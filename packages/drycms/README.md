@@ -1,7 +1,7 @@
 # drycms
 
 A Preact-based CMS UI for Astro. One integration mounts an admin dashboard, and
-a global stylesheet styles everything from bare tags and native attributes —
+a global stylesheet styles everything from bare tags and native attributes -
 Pico-style authoring, Minimals-style visuals.
 
 ## Install
@@ -10,15 +10,15 @@ Pico-style authoring, Minimals-style visuals.
 bun add drycms preact
 ```
 
-`preact` is a peer dependency. `@astrojs/preact` is not — drycms registers the
+`preact` is a peer dependency. `@astrojs/preact` is not - drycms registers the
 Preact renderer itself.
 
 ## Use
 
 ```js
 // astro.config.mjs
-import { defineConfig } from 'astro/config';
-import dry from 'drycms';
+import { defineConfig } from "astro/config";
+import dry from "drycms";
 
 export default defineConfig({
   integrations: [dry()],
@@ -60,7 +60,7 @@ All rules are scoped under `.dry` and grouped in cascade layers
 nothing leaks into the rest of your site and your own CSS overrides it without
 `!important`.
 
-Native/ARIA attributes drive state wherever one genuinely applies —
+Native/ARIA attributes drive state wherever one genuinely applies -
 `disabled`, `readonly`, `checked`, `aria-invalid`, `aria-selected`, `aria-busy`,
 `role`, `open` on `<details>`. Classes are used only where there is no real
 attribute for the concept (a button's colour, a card, a badge):
@@ -72,11 +72,17 @@ attribute for the concept (a button's colour, a card, a badge):
 <button aria-busy="true">Saving</button>
 
 <article class="card">
-  <header><h2>Title</h2><p>Description</p></header>
+  <header>
+    <h2>Title</h2>
+    <p>Description</p>
+  </header>
 </article>
 
 <span class="badge success">Published</span>
-<div class="alert destructive"><h3>Failed</h3><p>Try again.</p></div>
+<div class="alert destructive">
+  <h3>Failed</h3>
+  <p>Try again.</p>
+</div>
 
 <div class="field">
   <label for="title">Title</label>
@@ -95,9 +101,9 @@ The palette is [Minimals](https://minimals.cc): green `#00A76F` primary, the
 `light-dark()`, so the theme follows the OS by default; adding a `.light` or
 `.dark` class to the `.dry` element pins it (`ThemeToggle` does this for you).
 
-Intent tokens come as full ramps — `--dry-<intent>-lighter | -light | <base> |
+Intent tokens come as full ramps - `--dry-<intent>-lighter | -light | <base> |
 -dark | -darker` for `primary`, `secondary-main`, `info`, `success`, `warning`
-and `error` — plus `--dry-grey-50 … --dry-grey-900`. Override any of them:
+and `error` - plus `--dry-grey-50 … --dry-grey-900`. Override any of them:
 
 ```css
 .dry {
@@ -107,7 +113,7 @@ and `error` — plus `--dry-grey-50 … --dry-grey-900`. Override any of them:
 ```
 
 The font stack asks for `DM Sans` (what Minimals uses) and falls back to the
-system UI font. drycms does not load a webfont — add one yourself if you want an
+system UI font. drycms does not load a webfont - add one yourself if you want an
 exact match.
 
 ## Icons
@@ -126,9 +132,9 @@ import Icon from 'drycms/components/Icon.astro';
 ```
 
 ```tsx
-// Inside a Preact island — each icon is a separate export, so bundlers
+// Inside a Preact island - each icon is a separate export, so bundlers
 // drop the ones you do not use.
-import { SettingsIcon } from 'drycms/components/icons';
+import { SettingsIcon } from "drycms/components/icons";
 ```
 
 To add an icon, put it in `icons.config.json` (`"<set>:<name>"`, Solar first)
@@ -146,14 +152,14 @@ import DataTable from 'drycms/components/DataTable';
 <DataTable columns={columns} rows={rows} pageSize={10} client:load />
 ```
 
-- `drycms/components/DataTable` — sortable, filterable, paginated table
-- `drycms/components/ThemeToggle` — cycles system → light → dark
-- `drycms/components/SidebarToggle` — opens the mobile sidebar
+- `drycms/components/DataTable` - sortable, filterable, paginated table
+- `drycms/components/ThemeToggle` - cycles system → light → dark
+- `drycms/components/SidebarToggle` - opens the mobile sidebar
 
 `.astro` components are exported too: `drycms/components/Icon.astro`,
 `drycms/components/Demo.astro` (a preview + code pair, used by the showcase).
 `Demo.astro` syntax-highlights its code with [Prism.js](https://prismjs.com) at
-build time — no highlighter ships to the browser, and the token colours come
+build time - no highlighter ships to the browser, and the token colours come
 from `--dry-code-*` tokens, so they follow the light/dark theme.
 
 ## Notes

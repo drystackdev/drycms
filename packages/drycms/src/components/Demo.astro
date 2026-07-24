@@ -1,94 +1,98 @@
 ---
-import Prism from 'prismjs';
+import Prism from "prismjs";
 
 /**
  * One showcase entry: a live preview plus the markup that produced it. The
- * code is always visible — this page is a reference, not a puzzle to click
+ * code is always visible - this page is a reference, not a puzzle to click
  * through. Highlighting runs at build time, so no Prism runtime ships to the
  * browser; the token colours come from `styles/code.css`.
  */
 interface Props {
-	id: string;
-	title: string;
-	description?: string;
-	code: string;
-	/** Prism grammar to highlight with. @default "markup" */
-	lang?: string;
+  id: string;
+  title: string;
+  description?: string;
+  code: string;
+  /** Prism grammar to highlight with. @default "markup" */
+  lang?: string;
 }
 
-const { id, title, description, code, lang = 'markup' } = Astro.props;
+const { id, title, description, code, lang = "markup" } = Astro.props;
 
-const grammar = Prism.languages[lang] ? lang : 'markup';
-const highlighted = Prism.highlight(code.trim(), Prism.languages[grammar]!, grammar);
+const grammar = Prism.languages[lang] ? lang : "markup";
+const highlighted = Prism.highlight(
+  code.trim(),
+  Prism.languages[grammar]!,
+  grammar,
+);
 ---
 
 <section id={id} class="demo">
-	<header>
-		<h3>{title}</h3>
-		{description && <p>{description}</p>}
-	</header>
+  <header>
+    <h3>{title}</h3>
+    {description && <p>{description}</p>}
+  </header>
 
-	<div class="demo-preview">
-		<slot />
-	</div>
+  <div class="demo-preview">
+    <slot />
+  </div>
 
-	<div class="demo-code">
-		<span>Code</span>
-		<pre class={`language-${grammar}`}><code set:html={highlighted} /></pre>
-	</div>
+  <div class="demo-code">
+    <span>Code</span>
+    <pre class={`language-${grammar}`}><code set:html={highlighted} /></pre>
+  </div>
 </section>
 
 <style>
-	.demo {
-		scroll-margin-top: 5rem;
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 1rem;
-		padding: 1.5rem;
-		background-color: var(--dry-card);
-		border-radius: var(--dry-radius-xl);
-		box-shadow: var(--dry-shadow-md);
-	}
+  .demo {
+    scroll-margin-top: 5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1.5rem;
+    background-color: var(--dry-card);
+    border-radius: var(--dry-radius-xl);
+    box-shadow: var(--dry-shadow-md);
+  }
 
-	.demo > header > h3 {
-		font-size: 1rem;
-	}
+  .demo > header > h3 {
+    font-size: 1rem;
+  }
 
-	.demo > header > p {
-		color: var(--dry-muted-foreground);
-		margin-top: 0.25rem;
-	}
+  .demo > header > p {
+    color: var(--dry-muted-foreground);
+    margin-top: 0.25rem;
+  }
 
-	.demo-preview {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 1rem;
-		padding: 1.5rem;
-		border: 1px dashed var(--dry-border);
-		border-radius: var(--dry-radius-lg);
-		background-color: var(--dry-background);
-	}
+  .demo-preview {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    border: 1px dashed var(--dry-border);
+    border-radius: var(--dry-radius-lg);
+    background-color: var(--dry-background);
+  }
 
-	.demo-preview > * {
-		min-width: 0;
-	}
+  .demo-preview > * {
+    min-width: 0;
+  }
 
-	.demo-code {
-		display: grid;
-		gap: 0.5rem;
-	}
+  .demo-code {
+    display: grid;
+    gap: 0.5rem;
+  }
 
-	.demo-code > span {
-		font-size: var(--dry-text-xs);
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--dry-muted-foreground);
-	}
+  .demo-code > span {
+    font-size: var(--dry-text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dry-muted-foreground);
+  }
 
-	.demo-code > pre {
-		font-size: var(--dry-text-xs);
-		line-height: 1.6;
-	}
+  .demo-code > pre {
+    font-size: var(--dry-text-xs);
+    line-height: 1.6;
+  }
 </style>

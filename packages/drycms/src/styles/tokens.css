@@ -1,173 +1,209 @@
 /*
- * Design tokens — Minimals (minimals.cc) palette.
+ * Design tokens - Minimals (minimals.cc) palette.
  *
  * Colour values are declared once with `light-dark()`, so the theme follows the
  * OS by default and a `.light`/`.dark` class on the `.dry` element pins it.
  */
 @layer dry.tokens {
-	.dry {
-		color-scheme: light dark;
+  .dry {
+    color-scheme: light dark;
 
-		/* ------------------------------------------------------------- Greys */
-		--dry-grey-50: #fcfdfd;
-		--dry-grey-100: #f9fafb;
-		--dry-grey-200: #f4f6f8;
-		--dry-grey-300: #dfe3e8;
-		--dry-grey-400: #c4cdd5;
-		--dry-grey-500: #919eab;
-		--dry-grey-600: #637381;
-		--dry-grey-700: #454f5b;
-		--dry-grey-800: #1c252e;
-		--dry-grey-900: #141a21;
+    /* ------------------------------------------------------------- Greys */
+    --dry-grey-50: #fcfdfd;
+    --dry-grey-100: #f9fafb;
+    --dry-grey-200: #f4f6f8;
+    --dry-grey-300: #dfe3e8;
+    --dry-grey-400: #c4cdd5;
+    --dry-grey-500: #919eab;
+    --dry-grey-600: #637381;
+    --dry-grey-700: #454f5b;
+    --dry-grey-800: #1c252e;
+    --dry-grey-900: #141a21;
 
-		/* Every translucent neutral in Minimals is grey-500 at some alpha. */
-		--dry-grey-channel: 145 158 171;
+    /* Every translucent neutral in Minimals is grey-500 at some alpha. */
+    --dry-grey-channel: 145 158 171;
 
-		/* ----------------------------------------------------------- Intents */
-		--dry-primary-lighter: #c8fad6;
-		--dry-primary-light: #5be49b;
-		--dry-primary: #00a76f;
-		--dry-primary-dark: #007867;
-		--dry-primary-darker: #004b50;
-		--dry-primary-foreground: #ffffff;
+    /* ----------------------------------------------------------- Intents */
+    --dry-primary-lighter: #c8fad6;
+    --dry-primary-light: #5be49b;
+    --dry-primary: #00a76f;
+    --dry-primary-dark: #007867;
+    --dry-primary-darker: #004b50;
+    --dry-primary-foreground: #ffffff;
 
-		--dry-secondary-lighter: #efd6ff;
-		--dry-secondary-light: #c684ff;
-		--dry-secondary-main: #8e33ff;
-		--dry-secondary-dark: #5119b7;
-		--dry-secondary-darker: #27097a;
+    --dry-secondary-lighter: #efd6ff;
+    --dry-secondary-light: #c684ff;
+    --dry-secondary-main: #8e33ff;
+    --dry-secondary-dark: #5119b7;
+    --dry-secondary-darker: #27097a;
 
-		--dry-info-lighter: #cafdf5;
-		--dry-info-light: #61f3f3;
-		--dry-info: #00b8d9;
-		--dry-info-dark: #006c9c;
-		--dry-info-darker: #003768;
-		--dry-info-foreground: #ffffff;
+    --dry-info-lighter: #cafdf5;
+    --dry-info-light: #61f3f3;
+    --dry-info: #00b8d9;
+    --dry-info-dark: #006c9c;
+    --dry-info-darker: #003768;
+    --dry-info-foreground: #ffffff;
 
-		--dry-success-lighter: #d3fcd2;
-		--dry-success-light: #77ed8b;
-		--dry-success: #22c55e;
-		--dry-success-dark: #118d57;
-		--dry-success-darker: #065e49;
-		--dry-success-foreground: #ffffff;
+    --dry-success-lighter: #d3fcd2;
+    --dry-success-light: #77ed8b;
+    --dry-success: #22c55e;
+    --dry-success-dark: #118d57;
+    --dry-success-darker: #065e49;
+    --dry-success-foreground: #ffffff;
 
-		--dry-warning-lighter: #fff5cc;
-		--dry-warning-light: #ffd666;
-		--dry-warning: #ffab00;
-		--dry-warning-dark: #b76e00;
-		--dry-warning-darker: #7a4100;
-		--dry-warning-foreground: #1c252e;
+    --dry-warning-lighter: #fff5cc;
+    --dry-warning-light: #ffd666;
+    --dry-warning: #ffab00;
+    --dry-warning-dark: #b76e00;
+    --dry-warning-darker: #7a4100;
+    --dry-warning-foreground: #1c252e;
 
-		--dry-error-lighter: #ffe9d5;
-		--dry-error-light: #ffac82;
-		--dry-error: #ff5630;
-		--dry-error-dark: #b71d18;
-		--dry-error-darker: #7a0916;
-		--dry-error-foreground: #ffffff;
+    --dry-error-lighter: #ffe9d5;
+    --dry-error-light: #ffac82;
+    --dry-error: #ff5630;
+    --dry-error-dark: #b71d18;
+    --dry-error-darker: #7a0916;
+    --dry-error-foreground: #ffffff;
 
-		/* `destructive` is the variant name; `error` is the Minimals token name. */
-		--dry-destructive: var(--dry-error);
-		--dry-destructive-foreground: var(--dry-error-foreground);
+    /* `destructive` is the variant name; `error` is the Minimals token name. */
+    --dry-destructive: var(--dry-error);
+    --dry-destructive-foreground: var(--dry-error-foreground);
 
-		/* ---------------------------------------------------------- Surfaces */
-		--dry-background: light-dark(#f9fafb, #141a21);
-		--dry-card: light-dark(#ffffff, #1c252e);
-		--dry-card-foreground: light-dark(#1c252e, #ffffff);
-		--dry-popover: light-dark(#ffffff, #1c252e);
-		--dry-popover-foreground: light-dark(#1c252e, #ffffff);
-		--dry-sidebar: light-dark(#ffffff, #1c252e);
-		/* background.neutral */
-		--dry-muted: light-dark(#f4f6f8, #28323d);
+    /* ---------------------------------------------------------- Surfaces */
+    --dry-background: light-dark(#f9fafb, #141a21);
+    --dry-card: light-dark(#ffffff, #1c252e);
+    --dry-card-foreground: light-dark(#1c252e, #ffffff);
+    --dry-popover: light-dark(#ffffff, #1c252e);
+    --dry-popover-foreground: light-dark(#1c252e, #ffffff);
+    --dry-sidebar: light-dark(#ffffff, #1c252e);
+    /* background.neutral */
+    --dry-muted: light-dark(#f4f6f8, #28323d);
 
-		/* -------------------------------------------------------------- Text */
-		--dry-foreground: light-dark(#1c252e, #ffffff);
-		--dry-muted-foreground: light-dark(#637381, #919eab);
-		--dry-disabled-foreground: light-dark(#919eab, #637381);
+    /* -------------------------------------------------------------- Text */
+    --dry-foreground: light-dark(#1c252e, #ffffff);
+    --dry-muted-foreground: light-dark(#637381, #919eab);
+    --dry-disabled-foreground: light-dark(#919eab, #637381);
 
-		/* ------------------------------------------------------------ Action */
-		--dry-accent: rgb(var(--dry-grey-channel) / 8%);
-		--dry-accent-foreground: var(--dry-foreground);
-		--dry-selected: rgb(var(--dry-grey-channel) / 16%);
-		--dry-focus: rgb(var(--dry-grey-channel) / 24%);
-		--dry-disabled-background: rgb(var(--dry-grey-channel) / 24%);
+    /* ------------------------------------------------------------ Action */
+    --dry-accent: rgb(var(--dry-grey-channel) / 8%);
+    --dry-accent-foreground: var(--dry-foreground);
+    --dry-selected: rgb(var(--dry-grey-channel) / 16%);
+    --dry-focus: rgb(var(--dry-grey-channel) / 24%);
+    --dry-disabled-background: rgb(var(--dry-grey-channel) / 24%);
 
-		/* Neutral surface used by the `secondary` variant (Minimals soft/inherit). */
-		--dry-secondary: rgb(var(--dry-grey-channel) / 16%);
-		--dry-secondary-foreground: var(--dry-foreground);
+    /* Neutral surface used by the `secondary` variant (Minimals soft/inherit). */
+    --dry-secondary: rgb(var(--dry-grey-channel) / 16%);
+    --dry-secondary-foreground: var(--dry-foreground);
 
-		/* ------------------------------------------------------ Lines & focus */
-		--dry-border: rgb(var(--dry-grey-channel) / 20%);
-		--dry-input: rgb(var(--dry-grey-channel) / 20%);
-		--dry-ring: var(--dry-foreground);
+    /* ------------------------------------------------------ Lines & focus */
+    --dry-border: rgb(var(--dry-grey-channel) / 20%);
+    --dry-input: rgb(var(--dry-grey-channel) / 20%);
+    --dry-ring: var(--dry-foreground);
 
-		/* ------------------------------------------------------------- Shape */
-		--dry-radius: 0.5rem;
-		--dry-radius-sm: 0.375rem;
-		--dry-radius-md: 0.5rem;
-		--dry-radius-lg: 0.75rem;
-		--dry-radius-xl: 1rem;
+    /* ------------------------------------------------------------- Shape */
+    --dry-radius: 0.5rem;
+    --dry-radius-sm: 0.375rem;
+    --dry-radius-md: 0.5rem;
+    --dry-radius-lg: 0.75rem;
+    --dry-radius-xl: 1rem;
 
-		/* -------------------------------------------------------------- Type */
-		--dry-font-sans: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system,
-			'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-		--dry-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
-			monospace;
-		--dry-text-xs: 0.75rem;
-		--dry-text-sm: 0.875rem;
-		--dry-text-base: 1rem;
-		--dry-leading: 1.5;
-		--dry-weight-button: 700;
+    /* -------------------------------------------------------------- Type */
+    --dry-font-sans:
+      "DM Sans Variable", "DM Sans", ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --dry-font-mono:
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+    --dry-text-xs: 0.75rem;
+    --dry-text-sm: 0.875rem;
+    --dry-text-base: 1rem;
+    --dry-leading: 1.5;
+    --dry-weight-button: 700;
 
-		/*
+    /*
 		 * Elevation. Minimals tints shadows with grey-500 in light mode and with
-		 * black in dark mode — `light-dark()` only accepts colours, so the channel
+		 * black in dark mode - `light-dark()` only accepts colours, so the channel
 		 * is switched separately below.
 		 */
-		--dry-shadow-channel: 145 158 171;
-		--dry-shadow-xs: 0 1px 2px 0 rgb(var(--dry-shadow-channel) / 16%);
-		--dry-shadow-sm: 0 0 2px 0 rgb(var(--dry-shadow-channel) / 20%),
-			0 1px 4px -1px rgb(var(--dry-shadow-channel) / 12%);
-		--dry-shadow-md: 0 0 2px 0 rgb(var(--dry-shadow-channel) / 20%),
-			0 12px 24px -4px rgb(var(--dry-shadow-channel) / 12%);
-		--dry-shadow-lg: 0 0 2px 0 rgb(var(--dry-shadow-channel) / 24%),
-			-20px 20px 40px -4px rgb(var(--dry-shadow-channel) / 24%);
-		--dry-shadow-primary: 0 8px 16px 0 rgb(0 167 111 / 24%);
-		--dry-shadow-error: 0 8px 16px 0 rgb(255 86 48 / 24%);
+    --dry-shadow-channel: 145 158 171;
+    --dry-shadow-xs: 0 1px 2px 0 rgb(var(--dry-shadow-channel) / 16%);
+    --dry-shadow-sm:
+      0 0 2px 0 rgb(var(--dry-shadow-channel) / 20%),
+      0 1px 4px -1px rgb(var(--dry-shadow-channel) / 12%);
+    --dry-shadow-md:
+      0 0 2px 0 rgb(var(--dry-shadow-channel) / 20%),
+      0 12px 24px -4px rgb(var(--dry-shadow-channel) / 12%);
+    --dry-shadow-lg:
+      0 0 2px 0 rgb(var(--dry-shadow-channel) / 24%),
+      -20px 20px 40px -4px rgb(var(--dry-shadow-channel) / 24%);
+    --dry-shadow-primary: 0 8px 16px 0 rgb(0 167 111 / 24%);
+    --dry-shadow-error: 0 8px 16px 0 rgb(255 86 48 / 24%);
 
-		/* -------------------------------------- Code highlighting (Prism.js) */
-		--dry-code-comment: var(--dry-muted-foreground);
-		--dry-code-punctuation: var(--dry-muted-foreground);
-		--dry-code-tag: light-dark(#b71d18, #ffac82);
-		--dry-code-attr-name: light-dark(#5119b7, #c684ff);
-		--dry-code-string: light-dark(#118d57, #77ed8b);
-		--dry-code-keyword: light-dark(#006c9c, #61f3f3);
+    /* -------------------------------------- Code highlighting (Prism.js) */
+    --dry-code-comment: var(--dry-muted-foreground);
+    --dry-code-punctuation: var(--dry-muted-foreground);
+    --dry-code-tag: light-dark(#b71d18, #ffac82);
+    --dry-code-attr-name: light-dark(#5119b7, #c684ff);
+    --dry-code-string: light-dark(#118d57, #77ed8b);
+    --dry-code-keyword: light-dark(#006c9c, #61f3f3);
 
-		/* ------------------------------------------------------------ Layout */
-		--dry-sidebar-width: 16.25rem;
-		--dry-topbar-height: 4rem;
-		--dry-gap: 1.5rem;
+    /* ------------------------------------------------------------ Layout */
+    --dry-sidebar-width: 16.25rem;
+    --dry-topbar-height: 4rem;
+    --dry-gap: 1.5rem;
 
-		/* ------------------------------------------------------------ Spacing */
-		--dry-space-1: 0.25rem;
-		--dry-space-2: 0.5rem;
-		--dry-space-3: 0.75rem;
-		--dry-space-4: 1rem;
-		--dry-space-5: 1.25rem;
-	}
+    /* --------------------------------------------------- Spacing scale */
+    /* Used by the p, m, w, h utility classes in utilities.css. */
+    --dry-space-0: 0px;
+    --dry-space-px: 1px;
+    --dry-space-0-5: 0.125rem;
+    --dry-space-1: 0.25rem;
+    --dry-space-1-5: 0.375rem;
+    --dry-space-2: 0.5rem;
+    --dry-space-2-5: 0.625rem;
+    --dry-space-3: 0.75rem;
+    --dry-space-3-5: 0.875rem;
+    --dry-space-4: 1rem;
+    --dry-space-5: 1.25rem;
+    --dry-space-6: 1.5rem;
+    --dry-space-7: 1.75rem;
+    --dry-space-8: 2rem;
+    --dry-space-9: 2.25rem;
+    --dry-space-10: 2.5rem;
+    --dry-space-11: 2.75rem;
+    --dry-space-12: 3rem;
+    --dry-space-14: 3.5rem;
+    --dry-space-16: 4rem;
+    --dry-space-20: 5rem;
+    --dry-space-24: 6rem;
+    --dry-space-28: 7rem;
+    --dry-space-32: 8rem;
+    --dry-space-36: 9rem;
+    --dry-space-40: 10rem;
+    --dry-space-44: 11rem;
+    --dry-space-48: 12rem;
+    --dry-space-52: 13rem;
+    --dry-space-56: 14rem;
+    --dry-space-60: 15rem;
+    --dry-space-64: 16rem;
+    --dry-space-72: 18rem;
+    --dry-space-80: 20rem;
+    --dry-space-96: 24rem;
+  }
 
-	.dry.light {
-		color-scheme: light;
-		--dry-shadow-channel: 145 158 171;
-	}
+  .dry.light {
+    color-scheme: light;
+    --dry-shadow-channel: 145 158 171;
+  }
 
-	.dry.dark {
-		color-scheme: dark;
-		--dry-shadow-channel: 0 0 0;
-	}
+  .dry.dark {
+    color-scheme: dark;
+    --dry-shadow-channel: 0 0 0;
+  }
 
-	@media (prefers-color-scheme: dark) {
-		.dry:not(.light) {
-			--dry-shadow-channel: 0 0 0;
-		}
-	}
+  @media (prefers-color-scheme: dark) {
+    .dry:not(.light) {
+      --dry-shadow-channel: 0 0 0;
+    }
+  }
 }

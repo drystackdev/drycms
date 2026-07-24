@@ -5,7 +5,7 @@ This is a bun workspace. The root is a demo Astro app; the library lives in
 
 Only the `.ts`/`.tsx` sources are compiled (to `packages/drycms/dist`). The
 `.astro`, `.css` and route files are served straight from `src`, so editing them
-hot-reloads — but **editing anything under `packages/drycms/src/integration` or
+hot-reloads - but **editing anything under `packages/drycms/src/integration` or
 `packages/drycms/src/components` requires a rebuild**:
 
 ```
