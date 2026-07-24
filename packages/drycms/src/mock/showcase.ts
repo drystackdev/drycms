@@ -14,16 +14,6 @@ export interface ShowcaseGroup {
   items: ShowcaseItem[];
 }
 
-export const intents = [
-  "primary",
-  "secondary",
-  "info",
-  "success",
-  "warning",
-  "error",
-] as const;
-export const greys = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
-
 /** Sidebar + tab order. Flattened at runtime for Previous/Next navigation. */
 export const groups: ShowcaseGroup[] = [
   {
@@ -118,12 +108,6 @@ export const tableColumns: DataTableColumn<(typeof tableRows)[number]>[] = [
   { key: "status", label: "Status" },
   { key: "size", label: "Size", numeric: true },
 ];
-
-export function statusVariant(status: string) {
-  if (status === "Published") return "success";
-  if (status === "Draft") return "warning";
-  return "info";
-}
 
 export const code: Record<string, string> = {
   colors: `<span class="badge info">Info</span>

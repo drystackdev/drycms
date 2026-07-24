@@ -212,7 +212,7 @@
     :where(fieldset) {
       margin: 0;
       border: 1px solid var(--dry-border);
-      border-radius: var(--dry-radius-lg);
+      border-radius: var(--dry-radius-md);
     }
 
     :where(legend) {

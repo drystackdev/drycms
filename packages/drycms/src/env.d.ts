@@ -13,3 +13,25 @@ declare module "virtual:drycms/config" {
 	export default config;
 }
 
+// `@victr/prism-live` ships no types (plain JS). Only the surface Demo.tsx
+// actually uses is declared here.
+declare module "@victr/prism-live" {
+	export default class PrismLive {
+		constructor(source: HTMLElement);
+		value: string;
+		update(force?: boolean): void;
+		static create(source: HTMLElement): PrismLive;
+		static addPrism(prism: unknown): void;
+	}
+}
+declare module "@victr/prism-live/prism" {
+	export default class LivePrismCore {
+		addLanguage(language: unknown): void;
+	}
+}
+declare module "@victr/prism-live/language/markup" {
+	const language: unknown;
+	export default language;
+}
+declare module "@victr/prism-live/style.css";
+
