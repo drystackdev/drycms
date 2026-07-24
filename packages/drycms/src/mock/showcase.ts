@@ -308,6 +308,17 @@ import { SettingsIcon } from 'drycms/components/icons';
   <span class="error">Slug is required.</span>
 </div>
 
+<div class="field">
+  <div class="outlined">
+    <fieldset>
+      <legend><span>Title</span></legend>
+      <input id="sc-outlined-title" type="text" placeholder=" " />
+    </fieldset>
+    <label for="sc-outlined-title">Title</label>
+  </div>
+  <span class="hint">"Outlined" variant - the label floats into the border on focus/value.</span>
+</div>
+
 <fieldset>
   <legend>Publishing</legend>
   <div class="field inline">
