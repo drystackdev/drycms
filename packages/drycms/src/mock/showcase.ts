@@ -14,6 +14,16 @@ export interface ShowcaseGroup {
   items: ShowcaseItem[];
 }
 
+export const intents = [
+  "primary",
+  "secondary",
+  "info",
+  "success",
+  "warning",
+  "error",
+] as const;
+export const greys = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
+
 /** Sidebar + tab order. Flattened at runtime for Previous/Next navigation. */
 export const groups: ShowcaseGroup[] = [
   {
@@ -109,34 +119,23 @@ export const tableColumns: DataTableColumn<(typeof tableRows)[number]>[] = [
   { key: "size", label: "Size", numeric: true },
 ];
 
+export function statusVariant(status: string) {
+  if (status === "Published") return "success";
+  if (status === "Draft") return "warning";
+  return "info";
+}
+
 export const code: Record<string, string> = {
-  colors: `<div class="stack" style="width: 100%">
-  <div class="row">
-    <div class="swatch"><span style="background: var(--dry-primary)"></span><small class="mono">--dry-primary</small></div>
-    <div class="swatch"><span style="background: var(--dry-secondary-main)"></span><small class="mono">--dry-secondary-main</small></div>
-    <div class="swatch"><span style="background: var(--dry-info)"></span><small class="mono">--dry-info</small></div>
-    <div class="swatch"><span style="background: var(--dry-success)"></span><small class="mono">--dry-success</small></div>
-    <div class="swatch"><span style="background: var(--dry-warning)"></span><small class="mono">--dry-warning</small></div>
-    <div class="swatch"><span style="background: var(--dry-error)"></span><small class="mono">--dry-error</small></div>
-  </div>
-  <div class="row">
-    <div class="swatch"><span style="background: var(--dry-grey-100)"></span><small class="mono">100</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-200)"></span><small class="mono">200</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-300)"></span><small class="mono">300</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-400)"></span><small class="mono">400</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-500)"></span><small class="mono">500</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-600)"></span><small class="mono">600</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-700)"></span><small class="mono">700</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-800)"></span><small class="mono">800</small></div>
-    <div class="swatch"><span style="background: var(--dry-grey-900)"></span><small class="mono">900</small></div>
-  </div>
-  <div class="row">
-    <span class="badge info">Info</span>
-    <span class="badge success">Success</span>
-    <span class="badge warning">Warning</span>
-    <span class="badge destructive">Destructive</span>
-  </div>
-</div>`,
+  colors: `<span class="badge info">Info</span>
+<span class="badge success">Success</span>
+<span class="badge warning">Warning</span>
+<span class="badge destructive">Destructive</span>
+
+/* Override any token */
+.dry {
+  --dry-primary: #00A76F;
+  --dry-radius: 0.5rem;
+}`,
   typography: `<h1>Heading 1</h1>
 <h2>Heading 2</h2>
 <h3>Heading 3</h3>
