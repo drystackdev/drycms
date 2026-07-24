@@ -946,6 +946,83 @@
         background-color: var(--dry-primary);
         border-radius: 999px;
       }
+
+      &:indeterminate {
+        background-image: linear-gradient(
+          90deg,
+          transparent,
+          var(--dry-primary),
+          transparent
+        );
+        background-size: 50% 100%;
+        background-repeat: no-repeat;
+        animation: dry-progress-indeterminate 1.4s ease-in-out infinite;
+
+        &::-webkit-progress-bar {
+          background-color: transparent;
+        }
+
+        &::-webkit-progress-value {
+          display: none;
+        }
+
+        &::-moz-progress-bar {
+          background-color: transparent;
+        }
+      }
+    }
+
+    /* -------------------------------------------------------- Progress circle */
+    .progress-circle {
+      --value: 0;
+      --size: 4rem;
+      --thickness: 3;
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      width: var(--size);
+      height: var(--size);
+      font-size: var(--dry-text-xs);
+      font-weight: 600;
+
+      & > svg,
+      & > span {
+        grid-area: 1 / 1;
+      }
+
+      & > svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      & circle {
+        fill: none;
+        stroke-width: var(--thickness);
+        transform-origin: 50% 50%;
+      }
+
+      & .track {
+        stroke: rgb(var(--dry-grey-channel) / 16%);
+      }
+
+      & .value {
+        stroke: var(--dry-primary);
+        stroke-linecap: round;
+        stroke-dasharray: 100;
+        stroke-dashoffset: calc(100 - var(--value));
+        transform: rotate(-90deg);
+        transition: stroke-dashoffset 0.3s ease;
+      }
+
+      & > span {
+        position: relative;
+        z-index: 1;
+      }
+
+      &.indeterminate .value {
+        stroke-dasharray: 25 75;
+        animation: dry-progress-circle-spin 1s linear infinite;
+      }
     }
 
     /*
@@ -1261,7 +1338,8 @@
       display: grid;
       gap: 0.5rem;
 
-      & > span {
+      & > span,
+      & > .row > span {
         font-size: var(--dry-text-xs);
         font-weight: 700;
         text-transform: uppercase;
@@ -1272,6 +1350,55 @@
       & > pre {
         font-size: var(--dry-text-xs);
         line-height: 1.6;
+      }
+    }
+
+    /* Editable demo: a highlighted <pre> and a transparent <textarea> stacked
+     * exactly on top of each other. Typing is invisible except for the caret;
+     * the visible text always comes from the <pre> underneath. */
+    .editor {
+      position: relative;
+      margin: 0;
+      padding: 0.875rem 1rem;
+      background-color: var(--dry-muted);
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      font-size: var(--dry-text-xs);
+      line-height: 1.6;
+
+      & > pre,
+      & > textarea {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        font: inherit;
+        white-space: pre-wrap;
+        word-break: break-word;
+        tab-size: 2;
+      }
+
+      & > pre {
+        background: none;
+      }
+
+      & > textarea {
+        position: absolute;
+        inset: 0.875rem 1rem;
+        width: calc(100% - 2rem);
+        height: calc(100% - 1.75rem);
+        resize: none;
+        outline: none;
+        box-shadow: none;
+        background: transparent;
+        color: transparent;
+        caret-color: currentColor;
+
+        /* Overrides forms.css's global heavier-border focus style, which
+         * makes no sense on an invisible overlay textarea. */
+        &:focus-visible {
+          outline: none;
+          box-shadow: none;
+        }
       }
     }
 
@@ -1441,6 +1568,24 @@
   @keyframes dry-pulse {
     50% {
       opacity: 0.5;
+    }
+  }
+
+  @keyframes dry-progress-indeterminate {
+    0% {
+      background-position: -150% 0;
+    }
+    100% {
+      background-position: 250% 0;
+    }
+  }
+
+  @keyframes dry-progress-circle-spin {
+    from {
+      transform: rotate(-90deg);
+    }
+    to {
+      transform: rotate(270deg);
     }
   }
 }

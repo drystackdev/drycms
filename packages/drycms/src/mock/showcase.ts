@@ -52,6 +52,7 @@ export const groups: ShowcaseGroup[] = [
       { id: "table", label: "Table" },
       { id: "avatar", label: "Avatar" },
       { id: "progress", label: "Progress" },
+      { id: "progress-circle", label: "Progress circle" },
       { id: "skeleton", label: "Skeleton" },
       { id: "empty", label: "Empty state" },
     ],
@@ -253,6 +254,19 @@ import { SettingsIcon } from 'drycms/components/icons';
   progress: `<progress value="72" max="100"></progress>
 <progress value="28" max="100"></progress>
 <progress></progress>`,
+  progressCircle: `<div class="progress-circle" style="--value: 72">
+  <svg viewBox="0 0 36 36">
+    <circle class="track" cx="18" cy="18" r="16" pathLength="100"></circle>
+    <circle class="value" cx="18" cy="18" r="16" pathLength="100"></circle>
+  </svg>
+  <span>72%</span>
+</div>
+<div class="progress-circle indeterminate">
+  <svg viewBox="0 0 36 36">
+    <circle class="track" cx="18" cy="18" r="16" pathLength="100"></circle>
+    <circle class="value" cx="18" cy="18" r="16" pathLength="100"></circle>
+  </svg>
+</div>`,
   skeleton: `<span class="skeleton" style="height: 3rem; width: 3rem; border-radius: 50%"></span>
 <span class="skeleton" style="height: 0.75rem; width: 12rem"></span>
 <span class="skeleton" style="height: 0.75rem; width: 8rem"></span>`,
