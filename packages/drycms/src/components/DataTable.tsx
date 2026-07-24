@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'preact/hooks';
-import { ArrowDownIcon, ArrowUpIcon, SortIcon } from './icons.js';
+import { ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, SortIcon } from './icons.js';
 
 export interface DataTableColumn<Row> {
 	key: string & keyof Row;
@@ -169,6 +169,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
 							disabled={current === 0}
 							onClick={() => setPage(current - 1)}
 						>
+							<ArrowLeftIcon />
 							Previous
 						</button>
 						<button
@@ -178,6 +179,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
 							onClick={() => setPage(current + 1)}
 						>
 							Next
+							<ArrowRightIcon />
 						</button>
 					</div>
 				</div>

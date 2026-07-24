@@ -81,9 +81,21 @@ export const groups: ShowcaseGroup[] = [
     items: [
       { id: "dialog", label: "Dialog" },
       { id: "datatable", label: "DataTable" },
+      { id: "custom-select", label: "Select" },
+      { id: "combobox", label: "Combobox" },
+      { id: "multi-select", label: "Multi-select" },
       { id: "islands", label: "Theme & sidebar" },
     ],
   },
+];
+
+export const collectionOptions = [
+  { value: "blog", label: "Blog" },
+  { value: "docs", label: "Docs" },
+  { value: "changelog", label: "Changelog" },
+  { value: "roadmap", label: "Roadmap" },
+  { value: "design", label: "Design system" },
+  { value: "marketing", label: "Marketing", disabled: true },
 ];
 
 export const tableRows = [
@@ -358,6 +370,45 @@ const columns = [
 ];
 ---
 <DataTable columns={columns} rows={rows} pageSize={4} client:load />`,
+  customSelect: `---
+import Select from 'drycms/components/Select';
+
+const options = [
+  { value: 'blog', label: 'Blog' },
+  { value: 'docs', label: 'Docs' },
+  { value: 'changelog', label: 'Changelog' },
+  { value: 'roadmap', label: 'Roadmap' },
+  { value: 'design', label: 'Design system' },
+  { value: 'marketing', label: 'Marketing', disabled: true },
+];
+---
+<Select options={options} defaultValue="docs" name="collection" client:load />`,
+  combobox: `---
+import Combobox from 'drycms/components/Combobox';
+
+const options = [
+  { value: 'blog', label: 'Blog' },
+  { value: 'docs', label: 'Docs' },
+  { value: 'changelog', label: 'Changelog' },
+  { value: 'roadmap', label: 'Roadmap' },
+  { value: 'design', label: 'Design system' },
+  { value: 'marketing', label: 'Marketing', disabled: true },
+];
+---
+<Combobox options={options} defaultValue="changelog" name="collection" client:load />`,
+  multiSelect: `---
+import MultiSelect from 'drycms/components/MultiSelect';
+
+const options = [
+  { value: 'blog', label: 'Blog' },
+  { value: 'docs', label: 'Docs' },
+  { value: 'changelog', label: 'Changelog' },
+  { value: 'roadmap', label: 'Roadmap' },
+  { value: 'design', label: 'Design system' },
+  { value: 'marketing', label: 'Marketing', disabled: true },
+];
+---
+<MultiSelect options={options} defaultValue={['blog', 'docs']} name="collections" client:load />`,
   islands: `---
 import ThemeToggle from 'drycms/components/ThemeToggle';
 import SidebarToggle from 'drycms/components/SidebarToggle';

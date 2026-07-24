@@ -1,12 +1,17 @@
 ---
+import Combobox from "drycms/components/Combobox";
 import DataTable from "drycms/components/DataTable";
 import Demo from "drycms/components/Demo.astro";
 import Icon from "drycms/components/Icon.astro";
 import { type IconName, iconBodies } from "drycms/components/icons";
+import MultiSelect from "drycms/components/MultiSelect";
+import Select from "drycms/components/Select";
+import ThemeToggle from "drycms/components/ThemeToggle";
 import "drycms/styles.css";
 import { path } from "virtual:drycms/config";
 import {
   code,
+  collectionOptions,
   greys,
   groups,
   intents,
@@ -25,9 +30,23 @@ const iconNames = Object.keys(iconBodies) as IconName[];
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Showcase</title>
   </head>
-  <body class="dry" style="padding: 1rem; padding-top: 0;">
+  <body class="dry">
+    <script is:inline>
+      try {
+        const stored = localStorage.getItem("drycms:theme");
+        if (stored === "light" || stored === "dark") {
+          document.body.classList.add(stored);
+        }
+      } catch {}
+    </script>
+
+    <script>
+      import "simplebar";
+    </script>
+
+    <div class="main" data-simplebar style="padding: 1rem; padding-top: 0;">
     <header class="topbar" style="position: sticky; top: 0rem">
-      <div class="row w-full">
+      <div class="row" style="width: 100%">
         <a role="button" class="icon" href={`${path}/dashboard`}>
           <Icon name="Home" />
         </a>
@@ -36,11 +55,12 @@ const iconNames = Object.keys(iconBodies) as IconName[];
           <p>Every component in drycms, with the markup that produces it.</p>
         </div>
         <span class="badge outline" style="margin-left: auto;">v0.0.1</span>
+        <ThemeToggle client:idle />
       </div>
     </header>
 
     <div class="showcase">
-      <aside class="showcase-nav" aria-label="Showcase sections">
+      <aside class="showcase-nav" aria-label="Showcase sections" data-simplebar>
         <nav>
           {
             groups.map((group) => (
@@ -683,6 +703,39 @@ const iconNames = Object.keys(iconBodies) as IconName[];
         </Demo>
 
         <Demo
+          id="custom-select"
+          title="Select"
+          description="Custom-styled single select - a Preact island, unlike the native <select> above."
+          code={code.customSelect}
+        >
+          <div style="width: 100%; max-width: 20rem">
+            <Select options={collectionOptions} defaultValue="docs" name="collection" client:load />
+          </div>
+        </Demo>
+
+        <Demo
+          id="combobox"
+          title="Combobox"
+          description="Filterable single select - type to narrow the list."
+          code={code.combobox}
+        >
+          <div style="width: 100%; max-width: 20rem">
+            <Combobox options={collectionOptions} defaultValue="changelog" name="collection" client:load />
+          </div>
+        </Demo>
+
+        <Demo
+          id="multi-select"
+          title="Multi-select"
+          description="Filterable multi select - picks collect as chips, backspace removes the last one."
+          code={code.multiSelect}
+        >
+          <div style="width: 100%; max-width: 20rem">
+            <MultiSelect options={collectionOptions} defaultValue={["blog", "docs"]} name="collections" client:load />
+          </div>
+        </Demo>
+
+        <Demo
           id="islands"
           title="Theme & sidebar toggles"
           description="Both live in the topbar of every drycms page."
@@ -860,6 +913,7 @@ const iconNames = Object.keys(iconBodies) as IconName[];
           })();
         </script>
       </div>
+    </div>
     </div>
   </body>
 </html>

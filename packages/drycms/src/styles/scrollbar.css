@@ -1,0 +1,240 @@
+/*
+ * SimpleBar (https://grsmto.github.io/simplebar) replaces the native
+ * scrollbar on any element carrying `data-simplebar`. `DryLayout` imports the
+ * `simplebar` package so every such element on the page auto-inits,
+ * including ones added later by Preact islands.
+ *
+ * The rules below are `simplebar@6.3.3`'s own stylesheet (structural - do not
+ * edit without diffing against a newer release), scoped under `.dry` and
+ * moved into the `dry.scrollbar` layer. It's inlined rather than pulled in
+ * via `@import "simplebar/dist/simplebar.css"` because that bare-specifier
+ * import doesn't resolve through this project's Vite CSS pipeline.
+ */
+@layer dry.scrollbar {
+  .dry [data-simplebar] {
+    position: relative;
+    flex-direction: column;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-content: flex-start;
+    align-items: flex-start;
+  }
+
+  .dry .simplebar-wrapper {
+    overflow: hidden;
+    width: inherit;
+    height: inherit;
+    max-width: inherit;
+    max-height: inherit;
+  }
+
+  .dry .simplebar-mask {
+    direction: inherit;
+    position: absolute;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: auto !important;
+    height: auto !important;
+    z-index: 0;
+  }
+
+  .dry .simplebar-offset {
+    direction: inherit !important;
+    box-sizing: inherit !important;
+    resize: none !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    padding: 0;
+    margin: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dry .simplebar-content-wrapper {
+    direction: inherit;
+    box-sizing: border-box !important;
+    position: relative;
+    display: block;
+    height: 100%;
+    width: auto;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .dry .simplebar-content-wrapper::-webkit-scrollbar,
+  .dry .simplebar-hide-scrollbar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .dry .simplebar-content:before,
+  .dry .simplebar-content:after {
+    content: " ";
+    display: table;
+  }
+
+  .dry .simplebar-placeholder {
+    max-height: 100%;
+    max-width: 100%;
+    width: 100%;
+    pointer-events: none;
+  }
+
+  .dry .simplebar-height-auto-observer-wrapper {
+    box-sizing: inherit !important;
+    height: 100%;
+    width: 100%;
+    max-width: 1px;
+    position: relative;
+    float: left;
+    max-height: 1px;
+    overflow: hidden;
+    z-index: -1;
+    padding: 0;
+    margin: 0;
+    pointer-events: none;
+    flex-grow: inherit;
+    flex-shrink: 0;
+    flex-basis: 0;
+  }
+
+  .dry .simplebar-height-auto-observer {
+    box-sizing: inherit;
+    display: block;
+    opacity: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 1000%;
+    width: 1000%;
+    min-height: 1px;
+    min-width: 1px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .dry .simplebar-track {
+    z-index: 1;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .dry [data-simplebar].simplebar-dragging {
+    pointer-events: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  .dry [data-simplebar].simplebar-dragging .simplebar-content {
+    pointer-events: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  .dry [data-simplebar].simplebar-dragging .simplebar-track {
+    pointer-events: all;
+  }
+
+  .dry .simplebar-scrollbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    min-height: 10px;
+  }
+
+  /* Vendor default is a hardcoded black thumb - swap in the theme
+	 * foreground so it stays visible in dark mode too. */
+  .dry .simplebar-scrollbar:before {
+    position: absolute;
+    content: "";
+    background-color: var(--dry-foreground);
+    border-radius: 7px;
+    left: 2px;
+    right: 2px;
+    top: 2px;
+    bottom: 2px;
+    opacity: 0;
+    transition: opacity 0.2s 0.5s linear;
+  }
+
+  .dry .simplebar-scrollbar.simplebar-visible:before {
+    opacity: 0.5;
+    transition-delay: 0s;
+    transition-duration: 0s;
+  }
+
+  .dry .simplebar-track.simplebar-vertical {
+    top: 0;
+    width: 11px;
+  }
+
+  .dry .simplebar-track.simplebar-horizontal {
+    left: 0;
+    height: 11px;
+  }
+
+  .dry .simplebar-track.simplebar-horizontal .simplebar-scrollbar {
+    right: auto;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    min-height: 0;
+    min-width: 10px;
+    width: auto;
+  }
+
+  .dry [data-simplebar-direction="rtl"] .simplebar-track.simplebar-vertical {
+    right: auto;
+    left: 0;
+  }
+
+  .dry .simplebar-dummy-scrollbar-size {
+    direction: rtl;
+    position: fixed;
+    opacity: 0;
+    visibility: hidden;
+    height: 500px;
+    width: 500px;
+    overflow-y: hidden;
+    overflow-x: scroll;
+    -ms-overflow-style: scrollbar !important;
+  }
+
+  .dry .simplebar-dummy-scrollbar-size > div {
+    width: 200%;
+    height: 200%;
+    margin: 10px 0;
+  }
+
+  .dry .simplebar-hide-scrollbar {
+    position: fixed;
+    left: 0;
+    visibility: hidden;
+    overflow-y: scroll;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+}

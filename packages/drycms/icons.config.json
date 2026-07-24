@@ -23,6 +23,9 @@
     "ArrowDown": "solar:alt-arrow-down-linear",
     "ArrowLeft": "solar:alt-arrow-left-linear",
     "ArrowRight": "solar:alt-arrow-right-linear",
-    "Sort": "solar:sort-vertical-linear"
+    "Sort": "solar:sort-vertical-linear",
+
+    "Check": "lucide:check",
+    "X": "lucide:x"
   }
 }

@@ -44,6 +44,9 @@ export const iconBodies = {
   ArrowRight:
     '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m9 5l6 7l-6 7"/>',
   Sort: '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 18V6m0 0l4 4.125M16 6l-4 4.125M8 6v12m0 0l4-4.125M8 18l-4-4.125"/>',
+  Check:
+    '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 6L9 17l-5-5"/>',
+  X: '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 6L6 18M6 6l12 12"/>',
 } as const;
 
 /** `viewBox` matching each entry in `iconBodies`. */
@@ -68,6 +71,8 @@ export const iconViewBoxes = {
   ArrowLeft: "0 0 24 24",
   ArrowRight: "0 0 24 24",
   Sort: "0 0 24 24",
+  Check: "0 0 24 24",
+  X: "0 0 24 24",
 } as const;
 
 export type IconName = keyof typeof iconBodies;
@@ -407,6 +412,40 @@ export function SortIcon(props: IconProps) {
       dangerouslySetInnerHTML={{
         __html:
           '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 18V6m0 0l4 4.125M16 6l-4 4.125M8 6v12m0 0l4-4.125M8 18l-4-4.125"/>',
+      }}
+    />
+  );
+}
+
+/** `lucide:check` */
+export function CheckIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{
+        __html:
+          '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 6L9 17l-5-5"/>',
+      }}
+    />
+  );
+}
+
+/** `lucide:x` */
+export function XIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{
+        __html:
+          '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 6L6 18M6 6l12 12"/>',
       }}
     />
   );

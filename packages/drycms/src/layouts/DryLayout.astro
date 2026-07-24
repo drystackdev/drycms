@@ -45,8 +45,13 @@ const nav: { key: string; label: string; href: string; icon: IconName; ready: bo
 			} catch {}
 		</script>
 
+		{/* Auto-inits a custom scrollbar on every `data-simplebar` element. */}
+		<script>
+			import 'simplebar';
+		</script>
+
 		<div class="shell">
-			<aside class="sidebar">
+			<aside class="sidebar" data-simplebar>
 				<a class="brand" href={`${path}/dashboard`}>
 					<Icon name="Brand" />
 					drycms
@@ -77,7 +82,7 @@ const nav: { key: string; label: string; href: string; icon: IconName; ready: bo
 				<small>Mounted at <code>{path}</code></small>
 			</aside>
 
-			<div>
+			<div class="main" data-simplebar>
 				<header class="topbar">
 					<SidebarToggle client:idle />
 					<strong>{title}</strong>

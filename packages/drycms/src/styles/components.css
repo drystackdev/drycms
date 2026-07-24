@@ -275,6 +275,247 @@
       }
     }
 
+    /*
+     * ------------------------------------------------------------ Select
+     * Shared shell for Select/Combobox/MultiSelect (see components/Select.tsx,
+     * Combobox.tsx, MultiSelect.tsx). `.select` carries the bordered "field"
+     * look that `:where(input)` normally provides; its trigger/input/chips
+     * are reset to blend into it, so the same wrapper can hold a plain
+     * button (Select), a text input (Combobox), or chips + input (MultiSelect).
+     */
+    .select {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+      width: 100%;
+      min-height: 2.5rem;
+      padding: 0.375rem 0.5rem;
+
+      /* Room for the absolutely-positioned trailing icon button, below. */
+      &:has(.select-trailing) {
+        padding-inline-end: 2rem;
+      }
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      box-shadow: var(--dry-shadow-xs);
+      background-color: transparent;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      &:focus-within,
+      &:has(> button[aria-expanded="true"]) {
+        border-color: var(--dry-ring);
+        box-shadow: inset 0 0 0 1px var(--dry-ring);
+      }
+
+      &:has(> [aria-invalid="true"]) {
+        border-color: var(--dry-error);
+      }
+
+      &:has(> button[disabled]),
+      &:has(> input[disabled]) {
+        cursor: not-allowed;
+        background-color: var(--dry-muted);
+        opacity: 0.7;
+      }
+
+      /*
+       * The trigger button (Select) or text input (Combobox/MultiSelect).
+       * `:hover`/`:focus-visible` are reset too - both tie the generic
+       * `button` rule on specificity, and only lose the cascade because
+       * this block comes later.
+       */
+      & > button,
+      & > input {
+        flex: 1 1 3rem;
+        min-width: 3rem;
+        height: 1.75rem;
+        margin: 0;
+        padding: 0;
+        border: none;
+        box-shadow: none;
+        background-color: transparent;
+        font: inherit;
+        color: inherit;
+        text-align: start;
+
+        &:hover,
+        &:focus-visible {
+          background-color: transparent;
+          color: inherit;
+          box-shadow: none;
+        }
+      }
+
+      & > button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        cursor: pointer;
+      }
+
+      /*
+       * Clear/toggle icon button, next to the input in Combobox/MultiSelect.
+       * Pinned to the top-right corner (not a flex child) so it stays put
+       * when MultiSelect's chips wrap onto more than one line.
+       */
+      .select-trailing {
+        position: absolute;
+        top: 0.5rem;
+        inset-inline-end: 0.5rem;
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        min-width: 0;
+        height: 1.5rem;
+        padding: 0;
+        border: none;
+        border-radius: var(--dry-radius-sm);
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--dry-muted-foreground);
+        cursor: pointer;
+
+        &:hover {
+          color: var(--dry-foreground);
+        }
+
+        &[disabled] {
+          pointer-events: none;
+          background-color: transparent;
+          color: var(--dry-disabled-foreground);
+        }
+      }
+
+      .select-caret {
+        flex: none;
+        transition: rotate 150ms ease;
+      }
+
+      & > button[aria-expanded="true"] .select-caret,
+      &:has(> input[aria-expanded="true"]) .select-caret {
+        rotate: 180deg;
+      }
+    }
+
+    /* Selected value in a MultiSelect. */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      height: 1.5rem;
+      padding-left: 0.5rem;
+      padding-right: 0.25rem;
+      border-radius: 0.25rem;
+      background-color: var(--dry-secondary);
+      color: var(--dry-secondary-foreground);
+      font-size: var(--dry-text-xs);
+      font-weight: 500;
+      white-space: nowrap;
+
+      & > button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1rem;
+        height: 1rem;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background-color: transparent;
+        box-shadow: none;
+        color: inherit;
+        opacity: 0.7;
+        cursor: pointer;
+
+        &:hover {
+          opacity: 1;
+          background-color: rgb(var(--dry-grey-channel) / 16%);
+        }
+
+        & > svg {
+          width: 0.875em;
+          height: 0.875em;
+        }
+      }
+    }
+
+    /* Floating listbox popup, anchored to a `.select` wrapper. */
+    .select-popup {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 0.375rem);
+      inset-inline: 0;
+      max-height: 16rem;
+      overflow-y: auto;
+      /* Scrollable by mouse/trackpad, but the scrollbar itself stays hidden. */
+      scrollbar-width: none;
+      margin: 0;
+      padding-inline: 0.25rem;
+      list-style: none;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      &.up {
+        top: auto;
+        bottom: calc(100% + 0.375rem);
+      }
+
+      &:focus-visible {
+        outline: none;
+      }
+
+      & .muted {
+        display: block;
+        padding: 0.75rem;
+        text-align: center;
+      }
+
+      [role="option"] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.5rem 0.625rem;
+        border-radius: var(--dry-radius-sm);
+        cursor: pointer;
+        outline: none;
+
+        & > svg {
+          flex: none;
+          color: var(--dry-primary);
+        }
+
+        &:hover,
+        &:focus,
+        &.active {
+          background-color: var(--dry-accent);
+        }
+
+        &[aria-selected="true"] {
+          font-weight: 500;
+        }
+
+        &[aria-disabled="true"] {
+          cursor: not-allowed;
+          color: var(--dry-disabled-foreground);
+          pointer-events: none;
+        }
+      }
+    }
+
     /* ------------------------------------------------------------------ Card */
     .card {
       display: flex;
@@ -539,6 +780,7 @@
     /* ------------------------------------------------------- Accordion (native) */
     details {
       border-bottom: 1px dashed var(--dry-border);
+      interpolate-size: allow-keywords;
 
       & > summary {
         display: flex;
@@ -570,6 +812,23 @@
         rotate: 225deg;
       }
 
+      /* Animates the native disclosure panel; falls back to an instant
+			 * snap (no worse than before) in browsers without `::details-content`. */
+      &::details-content {
+        overflow: hidden;
+        opacity: 0;
+        block-size: 0;
+        transition:
+          content-visibility 200ms allow-discrete,
+          opacity 200ms ease,
+          block-size 200ms ease;
+      }
+
+      &[open]::details-content {
+        opacity: 1;
+        block-size: auto;
+      }
+
       & > :not(summary) {
         padding-block-end: 0.875rem;
         color: var(--dry-muted-foreground);
@@ -579,6 +838,8 @@
     /* ---------------------------------------------------------------- Dialog */
     dialog {
       padding: 1.5rem;
+      /* Defaults to "xs" - otherwise a short-content dialog hugs its content. */
+      width: 20rem;
       max-width: min(32rem, calc(100vw - 2rem));
       border: none;
       border-radius: var(--dry-radius-xl);
@@ -713,8 +974,26 @@
         transition: opacity 120ms ease;
       }
 
+      &::before {
+        content: "";
+        position: absolute;
+        inset-inline-start: 50%;
+        inset-block-end: calc(100% + 0.5rem - 6px);
+        translate: -50% 0;
+        z-index: 30;
+        border: 5px solid transparent;
+        border-block-end-width: 0;
+        border-block-start-width: 6px;
+        border-block-start-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 120ms ease;
+      }
+
       &:hover::after,
-      &:focus-visible::after {
+      &:focus-visible::after,
+      &:hover::before,
+      &:focus-visible::before {
         opacity: 1;
       }
     }
@@ -737,12 +1016,16 @@
         gap: 0.5rem;
         margin: 0;
 
+        /* solar:alt-arrow-right-linear, inlined so the separator needs no markup. */
         &:not(:last-child)::after {
           content: "";
-          width: 4px;
-          height: 4px;
-          border-radius: 50%;
+          width: 0.75rem;
+          height: 0.75rem;
           background-color: var(--dry-grey-500);
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m9 5l6 7l-6 7'/%3E%3C/svg%3E");
+          mask-repeat: no-repeat;
+          mask-position: center;
+          mask-size: contain;
         }
       }
 
@@ -768,7 +1051,7 @@
     .shell {
       display: grid;
       grid-template-columns: var(--dry-sidebar-width) minmax(0, 1fr);
-      min-height: 100dvh;
+      height: 100dvh;
     }
 
     .sidebar {
@@ -851,6 +1134,11 @@
       letter-spacing: 0.05em;
       color: var(--dry-muted-foreground);
       opacity: 0.6;
+    }
+
+    .main {
+      height: 100dvh;
+      overflow-y: auto;
     }
 
     .topbar {
