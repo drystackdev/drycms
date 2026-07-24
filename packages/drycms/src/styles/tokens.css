@@ -2,7 +2,7 @@
  * Design tokens — Minimals (minimals.cc) palette.
  *
  * Colour values are declared once with `light-dark()`, so the theme follows the
- * OS by default and `data-theme` on the `.dry` element pins it.
+ * OS by default and a `.light`/`.dark` class on the `.dry` element pins it.
  */
 @layer dry.tokens {
 	.dry {
@@ -134,24 +134,39 @@
 		--dry-shadow-primary: 0 8px 16px 0 rgb(0 167 111 / 24%);
 		--dry-shadow-error: 0 8px 16px 0 rgb(255 86 48 / 24%);
 
+		/* -------------------------------------- Code highlighting (Prism.js) */
+		--dry-code-comment: var(--dry-muted-foreground);
+		--dry-code-punctuation: var(--dry-muted-foreground);
+		--dry-code-tag: light-dark(#b71d18, #ffac82);
+		--dry-code-attr-name: light-dark(#5119b7, #c684ff);
+		--dry-code-string: light-dark(#118d57, #77ed8b);
+		--dry-code-keyword: light-dark(#006c9c, #61f3f3);
+
 		/* ------------------------------------------------------------ Layout */
 		--dry-sidebar-width: 16.25rem;
 		--dry-topbar-height: 4rem;
 		--dry-gap: 1.5rem;
+
+		/* ------------------------------------------------------------ Spacing */
+		--dry-space-1: 0.25rem;
+		--dry-space-2: 0.5rem;
+		--dry-space-3: 0.75rem;
+		--dry-space-4: 1rem;
+		--dry-space-5: 1.25rem;
 	}
 
-	.dry[data-theme='light'] {
+	.dry.light {
 		color-scheme: light;
 		--dry-shadow-channel: 145 158 171;
 	}
 
-	.dry[data-theme='dark'] {
+	.dry.dark {
 		color-scheme: dark;
 		--dry-shadow-channel: 0 0 0;
 	}
 
 	@media (prefers-color-scheme: dark) {
-		.dry:not([data-theme='light']) {
+		.dry:not(.light) {
 			--dry-shadow-channel: 0 0 0;
 		}
 	}

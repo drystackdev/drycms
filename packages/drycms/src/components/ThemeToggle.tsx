@@ -15,8 +15,8 @@ const LABELS: Record<DryTheme, string> = {
 
 function applyTheme(theme: DryTheme) {
 	const root = document.querySelector<HTMLElement>('.dry') ?? document.body;
-	if (theme === 'system') root.removeAttribute('data-theme');
-	else root.setAttribute('data-theme', theme);
+	root.classList.remove('light', 'dark');
+	if (theme !== 'system') root.classList.add(theme);
 	try {
 		localStorage.setItem(THEME_STORAGE_KEY, theme);
 	} catch {
@@ -54,8 +54,7 @@ export default function ThemeToggle() {
 	return (
 		<button
 			type="button"
-			data-variant="ghost"
-			data-size="icon"
+			class="ghost icon"
 			onClick={next}
 			title={LABELS[theme]}
 			aria-label={LABELS[theme]}

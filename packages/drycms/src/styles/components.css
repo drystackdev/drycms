@@ -1,7 +1,9 @@
 /*
- * Components. The API is bare elements plus `data-*` attributes — valid HTML,
- * no class names to memorize. Visual language follows Minimals: soft tinted
- * fills, 8px radii, grey-tinted elevation.
+ * Components. Bare elements carry the base look; native/ARIA attributes drive
+ * state (`disabled`, `aria-selected`, `open`, …); classes are used only where
+ * there is no real HTML attribute for the concept (`.card`, `.destructive`, …).
+ * Visual language follows Minimals: soft tinted fills, 8px radii, grey-tinted
+ * elevation.
  */
 @layer dry.components {
 	.dry {
@@ -69,7 +71,7 @@
 			}
 
 			/* Neutral surface — Minimals' "inherit soft". */
-			&[data-variant='secondary'] {
+			&.secondary {
 				background-color: var(--dry-secondary);
 				color: var(--dry-secondary-foreground);
 				box-shadow: none;
@@ -79,7 +81,7 @@
 				}
 			}
 
-			&[data-variant='outline'] {
+			&.outline {
 				background-color: transparent;
 				color: var(--dry-foreground);
 				border-color: var(--dry-border);
@@ -91,7 +93,7 @@
 				}
 			}
 
-			&[data-variant='ghost'] {
+			&.ghost {
 				background-color: transparent;
 				color: var(--dry-foreground);
 				box-shadow: none;
@@ -101,7 +103,7 @@
 				}
 			}
 
-			&[data-variant='link'] {
+			&.link {
 				background-color: transparent;
 				color: var(--dry-foreground);
 				box-shadow: none;
@@ -115,8 +117,7 @@
 				}
 			}
 
-			&[data-variant='destructive'],
-			&[data-variant='error'] {
+			&.destructive {
 				background-color: var(--dry-error);
 				color: var(--dry-error-foreground);
 				box-shadow: var(--dry-shadow-error);
@@ -126,7 +127,7 @@
 				}
 			}
 
-			&[data-variant='info'] {
+			&.info {
 				background-color: var(--dry-info);
 				color: var(--dry-info-foreground);
 				box-shadow: none;
@@ -136,7 +137,7 @@
 				}
 			}
 
-			&[data-variant='success'] {
+			&.success {
 				background-color: var(--dry-success);
 				color: var(--dry-success-foreground);
 				box-shadow: none;
@@ -146,7 +147,7 @@
 				}
 			}
 
-			&[data-variant='warning'] {
+			&.warning {
 				background-color: var(--dry-warning);
 				color: var(--dry-warning-foreground);
 				box-shadow: none;
@@ -156,8 +157,8 @@
 				}
 			}
 
-			/* Soft fill of the current intent — pair with `data-variant`. */
-			&[data-soft] {
+			/* Soft fill of the current intent — pair with a colour class above. */
+			&.soft {
 				box-shadow: none;
 				background-color: color-mix(in srgb, var(--dry-primary) 16%, transparent);
 				color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
@@ -166,8 +167,7 @@
 					background-color: color-mix(in srgb, var(--dry-primary) 32%, transparent);
 				}
 
-				&[data-variant='destructive'],
-				&[data-variant='error'] {
+				&.destructive {
 					background-color: color-mix(in srgb, var(--dry-error) 16%, transparent);
 					color: light-dark(var(--dry-error-dark), var(--dry-error-light));
 
@@ -176,7 +176,7 @@
 					}
 				}
 
-				&[data-variant='info'] {
+				&.info {
 					background-color: color-mix(in srgb, var(--dry-info) 16%, transparent);
 					color: light-dark(var(--dry-info-dark), var(--dry-info-light));
 
@@ -185,7 +185,7 @@
 					}
 				}
 
-				&[data-variant='success'] {
+				&.success {
 					background-color: color-mix(in srgb, var(--dry-success) 16%, transparent);
 					color: light-dark(var(--dry-success-dark), var(--dry-success-light));
 
@@ -194,7 +194,7 @@
 					}
 				}
 
-				&[data-variant='warning'] {
+				&.warning {
 					background-color: color-mix(in srgb, var(--dry-warning) 16%, transparent);
 					color: light-dark(var(--dry-warning-dark), var(--dry-warning-light));
 
@@ -204,44 +204,39 @@
 				}
 			}
 
-			&[data-size='sm'] {
+			&.sm {
 				height: 1.875rem;
 				padding-inline: 0.5rem;
 				font-size: var(--dry-text-xs);
 			}
 
-			&[data-size='lg'] {
+			&.lg {
 				height: 3rem;
 				padding-inline: 1.375rem;
 				font-size: var(--dry-text-base);
 			}
 
-			&[data-size='icon'] {
+			/* Square icon-only button; combine with `.sm`/`.lg` for other sizes. */
+			&.icon {
 				width: 2.25rem;
 				padding: 0;
+
+				&.sm {
+					width: 1.875rem;
+				}
+				&.lg {
+					width: 3rem;
+				}
 			}
 
-			/* Square icon buttons at the small/large heights. */
-			&[data-size='icon-sm'] {
-				width: 1.875rem;
-				height: 1.875rem;
-				padding: 0;
-			}
-
-			&[data-size='icon-lg'] {
-				width: 3rem;
-				height: 3rem;
-				padding: 0;
-			}
-
-			&[data-block] {
+			&.block {
 				display: flex;
 				width: 100%;
 			}
 		}
 
 		/* ------------------------------------------------------------------ Card */
-		[data-card] {
+		.card {
 			display: flex;
 			flex-direction: column;
 			gap: 1.25rem;
@@ -273,7 +268,7 @@
 				gap: 0.5rem;
 			}
 
-			&[data-flush] {
+			&.flush {
 				padding: 0;
 
 				& > header,
@@ -288,7 +283,7 @@
 		}
 
 		/* ----------------------------------------------------------------- Badge */
-		[data-badge] {
+		.badge {
 			display: inline-flex;
 			align-items: center;
 			gap: 0.25rem;
@@ -303,57 +298,55 @@
 			background-color: color-mix(in srgb, var(--dry-primary) 16%, transparent);
 			color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
 
-			&[data-variant='secondary'] {
+			&.secondary {
 				background-color: var(--dry-secondary);
 				color: var(--dry-foreground);
 			}
 
-			&[data-variant='outline'] {
+			&.outline {
 				background-color: transparent;
 				color: var(--dry-muted-foreground);
 				border-color: var(--dry-border);
 			}
 
-			&[data-variant='destructive'],
-			&[data-variant='error'] {
+			&.destructive {
 				background-color: color-mix(in srgb, var(--dry-error) 16%, transparent);
 				color: light-dark(var(--dry-error-dark), var(--dry-error-light));
 			}
 
-			&[data-variant='info'] {
+			&.info {
 				background-color: color-mix(in srgb, var(--dry-info) 16%, transparent);
 				color: light-dark(var(--dry-info-dark), var(--dry-info-light));
 			}
 
-			&[data-variant='success'] {
+			&.success {
 				background-color: color-mix(in srgb, var(--dry-success) 16%, transparent);
 				color: light-dark(var(--dry-success-dark), var(--dry-success-light));
 			}
 
-			&[data-variant='warning'] {
+			&.warning {
 				background-color: color-mix(in srgb, var(--dry-warning) 16%, transparent);
 				color: light-dark(var(--dry-warning-dark), var(--dry-warning-light));
 			}
 
 			/* Solid fill instead of the default soft fill. */
-			&[data-filled] {
+			&.filled {
 				background-color: var(--dry-primary);
 				color: var(--dry-primary-foreground);
 
-				&[data-variant='destructive'],
-				&[data-variant='error'] {
+				&.destructive {
 					background-color: var(--dry-error);
 					color: var(--dry-error-foreground);
 				}
-				&[data-variant='info'] {
+				&.info {
 					background-color: var(--dry-info);
 					color: var(--dry-info-foreground);
 				}
-				&[data-variant='success'] {
+				&.success {
 					background-color: var(--dry-success);
 					color: var(--dry-success-foreground);
 				}
-				&[data-variant='warning'] {
+				&.warning {
 					background-color: var(--dry-warning);
 					color: var(--dry-warning-foreground);
 				}
@@ -361,7 +354,7 @@
 		}
 
 		/* ----------------------------------------------------------------- Alert */
-		[data-alert] {
+		.alert {
 			display: grid;
 			grid-template-columns: auto 1fr;
 			gap: 0.25rem 0.75rem;
@@ -392,8 +385,7 @@
 				grid-column: 1 / -1;
 			}
 
-			&[data-variant='destructive'],
-			&[data-variant='error'] {
+			&.destructive {
 				background-color: color-mix(in srgb, var(--dry-error) 16%, transparent);
 				color: light-dark(var(--dry-error-darker), var(--dry-error-lighter));
 
@@ -402,7 +394,7 @@
 				}
 			}
 
-			&[data-variant='success'] {
+			&.success {
 				background-color: color-mix(in srgb, var(--dry-success) 16%, transparent);
 				color: light-dark(var(--dry-success-darker), var(--dry-success-lighter));
 
@@ -411,7 +403,7 @@
 				}
 			}
 
-			&[data-variant='warning'] {
+			&.warning {
 				background-color: color-mix(in srgb, var(--dry-warning) 16%, transparent);
 				color: light-dark(var(--dry-warning-darker), var(--dry-warning-lighter));
 
@@ -422,7 +414,7 @@
 		}
 
 		/* ------------------------------------------------------------- Separator */
-		[data-separator] {
+		.separator {
 			border: none;
 			border-top: 1px dashed var(--dry-border);
 			background: none;
@@ -533,7 +525,9 @@
 			box-shadow: var(--dry-shadow-lg);
 
 			&::backdrop {
-				background-color: rgb(var(--dry-grey-channel) / 80%);
+				background-color: light-dark(rgb(var(--dry-grey-channel) / 80%), rgb(0 0 0 / 75%));
+				backdrop-filter: blur(5px);
+				-webkit-backdrop-filter: blur(5px);
 			}
 
 			& > header {
@@ -561,7 +555,7 @@
 		}
 
 		/* -------------------------------------------------------------- Skeleton */
-		[data-skeleton] {
+		.skeleton {
 			display: block;
 			min-height: 1rem;
 			border-radius: var(--dry-radius-md);
@@ -570,7 +564,7 @@
 		}
 
 		/* ---------------------------------------------------------------- Avatar */
-		[data-avatar] {
+		.avatar {
 			display: inline-grid;
 			place-items: center;
 			width: 2.5rem;
@@ -590,13 +584,13 @@
 				object-fit: cover;
 			}
 
-			&[data-size='sm'] {
+			&.sm {
 				width: 2rem;
 				height: 2rem;
 				font-size: var(--dry-text-xs);
 			}
 
-			&[data-size='lg'] {
+			&.lg {
 				width: 3rem;
 				height: 3rem;
 				font-size: var(--dry-text-base);
@@ -628,7 +622,10 @@
 			}
 		}
 
-		/* --------------------------------------------------------------- Tooltip */
+		/*
+		 * Tooltip. `data-tooltip` is kept as an attribute (not a class) because,
+		 * like `title`, its value IS the content it renders — not a variant name.
+		 */
 		[data-tooltip] {
 			position: relative;
 
@@ -658,7 +655,7 @@
 		}
 
 		/* ------------------------------------------------------------ Breadcrumb */
-		[data-breadcrumb] {
+		.breadcrumb {
 			display: flex;
 			align-items: center;
 			flex-wrap: wrap;
@@ -690,7 +687,7 @@
 		}
 
 		/* ----------------------------------------------------------- Empty state */
-		[data-empty] {
+		.empty {
 			display: grid;
 			grid-template-columns: minmax(0, 1fr);
 			place-items: center;
@@ -703,13 +700,13 @@
 		}
 
 		/* ----------------------------------------------------------- Admin shell */
-		[data-dry-shell] {
+		.shell {
 			display: grid;
 			grid-template-columns: var(--dry-sidebar-width) minmax(0, 1fr);
 			min-height: 100dvh;
 		}
 
-		[data-dry-sidebar] {
+		.sidebar {
 			display: flex;
 			flex-direction: column;
 			gap: 0.75rem;
@@ -756,7 +753,7 @@
 			}
 		}
 
-		[data-dry-brand] {
+		.brand {
 			display: flex;
 			align-items: center;
 			gap: 0.625rem;
@@ -777,16 +774,17 @@
 			}
 		}
 
-		[data-dry-nav-label] {
+		.nav-label {
 			padding: 1rem 0.75rem 0.5rem;
 			font-size: var(--dry-text-xs);
 			font-weight: 700;
 			text-transform: uppercase;
 			letter-spacing: 0.05em;
 			color: var(--dry-muted-foreground);
+			opacity: 0.6;
 		}
 
-		[data-dry-topbar] {
+		.topbar {
 			display: flex;
 			align-items: center;
 			gap: 0.75rem;
@@ -799,7 +797,7 @@
 			z-index: 20;
 		}
 
-		[data-dry-content] {
+		.content {
 			padding: 1rem 1.5rem 4rem;
 			display: grid;
 			grid-template-columns: minmax(0, 1fr);
@@ -807,7 +805,7 @@
 			align-content: start;
 		}
 
-		[data-dry-page-header] {
+		.page-header {
 			display: flex;
 			align-items: flex-start;
 			justify-content: space-between;
@@ -824,13 +822,13 @@
 			}
 		}
 
-		/* Mobile: sidebar becomes an off-canvas drawer toggled by `data-dry-open`. */
+		/* Mobile: sidebar becomes an off-canvas drawer toggled by `.open`. */
 		@media (width < 48rem) {
-			[data-dry-shell] {
+			.shell {
 				grid-template-columns: minmax(0, 1fr);
 			}
 
-			[data-dry-sidebar] {
+			.sidebar {
 				position: fixed;
 				inset-block: 0;
 				inset-inline-start: 0;
@@ -841,11 +839,11 @@
 				box-shadow: var(--dry-shadow-lg);
 			}
 
-			[data-dry-shell][data-dry-open] [data-dry-sidebar] {
+			.shell.open .sidebar {
 				translate: 0 0;
 			}
 
-			[data-dry-shell][data-dry-open]::before {
+			.shell.open::before {
 				content: '';
 				position: fixed;
 				inset: 0;
@@ -855,7 +853,7 @@
 		}
 
 		@media (width >= 48rem) {
-			[data-dry-mobile-only] {
+			.mobile-only {
 				display: none;
 			}
 		}

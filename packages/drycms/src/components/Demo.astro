@@ -1,35 +1,45 @@
 ---
+import Prism from 'prismjs';
+
 /**
- * One showcase entry: a live preview plus the markup that produced it.
+ * One showcase entry: a live preview plus the markup that produced it. The
+ * code is always visible — this page is a reference, not a puzzle to click
+ * through. Highlighting runs at build time, so no Prism runtime ships to the
+ * browser; the token colours come from `styles/code.css`.
  */
 interface Props {
 	id: string;
 	title: string;
 	description?: string;
 	code: string;
+	/** Prism grammar to highlight with. @default "markup" */
+	lang?: string;
 }
 
-const { id, title, description, code } = Astro.props;
+const { id, title, description, code, lang = 'markup' } = Astro.props;
+
+const grammar = Prism.languages[lang] ? lang : 'markup';
+const highlighted = Prism.highlight(code.trim(), Prism.languages[grammar]!, grammar);
 ---
 
-<section id={id} data-demo>
+<section id={id} class="demo">
 	<header>
 		<h3>{title}</h3>
 		{description && <p>{description}</p>}
 	</header>
 
-	<div data-demo-preview>
+	<div class="demo-preview">
 		<slot />
 	</div>
 
-	<details>
-		<summary>Code</summary>
-		<pre><code>{code.trim()}</code></pre>
-	</details>
+	<div class="demo-code">
+		<span>Code</span>
+		<pre class={`language-${grammar}`}><code set:html={highlighted} /></pre>
+	</div>
 </section>
 
 <style>
-	[data-demo] {
+	.demo {
 		scroll-margin-top: 5rem;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
@@ -40,16 +50,16 @@ const { id, title, description, code } = Astro.props;
 		box-shadow: var(--dry-shadow-md);
 	}
 
-	[data-demo] > header > h3 {
+	.demo > header > h3 {
 		font-size: 1rem;
 	}
 
-	[data-demo] > header > p {
+	.demo > header > p {
 		color: var(--dry-muted-foreground);
 		margin-top: 0.25rem;
 	}
 
-	[data-demo-preview] {
+	.demo-preview {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -60,16 +70,16 @@ const { id, title, description, code } = Astro.props;
 		background-color: var(--dry-background);
 	}
 
-	[data-demo-preview] > * {
+	.demo-preview > * {
 		min-width: 0;
 	}
 
-	[data-demo] > details {
-		border-bottom: none;
+	.demo-code {
+		display: grid;
+		gap: 0.5rem;
 	}
 
-	[data-demo] > details > summary {
-		padding-block: 0;
+	.demo-code > span {
 		font-size: var(--dry-text-xs);
 		font-weight: 700;
 		text-transform: uppercase;
@@ -77,9 +87,7 @@ const { id, title, description, code } = Astro.props;
 		color: var(--dry-muted-foreground);
 	}
 
-	[data-demo] > details > pre {
-		margin-top: 0.75rem;
-		padding-bottom: 0;
+	.demo-code > pre {
 		font-size: var(--dry-text-xs);
 		line-height: 1.6;
 	}

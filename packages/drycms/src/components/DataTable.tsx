@@ -76,9 +76,9 @@ export default function DataTable<Row extends Record<string, unknown>>({
 	};
 
 	return (
-		<div data-stack>
+		<div class="stack">
 			{searchable && (
-				<div data-row>
+				<div class="row">
 					<input
 						type="search"
 						value={query}
@@ -90,14 +90,14 @@ export default function DataTable<Row extends Record<string, unknown>>({
 							setPage(0);
 						}}
 					/>
-					<span data-spacer />
+					<span class="spacer" />
 					<small>
 						{sorted.length} of {rows.length}
 					</small>
 				</div>
 			)}
 
-			<div data-scroll>
+			<div class="scroll">
 				<table>
 					<thead>
 						<tr>
@@ -107,14 +107,13 @@ export default function DataTable<Row extends Record<string, unknown>>({
 								return (
 									<th
 										key={column.key}
-										data-numeric={column.numeric ? '' : undefined}
+										class={column.numeric ? 'numeric' : undefined}
 										aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
 									>
 										{sortable ? (
 											<button
 												type="button"
-												data-variant="link"
-												data-size="sm"
+												class="link sm"
 												onClick={() => toggleSort(column.key)}
 											>
 												{column.label}
@@ -140,14 +139,14 @@ export default function DataTable<Row extends Record<string, unknown>>({
 						{visible.length === 0 ? (
 							<tr>
 								<td colSpan={columns.length}>
-									<div data-empty>{emptyLabel}</div>
+									<div class="empty">{emptyLabel}</div>
 								</td>
 							</tr>
 						) : (
 							visible.map((row, index) => (
 								<tr key={index}>
 									{columns.map((column) => (
-										<td key={column.key} data-numeric={column.numeric ? '' : undefined}>
+										<td key={column.key} class={column.numeric ? 'numeric' : undefined}>
 											{row[column.key] as never}
 										</td>
 									))}
@@ -159,15 +158,14 @@ export default function DataTable<Row extends Record<string, unknown>>({
 			</div>
 
 			{pageSize > 0 && pageCount > 1 && (
-				<div data-row data-justify="between">
+				<div class="row justify-between">
 					<small>
 						Page {current + 1} of {pageCount}
 					</small>
-					<div data-row>
+					<div class="row">
 						<button
 							type="button"
-							data-variant="outline"
-							data-size="sm"
+							class="outline sm"
 							disabled={current === 0}
 							onClick={() => setPage(current - 1)}
 						>
@@ -175,8 +173,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
 						</button>
 						<button
 							type="button"
-							data-variant="outline"
-							data-size="sm"
+							class="outline sm"
 							disabled={current >= pageCount - 1}
 							onClick={() => setPage(current + 1)}
 						>

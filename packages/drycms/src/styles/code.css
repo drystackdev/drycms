@@ -1,0 +1,43 @@
+/*
+ * Prism.js token colours, mapped to the Minimals palette so highlighted code
+ * follows the light/dark theme. Prism emits `.token` spans with no scope, so
+ * these rules live in the global stylesheet rather than a component's scoped
+ * <style>.
+ */
+@layer dry.code {
+	.dry {
+		:where(.token.comment, .token.prolog, .token.doctype, .token.cdata) {
+			color: var(--dry-code-comment);
+			font-style: italic;
+		}
+
+		:where(.token.punctuation) {
+			color: var(--dry-code-punctuation);
+		}
+
+		:where(.token.tag, .token.deleted) {
+			color: var(--dry-code-tag);
+		}
+
+		:where(.token.attr-name, .token.property, .token.class-name, .token.function) {
+			color: var(--dry-code-attr-name);
+		}
+
+		:where(.token.attr-value, .token.string, .token.char, .token.inserted, .token.number) {
+			color: var(--dry-code-string);
+		}
+
+		:where(.token.keyword, .token.selector, .token.important, .token.atrule, .token.boolean) {
+			color: var(--dry-code-keyword);
+			font-style: normal;
+		}
+
+		:where(.token.operator, .token.entity, .token.url) {
+			color: var(--dry-foreground);
+		}
+
+		:where(.token.namespace) {
+			opacity: 0.7;
+		}
+	}
+}

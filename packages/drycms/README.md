@@ -1,8 +1,8 @@
 # drycms
 
 A Preact-based CMS UI for Astro. One integration mounts an admin dashboard, and
-a global stylesheet styles everything from bare tags and `data-*` attributes —
-Pico-style authoring, shadcn/ui-style visuals.
+a global stylesheet styles everything from bare tags and native attributes —
+Pico-style authoring, Minimals-style visuals.
 
 ## Install
 
@@ -60,38 +60,40 @@ All rules are scoped under `.dry` and grouped in cascade layers
 nothing leaks into the rest of your site and your own CSS overrides it without
 `!important`.
 
-There are no class names in the API. Elements are styled bare, variants come
-from attributes:
+Native/ARIA attributes drive state wherever one genuinely applies —
+`disabled`, `readonly`, `checked`, `aria-invalid`, `aria-selected`, `aria-busy`,
+`role`, `open` on `<details>`. Classes are used only where there is no real
+attribute for the concept (a button's colour, a card, a badge):
 
 ```html
 <button>Save</button>
-<button data-variant="destructive" data-size="sm">Delete</button>
-<button data-soft data-variant="info">Soft info</button>
+<button class="destructive sm">Delete</button>
+<button class="soft info">Soft info</button>
 <button aria-busy="true">Saving</button>
 
-<article data-card>
+<article class="card">
   <header><h2>Title</h2><p>Description</p></header>
 </article>
 
-<span data-badge data-variant="success">Published</span>
-<div data-alert data-variant="destructive"><h3>Failed</h3><p>Try again.</p></div>
+<span class="badge success">Published</span>
+<div class="alert destructive"><h3>Failed</h3><p>Try again.</p></div>
 
-<div data-field>
+<div class="field">
   <label for="title">Title</label>
   <input id="title" aria-invalid="true" />
-  <span data-error>Required.</span>
+  <span class="error">Required.</span>
 </div>
 ```
 
-`data-variant` and `data-size` are used instead of `variant`/`size` because
-`size` already has native meaning on form controls.
+`.sm`/`.lg` are classes rather than the `size` attribute, since `size` already
+has different, native meaning on text inputs.
 
 ### Theming
 
 The palette is [Minimals](https://minimals.cc): green `#00A76F` primary, the
 `919EAB` grey ramp, and grey-tinted elevation. Tokens are declared once with
-`light-dark()`, so the theme follows the OS by default; setting
-`data-theme="light" | "dark"` on the `.dry` element pins it.
+`light-dark()`, so the theme follows the OS by default; adding a `.light` or
+`.dark` class to the `.dry` element pins it (`ThemeToggle` does this for you).
 
 Intent tokens come as full ramps — `--dry-<intent>-lighter | -light | <base> |
 -dark | -darker` for `primary`, `secondary-main`, `info`, `success`, `warning`
@@ -150,6 +152,9 @@ import DataTable from 'drycms/components/DataTable';
 
 `.astro` components are exported too: `drycms/components/Icon.astro`,
 `drycms/components/Demo.astro` (a preview + code pair, used by the showcase).
+`Demo.astro` syntax-highlights its code with [Prism.js](https://prismjs.com) at
+build time — no highlighter ships to the browser, and the token colours come
+from `--dry-code-*` tokens, so they follow the light/dark theme.
 
 ## Notes
 

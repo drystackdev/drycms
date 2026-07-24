@@ -2,17 +2,15 @@ import { useEffect, useState } from 'preact/hooks';
 import { CloseIcon, MenuIcon } from './icons.js';
 
 /**
- * Opens the off-canvas sidebar on small screens by toggling `data-dry-open` on
- * the shell element, which is all the CSS needs.
+ * Opens the off-canvas sidebar on small screens by toggling the `.open` class
+ * on the shell element, which is all the CSS needs.
  */
 export default function SidebarToggle() {
 	const [open, setOpen] = useState(false);
 
 	useEffect(() => {
-		const shell = document.querySelector<HTMLElement>('[data-dry-shell]');
-		if (!shell) return;
-		if (open) shell.setAttribute('data-dry-open', '');
-		else shell.removeAttribute('data-dry-open');
+		const shell = document.querySelector<HTMLElement>('.shell');
+		shell?.classList.toggle('open', open);
 	}, [open]);
 
 	useEffect(() => {
@@ -22,7 +20,7 @@ export default function SidebarToggle() {
 		};
 		const onClick = (event: MouseEvent) => {
 			const target = event.target as HTMLElement | null;
-			if (target?.closest('[data-dry-sidebar]') || target?.closest('[data-dry-sidebar-toggle]')) {
+			if (target?.closest('.sidebar') || target?.closest('[data-sidebar-toggle]')) {
 				return;
 			}
 			setOpen(false);
@@ -38,10 +36,8 @@ export default function SidebarToggle() {
 	return (
 		<button
 			type="button"
-			data-variant="ghost"
-			data-size="icon"
-			data-dry-sidebar-toggle
-			data-dry-mobile-only
+			class="ghost icon mobile-only"
+			data-sidebar-toggle
 			aria-expanded={open}
 			aria-label={open ? 'Close navigation' : 'Open navigation'}
 			onClick={() => setOpen((value) => !value)}

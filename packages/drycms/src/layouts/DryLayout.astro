@@ -40,20 +40,20 @@ const nav: { key: string; label: string; href: string; icon: IconName; ready: bo
 			try {
 				const stored = localStorage.getItem('drycms:theme');
 				if (stored === 'light' || stored === 'dark') {
-					document.body.setAttribute('data-theme', stored);
+					document.body.classList.add(stored);
 				}
 			} catch {}
 		</script>
 
-		<div data-dry-shell>
-			<aside data-dry-sidebar>
-				<a data-dry-brand href={`${path}/dashboard`}>
+		<div class="shell">
+			<aside class="sidebar">
+				<a class="brand" href={`${path}/dashboard`}>
 					<Icon name="Brand" />
 					drycms
 				</a>
 
 				<nav aria-label="Admin">
-					<span data-dry-nav-label>Manage</span>
+					<span class="nav-label">Manage</span>
 					{
 						nav.map((item) =>
 							item.ready ? (
@@ -65,27 +65,27 @@ const nav: { key: string; label: string; href: string; icon: IconName; ready: bo
 								<a aria-disabled="true" style="pointer-events: none; opacity: 0.55">
 									<Icon name={item.icon} />
 									{item.label}
-									<span data-spacer />
-									<span data-badge data-variant="outline">Soon</span>
+									<span class="spacer" />
+									<span class="badge outline">Soon</span>
 								</a>
 							),
 						)
 					}
 				</nav>
 
-				<span data-spacer></span>
+				<span class="spacer"></span>
 				<small>Mounted at <code>{path}</code></small>
 			</aside>
 
 			<div>
-				<header data-dry-topbar>
+				<header class="topbar">
 					<SidebarToggle client:idle />
 					<strong>{title}</strong>
-					<span data-spacer></span>
+					<span class="spacer"></span>
 					<ThemeToggle client:idle />
 				</header>
 
-				<main data-dry-content>
+				<main class="content">
 					<slot />
 				</main>
 			</div>

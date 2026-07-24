@@ -1,76 +1,76 @@
-/* Layout primitives, also attribute-driven. */
+/* Layout primitives. Classes, since none of these map to a real HTML attribute. */
 @layer dry.utilities {
 	.dry {
-		[data-stack] {
+		.stack {
 			display: flex;
 			flex-direction: column;
 			gap: var(--dry-gap);
 		}
 
-		[data-row] {
+		.row {
 			display: flex;
 			align-items: center;
 			gap: 0.5rem;
 			flex-wrap: wrap;
 
-			&[data-justify='between'] {
+			&.justify-between {
 				justify-content: space-between;
 			}
-			&[data-justify='end'] {
+			&.justify-end {
 				justify-content: flex-end;
 			}
-			&[data-justify='center'] {
+			&.justify-center {
 				justify-content: center;
 			}
-			&[data-align='start'] {
+			&.align-start {
 				align-items: flex-start;
 			}
 		}
 
-		[data-grid] {
+		.grid {
 			display: grid;
 			gap: var(--dry-gap);
 			grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
 
-			&[data-cols='2'] {
+			&.cols-2 {
 				grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
 			}
-			&[data-cols='4'] {
+			&.cols-4 {
 				grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
 			}
 		}
 
-		[data-container] {
+		.container {
 			width: 100%;
 			max-width: 80rem;
 			margin-inline: auto;
 		}
 
-		[data-scroll] {
+		.scroll {
 			overflow-x: auto;
 			overscroll-behavior-x: contain;
 		}
 
-		[data-muted] {
+		.muted {
 			color: var(--dry-muted-foreground);
 		}
 
-		[data-mono] {
+		.mono {
 			font-family: var(--dry-font-mono);
 			font-variant-numeric: tabular-nums;
 		}
 
-		[data-truncate] {
+		.truncate {
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
 
-		[data-spacer] {
+		.spacer {
 			flex: 1 1 auto;
 		}
 
-		[data-metric] {
+		.metric {
 			font-size: 1.75rem;
 			font-weight: 600;
 			letter-spacing: -0.02em;
@@ -78,7 +78,7 @@
 			line-height: 1.1;
 		}
 
-		[data-sr-only] {
+		.sr-only {
 			position: absolute;
 			width: 1px;
 			height: 1px;
@@ -89,6 +89,44 @@
 			white-space: nowrap;
 			border: 0;
 		}
+
+		/* Spacing: p/px/py (padding) and m/mx/my (margin), scale 1-5 = --dry-space-1…5. */
+		.p1 { padding: var(--dry-space-1); }
+		.p2 { padding: var(--dry-space-2); }
+		.p3 { padding: var(--dry-space-3); }
+		.p4 { padding: var(--dry-space-4); }
+		.p5 { padding: var(--dry-space-5); }
+
+		.px1 { padding-inline: var(--dry-space-1); }
+		.px2 { padding-inline: var(--dry-space-2); }
+		.px3 { padding-inline: var(--dry-space-3); }
+		.px4 { padding-inline: var(--dry-space-4); }
+		.px5 { padding-inline: var(--dry-space-5); }
+
+		.py1 { padding-block: var(--dry-space-1); }
+		.py2 { padding-block: var(--dry-space-2); }
+		.py3 { padding-block: var(--dry-space-3); }
+		.py4 { padding-block: var(--dry-space-4); }
+		.py5 { padding-block: var(--dry-space-5); }
+
+		.m1 { margin: var(--dry-space-1); }
+		.m2 { margin: var(--dry-space-2); }
+		.m3 { margin: var(--dry-space-3); }
+		.m4 { margin: var(--dry-space-4); }
+		.m5 { margin: var(--dry-space-5); }
+
+		.mx1 { margin-inline: var(--dry-space-1); }
+		.mx2 { margin-inline: var(--dry-space-2); }
+		.mx3 { margin-inline: var(--dry-space-3); }
+		.mx4 { margin-inline: var(--dry-space-4); }
+		.mx5 { margin-inline: var(--dry-space-5); }
+		.mx-auto { margin-inline: auto; }
+
+		.my1 { margin-block: var(--dry-space-1); }
+		.my2 { margin-block: var(--dry-space-2); }
+		.my3 { margin-block: var(--dry-space-3); }
+		.my4 { margin-block: var(--dry-space-4); }
+		.my5 { margin-block: var(--dry-space-5); }
 	}
 
 	@media (prefers-reduced-motion: reduce) {

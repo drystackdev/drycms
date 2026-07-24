@@ -1,6 +1,7 @@
 /*
  * Form controls, styled from the bare element with state driven by native
- * attributes (`disabled`, `readonly`, `aria-invalid`, …).
+ * attributes (`disabled`, `readonly`, `aria-invalid`, …). Variants that have no
+ * native attribute of their own (`.sm`, `.field`, …) are classes instead.
  */
 @layer dry.forms {
 	.dry {
@@ -61,12 +62,13 @@
 				}
 			}
 
-			/* `data-size` rather than `size`, which has native numeric semantics. */
-			&[data-size='sm'] {
+			/* `.sm`/`.lg` classes rather than the `size` attribute, which already
+			   has native (and different) meaning on text inputs. */
+			&.sm {
 				height: 2rem;
 				font-size: var(--dry-text-xs);
 			}
-			&[data-size='lg'] {
+			&.lg {
 				height: 2.5rem;
 			}
 		}
@@ -101,19 +103,28 @@
 
 		:where(input[type='checkbox'], input[type='radio']) {
 			appearance: none;
-			width: 1rem;
-			height: 1rem;
+			width: 1.125rem;
+			height: 1.125rem;
 			flex: none;
 			padding: 0;
 			cursor: pointer;
 			border: 1px solid var(--dry-input);
 			display: inline-grid;
 			place-content: center;
+			transition:
+				background-color 120ms ease,
+				border-color 120ms ease;
+		}
+
+		/* Filled dot, drawn with a scaling ::before — kept for radio only. */
+		:where(input[type='radio']) {
+			border-radius: 50%;
 
 			&::before {
 				content: '';
 				width: 0.6rem;
 				height: 0.6rem;
+				border-radius: 50%;
 				transform: scale(0);
 				transition: transform 100ms ease;
 				background-color: var(--dry-primary-foreground);
@@ -127,31 +138,35 @@
 					transform: scale(1);
 				}
 			}
+		}
+
+		/*
+		 * Checkbox uses the Material/MUI check-box icon as a mask: the icon is a
+		 * single filled rounded square with the mark cut out of it, so a solid
+		 * `background-color` shows through in our theme colour instead of a
+		 * hardcoded icon colour.
+		 */
+		:where(input[type='checkbox']) {
+			border-radius: 0.375rem;
+
+			&:checked,
+			&:indeterminate {
+				border-color: transparent;
+				background-color: var(--dry-primary);
+				mask-repeat: no-repeat;
+				mask-size: 100% 100%;
+				-webkit-mask-repeat: no-repeat;
+				-webkit-mask-size: 100% 100%;
+			}
+
+			&:checked {
+				mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17 2a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Zm-1.625 7.255-4.13 4.13-1.75-1.75a.881.881 0 0 0-1.24 0c-.34.34-.34.89 0 1.24l2.38 2.37c.17.17.39.25.61.25.23 0 .45-.08.62-.25l4.75-4.75c.34-.34.34-.89 0-1.24a.881.881 0 0 0-1.24 0Z'/%3E%3C/svg%3E");
+				-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17 2a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Zm-1.625 7.255-4.13 4.13-1.75-1.75a.881.881 0 0 0-1.24 0c-.34.34-.34.89 0 1.24l2.38 2.37c.17.17.39.25.61.25.23 0 .45-.08.62-.25l4.75-4.75c.34-.34.34-.89 0-1.24a.881.881 0 0 0-1.24 0Z'/%3E%3C/svg%3E");
+			}
 
 			&:indeterminate {
-				background-color: var(--dry-primary);
-				border-color: var(--dry-primary);
-
-				&::before {
-					transform: scale(1);
-					clip-path: inset(45% 0 45% 0);
-				}
-			}
-		}
-
-		:where(input[type='checkbox']) {
-			border-radius: var(--dry-radius-sm);
-
-			&::before {
-				clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
-			}
-		}
-
-		:where(input[type='radio']) {
-			border-radius: 50%;
-
-			&::before {
-				border-radius: 50%;
+				mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M17 2a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zM8 11h8a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2z'/%3E%3C/svg%3E");
+				-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M17 2a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zM8 11h8a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2z'/%3E%3C/svg%3E");
 			}
 		}
 
@@ -199,7 +214,7 @@
 		}
 
 		/* Label + control + hint grouping. */
-		:where([data-field]) {
+		.field {
 			display: grid;
 			grid-template-columns: minmax(0, 1fr);
 			gap: 0.375rem;
@@ -208,17 +223,17 @@
 				margin-block-end: 0;
 			}
 
-			& :where([data-hint]) {
+			& .hint {
 				font-size: var(--dry-text-xs);
 				color: var(--dry-muted-foreground);
 			}
 
-			& :where([data-error]) {
+			& .error {
 				font-size: var(--dry-text-xs);
 				color: var(--dry-destructive);
 			}
 
-			&[data-inline] {
+			&.inline {
 				grid-template-columns: auto 1fr;
 				align-items: center;
 				gap: 0.5rem;
@@ -226,7 +241,7 @@
 		}
 
 		/* Text input with a leading/trailing addon. */
-		:where([data-input-group]) {
+		.input-group {
 			display: flex;
 			align-items: center;
 			gap: 0.5rem;

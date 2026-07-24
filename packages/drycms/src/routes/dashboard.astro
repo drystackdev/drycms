@@ -11,10 +11,10 @@ const stats = [
 ];
 
 const columns = [
-	{ key: 'title', label: 'Title' },
-	{ key: 'collection', label: 'Collection' },
-	{ key: 'status', label: 'Status' },
-	{ key: 'updated', label: 'Updated' },
+	{ key: 'title' as const, label: 'Title' },
+	{ key: 'collection' as const, label: 'Collection' },
+	{ key: 'status' as const, label: 'Status' },
+	{ key: 'updated' as const, label: 'Updated' },
 ];
 
 const rows = [
@@ -28,13 +28,13 @@ const rows = [
 ---
 
 <DryLayout title="Dashboard" description="drycms admin overview" active="dashboard">
-	<div data-dry-page-header>
+	<div class="page-header">
 		<div>
 			<h1>Dashboard</h1>
 			<p>An overview of everything drycms is managing.</p>
 		</div>
-		<div data-row>
-			<button type="button" data-variant="outline">
+		<div class="row">
+			<button type="button" class="outline">
 				<Icon name="Export" />
 				Export
 			</button>
@@ -45,25 +45,23 @@ const rows = [
 		</div>
 	</div>
 
-	<div data-grid data-cols="4">
+	<div class="grid cols-4">
 		{
 			stats.map((stat) => (
-				<article data-card>
+				<article class="card">
 					<header>
 						<p>{stat.label}</p>
-						<span data-metric>{stat.value}</span>
+						<span class="metric">{stat.value}</span>
 					</header>
-					<div data-row>
-						<span data-badge data-variant={stat.tone}>
-							{stat.delta}
-						</span>
+					<div class="row">
+						<span class={`badge ${stat.tone}`}>{stat.delta}</span>
 					</div>
 				</article>
 			))
 		}
 	</div>
 
-	<section data-card data-flush>
+	<section class="card flush">
 		<header>
 			<h2>Recent content</h2>
 			<p>Sort, filter and page through entries without leaving the dashboard.</p>
@@ -73,29 +71,29 @@ const rows = [
 		</div>
 	</section>
 
-	<div data-grid data-cols="2">
-		<section data-card>
+	<div class="grid cols-2">
+		<section class="card">
 			<header>
 				<h2>Component preview</h2>
-				<p>Every element below is styled from its tag and attributes alone.</p>
+				<p>Every element below is styled from its tag alone.</p>
 			</header>
 
-			<div data-row>
+			<div class="row">
 				<button type="button">Default</button>
-				<button type="button" data-variant="secondary">Secondary</button>
-				<button type="button" data-variant="outline">Outline</button>
-				<button type="button" data-variant="ghost">Ghost</button>
-				<button type="button" data-variant="destructive">Destructive</button>
+				<button type="button" class="secondary">Secondary</button>
+				<button type="button" class="outline">Outline</button>
+				<button type="button" class="ghost">Ghost</button>
+				<button type="button" class="destructive">Destructive</button>
 				<button type="button" disabled>Disabled</button>
 			</div>
 
-			<div data-field>
+			<div class="field">
 				<label for="dry-demo-title">Title</label>
 				<input id="dry-demo-title" type="text" placeholder="Post title" />
-				<span data-hint>Shown in listings and search results.</span>
+				<span class="hint">Shown in listings and search results.</span>
 			</div>
 
-			<div data-field>
+			<div class="field">
 				<label for="dry-demo-collection">Collection</label>
 				<select id="dry-demo-collection">
 					<option>blog</option>
@@ -103,18 +101,18 @@ const rows = [
 				</select>
 			</div>
 
-			<div data-field data-inline>
+			<div class="field inline">
 				<input id="dry-demo-featured" type="checkbox" checked />
 				<label for="dry-demo-featured">Featured</label>
 			</div>
 
-			<div data-alert>
+			<div class="alert">
 				<h3>Heads up</h3>
 				<p>This dashboard ships with sample data until a content source is wired up.</p>
 			</div>
 		</section>
 
-		<section data-card>
+		<section class="card">
 			<header>
 				<h2>Activity</h2>
 				<p>Latest changes across your collections.</p>
@@ -133,8 +131,8 @@ const rows = [
 				<p>12 entries created across 3 collections.</p>
 			</details>
 
-			<div data-row>
-				<span data-avatar>KT</span>
+			<div class="row">
+				<span class="avatar">KT</span>
 				<div>
 					<strong>Khan Trần</strong>
 					<br />

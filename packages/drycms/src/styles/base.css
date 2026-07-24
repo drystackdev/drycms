@@ -81,7 +81,7 @@
 				color: var(--dry-muted-foreground);
 			}
 
-			&[data-underline] {
+			&.underline {
 				text-decoration: underline;
 				text-underline-offset: 4px;
 			}
@@ -91,7 +91,7 @@
 			margin: 0;
 			padding-inline-start: 1.25rem;
 
-			&[data-unstyled] {
+			&.unstyled {
 				list-style: none;
 				padding-inline-start: 0;
 			}
@@ -205,8 +205,7 @@
 			}
 		}
 
-		:where(td, th)[align='end'],
-		:where(td, th)[data-numeric] {
+		:where(td, th).numeric {
 			text-align: end;
 			font-variant-numeric: tabular-nums;
 		}

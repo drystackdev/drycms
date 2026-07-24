@@ -1,920 +1,1041 @@
 ---
-import DataTable, { type DataTableColumn } from 'drycms/components/DataTable';
-import Demo from 'drycms/components/Demo.astro';
-import Icon from 'drycms/components/Icon.astro';
-import { type IconName, iconBodies } from 'drycms/components/icons';
-import DryLayout from 'drycms/layouts/DryLayout.astro';
+import DataTable from "drycms/components/DataTable";
+import Demo from "drycms/components/Demo.astro";
+import Icon from "drycms/components/Icon.astro";
+import { type IconName, iconBodies } from "drycms/components/icons";
+import "drycms/styles.css";
+import { path } from "virtual:drycms/config";
+import {
+  code,
+  greys,
+  groups,
+  intents,
+  statusVariant,
+  tableColumns,
+  tableRows,
+} from "../mock/showcase";
 
 const iconNames = Object.keys(iconBodies) as IconName[];
-
-const intents = ['primary', 'secondary', 'info', 'success', 'warning', 'error'] as const;
-const greys = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
-
-/** Menu — must stay in sync with the section ids further down. */
-const groups = [
-	{
-		label: 'Foundations',
-		items: [
-			{ id: 'colors', label: 'Colors' },
-			{ id: 'typography', label: 'Typography' },
-			{ id: 'icons', label: 'Icons' },
-			{ id: 'layout', label: 'Layout' },
-		],
-	},
-	{
-		label: 'Actions',
-		items: [
-			{ id: 'buttons', label: 'Buttons' },
-			{ id: 'button-variants', label: 'Button variants' },
-			{ id: 'button-states', label: 'Button states' },
-		],
-	},
-	{
-		label: 'Data display',
-		items: [
-			{ id: 'cards', label: 'Cards' },
-			{ id: 'badges', label: 'Badges' },
-			{ id: 'alerts', label: 'Alerts' },
-			{ id: 'table', label: 'Table' },
-			{ id: 'avatar', label: 'Avatar' },
-			{ id: 'progress', label: 'Progress' },
-			{ id: 'skeleton', label: 'Skeleton' },
-			{ id: 'empty', label: 'Empty state' },
-		],
-	},
-	{
-		label: 'Inputs',
-		items: [
-			{ id: 'text-inputs', label: 'Text inputs' },
-			{ id: 'select', label: 'Select & textarea' },
-			{ id: 'toggles', label: 'Checkbox & radio' },
-			{ id: 'other-inputs', label: 'Range, color, file' },
-			{ id: 'fields', label: 'Fields & validation' },
-		],
-	},
-	{
-		label: 'Navigation',
-		items: [
-			{ id: 'tabs', label: 'Tabs' },
-			{ id: 'accordion', label: 'Accordion' },
-			{ id: 'breadcrumb', label: 'Breadcrumb' },
-			{ id: 'tooltip', label: 'Tooltip' },
-			{ id: 'separator', label: 'Separator' },
-		],
-	},
-	{
-		label: 'Overlays & islands',
-		items: [
-			{ id: 'dialog', label: 'Dialog' },
-			{ id: 'datatable', label: 'DataTable' },
-			{ id: 'islands', label: 'Theme & sidebar' },
-		],
-	},
-];
-
-const tableRows = [
-	{ name: 'Getting started', collection: 'docs', status: 'Published', size: 12 },
-	{ name: 'Design tokens', collection: 'docs', status: 'Published', size: 8 },
-	{ name: 'Roadmap 2026', collection: 'blog', status: 'Draft', size: 24 },
-	{ name: 'Release 0.0.1', collection: 'blog', status: 'Review', size: 4 },
-	{ name: 'Attribute CSS', collection: 'blog', status: 'Published', size: 16 },
-	{ name: 'Migrating', collection: 'docs', status: 'Draft', size: 6 },
-];
-
-const code = {
-	colors: `<span data-badge data-variant="success">Success</span>
-
-/* Override any token */
-.dry {
-  --dry-primary: #00A76F;
-  --dry-radius: 0.5rem;
-}`,
-	typography: `<h1>Heading 1</h1>
-<p>Body text</p>
-<small>Small, muted by default</small>
-<code>inline code</code>
-<kbd>Ctrl</kbd>
-<blockquote>A quotation</blockquote>`,
-	icons: `---
-import Icon from 'drycms/components/Icon.astro';
----
-<Icon name="Dashboard" />
-<Icon name="Settings" size="2rem" />
-
-// In a Preact island:
-import { SettingsIcon } from 'drycms/components/icons';
-<SettingsIcon />`,
-	layout: `<div data-stack>…</div>
-<div data-row data-justify="between">…</div>
-<div data-grid data-cols="4">…</div>
-<span data-metric>1,204</span>
-<span data-muted>Muted text</span>
-<span data-mono>0.0.1</span>`,
-	buttons: `<button>Default</button>
-<button data-size="sm">Small</button>
-<button data-size="lg">Large</button>
-<button data-size="icon" aria-label="Settings">…</button>
-<button data-block>Full width</button>`,
-	buttonVariants: `<button>Default</button>
-<button data-variant="secondary">Secondary</button>
-<button data-variant="outline">Outline</button>
-<button data-variant="ghost">Ghost</button>
-<button data-variant="link">Link</button>
-<button data-variant="destructive">Destructive</button>
-<button data-variant="info">Info</button>
-<button data-variant="success">Success</button>
-<button data-variant="warning">Warning</button>
-
-<!-- Soft fill of the same intent -->
-<button data-soft>Soft</button>
-<button data-soft data-variant="error">Soft error</button>`,
-	buttonStates: `<button disabled>Disabled</button>
-<button aria-busy="true">Saving</button>
-<a role="button" href="#">Link as button</a>`,
-	cards: `<article data-card>
-  <header>
-    <h3>Title</h3>
-    <p>Description</p>
-  </header>
-  <p>Body content.</p>
-  <footer><button data-size="sm">Action</button></footer>
-</article>
-
-<!-- Edge-to-edge body -->
-<article data-card data-flush>…</article>`,
-	badges: `<span data-badge>Default</span>
-<span data-badge data-variant="secondary">Secondary</span>
-<span data-badge data-variant="outline">Outline</span>
-<span data-badge data-variant="info">Info</span>
-<span data-badge data-variant="success">Success</span>
-<span data-badge data-variant="warning">Warning</span>
-<span data-badge data-variant="error">Error</span>
-
-<!-- Solid instead of soft -->
-<span data-badge data-filled>Filled</span>`,
-	alerts: `<div data-alert>
-  <h4>Heads up</h4>
-  <p>Informational message.</p>
-</div>
-
-<div data-alert data-variant="error">…</div>
-<div data-alert data-variant="success">…</div>
-<div data-alert data-variant="warning">…</div>`,
-	table: `<div data-scroll>
-  <table>
-    <caption>Recent entries</caption>
-    <thead>
-      <tr><th>Name</th><th data-numeric>Size</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>Getting started</td><td data-numeric>12</td></tr>
-    </tbody>
-  </table>
-</div>`,
-	avatar: `<span data-avatar>KT</span>
-<span data-avatar data-size="sm">SM</span>
-<span data-avatar data-size="lg">LG</span>
-<span data-avatar><img src="/avatar.jpg" alt="" /></span>`,
-	progress: `<progress value="72" max="100"></progress>
-<progress></progress>`,
-	skeleton: `<span data-skeleton style="height: 1rem; width: 12rem"></span>
-<span data-skeleton style="height: 3rem; width: 3rem; border-radius: 50%"></span>`,
-	empty: `<div data-empty>
-  <strong>No entries yet</strong>
-  <small>Create your first entry to get started.</small>
-</div>`,
-	textInputs: `<input type="text" placeholder="Default" />
-<input type="text" data-size="sm" placeholder="Small" />
-<input type="text" data-size="lg" placeholder="Large" />
-<input type="search" placeholder="Search" />
-<input type="text" value="Read only" readonly />
-<input type="text" placeholder="Disabled" disabled />`,
-	select: `<select>
-  <option>blog</option>
-  <option>docs</option>
-</select>
-
-<textarea placeholder="Write something…"></textarea>`,
-	toggles: `<input type="checkbox" checked />
-<input type="checkbox" indeterminate />
-<input type="radio" name="r" checked />
-<input type="radio" name="r" />`,
-	otherInputs: `<input type="range" value="60" />
-<input type="color" value="#00A76F" />
-<input type="file" />`,
-	fields: `<div data-field>
-  <label for="title">Title</label>
-  <input id="title" type="text" />
-  <span data-hint>Shown in listings.</span>
-</div>
-
-<div data-field>
-  <label for="slug">Slug</label>
-  <input id="slug" type="text" aria-invalid="true" />
-  <span data-error>Slug is required.</span>
-</div>
-
-<div data-field data-inline>
-  <input id="featured" type="checkbox" />
-  <label for="featured">Featured</label>
-</div>
-
-<fieldset>
-  <legend>Publishing</legend>
-  …
-</fieldset>`,
-	tabs: `<div role="tablist">
-  <button role="tab" aria-selected="true" aria-controls="p1">Overview</button>
-  <button role="tab" aria-selected="false" aria-controls="p2">Settings</button>
-</div>
-<div role="tabpanel" id="p1">…</div>
-<div role="tabpanel" id="p2" hidden>…</div>`,
-	accordion: `<details open>
-  <summary>What is drycms?</summary>
-  <p>An Astro integration with an attribute-driven stylesheet.</p>
-</details>
-<details>
-  <summary>Does it need a database?</summary>
-  <p>Not yet.</p>
-</details>`,
-	breadcrumb: `<ol data-breadcrumb>
-  <li><a href="/dry/dashboard">Dashboard</a></li>
-  <li><a href="#">Content</a></li>
-  <li><span aria-current="page">Getting started</span></li>
-</ol>`,
-	tooltip: `<button data-variant="outline" data-tooltip="Saved 2 minutes ago">
-  Hover me
-</button>`,
-	separator: `<hr data-separator />
-<div data-row>
-  <span>Left</span>
-  <hr data-separator aria-orientation="vertical" />
-  <span>Right</span>
-</div>`,
-	dialog: `<button data-dialog-open>Open dialog</button>
-
-<dialog id="demo-dialog">
-  <header>
-    <h3>Delete entry?</h3>
-    <p>This action cannot be undone.</p>
-  </header>
-  <footer>
-    <button data-variant="outline" data-dialog-close>Cancel</button>
-    <button data-variant="destructive">Delete</button>
-  </footer>
-</dialog>
-
-<script>
-  const dialog = document.querySelector('#demo-dialog');
-  document.querySelector('[data-dialog-open]')
-    .addEventListener('click', () => dialog.showModal());
-</script>`,
-	datatable: `---
-import DataTable from 'drycms/components/DataTable';
-
-const columns = [
-  { key: 'name', label: 'Name' },
-  { key: 'status', label: 'Status' },
-  { key: 'size', label: 'Size', numeric: true },
-];
----
-<DataTable columns={columns} rows={rows} pageSize={4} client:load />`,
-	islands: `---
-import ThemeToggle from 'drycms/components/ThemeToggle';
-import SidebarToggle from 'drycms/components/SidebarToggle';
----
-<ThemeToggle client:idle />
-<SidebarToggle client:idle />`,
-};
-
-const tableColumns: DataTableColumn<(typeof tableRows)[number]>[] = [
-	{ key: 'name', label: 'Name' },
-	{ key: 'collection', label: 'Collection' },
-	{ key: 'status', label: 'Status' },
-	{ key: 'size', label: 'Size', numeric: true },
-];
 ---
 
-<DryLayout title="Showcase" description="Every drycms component with copy-paste markup" active="showcase">
-	<div data-dry-page-header>
-		<div>
-			<h1>Showcase</h1>
-			<p>Every component in drycms, with the markup that produces it.</p>
-		</div>
-		<span data-badge data-variant="outline">v0.0.1</span>
-	</div>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Showcase</title>
+  </head>
+  <body class="dry" style="padding: 2rem">
+    <div class="page-header">
+      <div class="row">
+        <a role="button" class="icon" href={`${path}/dashboard`}>
+          <Icon name="Home" />
+        </a>
+        <div>
+          <h1>Showcase</h1>
+          <p>Every component in drycms, with the markup that produces it.</p>
+        </div>
+      </div>
+      <div class="row">
+        <span class="badge outline">v0.0.1</span>
+      </div>
+    </div>
 
-	<div data-showcase>
-		<aside data-showcase-nav aria-label="Showcase sections">
-			<nav>
-				{
-					groups.map((group) => (
-						<>
-							<span data-dry-nav-label>{group.label}</span>
-							{group.items.map((item) => (
-								<a href={`#${item.id}`} data-showcase-link={item.id}>
-									{item.label}
-								</a>
-							))}
-						</>
-					))
-				}
-			</nav>
-		</aside>
+    <div class="showcase">
+      <aside class="showcase-nav" aria-label="Showcase sections">
+        <nav>
+          {
+            groups.map((group) => (
+              <>
+                <span class="nav-label">{group.label}</span>
+                {group.items.map((item) => (
+                  <a href={`?tab=${item.id}`} data-showcase-link={item.id}>
+                    {item.label}
+                  </a>
+                ))}
+              </>
+            ))
+          }
+        </nav>
+      </aside>
 
-		<div data-showcase-body>
-			<!-- ------------------------------------------------------- Foundations -->
-			<h2 data-showcase-group>Foundations</h2>
+      <div class="showcase-body">
+        <!-- ------------------------------------------------------- Foundations -->
+        <h2 class="showcase-group">Foundations</h2>
 
-			<Demo id="colors" title="Colors" description="Minimals palette, exposed as CSS custom properties." code={code.colors}>
-				<div data-stack style="width: 100%">
-					<div data-row>
-						{
-							intents.map((intent) => (
-								<div data-swatch>
-									<span style={`background: var(--dry-${intent === 'secondary' ? 'secondary-main' : intent})`} />
-									<small data-mono>--dry-{intent === 'secondary' ? 'secondary-main' : intent}</small>
-								</div>
-							))
-						}
-					</div>
-					<div data-row>
-						{
-							greys.map((grey) => (
-								<div data-swatch>
-									<span style={`background: var(--dry-grey-${grey})`} />
-									<small data-mono>{grey}</small>
-								</div>
-							))
-						}
-					</div>
-					<div data-row>
-						<span data-badge data-variant="info">Info</span>
-						<span data-badge data-variant="success">Success</span>
-						<span data-badge data-variant="warning">Warning</span>
-						<span data-badge data-variant="error">Error</span>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="colors"
+          title="Colors"
+          description="Minimals palette, exposed as CSS custom properties."
+          code={code.colors}
+        >
+          <div class="stack" style="width: 100%">
+            <div class="row">
+              {
+                intents.map((intent) => (
+                  <div class="swatch">
+                    <span
+                      style={`background: var(--dry-${intent === "secondary" ? "secondary-main" : intent})`}
+                    />
+                    <small class="mono">
+                      --dry-{intent === "secondary" ? "secondary-main" : intent}
+                    </small>
+                  </div>
+                ))
+              }
+            </div>
+            <div class="row">
+              {
+                greys.map((grey) => (
+                  <div class="swatch">
+                    <span style={`background: var(--dry-grey-${grey})`} />
+                    <small class="mono">{grey}</small>
+                  </div>
+                ))
+              }
+            </div>
+            <div class="row">
+              <span class="badge info">Info</span>
+              <span class="badge success">Success</span>
+              <span class="badge warning">Warning</span>
+              <span class="badge destructive">Destructive</span>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="typography" title="Typography" description="Bare tags, no classes." code={code.typography}>
-				<div data-stack style="width: 100%; gap: 0.75rem">
-					<h1>Heading 1</h1>
-					<h2>Heading 2</h2>
-					<h3>Heading 3</h3>
-					<p>Body text sits at 14px with a 1.5 line height.</p>
-					<small>Small text is muted by default.</small>
-					<p>Inline <code>code</code>, a <kbd>Ctrl</kbd> key, and a <a href="#colors" data-underline>link</a>.</p>
-					<blockquote>Attribute-driven CSS keeps the markup honest.</blockquote>
-				</div>
-			</Demo>
+        <Demo
+          id="typography"
+          title="Typography"
+          description="Bare tags, no classes needed here."
+          code={code.typography}
+        >
+          <div class="stack" style="width: 100%; gap: 0.75rem">
+            <h1>Heading 1</h1>
+            <h2>Heading 2</h2>
+            <h3>Heading 3</h3>
+            <p>Body text sits at 14px with a 1.5 line height.</p>
+            <small>Small text is muted by default.</small>
+            <p>
+              Inline <code>code</code>, a <kbd>Ctrl</kbd> key, and a <a
+                href="#colors"
+                class="underline">link</a
+              >.
+            </p>
+            <blockquote>
+              Bare tags first, classes only when there's no real attribute.
+            </blockquote>
+          </div>
+        </Demo>
 
-			<Demo id="icons" title="Icons" description="Solar (Iconify), inlined at build time. Lucide is the fallback set." code={code.icons}>
-				<div data-icon-grid>
-					{
-						iconNames.map((name) => (
-							<div data-icon-cell>
-								<Icon name={name} size="1.5rem" />
-								<small data-mono>{name}</small>
-							</div>
-						))
-					}
-				</div>
-			</Demo>
+        <Demo
+          id="icons"
+          title="Icons"
+          description="Solar (Iconify), inlined at build time. Lucide is the fallback set."
+          code={code.icons}
+        >
+          <div class="icon-grid">
+            {
+              iconNames.map((name) => (
+                <div class="icon-cell">
+                  <Icon name={name} size="1.5rem" />
+                  <small class="mono">{name}</small>
+                </div>
+              ))
+            }
+          </div>
+        </Demo>
 
-			<Demo id="layout" title="Layout utilities" code={code.layout}>
-				<div data-stack style="width: 100%">
-					<div data-grid data-cols="4" style="width: 100%">
-						<article data-card><span data-metric>128</span><small>Entries</small></article>
-						<article data-card><span data-metric>9</span><small>Drafts</small></article>
-						<article data-card><span data-metric>1,204</span><small>Media</small></article>
-						<article data-card><span data-metric>6</span><small>Collections</small></article>
-					</div>
-					<div data-row data-justify="between" style="width: 100%">
-						<span data-muted>data-row + data-justify="between"</span>
-						<span data-mono>0.0.1</span>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="layout"
+          title="Layout utilities"
+          description="No native attribute means 'stack a column' or 'space these evenly' — .stack, .row, .grid and .cols-2/.cols-4 are classes for exactly that."
+          code={code.layout}
+        >
+          <div class="stack" style="width: 100%">
+            <div class="grid cols-4" style="width: 100%">
+              <article class="card">
+                <span class="metric">128</span><small>Entries</small>
+              </article>
+              <article class="card">
+                <span class="metric">9</span><small>Drafts</small>
+              </article>
+              <article class="card">
+                <span class="metric">1,204</span><small>Media</small>
+              </article>
+              <article class="card">
+                <span class="metric">6</span><small>Collections</small>
+              </article>
+            </div>
+            <div class="row justify-between" style="width: 100%">
+              <span class="muted">.row.justify-between</span>
+              <span class="mono">0.0.1</span>
+            </div>
+          </div>
+        </Demo>
 
-			<!-- ----------------------------------------------------------- Actions -->
-			<h2 data-showcase-group>Actions</h2>
+        <!-- ----------------------------------------------------------- Actions -->
+        <h2 class="showcase-group">Actions</h2>
 
-			<Demo id="buttons" title="Button sizes" code={code.buttons}>
-				<button type="button" data-size="sm">Small</button>
-				<button type="button">Default</button>
-				<button type="button" data-size="lg">Large</button>
-				<button type="button" data-size="icon" aria-label="Settings"><Icon name="Settings" /></button>
-				<button type="button"><Icon name="Add" />With icon</button>
-			</Demo>
+        <Demo
+          id="buttons"
+          title="Button sizes"
+          description=".sm/.lg set the height; .icon makes a square icon-only button; .block stretches to 100% width."
+          code={code.buttons}
+        >
+          <button type="button" class="sm">Small</button>
+          <button type="button">Default</button>
+          <button type="button" class="lg">Large</button>
+          <button type="button" class="icon" aria-label="Settings"
+            ><Icon name="Settings" /></button
+          >
+          <button type="button" class="block">Full width</button>
+        </Demo>
 
-			<Demo id="button-variants" title="Button variants" description="data-variant, optionally softened with data-soft." code={code.buttonVariants}>
-				<div data-stack style="width: 100%">
-					<div data-row>
-						<button type="button">Default</button>
-						<button type="button" data-variant="secondary">Secondary</button>
-						<button type="button" data-variant="outline">Outline</button>
-						<button type="button" data-variant="ghost">Ghost</button>
-						<button type="button" data-variant="link">Link</button>
-					</div>
-					<div data-row>
-						<button type="button" data-variant="destructive">Destructive</button>
-						<button type="button" data-variant="info">Info</button>
-						<button type="button" data-variant="success">Success</button>
-						<button type="button" data-variant="warning">Warning</button>
-					</div>
-					<div data-row>
-						<button type="button" data-soft>Soft</button>
-						<button type="button" data-soft data-variant="error">Soft error</button>
-						<button type="button" data-soft data-variant="info">Soft info</button>
-						<button type="button" data-soft data-variant="success">Soft success</button>
-						<button type="button" data-soft data-variant="warning">Soft warning</button>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="button-variants"
+          title="Button variants"
+          description="Colour classes, optionally softened with .soft."
+          code={code.buttonVariants}
+        >
+          <div class="stack" style="width: 100%">
+            <div class="row">
+              <button type="button">Default</button>
+              <button type="button" class="secondary">Secondary</button>
+              <button type="button" class="outline">Outline</button>
+              <button type="button" class="ghost">Ghost</button>
+              <button type="button" class="link">Link</button>
+            </div>
+            <div class="row">
+              <button type="button" class="destructive">Destructive</button>
+              <button type="button" class="info">Info</button>
+              <button type="button" class="success">Success</button>
+              <button type="button" class="warning">Warning</button>
+            </div>
+            <div class="row">
+              <button type="button" class="soft">Soft</button>
+              <button type="button" class="soft destructive"
+                >Soft destructive</button
+              >
+              <button type="button" class="soft info">Soft info</button>
+              <button type="button" class="soft success">Soft success</button>
+              <button type="button" class="soft warning">Soft warning</button>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="button-states" title="Button states" code={code.buttonStates}>
-				<button type="button" disabled>Disabled</button>
-				<button type="button" data-variant="outline" disabled>Disabled outline</button>
-				<button type="button" aria-busy="true">Saving</button>
-				<a role="button" data-variant="outline" href="#button-states">Link as button</a>
-			</Demo>
+        <Demo
+          id="button-states"
+          title="Button states"
+          description="All real attributes, no classes: disabled and aria-busy are native/ARIA state, not variants."
+          code={code.buttonStates}
+        >
+          <button type="button" disabled>Disabled</button>
+          <button type="button" class="outline" disabled
+            >Disabled outline</button
+          >
+          <button type="button" aria-busy="true">Saving</button>
+          <a role="button" class="outline" href="#button-states"
+            >Link as button</a
+          >
+        </Demo>
 
-			<!-- ------------------------------------------------------ Data display -->
-			<h2 data-showcase-group>Data display</h2>
+        <!-- ------------------------------------------------------ Data display -->
+        <h2 class="showcase-group">Data display</h2>
 
-			<Demo id="cards" title="Cards" code={code.cards}>
-				<div data-grid data-cols="2" style="width: 100%">
-					<article data-card>
-						<header>
-							<h3>Standard card</h3>
-							<p>Header, body and footer are plain child elements.</p>
-						</header>
-						<p>Padding, radius and elevation come from the stylesheet.</p>
-						<footer>
-							<button type="button" data-size="sm">Save</button>
-							<button type="button" data-size="sm" data-variant="outline">Cancel</button>
-						</footer>
-					</article>
-					<article data-card data-flush>
-						<header>
-							<h3>Flush card</h3>
-							<p>Body runs edge to edge — good for tables.</p>
-						</header>
-						<footer>
-							<span data-muted>data-flush</span>
-						</footer>
-					</article>
-				</div>
-			</Demo>
+        <Demo
+          id="cards"
+          title="Cards"
+          description=".card is the container; .flush removes its padding so a table or list can run edge to edge."
+          code={code.cards}
+        >
+          <div class="grid cols-2" style="width: 100%">
+            <article class="card">
+              <header>
+                <h3>Standard card</h3>
+                <p>Header, body and footer are plain child elements.</p>
+              </header>
+              <p>Padding, radius and elevation come from the stylesheet.</p>
+              <footer>
+                <button type="button" class="sm">Save</button>
+                <button type="button" class="sm outline">Cancel</button>
+              </footer>
+            </article>
+            <article class="card flush">
+              <header>
+                <h3>Flush card</h3>
+                <p>Body runs edge to edge — good for tables.</p>
+              </header>
+              <footer>
+                <span class="muted">.card.flush</span>
+              </footer>
+            </article>
+          </div>
+        </Demo>
 
-			<Demo id="badges" title="Badges" code={code.badges}>
-				<div data-stack style="width: 100%">
-					<div data-row>
-						<span data-badge>Default</span>
-						<span data-badge data-variant="secondary">Secondary</span>
-						<span data-badge data-variant="outline">Outline</span>
-						<span data-badge data-variant="info">Info</span>
-						<span data-badge data-variant="success">Success</span>
-						<span data-badge data-variant="warning">Warning</span>
-						<span data-badge data-variant="error">Error</span>
-					</div>
-					<div data-row>
-						<span data-badge data-filled>Default</span>
-						<span data-badge data-filled data-variant="info">Info</span>
-						<span data-badge data-filled data-variant="success">Success</span>
-						<span data-badge data-filled data-variant="warning">Warning</span>
-						<span data-badge data-filled data-variant="error">Error</span>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="badges"
+          title="Badges"
+          description=".badge plus a colour class (soft fill by default); add .filled for a solid fill."
+          code={code.badges}
+        >
+          <div class="stack" style="width: 100%">
+            <div class="row">
+              <span class="badge">Default</span>
+              <span class="badge secondary">Secondary</span>
+              <span class="badge outline">Outline</span>
+              <span class="badge info">Info</span>
+              <span class="badge success">Success</span>
+              <span class="badge warning">Warning</span>
+              <span class="badge destructive">Destructive</span>
+            </div>
+            <div class="row">
+              <span class="badge filled">Default</span>
+              <span class="badge filled info">Info</span>
+              <span class="badge filled success">Success</span>
+              <span class="badge filled warning">Warning</span>
+              <span class="badge filled destructive">Destructive</span>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="alerts" title="Alerts" code={code.alerts}>
-				<div data-stack style="width: 100%">
-					<div data-alert>
-						<Icon name="Dashboard" />
-						<h4>Heads up</h4>
-						<p>This dashboard ships with sample data until a content source is wired up.</p>
-					</div>
-					<div data-alert data-variant="success">
-						<h4>Published</h4>
-						<p>Your entry is now live.</p>
-					</div>
-					<div data-alert data-variant="warning">
-						<h4>Unsaved changes</h4>
-						<p>Leaving this page will discard them.</p>
-					</div>
-					<div data-alert data-variant="error">
-						<h4>Failed to save</h4>
-						<p>The server returned a 500. Try again.</p>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="alerts"
+          title="Alerts"
+          description=".alert plus a colour class; no class at all defaults to the neutral/info look."
+          code={code.alerts}
+        >
+          <div class="stack" style="width: 100%">
+            <div class="alert">
+              <h4>Heads up</h4>
+              <p>
+                This dashboard ships with sample data until a content source is
+                wired up.
+              </p>
+            </div>
+            <div class="alert success">
+              <h4>Published</h4>
+              <p>Your entry is now live.</p>
+            </div>
+            <div class="alert warning">
+              <h4>Unsaved changes</h4>
+              <p>Leaving this page will discard them.</p>
+            </div>
+            <div class="alert destructive">
+              <h4>Failed to save</h4>
+              <p>The server returned a 500. Try again.</p>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="table" title="Table" description="Plain table markup; data-numeric right-aligns and tabularises." code={code.table}>
-				<div data-scroll style="width: 100%">
-					<table>
-						<caption>Recent entries</caption>
-						<thead>
-							<tr>
-								<th>Name</th>
-								<th>Collection</th>
-								<th>Status</th>
-								<th data-numeric>Size</th>
-							</tr>
-						</thead>
-						<tbody>
-							{
-								tableRows.slice(0, 4).map((row) => (
-									<tr>
-										<td>{row.name}</td>
-										<td>{row.collection}</td>
-										<td>
-											<span
-												data-badge
-												data-variant={
-													row.status === 'Published'
-														? 'success'
-														: row.status === 'Draft'
-															? 'warning'
-															: 'info'
-												}
-											>
-												{row.status}
-											</span>
-										</td>
-										<td data-numeric>{row.size} KB</td>
-									</tr>
-								))
-							}
-						</tbody>
-					</table>
-				</div>
-			</Demo>
+        <Demo
+          id="table"
+          title="Table"
+          description="Plain table markup; .numeric right-aligns and tabularises."
+          code={code.table}
+        >
+          <div class="scroll" style="width: 100%">
+            <table>
+              <caption>Recent entries</caption>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Collection</th>
+                  <th>Status</th>
+                  <th class="numeric">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {
+                  tableRows.slice(0, 4).map((row) => (
+                    <tr>
+                      <td>{row.name}</td>
+                      <td>{row.collection}</td>
+                      <td>
+                        <span class={`badge ${statusVariant(row.status)}`}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td class="numeric">{row.size} KB</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+        </Demo>
 
-			<Demo id="avatar" title="Avatar" code={code.avatar}>
-				<span data-avatar data-size="sm">SM</span>
-				<span data-avatar>KT</span>
-				<span data-avatar data-size="lg">LG</span>
-			</Demo>
+        <Demo
+          id="avatar"
+          title="Avatar"
+          description=".avatar plus the shared .sm/.lg size classes."
+          code={code.avatar}
+        >
+          <span class="avatar sm">SM</span>
+          <span class="avatar">KT</span>
+          <span class="avatar lg">LG</span>
+        </Demo>
 
-			<Demo id="progress" title="Progress" code={code.progress}>
-				<div data-stack style="width: 100%; max-width: 24rem">
-					<progress value="72" max="100"></progress>
-					<progress value="28" max="100"></progress>
-					<progress></progress>
-				</div>
-			</Demo>
+        <Demo
+          id="progress"
+          title="Progress"
+          description="Native <progress>, no classes — value/max are the real attributes that drive it."
+          code={code.progress}
+        >
+          <div class="stack" style="width: 100%; max-width: 24rem">
+            <progress value="72" max="100"></progress>
+            <progress value="28" max="100"></progress>
+            <progress></progress>
+          </div>
+        </Demo>
 
-			<Demo id="skeleton" title="Skeleton" code={code.skeleton}>
-				<div data-row>
-					<span data-skeleton style="height: 3rem; width: 3rem; border-radius: 50%"></span>
-					<div data-stack style="gap: 0.5rem">
-						<span data-skeleton style="height: 0.75rem; width: 12rem"></span>
-						<span data-skeleton style="height: 0.75rem; width: 8rem"></span>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="skeleton"
+          title="Skeleton"
+          description=".skeleton — width, height and border-radius are set inline per use."
+          code={code.skeleton}
+        >
+          <div class="row">
+            <span
+              class="skeleton"
+              style="height: 3rem; width: 3rem; border-radius: 50%"></span>
+            <div class="stack" style="gap: 0.5rem">
+              <span class="skeleton" style="height: 0.75rem; width: 12rem"
+              ></span>
+              <span class="skeleton" style="height: 0.75rem; width: 8rem"
+              ></span>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="empty" title="Empty state" code={code.empty}>
-				<div data-empty style="width: 100%">
-					<strong>No entries yet</strong>
-					<small>Create your first entry to get started.</small>
-					<button type="button" data-size="sm"><Icon name="Add" />New entry</button>
-				</div>
-			</Demo>
+        <Demo
+          id="empty"
+          title="Empty state"
+          description=".empty — a dashed placeholder for zero-state screens."
+          code={code.empty}
+        >
+          <div class="empty" style="width: 100%">
+            <strong>No entries yet</strong>
+            <small>Create your first entry to get started.</small>
+            <button type="button" class="sm">New entry</button>
+          </div>
+        </Demo>
 
-			<!-- ------------------------------------------------------------ Inputs -->
-			<h2 data-showcase-group>Inputs</h2>
+        <!-- ------------------------------------------------------------ Inputs -->
+        <h2 class="showcase-group">Inputs</h2>
 
-			<Demo id="text-inputs" title="Text inputs" code={code.textInputs}>
-				<div data-grid data-cols="2" style="width: 100%">
-					<input type="text" data-size="sm" placeholder="Small" />
-					<input type="text" placeholder="Default" />
-					<input type="text" data-size="lg" placeholder="Large" />
-					<input type="search" placeholder="Search entries" />
-					<input type="text" value="Read only" readonly />
-					<input type="text" placeholder="Disabled" disabled />
-				</div>
-			</Demo>
+        <Demo
+          id="text-inputs"
+          title="Text inputs"
+          description=".sm/.lg size classes; readonly and disabled are real attributes."
+          code={code.textInputs}
+        >
+          <div class="grid cols-2" style="width: 100%">
+            <input type="text" class="sm" placeholder="Small" />
+            <input type="text" placeholder="Default" />
+            <input type="text" class="lg" placeholder="Large" />
+            <input type="search" placeholder="Search entries" />
+            <input type="text" value="Read only" readonly />
+            <input type="text" placeholder="Disabled" disabled />
+          </div>
+        </Demo>
 
-			<Demo id="select" title="Select & textarea" code={code.select}>
-				<div data-grid data-cols="2" style="width: 100%">
-					<select>
-						<option>blog</option>
-						<option>docs</option>
-						<option>changelog</option>
-					</select>
-					<textarea placeholder="Write something…"></textarea>
-				</div>
-			</Demo>
+        <Demo
+          id="select"
+          title="Select & textarea"
+          description="Native elements, no classes at all."
+          code={code.select}
+        >
+          <div class="grid cols-2" style="width: 100%">
+            <select>
+              <option>blog</option>
+              <option>docs</option>
+              <option>changelog</option>
+            </select>
+            <textarea placeholder="Write something…"></textarea>
+          </div>
+        </Demo>
 
-			<Demo id="toggles" title="Checkbox & radio" code={code.toggles}>
-				<div data-row style="gap: 1.5rem">
-					<div data-field data-inline>
-						<input id="sc-check-1" type="checkbox" checked />
-						<label for="sc-check-1">Checked</label>
-					</div>
-					<div data-field data-inline>
-						<input id="sc-check-2" type="checkbox" />
-						<label for="sc-check-2">Unchecked</label>
-					</div>
-					<div data-field data-inline>
-						<input id="sc-radio-1" type="radio" name="sc-radio" checked />
-						<label for="sc-radio-1">Option A</label>
-					</div>
-					<div data-field data-inline>
-						<input id="sc-radio-2" type="radio" name="sc-radio" />
-						<label for="sc-radio-2">Option B</label>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="toggles"
+          title="Checkbox & radio"
+          description="Real attributes only (checked, indeterminate); .field.inline lays out the pair horizontally."
+          code={code.toggles}
+        >
+          <div class="row" style="gap: 1.5rem">
+            <div class="field inline">
+              <input id="sc-check-1" type="checkbox" checked />
+              <label for="sc-check-1">Checked</label>
+            </div>
+            <div class="field inline">
+              <input id="sc-check-2" type="checkbox" />
+              <label for="sc-check-2">Unchecked</label>
+            </div>
+            <div class="field inline">
+              <input id="sc-radio-1" type="radio" name="sc-radio" checked />
+              <label for="sc-radio-1">Option A</label>
+            </div>
+            <div class="field inline">
+              <input id="sc-radio-2" type="radio" name="sc-radio" />
+              <label for="sc-radio-2">Option B</label>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="other-inputs" title="Range, color and file" code={code.otherInputs}>
-				<div data-grid data-cols="2" style="width: 100%">
-					<input type="range" value="60" />
-					<input type="color" value="#00a76f" />
-					<input type="file" />
-				</div>
-			</Demo>
+        <Demo
+          id="other-inputs"
+          title="Range, color and file"
+          description="Native input types, no classes."
+          code={code.otherInputs}
+        >
+          <div class="grid cols-2" style="width: 100%">
+            <input type="range" value="60" />
+            <input type="color" value="#00a76f" />
+            <input type="file" />
+          </div>
+        </Demo>
 
-			<Demo id="fields" title="Fields & validation" description="data-field groups a label, control and hint or error." code={code.fields}>
-				<div data-grid data-cols="2" style="width: 100%">
-					<div data-field>
-						<label for="sc-title">Title</label>
-						<input id="sc-title" type="text" value="Getting started" />
-						<span data-hint>Shown in listings and search results.</span>
-					</div>
-					<div data-field>
-						<label for="sc-slug">Slug</label>
-						<input id="sc-slug" type="text" aria-invalid="true" value="" />
-						<span data-error>Slug is required.</span>
-					</div>
-					<fieldset>
-						<legend>Publishing</legend>
-						<div data-field data-inline>
-							<input id="sc-pub" type="checkbox" checked />
-							<label for="sc-pub">Visible in listings</label>
-						</div>
-					</fieldset>
-				</div>
-			</Demo>
+        <Demo
+          id="fields"
+          title="Fields & validation"
+          description=".field groups a label, control and hint or error."
+          code={code.fields}
+        >
+          <div class="grid cols-2" style="width: 100%">
+            <div class="field">
+              <label for="sc-title">Title</label>
+              <input id="sc-title" type="text" value="Getting started" />
+              <span class="hint">Shown in listings and search results.</span>
+            </div>
+            <div class="field">
+              <label for="sc-slug">Slug</label>
+              <input id="sc-slug" type="text" aria-invalid="true" value="" />
+              <span class="error">Slug is required.</span>
+            </div>
+            <fieldset>
+              <legend>Publishing</legend>
+              <div class="field inline">
+                <input id="sc-pub" type="checkbox" checked />
+                <label for="sc-pub">Visible in listings</label>
+              </div>
+            </fieldset>
+          </div>
+        </Demo>
 
-			<!-- -------------------------------------------------------- Navigation -->
-			<h2 data-showcase-group>Navigation</h2>
+        <!-- -------------------------------------------------------- Navigation -->
+        <h2 class="showcase-group">Navigation</h2>
 
-			<Demo id="tabs" title="Tabs" description="Driven by role and aria-selected." code={code.tabs}>
-				<div data-stack style="width: 100%" data-tabs>
-					<div role="tablist">
-						<button type="button" role="tab" aria-selected="true" aria-controls="sc-panel-1">Overview</button>
-						<button type="button" role="tab" aria-selected="false" aria-controls="sc-panel-2">Settings</button>
-						<button type="button" role="tab" aria-selected="false" aria-controls="sc-panel-3">History</button>
-					</div>
-					<div role="tabpanel" id="sc-panel-1"><p>Overview panel.</p></div>
-					<div role="tabpanel" id="sc-panel-2" hidden><p>Settings panel.</p></div>
-					<div role="tabpanel" id="sc-panel-3" hidden><p>History panel.</p></div>
-				</div>
-			</Demo>
+        <Demo
+          id="tabs"
+          title="Tabs"
+          description="Driven by role and aria-selected."
+          code={code.tabs}
+        >
+          <div class="stack" style="width: 100%" data-tabs>
+            <div role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="sc-panel-1">Overview</button
+              >
+              <button
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="sc-panel-2">Settings</button
+              >
+              <button
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="sc-panel-3">History</button
+              >
+            </div>
+            <div role="tabpanel" id="sc-panel-1"><p>Overview panel.</p></div>
+            <div role="tabpanel" id="sc-panel-2" hidden>
+              <p>Settings panel.</p>
+            </div>
+            <div role="tabpanel" id="sc-panel-3" hidden>
+              <p>History panel.</p>
+            </div>
+          </div>
+        </Demo>
 
-			<Demo id="accordion" title="Accordion" description="Native details/summary, no JavaScript." code={code.accordion}>
-				<div style="width: 100%">
-					<details open>
-						<summary>What is drycms?</summary>
-						<p>An Astro integration that mounts an admin UI and ships an attribute-driven stylesheet.</p>
-					</details>
-					<details>
-						<summary>Does it need a database?</summary>
-						<p>Not yet — the dashboard currently renders sample data.</p>
-					</details>
-					<details>
-						<summary>Can I change the mount path?</summary>
-						<p>Yes, pass <code>dry(&#123; path: '/admin' &#125;)</code>.</p>
-					</details>
-				</div>
-			</Demo>
+        <Demo
+          id="accordion"
+          title="Accordion"
+          description="Native details/summary, no JavaScript."
+          code={code.accordion}
+        >
+          <div style="width: 100%">
+            <details open>
+              <summary>What is drycms?</summary>
+              <p>
+                An Astro integration that mounts an admin UI and ships a small
+                stylesheet.
+              </p>
+            </details>
+            <details>
+              <summary>Does it need a database?</summary>
+              <p>Not yet — the dashboard currently renders sample data.</p>
+            </details>
+            <details>
+              <summary>Can I change the mount path?</summary>
+              <p>Yes, pass <code>dry(&#123; path: '/admin' &#125;)</code>.</p>
+            </details>
+          </div>
+        </Demo>
 
-			<Demo id="breadcrumb" title="Breadcrumb" code={code.breadcrumb}>
-				<ol data-breadcrumb>
-					<li><a href="#">Dashboard</a></li>
-					<li><a href="#">Content</a></li>
-					<li><span aria-current="page">Getting started</span></li>
-				</ol>
-			</Demo>
+        <Demo
+          id="breadcrumb"
+          title="Breadcrumb"
+          description=".breadcrumb on an <ol>; aria-current marks the active page."
+          code={code.breadcrumb}
+        >
+          <ol class="breadcrumb">
+            <li><a href="#">Dashboard</a></li>
+            <li><a href="#">Content</a></li>
+            <li><span aria-current="page">Getting started</span></li>
+          </ol>
+        </Demo>
 
-			<Demo id="tooltip" title="Tooltip" description="Pure CSS, from the data-tooltip attribute." code={code.tooltip}>
-				<button type="button" data-variant="outline" data-tooltip="Saved 2 minutes ago">Hover me</button>
-				<span data-tooltip="Also works on any element" data-badge data-variant="outline">Badge</span>
-			</Demo>
+        <Demo
+          id="tooltip"
+          title="Tooltip"
+          description="Pure CSS, from the data-tooltip attribute (its value is the message, like title)."
+          code={code.tooltip}
+        >
+          <button
+            type="button"
+            class="outline"
+            data-tooltip="Saved 2 minutes ago">Hover me</button
+          >
+          <span class="badge outline" data-tooltip="Also works on any element"
+            >Badge</span
+          >
+        </Demo>
 
-			<Demo id="separator" title="Separator" code={code.separator}>
-				<div data-stack style="width: 100%">
-					<hr data-separator />
-					<div data-row>
-						<span>Left</span>
-						<hr data-separator aria-orientation="vertical" style="height: 1.5rem" />
-						<span>Right</span>
-					</div>
-				</div>
-			</Demo>
+        <Demo
+          id="separator"
+          title="Separator"
+          description=".separator; aria-orientation flips it vertical."
+          code={code.separator}
+        >
+          <div class="stack" style="width: 100%">
+            <div class="row">
+              <span>Left</span>
+              <hr
+                class="separator"
+                aria-orientation="vertical"
+                style="height: 1.5rem"
+              />
+              <span>Right</span>
+            </div>
+          </div>
+        </Demo>
 
-			<!-- ------------------------------------------------ Overlays & islands -->
-			<h2 data-showcase-group>Overlays & islands</h2>
+        <!-- ------------------------------------------------ Overlays & islands -->
+        <h2 class="showcase-group">Overlays & islands</h2>
 
-			<Demo id="dialog" title="Dialog" description="Native dialog element." code={code.dialog}>
-				<button type="button" data-dialog-open>Open dialog</button>
-				<dialog id="sc-dialog">
-					<header>
-						<h3>Delete entry?</h3>
-						<p>This action cannot be undone.</p>
-					</header>
-					<footer>
-						<button type="button" data-variant="outline" data-dialog-close>Cancel</button>
-						<button type="button" data-variant="destructive" data-dialog-close>Delete</button>
-					</footer>
-				</dialog>
-			</Demo>
+        <Demo
+          id="dialog"
+          title="Dialog"
+          description="Native dialog, opened and closed with command/commandfor — no JS."
+          code={code.dialog}
+        >
+          <button type="button" command="show-modal" commandfor="sc-dialog"
+            >Open dialog</button
+          >
+          <dialog id="sc-dialog">
+            <header>
+              <h3>Delete entry?</h3>
+              <p>This action cannot be undone.</p>
+            </header>
+            <footer>
+              <button
+                type="button"
+                class="outline"
+                command="close"
+                commandfor="sc-dialog">Cancel</button
+              >
+              <button
+                type="button"
+                class="destructive"
+                command="close"
+                commandfor="sc-dialog">Delete</button
+              >
+            </footer>
+          </dialog>
+        </Demo>
 
-			<Demo id="datatable" title="DataTable" description="Preact island — sort, filter and paginate." code={code.datatable}>
-				<div style="width: 100%">
-					<DataTable columns={tableColumns} rows={tableRows} pageSize={4} client:load />
-				</div>
-			</Demo>
+        <Demo
+          id="datatable"
+          title="DataTable"
+          description="Preact island — sort, filter and paginate."
+          code={code.datatable}
+        >
+          <div style="width: 100%">
+            <DataTable
+              columns={tableColumns}
+              rows={tableRows}
+              pageSize={4}
+              client:load
+            />
+          </div>
+        </Demo>
 
-			<Demo id="islands" title="Theme & sidebar toggles" description="Both live in the topbar of every drycms page." code={code.islands}>
-				<p data-muted>
-					The theme toggle and the mobile sidebar toggle are in the topbar above. The theme
-					toggle cycles system → light → dark and stores the choice in localStorage.
-				</p>
-			</Demo>
-		</div>
-	</div>
-</DryLayout>
+        <Demo
+          id="islands"
+          title="Theme & sidebar toggles"
+          description="Both live in the topbar of every drycms page."
+          code={code.islands}
+        >
+          <p class="muted">
+            The theme toggle and the mobile sidebar toggle are in the topbar
+            above. The theme toggle cycles system → light → dark and stores the
+            choice in localStorage.
+          </p>
+        </Demo>
+
+        <nav class="pager" aria-label="Showcase pagination">
+          <button
+            type="button"
+            class="outline pager-btn"
+            data-showcase-prev
+            disabled
+			style="text-align: left;"
+          >
+            <Icon name="ArrowLeft" />
+            <span class="pager-text">
+              <small>Previous</small>
+              <strong data-showcase-prev-label></strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="pager-btn pager-btn-next"
+            data-showcase-next
+            disabled
+          >
+            <span class="pager-text">
+              <small>Next</small>
+              <strong data-showcase-next-label></strong>
+            </span>
+            <Icon name="ArrowRight" />
+          </button>
+        </nav>
+
+        <script is:inline>
+          (function () {
+            var body = document.querySelector(".showcase-body");
+            if (!body) return;
+            var demos = Array.prototype.slice.call(
+              body.querySelectorAll(".demo"),
+            );
+            var order = demos.map(function (d) {
+              return d.id;
+            });
+            if (!order.length) return;
+
+            var links = Array.prototype.slice.call(
+              document.querySelectorAll("[data-showcase-link]"),
+            );
+            var groupHeaders = Array.prototype.slice.call(
+              document.querySelectorAll(".showcase-group"),
+            );
+            var prevBtn = document.querySelector("[data-showcase-prev]");
+            var nextBtn = document.querySelector("[data-showcase-next]");
+            var prevLabel = document.querySelector(
+              "[data-showcase-prev-label]",
+            );
+            var nextLabel = document.querySelector(
+              "[data-showcase-next-label]",
+            );
+            var baseTitle = document.title;
+            var currentId = order[0];
+
+            function labelFor(id) {
+              for (var i = 0; i < links.length; i++) {
+                if (links[i].getAttribute("data-showcase-link") === id)
+                  return links[i].textContent.trim();
+              }
+              return id;
+            }
+
+            function groupOf(demo) {
+              var el = demo.previousElementSibling;
+              while (el) {
+                if (el.classList.contains("showcase-group")) return el;
+                el = el.previousElementSibling;
+              }
+              return null;
+            }
+
+            function activate(id, opts) {
+              opts = opts || {};
+              var index = order.indexOf(id);
+              if (index === -1) index = 0;
+              id = order[index];
+              currentId = id;
+
+              for (var i = 0; i < demos.length; i++) {
+                demos[i].style.display = demos[i].id === id ? "" : "none";
+              }
+              for (var j = 0; j < groupHeaders.length; j++) {
+                groupHeaders[j].style.display = "none";
+              }
+              var group = groupOf(demos[index]);
+              if (group) group.style.display = "";
+
+              for (var k = 0; k < links.length; k++) {
+                if (links[k].getAttribute("data-showcase-link") === id)
+                  links[k].setAttribute("aria-current", "page");
+                else links[k].removeAttribute("aria-current");
+              }
+
+              var prevId = order[index - 1];
+              var nextId = order[index + 1];
+              if (prevBtn) prevBtn.disabled = !prevId;
+              if (nextBtn) nextBtn.disabled = !nextId;
+              if (prevLabel)
+                prevLabel.textContent = prevId ? labelFor(prevId) : "";
+              if (nextLabel)
+                nextLabel.textContent = nextId ? labelFor(nextId) : "";
+
+              document.title = labelFor(id) + " – " + baseTitle;
+
+              var url = new URL(location.href);
+              url.searchParams.set("tab", id);
+              if (opts.push) history.pushState({ tab: id }, "", url);
+              else history.replaceState({ tab: id }, "", url);
+
+              if (opts.scroll) demos[index].scrollIntoView({ block: "start" });
+            }
+
+            var requested = new URLSearchParams(location.search).get("tab");
+            activate(
+              order.indexOf(requested) === -1 ? order[0] : requested,
+              {},
+            );
+
+            document.addEventListener("click", function (event) {
+              var navLink = event.target.closest("[data-showcase-link]");
+              if (navLink) {
+                event.preventDefault();
+                activate(navLink.getAttribute("data-showcase-link"), {
+                  push: true,
+                  scroll: true,
+                });
+                return;
+              }
+              var hashLink = event.target.closest('a[href^="#"]');
+              if (hashLink && body.contains(hashLink)) {
+                var id = hashLink.getAttribute("href").slice(1);
+                if (order.indexOf(id) !== -1) {
+                  event.preventDefault();
+                  activate(id, { push: true, scroll: true });
+                }
+              }
+            });
+
+            if (prevBtn) {
+              prevBtn.addEventListener("click", function () {
+                var index = order.indexOf(currentId);
+                if (index > 0)
+                  activate(order[index - 1], { push: true, scroll: true });
+              });
+            }
+            if (nextBtn) {
+              nextBtn.addEventListener("click", function () {
+                var index = order.indexOf(currentId);
+                if (index < order.length - 1)
+                  activate(order[index + 1], { push: true, scroll: true });
+              });
+            }
+
+            window.addEventListener("popstate", function () {
+              var id = new URLSearchParams(location.search).get("tab");
+              activate(order.indexOf(id) === -1 ? order[0] : id, {
+                scroll: true,
+              });
+            });
+          })();
+        </script>
+      </div>
+    </div>
+  </body>
+</html>
 
 <style>
-	[data-showcase] {
-		display: grid;
-		/* Nav (aside) is first in the DOM, body second — track order must match. */
-		grid-template-columns: 13rem minmax(0, 1fr);
-		gap: 2rem;
-		align-items: start;
-	}
+  .showcase {
+    display: grid;
+    /* Nav (aside) is first in the DOM, body second — track order must match. */
+    grid-template-columns: 13rem minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
 
-	[data-showcase-body] {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 1.5rem;
-	}
+  .showcase-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
 
-	[data-showcase-group] {
-		font-size: 1.125rem;
-		padding-top: 1rem;
-		scroll-margin-top: 5rem;
-	}
+  .showcase-group {
+    font-size: 1.125rem;
+    padding-top: 1rem;
+    scroll-margin-top: 5rem;
+  }
 
-	[data-showcase-group]:not(:first-child) {
-		border-top: 1px dashed var(--dry-border);
-		padding-top: 2rem;
-	}
+  .showcase-nav {
+    position: sticky;
+    top: calc(var(--dry-topbar-height) + 1rem);
+    max-height: calc(100dvh - var(--dry-topbar-height) - 2rem);
+    overflow-y: auto;
+  }
 
-	[data-showcase-nav] {
-		position: sticky;
-		top: calc(var(--dry-topbar-height) + 1rem);
-		max-height: calc(100dvh - var(--dry-topbar-height) - 2rem);
-		overflow-y: auto;
-	}
+  .showcase-nav nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+  }
 
-	[data-showcase-nav] nav {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.125rem;
-	}
+  .showcase-nav a {
+    display: block;
+    padding: 0.3rem 0.625rem;
+    border-radius: var(--dry-radius-sm);
+    font-size: var(--dry-text-sm);
+    font-weight: 500;
+    color: var(--dry-muted-foreground);
+  }
 
-	[data-showcase-nav] a {
-		display: block;
-		padding: 0.3rem 0.625rem;
-		border-radius: var(--dry-radius-sm);
-		font-size: var(--dry-text-sm);
-		font-weight: 500;
-		color: var(--dry-muted-foreground);
-	}
+  .showcase-nav a:hover {
+    background-color: var(--dry-accent);
+    color: var(--dry-foreground);
+  }
 
-	[data-showcase-nav] a:hover {
-		background-color: var(--dry-accent);
-		color: var(--dry-foreground);
-	}
+  .showcase-nav a[aria-current="page"] {
+    color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+    background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
+  }
 
-	[data-showcase-nav] a[aria-current='true'] {
-		color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
-		background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
-	}
+  .swatch {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.375rem;
+    justify-items: center;
+  }
 
-	[data-swatch] {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 0.375rem;
-		justify-items: center;
-	}
+  .swatch > span {
+    display: block;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: var(--dry-radius-md);
+    box-shadow: inset 0 0 0 1px var(--dry-border);
+  }
 
-	[data-swatch] > span {
-		display: block;
-		width: 3.5rem;
-		height: 3.5rem;
-		border-radius: var(--dry-radius-md);
-		box-shadow: inset 0 0 0 1px var(--dry-border);
-	}
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+    gap: 0.75rem;
+    width: 100%;
+  }
 
-	[data-icon-grid] {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
-		gap: 0.75rem;
-		width: 100%;
-	}
+  .icon-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 0.375rem;
+    padding: 0.75rem 0.25rem;
+    border-radius: var(--dry-radius-md);
+    text-align: center;
+    overflow: hidden;
+  }
 
-	[data-icon-cell] {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		justify-items: center;
-		gap: 0.375rem;
-		padding: 0.75rem 0.25rem;
-		border-radius: var(--dry-radius-md);
-		text-align: center;
-		overflow: hidden;
-	}
+  .icon-cell:hover {
+    background-color: var(--dry-accent);
+  }
 
-	[data-icon-cell]:hover {
-		background-color: var(--dry-accent);
-	}
+  .icon-cell small {
+    font-size: 0.6875rem;
+  }
 
-	[data-icon-cell] small {
-		font-size: 0.6875rem;
-	}
+  .pager {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 1.5rem;
+    border-top: 1px dashed var(--dry-border);
+  }
 
-	@media (width < 64rem) {
-		[data-showcase] {
-			grid-template-columns: minmax(0, 1fr);
-		}
+  .pager-btn {
+    height: auto;
+    padding: 0.625rem 1rem;
+    white-space: normal;
+  }
 
-		[data-showcase-nav] {
-			position: static;
-			max-height: none;
-			order: -1;
-			padding: 1rem;
-			background-color: var(--dry-card);
-			border-radius: var(--dry-radius-xl);
-			box-shadow: var(--dry-shadow-sm);
-		}
+  .pager-btn-next {
+    margin-inline-start: auto;
+  }
 
-		[data-showcase-nav] nav {
-			grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
-		}
-	}
+  .pager-btn-next .pager-text {
+    text-align: right;
+  }
+
+  .pager-text {
+    display: grid;
+    gap: 0.125rem;
+    line-height: 1.3;
+  }
+
+  .pager-text small {
+    font-weight: 500;
+    color: var(--dry-muted-foreground);
+  }
+
+  .pager-btn-next .pager-text small {
+    color: inherit;
+  }
+
+  .pager-text strong {
+    font-size: var(--dry-text-sm);
+  }
+
+  @media (width < 64rem) {
+    .showcase {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .showcase-nav {
+      position: static;
+      max-height: none;
+      order: -1;
+      padding: 1rem;
+      background-color: var(--dry-card);
+      border-radius: var(--dry-radius-xl);
+      box-shadow: var(--dry-shadow-sm);
+    }
+
+    .showcase-nav nav {
+      grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    }
+  }
 </style>
 
 <script>
-	// Tabs
-	for (const group of document.querySelectorAll('[data-tabs]')) {
-		group.addEventListener('click', (event) => {
-			const tab = (event.target as HTMLElement).closest('[role="tab"]');
-			if (!tab) return;
-			for (const other of group.querySelectorAll('[role="tab"]')) {
-				const selected = other === tab;
-				other.setAttribute('aria-selected', String(selected));
-				const panelId = other.getAttribute('aria-controls');
-				const panel = panelId && document.getElementById(panelId);
-				if (panel) panel.toggleAttribute('hidden', !selected);
-			}
-		});
-	}
-
-	// Dialog
-	const dialog = document.querySelector<HTMLDialogElement>('#sc-dialog');
-	document
-		.querySelector('[data-dialog-open]')
-		?.addEventListener('click', () => dialog?.showModal());
-	for (const close of document.querySelectorAll('[data-dialog-close]')) {
-		close.addEventListener('click', () => dialog?.close());
-	}
-
-	// Highlight the menu entry for the section currently on screen.
-	const links = new Map<string, Element>();
-	for (const link of document.querySelectorAll('[data-showcase-link]')) {
-		const id = link.getAttribute('data-showcase-link');
-		if (id) links.set(id, link);
-	}
-
-	const observer = new IntersectionObserver(
-		(entries) => {
-			for (const entry of entries) {
-				if (!entry.isIntersecting) continue;
-				for (const link of links.values()) link.removeAttribute('aria-current');
-				links.get(entry.target.id)?.setAttribute('aria-current', 'true');
-			}
-		},
-		{ rootMargin: '-80px 0px -70% 0px' },
-	);
-
-	for (const id of links.keys()) {
-		const section = document.getElementById(id);
-		if (section) observer.observe(section);
-	}
+  // Tabs demo
+  for (const group of document.querySelectorAll("[data-tabs]")) {
+    group.addEventListener("click", (event) => {
+      const tab = (event.target as HTMLElement).closest('[role="tab"]');
+      if (!tab) return;
+      for (const other of group.querySelectorAll('[role="tab"]')) {
+        const selected = other === tab;
+        other.setAttribute("aria-selected", String(selected));
+        const panelId = other.getAttribute("aria-controls");
+        const panel = panelId && document.getElementById(panelId);
+        if (panel) panel.toggleAttribute("hidden", !selected);
+      }
+    });
+  }
 </script>
