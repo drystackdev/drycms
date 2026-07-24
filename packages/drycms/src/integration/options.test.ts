@@ -3,11 +3,7 @@ import { resolveOptions } from './options.js';
 
 describe('resolveOptions', () => {
 	it('defaults to /dry', () => {
-		const expected = {
-			path: '/dry',
-			dashboardPath: '/dry/dashboard',
-			showcasePath: '/dry/showcase',
-		};
+		const expected = { path: '/dry' };
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);
 	});
@@ -26,11 +22,7 @@ describe('resolveOptions', () => {
 	});
 
 	it('supports nested paths', () => {
-		expect(resolveOptions({ path: '/studio/cms' })).toEqual({
-			path: '/studio/cms',
-			dashboardPath: '/studio/cms/dashboard',
-			showcasePath: '/studio/cms/showcase',
-		});
+		expect(resolveOptions({ path: '/studio/cms' })).toEqual({ path: '/studio/cms' });
 	});
 
 	it('trims surrounding whitespace', () => {

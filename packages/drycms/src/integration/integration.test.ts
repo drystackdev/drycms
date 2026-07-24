@@ -45,7 +45,7 @@ describe('dry()', () => {
 		expect(injectRoute).toHaveBeenCalledTimes(1);
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/[...slug]',
-			entrypoint: 'drycms/routes/app.astro',
+			entrypoint: 'drycms/app.astro',
 		});
 	});
 
@@ -72,7 +72,7 @@ describe('dry()', () => {
 
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/admin/[...slug]',
-			entrypoint: 'drycms/routes/app.astro',
+			entrypoint: 'drycms/app.astro',
 		});
 	});
 

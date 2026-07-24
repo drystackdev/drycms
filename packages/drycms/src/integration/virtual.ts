@@ -19,8 +19,7 @@ export function dryVirtualConfig(options: ResolvedDryOption): Plugin {
       if (id !== RESOLVED_CONFIG_ID) return null;
       return [
         `export const path = ${JSON.stringify(options.path)};`,
-        `export const dashboardPath = ${JSON.stringify(options.dashboardPath)};`,
-        "export default { path, dashboardPath };",
+        "export default { path };",
       ].join("\n");
     },
   };
@@ -58,8 +57,7 @@ export function dryFixOptimizeDeps(aliases: Record<string, string>): Plugin {
 
 export const VIRTUAL_CONFIG_TYPES = `declare module '${VIRTUAL_CONFIG_ID}' {
 	export const path: string;
-	export const dashboardPath: string;
-	const config: { path: string; dashboardPath: string };
+	const config: { path: string };
 	export default config;
 }
 `;

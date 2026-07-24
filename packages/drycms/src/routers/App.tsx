@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import { ErrorBoundary, LocationProvider, Route, Router, lazy, useLocation } from 'preact-iso';
 import { path } from 'virtual:drycms/config';
-import DryLayout from './DryLayout.js';
+import DryLayout from '../components/DryLayout.js';
 
 // Code-split per route: the whole app renders `client:only`, so nothing
 // paints until its JS is downloaded. Showcase alone pulls in Prism plus every

@@ -9,12 +9,7 @@ export interface DryOption {
 }
 
 export interface ResolvedDryOption {
-  /** Normalized base path, always leading slash and never trailing slash. */
   path: string;
-  /** `${path}/dashboard` - the landing route of the admin UI. */
-  dashboardPath: string;
-  /** `${path}/showcase` - the component gallery. */
-  showcasePath: string;
 }
 
 /**
@@ -22,7 +17,7 @@ export interface ResolvedDryOption {
  * Preact app - every actual route (dashboard, showcase, ...) is handled
  * client-side by `preact-iso`, not by Astro.
  */
-export const APP_ENTRYPOINT = "drycms/routes/app.astro";
+export const APP_ENTRYPOINT = "drycms/app.astro";
 
 export const DEFAULT_PATH = "/dry";
 
@@ -61,7 +56,5 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
 
   return {
     path,
-    dashboardPath: `${path}/dashboard`,
-    showcasePath: `${path}/showcase`,
   };
 }

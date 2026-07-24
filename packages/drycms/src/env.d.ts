@@ -8,8 +8,7 @@ declare module "simplebar";
 // `tsc` build (which compiles the `.tsx` files that import it) can see it.
 declare module "virtual:drycms/config" {
 	export const path: string;
-	export const dashboardPath: string;
-	const config: { path: string; dashboardPath: string };
+	const config: { path: string };
 	export default config;
 }
 

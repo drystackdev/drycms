@@ -14,7 +14,7 @@
     },
     "./styles.css": "./src/styles/index.css",
     "./styles/*": "./src/styles/*",
-    "./routes/*": "./src/routes/*",
+    "./app.astro": "./src/app.astro",
     "./components/*": {
       "types": "./dist/components/*.d.ts",
       "default": "./dist/components/*.js"
@@ -22,6 +22,10 @@
     "./pages/*": {
       "types": "./dist/pages/*.d.ts",
       "default": "./dist/pages/*.js"
+    },
+    "./routers/*": {
+      "types": "./dist/routers/*.d.ts",
+      "default": "./dist/routers/*.js"
     },
     "./package.json": "./package.json"
   },
