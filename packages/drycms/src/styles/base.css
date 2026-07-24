@@ -1,0 +1,214 @@
+/*
+ * Bare-element styling. Everything is nested under `.dry` so nothing leaks into
+ * the host site's own pages.
+ */
+@layer dry.base {
+	.dry {
+		background-color: var(--dry-background);
+		color: var(--dry-foreground);
+		font-family: var(--dry-font-sans);
+		font-size: var(--dry-text-sm);
+		line-height: var(--dry-leading);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+		margin: 0;
+
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+			border-color: var(--dry-border);
+		}
+
+		:focus-visible {
+			outline: 2px solid var(--dry-ring);
+			outline-offset: 2px;
+		}
+
+		::selection {
+			background-color: color-mix(in srgb, var(--dry-primary) 25%, transparent);
+		}
+
+		:where(h1, h2, h3, h4, h5, h6) {
+			margin: 0;
+			font-weight: 600;
+			line-height: 1.25;
+			letter-spacing: -0.01em;
+			text-wrap: balance;
+		}
+
+		:where(h1) {
+			font-size: 1.875rem;
+			letter-spacing: -0.02em;
+		}
+		:where(h2) {
+			font-size: 1.5rem;
+		}
+		:where(h3) {
+			font-size: 1.25rem;
+		}
+		:where(h4) {
+			font-size: 1.125rem;
+		}
+		:where(h5) {
+			font-size: 1rem;
+		}
+		:where(h6) {
+			font-size: var(--dry-text-sm);
+		}
+
+		:where(p) {
+			margin: 0;
+			text-wrap: pretty;
+		}
+
+		:where(small) {
+			font-size: var(--dry-text-xs);
+			color: var(--dry-muted-foreground);
+		}
+
+		:where(strong, b) {
+			font-weight: 600;
+		}
+
+		:where(a) {
+			color: inherit;
+			text-decoration: none;
+			border-radius: var(--dry-radius-sm);
+			transition: color 120ms ease;
+
+			&:hover {
+				color: var(--dry-muted-foreground);
+			}
+
+			&[data-underline] {
+				text-decoration: underline;
+				text-underline-offset: 4px;
+			}
+		}
+
+		:where(ul, ol) {
+			margin: 0;
+			padding-inline-start: 1.25rem;
+
+			&[data-unstyled] {
+				list-style: none;
+				padding-inline-start: 0;
+			}
+		}
+
+		:where(li) {
+			margin-block: 0.25rem;
+		}
+
+		:where(hr) {
+			border: none;
+			border-top: 1px solid var(--dry-border);
+			margin-block: 1rem;
+		}
+
+		:where(blockquote) {
+			margin: 0;
+			padding-inline-start: 1rem;
+			border-inline-start: 2px solid var(--dry-border);
+			color: var(--dry-muted-foreground);
+			font-style: italic;
+		}
+
+		:where(code, kbd, samp) {
+			font-family: var(--dry-font-mono);
+			font-size: 0.85em;
+		}
+
+		:where(code) {
+			background-color: var(--dry-muted);
+			border-radius: var(--dry-radius-sm);
+			padding: 0.15em 0.35em;
+		}
+
+		:where(kbd) {
+			background-color: var(--dry-muted);
+			border: 1px solid var(--dry-border);
+			border-bottom-width: 2px;
+			border-radius: var(--dry-radius-sm);
+			padding: 0.1em 0.4em;
+			font-size: var(--dry-text-xs);
+		}
+
+		:where(pre) {
+			margin: 0;
+			padding: 0.875rem 1rem;
+			background-color: var(--dry-muted);
+			border: 1px solid var(--dry-border);
+			border-radius: var(--dry-radius-md);
+			overflow-x: auto;
+
+			& code {
+				background: none;
+				padding: 0;
+			}
+		}
+
+		:where(img, svg, video, canvas) {
+			display: block;
+			max-width: 100%;
+		}
+
+		:where(table) {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: var(--dry-text-sm);
+			caption-side: bottom;
+		}
+
+		:where(caption) {
+			padding-block-start: 0.75rem;
+			color: var(--dry-muted-foreground);
+			font-size: var(--dry-text-xs);
+		}
+
+		:where(th) {
+			text-align: start;
+			font-weight: 600;
+			color: var(--dry-muted-foreground);
+			background-color: var(--dry-muted);
+			height: 3.5rem;
+			padding-inline: 1rem;
+			white-space: nowrap;
+
+			&:first-child {
+				border-start-start-radius: var(--dry-radius-md);
+				border-end-start-radius: var(--dry-radius-md);
+			}
+
+			&:last-child {
+				border-start-end-radius: var(--dry-radius-md);
+				border-end-end-radius: var(--dry-radius-md);
+			}
+		}
+
+		:where(td) {
+			padding: 1rem;
+			border-bottom: 1px dashed var(--dry-border);
+			vertical-align: middle;
+		}
+
+		:where(tbody tr) {
+			transition: background-color 120ms ease;
+
+			&:hover {
+				background-color: var(--dry-accent);
+			}
+
+			&:last-child :where(td) {
+				border-bottom: none;
+			}
+		}
+
+		:where(td, th)[align='end'],
+		:where(td, th)[data-numeric] {
+			text-align: end;
+			font-variant-numeric: tabular-nums;
+		}
+	}
+}

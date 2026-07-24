@@ -1,0 +1,240 @@
+/*
+ * Form controls, styled from the bare element with state driven by native
+ * attributes (`disabled`, `readonly`, `aria-invalid`, …).
+ */
+@layer dry.forms {
+	.dry {
+		:where(label) {
+			display: inline-block;
+			font-size: var(--dry-text-sm);
+			font-weight: 500;
+			line-height: 1;
+			margin-block-end: 0.5rem;
+
+			&:has(+ :is(input, select, textarea)[disabled]) {
+				opacity: 0.5;
+			}
+		}
+
+		:where(input, select, textarea) {
+			font: inherit;
+			color: var(--dry-foreground);
+			background-color: transparent;
+			width: 100%;
+			min-width: 0;
+			height: 2.25rem;
+			padding: 0.375rem 0.75rem;
+			border: 1px solid var(--dry-input);
+			border-radius: var(--dry-radius-md);
+			box-shadow: var(--dry-shadow-xs);
+			transition:
+				border-color 120ms ease,
+				box-shadow 120ms ease;
+
+			&::placeholder {
+				color: var(--dry-muted-foreground);
+			}
+
+			/* Minimals marks focus with a heavier border, not a glow. */
+			&:focus-visible {
+				outline: none;
+				border-color: var(--dry-ring);
+				box-shadow: inset 0 0 0 1px var(--dry-ring);
+			}
+
+			&[disabled] {
+				cursor: not-allowed;
+				color: var(--dry-disabled-foreground);
+				border-color: var(--dry-border);
+			}
+
+			&[readonly] {
+				background-color: var(--dry-muted);
+			}
+
+			&[aria-invalid='true'] {
+				border-color: var(--dry-error);
+
+				&:focus-visible {
+					border-color: var(--dry-error);
+					box-shadow: inset 0 0 0 1px var(--dry-error);
+				}
+			}
+
+			/* `data-size` rather than `size`, which has native numeric semantics. */
+			&[data-size='sm'] {
+				height: 2rem;
+				font-size: var(--dry-text-xs);
+			}
+			&[data-size='lg'] {
+				height: 2.5rem;
+			}
+		}
+
+		:where(textarea) {
+			height: auto;
+			min-height: 4.5rem;
+			resize: vertical;
+			field-sizing: content;
+		}
+
+		:where(select) {
+			appearance: none;
+			cursor: pointer;
+			padding-inline-end: 2rem;
+			background-image: linear-gradient(45deg, transparent 50%, currentcolor 50%),
+				linear-gradient(135deg, currentcolor 50%, transparent 50%);
+			background-position:
+				calc(100% - 1rem) 55%,
+				calc(100% - 0.7rem) 55%;
+			background-size:
+				5px 5px,
+				5px 5px;
+			background-repeat: no-repeat;
+
+			&[multiple] {
+				height: auto;
+				background-image: none;
+				padding-inline-end: 0.75rem;
+			}
+		}
+
+		:where(input[type='checkbox'], input[type='radio']) {
+			appearance: none;
+			width: 1rem;
+			height: 1rem;
+			flex: none;
+			padding: 0;
+			cursor: pointer;
+			border: 1px solid var(--dry-input);
+			display: inline-grid;
+			place-content: center;
+
+			&::before {
+				content: '';
+				width: 0.6rem;
+				height: 0.6rem;
+				transform: scale(0);
+				transition: transform 100ms ease;
+				background-color: var(--dry-primary-foreground);
+			}
+
+			&:checked {
+				background-color: var(--dry-primary);
+				border-color: var(--dry-primary);
+
+				&::before {
+					transform: scale(1);
+				}
+			}
+
+			&:indeterminate {
+				background-color: var(--dry-primary);
+				border-color: var(--dry-primary);
+
+				&::before {
+					transform: scale(1);
+					clip-path: inset(45% 0 45% 0);
+				}
+			}
+		}
+
+		:where(input[type='checkbox']) {
+			border-radius: var(--dry-radius-sm);
+
+			&::before {
+				clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+			}
+		}
+
+		:where(input[type='radio']) {
+			border-radius: 50%;
+
+			&::before {
+				border-radius: 50%;
+			}
+		}
+
+		:where(input[type='range']) {
+			height: 1.25rem;
+			padding: 0;
+			border: none;
+			box-shadow: none;
+			accent-color: var(--dry-primary);
+			cursor: pointer;
+		}
+
+		:where(input[type='color']) {
+			padding: 0.25rem;
+			cursor: pointer;
+		}
+
+		:where(input[type='file']) {
+			padding: 0.3rem 0.75rem;
+			cursor: pointer;
+
+			&::file-selector-button {
+				font: inherit;
+				font-weight: 500;
+				margin-inline-end: 0.75rem;
+				padding: 0.2rem 0.6rem;
+				border: 1px solid var(--dry-border);
+				border-radius: var(--dry-radius-sm);
+				background-color: var(--dry-secondary);
+				color: var(--dry-secondary-foreground);
+				cursor: pointer;
+			}
+		}
+
+		:where(fieldset) {
+			margin: 0;
+			padding: 1rem;
+			border: 1px solid var(--dry-border);
+			border-radius: var(--dry-radius-lg);
+		}
+
+		:where(legend) {
+			padding-inline: 0.4rem;
+			font-weight: 500;
+		}
+
+		/* Label + control + hint grouping. */
+		:where([data-field]) {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.375rem;
+
+			& :where(label) {
+				margin-block-end: 0;
+			}
+
+			& :where([data-hint]) {
+				font-size: var(--dry-text-xs);
+				color: var(--dry-muted-foreground);
+			}
+
+			& :where([data-error]) {
+				font-size: var(--dry-text-xs);
+				color: var(--dry-destructive);
+			}
+
+			&[data-inline] {
+				grid-template-columns: auto 1fr;
+				align-items: center;
+				gap: 0.5rem;
+			}
+		}
+
+		/* Text input with a leading/trailing addon. */
+		:where([data-input-group]) {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+
+			& > :where(svg) {
+				color: var(--dry-muted-foreground);
+				flex: none;
+			}
+		}
+	}
+}

@@ -1,5 +1,5 @@
 ---
-
+import 'drycms/styles.css';
 ---
 
 <html lang="en">
@@ -9,9 +9,37 @@
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
+		<title>drycms</title>
 	</head>
-	<body>
-		<h1>Astro</h1>
+	<body class="dry">
+		<main data-dry-content data-container style="max-width: 44rem">
+			<div>
+				<h1>drycms</h1>
+				<p data-muted>A Preact-based CMS UI for Astro, styled from tags and attributes.</p>
+			</div>
+
+			<article data-card>
+				<header>
+					<h2>Try the admin UI</h2>
+					<p>Mounted by the <code>dry()</code> integration.</p>
+				</header>
+				<div data-row>
+					<a role="button" href="/dry">Open /dry</a>
+					<a role="button" data-variant="outline" href="/dry/dashboard">Go to the dashboard</a>
+				</div>
+			</article>
+
+			<article data-card>
+				<header>
+					<h2>Setup</h2>
+				</header>
+				<pre><code>{`import { defineConfig } from 'astro/config';
+import dry from 'drycms';
+
+export default defineConfig({
+  integrations: [dry({ path: '/dry' })],
+});`}</code></pre>
+			</article>
+		</main>
 	</body>
 </html>

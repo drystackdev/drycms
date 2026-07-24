@@ -1,0 +1,13 @@
+/*
+ * drycms global stylesheet.
+ *
+ * Everything lives under `.dry` (put it on `<body>`) and inside cascade layers,
+ * so host styles and your own overrides always win without `!important`.
+ */
+@layer dry.tokens, dry.base, dry.forms, dry.components, dry.utilities;
+
+@import './tokens.css';
+@import './base.css';
+@import './forms.css';
+@import './components.css';
+@import './utilities.css';

@@ -1,0 +1,86 @@
+---
+/**
+ * One showcase entry: a live preview plus the markup that produced it.
+ */
+interface Props {
+	id: string;
+	title: string;
+	description?: string;
+	code: string;
+}
+
+const { id, title, description, code } = Astro.props;
+---
+
+<section id={id} data-demo>
+	<header>
+		<h3>{title}</h3>
+		{description && <p>{description}</p>}
+	</header>
+
+	<div data-demo-preview>
+		<slot />
+	</div>
+
+	<details>
+		<summary>Code</summary>
+		<pre><code>{code.trim()}</code></pre>
+	</details>
+</section>
+
+<style>
+	[data-demo] {
+		scroll-margin-top: 5rem;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1rem;
+		padding: 1.5rem;
+		background-color: var(--dry-card);
+		border-radius: var(--dry-radius-xl);
+		box-shadow: var(--dry-shadow-md);
+	}
+
+	[data-demo] > header > h3 {
+		font-size: 1rem;
+	}
+
+	[data-demo] > header > p {
+		color: var(--dry-muted-foreground);
+		margin-top: 0.25rem;
+	}
+
+	[data-demo-preview] {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 1rem;
+		padding: 1.5rem;
+		border: 1px dashed var(--dry-border);
+		border-radius: var(--dry-radius-lg);
+		background-color: var(--dry-background);
+	}
+
+	[data-demo-preview] > * {
+		min-width: 0;
+	}
+
+	[data-demo] > details {
+		border-bottom: none;
+	}
+
+	[data-demo] > details > summary {
+		padding-block: 0;
+		font-size: var(--dry-text-xs);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--dry-muted-foreground);
+	}
+
+	[data-demo] > details > pre {
+		margin-top: 0.75rem;
+		padding-bottom: 0;
+		font-size: var(--dry-text-xs);
+		line-height: 1.6;
+	}
+</style>

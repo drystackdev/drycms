@@ -1,0 +1,27 @@
+{
+  "$comment": "Icon manifest. Solar is preferred; fall back to lucide only when Solar has no equivalent. Run `bun run build:icons` after editing.",
+  "icons": {
+    "Dashboard": "solar:widget-5-bold-duotone",
+    "Content": "solar:documents-bold-duotone",
+    "Media": "solar:gallery-wide-bold-duotone",
+    "Users": "solar:users-group-rounded-bold-duotone",
+    "Settings": "solar:settings-bold-duotone",
+    "Brand": "solar:layers-minimalistic-bold-duotone",
+
+    "Sun": "solar:sun-2-bold-duotone",
+    "Moon": "solar:moon-bold-duotone",
+    "Monitor": "solar:monitor-bold-duotone",
+
+    "Menu": "solar:hamburger-menu-linear",
+    "Close": "solar:close-circle-linear",
+    "Search": "solar:magnifer-linear",
+    "Export": "solar:export-bold",
+    "Add": "solar:add-circle-bold",
+
+    "ArrowUp": "solar:alt-arrow-up-linear",
+    "ArrowDown": "solar:alt-arrow-down-linear",
+    "ArrowLeft": "solar:alt-arrow-left-linear",
+    "ArrowRight": "solar:alt-arrow-right-linear",
+    "Sort": "solar:sort-vertical-linear"
+  }
+}

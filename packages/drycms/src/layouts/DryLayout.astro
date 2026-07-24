@@ -1,0 +1,94 @@
+---
+import Icon from 'drycms/components/Icon.astro';
+import SidebarToggle from 'drycms/components/SidebarToggle';
+import ThemeToggle from 'drycms/components/ThemeToggle';
+import type { IconName } from 'drycms/components/icons';
+import 'drycms/styles.css';
+import { path } from 'virtual:drycms/config';
+
+interface Props {
+	title?: string;
+	description?: string;
+	/** `key` of the nav entry to mark as current. */
+	active?: string;
+}
+
+const { title = 'drycms', description, active } = Astro.props;
+
+const nav: { key: string; label: string; href: string; icon: IconName; ready: boolean }[] = [
+	{ key: 'dashboard', label: 'Dashboard', href: `${path}/dashboard`, icon: 'Dashboard', ready: true },
+	{ key: 'showcase', label: 'Showcase', href: `${path}/showcase`, icon: 'Media', ready: true },
+	{ key: 'content', label: 'Content', href: `${path}/content`, icon: 'Content', ready: false },
+	{ key: 'media', label: 'Media', href: `${path}/media`, icon: 'Media', ready: false },
+	{ key: 'users', label: 'Users', href: `${path}/users`, icon: 'Users', ready: false },
+	{ key: 'settings', label: 'Settings', href: `${path}/settings`, icon: 'Settings', ready: false },
+];
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex, nofollow" />
+		{description && <meta name="description" content={description} />}
+		<title>{title}</title>
+	</head>
+	<body class="dry">
+		{/* Applies the stored theme before first paint to avoid a flash. */}
+		<script is:inline>
+			try {
+				const stored = localStorage.getItem('drycms:theme');
+				if (stored === 'light' || stored === 'dark') {
+					document.body.setAttribute('data-theme', stored);
+				}
+			} catch {}
+		</script>
+
+		<div data-dry-shell>
+			<aside data-dry-sidebar>
+				<a data-dry-brand href={`${path}/dashboard`}>
+					<Icon name="Brand" />
+					drycms
+				</a>
+
+				<nav aria-label="Admin">
+					<span data-dry-nav-label>Manage</span>
+					{
+						nav.map((item) =>
+							item.ready ? (
+								<a href={item.href} aria-current={active === item.key ? 'page' : undefined}>
+									<Icon name={item.icon} />
+									{item.label}
+								</a>
+							) : (
+								<a aria-disabled="true" style="pointer-events: none; opacity: 0.55">
+									<Icon name={item.icon} />
+									{item.label}
+									<span data-spacer />
+									<span data-badge data-variant="outline">Soon</span>
+								</a>
+							),
+						)
+					}
+				</nav>
+
+				<span data-spacer></span>
+				<small>Mounted at <code>{path}</code></small>
+			</aside>
+
+			<div>
+				<header data-dry-topbar>
+					<SidebarToggle client:idle />
+					<strong>{title}</strong>
+					<span data-spacer></span>
+					<ThemeToggle client:idle />
+				</header>
+
+				<main data-dry-content>
+					<slot />
+				</main>
+			</div>
+		</div>
+	</body>
+</html>

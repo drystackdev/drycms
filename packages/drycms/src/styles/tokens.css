@@ -1,0 +1,158 @@
+/*
+ * Design tokens — Minimals (minimals.cc) palette.
+ *
+ * Colour values are declared once with `light-dark()`, so the theme follows the
+ * OS by default and `data-theme` on the `.dry` element pins it.
+ */
+@layer dry.tokens {
+	.dry {
+		color-scheme: light dark;
+
+		/* ------------------------------------------------------------- Greys */
+		--dry-grey-50: #fcfdfd;
+		--dry-grey-100: #f9fafb;
+		--dry-grey-200: #f4f6f8;
+		--dry-grey-300: #dfe3e8;
+		--dry-grey-400: #c4cdd5;
+		--dry-grey-500: #919eab;
+		--dry-grey-600: #637381;
+		--dry-grey-700: #454f5b;
+		--dry-grey-800: #1c252e;
+		--dry-grey-900: #141a21;
+
+		/* Every translucent neutral in Minimals is grey-500 at some alpha. */
+		--dry-grey-channel: 145 158 171;
+
+		/* ----------------------------------------------------------- Intents */
+		--dry-primary-lighter: #c8fad6;
+		--dry-primary-light: #5be49b;
+		--dry-primary: #00a76f;
+		--dry-primary-dark: #007867;
+		--dry-primary-darker: #004b50;
+		--dry-primary-foreground: #ffffff;
+
+		--dry-secondary-lighter: #efd6ff;
+		--dry-secondary-light: #c684ff;
+		--dry-secondary-main: #8e33ff;
+		--dry-secondary-dark: #5119b7;
+		--dry-secondary-darker: #27097a;
+
+		--dry-info-lighter: #cafdf5;
+		--dry-info-light: #61f3f3;
+		--dry-info: #00b8d9;
+		--dry-info-dark: #006c9c;
+		--dry-info-darker: #003768;
+		--dry-info-foreground: #ffffff;
+
+		--dry-success-lighter: #d3fcd2;
+		--dry-success-light: #77ed8b;
+		--dry-success: #22c55e;
+		--dry-success-dark: #118d57;
+		--dry-success-darker: #065e49;
+		--dry-success-foreground: #ffffff;
+
+		--dry-warning-lighter: #fff5cc;
+		--dry-warning-light: #ffd666;
+		--dry-warning: #ffab00;
+		--dry-warning-dark: #b76e00;
+		--dry-warning-darker: #7a4100;
+		--dry-warning-foreground: #1c252e;
+
+		--dry-error-lighter: #ffe9d5;
+		--dry-error-light: #ffac82;
+		--dry-error: #ff5630;
+		--dry-error-dark: #b71d18;
+		--dry-error-darker: #7a0916;
+		--dry-error-foreground: #ffffff;
+
+		/* `destructive` is the variant name; `error` is the Minimals token name. */
+		--dry-destructive: var(--dry-error);
+		--dry-destructive-foreground: var(--dry-error-foreground);
+
+		/* ---------------------------------------------------------- Surfaces */
+		--dry-background: light-dark(#f9fafb, #141a21);
+		--dry-card: light-dark(#ffffff, #1c252e);
+		--dry-card-foreground: light-dark(#1c252e, #ffffff);
+		--dry-popover: light-dark(#ffffff, #1c252e);
+		--dry-popover-foreground: light-dark(#1c252e, #ffffff);
+		--dry-sidebar: light-dark(#ffffff, #1c252e);
+		/* background.neutral */
+		--dry-muted: light-dark(#f4f6f8, #28323d);
+
+		/* -------------------------------------------------------------- Text */
+		--dry-foreground: light-dark(#1c252e, #ffffff);
+		--dry-muted-foreground: light-dark(#637381, #919eab);
+		--dry-disabled-foreground: light-dark(#919eab, #637381);
+
+		/* ------------------------------------------------------------ Action */
+		--dry-accent: rgb(var(--dry-grey-channel) / 8%);
+		--dry-accent-foreground: var(--dry-foreground);
+		--dry-selected: rgb(var(--dry-grey-channel) / 16%);
+		--dry-focus: rgb(var(--dry-grey-channel) / 24%);
+		--dry-disabled-background: rgb(var(--dry-grey-channel) / 24%);
+
+		/* Neutral surface used by the `secondary` variant (Minimals soft/inherit). */
+		--dry-secondary: rgb(var(--dry-grey-channel) / 16%);
+		--dry-secondary-foreground: var(--dry-foreground);
+
+		/* ------------------------------------------------------ Lines & focus */
+		--dry-border: rgb(var(--dry-grey-channel) / 20%);
+		--dry-input: rgb(var(--dry-grey-channel) / 20%);
+		--dry-ring: var(--dry-foreground);
+
+		/* ------------------------------------------------------------- Shape */
+		--dry-radius: 0.5rem;
+		--dry-radius-sm: 0.375rem;
+		--dry-radius-md: 0.5rem;
+		--dry-radius-lg: 0.75rem;
+		--dry-radius-xl: 1rem;
+
+		/* -------------------------------------------------------------- Type */
+		--dry-font-sans: 'DM Sans Variable', 'DM Sans', ui-sans-serif, system-ui, -apple-system,
+			'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+		--dry-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+			monospace;
+		--dry-text-xs: 0.75rem;
+		--dry-text-sm: 0.875rem;
+		--dry-text-base: 1rem;
+		--dry-leading: 1.5;
+		--dry-weight-button: 700;
+
+		/*
+		 * Elevation. Minimals tints shadows with grey-500 in light mode and with
+		 * black in dark mode — `light-dark()` only accepts colours, so the channel
+		 * is switched separately below.
+		 */
+		--dry-shadow-channel: 145 158 171;
+		--dry-shadow-xs: 0 1px 2px 0 rgb(var(--dry-shadow-channel) / 16%);
+		--dry-shadow-sm: 0 0 2px 0 rgb(var(--dry-shadow-channel) / 20%),
+			0 1px 4px -1px rgb(var(--dry-shadow-channel) / 12%);
+		--dry-shadow-md: 0 0 2px 0 rgb(var(--dry-shadow-channel) / 20%),
+			0 12px 24px -4px rgb(var(--dry-shadow-channel) / 12%);
+		--dry-shadow-lg: 0 0 2px 0 rgb(var(--dry-shadow-channel) / 24%),
+			-20px 20px 40px -4px rgb(var(--dry-shadow-channel) / 24%);
+		--dry-shadow-primary: 0 8px 16px 0 rgb(0 167 111 / 24%);
+		--dry-shadow-error: 0 8px 16px 0 rgb(255 86 48 / 24%);
+
+		/* ------------------------------------------------------------ Layout */
+		--dry-sidebar-width: 16.25rem;
+		--dry-topbar-height: 4rem;
+		--dry-gap: 1.5rem;
+	}
+
+	.dry[data-theme='light'] {
+		color-scheme: light;
+		--dry-shadow-channel: 145 158 171;
+	}
+
+	.dry[data-theme='dark'] {
+		color-scheme: dark;
+		--dry-shadow-channel: 0 0 0;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		.dry:not([data-theme='light']) {
+			--dry-shadow-channel: 0 0 0;
+		}
+	}
+}
