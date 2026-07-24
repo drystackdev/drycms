@@ -15,11 +15,13 @@
     "./styles.css": "./src/styles/index.css",
     "./styles/*": "./src/styles/*",
     "./routes/*": "./src/routes/*",
-    "./layouts/*": "./src/layouts/*",
-    "./components/*.astro": "./src/components/*.astro",
     "./components/*": {
       "types": "./dist/components/*.d.ts",
       "default": "./dist/components/*.js"
+    },
+    "./pages/*": {
+      "types": "./dist/pages/*.d.ts",
+      "default": "./dist/pages/*.js"
     },
     "./package.json": "./package.json"
   },
@@ -32,6 +34,7 @@
   },
   "dependencies": {
     "@astrojs/preact": "^6.0.1",
+    "preact-iso": "^2.12.1",
     "prismjs": "^1.30.0",
     "simplebar": "^6.3.3"
   },

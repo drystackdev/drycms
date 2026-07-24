@@ -143,14 +143,11 @@ export const code: Record<string, string> = {
 <small>Small text is muted by default.</small>
 <p>Inline <code>code</code>, a <kbd>Ctrl</kbd> key, and a <a href="#colors" class="underline">link</a>.</p>
 <blockquote>Bare tags first, classes only when there's no real attribute.</blockquote>`,
-  icons: `---
-import Icon from 'drycms/components/Icon.astro';
----
+  icons: `import Icon from 'drycms/components/Icon';
+import { SettingsIcon } from 'drycms/components/icons';
+
 <Icon name="Dashboard" />
 <Icon name="Settings" size="2rem" />
-
-// In a Preact island:
-import { SettingsIcon } from 'drycms/components/icons';
 <SettingsIcon />`,
   layout: `<div class="grid cols-4">
   <article class="card"><span class="metric">128</span><small>Entries</small></article>
@@ -308,17 +305,6 @@ import { SettingsIcon } from 'drycms/components/icons';
   <span class="error">Slug is required.</span>
 </div>
 
-<div class="field">
-  <div class="outlined">
-    <fieldset>
-      <legend><span>Title</span></legend>
-      <input id="sc-outlined-title" type="text" placeholder=" " />
-    </fieldset>
-    <label for="sc-outlined-title">Title</label>
-  </div>
-  <span class="hint">"Outlined" variant - the label floats into the border on focus/value.</span>
-</div>
-
 <fieldset>
   <legend>Publishing</legend>
   <div class="field inline">
@@ -371,18 +357,16 @@ import { SettingsIcon } from 'drycms/components/icons';
     <button type="button" class="destructive" command="close" commandfor="demo-dialog">Delete</button>
   </footer>
 </dialog>`,
-  datatable: `---
-import DataTable from 'drycms/components/DataTable';
+  datatable: `import DataTable from 'drycms/components/DataTable';
 
 const columns = [
   { key: 'name', label: 'Name' },
   { key: 'status', label: 'Status' },
   { key: 'size', label: 'Size', numeric: true },
 ];
----
-<DataTable columns={columns} rows={rows} pageSize={4} client:load />`,
-  customSelect: `---
-import Select from 'drycms/components/Select';
+
+<DataTable columns={columns} rows={rows} pageSize={4} />`,
+  customSelect: `import Select from 'drycms/components/Select';
 
 const options = [
   { value: 'blog', label: 'Blog' },
@@ -392,10 +376,9 @@ const options = [
   { value: 'design', label: 'Design system' },
   { value: 'marketing', label: 'Marketing', disabled: true },
 ];
----
-<Select options={options} defaultValue="docs" name="collection" client:load />`,
-  combobox: `---
-import Combobox from 'drycms/components/Combobox';
+
+<Select options={options} defaultValue="docs" name="collection" />`,
+  combobox: `import Combobox from 'drycms/components/Combobox';
 
 const options = [
   { value: 'blog', label: 'Blog' },
@@ -405,10 +388,9 @@ const options = [
   { value: 'design', label: 'Design system' },
   { value: 'marketing', label: 'Marketing', disabled: true },
 ];
----
-<Combobox options={options} defaultValue="changelog" name="collection" client:load />`,
-  multiSelect: `---
-import MultiSelect from 'drycms/components/MultiSelect';
+
+<Combobox options={options} defaultValue="changelog" name="collection" />`,
+  multiSelect: `import MultiSelect from 'drycms/components/MultiSelect';
 
 const options = [
   { value: 'blog', label: 'Blog' },
@@ -418,12 +400,11 @@ const options = [
   { value: 'design', label: 'Design system' },
   { value: 'marketing', label: 'Marketing', disabled: true },
 ];
----
-<MultiSelect options={options} defaultValue={['blog', 'docs']} name="collections" client:load />`,
-  islands: `---
-import ThemeToggle from 'drycms/components/ThemeToggle';
+
+<MultiSelect options={options} defaultValue={['blog', 'docs']} name="collections" />`,
+  islands: `import ThemeToggle from 'drycms/components/ThemeToggle';
 import SidebarToggle from 'drycms/components/SidebarToggle';
----
-<ThemeToggle client:idle />
-<SidebarToggle client:idle />`,
+
+<ThemeToggle />
+<SidebarToggle />`,
 };

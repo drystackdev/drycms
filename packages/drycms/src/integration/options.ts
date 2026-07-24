@@ -17,11 +17,12 @@ export interface ResolvedDryOption {
   showcasePath: string;
 }
 
-/** Routes injected by the integration, relative to the resolved base path. */
-export const DRY_ROUTES = [
-  { segment: "dashboard", entrypoint: "drycms/routes/dashboard.astro" },
-  { segment: "showcase", entrypoint: "drycms/routes/showcase.astro" },
-] as const;
+/**
+ * The single Astro entrypoint injected by the integration. It only mounts the
+ * Preact app - every actual route (dashboard, showcase, ...) is handled
+ * client-side by `preact-iso`, not by Astro.
+ */
+export const APP_ENTRYPOINT = "drycms/routes/app.astro";
 
 export const DEFAULT_PATH = "/dry";
 

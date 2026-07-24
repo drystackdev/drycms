@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import preactIntegration from "@astrojs/preact";
 import type { AstroIntegration } from "astro";
-import { DRY_ROUTES, type DryOption, resolveOptions } from "./options.js";
+import { APP_ENTRYPOINT, type DryOption, resolveOptions } from "./options.js";
 import {
   VIRTUAL_CONFIG_TYPES,
   dryFixOptimizeDeps,
@@ -94,19 +94,22 @@ export function dry(options: DryOption = {}): AstroIntegration {
           });
         }
 
-        const conflicting = config.redirects?.[resolved.path];
-        if (conflicting !== undefined) {
-          logger.warn(
-            `\`redirects["${resolved.path}"]\` is already configured and will be overwritten. Pass a different \`path\` to dry() if that is not intended.`,
+        const aliases = hasPreact ? {} : preactAliases();
+
+        // The admin UI is routed entirely client-side by the Preact app, so
+        // its single Astro entrypoint has to be rendered on demand rather
+        // than statically (Astro's static output requires every dynamic
+        // route to enumerate its paths up front via `getStaticPaths`, which
+        // doesn't make sense for a route `preact-iso` owns).
+        if (config.output !== "server") {
+          logger.info(
+            'setting `output: "server"` - the admin UI needs on-demand rendering. ' +
+              "Add a server adapter (e.g. `@astrojs/node`) before running `astro build` for production.",
           );
         }
 
-        const aliases = hasPreact ? {} : preactAliases();
-
         updateConfig({
-          redirects: {
-            [resolved.path]: resolved.dashboardPath,
-          },
+          output: "server",
           vite: {
             plugins: [dryVirtualConfig(resolved), dryFixOptimizeDeps(aliases)],
             resolve: { alias: aliases },
@@ -117,12 +120,13 @@ export function dry(options: DryOption = {}): AstroIntegration {
           },
         });
 
-        for (const route of DRY_ROUTES) {
-          injectRoute({
-            pattern: `${resolved.path}/${route.segment}`,
-            entrypoint: route.entrypoint,
-          });
-        }
+        // A single catch-all route hands everything off to the Preact app;
+        // `preact-iso` (not Astro) owns every path under it, including the
+        // bare base path, which the app redirects to `/dashboard` client-side.
+        injectRoute({
+          pattern: `${resolved.path}/[...slug]`,
+          entrypoint: APP_ENTRYPOINT,
+        });
 
         logger.info(`admin UI mounted at ${resolved.path}`);
       },

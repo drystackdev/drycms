@@ -1,0 +1,29 @@
+---
+export const prerender = false;
+
+import App from '../components/App';
+import 'drycms/styles.css';
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex, nofollow" />
+		<title>DryCMS</title>
+	</head>
+	<body class="dry">
+		{/* Applies the stored theme before first paint to avoid a flash. */}
+		<script is:inline>
+			try {
+				const stored = localStorage.getItem('drycms:theme');
+				if (stored === 'light' || stored === 'dark') {
+					document.body.classList.add(stored);
+				}
+			} catch {}
+		</script>
+
+		<App client:only="preact" />
+	</body>
+</html>

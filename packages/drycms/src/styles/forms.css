@@ -211,7 +211,6 @@
 
     :where(fieldset) {
       margin: 0;
-      padding: 1rem;
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-lg);
     }
@@ -245,121 +244,6 @@
         grid-template-columns: auto 1fr;
         align-items: center;
         gap: 0.5rem;
-      }
-    }
-
-    /*
-     * "Outlined" field (MUI TextField variant="outlined"): a real
-     * <fieldset>/<legend> draws the border, since browsers already render
-     * <legend> straddling the fieldset's block-start border - the same
-     * notch MUI's own NotchedOutline gets from doing exactly this. The
-     * <input> is a real child of the fieldset (not an absolutely-positioned
-     * overlay) because a fieldset's rendered height always grows to fit its
-     * legend regardless of an explicit `height` - fighting that with
-     * `position: absolute; inset: 0` just leaves the border taller than the
-     * input. The <label> is a separate element, resting centred over the
-     * input like a placeholder, that floats up into the notch on
-     * focus/value; the legend's own (invisible) text just holds the notch
-     * open to match.
-     *
-     * Markup (`.outlined` nests inside `.field` like a plain `<input>`
-     * would, so `.hint`/`.error` stay outside it - they must NOT share its
-     * `position: relative` box, or their height throws off the label's
-     * `top: 50%`):
-     *   <div class="field">
-     *     <div class="outlined">
-     *       <fieldset>
-     *         <legend><span>Title</span></legend>
-     *         <input id="x" type="text" placeholder=" " />
-     *       </fieldset>
-     *       <label for="x">Title</label>
-     *     </div>
-     *     <span class="hint">…</span>
-     *   </div>
-     */
-    .outlined {
-      position: relative;
-
-      & fieldset {
-        display: block;
-        margin: 0;
-        padding: 0 0.75rem;
-        border: 1px solid var(--dry-input);
-        border-radius: var(--dry-radius-md);
-        transition: border-color 120ms ease;
-      }
-
-      & legend {
-        max-width: 0.01px;
-        padding: 0;
-        overflow: hidden;
-        white-space: nowrap;
-        transition: max-width 150ms ease;
-
-        & > span {
-          display: inline-block;
-          padding-inline: 0.25rem;
-          font-size: var(--dry-text-xs);
-          font-weight: 500;
-          opacity: 0;
-        }
-      }
-
-      & input {
-        display: block;
-        width: 100%;
-        height: 2.5rem;
-        padding: 0 0.125rem;
-        border: none;
-        background-color: transparent;
-        box-shadow: none;
-      }
-
-      & label {
-        position: absolute;
-        inset-inline-start: 1rem;
-        top: 50%;
-        translate: 0 -50%;
-        scale: 1;
-        margin: 0;
-        color: var(--dry-muted-foreground);
-        pointer-events: none;
-        transform-origin: left center;
-        transition:
-          translate 150ms ease,
-          scale 150ms ease,
-          color 150ms ease;
-      }
-
-      &:has(input:focus) fieldset {
-        border-color: var(--dry-ring);
-        box-shadow: inset 0 0 0 1px var(--dry-ring);
-      }
-
-      &:has(input:focus) legend,
-      &:has(input:not(:placeholder-shown)) legend {
-        max-width: 100%;
-      }
-
-      &:has(input:focus) label,
-      &:has(input:not(:placeholder-shown)) label {
-        translate: 0 -1.375rem;
-        scale: 0.85;
-        color: var(--dry-foreground);
-      }
-
-      &:has(input[aria-invalid="true"]) fieldset {
-        border-color: var(--dry-error);
-      }
-
-      &:has(input[disabled]) {
-        & label {
-          color: var(--dry-disabled-foreground);
-        }
-
-        & fieldset {
-          border-color: var(--dry-border);
-        }
       }
     }
 

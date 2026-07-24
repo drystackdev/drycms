@@ -9,6 +9,7 @@ function runSetup(integration: ReturnType<typeof dry>, overrides: Partial<SetupP
 	const updateConfig = vi.fn();
 	const injectRoute = vi.fn();
 	const addRenderer = vi.fn();
+	const info = vi.fn();
 	const warn = vi.fn();
 
 	const params = {
@@ -24,13 +25,13 @@ function runSetup(integration: ReturnType<typeof dry>, overrides: Partial<SetupP
 		addDevToolbarApp: vi.fn(),
 		addMiddleware: vi.fn(),
 		createCodegenDir: vi.fn(),
-		logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn(), fork: vi.fn() },
+		logger: { info, warn, error: vi.fn(), debug: vi.fn(), fork: vi.fn() },
 		...overrides,
 	} as unknown as SetupParams;
 
 	integration.hooks['astro:config:setup']?.(params);
 
-	return { updateConfig, injectRoute, addRenderer, warn };
+	return { updateConfig, injectRoute, addRenderer, info, warn };
 }
 
 describe('dry()', () => {
@@ -38,37 +39,41 @@ describe('dry()', () => {
 		expect(dry().name).toBe('drycms');
 	});
 
-	it('injects the dashboard route and its redirect', () => {
-		const { injectRoute, updateConfig } = runSetup(dry());
+	it('injects a single catch-all route for the Preact app', () => {
+		const { injectRoute } = runSetup(dry());
 
+		expect(injectRoute).toHaveBeenCalledTimes(1);
 		expect(injectRoute).toHaveBeenCalledWith({
-			pattern: '/dry/dashboard',
-			entrypoint: 'drycms/routes/dashboard.astro',
+			pattern: '/dry/[...slug]',
+			entrypoint: 'drycms/routes/app.astro',
 		});
+	});
+
+	it('switches the project to server output', () => {
+		const { updateConfig } = runSetup(dry());
+
 		expect(updateConfig).toHaveBeenCalledWith(
-			expect.objectContaining({ redirects: { '/dry': '/dry/dashboard' } }),
+			expect.objectContaining({ output: 'server' }),
 		);
 	});
 
-	it('injects the showcase route', () => {
-		const { injectRoute } = runSetup(dry());
+	it('logs when it changes the output mode, but not when already server', () => {
+		const { info } = runSetup(dry());
+		expect(info).toHaveBeenCalledWith(expect.stringContaining('output: "server"'));
 
-		expect(injectRoute).toHaveBeenCalledWith({
-			pattern: '/dry/showcase',
-			entrypoint: 'drycms/routes/showcase.astro',
-		});
+		const { info: info2 } = runSetup(dry(), {
+			config: { integrations: [], output: 'server' },
+		} as unknown as Partial<SetupParams>);
+		expect(info2).not.toHaveBeenCalledWith(expect.stringContaining('output: "server"'));
 	});
 
 	it('honours a custom path', () => {
-		const { injectRoute, updateConfig } = runSetup(dry({ path: 'admin/' }));
+		const { injectRoute } = runSetup(dry({ path: 'admin/' }));
 
-		expect(injectRoute.mock.calls.map(([route]) => route.pattern)).toEqual([
-			'/admin/dashboard',
-			'/admin/showcase',
-		]);
-		expect(updateConfig).toHaveBeenCalledWith(
-			expect.objectContaining({ redirects: { '/admin': '/admin/dashboard' } }),
-		);
+		expect(injectRoute).toHaveBeenCalledWith({
+			pattern: '/admin/[...slug]',
+			entrypoint: 'drycms/routes/app.astro',
+		});
 	});
 
 	it('registers the Preact renderer with absolute entrypoints', () => {
@@ -87,14 +92,6 @@ describe('dry()', () => {
 		} as unknown as Partial<SetupParams>);
 
 		expect(addRenderer).not.toHaveBeenCalled();
-	});
-
-	it('warns when it overwrites an existing redirect', () => {
-		const { warn } = runSetup(dry(), {
-			config: { integrations: [], redirects: { '/dry': '/somewhere-else' } },
-		} as unknown as Partial<SetupParams>);
-
-		expect(warn).toHaveBeenCalledWith(expect.stringContaining('already configured'));
 	});
 
 	it('fails fast on an invalid path', () => {
