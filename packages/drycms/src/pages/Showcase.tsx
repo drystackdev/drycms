@@ -6,8 +6,15 @@ import DataTable from "../components/DataTable.js";
 import Demo from "../components/Demo.js";
 import FileManager from "../components/FileManager.js";
 import Icon from "../components/Icon.js";
-import { type IconName, iconBodies } from "../components/icons.js";
+import {
+  CopyIcon,
+  type IconName,
+  RenameIcon,
+  TrashIcon,
+  iconBodies,
+} from "../components/icons.js";
 import MultiSelect from "../components/MultiSelect.js";
+import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
 import { toast } from "../components/Toast.js";
@@ -1057,6 +1064,42 @@ function DemoContent({ id }: { id: string }) {
               Promise
             </button>
           </div>
+        </Demo>
+      );
+
+    case "popover":
+      return (
+        <Demo
+          id="popover"
+          title="Popover"
+          description="A trigger button that opens a floating menu, portaled to <body> so it isn't clipped by a scroll/overflow ancestor - see the file manager's row actions for it in context."
+          code={code.popover!}
+        >
+          <Popover
+            label="Row actions"
+            items={[
+              {
+                type: "item",
+                label: "Rename",
+                icon: <RenameIcon />,
+                onClick: () => toast.add({ title: "Renamed" }),
+              },
+              {
+                type: "item",
+                label: "Duplicate",
+                icon: <CopyIcon />,
+                onClick: () => toast.add({ title: "Duplicated" }),
+              },
+              { type: "separator" },
+              {
+                type: "item",
+                label: "Delete",
+                icon: <TrashIcon />,
+                danger: true,
+                onClick: () => toast.add({ title: "Deleted", type: "error" }),
+              },
+            ]}
+          />
         </Demo>
       );
 

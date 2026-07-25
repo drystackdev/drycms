@@ -13,6 +13,20 @@ export default function SidebarToggle() {
 		shell?.classList.toggle('open', open);
 	}, [open]);
 
+	/* The off-canvas drawer only exists below the `48rem` breakpoint (see
+	 * `.shell.open` in components.css) - if the menu was left open there and
+	 * the viewport then grows into desktop width, close it so it doesn't pop
+	 * back up as a leftover overlay if the window later shrinks again. */
+	useEffect(() => {
+		const query = window.matchMedia('(width >= 48rem)');
+		const onChange = (event: MediaQueryList | MediaQueryListEvent) => {
+			if (event.matches) setOpen(false);
+		};
+		onChange(query);
+		query.addEventListener('change', onChange);
+		return () => query.removeEventListener('change', onChange);
+	}, []);
+
 	useEffect(() => {
 		if (!open) return;
 		const onKey = (event: KeyboardEvent) => {

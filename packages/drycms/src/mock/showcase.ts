@@ -82,6 +82,7 @@ export const groups: ShowcaseGroup[] = [
     items: [
       { id: "dialog", label: "Dialog" },
       { id: "toast", label: "Toast" },
+      { id: "popover", label: "Popover" },
       { id: "datatable", label: "DataTable" },
       { id: "custom-select", label: "Select" },
       { id: "combobox", label: "Combobox" },
@@ -395,6 +396,17 @@ toast.promise(saveEntry(), {
   success: 'Saved',
   error: (err) => \`Failed: \${err.message}\`,
 });`,
+  popover: `import Popover from 'drycms/components/Popover';
+import { RenameIcon, CopyIcon, TrashIcon } from 'drycms/components/icons';
+
+const items = [
+  { type: 'item', label: 'Rename', icon: <RenameIcon />, onClick: () => rename() },
+  { type: 'item', label: 'Duplicate', icon: <CopyIcon />, onClick: () => duplicate() },
+  { type: 'separator' },
+  { type: 'item', label: 'Delete', icon: <TrashIcon />, danger: true, onClick: () => remove() },
+];
+
+<Popover label="Row actions" items={items} />`,
   datatable: `import DataTable from 'drycms/components/DataTable';
 
 const columns = [

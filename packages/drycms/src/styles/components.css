@@ -51,6 +51,7 @@
       &[disabled],
       &[aria-disabled="true"] {
         pointer-events: none;
+        opacity: 0.6;
         color: var(--dry-disabled-foreground);
         background-color: var(--dry-disabled-background);
         box-shadow: none;
@@ -847,16 +848,25 @@
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
 
+      /* Wider on desktop - 20rem/32rem reads cramped once there's room to spare. */
+      @media (width >= 48rem) {
+        width: 26rem;
+        max-width: min(38rem, calc(100vw - 4rem));
+      }
+
       &::backdrop {
         background-color: light-dark(
           rgb(var(--dry-grey-channel) / 80%),
-          rgb(0 0 0 / 75%)
+          rgb(0 0 0 / 35%)
         );
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
       }
 
-      & > header {
+      /* A direct-child selector would miss a form-wrapped header/footer
+       * (RenameDialog, NewFolderDialog, ...) since the form sits between
+       * them and the dialog, not just a fragment - descendant reaches through it. */
+      & header {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         gap: 0.25rem;
@@ -872,7 +882,7 @@
         }
       }
 
-      & > footer {
+      & footer {
         display: flex;
         justify-content: flex-end;
         gap: 0.5rem;
@@ -944,7 +954,8 @@
       cursor: grab;
       opacity: 1;
       scale: 1;
-      translate: var(--toast-swipe-movement-x, 0px) calc(var(--toast-offset-y) * var(--toast-direction));
+      translate: var(--toast-swipe-movement-x, 0px)
+        calc(var(--toast-offset-y) * var(--toast-direction));
       transition:
         translate 480ms cubic-bezier(0.34, 1.56, 0.64, 1),
         scale 480ms cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -1251,14 +1262,20 @@
         inset-block-start: 100%;
         border-block-end-width: 0;
         border-block-start-width: 6px;
-        border-block-start-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+        border-block-start-color: light-dark(
+          var(--dry-grey-800),
+          var(--dry-grey-700)
+        );
       }
 
       &.dry-tooltip-below::before {
         inset-block-end: 100%;
         border-block-start-width: 0;
         border-block-end-width: 6px;
-        border-block-end-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+        border-block-end-color: light-dark(
+          var(--dry-grey-800),
+          var(--dry-grey-700)
+        );
       }
 
       &.dry-tooltip-visible {
@@ -1477,7 +1494,12 @@
         position: fixed;
         inset: 0;
         z-index: 30;
-        background-color: rgb(var(--dry-grey-channel) / 80%);
+        background-color: light-dark(
+          rgb(var(--dry-grey-channel) / 80%),
+          rgb(0 0 0 / 35%)
+        );
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
       }
 
       /* Fixed-height + centered content is fine for a single-line title, but
@@ -1651,7 +1673,11 @@
 
         &[aria-current="page"] {
           color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
-          background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
+          background-color: color-mix(
+            in srgb,
+            var(--dry-primary) 8%,
+            transparent
+          );
         }
       }
     }
@@ -1820,6 +1846,16 @@
         width: 1%;
         white-space: nowrap;
       }
+      & .file-table-selection {
+        padding: 0 0.75rem;
+        height: 56px;
+        border-bottom: none;
+        border-radius: var(--dry-radius-lg);
+        background-color: var(--dry-card);
+        box-shadow: var(--dry-shadow-md);
+        color: var(--dry-foreground);
+        white-space: normal;
+      }
 
       & tbody td {
         padding-block: 0.625rem;
@@ -1844,6 +1880,13 @@
 
       & tbody tr.selected td {
         background-color: var(--dry-selected);
+      }
+
+      /* Cut/copied, waiting on a paste elsewhere - dimmed instead of tinted so
+       * it doesn't read as still checkbox-selected. */
+      & tbody tr.pending {
+        opacity: 0.6;
+        pointer-events: none;
       }
     }
 
@@ -1896,6 +1939,11 @@
       &:has(.file-card-checkbox:checked) {
         background-color: var(--dry-selected);
       }
+
+      /* Cut/copied, waiting on a paste elsewhere. */
+      &.pending {
+        opacity: 0.6;
+      }
     }
 
     .file-card-head {
@@ -1905,18 +1953,28 @@
       gap: 0.5rem;
     }
 
-    /* Thumbnail by default; hovering (or focusing, for keyboard users) hides
-     * it for the checkbox underneath. Once checked, the checkbox stays put -
-     * no more hover needed - styled green/circular via `.file-card-checkbox`. */
+    /* Thumbnail hides only once actually checked (green/circular, via
+     * `.file-card-checkbox`) - tied to `:checked`, not `:hover`, so
+     * unchecking brings the icon back immediately even if the pointer never
+     * left the card, instead of waiting on a hover state that hasn't changed. */
     .file-card-select {
       position: relative;
       width: 2.5rem;
       height: 2.5rem;
 
-      &:hover .file-card-thumb,
-      &:focus-within .file-card-thumb,
       &:has(.file-card-checkbox:checked) .file-card-thumb {
         opacity: 0;
+      }
+
+      & > img {
+        position: relative;
+        z-index: 2;
+        transition: transform 0.13s ease-in-out, opacity 0.13s ease-in-out;
+      }
+
+      &:hover > img {
+        opacity: 0;
+        transform: scale(0.3);
       }
 
       &:hover .file-card-checkbox,
@@ -1998,15 +2056,26 @@
       box-shadow: var(--dry-shadow-lg);
     }
 
-    /* --- Per-row "more" menu. Portaled to `<body>` (see FileManager.tsx's
-     * `MoreMenu`) so `position`/`top`/`left` are set inline from JS, computed
-     * from the trigger button's own rect - only visual styling lives here. */
-    .file-more {
+    /* --- Popover: a trigger button opening a floating menu (see
+     * `Popover.tsx`). Portaled to `<body>` so `position`/`top`/`left` are set
+     * inline from JS, computed from the trigger button's own rect - only
+     * visual styling lives here. */
+    .popover {
       display: inline-flex;
     }
 
-    .file-more-menu {
+    /* Covers the viewport while a popover is open so a click anywhere else
+     * closes it - a portaled `.popover-menu` sits outside `.popover` in the
+     * DOM, so plain "outside click" containment checks can't tell a click on
+     * it from a click elsewhere. */
+    .popover-backdrop {
+      position: fixed;
+      inset: 0;
       z-index: 20;
+    }
+
+    .popover-menu {
+      z-index: 21;
       width: 11rem;
       margin: 0;
       padding: 0.25rem;
@@ -2032,12 +2101,12 @@
       }
     }
 
-    .file-more-menu-separator {
+    .popover-menu-separator {
       margin: 0.25rem 0.25rem;
       border-top: 1px dashed var(--dry-border);
     }
 
-    .file-more-menu-danger {
+    .popover-menu-danger {
       color: light-dark(var(--dry-error-dark), var(--dry-error-light));
     }
 
@@ -2059,11 +2128,17 @@
       border: 1px dashed var(--dry-border);
       border-radius: var(--dry-radius-lg);
       text-align: center;
-      transition: border-color 120ms ease, background-color 120ms ease;
+      transition:
+        border-color 120ms ease,
+        background-color 120ms ease;
 
       &.dragging {
         border-color: var(--dry-primary);
-        background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 8%,
+          transparent
+        );
       }
 
       & svg {

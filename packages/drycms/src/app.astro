@@ -12,6 +12,12 @@ import 'drycms/styles.css';
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="robots" content="noindex, nofollow" />
 		<title>DryCMS</title>
+		<style is:global>
+			/* Astro's dev toolbar is a project-wide setting; hide it on the admin page only. */
+			astro-dev-toolbar {
+				display: none;
+			}
+		</style>
 	</head>
 	<body class="dry">
 		{/* Applies the stored theme before first paint to avoid a flash. */}
