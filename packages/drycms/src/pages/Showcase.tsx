@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import Combobox from "../components/Combobox.js";
@@ -230,43 +230,6 @@ function TabsDemoPreview() {
 function FileManagerPreview() {
   const source = useMemo(() => createMemoryFileSource(), []);
   return <FileManager source={source} />;
-}
-
-/** `value`/`onChange` in single mode (`multiple={false}`): picking a file
- * sets a lone string id, matched against `accept` to gate which files can be picked. */
-function FileManagerSinglePreview() {
-  const source = useMemo(() => createMemoryFileSource(), []);
-  const [value, setValue] = useState("");
-  return (
-    <div class="stack" style="width: 100%">
-      <FileManager
-        source={source}
-        multiple={false}
-        accept={["jpg", "jpeg", "png"]}
-        value={value}
-        onChange={setValue as (value: string | string[]) => void}
-      />
-      <p class="muted">Selected: {value || "none"}</p>
-    </div>
-  );
-}
-
-/** Same picker, `multiple` on: `value`/`onChange` carry a `string[]` instead. */
-function FileManagerMultiPreview() {
-  const source = useMemo(() => createMemoryFileSource(), []);
-  const [value, setValue] = useState<string[]>([]);
-  return (
-    <div class="stack" style="width: 100%">
-      <FileManager
-        source={source}
-        multiple
-        accept={["jpg", "jpeg", "png"]}
-        value={value}
-        onChange={setValue as (value: string | string[]) => void}
-      />
-      <p class="muted">Selected: {value.join(", ") || "none"}</p>
-    </div>
-  );
 }
 
 function DemoContent({ id }: { id: string }) {
@@ -1205,30 +1168,6 @@ function DemoContent({ id }: { id: string }) {
           code={code.fileManager!}
         >
           <FileManagerPreview />
-        </Demo>
-      );
-
-    case "file-manager-single":
-      return (
-        <Demo
-          id="file-manager-single"
-          title="Image picker (single)"
-          description="Same component used as a picker: `accept` disables non-matching files, and the checkbox selection is reported through `value`/`onChange` as a lone id."
-          code={code.fileManagerSingle!}
-        >
-          <FileManagerSinglePreview />
-        </Demo>
-      );
-
-    case "file-manager-multi":
-      return (
-        <Demo
-          id="file-manager-multi"
-          title="Image picker (multi)"
-          description="`multiple` turns the same selection into a `string[]`, with a Snackbar for select all/unselect all."
-          code={code.fileManagerMulti!}
-        >
-          <FileManagerMultiPreview />
         </Demo>
       );
 

@@ -26,6 +26,7 @@ import {
   MoveIcon,
   PasteIcon,
   PlusIcon,
+  PreviewIcon,
   RenameIcon,
   ReplaceIcon,
   TrashIcon,
@@ -48,6 +49,10 @@ export interface FileManagerProps {
   accept?: string[];
   /** @default "list" */
   defaultView?: "list" | "grid";
+  /** Show real thumbnails (list: 16:9 mini, grid: full-card) instead of the
+   * generic file-type icon. Omitted: user gets a toolbar button to toggle it
+   * themselves. Set explicitly (`true`/`false`): fixed, no toggle shown. */
+  preview?: boolean;
 }
 
 type MoveCopyState = { mode: "move" | "copy"; ids: string[] } | null;
@@ -115,14 +120,44 @@ function MoreMenu({
   onDelete,
 }: MoreMenuProps) {
   const items: PopoverMenuEntry[] = [];
-  if (onRename) items.push({ type: "item", label: "Rename", icon: <RenameIcon />, onClick: onRename });
-  if (onReplace) items.push({ type: "item", label: "Replace", icon: <ReplaceIcon />, onClick: onReplace });
+  if (onRename)
+    items.push({
+      type: "item",
+      label: "Rename",
+      icon: <RenameIcon />,
+      onClick: onRename,
+    });
+  if (onReplace)
+    items.push({
+      type: "item",
+      label: "Replace",
+      icon: <ReplaceIcon />,
+      onClick: onReplace,
+    });
   if ((onCopy || onMove) && items.length > 0) items.push({ type: "separator" });
-  if (onCopy) items.push({ type: "item", label: "Copy", icon: <CopyIcon />, onClick: onCopy });
-  if (onMove) items.push({ type: "item", label: "Move", icon: <MoveIcon />, onClick: onMove });
+  if (onCopy)
+    items.push({
+      type: "item",
+      label: "Copy",
+      icon: <CopyIcon />,
+      onClick: onCopy,
+    });
+  if (onMove)
+    items.push({
+      type: "item",
+      label: "Move",
+      icon: <MoveIcon />,
+      onClick: onMove,
+    });
   if (onDelete && items.length > 0) items.push({ type: "separator" });
   if (onDelete) {
-    items.push({ type: "item", label: "Delete", icon: <TrashIcon />, onClick: onDelete, danger: true });
+    items.push({
+      type: "item",
+      label: "Delete",
+      icon: <TrashIcon />,
+      onClick: onDelete,
+      danger: true,
+    });
   }
   if (items.length === 0) return null;
 
@@ -171,6 +206,9 @@ interface ToolbarProps {
   /** Omitted (hides the button) when `source` doesn't support the action. */
   onNewFolder?: () => void;
   onUpload?: () => void;
+  previewOn: boolean;
+  /** Omitted (hides the toggle) when `preview` is controlled by the host. */
+  onTogglePreview?: () => void;
 }
 
 function Toolbar({
@@ -180,6 +218,8 @@ function Toolbar({
   onView,
   onNewFolder,
   onUpload,
+  previewOn,
+  onTogglePreview,
 }: ToolbarProps) {
   return (
     <div class="file-toolbar row">
@@ -215,6 +255,18 @@ function Toolbar({
         >
           <GridIcon />
         </button>
+        {onTogglePreview && (
+          <button
+            type="button"
+            class="ghost icon sm"
+            data-tooltip={previewOn ? "Hide preview" : "Show preview"}
+            aria-pressed={previewOn}
+            aria-label={previewOn ? "Hide preview" : "Show preview"}
+            onClick={onTogglePreview}
+          >
+            <PreviewIcon />
+          </button>
+        )}
       </div>
       {onNewFolder && (
         <button type="button" class="outline sm" onClick={onNewFolder}>
@@ -252,6 +304,8 @@ interface ViewProps {
   onDragOverEntry: (entry: FileEntry) => (event: DragEvent) => void;
   onDragLeaveEntry: (entry: FileEntry) => () => void;
   onDropEntry: (entry: FileEntry) => (event: DragEvent) => void;
+  /** Real thumbnails (list: 16:9 mini, grid: full-card) instead of the generic file-type icon. */
+  preview: boolean;
 }
 
 function ListView({
@@ -271,6 +325,7 @@ function ListView({
   onDragOverEntry,
   onDragLeaveEntry,
   onDropEntry,
+  preview,
   multiple,
   allSelected,
   onToggleAll,
@@ -357,20 +412,7 @@ function ListView({
             </tr>
           ) : (
             <tr>
-              <th class="file-table-check">
-                {multiple ? (
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    disabled={locked}
-                    data-tooltip={allSelected ? "Unselect all" : "Select all"}
-                    aria-label={allSelected ? "Unselect all" : "Select all"}
-                    onChange={onToggleAll}
-                  />
-                ) : (
-                  <span class="sr-only">Select</span>
-                )}
-              </th>
+              <th></th>
               <th>
                 <button type="button" class="link sm" onClick={onSort}>
                   Name
@@ -390,7 +432,7 @@ function ListView({
           {entries.length === 0 ? (
             <tr>
               <td colSpan={6}>
-                <div class="empty">No files.</div>
+                <div class="center" style={{height: 200}} >No files.</div>
               </td>
             </tr>
           ) : (
@@ -403,17 +445,21 @@ function ListView({
               return (
                 <tr
                   key={entry.id}
-                  class={[
-                    pending ? "pending" : selected ? "selected" : null,
-                    dragOverId === entry.id ? "drag-over" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" ") || undefined}
+                  class={
+                    [
+                      pending ? "pending" : selected ? "selected" : null,
+                      dragOverId === entry.id ? "drag-over" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
                   draggable={canDrag(entry)}
                   onDragStart={onDragStartEntry(entry)}
                   onDragEnd={onDragEndEntry}
                   onDragOver={isDropTarget ? onDragOverEntry(entry) : undefined}
-                  onDragLeave={isDropTarget ? onDragLeaveEntry(entry) : undefined}
+                  onDragLeave={
+                    isDropTarget ? onDragLeaveEntry(entry) : undefined
+                  }
                   onDrop={isDropTarget ? onDropEntry(entry) : undefined}
                 >
                   <td class="file-table-check">
@@ -432,13 +478,21 @@ function ListView({
                       class="file-name-cell"
                       onClick={(event) => onOpen(entry, event)}
                     >
-                      <img
-                        class="file-thumb-icon"
-                        src={thumbnailUrl(entry)}
-                        alt=""
-                        width={20}
-                        height={20}
-                      />
+                      {preview && entry.kind !== "folder" ? (
+                        <img
+                          class="file-thumb-preview"
+                          src={entry.previewUrl ?? thumbnailUrl(entry)}
+                          alt=""
+                        />
+                      ) : (
+                        <img
+                          class="file-thumb-icon"
+                          src={thumbnailUrl(entry)}
+                          alt=""
+                          width={20}
+                          height={20}
+                        />
+                      )}
                       <span>{entry.name}</span>
                     </button>
                   </td>
@@ -476,6 +530,7 @@ function GridView({
   onDragOverEntry,
   onDragLeaveEntry,
   onDropEntry,
+  preview,
 }: ViewProps) {
   if (entries.length === 0) return <div class="empty">No files.</div>;
 
@@ -486,11 +541,13 @@ function GridView({
         const pending = clipboard?.ids.includes(entry.id) ?? false;
         const disabled = isDisabled(entry);
         const isDropTarget = entry.kind === "folder";
+        const showMedia = preview && entry.kind !== "folder";
         return (
           <div
             key={entry.id}
             class={[
               "file-card",
+              showMedia ? "file-card-media" : null,
               pending ? "pending" : null,
               dragOverId === entry.id ? "drag-over" : null,
             ]
@@ -503,43 +560,94 @@ function GridView({
             onDragLeave={isDropTarget ? onDragLeaveEntry(entry) : undefined}
             onDrop={isDropTarget ? onDropEntry(entry) : undefined}
           >
-            <div class="file-card-head">
-              {/* Purely the selection hit-target - opening happens via the name below, so this never doubles as a button (the overlay input would swallow every click anyway).
-               * Thumbnail and checkbox both always sit in the DOM; CSS (`:hover`, `:checked`, `:has()`) drives which one shows. */}
-              <label class="file-card-select">
-                {!disabled && (
-                  <input
-                    type="checkbox"
-                    class="file-card-checkbox"
-                    checked={selected}
-                    aria-label={`Select ${entry.name}`}
-                    onChange={() => onToggle(entry)}
-                  />
-                )}
+            {showMedia ? (
+              <>
+                {/* Real thumbnail fills the card - the rest (checkbox, more
+                 * menu, name, size) lives in a blurred overlay that's hidden
+                 * until hover/focus (or the item is already checked), so the
+                 * default view reads as a plain photo grid. */}
                 <img
-                  class="file-card-thumb"
-                  src={thumbnailUrl(entry)}
+                  class="file-card-media-image"
+                  src={entry.previewUrl ?? thumbnailUrl(entry)}
                   alt=""
-                  width={40}
-                  height={40}
-				  style={{pointerEvents: 'none'}}
                 />
-              </label>
-              {more(entry)}
-            </div>
-            <button
-              type="button"
-              class="file-card-name"
-              onClick={(event) => onOpen(entry, event)}
-            >
-              {entry.name}
-            </button>
-            <small class="muted">
-              {formatBytes(entry.size)}
-              {entry.kind === "folder"
-                ? ` · ${entry.fileCount ?? 0} files`
-                : ""}
-            </small>
+                <div
+                  class="file-card-media-overlay"
+                  onClick={(event) => onOpen(entry, event)}
+                >
+                  <div
+                    class="file-card-media-top"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {!disabled && (
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        aria-label={`Select ${entry.name}`}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => onToggle(entry)}
+                      />
+                    )}
+                    {more(entry)}
+                  </div>
+                  <div class="file-card-media-bottom">
+                    <button
+                      type="button"
+                      class="file-card-name"
+                      onClick={(event) => onOpen(entry, event)}
+                    >
+                      {entry.name}
+                    </button>
+                    <small class="muted">
+                      {formatBytes(entry.size)}
+                      {entry.kind === "folder"
+                        ? ` · ${entry.fileCount ?? 0} files`
+                        : ""}
+                    </small>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div class="file-card-head">
+                  {/* Purely the selection hit-target - opening happens via the name below, so this never doubles as a button (the overlay input would swallow every click anyway).
+                   * Thumbnail and checkbox both always sit in the DOM; CSS (`:hover`, `:checked`, `:has()`) drives which one shows. */}
+                  <label class="file-card-select">
+                    {!disabled && (
+                      <input
+                        type="checkbox"
+                        class="file-card-checkbox"
+                        checked={selected}
+                        aria-label={`Select ${entry.name}`}
+                        onChange={() => onToggle(entry)}
+                      />
+                    )}
+                    <img
+                      class="file-card-thumb"
+                      src={thumbnailUrl(entry)}
+                      alt=""
+                      width={40}
+                      height={40}
+                      style={{ pointerEvents: "none" }}
+                    />
+                  </label>
+                  {more(entry)}
+                </div>
+                <button
+                  type="button"
+                  class="file-card-name"
+                  onClick={(event) => onOpen(entry, event)}
+                >
+                  {entry.name}
+                </button>
+                <small class="muted">
+                  {formatBytes(entry.size)}
+                  {entry.kind === "folder"
+                    ? ` · ${entry.fileCount ?? 0} files`
+                    : ""}
+                </small>
+              </>
+            )}
           </div>
         );
       })}
@@ -1104,12 +1212,16 @@ function PreviewDialog({
             </button>
 
             <div
-              class={canLoop ? "file-preview-stage swipeable" : "file-preview-stage"}
+              class={
+                canLoop ? "file-preview-stage swipeable" : "file-preview-stage"
+              }
               onWheel={
                 image
                   ? (event) => {
                       event.preventDefault();
-                      zoomBy(event.deltaY > 0 ? -WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP);
+                      zoomBy(
+                        event.deltaY > 0 ? -WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP,
+                      );
                     }
                   : undefined
               }
@@ -1125,7 +1237,9 @@ function PreviewDialog({
                     ? "file-preview-slide from-left"
                     : "file-preview-slide from-right"
                 }
-                style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
+                style={
+                  dragX ? { transform: `translateX(${dragX}px)` } : undefined
+                }
               >
                 {image ? (
                   <img
@@ -1275,6 +1389,7 @@ export default function FileManager({
   multiple = true,
   accept,
   defaultView = "list",
+  preview,
 }: FileManagerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -1311,6 +1426,11 @@ export default function FileManager({
    * and the id of the folder currently hovered as a drop target. */
   const [dragIds, setDragIds] = useState<string[] | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  /** Same controlled/uncontrolled split as `value`/`onChange` - `preview` set
+   * by the host fixes the mode (no toolbar toggle); omitted, the user drives
+   * it themselves via the toolbar button. */
+  const [uncontrolledPreview, setUncontrolledPreview] = useState(false);
+  const previewOn = preview ?? uncontrolledPreview;
 
   /** Fetches `folderId`'s children and replaces any entries already loaded
    * for it - called both by the lazy-load effect below (first visit) and
@@ -1357,7 +1477,10 @@ export default function FileManager({
   // captures. Mutation handlers force a refresh directly via `refreshFolder`
   // instead of going through this effect.
   useEffect(() => {
-    if (loadedFolders.has(currentFolderId) || loadingFolders.has(currentFolderId)) {
+    if (
+      loadedFolders.has(currentFolderId) ||
+      loadingFolders.has(currentFolderId)
+    ) {
       return;
     }
     loadFolder(currentFolderId);
@@ -1577,7 +1700,8 @@ export default function FileManager({
     const targetId = currentFolderId;
     // Selection only ever spans one open folder, so every clipboard id shares
     // the same (pre-move) parent - moving stales that folder's cached listing.
-    const sourceFolderId = entries.find((entry) => entry.id === ids[0])?.parentId ?? null;
+    const sourceFolderId =
+      entries.find((entry) => entry.id === ids[0])?.parentId ?? null;
 
     setBusy(true);
     try {
@@ -1776,8 +1900,16 @@ export default function FileManager({
         onQuery={setQuery}
         view={view}
         onView={setView}
-        onNewFolder={source.createFolder ? () => setNewFolderOpen(true) : undefined}
+        onNewFolder={
+          source.createFolder ? () => setNewFolderOpen(true) : undefined
+        }
         onUpload={source.upload ? () => setUploadOpen(true) : undefined}
+        previewOn={previewOn}
+        onTogglePreview={
+          preview === undefined
+            ? () => setUncontrolledPreview((current) => !current)
+            : undefined
+        }
       />
 
       {view === "grid" &&
@@ -1801,7 +1933,9 @@ export default function FileManager({
             onUnselectAll={() => setSelection([])}
             onMove={source.move ? () => requestMove(selectedIds) : undefined}
             onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
-            onDelete={source.remove ? () => deleteEntries(selectedIds) : undefined}
+            onDelete={
+              source.remove ? () => deleteEntries(selectedIds) : undefined
+            }
           />
         ))}
 
@@ -1836,6 +1970,7 @@ export default function FileManager({
           onDragOverEntry={onDragOverEntry}
           onDragLeaveEntry={onDragLeaveEntry}
           onDropEntry={onDropEntry}
+          preview={previewOn}
           multiple={multiple}
           allSelected={allSelected}
           onToggleAll={toggleAll}
@@ -1843,7 +1978,9 @@ export default function FileManager({
           locked={selectionLocked}
           onMove={source.move ? () => requestMove(selectedIds) : undefined}
           onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
-          onDelete={source.remove ? () => deleteEntries(selectedIds) : undefined}
+          onDelete={
+            source.remove ? () => deleteEntries(selectedIds) : undefined
+          }
           canPaste={canPaste && !busy}
           onPasteClipboard={pasteClipboard}
           onCancelClipboard={() => setClipboard(null)}
@@ -1864,6 +2001,7 @@ export default function FileManager({
           onDragOverEntry={onDragOverEntry}
           onDragLeaveEntry={onDragLeaveEntry}
           onDropEntry={onDropEntry}
+          preview={previewOn}
         />
       )}
 

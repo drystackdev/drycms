@@ -92,11 +92,7 @@ export const groups: ShowcaseGroup[] = [
   },
   {
     label: "File manager",
-    items: [
-      { id: "file-manager", label: "File manager" },
-      { id: "file-manager-single", label: "Image picker (single)" },
-      { id: "file-manager-multi", label: "Image picker (multi)" },
-    ],
+    items: [{ id: "file-manager", label: "File manager" }],
   },
 ];
 
@@ -460,30 +456,4 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   fileManager: `import FileManager from 'drycms/components/FileManager';
 
 <FileManager source={source} />`,
-  fileManagerSingle: `import { useState } from 'preact/hooks';
-import FileManager from 'drycms/components/FileManager';
-
-const [value, setValue] = useState('');
-
-<FileManager
-  source={source}
-  multiple={false}
-  accept={['jpg', 'jpeg', 'png']}
-  value={value}
-  onChange={setValue}
-/>
-<p class="muted">Selected: {value || 'none'}</p>`,
-  fileManagerMulti: `import { useState } from 'preact/hooks';
-import FileManager from 'drycms/components/FileManager';
-
-const [value, setValue] = useState([]);
-
-<FileManager
-  source={source}
-  multiple
-  accept={['jpg', 'jpeg', 'png']}
-  value={value}
-  onChange={setValue}
-/>
-<p class="muted">Selected: {value.join(', ') || 'none'}</p>`,
 };
