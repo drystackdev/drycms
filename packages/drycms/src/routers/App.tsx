@@ -2,7 +2,6 @@ import { useEffect } from 'preact/hooks';
 import { ErrorBoundary, LocationProvider, Route, Router, lazy, useLocation } from 'preact-iso';
 import { path } from 'virtual:drycms/config';
 import DryLayout from '../components/DryLayout.js';
-import Toaster from '../components/Toast.js';
 
 // Code-split per route: the whole app renders `client:only`, so nothing
 // paints until its JS is downloaded. Showcase alone pulls in Prism plus every
@@ -27,7 +26,11 @@ function DashboardRoute() {
 }
 
 function ShowcaseRoute({ tab }: { tab?: string }) {
-	return <Showcase tab={tab} />;
+	return (
+		<DryLayout title="Showcase">
+			<Showcase tab={tab} />
+		</DryLayout>
+	);
 }
 
 /** Keeps every `input[type="range"]`'s `--value` (0-100, drives the WebKit
@@ -63,7 +66,6 @@ export default function App() {
 					<Route default component={() => <Redirect to={`${path}/dashboard`} />} />
 				</Router>
 			</ErrorBoundary>
-			<Toaster />
 		</LocationProvider>
 	);
 }

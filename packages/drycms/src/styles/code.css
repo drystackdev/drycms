@@ -23,6 +23,12 @@
 			color: var(--dry-code-attr-name);
 		}
 
+		/* jsx marks component names as class-name inside the tag - keep them
+		   the same colour as plain tag names. */
+		:where(.token.tag .token.class-name) {
+			color: var(--dry-code-tag);
+		}
+
 		:where(.token.attr-value, .token.string, .token.char, .token.inserted, .token.number) {
 			color: var(--dry-code-string);
 		}

@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact';
 import Icon from './Icon.js';
 import SidebarToggle from './SidebarToggle.js';
 import ThemeToggle from './ThemeToggle.js';
+import Toaster from './Toast.js';
 import type { IconName } from './icons.js';
 import { useSimpleBar } from './simplebar.js';
 import { path } from 'virtual:drycms/config';
@@ -74,6 +75,8 @@ export default function DryLayout({ title = 'drycms', children }: Props) {
 
 				<main class="content">{children}</main>
 			</div>
+
+			<Toaster />
 		</div>
 	);
 }

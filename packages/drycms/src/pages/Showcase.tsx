@@ -9,7 +9,6 @@ import { type IconName, iconBodies } from "../components/icons.js";
 import MultiSelect from "../components/MultiSelect.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
-import ThemeToggle from "../components/ThemeToggle.js";
 import { toast } from "../components/Toast.js";
 import {
   code,
@@ -51,30 +50,21 @@ export default function Showcase({ tab }: Props) {
   const nextId = order[index + 1];
 
   const nav = useSimpleBar<HTMLElement>();
-  const main = useSimpleBar<HTMLDivElement>();
 
   useEffect(() => {
     document.title = `${labelFor(activeId)} – Showcase`;
-    main.scrollToTop();
+    document.querySelector(".shell > .main")?.scrollTo({ top: 0 });
   }, [activeId]);
 
   return (
-    <div class="main" ref={main.ref} style="padding: 1rem; padding-top: 0;">
-      <header class="topbar" style="position: sticky; top: 0rem">
-        <div class="row" style="width: 100%">
-          <a role="button" class="icon" href={`${path}/dashboard`}>
-            <Icon name="Home" />
-          </a>
-          <div>
-            <h1>Showcase</h1>
-            <p>Every component in drycms, with the markup that produces it.</p>
-          </div>
-          <span class="badge outline" style="margin-left: auto;">
-            v0.0.1
-          </span>
-          <ThemeToggle />
+    <>
+      <div class="page-header">
+        <div>
+          <h1>Showcase</h1>
+          <p>Every component in drycms, with the markup that produces it.</p>
         </div>
-      </header>
+        <span class="badge outline">v0.0.1</span>
+      </div>
 
       <div class="showcase">
         <aside
@@ -158,7 +148,7 @@ export default function Showcase({ tab }: Props) {
           </nav>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

@@ -1,6 +1,9 @@
 import { useMemo } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import Prism from 'prismjs';
+// jsx extends the markup grammar, so plain HTML snippets still highlight, and
+// the Preact samples get their braces/attributes tokenised too.
+import 'prismjs/components/prism-jsx';
 
 /**
  * One showcase entry: a live preview plus the markup that produced it. The
@@ -12,13 +15,13 @@ interface Props {
 	title: string;
 	description?: string;
 	code: string;
-	/** Prism grammar to highlight with. @default "markup" */
+	/** Prism grammar to highlight with. @default "jsx" */
 	lang?: string;
 	children?: ComponentChildren;
 }
 
-export default function Demo({ id, title, description, code, lang = 'markup', children }: Props) {
-	const grammar = Prism.languages[lang] ? lang : 'markup';
+export default function Demo({ id, title, description, code, lang = 'jsx', children }: Props) {
+	const grammar = Prism.languages[lang] ? lang : 'jsx';
 	const highlighted = useMemo(
 		() => Prism.highlight(code.trim(), Prism.languages[grammar]!, grammar),
 		[code, grammar],

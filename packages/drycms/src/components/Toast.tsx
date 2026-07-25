@@ -40,9 +40,9 @@ interface ToastItem {
 }
 
 const DEFAULT_TIMEOUT = 5000;
-/** Kept just above the CSS closing transition (280ms, see `.toast` in
+/** Kept just above the CSS closing transition (480ms, see `.toast` in
  * components.css) so the card never gets unmounted mid-animation. */
-const EXIT_DURATION = 300;
+const EXIT_DURATION = 520;
 const LIMIT = 4;
 
 const TYPE_ICON: Partial<Record<ToastType, IconName>> = {
@@ -423,7 +423,12 @@ export default function Toaster({ position = 'bottom-end' }: ToasterProps) {
 			data-position={position}
 			role="region"
 			aria-label="Notifications"
-			style={{ '--toast-frontmost-height': `${frontmostHeight}px` }}
+			// Reserves the full expanded extent (cards + gaps) as one continuous
+			// hit-test box, even while collapsed - without it, the gaps between
+			// cards belong to whatever's behind the stack, so crossing one on the
+			// way to another toast fires a spurious pointerleave/enter and the
+			// stack flickers collapsed/expanded under the cursor.
+			style={{ '--toast-frontmost-height': `${frontmostHeight}px`, height: `${cumulative}px` }}
 			onPointerEnter={handleEnter}
 			onPointerLeave={handleLeave}
 			onFocusIn={handleEnter}

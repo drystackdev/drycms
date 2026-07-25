@@ -350,7 +350,7 @@ import { SettingsIcon } from 'drycms/components/icons';
   <li><a href="#">Content</a></li>
   <li><span aria-current="page">Getting started</span></li>
 </ol>`,
-  tooltip: `<!-- data-tooltip holds the message itself, like "title" does -->
+  tooltip: `// <!-- data-tooltip holds the message itself, like "title" does -->
 <button type="button" class="outline" data-tooltip="Saved 2 minutes ago">Hover me</button>
 <span class="badge outline" data-tooltip="Also works on any element">Badge</span>`,
   separator: `<div class="row">
