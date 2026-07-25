@@ -455,6 +455,7 @@ const [value, setValue] = useState('');
 
 <FileManager
   data={files}
+  multiple={false}
   accept={['jpg', 'jpeg', 'png']}
   value={value}
   onChange={setValue}

@@ -82,6 +82,31 @@ export function useOutsideClick(open: boolean, refs: RefObject<HTMLElement>[], o
 }
 
 /**
+ * Locks every scrollable ancestor of `ref` (a SimpleBar pane, a plain
+ * `overflow: auto` container, or the page itself) while `active` - keeps a
+ * popover's anchor from drifting out from under it while it's open.
+ */
+export function useScrollLock(active: boolean, ref: RefObject<HTMLElement>) {
+	useEffect(() => {
+		if (!active) return;
+		const locked: { el: HTMLElement; overflow: string }[] = [];
+		let node: HTMLElement | null = ref.current;
+		while (node) {
+			if (node.scrollHeight > node.clientHeight + 1) {
+				locked.push({ el: node, overflow: node.style.overflow });
+				node.style.overflow = 'hidden';
+			}
+			node = node.parentElement;
+		}
+		locked.push({ el: document.body, overflow: document.body.style.overflow });
+		document.body.style.overflow = 'hidden';
+		return () => {
+			for (const { el, overflow } of locked) el.style.overflow = overflow;
+		};
+	}, [active, ref]);
+}
+
+/**
  * Whether a popup anchored below `anchorRef` should instead drop upward,
  * because there isn't enough viewport space below it.
  */

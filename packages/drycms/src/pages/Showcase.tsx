@@ -218,14 +218,15 @@ function TabsDemoPreview() {
   );
 }
 
-/** `value`/`onChange` in single mode (`multiple` unset): picking a file sets
- * a lone string id, matched against `accept` to gate which files can be picked. */
+/** `value`/`onChange` in single mode (`multiple={false}`): picking a file
+ * sets a lone string id, matched against `accept` to gate which files can be picked. */
 function FileManagerSinglePreview() {
   const [value, setValue] = useState("");
   return (
     <div class="stack" style="width: 100%">
       <FileManager
         data={fileManagerMock}
+        multiple={false}
         accept={["jpg", "jpeg", "png"]}
         value={value}
         onChange={setValue as (value: string | string[]) => void}
@@ -898,7 +899,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="tooltip"
           title="Tooltip"
-          description="Pure CSS, from the data-tooltip attribute (its value is the message, like title)."
+          description="From the data-tooltip attribute (its value is the message, like title) - shown via a small JS helper so it floats free of any scroll-clipped ancestor."
           code={code.tooltip!}
         >
           <button

@@ -1217,51 +1217,51 @@
     }
 
     /*
-		 * Tooltip. `data-tooltip` is kept as an attribute (not a class) because,
-		 * like `title`, its value IS the content it renders - not a variant name.
-		 */
-    [data-tooltip] {
-      position: relative;
-
-      &::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        inset-inline-start: 50%;
-        inset-block-end: calc(100% + 0.5rem);
-        translate: -50% 0;
-        z-index: 30;
-        padding: 0.25rem 0.5rem;
-        font-size: var(--dry-text-xs);
-        font-weight: 400;
-        white-space: nowrap;
-        border-radius: var(--dry-radius-sm);
-        background-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
-        color: #ffffff;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 120ms ease;
-      }
+     * Tooltip. `data-tooltip` is kept as an attribute (not a class) because,
+     * like `title`, its value IS the content it renders - not a variant name.
+     * The tooltip itself is a single JS-managed element portaled to `<body>`
+     * (see `useTooltip` in routers/App.tsx), not a CSS pseudo-element on the
+     * trigger - a pseudo-element positioned `absolute` would get clipped by
+     * any `overflow: hidden`/`auto` ancestor (a SimpleBar pane, a table's
+     * `.scroll` wrapper, ...) instead of floating free above it.
+     */
+    .dry-tooltip {
+      position: fixed;
+      z-index: 30;
+      padding: 0.25rem 0.5rem;
+      font-size: var(--dry-text-xs);
+      font-weight: 400;
+      white-space: nowrap;
+      border-radius: var(--dry-radius-sm);
+      background-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+      color: #ffffff;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease;
 
       &::before {
         content: "";
         position: absolute;
         inset-inline-start: 50%;
-        inset-block-end: calc(100% + 0.5rem - 5px);
         translate: -50% 0;
-        z-index: 30;
         border: 5px solid transparent;
+      }
+
+      &.dry-tooltip-above::before {
+        inset-block-start: 100%;
         border-block-end-width: 0;
         border-block-start-width: 6px;
         border-block-start-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 120ms ease;
       }
 
-      &:hover::after,
-      &:focus-visible::after,
-      &:hover::before,
-      &:focus-visible::before {
+      &.dry-tooltip-below::before {
+        inset-block-end: 100%;
+        border-block-start-width: 0;
+        border-block-end-width: 6px;
+        border-block-end-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+      }
+
+      &.dry-tooltip-visible {
         opacity: 1;
       }
     }
@@ -1763,7 +1763,8 @@
      * ------------------------------------------------------------------------
      * File manager (components/FileManager.tsx). Mock, self-contained: list/
      * grid browsing, a persistent "Snackbar" selection bar, per-row "more"
-     * menus, move/copy/rename/upload dialogs, and a full-screen preview.
+     * menus, a cut/copy-then-paste clipboard, rename/upload dialogs, and a
+     * full-screen preview.
      */
     .file-manager {
       display: flex;
@@ -1806,20 +1807,47 @@
       }
     }
 
-    /* --- List view: extends the bare `table` styling from base.css. */
+    /* --- List view: rows are separated, rounded, solid-bordered "pills"
+     * rather than base.css's collapsed/dashed dividers - border-spacing
+     * opens the vertical gap, and radius/border live on the first & last
+     * `td` of each row so the row reads as one continuous outline. */
     .file-table {
+      border-collapse: separate;
+      border-spacing: 0 0.5rem;
+
       & .file-table-check,
       & .file-table-more {
         width: 1%;
         white-space: nowrap;
       }
 
-      & tbody tr.selected {
+      & tbody td {
+        padding-block: 0.625rem;
+        border-block: 1px solid var(--dry-border);
+      }
+
+      & tbody td:first-child {
+        border-inline-start: 1px solid var(--dry-border);
+        border-start-start-radius: var(--dry-radius-md);
+        border-end-start-radius: var(--dry-radius-md);
+      }
+
+      & tbody td:last-child {
+        border-inline-end: 1px solid var(--dry-border);
+        border-start-end-radius: var(--dry-radius-md);
+        border-end-end-radius: var(--dry-radius-md);
+      }
+
+      & tbody tr:hover td {
+        background-color: var(--dry-accent);
+      }
+
+      & tbody tr.selected td {
         background-color: var(--dry-selected);
       }
     }
 
-    .file-name-cell {
+    button.file-name-cell {
       gap: 0.625rem;
       height: auto;
       padding: 0;
@@ -1832,7 +1860,6 @@
       &:hover {
         background: none;
         color: inherit;
-        text-decoration: underline;
       }
     }
 
@@ -1854,6 +1881,8 @@
       }
     }
 
+    /* Selection shows two ways: the checkbox itself (see `.file-card-select`
+     * below) and a light background tint on the whole card, once checked. */
     .file-card {
       display: flex;
       flex-direction: column;
@@ -1864,9 +1893,8 @@
       border-radius: var(--dry-radius-lg);
       background-color: var(--dry-card);
 
-      &.selected {
-        border-color: var(--dry-primary);
-        box-shadow: inset 0 0 0 1px var(--dry-primary);
+      &:has(.file-card-checkbox:checked) {
+        background-color: var(--dry-selected);
       }
     }
 
@@ -1877,28 +1905,23 @@
       gap: 0.5rem;
     }
 
-    /* Icon by default; hovering (or focusing, for keyboard users) swaps it for
-     * a checkbox; once checked, `.file-card-check` (a green badge, driven by
-     * JS state - see FileManager.tsx) replaces the icon entirely and the
-     * checkbox stays on top so it can still be unchecked. */
+    /* Thumbnail by default; hovering (or focusing, for keyboard users) hides
+     * it for the checkbox underneath. Once checked, the checkbox stays put -
+     * no more hover needed - styled green/circular via `.file-card-checkbox`. */
     .file-card-select {
       position: relative;
       width: 2.5rem;
       height: 2.5rem;
 
-      & > input {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        border-radius: 50%;
+      &:hover .file-card-thumb,
+      &:focus-within .file-card-thumb,
+      &:has(.file-card-checkbox:checked) .file-card-thumb {
         opacity: 0;
-        cursor: pointer;
       }
 
-      &:hover > input,
-      &:focus-within > input {
+      &:hover .file-card-checkbox,
+      &:focus-within .file-card-checkbox,
+      & .file-card-checkbox:checked {
         opacity: 1;
       }
     }
@@ -1907,19 +1930,42 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
+      transition: opacity 120ms ease;
     }
 
-    .file-card-check {
-      display: grid;
-      width: 100%;
-      height: 100%;
-      place-content: center;
+    .file-card-checkbox {
+      position: absolute;
+      inset-block-start: 50%;
+      inset-inline-start: 50%;
+      translate: -50% -50%;
+      width: 1rem;
+      height: 1rem;
+      margin: 0;
       border-radius: 50%;
-      background-color: var(--dry-success);
-      color: var(--dry-success-foreground);
+      opacity: 0;
+      cursor: pointer;
+      transition: opacity 120ms ease;
+
+      /* The shared checkbox rule paints its check via `mask-image` (it reveals
+       * `background-color` through a checkmark-shaped hole, relying on
+       * whatever's behind to read as the check) - fine for a small square
+       * checkbox sat on a flat field, but here that "whatever's behind" is
+       * this card's own thumbnail/background, an unreliable contrast. So:
+       * cancel the inherited mask and paint an explicit white tick as a
+       * `background-image` layered on top of the solid fill instead. */
+      &:checked {
+        background-color: var(--dry-success);
+        border-color: transparent;
+        mask-image: none;
+        -webkit-mask-image: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: 55% 55%;
+      }
     }
 
-    .file-card-name {
+    button.file-card-name {
       display: block;
       height: auto;
       padding: 0;
@@ -1933,15 +1979,14 @@
       overflow-wrap: anywhere;
 
       &:hover {
-        all: unset !important
+        background-color: unset;
       }
     }
 
-    /* --- Selection bar ("Snackbar"): sticky above the fold, not modal. */
+    /* --- Selection / clipboard bar: sits above the table, under the toolbar -
+     * shared by both `SelectionBar` and `ClipboardBar` so only one kind of
+     * "here's what's active" bar ever competes for that spot. */
     .file-selection-bar {
-      position: sticky;
-      inset-block-end: 1rem;
-      z-index: 5;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1953,17 +1998,15 @@
       box-shadow: var(--dry-shadow-lg);
     }
 
-    /* --- Per-row "more" menu. */
+    /* --- Per-row "more" menu. Portaled to `<body>` (see FileManager.tsx's
+     * `MoreMenu`) so `position`/`top`/`left` are set inline from JS, computed
+     * from the trigger button's own rect - only visual styling lives here. */
     .file-more {
-      position: relative;
       display: inline-flex;
     }
 
     .file-more-menu {
-      position: absolute;
       z-index: 20;
-      top: calc(100% + 0.25rem);
-      inset-inline-end: 0;
       width: 11rem;
       margin: 0;
       padding: 0.25rem;
@@ -1972,11 +2015,6 @@
       background-color: var(--dry-popover);
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
-
-      &.up {
-        top: auto;
-        bottom: calc(100% + 0.25rem);
-      }
 
       & button {
         justify-content: flex-start;
@@ -2003,41 +2041,9 @@
       color: light-dark(var(--dry-error-dark), var(--dry-error-light));
     }
 
-    /* --- Rename / move-copy / upload dialogs. */
+    /* --- Rename / upload dialogs. */
     .file-dialog {
       width: 24rem;
-    }
-
-    .file-folder-tree {
-      display: flex;
-      flex-direction: column;
-      gap: 0.125rem;
-      max-height: 16rem;
-      margin: 0;
-      padding: 0;
-      overflow-y: auto;
-      list-style: none;
-      border: 1px solid var(--dry-border);
-      border-radius: var(--dry-radius-md);
-    }
-
-    .file-folder-tree-item {
-      justify-content: flex-start;
-      width: 100%;
-      height: 2.25rem;
-      background: none;
-      box-shadow: none;
-      color: inherit;
-      font-weight: 400;
-
-      &:hover {
-        background-color: var(--dry-accent);
-      }
-
-      &[aria-selected="true"] {
-        background-color: var(--dry-selected);
-        font-weight: 600;
-      }
     }
 
     .file-upload-dialog {
@@ -2106,12 +2112,13 @@
      * where it lands in the DOM) swallowing clicks meant for the page. */
     .file-preview[open] {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 14rem;
-      grid-template-rows: auto 1fr auto;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto 1fr auto auto;
       grid-template-areas:
-        "header header"
-        "stage  info"
-        "film   info";
+        "header"
+        "stage"
+        "zoom"
+        "film";
       gap: 1rem;
       width: 100vw;
       height: 100vh;
@@ -2119,6 +2126,11 @@
       max-height: 100vh;
       padding: 1rem;
       border-radius: 0;
+      /* Glass, not a solid card - the point of a full-screen preview is to
+       * stay grounded in the page it floats over. */
+      background-color: light-dark(rgb(255 255 255 / 70%), rgb(28 37 46 / 70%));
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
     }
 
     .file-preview-header {
@@ -2145,17 +2157,34 @@
       min-height: 0;
     }
 
+    /* Plain, square hit-targets - no fill/border of their own, only the
+     * `.ghost` hover tint gives them presence. */
     .file-preview-nav {
       flex: none;
-      border-radius: 50%;
+      border-radius: 0;
     }
 
     .file-preview-stage {
-      display: grid;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       flex: 1 1 auto;
-      place-items: center;
       min-width: 0;
       height: 100%;
+      /* Zoomed images are scaled visually (not laid out larger), so this
+       * only ever clips paint at the stage edge - it never needs to scroll. */
+      overflow: hidden;
+    }
+
+    .file-preview-slide {
+      display: flex;
+      max-width: 100%;
+      max-height: 100%;
+      animation: file-preview-from-right 220ms ease;
+
+      &.from-left {
+        animation-name: file-preview-from-left;
+      }
     }
 
     .file-preview-image {
@@ -2165,38 +2194,71 @@
       object-fit: contain;
     }
 
-    .file-preview-placeholder {
-      display: grid;
-      place-items: center;
-      gap: 0.75rem;
-      color: var(--dry-muted-foreground);
+    /* Non-image files get a floating info card instead of the image stage. */
+    .file-preview-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 2rem 2.5rem;
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      & > img {
+        width: 4rem;
+        height: 4rem;
+      }
     }
 
-    .file-preview-info {
-      grid-area: info;
+    .file-preview-rows {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-width: 16rem;
+      margin: 0;
+    }
 
-      & dl {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        margin: 0;
-      }
+    .file-preview-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding-block: 0.625rem;
+      border-bottom: 1px dashed var(--dry-border);
 
-      & div {
-        display: flex;
-        flex-direction: column;
-        gap: 0.125rem;
+      &:last-child {
+        border-bottom: none;
       }
 
       & dt {
         color: var(--dry-muted-foreground);
-        font-size: var(--dry-text-xs);
+        font-size: var(--dry-text-sm);
       }
 
       & dd {
         margin: 0;
         font-size: var(--dry-text-sm);
+        font-weight: 500;
       }
+    }
+
+    /* Zoom bar: only rendered for image files. */
+    .file-preview-zoom {
+      grid-area: zoom;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .file-preview-zoom-input {
+      width: 4rem;
+      height: 1.875rem;
+      padding: 0;
+      text-align: center;
+      font-size: var(--dry-text-xs);
     }
 
     .file-preview-filmstrip {
@@ -2221,16 +2283,19 @@
         border-color: var(--dry-primary);
       }
     }
+  }
 
-    @media (width < 40rem) {
-      .file-preview[open] {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-          "header"
-          "stage"
-          "info"
-          "film";
-      }
+  @keyframes file-preview-from-right {
+    from {
+      translate: 1.5rem 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes file-preview-from-left {
+    from {
+      translate: -1.5rem 0;
+      opacity: 0;
     }
   }
 

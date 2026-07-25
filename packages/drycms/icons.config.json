@@ -33,7 +33,7 @@
     "AlertTriangle": "solar:danger-triangle-bold-duotone",
     "XCircle": "solar:close-circle-bold-duotone",
 
-    "MoreVertical": "solar:menu-dots-bold",
+    "MoreVertical": "lucide:ellipsis-vertical",
     "Copy": "solar:copy-linear",
     "Move": "solar:file-send-linear",
     "Rename": "solar:pen-2-linear",
@@ -42,6 +42,10 @@
     "Upload": "solar:upload-linear",
     "Grid": "solar:widget-2-linear",
     "ListView": "solar:list-linear",
-    "Folder": "solar:folder-linear"
+    "Folder": "solar:folder-linear",
+    "AddFolder": "solar:add-folder-linear",
+    "Plus": "lucide:plus",
+    "Minus": "lucide:minus",
+    "Paste": "solar:clipboard-check-linear"
   }
 }
