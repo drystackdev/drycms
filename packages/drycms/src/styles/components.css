@@ -1095,6 +1095,20 @@
       animation: dry-pulse 1.6s ease-in-out infinite;
     }
 
+    /* Small inline "something's loading" indicator - e.g. next to the file
+     * manager's view toggle. Not a button, so `aria-busy` (see `button`
+     * above) doesn't apply; this is the bare-element equivalent. */
+    .spinner {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      flex: none;
+      border: 2px solid var(--dry-border);
+      border-top-color: var(--dry-muted-foreground);
+      border-radius: 50%;
+      animation: dry-spin 700ms linear infinite;
+    }
+
     /* ---------------------------------------------------------------- Avatar */
     .avatar {
       display: inline-grid;
@@ -1916,17 +1930,6 @@
       & tbody tr.drag-over td {
         background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
       }
-
-      /* Stands in for a real row while the current folder's first
-       * `source.list()` call is in flight - header stays, only this changes. */
-      & tbody tr.file-table-skeleton-row {
-        cursor: default;
-        pointer-events: none;
-
-        & .skeleton {
-          height: 1.25rem;
-        }
-      }
     }
 
     button.file-name-cell {
@@ -1958,10 +1961,6 @@
       object-fit: contain;
       border-radius: 4px;
       background-color: var(--dry-muted);
-    }
-
-    .file-card-skeleton-thumb {
-      height: 2.5rem;
     }
 
     /* --- Grid view: fixed 4 columns, explicit tracks so long names can't force an overflow. */
@@ -1998,12 +1997,6 @@
       /* Cut/copied, waiting on a paste elsewhere. */
       &.pending {
         opacity: 0.6;
-      }
-
-      /* Stands in for a real card while the current folder's first
-       * `source.list()` call is in flight. */
-      &.file-card-skeleton {
-        cursor: default;
       }
 
       /* Drag-to-move: hovering dragged item(s) over a folder card - solid,

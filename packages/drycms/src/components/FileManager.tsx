@@ -265,6 +265,10 @@ interface ToolbarProps {
   onUpload?: () => void;
   previewOn: boolean;
   onTogglePreview: () => void;
+  /** The current folder is (re)loading - a small spinner next to the view
+   * toggle, instead of a full skeleton, since `entries` keeps showing
+   * whatever it already had until the fresh data replaces it. */
+  loading: boolean;
 }
 
 function Toolbar({
@@ -276,6 +280,7 @@ function Toolbar({
   onUpload,
   previewOn,
   onTogglePreview,
+  loading,
 }: ToolbarProps) {
   return (
     <div class="file-toolbar row">
@@ -290,6 +295,7 @@ function Toolbar({
         }
       />
       <span class="spacer" />
+      {loading && <span class="spinner" aria-hidden="true" />}
       <div class="file-view-toggle" role="group" aria-label="View">
         <button
           type="button"
@@ -360,14 +366,7 @@ interface ViewProps {
   onDropEntry: (entry: FileEntry) => (event: DragEvent) => void;
   /** Real thumbnails (list: 16:9 mini, grid: full-card) instead of the generic file-type icon. */
   preview: boolean;
-  /** The current folder's first `source.list()` call is in flight - renders
-   * skeleton rows/cards in place of `entries` instead of replacing the whole
-   * view (header/toolbar stay put, only the data underneath is placeholder). */
-  loading: boolean;
 }
-
-const SKELETON_ROWS = 6;
-const SKELETON_WIDTHS = [92, 78, 85, 65, 90, 72, 88, 60];
 
 function ListView({
   entries,
@@ -387,7 +386,6 @@ function ListView({
   onDragLeaveEntry,
   onDropEntry,
   preview,
-  loading,
   multiple,
   allSelected,
   onToggleAll,
@@ -491,40 +489,7 @@ function ListView({
           )}
         </thead>
         <tbody>
-          {loading ? (
-            Array.from({ length: SKELETON_ROWS }).map((_, index) => (
-              <tr
-                // eslint-disable-next-line react/no-array-index-key
-                key={index}
-                class="file-table-skeleton-row"
-                style={{ cursor: "default" }}
-              >
-                <td class="file-table-check">
-                  <span class="skeleton" />
-                </td>
-                <td>
-                  <span
-                    class="skeleton"
-                    style={{
-                      width: `${SKELETON_WIDTHS[index % SKELETON_WIDTHS.length]}%`,
-                    }}
-                  />
-                </td>
-                <td class="numeric">
-                  <span class="skeleton" />
-                </td>
-                <td>
-                  <span class="skeleton" />
-                </td>
-                <td>
-                  <span class="skeleton" />
-                </td>
-                <td class="file-table-more">
-                  <span class="skeleton" />
-                </td>
-              </tr>
-            ))
-          ) : entries.length === 0 ? (
+          {entries.length === 0 ? (
             <tr style={{ cursor: "default" }}>
               <td colSpan={6}>
                 <div class="center" style={{height: 200}} >No files.</div>
@@ -637,27 +602,7 @@ function GridView({
   onDragLeaveEntry,
   onDropEntry,
   preview,
-  loading,
 }: ViewProps) {
-  if (loading) {
-    return (
-      <div class="file-grid">
-        {Array.from({ length: SKELETON_ROWS }).map((_, index) => (
-          // eslint-disable-next-line react/no-array-index-key
-          <div key={index} class="file-card file-card-skeleton">
-            <span class="skeleton file-card-skeleton-thumb" />
-            <span
-              class="skeleton"
-              style={{
-                width: `${SKELETON_WIDTHS[index % SKELETON_WIDTHS.length]}%`,
-              }}
-            />
-            <span class="skeleton" style={{ width: "40%" }} />
-          </div>
-        ))}
-      </div>
-    );
-  }
   if (entries.length === 0) return <div class="empty">No files.</div>;
 
   return (
@@ -1198,6 +1143,7 @@ function UploadDialog({
             <button
               type="button"
               disabled={busy || files.length === 0}
+              aria-busy={busy}
               onClick={() => onSubmit(files)}
             >
               Upload{files.length > 0 ? ` (${files.length})` : ""}
@@ -1822,10 +1768,6 @@ export default function FileManager({
     });
     await refreshFolder(currentFolderId);
     setSelection(selectedIds.filter((id) => !ids.includes(id)));
-    toast.add({
-      title: `Moved ${ids.length} item${ids.length === 1 ? "" : "s"}`,
-      type: "success",
-    });
   };
 
   const navigateBreadcrumb = (id: string | null) => {
@@ -1853,10 +1795,6 @@ export default function FileManager({
     setEntries((current) => current.filter((entry) => !toRemove.has(entry.id)));
     setSelection(selectedIds.filter((id) => !toRemove.has(id)));
     if (previewId && toRemove.has(previewId)) setPreviewId(null);
-    toast.add({
-      title: `Deleted ${ids.length} item${ids.length === 1 ? "" : "s"}`,
-      type: "success",
-    });
   };
 
   /* Clears the current selection so the (also sticky, bottom-of-screen)
@@ -1922,10 +1860,6 @@ export default function FileManager({
     await refreshFolder(targetId);
     setSelection([]);
     setClipboard(null);
-    toast.add({
-      title: `${mode === "move" ? "Moved" : "Copied"} ${ids.length} item${ids.length === 1 ? "" : "s"}`,
-      type: "success",
-    });
   };
 
   const renameTargetEntry = renameId
@@ -1953,7 +1887,6 @@ export default function FileManager({
       setSelection(selectedIds.map((id) => (id === oldId ? updated.id : id)));
     }
     if (previewId === oldId) setPreviewId(updated.id);
-    toast.add({ title: "Renamed", type: "success" });
   };
 
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -2014,7 +1947,6 @@ export default function FileManager({
           : entry,
       ),
     );
-    toast.add({ title: "File replaced", type: "success" });
   };
 
   const submitUpload = async (files: File[]) => {
@@ -2031,10 +1963,6 @@ export default function FileManager({
 
     setUploadOpen(false);
     await refreshFolder(currentFolderId);
-    toast.add({
-      title: `Uploaded ${files.length} file${files.length === 1 ? "" : "s"}`,
-      type: "success",
-    });
   };
 
   const createFolder = async (name: string) => {
@@ -2051,7 +1979,6 @@ export default function FileManager({
 
     setNewFolderOpen(false);
     await refreshFolder(currentFolderId);
-    toast.add({ title: `Created folder "${name}"`, type: "success" });
   };
 
   const previewEntry = previewId
@@ -2081,8 +2008,11 @@ export default function FileManager({
     />
   );
 
-  const showSkeleton =
-    loadingFolders.has(currentFolderId) && !loadedFolders.has(currentFolderId);
+  /** Drives the small spinner next to the view toggle - covers both the
+   * first visit to a folder *and* the refetch every mutation triggers, so
+   * the toolbar signals "working" without ever swapping `entries` out for
+   * skeleton placeholders (the list/grid just keep showing what they had). */
+  const folderLoading = loadingFolders.has(currentFolderId);
 
   return (
     <div class="file-manager">
@@ -2112,6 +2042,7 @@ export default function FileManager({
         onUpload={source.upload ? () => setUploadOpen(true) : undefined}
         previewOn={previewOn}
         onTogglePreview={() => setPreviewOn((current) => !current)}
+        loading={folderLoading}
       />
 
       {view === "grid" &&
@@ -2147,7 +2078,6 @@ export default function FileManager({
           selectedIds={selectedIds}
           clipboard={clipboard}
           isDisabled={isDisabled}
-          loading={showSkeleton}
           sortDir={sortDir}
           onSort={() =>
             setSortDir((current) => (current === "asc" ? "desc" : "asc"))
@@ -2194,7 +2124,6 @@ export default function FileManager({
           onDragLeaveEntry={onDragLeaveEntry}
           onDropEntry={onDropEntry}
           preview={previewOn}
-          loading={showSkeleton}
         />
       )}
 
