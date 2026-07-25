@@ -38,6 +38,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:icons": "node scripts/build-icons.mjs",
+    "build:file-icons": "node scripts/build-file-icons.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run"
   },

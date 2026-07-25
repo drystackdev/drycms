@@ -1,13 +1,13 @@
 # db.ts — thư viện SQLite/D1 tối giản
 
 Thư viện 1 file (`db.ts`) cung cấp: column builder tự sinh JSON Schema + TS
-type, query builder kiểu Prisma (rút gọn cho SQLite), và migration diff sinh
-file `.sql`. Chạy được trên Cloudflare D1, `better-sqlite3`, `bun:sqlite`,
-`node:sqlite`.
+type, table handle vừa định nghĩa schema vừa truy vấn trực tiếp (kiểu
+ActiveRecord, rút gọn cho SQLite), và migration diff sinh file `.sql`. Chạy
+được trên Cloudflare D1, `better-sqlite3`, `bun:sqlite`, `node:sqlite`.
 
 > Thiết kế nền tảng: xem `status/db.md` để biết đầy đủ các quyết định (vì sao
 > validate không nằm ở SQL schema, vì sao migration chỉ sinh file không
-> auto-apply, v.v).
+> auto-apply, vì sao không có `db.query()`, v.v).
 
 ## Cài đặt / import
 
@@ -59,8 +59,9 @@ const user = db.table("user", {
 });
 ```
 
-**Giữ lại biến trả về** (`user` ở trên) — đây là chìa khoá để có type chính
-xác + autocomplete ở bước query, xem mục [5](#5-type-safety-dùng-handle-không-dùng-string).
+`user` — giá trị trả về từ `db.table()` — là **đối tượng duy nhất bạn cần**:
+nó vừa mang schema, vừa là nơi gọi mọi thao tác truy vấn (xem mục 5). Không có
+`db.query()` nào khác để nhớ.
 
 ### Kiểu cột
 
@@ -94,14 +95,20 @@ xác + autocomplete ở bước query, xem mục [5](#5-type-safety-dùng-handle
 ```ts
 const role = db.table("role", { name: db.TEXT().REQUIRED() });
 
-user.add({
+user = user.addColumn({
   address: db.TEXT({ regex: "^\\d*$" }),
   role: db.REF(role), // cột INTEGER tên "role", trỏ tới bảng role
   permissions: db.REFS(permissionTable), // bảng phụ user_permission (n-n)
 });
 
-user.remove("address");
+user = user.removeColumn("address");
 ```
+
+**Bắt buộc gán lại `user = user.addColumn(...)` / `user = user.removeColumn(...)`**
+để lấy được type mới (TypeScript không tự "vá" type của biến `user` cũ sau khi
+đổi schema — đây là giới hạn cứng của type system, không phải sơ suất; xem
+`status/db.md`). Ở runtime, gán lại hay không đều được (cùng 1 instance, tự
+mutate), nhưng không gán lại thì type sẽ thiếu cột mới.
 
 - `db.REF(target)`: thêm 1 cột INTEGER **đúng tên field** đã khai báo (không tự
   thêm hậu tố `_id`) — không có `FOREIGN KEY` thật ở SQL.
@@ -126,16 +133,14 @@ So sánh schema khai báo trong code với DB thật (`PRAGMA table_info`), rồ
   for (const stmt of statements) raw.exec(stmt);
   ```
 
-## 5. Query builder
+## 5. Truy vấn — gọi thẳng trên table handle
 
-```ts
-const query = db.query();
-```
+Không có `db.query()`. Mọi thao tác gọi trực tiếp trên biến bảng (`user`).
 
 ### Tạo mới
 
 ```ts
-const created = await query(user).creates({
+const created = await user.creates({
   name: "Khan Tran",
   email: "khan@gmail.com",
   password: "secret123",
@@ -152,14 +157,18 @@ vào → object ra, mảng vào → mảng ra — không phải đoán/ép kiể
 ### Sửa / xoá
 
 ```ts
-await query(user).where("id", 1).update({ name: "Khan" }); // -> hàng khớp[]
-await query(user).where("id", 1).delete(); // -> hàng đã xoá[]
+await user.where("id", 1).update({ name: "Khan" }); // -> hàng khớp[]
+await user.where("id", 1).delete(); // -> hàng đã xoá[]
+
+// Không gọi .where() trước -> áp dụng cho TOÀN BỘ row (đúng ngữ nghĩa SQL
+// UPDATE/DELETE không WHERE) - cẩn thận khi dùng.
+await user.update({ role: null });
 ```
 
 ### Lọc, chọn field, sắp xếp, phân trang
 
 ```ts
-const result = await query(user)
+const result = await user
   .where({
     OR: [{ name: "A" }, { name: "B" }],
     email: { endsWith: "gmail.com" },
@@ -171,6 +180,9 @@ const result = await query(user)
   .sort({ name: "asc" }) // luôn kèm updated_at desc làm tie-breaker
   .pagination(20, 0) // take, skip
   .get();
+
+// Không lọc gì, lấy hết:
+const all = await user.get();
 ```
 
 Operator hỗ trợ trong `where`: `equals` (mặc định khi gán giá trị trực tiếp),
@@ -181,21 +193,19 @@ Operator hỗ trợ trong `where`: `equals` (mặc định khi gán giá trị t
 
 ```ts
 // where: callback = lọc kiểu EXISTS, KHÔNG trả dữ liệu quan hệ ra ngoài
-const admins = await query(user)
-  .where({ role: (q) => q.where({ name: "Admin" }) })
-  .get();
+const admins = await user.where({ role: (q) => q.where({ name: "Admin" }) }).get();
 
 // REFS (n-n): where nghĩa là "tồn tại ít nhất 1 bản ghi liên kết khớp"
-const withWritePerm = await query(user)
+const withWritePerm = await user
   .where({ permissions: (q) => q.where({ name: "write" }) })
   .get();
 
 // select: object lồng (không phải callback) = include dữ liệu quan hệ
-const withRole = await query(user)
+const withRole = await user
   .select({ name: true, role: { name: true } }) // role: { name } | null
   .get();
 
-const withPerms = await query(user)
+const withPerms = await user
   .select({ name: true, permissions: { name: true } }) // permissions: {name}[]
   .get();
 ```
@@ -211,26 +221,34 @@ bảng cha.
 ngoài) khi `.creates()`/`.update()`. Mặc định **luôn bị ẩn** khỏi kết quả
 `.get()`/`.select()`.
 
+`verifyPassword` nằm thẳng trên **row trả về** (không phải trên `user`/table
+handle) — chỉ những bảng có cột `PASSWORD()` mới có method này, TypeScript tự
+biết và autocomplete đúng:
+
 ```ts
-await db.verifyPassword("user", userId, "mật khẩu người dùng nhập");
-// -> true | false
+const created = await user.creates({ name: "Khan", password: "secret123" });
+await created.success?.verifyPassword("secret123"); // -> true
+
+const [found] = await user.where({ name: "Khan" }).get();
+await found?.verifyPassword("secret123"); // -> true
 ```
 
-## 7. Type-safety: dùng handle, không dùng string
+`verifyPassword` không hiện trong `Object.keys()`/`JSON.stringify()`/spread
+(gắn bằng property non-enumerable) nên không lẫn vào response API trả ra
+ngoài, dù vẫn gọi trực tiếp được trên object.
+
+## 7. Type-safety
 
 ```ts
 const user = db.table("user", { name: db.TEXT().REQUIRED(), ... });
-const query = db.query();
 
-query(user)   // ✅ truyền biến handle -> type chính xác, autocomplete field,
-              //    thiếu field REQUIRED() bị TypeScript chặn ngay lúc code
-query("user") // ⚠️ chạy đúng ở runtime nhưng type lỏng (không autocomplete)
+user.where({ name: "Khan" })   // ✅ autocomplete field, thiếu field REQUIRED()
+                               //    ở .creates() bị TypeScript chặn ngay lúc code
 ```
 
-Lý do: TypeScript không thể suy type từ 1 literal string tới bảng đã đăng ký
-bằng 1 lệnh `db.table(...)` riêng biệt trước đó (giới hạn của type system, xem
-`status/db.md`). Luôn ưu tiên giữ lại và dùng biến `TableHandle` trả về từ
-`db.table()`/`.add()` thay vì gõ lại tên bảng bằng string.
+Vì `user` mang theo đúng generic của schema đã khai báo, mọi method
+(`where/select/sort/pagination/get/update/delete/creates`) đều được suy type
+chính xác — không cần `as any`, không có bước trung gian nào để mất type.
 
 ## 8. Giới hạn hiện tại
 
@@ -246,6 +264,9 @@ bằng 1 lệnh `db.table(...)` riêng biệt trước đó (giới hạn của 
   khi cần chạy thử local.
 - `db.migrate()` chỉ diff cột thêm/xoá + index; chưa diff đổi kiểu cột hay đổi
   tên cột (rename = xoá + thêm mới, mất dữ liệu cột đó).
+- `user.update(...)`/`user.delete()` gọi trực tiếp (không qua `.where()`) sẽ
+  áp dụng cho **toàn bộ** row trong bảng — đúng ngữ nghĩa SQL, nhưng dễ nhầm
+  nếu quên `.where()`.
 
 ## Ví dụ đầy đủ
 

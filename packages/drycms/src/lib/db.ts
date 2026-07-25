@@ -147,6 +147,18 @@ export class Column<T, Req extends boolean = false, RefCols extends ColumnMap | 
   }
 }
 
+/**
+ * Subclass riêng chỉ để đánh dấu "đây là cột PASSWORD" ở tầng type (cho
+ * `Model<Cols>` biết bảng nào cần gắn `verifyPassword` vào row trả về) mà
+ * không phải sửa lại mọi chỗ đang check `Column<any, any, any>` sẵn có.
+ */
+export class PasswordColumn<Req extends boolean = false> extends Column<string, Req, undefined> {
+  override REQUIRED(): PasswordColumn<true> {
+    this._meta.required = true;
+    return this as unknown as PasswordColumn<true>;
+  }
+}
+
 export class RelationRefs<TargetCols extends ColumnMap = ColumnMap> {
   declare readonly _targetCols: TargetCols;
   constructor(public readonly targetTable: string) {}
@@ -200,8 +212,22 @@ export type InferCreateInput<Cols extends ColumnMap> = {
   [K in OptionalScalarKeys<Cols>]?: Cols[K] extends Column<infer T, any, any> ? T : never;
 };
 
+type PasswordKeys<Cols extends ColumnMap> = {
+  [K in keyof Cols]: Cols[K] extends PasswordColumn<any> ? K : never;
+}[keyof Cols];
+
+type HasPassword<Cols extends ColumnMap> = [PasswordKeys<Cols>] extends [never] ? false : true;
+
+/**
+ * Row trả về từ `.get()/.creates()/.update()/.delete()`. Nếu bảng có cột
+ * PASSWORD thì row có thêm `verifyPassword(plain)` gắn sẵn theo đúng id của
+ * chính row đó — không cần truyền lại table/id.
+ */
+export type Model<Cols extends ColumnMap> = InferRow<Cols> &
+  (HasPassword<Cols> extends true ? { verifyPassword(plain: string): Promise<boolean> } : {});
+
 /** `type User = Infer<typeof userTable>` */
-export type Infer<H> = H extends TableHandle<infer Cols> ? InferRow<Cols> : never;
+export type Infer<H> = H extends TableHandle<infer Cols> ? Model<Cols> : never;
 
 interface TextOptions {
   min?: number;
@@ -238,7 +264,7 @@ interface ColumnFactories {
   BOOL(): Column<boolean>;
   DATE(): Column<string>;
   JSON<T = unknown>(): Column<T>;
-  PASSWORD(): Column<string>;
+  PASSWORD(): PasswordColumn;
   REF<Cols extends ColumnMap>(target: TableHandle<Cols>): Column<number, false, Cols>;
   REFS<Cols extends ColumnMap>(target: TableHandle<Cols>): RelationRefs<Cols>;
 }
@@ -306,7 +332,7 @@ function makeColumnFactories(): ColumnFactories {
       });
     },
     PASSWORD() {
-      return new Column<string>({
+      return new PasswordColumn({
         sqlType: "TEXT",
         kind: "password",
         required: false,
@@ -361,12 +387,22 @@ export class TableHandle<Cols extends ColumnMap = ColumnMap> {
   columns: Cols;
   readonly relationsMany = new Map<string, RelationManyDef>();
   private readonly joinTables: Map<string, JoinTableDef>;
+  private readonly driver: AsyncDriver;
+  private readonly tables: Map<string, TableHandle<any>>;
 
-  constructor(name: string, columns: Cols, joinTables: Map<string, JoinTableDef>) {
+  constructor(
+    name: string,
+    columns: Cols,
+    joinTables: Map<string, JoinTableDef>,
+    driver: AsyncDriver,
+    tables: Map<string, TableHandle<any>>,
+  ) {
     assertIdentifier(name);
     this.name = name;
     this.columns = columns;
     this.joinTables = joinTables;
+    this.driver = driver;
+    this.tables = tables;
   }
 
   get jsonSchema(): Record<string, unknown> {
@@ -380,7 +416,8 @@ export class TableHandle<Cols extends ColumnMap = ColumnMap> {
     return { type: "object", properties, required };
   }
 
-  add<NewCols extends ColumnMap>(cols: NewCols): TableHandle<Cols & NewCols> {
+  /** Thêm cột vào bảng đã có. Bắt buộc `user = user.addColumn(...)` để lấy type mới. */
+  addColumn<NewCols extends ColumnMap>(cols: NewCols): TableHandle<Cols & NewCols> {
     for (const [key, col] of Object.entries(cols)) {
       assertIdentifier(key);
       if (RESERVED_COLUMNS.has(key)) {
@@ -401,12 +438,58 @@ export class TableHandle<Cols extends ColumnMap = ColumnMap> {
     return this as unknown as TableHandle<Cols & NewCols>;
   }
 
-  remove<K extends keyof Cols>(...fields: K[]): TableHandle<Omit<Cols, K>> {
+  /** Xoá cột khỏi bảng. Bắt buộc `user = user.removeColumn(...)` để lấy type mới. */
+  removeColumn<K extends keyof Cols>(...fields: K[]): TableHandle<Omit<Cols, K>> {
     for (const field of fields) {
       delete (this.columns as ColumnMap)[field as string];
       this.relationsMany.delete(field as string);
     }
     return this as unknown as TableHandle<Omit<Cols, K>>;
+  }
+
+  private query(): QueryBuilder<Cols> {
+    return new QueryBuilder<Cols>(this.driver, this, this.tables);
+  }
+
+  where(cond: WhereInput<Cols>): QueryBuilder<Cols>;
+  where<K extends ScalarKeys<Cols>>(
+    field: K,
+    value: Cols[K] extends Column<infer T, any, any> ? T : never,
+  ): QueryBuilder<Cols>;
+  where(condOrField: any, value?: unknown): QueryBuilder<Cols> {
+    return (this.query().where as (a: any, b?: unknown) => QueryBuilder<Cols>)(condOrField, value);
+  }
+
+  select(shape: SelectInput<Cols>): QueryBuilder<Cols> {
+    return this.query().select(shape);
+  }
+
+  sort(spec: SortInput<Cols>): QueryBuilder<Cols> {
+    return this.query().sort(spec);
+  }
+
+  pagination(take: number, skip = 0): QueryBuilder<Cols> {
+    return this.query().pagination(take, skip);
+  }
+
+  get(): Promise<Model<Cols>[]> {
+    return this.query().get();
+  }
+
+  /** Không gọi `.where()` trước -> áp dụng cho TOÀN BỘ row (đúng ngữ nghĩa SQL UPDATE không WHERE). */
+  update(data: Partial<InferRow<Cols>>): Promise<Model<Cols>[]> {
+    return this.query().update(data);
+  }
+
+  /** Không gọi `.where()` trước -> xoá TOÀN BỘ row. */
+  delete(): Promise<Model<Cols>[]> {
+    return this.query().delete();
+  }
+
+  creates(data: InferCreateInput<Cols>): Promise<CreateResult<Model<Cols>, false>>;
+  creates(data: InferCreateInput<Cols>[]): Promise<CreateResult<Model<Cols>, true>>;
+  creates(data: any): Promise<CreateResult<Model<Cols>, boolean>> {
+    return this.query().creates(data);
   }
 }
 
@@ -710,6 +793,28 @@ function stripSensitive(row: SqlRow, table: TableHandle<any>): SqlRow {
   return out;
 }
 
+/**
+ * Nếu bảng có cột PASSWORD, gắn `verifyPassword(plain)` thẳng vào row trả về
+ * (không enumerable - không lẫn vào JSON.stringify/spread), tra lại đúng hash
+ * theo id của chính row này. Không có cột PASSWORD thì trả nguyên row.
+ */
+function attachVerifyPassword(row: SqlRow, id: unknown, table: TableHandle<any>, driver: AsyncDriver): SqlRow {
+  const passwordEntry = Object.entries(table.columns).find(
+    ([, c]) => c instanceof Column && c._meta.kind === "password",
+  );
+  if (!passwordEntry) return row;
+  const [passwordField] = passwordEntry;
+  Object.defineProperty(row, "verifyPassword", {
+    enumerable: false,
+    value: async (plain: string) => {
+      const fresh = await driver.get(`SELECT ${passwordField} FROM ${table.name} WHERE id = ?`, [id]);
+      if (!fresh) return false;
+      return verifyPasswordHash(plain, String(fresh[passwordField]));
+    },
+  });
+  return row;
+}
+
 async function applySelect(
   rows: SqlRow[],
   table: TableHandle<any>,
@@ -718,7 +823,7 @@ async function applySelect(
   driver: AsyncDriver,
 ): Promise<SqlRow[]> {
   if (!shape) {
-    return rows.map((r) => stripSensitive(r, table));
+    return rows.map((r) => attachVerifyPassword(stripSensitive(r, table), r.id, table, driver));
   }
 
   const results: SqlRow[] = [];
@@ -763,7 +868,7 @@ async function applySelect(
         continue;
       }
     }
-    results.push(out);
+    results.push(attachVerifyPassword(out, row.id, table, driver));
   }
   return results;
 }
@@ -811,20 +916,20 @@ export class QueryBuilder<Cols extends ColumnMap = ColumnMap> {
     return { tables: this.tables };
   }
 
-  async get(): Promise<InferRow<Cols>[]> {
+  async get(): Promise<Model<Cols>[]> {
     const { sql: whereSql, params } = compileWhere(this.table, this.cond, this.ctx());
     const orderSql = buildOrderSql(this.table, this.sortSpec);
     const limitSql = this.takeN != null ? ` LIMIT ${this.takeN} OFFSET ${this.skipN}` : "";
     const sql = `SELECT * FROM ${this.table.name} WHERE ${whereSql}${orderSql}${limitSql}`;
     const rows = await this.driver.all(sql, params);
-    return (await applySelect(rows, this.table, this.selectShape, this.ctx(), this.driver)) as InferRow<Cols>[];
+    return (await applySelect(rows, this.table, this.selectShape, this.ctx(), this.driver)) as Model<Cols>[];
   }
 
-  async creates(data: InferCreateInput<Cols>): Promise<CreateResult<InferRow<Cols>, false>>;
-  async creates(data: InferCreateInput<Cols>[]): Promise<CreateResult<InferRow<Cols>, true>>;
+  async creates(data: InferCreateInput<Cols>): Promise<CreateResult<Model<Cols>, false>>;
+  async creates(data: InferCreateInput<Cols>[]): Promise<CreateResult<Model<Cols>, true>>;
   async creates(
     data: InferCreateInput<Cols> | InferCreateInput<Cols>[],
-  ): Promise<CreateResult<InferRow<Cols>, boolean>> {
+  ): Promise<CreateResult<Model<Cols>, boolean>> {
     const isArray = Array.isArray(data);
     const items: SqlRow[] = (isArray ? data : [data]) as SqlRow[];
     const errors: Record<string, string[]> = {};
@@ -870,10 +975,10 @@ export class QueryBuilder<Cols extends ColumnMap = ColumnMap> {
     }
 
     const output = await applySelect(created, this.table, undefined, this.ctx(), this.driver);
-    return { success: (isArray ? output : output[0]) as InferRow<Cols> | InferRow<Cols>[] };
+    return { success: (isArray ? output : output[0]) as Model<Cols> | Model<Cols>[] };
   }
 
-  async update(data: Partial<InferRow<Cols>>): Promise<InferRow<Cols>[]> {
+  async update(data: Partial<InferRow<Cols>>): Promise<Model<Cols>[]> {
     const { sql: whereSql, params } = compileWhere(this.table, this.cond, this.ctx());
     const rows = await this.driver.all(`SELECT * FROM ${this.table.name} WHERE ${whereSql}`, params);
     const now = new Date().toISOString();
@@ -903,16 +1008,16 @@ export class QueryBuilder<Cols extends ColumnMap = ColumnMap> {
       if (fresh) updated.push(fresh);
     }
 
-    return (await applySelect(updated, this.table, undefined, this.ctx(), this.driver)) as InferRow<Cols>[];
+    return (await applySelect(updated, this.table, undefined, this.ctx(), this.driver)) as Model<Cols>[];
   }
 
-  async delete(): Promise<InferRow<Cols>[]> {
+  async delete(): Promise<Model<Cols>[]> {
     const { sql: whereSql, params } = compileWhere(this.table, this.cond, this.ctx());
     const rows = await this.driver.all(`SELECT * FROM ${this.table.name} WHERE ${whereSql}`, params);
     for (const row of rows) {
       await this.driver.run(`DELETE FROM ${this.table.name} WHERE id = ?`, [row.id]);
     }
-    return (await applySelect(rows, this.table, undefined, this.ctx(), this.driver)) as InferRow<Cols>[];
+    return (await applySelect(rows, this.table, undefined, this.ctx(), this.driver)) as Model<Cols>[];
   }
 }
 
@@ -1010,23 +1115,10 @@ async function migrateAndWrite(
 // createDB()
 // ---------------------------------------------------------------------------
 
-/**
- * Truyền `TableHandle` (biến trả về từ `db.table(...)`) để suy ra type chính
- * xác (autocomplete, không cần `as any`). Truyền string trần vẫn chạy đúng ở
- * runtime nhưng type lỏng (`ColumnMap` rỗng) vì TS không thể tra type từ 1
- * literal string tới bảng đã đăng ký trước đó bằng lệnh riêng biệt.
- */
-export interface QueryFn {
-  <Cols extends ColumnMap>(table: TableHandle<Cols>): QueryBuilder<Cols>;
-  (table: string): QueryBuilder<ColumnMap>;
-}
-
 export interface DB extends ColumnFactories {
   table<Cols extends ColumnMap>(name: string, columns: Cols): TableHandle<Cols>;
   table(name: string): TableHandle<any>;
-  query(): QueryFn;
   migrate(): Promise<MigrationResult>;
-  verifyPassword(tableName: string, id: number, plain: string): Promise<boolean>;
 }
 
 export function createDB(instance?: SupportedInstance): DB {
@@ -1042,7 +1134,7 @@ export function createDB(instance?: SupportedInstance): DB {
       for (const key of Object.keys(columns)) {
         if (RESERVED_COLUMNS.has(key)) throw new Error(`Cột "${key}" trùng tên với cột hệ thống.`);
       }
-      const t = new TableHandle(name, columns, joinTables);
+      const t = new TableHandle(name, columns, joinTables, driver, tables);
       tables.set(name, t);
       return t;
     }
@@ -1051,31 +1143,11 @@ export function createDB(instance?: SupportedInstance): DB {
     return existing;
   }
 
-  function resolveTable(t: string | TableHandle<any>): TableHandle<any> {
-    const resolved = typeof t === "string" ? tables.get(t) : t;
-    if (!resolved) throw new Error(`Bảng "${t}" chưa được khai báo qua db.table().`);
-    return resolved;
-  }
-
   return {
     ...factories,
     table: table as DB["table"],
-    query() {
-      return ((t: string | TableHandle<any>) => new QueryBuilder(driver, resolveTable(t), tables)) as QueryFn;
-    },
     migrate() {
       return migrateAndWrite(driver, tables, joinTables);
-    },
-    async verifyPassword(tableName, id, plain) {
-      const tbl = resolveTable(tableName);
-      const passwordEntry = Object.entries(tbl.columns).find(
-        ([, c]) => c instanceof Column && c._meta.kind === "password",
-      );
-      if (!passwordEntry) throw new Error(`Bảng "${tableName}" không có cột PASSWORD.`);
-      const [passwordField] = passwordEntry;
-      const row = await driver.get(`SELECT ${passwordField} FROM ${tableName} WHERE id = ?`, [id]);
-      if (!row) return false;
-      return verifyPasswordHash(plain, String(row[passwordField]));
     },
   };
 }

@@ -22,28 +22,25 @@ if (statements.length > 0) {
   console.log("Không có thay đổi schema, bỏ qua migration.");
 }
 
-const query = db.query();
-
-// Truyền `user` (handle từ db.table(), không phải string "user") để có type
-// chính xác + autocomplete field ngay khi gõ - thiếu `name` sẽ bị TypeScript
-// báo lỗi ngay lúc code, không cần đợi chạy mới biết.
-const invalid = await query(user).creates({ name: "A", email: "not-an-email" });
+// Không còn db.query() - gọi thẳng where/select/creates/... trên chính
+// `user` (handle từ db.table()). Thiếu `name` sẽ bị TypeScript báo lỗi ngay
+// lúc code, không cần đợi chạy mới biết.
+const invalid = await user.creates({ name: "A", email: "not-an-email" });
 console.log("\nEmail sai định dạng (name đã có, bắt ở runtime qua jsonSchema) ->", invalid);
 
-const created = await query(user).creates({
+const created = await user.creates({
   name: "Khan Tran",
   email: "khan@gmail.com",
   password: "secret123",
 });
 console.log("\nTạo user hợp lệ ->", created);
 
-const users = await query(user).get();
+const users = await user.get();
 console.log("\nDanh sách user (password bị ẩn mặc định) ->", users);
 
-// creates() với 1 object (không phải mảng) trả thẳng 1 object ở `success`,
-// không còn union với mảng nữa - không cần Array.isArray check.
+// verifyPassword nằm thẳng trên row trả về (không cần truyền lại table/id).
 const row = created.success;
 if (row) {
-  console.log("\nverifyPassword('secret123') ->", await db.verifyPassword("user", row.id, "secret123"));
-  console.log("verifyPassword('sai') ->", await db.verifyPassword("user", row.id, "sai"));
+  console.log("\nverifyPassword('secret123') ->", await row.verifyPassword("secret123"));
+  console.log("verifyPassword('sai') ->", await row.verifyPassword("sai"));
 }

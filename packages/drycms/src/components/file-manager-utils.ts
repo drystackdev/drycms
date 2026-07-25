@@ -1,6 +1,7 @@
 import type { FileEntry } from './file-manager-types.js';
+import { fileThumbnails, type FileThumbnailName } from './file-manager-thumbnails.js';
 
-/** The 12 thumbnail categories the CDN serves an `ic-*.svg` for. */
+/** The 12 thumbnail categories with a bundled `ic-*.svg`. */
 export type FileThumbCategory =
 	| 'folder'
 	| 'txt'
@@ -15,10 +16,8 @@ export type FileThumbCategory =
 	| 'photoshop'
 	| 'illustrator';
 
-const THUMB_BASE = 'https://pub-c5e31b5cdafb419fb247a8ac2e78df7a.r2.dev/public/assets/icons/files';
-
-/** Category -> CDN filename stem (differs from the category name in a few spots). */
-const THUMB_FILE: Record<FileThumbCategory, string> = {
+/** Category -> `file-icons/` filename stem (differs from the category name in a few spots). */
+const THUMB_FILE: Record<FileThumbCategory, FileThumbnailName> = {
 	folder: 'ic-folder',
 	txt: 'ic-txt',
 	zip: 'ic-zip',
@@ -71,7 +70,7 @@ export function extensionToCategory(ext: string | undefined): FileThumbCategory 
 
 export function thumbnailUrl(entry: FileEntry): string {
 	const category = entry.kind === 'folder' ? 'folder' : extensionToCategory(entry.ext);
-	return `${THUMB_BASE}/${THUMB_FILE[category]}.svg`;
+	return fileThumbnails[THUMB_FILE[category]];
 }
 
 export function isImageEntry(entry: FileEntry): boolean {
