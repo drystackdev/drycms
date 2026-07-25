@@ -637,9 +637,12 @@ type PlainSelectFields<Cols extends ColumnMap> = {
   [K in NonRefScalarKeys<Cols>]?: Cols[K] extends Column<infer T, any, any> ? true | ((value: T) => unknown) : never;
 };
 
-/** REF/REFS trong select() = include: object lồng chọn cột của bảng đích (không phải callback). */
+/**
+ * REF/REFS trong select() = include: `true` lấy toàn bộ cột của bảng đích,
+ * object lồng chọn field cụ thể (không phải callback).
+ */
 type RelationSelectFields<Cols extends ColumnMap> = {
-  [K in RefKeys<Cols> | RefsKeys<Cols>]?: SelectInput<TargetColsOf<Cols, K>>;
+  [K in RefKeys<Cols> | RefsKeys<Cols>]?: true | SelectInput<TargetColsOf<Cols, K>>;
 };
 
 export type SelectInput<Cols extends ColumnMap> = PlainSelectFields<Cols> & RelationSelectFields<Cols>;
@@ -839,7 +842,8 @@ async function applySelect(
             `WHERE ${rel.joinTable}.${table.name}_id = ?`,
           [row.id],
         );
-        out[key] = await applySelect(related, target, spec as Record<string, SelectSpec>, ctx, driver);
+        const relSpec = spec === true ? undefined : (spec as Record<string, SelectSpec>);
+        out[key] = await applySelect(related, target, relSpec, ctx, driver);
         continue;
       }
 
@@ -853,9 +857,8 @@ async function applySelect(
           continue;
         }
         const relatedRow = await driver.get(`SELECT * FROM ${col._meta.refTable} WHERE id = ?`, [relatedId]);
-        out[key] = relatedRow
-          ? (await applySelect([relatedRow], target, spec as Record<string, SelectSpec>, ctx, driver))[0]
-          : null;
+        const refSpec = spec === true ? undefined : (spec as Record<string, SelectSpec>);
+        out[key] = relatedRow ? (await applySelect([relatedRow], target, refSpec, ctx, driver))[0] : null;
         continue;
       }
 

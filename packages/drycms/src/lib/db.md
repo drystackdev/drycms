@@ -200,8 +200,12 @@ const withWritePerm = await user
   .where({ permissions: (q) => q.where({ name: "write" }) })
   .get();
 
-// select: object lồng (không phải callback) = include dữ liệu quan hệ
+// select: true = lấy TOÀN BỘ cột bảng đích; object lồng = chỉ lấy field chỉ định
 const withRole = await user
+  .select({ name: true, role: true }) // role: { id, created_at, updated_at, name } | null
+  .get();
+
+const withRoleName = await user
   .select({ name: true, role: { name: true } }) // role: { name } | null
   .get();
 
@@ -252,9 +256,6 @@ chính xác — không cần `as any`, không có bước trung gian nào để 
 
 ## 8. Giới hạn hiện tại
 
-- `select({ field: true })` không hợp lệ cho cột `REF` — chỉ nhận object
-  include lồng (`role: { name: true }}`), vì `REF` không có giá trị "chọn
-  nguyên trạng" ở dạng số thô.
 - Include quan hệ ở `select()` không tự lọc bản ghi con, chưa có cú pháp lọc
   kèm include trong cùng 1 lời gọi.
 - Chưa có helper ghi/xoá row trong bảng phụ `REFS` — phải tự viết SQL

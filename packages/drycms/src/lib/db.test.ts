@@ -145,6 +145,13 @@ describe("createDB", () => {
       .select({ name: true, role: { name: true } })
       .get();
     expect(withInclude[0]?.role).toEqual({ name: "Admin" });
+
+    // role: true -> lấy toàn bộ cột của bảng đích (id/created_at/updated_at/name), không phải object rỗng.
+    const withFullInclude = await user
+      .where({ name: "Khan" })
+      .select({ name: true, role: true })
+      .get();
+    expect(withFullInclude[0]?.role).toMatchObject({ name: "Admin", id: adminRole!.id });
   });
 
   it("REFS: join-table filter (some) and array include", async () => {
