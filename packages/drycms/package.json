@@ -28,6 +28,10 @@
       "types": "./dist/routers/*.d.ts",
       "default": "./dist/routers/*.js"
     },
+    "./db": {
+      "types": "./dist/lib/db.d.ts",
+      "default": "./dist/lib/db.js"
+    },
     "./package.json": "./package.json"
   },
   "files": ["dist", "src"],

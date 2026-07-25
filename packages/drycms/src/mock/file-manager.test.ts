@@ -22,6 +22,12 @@ describe("createMemoryFileSource", () => {
     expect(await source.list("Docs")).toEqual([expect.objectContaining({ id: "Docs/a.txt" })]);
   });
 
+  it("listAll() flattens every entry at every depth, excluding .dir markers", async () => {
+    const source = createMemoryFileSource(seed);
+    const all = await source.listAll!();
+    expect(all.map((e) => e.id).sort()).toEqual(["Docs", "Docs/a.txt", "notes.txt"]);
+  });
+
   it("each source instance is independent - mutating one never touches another", async () => {
     const a = createMemoryFileSource(seed);
     const b = createMemoryFileSource(seed);

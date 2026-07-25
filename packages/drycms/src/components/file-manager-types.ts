@@ -15,6 +15,10 @@ export interface FileEntry {
 	fileCount?: number;
 	/** Object URL for files uploaded this session (real `File` blob) - lets the preview show the actual image instead of a placeholder. */
 	previewUrl?: string;
+	/** Files only, and only on content-addressed backends (see
+	 * `StorageStatEntry.contentHash`) - lets the preview dialog cache the
+	 * actual bytes by content instead of path (see `file-manager-blob-cache.ts`). */
+	contentHash?: string;
 }
 
 /**
@@ -30,6 +34,15 @@ export interface FileEntry {
  */
 export interface FileManagerSource {
 	list(folderId: string | null): Promise<FileEntry[]>;
+	/** Every entry at every depth, flattened, in one call - lets `FileManager`
+	 * prefetch the whole tree once on mount instead of a `list()` per folder as
+	 * the user navigates. Optional at the type level for sources that never
+	 * support it; when present, a resolved `null` is a *runtime* "actually not
+	 * supported for this backend" signal (see `createHttpFileSource` - the
+	 * configured storage kind might not implement `StorageAdapter.listAll`,
+	 * e.g. future R2/S3), telling `FileManager` to fall back to its existing
+	 * lazy per-folder `list()` instead. */
+	listAll?(): Promise<FileEntry[] | null>;
 	upload?(folderId: string | null, files: File[]): Promise<FileEntry[]>;
 	createFolder?(folderId: string | null, name: string): Promise<FileEntry>;
 	move?(ids: string[], targetFolderId: string | null): Promise<FileEntry[]>;

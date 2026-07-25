@@ -61,6 +61,15 @@ export function createHttpFileSource(apiBase: string): FileManagerSource {
     return data.entries;
   }
 
+  /** `null` = the configured storage kind doesn't support a whole-tree
+   * prefetch (see `routes/storage.ts`'s `?tree` handling) - `FileManager`
+   * falls back to its per-folder `list()` in that case. */
+  async function listAll(): Promise<FileEntry[] | null> {
+    const response = await fetch(`${apiBase}?tree=1`);
+    const data = await parseJson<{ supported: boolean; entries?: FileEntry[] }>(response);
+    return data.supported ? (data.entries ?? []) : null;
+  }
+
   async function upload(folderId: string | null, files: File[]): Promise<FileEntry[]> {
     const form = new FormData();
     for (const file of files) form.append("files", file);
@@ -161,5 +170,5 @@ export function createHttpFileSource(apiBase: string): FileManagerSource {
     return data.entry;
   }
 
-  return { list, upload, createFolder, move, copy, remove, rename, replace };
+  return { list, listAll, upload, createFolder, move, copy, remove, rename, replace };
 }

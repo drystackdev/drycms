@@ -170,6 +170,13 @@ export function createMemoryFileSource(seed: FileEntry[] = defaultSeed): FileMan
       .map((entry) => ({ ...entry }));
   }
 
+  /** Exercises the same `FileManager` tree-prefetch path the real `local`/
+   * `github` backends use - trivial here since everything already lives in
+   * memory. */
+  async function listAll(): Promise<FileEntry[]> {
+    return entries.filter((entry) => !isHiddenEntry(entry)).map((entry) => ({ ...entry }));
+  }
+
   async function upload(folderId: string | null, files: File[]): Promise<FileEntry[]> {
     const additions = files.map((file): FileEntry => {
       const name = findFreeName(folderId, file.name);
@@ -246,5 +253,5 @@ export function createMemoryFileSource(seed: FileEntry[] = defaultSeed): FileMan
     return { ...updated };
   }
 
-  return { list, upload, createFolder, move, copy, remove, rename, replace };
+  return { list, listAll, upload, createFolder, move, copy, remove, rename, replace };
 }

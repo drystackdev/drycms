@@ -23,8 +23,10 @@ function context(opts: {
   method?: string;
   body?: BodyInit;
   headers?: Record<string, string>;
+  query?: Record<string, string>;
 }): APIContext {
   const url = new URL(`http://localhost/dry/api/storage/${opts.slug ?? ""}`);
+  for (const [key, value] of Object.entries(opts.query ?? {})) url.searchParams.set(key, value);
   const request = new Request(url, {
     method: opts.method ?? "GET",
     body: opts.body,
@@ -93,6 +95,26 @@ describe("GET /dry/api/storage/[...slug]", () => {
   });
 });
 
+describe("GET /dry/api/storage?tree (listAll prefetch)", () => {
+  it("returns the whole tree flattened when the adapter supports it (local does)", async () => {
+    await mkdir("tree-docs");
+    await upload("tree-docs", new File(["x"], "a.txt", { type: "text/plain" }));
+
+    const response = await GET(context({ slug: "", query: { tree: "1" } }));
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as { supported: boolean; entries: { id: string }[] };
+    expect(data.supported).toBe(true);
+    expect(data.entries.map((e) => e.id)).toEqual(
+      expect.arrayContaining(["tree-docs", "tree-docs/a.txt"]),
+    );
+  });
+
+  it("400s when ?tree is requested for a non-root path", async () => {
+    const response = await GET(context({ slug: "somewhere", query: { tree: "1" } }));
+    expect(response.status).toBe(400);
+  });
+});
+
 describe("POST /dry/api/storage/[...slug] (multipart upload)", () => {
   it("uploads into an existing folder", async () => {
     await mkdir("uploads");
@@ -100,6 +122,13 @@ describe("POST /dry/api/storage/[...slug] (multipart upload)", () => {
     expect(response.status).toBe(201);
     const data = (await response.json()) as { entries: { id: string }[] };
     expect(data.entries).toEqual([expect.objectContaining({ id: "uploads/a.txt" })]);
+  });
+
+  it("includes previewUrl on an uploaded image, matching what GET/list() would report", async () => {
+    await mkdir("photos-upload");
+    const response = await upload("photos-upload", new File(["data"], "cover.jpg", { type: "image/jpeg" }));
+    const data = (await response.json()) as { entries: { previewUrl?: string }[] };
+    expect(data.entries[0]?.previewUrl).toBe("/dry/api/storage/photos-upload/cover.jpg");
   });
 
   it("409s on a colliding filename", async () => {
@@ -155,6 +184,12 @@ describe("PUT /dry/api/storage/[...slug]", () => {
     const response = await PUT(context({ slug: "", method: "PUT", body: "x" }));
     expect(response.status).toBe(400);
   });
+
+  it("includes previewUrl when overwriting an image, matching what GET/list() would report", async () => {
+    const response = await PUT(context({ slug: "photo.jpg", method: "PUT", body: "bytes" }));
+    const data = (await response.json()) as { entry: { previewUrl?: string } };
+    expect(data.entry.previewUrl).toBe("/dry/api/storage/photo.jpg");
+  });
 });
 
 describe("PATCH /dry/api/storage/[...slug] (move/copy)", () => {
@@ -166,6 +201,15 @@ describe("PATCH /dry/api/storage/[...slug] (move/copy)", () => {
     expect(response.status).toBe(200);
     expect((await GET(context({ slug: "move-me.txt" }))).status).toBe(404);
     expect((await GET(context({ slug: "moved.txt" }))).status).toBe(200);
+  });
+
+  it("includes previewUrl on a moved image, matching what GET/list() would report", async () => {
+    await upload("", new File(["data"], "pic.jpg", { type: "image/jpeg" }));
+    const response = await PATCH(
+      context({ slug: "pic.jpg", method: "PATCH", ...jsonBody({ action: "move", to: "pic-2.jpg" }) }),
+    );
+    const data = (await response.json()) as { entry: { previewUrl?: string } };
+    expect(data.entry.previewUrl).toBe("/dry/api/storage/pic-2.jpg");
   });
 
   it("copies a folder recursively, leaving the source in place", async () => {

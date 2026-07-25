@@ -154,6 +154,23 @@ describe("createHttpFileSource", () => {
     expect(JSON.parse(init.body as string)).toEqual({ action: "move", to: "docs/b.txt" });
   });
 
+  it("listAll() GETs ?tree=1 and returns the flattened entries when supported", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ supported: true, entries: [fileEntry()] }));
+    const source = createHttpFileSource(API_BASE);
+
+    const all = await source.listAll!();
+
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE}?tree=1`);
+    expect(all).toEqual([fileEntry()]);
+  });
+
+  it("listAll() returns null when the backend reports it isn't supported", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ supported: false }));
+    const source = createHttpFileSource(API_BASE);
+
+    expect(await source.listAll!()).toBeNull();
+  });
+
   it("replace() PUTs the raw file", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ entry: fileEntry({ size: 3 }) }));
     const source = createHttpFileSource(API_BASE);

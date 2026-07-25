@@ -151,6 +151,37 @@ export function collectDescendantIds(entries: FileEntry[], id: string): Set<stri
 	return collected;
 }
 
+/** Rewrites `id`'s subtree (itself included) as if it now lived under
+ * `newParentId` with leaf name `newName` - every descendant's `id`/`parentId`
+ * gets the same prefix swap (`id` is always a strict path prefix of its own
+ * descendants' ids, by construction of `parentId` chains, so a plain slice is
+ * safe - no need for a smarter path-segment join). Pure: returns a new array,
+ * doesn't mutate `entries`. Used for `FileManager`'s optimistic move/rename
+ * patches - applied *before* the server confirms, then overwritten by
+ * whatever authoritative entry/entries the request actually resolves with. */
+export function retargetSubtree(
+	entries: FileEntry[],
+	id: string,
+	newParentId: string | null,
+	newName: string,
+): FileEntry[] {
+	const source = entries.find((entry) => entry.id === id);
+	if (!source) return entries;
+	const newId = newParentId ? `${newParentId}/${newName}` : newName;
+	if (newId === id) return entries;
+	const descendantIds = collectDescendantIds(entries, id);
+	const rewrite = (path: string) => newId + path.slice(id.length);
+	return entries.map((entry) => {
+		if (entry.id === id) return { ...entry, id: newId, parentId: newParentId, name: newName };
+		if (!descendantIds.has(entry.id)) return entry;
+		return {
+			...entry,
+			id: rewrite(entry.id),
+			parentId: entry.parentId === id ? newId : rewrite(entry.parentId!),
+		};
+	});
+}
+
 export interface FolderNode {
 	entry: FileEntry | null; // null = the synthetic root
 	depth: number;

@@ -1957,7 +1957,7 @@
       flex: none;
       margin-left: -1rem;
       width: 3.5rem;
-      aspect-ratio: 16 / 9;
+      aspect-ratio: 4 / 3;
       object-fit: contain;
       border-radius: 4px;
       background-color: var(--dry-muted);

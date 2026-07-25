@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
+import { readCachedFile } from "./file-manager-blob-cache.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import {
   collectDescendantIds,
@@ -9,6 +10,7 @@ import {
   isAccepted,
   isHiddenEntry,
   isImageEntry,
+  retargetSubtree,
   sortEntries,
   thumbnailUrl,
 } from "./file-manager-utils.js";
@@ -1180,6 +1182,43 @@ const WHEEL_ZOOM_STEP = 5;
 /** Minimum horizontal drag (px) on the stage before a swipe commits to prev/next. */
 const SWIPE_THRESHOLD = 60;
 
+/** Resolves what to actually put in the preview `<img src>`. Files with a
+ * `contentHash` (github/future R2-S3 - see `StorageStatEntry.contentHash`)
+ * go through the sha-keyed IndexedDB cache (`readCachedFile`), so re-opening
+ * the same bytes later - even at a different path, after a rename/move -
+ * doesn't refetch them; anything without one (`local`, or a same-session
+ * upload preview) just uses `previewUrl` directly, unchanged from before.
+ * Deliberately returns `undefined` (not the plain URL) while a cached fetch
+ * is in flight - falling back to the raw URL there would make the `<img>`
+ * load it directly too, fetching the same bytes twice over the network. */
+function usePreviewImageSrc(entry: FileEntry | null): string | undefined {
+  const [cachedSrc, setCachedSrc] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    setCachedSrc(undefined);
+    if (!entry?.previewUrl || !entry.contentHash) return;
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    readCachedFile(entry.previewUrl, entry.contentHash)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setCachedSrc(objectUrl);
+      })
+      .catch(() => {
+        // Left as `undefined` - the caller's fallback (plain `previewUrl`,
+        // see below) only applies to sourceless entries, so a fetch failure
+        // here just means "no image yet" rather than a broken cache path.
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [entry?.id, entry?.previewUrl, entry?.contentHash]);
+
+  return entry?.contentHash ? cachedSrc : entry?.previewUrl;
+}
+
 function PreviewDialog({
   entry,
   scope,
@@ -1198,7 +1237,8 @@ function PreviewDialog({
   const [dragX, setDragX] = useState(0);
   const dragState = useRef<{ pointerId: number; startX: number } | null>(null);
   const canLoop = scope.length > 1;
-  const image = entry !== null && isImageEntry(entry) && !!entry.previewUrl;
+  const previewSrc = usePreviewImageSrc(entry);
+  const image = entry !== null && isImageEntry(entry) && !!previewSrc;
 
   useEffect(() => {
     setZoom(100);
@@ -1325,7 +1365,7 @@ function PreviewDialog({
               >
                 {image ? (
                   <img
-                    src={entry.previewUrl}
+                    src={previewSrc}
                     alt={entry.name}
                     class="file-preview-image"
                     draggable={false}
@@ -1579,8 +1619,8 @@ export default function FileManager({
   };
 
   /** Invalidates `folderId`'s cached listing and immediately re-fetches it -
-   * the reconciliation step every mutation handler runs after a successful
-   * write, so `entries` never has to guess at server-assigned ids/paths. */
+   * used where a write's result can't be predicted client-side (copy's
+   * dedupe-suffixed destination name). */
   const refreshFolder = async (folderId: string | null) => {
     setLoadedFolders((current) => {
       const next = new Set(current);
@@ -1590,6 +1630,73 @@ export default function FileManager({
     await loadFolder(folderId);
   };
 
+  /** Every mutation below applies its effect to `entries` optimistically,
+   * *before* `source`'s write settles - the recovery path on failure is
+   * always "invalidate and re-fetch the truth" for every folder the write
+   * touched, never a blind revert to the pre-optimistic snapshot. That's
+   * deliberate: `move`/`copy`/`remove` aren't atomic on every backend
+   * (`github`'s each blob is its own commit; future R2/S3 is copy-then-delete
+   * per key), so a failure can still have partially applied server-side - a
+   * naive "undo my local guess" would then show something that doesn't match
+   * the real server state. Re-fetching is correct either way: on a backend
+   * where the write genuinely was all-or-nothing, it just confirms nothing
+   * changed. */
+  const revertAfterFailure = async (folderIds: (string | null)[]) => {
+    const unique = [...new Set(folderIds)];
+    setLoadedFolders((current) => {
+      const next = new Set(current);
+      for (const id of unique) next.delete(id);
+      return next;
+    });
+    await Promise.all(unique.map((id) => loadFolder(id)));
+  };
+
+  /** `"pending"` until `source.listAll` (if present) settles - the lazy
+   * per-folder effect below waits for this instead of racing it, so a
+   * `listAll` source doesn't fire a redundant `list()` for whatever folder
+   * happened to be open at mount before the full-tree prefetch lands.
+   * `"unavailable"` covers both "no `listAll` on this source" and "this
+   * backend doesn't support it" (a resolved `null`, or a rejected promise) -
+   * either way, callers fall back to `list()` exactly as before. */
+  const [treePrefetch, setTreePrefetch] = useState<"pending" | "unavailable" | "done">(
+    () => (source.listAll ? "pending" : "unavailable"),
+  );
+
+  // Prefetches the whole tree once per `source`, when it supports one -
+  // replaces the lazy per-folder loading entirely on success (every folder is
+  // marked loaded up front), and defers to it untouched on failure/`null`.
+  useEffect(() => {
+    if (!source.listAll) {
+      setTreePrefetch("unavailable");
+      return;
+    }
+    let cancelled = false;
+    setTreePrefetch("pending");
+    source
+      .listAll()
+      .then((all) => {
+        if (cancelled) return;
+        if (all === null) {
+          setTreePrefetch("unavailable");
+          return;
+        }
+        setEntries(all);
+        setLoadedFolders((current) => {
+          const next = new Set(current);
+          next.add(null);
+          for (const entry of all) if (entry.kind === "folder") next.add(entry.id);
+          return next;
+        });
+        setTreePrefetch("done");
+      })
+      .catch(() => {
+        if (!cancelled) setTreePrefetch("unavailable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source]);
+
   // Lazy-loads whatever folder is currently open, the first time it's
   // visited. Deliberately excludes `loadedFolders`/`loadingFolders` from the
   // deps - both are written by this same effect (via `loadFolder`), and
@@ -1598,6 +1705,7 @@ export default function FileManager({
   // captures. Mutation handlers force a refresh directly via `refreshFolder`
   // instead of going through this effect.
   useEffect(() => {
+    if (treePrefetch === "pending") return;
     if (
       loadedFolders.has(currentFolderId) ||
       loadingFolders.has(currentFolderId)
@@ -1606,7 +1714,7 @@ export default function FileManager({
     }
     loadFolder(currentFolderId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFolderId, source]);
+  }, [currentFolderId, source, treePrefetch]);
 
   const selectedIds =
     value === undefined
@@ -1747,26 +1855,46 @@ export default function FileManager({
     if (ids && canDropOnFolder(targetId, ids)) moveEntriesInto(ids, targetId);
   };
 
-  const moveEntriesInto = async (ids: string[], targetId: string | null) => {
-    if (!source.move) return;
+  /** Optimistically relocates each id into `targetId` (deterministic
+   * destination: `target/basename`, matching what the server computes too),
+   * then reconciles with the server's authoritative entries on success or
+   * re-fetches every folder the move could have touched on failure - shared
+   * by drag-and-drop (`moveEntriesInto`) and the clipboard's Move/Paste flow
+   * (`pasteClipboard`). Returns whether it succeeded. */
+  const performMove = async (ids: string[], targetId: string | null): Promise<boolean> => {
+    if (!source.move) return false;
+    const sourceFolderIds = ids.map((id) => entries.find((entry) => entry.id === id)?.parentId ?? null);
+    const affectedFolderIds = [...sourceFolderIds, targetId, currentFolderId];
+
+    setEntries((current) => {
+      let next = current;
+      for (const id of ids) {
+        const entry = next.find((e) => e.id === id);
+        if (entry) next = retargetSubtree(next, id, targetId, entry.name);
+      }
+      return next;
+    });
+
     setBusy(true);
     try {
-      await source.move(ids, targetId);
+      const moved = await source.move(ids, targetId);
+      // Descendants of a moved folder keep their optimistic (but
+      // deterministic, so correct) path rewrite - only the top-level moved
+      // ids get server-confirmed data back from a batch move.
+      const byId = new Map(moved.map((entry) => [entry.id, entry]));
+      setEntries((current) => current.map((entry) => byId.get(entry.id) ?? entry));
+      return true;
     } catch {
       toast.add({ title: "Couldn't move - try again", type: "error" });
-      return;
+      await revertAfterFailure(affectedFolderIds);
+      return false;
     } finally {
       setBusy(false);
     }
+  };
 
-    // Dropped-onto folder may already be cached (e.g. previously visited) -
-    // invalidate it so it re-lists on next visit instead of missing the move.
-    setLoadedFolders((current) => {
-      const next = new Set(current);
-      next.delete(targetId);
-      return next;
-    });
-    await refreshFolder(currentFolderId);
+  const moveEntriesInto = async (ids: string[], targetId: string | null) => {
+    if (!(await performMove(ids, targetId))) return;
     setSelection(selectedIds.filter((id) => !ids.includes(id)));
   };
 
@@ -1776,25 +1904,32 @@ export default function FileManager({
 
   const deleteEntries = async (ids: string[]) => {
     if (!source.remove) return;
+    const toRemove = new Set<string>();
+    for (const id of ids)
+      for (const descendant of collectDescendantIds(entries, id))
+        toRemove.add(descendant);
+    // Folders among the removed set: if the delete turns out to have failed,
+    // these need re-fetching too (not just currentFolderId) - otherwise
+    // navigating back into a wrongly-purged subfolder would show an
+    // incorrect, empty cached listing instead of re-querying it.
+    const removedFolderIds = entries
+      .filter((entry) => toRemove.has(entry.id) && entry.kind === "folder")
+      .map((entry) => entry.id);
+
+    // Optimistic: reflect the delete immediately, before the request settles.
+    setEntries((current) => current.filter((entry) => !toRemove.has(entry.id)));
+    setSelection(selectedIds.filter((id) => !toRemove.has(id)));
+    if (previewId && toRemove.has(previewId)) setPreviewId(null);
+
     setBusy(true);
     try {
       await source.remove(ids);
     } catch {
       toast.add({ title: "Couldn't delete - try again", type: "error" });
-      return;
+      await revertAfterFailure([currentFolderId, ...removedFolderIds]);
     } finally {
       setBusy(false);
     }
-
-    // Delete doesn't churn any *other* id - a local purge of exactly what was
-    // asked for (plus loaded descendants) is enough, no re-list needed.
-    const toRemove = new Set<string>();
-    for (const id of ids)
-      for (const descendant of collectDescendantIds(entries, id))
-        toRemove.add(descendant);
-    setEntries((current) => current.filter((entry) => !toRemove.has(entry.id)));
-    setSelection(selectedIds.filter((id) => !toRemove.has(id)));
-    if (previewId && toRemove.has(previewId)) setPreviewId(null);
   };
 
   /* Clears the current selection so the (also sticky, bottom-of-screen)
@@ -1832,31 +1967,32 @@ export default function FileManager({
   const pasteClipboard = async () => {
     if (!clipboard || !canPaste) return;
     const { mode, ids } = clipboard;
-    const action = mode === "move" ? source.move : source.copy;
-    if (!action) return;
     const targetId = currentFolderId;
-    // Selection only ever spans one open folder, so every clipboard id shares
-    // the same (pre-move) parent - moving stales that folder's cached listing.
-    const sourceFolderId =
-      entries.find((entry) => entry.id === ids[0])?.parentId ?? null;
 
+    if (mode === "move") {
+      if (!(await performMove(ids, targetId))) return;
+      setSelection([]);
+      setClipboard(null);
+      return;
+    }
+
+    // Copy's destination name isn't predictable client-side (the server
+    // auto-suffixes a collision - "name copy", "name copy 2", ... - and
+    // duplicating that dedupe logic here could drift from what it actually
+    // decides), so this stays "await once, then merge the real result"
+    // rather than an optimistic guess.
+    if (!source.copy) return;
     setBusy(true);
     try {
-      await action(ids, targetId);
+      await source.copy(ids, targetId);
     } catch {
-      toast.add({ title: `Couldn't ${mode} - try again`, type: "error" });
+      toast.add({ title: "Couldn't copy - try again", type: "error" });
+      await revertAfterFailure([targetId]);
       return;
     } finally {
       setBusy(false);
     }
 
-    if (mode === "move" && sourceFolderId !== targetId) {
-      setLoadedFolders((current) => {
-        const next = new Set(current);
-        next.delete(sourceFolderId);
-        return next;
-      });
-    }
     await refreshFolder(targetId);
     setSelection([]);
     setClipboard(null);
@@ -1868,25 +2004,35 @@ export default function FileManager({
   const submitRename = async (name: string) => {
     if (!renameId || !source.rename) return;
     const oldId = renameId;
+    const target = entries.find((entry) => entry.id === oldId);
+    if (!target) return;
+    const parentId = target.parentId;
+    const guessedId = parentId ? `${parentId}/${name}` : name;
+
+    // Optimistic: `id` is a path, so this hands back a *different* id -
+    // carry the selection/preview over to the guessed one immediately rather
+    // than waiting on the server to confirm it.
+    setEntries((current) => retargetSubtree(current, oldId, parentId, name));
+    setRenameId(null);
+    if (selectedIds.includes(oldId)) {
+      setSelection(selectedIds.map((id) => (id === oldId ? guessedId : id)));
+    }
+    if (previewId === oldId) setPreviewId(guessedId);
+
     setBusy(true);
-    let updated: FileEntry;
     try {
-      updated = await source.rename(oldId, name);
+      const updated = await source.rename(oldId, name);
+      setEntries((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
     } catch {
       toast.add({ title: "Couldn't rename - try again", type: "error" });
-      return;
+      if (selectedIds.includes(guessedId)) {
+        setSelection(selectedIds.map((id) => (id === guessedId ? oldId : id)));
+      }
+      if (previewId === guessedId) setPreviewId(oldId);
+      await revertAfterFailure([currentFolderId, parentId]);
     } finally {
       setBusy(false);
     }
-
-    setRenameId(null);
-    await refreshFolder(currentFolderId);
-    // `id` is a path, so a rename hands back a *different* id - carry the
-    // selection/preview over to it rather than silently dropping them.
-    if (selectedIds.includes(oldId)) {
-      setSelection(selectedIds.map((id) => (id === oldId ? updated.id : id)));
-    }
-    if (previewId === oldId) setPreviewId(updated.id);
   };
 
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -1922,63 +2068,99 @@ export default function FileManager({
       return;
     }
 
-    setBusy(true);
-    let updated: FileEntry;
-    try {
-      updated = await source.replace(id, file);
-    } catch {
-      toast.add({ title: "Couldn't replace - try again", type: "error" });
-      return;
-    } finally {
-      setBusy(false);
-    }
-
-    // Replace overwrites bytes at the *same* path - `id` doesn't churn, so a
-    // local patch (using the server's authoritative size/modifiedAt) is enough.
+    // Replace overwrites bytes at the *same* path - `id` doesn't churn, so an
+    // optimistic patch (client-known size + a real object URL for images)
+    // can go straight into `entries` before the request even starts.
+    const optimisticPreview = file.type.startsWith("image/")
+      ? URL.createObjectURL(file)
+      : target?.previewUrl;
     setEntries((current) =>
       current.map((entry) =>
         entry.id === id
-          ? {
-              ...updated,
-              previewUrl: file.type.startsWith("image/")
-                ? URL.createObjectURL(file)
-                : updated.previewUrl,
-            }
+          ? { ...entry, size: file.size, modifiedAt: new Date().toISOString(), previewUrl: optimisticPreview }
           : entry,
       ),
     );
+
+    setBusy(true);
+    try {
+      const updated = await source.replace(id, file);
+      setEntries((current) =>
+        current.map((entry) => (entry.id === id ? { ...updated, previewUrl: optimisticPreview } : entry)),
+      );
+    } catch {
+      toast.add({ title: "Couldn't replace - try again", type: "error" });
+      await revertAfterFailure([currentFolderId]);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submitUpload = async (files: File[]) => {
     if (!source.upload) return;
+    const folderId = currentFolderId;
+    // Optimistic placeholders, one per file, using client-known
+    // name/size/(object-URL preview) - upload rejects on a name collision
+    // rather than silently renaming (see `routes/storage.ts`), so unlike
+    // `copy` the destination path here *is* predictable.
+    const placeholders: FileEntry[] = files.map((file) => {
+      const dot = file.name.lastIndexOf(".");
+      return {
+        id: folderId ? `${folderId}/${file.name}` : file.name,
+        name: file.name,
+        parentId: folderId,
+        kind: "file",
+        ext: dot > 0 ? file.name.slice(dot + 1).toLowerCase() : undefined,
+        size: file.size,
+        modifiedAt: new Date().toISOString(),
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+      };
+    });
+    setEntries((current) => [...current, ...placeholders]);
+    setUploadOpen(false);
+
     setBusy(true);
     try {
-      await source.upload(currentFolderId, files);
+      const uploaded = await source.upload(folderId, files);
+      const placeholderIds = new Set(placeholders.map((entry) => entry.id));
+      setEntries((current) => [...current.filter((entry) => !placeholderIds.has(entry.id)), ...uploaded]);
     } catch {
       toast.add({ title: "Couldn't upload - try again", type: "error" });
-      return;
+      // A batch upload isn't all-or-nothing (the route writes files one at a
+      // time and stops at the first collision) - some may have actually
+      // landed server-side, so recovery is a real re-fetch, not just
+      // dropping the placeholders.
+      await revertAfterFailure([folderId]);
     } finally {
       setBusy(false);
     }
-
-    setUploadOpen(false);
-    await refreshFolder(currentFolderId);
   };
 
   const createFolder = async (name: string) => {
     if (!source.createFolder) return;
+    const folderId = currentFolderId;
+    const placeholder: FileEntry = {
+      id: folderId ? `${folderId}/${name}` : name,
+      name,
+      parentId: folderId,
+      kind: "folder",
+      size: 0,
+      fileCount: 0,
+      modifiedAt: new Date().toISOString(),
+    };
+    setEntries((current) => [...current, placeholder]);
+    setNewFolderOpen(false);
+
     setBusy(true);
     try {
-      await source.createFolder(currentFolderId, name);
+      const created = await source.createFolder(folderId, name);
+      setEntries((current) => current.map((entry) => (entry.id === placeholder.id ? created : entry)));
     } catch {
       toast.add({ title: "Couldn't create folder - try again", type: "error" });
-      return;
+      await revertAfterFailure([folderId]);
     } finally {
       setBusy(false);
     }
-
-    setNewFolderOpen(false);
-    await refreshFolder(currentFolderId);
   };
 
   const previewEntry = previewId
@@ -2012,7 +2194,7 @@ export default function FileManager({
    * first visit to a folder *and* the refetch every mutation triggers, so
    * the toolbar signals "working" without ever swapping `entries` out for
    * skeleton placeholders (the list/grid just keep showing what they had). */
-  const folderLoading = loadingFolders.has(currentFolderId);
+  const folderLoading = treePrefetch === "pending" || loadingFolders.has(currentFolderId);
 
   return (
     <div class="file-manager">

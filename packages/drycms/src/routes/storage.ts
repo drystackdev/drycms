@@ -117,9 +117,29 @@ function readLeafName(raw: unknown): string {
   return name;
 }
 
+/** `?tree` prefetches the whole storage tree in one response (see
+ * `StorageAdapter.listAll`) instead of one folder at a time - only valid at
+ * the root, and only actually available when the configured `storage.kind`
+ * implements `listAll` (not R2/S3). `supported: false` tells the client to
+ * fall back to per-folder `list()`, same contract as every other optional
+ * `FileManagerSource` method. */
+async function handleTree(apiBase: string): Promise<Response> {
+  if (!adapter.listAll) return jsonResponse({ supported: false });
+  const all = await adapter.listAll();
+  const entries = all.map((entry) => withPreview(toFileEntry(entry), apiBase));
+  return jsonResponse({ supported: true, entries });
+}
+
 export const GET: APIRoute = async (context) => {
   try {
     const path = readSlug(context);
+    if (context.url.searchParams.has("tree")) {
+      if (path !== "") {
+        throw new StorageError("invalid_path", "`?tree` is only valid at the storage root.");
+      }
+      return await handleTree(apiBaseFrom(context.url));
+    }
+
     const stat = await adapter.stat(path);
     if (!stat) throw new StorageError("not_found", `"${path}" does not exist.`);
 
@@ -144,7 +164,7 @@ export const GET: APIRoute = async (context) => {
   }
 };
 
-async function handleUpload(request: Request, folder: string): Promise<Response> {
+async function handleUpload(request: Request, folder: string, apiBase: string): Promise<Response> {
   const target = await adapter.stat(folder);
   if (!target || target.kind !== "folder") {
     throw new StorageError("not_found", `"${folder}" is not an existing folder.`);
@@ -167,7 +187,7 @@ async function handleUpload(request: Request, folder: string): Promise<Response>
       targetPath,
       Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]),
     );
-    entries.push(toFileEntry(stat));
+    entries.push(withPreview(toFileEntry(stat), apiBase));
   }
   return jsonResponse({ entries }, 201);
 }
@@ -188,7 +208,7 @@ export const POST: APIRoute = async (context) => {
     const path = readSlug(context);
     const contentType = context.request.headers.get("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
-      return await handleUpload(context.request, path);
+      return await handleUpload(context.request, path, apiBaseFrom(context.url));
     }
     if (contentType.includes("application/json")) {
       return await handleCreateFolder(context.request, path);
@@ -222,7 +242,7 @@ export const PUT: APIRoute = async (context) => {
     const body = context.request.body;
     const data = body ? Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]) : new Uint8Array();
     const stat = await adapter.write(path, data);
-    return jsonResponse({ entry: toFileEntry(stat) }, 200);
+    return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBaseFrom(context.url)) }, 200);
   } catch (error) {
     return errorResponse(error);
   }
@@ -240,10 +260,11 @@ export const PATCH: APIRoute = async (context) => {
     const to = normalizeStoragePath(typeof body.to === "string" ? body.to : undefined);
     if (!to) throw new StorageError("invalid_path", "A destination path is required.");
 
+    const apiBase = apiBaseFrom(context.url);
     if (to === from) {
       const stat = await adapter.stat(from);
       if (!stat) throw new StorageError("not_found", `"${from}" does not exist.`);
-      return jsonResponse({ entry: toFileEntry(stat) }, 200);
+      return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBase) }, 200);
     }
     if (to.startsWith(`${from}/`)) {
       throw new StorageError(
@@ -254,7 +275,7 @@ export const PATCH: APIRoute = async (context) => {
 
     const stat =
       body.action === "move" ? await adapter.move(from, to) : await adapter.copy(from, to);
-    return jsonResponse({ entry: toFileEntry(stat) }, 200);
+    return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBase) }, 200);
   } catch (error) {
     return errorResponse(error);
   }
