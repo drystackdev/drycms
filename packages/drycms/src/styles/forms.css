@@ -178,13 +178,121 @@
       }
     }
 
+    /*
+		 * `role="switch"` is real ARIA semantics (switch vs. checkbox), not a
+		 * styling hook, so it's an attribute selector like `[readonly]` above -
+		 * it swaps the checkbox's checkmark mask for a track + sliding thumb.
+		 * Follows Pico CSS's technique: the thumb is a `::before` sized to the
+		 * track's height via `aspect-ratio: 1`, shifted with `margin-inline-start`
+		 * rather than absolute positioning + transform.
+		 */
+    :where(input[type="checkbox"][role="switch"]) {
+      --dry-switch-h: 1.25em;
+      --dry-switch-w: 2.25em;
+      width: var(--dry-switch-w);
+      height: var(--dry-switch-h);
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-switch-h);
+      background-color: rgb(var(--dry-grey-channel) / 24%);
+      line-height: var(--dry-switch-h);
+
+      &::before {
+        display: block;
+        aspect-ratio: 1;
+        height: 100%;
+        border-radius: 50%;
+        background-color: var(--dry-card);
+        box-shadow: var(--dry-shadow-xs);
+        content: "";
+        transition: margin-inline-start 100ms ease-in-out;
+      }
+
+      &:checked {
+        border-color: var(--dry-primary);
+        background-color: var(--dry-primary);
+        mask-image: none;
+        -webkit-mask-image: none;
+
+        &::before {
+          margin-inline-start: calc(var(--dry-switch-w) - var(--dry-switch-h));
+        }
+      }
+    }
+
+    /*
+		 * Mirrors Pico CSS's range slider: separate track/thumb pseudo-element
+		 * rules per vendor prefix - a comma-grouped selector combining
+		 * `::-webkit-…` and `::-moz-…` would make the whole rule invalid in
+		 * browsers that don't recognise every prefix in the group.
+		 */
     :where(input[type="range"]) {
-      height: 1.25rem;
+      --dry-range-track-h: 0.375rem;
+      --dry-range-thumb-h: 1.25rem;
+      appearance: none;
+      width: 100%;
+      height: var(--dry-range-thumb-h);
       padding: 0;
       border: none;
+      background: none;
       box-shadow: none;
-      accent-color: var(--dry-primary);
       cursor: pointer;
+
+      &:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+
+      &::-webkit-slider-runnable-track {
+        width: 100%;
+        height: var(--dry-range-track-h);
+        border-radius: var(--dry-radius-md);
+        background-color: rgb(var(--dry-grey-channel) / 24%);
+        transition: background-color 120ms ease;
+      }
+
+      &::-moz-range-track {
+        width: 100%;
+        height: var(--dry-range-track-h);
+        border-radius: var(--dry-radius-md);
+        background-color: rgb(var(--dry-grey-channel) / 24%);
+        transition: background-color 120ms ease;
+      }
+
+      &::-webkit-slider-thumb {
+        appearance: none;
+        width: var(--dry-range-thumb-h);
+        height: var(--dry-range-thumb-h);
+        margin-top: calc((var(--dry-range-track-h) - var(--dry-range-thumb-h)) / 2);
+        border: 2px solid var(--dry-card);
+        border-radius: 50%;
+        background-color: var(--dry-primary);
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          transform 120ms ease;
+      }
+
+      &::-moz-range-thumb {
+        width: var(--dry-range-thumb-h);
+        height: var(--dry-range-thumb-h);
+        border: 2px solid var(--dry-card);
+        border-radius: 50%;
+        background-color: var(--dry-primary);
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          transform 120ms ease;
+      }
+
+      &:active::-webkit-slider-thumb {
+        background-color: var(--dry-primary-dark);
+        transform: scale(1.25);
+      }
+
+      &:active::-moz-range-thumb {
+        background-color: var(--dry-primary-dark);
+        transform: scale(1.25);
+      }
     }
 
     :where(input[type="color"]) {
@@ -193,7 +301,7 @@
     }
 
     :where(input[type="file"]) {
-      padding: 0.3rem 0.75rem;
+      padding: 0.3rem;
       cursor: pointer;
 
       &::file-selector-button {

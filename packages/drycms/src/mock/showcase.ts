@@ -62,7 +62,7 @@ export const groups: ShowcaseGroup[] = [
     items: [
       { id: "text-inputs", label: "Text inputs" },
       { id: "select", label: "Select & textarea" },
-      { id: "toggles", label: "Checkbox & radio" },
+      { id: "toggles", label: "Checkbox, radio & switch" },
       { id: "other-inputs", label: "Range, color, file" },
       { id: "fields", label: "Fields & validation" },
     ],
@@ -303,6 +303,14 @@ import { SettingsIcon } from 'drycms/components/icons';
 <div class="field inline">
   <input id="sc-radio-2" type="radio" name="sc-radio" />
   <label for="sc-radio-2">Option B</label>
+</div>
+<div class="field inline">
+  <input id="sc-switch-1" type="checkbox" role="switch" checked />
+  <label for="sc-switch-1">On</label>
+</div>
+<div class="field inline">
+  <input id="sc-switch-2" type="checkbox" role="switch" />
+  <label for="sc-switch-2">Off</label>
 </div>`,
   otherInputs: `<input type="range" value="60" />
 <input type="color" value="#00a76f" />

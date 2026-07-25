@@ -237,13 +237,11 @@ function DemoContent({ id }: { id: string }) {
           <div class="stack" style="width: 100%">
             <div class="row">
               {intents.map((intent) => (
-                <div class="swatch" key={intent}>
+                <div class="swatch" key={intent} data-tooltip={`--dry-${intent === "secondary" ? "secondary-main" : intent}`}>
                   <span
                     style={`background: var(--dry-${intent === "secondary" ? "secondary-main" : intent})`}
                   />
-                  <small class="mono">
-                    --dry-{intent === "secondary" ? "secondary-main" : intent}
-                  </small>
+				  <small class="mono">{intent}</small>
                 </div>
               ))}
             </div>
@@ -756,8 +754,8 @@ function DemoContent({ id }: { id: string }) {
       return (
         <Demo
           id="toggles"
-          title="Checkbox & radio"
-          description="Real attributes only (checked, indeterminate); .field.inline lays out the pair horizontally."
+          title="Checkbox, radio & switch"
+          description="Real attributes only (checked, indeterminate, role=switch); .field.inline lays out each pair horizontally."
           code={code.toggles!}
         >
           <div class="row" style="gap: 1.5rem">
@@ -776,6 +774,14 @@ function DemoContent({ id }: { id: string }) {
             <div class="field inline">
               <input id="sc-radio-2" type="radio" name="sc-radio" />
               <label for="sc-radio-2">Option B</label>
+            </div>
+            <div class="field inline">
+              <input id="sc-switch-1" type="checkbox" role="switch" checked />
+              <label for="sc-switch-1">On</label>
+            </div>
+            <div class="field inline">
+              <input id="sc-switch-2" type="checkbox" role="switch" />
+              <label for="sc-switch-2">Off</label>
             </div>
           </div>
         </Demo>
