@@ -24,3 +24,6 @@ pnpm-debug.log*
 .idea/
 
 status/
+
+# drycms local file storage (see `storage.root` in astro.config.mjs)
+storage/

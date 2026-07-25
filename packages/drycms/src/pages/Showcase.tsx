@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import Combobox from "../components/Combobox.js";
@@ -18,7 +18,7 @@ import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
 import { toast } from "../components/Toast.js";
-import { fileManagerMock } from "../mock/file-manager.js";
+import { createMemoryFileSource } from "../mock/file-manager.js";
 import {
   code,
   collectionOptions,
@@ -225,14 +225,22 @@ function TabsDemoPreview() {
   );
 }
 
+/** Plain full demo: list/grid, move/copy/delete/rename/replace/upload, all
+ * against an in-memory sandbox - never a real `storage/` folder. */
+function FileManagerPreview() {
+  const source = useMemo(() => createMemoryFileSource(), []);
+  return <FileManager source={source} />;
+}
+
 /** `value`/`onChange` in single mode (`multiple={false}`): picking a file
  * sets a lone string id, matched against `accept` to gate which files can be picked. */
 function FileManagerSinglePreview() {
+  const source = useMemo(() => createMemoryFileSource(), []);
   const [value, setValue] = useState("");
   return (
     <div class="stack" style="width: 100%">
       <FileManager
-        data={fileManagerMock}
+        source={source}
         multiple={false}
         accept={["jpg", "jpeg", "png"]}
         value={value}
@@ -245,11 +253,12 @@ function FileManagerSinglePreview() {
 
 /** Same picker, `multiple` on: `value`/`onChange` carry a `string[]` instead. */
 function FileManagerMultiPreview() {
+  const source = useMemo(() => createMemoryFileSource(), []);
   const [value, setValue] = useState<string[]>([]);
   return (
     <div class="stack" style="width: 100%">
       <FileManager
-        data={fileManagerMock}
+        source={source}
         multiple
         accept={["jpg", "jpeg", "png"]}
         value={value}
@@ -1192,10 +1201,10 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="file-manager"
           title="File manager"
-          description="Mock, self-contained: list/grid views, search, multi-select with move/copy/delete, rename/replace, full-screen preview, and upload - all against a local copy of `data`."
+          description="Self-contained: list/grid views, search, multi-select with move/copy/delete, rename/replace, full-screen preview, and upload - all against an in-memory `source`, never a real folder."
           code={code.fileManager!}
         >
-          <FileManager data={fileManagerMock} />
+          <FileManagerPreview />
         </Demo>
       );
 

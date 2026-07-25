@@ -1,11 +1,18 @@
 import { createRequire } from "node:module";
 import preactIntegration from "@astrojs/preact";
 import type { AstroIntegration } from "astro";
-import { APP_ENTRYPOINT, type DryOption, resolveOptions } from "./options.js";
+import {
+  APP_ENTRYPOINT,
+  STORAGE_ROUTE_ENTRYPOINT,
+  type DryOption,
+  resolveOptions,
+} from "./options.js";
 import {
   VIRTUAL_CONFIG_TYPES,
+  VIRTUAL_STORAGE_CONFIG_TYPES,
   dryFixOptimizeDeps,
   dryVirtualConfig,
+  dryVirtualStorageConfig,
 } from "./virtual.js";
 
 const PREACT_INTEGRATION_NAME = "@astrojs/preact";
@@ -111,7 +118,11 @@ export function dry(options: DryOption = {}): AstroIntegration {
         updateConfig({
           output: "server",
           vite: {
-            plugins: [dryVirtualConfig(resolved), dryFixOptimizeDeps(aliases)],
+            plugins: [
+              dryVirtualConfig(resolved),
+              dryVirtualStorageConfig(resolved.storage),
+              dryFixOptimizeDeps(aliases),
+            ],
             resolve: { alias: aliases },
             // The package ships uncompiled `.astro`/`.css`, so it must go through
             // the Astro/Vite pipeline instead of being externalized.
@@ -128,11 +139,27 @@ export function dry(options: DryOption = {}): AstroIntegration {
           entrypoint: APP_ENTRYPOINT,
         });
 
+        // Server-rendered API endpoint (not client-routed like the app above)
+        // backing the file manager - see `routes/storage.ts`.
+        injectRoute({
+          pattern: `${resolved.path}/api/storage/[...slug]`,
+          entrypoint: STORAGE_ROUTE_ENTRYPOINT,
+        });
+
         logger.info(`admin UI mounted at ${resolved.path}`);
+        if (resolved.storage.kind === "local") {
+          logger.info(
+            `storage: "local" files live under ${resolved.storage.root} - add "storage/" to .gitignore if this is a fresh project.`,
+          );
+        }
       },
 
       "astro:config:done": ({ injectTypes }) => {
         injectTypes({ filename: "types.d.ts", content: VIRTUAL_CONFIG_TYPES });
+        injectTypes({
+          filename: "storage-types.d.ts",
+          content: VIRTUAL_STORAGE_CONFIG_TYPES,
+        });
       },
     },
   };

@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import type { ResolvedDryOption } from "./options.js";
+import type { ResolvedDryOption, ResolvedStorageOption } from "./options.js";
 
 export const VIRTUAL_CONFIG_ID = "virtual:drycms/config";
 const RESOLVED_CONFIG_ID = `\0${VIRTUAL_CONFIG_ID}`;
@@ -20,6 +20,32 @@ export function dryVirtualConfig(options: ResolvedDryOption): Plugin {
       return [
         `export const path = ${JSON.stringify(options.path)};`,
         "export default { path };",
+      ].join("\n");
+    },
+  };
+}
+
+export const VIRTUAL_STORAGE_CONFIG_ID = "virtual:drycms/storage-config";
+const RESOLVED_STORAGE_CONFIG_ID = `\0${VIRTUAL_STORAGE_CONFIG_ID}`;
+
+/**
+ * Exposes the resolved `storage` option to `routes/storage.ts` only. Kept
+ * separate from `virtual:drycms/config` on purpose: that module is imported
+ * by client-shipped code (`app.astro`, `App.tsx`, `DryLayout.tsx`), and an
+ * absolute filesystem path has no business ending up in a browser bundle.
+ */
+export function dryVirtualStorageConfig(storage: ResolvedStorageOption): Plugin {
+  return {
+    name: "drycms:virtual-storage-config",
+    resolveId(id) {
+      if (id === VIRTUAL_STORAGE_CONFIG_ID) return RESOLVED_STORAGE_CONFIG_ID;
+      return null;
+    },
+    load(id) {
+      if (id !== RESOLVED_STORAGE_CONFIG_ID) return null;
+      return [
+        `export const storage = ${JSON.stringify(storage)};`,
+        "export default { storage };",
       ].join("\n");
     },
   };
@@ -58,6 +84,13 @@ export function dryFixOptimizeDeps(aliases: Record<string, string>): Plugin {
 export const VIRTUAL_CONFIG_TYPES = `declare module '${VIRTUAL_CONFIG_ID}' {
 	export const path: string;
 	const config: { path: string };
+	export default config;
+}
+`;
+
+export const VIRTUAL_STORAGE_CONFIG_TYPES = `declare module '${VIRTUAL_STORAGE_CONFIG_ID}' {
+	export const storage: { kind: 'local'; root: string };
+	const config: { storage: { kind: 'local'; root: string } };
 	export default config;
 }
 `;

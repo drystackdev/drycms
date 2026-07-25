@@ -9,6 +9,7 @@ import '../components/tooltip.js';
 // form-input component - keeping it out of Dashboard's chunk matters here.
 const Dashboard = lazy(() => import('../pages/Dashboard.js'));
 const Showcase = lazy(() => import('../pages/Showcase.js'));
+const Media = lazy(() => import('../pages/Media.js'));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
  * base path and any unmatched path have to be sent to `/dashboard` here. */
@@ -30,6 +31,14 @@ function ShowcaseRoute({ tab }: { tab?: string }) {
 	return (
 		<DryLayout title="Showcase">
 			<Showcase tab={tab} />
+		</DryLayout>
+	);
+}
+
+function MediaRoute() {
+	return (
+		<DryLayout title="Media">
+			<Media />
 		</DryLayout>
 	);
 }
@@ -64,6 +73,7 @@ export default function App() {
 					<Route path={path} component={() => <Redirect to={`${path}/dashboard`} />} />
 					<Route path={`${path}/dashboard`} component={DashboardRoute} />
 					<Route path={`${path}/showcase/:tab?`} component={ShowcaseRoute} />
+					<Route path={`${path}/media`} component={MediaRoute} />
 					<Route default component={() => <Redirect to={`${path}/dashboard`} />} />
 				</Router>
 			</ErrorBoundary>

@@ -12,3 +12,9 @@ declare module "virtual:drycms/config" {
 	export default config;
 }
 
+declare module "virtual:drycms/storage-config" {
+	export const storage: { kind: "local"; root: string };
+	const config: { storage: { kind: "local"; root: string } };
+	export default config;
+}
+

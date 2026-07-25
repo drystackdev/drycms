@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import type { FileEntry } from "./file-manager-types.js";
+import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import {
   collectDescendantIds,
   folderPath,
@@ -34,11 +34,11 @@ import {
 } from "./icons.js";
 import { toast } from "./Toast.js";
 import FileManagerUploadArtwork from "./FileManagerUploadArtwork.js";
-import Popover from "./Popover.js";
+import Popover, { type PopoverMenuEntry } from "./Popover.js";
 
 export interface FileManagerProps {
-  /** Mock dataset - the component keeps its own copy and mutates it locally (move/copy/delete/rename/replace/upload never touch the original array). */
-  data: FileEntry[];
+  /** Where data is read from and writes are sent - see `FileManagerSource`. */
+  source: FileManagerSource;
   /** Selected id(s). Single mode (`multiple` false): a `string` (`''` when nothing's picked). Multi mode (the default): a `string[]`. */
   value?: string | string[];
   onChange?: (value: string | string[]) => void;
@@ -92,12 +92,14 @@ function useDialogSync(active: boolean, onDismiss: () => void) {
 
 interface MoreMenuProps {
   label: string;
-  onRename: () => void;
-  /** Omitted for folders - there's no single file to replace. */
+  /** Every action is optional - omitted when `source` doesn't support it (see
+   * `FileManagerSource`), the same way `onReplace` was already conditionally
+   * omitted for folders. Renders nothing if every action ends up omitted. */
+  onRename?: () => void;
   onReplace?: () => void;
-  onCopy: () => void;
-  onMove: () => void;
-  onDelete: () => void;
+  onCopy?: () => void;
+  onMove?: () => void;
+  onDelete?: () => void;
 }
 
 /** Row-level equivalent of the selection bar's Copy/Move/Delete trio - picking
@@ -112,35 +114,19 @@ function MoreMenu({
   onMove,
   onDelete,
 }: MoreMenuProps) {
-  return (
-    <Popover
-      label={`More actions for ${label}`}
-      items={[
-        { type: "item", label: "Rename", icon: <RenameIcon />, onClick: onRename },
-        ...(onReplace
-          ? [
-              {
-                type: "item" as const,
-                label: "Replace",
-                icon: <ReplaceIcon />,
-                onClick: onReplace,
-              },
-            ]
-          : []),
-        { type: "separator" },
-        { type: "item", label: "Copy", icon: <CopyIcon />, onClick: onCopy },
-        { type: "item", label: "Move", icon: <MoveIcon />, onClick: onMove },
-        { type: "separator" },
-        {
-          type: "item",
-          label: "Delete",
-          icon: <TrashIcon />,
-          onClick: onDelete,
-          danger: true,
-        },
-      ]}
-    />
-  );
+  const items: PopoverMenuEntry[] = [];
+  if (onRename) items.push({ type: "item", label: "Rename", icon: <RenameIcon />, onClick: onRename });
+  if (onReplace) items.push({ type: "item", label: "Replace", icon: <ReplaceIcon />, onClick: onReplace });
+  if ((onCopy || onMove) && items.length > 0) items.push({ type: "separator" });
+  if (onCopy) items.push({ type: "item", label: "Copy", icon: <CopyIcon />, onClick: onCopy });
+  if (onMove) items.push({ type: "item", label: "Move", icon: <MoveIcon />, onClick: onMove });
+  if (onDelete && items.length > 0) items.push({ type: "separator" });
+  if (onDelete) {
+    items.push({ type: "item", label: "Delete", icon: <TrashIcon />, onClick: onDelete, danger: true });
+  }
+  if (items.length === 0) return null;
+
+  return <Popover label={`More actions for ${label}`} items={items} />;
 }
 
 // --------------------------------------------------------------- Breadcrumb
@@ -182,8 +168,9 @@ interface ToolbarProps {
   onQuery: (value: string) => void;
   view: "list" | "grid";
   onView: (view: "list" | "grid") => void;
-  onNewFolder: () => void;
-  onUpload: () => void;
+  /** Omitted (hides the button) when `source` doesn't support the action. */
+  onNewFolder?: () => void;
+  onUpload?: () => void;
 }
 
 function Toolbar({
@@ -229,12 +216,16 @@ function Toolbar({
           <GridIcon />
         </button>
       </div>
-      <button type="button" class="outline sm" onClick={onNewFolder}>
-        <AddFolderIcon /> New folder
-      </button>
-      <button type="button" class="outline sm" onClick={onUpload}>
-        <UploadIcon /> Upload
-      </button>
+      {onNewFolder && (
+        <button type="button" class="outline sm" onClick={onNewFolder}>
+          <AddFolderIcon /> New folder
+        </button>
+      )}
+      {onUpload && (
+        <button type="button" class="outline sm" onClick={onUpload}>
+          <UploadIcon /> Upload
+        </button>
+      )}
     </div>
   );
 }
@@ -280,9 +271,9 @@ function ListView({
   allSelected: boolean;
   onToggleAll: () => void;
   locked: boolean;
-  onMove: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
+  onMove?: () => void;
+  onCopy?: () => void;
+  onDelete?: () => void;
   canPaste: boolean;
   onPasteClipboard: () => void;
   onCancelClipboard: () => void;
@@ -501,9 +492,10 @@ function GridView({
 
 interface SelectionActionsProps {
   disabled: boolean;
-  onMove: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
+  /** Omitted (hides the button) when `source` doesn't support the action. */
+  onMove?: () => void;
+  onCopy?: () => void;
+  onDelete?: () => void;
 }
 
 /** The Copy/Move/Delete trio - shared by the always-visible grid `SelectionBar`
@@ -517,36 +509,42 @@ function SelectionActions({
 }: SelectionActionsProps) {
   return (
     <div class="row">
-      <button
-        type="button"
-        class="ghost icon sm"
-        data-tooltip="Copy"
-        aria-label="Copy selection"
-        disabled={disabled}
-        onClick={onCopy}
-      >
-        <CopyIcon />
-      </button>
-      <button
-        type="button"
-        class="ghost icon sm"
-        data-tooltip="Move"
-        aria-label="Move selection"
-        disabled={disabled}
-        onClick={onMove}
-      >
-        <MoveIcon />
-      </button>
-      <button
-        type="button"
-        class="icon sm destructive"
-        data-tooltip="Delete"
-        aria-label="Delete selection"
-        disabled={disabled}
-        onClick={onDelete}
-      >
-        <TrashIcon />
-      </button>
+      {onCopy && (
+        <button
+          type="button"
+          class="ghost icon sm"
+          data-tooltip="Copy"
+          aria-label="Copy selection"
+          disabled={disabled}
+          onClick={onCopy}
+        >
+          <CopyIcon />
+        </button>
+      )}
+      {onMove && (
+        <button
+          type="button"
+          class="ghost icon sm"
+          data-tooltip="Move"
+          aria-label="Move selection"
+          disabled={disabled}
+          onClick={onMove}
+        >
+          <MoveIcon />
+        </button>
+      )}
+      {onDelete && (
+        <button
+          type="button"
+          class="icon sm destructive"
+          data-tooltip="Delete"
+          aria-label="Delete selection"
+          disabled={disabled}
+          onClick={onDelete}
+        >
+          <TrashIcon />
+        </button>
+      )}
     </div>
   );
 }
@@ -559,9 +557,9 @@ interface SelectionBarProps {
   locked: boolean;
   onSelectAll: () => void;
   onUnselectAll: () => void;
-  onMove: () => void;
-  onCopy: () => void;
-  onDelete: () => void;
+  onMove?: () => void;
+  onCopy?: () => void;
+  onDelete?: () => void;
 }
 
 /** Grid view only - list view gets the same controls folded into its own
@@ -665,10 +663,12 @@ function RenameDialog({
   target,
   onClose,
   onSubmit,
+  busy,
 }: {
   target: FileEntry | null;
   onClose: () => void;
   onSubmit: (name: string) => void;
+  busy: boolean;
 }) {
   const ref = useDialogSync(target !== null, onClose);
   const [name, setName] = useState("");
@@ -701,7 +701,9 @@ function RenameDialog({
             <button type="button" class="outline" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit">Save</button>
+            <button type="submit" disabled={busy}>
+              Save
+            </button>
           </footer>
         </form>
       )}
@@ -715,10 +717,12 @@ function NewFolderDialog({
   open,
   onClose,
   onSubmit,
+  busy,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (name: string) => void;
+  busy: boolean;
 }) {
   const ref = useDialogSync(open, onClose);
   const [name, setName] = useState("");
@@ -752,7 +756,7 @@ function NewFolderDialog({
             <button type="button" class="outline" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" disabled={!name.trim()}>
+            <button type="submit" disabled={busy || !name.trim()}>
               Create
             </button>
           </footer>
@@ -769,11 +773,13 @@ function UploadDialog({
   folderPathLabel,
   onClose,
   onSubmit,
+  busy,
 }: {
   open: boolean;
   folderPathLabel: string;
   onClose: () => void;
   onSubmit: (files: File[]) => void;
+  busy: boolean;
 }) {
   const ref = useDialogSync(open, onClose);
   const [files, setFiles] = useState<File[]>([]);
@@ -804,7 +810,7 @@ function UploadDialog({
             </p>
           </header>
 
-          <div
+          <label
             class={dragOver ? "upload-dropzone dragging" : "upload-dropzone"}
             onDragOver={(event) => {
               event.preventDefault();
@@ -842,7 +848,7 @@ function UploadDialog({
                 (event.currentTarget as HTMLInputElement).value = "";
               }}
             />
-          </div>
+          </label>
 
           {files.length > 0 && (
             <ul class="upload-file-list">
@@ -874,7 +880,7 @@ function UploadDialog({
             </button>
             <button
               type="button"
-              disabled={files.length === 0}
+              disabled={busy || files.length === 0}
               onClick={() => onSubmit(files)}
             >
               Upload{files.length > 0 ? ` (${files.length})` : ""}
@@ -893,16 +899,21 @@ interface PreviewDialogProps {
   scope: FileEntry[];
   onClose: () => void;
   onNavigate: (id: string) => void;
-  onRename: (id: string) => void;
-  onReplace: (id: string) => void;
-  onCopy: (id: string) => void;
-  onMove: (id: string) => void;
-  onDelete: (id: string) => void;
+  /** Omitted (hides the action) when `source` doesn't support it. */
+  onRename?: (id: string) => void;
+  onReplace?: (id: string) => void;
+  onCopy?: (id: string) => void;
+  onMove?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 400;
 const ZOOM_STEP = 25;
+/** A single scroll gesture fires many `wheel` events (especially trackpads),
+ * so the step per event needs to be much smaller than the +/- buttons' - at
+ * `ZOOM_STEP` it multiplied out to a jarring zoom-per-notch. */
+const WHEEL_ZOOM_STEP = 5;
 
 function PreviewDialog({
   entry,
@@ -962,11 +973,11 @@ function PreviewDialog({
             <div class="row">
               <MoreMenu
                 label={entry.name}
-                onRename={() => onRename(entry.id)}
-                onReplace={() => onReplace(entry.id)}
-                onCopy={() => onCopy(entry.id)}
-                onMove={() => onMove(entry.id)}
-                onDelete={() => onDelete(entry.id)}
+                onRename={onRename && (() => onRename(entry.id))}
+                onReplace={onReplace && (() => onReplace(entry.id))}
+                onCopy={onCopy && (() => onCopy(entry.id))}
+                onMove={onMove && (() => onMove(entry.id))}
+                onDelete={onDelete && (() => onDelete(entry.id))}
               />
               <button
                 type="button"
@@ -998,7 +1009,7 @@ function PreviewDialog({
                 image
                   ? (event) => {
                       event.preventDefault();
-                      zoomBy(event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP);
+                      zoomBy(event.deltaY > 0 ? -WHEEL_ZOOM_STEP : WHEEL_ZOOM_STEP);
                     }
                   : undefined
               }
@@ -1141,23 +1152,35 @@ function PreviewDialog({
 // ---------------------------------------------------------------- Main
 
 /**
- * Self-contained mock file manager: a browsable list/grid over `data`, with
- * move/copy/delete/rename/replace/upload applied to a local copy (the
- * `data` prop is never mutated). Also doubles as a file *picker* - the same
+ * A browsable list/grid over `source`: navigating into a folder lazily calls
+ * `source.list()` the first time it's visited, and move/copy/delete/rename/
+ * replace/upload/createFolder each call the matching `source` method (hidden
+ * from the UI entirely when `source` doesn't implement it) before
+ * re-fetching whatever folder they touched - `source` is the single source
+ * of truth, not a local copy. Also doubles as a file *picker* - the same
  * checkbox/radio selection that drives the bulk-action Snackbar is reported
  * through `value`/`onChange`, so dropping this inside a host dialog is
  * enough to let it pick file(s) for some other field.
  */
 export default function FileManager({
-  data,
+  source,
   value,
   onChange,
   multiple = true,
   accept,
   defaultView = "list",
 }: FileManagerProps) {
-  const [entries, setEntries] = useState<FileEntry[]>(data);
+  const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [loadedFolders, setLoadedFolders] = useState<Set<string | null>>(
+    () => new Set(),
+  );
+  const [loadingFolders, setLoadingFolders] = useState<Set<string | null>>(
+    () => new Set(),
+  );
+  /** Disables the buttons most likely to be double-clicked (dialog submits,
+   * clipboard paste) while a `source` write is in flight. */
+  const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"list" | "grid">(() =>
     readStoredView(defaultView),
   );
@@ -1178,6 +1201,58 @@ export default function FileManager({
   const [clipboard, setClipboard] = useState<MoveCopyState>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+
+  /** Fetches `folderId`'s children and replaces any entries already loaded
+   * for it - called both by the lazy-load effect below (first visit) and
+   * directly by mutation handlers (forced refresh after a write, since `id`
+   * is a path and a move/copy/rename/upload/createFolder can change or add
+   * ids that a local patch can't safely predict). */
+  const loadFolder = async (folderId: string | null) => {
+    setLoadingFolders((current) => new Set(current).add(folderId));
+    try {
+      const fresh = await source.list(folderId);
+      setEntries((current) => [
+        ...current.filter((entry) => entry.parentId !== folderId),
+        ...fresh,
+      ]);
+      setLoadedFolders((current) => new Set(current).add(folderId));
+    } catch {
+      toast.add({ title: "Couldn't load this folder", type: "error" });
+    } finally {
+      setLoadingFolders((current) => {
+        const next = new Set(current);
+        next.delete(folderId);
+        return next;
+      });
+    }
+  };
+
+  /** Invalidates `folderId`'s cached listing and immediately re-fetches it -
+   * the reconciliation step every mutation handler runs after a successful
+   * write, so `entries` never has to guess at server-assigned ids/paths. */
+  const refreshFolder = async (folderId: string | null) => {
+    setLoadedFolders((current) => {
+      const next = new Set(current);
+      next.delete(folderId);
+      return next;
+    });
+    await loadFolder(folderId);
+  };
+
+  // Lazy-loads whatever folder is currently open, the first time it's
+  // visited. Deliberately excludes `loadedFolders`/`loadingFolders` from the
+  // deps - both are written by this same effect (via `loadFolder`), and
+  // re-running on every write to them would refetch on a loop; it only needs
+  // to react to *navigating somewhere new*, which `currentFolderId` already
+  // captures. Mutation handlers force a refresh directly via `refreshFolder`
+  // instead of going through this effect.
+  useEffect(() => {
+    if (loadedFolders.has(currentFolderId) || loadingFolders.has(currentFolderId)) {
+      return;
+    }
+    loadFolder(currentFolderId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFolderId, source]);
 
   const selectedIds =
     value === undefined
@@ -1253,7 +1328,20 @@ export default function FileManager({
     setQuery("");
   };
 
-  const deleteEntries = (ids: string[]) => {
+  const deleteEntries = async (ids: string[]) => {
+    if (!source.remove) return;
+    setBusy(true);
+    try {
+      await source.remove(ids);
+    } catch {
+      toast.add({ title: "Couldn't delete - try again", type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
+    // Delete doesn't churn any *other* id - a local purge of exactly what was
+    // asked for (plus loaded descendants) is enough, no re-list needed.
     const toRemove = new Set<string>();
     for (const id of ids)
       for (const descendant of collectDescendantIds(entries, id))
@@ -1299,76 +1387,68 @@ export default function FileManager({
     clipboard !== null &&
     (currentFolderId === null || !clipboardBlocked.has(currentFolderId));
 
-  const pasteClipboard = () => {
+  const pasteClipboard = async () => {
     if (!clipboard || !canPaste) return;
     const { mode, ids } = clipboard;
+    const action = mode === "move" ? source.move : source.copy;
+    if (!action) return;
     const targetId = currentFolderId;
-    if (mode === "move") {
-      setEntries((current) =>
-        current.map((entry) =>
-          ids.includes(entry.id) ? { ...entry, parentId: targetId } : entry,
-        ),
-      );
-      toast.add({
-        title: `Moved ${ids.length} item${ids.length === 1 ? "" : "s"}`,
-        type: "success",
-      });
-    } else {
-      setEntries((current) => {
-        const additions: FileEntry[] = [];
-        const cloneTree = (
-          id: string,
-          newParentId: string | null,
-          isTop: boolean,
-        ) => {
-          const source = current.find((entry) => entry.id === id);
-          if (!source) return;
-          const newId = `copy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          additions.push({
-            ...source,
-            id: newId,
-            parentId: newParentId,
-            name: isTop ? `${source.name} copy` : source.name,
-          });
-          if (source.kind === "folder") {
-            for (const child of current.filter(
-              (entry) => entry.parentId === id,
-            ))
-              cloneTree(child.id, newId, false);
-          }
-        };
-        for (const id of ids) cloneTree(id, targetId, true);
-        return [...current, ...additions];
-      });
-      toast.add({
-        title: `Copied ${ids.length} item${ids.length === 1 ? "" : "s"}`,
-        type: "success",
+    // Selection only ever spans one open folder, so every clipboard id shares
+    // the same (pre-move) parent - moving stales that folder's cached listing.
+    const sourceFolderId = entries.find((entry) => entry.id === ids[0])?.parentId ?? null;
+
+    setBusy(true);
+    try {
+      await action(ids, targetId);
+    } catch {
+      toast.add({ title: `Couldn't ${mode} - try again`, type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
+    if (mode === "move" && sourceFolderId !== targetId) {
+      setLoadedFolders((current) => {
+        const next = new Set(current);
+        next.delete(sourceFolderId);
+        return next;
       });
     }
+    await refreshFolder(targetId);
     setSelection([]);
     setClipboard(null);
+    toast.add({
+      title: `${mode === "move" ? "Moved" : "Copied"} ${ids.length} item${ids.length === 1 ? "" : "s"}`,
+      type: "success",
+    });
   };
 
   const renameTargetEntry = renameId
     ? (entries.find((entry) => entry.id === renameId) ?? null)
     : null;
-  const submitRename = (name: string) => {
-    if (!renameId) return;
-    setEntries((current) =>
-      current.map((entry) =>
-        entry.id === renameId
-          ? {
-              ...entry,
-              name,
-              ext:
-                entry.kind === "file" && name.includes(".")
-                  ? name.split(".").pop()
-                  : entry.ext,
-            }
-          : entry,
-      ),
-    );
+  const submitRename = async (name: string) => {
+    if (!renameId || !source.rename) return;
+    const oldId = renameId;
+    setBusy(true);
+    let updated: FileEntry;
+    try {
+      updated = await source.rename(oldId, name);
+    } catch {
+      toast.add({ title: "Couldn't rename - try again", type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
     setRenameId(null);
+    await refreshFolder(currentFolderId);
+    // `id` is a path, so a rename hands back a *different* id - carry the
+    // selection/preview over to it rather than silently dropping them.
+    if (selectedIds.includes(oldId)) {
+      setSelection(selectedIds.map((id) => (id === oldId ? updated.id : id)));
+    }
+    if (previewId === oldId) setPreviewId(updated.id);
+    toast.add({ title: "Renamed", type: "success" });
   };
 
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -1383,12 +1463,12 @@ export default function FileManager({
     }
     replaceInputRef.current?.click();
   };
-  const handleReplaceFile = (event: Event) => {
+  const handleReplaceFile = async (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     const id = replaceTargetId.current;
     input.value = "";
-    if (!file || !id) return;
+    if (!file || !id || !source.replace) return;
     const target = entries.find((entry) => entry.id === id);
     const targetExt = target?.ext?.toLowerCase();
     const fileExt = file.name.includes(".")
@@ -1403,16 +1483,28 @@ export default function FileManager({
       });
       return;
     }
+
+    setBusy(true);
+    let updated: FileEntry;
+    try {
+      updated = await source.replace(id, file);
+    } catch {
+      toast.add({ title: "Couldn't replace - try again", type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
+    // Replace overwrites bytes at the *same* path - `id` doesn't churn, so a
+    // local patch (using the server's authoritative size/modifiedAt) is enough.
     setEntries((current) =>
       current.map((entry) =>
         entry.id === id
           ? {
-              ...entry,
-              size: file.size,
-              modifiedAt: new Date().toISOString(),
+              ...updated,
               previewUrl: file.type.startsWith("image/")
                 ? URL.createObjectURL(file)
-                : entry.previewUrl,
+                : updated.previewUrl,
             }
           : entry,
       ),
@@ -1420,56 +1512,40 @@ export default function FileManager({
     toast.add({ title: "File replaced", type: "success" });
   };
 
-  const submitUpload = (files: File[]) => {
-    const additions: FileEntry[] = files.map((file) => ({
-      id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name,
-      parentId: currentFolderId,
-      kind: "file",
-      ext: file.name.includes(".")
-        ? file.name.split(".").pop()!.toLowerCase()
-        : undefined,
-      size: file.size,
-      modifiedAt: new Date().toISOString(),
-      previewUrl: file.type.startsWith("image/")
-        ? URL.createObjectURL(file)
-        : undefined,
-    }));
-    setEntries((current) => [...current, ...additions]);
+  const submitUpload = async (files: File[]) => {
+    if (!source.upload) return;
+    setBusy(true);
+    try {
+      await source.upload(currentFolderId, files);
+    } catch {
+      toast.add({ title: "Couldn't upload - try again", type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
     setUploadOpen(false);
+    await refreshFolder(currentFolderId);
     toast.add({
       title: `Uploaded ${files.length} file${files.length === 1 ? "" : "s"}`,
       type: "success",
     });
   };
 
-  /** New folders get a hidden `.tmp` child - see `isHiddenEntry` - so they're
-   * never actually "empty" underneath, matching how the real (R2) backend
-   * this mock stands in for has to represent an empty folder. */
-  const createFolder = (name: string) => {
-    const id = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const now = new Date().toISOString();
-    setEntries((current) => [
-      ...current,
-      {
-        id,
-        name,
-        parentId: currentFolderId,
-        kind: "folder",
-        size: 0,
-        fileCount: 0,
-        modifiedAt: now,
-      },
-      {
-        id: `${id}-tmp`,
-        name: ".tmp",
-        parentId: id,
-        kind: "file",
-        size: 0,
-        modifiedAt: now,
-      },
-    ]);
+  const createFolder = async (name: string) => {
+    if (!source.createFolder) return;
+    setBusy(true);
+    try {
+      await source.createFolder(currentFolderId, name);
+    } catch {
+      toast.add({ title: "Couldn't create folder - try again", type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
     setNewFolderOpen(false);
+    await refreshFolder(currentFolderId);
     toast.add({ title: `Created folder "${name}"`, type: "success" });
   };
 
@@ -1488,15 +1564,20 @@ export default function FileManager({
   const renderMore = (entry: FileEntry) => (
     <MoreMenu
       label={entry.name}
-      onRename={() => setRenameId(entry.id)}
+      onRename={source.rename ? () => setRenameId(entry.id) : undefined}
       onReplace={
-        entry.kind === "folder" ? undefined : () => requestReplace(entry.id)
+        entry.kind === "folder" || !source.replace
+          ? undefined
+          : () => requestReplace(entry.id)
       }
-      onCopy={() => requestCopy([entry.id])}
-      onMove={() => requestMove([entry.id])}
-      onDelete={() => deleteEntries([entry.id])}
+      onCopy={source.copy ? () => requestCopy([entry.id]) : undefined}
+      onMove={source.move ? () => requestMove([entry.id]) : undefined}
+      onDelete={source.remove ? () => deleteEntries([entry.id]) : undefined}
     />
   );
+
+  const showSkeleton =
+    loadingFolders.has(currentFolderId) && !loadedFolders.has(currentFolderId);
 
   return (
     <div class="file-manager">
@@ -1513,8 +1594,8 @@ export default function FileManager({
         onQuery={setQuery}
         view={view}
         onView={setView}
-        onNewFolder={() => setNewFolderOpen(true)}
-        onUpload={() => setUploadOpen(true)}
+        onNewFolder={source.createFolder ? () => setNewFolderOpen(true) : undefined}
+        onUpload={source.upload ? () => setUploadOpen(true) : undefined}
       />
 
       {view === "grid" &&
@@ -1522,7 +1603,7 @@ export default function FileManager({
           <ClipboardBar
             mode={clipboard.mode}
             count={clipboard.ids.length}
-            canPaste={canPaste}
+            canPaste={canPaste && !busy}
             onPaste={pasteClipboard}
             onCancel={() => setClipboard(null)}
           />
@@ -1536,13 +1617,24 @@ export default function FileManager({
               setSelection(selectableVisible.map((entry) => entry.id))
             }
             onUnselectAll={() => setSelection([])}
-            onMove={() => requestMove(selectedIds)}
-            onCopy={() => requestCopy(selectedIds)}
-            onDelete={() => deleteEntries(selectedIds)}
+            onMove={source.move ? () => requestMove(selectedIds) : undefined}
+            onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
+            onDelete={source.remove ? () => deleteEntries(selectedIds) : undefined}
           />
         ))}
 
-      {view === "list" ? (
+      {showSkeleton ? (
+        <div class="file-manager-skeleton" aria-hidden="true">
+          {[100, 85, 90, 70, 95, 80].map((width, index) => (
+            <span
+              // eslint-disable-next-line react/no-array-index-key
+              key={index}
+              class="skeleton"
+              style={{ width: `${width}%` }}
+            />
+          ))}
+        </div>
+      ) : view === "list" ? (
         <ListView
           entries={visible}
           selectedIds={selectedIds}
@@ -1559,10 +1651,10 @@ export default function FileManager({
           allSelected={allSelected}
           onToggleAll={toggleAll}
           locked={selectionLocked}
-          onMove={() => requestMove(selectedIds)}
-          onCopy={() => requestCopy(selectedIds)}
-          onDelete={() => deleteEntries(selectedIds)}
-          canPaste={canPaste}
+          onMove={source.move ? () => requestMove(selectedIds) : undefined}
+          onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
+          onDelete={source.remove ? () => deleteEntries(selectedIds) : undefined}
+          canPaste={canPaste && !busy}
           onPasteClipboard={pasteClipboard}
           onCancelClipboard={() => setClipboard(null)}
         />
@@ -1582,34 +1674,45 @@ export default function FileManager({
         target={renameTargetEntry}
         onClose={() => setRenameId(null)}
         onSubmit={submitRename}
+        busy={busy}
       />
       <NewFolderDialog
         open={newFolderOpen}
         onClose={() => setNewFolderOpen(false)}
         onSubmit={createFolder}
+        busy={busy}
       />
       <UploadDialog
         open={uploadOpen}
         folderPathLabel={currentPathLabel}
         onClose={() => setUploadOpen(false)}
         onSubmit={submitUpload}
+        busy={busy}
       />
       <PreviewDialog
         entry={previewEntry}
         scope={previewScope}
         onClose={() => setPreviewId(null)}
         onNavigate={setPreviewId}
-        onRename={(id) => setRenameId(id)}
-        onReplace={requestReplace}
-        onCopy={(id) => {
-          requestCopy([id]);
-          setPreviewId(null);
-        }}
-        onMove={(id) => {
-          requestMove([id]);
-          setPreviewId(null);
-        }}
-        onDelete={(id) => deleteEntries([id])}
+        onRename={source.rename ? (id) => setRenameId(id) : undefined}
+        onReplace={source.replace ? requestReplace : undefined}
+        onCopy={
+          source.copy
+            ? (id) => {
+                requestCopy([id]);
+                setPreviewId(null);
+              }
+            : undefined
+        }
+        onMove={
+          source.move
+            ? (id) => {
+                requestMove([id]);
+                setPreviewId(null);
+              }
+            : undefined
+        }
+        onDelete={source.remove ? (id) => deleteEntries([id]) : undefined}
       />
     </div>
   );

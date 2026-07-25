@@ -78,11 +78,11 @@ export function isImageEntry(entry: FileEntry): boolean {
 	return entry.kind === 'file' && extensionToCategory(entry.ext) === 'image';
 }
 
-/** `.tmp` is a placeholder file dropped into every newly-created folder (object
+/** `.dir` is a placeholder file dropped into every newly-created folder (object
  * storage like R2 has no such thing as an empty "directory" - a prefix only
  * exists once something is stored under it). Never shown in the UI. */
 export function isHiddenEntry(entry: FileEntry): boolean {
-	return entry.kind === 'file' && entry.name === '.tmp';
+	return entry.kind === 'file' && entry.name === '.dir';
 }
 
 export function formatBytes(bytes: number | undefined): string {

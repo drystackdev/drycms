@@ -459,14 +459,14 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
 <SidebarToggle />`,
   fileManager: `import FileManager from 'drycms/components/FileManager';
 
-<FileManager data={files} />`,
+<FileManager source={source} />`,
   fileManagerSingle: `import { useState } from 'preact/hooks';
 import FileManager from 'drycms/components/FileManager';
 
 const [value, setValue] = useState('');
 
 <FileManager
-  data={files}
+  source={source}
   multiple={false}
   accept={['jpg', 'jpeg', 'png']}
   value={value}
@@ -479,7 +479,7 @@ import FileManager from 'drycms/components/FileManager';
 const [value, setValue] = useState([]);
 
 <FileManager
-  data={files}
+  source={source}
   multiple
   accept={['jpg', 'jpeg', 'png']}
   value={value}

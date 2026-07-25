@@ -39,14 +39,29 @@ describe('dry()', () => {
 		expect(dry().name).toBe('drycms');
 	});
 
-	it('injects a single catch-all route for the Preact app', () => {
+	it('injects the app catch-all route and the storage API route', () => {
 		const { injectRoute } = runSetup(dry());
 
-		expect(injectRoute).toHaveBeenCalledTimes(1);
+		expect(injectRoute).toHaveBeenCalledTimes(2);
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/[...slug]',
 			entrypoint: 'drycms/app.astro',
 		});
+		expect(injectRoute).toHaveBeenCalledWith({
+			pattern: '/dry/api/storage/[...slug]',
+			entrypoint: 'drycms/routes/storage.ts',
+		});
+	});
+
+	it('registers a storage virtual-config plugin', () => {
+		const { updateConfig } = runSetup(dry());
+
+		// `@astrojs/preact`'s own setup hook also calls `updateConfig` (for its
+		// babel/jsx config), so this is not necessarily the first call.
+		const plugins = updateConfig.mock.calls
+			.flatMap((call) => (call[0] as { vite?: { plugins?: { name: string }[] } }).vite?.plugins ?? [])
+			.map((plugin) => plugin.name);
+		expect(plugins).toContain('drycms:virtual-storage-config');
 	});
 
 	it('switches the project to server output', () => {
@@ -73,6 +88,10 @@ describe('dry()', () => {
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/admin/[...slug]',
 			entrypoint: 'drycms/app.astro',
+		});
+		expect(injectRoute).toHaveBeenCalledWith({
+			pattern: '/admin/api/storage/[...slug]',
+			entrypoint: 'drycms/routes/storage.ts',
 		});
 	});
 
