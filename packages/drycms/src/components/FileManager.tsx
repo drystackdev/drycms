@@ -197,16 +197,37 @@ function MoreMenu({
 
 // --------------------------------------------------------------- Breadcrumb
 
+interface BreadcrumbProps {
+  chain: FileEntry[];
+  onNavigate: (id: string | null) => void;
+  /** Drag-to-move onto a breadcrumb entry - see the main component's
+   * `dragIds`/`breadcrumbDragOverId`/drag handlers for the shared state. */
+  dragOverId: string | null | undefined;
+  onDragOver: (id: string | null) => (event: DragEvent) => void;
+  onDragLeave: (id: string | null) => () => void;
+  onDrop: (id: string | null) => (event: DragEvent) => void;
+}
+
 function Breadcrumb({
   chain,
   onNavigate,
-}: {
-  chain: FileEntry[];
-  onNavigate: (id: string | null) => void;
-}) {
+  dragOverId,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: BreadcrumbProps) {
   return (
     <nav class="file-breadcrumb" aria-label="Breadcrumb">
-      <button type="button" class="link" onClick={() => onNavigate(null)}>
+      <button
+        type="button"
+        class={["link", dragOverId === null ? "drag-over" : null]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => onNavigate(null)}
+        onDragOver={onDragOver(null)}
+        onDragLeave={onDragLeave(null)}
+        onDrop={onDrop(null)}
+      >
         Root
       </button>
       {chain.map((entry) => (
@@ -216,8 +237,13 @@ function Breadcrumb({
           </span>
           <button
             type="button"
-            class="link"
+            class={["link", dragOverId === entry.id ? "drag-over" : null]
+              .filter(Boolean)
+              .join(" ")}
             onClick={() => onNavigate(entry.id)}
+            onDragOver={onDragOver(entry.id)}
+            onDragLeave={onDragLeave(entry.id)}
+            onDrop={onDrop(entry.id)}
           >
             {entry.name}
           </button>
@@ -1565,6 +1591,13 @@ export default function FileManager({
    * and the id of the folder currently hovered as a drop target. */
   const [dragIds, setDragIds] = useState<string[] | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  /** Same idea for the breadcrumb, which can also be dropped onto. `null`
+   * means "Root" is hovered - distinct from `undefined` (nothing hovered),
+   * since a folder's own id can't stand in for "no target" the way it does
+   * for `dragOverId` above. */
+  const [breadcrumbDragOverId, setBreadcrumbDragOverId] = useState<
+    string | null | undefined
+  >(undefined);
   const [previewOn, setPreviewOn] = useState(() => readStoredPreview(false));
   useEffect(() => {
     try {
@@ -1705,10 +1738,19 @@ export default function FileManager({
    * (if the dragged entry is part of it) or just that one entry. */
   const canDrag = (entry: FileEntry) =>
     !!source.move && !isDisabled(entry) && !busy;
-  const canDropOn = (target: FileEntry, ids: string[]) => {
-    if (target.kind !== "folder" || ids.includes(target.id)) return false;
-    return !ids.some((id) => collectDescendantIds(entries, id).has(target.id));
+  /** Shared by the grid/list folder rows and the breadcrumb (incl. "Root",
+   * `targetId === null`): can't drop onto the folder already open, onto one
+   * of the dragged items itself, or onto one of their own descendants. */
+  const canDropOnFolder = (targetId: string | null, ids: string[]) => {
+    if (targetId === currentFolderId) return false;
+    if (targetId !== null && ids.includes(targetId)) return false;
+    return !(
+      targetId !== null &&
+      ids.some((id) => collectDescendantIds(entries, id).has(targetId))
+    );
   };
+  const canDropOn = (target: FileEntry, ids: string[]) =>
+    target.kind === "folder" && canDropOnFolder(target.id, ids);
   const onDragStartEntry = (entry: FileEntry) => (event: DragEvent) => {
     if (!canDrag(entry)) {
       event.preventDefault();
@@ -1724,6 +1766,7 @@ export default function FileManager({
   const onDragEndEntry = () => {
     setDragIds(null);
     setDragOverId(null);
+    setBreadcrumbDragOverId(undefined);
   };
   const onDragOverEntry = (entry: FileEntry) => (event: DragEvent) => {
     if (!dragIds || !canDropOn(entry, dragIds)) return;
@@ -1741,8 +1784,24 @@ export default function FileManager({
     setDragOverId(null);
     if (ids && canDropOn(entry, ids)) moveEntriesInto(ids, entry.id);
   };
+  const onDragOverBreadcrumb = (targetId: string | null) => (event: DragEvent) => {
+    if (!dragIds || !canDropOnFolder(targetId, dragIds)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    setBreadcrumbDragOverId(targetId);
+  };
+  const onDragLeaveBreadcrumb = (targetId: string | null) => () => {
+    setBreadcrumbDragOverId((current) => (current === targetId ? undefined : current));
+  };
+  const onDropBreadcrumb = (targetId: string | null) => (event: DragEvent) => {
+    event.preventDefault();
+    const ids = dragIds;
+    setDragIds(null);
+    setBreadcrumbDragOverId(undefined);
+    if (ids && canDropOnFolder(targetId, ids)) moveEntriesInto(ids, targetId);
+  };
 
-  const moveEntriesInto = async (ids: string[], targetId: string) => {
+  const moveEntriesInto = async (ids: string[], targetId: string | null) => {
     if (!source.move) return;
     setBusy(true);
     try {
@@ -2034,7 +2093,14 @@ export default function FileManager({
         onChange={handleReplaceFile}
       />
 
-      <Breadcrumb chain={breadcrumb} onNavigate={navigateBreadcrumb} />
+      <Breadcrumb
+        chain={breadcrumb}
+        onNavigate={navigateBreadcrumb}
+        dragOverId={breadcrumbDragOverId}
+        onDragOver={onDragOverBreadcrumb}
+        onDragLeave={onDragLeaveBreadcrumb}
+        onDrop={onDropBreadcrumb}
+      />
       <Toolbar
         query={query}
         onQuery={setQuery}
