@@ -78,6 +78,30 @@ function readStoredPreview(fallback: boolean): boolean {
   }
 }
 
+const FOLDER_QUERY_KEY = "dry_folder";
+
+/** Reads the folder id encoded in the current URL, if any - lets a reload or
+ * a shared link land back in the same folder. Guarded for SSR. */
+function readFolderFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(FOLDER_QUERY_KEY);
+}
+
+/** Writes `folderId` into the URL's query string and browser history, so
+ * back/forward moves between folders like any other page navigation.
+ * `replace` swaps the current entry instead of pushing a new one - used for
+ * the initial mount, so opening the manager doesn't itself become a
+ * back-button stop. */
+function writeFolderToUrl(folderId: string | null, replace: boolean) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (folderId === null) url.searchParams.delete(FOLDER_QUERY_KEY);
+  else url.searchParams.set(FOLDER_QUERY_KEY, folderId);
+  const state = { [FOLDER_QUERY_KEY]: folderId };
+  if (replace) window.history.replaceState(state, "", url);
+  else window.history.pushState(state, "", url);
+}
+
 /** Opens/closes a native `<dialog>` to match `active`, and reports back when the dialog closes itself (Escape, backdrop click, or an in-dialog `close()` call). */
 function useDialogSync(active: boolean, onDismiss: () => void) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -273,12 +297,12 @@ function Toolbar({
         </button>
       </div>
       {onNewFolder && (
-        <button type="button" class="outline sm" onClick={onNewFolder}>
+        <button type="button" class="outline" onClick={onNewFolder}>
           <AddFolderIcon /> New folder
         </button>
       )}
       {onUpload && (
-        <button type="button" class="outline sm" onClick={onUpload}>
+        <button type="button" class="outline" onClick={onUpload}>
           <UploadIcon /> Upload
         </button>
       )}
@@ -310,7 +334,14 @@ interface ViewProps {
   onDropEntry: (entry: FileEntry) => (event: DragEvent) => void;
   /** Real thumbnails (list: 16:9 mini, grid: full-card) instead of the generic file-type icon. */
   preview: boolean;
+  /** The current folder's first `source.list()` call is in flight - renders
+   * skeleton rows/cards in place of `entries` instead of replacing the whole
+   * view (header/toolbar stay put, only the data underneath is placeholder). */
+  loading: boolean;
 }
+
+const SKELETON_ROWS = 6;
+const SKELETON_WIDTHS = [92, 78, 85, 65, 90, 72, 88, 60];
 
 function ListView({
   entries,
@@ -330,6 +361,7 @@ function ListView({
   onDragLeaveEntry,
   onDropEntry,
   preview,
+  loading,
   multiple,
   allSelected,
   onToggleAll,
@@ -433,7 +465,40 @@ function ListView({
           )}
         </thead>
         <tbody>
-          {entries.length === 0 ? (
+          {loading ? (
+            Array.from({ length: SKELETON_ROWS }).map((_, index) => (
+              <tr
+                // eslint-disable-next-line react/no-array-index-key
+                key={index}
+                class="file-table-skeleton-row"
+                style={{ cursor: "default" }}
+              >
+                <td class="file-table-check">
+                  <span class="skeleton" />
+                </td>
+                <td>
+                  <span
+                    class="skeleton"
+                    style={{
+                      width: `${SKELETON_WIDTHS[index % SKELETON_WIDTHS.length]}%`,
+                    }}
+                  />
+                </td>
+                <td class="numeric">
+                  <span class="skeleton" />
+                </td>
+                <td>
+                  <span class="skeleton" />
+                </td>
+                <td>
+                  <span class="skeleton" />
+                </td>
+                <td class="file-table-more">
+                  <span class="skeleton" />
+                </td>
+              </tr>
+            ))
+          ) : entries.length === 0 ? (
             <tr style={{ cursor: "default" }}>
               <td colSpan={6}>
                 <div class="center" style={{height: 200}} >No files.</div>
@@ -488,7 +553,7 @@ function ListView({
                         onOpen(entry, event);
                       }}
                     >
-                      {preview && entry.kind !== "folder" ? (
+                      {preview && isImageEntry(entry) ? (
                         <img
                           class="file-thumb-preview"
                           src={entry.previewUrl ?? thumbnailUrl(entry)}
@@ -546,7 +611,27 @@ function GridView({
   onDragLeaveEntry,
   onDropEntry,
   preview,
+  loading,
 }: ViewProps) {
+  if (loading) {
+    return (
+      <div class="file-grid">
+        {Array.from({ length: SKELETON_ROWS }).map((_, index) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <div key={index} class="file-card file-card-skeleton">
+            <span class="skeleton file-card-skeleton-thumb" />
+            <span
+              class="skeleton"
+              style={{
+                width: `${SKELETON_WIDTHS[index % SKELETON_WIDTHS.length]}%`,
+              }}
+            />
+            <span class="skeleton" style={{ width: "40%" }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (entries.length === 0) return <div class="empty">No files.</div>;
 
   return (
@@ -556,7 +641,7 @@ function GridView({
         const pending = clipboard?.ids.includes(entry.id) ?? false;
         const disabled = isDisabled(entry);
         const isDropTarget = entry.kind === "folder";
-        const showMedia = preview && entry.kind !== "folder";
+        const showMedia = preview && isImageEntry(entry);
         return (
           <div
             key={entry.id}
@@ -1416,7 +1501,37 @@ export default function FileManager({
   defaultView = "list",
 }: FileManagerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(() =>
+    readFolderFromUrl(),
+  );
+  // Establishes a baseline history entry for whatever folder we opened on
+  // (root or one restored from the URL), so the very first back-button press
+  // doesn't skip past it.
+  useEffect(() => {
+    writeFolderToUrl(currentFolderId, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Back/forward moves between folders the same way clicking into one does.
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      const state = event.state as { [FOLDER_QUERY_KEY]?: string | null } | null;
+      const id =
+        state && FOLDER_QUERY_KEY in state
+          ? (state[FOLDER_QUERY_KEY] ?? null)
+          : readFolderFromUrl();
+      setCurrentFolderId(id);
+      setQuery("");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  /** Centralizes the two user-driven navigations (opening a folder,
+   * clicking a breadcrumb) so both stay in sync with browser history. */
+  const goToFolder = (id: string | null) => {
+    setCurrentFolderId(id);
+    setQuery("");
+    writeFolderToUrl(id, false);
+  };
   const [loadedFolders, setLoadedFolders] = useState<Set<string | null>>(
     () => new Set(),
   );
@@ -1580,8 +1695,7 @@ export default function FileManager({
       return;
     }
     if (entry.kind === "folder") {
-      setCurrentFolderId(entry.id);
-      setQuery("");
+      goToFolder(entry.id);
     } else {
       setPreviewId(entry.id);
     }
@@ -1656,8 +1770,7 @@ export default function FileManager({
   };
 
   const navigateBreadcrumb = (id: string | null) => {
-    setCurrentFolderId(id);
-    setQuery("");
+    goToFolder(id);
   };
 
   const deleteEntries = async (ids: string[]) => {
@@ -1962,23 +2075,13 @@ export default function FileManager({
           />
         ))}
 
-      {showSkeleton ? (
-        <div class="file-manager-skeleton" aria-hidden="true">
-          {[100, 85, 90, 70, 95, 80].map((width, index) => (
-            <span
-              // eslint-disable-next-line react/no-array-index-key
-              key={index}
-              class="skeleton"
-              style={{ width: `${width}%` }}
-            />
-          ))}
-        </div>
-      ) : view === "list" ? (
+      {view === "list" ? (
         <ListView
           entries={visible}
           selectedIds={selectedIds}
           clipboard={clipboard}
           isDisabled={isDisabled}
+          loading={showSkeleton}
           sortDir={sortDir}
           onSort={() =>
             setSortDir((current) => (current === "asc" ? "desc" : "asc"))
@@ -2025,6 +2128,7 @@ export default function FileManager({
           onDragLeaveEntry={onDragLeaveEntry}
           onDropEntry={onDropEntry}
           preview={previewOn}
+          loading={showSkeleton}
         />
       )}
 

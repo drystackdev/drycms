@@ -340,6 +340,33 @@
       }
     }
 
+    /*
+		 * Search icon, reusing the `Search` glyph from components/icons.tsx.
+		 * Unlike the checkbox/breadcrumb icons above, this can't be a
+		 * `currentColor` mask - masking the whole input would clip away its
+		 * text and border along with everything outside the glyph, not just
+		 * draw one. It's a `background-image` instead (Pico CSS's own
+		 * technique), layered on top of the field's normal background/border.
+		 * That rules out `currentColor` too (a data URI is a static string),
+		 * hence the manual light/dark swap below.
+		 */
+    :where(input[type="search"]) {
+      appearance: none;
+      padding-inline-start: 2.25rem;
+      background-repeat: no-repeat;
+      background-position: 0.75rem center;
+      background-size: 1rem;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23637381' stroke-width='1.5'%3E%3Ccircle cx='11.5' cy='11.5' r='9.5'/%3E%3Cpath stroke-linecap='round' d='M18.5 18.5L22 22'/%3E%3C/g%3E%3C/svg%3E");
+
+      &::-webkit-search-cancel-button {
+        margin-inline-end: -0.25rem;
+      }
+    }
+
+    &.dark :where(input[type="search"]) {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23919eab' stroke-width='1.5'%3E%3Ccircle cx='11.5' cy='11.5' r='9.5'/%3E%3Cpath stroke-linecap='round' d='M18.5 18.5L22 22'/%3E%3C/g%3E%3C/svg%3E");
+    }
+
     :where(fieldset) {
       margin: 0;
       border: 1px solid var(--dry-border);
@@ -388,6 +415,12 @@
         color: var(--dry-muted-foreground);
         flex: none;
       }
+    }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .dry:not(.light) :where(input[type="search"]) {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23919eab' stroke-width='1.5'%3E%3Ccircle cx='11.5' cy='11.5' r='9.5'/%3E%3Cpath stroke-linecap='round' d='M18.5 18.5L22 22'/%3E%3C/g%3E%3C/svg%3E");
     }
   }
 }
