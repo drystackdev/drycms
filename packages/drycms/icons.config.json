@@ -31,6 +31,17 @@
     "CheckCircle": "solar:check-circle-bold-duotone",
     "InfoCircle": "solar:info-circle-bold-duotone",
     "AlertTriangle": "solar:danger-triangle-bold-duotone",
-    "XCircle": "solar:close-circle-bold-duotone"
+    "XCircle": "solar:close-circle-bold-duotone",
+
+    "MoreVertical": "solar:menu-dots-bold",
+    "Copy": "solar:copy-linear",
+    "Move": "solar:file-send-linear",
+    "Rename": "solar:pen-2-linear",
+    "Replace": "solar:refresh-linear",
+    "Trash": "solar:trash-bin-trash-linear",
+    "Upload": "solar:upload-linear",
+    "Grid": "solar:widget-2-linear",
+    "ListView": "solar:list-linear",
+    "Folder": "solar:folder-linear"
   }
 }

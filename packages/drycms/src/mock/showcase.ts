@@ -89,6 +89,14 @@ export const groups: ShowcaseGroup[] = [
       { id: "islands", label: "Theme & sidebar" },
     ],
   },
+  {
+    label: "File manager",
+    items: [
+      { id: "file-manager", label: "File manager" },
+      { id: "file-manager-single", label: "Image picker (single)" },
+      { id: "file-manager-multi", label: "Image picker (multi)" },
+    ],
+  },
 ];
 
 export const collectionOptions = [
@@ -437,4 +445,32 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
 
 <ThemeToggle />
 <SidebarToggle />`,
+  fileManager: `import FileManager from 'drycms/components/FileManager';
+
+<FileManager data={files} />`,
+  fileManagerSingle: `import { useState } from 'preact/hooks';
+import FileManager from 'drycms/components/FileManager';
+
+const [value, setValue] = useState('');
+
+<FileManager
+  data={files}
+  accept={['jpg', 'jpeg', 'png']}
+  value={value}
+  onChange={setValue}
+/>
+<p class="muted">Selected: {value || 'none'}</p>`,
+  fileManagerMulti: `import { useState } from 'preact/hooks';
+import FileManager from 'drycms/components/FileManager';
+
+const [value, setValue] = useState([]);
+
+<FileManager
+  data={files}
+  multiple
+  accept={['jpg', 'jpeg', 'png']}
+  value={value}
+  onChange={setValue}
+/>
+<p class="muted">Selected: {value.join(', ') || 'none'}</p>`,
 };

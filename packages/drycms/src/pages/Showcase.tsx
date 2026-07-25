@@ -1,15 +1,17 @@
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import Combobox from "../components/Combobox.js";
 import DataTable from "../components/DataTable.js";
 import Demo from "../components/Demo.js";
+import FileManager from "../components/FileManager.js";
 import Icon from "../components/Icon.js";
 import { type IconName, iconBodies } from "../components/icons.js";
 import MultiSelect from "../components/MultiSelect.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
 import { toast } from "../components/Toast.js";
+import { fileManagerMock } from "../mock/file-manager.js";
 import {
   code,
   collectionOptions,
@@ -212,6 +214,40 @@ function TabsDemoPreview() {
       <div role="tabpanel" id="sc-panel-3" hidden>
         <p>History panel.</p>
       </div>
+    </div>
+  );
+}
+
+/** `value`/`onChange` in single mode (`multiple` unset): picking a file sets
+ * a lone string id, matched against `accept` to gate which files can be picked. */
+function FileManagerSinglePreview() {
+  const [value, setValue] = useState("");
+  return (
+    <div class="stack" style="width: 100%">
+      <FileManager
+        data={fileManagerMock}
+        accept={["jpg", "jpeg", "png"]}
+        value={value}
+        onChange={setValue as (value: string | string[]) => void}
+      />
+      <p class="muted">Selected: {value || "none"}</p>
+    </div>
+  );
+}
+
+/** Same picker, `multiple` on: `value`/`onChange` carry a `string[]` instead. */
+function FileManagerMultiPreview() {
+  const [value, setValue] = useState<string[]>([]);
+  return (
+    <div class="stack" style="width: 100%">
+      <FileManager
+        data={fileManagerMock}
+        multiple
+        accept={["jpg", "jpeg", "png"]}
+        value={value}
+        onChange={setValue as (value: string | string[]) => void}
+      />
+      <p class="muted">Selected: {value.join(", ") || "none"}</p>
     </div>
   );
 }
@@ -1104,6 +1140,42 @@ function DemoContent({ id }: { id: string }) {
             above. The theme toggle cycles system → light → dark and stores the
             choice in localStorage.
           </p>
+        </Demo>
+      );
+
+    case "file-manager":
+      return (
+        <Demo
+          id="file-manager"
+          title="File manager"
+          description="Mock, self-contained: list/grid views, search, multi-select with move/copy/delete, rename/replace, full-screen preview, and upload - all against a local copy of `data`."
+          code={code.fileManager!}
+        >
+          <FileManager data={fileManagerMock} />
+        </Demo>
+      );
+
+    case "file-manager-single":
+      return (
+        <Demo
+          id="file-manager-single"
+          title="Image picker (single)"
+          description="Same component used as a picker: `accept` disables non-matching files, and the checkbox selection is reported through `value`/`onChange` as a lone id."
+          code={code.fileManagerSingle!}
+        >
+          <FileManagerSinglePreview />
+        </Demo>
+      );
+
+    case "file-manager-multi":
+      return (
+        <Demo
+          id="file-manager-multi"
+          title="Image picker (multi)"
+          description="`multiple` turns the same selection into a `string[]`, with a Snackbar for select all/unselect all."
+          code={code.fileManagerMulti!}
+        >
+          <FileManagerMultiPreview />
         </Demo>
       );
 
