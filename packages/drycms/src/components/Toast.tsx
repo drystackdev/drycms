@@ -40,7 +40,9 @@ interface ToastItem {
 }
 
 const DEFAULT_TIMEOUT = 5000;
-const EXIT_DURATION = 200;
+/** Kept just above the CSS closing transition (280ms, see `.toast` in
+ * components.css) so the card never gets unmounted mid-animation. */
+const EXIT_DURATION = 300;
 const LIMIT = 4;
 
 const TYPE_ICON: Partial<Record<ToastType, IconName>> = {
@@ -194,10 +196,45 @@ function useToastItems(): ToastItem[] {
 }
 
 const SWIPE_THRESHOLD = 80;
+/** Peek offset (px) per layer while collapsed - just enough to read as a stack. */
+const COLLAPSED_PEEK = 14;
+/** Gap (px) between cards once the stack fans out (hover/focus). */
+const EXPANDED_GAP = 10;
+/** Assumed card height (px) before the real one is measured on first paint. */
+const FALLBACK_HEIGHT = 64;
 
-function ToastCard({ item, index }: { item: ToastItem; index: number }) {
+interface ToastCardProps {
+	item: ToastItem;
+	index: number;
+	offsetY: number;
+	expanded: boolean;
+	onResize: (id: string, height: number) => void;
+}
+
+function ToastCard({ item, index, offsetY, expanded, onResize }: ToastCardProps) {
+	const ref = useRef<HTMLDivElement>(null);
 	const drag = useRef<{ startX: number; startY: number } | null>(null);
 	const [swipe, setSwipe] = useState({ x: 0, y: 0, active: false });
+	// Starts detached from the "open" transition so the browser has a real
+	// before/after to animate between on the very next frame, instead of
+	// racing a `transition` against a mount-time `animation` on one property.
+	const [mounted, setMounted] = useState(false);
+
+	useEffect(() => {
+		const raf = requestAnimationFrame(() => setMounted(true));
+		return () => cancelAnimationFrame(raf);
+	}, []);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(([entry]) => {
+			const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height;
+			if (height) onResize(item.id, height);
+		});
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [item.id, onResize]);
 
 	const onPointerDown = (event: PointerEvent) => {
 		if ((event.target as HTMLElement).closest('[data-toast-no-swipe]')) return;
@@ -227,18 +264,23 @@ function ToastCard({ item, index }: { item: ToastItem; index: number }) {
 	};
 
 	const typeIcon = TYPE_ICON[item.type];
+	const state = item.closing ? 'closing' : mounted ? 'open' : 'starting';
 
 	return (
 		<div
+			ref={ref}
 			class="toast"
 			data-type={item.type}
-			data-state={item.closing ? 'closing' : 'open'}
+			data-state={state}
+			data-expanded={expanded ? '' : undefined}
+			data-behind={index > 0 ? '' : undefined}
 			data-swiping={swipe.active ? '' : undefined}
 			data-swipe-direction={item.swipeDirection}
 			role={item.priority === 'high' ? 'alert' : 'status'}
 			aria-live={item.priority === 'high' ? 'assertive' : 'polite'}
 			style={{
 				'--toast-index': index,
+				'--toast-offset-y': `${offsetY}px`,
 				'--toast-swipe-movement-x': `${swipe.x}px`,
 				'--toast-swipe-movement-y': `${swipe.y}px`,
 			}}
@@ -247,40 +289,44 @@ function ToastCard({ item, index }: { item: ToastItem; index: number }) {
 			onPointerUp={endDrag}
 			onPointerCancel={endDrag}
 		>
-			{item.type === 'loading' ? (
-				<span class="toast-spinner" aria-hidden="true" />
-			) : typeIcon ? (
-				<Icon name={typeIcon} />
-			) : null}
+			<div class="toast-body">
+				{item.type === 'loading' ? (
+					<span class="toast-spinner" aria-hidden="true" />
+				) : typeIcon ? (
+					<Icon name={typeIcon} />
+				) : null}
 
-			<div class="toast-content">
-				{item.title ? <strong>{item.title}</strong> : null}
-				{item.description ? <p>{item.description}</p> : null}
+				<div class="toast-content">
+					{item.title ? <strong>{item.title}</strong> : null}
+					{item.description ? <p>{item.description}</p> : null}
+				</div>
+
+				<div class="toast-actions">
+					{item.actionProps ? (
+						<button
+							type="button"
+							class="ghost sm toast-action"
+							data-toast-no-swipe
+							onClick={() => {
+								item.actionProps?.onClick?.();
+								close(item.id);
+							}}
+						>
+							{item.actionProps.children}
+						</button>
+					) : null}
+
+					<button
+						type="button"
+						class="ghost icon sm toast-close"
+						data-toast-no-swipe
+						aria-label="Dismiss notification"
+						onClick={() => close(item.id)}
+					>
+						<Icon name="Close" />
+					</button>
+				</div>
 			</div>
-
-			{item.actionProps ? (
-				<button
-					type="button"
-					class="ghost sm toast-action"
-					data-toast-no-swipe
-					onClick={() => {
-						item.actionProps?.onClick?.();
-						close(item.id);
-					}}
-				>
-					{item.actionProps.children}
-				</button>
-			) : null}
-
-			<button
-				type="button"
-				class="ghost icon sm toast-close"
-				data-toast-no-swipe
-				aria-label="Dismiss notification"
-				onClick={() => close(item.id)}
-			>
-				<Icon name="Close" />
-			</button>
 		</div>
 	);
 }
@@ -297,10 +343,18 @@ export interface ToasterProps {
  * Rendered via the Popover API (`popover="manual"`) rather than a portal: it
  * puts the stack in the browser's top layer, so it floats above an open
  * native `<dialog>` too, without a manual z-index scale.
+ *
+ * Collapsed, the cards overlap into a shallow deck (a `ResizeObserver` per
+ * card feeds real heights back up, since a CSS-only guess would misalign the
+ * peek the moment a title wraps to two lines); hovering/focusing the
+ * viewport fans them out to full height so every toast is readable.
  */
 export default function Toaster({ position = 'bottom-end' }: ToasterProps) {
 	const toasts = useToastItems();
 	const viewportRef = useRef<HTMLDivElement>(null);
+	const previousCount = useRef(0);
+	const [heights, setHeights] = useState<Record<string, number>>({});
+	const [expanded, setExpanded] = useState(false);
 
 	useEffect(() => {
 		const el = viewportRef.current;
@@ -309,6 +363,59 @@ export default function Toaster({ position = 'bottom-end' }: ToasterProps) {
 		el.showPopover?.();
 	}, []);
 
+	// The top layer stacks by "last shown wins" - an open `<dialog>` shown
+	// after the viewport's one `showPopover()` call would otherwise bury every
+	// toast added from then on. Re-promoting on each new toast keeps the
+	// stack above it without a portal or z-index scale.
+	useEffect(() => {
+		const el = viewportRef.current;
+		if (el && toasts.length > previousCount.current && el.matches?.(':popover-open')) {
+			el.hidePopover?.();
+			el.showPopover?.();
+		}
+		previousCount.current = toasts.length;
+	}, [toasts]);
+
+	// Drop heights for toasts that have fully closed, so a long-lived session
+	// doesn't accumulate stale entries under reused/incrementing ids.
+	useEffect(() => {
+		setHeights((current) => {
+			const liveIds = new Set(toasts.map((entry) => entry.id));
+			let changed = false;
+			const next: Record<string, number> = {};
+			for (const [id, height] of Object.entries(current)) {
+				if (liveIds.has(id)) next[id] = height;
+				else changed = true;
+			}
+			return changed ? next : current;
+		});
+	}, [toasts]);
+
+	const handleResize = (id: string, height: number) => {
+		setHeights((current) => (current[id] === height ? current : { ...current, [id]: height }));
+	};
+
+	const handleEnter = () => {
+		setExpanded(true);
+		pauseTimers();
+	};
+	const handleLeave = () => {
+		setExpanded(false);
+		resumeTimers();
+	};
+
+	// Render newest-first so array position lines up with `--toast-index`
+	// (0 = frontmost); accumulate each card's real height to place the next
+	// one behind it once expanded.
+	const ordered = [...toasts].reverse();
+	let cumulative = 0;
+	const placed = ordered.map((item, index) => {
+		const offsetY = expanded ? cumulative : index * COLLAPSED_PEEK;
+		cumulative += (heights[item.id] ?? FALLBACK_HEIGHT) + EXPANDED_GAP;
+		return { item, index, offsetY };
+	});
+	const frontmostHeight = heights[ordered[0]?.id ?? ''] ?? FALLBACK_HEIGHT;
+
 	return (
 		<div
 			ref={viewportRef}
@@ -316,13 +423,21 @@ export default function Toaster({ position = 'bottom-end' }: ToasterProps) {
 			data-position={position}
 			role="region"
 			aria-label="Notifications"
-			onPointerEnter={pauseTimers}
-			onPointerLeave={resumeTimers}
-			onFocusIn={pauseTimers}
-			onFocusOut={resumeTimers}
+			style={{ '--toast-frontmost-height': `${frontmostHeight}px` }}
+			onPointerEnter={handleEnter}
+			onPointerLeave={handleLeave}
+			onFocusIn={handleEnter}
+			onFocusOut={handleLeave}
 		>
-			{toasts.map((item, arrayIndex) => (
-				<ToastCard key={item.id} item={item} index={toasts.length - 1 - arrayIndex} />
+			{placed.map(({ item, index, offsetY }) => (
+				<ToastCard
+					key={item.id}
+					item={item}
+					index={index}
+					offsetY={offsetY}
+					expanded={expanded}
+					onResize={handleResize}
+				/>
 			))}
 		</div>
 	);
