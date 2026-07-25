@@ -81,6 +81,7 @@ export const groups: ShowcaseGroup[] = [
     label: "Overlays & islands",
     items: [
       { id: "dialog", label: "Dialog" },
+      { id: "toast", label: "Toast" },
       { id: "datatable", label: "DataTable" },
       { id: "custom-select", label: "Select" },
       { id: "combobox", label: "Combobox" },
@@ -254,19 +255,9 @@ import { SettingsIcon } from 'drycms/components/icons';
   progress: `<progress value="72" max="100"></progress>
 <progress value="28" max="100"></progress>
 <progress></progress>`,
-  progressCircle: `<div class="progress-circle" style="--value: 72">
-  <svg viewBox="0 0 36 36">
-    <circle class="track" cx="18" cy="18" r="16" pathLength="100"></circle>
-    <circle class="value" cx="18" cy="18" r="16" pathLength="100"></circle>
-  </svg>
-  <span>72%</span>
-</div>
-<div class="progress-circle indeterminate">
-  <svg viewBox="0 0 36 36">
-    <circle class="track" cx="18" cy="18" r="16" pathLength="100"></circle>
-    <circle class="value" cx="18" cy="18" r="16" pathLength="100"></circle>
-  </svg>
-</div>`,
+  progressCircle: `<progress value="72" max="100" class="circle" style="--value: 72"></progress>
+<progress value="28" max="100" class="circle" style="--value: 28"></progress>
+<progress class="circle"></progress>`,
   skeleton: `<span class="skeleton" style="height: 3rem; width: 3rem; border-radius: 50%"></span>
 <span class="skeleton" style="height: 0.75rem; width: 12rem"></span>
 <span class="skeleton" style="height: 0.75rem; width: 8rem"></span>`,
@@ -312,7 +303,7 @@ import { SettingsIcon } from 'drycms/components/icons';
   <input id="sc-switch-2" type="checkbox" role="switch" />
   <label for="sc-switch-2">Off</label>
 </div>`,
-  otherInputs: `<input type="range" value="60" />
+  otherInputs: `<input type="range" value="60" style="--value: 60" />
 <input type="color" value="#00a76f" />
 <input type="file" />`,
   fields: `<div class="field">
@@ -379,6 +370,23 @@ import { SettingsIcon } from 'drycms/components/icons';
     <button type="button" class="destructive" command="close" commandfor="demo-dialog">Delete</button>
   </footer>
 </dialog>`,
+  toast: `import Toaster, { toast } from 'drycms/components/Toast';
+
+// Mount once, anywhere in the tree - trigger from anywhere after that.
+<Toaster />
+
+toast.add({ title: 'Entry saved', description: 'Draft #128 was updated.' });
+toast.add({ title: 'Something went wrong', type: 'error' });
+toast.add({
+  title: 'Entry deleted',
+  actionProps: { children: 'Undo', onClick: () => restore() },
+});
+
+toast.promise(saveEntry(), {
+  loading: 'Saving…',
+  success: 'Saved',
+  error: (err) => \`Failed: \${err.message}\`,
+});`,
   datatable: `import DataTable from 'drycms/components/DataTable';
 
 const columns = [

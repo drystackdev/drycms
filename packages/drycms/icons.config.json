@@ -26,6 +26,11 @@
     "Sort": "solar:sort-vertical-linear",
 
     "Check": "lucide:check",
-    "X": "lucide:x"
+    "X": "lucide:x",
+
+    "CheckCircle": "solar:check-circle-bold-duotone",
+    "InfoCircle": "solar:info-circle-bold-duotone",
+    "AlertTriangle": "solar:danger-triangle-bold-duotone",
+    "XCircle": "solar:close-circle-bold-duotone"
   }
 }

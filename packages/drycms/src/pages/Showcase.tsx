@@ -10,6 +10,7 @@ import MultiSelect from "../components/MultiSelect.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
 import ThemeToggle from "../components/ThemeToggle.js";
+import { toast } from "../components/Toast.js";
 import {
   code,
   collectionOptions,
@@ -110,7 +111,7 @@ export default function Showcase({ tab }: Props) {
                 role="button"
                 class="outline pager-btn"
                 href={`${path}/showcase/${prevId}`}
-                style="text-align: left;"
+                style={{paddingBlock: `0.5rem`, textAlign: 'left', height: 'unset'}}
               >
                 <Icon name="ArrowLeft" />
                 <span class="pager-text">
@@ -137,6 +138,7 @@ export default function Showcase({ tab }: Props) {
                 role="button"
                 class="pager-btn pager-btn-next"
                 href={`${path}/showcase/${nextId}`}
+				style={{paddingBlock: `0.5rem`, height: 'unset'}}
               >
                 <span class="pager-text">
                   <small>Next</small>
@@ -622,47 +624,13 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="progress-circle"
           title="Progress circle"
-          description=".progress-circle - --value (0-100) drives the ring via an SVG stroke-dasharray."
+          description="Native <progress>, no wrapper markup - value/max drive it, class='circle' picks the ring shape."
           code={code.progressCircle!}
         >
           <div class="row" style="gap: 1.5rem">
-            <div class="progress-circle" style="--value: 72">
-              <svg viewBox="0 0 36 36">
-                <circle
-                  class="track"
-                  cx="18"
-                  cy="18"
-                  r="16"
-                  pathLength="100"
-                ></circle>
-                <circle
-                  class="value"
-                  cx="18"
-                  cy="18"
-                  r="16"
-                  pathLength="100"
-                ></circle>
-              </svg>
-              <span>72%</span>
-            </div>
-            <div class="progress-circle indeterminate">
-              <svg viewBox="0 0 36 36">
-                <circle
-                  class="track"
-                  cx="18"
-                  cy="18"
-                  r="16"
-                  pathLength="100"
-                ></circle>
-                <circle
-                  class="value"
-                  cx="18"
-                  cy="18"
-                  r="16"
-                  pathLength="100"
-                ></circle>
-              </svg>
-            </div>
+            <progress value="72" max="100" class="circle" style="--value: 72"></progress>
+            <progress value="28" max="100" class="circle" style="--value: 28"></progress>
+            <progress class="circle"></progress>
           </div>
         </Demo>
       );
@@ -796,7 +764,7 @@ function DemoContent({ id }: { id: string }) {
           code={code.otherInputs!}
         >
           <div class="grid cols-2" style="width: 100%">
-            <input type="range" value="60" />
+            <input type="range" value="60" style={{ "--value": 60 }} />
             <input type="color" value="#00a76f" />
             <input type="file" />
           </div>
@@ -977,6 +945,91 @@ function DemoContent({ id }: { id: string }) {
               </button>
             </footer>
           </dialog>
+        </Demo>
+      );
+
+    case "toast":
+      return (
+        <Demo
+          id="toast"
+          title="Toast"
+          description="Imperative queue in the style of Base UI's Toast - stacked, swipe-to-dismiss, pauses on hover."
+          code={code.toast!}
+        >
+          <div class="row">
+            <button
+              type="button"
+              class="outline"
+              onClick={() =>
+                toast.add({
+                  title: "Entry saved",
+                  description: "Draft #128 was updated.",
+                })
+              }
+            >
+              Default
+            </button>
+            <button
+              type="button"
+              class="success"
+              onClick={() => toast.add({ title: "Entry published", type: "success" })}
+            >
+              Success
+            </button>
+            <button
+              type="button"
+              class="destructive"
+              onClick={() => toast.add({ title: "Something went wrong", type: "error" })}
+            >
+              Error
+            </button>
+            <button
+              type="button"
+              class="warning"
+              onClick={() => toast.add({ title: "Quota almost reached", type: "warning" })}
+            >
+              Warning
+            </button>
+            <button
+              type="button"
+              class="info"
+              onClick={() => toast.add({ title: "A new version is available", type: "info" })}
+            >
+              Info
+            </button>
+            <button
+              type="button"
+              class="outline"
+              onClick={() =>
+                toast.add({
+                  title: "Entry deleted",
+                  actionProps: { children: "Undo", onClick: () => {} },
+                })
+              }
+            >
+              With action
+            </button>
+            <button
+              type="button"
+              class="outline"
+              onClick={() =>
+                toast
+                  .promise(
+                    new Promise<void>((resolve, reject) =>
+                      setTimeout(() => (Math.random() > 0.5 ? resolve() : reject(new Error("Network error"))), 1200),
+                    ),
+                    {
+                      loading: "Saving…",
+                      success: "Saved",
+                      error: (err: unknown) => `Failed: ${(err as Error).message}`,
+                    },
+                  )
+                  .catch(() => {})
+              }
+            >
+              Promise
+            </button>
+          </div>
         </Demo>
       );
 

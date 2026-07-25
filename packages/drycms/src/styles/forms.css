@@ -189,6 +189,11 @@
     :where(input[type="checkbox"][role="switch"]) {
       --dry-switch-h: 1.25em;
       --dry-switch-w: 2.25em;
+      /* Overrides the shared rule's `inline-grid; place-content: center` -
+			 * the thumb's `height: 100%` needs a definite containing block, and an
+			 * auto-sized grid row can't provide one (it's sized *from* its content,
+			 * so a content that asks for 100% of it is circular and resolves to 0). */
+      display: block;
       width: var(--dry-switch-w);
       height: var(--dry-switch-h);
       border: 1px solid var(--dry-input);
@@ -224,10 +229,18 @@
 		 * rules per vendor prefix - a comma-grouped selector combining
 		 * `::-webkit-…` and `::-moz-…` would make the whole rule invalid in
 		 * browsers that don't recognise every prefix in the group.
+		 *
+		 * The filled portion left of the thumb: Firefox fills it natively via
+		 * `::-moz-range-progress`, but WebKit has no equivalent pseudo-element
+		 * for `range` (unlike `progress`) - and CSS can't read the `value`
+		 * attribute either, so `--value` (0-100, percent of min-max) mirrors it
+		 * for the track's gradient to read: keep `style="--value: …"` in sync
+		 * with the `value` attribute in markup.
 		 */
     :where(input[type="range"]) {
       --dry-range-track-h: 0.375rem;
       --dry-range-thumb-h: 1.25rem;
+      --value: 0;
       appearance: none;
       width: 100%;
       height: var(--dry-range-thumb-h);
@@ -246,7 +259,11 @@
         width: 100%;
         height: var(--dry-range-track-h);
         border-radius: var(--dry-radius-md);
-        background-color: rgb(var(--dry-grey-channel) / 24%);
+        background: linear-gradient(
+          to right,
+          var(--dry-primary) calc(var(--value) * 1%),
+          rgb(var(--dry-grey-channel) / 24%) calc(var(--value) * 1%)
+        );
         transition: background-color 120ms ease;
       }
 
@@ -256,6 +273,12 @@
         border-radius: var(--dry-radius-md);
         background-color: rgb(var(--dry-grey-channel) / 24%);
         transition: background-color 120ms ease;
+      }
+
+      &::-moz-range-progress {
+        height: var(--dry-range-track-h);
+        border-radius: var(--dry-radius-md);
+        background-color: var(--dry-primary);
       }
 
       &::-webkit-slider-thumb {

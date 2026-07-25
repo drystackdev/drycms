@@ -880,6 +880,150 @@
       }
     }
 
+    /*
+		 * ----------------------------------------------------------------- Toast
+		 * `popover="manual"` (set on mount in Toast.tsx) puts the viewport in the
+		 * top layer, same as `<dialog>` - it floats above one without a z-index
+		 * scale, and needs no portal to escape a clipped/transformed ancestor.
+		 */
+    /* The UA stylesheet gives `[popover]` its own `inset: 0; margin: auto`
+		 * (centers it) - every side below is set explicitly (`auto` included) so
+		 * none of that leaks through. */
+    .toast-viewport {
+      position: fixed;
+      inset-block-start: auto;
+      inset-block-end: 1.5rem;
+      inset-inline-start: auto;
+      inset-inline-end: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      width: 22rem;
+      max-width: calc(100vw - 2rem);
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: none;
+      overflow: visible;
+
+      &[data-position^="top"] {
+        inset-block-start: 1.5rem;
+        inset-block-end: auto;
+        flex-direction: column-reverse;
+      }
+
+      &[data-position$="start"] {
+        inset-inline-start: 1.5rem;
+        inset-inline-end: auto;
+      }
+    }
+
+    .toast {
+      --toast-index: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      align-items: start;
+      gap: 0.625rem;
+      padding: 0.875rem 1rem;
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+      touch-action: pan-y;
+      cursor: grab;
+      translate: var(--toast-swipe-movement-x, 0) var(--toast-swipe-movement-y, 0);
+      scale: calc(1 - var(--toast-index) * 0.04);
+      transition:
+        translate 200ms ease,
+        scale 200ms ease,
+        opacity 200ms ease;
+      animation: dry-toast-in 200ms ease;
+
+      &[data-swiping] {
+        transition: none;
+        cursor: grabbing;
+      }
+
+      &[data-state="closing"] {
+        animation: dry-toast-out 200ms ease forwards;
+      }
+
+      &[data-swipe-direction="right"] {
+        animation-name: dry-toast-out-right;
+      }
+
+      &[data-swipe-direction="down"] {
+        animation-name: dry-toast-out-down;
+      }
+
+      & > svg {
+        width: 1.25rem;
+        height: 1.25rem;
+        flex: none;
+        margin-block-start: 0.125rem;
+        color: var(--dry-muted-foreground);
+      }
+
+      &[data-type="success"] > svg {
+        color: var(--dry-success);
+      }
+
+      &[data-type="error"] > svg {
+        color: var(--dry-error);
+      }
+
+      &[data-type="warning"] > svg {
+        color: var(--dry-warning);
+      }
+
+      &[data-type="info"] > svg {
+        color: var(--dry-info);
+      }
+    }
+
+    .toast-spinner {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: none;
+      margin-block-start: 0.125rem;
+      border: 2px solid var(--dry-border);
+      border-top-color: var(--dry-foreground);
+      border-radius: 50%;
+      animation: dry-spin 700ms linear infinite;
+    }
+
+    .toast-content {
+      display: grid;
+      gap: 0.125rem;
+      min-width: 0;
+
+      & > strong {
+        font-size: var(--dry-text-sm);
+        font-weight: 600;
+      }
+
+      & > p {
+        font-size: var(--dry-text-sm);
+        color: var(--dry-muted-foreground);
+      }
+    }
+
+    .toast-action {
+      align-self: center;
+    }
+
+    .toast-close {
+      align-self: start;
+      width: 1.5rem;
+      height: 1.5rem;
+      color: var(--dry-muted-foreground);
+
+      &:hover {
+        background-color: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
+    }
+
     /* -------------------------------------------------------------- Skeleton */
     .skeleton {
       display: block;
@@ -972,55 +1116,51 @@
       }
     }
 
-    /* -------------------------------------------------------- Progress circle */
-    .progress-circle {
+    /*
+		 * `.circle` - `value`/`max` stay the real driver of the bar (semantics,
+		 * a11y), but `conic-gradient()` needs an angle, not a percentage of a
+		 * box's width, and CSS can't read an attribute's number into one - so
+		 * `--value` (0-100) mirrors `value` for CSS to read: keep the
+		 * `style="--value: …"` in sync with the `value` attribute in markup.
+		 * The native fill pseudo-elements are turned off; the ring itself is
+		 * the element's own background, punched into a ring with `mask`.
+		 */
+    progress.circle {
       --value: 0;
       --size: 4rem;
-      --thickness: 3;
-      position: relative;
-      display: inline-grid;
-      place-items: center;
+      --thickness: 0px;
       width: var(--size);
       height: var(--size);
-      font-size: var(--dry-text-xs);
-      font-weight: 600;
+      border-radius: 50%;
+      background: conic-gradient(
+        var(--dry-primary) calc(var(--value) * 3.6deg),
+        rgb(var(--dry-grey-channel) / 16%) 0
+      );
+      mask-image: radial-gradient(
+        circle at 50% 50%,
+        transparent calc(50% - var(--thickness)),
+        #000 calc(50% - var(--thickness))
+      );
+      -webkit-mask-image: radial-gradient(
+        circle at 50% 50%,
+        transparent calc(50% - var(--thickness)),
+        #000 calc(50% - var(--thickness))
+      );
 
-      & > svg,
-      & > span {
-        grid-area: 1 / 1;
+      &::-webkit-progress-bar,
+      &::-webkit-progress-value {
+        background: none;
       }
 
-      & > svg {
-        width: 100%;
-        height: 100%;
+      &::-moz-progress-bar {
+        background: none;
       }
 
-      & circle {
-        fill: none;
-        stroke-width: var(--thickness);
-        transform-origin: 50% 50%;
-      }
-
-      & .track {
-        stroke: rgb(var(--dry-grey-channel) / 16%);
-      }
-
-      & .value {
-        stroke: var(--dry-primary);
-        stroke-linecap: round;
-        stroke-dasharray: 100;
-        stroke-dashoffset: calc(100 - var(--value));
-        transform: rotate(-90deg);
-        transition: stroke-dashoffset 0.3s ease;
-      }
-
-      & > span {
-        position: relative;
-        z-index: 1;
-      }
-
-      &.indeterminate .value {
-        stroke-dasharray: 25 75;
+      &:indeterminate {
+        background: conic-gradient(
+          var(--dry-primary) 0 90deg,
+          rgb(var(--dry-grey-channel) / 16%) 0
+        );
         animation: dry-progress-circle-spin 1s linear infinite;
       }
     }
@@ -1055,7 +1195,7 @@
         content: "";
         position: absolute;
         inset-inline-start: 50%;
-        inset-block-end: calc(100% + 0.5rem - 6px);
+        inset-block-end: calc(100% + 0.5rem - 5px);
         translate: -50% 0;
         z-index: 30;
         border: 5px solid transparent;
@@ -1287,6 +1427,16 @@
         inset: 0;
         z-index: 30;
         background-color: rgb(var(--dry-grey-channel) / 80%);
+      }
+
+      /* Fixed-height + centered content is fine for a single-line title, but
+       * Showcase's topbar also carries a description that wraps to a second
+       * line at this width - clamping the height then centers the overflow,
+       * pushing half of it (icons included) outside the sticky bar. */
+      .topbar {
+        height: auto;
+        min-height: var(--dry-topbar-height);
+        padding-block: 0.5rem;
       }
     }
 
@@ -1565,6 +1715,34 @@
     }
   }
 
+  @keyframes dry-toast-in {
+    from {
+      opacity: 0;
+      translate: 0 0.5rem;
+    }
+  }
+
+  @keyframes dry-toast-out {
+    to {
+      opacity: 0;
+      scale: 0.95;
+    }
+  }
+
+  @keyframes dry-toast-out-right {
+    to {
+      opacity: 0;
+      translate: 100% var(--toast-swipe-movement-y, 0);
+    }
+  }
+
+  @keyframes dry-toast-out-down {
+    to {
+      opacity: 0;
+      translate: var(--toast-swipe-movement-x, 0) 100%;
+    }
+  }
+
   @keyframes dry-pulse {
     50% {
       opacity: 0.5;
@@ -1581,11 +1759,8 @@
   }
 
   @keyframes dry-progress-circle-spin {
-    from {
-      transform: rotate(-90deg);
-    }
     to {
-      transform: rotate(270deg);
+      transform: rotate(1turn);
     }
   }
 }
