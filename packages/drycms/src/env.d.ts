@@ -13,8 +13,11 @@ declare module "virtual:drycms/config" {
 }
 
 declare module "virtual:drycms/storage-config" {
-	export const storage: { kind: "local"; root: string };
-	const config: { storage: { kind: "local"; root: string } };
+	type StorageConfig =
+		| { kind: "local"; root: string }
+		| { kind: "github"; owner: string; repo: string; branch: string; token: string; root: string };
+	export const storage: StorageConfig;
+	const config: { storage: StorageConfig };
 	export default config;
 }
 

@@ -68,6 +68,10 @@ export const groups: ShowcaseGroup[] = [
     ],
   },
   {
+    label: "Field inputs",
+    items: [{ id: "text-field", label: "Text field" }],
+  },
+  {
     label: "Navigation",
     items: [
       { id: "tabs", label: "Tabs" },
@@ -456,4 +460,28 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   fileManager: `import FileManager from 'drycms/components/FileManager';
 
 <FileManager source={source} />`,
+  textField: `import TextField from 'drycms/components/TextField';
+
+<TextField
+  label="Title"
+  value={title}
+  onChange={setTitle}
+  helperText="Shown in listings and search results."
+/>
+
+<TextField
+  label="Slug"
+  value={slug}
+  onChange={setSlug}
+  error
+  helperText="Slug is required."
+/>
+
+<TextField
+  label="Bio"
+  value={bio}
+  onChange={setBio}
+  multiline
+  placeholder="Write something…"
+/>`,
 };

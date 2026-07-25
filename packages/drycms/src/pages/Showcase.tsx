@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import Combobox from "../components/Combobox.js";
@@ -17,6 +17,7 @@ import MultiSelect from "../components/MultiSelect.js";
 import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
+import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createMemoryFileSource } from "../mock/file-manager.js";
 import {
@@ -230,6 +231,36 @@ function TabsDemoPreview() {
 function FileManagerPreview() {
   const source = useMemo(() => createMemoryFileSource(), []);
   return <FileManager source={source} />;
+}
+
+function TextFieldPreview() {
+  const [title, setTitle] = useState("Getting started");
+  const [slug, setSlug] = useState("");
+  const [bio, setBio] = useState("");
+  return (
+    <div class="grid cols-2" style="width: 100%">
+      <TextField
+        label="Title"
+        value={title}
+        onChange={setTitle}
+        helperText="Shown in listings and search results."
+      />
+      <TextField
+        label="Slug"
+        value={slug}
+        onChange={setSlug}
+        error
+        helperText="Slug is required."
+      />
+      <TextField
+        label="Bio"
+        value={bio}
+        onChange={setBio}
+        multiline
+        placeholder="Write something…"
+      />
+    </div>
+  );
 }
 
 function DemoContent({ id }: { id: string }) {
@@ -806,6 +837,18 @@ function DemoContent({ id }: { id: string }) {
               </fieldset>
             </div>
           </div>
+        </Demo>
+      );
+
+    case "text-field":
+      return (
+        <Demo
+          id="text-field"
+          title="Text field"
+          description="Controlled label + control + helper text component; error switches the helper text to the destructive colour, multiline swaps the input for a textarea."
+          code={code.textField!}
+        >
+          <TextFieldPreview />
         </Demo>
       );
 

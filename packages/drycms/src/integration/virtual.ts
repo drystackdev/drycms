@@ -88,9 +88,12 @@ export const VIRTUAL_CONFIG_TYPES = `declare module '${VIRTUAL_CONFIG_ID}' {
 }
 `;
 
+const STORAGE_CONFIG_TYPE =
+  "{ kind: 'local'; root: string } | { kind: 'github'; owner: string; repo: string; branch: string; token: string; root: string }";
+
 export const VIRTUAL_STORAGE_CONFIG_TYPES = `declare module '${VIRTUAL_STORAGE_CONFIG_ID}' {
-	export const storage: { kind: 'local'; root: string };
-	const config: { storage: { kind: 'local'; root: string } };
+	export const storage: ${STORAGE_CONFIG_TYPE};
+	const config: { storage: ${STORAGE_CONFIG_TYPE} };
 	export default config;
 }
 `;

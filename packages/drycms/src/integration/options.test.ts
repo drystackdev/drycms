@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveOptions } from './options.js';
 
 describe('resolveOptions', () => {
@@ -61,9 +61,17 @@ describe('resolveOptions', () => {
 		expect(resolveOptions({ storage: { root: absolute } }).storage.root).toBe(absolute);
 	});
 
-	it('rejects an unimplemented storage kind, naming the roadmap', () => {
+	it('rejects an unimplemented storage kind, naming the roadmap (github no longer on it)', () => {
 		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(/roadmap/);
-		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(/github/);
+		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(
+			/planned: r2, gitlab, s3\)/,
+		);
+	});
+
+	it('mentions both implemented kinds when rejecting an unimplemented one', () => {
+		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(
+			/Only "local" and "github" are available today/,
+		);
 	});
 
 	it('rejects an unrecognized storage kind', () => {
@@ -78,5 +86,59 @@ describe('resolveOptions', () => {
 
 	it('rejects a non-string storage.root', () => {
 		expect(() => resolveOptions({ storage: { root: 42 as unknown as string } })).toThrow(TypeError);
+	});
+
+	describe('storage.kind: "github"', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('resolves owner/repo/token from env, defaulting branch to main', () => {
+			vi.stubEnv('GITHUB_REPO', 'acme/media');
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+			vi.stubEnv('GITHUB_BRANCH', undefined);
+
+			expect(resolveOptions({ storage: { kind: 'github' } }).storage).toEqual({
+				kind: 'github',
+				owner: 'acme',
+				repo: 'media',
+				branch: 'main',
+				token: 'ghp_test_token',
+				root: 'storage',
+			});
+		});
+
+		it('honors GITHUB_BRANCH and storage.root when set', () => {
+			vi.stubEnv('GITHUB_REPO', 'acme/media');
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+			vi.stubEnv('GITHUB_BRANCH', 'develop');
+
+			expect(resolveOptions({ storage: { kind: 'github', root: '' } }).storage).toEqual({
+				kind: 'github',
+				owner: 'acme',
+				repo: 'media',
+				branch: 'develop',
+				token: 'ghp_test_token',
+				root: '',
+			});
+		});
+
+		it('rejects a missing GITHUB_REPO', () => {
+			vi.stubEnv('GITHUB_REPO', undefined);
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+			expect(() => resolveOptions({ storage: { kind: 'github' } })).toThrow(/GITHUB_REPO/);
+		});
+
+		it('rejects a GITHUB_REPO not shaped "owner/repo"', () => {
+			vi.stubEnv('GITHUB_REPO', 'not-a-valid-repo');
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+			expect(() => resolveOptions({ storage: { kind: 'github' } })).toThrow(/owner\/repo/);
+		});
+
+		it('rejects a missing GITHUB_PAT_KEY', () => {
+			vi.stubEnv('GITHUB_REPO', 'acme/media');
+			vi.stubEnv('GITHUB_PAT_KEY', undefined);
+			expect(() => resolveOptions({ storage: { kind: 'github' } })).toThrow(/GITHUB_PAT_KEY/);
+		});
 	});
 });

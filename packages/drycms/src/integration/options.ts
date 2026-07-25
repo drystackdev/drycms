@@ -1,22 +1,24 @@
+import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 
 /** Roadmap kinds not implemented yet - listed so an unsupported `kind` can
  * name what's coming instead of just saying "unknown". */
-const PLANNED_STORAGE_KINDS = ["r2", "github", "gitlab", "s3"];
+const PLANNED_STORAGE_KINDS = ["r2", "gitlab", "s3"];
 
 export interface DryStorageOption {
   /**
-   * Which backend serves `/dry/api/storage/**`. Only `'local'` is
-   * implemented today; the shape is deliberately an open object (not a bare
-   * string) so future kinds can carry their own fields (bucket, token, ...)
-   * without breaking this type.
+   * Which backend serves `/dry/api/storage/**`. `'github'` reads its
+   * owner/repo/branch/token from env vars (`GITHUB_REPO`, `GITHUB_PAT_KEY`,
+   * `GITHUB_BRANCH`) rather than this object, so no secret ends up in a
+   * committed `astro.config.mjs`.
    *
    * @default "local"
    */
-  kind?: "local";
+  kind?: "local" | "github";
   /**
-   * `local` only: directory files are read from/written to, relative to the
-   * consuming project's cwd (or an absolute path).
+   * `local`: directory files are read from/written to, relative to the
+   * consuming project's cwd (or an absolute path). `github`: subpath within
+   * the repo files live under (repo root if omitted).
    *
    * @default "storage"
    */
@@ -39,8 +41,18 @@ export interface ResolvedLocalStorageOption {
   root: string;
 }
 
+export interface ResolvedGithubStorageOption {
+  kind: "github";
+  owner: string;
+  repo: string;
+  branch: string;
+  token: string;
+  /** Subpath within the repo files live under. `""` = repo root. */
+  root: string;
+}
+
 /** A union so future kinds can be added without widening every existing branch. */
-export type ResolvedStorageOption = ResolvedLocalStorageOption;
+export type ResolvedStorageOption = ResolvedLocalStorageOption | ResolvedGithubStorageOption;
 
 export interface ResolvedDryOption {
   path: string;
@@ -65,6 +77,87 @@ export const STORAGE_ROUTE_ENTRYPOINT = "drycms/routes/storage.ts";
 export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = "storage";
 
+let dotEnvCache: Record<string, string> | undefined;
+
+/**
+ * `astro.config.mjs` is evaluated before any of `.env`'s vars are
+ * guaranteed to be in `process.env` - Astro's own env loader (`loadEnv`)
+ * only feeds `import.meta.env`/`astro:env` for *application* code, not
+ * `process.env`, and depending on how `astro dev` gets launched (`bunx`,
+ * a plain `node`, a package.json script shelling out), the wrapping
+ * runtime's own `.env` auto-load may not have run yet either - reproduced
+ * directly: `bun run <script that shells out to node>` does NOT forward
+ * Bun's auto-loaded `.env` vars to that child process. A tiny parser here,
+ * consulted only when the real environment doesn't already have the var,
+ * makes config-time resolution work regardless of invocation method.
+ */
+function readDotEnv(): Record<string, string> {
+  if (dotEnvCache) return dotEnvCache;
+  dotEnvCache = {};
+  let text: string;
+  try {
+    text = readFileSync(resolvePath(process.cwd(), ".env"), "utf8");
+  } catch {
+    return dotEnvCache;
+  }
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    dotEnvCache[key] = value;
+  }
+  return dotEnvCache;
+}
+
+function readEnvVar(name: string): string | undefined {
+  return process.env[name] || readDotEnv()[name];
+}
+
+/**
+ * `github`'s owner/repo/branch/token come from env vars, not this object -
+ * they're deployment secrets/specifics, not something that belongs in a
+ * committed `astro.config.mjs`.
+ */
+function resolveGithubStorageOption(root: string): ResolvedGithubStorageOption {
+  const repoEnv = readEnvVar("GITHUB_REPO");
+  if (!repoEnv) {
+    throw new Error(
+      '[drycms] `storage.kind: "github"` requires a `GITHUB_REPO` env var shaped "owner/repo".',
+    );
+  }
+  const slash = repoEnv.indexOf("/");
+  if (slash <= 0 || slash === repoEnv.length - 1) {
+    throw new Error(
+      `[drycms] \`GITHUB_REPO\` must be shaped "owner/repo", received "${repoEnv}".`,
+    );
+  }
+
+  const token = readEnvVar("GITHUB_PAT_KEY");
+  if (!token) {
+    throw new Error(
+      '[drycms] `storage.kind: "github"` requires a `GITHUB_PAT_KEY` env var (a GitHub personal access token).',
+    );
+  }
+
+  return {
+    kind: "github",
+    owner: repoEnv.slice(0, slash),
+    repo: repoEnv.slice(slash + 1),
+    branch: readEnvVar("GITHUB_BRANCH") || "main",
+    token,
+    root,
+  };
+}
+
 function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOption {
   const kind = storage.kind ?? "local";
   if (typeof kind !== "string") {
@@ -72,12 +165,12 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
       `[drycms] \`storage.kind\` must be a string, received ${typeof kind}.`,
     );
   }
-  if (kind !== "local") {
+  if (kind !== "local" && kind !== "github") {
     const roadmap = PLANNED_STORAGE_KINDS.includes(kind)
       ? ` \`storage.kind: "${kind}"\` is on the roadmap but not implemented yet.`
       : ` "${kind}" is not a recognized storage kind.`;
     throw new Error(
-      `[drycms]${roadmap} Only "local" is available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
+      `[drycms]${roadmap} Only "local" and "github" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
     );
   }
 
@@ -87,6 +180,8 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
       `[drycms] \`storage.root\` must be a string, received ${typeof root}.`,
     );
   }
+
+  if (kind === "github") return resolveGithubStorageOption(root);
 
   return { kind: "local", root: resolvePath(process.cwd(), root) };
 }
