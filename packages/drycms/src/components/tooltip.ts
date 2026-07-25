@@ -9,9 +9,10 @@
  * the trigger so it isn't clipped by a scroll-overflowed ancestor (a
  * SimpleBar pane, a table's `.scroll` wrapper, ...). Dismissed on
  * mouseout/blur same as a native tooltip, and also on scroll (capturing, so
- * it catches any scrollable ancestor, not just the window) - once the
- * trigger has moved, the tooltip's stale fixed position no longer points at
- * it, so it's dropped rather than re-measured mid-scroll.
+ * it catches any scrollable ancestor, not just the window) or window resize -
+ * once the trigger has moved (or the layout has reflowed), the tooltip's
+ * stale fixed position no longer points at it, so it's dropped rather than
+ * re-measured.
  */
 
 const TOOLTIP_GAP = 8;
@@ -63,7 +64,7 @@ function initTooltip() {
 		if (related?.closest?.('[data-tooltip]') === trigger) return;
 		hide();
 	};
-	const onScroll = () => {
+	const onDismiss = () => {
 		if (trigger) hide();
 	};
 
@@ -71,7 +72,8 @@ function initTooltip() {
 	document.addEventListener('mouseout', onOut);
 	document.addEventListener('focusin', onOver);
 	document.addEventListener('focusout', onOut);
-	window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+	window.addEventListener('scroll', onDismiss, { capture: true, passive: true });
+	window.addEventListener('resize', onDismiss, { passive: true });
 }
 
 if (typeof document !== 'undefined') initTooltip();

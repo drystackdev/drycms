@@ -114,7 +114,7 @@
 
         &:hover {
           background-color: transparent;
-          text-decoration: underline;
+          opacity: 0.6;
         }
       }
 
@@ -1815,7 +1815,7 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.25rem;
+      gap: 0.15rem;
       font-size: var(--dry-text-sm);
 
       & button {
@@ -1824,7 +1824,7 @@
     }
 
     .file-breadcrumb-sep {
-      margin-inline: 0.125rem;
+      margin-inline: 0.25rem;
       color: var(--dry-muted-foreground);
     }
 
@@ -1900,6 +1900,15 @@
         opacity: 0.6;
         pointer-events: none;
       }
+
+      /* Drag-to-move: hovering dragged item(s) over a folder row - solid
+       * (unlike the translucent hover/selected tints) so the drop target
+       * reads unambiguously. One background change on the row, not an
+       * outline per `<td>` (which never merges into a single rectangle
+       * around the row). */
+      & tbody tr.drag-over td {
+        background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
+      }
     }
 
     button.file-name-cell {
@@ -1955,6 +1964,14 @@
       /* Cut/copied, waiting on a paste elsewhere. */
       &.pending {
         opacity: 0.6;
+      }
+
+      /* Drag-to-move: hovering dragged item(s) over a folder card - solid,
+       * see the list view's `tr.drag-over` for why. */
+      &.drag-over {
+        background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
+        outline: 2px dashed var(--dry-primary);
+        outline-offset: 2px;
       }
     }
 
@@ -2047,8 +2064,8 @@
       font: inherit;
       font-weight: 500;
       text-align: start;
-      white-space: normal;
-      overflow-wrap: anywhere;
+      overflow: hidden;
+      text-overflow: ellipsis;
 
       &:hover {
         background-color: unset;
@@ -2078,21 +2095,15 @@
       display: inline-flex;
     }
 
-    /* Covers the viewport while a popover is open so a click anywhere else
-     * closes it - a portaled `.popover-menu` sits outside `.popover` in the
-     * DOM, so plain "outside click" containment checks can't tell a click on
-     * it from a click elsewhere. */
-    .popover-backdrop {
-      position: fixed;
-      inset: 0;
-      z-index: 20;
-    }
-
+    /* No manual backdrop/z-index scale needed - `popover="auto"` (see
+     * Popover.tsx) puts this in the top layer and handles outside-click/
+     * Escape dismissal natively, above everything in normal document flow
+     * including an open native `<dialog>`. */
     .popover-menu {
-      z-index: 21;
+      border-width: 0;
       width: 11rem;
       margin: 0;
-      padding: 0.25rem;
+      padding: 0.25rem 0.5rem;
       list-style: none;
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-popover);
@@ -2116,7 +2127,7 @@
     }
 
     .popover-menu-separator {
-      margin: 0.25rem 0.25rem;
+      margin: 0.5rem -0.25rem;
       border-top: 1px dashed var(--dry-border);
     }
 
@@ -2268,6 +2279,12 @@
       /* Zoomed images are scaled visually (not laid out larger), so this
        * only ever clips paint at the stage edge - it never needs to scroll. */
       overflow: hidden;
+
+      /* More than one file in scope - horizontal drag/swipe moves to prev/next. */
+      &.swipeable {
+        touch-action: pan-y;
+        cursor: grab;
+      }
     }
 
     .file-preview-slide {

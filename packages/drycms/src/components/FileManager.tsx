@@ -240,8 +240,18 @@ interface ViewProps {
   clipboard: MoveCopyState;
   isDisabled: (entry: FileEntry) => boolean;
   onToggle: (entry: FileEntry) => void;
-  onOpen: (entry: FileEntry) => void;
+  /** cmd/ctrl+click on the name toggles selection instead of opening - the event is
+   * forwarded so the caller can check the modifier. */
+  onOpen: (entry: FileEntry, event?: MouseEvent) => void;
   more: (entry: FileEntry) => ComponentChildren;
+  /** Drag-to-move - see the main component's `canDrag`/`dragOverId`/drag handlers. */
+  canDrag: (entry: FileEntry) => boolean;
+  dragOverId: string | null;
+  onDragStartEntry: (entry: FileEntry) => (event: DragEvent) => void;
+  onDragEndEntry: () => void;
+  onDragOverEntry: (entry: FileEntry) => (event: DragEvent) => void;
+  onDragLeaveEntry: (entry: FileEntry) => () => void;
+  onDropEntry: (entry: FileEntry) => (event: DragEvent) => void;
 }
 
 function ListView({
@@ -254,9 +264,17 @@ function ListView({
   onToggle,
   onOpen,
   more,
+  canDrag,
+  dragOverId,
+  onDragStartEntry,
+  onDragEndEntry,
+  onDragOverEntry,
+  onDragLeaveEntry,
+  onDropEntry,
   multiple,
   allSelected,
   onToggleAll,
+  onUnselect,
   locked,
   onMove,
   onCopy,
@@ -270,6 +288,7 @@ function ListView({
   multiple: boolean;
   allSelected: boolean;
   onToggleAll: () => void;
+  onUnselect: () => void;
   locked: boolean;
   onMove?: () => void;
   onCopy?: () => void;
@@ -316,6 +335,16 @@ function ListView({
                       </button>
                     )}
                     <strong>{selectedIds.length} selected</strong>
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      data-tooltip="Unselect"
+                      aria-label="Unselect"
+                      disabled={locked}
+                      onClick={onUnselect}
+                    >
+                      <XIcon />
+                    </button>
                   </div>
                   <SelectionActions
                     disabled={locked}
@@ -370,12 +399,22 @@ function ListView({
               const pending = clipboard?.ids.includes(entry.id) ?? false;
               const disabled = isDisabled(entry);
               const { date, time } = formatDate(entry.modifiedAt);
+              const isDropTarget = entry.kind === "folder";
               return (
                 <tr
                   key={entry.id}
-                  class={
-                    pending ? "pending" : selected ? "selected" : undefined
-                  }
+                  class={[
+                    pending ? "pending" : selected ? "selected" : null,
+                    dragOverId === entry.id ? "drag-over" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || undefined}
+                  draggable={canDrag(entry)}
+                  onDragStart={onDragStartEntry(entry)}
+                  onDragEnd={onDragEndEntry}
+                  onDragOver={isDropTarget ? onDragOverEntry(entry) : undefined}
+                  onDragLeave={isDropTarget ? onDragLeaveEntry(entry) : undefined}
+                  onDrop={isDropTarget ? onDropEntry(entry) : undefined}
                 >
                   <td class="file-table-check">
                     <input
@@ -391,7 +430,7 @@ function ListView({
                     <button
                       type="button"
                       class="file-name-cell"
-                      onClick={() => onOpen(entry)}
+                      onClick={(event) => onOpen(entry, event)}
                     >
                       <img
                         class="file-thumb-icon"
@@ -430,6 +469,13 @@ function GridView({
   onToggle,
   onOpen,
   more,
+  canDrag,
+  dragOverId,
+  onDragStartEntry,
+  onDragEndEntry,
+  onDragOverEntry,
+  onDragLeaveEntry,
+  onDropEntry,
 }: ViewProps) {
   if (entries.length === 0) return <div class="empty">No files.</div>;
 
@@ -439,10 +485,23 @@ function GridView({
         const selected = selectedIds.includes(entry.id);
         const pending = clipboard?.ids.includes(entry.id) ?? false;
         const disabled = isDisabled(entry);
+        const isDropTarget = entry.kind === "folder";
         return (
           <div
             key={entry.id}
-            class={pending ? "file-card pending" : "file-card"}
+            class={[
+              "file-card",
+              pending ? "pending" : null,
+              dragOverId === entry.id ? "drag-over" : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            draggable={canDrag(entry)}
+            onDragStart={onDragStartEntry(entry)}
+            onDragEnd={onDragEndEntry}
+            onDragOver={isDropTarget ? onDragOverEntry(entry) : undefined}
+            onDragLeave={isDropTarget ? onDragLeaveEntry(entry) : undefined}
+            onDrop={isDropTarget ? onDropEntry(entry) : undefined}
           >
             <div class="file-card-head">
               {/* Purely the selection hit-target - opening happens via the name below, so this never doubles as a button (the overlay input would swallow every click anyway).
@@ -471,7 +530,7 @@ function GridView({
             <button
               type="button"
               class="file-card-name"
-              onClick={() => onOpen(entry)}
+              onClick={(event) => onOpen(entry, event)}
             >
               {entry.name}
             </button>
@@ -590,7 +649,21 @@ function SelectionBar({
             {allSelected ? "Unselect all" : "Select all"}
           </button>
         )}
-        {count > 0 && <strong>{count} selected</strong>}
+        {count > 0 && (
+          <>
+            <strong>{count} selected</strong>
+            <button
+              type="button"
+              class="ghost icon sm"
+              data-tooltip="Unselect"
+              aria-label="Unselect"
+              disabled={locked}
+              onClick={onUnselectAll}
+            >
+              <XIcon />
+            </button>
+          </>
+        )}
       </div>
       <SelectionActions
         disabled={locked || count === 0}
@@ -914,6 +987,8 @@ const ZOOM_STEP = 25;
  * so the step per event needs to be much smaller than the +/- buttons' - at
  * `ZOOM_STEP` it multiplied out to a jarring zoom-per-notch. */
 const WHEEL_ZOOM_STEP = 5;
+/** Minimum horizontal drag (px) on the stage before a swipe commits to prev/next. */
+const SWIPE_THRESHOLD = 60;
 
 function PreviewDialog({
   entry,
@@ -930,11 +1005,15 @@ function PreviewDialog({
   const index = entry ? scope.findIndex((item) => item.id === entry.id) : -1;
   const [direction, setDirection] = useState<"prev" | "next">("next");
   const [zoom, setZoom] = useState(100);
+  const [dragX, setDragX] = useState(0);
+  const dragState = useRef<{ pointerId: number; startX: number } | null>(null);
   const canLoop = scope.length > 1;
   const image = entry !== null && isImageEntry(entry) && !!entry.previewUrl;
 
   useEffect(() => {
     setZoom(100);
+    setDragX(0);
+    dragState.current = null;
   }, [entry?.id]);
 
   const goPrev = () => {
@@ -946,6 +1025,27 @@ function PreviewDialog({
     if (!canLoop || index < 0) return;
     setDirection("next");
     onNavigate(scope[index === scope.length - 1 ? 0 : index + 1]!.id);
+  };
+
+  /** Horizontal swipe/drag on the stage - previous on a rightward drag, next
+   * on a leftward one, once past `SWIPE_THRESHOLD`. Pointer Events cover
+   * touch and mouse alike, so this doubles as the carousel's swipe gesture. */
+  const handleStagePointerDown = (event: PointerEvent) => {
+    if (!canLoop) return;
+    dragState.current = { pointerId: event.pointerId, startX: event.clientX };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  };
+  const handleStagePointerMove = (event: PointerEvent) => {
+    if (dragState.current?.pointerId !== event.pointerId) return;
+    setDragX(event.clientX - dragState.current.startX);
+  };
+  const endStageDrag = (event: PointerEvent) => {
+    if (dragState.current?.pointerId !== event.pointerId) return;
+    const delta = event.clientX - dragState.current.startX;
+    dragState.current = null;
+    setDragX(0);
+    if (delta > SWIPE_THRESHOLD) goPrev();
+    else if (delta < -SWIPE_THRESHOLD) goNext();
   };
 
   useEffect(() => {
@@ -1004,7 +1104,7 @@ function PreviewDialog({
             </button>
 
             <div
-              class="file-preview-stage"
+              class={canLoop ? "file-preview-stage swipeable" : "file-preview-stage"}
               onWheel={
                 image
                   ? (event) => {
@@ -1013,6 +1113,10 @@ function PreviewDialog({
                     }
                   : undefined
               }
+              onPointerDown={handleStagePointerDown}
+              onPointerMove={handleStagePointerMove}
+              onPointerUp={endStageDrag}
+              onPointerCancel={endStageDrag}
             >
               <div
                 key={entry.id}
@@ -1021,12 +1125,14 @@ function PreviewDialog({
                     ? "file-preview-slide from-left"
                     : "file-preview-slide from-right"
                 }
+                style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
               >
                 {image ? (
                   <img
                     src={entry.previewUrl}
                     alt={entry.name}
                     class="file-preview-image"
+                    draggable={false}
                     style={{ transform: `scale(${zoom / 100})` }}
                   />
                 ) : (
@@ -1201,6 +1307,10 @@ export default function FileManager({
   const [clipboard, setClipboard] = useState<MoveCopyState>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  /** ids currently being dragged (drag-to-move a file/folder into a folder),
+   * and the id of the folder currently hovered as a drop target. */
+  const [dragIds, setDragIds] = useState<string[] | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   /** Fetches `folderId`'s children and replaces any entries already loaded
    * for it - called both by the lazy-load effect below (first visit) and
@@ -1314,13 +1424,85 @@ export default function FileManager({
     else setSelection(isSelected ? [] : [entry.id]);
   };
 
-  const openEntry = (entry: FileEntry) => {
+  const openEntry = (entry: FileEntry, event?: MouseEvent) => {
+    if (event && (event.metaKey || event.ctrlKey)) {
+      toggleSelect(entry);
+      return;
+    }
     if (entry.kind === "folder") {
       setCurrentFolderId(entry.id);
       setQuery("");
     } else {
       setPreviewId(entry.id);
     }
+  };
+
+  /** Drag-to-move: whatever's dragged is either the whole current selection
+   * (if the dragged entry is part of it) or just that one entry. */
+  const canDrag = (entry: FileEntry) =>
+    !!source.move && !isDisabled(entry) && !busy;
+  const canDropOn = (target: FileEntry, ids: string[]) => {
+    if (target.kind !== "folder" || ids.includes(target.id)) return false;
+    return !ids.some((id) => collectDescendantIds(entries, id).has(target.id));
+  };
+  const onDragStartEntry = (entry: FileEntry) => (event: DragEvent) => {
+    if (!canDrag(entry)) {
+      event.preventDefault();
+      return;
+    }
+    const ids = selectedIds.includes(entry.id) ? selectedIds : [entry.id];
+    setDragIds(ids);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", entry.id);
+    }
+  };
+  const onDragEndEntry = () => {
+    setDragIds(null);
+    setDragOverId(null);
+  };
+  const onDragOverEntry = (entry: FileEntry) => (event: DragEvent) => {
+    if (!dragIds || !canDropOn(entry, dragIds)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    setDragOverId(entry.id);
+  };
+  const onDragLeaveEntry = (entry: FileEntry) => () => {
+    setDragOverId((current) => (current === entry.id ? null : current));
+  };
+  const onDropEntry = (entry: FileEntry) => (event: DragEvent) => {
+    event.preventDefault();
+    const ids = dragIds;
+    setDragIds(null);
+    setDragOverId(null);
+    if (ids && canDropOn(entry, ids)) moveEntriesInto(ids, entry.id);
+  };
+
+  const moveEntriesInto = async (ids: string[], targetId: string) => {
+    if (!source.move) return;
+    setBusy(true);
+    try {
+      await source.move(ids, targetId);
+    } catch {
+      toast.add({ title: "Couldn't move - try again", type: "error" });
+      return;
+    } finally {
+      setBusy(false);
+    }
+
+    // Dropped-onto folder may already be cached (e.g. previously visited) -
+    // invalidate it so it re-lists on next visit instead of missing the move.
+    setLoadedFolders((current) => {
+      const next = new Set(current);
+      next.delete(targetId);
+      return next;
+    });
+    await refreshFolder(currentFolderId);
+    setSelection(selectedIds.filter((id) => !ids.includes(id)));
+    toast.add({
+      title: `Moved ${ids.length} item${ids.length === 1 ? "" : "s"}`,
+      type: "success",
+    });
   };
 
   const navigateBreadcrumb = (id: string | null) => {
@@ -1647,9 +1829,17 @@ export default function FileManager({
           onToggle={toggleSelect}
           onOpen={openEntry}
           more={renderMore}
+          canDrag={canDrag}
+          dragOverId={dragOverId}
+          onDragStartEntry={onDragStartEntry}
+          onDragEndEntry={onDragEndEntry}
+          onDragOverEntry={onDragOverEntry}
+          onDragLeaveEntry={onDragLeaveEntry}
+          onDropEntry={onDropEntry}
           multiple={multiple}
           allSelected={allSelected}
           onToggleAll={toggleAll}
+          onUnselect={() => setSelection([])}
           locked={selectionLocked}
           onMove={source.move ? () => requestMove(selectedIds) : undefined}
           onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
@@ -1667,6 +1857,13 @@ export default function FileManager({
           onToggle={toggleSelect}
           onOpen={openEntry}
           more={renderMore}
+          canDrag={canDrag}
+          dragOverId={dragOverId}
+          onDragStartEntry={onDragStartEntry}
+          onDragEndEntry={onDragEndEntry}
+          onDragOverEntry={onDragOverEntry}
+          onDragLeaveEntry={onDragLeaveEntry}
+          onDropEntry={onDropEntry}
         />
       )}
 
