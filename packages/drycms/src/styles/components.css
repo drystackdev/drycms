@@ -1887,6 +1887,10 @@
         border-end-end-radius: var(--dry-radius-md);
       }
 
+      & tbody tr {
+        cursor: pointer;
+      }
+
       & tbody tr:hover td {
         background-color: var(--dry-accent);
       }
@@ -1964,6 +1968,7 @@
       gap: 0.5rem;
       min-width: 0;
       padding: 1rem;
+      cursor: pointer;
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-lg);
       background-color: var(--dry-card);
@@ -1990,7 +1995,7 @@
       &.file-card-media {
         position: relative;
         padding: 0;
-        aspect-ratio: 16 / 9;
+        height: 139px;
         overflow: hidden;
       }
     }

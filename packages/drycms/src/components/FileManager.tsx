@@ -49,15 +49,12 @@ export interface FileManagerProps {
   accept?: string[];
   /** @default "list" */
   defaultView?: "list" | "grid";
-  /** Show real thumbnails (list: 16:9 mini, grid: full-card) instead of the
-   * generic file-type icon. Omitted: user gets a toolbar button to toggle it
-   * themselves. Set explicitly (`true`/`false`): fixed, no toggle shown. */
-  preview?: boolean;
 }
 
 type MoveCopyState = { mode: "move" | "copy"; ids: string[] } | null;
 
 const VIEW_STORAGE_KEY = "drycms-file-manager-view";
+const PREVIEW_STORAGE_KEY = "drycms-file-manager-preview";
 
 /** Reads the last-used list/grid choice - shared across every `FileManager`
  * on the page, same as any other persisted user preference. Guarded for SSR
@@ -66,6 +63,16 @@ function readStoredView(fallback: "list" | "grid"): "list" | "grid" {
   try {
     const stored = localStorage.getItem(VIEW_STORAGE_KEY);
     return stored === "list" || stored === "grid" ? stored : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Same idea as `readStoredView`, for the uncontrolled preview toggle. */
+function readStoredPreview(fallback: boolean): boolean {
+  try {
+    const stored = localStorage.getItem(PREVIEW_STORAGE_KEY);
+    return stored === "true" || stored === "false" ? stored === "true" : fallback;
   } catch {
     return fallback;
   }
@@ -207,8 +214,7 @@ interface ToolbarProps {
   onNewFolder?: () => void;
   onUpload?: () => void;
   previewOn: boolean;
-  /** Omitted (hides the toggle) when `preview` is controlled by the host. */
-  onTogglePreview?: () => void;
+  onTogglePreview: () => void;
 }
 
 function Toolbar({
@@ -255,18 +261,16 @@ function Toolbar({
         >
           <GridIcon />
         </button>
-        {onTogglePreview && (
-          <button
-            type="button"
-            class="ghost icon sm"
-            data-tooltip={previewOn ? "Hide preview" : "Show preview"}
-            aria-pressed={previewOn}
-            aria-label={previewOn ? "Hide preview" : "Show preview"}
-            onClick={onTogglePreview}
-          >
-            <PreviewIcon />
-          </button>
-        )}
+        <button
+          type="button"
+          class="ghost icon sm"
+          data-tooltip={previewOn ? "Hide preview" : "Show preview"}
+          aria-pressed={previewOn}
+          aria-label={previewOn ? "Hide preview" : "Show preview"}
+          onClick={onTogglePreview}
+        >
+          <PreviewIcon />
+        </button>
       </div>
       {onNewFolder && (
         <button type="button" class="outline sm" onClick={onNewFolder}>
@@ -430,7 +434,7 @@ function ListView({
         </thead>
         <tbody>
           {entries.length === 0 ? (
-            <tr>
+            <tr style={{ cursor: "default" }}>
               <td colSpan={6}>
                 <div class="center" style={{height: 200}} >No files.</div>
               </td>
@@ -454,6 +458,7 @@ function ListView({
                       .join(" ") || undefined
                   }
                   draggable={canDrag(entry)}
+                  onClick={(event) => onOpen(entry, event)}
                   onDragStart={onDragStartEntry(entry)}
                   onDragEnd={onDragEndEntry}
                   onDragOver={isDropTarget ? onDragOverEntry(entry) : undefined}
@@ -462,13 +467,15 @@ function ListView({
                   }
                   onDrop={isDropTarget ? onDropEntry(entry) : undefined}
                 >
-                  <td class="file-table-check">
+                  <td
+                    class="file-table-check"
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       checked={selected}
                       disabled={disabled}
                       aria-label={`Select ${entry.name}`}
-                      onClick={(event) => event.stopPropagation()}
                       onChange={() => onToggle(entry)}
                     />
                   </td>
@@ -476,7 +483,10 @@ function ListView({
                     <button
                       type="button"
                       class="file-name-cell"
-                      onClick={(event) => onOpen(entry, event)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpen(entry, event);
+                      }}
                     >
                       {preview && entry.kind !== "folder" ? (
                         <img
@@ -502,7 +512,12 @@ function ListView({
                     <div>{date}</div>
                     <small class="muted">{time}</small>
                   </td>
-                  <td class="file-table-more">{more(entry)}</td>
+                  <td
+                    class="file-table-more"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {more(entry)}
+                  </td>
                 </tr>
               );
             })
@@ -554,6 +569,7 @@ function GridView({
               .filter(Boolean)
               .join(" ")}
             draggable={canDrag(entry)}
+            onClick={(event) => onOpen(entry, event)}
             onDragStart={onDragStartEntry(entry)}
             onDragEnd={onDragEndEntry}
             onDragOver={isDropTarget ? onDragOverEntry(entry) : undefined}
@@ -571,10 +587,7 @@ function GridView({
                   src={entry.previewUrl ?? thumbnailUrl(entry)}
                   alt=""
                 />
-                <div
-                  class="file-card-media-overlay"
-                  onClick={(event) => onOpen(entry, event)}
-                >
+                <div class="file-card-media-overlay">
                   <div
                     class="file-card-media-top"
                     onClick={(event) => event.stopPropagation()}
@@ -594,7 +607,10 @@ function GridView({
                     <button
                       type="button"
                       class="file-card-name"
-                      onClick={(event) => onOpen(entry, event)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpen(entry, event);
+                      }}
                     >
                       {entry.name}
                     </button>
@@ -609,9 +625,15 @@ function GridView({
               </>
             ) : (
               <>
-                <div class="file-card-head">
-                  {/* Purely the selection hit-target - opening happens via the name below, so this never doubles as a button (the overlay input would swallow every click anyway).
-                   * Thumbnail and checkbox both always sit in the DOM; CSS (`:hover`, `:checked`, `:has()`) drives which one shows. */}
+                <div
+                  class="file-card-head"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {/* Purely the selection hit-target - opening happens by clicking
+                   * the rest of the card, so this never doubles as a button (the
+                   * overlay input would swallow every click anyway).
+                   * Thumbnail and checkbox both always sit in the DOM; CSS
+                   * (`:hover`, `:checked`, `:has()`) drives which one shows. */}
                   <label class="file-card-select">
                     {!disabled && (
                       <input
@@ -636,7 +658,10 @@ function GridView({
                 <button
                   type="button"
                   class="file-card-name"
-                  onClick={(event) => onOpen(entry, event)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen(entry, event);
+                  }}
                 >
                   {entry.name}
                 </button>
@@ -1389,7 +1414,6 @@ export default function FileManager({
   multiple = true,
   accept,
   defaultView = "list",
-  preview,
 }: FileManagerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -1426,11 +1450,14 @@ export default function FileManager({
    * and the id of the folder currently hovered as a drop target. */
   const [dragIds, setDragIds] = useState<string[] | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  /** Same controlled/uncontrolled split as `value`/`onChange` - `preview` set
-   * by the host fixes the mode (no toolbar toggle); omitted, the user drives
-   * it themselves via the toolbar button. */
-  const [uncontrolledPreview, setUncontrolledPreview] = useState(false);
-  const previewOn = preview ?? uncontrolledPreview;
+  const [previewOn, setPreviewOn] = useState(() => readStoredPreview(false));
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREVIEW_STORAGE_KEY, String(previewOn));
+    } catch {
+      // Storage unavailable (private browsing, quota, ...) - the choice just won't survive reload.
+    }
+  }, [previewOn]);
 
   /** Fetches `folderId`'s children and replaces any entries already loaded
    * for it - called both by the lazy-load effect below (first visit) and
@@ -1905,11 +1932,7 @@ export default function FileManager({
         }
         onUpload={source.upload ? () => setUploadOpen(true) : undefined}
         previewOn={previewOn}
-        onTogglePreview={
-          preview === undefined
-            ? () => setUncontrolledPreview((current) => !current)
-            : undefined
-        }
+        onTogglePreview={() => setPreviewOn((current) => !current)}
       />
 
       {view === "grid" &&
