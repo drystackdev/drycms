@@ -1667,8 +1667,8 @@
      * The tooltip itself is a single JS-managed element portaled to `<body>`
      * (see `useTooltip` in routers/App.tsx), not a CSS pseudo-element on the
      * trigger - a pseudo-element positioned `absolute` would get clipped by
-     * any `overflow: hidden`/`auto` ancestor (a SimpleBar pane, a table's
-     * `.scroll` wrapper, ...) instead of floating free above it.
+     * any `overflow: hidden`/`auto` ancestor (a table's `.scroll` wrapper,
+     * ...) instead of floating free above it.
      */
     .dry-tooltip {
       position: fixed;
@@ -2072,22 +2072,13 @@
       }
     }
 
-    /* SimpleBar-managed scroll frame around `.field-dialog-grid` - has to be
-     * a separate element from the grid itself since SimpleBar relocates its
-     * target's direct children into a nested `.simplebar-content`, which
-     * would otherwise strip the grid of its grid items. */
+    /* Scroll frame around `.field-dialog-grid` - a separate element from the
+     * grid itself so the grid can keep `display: grid` while this element
+     * owns the scrolling. */
     .field-dialog-scroll {
       flex: 1 1 auto;
       min-height: 0;
-      /* No overflow here - SimpleBar's `.simplebar-content-wrapper` already
-       * scrolls internally. This element's own resolved height only exists
-       * via flexbox (there's no explicit `height`, just `max-height` on the
-       * flex-column ancestor above), which `.simplebar-wrapper`'s `height:
-       * inherit` can't see - so its box balloons to the content's full
-       * height. Giving this element `overflow-y: auto` too then made it a
-       * second, independent native scroll container stacked on top of
-       * SimpleBar's, i.e. two scrollbars for the same content ("scroll in
-       * scroll", not just a cosmetic double bar). */
+      overflow-y: auto;
       /* Avoid clipping focus rings/shadows on inputs flush against the edge. */
       margin-inline: -1rem;
       padding-inline: 1.25rem;
@@ -2275,10 +2266,6 @@
         display: none;
       }
 
-      /*
-       * Descendant, not child - SimpleBar (see `useSimpleBar`) wraps the
-       * sidebar's children in its own scroll-container divs.
-       */
       .shell.collapsed .sidebar small {
         display: none;
       }
@@ -2542,11 +2529,8 @@
       }
 
       .showcase-nav {
-        /* Not `static`: SimpleBar absolutely-positions its internal mask/
-         * offset elements against this element, so it needs to stay a
-         * positioned container even though it no longer needs `sticky`'s
-         * offset here - `static` let that mask escape to the nearest
-         * positioned ancestor and render over the page header instead. */
+        /* Cancels the wider breakpoint's `sticky` for this stacked-layout
+         * order. */
         position: relative;
         max-height: none;
         order: -1;

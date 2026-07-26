@@ -82,9 +82,9 @@ export function useOutsideClick(open: boolean, refs: RefObject<HTMLElement>[], o
 }
 
 /**
- * Locks every scrollable ancestor of `ref` (a SimpleBar pane, a plain
- * `overflow: auto` container, or the page itself) while `active` - keeps a
- * popover's anchor from drifting out from under it while it's open.
+ * Locks every scrollable ancestor of `ref` (a plain `overflow: auto`
+ * container, or the page itself) while `active` - keeps a popover's anchor
+ * from drifting out from under it while it's open.
  */
 export function useScrollLock(active: boolean, ref: RefObject<HTMLElement>) {
 	useEffect(() => {

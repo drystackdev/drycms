@@ -6,8 +6,8 @@
  * Shows a `.dry-tooltip` (portaled straight onto `<body>`, positioned via
  * `getBoundingClientRect`) whenever a `[data-tooltip]` element is hovered or
  * focused - a fixed, body-level element instead of a CSS pseudo-element on
- * the trigger so it isn't clipped by a scroll-overflowed ancestor (a
- * SimpleBar pane, a table's `.scroll` wrapper, ...). Dismissed on
+ * the trigger so it isn't clipped by a scroll-overflowed ancestor (a table's
+ * `.scroll` wrapper, ...). Dismissed on
  * mouseout/blur same as a native tooltip, and also on scroll (capturing, so
  * it catches any scrollable ancestor, not just the window) or window resize -
  * once the trigger has moved (or the layout has reflowed), the tooltip's

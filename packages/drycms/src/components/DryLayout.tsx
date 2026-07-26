@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -6,7 +6,6 @@ import SidebarToggle from "./SidebarToggle.js";
 import ThemeToggle from "./ThemeToggle.js";
 import Toaster from "./Toast.js";
 import type { IconName } from "./icons.js";
-import { useSimpleBar } from "./simplebar.js";
 import { path } from "virtual:drycms/config";
 import { collapsed } from "../store/dashboard.js";
 
@@ -87,8 +86,8 @@ const NAV: {
 
 export default function DryLayout({ children }: Props) {
   const { url } = useLocation();
-  const sidebar = useSimpleBar<HTMLElement>();
-  const main = useSimpleBar<HTMLDivElement>();
+  const sidebar = useRef<HTMLElement>(null);
+  const main = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const stored = readStoredCollapsed();
@@ -115,7 +114,7 @@ export default function DryLayout({ children }: Props) {
 
   return (
     <div class="shell">
-      <aside class="sidebar" ref={sidebar.ref}>
+      <aside class="sidebar" ref={sidebar}>
         <div class="sidebar-head">
           <a class="brand" href={`${path}/dashboard`}>
             <Icon name="Brand" />
@@ -171,7 +170,7 @@ export default function DryLayout({ children }: Props) {
         </small>
       </aside>
 
-      <div class="main" ref={main.ref}>
+      <div class="main" ref={main}>
         <header class="topbar">
           <SidebarToggle />
           <span class="spacer"></span>

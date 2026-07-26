@@ -47,8 +47,7 @@
     "@preact/signals": "^2.10.0",
     "dayjs": "^1.11.21",
     "preact-iso": "^2.12.1",
-    "prismjs": "^1.30.0",
-    "simplebar": "^6.3.3"
+    "prismjs": "^1.30.0"
   },
   "peerDependencies": {
     "astro": "^7.0.0",

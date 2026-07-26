@@ -1,10 +1,9 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import CheckField from "../../components/CheckField.js";
 import DatePickerField from "../../components/DatePickerField.js";
 import { useDialogSync } from "../../components/FileManager.js";
 import NumberField from "../../components/NumberField.js";
 import Select from "../../components/Select.js";
-import { useSimpleBar } from "../../components/simplebar.js";
 import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
 import { toast } from "../../components/Toast.js";
@@ -273,7 +272,7 @@ export default function FieldDialog({
   const dialogRef = useDialogSync(open, onCancel);
   // Deps include `open`: the grid only mounts once the dialog opens, so the
   // ref is still null on `FieldDialog`'s own first render.
-  const gridScroll = useSimpleBar<HTMLDivElement>([open]);
+  const gridScroll = useRef<HTMLDivElement>(null);
 
   const [draftType, setDraftType] = useState("text");
   const [draftName, setDraftName] = useState("");
@@ -367,7 +366,7 @@ export default function FieldDialog({
           <header>
             <h3>{editingField ? "Edit field" : "Add field"}</h3>
           </header>
-          <div class="field-dialog-scroll" ref={gridScroll.ref}>
+          <div class="field-dialog-scroll" ref={gridScroll}>
             <div class="field-dialog-grid">
               <div class="stack">
                 <SlugField

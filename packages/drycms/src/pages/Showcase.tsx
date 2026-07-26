@@ -21,7 +21,6 @@ import MultiSelect from "../components/MultiSelect.js";
 import NumberField from "../components/NumberField.js";
 import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
-import { useSimpleBar } from "../components/simplebar.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
@@ -64,7 +63,7 @@ export default function Showcase({ tab }: Props) {
   const prevId = order[index - 1];
   const nextId = order[index + 1];
 
-  const nav = useSimpleBar<HTMLElement>();
+  const nav = useRef<HTMLElement>(null);
 
   useEffect(() => {
     document.title = `${labelFor(activeId)} – Showcase`;
@@ -85,7 +84,7 @@ export default function Showcase({ tab }: Props) {
         <aside
           class="showcase-nav"
           aria-label="Showcase sections"
-          ref={nav.ref}
+          ref={nav}
         >
           <nav>
             {groups.map((group) => (
