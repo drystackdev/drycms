@@ -295,6 +295,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <SlugField
             label="Table Name"
             slugLabel="Table"
+            placeholder="e.g. Blog Posts"
+            slugPlaceholder="e.g. blog_posts"
             value={definition.label}
             slug={definition.name}
             onChange={(label, name) => {
@@ -308,6 +310,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <TextField
             label="Description"
             multiline
+            placeholder="e.g. Articles published on the company blog"
             value={definition.description ?? ""}
             onChange={(v) =>
               setDefinition((d) => (d ? { ...d, description: v } : d))

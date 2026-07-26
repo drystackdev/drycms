@@ -38,6 +38,15 @@ const PAIRED_ROWS: [string, string][] = [
   ["minLength", "maxLength"],
 ];
 
+/** Demo placeholder text for the generic `"text"`-widget settings, keyed by
+ * `SettingDescriptor.key` - covers keys shared across field types (only
+ * `text`'s `placeholder`/`regex` today) without the registry itself needing
+ * a placeholder field. */
+const TEXT_WIDGET_PLACEHOLDERS: Record<string, string> = {
+  placeholder: "e.g. Enter your name",
+  regex: "e.g. ^[A-Za-z0-9_-]+$",
+};
+
 function groupIntoRows(
   descriptors: SettingDescriptor[],
 ): SettingDescriptor[][] {
@@ -89,6 +98,7 @@ function renderControl({
         value={
           typeof values[d.key] === "string" ? (values[d.key] as string) : ""
         }
+        placeholder={TEXT_WIDGET_PLACEHOLDERS[d.key]}
         disabled={disabled}
         onChange={(v) => onChange(d.key, v)}
       />
@@ -201,6 +211,7 @@ function DefaultValueInput({
       return (
         <TextField
           label="Default value"
+          placeholder="e.g. Untitled"
           value={typeof value === "string" ? value : ""}
           onChange={onChange}
         />
@@ -362,6 +373,9 @@ export default function FieldDialog({
                 <SlugField
                   label="Label"
                   slugLabel="Name"
+                  placeholder="e.g. Title"
+                  slugPlaceholder="e.g. title"
+                  required
                   value={draftLabel}
                   slug={draftName}
                   onChange={(label, name) => {
@@ -372,6 +386,7 @@ export default function FieldDialog({
                 <TextField
                   label="Description"
                   multiline
+                  placeholder="e.g. Shown as a hint in the entry editor"
                   value={draftDescription}
                   onChange={setDraftDescription}
                 />

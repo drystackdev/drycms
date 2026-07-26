@@ -1305,6 +1305,8 @@
         justify-content: flex-end;
         gap: 0.5rem;
         margin-block-start: 1.5rem;
+        position: relative;
+        z-index: 2;
       }
     }
 

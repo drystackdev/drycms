@@ -10,6 +10,8 @@ export interface SlugFieldProps {
   onChange: (value: string, slug: string) => void;
   label?: string;
   slugLabel?: string;
+  placeholder?: string;
+  slugPlaceholder?: string;
   helperText?: string;
   error?: boolean;
   disabled?: boolean;
@@ -49,6 +51,8 @@ export default function SlugField({
   onChange,
   label = "Title",
   slugLabel = "Slug",
+  placeholder,
+  slugPlaceholder,
   helperText,
   error = false,
   disabled = false,
@@ -65,6 +69,7 @@ export default function SlugField({
       <TextField
         label={label}
         value={value}
+        placeholder={placeholder}
         disabled={disabled}
         onChange={(nextValue) => {
           onChange(nextValue, slugTouched ? slug : slugify(nextValue));
@@ -81,6 +86,7 @@ export default function SlugField({
             type="text"
             name={name}
             value={slug}
+            placeholder={slugPlaceholder}
             disabled={disabled}
             aria-invalid={error || undefined}
             onInput={(event) => {
