@@ -113,6 +113,12 @@ export function folderPath(entries: FileEntry[], folderId: string | null): FileE
 	return chain;
 }
 
+/** Same comparison `sortEntries` uses for equality - locale-aware, case-insensitive,
+ * so e.g. "Report.PDF" collides with "report.pdf". */
+export function namesEqual(a: string, b: string): boolean {
+	return a.localeCompare(b, undefined, { sensitivity: 'base' }) === 0;
+}
+
 /** Folders always sort before files; each group sorts by name (locale, case-insensitive). */
 export function sortEntries(entries: FileEntry[], direction: 'asc' | 'desc' = 'asc'): FileEntry[] {
 	const factor = direction === 'asc' ? 1 : -1;

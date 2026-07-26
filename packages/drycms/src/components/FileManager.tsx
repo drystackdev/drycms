@@ -10,6 +10,7 @@ import {
   isAccepted,
   isHiddenEntry,
   isImageEntry,
+  namesEqual,
   retargetSubtree,
   sortEntries,
   thumbnailUrl,
@@ -925,11 +926,16 @@ function ClipboardBar(props: ClipboardBarProps) {
 
 function RenameDialog({
   target,
+  existingNames,
   onClose,
   onSubmit,
   busy,
 }: {
   target: FileEntry | null;
+  /** Sibling names in the same folder (the target itself excluded) - used to
+   * catch a duplicate before it round-trips to the server as an
+   * `already_exists` error. */
+  existingNames: string[];
   onClose: () => void;
   onSubmit: (name: string) => void;
   busy: boolean;
@@ -941,31 +947,40 @@ function RenameDialog({
     if (target) setName(target.name);
   }, [target]);
 
+  const trimmed = name.trim();
+  const duplicate =
+    trimmed !== "" && existingNames.some((existing) => namesEqual(existing, trimmed));
+
   return (
     <dialog ref={ref} aria-label="Rename">
       {target && (
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            const trimmed = name.trim();
-            if (trimmed) onSubmit(trimmed);
+            if (trimmed && !duplicate) onSubmit(trimmed);
           }}
         >
           <header>
             <h3>Rename</h3>
           </header>
-          <input
-            type="text"
-            value={name}
-            onInput={(event) =>
-              setName((event.currentTarget as HTMLInputElement).value)
-            }
-          />
+          <div class="field">
+            <input
+              type="text"
+              value={name}
+              aria-invalid={duplicate || undefined}
+              onInput={(event) =>
+                setName((event.currentTarget as HTMLInputElement).value)
+              }
+            />
+            {duplicate && (
+              <span class="error">"{trimmed}" already exists here.</span>
+            )}
+          </div>
           <footer>
             <button type="button" class="outline" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" disabled={busy}>
+            <button type="submit" disabled={busy || !trimmed || duplicate}>
               Save
             </button>
           </footer>
@@ -2001,6 +2016,20 @@ export default function FileManager({
   const renameTargetEntry = renameId
     ? (entries.find((entry) => entry.id === renameId) ?? null)
     : null;
+  const renameExistingNames = useMemo(
+    () =>
+      renameTargetEntry
+        ? entries
+            .filter(
+              (entry) =>
+                entry.parentId === renameTargetEntry.parentId &&
+                entry.id !== renameTargetEntry.id &&
+                !isHiddenEntry(entry),
+            )
+            .map((entry) => entry.name)
+        : [],
+    [entries, renameTargetEntry],
+  );
   const submitRename = async (name: string) => {
     if (!renameId || !source.rename) return;
     const oldId = renameId;
@@ -2311,6 +2340,7 @@ export default function FileManager({
 
       <RenameDialog
         target={renameTargetEntry}
+        existingNames={renameExistingNames}
         onClose={() => setRenameId(null)}
         onSubmit={submitRename}
         busy={busy}
