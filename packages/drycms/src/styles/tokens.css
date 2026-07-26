@@ -149,6 +149,7 @@
 
     /* ------------------------------------------------------------ Layout */
     --dry-sidebar-width: 16.25rem;
+    --dry-sidebar-width-collapsed: 4.5rem;
     --dry-topbar-height: 4rem;
     --dry-gap: 1.5rem;
   }

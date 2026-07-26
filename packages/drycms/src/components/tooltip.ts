@@ -13,6 +13,12 @@
  * once the trigger has moved (or the layout has reflowed), the tooltip's
  * stale fixed position no longer points at it, so it's dropped rather than
  * re-measured.
+ *
+ * Placement defaults to above/below the trigger, flipping based on available
+ * space. Add `data-tooltip-placement="right"` to instead pin it to the
+ * trigger's inline-end, vertically centered - used by the collapsed sidebar,
+ * where icons sit flush against the viewport edge and a top/bottom tooltip
+ * would overlap the nav items above or below.
  */
 
 const TOOLTIP_GAP = 8;
@@ -39,11 +45,19 @@ function initTooltip() {
 		trigger = next;
 		el.textContent = message;
 		const rect = next.getBoundingClientRect();
-		const above = rect.top > 40;
+		const right = next.getAttribute('data-tooltip-placement') === 'right';
+		const above = !right && rect.top > 40;
 		el.classList.toggle('dry-tooltip-above', above);
-		el.classList.toggle('dry-tooltip-below', !above);
+		el.classList.toggle('dry-tooltip-below', !right && !above);
+		el.classList.toggle('dry-tooltip-right', right);
 		el.classList.add('dry-tooltip-visible');
 		const tipRect = el.getBoundingClientRect();
+		if (right) {
+			const top = rect.top + rect.height / 2 - tipRect.height / 2;
+			el.style.left = `${rect.right + TOOLTIP_GAP}px`;
+			el.style.top = `${Math.max(TOOLTIP_MARGIN, Math.min(top, window.innerHeight - tipRect.height - TOOLTIP_MARGIN))}px`;
+			return;
+		}
 		const left = rect.left + rect.width / 2 - tipRect.width / 2;
 		const top = above ? rect.top - TOOLTIP_GAP - tipRect.height : rect.bottom + TOOLTIP_GAP;
 		el.style.left = `${Math.max(TOOLTIP_MARGIN, Math.min(left, window.innerWidth - tipRect.width - TOOLTIP_MARGIN))}px`;

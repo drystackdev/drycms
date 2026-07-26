@@ -61,16 +61,16 @@ describe('resolveOptions', () => {
 		expect(resolveOptions({ storage: { root: absolute } }).storage.root).toBe(absolute);
 	});
 
-	it('rejects an unimplemented storage kind, naming the roadmap (github no longer on it)', () => {
+	it('rejects an unimplemented storage kind, naming the roadmap (github/gitlab no longer on it)', () => {
 		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(/roadmap/);
 		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(
-			/planned: r2, gitlab, s3\)/,
+			/planned: r2, s3\)/,
 		);
 	});
 
-	it('mentions both implemented kinds when rejecting an unimplemented one', () => {
+	it('mentions all implemented kinds when rejecting an unimplemented one', () => {
 		expect(() => resolveOptions({ storage: { kind: 'r2' as unknown as 'local' } })).toThrow(
-			/Only "local" and "github" are available today/,
+			/Only "local", "github" and "gitlab" are available today/,
 		);
 	});
 
@@ -139,6 +139,56 @@ describe('resolveOptions', () => {
 			vi.stubEnv('GITHUB_REPO', 'acme/media');
 			vi.stubEnv('GITHUB_PAT_KEY', undefined);
 			expect(() => resolveOptions({ storage: { kind: 'github' } })).toThrow(/GITHUB_PAT_KEY/);
+		});
+	});
+
+	describe('storage.kind: "gitlab"', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('resolves project/token from env, defaulting branch to main and host to gitlab.com', () => {
+			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
+			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
+			vi.stubEnv('GITLAB_BRANCH', undefined);
+			vi.stubEnv('GITLAB_HOST', undefined);
+
+			expect(resolveOptions({ storage: { kind: 'gitlab' } }).storage).toEqual({
+				kind: 'gitlab',
+				host: 'https://gitlab.com',
+				project: 'acme/media',
+				branch: 'main',
+				token: 'glpat_test_token',
+				root: 'storage',
+			});
+		});
+
+		it('honors GITLAB_BRANCH, GITLAB_HOST and storage.root when set', () => {
+			vi.stubEnv('GITLAB_PROJECT', '42');
+			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
+			vi.stubEnv('GITLAB_BRANCH', 'develop');
+			vi.stubEnv('GITLAB_HOST', 'https://gitlab.example.com/');
+
+			expect(resolveOptions({ storage: { kind: 'gitlab', root: '' } }).storage).toEqual({
+				kind: 'gitlab',
+				host: 'https://gitlab.example.com',
+				project: '42',
+				branch: 'develop',
+				token: 'glpat_test_token',
+				root: '',
+			});
+		});
+
+		it('rejects a missing GITLAB_PROJECT', () => {
+			vi.stubEnv('GITLAB_PROJECT', undefined);
+			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
+			expect(() => resolveOptions({ storage: { kind: 'gitlab' } })).toThrow(/GITLAB_PROJECT/);
+		});
+
+		it('rejects a missing GITLAB_PAT_KEY', () => {
+			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
+			vi.stubEnv('GITLAB_PAT_KEY', undefined);
+			expect(() => resolveOptions({ storage: { kind: 'gitlab' } })).toThrow(/GITLAB_PAT_KEY/);
 		});
 	});
 });

@@ -1293,6 +1293,18 @@
         );
       }
 
+      &.dry-tooltip-right::before {
+        inset-inline-start: 0;
+        inset-block-start: 50%;
+        translate: -100% -50%;
+        border-inline-end-width: 6px;
+        border-inline-start-width: 0;
+        border-inline-end-color: light-dark(
+          var(--dry-grey-800),
+          var(--dry-grey-700)
+        );
+      }
+
       &.dry-tooltip-visible {
         opacity: 1;
       }
@@ -1352,6 +1364,7 @@
       display: grid;
       grid-template-columns: var(--dry-sidebar-width) minmax(0, 1fr);
       height: 100dvh;
+      transition: grid-template-columns 180ms ease;
     }
 
     .sidebar {
@@ -1365,6 +1378,7 @@
       top: 0;
       height: 100dvh;
       overflow-y: auto;
+      overflow-x: hidden;
 
       & nav {
         display: grid;
@@ -1403,6 +1417,12 @@
           color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
         }
       }
+    }
+
+    .sidebar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
     .brand {
@@ -1530,6 +1550,54 @@
 
     @media (width >= 48rem) {
       .mobile-only {
+        display: none;
+      }
+
+      /*
+       * Icon-only sidebar. Scoped to this breakpoint so `.collapsed` never
+       * fights the off-canvas drawer below `48rem` - the mobile menu is
+       * always full-width-or-hidden regardless of the desktop collapse
+       * preference.
+       */
+      .shell.collapsed {
+        grid-template-columns: var(--dry-sidebar-width-collapsed) minmax(0, 1fr);
+      }
+
+      .shell.collapsed .sidebar-head {
+        flex-direction: column;
+        gap: 0.5rem;
+        padding-block: 0.75rem 0.25rem;
+      }
+
+      .shell.collapsed .brand {
+        justify-content: center;
+        height: auto;
+      }
+
+      .shell.collapsed .nav-label {
+        display: none;
+      }
+
+      .shell.collapsed .sidebar nav a {
+        justify-content: center;
+      }
+
+      .shell.collapsed .sidebar nav a > *:not(svg),
+      .shell.collapsed .brand > *:not(svg) {
+        display: none;
+      }
+
+      /*
+       * Descendant, not child - SimpleBar (see `useSimpleBar`) wraps the
+       * sidebar's children in its own scroll-container divs.
+       */
+      .shell.collapsed .sidebar small {
+        display: none;
+      }
+    }
+
+    @media (width < 48rem) {
+      .desktop-only {
         display: none;
       }
     }

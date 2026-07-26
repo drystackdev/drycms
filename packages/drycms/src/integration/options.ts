@@ -3,18 +3,19 @@ import { resolve as resolvePath } from "node:path";
 
 /** Roadmap kinds not implemented yet - listed so an unsupported `kind` can
  * name what's coming instead of just saying "unknown". */
-const PLANNED_STORAGE_KINDS = ["r2", "gitlab", "s3"];
+const PLANNED_STORAGE_KINDS = ["r2", "s3"];
 
 export interface DryStorageOption {
   /**
-   * Which backend serves `/dry/api/storage/**`. `'github'` reads its
-   * owner/repo/branch/token from env vars (`GITHUB_REPO`, `GITHUB_PAT_KEY`,
-   * `GITHUB_BRANCH`) rather than this object, so no secret ends up in a
+   * Which backend serves `/dry/api/storage/**`. `'github'`/`'gitlab'` read
+   * their repo/branch/token from env vars (`GITHUB_REPO`/`GITHUB_PAT_KEY`/
+   * `GITHUB_BRANCH` or `GITLAB_PROJECT`/`GITLAB_PAT_KEY`/`GITLAB_BRANCH`/
+   * `GITLAB_HOST`) rather than this object, so no secret ends up in a
    * committed `astro.config.mjs`.
    *
    * @default "local"
    */
-  kind?: "local" | "github";
+  kind?: "local" | "github" | "gitlab";
   /**
    * `local`: directory files are read from/written to, relative to the
    * consuming project's cwd (or an absolute path). `github`: subpath within
@@ -51,8 +52,26 @@ export interface ResolvedGithubStorageOption {
   root: string;
 }
 
+export interface ResolvedGitlabStorageOption {
+  kind: "gitlab";
+  /** API/instance base, e.g. `"https://gitlab.com"` - configurable (unlike
+   * the GitHub adapter's hardcoded `api.github.com`) since self-managed
+   * GitLab is common. No trailing slash. */
+  host: string;
+  /** Numeric project ID or URL-encoded-at-request-time `"namespace/project"`
+   * path - GitLab accepts either as the `:id` in `/projects/:id/...`. */
+  project: string;
+  branch: string;
+  token: string;
+  /** Subpath within the repo files live under. `""` = repo root. */
+  root: string;
+}
+
 /** A union so future kinds can be added without widening every existing branch. */
-export type ResolvedStorageOption = ResolvedLocalStorageOption | ResolvedGithubStorageOption;
+export type ResolvedStorageOption =
+  | ResolvedLocalStorageOption
+  | ResolvedGithubStorageOption
+  | ResolvedGitlabStorageOption;
 
 export interface ResolvedDryOption {
   path: string;
@@ -158,6 +177,37 @@ function resolveGithubStorageOption(root: string): ResolvedGithubStorageOption {
   };
 }
 
+/**
+ * `gitlab`'s host/project/branch/token come from env vars, not this object -
+ * same rationale as `resolveGithubStorageOption`.
+ */
+function resolveGitlabStorageOption(root: string): ResolvedGitlabStorageOption {
+  const project = readEnvVar("GITLAB_PROJECT");
+  if (!project) {
+    throw new Error(
+      '[drycms] `storage.kind: "gitlab"` requires a `GITLAB_PROJECT` env var (a numeric project ID or a "namespace/project" path).',
+    );
+  }
+
+  const token = readEnvVar("GITLAB_PAT_KEY");
+  if (!token) {
+    throw new Error(
+      '[drycms] `storage.kind: "gitlab"` requires a `GITLAB_PAT_KEY` env var (a GitLab personal access token).',
+    );
+  }
+
+  const host = (readEnvVar("GITLAB_HOST") || "https://gitlab.com").replace(/\/+$/, "");
+
+  return {
+    kind: "gitlab",
+    host,
+    project,
+    branch: readEnvVar("GITLAB_BRANCH") || "main",
+    token,
+    root,
+  };
+}
+
 function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOption {
   const kind = storage.kind ?? "local";
   if (typeof kind !== "string") {
@@ -165,12 +215,12 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
       `[drycms] \`storage.kind\` must be a string, received ${typeof kind}.`,
     );
   }
-  if (kind !== "local" && kind !== "github") {
+  if (kind !== "local" && kind !== "github" && kind !== "gitlab") {
     const roadmap = PLANNED_STORAGE_KINDS.includes(kind)
       ? ` \`storage.kind: "${kind}"\` is on the roadmap but not implemented yet.`
       : ` "${kind}" is not a recognized storage kind.`;
     throw new Error(
-      `[drycms]${roadmap} Only "local" and "github" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
+      `[drycms]${roadmap} Only "local", "github" and "gitlab" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
     );
   }
 
@@ -182,6 +232,7 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
   }
 
   if (kind === "github") return resolveGithubStorageOption(root);
+  if (kind === "gitlab") return resolveGitlabStorageOption(root);
 
   return { kind: "local", root: resolvePath(process.cwd(), root) };
 }

@@ -19,30 +19,6 @@ function Redirect({ to }: { to: string }) {
 	return null;
 }
 
-function DashboardRoute() {
-	return (
-		<DryLayout title="Dashboard">
-			<Dashboard />
-		</DryLayout>
-	);
-}
-
-function ShowcaseRoute({ tab }: { tab?: string }) {
-	return (
-		<DryLayout title="Showcase">
-			<Showcase tab={tab} />
-		</DryLayout>
-	);
-}
-
-function MediaRoute() {
-	return (
-		<DryLayout title="Media">
-			<Media />
-		</DryLayout>
-	);
-}
-
 /** Keeps every `input[type="range"]`'s `--value` (0-100, drives the WebKit
  * track fill in forms.css) synced to the value the user is dragging to -
  * WebKit has no `::-webkit-range-progress` pseudo-element to fill natively,
@@ -69,13 +45,18 @@ export default function App() {
 	return (
 		<LocationProvider scope={path}>
 			<ErrorBoundary>
-				<Router>
-					<Route path={path} component={() => <Redirect to={`${path}/dashboard`} />} />
-					<Route path={`${path}/dashboard`} component={DashboardRoute} />
-					<Route path={`${path}/showcase/:tab?`} component={ShowcaseRoute} />
-					<Route path={`${path}/media`} component={MediaRoute} />
-					<Route default component={() => <Redirect to={`${path}/dashboard`} />} />
-				</Router>
+				{/* Outside `Router` so it survives route changes - swapping it in
+				 * per-route remounted the sidebar (losing scroll position, replaying
+				 * the collapse-state flash) on every navigation. */}
+				<DryLayout>
+					<Router>
+						<Route path={path} component={() => <Redirect to={`${path}/dashboard`} />} />
+						<Route path={`${path}/dashboard`} component={Dashboard} />
+						<Route path={`${path}/showcase/:tab?`} component={Showcase} />
+						<Route path={`${path}/media`} component={Media} />
+						<Route default component={() => <Redirect to={`${path}/dashboard`} />} />
+					</Router>
+				</DryLayout>
 			</ErrorBoundary>
 		</LocationProvider>
 	);

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import type { ComponentChildren } from 'preact';
 import Icon from './Icon.js';
@@ -8,9 +9,17 @@ import type { IconName } from './icons.js';
 import { useSimpleBar } from './simplebar.js';
 import { path } from 'virtual:drycms/config';
 
+const SIDEBAR_COLLAPSED_KEY = 'drycms:sidebar-collapsed';
+
+function readStoredCollapsed(): boolean {
+	try {
+		return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+	} catch {
+		return false;
+	}
+}
+
 interface Props {
-	/** Shown in the topbar; the document title is set by each page instead. */
-	title?: string;
 	children?: ComponentChildren;
 }
 
@@ -23,18 +32,52 @@ const NAV: { key: string; label: string; href: string; icon: IconName; ready: bo
 	{ key: 'settings', label: 'Settings', href: `${path}/settings`, icon: 'Settings', ready: false },
 ];
 
-export default function DryLayout({ title = 'drycms', children }: Props) {
+export default function DryLayout({ children }: Props) {
 	const { url } = useLocation();
 	const sidebar = useSimpleBar<HTMLElement>();
 	const main = useSimpleBar<HTMLDivElement>();
+	const [collapsed, setCollapsed] = useState(false);
+
+	/* Shown in the topbar; `document.title` is set by each page instead. */
+	const title = NAV.find((item) => url.startsWith(item.href))?.label ?? 'drycms';
+
+	useEffect(() => {
+		const stored = readStoredCollapsed();
+		setCollapsed(stored);
+		document.querySelector<HTMLElement>('.shell')?.classList.toggle('collapsed', stored);
+	}, []);
+
+	const toggleCollapsed = () => {
+		const next = !collapsed;
+		setCollapsed(next);
+		document.querySelector<HTMLElement>('.shell')?.classList.toggle('collapsed', next);
+		try {
+			localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+		} catch {
+			// Private mode / storage disabled - collapse still applies for this page.
+		}
+	};
 
 	return (
 		<div class="shell">
 			<aside class="sidebar" ref={sidebar.ref}>
-				<a class="brand" href={`${path}/dashboard`}>
-					<Icon name="Brand" />
-					drycms
-				</a>
+				<div class="sidebar-head">
+					<a class="brand" href={`${path}/dashboard`}>
+						<Icon name="Brand" />
+						<span>drycms</span>
+					</a>
+
+					<button
+						type="button"
+						class="ghost icon desktop-only"
+						aria-expanded={!collapsed}
+						aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+						title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+						onClick={toggleCollapsed}
+					>
+						<Icon name={collapsed ? 'ArrowRight' : 'ArrowLeft'} />
+					</button>
+				</div>
 
 				<nav aria-label="Admin">
 					<span class="nav-label">Manage</span>
@@ -44,14 +87,22 @@ export default function DryLayout({ title = 'drycms', children }: Props) {
 								key={item.key}
 								href={item.href}
 								aria-current={url.startsWith(item.href) ? 'page' : undefined}
+								data-tooltip={collapsed ? item.label : undefined}
+								data-tooltip-placement="right"
 							>
 								<Icon name={item.icon} />
-								{item.label}
+								<span>{item.label}</span>
 							</a>
 						) : (
-							<a key={item.key} aria-disabled="true" style="pointer-events: none; opacity: 0.55">
+							<a
+								key={item.key}
+								aria-disabled="true"
+								style="pointer-events: none; opacity: 0.55"
+								data-tooltip={collapsed ? item.label : undefined}
+								data-tooltip-placement="right"
+							>
 								<Icon name={item.icon} />
-								{item.label}
+								<span>{item.label}</span>
 								<span class="spacer" />
 								<span class="badge outline">Soon</span>
 							</a>
