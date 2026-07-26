@@ -21,3 +21,10 @@ declare module "virtual:drycms/storage-config" {
 	export default config;
 }
 
+declare module "virtual:drycms/content-config" {
+	type ContentConfig = { engine: "sqlite"; file: string } | { engine: "D1"; binding: string };
+	export const content: ContentConfig;
+	const config: { content: ContentConfig };
+	export default config;
+}
+

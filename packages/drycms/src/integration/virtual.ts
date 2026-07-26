@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import type { ResolvedDryOption, ResolvedStorageOption } from "./options.js";
+import type { ResolvedContentOption, ResolvedDryOption, ResolvedStorageOption } from "./options.js";
 
 export const VIRTUAL_CONFIG_ID = "virtual:drycms/config";
 const RESOLVED_CONFIG_ID = `\0${VIRTUAL_CONFIG_ID}`;
@@ -51,6 +51,34 @@ export function dryVirtualStorageConfig(storage: ResolvedStorageOption): Plugin 
   };
 }
 
+export const VIRTUAL_CONTENT_CONFIG_ID = "virtual:drycms/content-config";
+const RESOLVED_CONTENT_CONFIG_ID = `\0${VIRTUAL_CONTENT_CONFIG_ID}`;
+
+/**
+ * Exposes the resolved `content` option to `routes/content-types.ts` only -
+ * same rationale as `dryVirtualStorageConfig`: kept out of the client-facing
+ * `virtual:drycms/config` module since a `sqlite` config carries an absolute
+ * filesystem path. Note this never carries a live `D1Database` binding
+ * itself (that isn't a JSON-serializable value) - only the binding *name*
+ * for `engine: "D1"`; the route resolves the actual binding per-request.
+ */
+export function dryVirtualContentConfig(content: ResolvedContentOption): Plugin {
+  return {
+    name: "drycms:virtual-content-config",
+    resolveId(id) {
+      if (id === VIRTUAL_CONTENT_CONFIG_ID) return RESOLVED_CONTENT_CONFIG_ID;
+      return null;
+    },
+    load(id) {
+      if (id !== RESOLVED_CONTENT_CONFIG_ID) return null;
+      return [
+        `export const content = ${JSON.stringify(content)};`,
+        "export default { content };",
+      ].join("\n");
+    },
+  };
+}
+
 /**
  * `@astrojs/preact` seeds `optimizeDeps.include` with `@astrojs/preact > …`
  * dependency chains that only resolve when the integration is a direct
@@ -94,6 +122,15 @@ const STORAGE_CONFIG_TYPE =
 export const VIRTUAL_STORAGE_CONFIG_TYPES = `declare module '${VIRTUAL_STORAGE_CONFIG_ID}' {
 	export const storage: ${STORAGE_CONFIG_TYPE};
 	const config: { storage: ${STORAGE_CONFIG_TYPE} };
+	export default config;
+}
+`;
+
+const CONTENT_CONFIG_TYPE = "{ engine: 'sqlite'; file: string } | { engine: 'D1'; binding: string }";
+
+export const VIRTUAL_CONTENT_CONFIG_TYPES = `declare module '${VIRTUAL_CONTENT_CONFIG_ID}' {
+	export const content: ${CONTENT_CONFIG_TYPE};
+	const config: { content: ${CONTENT_CONFIG_TYPE} };
 	export default config;
 }
 `;

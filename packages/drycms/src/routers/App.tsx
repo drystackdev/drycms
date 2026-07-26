@@ -10,6 +10,8 @@ import '../components/tooltip.js';
 const Dashboard = lazy(() => import('../pages/Dashboard.js'));
 const Showcase = lazy(() => import('../pages/Showcase.js'));
 const Media = lazy(() => import('../pages/Media.js'));
+const ContentTypes = lazy(() => import('../pages/ContentTypes.js'));
+const ContentTypeEditor = lazy(() => import('../pages/ContentTypeEditor.js'));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
  * base path and any unmatched path have to be sent to `/dashboard` here. */
@@ -54,6 +56,9 @@ export default function App() {
 						<Route path={`${path}/dashboard`} component={Dashboard} />
 						<Route path={`${path}/showcase/:tab?`} component={Showcase} />
 						<Route path={`${path}/media`} component={Media} />
+						<Route path={`${path}/content-types`} component={ContentTypes} />
+						<Route path={`${path}/content-types/new/:kind`} component={ContentTypeEditor} />
+						<Route path={`${path}/content-types/:id/edit`} component={ContentTypeEditor} />
 						<Route default component={() => <Redirect to={`${path}/dashboard`} />} />
 					</Router>
 				</DryLayout>

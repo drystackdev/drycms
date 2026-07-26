@@ -26,6 +26,10 @@ interface Props {
 const NAV: { key: string; label: string; href: string; icon: IconName; ready: boolean }[] = [
 	{ key: 'dashboard', label: 'Dashboard', href: `${path}/dashboard`, icon: 'Dashboard', ready: true },
 	{ key: 'showcase', label: 'Showcase', href: `${path}/showcase`, icon: 'Media', ready: true },
+	// Listed before 'content' - `url.startsWith(item.href)` is a simple
+	// prefix match, and "/content-types" itself starts with "/content", so
+	// the more specific route must win the `.find()` lookup below.
+	{ key: 'content-types', label: 'Content Types', href: `${path}/content-types`, icon: 'Content', ready: true },
 	{ key: 'content', label: 'Content', href: `${path}/content`, icon: 'Content', ready: false },
 	{ key: 'media', label: 'Media', href: `${path}/media`, icon: 'Media', ready: true },
 	{ key: 'users', label: 'Users', href: `${path}/users`, icon: 'Users', ready: false },

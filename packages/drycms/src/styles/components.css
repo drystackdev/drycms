@@ -1894,6 +1894,22 @@
       }
     }
 
+    /* ---------------------------------------------------- Content types list */
+    .content-type-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .content-type-list-item {
+      padding-block: 0.625rem;
+      border-block-end: 1px solid var(--dry-border);
+
+      &:last-child {
+        border-block-end: none;
+      }
+    }
+
     /* Mobile: sidebar becomes an off-canvas drawer toggled by `.open`. */
     @media (width < 48rem) {
       .shell {

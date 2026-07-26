@@ -28,5 +28,8 @@ status/
 # drycms local file storage (see `storage.root` in astro.config.mjs)
 storage/
 
+# drycms content-type builder sqlite database (see `content.file` in astro.config.mjs)
+content.sqlite
+
 # drycms/src/db.ts local dev SQLite fallback (see status/db.md)
 db.sqlite

@@ -51,7 +51,13 @@
   },
   "peerDependencies": {
     "astro": "^7.0.0",
-    "preact": "^10.24.0"
+    "preact": "^10.24.0",
+    "better-sqlite3": "^11.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.119",

@@ -26,6 +26,32 @@ export interface DryStorageOption {
   root?: string;
 }
 
+export interface DryContentOption {
+  /**
+   * Which backend the Content-Type Builder generates/migrates tables into.
+   * `"file"` (GitHub/GitLab-backed) is on the roadmap but not implemented
+   * yet - there's no notion of a SQL column to add/drop there.
+   *
+   * @default "sqlite"
+   */
+  engine?: "sqlite" | "D1";
+  /**
+   * `sqlite` only: path to the database file, relative to the consuming
+   * project's cwd (or an absolute path).
+   *
+   * @default "content.sqlite"
+   */
+  file?: string;
+  /**
+   * `D1` only: the binding name configured in `wrangler.jsonc`'s
+   * `d1_databases[].binding` (e.g. `"CONTENT_DB"`) - required for
+   * `engine: "D1"`. The live `D1Database` itself is looked up per-request
+   * from `context.locals.runtime.env`, not from this option (it isn't a
+   * JSON-serializable value, unlike every other resolved option).
+   */
+  binding?: string;
+}
+
 export interface DryOption {
   /**
    * Base path the drycms admin UI is mounted on.
@@ -35,6 +61,7 @@ export interface DryOption {
    */
   path?: string;
   storage?: DryStorageOption;
+  content?: DryContentOption;
 }
 
 export interface ResolvedLocalStorageOption {
@@ -73,9 +100,24 @@ export type ResolvedStorageOption =
   | ResolvedGithubStorageOption
   | ResolvedGitlabStorageOption;
 
+export interface ResolvedSqliteContentOption {
+  engine: "sqlite";
+  file: string;
+}
+
+export interface ResolvedD1ContentOption {
+  engine: "D1";
+  binding: string;
+}
+
+/** A union so a future `"file"` engine can be added without widening every
+ * existing branch. */
+export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption;
+
 export interface ResolvedDryOption {
   path: string;
   storage: ResolvedStorageOption;
+  content: ResolvedContentOption;
 }
 
 /**
@@ -93,8 +135,15 @@ export const APP_ENTRYPOINT = "drycms/app.astro";
  */
 export const STORAGE_ROUTE_ENTRYPOINT = "drycms/routes/storage.ts";
 
+/**
+ * The Astro API endpoint backing the Content-Type Builder, serving
+ * `${path}/api/content-types/**`.
+ */
+export const CONTENT_ROUTE_ENTRYPOINT = "drycms/routes/content-types.ts";
+
 export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = "storage";
+export const DEFAULT_CONTENT_FILE = "content.sqlite";
 
 let dotEnvCache: Record<string, string> | undefined;
 
@@ -237,6 +286,34 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
   return { kind: "local", root: resolvePath(process.cwd(), root) };
 }
 
+function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
+  const engine = content.engine ?? "sqlite";
+  if (typeof engine !== "string") {
+    throw new TypeError(`[drycms] \`content.engine\` must be a string, received ${typeof engine}.`);
+  }
+  if (engine !== "sqlite" && engine !== "D1") {
+    throw new Error(
+      `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite" and "D1" are available today ("file" is on the roadmap).`,
+    );
+  }
+
+  if (engine === "D1") {
+    const binding = content.binding;
+    if (!binding || typeof binding !== "string") {
+      throw new Error(
+        '[drycms] `content.engine: "D1"` requires a `content.binding` string naming the D1 binding (matching `wrangler.jsonc`\'s `d1_databases[].binding`).',
+      );
+    }
+    return { engine: "D1", binding };
+  }
+
+  const file = content.file ?? DEFAULT_CONTENT_FILE;
+  if (typeof file !== "string") {
+    throw new TypeError(`[drycms] \`content.file\` must be a string, received ${typeof file}.`);
+  }
+  return { engine: "sqlite", file: resolvePath(process.cwd(), file) };
+}
+
 /**
  * Normalizes and validates user options. Throws on values that would produce a
  * broken route so the failure surfaces at config time rather than at request time.
@@ -273,5 +350,6 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
   return {
     path,
     storage: resolveStorageOption(options.storage),
+    content: resolveContentOption(options.content),
   };
 }

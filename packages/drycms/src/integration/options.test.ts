@@ -4,7 +4,11 @@ import { resolveOptions } from './options.js';
 
 describe('resolveOptions', () => {
 	it('defaults to /dry and local storage under ./storage', () => {
-		const expected = { path: '/dry', storage: { kind: 'local', root: resolve(process.cwd(), 'storage') } };
+		const expected = {
+			path: '/dry',
+			storage: { kind: 'local', root: resolve(process.cwd(), 'storage') },
+			content: { engine: 'sqlite', file: resolve(process.cwd(), 'content.sqlite') },
+		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);
 	});

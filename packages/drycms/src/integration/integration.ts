@@ -3,15 +3,18 @@ import preactIntegration from "@astrojs/preact";
 import type { AstroIntegration } from "astro";
 import {
   APP_ENTRYPOINT,
+  CONTENT_ROUTE_ENTRYPOINT,
   STORAGE_ROUTE_ENTRYPOINT,
   type DryOption,
   resolveOptions,
 } from "./options.js";
 import {
   VIRTUAL_CONFIG_TYPES,
+  VIRTUAL_CONTENT_CONFIG_TYPES,
   VIRTUAL_STORAGE_CONFIG_TYPES,
   dryFixOptimizeDeps,
   dryVirtualConfig,
+  dryVirtualContentConfig,
   dryVirtualStorageConfig,
 } from "./virtual.js";
 
@@ -121,6 +124,7 @@ export function dry(options: DryOption = {}): AstroIntegration {
             plugins: [
               dryVirtualConfig(resolved),
               dryVirtualStorageConfig(resolved.storage),
+              dryVirtualContentConfig(resolved.content),
               dryFixOptimizeDeps(aliases),
             ],
             resolve: { alias: aliases },
@@ -146,10 +150,22 @@ export function dry(options: DryOption = {}): AstroIntegration {
           entrypoint: STORAGE_ROUTE_ENTRYPOINT,
         });
 
+        // Server-rendered API endpoint backing the Content-Type Builder -
+        // see `routes/content-types.ts`.
+        injectRoute({
+          pattern: `${resolved.path}/api/content-types/[...slug]`,
+          entrypoint: CONTENT_ROUTE_ENTRYPOINT,
+        });
+
         logger.info(`admin UI mounted at ${resolved.path}`);
         if (resolved.storage.kind === "local") {
           logger.info(
             `storage: "local" files live under ${resolved.storage.root} - add "storage/" to .gitignore if this is a fresh project.`,
+          );
+        }
+        if (resolved.content.engine === "sqlite") {
+          logger.info(
+            `content: "sqlite" database lives at ${resolved.content.file} - add it to .gitignore if this is a fresh project.`,
           );
         }
       },
@@ -159,6 +175,10 @@ export function dry(options: DryOption = {}): AstroIntegration {
         injectTypes({
           filename: "storage-types.d.ts",
           content: VIRTUAL_STORAGE_CONFIG_TYPES,
+        });
+        injectTypes({
+          filename: "content-types-config-types.d.ts",
+          content: VIRTUAL_CONTENT_CONFIG_TYPES,
         });
       },
     },

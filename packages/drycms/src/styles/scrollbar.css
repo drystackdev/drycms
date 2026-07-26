@@ -57,6 +57,10 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  .dry .simplebar-content {
+    min-height: 100%;
+  }
+
   .dry .simplebar-content-wrapper {
     direction: inherit;
     box-sizing: border-box !important;
