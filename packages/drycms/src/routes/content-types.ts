@@ -6,6 +6,7 @@ import { createContentEngineAdapter } from "../content-types/engine/index.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../content-types/engine/types.js";
 import type { SavePlan } from "../content-types/migration.js";
 import { NamingError, validateContentTypeDefinition } from "../content-types/naming.js";
+import { collectTableNames, resolveTableTree } from "../content-types/tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
@@ -74,6 +75,25 @@ async function handleSave(
 ): Promise<Response> {
   const allTypes = await adapter.listContentTypes();
   validateContentTypeDefinition(definition, allTypes);
+
+  // `validateContentTypeDefinition` only rules out two types sharing a
+  // top-level *name* - it can't see that a repeatable field's generated
+  // child table (e.g. "posts_categories") might collide with some OTHER
+  // type's table name, since that's a property of the resolved tree, not
+  // the definition itself. Components never produce tables of their own.
+  if (definition.kind !== "component") {
+    const newTableNames = collectTableNames(resolveTableTree(definition, allTypes));
+    const others = allTypes.filter((t) => t.id !== definition.id && t.kind !== "component");
+    for (const other of others) {
+      const otherTableNames = collectTableNames(resolveTableTree(other, allTypes));
+      const collision = newTableNames.find((name) => otherTableNames.includes(name));
+      if (collision) {
+        throw new NamingError(
+          `Content type "${definition.name}" would generate table "${collision}", which is already used by "${other.name}".`,
+        );
+      }
+    }
+  }
 
   const plan: SavePlan = await adapter.planSave(definition);
   if (plan.destructiveSummary.length > 0 && !confirm) {

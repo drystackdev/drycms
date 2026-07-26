@@ -129,7 +129,7 @@ export default function DryLayout({ children }: Props) {
             title="Collapse navigation"
             onClick={toggleCollapsed}
           >
-            <Icon name={collapsed ? "ArrowRight" : "ArrowLeft"} />
+            <Icon name={collapsed.value ? "ArrowRight" : "ArrowLeft"} />
           </button>
         </div>
 

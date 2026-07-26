@@ -279,11 +279,15 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
       `[drycms] \`storage.root\` must be a string, received ${typeof root}.`,
     );
   }
+  // `local` normalizes trailing slashes away via `resolvePath` - github/gitlab
+  // don't go through that, so a config'd trailing slash would otherwise make
+  // their `stripRoot`'s `${root}/` prefix check never match a real path.
+  const normalizedRoot = root.replace(/\/+$/, "");
 
-  if (kind === "github") return resolveGithubStorageOption(root);
-  if (kind === "gitlab") return resolveGitlabStorageOption(root);
+  if (kind === "github") return resolveGithubStorageOption(normalizedRoot);
+  if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot);
 
-  return { kind: "local", root: resolvePath(process.cwd(), root) };
+  return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };
 }
 
 function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
@@ -294,6 +298,15 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
   if (engine !== "sqlite" && engine !== "D1") {
     throw new Error(
       `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite" and "D1" are available today ("file" is on the roadmap).`,
+    );
+  }
+  // A `binding` only means anything under `engine: "D1"` - silently falling
+  // back to local sqlite when it's set without that would turn a config typo
+  // into a "why is my data going to the wrong place" bug discovered later,
+  // instead of surfacing at config time like every other mistake here does.
+  if (engine !== "D1" && content.binding !== undefined) {
+    throw new Error(
+      '[drycms] `content.binding` is only used with `content.engine: "D1"` - add `engine: "D1"` or remove `binding`.',
     );
   }
 

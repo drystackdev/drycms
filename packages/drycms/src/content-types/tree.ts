@@ -45,6 +45,16 @@ class TreeResolutionError extends Error {
   }
 }
 
+/** Every table name a resolved tree produces: the root plus every child
+ * table, recursively. Used to detect a physical table-name collision
+ * between two different content types (e.g. a repeatable field generating
+ * `posts_categories` while another type is literally named that). */
+export function collectTableNames(node: TableNode): string[] {
+  const names = [node.tableName];
+  for (const child of node.children) names.push(...collectTableNames(child.node));
+  return names;
+}
+
 /** Every repeatable-component/relation-many child table gets these fixed
  * synthetic columns; they are never user-diffable (no id in `metadata`
  * produces them, they're implicit in `tableKind: 'child'`), so their

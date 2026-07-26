@@ -149,6 +149,7 @@ export default function ImageField({
                 multiple={false}
                 accept={IMAGE_EXTENSIONS}
                 initialFolderId={value ? parentFolderOf(value) : undefined}
+                syncUrl={false}
               />
             </div>
             <footer>

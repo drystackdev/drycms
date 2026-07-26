@@ -125,7 +125,12 @@ export function dry(options: DryOption = {}): AstroIntegration {
               dryVirtualConfig(resolved),
               dryVirtualStorageConfig(resolved.storage),
               dryVirtualContentConfig(resolved.content),
-              dryFixOptimizeDeps(aliases),
+              // Only needed for drycms's OWN `preactAliases()` (`aliases`
+              // is `{}` when the consumer supplies `@astrojs/preact`
+              // themselves) - registering it unconditionally would strip
+              // the CONSUMER's own legitimate `optimizeDeps` hints too,
+              // since none of their entries are keys in an empty `aliases`.
+              ...(hasPreact ? [] : [dryFixOptimizeDeps(aliases)]),
             ],
             resolve: { alias: aliases },
             // The package ships uncompiled `.astro`/`.css`, so it must go through

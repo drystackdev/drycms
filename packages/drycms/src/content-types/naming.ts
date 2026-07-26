@@ -90,6 +90,7 @@ export function validateContentTypeDefinition(
   validateContentTypeName(definition.name, others);
 
   const seen = new Map<string, string>();
+  const seenIds = new Set<string>();
   for (const field of definition.fields) {
     validateFieldName(field.name);
     const lower = field.name.toLowerCase();
@@ -98,6 +99,15 @@ export function validateContentTypeDefinition(
       throw new NamingError(`Field name "${field.name}" is used more than once on "${definition.name}".`);
     }
     seen.set(lower, field.name);
+
+    // `migration.ts`'s `diffColumns` keys columns by field id - a duplicate
+    // id (only reachable by calling the API directly, bypassing the UI's
+    // `crypto.randomUUID()`) would silently collapse two real columns into
+    // one during diffing without this check ever catching it.
+    if (seenIds.has(field.id)) {
+      throw new NamingError(`Field id "${field.id}" is used more than once on "${definition.name}".`);
+    }
+    seenIds.add(field.id);
   }
 }
 

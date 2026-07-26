@@ -161,7 +161,10 @@ export const dateFieldType: FieldTypeDefinition<Date> = {
   shape: "column",
   Editor: DatePickerField,
   sqlType: () => "TEXT",
-  serialize: (value) => value.toISOString(),
+  // `value` is a `Date` when serializing a live entry, but a plain ISO
+  // string when it arrives as a `FieldDefinition.default` that already
+  // round-tripped through JSON (see `migration.ts`'s `defaultLiteralFor`).
+  serialize: (value) => (value instanceof Date ? value : new Date(value)).toISOString(),
   deserialize: (raw) => new Date(raw as string),
   fts: false,
   configFields: [

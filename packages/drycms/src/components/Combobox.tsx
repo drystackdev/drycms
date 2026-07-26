@@ -5,6 +5,7 @@ import {
 	firstEnabledIndex,
 	lastEnabledIndex,
 	nextEnabledIndex,
+	useCloseOnBlur,
 	useOutsideClick,
 	usePopupFlip,
 	type ListOption,
@@ -61,11 +62,15 @@ export default function Combobox({
 	const filtered = useMemo(() => filterOptions(options, open ? text : ''), [options, open, text]);
 	const openUp = usePopupFlip(open, wrapRef);
 
-	// Controlled value changed elsewhere while the popup was closed - resync the display text.
+	// Controlled value changed elsewhere while the popup was closed - resync
+	// the display text. Also resyncs when `options` itself changes, so a
+	// `value` set before an async options list finishes loading still
+	// resolves to its label once the matching option shows up.
 	useEffect(() => {
 		if (value === undefined || open) return;
 		setText(labelFor(value));
-	}, [value, open]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [value, open, options]);
 
 	const commit = (option: ComboboxOption) => {
 		if (option.disabled) return;
@@ -90,6 +95,7 @@ export default function Combobox({
 	};
 
 	useOutsideClick(open, [wrapRef], revert);
+	useCloseOnBlur(open, wrapRef, revert);
 
 	const openAt = (index: number) => {
 		setOpen(true);

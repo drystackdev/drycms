@@ -6,6 +6,7 @@ import {
 	matchTypeahead,
 	nextEnabledIndex,
 	printableChar,
+	useCloseOnBlur,
 	useOutsideClick,
 	usePopupFlip,
 	useTypeahead,
@@ -72,6 +73,8 @@ export default function Select({
 		setOpen(false);
 		if (refocus) triggerRef.current?.focus();
 	};
+
+	useCloseOnBlur(open, wrapRef, () => close(false));
 
 	const focusIndex = (index: number) => {
 		optionRefs.current[index]?.focus();

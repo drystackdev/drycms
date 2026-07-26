@@ -129,6 +129,7 @@ export default function ContentTypes() {
                 },
               ]}
               rows={rows}
+              rowKey={(row) => row.id}
               emptyLabel="None yet."
               onRowClick={(row) =>
                 route(`${path}/content-types/${row.id}/edit`)

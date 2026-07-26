@@ -59,6 +59,11 @@ export interface FileManagerProps {
    * folder the current selection already lives in, instead of wherever the
    * page's URL happens to say. */
   initialFolderId?: string | null;
+  /** Whether folder navigation reads/writes the host page's URL and
+   * browser history. Set `false` for a `FileManager` embedded in a picker
+   * dialog (e.g. `ImageField`) - otherwise browsing folders in the dialog
+   * pushes history entries onto the page behind it. @default true */
+  syncUrl?: boolean;
 }
 
 type MoveCopyState = { mode: "move" | "copy"; ids: string[] } | null;
@@ -112,21 +117,31 @@ function writeFolderToUrl(folderId: string | null, replace: boolean) {
   else window.history.pushState(state, "", url);
 }
 
-/** Opens/closes a native `<dialog>` to match `active`, and reports back when the dialog closes itself (Escape, backdrop click, or an in-dialog `close()` call). */
+/** Opens/closes a native `<dialog>` to match `active`, and reports back when the dialog closes itself (Escape, backdrop click, or an in-dialog `close()` call) - but NOT when it closes because `active` itself just turned false (e.g. the caller already handled a successful confirm), since the native `close` event fires either way and can't tell the two apart on its own. */
 export function useDialogSync(active: boolean, onDismiss: () => void) {
   const ref = useRef<HTMLDialogElement>(null);
+  const closingProgrammatically = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (active && !el.open) el.showModal();
-    if (!active && el.open) el.close();
+    if (!active && el.open) {
+      closingProgrammatically.current = true;
+      el.close();
+    }
   }, [active]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const handleClose = () => onDismiss();
+    const handleClose = () => {
+      if (closingProgrammatically.current) {
+        closingProgrammatically.current = false;
+        return;
+      }
+      onDismiss();
+    };
     el.addEventListener("close", handleClose);
     return () => el.removeEventListener("close", handleClose);
   }, [onDismiss]);
@@ -1537,20 +1552,23 @@ export default function FileManager({
   accept,
   defaultView = "list",
   initialFolderId,
+  syncUrl = true,
 }: FileManagerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(() =>
-    initialFolderId !== undefined ? initialFolderId : readFolderFromUrl(),
+    initialFolderId !== undefined ? initialFolderId : syncUrl ? readFolderFromUrl() : null,
   );
   // Establishes a baseline history entry for whatever folder we opened on
   // (root or one restored from the URL), so the very first back-button press
   // doesn't skip past it.
   useEffect(() => {
+    if (!syncUrl) return;
     writeFolderToUrl(currentFolderId, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // Back/forward moves between folders the same way clicking into one does.
   useEffect(() => {
+    if (!syncUrl) return;
     const onPopState = (event: PopStateEvent) => {
       const state = event.state as { [FOLDER_QUERY_KEY]?: string | null } | null;
       const id =
@@ -1562,13 +1580,14 @@ export default function FileManager({
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   /** Centralizes the two user-driven navigations (opening a folder,
    * clicking a breadcrumb) so both stay in sync with browser history. */
   const goToFolder = (id: string | null) => {
     setCurrentFolderId(id);
     setQuery("");
-    writeFolderToUrl(id, false);
+    if (syncUrl) writeFolderToUrl(id, false);
   };
   const [loadedFolders, setLoadedFolders] = useState<Set<string | null>>(
     () => new Set(),
@@ -1595,6 +1614,12 @@ export default function FileManager({
     [],
   );
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // Mirrors the latest render's value for reads *after* an `await` inside an
+  // event handler - `selectedIds`/`previewId` themselves are closed over at
+  // call time and go stale if the user changes selection while the request
+  // is in flight (see `moveEntriesInto`/`submitRename`).
+  const previewIdRef = useRef(previewId);
+  previewIdRef.current = previewId;
   const [renameId, setRenameId] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<MoveCopyState>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -1753,6 +1778,8 @@ export default function FileManager({
         : value
           ? [value]
           : [];
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
 
   const setSelection = (ids: string[]) => {
     if (value === undefined) setUncontrolledSelected(ids);
@@ -1929,7 +1956,9 @@ export default function FileManager({
 
   const moveEntriesInto = async (ids: string[], targetId: string | null) => {
     if (!(await performMove(ids, targetId))) return;
-    setSelection(selectedIds.filter((id) => !ids.includes(id)));
+    // Read the live selection via the ref, not the `selectedIds` closed over
+    // when this call started - it may have changed while the move was in flight.
+    setSelection(selectedIdsRef.current.filter((id) => !ids.includes(id)));
   };
 
   const navigateBreadcrumb = (id: string | null) => {
@@ -2085,10 +2114,12 @@ export default function FileManager({
       setEntries((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
     } catch {
       toast.add({ title: "Couldn't rename - try again", type: "error" });
-      if (selectedIds.includes(guessedId)) {
-        setSelection(selectedIds.map((id) => (id === guessedId ? oldId : id)));
+      // Same rationale as `moveEntriesInto`: read the live selection/preview
+      // via ref, not the values closed over before the `await`.
+      if (selectedIdsRef.current.includes(guessedId)) {
+        setSelection(selectedIdsRef.current.map((id) => (id === guessedId ? oldId : id)));
       }
-      if (previewId === guessedId) setPreviewId(oldId);
+      if (previewIdRef.current === guessedId) setPreviewId(oldId);
       await revertAfterFailure([currentFolderId, parentId]);
     } finally {
       setBusy(false);
@@ -2145,19 +2176,31 @@ export default function FileManager({
     setBusy(true);
     try {
       const updated = await source.replace(id, file);
-      setEntries((current) =>
-        current.map((entry) => (entry.id === id ? { ...updated, previewUrl: optimisticPreview } : entry)),
-      );
+      // Use the server's own `previewUrl`, not the local blob URL - the
+      // optimistic one is only a stand-in until the real upload lands.
+      setEntries((current) => current.map((entry) => (entry.id === id ? updated : entry)));
     } catch {
       toast.add({ title: "Couldn't replace - try again", type: "error" });
       await revertAfterFailure([currentFolderId]);
     } finally {
       setBusy(false);
+      if (optimisticPreview?.startsWith("blob:")) URL.revokeObjectURL(optimisticPreview);
     }
   };
 
   const submitUpload = async (files: File[]) => {
     if (!source.upload) return;
+    // Two files sharing a name would collide on the same optimistic
+    // placeholder id below (and on the server's target path) - reject
+    // up front with a clear message instead of a confusing partial upload.
+    const names = new Set<string>();
+    for (const file of files) {
+      if (names.has(file.name)) {
+        toast.add({ title: `Duplicate filename "${file.name}" in this upload`, type: "error" });
+        return;
+      }
+      names.add(file.name);
+    }
     const folderId = currentFolderId;
     // Optimistic placeholders, one per file, using client-known
     // name/size/(object-URL preview) - upload rejects on a name collision
@@ -2193,6 +2236,9 @@ export default function FileManager({
       await revertAfterFailure([folderId]);
     } finally {
       setBusy(false);
+      for (const placeholder of placeholders) {
+        if (placeholder.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(placeholder.previewUrl);
+      }
     }
   };
 

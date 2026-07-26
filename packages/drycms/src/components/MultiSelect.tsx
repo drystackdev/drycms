@@ -5,6 +5,7 @@ import {
 	firstEnabledIndex,
 	lastEnabledIndex,
 	nextEnabledIndex,
+	useCloseOnBlur,
 	useOutsideClick,
 	usePopupFlip,
 	type ListOption,
@@ -90,6 +91,7 @@ export default function MultiSelect({
 	};
 
 	useOutsideClick(open, [wrapRef], close);
+	useCloseOnBlur(open, wrapRef, close);
 
 	const onKeyDown = (event: KeyboardEvent) => {
 		if (disabled) return;

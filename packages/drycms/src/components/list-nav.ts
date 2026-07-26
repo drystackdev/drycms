@@ -30,7 +30,7 @@ export function nextEnabledIndex(options: ListOption[], from: number, direction:
 	let index = from;
 	while (true) {
 		const candidate = index + direction;
-		if (candidate < 0 || candidate >= options.length) return index;
+		if (candidate < 0 || candidate >= options.length) return from;
 		index = candidate;
 		if (!options[index]?.disabled) return index;
 	}
@@ -79,6 +79,26 @@ export function useOutsideClick(open: boolean, refs: RefObject<HTMLElement>[], o
 		document.addEventListener('pointerdown', handlePointerDown);
 		return () => document.removeEventListener('pointerdown', handlePointerDown);
 	}, [open, onClose]);
+}
+
+/** Closes an open popup when focus leaves `ref`'s subtree, e.g. via Tab -
+ * `useOutsideClick` only reacts to pointer events, so keyboard-only users
+ * tabbing past the trigger/input previously left the popup open and
+ * visually stranded. `focusout` bubbles (unlike `blur`), so one listener on
+ * the wrapper catches focus leaving any descendant (input, option, ...). */
+export function useCloseOnBlur(open: boolean, ref: RefObject<HTMLElement>, onClose: () => void) {
+	useEffect(() => {
+		if (!open) return;
+		const el = ref.current;
+		if (!el) return;
+		const handleFocusOut = (event: FocusEvent) => {
+			const next = event.relatedTarget as Node | null;
+			if (next && el.contains(next)) return;
+			onClose();
+		};
+		el.addEventListener('focusout', handleFocusOut);
+		return () => el.removeEventListener('focusout', handleFocusOut);
+	}, [open, ref, onClose]);
 }
 
 /**

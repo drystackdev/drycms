@@ -175,6 +175,16 @@ async function handleUpload(request: Request, folder: string, apiBase: string): 
   if (files.length === 0) {
     throw new StorageError("invalid_path", "No files in the upload.");
   }
+  // Reject an in-batch name collision up front: writing sequentially and
+  // only discovering the collision on the second file would otherwise leave
+  // the first file actually written while reporting the whole batch failed.
+  const seenNames = new Set<string>();
+  for (const file of files) {
+    if (seenNames.has(file.name)) {
+      throw new StorageError("invalid_path", `Duplicate filename "${file.name}" in the same upload.`);
+    }
+    seenNames.add(file.name);
+  }
 
   const entries: FileEntry[] = [];
   for (const file of files) {
@@ -263,7 +273,11 @@ export const PATCH: APIRoute = async (context) => {
     if (!to) throw new StorageError("invalid_path", "A destination path is required.");
 
     const apiBase = apiBaseFrom(context.url);
-    if (to === from) {
+    // Same-path is a legitimate no-op for `move` (dropping a file back where
+    // it started), but NOT for `copy` - falling through there lets the
+    // adapter's normal existing-destination check 409, which is what the
+    // client's `copyWithRetry` expects to trigger its "name copy" retry.
+    if (to === from && body.action === "move") {
       const stat = await adapter.stat(from);
       if (!stat) throw new StorageError("not_found", `"${from}" does not exist.`);
       return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBase) }, 200);

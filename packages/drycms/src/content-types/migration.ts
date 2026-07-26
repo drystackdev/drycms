@@ -202,7 +202,12 @@ interface ColumnDiff {
   drops: ColumnSpec[];
   renames: { from: ColumnSpec; to: ColumnSpec }[];
   retypes: { from: ColumnSpec; to: ColumnSpec }[];
-  uniqueToggles: { column: ColumnSpec; nowUnique: boolean }[];
+  /** `oldColumnName` is the name the column had (and the unique index was
+   * created under) BEFORE this diff's renames apply - needed because
+   * SQLite's `RENAME COLUMN` repoints an existing index at the new column
+   * without renaming the index itself, so a same-save rename+unique-drop
+   * must target the OLD name to actually find it. */
+  uniqueToggles: { column: ColumnSpec; oldColumnName: string; nowUnique: boolean }[];
   destructive: DestructiveChange[];
 }
 
@@ -233,7 +238,7 @@ function diffColumns(oldNode: TableNode, newNode: TableNode): ColumnDiff {
         diff.renames.push({ from: oldCol, to: newCol });
       }
       if (oldCol.unique !== newCol.unique) {
-        diff.uniqueToggles.push({ column: newCol, nowUnique: newCol.unique });
+        diff.uniqueToggles.push({ column: newCol, oldColumnName: oldCol.name, nowUnique: newCol.unique });
       }
       continue;
     }
@@ -293,9 +298,9 @@ function alterTableStatements(tableName: string, diff: ColumnDiff): Statement[] 
     statements.push({ sql: `ALTER TABLE ${quoteIdent(tableName)} ADD COLUMN ${columnDefSql(col)};`, description: `Add ${tableName}.${col.name}` });
   }
 
-  for (const { column, nowUnique } of diff.uniqueToggles) {
+  for (const { column, oldColumnName, nowUnique } of diff.uniqueToggles) {
     statements.push(
-      nowUnique ? createUniqueIndexStatement(tableName, column) : dropUniqueIndexStatement(tableName, column.name),
+      nowUnique ? createUniqueIndexStatement(tableName, column) : dropUniqueIndexStatement(tableName, oldColumnName),
     );
   }
 

@@ -29,6 +29,11 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * they don't also trigger the row click. */
   onRowClick?: (row: Row) => void;
   actions?: JSX.Element
+  /** Stable identity for a row, so per-row UI state (an open menu, an
+   * inline input from `render`) stays with the right row across
+   * sort/filter/page instead of whatever row now occupies the same index.
+   * Falls back to the row's index when omitted. */
+  rowKey?: (row: Row) => string | number;
 }
 
 type SortState = { key: string; direction: "asc" | "desc" } | null;
@@ -55,7 +60,8 @@ export default function DataTable<Row extends Record<string, unknown>>({
   searchPlaceholder = "Filter…",
   emptyLabel = "No results.",
   onRowClick,
-  actions
+  actions,
+  rowKey,
 }: DataTableProps<Row>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
@@ -167,7 +173,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
             ) : (
               visible.map((row, index) => (
                 <tr
-                  key={index}
+                  key={rowKey ? rowKey(row) : index}
                   style={onRowClick ? { cursor: "pointer" } : undefined}
                   onClick={() => onRowClick?.(row)}
                 >
