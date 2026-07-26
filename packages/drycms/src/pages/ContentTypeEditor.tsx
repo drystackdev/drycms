@@ -64,6 +64,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
 
   const [pendingConfirm, setPendingConfirm] = useState<DestructiveChange[] | null>(null);
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -160,6 +162,25 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     }
   }
 
+  async function handleDelete() {
+    if (!definition) return;
+    setDeleting(true);
+    try {
+      await api.remove(definition.id);
+      setShowDeleteConfirm(false);
+      toast.add({ type: "success", title: `Deleted "${definition.label || definition.name}".` });
+      route(`${path}/content-types`);
+    } catch (error) {
+      toast.add({
+        type: "error",
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loadError) return <span class="error">{loadError}</span>;
   if (!definition) return <span class="hint">Loading…</span>;
 
@@ -229,6 +250,20 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         </div>
       </div>
 
+      {!isNew && (
+        <div class="content-type-editor-danger">
+          <div>
+            <h2>Danger zone</h2>
+            <p>
+              Delete this {definition.kind} and all of its data. This cannot be undone.
+            </p>
+          </div>
+          <button type="button" class="destructive" onClick={() => setShowDeleteConfirm(true)}>
+            Delete {definition.kind}
+          </button>
+        </div>
+      )}
+
       <FieldDialog
         open={fieldDialogOpen}
         editingField={editingField}
@@ -265,6 +300,21 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         busy={saving}
         onConfirm={() => submit(true)}
         onCancel={() => setPendingConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title={`Delete "${definition.label || definition.name}"?`}
+        message={
+          <p>
+            This permanently deletes the {definition.kind} and all of its data. This cannot be undone.
+          </p>
+        }
+        confirmLabel="Delete"
+        destructive
+        busy={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
       />
     </>
   );

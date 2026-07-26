@@ -2028,6 +2028,30 @@
       }
     }
 
+    /* Edit-only (hidden for `isNew`) - deleting a not-yet-created content
+     * type doesn't make sense. */
+    .content-type-editor-danger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-block-start: 2rem;
+      padding: 1.25rem 1.5rem;
+      border: 1px solid var(--dry-error);
+      border-radius: var(--dry-radius-lg);
+
+      & h2 {
+        font-size: 1rem;
+        font-weight: 700;
+      }
+
+      & p {
+        margin-block-start: 0.25rem;
+        color: var(--dry-muted-foreground);
+        font-size: var(--dry-text-sm);
+      }
+    }
+
     /* Add/Edit Field dialog - header/footer stay put while the grid (the
      * only part with unbounded content) scrolls, same reasoning as
      * `.image-picker-dialog` above: without a max-height the dialog just
@@ -2105,7 +2129,6 @@
       padding: 0;
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      gap: 0.125rem;
 
       @media (width < 48rem) {
         position: static;
@@ -2149,6 +2172,9 @@
     }
 
     .content-types-panel {
+      padding: 2rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-xl);
       & h3 {
         margin-block-start: 0;
       }

@@ -96,7 +96,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   return (
     <div class="stack">
       {searchable && (
-        <div class="row">
+        <div class="row" style={{gap: '0.5rem'}}>
           <input
             type="search"
             value={query}
@@ -112,7 +112,6 @@ export default function DataTable<Row extends Record<string, unknown>>({
           <small>
             {sorted.length} of {rows.length}
           </small>
-          {actions && <hr class="separator" aria-orientation="vertical"/>}
           {actions}
         </div>
       )}

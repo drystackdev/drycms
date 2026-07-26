@@ -123,7 +123,7 @@ export default function FieldsList({
           />
         )}
         {orderedEntries.length === 0 && !idEntry && (
-          <li class="hint">No fields yet.</li>
+          <li class="hint empty" style={{marginInline: '1rem'}}>No fields yet.</li>
         )}
         {orderedEntries.map((item) =>
           item.system ? (

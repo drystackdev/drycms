@@ -114,9 +114,9 @@ export default function ContentTypes() {
                   render: (_value, row) => (
                     <div class="stack" style={{ gap: "0.125rem" }}>
                       <span>{row.label}</span>
-                      {row.description && (
-                        <span class="hint">{row.description}</span>
-                      )}
+                      <span class="hint">
+                        {row.description || <i>No description</i>}
+                      </span>
                     </div>
                   ),
                 },
@@ -125,6 +125,7 @@ export default function ContentTypes() {
                   label: "Fields",
                   numeric: true,
                   sortable: true,
+                  render: (_v, row) => <span class="badge">{row.fieldCount}</span>
                 },
               ]}
               rows={rows}
