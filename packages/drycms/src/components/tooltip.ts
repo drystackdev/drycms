@@ -51,16 +51,21 @@ function initTooltip() {
 		el.classList.toggle('dry-tooltip-below', !right && !above);
 		el.classList.toggle('dry-tooltip-right', right);
 		el.classList.add('dry-tooltip-visible');
-		const tipRect = el.getBoundingClientRect();
+		// offsetWidth/offsetHeight, not getBoundingClientRect() - the latter
+		// reflects the entrance `scale` transform, which is still animating in
+		// from a fraction of full size right after the class toggle above, and
+		// would throw off the centering math below.
+		const tipWidth = el.offsetWidth;
+		const tipHeight = el.offsetHeight;
 		if (right) {
-			const top = rect.top + rect.height / 2 - tipRect.height / 2;
+			const top = rect.top + rect.height / 2 - tipHeight / 2;
 			el.style.left = `${rect.right + TOOLTIP_GAP}px`;
-			el.style.top = `${Math.max(TOOLTIP_MARGIN, Math.min(top, window.innerHeight - tipRect.height - TOOLTIP_MARGIN))}px`;
+			el.style.top = `${Math.max(TOOLTIP_MARGIN, Math.min(top, window.innerHeight - tipHeight - TOOLTIP_MARGIN))}px`;
 			return;
 		}
-		const left = rect.left + rect.width / 2 - tipRect.width / 2;
-		const top = above ? rect.top - TOOLTIP_GAP - tipRect.height : rect.bottom + TOOLTIP_GAP;
-		el.style.left = `${Math.max(TOOLTIP_MARGIN, Math.min(left, window.innerWidth - tipRect.width - TOOLTIP_MARGIN))}px`;
+		const left = rect.left + rect.width / 2 - tipWidth / 2;
+		const top = above ? rect.top - TOOLTIP_GAP - tipHeight : rect.bottom + TOOLTIP_GAP;
+		el.style.left = `${Math.max(TOOLTIP_MARGIN, Math.min(left, window.innerWidth - tipWidth - TOOLTIP_MARGIN))}px`;
 		el.style.top = `${top}px`;
 	};
 

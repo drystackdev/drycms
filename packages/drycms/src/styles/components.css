@@ -1217,6 +1217,7 @@
       background-color: var(--dry-popover);
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
+      animation: dry-dialog-in 120ms ease;
 
       /* Wider on desktop - 20rem/32rem reads cramped once there's room to spare. */
       @media (width >= 48rem) {
@@ -1231,6 +1232,7 @@
         );
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
+        animation: dry-dialog-backdrop-in 120ms ease;
       }
 
       /* A direct-child selector would miss a form-wrapped header/footer
@@ -1632,8 +1634,11 @@
       color: #ffffff;
       box-shadow: var(--dry-shadow-sm);
       opacity: 0;
+      scale: 0.4;
       pointer-events: none;
-      transition: opacity 120ms ease;
+      transition:
+        opacity 120ms ease,
+        scale 120ms ease;
 
       &::before {
         content: "";
@@ -1643,40 +1648,56 @@
         border: 5px solid transparent;
       }
 
-      &.dry-tooltip-above::before {
-        inset-block-start: 100%;
-        border-block-end-width: 0;
-        border-block-start-width: 6px;
-        border-block-start-color: light-dark(
-          var(--dry-grey-800),
-          var(--dry-grey-700)
-        );
+      /* Zooms in from the arrow tip, i.e. from the point touching the
+       * trigger, rather than from the tooltip's own center - the origin
+       * has to match the arrow's position on each placement variant. */
+      &.dry-tooltip-above {
+        transform-origin: 50% 100%;
+
+        &::before {
+          inset-block-start: 100%;
+          border-block-end-width: 0;
+          border-block-start-width: 6px;
+          border-block-start-color: light-dark(
+            var(--dry-grey-800),
+            var(--dry-grey-700)
+          );
+        }
       }
 
-      &.dry-tooltip-below::before {
-        inset-block-end: 100%;
-        border-block-start-width: 0;
-        border-block-end-width: 6px;
-        border-block-end-color: light-dark(
-          var(--dry-grey-800),
-          var(--dry-grey-700)
-        );
+      &.dry-tooltip-below {
+        transform-origin: 50% 0%;
+
+        &::before {
+          inset-block-end: 100%;
+          border-block-start-width: 0;
+          border-block-end-width: 6px;
+          border-block-end-color: light-dark(
+            var(--dry-grey-800),
+            var(--dry-grey-700)
+          );
+        }
       }
 
-      &.dry-tooltip-right::before {
-        inset-inline-start: 0;
-        inset-block-start: 50%;
-        translate: -100% -50%;
-        border-inline-end-width: 6px;
-        border-inline-start-width: 0;
-        border-inline-end-color: light-dark(
-          var(--dry-grey-800),
-          var(--dry-grey-700)
-        );
+      &.dry-tooltip-right {
+        transform-origin: 0% 50%;
+
+        &::before {
+          inset-inline-start: 0;
+          inset-block-start: 50%;
+          translate: -100% -50%;
+          border-inline-end-width: 6px;
+          border-inline-start-width: 0;
+          border-inline-end-color: light-dark(
+            var(--dry-grey-800),
+            var(--dry-grey-700)
+          );
+        }
       }
 
       &.dry-tooltip-visible {
         opacity: 1;
+        scale: 1;
       }
     }
 
@@ -3088,6 +3109,19 @@
   @keyframes dry-sheet-up {
     from {
       translate: 0 100%;
+    }
+  }
+
+  @keyframes dry-dialog-in {
+    from {
+      opacity: 0;
+      scale: 0.95;
+    }
+  }
+
+  @keyframes dry-dialog-backdrop-in {
+    from {
+      opacity: 0;
     }
   }
 
