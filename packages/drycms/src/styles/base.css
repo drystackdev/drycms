@@ -191,6 +191,9 @@
 			padding: 1rem;
 			border-bottom: 1px dashed var(--dry-border);
 			vertical-align: middle;
+			& > .empty {
+				margin-inline: -1rem;
+			}
 		}
 
 		:where(tbody tr) {
