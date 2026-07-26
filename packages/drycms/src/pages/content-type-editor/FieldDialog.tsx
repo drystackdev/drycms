@@ -359,7 +359,7 @@ export default function FieldDialog({
     <dialog
       ref={dialogRef}
       aria-label={editingField ? "Edit field" : "Add field"}
-      class="xl field-dialog"
+      class="lg field-dialog"
     >
       {open && (
         <>

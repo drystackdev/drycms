@@ -12,7 +12,7 @@ import type {
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
-import { ArrowLeftIcon } from "../components/icons.js";
+import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
 import FeaturesFieldset from "./content-type-editor/FeaturesFieldset.js";
 import FieldDialog from "./content-type-editor/FieldDialog.js";
 import FieldsList, {
@@ -327,27 +327,27 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               )
             }
           />
+
+          {!isNew && (
+            <div class="content-type-editor-danger">
+              <div>
+                <h2>Danger zone</h2>
+                <p>
+                  Delete this {definition.kind} and all of its data. This cannot
+                  be undone.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="destructive"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <TrashIcon /> Delete {definition.kind}
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      {!isNew && (
-        <div class="content-type-editor-danger">
-          <div>
-            <h2>Danger zone</h2>
-            <p>
-              Delete this {definition.kind} and all of its data. This cannot be
-              undone.
-            </p>
-          </div>
-          <button
-            type="button"
-            class="destructive"
-            onClick={() => setShowDeleteConfirm(true)}
-          >
-            Delete {definition.kind}
-          </button>
-        </div>
-      )}
 
       <FieldDialog
         open={fieldDialogOpen}

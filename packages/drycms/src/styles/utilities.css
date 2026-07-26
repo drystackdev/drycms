@@ -51,6 +51,23 @@
 			overscroll-behavior-x: contain;
 		}
 
+		/* Positioning context for .scroll-over (components.css), kept as a
+		sibling of .scrollbar-auto rather than its child so the injected overlay
+		can't scroll away with the content or join its grid/flex layout. */
+		.scrollbar-auto-host {
+			position: relative;
+		}
+
+		.scrollbar-auto {
+			overflow-y: auto;
+			scrollbar-width: none;
+
+			&::-webkit-scrollbar {
+				width: 0;
+				height: 0;
+			}
+		}
+
 		.muted {
 			color: var(--dry-muted-foreground);
 		}

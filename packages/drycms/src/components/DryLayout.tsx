@@ -44,9 +44,6 @@ const NAV: {
     icon: "Media",
     ready: true,
   },
-  // Listed before 'content' - `url.startsWith(item.href)` is a simple
-  // prefix match, and "/content-types" itself starts with "/content", so
-  // the more specific route must win the `.find()` lookup below.
   {
     key: "content-types",
     label: "Content Types",
@@ -83,6 +80,15 @@ const NAV: {
     ready: false,
   },
 ];
+
+/** Whether `href` is the active nav item for `url` - an exact match, or a
+ * path segment beneath it (`${href}/...`). A plain `url.startsWith(href)`
+ * would also match "/content-types" against href "/content" (since one
+ * string just literally starts with the other's characters), lighting up
+ * two nav items at once once the "Content" entry ships. */
+function isActiveNavItem(url: string, href: string): boolean {
+  return url === href || url.startsWith(`${href}/`);
+}
 
 export default function DryLayout({ children }: Props) {
   const { url } = useLocation();
@@ -140,7 +146,7 @@ export default function DryLayout({ children }: Props) {
               <a
                 key={item.key}
                 href={item.href}
-                aria-current={url.startsWith(item.href) ? "page" : undefined}
+                aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
                 data-tooltip={collapsed.value ? item.label : undefined}
                 data-tooltip-placement="right"
               >
