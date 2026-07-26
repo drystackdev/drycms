@@ -6,6 +6,7 @@ import Combobox from "../components/Combobox.js";
 import DataTable from "../components/DataTable.js";
 import DatePickerField from "../components/DatePickerField.js";
 import Demo from "../components/Demo.js";
+import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import FileManager from "../components/FileManager.js";
 import Icon from "../components/Icon.js";
 import ImageField from "../components/ImageField.js";
@@ -23,7 +24,6 @@ import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
-import { createMemoryFileSource } from "../mock/file-manager.js";
 import {
   code,
   collectionOptions,
@@ -230,10 +230,11 @@ function TabsDemoPreview() {
   );
 }
 
-/** Plain full demo: list/grid, move/copy/delete/rename/replace/upload, all
- * against an in-memory sandbox - never a real `storage/` folder. */
+/** Plain full demo: list/grid, move/copy/delete/rename/replace/upload -
+ * against the same real `storage/` folder the Media page uses, so every
+ * action here actually reads/writes real files. */
 function FileManagerPreview() {
-  const source = useMemo(() => createMemoryFileSource(), []);
+  const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   return <FileManager source={source} />;
 }
 
@@ -331,6 +332,7 @@ function DatePickerFieldPreview() {
         label="Published at"
         value={publishedAt}
         onChange={setPublishedAt}
+        time
         helperText="Pick a day, then adjust the time below."
       />
       <DatePickerField
@@ -338,7 +340,6 @@ function DatePickerFieldPreview() {
         value={birthday}
         onChange={setBirthday}
         mode="select"
-        time={false}
         helperText="Day / month / year dropdowns, no time."
       />
       <DatePickerField
@@ -346,15 +347,15 @@ function DatePickerFieldPreview() {
         value={noteDate}
         onChange={setNoteDate}
         mode="input"
-        helperText="Free text, nothing enforced."
+        helperText="Native browser date input."
       />
     </div>
   );
 }
 
 function ImageFieldPreview() {
-  const source = useMemo(() => createMemoryFileSource(), []);
-  const [cover, setCover] = useState("cover-12.jpg");
+  const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
+  const [cover, setCover] = useState("image.png");
   return (
     <div style="width: 100%; max-width: 20rem">
       <ImageField
@@ -986,7 +987,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="date-picker-field"
           title="Date picker field"
-          description="Same label + control + helper text contract as TextField; mode='calendar' shows a month grid, mode='select' three dropdowns, mode='input' a free-typed text field. time={false} drops the NumberField-driven hour/minute row and switches the display format to date-only."
+          description="Same label + control + helper text contract as TextField; mode='calendar' shows a month grid, mode='select' three dropdowns, mode='input' the browser's native <input type='date'>. time (off by default) adds a NumberField-driven hour/minute row and switches mode='input' to type='datetime-local'."
           code={code.datePickerField!}
         >
           <DatePickerFieldPreview />
@@ -1360,7 +1361,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="file-manager"
           title="File manager"
-          description="Self-contained: list/grid views, search, multi-select with move/copy/delete, rename/replace, full-screen preview, and upload - all against an in-memory `source`, never a real folder."
+          description="Self-contained: list/grid views, search, multi-select with move/copy/delete, rename/replace, full-screen preview, and upload - against the same real storage/ folder as the Media page, via createHttpFileSource."
           code={code.fileManager!}
         >
           <FileManagerPreview />

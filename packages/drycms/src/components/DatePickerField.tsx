@@ -1,5 +1,5 @@
 import dayjs, { type Dayjs } from "dayjs";
-import { useEffect, useId, useRef, useState } from "preact/hooks";
+import { useId, useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon } from "./icons.js";
 import { useOutsideClick, usePopupFlip } from "./list-nav.js";
@@ -10,14 +10,15 @@ export type DatePickerMode = "calendar" | "select" | "input";
 export interface DatePickerFieldProps extends FieldProps<Date> {
   /**
    * "calendar" - month grid. "select" - three day/month/year dropdowns.
-   * "input" - free text, unparsed input passes through untouched.
+   * "input" - the browser's native `<input type="date">` (or
+   * "datetime-local" when `time` is set), with its own built-in picker UI.
    * @default "calendar"
    */
   mode?: DatePickerMode;
   /**
    * Whether the field also captures a time-of-day, not just a date. Adds an
    * Hour/Minute NumberField pair to "calendar"/"select", and switches
-   * "input"'s format between "DD/MM/YYYY" and "DD/MM/YYYY HH:mm". @default false
+   * "input" to `type="datetime-local"`. @default false
    */
   time?: boolean;
   /** Only enforced in "calendar" mode, where out-of-range days are disabled. */
@@ -69,39 +70,26 @@ export default function DatePickerField({
 
   const format = time ? "DD/MM/YYYY HH:mm" : "DD/MM/YYYY";
 
-  const [text, setText] = useState(() => dayjs(value).format(format));
-  const focusedRef = useRef(false);
-  useEffect(() => {
-    if (mode === "input" && !focusedRef.current) {
-      setText(dayjs(value).format(format));
-    }
-  }, [value, mode, format]);
-
   if (mode === "input") {
+    const nativeType = time ? "datetime-local" : "date";
+    const nativeFormat = time ? "YYYY-MM-DDTHH:mm" : "YYYY-MM-DD";
     return (
       <div class="field">
         <label for={fieldId}>{label}</label>
         <input
           id={fieldId}
-          type="text"
+          type={nativeType}
           name={name}
-          value={text}
-          placeholder={placeholder}
+          value={dayjs(value).format(nativeFormat)}
+          min={min ? dayjs(min).format(nativeFormat) : undefined}
+          max={max ? dayjs(max).format(nativeFormat) : undefined}
           disabled={disabled}
           aria-invalid={error || undefined}
-          onInput={(event) => setText((event.target as HTMLInputElement).value)}
-          onFocus={() => {
-            focusedRef.current = true;
-          }}
-          onBlur={() => {
-            focusedRef.current = false;
-            // Free text, nothing enforced: an unparseable value is left as-is
-            // rather than snapped back to the last committed date.
-            const parsed = dayjs(text, format);
-            if (parsed.isValid()) {
-              onChange(parsed.toDate());
-              setText(parsed.format(format));
-            }
+          onInput={(event) => {
+            const raw = (event.target as HTMLInputElement).value;
+            if (!raw) return;
+            const parsed = dayjs(raw);
+            if (parsed.isValid()) onChange(parsed.toDate());
           }}
         />
         {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}

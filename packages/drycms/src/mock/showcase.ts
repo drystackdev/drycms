@@ -538,6 +538,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   label="Published at"
   value={publishedAt}
   onChange={setPublishedAt}
+  time
   helperText="Pick a day, then adjust the time below."
 />
 
@@ -546,7 +547,6 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   value={birthday}
   onChange={setBirthday}
   mode="select"
-  time={false}
   helperText="Day / month / year dropdowns, no time."
 />
 
@@ -555,7 +555,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   value={noteDate}
   onChange={setNoteDate}
   mode="input"
-  helperText="Free text, nothing enforced."
+  helperText="Native browser date input."
 />`,
   imageField: `import ImageField from 'drycms/components/ImageField';
 

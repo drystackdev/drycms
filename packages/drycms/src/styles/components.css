@@ -451,7 +451,7 @@
         height: 100%;
         border: none;
         box-shadow: none;
-        background-color:transparent;
+        background-color: transparent;
         border-radius: 0;
         text-align: center;
         appearance: textfield;
@@ -779,7 +779,7 @@
       position: relative;
       width: 100%;
       max-width: 16rem;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 16 / 9;
       overflow: hidden;
       border: 1px solid var(--dry-input);
       border-radius: var(--dry-radius-md);
@@ -794,7 +794,7 @@
       object-fit: contain;
     }
 
-    .image-field-empty {
+    button.image-field-empty {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -829,19 +829,36 @@
       position: absolute;
       inset: 0;
       display: flex;
+      height: 100%;
       align-items: flex-end;
       padding: 0.625rem 2.25rem 0.625rem 0.625rem;
       border: none;
       border-radius: inherit;
-      background: linear-gradient(to top, rgb(0 0 0 / 70%), rgb(0 0 0 / 0%) 60%);
+      background: linear-gradient(
+        to top,
+        rgb(0 0 0 / 70%),
+        rgb(0 0 0 / 0%) 60%
+      );
       box-shadow: none;
       color: white;
       text-align: start;
       cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
 
       &:hover:not(:disabled) {
-        background: linear-gradient(to top, rgb(0 0 0 / 80%), rgb(0 0 0 / 10%) 60%);
+        opacity: 1;
+        background: linear-gradient(
+          to top,
+          rgb(0 0 0 / 80%),
+          rgb(0 0 0 / 10%) 60%
+        );
       }
+
+      &:hover:not(:disabled) ~ button.image-field-remove {
+        opacity: 1;
+      }
+      
 
       &:disabled {
         cursor: not-allowed;
@@ -858,13 +875,15 @@
 
     .image-field-remove {
       position: absolute;
-      inset-block-start: 0.5rem;
-      inset-inline-end: 0.5rem;
+      inset-block-start: 0.25rem;
+      inset-inline-end: 0.25rem;
       background-color: rgb(0 0 0 / 55%);
       color: white;
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
 
       &:hover:not(:disabled) {
-        background-color: rgb(0 0 0 / 75%);
+        opacity: 1;
       }
     }
 
@@ -2233,11 +2252,22 @@
       width: 100%;
     }
 
+    /* Sticky within whatever scrolls it - the page itself on a full
+     * `FileManager` page, or `.image-picker-body` inside ImageField's
+     * dialog - so the current folder (and its drop target for drag-to-move)
+     * stays reachable while the list scrolls underneath. `--dry-card`
+     * matches both hosts: a plain page's `.card` wrapper and the picker
+     * dialog's own background (`--dry-popover` is the same value). */
     .file-breadcrumb {
+      position: sticky;
+      top: 0;
+      z-index: 5;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 0.15rem;
+      padding-block: 0.375rem;
+      background-color: var(--dry-card);
       font-size: var(--dry-text-sm);
 
       & button {
@@ -2262,6 +2292,22 @@
     .file-breadcrumb-sep {
       margin-inline: 0.25rem;
       color: var(--dry-muted-foreground);
+    }
+
+    /* On a real page, `.main`'s own sticky `.topbar` already claims `top: 0`
+     * in the same scroll container - stick just below it instead of
+     * underneath it (same idea as `.showcase-nav`'s topbar-aware offset). */
+    .main .file-breadcrumb {
+      top: var(--dry-topbar-height);
+    }
+
+    /* ...except inside ImageField's picker dialog: `<dialog>` breaks out of
+     * `.main`'s layout into the top layer, so there's no topbar sharing its
+     * scroll container - `.image-picker-body` is, and `top: 0` there is
+     * already correct. Same specificity as the rule above (two classes) -
+     * defined after it, so it wins the tie regardless of DOM depth. */
+    .image-picker-dialog .file-breadcrumb {
+      top: 0;
     }
 
     .file-toolbar {
@@ -2680,8 +2726,12 @@
     /* ImageField's picker - much roomier than the rename/upload dialogs
      * above since it hosts a full `FileManager`; header/footer stay put
      * while `.image-picker-body` (the only part with unbounded content)
-     * scrolls, rather than the whole dialog growing past the viewport. */
-    .image-picker-dialog {
+     * scrolls, rather than the whole dialog growing past the viewport.
+     * `[open]`-scoped for the same reason as `.file-preview[open]` above -
+     * an unscoped `display` would override the UA `dialog:not([open])
+     * { display: none }` rule and leave the closed dialog sitting in normal
+     * flow, swallowing clicks meant for the page underneath. */
+    .image-picker-dialog[open] {
       display: flex;
       flex-direction: column;
       width: min(64rem, calc(100vw - 4rem));
@@ -2699,6 +2749,11 @@
       flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;
+      & .file-selection-bar,
+      & .file-table-selection {
+        box-shadow: none;
+        background-color: var(--dry-muted);
+      }
     }
 
     .upload-dropzone {
@@ -2953,6 +3008,86 @@
       &.active {
         border-color: var(--dry-primary);
       }
+    }
+
+    /*
+     * Mobile: any anchored popover-style panel - select/combobox/multi-select
+     * listbox, date picker calendar/select-row, popover action menu - becomes
+     * a full-width bottom drawer instead of a small anchored dropdown, same
+     * treatment as the sidebar's off-canvas drawer above. `.popover-menu`'s
+     * position/left/top/transform are computed inline by JS (see
+     * Popover.tsx) for desktop anchoring, so `!important` is needed there to
+     * win over the inline style - scoped to this one selector, this one
+     * breakpoint.
+     */
+    @media (width < 48rem) {
+      .select-popup,
+      .select-popup.up,
+      .datepicker-popup,
+      .datepicker-popup.up {
+        position: fixed;
+        z-index: 49;
+        inset-inline: 0;
+        top: auto;
+        bottom: 0;
+        width: auto;
+        max-width: none;
+        max-height: 70vh;
+        border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
+        box-shadow: var(--dry-shadow-lg);
+        animation: dry-sheet-up 200ms ease;
+      }
+
+      .datepicker-grid {
+        margin-inline: auto;
+      }
+
+      .select:has(> .select-popup)::before,
+      .select:has(> .datepicker-popup)::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 48;
+        background-color: light-dark(
+          rgb(var(--dry-grey-channel) / 80%),
+          rgb(0 0 0 / 35%)
+        );
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+      }
+
+      .popover-menu {
+        position: fixed !important;
+        inset-inline: 0 !important;
+        top: auto !important;
+        bottom: 0 !important;
+        transform: none !important;
+        width: auto;
+        max-width: none;
+        max-height: 70vh;
+        z-index: 49;
+        border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
+        animation: dry-sheet-up 200ms ease;
+      }
+
+      .popover:has(> .popover-menu:popover-open)::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 48;
+        background-color: light-dark(
+          rgb(var(--dry-grey-channel) / 80%),
+          rgb(0 0 0 / 35%)
+        );
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+      }
+    }
+  }
+
+  @keyframes dry-sheet-up {
+    from {
+      translate: 0 100%;
     }
   }
 
