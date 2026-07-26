@@ -52,6 +52,12 @@ export interface FileManagerProps {
   accept?: string[];
   /** @default "list" */
   defaultView?: "list" | "grid";
+  /** Seeds the folder open on mount, taking priority over the URL-restored
+   * one (`?dry_folder=`). For a host that remounts `FileManager` fresh each
+   * time it's shown inside a picker dialog - e.g. reopening at whatever
+   * folder the current selection already lives in, instead of wherever the
+   * page's URL happens to say. */
+  initialFolderId?: string | null;
 }
 
 type MoveCopyState = { mode: "move" | "copy"; ids: string[] } | null;
@@ -106,7 +112,7 @@ function writeFolderToUrl(folderId: string | null, replace: boolean) {
 }
 
 /** Opens/closes a native `<dialog>` to match `active`, and reports back when the dialog closes itself (Escape, backdrop click, or an in-dialog `close()` call). */
-function useDialogSync(active: boolean, onDismiss: () => void) {
+export function useDialogSync(active: boolean, onDismiss: () => void) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -354,6 +360,8 @@ interface ViewProps {
    * "already spoken for" without looking like they're still checkbox-selected. */
   clipboard: MoveCopyState;
   isDisabled: (entry: FileEntry) => boolean;
+  /** Wrong file type per `accept` - dimmed with low opacity, distinct from `isDisabled`'s other reasons (see the main component's comment). */
+  isNotAccepted: (entry: FileEntry) => boolean;
   onToggle: (entry: FileEntry) => void;
   /** cmd/ctrl+click on the name toggles selection instead of opening - the event is
    * forwarded so the caller can check the modifier. */
@@ -376,6 +384,7 @@ function ListView({
   selectedIds,
   clipboard,
   isDisabled,
+  isNotAccepted,
   sortDir,
   onSort,
   onToggle,
@@ -503,6 +512,7 @@ function ListView({
               const selected = selectedIds.includes(entry.id);
               const pending = clipboard?.ids.includes(entry.id) ?? false;
               const disabled = isDisabled(entry);
+              const notAccepted = isNotAccepted(entry);
               const { date, time } = formatDate(entry.modifiedAt);
               const isDropTarget = entry.kind === "folder";
               return (
@@ -511,6 +521,7 @@ function ListView({
                   class={
                     [
                       pending ? "pending" : selected ? "selected" : null,
+                      notAccepted ? "not-accepted" : null,
                       dragOverId === entry.id ? "drag-over" : null,
                     ]
                       .filter(Boolean)
@@ -594,6 +605,7 @@ function GridView({
   selectedIds,
   clipboard,
   isDisabled,
+  isNotAccepted,
   onToggle,
   onOpen,
   more,
@@ -614,6 +626,7 @@ function GridView({
         const selected = selectedIds.includes(entry.id);
         const pending = clipboard?.ids.includes(entry.id) ?? false;
         const disabled = isDisabled(entry);
+        const notAccepted = isNotAccepted(entry);
         const isDropTarget = entry.kind === "folder";
         const showMedia = preview && isImageEntry(entry);
         return (
@@ -623,6 +636,7 @@ function GridView({
               "file-card",
               showMedia ? "file-card-media" : null,
               pending ? "pending" : null,
+              notAccepted ? "not-accepted" : null,
               dragOverId === entry.id ? "drag-over" : null,
             ]
               .filter(Boolean)
@@ -1526,10 +1540,11 @@ export default function FileManager({
   multiple = true,
   accept,
   defaultView = "list",
+  initialFolderId,
 }: FileManagerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(() =>
-    readFolderFromUrl(),
+    initialFolderId !== undefined ? initialFolderId : readFolderFromUrl(),
   );
   // Establishes a baseline history entry for whatever folder we opened on
   // (root or one restored from the URL), so the very first back-button press
@@ -1772,6 +1787,11 @@ export default function FileManager({
   const selectionLocked = clipboard !== null;
   const isDisabled = (entry: FileEntry) =>
     selectionLocked || !isAccepted(entry, accept);
+  /** Distinct from `isDisabled` above: only the "wrong file type" reason gets
+   * dimmed, not a transient clipboard lock - that already reads as disabled
+   * via the checkbox itself, and dimming every row for it would make the
+   * clipboard flow look like the whole browser went inert. */
+  const isNotAccepted = (entry: FileEntry) => !isAccepted(entry, accept);
   const selectableVisible = visible.filter((entry) => !isDisabled(entry));
   const allSelected =
     selectableVisible.length > 0 &&
@@ -2289,6 +2309,7 @@ export default function FileManager({
           selectedIds={selectedIds}
           clipboard={clipboard}
           isDisabled={isDisabled}
+          isNotAccepted={isNotAccepted}
           sortDir={sortDir}
           onSort={() =>
             setSortDir((current) => (current === "asc" ? "desc" : "asc"))
@@ -2324,6 +2345,7 @@ export default function FileManager({
           selectedIds={selectedIds}
           clipboard={clipboard}
           isDisabled={isDisabled}
+          isNotAccepted={isNotAccepted}
           onToggle={toggleSelect}
           onOpen={openEntry}
           more={renderMore}

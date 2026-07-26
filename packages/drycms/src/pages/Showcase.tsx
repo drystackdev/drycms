@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
+import CheckField from "../components/CheckField.js";
 import Combobox from "../components/Combobox.js";
 import DataTable from "../components/DataTable.js";
+import DatePickerField from "../components/DatePickerField.js";
 import Demo from "../components/Demo.js";
 import FileManager from "../components/FileManager.js";
 import Icon from "../components/Icon.js";
+import ImageField from "../components/ImageField.js";
 import {
   CopyIcon,
   type IconName,
@@ -14,6 +17,7 @@ import {
   iconBodies,
 } from "../components/icons.js";
 import MultiSelect from "../components/MultiSelect.js";
+import NumberField from "../components/NumberField.js";
 import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
@@ -258,6 +262,107 @@ function TextFieldPreview() {
         onChange={setBio}
         multiline
         placeholder="Write something…"
+      />
+    </div>
+  );
+}
+
+function NumberFieldPreview() {
+  const [priority, setPriority] = useState(5);
+  const [wordCount, setWordCount] = useState(0);
+  const [price, setPrice] = useState(9.5);
+  return (
+    <div class="grid cols-2" style="width: 100%">
+      <NumberField
+        label="Priority"
+        value={priority}
+        onChange={setPriority}
+        min={0}
+        max={10}
+        helperText="Higher numbers sort first."
+      />
+      <NumberField
+        label="Word count"
+        value={wordCount}
+        onChange={setWordCount}
+        error
+        helperText="Must be greater than 0."
+      />
+      <NumberField
+        label="Price"
+        value={price}
+        onChange={setPrice}
+        min={0}
+        step={0.5}
+        helperText="Steps by 0.5 per click."
+      />
+    </div>
+  );
+}
+
+function CheckFieldPreview() {
+  const [visible, setVisible] = useState(true);
+  const [autoPublish, setAutoPublish] = useState(false);
+  return (
+    <div class="row" style="gap: 1.5rem">
+      <CheckField
+        label="Visible in listings"
+        value={visible}
+        onChange={setVisible}
+        helperText="Shown on the public site once enabled."
+      />
+      <CheckField
+        label="Auto-publish"
+        value={autoPublish}
+        onChange={setAutoPublish}
+        ui="switch"
+      />
+    </div>
+  );
+}
+
+function DatePickerFieldPreview() {
+  const [publishedAt, setPublishedAt] = useState(new Date(2026, 6, 20, 9, 30));
+  const [birthday, setBirthday] = useState(new Date(1995, 3, 12));
+  const [noteDate, setNoteDate] = useState(new Date(2026, 6, 1));
+  return (
+    <div class="grid cols-2" style="width: 100%">
+      <DatePickerField
+        label="Published at"
+        value={publishedAt}
+        onChange={setPublishedAt}
+        helperText="Pick a day, then adjust the time below."
+      />
+      <DatePickerField
+        label="Birthday"
+        value={birthday}
+        onChange={setBirthday}
+        mode="select"
+        time={false}
+        helperText="Day / month / year dropdowns, no time."
+      />
+      <DatePickerField
+        label="Custom note date"
+        value={noteDate}
+        onChange={setNoteDate}
+        mode="input"
+        helperText="Free text, nothing enforced."
+      />
+    </div>
+  );
+}
+
+function ImageFieldPreview() {
+  const source = useMemo(() => createMemoryFileSource(), []);
+  const [cover, setCover] = useState("cover-12.jpg");
+  return (
+    <div style="width: 100%; max-width: 20rem">
+      <ImageField
+        label="Cover image"
+        source={source}
+        value={cover}
+        onChange={setCover}
+        helperText="Shown at the top of the post."
       />
     </div>
   );
@@ -849,6 +954,54 @@ function DemoContent({ id }: { id: string }) {
           code={code.textField!}
         >
           <TextFieldPreview />
+        </Demo>
+      );
+
+    case "number-field":
+      return (
+        <Demo
+          id="number-field"
+          title="Number field"
+          description="Same label + control + helper text contract as TextField, backed by a numeric input; empty/invalid input resolves to 0."
+          code={code.numberField!}
+        >
+          <NumberFieldPreview />
+        </Demo>
+      );
+
+    case "check-field":
+      return (
+        <Demo
+          id="check-field"
+          title="Check field"
+          description="Same label + control + helper text contract as TextField; ui='switch' swaps the checkbox for role='switch' (real ARIA semantics, not a class)."
+          code={code.checkField!}
+        >
+          <CheckFieldPreview />
+        </Demo>
+      );
+
+    case "date-picker-field":
+      return (
+        <Demo
+          id="date-picker-field"
+          title="Date picker field"
+          description="Same label + control + helper text contract as TextField; mode='calendar' shows a month grid, mode='select' three dropdowns, mode='input' a free-typed text field. time={false} drops the NumberField-driven hour/minute row and switches the display format to date-only."
+          code={code.datePickerField!}
+        >
+          <DatePickerFieldPreview />
+        </Demo>
+      );
+
+    case "image-field":
+      return (
+        <Demo
+          id="image-field"
+          title="Image field"
+          description="Same label + control + helper text contract as TextField; the control is a 4:3 frame that opens a FileManager-backed dialog restricted to images (accept), pre-scrolled to the current selection."
+          code={code.imageField!}
+        >
+          <ImageFieldPreview />
         </Demo>
       );
 

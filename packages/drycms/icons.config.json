@@ -47,6 +47,7 @@
     "AddFolder": "solar:add-folder-linear",
     "Plus": "lucide:plus",
     "Minus": "lucide:minus",
-    "Paste": "solar:clipboard-check-linear"
+    "Paste": "solar:clipboard-check-linear",
+    "Calendar": "solar:calendar-linear"
   }
 }

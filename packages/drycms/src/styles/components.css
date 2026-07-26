@@ -403,6 +403,133 @@
       &:has(> input[aria-expanded="true"]) .select-caret {
         rotate: 180deg;
       }
+
+      /* Static trailing icon (DatePickerField's calendar glyph) - no rotate-on-open. */
+      .select-icon {
+        flex: none;
+      }
+    }
+
+    /* DatePickerField's calendar/select trigger: no ring on focus/open. */
+    .select.datepicker-trigger:focus-within,
+    .select.datepicker-trigger:has(> button[aria-expanded="true"]) {
+      border-color: var(--dry-input);
+      box-shadow: var(--dry-shadow-xs);
+    }
+
+    /* Numeric input flanked by decrement/increment buttons. */
+    .stepper {
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+      height: 2.5rem;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      box-shadow: var(--dry-shadow-xs);
+      background-color: transparent;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      &:focus-within {
+        border-color: none;
+      }
+
+      &:has(> input[aria-invalid="true"]) {
+        border-color: var(--dry-error);
+      }
+
+      &:has(> input[disabled]) {
+        cursor: not-allowed;
+        background-color: var(--dry-muted);
+      }
+
+      & > input {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 100%;
+        border: none;
+        box-shadow: none;
+        background-color:transparent;
+        border-radius: 0;
+        text-align: center;
+        appearance: textfield;
+
+        &:focus-visible {
+          outline: none;
+          box-shadow: none;
+        }
+
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+          appearance: none;
+          margin: 0;
+        }
+      }
+
+      & > button {
+        flex: none;
+        width: 2.5rem;
+        height: 100%;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--dry-muted-foreground);
+
+        &:hover:not(:disabled) {
+          color: var(--dry-foreground);
+          background-color: rgb(var(--dry-grey-channel) / 8%);
+        }
+
+        &:first-child {
+          border-top-left-radius: var(--dry-radius-md);
+          border-bottom-left-radius: var(--dry-radius-md);
+        }
+
+        &:last-child {
+          border-top-right-radius: var(--dry-radius-md);
+          border-bottom-right-radius: var(--dry-radius-md);
+        }
+
+        &:disabled {
+          color: var(--dry-disabled-foreground);
+          background-color: unset;
+          cursor: not-allowed;
+        }
+      }
+    }
+
+    /* Checkbox/switch + its label, outlined to match TextField's input. */
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      width: 100%;
+      height: 2.5rem;
+      padding: 0 0.875rem;
+      box-shadow: var(--dry-shadow-xs);
+      background-color: transparent;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      &:has(> input[aria-invalid="true"]) {
+        border-color: var(--dry-error);
+      }
+
+      &:has(> input[disabled]) {
+        cursor: not-allowed;
+        background-color: var(--dry-muted);
+        opacity: 0.7;
+      }
+
+      & > label {
+        margin: 0;
+        cursor: pointer;
+      }
     }
 
     /* Selected value in a MultiSelect. */
@@ -514,6 +641,230 @@
           color: var(--dry-disabled-foreground);
           pointer-events: none;
         }
+      }
+    }
+
+    /* Calendar/select-triple popup for DatePickerField, anchored below `.select`. */
+    .datepicker-popup {
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 0.375rem);
+      left: 0;
+      width: max-content;
+      padding: 0.75rem;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      &.up {
+        top: auto;
+        bottom: calc(100% + 0.375rem);
+      }
+    }
+
+    .datepicker-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-block-end: 0.5rem;
+      font-size: var(--dry-text-sm);
+      font-weight: 500;
+
+      & > button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        padding: 0;
+        border: none;
+        border-radius: var(--dry-radius-sm);
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--dry-muted-foreground);
+
+        &:hover {
+          color: var(--dry-foreground);
+          background-color: rgb(var(--dry-grey-channel) / 8%);
+        }
+      }
+    }
+
+    .datepicker-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 2.25rem);
+      gap: 0.125rem;
+
+      & > .datepicker-weekday {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 1.75rem;
+        font-size: var(--dry-text-xs);
+        color: var(--dry-muted-foreground);
+        font-weight: 500;
+      }
+
+      & > button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 2.25rem;
+        padding: 0;
+        border: none;
+        border-radius: 16px;
+        background-color: transparent;
+        box-shadow: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+
+        &:hover:not(:disabled):not([aria-selected="true"]) {
+          background-color: var(--dry-accent);
+        }
+
+        &.outside {
+          color: var(--dry-disabled-foreground);
+        }
+
+        &[aria-current="date"] {
+          font-weight: 700;
+          color: var(--dry-primary);
+        }
+
+        &[aria-selected="true"] {
+          background-color: var(--dry-primary);
+          color: var(--dry-primary-foreground);
+        }
+
+        &:disabled {
+          color: var(--dry-disabled-foreground);
+          cursor: not-allowed;
+          pointer-events: none;
+        }
+      }
+    }
+
+    .datepicker-time {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.5rem;
+      margin-block-start: 0.75rem;
+      padding-block-start: 0.75rem;
+      border-block-start: 1px solid var(--dry-border);
+
+      & > * {
+        flex: 1;
+      }
+    }
+
+    .datepicker-select-row {
+      display: flex;
+      gap: 0.5rem;
+
+      & > select {
+        flex: 1;
+        min-width: 5.5rem;
+        width: auto;
+      }
+    }
+
+    /* 4:3 frame for ImageField - a plain "choose" button when empty, the
+     * picked file's thumbnail under a permanent name/remove overlay once
+     * something's selected (unlike the file manager's own hover-reveal
+     * media card, this is the field's only content so it stays visible). */
+    .image-field-box {
+      position: relative;
+      width: 100%;
+      max-width: 16rem;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-muted);
+    }
+
+    .image-field-thumb {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .image-field-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: inherit;
+      background: none;
+      box-shadow: none;
+      color: var(--dry-muted-foreground);
+      font-size: var(--dry-text-sm);
+
+      &:hover:not(:disabled) {
+        background-color: rgb(var(--dry-grey-channel) / 8%);
+        color: var(--dry-foreground);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        color: var(--dry-disabled-foreground);
+      }
+
+      & > svg {
+        width: 1.75rem;
+        height: 1.75rem;
+      }
+    }
+
+    .image-field-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: flex-end;
+      padding: 0.625rem 2.25rem 0.625rem 0.625rem;
+      border: none;
+      border-radius: inherit;
+      background: linear-gradient(to top, rgb(0 0 0 / 70%), rgb(0 0 0 / 0%) 60%);
+      box-shadow: none;
+      color: white;
+      text-align: start;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background: linear-gradient(to top, rgb(0 0 0 / 80%), rgb(0 0 0 / 10%) 60%);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+      }
+    }
+
+    .image-field-name {
+      overflow: hidden;
+      font-size: var(--dry-text-sm);
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .image-field-remove {
+      position: absolute;
+      inset-block-start: 0.5rem;
+      inset-inline-end: 0.5rem;
+      background-color: rgb(0 0 0 / 55%);
+      color: white;
+
+      &:hover:not(:disabled) {
+        background-color: rgb(0 0 0 / 75%);
       }
     }
 
@@ -1898,7 +2249,11 @@
       /* Drag-to-move: hovering dragged item(s) over a crumb (incl. "Root") -
        * same treatment as the list/grid's folder drop target. */
       & button.drag-over {
-        background-color: color-mix(in srgb, var(--dry-primary) 20%, transparent);
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 20%,
+          transparent
+        );
         outline: 2px dashed var(--dry-primary);
         outline-offset: 2px;
       }
@@ -1990,13 +2345,23 @@
         pointer-events: none;
       }
 
+      /* Wrong file type for `accept` - browsable still (so a folder full of
+       * mixed files doesn't turn half-invisible), just visibly not choosable. */
+      & tbody tr.not-accepted {
+        opacity: 0.45;
+      }
+
       /* Drag-to-move: hovering dragged item(s) over a folder row - solid
        * (unlike the translucent hover/selected tints) so the drop target
        * reads unambiguously. One background change on the row, not an
        * outline per `<td>` (which never merges into a single rectangle
        * around the row). */
       & tbody tr.drag-over td {
-        background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 20%,
+          var(--dry-card)
+        );
       }
     }
 
@@ -2067,10 +2432,19 @@
         opacity: 0.6;
       }
 
+      /* Wrong file type for `accept` - see the list view's `tr.not-accepted`. */
+      &.not-accepted {
+        opacity: 0.45;
+      }
+
       /* Drag-to-move: hovering dragged item(s) over a folder card - solid,
        * see the list view's `tr.drag-over` for why. */
       &.drag-over {
-        background-color: color-mix(in srgb, var(--dry-primary) 20%, var(--dry-card));
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 20%,
+          var(--dry-card)
+        );
         outline: 2px dashed var(--dry-primary);
         outline-offset: 2px;
       }
@@ -2301,6 +2675,30 @@
 
     .file-upload-dialog {
       width: 38rem;
+    }
+
+    /* ImageField's picker - much roomier than the rename/upload dialogs
+     * above since it hosts a full `FileManager`; header/footer stay put
+     * while `.image-picker-body` (the only part with unbounded content)
+     * scrolls, rather than the whole dialog growing past the viewport. */
+    .image-picker-dialog {
+      display: flex;
+      flex-direction: column;
+      width: min(64rem, calc(100vw - 4rem));
+      max-width: min(64rem, calc(100vw - 4rem));
+      height: min(40rem, calc(100vh - 4rem));
+      max-height: min(40rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    .image-picker-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
     }
 
     .upload-dropzone {

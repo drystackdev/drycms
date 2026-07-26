@@ -48,6 +48,7 @@ export const iconBodies = {
 	Plus: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 12h14m-7-7v14\"/>",
 	Minus: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 12h14\"/>",
 	Paste: "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M16 4c2.175.012 3.353.109 4.121.877C21 5.756 21 7.17 21 9.998v6c0 2.829 0 4.243-.879 5.122c-.878.878-2.293.878-5.121.878H9c-2.828 0-4.243 0-5.121-.878C3 20.24 3 18.827 3 15.998v-6c0-2.828 0-4.242.879-5.121C4.647 4.109 5.825 4.012 8 4\"/><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m9 13.4l1.714 1.6L15 11\"/><path d=\"M8 3.5A1.5 1.5 0 0 1 9.5 2h5A1.5 1.5 0 0 1 16 3.5v1A1.5 1.5 0 0 1 14.5 6h-5A1.5 1.5 0 0 1 8 4.5z\"/></g>",
+	Calendar: "<g fill=\"none\"><path stroke=\"currentColor\" stroke-width=\"1.5\" d=\"M2 12c0-3.771 0-5.657 1.172-6.828S6.229 4 10 4h4c3.771 0 5.657 0 6.828 1.172S22 8.229 22 12v2c0 3.771 0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14z\"/><path stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\" d=\"M7 4V2.5M17 4V2.5M2.5 9h19\"/><path fill=\"currentColor\" d=\"M18 17a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0\"/></g>",
 } as const;
 
 /** `viewBox` matching each entry in `iconBodies`. */
@@ -93,6 +94,7 @@ export const iconViewBoxes = {
 	Plus: "0 0 24 24",
 	Minus: "0 0 24 24",
 	Paste: "0 0 24 24",
+	Calendar: "0 0 24 24",
 } as const;
 
 export type IconName = keyof typeof iconBodies;
@@ -381,5 +383,12 @@ export function MinusIcon(props: IconProps) {
 export function PasteIcon(props: IconProps) {
 	return (
 		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M16 4c2.175.012 3.353.109 4.121.877C21 5.756 21 7.17 21 9.998v6c0 2.829 0 4.243-.879 5.122c-.878.878-2.293.878-5.121.878H9c-2.828 0-4.243 0-5.121-.878C3 20.24 3 18.827 3 15.998v-6c0-2.828 0-4.242.879-5.121C4.647 4.109 5.825 4.012 8 4\"/><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m9 13.4l1.714 1.6L15 11\"/><path d=\"M8 3.5A1.5 1.5 0 0 1 9.5 2h5A1.5 1.5 0 0 1 16 3.5v1A1.5 1.5 0 0 1 14.5 6h-5A1.5 1.5 0 0 1 8 4.5z\"/></g>" }} />
+	);
+}
+
+/** `solar:calendar-linear` */
+export function CalendarIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\"><path stroke=\"currentColor\" stroke-width=\"1.5\" d=\"M2 12c0-3.771 0-5.657 1.172-6.828S6.229 4 10 4h4c3.771 0 5.657 0 6.828 1.172S22 8.229 22 12v2c0 3.771 0 5.657-1.172 6.828S17.771 22 14 22h-4c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14z\"/><path stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\" d=\"M7 4V2.5M17 4V2.5M2.5 9h19\"/><path fill=\"currentColor\" d=\"M18 17a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0\"/></g>" }} />
 	);
 }

@@ -69,7 +69,13 @@ export const groups: ShowcaseGroup[] = [
   },
   {
     label: "Field inputs",
-    items: [{ id: "text-field", label: "Text field" }],
+    items: [
+      { id: "text-field", label: "Text field" },
+      { id: "number-field", label: "Number field" },
+      { id: "check-field", label: "Check field" },
+      { id: "date-picker-field", label: "Date picker field" },
+      { id: "image-field", label: "Image field" },
+    ],
   },
   {
     label: "Navigation",
@@ -483,5 +489,81 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={setBio}
   multiline
   placeholder="Write something…"
+/>`,
+  numberField: `import NumberField from 'drycms/components/NumberField';
+
+<NumberField
+  label="Priority"
+  value={priority}
+  onChange={setPriority}
+  min={0}
+  max={10}
+  helperText="Higher numbers sort first."
+/>
+
+<NumberField
+  label="Word count"
+  value={wordCount}
+  onChange={setWordCount}
+  error
+  helperText="Must be greater than 0."
+/>
+
+<NumberField
+  label="Price"
+  value={price}
+  onChange={setPrice}
+  min={0}
+  step={0.5}
+  helperText="Steps by 0.5 per click."
+/>`,
+  checkField: `import CheckField from 'drycms/components/CheckField';
+
+<CheckField
+  label="Visible in listings"
+  value={visible}
+  onChange={setVisible}
+  helperText="Shown on the public site once enabled."
+/>
+
+<CheckField
+  label="Auto-publish"
+  value={autoPublish}
+  onChange={setAutoPublish}
+  ui="switch"
+/>`,
+  datePickerField: `import DatePickerField from 'drycms/components/DatePickerField';
+
+<DatePickerField
+  label="Published at"
+  value={publishedAt}
+  onChange={setPublishedAt}
+  helperText="Pick a day, then adjust the time below."
+/>
+
+<DatePickerField
+  label="Birthday"
+  value={birthday}
+  onChange={setBirthday}
+  mode="select"
+  time={false}
+  helperText="Day / month / year dropdowns, no time."
+/>
+
+<DatePickerField
+  label="Custom note date"
+  value={noteDate}
+  onChange={setNoteDate}
+  mode="input"
+  helperText="Free text, nothing enforced."
+/>`,
+  imageField: `import ImageField from 'drycms/components/ImageField';
+
+<ImageField
+  label="Cover image"
+  source={source}
+  value={cover}
+  onChange={setCover}
+  helperText="Shown at the top of the post."
 />`,
 };
