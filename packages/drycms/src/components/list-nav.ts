@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 
 export interface ListOption {
@@ -164,4 +164,42 @@ export function printableChar(event: KeyboardEvent): string | null {
 		return null;
 	}
 	return event.key;
+}
+
+/** Opens/closes a native `<dialog>` to match `active`, and reports back when
+ * the dialog closes itself (Escape, backdrop click, or an in-dialog
+ * `close()` call) - but NOT when it closes because `active` itself just
+ * turned false (e.g. the caller already handled a successful confirm),
+ * since the native `close` event fires either way and can't tell the two
+ * apart on its own. Shared by every native-`<dialog>` consumer (`Confirm
+ * Dialog`, `FieldDialog`, `ImageField`, `FileManager`'s own dialogs). */
+export function useDialogSync(active: boolean, onDismiss: () => void) {
+	const ref = useRef<HTMLDialogElement>(null);
+	const closingProgrammatically = useRef(false);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		if (active && !el.open) el.showModal();
+		if (!active && el.open) {
+			closingProgrammatically.current = true;
+			el.close();
+		}
+	}, [active]);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		const handleClose = () => {
+			if (closingProgrammatically.current) {
+				closingProgrammatically.current = false;
+				return;
+			}
+			onDismiss();
+		};
+		el.addEventListener('close', handleClose);
+		return () => el.removeEventListener('close', handleClose);
+	}, [onDismiss]);
+
+	return ref;
 }

@@ -1,9 +1,10 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import FileManager, { useDialogSync } from "./FileManager.js";
+import FileManager from "./FileManager.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import { thumbnailUrl } from "./file-manager-utils.js";
-import { CloseIcon, UploadIcon } from "./icons.js";
+import { CloseIcon, MediaIcon, UploadIcon } from "./icons.js";
+import { useDialogSync } from "./list-nav.js";
 
 export interface ImageFieldProps extends FieldProps<string> {
   /** Where the picker dialog's `FileManager` reads its files from. */
@@ -123,7 +124,7 @@ export default function ImageField({
             aria-haspopup="dialog"
             onClick={openPicker}
           >
-            <UploadIcon />
+            <MediaIcon />
             <span>Choose image</span>
           </button>
         )}

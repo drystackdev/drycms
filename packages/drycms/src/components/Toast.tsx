@@ -264,18 +264,26 @@ function ToastCard({ item, index, offsetY, expanded, onResize }: ToastCardProps)
 	};
 
 	const typeIcon = TYPE_ICON[item.type];
-	const state = item.closing ? 'closing' : mounted ? 'open' : 'starting';
+	// 'open' is the CSS rest state (no rule needed for it) - only 'starting'/
+	// 'closing' carry one, so only those two ever appear as a class.
+	const state = item.closing ? 'closing' : !mounted ? 'starting' : undefined;
+
+	const cardClass = [
+		'toast',
+		item.type,
+		state,
+		expanded && 'expanded',
+		index > 0 && 'behind',
+		swipe.active && 'swiping',
+		item.swipeDirection === 'down' && 'swipe-down',
+	]
+		.filter(Boolean)
+		.join(' ');
 
 	return (
 		<div
 			ref={ref}
-			class="toast"
-			data-type={item.type}
-			data-state={state}
-			data-expanded={expanded ? '' : undefined}
-			data-behind={index > 0 ? '' : undefined}
-			data-swiping={swipe.active ? '' : undefined}
-			data-swipe-direction={item.swipeDirection}
+			class={cardClass}
 			role={item.priority === 'high' ? 'alert' : 'status'}
 			aria-live={item.priority === 'high' ? 'assertive' : 'polite'}
 			style={{
@@ -416,11 +424,18 @@ export default function Toaster({ position = 'bottom-end' }: ToasterProps) {
 	});
 	const frontmostHeight = heights[ordered[0]?.id ?? ''] ?? FALLBACK_HEIGHT;
 
+	const viewportClass = [
+		'toast-viewport',
+		position.startsWith('top') && 'top',
+		position.endsWith('start') && 'start',
+	]
+		.filter(Boolean)
+		.join(' ');
+
 	return (
 		<div
 			ref={viewportRef}
-			class="toast-viewport"
-			data-position={position}
+			class={viewportClass}
 			role="region"
 			aria-label="Notifications"
 			// Reserves the full expanded extent (cards + gaps) as one continuous

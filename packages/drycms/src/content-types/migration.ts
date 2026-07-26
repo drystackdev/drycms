@@ -368,6 +368,10 @@ function recreateTableStatements(oldNode: TableNode, newNode: TableNode, diff: C
   }
   statements.push(...createFtsStatements(newNode.tableName, newNode.ftsColumns));
 
+  // No generated DDL declares a `FOREIGN KEY`/`REFERENCES` yet (`parent_id`/
+  // `target_id` are plain `INTEGER` columns) - this currently verifies
+  // nothing, but is correct groundwork for when those columns do, and is
+  // cheap/harmless to run either way.
   statements.push(
     { sql: "PRAGMA foreign_key_check;", description: "Verify FK integrity after rebuild" },
   );
@@ -455,9 +459,15 @@ function diffOneTable(oldNode: TableNode | undefined, newNode: TableNode | undef
   };
 }
 
+/** Pushes each table's migration pre-order (parent before children) for
+ * every action except `drop`, which pushes post-order (children before
+ * parent) instead - matching `MigrationPlan.tables`' documented invariant.
+ * A `create` needs its parent to exist before a child can reference it; a
+ * `drop` needs the opposite, a child gone before its parent can be dropped. */
 function walkTablePair(oldNode: TableNode | undefined, newNode: TableNode | undefined, out: TableMigration[]): void {
   const migration = diffOneTable(oldNode, newNode);
-  if (migration && migration.action !== "noop") out.push(migration);
+  const isDrop = migration?.action === "drop";
+  if (migration && migration.action !== "noop" && !isDrop) out.push(migration);
 
   const oldChildren = new Map<string, ChildTableRef>((oldNode?.children ?? []).map((c) => [c.localIdPath.join("/"), c]));
   const newChildren = new Map<string, ChildTableRef>((newNode?.children ?? []).map((c) => [c.localIdPath.join("/"), c]));
@@ -466,6 +476,8 @@ function walkTablePair(oldNode: TableNode | undefined, newNode: TableNode | unde
   for (const key of allKeys) {
     walkTablePair(oldChildren.get(key)?.node, newChildren.get(key)?.node, out);
   }
+
+  if (migration && isDrop) out.push(migration);
 }
 
 // ---------------------------------------------------------------------------

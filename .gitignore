@@ -26,7 +26,7 @@ pnpm-debug.log*
 status/
 
 # drycms local file storage (see `storage.root` in astro.config.mjs)
-storage/
+/storage/
 
 # drycms content-type builder sqlite database (see `content.file` in astro.config.mjs)
 content.sqlite

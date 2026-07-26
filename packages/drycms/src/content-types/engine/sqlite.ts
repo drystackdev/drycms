@@ -165,6 +165,9 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
       }
     }
 
+    // Standard prep for SQLite's 12-step table-recreate procedure - a no-op
+    // today since no generated DDL declares real `FOREIGN KEY` constraints,
+    // but required once `parent_id`/`target_id` columns gain them.
     const needsForeignKeysOff = allPlans.some((p) => p.tables.some((t) => t.action === "recreate"));
     if (needsForeignKeysOff) handle.exec("PRAGMA foreign_keys = OFF;");
     try {

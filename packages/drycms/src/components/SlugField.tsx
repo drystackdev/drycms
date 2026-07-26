@@ -26,7 +26,14 @@ export interface SlugFieldProps {
  * closest iconify approximation. */
 function RegenerateSlugIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" class="select-caret" aria-hidden="true">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+      class="select-caret"
+      aria-hidden="true"
+    >
       <path d="M0 0h24v24H0z" fill="none" />
       <path
         fill="currentColor"
@@ -58,7 +65,7 @@ export default function SlugField({
   disabled = false,
   name,
   id,
-  required = false  
+  required = false,
 }: SlugFieldProps) {
   const [slugTouched, setSlugTouched] = useState(false);
   const reactId = useId();
@@ -76,7 +83,6 @@ export default function SlugField({
         }}
         required={required}
         error={error}
-        helperText={helperText}
       />
       <div class="field">
         <label for={slugFieldId}>{slugLabel}</label>
@@ -107,6 +113,9 @@ export default function SlugField({
             <RegenerateSlugIcon />
           </button>
         </div>
+        {helperText && (
+          <small class={error ? "error" : "hint"}>{helperText}</small>
+        )}
       </div>
     </div>
   );

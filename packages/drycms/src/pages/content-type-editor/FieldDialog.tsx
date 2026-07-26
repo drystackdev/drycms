@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import CheckField from "../../components/CheckField.js";
 import DatePickerField from "../../components/DatePickerField.js";
-import { useDialogSync } from "../../components/FileManager.js";
+import { useDialogSync } from "../../components/list-nav.js";
 import NumberField from "../../components/NumberField.js";
 import Select from "../../components/Select.js";
 import SlugField from "../../components/SlugField.js";

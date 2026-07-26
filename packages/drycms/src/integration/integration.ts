@@ -112,8 +112,11 @@ export function dry(options: DryOption = {}): AstroIntegration {
         // route to enumerate its paths up front via `getStaticPaths`, which
         // doesn't make sense for a route `preact-iso` owns).
         if (config.output !== "server") {
-          logger.info(
-            'setting `output: "server"` - the admin UI needs on-demand rendering. ' +
+          // `warn`, not `info` - this silently overrides whatever the
+          // consumer configured (including an intentional `"static"`/
+          // `"hybrid"` choice), so it needs to be hard to miss in CI output.
+          logger.warn(
+            'overriding to `output: "server"` - the admin UI needs on-demand rendering. ' +
               "Add a server adapter (e.g. `@astrojs/node`) before running `astro build` for production.",
           );
         }

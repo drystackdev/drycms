@@ -1345,13 +1345,13 @@
       background: none;
       overflow: visible;
 
-      &[data-position^="top"] {
+      &.top {
         --toast-direction: 1;
         inset-block-start: 1.5rem;
         inset-block-end: auto;
       }
 
-      &[data-position$="start"] {
+      &.start {
         inset-inline-start: 1.5rem;
         inset-inline-end: auto;
       }
@@ -1381,53 +1381,53 @@
         scale 480ms cubic-bezier(0.34, 1.56, 0.64, 1),
         opacity 320ms ease;
 
-      [data-position^="top"] & {
+      .toast-viewport.top & {
         inset-block-end: auto;
         inset-block-start: 0;
       }
 
-      &[data-behind] {
+      &.behind {
         scale: calc(1 - var(--toast-index) * 0.05);
         opacity: calc(1 - var(--toast-index) * 0.15);
       }
 
-      &[data-expanded] {
+      &.expanded {
         scale: 1;
         opacity: 1;
       }
 
-      &[data-state="starting"] {
+      &.starting {
         translate: 0px calc(1.75rem * var(--toast-direction) * -1);
         transition: none;
       }
 
-      &[data-state="closing"] {
+      &.closing {
         opacity: 0;
         translate: 100% calc(var(--toast-offset-y) * var(--toast-direction));
       }
 
-      &[data-swipe-direction="down"] {
+      &.swipe-down {
         translate: var(--toast-swipe-movement-x, 0px) 100%;
       }
 
-      &[data-swiping] {
+      &.swiping {
         transition: none;
         cursor: grabbing;
       }
 
-      &[data-type="success"] svg {
+      &.success svg {
         color: var(--dry-success);
       }
 
-      &[data-type="error"] svg {
+      &.error svg {
         color: var(--dry-error);
       }
 
-      &[data-type="warning"] svg {
+      &.warning svg {
         color: var(--dry-warning);
       }
 
-      &[data-type="info"] svg {
+      &.info svg {
         color: var(--dry-info);
       }
     }
@@ -1450,13 +1450,13 @@
         color: var(--dry-muted-foreground);
       }
 
-      .toast[data-expanded] &,
-      .toast:not([data-behind]) & {
+      .toast.expanded &,
+      .toast:not(.behind) & {
         max-height: none;
         opacity: 1;
       }
 
-      .toast[data-behind]:not([data-expanded]) & {
+      .toast.behind:not(.expanded) & {
         opacity: 0;
       }
     }

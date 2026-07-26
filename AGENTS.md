@@ -25,7 +25,9 @@ astro dev --background
 
 Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
 
-Tests live in `packages/drycms` and run with `bun run test`.
+Unit tests live in `packages/drycms` and run with `bun run test`. End-to-end
+tests (Playwright) live in `e2e/` at the repo root and run with `bun run test:e2e`
+against a running dev server.
 
 ## Documentation
 

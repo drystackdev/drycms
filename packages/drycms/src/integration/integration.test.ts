@@ -76,14 +76,14 @@ describe('dry()', () => {
 		);
 	});
 
-	it('logs when it changes the output mode, but not when already server', () => {
-		const { info } = runSetup(dry());
-		expect(info).toHaveBeenCalledWith(expect.stringContaining('output: "server"'));
+	it('warns when it changes the output mode, but not when already server', () => {
+		const { warn } = runSetup(dry());
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('output: "server"'));
 
-		const { info: info2 } = runSetup(dry(), {
+		const { warn: warn2 } = runSetup(dry(), {
 			config: { integrations: [], output: 'server' },
 		} as unknown as Partial<SetupParams>);
-		expect(info2).not.toHaveBeenCalledWith(expect.stringContaining('output: "server"'));
+		expect(warn2).not.toHaveBeenCalledWith(expect.stringContaining('output: "server"'));
 	});
 
 	it('honours a custom path', () => {
