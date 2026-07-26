@@ -8,6 +8,8 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   busy?: boolean;
+  /** Styles the confirm button as destructive (red) - for actions like delete. */
+  destructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -25,6 +27,7 @@ export default function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   busy = false,
+  destructive = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -42,7 +45,12 @@ export default function ConfirmDialog({
             <button type="button" class="outline" disabled={busy} onClick={onCancel}>
               {cancelLabel}
             </button>
-            <button type="button" disabled={busy} onClick={onConfirm}>
+            <button
+              type="button"
+              class={destructive ? "destructive" : undefined}
+              disabled={busy}
+              onClick={onConfirm}
+            >
               {confirmLabel}
             </button>
           </footer>

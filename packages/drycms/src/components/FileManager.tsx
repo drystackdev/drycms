@@ -37,6 +37,7 @@ import {
   XIcon,
 } from "./icons.js";
 import { toast } from "./Toast.js";
+import ConfirmDialog from "./ConfirmDialog.js";
 import FileManagerUploadArtwork from "./FileManagerUploadArtwork.js";
 import Popover, { type PopoverMenuEntry } from "./Popover.js";
 
@@ -661,7 +662,7 @@ function GridView({
                   alt=""
                 />
                 <div class="file-card-media-overlay">
-                  <div
+                  <label
                     class="file-card-media-top"
                     onClick={(event) => event.stopPropagation()}
                   >
@@ -675,7 +676,7 @@ function GridView({
                       />
                     )}
                     {more(entry)}
-                  </div>
+                  </label>
                   <div class="file-card-media-bottom">
                     <button
                       type="button"
@@ -702,11 +703,6 @@ function GridView({
                   class="file-card-head"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  {/* Purely the selection hit-target - opening happens by clicking
-                   * the rest of the card, so this never doubles as a button (the
-                   * overlay input would swallow every click anyway).
-                   * Thumbnail and checkbox both always sit in the DOM; CSS
-                   * (`:hover`, `:checked`, `:has()`) drives which one shows. */}
                   <label class="file-card-select">
                     {!disabled && (
                       <input
@@ -1603,6 +1599,9 @@ export default function FileManager({
   const [clipboard, setClipboard] = useState<MoveCopyState>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(
+    null,
+  );
   /** ids currently being dragged (drag-to-move a file/folder into a folder),
    * and the id of the folder currently hovered as a drop target. */
   const [dragIds, setDragIds] = useState<string[] | null>(null);
@@ -1967,6 +1966,18 @@ export default function FileManager({
     }
   };
 
+  const pendingDeleteEntries = useMemo(
+    () => entries.filter((entry) => pendingDeleteIds?.includes(entry.id)),
+    [entries, pendingDeleteIds],
+  );
+
+  const confirmDelete = () => {
+    if (!pendingDeleteIds) return;
+    const ids = pendingDeleteIds;
+    setPendingDeleteIds(null);
+    deleteEntries(ids);
+  };
+
   /* Clears the current selection so the (also sticky, bottom-of-screen)
    * selection bar hands off to the clipboard bar instead of stacking with it. */
   const requestMove = (ids: string[]) => {
@@ -2235,7 +2246,9 @@ export default function FileManager({
       }
       onCopy={source.copy ? () => requestCopy([entry.id]) : undefined}
       onMove={source.move ? () => requestMove([entry.id]) : undefined}
-      onDelete={source.remove ? () => deleteEntries([entry.id]) : undefined}
+      onDelete={
+        source.remove ? () => setPendingDeleteIds([entry.id]) : undefined
+      }
     />
   );
 
@@ -2298,7 +2311,9 @@ export default function FileManager({
             onMove={source.move ? () => requestMove(selectedIds) : undefined}
             onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
             onDelete={
-              source.remove ? () => deleteEntries(selectedIds) : undefined
+              source.remove
+                ? () => setPendingDeleteIds(selectedIds)
+                : undefined
             }
           />
         ))}
@@ -2333,7 +2348,9 @@ export default function FileManager({
           onMove={source.move ? () => requestMove(selectedIds) : undefined}
           onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
           onDelete={
-            source.remove ? () => deleteEntries(selectedIds) : undefined
+            source.remove
+              ? () => setPendingDeleteIds(selectedIds)
+              : undefined
           }
           canPaste={canPaste && !busy}
           onPasteClipboard={pasteClipboard}
@@ -2403,7 +2420,29 @@ export default function FileManager({
               }
             : undefined
         }
-        onDelete={source.remove ? (id) => deleteEntries([id]) : undefined}
+        onDelete={
+          source.remove ? (id) => setPendingDeleteIds([id]) : undefined
+        }
+      />
+
+      <ConfirmDialog
+        open={pendingDeleteIds !== null}
+        title={
+          pendingDeleteIds && pendingDeleteIds.length === 1
+            ? `Delete "${pendingDeleteEntries[0]?.name ?? ""}"?`
+            : `Delete ${pendingDeleteIds?.length ?? 0} items?`
+        }
+        message={
+          <p>
+            {pendingDeleteEntries.some((entry) => entry.kind === "folder") &&
+              "This also deletes everything inside the selected folder(s). "}
+            This cannot be undone.
+          </p>
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteIds(null)}
       />
     </div>
   );

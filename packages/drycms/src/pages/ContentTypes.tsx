@@ -119,6 +119,7 @@ export default function ContentTypes() {
           </p>
         }
         confirmLabel="Delete"
+        destructive
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}

@@ -34,5 +34,4 @@ content.sqlite
 # drycms/src/db.ts local dev SQLite fallback (see status/db.md)
 db.sqlite
 
-# Thư viện để copy code
 Sortable-master

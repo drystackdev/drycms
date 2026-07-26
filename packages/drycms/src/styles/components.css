@@ -2616,7 +2616,7 @@
       flex-direction: column;
       justify-content: space-between;
       gap: 0.5rem;
-      padding: 0.75rem;
+      padding: 1rem;
       border-radius: inherit;
       background-color: light-dark(rgb(255 255 255 / 80%), rgb(28 37 46 / 80%));
       backdrop-filter: blur(1px);
@@ -2636,7 +2636,6 @@
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 0.5rem;
     }
 
     .file-card-media-bottom {
@@ -2649,8 +2648,9 @@
     .file-card-head {
       display: flex;
       align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.5rem;
+      & > label {
+        flex: 1;
+      }
     }
 
     /* Thumbnail hides only once actually checked (green/circular, via
@@ -2667,6 +2667,7 @@
       }
 
       & > img {
+        width: auto;
         position: relative;
         z-index: 2;
         transition:
@@ -2696,33 +2697,12 @@
     .file-card-checkbox {
       position: absolute;
       inset-block-start: 50%;
-      inset-inline-start: 50%;
+      inset-inline-start: 1rem;
       translate: -50% -50%;
-      width: 1rem;
-      height: 1rem;
       margin: 0;
-      border-radius: 50%;
       opacity: 0;
       cursor: pointer;
       transition: opacity 120ms ease;
-
-      /* The shared checkbox rule paints its check via `mask-image` (it reveals
-       * `background-color` through a checkmark-shaped hole, relying on
-       * whatever's behind to read as the check) - fine for a small square
-       * checkbox sat on a flat field, but here that "whatever's behind" is
-       * this card's own thumbnail/background, an unreliable contrast. So:
-       * cancel the inherited mask and paint an explicit white tick as a
-       * `background-image` layered on top of the solid fill instead. */
-      &:checked {
-        background-color: var(--dry-success);
-        border-color: transparent;
-        mask-image: none;
-        -webkit-mask-image: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: center;
-        background-size: 55% 55%;
-      }
     }
 
     button.file-card-name {
