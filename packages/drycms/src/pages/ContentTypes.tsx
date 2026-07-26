@@ -125,7 +125,7 @@ export default function ContentTypes() {
                   label: "Fields",
                   numeric: true,
                   sortable: true,
-                  render: (_v, row) => <span class="badge">{row.fieldCount}</span>
+                  render: (_v, row) => <span class="badge outline">{row.fieldCount}</span>
                 },
               ]}
               rows={rows}

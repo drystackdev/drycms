@@ -7,11 +7,17 @@ import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { DestructiveChange } from "../content-types/migration.js";
-import type { ContentTypeDefinition, ContentTypeKind, FieldDefinition } from "../content-types/types.js";
+import type {
+  ContentTypeDefinition,
+  ContentTypeKind,
+  FieldDefinition,
+} from "../content-types/types.js";
 import { ArrowLeftIcon } from "../components/icons.js";
 import FeaturesFieldset from "./content-type-editor/FeaturesFieldset.js";
 import FieldDialog from "./content-type-editor/FieldDialog.js";
-import FieldsList, { type SystemFieldEntry } from "./content-type-editor/FieldsList.js";
+import FieldsList, {
+  type SystemFieldEntry,
+} from "./content-type-editor/FieldsList.js";
 
 interface Props {
   id?: string;
@@ -23,9 +29,13 @@ interface Props {
  * see that file's doc comment - and can't be dragged/reordered/removed).
  * Title is bundled with Slug (turning `slug` on adds both, in that order);
  * Draft/Schedule/Timestamps are collection-only. */
-function systemFieldsForUi(definition: ContentTypeDefinition): SystemFieldEntry[] {
+function systemFieldsForUi(
+  definition: ContentTypeDefinition,
+): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
-  const items: SystemFieldEntry[] = [{ id: "id", label: "ID", name: "id", typeLabel: "Number" }];
+  const items: SystemFieldEntry[] = [
+    { id: "id", label: "ID", name: "id", typeLabel: "Number" },
+  ];
   if (definition.features?.slug) {
     items.push(
       { id: "title", label: "Title", name: "title", typeLabel: "Text" },
@@ -34,15 +44,35 @@ function systemFieldsForUi(definition: ContentTypeDefinition): SystemFieldEntry[
   }
   if (definition.kind === "collection") {
     if (definition.features?.draft) {
-      items.push({ id: "draft", label: "Draft", name: "draft", typeLabel: "Boolean" });
+      items.push({
+        id: "draft",
+        label: "Draft",
+        name: "draft",
+        typeLabel: "Boolean",
+      });
     }
     if (definition.features?.schedule) {
-      items.push({ id: "schedule", label: "Schedule", name: "schedule", typeLabel: "Date" });
+      items.push({
+        id: "schedule",
+        label: "Schedule",
+        name: "schedule",
+        typeLabel: "Date",
+      });
     }
     if (definition.features?.timestamps) {
       items.push(
-        { id: "createdAt", label: "Created at", name: "created_at", typeLabel: "Date" },
-        { id: "updatedAt", label: "Updated at", name: "updated_at", typeLabel: "Date" },
+        {
+          id: "createdAt",
+          label: "Created at",
+          name: "created_at",
+          typeLabel: "Date",
+        },
+        {
+          id: "updatedAt",
+          label: "Updated at",
+          name: "updated_at",
+          typeLabel: "Date",
+        },
       );
     }
   }
@@ -51,18 +81,27 @@ function systemFieldsForUi(definition: ContentTypeDefinition): SystemFieldEntry[
 
 export default function ContentTypeEditor({ id, kind }: Props) {
   const { route } = useLocation();
-  const api = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const api = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
   const isNew = !id;
 
-  const [definition, setDefinition] = useState<ContentTypeDefinition | null>(null);
+  const [definition, setDefinition] = useState<ContentTypeDefinition | null>(
+    null,
+  );
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
-  const [editingField, setEditingField] = useState<FieldDefinition | null>(null);
+  const [editingField, setEditingField] = useState<FieldDefinition | null>(
+    null,
+  );
 
-  const [pendingConfirm, setPendingConfirm] = useState<DestructiveChange[] | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<
+    DestructiveChange[] | null
+  >(null);
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -89,7 +128,11 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           });
         }
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load content type.");
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load content type.",
+        );
       }
     })();
   }, [id, kind]);
@@ -115,13 +158,17 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   }
 
   function removeField(fieldId: string) {
-    setDefinition((d) => (d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d));
+    setDefinition((d) =>
+      d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d,
+    );
   }
 
   function handleFieldSave(field: FieldDefinition) {
     setDefinition((d) => {
       if (!d) return d;
-      const fields = editingField ? d.fields.map((f) => (f.id === editingField.id ? field : f)) : [...d.fields, field];
+      const fields = editingField
+        ? d.fields.map((f) => (f.id === editingField.id ? field : f))
+        : [...d.fields, field];
       return { ...d, fields };
     });
     setFieldDialogOpen(false);
@@ -135,7 +182,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     }
     setSaving(true);
     try {
-      const response = isNew ? await api.create(definition, confirm) : await api.update(definition, confirm);
+      const response = isNew
+        ? await api.create(definition, confirm)
+        : await api.update(definition, confirm);
       if (response.requiresConfirm) {
         setPendingConfirm(response.destructiveSummary ?? []);
         return;
@@ -168,7 +217,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     try {
       await api.remove(definition.id);
       setShowDeleteConfirm(false);
-      toast.add({ type: "success", title: `Deleted "${definition.label || definition.name}".` });
+      toast.add({
+        type: "success",
+        title: `Deleted "${definition.label || definition.name}".`,
+      });
       route(`${path}/content-types`);
     } catch (error) {
       toast.add({
@@ -191,15 +243,23 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <ArrowLeftIcon />
         </a>
         <div style={{ flex: 1 }}>
-          <h1>{isNew ? `New ${definition.kind}` : definition.label || definition.name}</h1>
+          <h1>
+            {isNew
+              ? `New ${definition.kind}`
+              : definition.label || definition.name}
+          </h1>
           <p>
             {definition.kind === "component"
               ? "Reusable field group, embeddable in other content types."
-              : "Content type schema."}
+              : "Define the fields, data types, and structure used to store content for this content type."}
           </p>
         </div>
         <div class="row">
-          <button type="button" class="outline" onClick={() => route(`${path}/content-types`)}>
+          <button
+            type="button"
+            class="outline"
+            onClick={() => route(`${path}/content-types`)}
+          >
             Cancel
           </button>
           <button type="button" disabled={saving} onClick={handleSaveClick}>
@@ -213,6 +273,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <FieldsList
             systemEntries={systemFieldsForUi(definition)}
             fields={definition.fields}
+            features={definition.features}
             onEdit={(field) => {
               setEditingField(field);
               setFieldDialogOpen(true);
@@ -227,24 +288,32 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         </legend>
         <div class="stack">
           <SlugField
-            label="Title"
-            slugLabel="Table Name"
+            label="Table Name"
+            slugLabel="Table"
             value={definition.label}
             slug={definition.name}
-            onChange={(label, name) => setDefinition((d) => (d ? { ...d, label, name } : d))}
+            onChange={(label, name) =>
+              setDefinition((d) => (d ? { ...d, label, name } : d))
+            }
+            required
           />
           <TextField
             label="Description"
             multiline
             value={definition.description ?? ""}
-            onChange={(v) => setDefinition((d) => (d ? { ...d, description: v } : d))}
+            onChange={(v) =>
+              setDefinition((d) => (d ? { ...d, description: v } : d))
+            }
+            helperText="Optional description for this content type, shown in the admin UI."
           />
 
           <FeaturesFieldset
             kind={definition.kind}
             features={definition.features}
             onChange={(key, value) =>
-              setDefinition((d) => (d ? { ...d, features: { ...d.features, [key]: value } } : d))
+              setDefinition((d) =>
+                d ? { ...d, features: { ...d.features, [key]: value } } : d,
+              )
             }
           />
         </div>
@@ -255,10 +324,15 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <div>
             <h2>Danger zone</h2>
             <p>
-              Delete this {definition.kind} and all of its data. This cannot be undone.
+              Delete this {definition.kind} and all of its data. This cannot be
+              undone.
             </p>
           </div>
-          <button type="button" class="destructive" onClick={() => setShowDeleteConfirm(true)}>
+          <button
+            type="button"
+            class="destructive"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
             Delete {definition.kind}
           </button>
         </div>
@@ -275,7 +349,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       <ConfirmDialog
         open={showApplyConfirm}
         title="Apply schema changes?"
-        message={<p>Saving will apply these schema changes to the live table.</p>}
+        message={
+          <p>Saving will apply these schema changes to the live table.</p>
+        }
         confirmLabel="Save & apply"
         busy={saving}
         onConfirm={() => {
@@ -307,7 +383,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         title={`Delete "${definition.label || definition.name}"?`}
         message={
           <p>
-            This permanently deletes the {definition.kind} and all of its data. This cannot be undone.
+            This permanently deletes the {definition.kind} and all of its data.
+            This cannot be undone.
           </p>
         }
         confirmLabel="Delete"

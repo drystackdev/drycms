@@ -38,13 +38,13 @@ export default function FieldListItem({
   return (
     <li
       data-sortable-id={dragHandleProps ? id : undefined}
-      class={`content-type-list-item row justify-between${system?" system":""}${dragging ? " dnd-drag-placeholder" : ""}`}
+      class={`content-type-list-item row justify-between${system ? " system" : ""}${dragging ? " dnd-drag-placeholder" : ""}`}
       onClick={system ? undefined : onEdit}
     >
       <button
         type="button"
         class="ghost icon sm"
-        {...(dragHandleProps ?? { disabled: true})}
+        {...(dragHandleProps ?? { disabled: true })}
         onClick={(event) => event.stopPropagation()}
       >
         <DragHandleIcon />
@@ -52,10 +52,17 @@ export default function FieldListItem({
       <div class="stack spacer" style={{ gap: "0.125rem" }}>
         <span>
           {label}
-          <span class="badge" style={{ marginLeft: '0.5rem' }}>
+          <span class="badge sm secondary" style={{ marginLeft: "0.5rem" }}>
             {typeLabel}
           </span>
-          {required && <span class="required-asterisk">*</span>}
+          {system ? (
+            <span class="badge sm outline" style={{ marginLeft: "0.5rem" }}>
+              System
+            </span>
+          ) : (
+            ""
+          )}
+          {required && <span class="required-asterisk"> *</span>}
         </span>
         <small class="hint">
           {name}
@@ -65,7 +72,7 @@ export default function FieldListItem({
       {!system && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
           <button type="button" class="ghost sm" onClick={onRemove}>
-            <TrashIcon/>
+            <TrashIcon />
           </button>
         </div>
       )}

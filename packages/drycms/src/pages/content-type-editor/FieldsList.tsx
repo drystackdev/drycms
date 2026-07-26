@@ -1,7 +1,10 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import { fieldTypes } from "../../content-types/field-registry.js";
-import type { FieldDefinition } from "../../content-types/types.js";
+import type {
+  ContentTypeFeatures,
+  FieldDefinition,
+} from "../../content-types/types.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import FieldListItem, { fieldListItemProps } from "./FieldListItem.js";
 import { PlusIcon } from "../../components/icons.js";
@@ -23,6 +26,7 @@ export interface FieldsListProps {
   /** ID always renders first, pinned, non-draggable, non-reorderable. */
   systemEntries: SystemFieldEntry[];
   fields: FieldDefinition[];
+  features?: ContentTypeFeatures;
   onEdit: (field: FieldDefinition) => void;
   onRemove: (fieldId: string) => void;
   /** Fires with the custom fields' new relative order whenever the unified
@@ -43,6 +47,7 @@ export interface FieldsListProps {
 export default function FieldsList({
   systemEntries,
   fields,
+  features,
   onEdit,
   onRemove,
   onReorderFields,
@@ -99,6 +104,14 @@ export default function FieldsList({
     },
   });
 
+  const featureCount = useMemo(
+    () => (!features ? 0 : Object.values(features).filter((i) => i).length),
+    [features],
+  );
+
+  const fieldCount = systemEntries.length + fields.length;
+  const fieldRequired = fields.filter((f) => f.validation?.required).length;
+
   return (
     <div>
       <div class="row justify-between">
@@ -123,7 +136,9 @@ export default function FieldsList({
           />
         )}
         {orderedEntries.length === 0 && !idEntry && (
-          <li class="hint empty" style={{marginInline: '1rem'}}>No fields yet.</li>
+          <li class="hint empty" style={{ marginInline: "1rem" }}>
+            No fields yet.
+          </li>
         )}
         {orderedEntries.map((item) =>
           item.system ? (
@@ -153,6 +168,10 @@ export default function FieldsList({
           ),
         )}
       </ul>
+      <div class="hint" style={{ marginTop: "2rem" }}>
+        Total: {fieldCount} field{fieldCount > 1 ? "s" : ""} - {featureCount}{" "}
+        feature{featureCount > 1 ? "s" : ""} - {fieldRequired} required
+      </div>
       <ConfirmDialog
         open={pendingRemove !== null}
         title={`Remove "${pendingRemove?.label ?? ""}"?`}

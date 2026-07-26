@@ -15,6 +15,7 @@ export interface SlugFieldProps {
   disabled?: boolean;
   name?: string;
   id?: string;
+  required?: boolean;
 }
 
 /** `solar:refresh-square-linear`-style regenerate icon, hand-written from the
@@ -53,6 +54,7 @@ export default function SlugField({
   disabled = false,
   name,
   id,
+  required = false  
 }: SlugFieldProps) {
   const [slugTouched, setSlugTouched] = useState(false);
   const reactId = useId();
@@ -67,6 +69,7 @@ export default function SlugField({
         onChange={(nextValue) => {
           onChange(nextValue, slugTouched ? slug : slugify(nextValue));
         }}
+        required={required}
       />
       <div class="field">
         <label for={slugFieldId}>{slugLabel}</label>

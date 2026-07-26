@@ -1209,10 +1209,6 @@
         rotate: 225deg;
       }
 
-      &[open] {
-        background-color: var(--dry-card);
-      }
-
       /* Animates the native disclosure panel; falls back to an instant
 			 * snap (no worse than before) in browsers without `::details-content`. */
       &::details-content {
@@ -1889,7 +1885,7 @@
 
     .nav-label {
       grid-column: 1 / -1;
-      padding: 1rem 0.75rem 0.5rem;
+      padding-block: 0.5rem;
       font-size: var(--dry-text-xs);
       font-weight: 700;
       text-transform: uppercase;
@@ -1943,6 +1939,13 @@
         color: var(--dry-muted-foreground);
         margin-block-start: 0.25rem;
       }
+      @media (width < 48rem) {
+        & .row {
+          justify-content: end;
+          width: 100%;
+        }
+      }
+
     }
 
     /* ---------------------------------------------------- Content types list */
@@ -2112,7 +2115,7 @@
      * proportional column - a 1/4-width nav looked oversized for 3 items. */
     .content-types-grid {
       display: grid;
-      grid-template-columns: 13rem minmax(0, 1fr);
+      grid-template-columns: 12rem minmax(0, 1fr);
       gap: var(--dry-gap) 2rem;
       align-items: start;
 
@@ -2249,10 +2252,6 @@
       .shell.collapsed .brand {
         justify-content: center;
         height: auto;
-      }
-
-      .shell.collapsed .nav-label {
-        display: none;
       }
 
       .shell.collapsed .sidebar nav a {

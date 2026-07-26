@@ -191,9 +191,6 @@
     :where(td) {
       padding: 0.75rem;
       vertical-align: middle;
-      & > .empty {
-        margin-inline: -1rem;
-      }
     }
 
     :where(tbody tr) {

@@ -8,6 +8,7 @@ export interface TextFieldProps extends FieldProps<string> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  required?: boolean;
 }
 
 export default function TextField({
@@ -21,13 +22,14 @@ export default function TextField({
   disabled = false,
   name,
   id,
+  required = false
 }: TextFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `text-field-${reactId}`;
 
   return (
     <div class="field">
-      <label for={fieldId}>{label}</label>
+      <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {multiline ? (
         <textarea
           id={fieldId}

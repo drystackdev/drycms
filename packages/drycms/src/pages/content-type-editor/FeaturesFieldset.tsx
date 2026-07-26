@@ -47,7 +47,7 @@ export default function FeaturesFieldset({ kind, features, onChange }: FeaturesF
   return (
     <fieldset>
       <legend>Features</legend>
-      <div class="stack">
+      <div class="stack" style={{marginBottom: '1rem'}}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
             <CheckField helperText={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
