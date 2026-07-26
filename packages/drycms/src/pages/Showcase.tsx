@@ -657,10 +657,15 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="badges"
           title="Badges"
-          description=".badge plus a colour class (soft fill by default); add .filled for a solid fill."
+          description=".badge plus a colour class (soft fill by default); add .filled for a solid fill. .sm/.lg for size, unclassed is md."
           code={code.badges!}
         >
           <div class="stack" style="width: 100%">
+            <div class="row">
+              <span class="badge sm">Small</span>
+              <span class="badge">Default</span>
+              <span class="badge lg">Large</span>
+            </div>
             <div class="row">
               <span class="badge">Default</span>
               <span class="badge secondary">Secondary</span>

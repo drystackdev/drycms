@@ -15,8 +15,13 @@ export interface SimpleBarHandle<T extends HTMLElement> {
  * unmount. Used instead of SimpleBar's global `data-simplebar` auto-init,
  * which only scans the DOM present at `DOMContentLoaded` and can't be relied
  * on for elements a Preact render mounts later.
+ *
+ * `deps` defaults to `[]` (mount once, for elements present from first
+ * render, e.g. `DryLayout`'s sidebar/main). Pass e.g. `[open]` for an element
+ * that's conditionally rendered later - the ref is still null on first
+ * mount, so the effect needs to re-run once that condition flips.
  */
-export function useSimpleBar<T extends HTMLElement>(): SimpleBarHandle<T> {
+export function useSimpleBar<T extends HTMLElement>(deps: unknown[] = []): SimpleBarHandle<T> {
 	const ref = useRef<T>(null);
 	const instance = useRef<SimpleBarInstance | null>(null);
 
@@ -28,7 +33,7 @@ export function useSimpleBar<T extends HTMLElement>(): SimpleBarHandle<T> {
 			instance.current?.unMount();
 			instance.current = null;
 		};
-	}, []);
+	}, deps);
 
 	return {
 		ref,

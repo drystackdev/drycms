@@ -1,5 +1,5 @@
 import type { SortableHandleProps } from "../../lib/dnd/useSortableList.js";
-import { DragHandleIcon } from "../../components/icons.js";
+import { DragHandleIcon, TrashIcon } from "../../components/icons.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 
 export interface FieldListItemProps {
@@ -9,7 +9,7 @@ export interface FieldListItemProps {
   label: string;
   typeLabel: string;
   required?: boolean;
-  /** Row 2: technical column name — description. */
+  /** Row 2: technical column name • description. */
   name: string;
   description?: string;
   /** System rows (Title/Slug/Draft/...) look identical to custom rows, just
@@ -38,34 +38,34 @@ export default function FieldListItem({
   return (
     <li
       data-sortable-id={dragHandleProps ? id : undefined}
-      class={`content-type-list-item row justify-between${dragging ? " dnd-dragging" : ""}`}
+      class={`content-type-list-item row justify-between${system?" system":""}${dragging ? " dnd-drag-placeholder" : ""}`}
       onClick={system ? undefined : onEdit}
     >
-      <div class="stack" style={{ gap: "0.125rem" }}>
+      <button
+        type="button"
+        class="ghost icon sm"
+        {...(dragHandleProps ?? { disabled: true})}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DragHandleIcon />
+      </button>
+      <div class="stack spacer" style={{ gap: "0.125rem" }}>
         <span>
-          {dragHandleProps && (
-            <button
-              type="button"
-              class="ghost icon sm"
-              {...dragHandleProps}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <DragHandleIcon />
-            </button>
-          )}
           {label}
+          <span class="badge" style={{ marginLeft: '0.5rem' }}>
+            {typeLabel}
+          </span>
           {required && <span class="required-asterisk">*</span>}
-          <span class="hint"> ({typeLabel})</span>
         </span>
-        <span class="hint">
+        <small class="hint">
           {name}
-          {description ? ` — ${description}` : ""}
-        </span>
+          {description ? ` • ${description}` : ""}
+        </small>
       </div>
       {!system && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
           <button type="button" class="ghost sm" onClick={onRemove}>
-            Remove
+            <TrashIcon/>
           </button>
         </div>
       )}

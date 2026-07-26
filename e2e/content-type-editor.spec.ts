@@ -161,8 +161,12 @@ test.describe("Content Type editor", () => {
     await page.getByRole("option", { name: "Text" }).click();
     await expect(dialog.getByText("Validation")).toBeVisible();
 
-    const grid = dialog.locator(".field-dialog-grid");
-    const gridOverflows = await grid.evaluate((el) => el.scrollHeight > el.clientHeight);
+    // Scrolling is handled by SimpleBar on `.field-dialog-scroll` (the grid's
+    // wrapper), not by native overflow on `.field-dialog-grid` itself.
+    const scrollRoot = dialog.locator(".field-dialog-scroll");
+    await expect(scrollRoot).toHaveAttribute("data-simplebar", "init");
+    const contentWrapper = scrollRoot.locator(".simplebar-content-wrapper");
+    const gridOverflows = await contentWrapper.evaluate((el) => el.scrollHeight > el.clientHeight);
     expect(gridOverflows).toBe(true);
 
     const windowScrollable = await page.evaluate(

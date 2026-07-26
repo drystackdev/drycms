@@ -4,6 +4,7 @@ import DatePickerField from "../../components/DatePickerField.js";
 import { useDialogSync } from "../../components/FileManager.js";
 import NumberField from "../../components/NumberField.js";
 import Select from "../../components/Select.js";
+import { useSimpleBar } from "../../components/simplebar.js";
 import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
 import { toast } from "../../components/Toast.js";
@@ -14,7 +15,10 @@ import {
   type SettingDescriptor,
   type SettingOption,
 } from "../../content-types/field-registry.js";
-import type { FieldDefinition, FieldValidation } from "../../content-types/types.js";
+import type {
+  FieldDefinition,
+  FieldValidation,
+} from "../../content-types/types.js";
 
 export interface FieldDialogProps {
   open: boolean;
@@ -34,12 +38,15 @@ const PAIRED_ROWS: [string, string][] = [
   ["minLength", "maxLength"],
 ];
 
-function groupIntoRows(descriptors: SettingDescriptor[]): SettingDescriptor[][] {
+function groupIntoRows(
+  descriptors: SettingDescriptor[],
+): SettingDescriptor[][] {
   const rows: SettingDescriptor[][] = [];
   for (let i = 0; i < descriptors.length; i++) {
     const current = descriptors[i]!;
     const next = descriptors[i + 1];
-    const isPair = next && PAIRED_ROWS.some(([a, b]) => current.key === a && next.key === b);
+    const isPair =
+      next && PAIRED_ROWS.some(([a, b]) => current.key === a && next.key === b);
     if (isPair) {
       rows.push([current, next!]);
       i++;
@@ -79,7 +86,9 @@ function renderControl({
       <TextField
         key={d.key}
         label={d.label}
-        value={typeof values[d.key] === "string" ? (values[d.key] as string) : ""}
+        value={
+          typeof values[d.key] === "string" ? (values[d.key] as string) : ""
+        }
         disabled={disabled}
         onChange={(v) => onChange(d.key, v)}
       />
@@ -90,13 +99,17 @@ function renderControl({
       <NumberField
         key={d.key}
         label={d.label}
-        value={typeof values[d.key] === "number" ? (values[d.key] as number) : 0}
+        value={
+          typeof values[d.key] === "number" ? (values[d.key] as number) : 0
+        }
         disabled={disabled}
         onChange={(v) => onChange(d.key, v)}
       />
     );
   }
-  const options = d.optionsSource ? dynamicOptions[d.optionsSource] : (d.options ?? []);
+  const options = d.optionsSource
+    ? dynamicOptions[d.optionsSource]
+    : (d.options ?? []);
   return (
     <div class="field" key={d.key}>
       <label>{d.label}</label>
@@ -135,15 +148,31 @@ function SettingsForm({
     <>
       {groupIntoRows(descriptors).map((row) =>
         row.length === 2 ? (
-          <div class="row" style={{ alignItems: "flex-start" }} key={row.map((d) => d.key).join("-")}>
+          <div
+            class="row"
+            style={{ alignItems: "flex-start" }}
+            key={row.map((d) => d.key).join("-")}
+          >
             {row.map((d) => (
               <div style={{ flex: 1, minWidth: 0 }} key={d.key}>
-                {renderControl({ d, values, onChange, dynamicOptions, disabled: disabledKeys.includes(d.key) })}
+                {renderControl({
+                  d,
+                  values,
+                  onChange,
+                  dynamicOptions,
+                  disabled: disabledKeys.includes(d.key),
+                })}
               </div>
             ))}
           </div>
         ) : (
-          renderControl({ d: row[0]!, values, onChange, dynamicOptions, disabled: disabledKeys.includes(row[0]!.key) })
+          renderControl({
+            d: row[0]!,
+            values,
+            onChange,
+            dynamicOptions,
+            disabled: disabledKeys.includes(row[0]!.key),
+          })
         ),
       )}
     </>
@@ -165,18 +194,29 @@ function DefaultValueInput({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  if (!activeType || resolveFieldShape(activeType, config) !== "column") return null;
+  if (!activeType || resolveFieldShape(activeType, config) !== "column")
+    return null;
   switch (activeType.key) {
     case "text":
       return (
-        <TextField label="Default value" value={typeof value === "string" ? value : ""} onChange={onChange} />
+        <TextField
+          label="Default value"
+          value={typeof value === "string" ? value : ""}
+          onChange={onChange}
+        />
       );
     case "number":
       return (
-        <NumberField label="Default value" value={typeof value === "number" ? value : 0} onChange={onChange} />
+        <NumberField
+          label="Default value"
+          value={typeof value === "number" ? value : 0}
+          onChange={onChange}
+        />
       );
     case "boolean":
-      return <CheckField label="Default value" value={!!value} onChange={onChange} />;
+      return (
+        <CheckField label="Default value" value={!!value} onChange={onChange} />
+      );
     case "date":
       return (
         <DatePickerField
@@ -196,26 +236,42 @@ function DefaultValueInput({
  * *meaningful* `regex` or `minLength` (i.e. actually constraining something)
  * forces `required` on - `minLength` sitting at its neutral `0` imposes no
  * real constraint, so it doesn't force anything. */
-function textValidationDisabledKeys(validation: Record<string, unknown>): string[] {
+function textValidationDisabledKeys(
+  validation: Record<string, unknown>,
+): string[] {
   const disabled: string[] = [];
-  const hasRegex = typeof validation.regex === "string" && validation.regex.length > 0;
-  const hasFormat = typeof validation.format === "string" && validation.format !== "none";
-  const hasMinLength = typeof validation.minLength === "number" && validation.minLength > 0;
+  const hasRegex =
+    typeof validation.regex === "string" && validation.regex.length > 0;
+  const hasFormat =
+    typeof validation.format === "string" && validation.format !== "none";
+  const hasMinLength =
+    typeof validation.minLength === "number" && validation.minLength > 0;
   if (hasFormat) disabled.push("regex");
   if (hasRegex) disabled.push("format");
   if (hasRegex || hasMinLength) disabled.push("required");
   return disabled;
 }
 
-export default function FieldDialog({ open, editingField, dynamicOptions, onCancel, onSave }: FieldDialogProps) {
+export default function FieldDialog({
+  open,
+  editingField,
+  dynamicOptions,
+  onCancel,
+  onSave,
+}: FieldDialogProps) {
   const dialogRef = useDialogSync(open, onCancel);
+  // Deps include `open`: the grid only mounts once the dialog opens, so the
+  // ref is still null on `FieldDialog`'s own first render.
+  const gridScroll = useSimpleBar<HTMLDivElement>([open]);
 
   const [draftType, setDraftType] = useState("text");
   const [draftName, setDraftName] = useState("");
   const [draftLabel, setDraftLabel] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
-  const [draftValidation, setDraftValidation] = useState<Record<string, unknown>>({});
+  const [draftValidation, setDraftValidation] = useState<
+    Record<string, unknown>
+  >({});
   const [draftDefault, setDraftDefault] = useState<unknown>(undefined);
 
   useEffect(() => {
@@ -226,7 +282,9 @@ export default function FieldDialog({ open, editingField, dynamicOptions, onCanc
       setDraftLabel(editingField.label);
       setDraftDescription(editingField.description ?? "");
       setDraftConfig((editingField.config as Record<string, unknown>) ?? {});
-      setDraftValidation((editingField.validation as Record<string, unknown>) ?? {});
+      setDraftValidation(
+        (editingField.validation as Record<string, unknown>) ?? {},
+      );
       setDraftDefault(editingField.default);
     } else {
       // No type pre-selected - the right column stays an empty frame until
@@ -250,8 +308,10 @@ export default function FieldDialog({ open, editingField, dynamicOptions, onCanc
         } else if (key === "format" && value !== "none") {
           next.regex = "";
         }
-        const hasRegex = typeof next.regex === "string" && next.regex.length > 0;
-        const hasMinLength = typeof next.minLength === "number" && next.minLength > 0;
+        const hasRegex =
+          typeof next.regex === "string" && next.regex.length > 0;
+        const hasMinLength =
+          typeof next.minLength === "number" && next.minLength > 0;
         if (hasRegex || hasMinLength) {
           next.required = true;
         }
@@ -282,87 +342,108 @@ export default function FieldDialog({ open, editingField, dynamicOptions, onCanc
   }
 
   const activeFieldType = fieldTypes[draftType];
-  const textDisabledKeys = draftType === "text" ? textValidationDisabledKeys(draftValidation) : [];
+  const textDisabledKeys =
+    draftType === "text" ? textValidationDisabledKeys(draftValidation) : [];
 
   return (
-    <dialog ref={dialogRef} aria-label={editingField ? "Edit field" : "Add field"} class="xl field-dialog">
+    <dialog
+      ref={dialogRef}
+      aria-label={editingField ? "Edit field" : "Add field"}
+      class="xl field-dialog"
+    >
       {open && (
         <>
           <header>
             <h3>{editingField ? "Edit field" : "Add field"}</h3>
           </header>
-          <div class="field-dialog-grid">
-            <div class="stack">
-              <SlugField
-                label="Label"
-                slugLabel="Name"
-                value={draftLabel}
-                slug={draftName}
-                onChange={(label, name) => {
-                  setDraftLabel(label);
-                  setDraftName(name);
-                }}
-              />
-              <TextField label="Description" multiline value={draftDescription} onChange={setDraftDescription} />
-              <div class="field">
-                <label>Type</label>
-                <Select
-                  options={Object.values(fieldTypes).map((t) => ({ value: t.key, label: t.label }))}
-                  value={draftType}
-                  onChange={(value) => {
-                    setDraftType(value);
-                    const type = fieldTypes[value];
-                    setDraftConfig(type?.defaultConfig ?? {});
-                    setDraftValidation(type?.defaultValidation ?? {});
-                    setDraftDefault(undefined);
+          <div class="field-dialog-scroll" ref={gridScroll.ref}>
+            <div class="field-dialog-grid">
+              <div class="stack">
+                <SlugField
+                  label="Label"
+                  slugLabel="Name"
+                  value={draftLabel}
+                  slug={draftName}
+                  onChange={(label, name) => {
+                    setDraftLabel(label);
+                    setDraftName(name);
                   }}
-                  disabled={editingField !== null}
                 />
+                <TextField
+                  label="Description"
+                  multiline
+                  value={draftDescription}
+                  onChange={setDraftDescription}
+                />
+                <div class="field">
+                  <label>Type</label>
+                  <Select
+                    options={Object.values(fieldTypes).map((t) => ({
+                      value: t.key,
+                      label: t.label,
+                    }))}
+                    value={draftType}
+                    onChange={(value) => {
+                      setDraftType(value);
+                      const type = fieldTypes[value];
+                      setDraftConfig(type?.defaultConfig ?? {});
+                      setDraftValidation(type?.defaultValidation ?? {});
+                      setDraftDefault(undefined);
+                    }}
+                    disabled={editingField !== null}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div class="stack">
-              {!activeFieldType && (
-                <div class="field-dialog-empty-type">Choose a field type to configure its settings.</div>
-              )}
-
-              {activeFieldType && (
-                <DefaultValueInput
-                  activeType={activeFieldType}
-                  config={draftConfig}
-                  value={draftDefault}
-                  onChange={setDraftDefault}
-                />
-              )}
-
-              {activeFieldType && (activeFieldType.configFields?.length ?? 0) > 0 && (
-                <fieldset>
-                  <legend>Display</legend>
-                  <div class="stack">
-                    <SettingsForm
-                      descriptors={activeFieldType.configFields ?? []}
-                      values={draftConfig}
-                      onChange={(key, value) => setDraftConfig((c) => ({ ...c, [key]: value }))}
-                      dynamicOptions={dynamicOptions}
-                    />
+              <div class="stack">
+                {!activeFieldType && (
+                  <div class="field-dialog-empty-type">
+                    Choose a field type to configure its settings.
                   </div>
-                </fieldset>
-              )}
+                )}
 
-              {activeFieldType && (activeFieldType.validationFields?.length ?? 0) > 0 && (
-                <fieldset>
-                  <legend>Validation</legend>
-                  <div class="stack">
-                    <SettingsForm
-                      descriptors={activeFieldType.validationFields ?? []}
-                      values={draftValidation}
-                      onChange={handleValidationChange}
-                      dynamicOptions={dynamicOptions}
-                      disabledKeys={textDisabledKeys}
-                    />
-                  </div>
-                </fieldset>
-              )}
+                {activeFieldType && (
+                  <DefaultValueInput
+                    activeType={activeFieldType}
+                    config={draftConfig}
+                    value={draftDefault}
+                    onChange={setDraftDefault}
+                  />
+                )}
+
+                {activeFieldType &&
+                  (activeFieldType.configFields?.length ?? 0) > 0 && (
+                    <fieldset>
+                      <legend>Display</legend>
+                      <div class="stack">
+                        <SettingsForm
+                          descriptors={activeFieldType.configFields ?? []}
+                          values={draftConfig}
+                          onChange={(key, value) =>
+                            setDraftConfig((c) => ({ ...c, [key]: value }))
+                          }
+                          dynamicOptions={dynamicOptions}
+                        />
+                      </div>
+                    </fieldset>
+                  )}
+
+                {activeFieldType &&
+                  (activeFieldType.validationFields?.length ?? 0) > 0 && (
+                    <fieldset>
+                      <legend>Validation</legend>
+                      <div class="stack">
+                        <SettingsForm
+                          descriptors={activeFieldType.validationFields ?? []}
+                          values={draftValidation}
+                          onChange={handleValidationChange}
+                          dynamicOptions={dynamicOptions}
+                          disabledKeys={textDisabledKeys}
+                        />
+                      </div>
+                    </fieldset>
+                  )}
+              </div>
             </div>
           </div>
           <footer>

@@ -224,7 +224,11 @@ import { SettingsIcon } from 'drycms/components/icons';
     <span class="muted">.card.flush</span>
   </footer>
 </article>`,
-  badges: `<span class="badge">Default</span>
+  badges: `<span class="badge sm">Small</span>
+<span class="badge">Default</span>
+<span class="badge lg">Large</span>
+
+<span class="badge">Default</span>
 <span class="badge secondary">Secondary</span>
 <span class="badge outline">Outline</span>
 <span class="badge info">Info</span>
@@ -234,7 +238,10 @@ import { SettingsIcon } from 'drycms/components/icons';
 
 <!-- Solid instead of soft -->
 <span class="badge filled">Default</span>
-<span class="badge filled info">Info</span>`,
+<span class="badge filled info">Info</span>
+<span class="badge filled success">Success</span>
+<span class="badge filled warning">Warning</span>
+<span class="badge filled destructive">Destructive</span>`,
   alerts: `<div class="alert">
   <h4>Heads up</h4>
   <p>This dashboard ships with sample data until a content source is wired up.</p>

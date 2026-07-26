@@ -17,6 +17,11 @@
       }
     }
 
+    .hint {
+      font-size: var(--dry-text-xs);
+      color: var(--dry-muted-foreground);
+    }
+
     :where(input, select, textarea) {
       font: inherit;
       color: var(--dry-foreground);
@@ -285,7 +290,9 @@
         appearance: none;
         width: var(--dry-range-thumb-h);
         height: var(--dry-range-thumb-h);
-        margin-top: calc((var(--dry-range-track-h) - var(--dry-range-thumb-h)) / 2);
+        margin-top: calc(
+          (var(--dry-range-track-h) - var(--dry-range-thumb-h)) / 2
+        );
         border: 2px solid var(--dry-card);
         border-radius: 50%;
         background-color: var(--dry-primary);
@@ -391,11 +398,6 @@
         margin-block-end: 0;
       }
 
-      & .hint {
-        font-size: var(--dry-text-xs);
-        color: var(--dry-muted-foreground);
-      }
-
       & .error {
         font-size: var(--dry-text-xs);
         color: var(--dry-destructive);
@@ -410,7 +412,6 @@
           grid-column: 1 / -1;
         }
       }
-      
     }
 
     /* Text input with a leading/trailing addon. */

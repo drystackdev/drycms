@@ -4,6 +4,7 @@ import { fieldTypes } from "../../content-types/field-registry.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import FieldListItem, { fieldListItemProps } from "./FieldListItem.js";
+import { PlusIcon } from "../../components/icons.js";
 
 export interface SystemFieldEntry {
   /** Combined-list id. */
@@ -47,13 +48,19 @@ export default function FieldsList({
   onReorderFields,
   onAdd,
 }: FieldsListProps) {
-  const [pendingRemove, setPendingRemove] = useState<FieldDefinition | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<FieldDefinition | null>(
+    null,
+  );
 
   const idEntry = systemEntries.find((e) => e.id === "id");
   const reorderableSystem = systemEntries.filter((e) => e.id !== "id");
 
   const combined: CombinedEntry[] = [
-    ...reorderableSystem.map((entry) => ({ id: entry.id, system: true as const, entry })),
+    ...reorderableSystem.map((entry) => ({
+      id: entry.id,
+      system: true as const,
+      entry,
+    })),
     ...fields.map((field) => ({ id: field.id, system: false as const, field })),
   ];
   const combinedIds = combined.map((e) => e.id);
@@ -76,14 +83,18 @@ export default function FieldsList({
   }, [combinedIds.join(",")]);
 
   const byId = new Map(combined.map((e) => [e.id, e]));
-  const orderedEntries = order.map((id) => byId.get(id)).filter((e): e is CombinedEntry => !!e);
+  const orderedEntries = order
+    .map((id) => byId.get(id))
+    .filter((e): e is CombinedEntry => !!e);
 
   const sortable = useSortableList<CombinedEntry>({
     items: orderedEntries,
     getId: (e) => e.id,
     onReorder: (next) => {
       setOrder(next.map((e) => e.id));
-      const nextFields = next.filter((e): e is CombinedEntry & { system: false } => !e.system).map((e) => e.field);
+      const nextFields = next
+        .filter((e): e is CombinedEntry & { system: false } => !e.system)
+        .map((e) => e.field);
       onReorderFields(nextFields);
     },
   });
@@ -91,9 +102,14 @@ export default function FieldsList({
   return (
     <div>
       <div class="row justify-between">
-        <h3>Fields</h3>
-        <button type="button" class="outline sm" onClick={onAdd}>
-          + Add Field
+        <div>
+          <h3>Fields</h3>
+          <span class="hint">
+            Define the columns used for data entry and storage
+          </span>
+        </div>
+        <button type="button" class="outline" onClick={onAdd}>
+          <PlusIcon /> Add Field
         </button>
       </div>
       <ul class="content-type-list" {...sortable.containerProps}>
@@ -106,7 +122,9 @@ export default function FieldsList({
             system
           />
         )}
-        {orderedEntries.length === 0 && !idEntry && <li class="hint">No fields yet.</li>}
+        {orderedEntries.length === 0 && !idEntry && (
+          <li class="hint">No fields yet.</li>
+        )}
         {orderedEntries.map((item) =>
           item.system ? (
             <FieldListItem
@@ -123,7 +141,10 @@ export default function FieldsList({
             <FieldListItem
               key={item.id}
               id={item.id}
-              {...fieldListItemProps(item.field, fieldTypes[item.field.type]?.label ?? item.field.type)}
+              {...fieldListItemProps(
+                item.field,
+                fieldTypes[item.field.type]?.label ?? item.field.type,
+              )}
               onEdit={() => onEdit(item.field)}
               onRemove={() => setPendingRemove(item.field)}
               dragHandleProps={sortable.getHandleProps(item.id)}
@@ -136,7 +157,10 @@ export default function FieldsList({
         open={pendingRemove !== null}
         title={`Remove "${pendingRemove?.label ?? ""}"?`}
         message={
-          <p>This removes the field from the schema - saving afterwards will drop its column, and any data in it.</p>
+          <p>
+            This removes the field from the schema - saving afterwards will drop
+            its column, and any data in it.
+          </p>
         }
         confirmLabel="Remove"
         destructive

@@ -12,13 +12,18 @@ import { useMemo, useRef, useState } from "preact/hooks";
  * mouse/touch code paths); no groups, multi-drag, swap plugin, or
  * autoscroll (all out of scope here).
  *
- * The dragged row is switched to `position: fixed` with an explicit `top`
- * computed once from its pointerdown-time rect plus total pointer delta -
- * deliberately NOT a transform re-derived from the row's own (possibly
- * already-transformed) `getBoundingClientRect()` each tick, which is a
- * self-referential feedback loop that produces visible jitter. Fixed
- * positioning also means reorders (which move the row to a new DOM index)
- * never disturb its on-screen position mid-drag.
+ * Once the drag arms, the row is cloned into a `position: fixed` overlay
+ * appended to `document.body`, with an explicit `top` computed once from
+ * the row's pointerdown-time rect plus total pointer delta - deliberately
+ * NOT a transform re-derived from the overlay's own `getBoundingClientRect()`
+ * each tick, which is a self-referential feedback loop that produces visible
+ * jitter. Being a clone appended to `body` (rather than the row itself going
+ * `position: fixed`) also means reorders (which move the row to a new DOM
+ * index) never disturb the overlay's on-screen position mid-drag. The real
+ * row stays in normal flow, styled as a dashed "drop slot" placeholder -
+ * so the list never collapses the gap shut and hides whatever row would
+ * otherwise slide underneath it, and the placeholder doubles as the
+ * "landing here" indicator as it moves with each reorder.
  *
  * Contract: every row rendered by the caller must carry
  * `data-sortable-id={getId(item)}` as a direct child of the element holding
@@ -53,6 +58,11 @@ export interface UseSortableListResult {
 }
 
 const FLIP_DURATION_MS = 180;
+const DROP_DURATION_MS = 220;
+/** Same spring-ish overshoot curve used for the toast pop-in (see
+ * `.toast` in components.css) - reused here so drop settles read as part of
+ * the same design language rather than inventing a new "nice" curve. */
+const DROP_EASING = "cubic-bezier(0.34, 1.56, 0.64, 1)";
 
 function rowsIn(container: HTMLElement): Map<string, HTMLElement> {
   const rows = new Map<string, HTMLElement>();
@@ -74,9 +84,10 @@ function captureTops(container: HTMLElement, skipId: string): Map<string, number
   return tops;
 }
 
-/** Animates every row (except `skipId`, the fixed-position dragged row)
- * from its captured "before" top to wherever it now sits, via an inverted
- * transform eased back to none - the FLIP technique. */
+/** Animates every row (except `skipId`, the dragged row's own placeholder -
+ * it should snap straight to its new slot, not ease into it) from its
+ * captured "before" top to wherever it now sits, via an inverted transform
+ * eased back to none - the FLIP technique. */
 function playFlip(container: HTMLElement, before: Map<string, number>, skipId: string) {
   for (const [id, el] of rowsIn(container)) {
     if (id === skipId) continue;
@@ -112,6 +123,8 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
      * from the (once dragging starts) transformed/fixed-positioned element. */
     startRect: DOMRect;
     armed: boolean;
+    /** The floating clone tracking the pointer, created on arm. */
+    overlay: HTMLElement | null;
   } | null>(null);
 
   const endDrag = () => {
@@ -121,13 +134,42 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
     setDraggingId(null);
     if (!state || !container) return;
     const row = rowsIn(container).get(state.id);
-    if (row) {
-      row.style.position = "";
-      row.style.top = "";
-      row.style.left = "";
-      row.style.width = "";
-      row.classList.remove("dnd-dragging");
+
+    if (!state.armed || !row) {
+      // Never crossed the activation distance - nothing was ever detached
+      // from flow (no overlay was created), so there's nothing to settle.
+      state.overlay?.remove();
+      return;
     }
+
+    row.classList.remove("dnd-drag-placeholder");
+
+    // Drop settle: rather than snapping the row straight into its resting
+    // slot, invert from the overlay's last position into a transform (FLIP,
+    // as in `playFlip` above) applied to the row, and ease it - and the
+    // lifted card look - back to normal over one frame. The overlay itself
+    // is removed synchronously in the same tick the transform is applied,
+    // so the handoff paints as one continuous element, never both at once.
+    const overlayRect = state.overlay?.getBoundingClientRect();
+    state.overlay?.remove();
+    if (!overlayRect) return;
+    const restRect = row.getBoundingClientRect();
+    const deltaX = overlayRect.left - restRect.left;
+    const deltaY = overlayRect.top - restRect.top;
+
+    row.style.transition = "none";
+    row.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    row.style.backgroundColor = "var(--dry-card)";
+    row.style.boxShadow = "var(--dry-shadow-lg)";
+    requestAnimationFrame(() => {
+      row.style.transition = `transform ${DROP_DURATION_MS}ms ${DROP_EASING}, background-color ${DROP_DURATION_MS}ms ease, box-shadow ${DROP_DURATION_MS}ms ease`;
+      row.style.transform = "";
+      row.style.backgroundColor = "";
+      row.style.boxShadow = "";
+      setTimeout(() => {
+        row.style.transition = "";
+      }, DROP_DURATION_MS);
+    });
   };
 
   const onPointerMove = (event: PointerEvent) => {
@@ -142,17 +184,33 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
       setDraggingId(state.id);
       const row = rowsIn(container).get(state.id);
       if (row) {
-        row.classList.add("dnd-dragging");
-        row.style.position = "fixed";
-        row.style.left = `${state.startRect.left}px`;
-        row.style.width = `${state.startRect.width}px`;
+        // Clone the row into a floating overlay that tracks the pointer,
+        // rather than taking the row itself out of flow - that would
+        // collapse its slot immediately, snapping whatever's below up into
+        // the gap before any reorder was actually earned by crossing a
+        // swap threshold.
+        const overlay = row.cloneNode(true) as HTMLElement;
+        overlay.removeAttribute("data-sortable-id");
+        overlay.classList.add("dnd-dragging");
+        overlay.style.position = "fixed";
+        overlay.style.top = `${state.startRect.top}px`;
+        overlay.style.left = `${state.startRect.left}px`;
+        overlay.style.width = `${state.startRect.width}px`;
+        overlay.style.margin = "0";
+        overlay.style.zIndex = "50";
+        document.body.appendChild(overlay);
+        state.overlay = overlay;
+
+        // The row itself stays in flow, restyled as the "drop slot" - it
+        // keeps the list's height stable and, as reorders move it through
+        // the DOM, shows exactly where the item would land.
+        row.classList.add("dnd-drag-placeholder");
       }
     }
 
-    const row = rowsIn(container).get(state.id);
-    if (!row) return;
+    if (!state.overlay) return;
     const draggedTop = state.startRect.top + deltaY;
-    row.style.top = `${draggedTop}px`;
+    state.overlay.style.top = `${draggedTop}px`;
 
     const { items, getId, onReorder } = optionsRef.current;
     const draggedCenter = draggedTop + state.startRect.height / 2;
@@ -223,6 +281,7 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
             startY: event.clientY,
             startRect: row.getBoundingClientRect(),
             armed: false,
+            overlay: null,
           };
           document.addEventListener("pointermove", stableMoveHandler.current);
           document.addEventListener("pointerup", stableUpHandler.current);
