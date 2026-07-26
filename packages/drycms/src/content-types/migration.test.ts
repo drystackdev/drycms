@@ -100,6 +100,17 @@ describe("planMigration", () => {
     expect(plan.tables.some((t) => t.tableName === "posts_category" && t.action === "create")).toBe(true);
   });
 
+  it("drops the title column when the slug feature is turned off, since title is bundled with slug", () => {
+    const old = collection({ features: { slug: true } });
+    const next = collection({ features: {} });
+    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
+
+    expect(plan.tables[0]!.action).toBe("alter");
+    expect(plan.tables[0]!.destructive).toEqual(
+      expect.arrayContaining([{ kind: "drop-column", tableName: "posts", columnName: "title" }]),
+    );
+  });
+
   it("does nothing when nothing changed", () => {
     const type = collection({ fields: [field({ id: "f1", name: "body" })] });
     const plan = planMigration({ target: type, oldAllTypes: [type], newAllTypes: [type] });

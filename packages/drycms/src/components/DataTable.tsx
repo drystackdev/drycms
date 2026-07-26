@@ -24,6 +24,10 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
   searchable?: boolean;
   searchPlaceholder?: string;
   emptyLabel?: string;
+  /** When provided, each row becomes clickable (e.g. "click to edit") -
+   * cell-level `render` buttons should still call `stopPropagation()` so
+   * they don't also trigger the row click. */
+  onRowClick?: (row: Row) => void;
 }
 
 type SortState = { key: string; direction: "asc" | "desc" } | null;
@@ -49,6 +53,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   searchable = true,
   searchPlaceholder = "Filter…",
   emptyLabel = "No results.",
+  onRowClick,
 }: DataTableProps<Row>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
@@ -158,7 +163,11 @@ export default function DataTable<Row extends Record<string, unknown>>({
               </tr>
             ) : (
               visible.map((row, index) => (
-                <tr key={index}>
+                <tr
+                  key={index}
+                  style={onRowClick ? { cursor: "pointer" } : undefined}
+                  onClick={() => onRowClick?.(row)}
+                >
                   {columns.map((column) => (
                     <td
                       key={column.key}

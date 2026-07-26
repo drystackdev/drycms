@@ -408,6 +408,10 @@
       .select-icon {
         flex: none;
       }
+
+      & > button:disabled, & > input:disabled {
+        background-color: transparent;
+      }
     }
 
     /* DatePickerField's calendar/select trigger: no ring on focus/open. */
@@ -1945,6 +1949,27 @@
       &:last-child {
         border-block-end: none;
       }
+
+      /* System fields aren't clickable - don't look it either. */
+      &.system:hover {
+        cursor: default;
+        background-color: transparent;
+        color: inherit;
+      }
+    }
+
+    /* Field being dragged in the Fields list (see lib/dnd/useSortableList) -
+     * the pointer-following transform already establishes a stacking
+     * context, but `position: relative` makes the `z-index` deterministic. */
+    .dnd-dragging {
+      position: relative;
+      z-index: 5;
+      opacity: 0.6;
+    }
+
+    .required-asterisk {
+      margin-inline-start: 0.125rem;
+      color: var(--dry-error);
     }
 
     .content-type-editor-grid {
@@ -1962,6 +1987,94 @@
       & > *:first-child {
         padding: 2rem;
         min-height: 100%;
+      }
+    }
+
+    /* Add/Edit Field dialog - header/footer stay put while the grid (the
+     * only part with unbounded content) scrolls, same reasoning as
+     * `.image-picker-dialog` above: without a max-height the dialog just
+     * keeps growing past the viewport and the window scrolls instead. */
+    .field-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    /* Even 1fr/1fr split (vs. the editor grid's 3:1), right column empty
+     * until a type is chosen. */
+    .field-dialog-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      /* Avoid clipping focus rings/shadows on inputs flush against the edge. */
+      margin: -0.25rem;
+      padding: 0.25rem;
+
+      @media (width < 48rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    /* Content Types list page: 1/4 icon-menu + 3/4 table. */
+    .content-types-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 48rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .content-types-nav {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.25rem;
+
+      & button {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 2.75rem;
+        padding: 0.25rem 0.75rem;
+        border: none;
+        border-radius: var(--dry-radius-md);
+        background-color: transparent;
+        box-shadow: none;
+        font-size: var(--dry-text-sm);
+        font-weight: 600;
+        color: var(--dry-muted-foreground);
+        cursor: pointer;
+
+        & > svg {
+          width: 1.5rem;
+          height: 1.5rem;
+          flex: none;
+        }
+
+        &:hover {
+          background-color: var(--dry-accent);
+          color: var(--dry-foreground);
+        }
+
+        &[aria-current="page"] {
+          background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
+          color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+        }
       }
     }
 
@@ -2042,6 +2155,8 @@
 
       .shell.collapsed .sidebar nav a {
         justify-content: center;
+        padding: 0;
+        min-width: 2.75rem;
       }
 
       .shell.collapsed .sidebar nav a > *:not(svg),

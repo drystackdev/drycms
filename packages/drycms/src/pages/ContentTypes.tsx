@@ -2,15 +2,26 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import ConfirmDialog from "../components/ConfirmDialog.js";
+import DataTable from "../components/DataTable.js";
+import Icon from "../components/Icon.js";
+import type { IconName } from "../components/icons.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "../content-types/types.js";
 
-const GROUPS: { kind: ContentTypeKind; label: string }[] = [
-  { kind: "collection", label: "Collection" },
-  { kind: "singleton", label: "Single" },
-  { kind: "component", label: "Component" },
+const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
+  { kind: "collection", label: "Collection", icon: "Collection" },
+  { kind: "singleton", label: "Single", icon: "Singleton" },
+  { kind: "component", label: "Component", icon: "Component" },
 ];
+
+interface Row extends Record<string, unknown> {
+  id: string;
+  label: string;
+  description: string;
+  fieldCount: number;
+  def: ContentTypeDefinition;
+}
 
 export default function ContentTypes() {
   useEffect(() => {
@@ -22,6 +33,7 @@ export default function ContentTypes() {
 
   const [definitions, setDefinitions] = useState<ContentTypeDefinition[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedKind, setSelectedKind] = useState<ContentTypeKind>("collection");
   const [pendingDelete, setPendingDelete] = useState<ContentTypeDefinition | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -38,7 +50,9 @@ export default function ContentTypes() {
     load();
   }, []);
 
-  const groupItems = (kind: ContentTypeKind) => (definitions ?? []).filter((d) => d.kind === kind);
+  const rows: Row[] = (definitions ?? [])
+    .filter((d) => d.kind === selectedKind)
+    .map((d) => ({ id: d.id, label: d.label, description: d.description ?? "", fieldCount: d.fields.length, def: d }));
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
@@ -59,6 +73,8 @@ export default function ContentTypes() {
     }
   };
 
+  const selectedGroup = GROUPS.find((g) => g.kind === selectedKind)!;
+
   return (
     <>
       <div class="page-header">
@@ -73,40 +89,62 @@ export default function ContentTypes() {
       {definitions === null && !loadError ? (
         <span class="hint">Loading…</span>
       ) : (
-        GROUPS.map(({ kind, label }) => (
-          <details key={kind} open>
-            <summary>
-              <span>{label}</span>
+        <div class="content-types-grid">
+          <ul class="content-types-nav">
+            {GROUPS.map(({ kind, label, icon }) => (
+              <li key={kind}>
+                <button
+                  type="button"
+                  aria-current={kind === selectedKind ? "page" : undefined}
+                  onClick={() => setSelectedKind(kind)}
+                >
+                  <Icon name={icon} />
+                  <span>{label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div class="content-types-panel">
+            <div class="row justify-between">
+              <h3>{selectedGroup.label}</h3>
               <button
                 type="button"
                 class="outline sm"
-                style={{marginLeft: 'auto'}}
-                onClick={(event) => {
-                  event.preventDefault();
-                  route(`${path}/content-types/new/${kind}`);
-                }}
+                onClick={() => route(`${path}/content-types/new/${selectedKind}`)}
               >
                 + Add
               </button>
-            </summary>
-            <ul class="content-type-list">
-              {groupItems(kind).length === 0 && <li class="hint">None yet.</li>}
-              {groupItems(kind).map((def) => (
-                <li key={def.id} class="content-type-list-item row justify-between" onClick={() => route(`${path}/content-types/${def.id}/edit`)}>
-                  <span>{def.label}</span>
-                  <div class="row">
-                    <button type="button" class="ghost sm" onClick={(e) => {
-                      e.stopPropagation()
-                      setPendingDelete(def)
-                    }}>
+            </div>
+            <DataTable
+              columns={[
+                { key: "label", label: "Name", sortable: true },
+                { key: "description", label: "Description", sortable: false },
+                { key: "fieldCount", label: "Fields", numeric: true, sortable: true },
+                {
+                  key: "id",
+                  label: "",
+                  sortable: false,
+                  render: (_value, row) => (
+                    <button
+                      type="button"
+                      class="ghost sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPendingDelete(row.def);
+                      }}
+                    >
                       Delete
                     </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </details>
-        ))
+                  ),
+                },
+              ]}
+              rows={rows}
+              emptyLabel="None yet."
+              onRowClick={(row) => route(`${path}/content-types/${row.id}/edit`)}
+            />
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

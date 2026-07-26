@@ -3,7 +3,10 @@ export interface FieldValidation {
   unique?: boolean;
   min?: number | Date;
   max?: number | Date;
+  minLength?: number;
   maxLength?: number;
+  regex?: string;
+  format?: "none" | "email" | "url" | "slug";
 }
 
 export interface FieldDefinition {
@@ -11,6 +14,7 @@ export interface FieldDefinition {
   name: string;
   label: string;
   type: string;
+  description?: string;
   config: unknown;
   validation: FieldValidation;
   default?: unknown;
@@ -21,6 +25,7 @@ export interface ContentTypeFeatures {
   draft?: boolean;
   schedule?: boolean;
   fullSearch?: boolean;
+  timestamps?: boolean;
 }
 
 export type ContentTypeKind = "collection" | "singleton" | "component";

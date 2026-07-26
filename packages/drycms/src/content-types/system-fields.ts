@@ -11,33 +11,41 @@ export const SYSTEM_FIELD_IDS = {
   slug: "__system_slug",
   draft: "__system_draft",
   schedule: "__system_schedule",
+  createdAt: "__system_created_at",
+  updatedAt: "__system_updated_at",
 } as const;
 
 /** The synthetic fields implied by `type.features`, in front of `type.fields`
- * every time a table tree is resolved. `collection` gets every feature;
- * `singleton` only ever gets `slug` (doc: "Features chỉ có [x] slug");
- * `component` has no table of its own and never calls this. */
+ * every time a table tree is resolved. `title` is NOT a standalone default -
+ * it's bundled with `slug` (turning `slug` on adds both); `id` is never in
+ * here at all, unconditionally on every root table (see `migration.ts`'s
+ * `CREATE TABLE ... INTEGER PRIMARY KEY AUTOINCREMENT` codegen) - it is
+ * baked directly into the DDL rather than being a diffable field. `draft`/
+ * `schedule`/`timestamps` are collection-only; `singleton` only ever gets
+ * `slug` (+ the `title` it brings with it); `component` has no table of its
+ * own and never calls this. */
 export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] {
-  const fields: FieldDefinition[] = [
-    {
-      id: SYSTEM_FIELD_IDS.title,
-      name: "title",
-      label: "Title",
-      type: "text",
-      config: {},
-      validation: { required: true },
-    },
-  ];
+  const fields: FieldDefinition[] = [];
 
   if (type.features?.slug) {
-    fields.push({
-      id: SYSTEM_FIELD_IDS.slug,
-      name: "slug",
-      label: "Slug",
-      type: "text",
-      config: {},
-      validation: { required: true, unique: true },
-    });
+    fields.push(
+      {
+        id: SYSTEM_FIELD_IDS.title,
+        name: "title",
+        label: "Title",
+        type: "text",
+        config: {},
+        validation: { required: true },
+      },
+      {
+        id: SYSTEM_FIELD_IDS.slug,
+        name: "slug",
+        label: "Slug",
+        type: "text",
+        config: {},
+        validation: { required: true, unique: true },
+      },
+    );
   }
 
   if (type.kind === "collection") {
@@ -60,6 +68,26 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
         config: { time: true },
         validation: {},
       });
+    }
+    if (type.features?.timestamps) {
+      fields.push(
+        {
+          id: SYSTEM_FIELD_IDS.createdAt,
+          name: "created_at",
+          label: "Created at",
+          type: "date",
+          config: { time: true },
+          validation: {},
+        },
+        {
+          id: SYSTEM_FIELD_IDS.updatedAt,
+          name: "updated_at",
+          label: "Updated at",
+          type: "date",
+          config: { time: true },
+          validation: {},
+        },
+      );
     }
   }
 

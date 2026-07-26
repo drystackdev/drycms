@@ -14,6 +14,7 @@
     "dev:lib": "bun run --cwd packages/drycms dev",
     "preview": "astro preview",
     "test": "bun run --cwd packages/drycms test",
+    "test:e2e": "playwright test",
     "astro": "astro"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "preact": "^10.29.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.0",
     "@types/bun": "^1.3.14",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

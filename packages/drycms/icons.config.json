@@ -48,6 +48,11 @@
     "Plus": "lucide:plus",
     "Minus": "lucide:minus",
     "Paste": "solar:clipboard-check-linear",
-    "Calendar": "solar:calendar-linear"
+    "Calendar": "solar:calendar-linear",
+
+    "Collection": "solar:widget-4-bold-duotone",
+    "Singleton": "solar:document-bold-duotone",
+    "Component": "lucide:puzzle",
+    "DragHandle": "lucide:grip-vertical"
   }
 }

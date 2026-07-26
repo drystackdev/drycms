@@ -60,6 +60,12 @@ export interface FieldTypeDefinition<V = unknown> {
    * `validationFields` write into `FieldDefinition.validation`. */
   configFields?: SettingDescriptor[];
   validationFields?: SettingDescriptor[];
+  /** Seeded into `draftConfig`/`draftValidation` when this type is picked in
+   * the "Add Field" dialog (replacing the previous unconditional reset to
+   * `{}`), so a type can declare sensible defaults - e.g. `number`'s `step`
+   * defaulting to 1 - without the dialog special-casing individual types. */
+  defaultConfig?: Record<string, unknown>;
+  defaultValidation?: Record<string, unknown>;
 }
 
 const REQUIRED_UNIQUE_VALIDATION: SettingDescriptor[] = [
@@ -87,9 +93,28 @@ export const textFieldType: FieldTypeDefinition<string> = {
     { key: "multiline", label: "Multiline (textarea)", widget: "boolean" },
     { key: "placeholder", label: "Placeholder", widget: "text" },
   ],
-  // maxLength is server-side only (TextField has no matching UI prop yet) -
-  // still a real validation rule, just not reflected in the Editor itself.
-  validationFields: [...REQUIRED_UNIQUE_VALIDATION, { key: "maxLength", label: "Max length", widget: "number" }],
+  // minLength/maxLength/regex are server-side only (TextField has no
+  // matching UI prop yet) - still real validation rules, just not reflected
+  // in the Editor itself. `regex` and `format` are mutually exclusive, and
+  // either `regex` or `minLength` forces `required` on - enforced by the
+  // Add/Edit Field dialog (not here; this registry stays declarative).
+  validationFields: [
+    ...REQUIRED_UNIQUE_VALIDATION,
+    { key: "minLength", label: "Min length", widget: "number" },
+    { key: "maxLength", label: "Max length", widget: "number" },
+    { key: "regex", label: "Regex", widget: "text" },
+    {
+      key: "format",
+      label: "Format",
+      widget: "select",
+      options: [
+        { value: "none", label: "None" },
+        { value: "email", label: "Email" },
+        { value: "url", label: "URL" },
+        { value: "slug", label: "Slug" },
+      ],
+    },
+  ],
 };
 
 export const numberFieldType: FieldTypeDefinition<number> = {
@@ -99,6 +124,7 @@ export const numberFieldType: FieldTypeDefinition<number> = {
   Editor: NumberField,
   sqlType: () => "REAL",
   configFields: [{ key: "step", label: "Step", widget: "number" }],
+  defaultConfig: { step: 1 },
   validationFields: [
     ...REQUIRED_UNIQUE_VALIDATION,
     { key: "min", label: "Min", widget: "number" },

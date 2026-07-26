@@ -41,3 +41,26 @@
 - các mục là menu bên trái (1/4)
 - bên phải (3/4) là table hiện danh sách (có mô tả từng danh mục)
 - mặc định menu mở collection
+
+# update 2.0
+## tại /dry/content-types/
+
+- menu cần hiện nhỏ bằng kích thước bên showcase là đẹp (item hiện số lượng trong badge)
+- table không cần nút deleted, số lượng file hiên trong badge, search theo name, descript hiện chung 1 ô màu muted
+- nút add to lên và ghi rõ add cái gì
+- sticky menu khi scroll
+
+# tại edit/add
+
+- System fields và Fields nằm chung 1 list cho thép thay đổi vi trí cho nhau - system ui y như custom filed nhưng không có tag(badge) system
+- cac thông tin để trong badge nằm ở 1 hàng riêng 
+    - hàng trên chỉ hiện Name [type] 
+    - hàng dưới: tablename, description
+- bỏ 2 nút di chuyển
+- nút drapdrop chưa hoạt động tốt đang bị giật
+
+-dialog
+    - default để bên cột bên phải trên cùng (nếu có)
+    - khi chưa chọn type bên phải hiện ô border và yêu cầu người dùng chọn type 
+    - Validation các thuọc tính min, max. nên chung 1 row | required, unit chung 1 row
+    - Min length = 0 nhưng Required chưa mở disabel

@@ -15,17 +15,17 @@ function component(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeD
 }
 
 describe("resolveTableTree", () => {
-  it("always includes the title system column, plus a column per scalar field", () => {
+  it("has no system columns at all when no features are on, plus a column per scalar field", () => {
     const type = collection({ fields: [field({ id: "f1", name: "body", type: "text" })] });
     const tree = resolveTableTree(type, [type]);
 
     expect(tree.tableName).toBe("posts");
     expect(tree.tableKind).toBe("root-collection");
     const names = tree.columns.map((c) => c.name);
-    expect(names).toEqual(["title", "body"]);
+    expect(names).toEqual(["body"]);
   });
 
-  it("adds slug/draft/schedule columns only when the matching feature is on", () => {
+  it("adds title+slug together (bundled) plus draft/schedule only when the matching feature is on", () => {
     const type = collection({ features: { slug: true, draft: true } });
     const tree = resolveTableTree(type, [type]);
     expect(tree.columns.map((c) => c.name)).toEqual(["title", "slug", "draft"]);
@@ -117,19 +117,22 @@ describe("resolveTableTree", () => {
   });
 
   it("only fills ftsColumns when features.fullSearch is on", () => {
-    const withSearch = collection({ features: { fullSearch: true }, fields: [field({ id: "f1", name: "body" })] });
-    const withoutSearch = collection({ fields: [field({ id: "f1", name: "body" })] });
+    const withSearch = collection({
+      features: { fullSearch: true, slug: true },
+      fields: [field({ id: "f1", name: "body" })],
+    });
+    const withoutSearch = collection({ features: { slug: true }, fields: [field({ id: "f1", name: "body" })] });
 
-    expect(resolveTableTree(withSearch, [withSearch]).ftsColumns).toEqual(["title", "body"]);
+    expect(resolveTableTree(withSearch, [withSearch]).ftsColumns).toEqual(["title", "slug", "body"]);
     expect(resolveTableTree(withoutSearch, [withoutSearch]).ftsColumns).toEqual([]);
   });
 
   it("excludes date/image columns from FTS even when fullSearch is on", () => {
     const type = collection({
-      features: { fullSearch: true },
+      features: { fullSearch: true, slug: true },
       fields: [field({ id: "d1", name: "published", type: "date" }), field({ id: "i1", name: "cover", type: "image" })],
     });
-    expect(resolveTableTree(type, [type]).ftsColumns).toEqual(["title"]);
+    expect(resolveTableTree(type, [type]).ftsColumns).toEqual(["title", "slug"]);
   });
 });
 

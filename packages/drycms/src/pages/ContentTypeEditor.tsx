@@ -1,172 +1,60 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
-import CheckField from "../components/CheckField.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import { useDialogSync } from "../components/FileManager.js";
-import NumberField from "../components/NumberField.js";
-import Select from "../components/Select.js";
+import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
-import {
-  fieldTypes,
-  type SettingDescriptor,
-  type SettingOption,
-} from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { DestructiveChange } from "../content-types/migration.js";
-import type {
-  ContentTypeDefinition,
-  ContentTypeFeatures,
-  ContentTypeKind,
-  FieldDefinition,
-} from "../content-types/types.js";
+import type { ContentTypeDefinition, ContentTypeKind, FieldDefinition } from "../content-types/types.js";
 import { ArrowLeftIcon } from "../components/icons.js";
+import FeaturesFieldset from "./content-type-editor/FeaturesFieldset.js";
+import FieldDialog from "./content-type-editor/FieldDialog.js";
+import FieldsList from "./content-type-editor/FieldsList.js";
+import SystemFieldsList, { type SystemFieldEntry } from "./content-type-editor/SystemFieldsList.js";
 
 interface Props {
   id?: string;
   kind?: string;
 }
 
-function slugifyPreview(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/đ/gi, "d")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-}
-
-const FEATURES_BY_KIND: Record<
-  ContentTypeKind,
-  { key: keyof ContentTypeFeatures; label: string }[]
-> = {
-  collection: [
-    { key: "slug", label: "Slug" },
-    { key: "draft", label: "Draft" },
-    { key: "schedule", label: "Schedule" },
-    { key: "fullSearch", label: "Full-text search" },
-  ],
-  singleton: [{ key: "slug", label: "Slug" }],
-  component: [],
-};
-
-function systemFieldLabels(definition: ContentTypeDefinition): string[] {
+/** ID always shows (it's a real column, just baked directly into every
+ * generated `CREATE TABLE` rather than going through `systemFieldsFor` -
+ * see that file's doc comment - and can't be dragged/reordered/removed).
+ * Title is bundled with Slug (turning `slug` on adds both, in that order);
+ * Draft/Schedule/Timestamps are collection-only. */
+function systemFieldsForUi(definition: ContentTypeDefinition): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
-  const labels = ["Title"];
-  if (definition.features?.slug) labels.push("Slug");
-  if (definition.kind === "collection" && definition.features?.draft)
-    labels.push("Draft");
-  if (definition.kind === "collection" && definition.features?.schedule)
-    labels.push("Schedule");
-  return labels;
-}
-
-/** Renders a list of `SettingDescriptor`s against a plain values object - one
- * shared form for every field type's "Add Field" settings, instead of a
- * bespoke settings form per type. */
-function SettingsForm({
-  descriptors,
-  values,
-  onChange,
-  dynamicOptions,
-}: {
-  descriptors: SettingDescriptor[];
-  values: Record<string, unknown>;
-  onChange: (key: string, value: unknown) => void;
-  dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
-}) {
-  if (descriptors.length === 0) return null;
-  return (
-    <>
-      {descriptors.map((d) => {
-        if (d.widget === "boolean") {
-          return (
-            <CheckField
-              key={d.key}
-              label={d.label}
-              value={!!values[d.key]}
-              onChange={(v) => onChange(d.key, v)}
-            />
-          );
-        }
-        if (d.widget === "text") {
-          return (
-            <TextField
-              key={d.key}
-              label={d.label}
-              value={
-                typeof values[d.key] === "string"
-                  ? (values[d.key] as string)
-                  : ""
-              }
-              onChange={(v) => onChange(d.key, v)}
-            />
-          );
-        }
-        if (d.widget === "number") {
-          return (
-            <NumberField
-              key={d.key}
-              label={d.label}
-              value={
-                typeof values[d.key] === "number"
-                  ? (values[d.key] as number)
-                  : 0
-              }
-              onChange={(v) => onChange(d.key, v)}
-            />
-          );
-        }
-        const options = d.optionsSource
-          ? dynamicOptions[d.optionsSource]
-          : (d.options ?? []);
-        return (
-          <div class="field" key={d.key}>
-            <label>{d.label}</label>
-            <Select
-              options={options}
-              value={values[d.key] as string | undefined}
-              onChange={(v) => onChange(d.key, v)}
-            />
-          </div>
-        );
-      })}
-    </>
-  );
+  const items: SystemFieldEntry[] = [{ id: "id", label: "ID" }];
+  if (definition.features?.slug) {
+    items.push({ id: "title", label: "Title" }, { id: "slug", label: "Slug" });
+  }
+  if (definition.kind === "collection") {
+    if (definition.features?.draft) items.push({ id: "draft", label: "Draft" });
+    if (definition.features?.schedule) items.push({ id: "schedule", label: "Schedule" });
+    if (definition.features?.timestamps) {
+      items.push({ id: "createdAt", label: "Created at" }, { id: "updatedAt", label: "Updated at" });
+    }
+  }
+  return items;
 }
 
 export default function ContentTypeEditor({ id, kind }: Props) {
   const { route } = useLocation();
-  const api = useMemo(
-    () => createContentTypesApi(`${path}/api/content-types`),
-    [],
-  );
+  const api = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const isNew = !id;
 
-  const [definition, setDefinition] = useState<ContentTypeDefinition | null>(
-    null,
-  );
+  const [definition, setDefinition] = useState<ContentTypeDefinition | null>(null);
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [nameTouched, setNameTouched] = useState(!isNew);
 
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
-  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
-  const [draftType, setDraftType] = useState("text");
-  const [draftName, setDraftName] = useState("");
-  const [draftLabel, setDraftLabel] = useState("");
-  const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
-  const [draftValidation, setDraftValidation] = useState<
-    Record<string, unknown>
-  >({});
+  const [editingField, setEditingField] = useState<FieldDefinition | null>(null);
 
-  const [pendingConfirm, setPendingConfirm] = useState<
-    DestructiveChange[] | null
-  >(null);
+  const [pendingConfirm, setPendingConfirm] = useState<DestructiveChange[] | null>(null);
+  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -190,11 +78,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           });
         }
       } catch (error) {
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load content type.",
-        );
+        setLoadError(error instanceof Error ? error.message : "Failed to load content type.");
       }
     })();
   }, [id, kind]);
@@ -202,17 +86,6 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   useEffect(() => {
     document.title = isNew ? "New content type" : "Edit content type";
   }, [isNew]);
-
-  useEffect(() => {
-    if (!definition || nameTouched) return;
-    const nextName = slugifyPreview(definition.label);
-    if (nextName !== definition.name)
-      setDefinition((d) => (d ? { ...d, name: nextName } : d));
-  }, [definition?.label, nameTouched]);
-
-  const fieldDialogRef = useDialogSync(fieldDialogOpen, () =>
-    setFieldDialogOpen(false),
-  );
 
   const dynamicOptions = useMemo(
     () => ({
@@ -226,66 +99,21 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     [allTypes, definition?.id],
   );
 
-  function openAddField() {
-    setEditingFieldId(null);
-    setDraftType("text");
-    setDraftName("");
-    setDraftLabel("");
-    setDraftConfig({});
-    setDraftValidation({});
-    setFieldDialogOpen(true);
-  }
-
-  function openEditField(field: FieldDefinition) {
-    setEditingFieldId(field.id);
-    setDraftType(field.type);
-    setDraftName(field.name);
-    setDraftLabel(field.label);
-    setDraftConfig((field.config as Record<string, unknown>) ?? {});
-    setDraftValidation((field.validation as Record<string, unknown>) ?? {});
-    setFieldDialogOpen(true);
-  }
-
-  function saveDraftField() {
-    if (!draftName.trim()) {
-      toast.add({ type: "error", title: "Field name is required." });
-      return;
-    }
-    const nextField: FieldDefinition = {
-      id: editingFieldId ?? crypto.randomUUID(),
-      name: draftName.trim(),
-      label: draftLabel.trim() || draftName.trim(),
-      type: draftType,
-      config: draftConfig,
-      validation: draftValidation,
-    };
-    setDefinition((d) => {
-      if (!d) return d;
-      const fields = editingFieldId
-        ? d.fields.map((f) => (f.id === editingFieldId ? nextField : f))
-        : [...d.fields, nextField];
-      return { ...d, fields };
-    });
-    setFieldDialogOpen(false);
+  function updateFields(fields: FieldDefinition[]) {
+    setDefinition((d) => (d ? { ...d, fields } : d));
   }
 
   function removeField(fieldId: string) {
-    setDefinition((d) =>
-      d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d,
-    );
+    setDefinition((d) => (d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d));
   }
 
-  function moveField(fieldId: string, direction: -1 | 1) {
+  function handleFieldSave(field: FieldDefinition) {
     setDefinition((d) => {
       if (!d) return d;
-      const index = d.fields.findIndex((f) => f.id === fieldId);
-      const target = index + direction;
-      if (index === -1 || target < 0 || target >= d.fields.length) return d;
-      const fields = [...d.fields];
-      const [moved] = fields.splice(index, 1);
-      fields.splice(target, 0, moved!);
+      const fields = editingField ? d.fields.map((f) => (f.id === editingField.id ? field : f)) : [...d.fields, field];
       return { ...d, fields };
     });
+    setFieldDialogOpen(false);
   }
 
   async function submit(confirm: boolean) {
@@ -296,9 +124,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     }
     setSaving(true);
     try {
-      const response = isNew
-        ? await api.create(definition, confirm)
-        : await api.update(definition, confirm);
+      const response = isNew ? await api.create(definition, confirm) : await api.update(definition, confirm);
       if (response.requiresConfirm) {
         setPendingConfirm(response.destructiveSummary ?? []);
         return;
@@ -317,11 +143,16 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     }
   }
 
+  function handleSaveClick() {
+    if (isNew) {
+      submit(false);
+    } else {
+      setShowApplyConfirm(true);
+    }
+  }
+
   if (loadError) return <span class="error">{loadError}</span>;
   if (!definition) return <span class="hint">Loading…</span>;
-
-  const activeFieldType = fieldTypes[draftType];
-  const features = FEATURES_BY_KIND[definition.kind];
 
   return (
     <>
@@ -330,11 +161,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <ArrowLeftIcon />
         </a>
         <div style={{ flex: 1 }}>
-          <h1>
-            {isNew
-              ? `New ${definition.kind}`
-              : definition.label || definition.name}
-          </h1>
+          <h1>{isNew ? `New ${definition.kind}` : definition.label || definition.name}</h1>
           <p>
             {definition.kind === "component"
               ? "Reusable field group, embeddable in other content types."
@@ -342,15 +169,11 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           </p>
         </div>
         <div class="row">
-          <button
-            type="button"
-            class="outline"
-            onClick={() => route(`${path}/content-types`)}
-          >
+          <button type="button" class="outline" onClick={() => route(`${path}/content-types`)}>
             Cancel
           </button>
-          <button type="button" disabled={saving} onClick={() => submit(false)}>
-            Save
+          <button type="button" disabled={saving} onClick={handleSaveClick}>
+            Save & apply schema
           </button>
         </div>
       </div>
@@ -359,205 +182,70 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         <legend class="stack">
           {definition.kind !== "component" && (
             <>
-              <div>
-                <h3>System fields</h3>
-                <ul class="content-type-list">
-                  {systemFieldLabels(definition).map((label) => (
-                    <li key={label} class="content-type-list-item row">
-                      <span>{label}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <hr style={{width: 'calc(100% + 4rem)', marginInline: '-2rem'}} />
+              <SystemFieldsList items={systemFieldsForUi(definition)} />
+              <hr style={{ width: "calc(100% + 4rem)", marginInline: "-2rem" }} />
             </>
           )}
 
-          <div>
-            <div class="row justify-between">
-              <h3>Fields</h3>
-              <button type="button" class="outline sm" onClick={openAddField}>
-                + Add Field
-              </button>
-            </div>
-            <ul class="content-type-list">
-              {definition.fields.length === 0 && (
-                <li class="hint">No custom fields yet.</li>
-              )}
-              {definition.fields.map((field, index) => (
-                <li
-                  key={field.id}
-                  class="content-type-list-item row justify-between"
-                  onClick={() => openEditField(field)}
-                >
-                  <span>
-                    {field.label}{" "}
-                    <span class="hint">
-                      ({fieldTypes[field.type]?.label ?? field.type})
-                    </span>
-                  </span>
-                  <div class="row" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      class="ghost icon sm"
-                      disabled={index === 0}
-                      onClick={() => moveField(field.id, -1)}
-                      aria-label="Move up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      class="ghost icon sm"
-                      disabled={index === definition.fields.length - 1}
-                      onClick={() => moveField(field.id, 1)}
-                      aria-label="Move down"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      class="ghost sm"
-                      onClick={() => removeField(field.id)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FieldsList
+            fields={definition.fields}
+            onEdit={(field) => {
+              setEditingField(field);
+              setFieldDialogOpen(true);
+            }}
+            onRemove={removeField}
+            onReorder={updateFields}
+            onAdd={() => {
+              setEditingField(null);
+              setFieldDialogOpen(true);
+            }}
+          />
         </legend>
         <div class="stack">
-          <TextField
+          <SlugField
             label="Title"
+            slugLabel="Table Name"
             value={definition.label}
-            onChange={(v) => setDefinition((d) => (d ? { ...d, label: v } : d))}
+            slug={definition.name}
+            onChange={(label, name) => setDefinition((d) => (d ? { ...d, label, name } : d))}
           />
           <TextField
             label="Description"
             multiline
             value={definition.description ?? ""}
-            onChange={(v) =>
-              setDefinition((d) => (d ? { ...d, description: v } : d))
-            }
-          />
-          <TextField
-            label="Technical name"
-            helperText={`Table name: "${definition.name || "-"}"`}
-            value={definition.name}
-            onChange={(v) => {
-              setNameTouched(true);
-              setDefinition((d) => (d ? { ...d, name: v } : d));
-            }}
+            onChange={(v) => setDefinition((d) => (d ? { ...d, description: v } : d))}
           />
 
-          {features.length > 0 && (
-            <fieldset>
-              <legend>Features</legend>
-              {features.map(({ key, label }) => (
-                <CheckField
-                  key={key}
-                  label={label}
-                  value={!!definition.features?.[key]}
-                  onChange={(v) =>
-                    setDefinition((d) =>
-                      d ? { ...d, features: { ...d.features, [key]: v } } : d,
-                    )
-                  }
-                />
-              ))}
-            </fieldset>
-          )}
+          <FeaturesFieldset
+            kind={definition.kind}
+            features={definition.features}
+            onChange={(key, value) =>
+              setDefinition((d) => (d ? { ...d, features: { ...d.features, [key]: value } } : d))
+            }
+          />
         </div>
       </div>
 
-      <dialog
-        ref={fieldDialogRef}
-        aria-label={editingFieldId ? "Edit field" : "Add field"}
-        class="xl"
-      >
-        {fieldDialogOpen && (
-          <>
-            <header>
-              <h3>{editingFieldId ? "Edit field" : "Add field"}</h3>
-            </header>
-            <div class="stack">
-              <div class="field">
-                <label>Type</label>
-                <Select
-                  options={Object.values(fieldTypes).map((t) => ({
-                    value: t.key,
-                    label: t.label,
-                  }))}
-                  value={draftType}
-                  onChange={(value) => {
-                    setDraftType(value);
-                    setDraftConfig({});
-                    setDraftValidation({});
-                  }}
-                  disabled={editingFieldId !== null}
-                />
-              </div>
-              <TextField
-                label="Name"
-                value={draftName}
-                onChange={setDraftName}
-              />
-              <TextField
-                label="Label"
-                value={draftLabel}
-                onChange={setDraftLabel}
-                placeholder={draftName}
-              />
+      <FieldDialog
+        open={fieldDialogOpen}
+        editingField={editingField}
+        dynamicOptions={dynamicOptions}
+        onCancel={() => setFieldDialogOpen(false)}
+        onSave={handleFieldSave}
+      />
 
-              {activeFieldType &&
-                (activeFieldType.configFields?.length ?? 0) > 0 && (
-                  <fieldset>
-                    <legend>Display</legend>
-                    <div>
-                      <SettingsForm
-                        descriptors={activeFieldType.configFields ?? []}
-                        values={draftConfig}
-                        onChange={(key, value) =>
-                          setDraftConfig((c) => ({ ...c, [key]: value }))
-                        }
-                        dynamicOptions={dynamicOptions}
-                      />
-                    </div>
-                  </fieldset>
-                )}
-
-              {activeFieldType &&
-                (activeFieldType.validationFields?.length ?? 0) > 0 && (
-                  <fieldset>
-                    <legend>Validation</legend>
-                    <SettingsForm
-                      descriptors={activeFieldType.validationFields ?? []}
-                      values={draftValidation}
-                      onChange={(key, value) =>
-                        setDraftValidation((c) => ({ ...c, [key]: value }))
-                      }
-                      dynamicOptions={dynamicOptions}
-                    />
-                  </fieldset>
-                )}
-            </div>
-            <footer>
-              <button
-                type="button"
-                class="outline"
-                onClick={() => setFieldDialogOpen(false)}
-              >
-                Cancel
-              </button>
-              <button type="button" onClick={saveDraftField}>
-                Save field
-              </button>
-            </footer>
-          </>
-        )}
-      </dialog>
+      <ConfirmDialog
+        open={showApplyConfirm}
+        title="Apply schema changes?"
+        message={<p>Saving will apply these schema changes to the live table.</p>}
+        confirmLabel="Save & apply"
+        busy={saving}
+        onConfirm={() => {
+          setShowApplyConfirm(false);
+          submit(false);
+        }}
+        onCancel={() => setShowApplyConfirm(false)}
+      />
 
       <ConfirmDialog
         open={pendingConfirm !== null}
@@ -570,6 +258,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           </ul>
         }
         confirmLabel="Save anyway"
+        destructive
         busy={saving}
         onConfirm={() => submit(true)}
         onCancel={() => setPendingConfirm(null)}
