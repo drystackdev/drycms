@@ -84,6 +84,11 @@ function titleIndexName(tableName: string): string {
   return `ix_${tableName}_title`;
 }
 
+function dropTitleIndexStatement(tableName: string): Statement {
+  const name = titleIndexName(tableName);
+  return { sql: `DROP INDEX IF EXISTS ${quoteIdent(name)};`, description: `Drop title index on ${tableName}` };
+}
+
 // ---------------------------------------------------------------------------
 // FTS5
 // ---------------------------------------------------------------------------
@@ -265,6 +270,7 @@ function alterTableStatements(tableName: string, diff: ColumnDiff): Statement[] 
 
   for (const col of diff.drops) {
     if (col.unique) statements.push(dropUniqueIndexStatement(tableName, col.name));
+    if (col.name === "title") statements.push(dropTitleIndexStatement(tableName));
     statements.push({ sql: `ALTER TABLE ${quoteIdent(tableName)} DROP COLUMN ${quoteIdent(col.name)};`, description: `Drop ${tableName}.${col.name}` });
   }
 
@@ -416,13 +422,19 @@ function diffOneTable(oldNode: TableNode | undefined, newNode: TableNode | undef
       sql: `ALTER TABLE ${quoteIdent(old.tableName)} RENAME TO ${quoteIdent(next.tableName)};`,
       description: `Rename table ${old.tableName} to ${next.tableName}`,
     });
+  } else if (ftsChanged && old.ftsColumns.length > 0) {
+    // Must drop BEFORE the column ops below - the old triggers reference
+    // the old column set (e.g. `new.title`), and SQLite validates trigger
+    // bodies against the post-drop schema during `ALTER TABLE ... DROP
+    // COLUMN`, so a stale trigger referencing a dropped column fails the
+    // whole statement.
+    statements.push(...dropFtsStatements(old.tableName));
   }
   statements.push(...alterTableStatements(next.tableName, diff));
   // FTS5 doesn't support in-place column add/remove - whenever the eligible
   // column set changes, rebuild it fully after the base table's own
   // migration is applied (needs the FINAL column names/set).
   if (ftsChanged) {
-    if (old.ftsColumns.length > 0 && !tableRenamed) statements.push(...dropFtsStatements(old.tableName));
     statements.push(...createFtsStatements(next.tableName, next.ftsColumns));
   } else if (tableRenamed && old.ftsColumns.length > 0) {
     // Not otherwise rebuilt this pass (column set unchanged) - just needs to

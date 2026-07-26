@@ -3,6 +3,7 @@ import type { FieldProps } from "./field-common.js";
 
 export interface CheckFieldProps extends FieldProps<boolean> {
   /** Renders a switch instead of a checkbox. @default "checkbox" */
+  description?: string;
   ui?: "checkbox" | "switch";
   disabled?: boolean;
   name?: string;
@@ -13,6 +14,7 @@ export default function CheckField({
   value,
   onChange,
   label,
+  description,
   helperText,
   error = false,
   ui = "checkbox",
@@ -36,7 +38,10 @@ export default function CheckField({
           aria-invalid={error || undefined}
           onChange={(event) => onChange((event.target as HTMLInputElement).checked)}
         />
-        <label for={fieldId}>{label}</label>
+        <label for={fieldId} class="stack" style={{gap: 4}}>
+          {label}
+          {description && <span class="hint">{description}</span>}
+        </label>
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>

@@ -109,6 +109,32 @@ describe("planMigration", () => {
     expect(plan.tables[0]!.destructive).toEqual(
       expect.arrayContaining([{ kind: "drop-column", tableName: "posts", columnName: "title" }]),
     );
+    // The title column carries an implicit `ix_posts_title` index (see
+    // createTableStatements) - it must be dropped before the column itself,
+    // or SQLite rejects the ALTER TABLE with "error in index ix_posts_title
+    // after drop column: no such column: title".
+    const sqls = plan.tables[0]!.statements.map((s) => s.sql);
+    const indexDropIdx = sqls.findIndex((s) => s.includes('DROP INDEX IF EXISTS "ix_posts_title"'));
+    const columnDropIdx = sqls.findIndex((s) => s.includes('DROP COLUMN "title"'));
+    expect(indexDropIdx).toBeGreaterThanOrEqual(0);
+    expect(columnDropIdx).toBeGreaterThan(indexDropIdx);
+  });
+
+  it("drops the FTS triggers before dropping a column they reference (turning off slug + fullSearch together)", () => {
+    const old = collection({ features: { slug: true, fullSearch: true } });
+    const next = collection({ features: {} });
+    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
+
+    expect(plan.tables[0]!.action).toBe("alter");
+    // The FTS triggers reference `new.title`/`old.title` - they must be torn
+    // down before `ALTER TABLE ... DROP COLUMN "title"`, or SQLite rejects
+    // the drop with "error in trigger posts_fts_ai after drop column: no
+    // such column: new.title".
+    const sqls = plan.tables[0]!.statements.map((s) => s.sql);
+    const triggerDropIdx = sqls.findIndex((s) => s.includes('DROP TRIGGER IF EXISTS "posts_fts_ai"'));
+    const columnDropIdx = sqls.findIndex((s) => s.includes('DROP COLUMN "title"'));
+    expect(triggerDropIdx).toBeGreaterThanOrEqual(0);
+    expect(columnDropIdx).toBeGreaterThan(triggerDropIdx);
   });
 
   it("does nothing when nothing changed", () => {

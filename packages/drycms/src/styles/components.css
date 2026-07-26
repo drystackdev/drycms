@@ -314,6 +314,11 @@
 
       &:has(> [aria-invalid="true"]) {
         border-color: var(--dry-error);
+
+        &:focus-within {
+          border-color: var(--dry-error);
+          box-shadow: inset 0 0 0 1px var(--dry-error);
+        }
       }
 
       &:has(> button[disabled]),
@@ -532,11 +537,6 @@
       & > label {
         margin: 0;
         cursor: pointer;
-      }
-
-      & ~ span.hint {
-        margin-left: 2.125rem;
-        margin-top: -1rem;
       }
     }
 
@@ -2077,7 +2077,15 @@
     .field-dialog-scroll {
       flex: 1 1 auto;
       min-height: 0;
-      overflow-y: auto;
+      /* No overflow here - SimpleBar's `.simplebar-content-wrapper` already
+       * scrolls internally. This element's own resolved height only exists
+       * via flexbox (there's no explicit `height`, just `max-height` on the
+       * flex-column ancestor above), which `.simplebar-wrapper`'s `height:
+       * inherit` can't see - so its box balloons to the content's full
+       * height. Giving this element `overflow-y: auto` too then made it a
+       * second, independent native scroll container stacked on top of
+       * SimpleBar's, i.e. two scrollbars for the same content ("scroll in
+       * scroll", not just a cosmetic double bar). */
       /* Avoid clipping focus rings/shadows on inputs flush against the edge. */
       margin-inline: -1rem;
       padding-inline: 1.25rem;

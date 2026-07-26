@@ -70,6 +70,8 @@ export default function SlugField({
           onChange(nextValue, slugTouched ? slug : slugify(nextValue));
         }}
         required={required}
+        error={error}
+        helperText={helperText}
       />
       <div class="field">
         <label for={slugFieldId}>{slugLabel}</label>
@@ -99,7 +101,6 @@ export default function SlugField({
             <RegenerateSlugIcon />
           </button>
         </div>
-        {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
       </div>
     </div>
   );

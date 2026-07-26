@@ -50,7 +50,7 @@ export default function FeaturesFieldset({ kind, features, onChange }: FeaturesF
       <div class="stack" style={{marginBottom: '1rem'}}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
-            <CheckField helperText={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
+            <CheckField description={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
           </div>
         ))}
       </div>

@@ -24,18 +24,21 @@ interface Props {
   kind?: string;
 }
 
-/** ID always shows (it's a real column, just baked directly into every
- * generated `CREATE TABLE` rather than going through `systemFieldsFor` -
- * see that file's doc comment - and can't be dragged/reordered/removed).
+/** ID is a real column, baked directly into every generated `CREATE TABLE`
+ * rather than going through `systemFieldsFor` - see that file's doc comment
+ * - and can't be dragged/reordered/removed. It's hidden from the UI for
+ * singletons (a single row's numeric id isn't meaningful to show) even
+ * though the column itself still exists.
  * Title is bundled with Slug (turning `slug` on adds both, in that order);
  * Draft/Schedule/Timestamps are collection-only. */
 function systemFieldsForUi(
   definition: ContentTypeDefinition,
 ): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
-  const items: SystemFieldEntry[] = [
-    { id: "id", label: "ID", name: "id", typeLabel: "Number" },
-  ];
+  const items: SystemFieldEntry[] =
+    definition.kind === "singleton"
+      ? []
+      : [{ id: "id", label: "ID", name: "id", typeLabel: "Number" }];
   if (definition.features?.slug) {
     items.push(
       { id: "title", label: "Title", name: "title", typeLabel: "Text" },
@@ -93,6 +96,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [tableNameError, setTableNameError] = useState<string | null>(null);
 
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
   const [editingField, setEditingField] = useState<FieldDefinition | null>(
@@ -177,9 +181,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   async function submit(confirm: boolean) {
     if (!definition) return;
     if (!definition.label.trim() || !definition.name.trim()) {
-      toast.add({ type: "error", title: "Title is required." });
+      setTableNameError("Table Name is required.");
       return;
     }
+    setTableNameError(null);
     setSaving(true);
     try {
       const response = isNew
@@ -292,10 +297,13 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             slugLabel="Table"
             value={definition.label}
             slug={definition.name}
-            onChange={(label, name) =>
-              setDefinition((d) => (d ? { ...d, label, name } : d))
-            }
+            onChange={(label, name) => {
+              setTableNameError(null);
+              setDefinition((d) => (d ? { ...d, label, name } : d));
+            }}
             required
+            error={!!tableNameError}
+            helperText={tableNameError ?? undefined}
           />
           <TextField
             label="Description"
