@@ -509,8 +509,6 @@
       gap: 0.625rem;
       width: 100%;
       height: 2.5rem;
-      padding: 0 0.875rem;
-      box-shadow: var(--dry-shadow-xs);
       background-color: transparent;
       transition:
         border-color 120ms ease,
@@ -529,6 +527,11 @@
       & > label {
         margin: 0;
         cursor: pointer;
+      }
+
+      & ~ span.hint {
+        margin-left: 2.125rem;
+        margin-top: -1rem;
       }
     }
 
@@ -858,7 +861,6 @@
       &:hover:not(:disabled) ~ button.image-field-remove {
         opacity: 1;
       }
-      
 
       &:disabled {
         cursor: not-allowed;
@@ -1150,9 +1152,15 @@
 
     /* ------------------------------------------------------- Accordion (native) */
     details {
-      border-bottom: 1px dashed var(--dry-border);
+      & + & {
+        border-top: 1px dashed var(--dry-border);
+      }
       interpolate-size: allow-keywords;
-
+      padding-inline: 1rem;
+      transition: background-color 0.05s ease-in-out;
+      &:hover {
+        background-color: var(--dry-accent);
+      }
       & > summary {
         display: flex;
         align-items: center;
@@ -1181,6 +1189,10 @@
 
       &[open] > summary::after {
         rotate: 225deg;
+      }
+
+      &[open] {
+        background-color: var(--dry-card);
       }
 
       /* Animates the native disclosure panel; falls back to an instant
@@ -1223,6 +1235,26 @@
       @media (width >= 48rem) {
         width: 26rem;
         max-width: min(38rem, calc(100vw - 4rem));
+      }
+      /* Sizes */
+      &.sm {
+        width: 20rem;
+        max-width: min(28rem, calc(100vw - 2rem));
+      }
+
+      &.md {
+        width: 32rem;
+        max-width: min(40rem, calc(100vw - 2rem));
+      }
+
+      &.lg {
+        width: 48rem;
+        max-width: min(56rem, calc(100vw - 2rem));
+      }
+
+      &.xl {
+        width: 64rem;
+        max-width: min(64rem, calc(100vw - 4rem));
       }
 
       &::backdrop {
@@ -1903,10 +1935,33 @@
 
     .content-type-list-item {
       padding-block: 0.625rem;
+      padding-inline: 0.5rem;
       border-block-end: 1px solid var(--dry-border);
-
+      &:hover {
+        cursor: pointer;
+        background-color: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
       &:last-child {
         border-block-end: none;
+      }
+    }
+
+    .content-type-editor-grid {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 3fr)
+        minmax(0, 1fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 48rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      & > *:first-child {
+        padding: 2rem;
+        min-height: 100%;
       }
     }
 

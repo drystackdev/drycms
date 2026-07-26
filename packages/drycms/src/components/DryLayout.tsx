@@ -42,9 +42,6 @@ export default function DryLayout({ children }: Props) {
 	const main = useSimpleBar<HTMLDivElement>();
 	const [collapsed, setCollapsed] = useState(false);
 
-	/* Shown in the topbar; `document.title` is set by each page instead. */
-	const title = NAV.find((item) => url.startsWith(item.href))?.label ?? 'drycms';
-
 	useEffect(() => {
 		const stored = readStoredCollapsed();
 		setCollapsed(stored);
@@ -123,7 +120,6 @@ export default function DryLayout({ children }: Props) {
 			<div class="main" ref={main.ref}>
 				<header class="topbar">
 					<SidebarToggle />
-					<strong>{title}</strong>
 					<span class="spacer"></span>
 					<ThemeToggle />
 				</header>

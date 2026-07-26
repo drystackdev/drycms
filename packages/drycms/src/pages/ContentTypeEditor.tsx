@@ -8,10 +8,20 @@ import NumberField from "../components/NumberField.js";
 import Select from "../components/Select.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
-import { fieldTypes, type SettingDescriptor, type SettingOption } from "../content-types/field-registry.js";
+import {
+  fieldTypes,
+  type SettingDescriptor,
+  type SettingOption,
+} from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { DestructiveChange } from "../content-types/migration.js";
-import type { ContentTypeDefinition, ContentTypeFeatures, ContentTypeKind, FieldDefinition } from "../content-types/types.js";
+import type {
+  ContentTypeDefinition,
+  ContentTypeFeatures,
+  ContentTypeKind,
+  FieldDefinition,
+} from "../content-types/types.js";
+import { ArrowLeftIcon } from "../components/icons.js";
 
 interface Props {
   id?: string;
@@ -29,7 +39,10 @@ function slugifyPreview(text: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-const FEATURES_BY_KIND: Record<ContentTypeKind, { key: keyof ContentTypeFeatures; label: string }[]> = {
+const FEATURES_BY_KIND: Record<
+  ContentTypeKind,
+  { key: keyof ContentTypeFeatures; label: string }[]
+> = {
   collection: [
     { key: "slug", label: "Slug" },
     { key: "draft", label: "Draft" },
@@ -44,8 +57,10 @@ function systemFieldLabels(definition: ContentTypeDefinition): string[] {
   if (definition.kind === "component") return [];
   const labels = ["Title"];
   if (definition.features?.slug) labels.push("Slug");
-  if (definition.kind === "collection" && definition.features?.draft) labels.push("Draft");
-  if (definition.kind === "collection" && definition.features?.schedule) labels.push("Schedule");
+  if (definition.kind === "collection" && definition.features?.draft)
+    labels.push("Draft");
+  if (definition.kind === "collection" && definition.features?.schedule)
+    labels.push("Schedule");
   return labels;
 }
 
@@ -69,7 +84,12 @@ function SettingsForm({
       {descriptors.map((d) => {
         if (d.widget === "boolean") {
           return (
-            <CheckField key={d.key} label={d.label} value={!!values[d.key]} onChange={(v) => onChange(d.key, v)} />
+            <CheckField
+              key={d.key}
+              label={d.label}
+              value={!!values[d.key]}
+              onChange={(v) => onChange(d.key, v)}
+            />
           );
         }
         if (d.widget === "text") {
@@ -77,7 +97,11 @@ function SettingsForm({
             <TextField
               key={d.key}
               label={d.label}
-              value={typeof values[d.key] === "string" ? (values[d.key] as string) : ""}
+              value={
+                typeof values[d.key] === "string"
+                  ? (values[d.key] as string)
+                  : ""
+              }
               onChange={(v) => onChange(d.key, v)}
             />
           );
@@ -87,16 +111,26 @@ function SettingsForm({
             <NumberField
               key={d.key}
               label={d.label}
-              value={typeof values[d.key] === "number" ? (values[d.key] as number) : 0}
+              value={
+                typeof values[d.key] === "number"
+                  ? (values[d.key] as number)
+                  : 0
+              }
               onChange={(v) => onChange(d.key, v)}
             />
           );
         }
-        const options = d.optionsSource ? dynamicOptions[d.optionsSource] : (d.options ?? []);
+        const options = d.optionsSource
+          ? dynamicOptions[d.optionsSource]
+          : (d.options ?? []);
         return (
           <div class="field" key={d.key}>
             <label>{d.label}</label>
-            <Select options={options} value={values[d.key] as string | undefined} onChange={(v) => onChange(d.key, v)} />
+            <Select
+              options={options}
+              value={values[d.key] as string | undefined}
+              onChange={(v) => onChange(d.key, v)}
+            />
           </div>
         );
       })}
@@ -106,10 +140,15 @@ function SettingsForm({
 
 export default function ContentTypeEditor({ id, kind }: Props) {
   const { route } = useLocation();
-  const api = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const api = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
   const isNew = !id;
 
-  const [definition, setDefinition] = useState<ContentTypeDefinition | null>(null);
+  const [definition, setDefinition] = useState<ContentTypeDefinition | null>(
+    null,
+  );
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,9 +160,13 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [draftName, setDraftName] = useState("");
   const [draftLabel, setDraftLabel] = useState("");
   const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
-  const [draftValidation, setDraftValidation] = useState<Record<string, unknown>>({});
+  const [draftValidation, setDraftValidation] = useState<
+    Record<string, unknown>
+  >({});
 
-  const [pendingConfirm, setPendingConfirm] = useState<DestructiveChange[] | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<
+    DestructiveChange[] | null
+  >(null);
 
   useEffect(() => {
     (async () => {
@@ -133,11 +176,25 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         if (id) {
           setDefinition(types.find((t) => t.id === id) ?? (await api.get(id)));
         } else {
-          const initialKind: ContentTypeKind = kind === "singleton" || kind === "component" ? kind : "collection";
-          setDefinition({ id: crypto.randomUUID(), kind: initialKind, name: "", label: "", description: "", features: {}, fields: [], version: 0 });
+          const initialKind: ContentTypeKind =
+            kind === "singleton" || kind === "component" ? kind : "collection";
+          setDefinition({
+            id: crypto.randomUUID(),
+            kind: initialKind,
+            name: "",
+            label: "",
+            description: "",
+            features: {},
+            fields: [],
+            version: 0,
+          });
         }
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load content type.");
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load content type.",
+        );
       }
     })();
   }, [id, kind]);
@@ -149,15 +206,22 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   useEffect(() => {
     if (!definition || nameTouched) return;
     const nextName = slugifyPreview(definition.label);
-    if (nextName !== definition.name) setDefinition((d) => (d ? { ...d, name: nextName } : d));
+    if (nextName !== definition.name)
+      setDefinition((d) => (d ? { ...d, name: nextName } : d));
   }, [definition?.label, nameTouched]);
 
-  const fieldDialogRef = useDialogSync(fieldDialogOpen, () => setFieldDialogOpen(false));
+  const fieldDialogRef = useDialogSync(fieldDialogOpen, () =>
+    setFieldDialogOpen(false),
+  );
 
   const dynamicOptions = useMemo(
     () => ({
-      collections: allTypes.filter((t) => t.kind === "collection" && t.id !== definition?.id).map((t) => ({ value: t.id, label: t.label })),
-      components: allTypes.filter((t) => t.kind === "component" && t.id !== definition?.id).map((t) => ({ value: t.id, label: t.label })),
+      collections: allTypes
+        .filter((t) => t.kind === "collection" && t.id !== definition?.id)
+        .map((t) => ({ value: t.id, label: t.label })),
+      components: allTypes
+        .filter((t) => t.kind === "component" && t.id !== definition?.id)
+        .map((t) => ({ value: t.id, label: t.label })),
     }),
     [allTypes, definition?.id],
   );
@@ -197,14 +261,18 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     };
     setDefinition((d) => {
       if (!d) return d;
-      const fields = editingFieldId ? d.fields.map((f) => (f.id === editingFieldId ? nextField : f)) : [...d.fields, nextField];
+      const fields = editingFieldId
+        ? d.fields.map((f) => (f.id === editingFieldId ? nextField : f))
+        : [...d.fields, nextField];
       return { ...d, fields };
     });
     setFieldDialogOpen(false);
   }
 
   function removeField(fieldId: string) {
-    setDefinition((d) => (d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d));
+    setDefinition((d) =>
+      d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d,
+    );
   }
 
   function moveField(fieldId: string, direction: -1 | 1) {
@@ -228,7 +296,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     }
     setSaving(true);
     try {
-      const response = isNew ? await api.create(definition, confirm) : await api.update(definition, confirm);
+      const response = isNew
+        ? await api.create(definition, confirm)
+        : await api.update(definition, confirm);
       if (response.requiresConfirm) {
         setPendingConfirm(response.destructiveSummary ?? []);
         return;
@@ -237,7 +307,11 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       toast.add({ type: "success", title: `Saved "${definition.label}".` });
       route(`${path}/content-types`);
     } catch (error) {
-      toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
+      toast.add({
+        type: "error",
+        title: "Save failed",
+        description: error instanceof Error ? error.message : undefined,
+      });
     } finally {
       setSaving(false);
     }
@@ -252,107 +326,157 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   return (
     <>
       <div class="page-header">
-        <div>
-          <h1>{isNew ? `New ${definition.kind}` : definition.label || definition.name}</h1>
-          <p>{definition.kind === "component" ? "Reusable field group, embeddable in other content types." : "Content type schema."}</p>
+        <a role="button" href={`${path}/content-types/`} class="icon ghost">
+          <ArrowLeftIcon />
+        </a>
+        <div style={{ flex: 1 }}>
+          <h1>
+            {isNew
+              ? `New ${definition.kind}`
+              : definition.label || definition.name}
+          </h1>
+          <p>
+            {definition.kind === "component"
+              ? "Reusable field group, embeddable in other content types."
+              : "Content type schema."}
+          </p>
         </div>
-      </div>
-
-      <div class="stack">
-        <TextField label="Title" value={definition.label} onChange={(v) => setDefinition((d) => (d ? { ...d, label: v } : d))} />
-        <TextField
-          label="Description"
-          multiline
-          value={definition.description ?? ""}
-          onChange={(v) => setDefinition((d) => (d ? { ...d, description: v } : d))}
-        />
-        <TextField
-          label="Technical name"
-          helperText={`Table name: "${definition.name || "-"}"`}
-          value={definition.name}
-          onChange={(v) => {
-            setNameTouched(true);
-            setDefinition((d) => (d ? { ...d, name: v } : d));
-          }}
-        />
-
-        {features.length > 0 && (
-          <fieldset>
-            <legend>Features</legend>
-            {features.map(({ key, label }) => (
-              <CheckField
-                key={key}
-                label={label}
-                value={!!definition.features?.[key]}
-                onChange={(v) => setDefinition((d) => (d ? { ...d, features: { ...d.features, [key]: v } } : d))}
-              />
-            ))}
-          </fieldset>
-        )}
-
-        {definition.kind !== "component" && (
-          <div>
-            <h3>System fields</h3>
-            <ul class="content-type-list">
-              {systemFieldLabels(definition).map((label) => (
-                <li key={label} class="content-type-list-item row">
-                  <span>{label}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div>
-          <div class="row justify-between">
-            <h3>Fields</h3>
-            <button type="button" class="outline sm" onClick={openAddField}>
-              + Add Field
-            </button>
-          </div>
-          <ul class="content-type-list">
-            {definition.fields.length === 0 && <li class="hint">No custom fields yet.</li>}
-            {definition.fields.map((field, index) => (
-              <li key={field.id} class="content-type-list-item row justify-between">
-                <span>
-                  {field.label} <span class="hint">({fieldTypes[field.type]?.label ?? field.type})</span>
-                </span>
-                <div class="row">
-                  <button type="button" class="ghost icon sm" disabled={index === 0} onClick={() => moveField(field.id, -1)} aria-label="Move up">
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    class="ghost icon sm"
-                    disabled={index === definition.fields.length - 1}
-                    onClick={() => moveField(field.id, 1)}
-                    aria-label="Move down"
-                  >
-                    ↓
-                  </button>
-                  <button type="button" class="ghost sm" onClick={() => openEditField(field)}>
-                    Edit
-                  </button>
-                  <button type="button" class="ghost sm" onClick={() => removeField(field.id)}>
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <footer class="row justify-end">
-          <button type="button" class="outline" onClick={() => route(`${path}/content-types`)}>
+        <div class="row">
+          <button
+            type="button"
+            class="outline"
+            onClick={() => route(`${path}/content-types`)}
+          >
             Cancel
           </button>
           <button type="button" disabled={saving} onClick={() => submit(false)}>
             Save
           </button>
-        </footer>
+        </div>
       </div>
 
-      <dialog ref={fieldDialogRef} aria-label={editingFieldId ? "Edit field" : "Add field"}>
+      <div class="content-type-editor-grid">
+        <legend class="stack">
+          {definition.kind !== "component" && (
+            <>
+              <div>
+                <h3>System fields</h3>
+                <ul class="content-type-list">
+                  {systemFieldLabels(definition).map((label) => (
+                    <li key={label} class="content-type-list-item row">
+                      <span>{label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <hr style={{width: 'calc(100% + 4rem)', marginInline: '-2rem'}} />
+            </>
+          )}
+
+          <div>
+            <div class="row justify-between">
+              <h3>Fields</h3>
+              <button type="button" class="outline sm" onClick={openAddField}>
+                + Add Field
+              </button>
+            </div>
+            <ul class="content-type-list">
+              {definition.fields.length === 0 && (
+                <li class="hint">No custom fields yet.</li>
+              )}
+              {definition.fields.map((field, index) => (
+                <li
+                  key={field.id}
+                  class="content-type-list-item row justify-between"
+                  onClick={() => openEditField(field)}
+                >
+                  <span>
+                    {field.label}{" "}
+                    <span class="hint">
+                      ({fieldTypes[field.type]?.label ?? field.type})
+                    </span>
+                  </span>
+                  <div class="row" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      disabled={index === 0}
+                      onClick={() => moveField(field.id, -1)}
+                      aria-label="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      disabled={index === definition.fields.length - 1}
+                      onClick={() => moveField(field.id, 1)}
+                      aria-label="Move down"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      class="ghost sm"
+                      onClick={() => removeField(field.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </legend>
+        <div class="stack">
+          <TextField
+            label="Title"
+            value={definition.label}
+            onChange={(v) => setDefinition((d) => (d ? { ...d, label: v } : d))}
+          />
+          <TextField
+            label="Description"
+            multiline
+            value={definition.description ?? ""}
+            onChange={(v) =>
+              setDefinition((d) => (d ? { ...d, description: v } : d))
+            }
+          />
+          <TextField
+            label="Technical name"
+            helperText={`Table name: "${definition.name || "-"}"`}
+            value={definition.name}
+            onChange={(v) => {
+              setNameTouched(true);
+              setDefinition((d) => (d ? { ...d, name: v } : d));
+            }}
+          />
+
+          {features.length > 0 && (
+            <fieldset>
+              <legend>Features</legend>
+              {features.map(({ key, label }) => (
+                <CheckField
+                  key={key}
+                  label={label}
+                  value={!!definition.features?.[key]}
+                  onChange={(v) =>
+                    setDefinition((d) =>
+                      d ? { ...d, features: { ...d.features, [key]: v } } : d,
+                    )
+                  }
+                />
+              ))}
+            </fieldset>
+          )}
+        </div>
+      </div>
+
+      <dialog
+        ref={fieldDialogRef}
+        aria-label={editingFieldId ? "Edit field" : "Add field"}
+        class="xl"
+      >
         {fieldDialogOpen && (
           <>
             <header>
@@ -362,7 +486,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               <div class="field">
                 <label>Type</label>
                 <Select
-                  options={Object.values(fieldTypes).map((t) => ({ value: t.key, label: t.label }))}
+                  options={Object.values(fieldTypes).map((t) => ({
+                    value: t.key,
+                    label: t.label,
+                  }))}
                   value={draftType}
                   onChange={(value) => {
                     setDraftType(value);
@@ -372,35 +499,56 @@ export default function ContentTypeEditor({ id, kind }: Props) {
                   disabled={editingFieldId !== null}
                 />
               </div>
-              <TextField label="Name" value={draftName} onChange={setDraftName} />
-              <TextField label="Label" value={draftLabel} onChange={setDraftLabel} placeholder={draftName} />
+              <TextField
+                label="Name"
+                value={draftName}
+                onChange={setDraftName}
+              />
+              <TextField
+                label="Label"
+                value={draftLabel}
+                onChange={setDraftLabel}
+                placeholder={draftName}
+              />
 
-              {activeFieldType && (activeFieldType.configFields?.length ?? 0) > 0 && (
-                <fieldset>
-                  <legend>Display</legend>
-                  <SettingsForm
-                    descriptors={activeFieldType.configFields ?? []}
-                    values={draftConfig}
-                    onChange={(key, value) => setDraftConfig((c) => ({ ...c, [key]: value }))}
-                    dynamicOptions={dynamicOptions}
-                  />
-                </fieldset>
-              )}
+              {activeFieldType &&
+                (activeFieldType.configFields?.length ?? 0) > 0 && (
+                  <fieldset>
+                    <legend>Display</legend>
+                    <div>
+                      <SettingsForm
+                        descriptors={activeFieldType.configFields ?? []}
+                        values={draftConfig}
+                        onChange={(key, value) =>
+                          setDraftConfig((c) => ({ ...c, [key]: value }))
+                        }
+                        dynamicOptions={dynamicOptions}
+                      />
+                    </div>
+                  </fieldset>
+                )}
 
-              {activeFieldType && (activeFieldType.validationFields?.length ?? 0) > 0 && (
-                <fieldset>
-                  <legend>Validation</legend>
-                  <SettingsForm
-                    descriptors={activeFieldType.validationFields ?? []}
-                    values={draftValidation}
-                    onChange={(key, value) => setDraftValidation((c) => ({ ...c, [key]: value }))}
-                    dynamicOptions={dynamicOptions}
-                  />
-                </fieldset>
-              )}
+              {activeFieldType &&
+                (activeFieldType.validationFields?.length ?? 0) > 0 && (
+                  <fieldset>
+                    <legend>Validation</legend>
+                    <SettingsForm
+                      descriptors={activeFieldType.validationFields ?? []}
+                      values={draftValidation}
+                      onChange={(key, value) =>
+                        setDraftValidation((c) => ({ ...c, [key]: value }))
+                      }
+                      dynamicOptions={dynamicOptions}
+                    />
+                  </fieldset>
+                )}
             </div>
             <footer>
-              <button type="button" class="outline" onClick={() => setFieldDialogOpen(false)}>
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setFieldDialogOpen(false)}
+              >
                 Cancel
               </button>
               <button type="button" onClick={saveDraftField}>

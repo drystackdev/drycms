@@ -80,6 +80,7 @@ export default function ContentTypes() {
               <button
                 type="button"
                 class="outline sm"
+                style={{marginLeft: 'auto'}}
                 onClick={(event) => {
                   event.preventDefault();
                   route(`${path}/content-types/new/${kind}`);
@@ -91,13 +92,13 @@ export default function ContentTypes() {
             <ul class="content-type-list">
               {groupItems(kind).length === 0 && <li class="hint">None yet.</li>}
               {groupItems(kind).map((def) => (
-                <li key={def.id} class="content-type-list-item row justify-between">
+                <li key={def.id} class="content-type-list-item row justify-between" onClick={() => route(`${path}/content-types/${def.id}/edit`)}>
                   <span>{def.label}</span>
                   <div class="row">
-                    <button type="button" class="ghost sm" onClick={() => route(`${path}/content-types/${def.id}/edit`)}>
-                      Edit
-                    </button>
-                    <button type="button" class="ghost sm" onClick={() => setPendingDelete(def)}>
+                    <button type="button" class="ghost sm" onClick={(e) => {
+                      e.stopPropagation()
+                      setPendingDelete(def)
+                    }}>
                       Delete
                     </button>
                   </div>

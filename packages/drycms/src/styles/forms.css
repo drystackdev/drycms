@@ -370,12 +370,15 @@
     :where(fieldset) {
       margin: 0;
       border: 1px solid var(--dry-border);
-      border-radius: var(--dry-radius-md);
+      border-radius: var(--dry-radius-lg);
+      padding: 1rem;
     }
 
     :where(legend) {
-      padding-inline: 0.4rem;
+      padding-inline: 0.75rem;
       font-weight: 500;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-lg);
     }
 
     /* Label + control + hint grouping. */
@@ -407,6 +410,7 @@
           grid-column: 1 / -1;
         }
       }
+      
     }
 
     /* Text input with a leading/trailing addon. */
