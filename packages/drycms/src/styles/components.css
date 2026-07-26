@@ -2039,7 +2039,7 @@
       padding: 0.75rem;
       border-radius: inherit;
       background-color: light-dark(rgb(255 255 255 / 80%), rgb(28 37 46 / 80%));
-      backdrop-filter: blur(6px);
+      backdrop-filter: blur(1px);
       -webkit-backdrop-filter: blur(6px);
       color: var(--dry-card-foreground);
       opacity: 0;

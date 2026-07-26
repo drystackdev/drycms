@@ -185,7 +185,7 @@ async function handleUpload(request: Request, folder: string, apiBase: string): 
     }
     const stat = await adapter.write(
       targetPath,
-      Readable.fromWeb(file.stream() as Parameters<typeof Readable.fromWeb>[0]),
+      Readable.fromWeb(file.stream() as unknown as Parameters<typeof Readable.fromWeb>[0]),
     );
     entries.push(withPreview(toFileEntry(stat), apiBase));
   }
@@ -240,7 +240,9 @@ export const PUT: APIRoute = async (context) => {
     }
 
     const body = context.request.body;
-    const data = body ? Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]) : new Uint8Array();
+    const data = body
+      ? Readable.fromWeb(body as unknown as Parameters<typeof Readable.fromWeb>[0])
+      : new Uint8Array();
     const stat = await adapter.write(path, data);
     return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBaseFrom(context.url)) }, 200);
   } catch (error) {
