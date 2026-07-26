@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
-import ConfirmDialog from "../components/ConfirmDialog.js";
 import DataTable from "../components/DataTable.js";
 import Icon from "../components/Icon.js";
 import type { IconName } from "../components/icons.js";
-import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
-import type { ContentTypeDefinition, ContentTypeKind } from "../content-types/types.js";
+import type {
+  ContentTypeDefinition,
+  ContentTypeKind,
+} from "../content-types/types.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
@@ -20,7 +21,6 @@ interface Row extends Record<string, unknown> {
   label: string;
   description: string;
   fieldCount: number;
-  def: ContentTypeDefinition;
 }
 
 export default function ContentTypes() {
@@ -29,49 +29,43 @@ export default function ContentTypes() {
   }, []);
 
   const { route } = useLocation();
-  const api = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const api = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
 
-  const [definitions, setDefinitions] = useState<ContentTypeDefinition[] | null>(null);
+  const [definitions, setDefinitions] = useState<
+    ContentTypeDefinition[] | null
+  >(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selectedKind, setSelectedKind] = useState<ContentTypeKind>("collection");
-  const [pendingDelete, setPendingDelete] = useState<ContentTypeDefinition | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const load = async () => {
-    try {
-      setDefinitions(await api.list());
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Failed to load content types.");
-    }
-  };
+  const [selectedKind, setSelectedKind] =
+    useState<ContentTypeKind>("collection");
 
   useEffect(() => {
-    load();
+    (async () => {
+      try {
+        setDefinitions(await api.list());
+      } catch (error) {
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load content types.",
+        );
+      }
+    })();
   }, []);
+
+  const countByKind = (kind: ContentTypeKind) =>
+    (definitions ?? []).filter((d) => d.kind === kind).length;
 
   const rows: Row[] = (definitions ?? [])
     .filter((d) => d.kind === selectedKind)
-    .map((d) => ({ id: d.id, label: d.label, description: d.description ?? "", fieldCount: d.fields.length, def: d }));
-
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setDeleting(true);
-    try {
-      await api.remove(pendingDelete.id);
-      toast.add({ type: "success", title: `Deleted "${pendingDelete.label}".` });
-      setPendingDelete(null);
-      await load();
-    } catch (error) {
-      toast.add({
-        type: "error",
-        title: "Delete failed",
-        description: error instanceof Error ? error.message : undefined,
-      });
-    } finally {
-      setDeleting(false);
-    }
-  };
+    .map((d) => ({
+      id: d.id,
+      label: d.label,
+      description: d.description ?? "",
+      fieldCount: d.fields.length,
+    }));
 
   const selectedGroup = GROUPS.find((g) => g.kind === selectedKind)!;
 
@@ -79,8 +73,11 @@ export default function ContentTypes() {
     <>
       <div class="page-header">
         <div>
-          <h1>Content Types</h1>
-          <p>Define the shape of your content - Collections, Singles, and Components.</p>
+          <h1>Content Types - {selectedGroup.label}</h1>
+          <p>
+            Define the shape of your content - Collections, Singles, and
+            Components.
+          </p>
         </div>
       </div>
 
@@ -100,68 +97,55 @@ export default function ContentTypes() {
                 >
                   <Icon name={icon} />
                   <span>{label}</span>
+                  <span class="spacer" />
+                  <span class="badge outline">{countByKind(kind)}</span>
                 </button>
               </li>
             ))}
           </ul>
 
           <div class="content-types-panel">
-            <div class="row justify-between">
-              <h3>{selectedGroup.label}</h3>
-              <button
-                type="button"
-                class="outline sm"
-                onClick={() => route(`${path}/content-types/new/${selectedKind}`)}
-              >
-                + Add
-              </button>
-            </div>
             <DataTable
               columns={[
-                { key: "label", label: "Name", sortable: true },
-                { key: "description", label: "Description", sortable: false },
-                { key: "fieldCount", label: "Fields", numeric: true, sortable: true },
                 {
-                  key: "id",
-                  label: "",
-                  sortable: false,
+                  key: "label",
+                  label: "Name",
+                  sortable: true,
                   render: (_value, row) => (
-                    <button
-                      type="button"
-                      class="ghost sm"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setPendingDelete(row.def);
-                      }}
-                    >
-                      Delete
-                    </button>
+                    <div class="stack" style={{ gap: "0.125rem" }}>
+                      <span>{row.label}</span>
+                      {row.description && (
+                        <span class="hint">{row.description}</span>
+                      )}
+                    </div>
                   ),
+                },
+                {
+                  key: "fieldCount",
+                  label: "Fields",
+                  numeric: true,
+                  sortable: true,
                 },
               ]}
               rows={rows}
               emptyLabel="None yet."
-              onRowClick={(row) => route(`${path}/content-types/${row.id}/edit`)}
+              onRowClick={(row) =>
+                route(`${path}/content-types/${row.id}/edit`)
+              }
+              actions={
+                <button
+                  type="button"
+                  onClick={() =>
+                    route(`${path}/content-types/new/${selectedKind}`)
+                  }
+                >
+                  + Add {selectedGroup.label}
+                </button>
+              }
             />
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        open={pendingDelete !== null}
-        title={`Delete "${pendingDelete?.label ?? ""}"?`}
-        message={
-          <p>
-            This drops the underlying table{pendingDelete?.kind === "component" ? "" : " and every row in it"} - this
-            cannot be undone.
-          </p>
-        }
-        confirmLabel="Delete"
-        destructive
-        busy={deleting}
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
-      />
     </>
   );
 }

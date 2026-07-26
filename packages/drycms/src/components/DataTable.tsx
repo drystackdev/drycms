@@ -28,6 +28,7 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * cell-level `render` buttons should still call `stopPropagation()` so
    * they don't also trigger the row click. */
   onRowClick?: (row: Row) => void;
+  actions?: JSX.Element
 }
 
 type SortState = { key: string; direction: "asc" | "desc" } | null;
@@ -54,6 +55,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   searchPlaceholder = "Filter…",
   emptyLabel = "No results.",
   onRowClick,
+  actions
 }: DataTableProps<Row>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
@@ -110,6 +112,8 @@ export default function DataTable<Row extends Record<string, unknown>>({
           <small>
             {sorted.length} of {rows.length}
           </small>
+          {actions && <hr class="separator" aria-orientation="vertical"/>}
+          {actions}
         </div>
       )}
 

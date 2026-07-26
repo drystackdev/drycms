@@ -11,8 +11,7 @@ import type { ContentTypeDefinition, ContentTypeKind, FieldDefinition } from "..
 import { ArrowLeftIcon } from "../components/icons.js";
 import FeaturesFieldset from "./content-type-editor/FeaturesFieldset.js";
 import FieldDialog from "./content-type-editor/FieldDialog.js";
-import FieldsList from "./content-type-editor/FieldsList.js";
-import SystemFieldsList, { type SystemFieldEntry } from "./content-type-editor/SystemFieldsList.js";
+import FieldsList, { type SystemFieldEntry } from "./content-type-editor/FieldsList.js";
 
 interface Props {
   id?: string;
@@ -26,15 +25,25 @@ interface Props {
  * Draft/Schedule/Timestamps are collection-only. */
 function systemFieldsForUi(definition: ContentTypeDefinition): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
-  const items: SystemFieldEntry[] = [{ id: "id", label: "ID" }];
+  const items: SystemFieldEntry[] = [{ id: "id", label: "ID", name: "id", typeLabel: "Number" }];
   if (definition.features?.slug) {
-    items.push({ id: "title", label: "Title" }, { id: "slug", label: "Slug" });
+    items.push(
+      { id: "title", label: "Title", name: "title", typeLabel: "Text" },
+      { id: "slug", label: "Slug", name: "slug", typeLabel: "Text" },
+    );
   }
   if (definition.kind === "collection") {
-    if (definition.features?.draft) items.push({ id: "draft", label: "Draft" });
-    if (definition.features?.schedule) items.push({ id: "schedule", label: "Schedule" });
+    if (definition.features?.draft) {
+      items.push({ id: "draft", label: "Draft", name: "draft", typeLabel: "Boolean" });
+    }
+    if (definition.features?.schedule) {
+      items.push({ id: "schedule", label: "Schedule", name: "schedule", typeLabel: "Date" });
+    }
     if (definition.features?.timestamps) {
-      items.push({ id: "createdAt", label: "Created at" }, { id: "updatedAt", label: "Updated at" });
+      items.push(
+        { id: "createdAt", label: "Created at", name: "created_at", typeLabel: "Date" },
+        { id: "updatedAt", label: "Updated at", name: "updated_at", typeLabel: "Date" },
+      );
     }
   }
   return items;
@@ -180,21 +189,15 @@ export default function ContentTypeEditor({ id, kind }: Props) {
 
       <div class="content-type-editor-grid">
         <legend class="stack">
-          {definition.kind !== "component" && (
-            <>
-              <SystemFieldsList items={systemFieldsForUi(definition)} />
-              <hr style={{ width: "calc(100% + 4rem)", marginInline: "-2rem" }} />
-            </>
-          )}
-
           <FieldsList
+            systemEntries={systemFieldsForUi(definition)}
             fields={definition.fields}
             onEdit={(field) => {
               setEditingField(field);
               setFieldDialogOpen(true);
             }}
             onRemove={removeField}
-            onReorder={updateFields}
+            onReorderFields={updateFields}
             onAdd={() => {
               setEditingField(null);
               setFieldDialogOpen(true);

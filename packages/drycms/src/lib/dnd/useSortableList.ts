@@ -12,6 +12,14 @@ import { useMemo, useRef, useState } from "preact/hooks";
  * mouse/touch code paths); no groups, multi-drag, swap plugin, or
  * autoscroll (all out of scope here).
  *
+ * The dragged row is switched to `position: fixed` with an explicit `top`
+ * computed once from its pointerdown-time rect plus total pointer delta -
+ * deliberately NOT a transform re-derived from the row's own (possibly
+ * already-transformed) `getBoundingClientRect()` each tick, which is a
+ * self-referential feedback loop that produces visible jitter. Fixed
+ * positioning also means reorders (which move the row to a new DOM index)
+ * never disturb its on-screen position mid-drag.
+ *
  * Contract: every row rendered by the caller must carry
  * `data-sortable-id={getId(item)}` as a direct child of the element holding
  * `containerProps`, so the hook can locate/measure rows by querying the
@@ -57,16 +65,19 @@ function rowsIn(container: HTMLElement): Map<string, HTMLElement> {
 
 /** Captures every row's current top offset, keyed by id - the FLIP "before"
  * snapshot, taken right before a reorder is committed. */
-function captureTops(container: HTMLElement): Map<string, number> {
+function captureTops(container: HTMLElement, skipId: string): Map<string, number> {
   const tops = new Map<string, number>();
-  for (const [id, el] of rowsIn(container)) tops.set(id, el.getBoundingClientRect().top);
+  for (const [id, el] of rowsIn(container)) {
+    if (id === skipId) continue;
+    tops.set(id, el.getBoundingClientRect().top);
+  }
   return tops;
 }
 
-/** Animates every row (except `skipId`, already being dragged by the
- * pointer) from its captured "before" top to wherever it now sits, via an
- * inverted transform eased back to none - the FLIP technique. */
-function playFlip(container: HTMLElement, before: Map<string, number>, skipId: string | null) {
+/** Animates every row (except `skipId`, the fixed-position dragged row)
+ * from its captured "before" top to wherever it now sits, via an inverted
+ * transform eased back to none - the FLIP technique. */
+function playFlip(container: HTMLElement, before: Map<string, number>, skipId: string) {
   for (const [id, el] of rowsIn(container)) {
     if (id === skipId) continue;
     const beforeTop = before.get(id);
@@ -96,9 +107,10 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
 
   const dragState = useRef<{
     id: string;
-    pointerId: number;
     startY: number;
-    startTop: number;
+    /** The row's rect at pointerdown time - captured once, never re-read
+     * from the (once dragging starts) transformed/fixed-positioned element. */
+    startRect: DOMRect;
     armed: boolean;
   } | null>(null);
 
@@ -110,7 +122,10 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
     if (!state || !container) return;
     const row = rowsIn(container).get(state.id);
     if (row) {
-      row.style.transform = "";
+      row.style.position = "";
+      row.style.top = "";
+      row.style.left = "";
+      row.style.width = "";
       row.classList.remove("dnd-dragging");
     }
   };
@@ -125,15 +140,22 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
       if (Math.abs(deltaY) < activationDistance) return;
       state.armed = true;
       setDraggingId(state.id);
+      const row = rowsIn(container).get(state.id);
+      if (row) {
+        row.classList.add("dnd-dragging");
+        row.style.position = "fixed";
+        row.style.left = `${state.startRect.left}px`;
+        row.style.width = `${state.startRect.width}px`;
+      }
     }
 
     const row = rowsIn(container).get(state.id);
     if (!row) return;
-    row.classList.add("dnd-dragging");
-    row.style.transform = `translateY(${state.startTop - row.getBoundingClientRect().top + deltaY}px)`;
+    const draggedTop = state.startRect.top + deltaY;
+    row.style.top = `${draggedTop}px`;
 
     const { items, getId, onReorder } = optionsRef.current;
-    const draggedCenter = state.startTop + deltaY + row.getBoundingClientRect().height / 2;
+    const draggedCenter = draggedTop + state.startRect.height / 2;
     const fromIndex = items.findIndex((item) => getId(item) === state.id);
     if (fromIndex === -1) return;
 
@@ -150,7 +172,7 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
     });
 
     if (toIndex !== fromIndex) {
-      const before = captureTops(container);
+      const before = captureTops(container, state.id);
       const next = items.slice();
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved!);
@@ -198,9 +220,8 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
           if (!row) return;
           dragState.current = {
             id,
-            pointerId: event.pointerId,
             startY: event.clientY,
-            startTop: row.getBoundingClientRect().top,
+            startRect: row.getBoundingClientRect(),
             armed: false,
           };
           document.addEventListener("pointermove", stableMoveHandler.current);

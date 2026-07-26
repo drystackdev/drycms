@@ -1096,7 +1096,7 @@
     /* ------------------------------------------------------------- Separator */
     .separator {
       border: none;
-      border-top: 1px dashed var(--dry-border);
+      border-top: 1px solid var(--dry-border);
       background: none;
       margin: 0;
       height: 0;
@@ -1104,7 +1104,7 @@
 
       &[aria-orientation="vertical"] {
         border-top: none;
-        border-left: 1px dashed var(--dry-border);
+        border-left: 1px solid var(--dry-border);
         width: 0;
         height: auto;
         align-self: stretch;
@@ -1874,6 +1874,7 @@
     }
 
     .nav-label {
+      grid-column: 1 / -1;
       padding: 1rem 0.75rem 0.5rem;
       font-size: var(--dry-text-xs);
       font-weight: 700;
@@ -1959,12 +1960,12 @@
     }
 
     /* Field being dragged in the Fields list (see lib/dnd/useSortableList) -
-     * the pointer-following transform already establishes a stacking
-     * context, but `position: relative` makes the `z-index` deterministic. */
+     * `position`/`top`/`left`/`width` are set inline by the hook itself. */
     .dnd-dragging {
-      position: relative;
       z-index: 5;
-      opacity: 0.6;
+      opacity: 0.85;
+      box-shadow: var(--dry-shadow-md);
+      pointer-events: none;
     }
 
     .required-asterisk {
@@ -2024,10 +2025,26 @@
       }
     }
 
+    /* Right column of the Add/Edit Field dialog before a type is chosen. */
+    .field-dialog-empty-type {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 8rem;
+      padding: 1.5rem;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      color: var(--dry-muted-foreground);
+      font-size: var(--dry-text-sm);
+      text-align: center;
+    }
+
     /* Content Types list page: 1/4 icon-menu + 3/4 table. */
+    /* Small, fixed-width nav (13rem) matching .showcase-nav's sizing, not a
+     * proportional column - a 1/4-width nav looked oversized for 3 items. */
     .content-types-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+      grid-template-columns: 13rem minmax(0, 1fr);
       gap: var(--dry-gap) 2rem;
       align-items: start;
 
@@ -2037,32 +2054,37 @@
     }
 
     .content-types-nav {
+      position: sticky;
+      top: calc(var(--dry-topbar-height) + 1rem);
       list-style: none;
       margin: 0;
       padding: 0;
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      gap: 0.25rem;
+      gap: 0.125rem;
+
+      @media (width < 48rem) {
+        position: static;
+      }
 
       & button {
         width: 100%;
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        min-height: 2.75rem;
-        padding: 0.25rem 0.75rem;
+        gap: 0.5rem;
+        padding: 0.3rem 0.625rem;
         border: none;
-        border-radius: var(--dry-radius-md);
+        border-radius: var(--dry-radius-sm);
         background-color: transparent;
         box-shadow: none;
         font-size: var(--dry-text-sm);
-        font-weight: 600;
+        font-weight: 500;
         color: var(--dry-muted-foreground);
         cursor: pointer;
 
         & > svg {
-          width: 1.5rem;
-          height: 1.5rem;
+          width: 1.125rem;
+          height: 1.125rem;
           flex: none;
         }
 
@@ -2075,6 +2097,12 @@
           background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
           color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
         }
+      }
+    }
+
+    .content-types-panel {
+      & h3 {
+        margin-block-start: 0;
       }
     }
 
@@ -2431,7 +2459,12 @@
       }
 
       .showcase-nav {
-        position: static;
+        /* Not `static`: SimpleBar absolutely-positions its internal mask/
+         * offset elements against this element, so it needs to stay a
+         * positioned container even though it no longer needs `sticky`'s
+         * offset here - `static` let that mask escape to the nearest
+         * positioned ancestor and render over the page header instead. */
+        position: relative;
         max-height: none;
         order: -1;
         padding: 1rem;

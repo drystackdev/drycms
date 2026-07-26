@@ -25,10 +25,97 @@ export interface FieldDialogProps {
   onSave: (field: FieldDefinition) => void;
 }
 
+/** Descriptor keys that share a row instead of each getting their own full
+ * width - `key` immediately followed by its pair in the descriptor array
+ * (true for every field type's `validationFields` today). */
+const PAIRED_ROWS: [string, string][] = [
+  ["required", "unique"],
+  ["min", "max"],
+  ["minLength", "maxLength"],
+];
+
+function groupIntoRows(descriptors: SettingDescriptor[]): SettingDescriptor[][] {
+  const rows: SettingDescriptor[][] = [];
+  for (let i = 0; i < descriptors.length; i++) {
+    const current = descriptors[i]!;
+    const next = descriptors[i + 1];
+    const isPair = next && PAIRED_ROWS.some(([a, b]) => current.key === a && next.key === b);
+    if (isPair) {
+      rows.push([current, next!]);
+      i++;
+    } else {
+      rows.push([current]);
+    }
+  }
+  return rows;
+}
+
+function renderControl({
+  d,
+  values,
+  onChange,
+  dynamicOptions,
+  disabled,
+}: {
+  d: SettingDescriptor;
+  values: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+  dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
+  disabled: boolean;
+}) {
+  if (d.widget === "boolean") {
+    return (
+      <CheckField
+        key={d.key}
+        label={d.label}
+        value={!!values[d.key]}
+        disabled={disabled}
+        onChange={(v) => onChange(d.key, v)}
+      />
+    );
+  }
+  if (d.widget === "text") {
+    return (
+      <TextField
+        key={d.key}
+        label={d.label}
+        value={typeof values[d.key] === "string" ? (values[d.key] as string) : ""}
+        disabled={disabled}
+        onChange={(v) => onChange(d.key, v)}
+      />
+    );
+  }
+  if (d.widget === "number") {
+    return (
+      <NumberField
+        key={d.key}
+        label={d.label}
+        value={typeof values[d.key] === "number" ? (values[d.key] as number) : 0}
+        disabled={disabled}
+        onChange={(v) => onChange(d.key, v)}
+      />
+    );
+  }
+  const options = d.optionsSource ? dynamicOptions[d.optionsSource] : (d.options ?? []);
+  return (
+    <div class="field" key={d.key}>
+      <label>{d.label}</label>
+      <Select
+        options={options}
+        value={values[d.key] as string | undefined}
+        disabled={disabled}
+        onChange={(v) => onChange(d.key, v)}
+      />
+    </div>
+  );
+}
+
 /** Renders a list of `SettingDescriptor`s against a plain values object - one
  * shared form for every field type's "Add Field" settings, instead of a
- * bespoke settings form per type. `disabledKeys` lets a caller grey out
- * individual controls (e.g. text's `required` while `regex`/`minLength`
+ * bespoke settings form per type. Adjacent descriptors named in
+ * `PAIRED_ROWS` (required+unique, min+max, minLength+maxLength) share a row
+ * instead of each taking the full width. `disabledKeys` lets a caller grey
+ * out individual controls (e.g. text's `required` while `regex`/`minLength`
  * force it on) without forking the render per descriptor. */
 function SettingsForm({
   descriptors,
@@ -46,54 +133,19 @@ function SettingsForm({
   if (descriptors.length === 0) return null;
   return (
     <>
-      {descriptors.map((d) => {
-        const disabled = disabledKeys.includes(d.key);
-        if (d.widget === "boolean") {
-          return (
-            <CheckField
-              key={d.key}
-              label={d.label}
-              value={!!values[d.key]}
-              disabled={disabled}
-              onChange={(v) => onChange(d.key, v)}
-            />
-          );
-        }
-        if (d.widget === "text") {
-          return (
-            <TextField
-              key={d.key}
-              label={d.label}
-              value={typeof values[d.key] === "string" ? (values[d.key] as string) : ""}
-              disabled={disabled}
-              onChange={(v) => onChange(d.key, v)}
-            />
-          );
-        }
-        if (d.widget === "number") {
-          return (
-            <NumberField
-              key={d.key}
-              label={d.label}
-              value={typeof values[d.key] === "number" ? (values[d.key] as number) : 0}
-              disabled={disabled}
-              onChange={(v) => onChange(d.key, v)}
-            />
-          );
-        }
-        const options = d.optionsSource ? dynamicOptions[d.optionsSource] : (d.options ?? []);
-        return (
-          <div class="field" key={d.key}>
-            <label>{d.label}</label>
-            <Select
-              options={options}
-              value={values[d.key] as string | undefined}
-              disabled={disabled}
-              onChange={(v) => onChange(d.key, v)}
-            />
+      {groupIntoRows(descriptors).map((row) =>
+        row.length === 2 ? (
+          <div class="row" style={{ alignItems: "flex-start" }} key={row.map((d) => d.key).join("-")}>
+            {row.map((d) => (
+              <div style={{ flex: 1, minWidth: 0 }} key={d.key}>
+                {renderControl({ d, values, onChange, dynamicOptions, disabled: disabledKeys.includes(d.key) })}
+              </div>
+            ))}
           </div>
-        );
-      })}
+        ) : (
+          renderControl({ d: row[0]!, values, onChange, dynamicOptions, disabled: disabledKeys.includes(row[0]!.key) })
+        ),
+      )}
     </>
   );
 }
@@ -140,15 +192,18 @@ function DefaultValueInput({
 
 /** Mutual-exclusivity + forced-required rules for `text` validation: picking
  * a `format` clears+disables `regex` and vice versa (a format implies a
- * canonical regex server-side - using both would conflict), and either
- * `regex` or `minLength` being set forces `required` on. */
+ * canonical regex server-side - using both would conflict), and a
+ * *meaningful* `regex` or `minLength` (i.e. actually constraining something)
+ * forces `required` on - `minLength` sitting at its neutral `0` imposes no
+ * real constraint, so it doesn't force anything. */
 function textValidationDisabledKeys(validation: Record<string, unknown>): string[] {
   const disabled: string[] = [];
   const hasRegex = typeof validation.regex === "string" && validation.regex.length > 0;
   const hasFormat = typeof validation.format === "string" && validation.format !== "none";
+  const hasMinLength = typeof validation.minLength === "number" && validation.minLength > 0;
   if (hasFormat) disabled.push("regex");
   if (hasRegex) disabled.push("format");
-  if (hasRegex || validation.minLength != null) disabled.push("required");
+  if (hasRegex || hasMinLength) disabled.push("required");
   return disabled;
 }
 
@@ -195,7 +250,9 @@ export default function FieldDialog({ open, editingField, dynamicOptions, onCanc
         } else if (key === "format" && value !== "none") {
           next.regex = "";
         }
-        if ((typeof next.regex === "string" && next.regex.length > 0) || next.minLength != null) {
+        const hasRegex = typeof next.regex === "string" && next.regex.length > 0;
+        const hasMinLength = typeof next.minLength === "number" && next.minLength > 0;
+        if (hasRegex || hasMinLength) {
           next.required = true;
         }
       }
@@ -262,15 +319,22 @@ export default function FieldDialog({ open, editingField, dynamicOptions, onCanc
                   disabled={editingField !== null}
                 />
               </div>
-              <DefaultValueInput
-                activeType={activeFieldType}
-                config={draftConfig}
-                value={draftDefault}
-                onChange={setDraftDefault}
-              />
             </div>
 
             <div class="stack">
+              {!activeFieldType && (
+                <div class="field-dialog-empty-type">Choose a field type to configure its settings.</div>
+              )}
+
+              {activeFieldType && (
+                <DefaultValueInput
+                  activeType={activeFieldType}
+                  config={draftConfig}
+                  value={draftDefault}
+                  onChange={setDraftDefault}
+                />
+              )}
+
               {activeFieldType && (activeFieldType.configFields?.length ?? 0) > 0 && (
                 <fieldset>
                   <legend>Display</legend>

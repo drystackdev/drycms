@@ -22,6 +22,7 @@ import NumberField from "../components/NumberField.js";
 import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
 import { useSimpleBar } from "../components/simplebar.js";
+import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import {
@@ -263,6 +264,24 @@ function TextFieldPreview() {
         onChange={setBio}
         multiline
         placeholder="Write something…"
+      />
+    </div>
+  );
+}
+
+function SlugFieldPreview() {
+  const [title, setTitle] = useState("Getting started");
+  const [slug, setSlug] = useState("getting-started");
+  return (
+    <div style="width: 100%; max-width: 24rem">
+      <SlugField
+        value={title}
+        slug={slug}
+        onChange={(value, slug) => {
+          setTitle(value);
+          setSlug(slug);
+        }}
+        helperText="Auto-derived from the title until you edit the slug directly."
       />
     </div>
   );
@@ -955,6 +974,18 @@ function DemoContent({ id }: { id: string }) {
           code={code.textField!}
         >
           <TextFieldPreview />
+        </Demo>
+      );
+
+    case "slug-field":
+      return (
+        <Demo
+          id="slug-field"
+          title="Slug field"
+          description="Pairs a TextField for the title with a derived, editable slug input below it; auto-derives via slugify() until the slug is edited directly, and the trailing button re-syncs it from the title."
+          code={code.slugField!}
+        >
+          <SlugFieldPreview />
         </Demo>
       );
 

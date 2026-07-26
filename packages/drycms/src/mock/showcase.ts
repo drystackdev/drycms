@@ -27,6 +27,17 @@ export const greys = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
 /** Sidebar + tab order. Flattened at runtime for Previous/Next navigation. */
 export const groups: ShowcaseGroup[] = [
   {
+    label: "Field inputs",
+    items: [
+      { id: "text-field", label: "Text field" },
+      { id: "slug-field", label: "Slug field" },
+      { id: "number-field", label: "Number field" },
+      { id: "check-field", label: "Check field" },
+      { id: "date-picker-field", label: "Date picker field" },
+      { id: "image-field", label: "Image field" },
+    ],
+  },
+  {
     label: "Foundations",
     items: [
       { id: "colors", label: "Colors" },
@@ -65,16 +76,6 @@ export const groups: ShowcaseGroup[] = [
       { id: "toggles", label: "Checkbox, radio & switch" },
       { id: "other-inputs", label: "Range, color, file" },
       { id: "fields", label: "Fields & validation" },
-    ],
-  },
-  {
-    label: "Field inputs",
-    items: [
-      { id: "text-field", label: "Text field" },
-      { id: "number-field", label: "Number field" },
-      { id: "check-field", label: "Check field" },
-      { id: "date-picker-field", label: "Date picker field" },
-      { id: "image-field", label: "Image field" },
     ],
   },
   {
@@ -489,6 +490,17 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={setBio}
   multiline
   placeholder="Write something…"
+/>`,
+  slugField: `import SlugField from 'drycms/components/SlugField';
+
+<SlugField
+  value={title}
+  slug={slug}
+  onChange={(value, slug) => {
+    setTitle(value);
+    setSlug(slug);
+  }}
+  helperText="Auto-derived from the title until you edit the slug directly."
 />`,
   numberField: `import NumberField from 'drycms/components/NumberField';
 
