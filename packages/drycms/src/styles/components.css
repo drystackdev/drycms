@@ -1131,9 +1131,6 @@
 
     /* ------------------------------------------------------------------ Tabs */
     [role="tablist"] {
-      display: flex;
-      align-items: center;
-      gap: 1.25rem;
       border-bottom: 1px solid var(--dry-border);
       /* Plain native fallback for a `role="tablist"` outside a drycms
        * component (nothing calls `useOverlayScrollbars` on it); the
@@ -1146,7 +1143,10 @@
         overscroll-behavior-x: contain;
       }
 
-      & > [role="tab"] {
+      /* Descendant, not direct-child - the Showcase demo's own tablist (see
+       * the OverlayScrollbars note above) re-parents these buttons a couple
+       * levels deeper once that hook runs, and `>` would stop matching them. */
+      & [role="tab"] {
         flex: none;
         height: 3rem;
         padding: 0;
@@ -1167,6 +1167,9 @@
         &[aria-selected="true"] {
           color: var(--dry-foreground);
           border-bottom-color: var(--dry-foreground);
+        }
+        & + [role="tab"] {
+          margin-inline-start: 0.5rem;
         }
       }
     }

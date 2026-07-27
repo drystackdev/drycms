@@ -8,8 +8,14 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, and menu (collections), all system + fully locked", () => {
-    expect(defs.map((t) => t.name).sort()).toEqual(["menu", "menuItem", "seo", "user"]);
+  it("declares menuItem+seo (components), user, menu, and aiKeyManagement (collections), all system + fully locked", () => {
+    expect(defs.map((t) => t.name).sort()).toEqual([
+      "aiKeyManagement",
+      "menu",
+      "menuItem",
+      "seo",
+      "user",
+    ]);
     for (const def of defs) {
       expect(def.system).toBe(true);
       expect(def.fields.every((f) => f.locked)).toBe(true);
@@ -18,6 +24,7 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("seo").kind).toBe("component");
     expect(byName("user").kind).toBe("collection");
     expect(byName("menu").kind).toBe("collection");
+    expect(byName("aiKeyManagement").kind).toBe("collection");
   });
 
   it("gives every type and field a stable, unique id", () => {
@@ -59,6 +66,22 @@ describe("defaultContentTypeDefinitions", () => {
     expect(refs.config).toMatchObject({ componentId: menuItem.id, repeatable: true });
   });
 
+  it("aiKeyManagement: required name/provider/key, optional description/url", () => {
+    const aiKeyManagement = byName("aiKeyManagement");
+    const provider = aiKeyManagement.fields.find((f) => f.name === "provider")!;
+    expect(provider.type).toBe("select");
+    expect(provider.config).toMatchObject({ options: ["Google", "Anthropic", "ChatGPT", "Custom"] });
+    expect(provider.validation.required).toBe(true);
+    const key = aiKeyManagement.fields.find((f) => f.name === "key")!;
+    expect(key.type).toBe("secretkey");
+    expect(key.validation.required).toBe(true);
+    const description = aiKeyManagement.fields.find((f) => f.name === "description")!;
+    expect(description.validation.required).toBeFalsy();
+    const url = aiKeyManagement.fields.find((f) => f.name === "url")!;
+    expect(url.validation).toMatchObject({ format: "url" });
+    expect(url.validation.required).toBeFalsy();
+  });
+
   it("resolves to a 'menu_refs' child table carrying menuItem's fields", () => {
     const menu = byName("menu");
     const tree = resolveTableTree(menu, defs);
@@ -98,21 +121,24 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs tables plus 4 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKeyManagement tables plus 5 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
+    expect(sql).toContain('CREATE TABLE "aiKeyManagement"');
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
     const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
-    expect(metadataInserts).toHaveLength(4);
+    expect(metadataInserts).toHaveLength(5);
   });
 
   it("seeds nothing once every default name is already present", () => {
-    const statements = pendingSeedStatements(new Set(["user", "menu", "menuitem", "seo"]));
+    const statements = pendingSeedStatements(
+      new Set(["user", "menu", "menuitem", "seo", "aikeymanagement"]),
+    );
     expect(statements).toEqual([]);
   });
 
@@ -122,8 +148,9 @@ describe("pendingSeedStatements", () => {
     expect(sql).not.toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
+    expect(sql).toContain('CREATE TABLE "aiKeyManagement"');
 
     const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
-    expect(metadataInserts).toHaveLength(3);
+    expect(metadataInserts).toHaveLength(4);
   });
 });

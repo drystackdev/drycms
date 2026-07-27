@@ -23,6 +23,12 @@ const IDS = {
   seoMetaTitle: "system-seo-meta-title",
   seoDescription: "system-seo-description",
   seoImage: "system-seo-image",
+  aiKeyManagement: "system-ai-key-management",
+  aiKeyManagementName: "system-ai-key-management-name",
+  aiKeyManagementDescription: "system-ai-key-management-description",
+  aiKeyManagementProvider: "system-ai-key-management-provider",
+  aiKeyManagementKey: "system-ai-key-management-key",
+  aiKeyManagementUrl: "system-ai-key-management-url",
 } as const;
 
 function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinition {
@@ -32,15 +38,16 @@ function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinitio
 /**
  * The content types every app must have from first boot: a `user` collection
  * (for accounts able to sign in), a `menu` collection (a named group of
- * links), the `menuItem` component `menu.refs` repeats, and an `seo`
- * component any collection/singleton can flatten in via `features.seo` (see
- * `system-fields.ts`). All four are `system: true` (can't be deleted) and
- * every declared field is `locked: true` (can't be removed) - new fields can
- * still be added, and everything can still be reordered; see `naming.ts`'s
- * `validateSystemProtections` for the enforcement. `createdAt`/`updatedAt`
- * ride on `features.timestamps` instead of being declared fields - same
- * protection, since a `system` type's already-on features can't be turned
- * off either.
+ * links), the `menuItem` component `menu.refs` repeats, an `seo` component
+ * any collection/singleton can flatten in via `features.seo` (see
+ * `system-fields.ts`), and an `aiKeyManagement` collection (credentials for
+ * third-party AI providers). All five are `system: true` (can't be deleted)
+ * and every declared field is `locked: true` (can't be removed) - new fields
+ * can still be added, and everything can still be reordered; see
+ * `naming.ts`'s `validateSystemProtections` for the enforcement.
+ * `createdAt`/`updatedAt` ride on `features.timestamps` instead of being
+ * declared fields - same protection, since a `system` type's already-on
+ * features can't be turned off either.
  */
 export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
   const menuItem: ContentTypeDefinition = {
@@ -196,7 +203,64 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     system: true,
   };
 
-  return [menuItem, seo, user, menu];
+  const aiKeyManagement: ContentTypeDefinition = {
+    id: IDS.aiKeyManagement,
+    kind: "collection",
+    name: "aiKeyManagement",
+    label: "AI Key Management",
+    description: "Credentials for third-party AI providers.",
+    fields: [
+      lockedField({
+        id: IDS.aiKeyManagementName,
+        name: "name",
+        label: "Name",
+        type: "text",
+        config: {},
+        validation: { required: true },
+        order: 0,
+      }),
+      lockedField({
+        id: IDS.aiKeyManagementDescription,
+        name: "description",
+        label: "Description",
+        type: "text",
+        config: {},
+        validation: {},
+        order: 1,
+      }),
+      lockedField({
+        id: IDS.aiKeyManagementProvider,
+        name: "provider",
+        label: "Provider",
+        type: "select",
+        config: { options: ["Google", "Anthropic", "ChatGPT", "Custom"], multiple: false },
+        validation: { required: true },
+        order: 2,
+      }),
+      lockedField({
+        id: IDS.aiKeyManagementKey,
+        name: "key",
+        label: "Key",
+        type: "secretkey",
+        config: {},
+        validation: { required: true },
+        order: 3,
+      }),
+      lockedField({
+        id: IDS.aiKeyManagementUrl,
+        name: "url",
+        label: "URL",
+        type: "text",
+        config: {},
+        validation: { format: "url" },
+        order: 4,
+      }),
+    ],
+    version: 0,
+    system: true,
+  };
+
+  return [menuItem, seo, user, menu, aiKeyManagement];
 }
 
 /**

@@ -25,7 +25,13 @@ describe("createSqliteContentEngineAdapter", () => {
     dirs.push(dir);
 
     const types = await adapter.listContentTypes();
-    expect(types.map((t) => t.name).sort()).toEqual(["menu", "menuItem", "seo", "user"]);
+    expect(types.map((t) => t.name).sort()).toEqual([
+      "aiKeyManagement",
+      "menu",
+      "menuItem",
+      "seo",
+      "user",
+    ]);
     expect(types.every((t) => t.system)).toBe(true);
   });
 
