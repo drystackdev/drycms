@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SYSTEM_FIELD_IDS, systemFieldsFor } from "./system-fields.js";
+import { SYSTEM_COMPONENT_IDS, SYSTEM_FIELD_IDS, systemFieldsFor } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 function contentType(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeDefinition {
@@ -41,5 +41,25 @@ describe("systemFieldsFor", () => {
     const ids = fields.map((f) => f.id);
     expect(ids).not.toContain(SYSTEM_FIELD_IDS.draft);
     expect(ids).not.toContain(SYSTEM_FIELD_IDS.schedule);
+  });
+
+  it("adds no seo field when the seo feature is off", () => {
+    const fields = systemFieldsFor(contentType({ features: {} }));
+    expect(fields.map((f) => f.id)).not.toContain(SYSTEM_FIELD_IDS.seo);
+  });
+
+  it("adds a non-repeatable component field embedding the built-in seo component when the seo feature is on", () => {
+    const fields = systemFieldsFor(contentType({ features: { seo: true } }));
+    const seoField = fields.find((f) => f.id === SYSTEM_FIELD_IDS.seo);
+    expect(seoField).toMatchObject({
+      name: "seo",
+      type: "component",
+      config: { componentId: SYSTEM_COMPONENT_IDS.seo, repeatable: false },
+    });
+  });
+
+  it("adds the seo field on a singleton too, unlike draft/schedule/timestamps", () => {
+    const fields = systemFieldsFor(contentType({ kind: "singleton", features: { seo: true } as never }));
+    expect(fields.map((f) => f.id)).toContain(SYSTEM_FIELD_IDS.seo);
   });
 });

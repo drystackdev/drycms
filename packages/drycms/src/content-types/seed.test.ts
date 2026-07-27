@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 import { validateContentTypeDefinition } from "./naming.js";
 import { defaultContentTypeDefinitions, pendingSeedStatements } from "./seed.js";
 import { resolveTableTree } from "./tree.js";
+import type { ContentTypeDefinition } from "./types.js";
 
 describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem (component), user, and menu (collections), all system + fully locked", () => {
-    expect(defs.map((t) => t.name).sort()).toEqual(["menu", "menuItem", "user"]);
+  it("declares menuItem+seo (components), user, and menu (collections), all system + fully locked", () => {
+    expect(defs.map((t) => t.name).sort()).toEqual(["menu", "menuItem", "seo", "user"]);
     for (const def of defs) {
       expect(def.system).toBe(true);
       expect(def.fields.every((f) => f.locked)).toBe(true);
     }
     expect(byName("menuItem").kind).toBe("component");
+    expect(byName("seo").kind).toBe("component");
     expect(byName("user").kind).toBe("collection");
     expect(byName("menu").kind).toBe("collection");
   });
@@ -70,22 +72,47 @@ describe("defaultContentTypeDefinitions", () => {
       expect.arrayContaining(["label", "description", "href"]),
     );
   });
+
+  it("seo: Title/Description/Image, none required (a page can opt out of any of them)", () => {
+    const seo = byName("seo");
+    expect(seo.fields.map((f) => f.name).sort()).toEqual(["description", "image", "metaTitle"]);
+    const image = seo.fields.find((f) => f.name === "image")!;
+    expect(image.type).toBe("image");
+  });
+
+  it("a collection with features.seo on flattens seo's fields as seo_*", () => {
+    const withSeo: ContentTypeDefinition = {
+      id: "t1",
+      kind: "collection",
+      name: "posts",
+      label: "Posts",
+      features: { seo: true },
+      fields: [],
+      version: 0,
+    };
+    const tree = resolveTableTree(withSeo, [withSeo, ...defs]);
+    expect(tree.columns.map((c) => c.name)).toEqual(
+      expect.arrayContaining(["seo_metaTitle", "seo_description", "seo_image"]),
+    );
+  });
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs tables plus 3 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs tables plus 4 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
+    // `seo`, like `menuItem`, is a component - no table of its own.
+    expect(sql).not.toContain('CREATE TABLE "seo"');
 
     const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
-    expect(metadataInserts).toHaveLength(3);
+    expect(metadataInserts).toHaveLength(4);
   });
 
   it("seeds nothing once every default name is already present", () => {
-    const statements = pendingSeedStatements(new Set(["user", "menu", "menuitem"]));
+    const statements = pendingSeedStatements(new Set(["user", "menu", "menuitem", "seo"]));
     expect(statements).toEqual([]);
   });
 
@@ -97,6 +124,6 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu_refs"');
 
     const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
-    expect(metadataInserts).toHaveLength(2);
+    expect(metadataInserts).toHaveLength(3);
   });
 });

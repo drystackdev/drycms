@@ -32,6 +32,9 @@ export interface ContentTypeFeatures {
   schedule?: boolean;
   fullSearch?: boolean;
   timestamps?: boolean;
+  /** Flattens the built-in `seo` component's fields (Title/Description/Image
+   * - see `seed.ts`) in as `seo_metaTitle`/`seo_description`/`seo_image`. */
+  seo?: boolean;
 }
 
 export type ContentTypeKind = "collection" | "singleton" | "component";
@@ -42,6 +45,10 @@ export interface ContentTypeDefinition {
   name: string;
   label: string;
   description?: string;
+  /** URL (optionally templated, e.g. `https://example.com/posts/{slug}`) the
+   * entry editor will eventually open for a live preview. `collection`/
+   * `singleton` only - a `component` has no page of its own to preview. */
+  livePreviewUrl?: string;
   features?: ContentTypeFeatures;
   fields: FieldDefinition[];
   /** Optimistic-lock counter, incremented on every successful save. */

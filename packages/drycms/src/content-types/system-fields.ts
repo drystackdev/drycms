@@ -13,6 +13,16 @@ export const SYSTEM_FIELD_IDS = {
   schedule: "__system_schedule",
   createdAt: "__system_created_at",
   updatedAt: "__system_updated_at",
+  seo: "__system_seo",
+} as const;
+
+/** Fixed ids for the built-in components a feature toggle embeds (as opposed
+ * to `SYSTEM_FIELD_IDS`, which are ids for the synthetic FIELDS themselves).
+ * Lives here rather than in `seed.ts` so `systemFieldsFor` can reference the
+ * component's id without importing `seed.ts` - `seed.ts` already imports
+ * from this file, and the reverse would be circular. */
+export const SYSTEM_COMPONENT_IDS = {
+  seo: "system-seo",
 } as const;
 
 /** The synthetic fields implied by `type.features`, in front of `type.fields`
@@ -22,8 +32,8 @@ export const SYSTEM_FIELD_IDS = {
  * `CREATE TABLE ... INTEGER PRIMARY KEY AUTOINCREMENT` codegen) - it is
  * baked directly into the DDL rather than being a diffable field. `draft`/
  * `schedule`/`timestamps` are collection-only; `singleton` only ever gets
- * `slug` (+ the `title` it brings with it); `component` has no table of its
- * own and never calls this. */
+ * `slug` (+ the `title` it brings with it) and `seo`; `component` has no
+ * table of its own and never calls this. */
 export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] {
   const fields: FieldDefinition[] = [];
 
@@ -46,6 +56,17 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
         validation: { required: true, unique: true },
       },
     );
+  }
+
+  if (type.features?.seo) {
+    fields.push({
+      id: SYSTEM_FIELD_IDS.seo,
+      name: "seo",
+      label: "SEO",
+      type: "component",
+      config: { componentId: SYSTEM_COMPONENT_IDS.seo, repeatable: false },
+      validation: {},
+    });
   }
 
   if (type.kind === "collection") {

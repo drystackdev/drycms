@@ -114,15 +114,18 @@ export function validateContentTypeDefinition(
 /** Feature flags whose synthetic fields (see `system-fields.ts`) a `system`
  * content type is allowed to depend on for its default shape - only these
  * are checked against being turned back off. */
-const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps"] as const;
+const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo"] as const;
 
 /**
  * Guards a `system` content type's built-in shape (see `seed.ts`) against
  * deletion-shaped edits: un-marking it back to a plain (non-`system`) type,
- * removing a field the stored definition has `locked: true` on, or turning
- * off a `features` flag the stored definition already has on. Everything
- * else - adding fields, reordering, editing a locked field's label/
- * description/validation/config, renaming the type - is left alone.
+ * removing a field the stored definition has `locked: true` on, turning off
+ * a `features` flag the stored definition already has on, or renaming its
+ * Title/Table Name/Description - those identify the type as the specific
+ * built-in the rest of the app (routes, seed re-runs matching by name)
+ * expects to find. Everything else - adding fields, reordering, editing a
+ * locked field's label/description/validation/config, `livePreviewUrl` - is
+ * left alone.
  *
  * Checks against `existing` (the version already in storage), never against
  * `next`'s own `locked`/`system` claims - a single request can't strip
@@ -134,6 +137,16 @@ export function validateSystemProtections(next: ContentTypeDefinition, existing:
 
   if (!next.system) {
     throw new NamingError(`"${existing.label}" is a built-in content type and can't be un-marked as system.`);
+  }
+
+  if (next.label !== existing.label) {
+    throw new NamingError(`"${existing.label}"'s Title is set by the system and can't be changed.`);
+  }
+  if (next.name !== existing.name) {
+    throw new NamingError(`"${existing.label}"'s Table Name is set by the system and can't be changed.`);
+  }
+  if ((next.description ?? "") !== (existing.description ?? "")) {
+    throw new NamingError(`"${existing.label}"'s Description is set by the system and can't be changed.`);
   }
 
   const nextFieldIds = new Set(next.fields.map((f) => f.id));

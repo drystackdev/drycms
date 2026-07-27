@@ -28,9 +28,19 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
       label: "Timestamps",
       description: "Automatically records when each entry was created and last updated.",
     },
+    {
+      key: "seo",
+      label: "SEO",
+      description: "Adds Title, Description, and Image fields for search engines and social previews.",
+    },
   ],
   singleton: [
     { key: "slug", label: "Slug", description: "Adds a URL-friendly Slug field, and a Title field to go with it." },
+    {
+      key: "seo",
+      label: "SEO",
+      description: "Adds Title, Description, and Image fields for search engines and social previews.",
+    },
   ],
   component: [],
 };
@@ -50,7 +60,7 @@ export default function FeaturesFieldset({ kind, features, onChange }: FeaturesF
       <div class="stack" style={{marginBottom: '1rem'}}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
-            <CheckField description={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
+            <CheckField role="switch" description={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
           </div>
         ))}
       </div>

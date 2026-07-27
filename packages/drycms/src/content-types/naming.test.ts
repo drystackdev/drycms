@@ -95,6 +95,36 @@ describe("validateSystemProtections", () => {
     expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
   });
 
+  it("rejects renaming a system type's Title (label)", () => {
+    const existing = contentType({ system: true, fields: [], label: "User" });
+    const next = contentType({ system: true, fields: [], label: "Account" });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+  });
+
+  it("rejects renaming a system type's Table Name (name)", () => {
+    const existing = contentType({ system: true, fields: [], name: "user" });
+    const next = contentType({ system: true, fields: [], name: "account" });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+  });
+
+  it("rejects editing a system type's Description", () => {
+    const existing = contentType({ system: true, fields: [], description: "Accounts able to sign in." });
+    const next = contentType({ system: true, fields: [], description: "Something else." });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+  });
+
+  it("treats an unset Description the same as an empty one (no false-positive reject)", () => {
+    const existing = contentType({ system: true, fields: [], description: undefined });
+    const next = contentType({ system: true, fields: [], description: "" });
+    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+  });
+
+  it("allows setting livePreviewUrl on a system type", () => {
+    const existing = contentType({ system: true, fields: [] });
+    const next = contentType({ system: true, fields: [], livePreviewUrl: "https://example.com/preview" });
+    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+  });
+
   it("rejects removing a locked field", () => {
     const existing = contentType({ system: true, fields: [lockedName] });
     const next = contentType({ system: true, fields: [] });
@@ -134,6 +164,12 @@ describe("validateSystemProtections", () => {
     const existing = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
     const next = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
     expect(() => validateSystemProtections(next, existing)).not.toThrow();
+  });
+
+  it("also guards the seo feature, same as timestamps/slug/draft/schedule", () => {
+    const existing = contentType({ system: true, fields: [], features: { seo: true } });
+    const next = contentType({ system: true, fields: [], features: { seo: false } });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
   });
 });
 

@@ -338,7 +338,7 @@ function CheckFieldPreview() {
         value={autoPublish}
         onChange={setAutoPublish}
         description="Automatically publish new posts without review."
-        ui="switch"
+        role="switch"
       />
     </div>
   );

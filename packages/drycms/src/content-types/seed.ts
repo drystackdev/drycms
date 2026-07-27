@@ -1,9 +1,13 @@
 import { planMigration, type Statement } from "./migration.js";
+import { SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
 /** Fixed ids for the built-in default content types/fields, so re-running
  * `pendingSeedStatements` on every boot (see the engine adapters) always
- * resolves the same identity instead of minting a new row each time. */
+ * resolves the same identity instead of minting a new row each time. `seo`
+ * itself is `SYSTEM_COMPONENT_IDS.seo` (shared with `system-fields.ts`,
+ * which embeds it via `features.seo` - the same fixed id both files need to
+ * agree on has to live in one of them, not be duplicated in both). */
 const IDS = {
   user: "system-user",
   userName: "system-user-name",
@@ -16,6 +20,9 @@ const IDS = {
   menuItemLabel: "system-menu-item-label",
   menuItemDescription: "system-menu-item-description",
   menuItemHref: "system-menu-item-href",
+  seoMetaTitle: "system-seo-meta-title",
+  seoDescription: "system-seo-description",
+  seoImage: "system-seo-image",
 } as const;
 
 function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinition {
@@ -25,13 +32,15 @@ function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinitio
 /**
  * The content types every app must have from first boot: a `user` collection
  * (for accounts able to sign in), a `menu` collection (a named group of
- * links), and the `menuItem` component `menu.refs` repeats. All three are
- * `system: true` (can't be deleted) and every declared field is `locked:
- * true` (can't be removed) - new fields can still be added, and everything
- * can still be reordered; see `naming.ts`'s `validateSystemProtections` for
- * the enforcement. `createdAt`/`updatedAt` ride on `features.timestamps`
- * instead of being declared fields - same protection, since a `system`
- * type's already-on features can't be turned off either.
+ * links), the `menuItem` component `menu.refs` repeats, and an `seo`
+ * component any collection/singleton can flatten in via `features.seo` (see
+ * `system-fields.ts`). All four are `system: true` (can't be deleted) and
+ * every declared field is `locked: true` (can't be removed) - new fields can
+ * still be added, and everything can still be reordered; see `naming.ts`'s
+ * `validateSystemProtections` for the enforcement. `createdAt`/`updatedAt`
+ * ride on `features.timestamps` instead of being declared fields - same
+ * protection, since a `system` type's already-on features can't be turned
+ * off either.
  */
 export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
   const menuItem: ContentTypeDefinition = {
@@ -64,6 +73,46 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: { required: true, format: "url" },
+      }),
+    ],
+    version: 0,
+    system: true,
+  };
+
+  const seo: ContentTypeDefinition = {
+    id: SYSTEM_COMPONENT_IDS.seo,
+    kind: "component",
+    name: "seo",
+    label: "SEO",
+    description: "Search-engine/social preview metadata.",
+    fields: [
+      // Named `metaTitle`, not `title` - naming.ts's RESERVED_NAMES blocks a
+      // bare "title" on any field (it's the synthetic column `features.slug`
+      // adds), even though this one would only ever appear prefixed
+      // (`seo_metaTitle`) once flattened.
+      lockedField({
+        id: IDS.seoMetaTitle,
+        name: "metaTitle",
+        label: "Title",
+        type: "text",
+        config: {},
+        validation: {},
+      }),
+      lockedField({
+        id: IDS.seoDescription,
+        name: "description",
+        label: "Description",
+        type: "text",
+        config: { multiline: true },
+        validation: {},
+      }),
+      lockedField({
+        id: IDS.seoImage,
+        name: "image",
+        label: "Image",
+        type: "image",
+        config: {},
+        validation: {},
       }),
     ],
     version: 0,
@@ -136,7 +185,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     system: true,
   };
 
-  return [menuItem, user, menu];
+  return [menuItem, seo, user, menu];
 }
 
 /**

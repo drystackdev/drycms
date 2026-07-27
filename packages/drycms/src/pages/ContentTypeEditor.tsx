@@ -26,6 +26,15 @@ interface Props {
   kind?: string;
 }
 
+/** Matches `ContentTypes.tsx`'s nav wording ("Single", not "Singleton") -
+ * shown next to the label so it's clear which of the 3 kinds is being
+ * edited, since the label/table name alone don't say. */
+const KIND_LABELS: Record<ContentTypeKind, string> = {
+  collection: "Collection",
+  singleton: "Single",
+  component: "Component",
+};
+
 /** ID is a real column, baked directly into every generated `CREATE TABLE`
  * rather than going through `systemFieldsFor` - see that file's doc comment
  * - and can't be dragged/reordered/removed. It's hidden from the UI for
@@ -46,6 +55,9 @@ function systemFieldsForUi(
       { id: "title", label: "Title", name: "title", typeLabel: "Text" },
       { id: "slug", label: "Slug", name: "slug", typeLabel: "Text" },
     );
+  }
+  if (definition.features?.seo) {
+    items.push({ id: "seo", label: "SEO", name: "seo", typeLabel: "Component" });
   }
   if (definition.kind === "collection") {
     if (definition.features?.draft) {
@@ -300,9 +312,12 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         </a>
         <div style={{ flex: 1 }}>
           <h1>
-            {isNew
-              ? `New ${definition.kind}`
-              : definition.label || definition.name}
+            {isNew ? `New ${KIND_LABELS[definition.kind]}` : definition.label || definition.name}
+            {!isNew && (
+              <span class="badge sm outline" style={{ marginLeft: "0.5rem" }}>
+                {KIND_LABELS[definition.kind]}
+              </span>
+            )}
           </h1>
           <p>
             {definition.kind === "component"
@@ -355,8 +370,13 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setDefinition((d) => (d ? { ...d, label, name } : d));
             }}
             required
+            disabled={definition.system}
             error={!!tableNameError}
-            helperText={tableNameError ?? undefined}
+            helperText={
+              definition.system
+                ? "Set by the system and can't be changed."
+                : (tableNameError ?? undefined)
+            }
           />
           <TextField
             label="Description"
@@ -366,8 +386,29 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             onChange={(v) =>
               setDefinition((d) => (d ? { ...d, description: v } : d))
             }
-            helperText="Optional description for this content type, shown in the admin UI."
+            disabled={definition.system}
+            helperText={
+              definition.system
+                ? "Set by the system and can't be changed."
+                : "Optional description for this content type, shown in the admin UI."
+            }
           />
+
+          {definition.kind !== "component" && (
+            <TextField
+              label="Live Preview"
+              placeholder={
+                definition.kind === "singleton"
+                  ? "e.g. https://example.com/about"
+                  : "e.g. https://example.com/posts/{slug}"
+              }
+              value={definition.livePreviewUrl ?? ""}
+              onChange={(v) =>
+                setDefinition((d) => (d ? { ...d, livePreviewUrl: v } : d))
+              }
+              helperText="URL the entry editor will open for a live preview."
+            />
+          )}
 
           <FeaturesFieldset
             kind={definition.kind}

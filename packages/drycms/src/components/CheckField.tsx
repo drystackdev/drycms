@@ -4,7 +4,7 @@ import type { FieldProps } from "./field-common.js";
 export interface CheckFieldProps extends FieldProps<boolean> {
   /** Renders a switch instead of a checkbox. @default "checkbox" */
   description?: string;
-  ui?: "checkbox" | "switch";
+  role?: "checkbox" | "switch";
   disabled?: boolean;
   name?: string;
   id?: string;
@@ -17,7 +17,7 @@ export default function CheckField({
   description,
   helperText,
   error = false,
-  ui = "checkbox",
+  role = "checkbox",
   disabled = false,
   name,
   id,
@@ -31,7 +31,7 @@ export default function CheckField({
         <input
           id={fieldId}
           type="checkbox"
-          role={ui === "switch" ? "switch" : undefined}
+          role={role === "switch" ? "switch" : undefined}
           name={name}
           checked={value}
           disabled={disabled}
