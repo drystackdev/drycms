@@ -141,6 +141,13 @@ export const STORAGE_ROUTE_ENTRYPOINT = "drycms/routes/storage.ts";
  */
 export const CONTENT_ROUTE_ENTRYPOINT = "drycms/routes/content-types.ts";
 
+/**
+ * The Astro API endpoint backing content-*entry* CRUD (list/get/create/
+ * update/delete rows of a collection/singleton), serving `${path}/api/content/**`.
+ * Distinct from `CONTENT_ROUTE_ENTRYPOINT`, which is schema-definition only.
+ */
+export const CONTENT_ENTRIES_ROUTE_ENTRYPOINT = "drycms/routes/content-entries.ts";
+
 export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = "storage";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";

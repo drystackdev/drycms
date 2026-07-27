@@ -3,6 +3,7 @@ import preactIntegration from "@astrojs/preact";
 import type { AstroIntegration } from "astro";
 import {
   APP_ENTRYPOINT,
+  CONTENT_ENTRIES_ROUTE_ENTRYPOINT,
   CONTENT_ROUTE_ENTRYPOINT,
   STORAGE_ROUTE_ENTRYPOINT,
   type DryOption,
@@ -163,6 +164,15 @@ export function dry(options: DryOption = {}): AstroIntegration {
         injectRoute({
           pattern: `${resolved.path}/api/content-types/[...slug]`,
           entrypoint: CONTENT_ROUTE_ENTRYPOINT,
+        });
+
+        // Server-rendered API endpoint backing content-ENTRY CRUD (the
+        // actual rows inside a collection/singleton) - see
+        // `routes/content-entries.ts`. Distinct from the content-TYPE
+        // (schema) endpoint just above.
+        injectRoute({
+          pattern: `${resolved.path}/api/content/[...slug]`,
+          entrypoint: CONTENT_ENTRIES_ROUTE_ENTRYPOINT,
         });
 
         logger.info(`admin UI mounted at ${resolved.path}`);

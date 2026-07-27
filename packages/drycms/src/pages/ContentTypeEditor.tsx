@@ -211,8 +211,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         .map((t) => ({ value: t.id, label: t.label })),
       components: allTypes
         .filter(
-          (t) =>
-            t.kind === "component" && t.id !== definition?.id && !t.system,
+          (t) => t.kind === "component" && t.id !== definition?.id && !t.system,
         )
         .map((t) => ({ value: t.id, label: t.label })),
     }),
@@ -342,10 +341,17 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (!definition) return <span class="hint">Loading…</span>;
+  if (!definition)
+    return (
+      <div class="empty">
+        <progress class="circle" />
+        <p>Loading content type...</p>
+      </div>
+    );
 
   // Back/Cancel return to the list on the tab matching this content type's
   // kind, rather than resetting to whichever tab `selectedKind` defaults to.
+
   const backTo = `${path}/content-types?selectedKind=${definition.kind}`;
 
   return (
@@ -369,9 +375,6 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               : definition.label || definition.name}
           </h1>
           <p>
-            <span class="badge sm outline" style={{ marginRight: "0.5rem" }}>
-              {KIND_LABELS[definition.kind]}
-            </span>
             {definition.kind === "component"
               ? "Reusable field group, embeddable in other content types."
               : "Define the fields, data types, and structure used to store content for this content type."}
@@ -397,6 +400,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             systemEntries={systemFieldsForUi(definition)}
             fields={definition.fields}
             features={definition.features}
+            type={KIND_LABELS[definition.kind]}
             onEdit={(field) => {
               setEditingField(field);
               setFieldDialogOpen(true);

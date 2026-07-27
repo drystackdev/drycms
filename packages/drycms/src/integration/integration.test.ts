@@ -39,10 +39,10 @@ describe('dry()', () => {
 		expect(dry().name).toBe('drycms');
 	});
 
-	it('injects the app catch-all route, the storage API route, and the content-types API route', () => {
+	it('injects the app catch-all route, the storage API route, the content-types API route, and the content-entries API route', () => {
 		const { injectRoute } = runSetup(dry());
 
-		expect(injectRoute).toHaveBeenCalledTimes(3);
+		expect(injectRoute).toHaveBeenCalledTimes(4);
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/[...slug]',
 			entrypoint: 'drycms/app.astro',
@@ -54,6 +54,10 @@ describe('dry()', () => {
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/api/content-types/[...slug]',
 			entrypoint: 'drycms/routes/content-types.ts',
+		});
+		expect(injectRoute).toHaveBeenCalledWith({
+			pattern: '/dry/api/content/[...slug]',
+			entrypoint: 'drycms/routes/content-entries.ts',
 		});
 	});
 

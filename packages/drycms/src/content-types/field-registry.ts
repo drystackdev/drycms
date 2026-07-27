@@ -317,9 +317,9 @@ export const relationFieldType: FieldTypeDefinition = {
       label: "Cardinality",
       widget: "select",
       options: [
-        { value: "manyToOne", label: "Many-to-one (n→1) – each entry links to one target" },
-        { value: "oneToMany", label: "One-to-many (1→n) – each target belongs to only one entry here" },
-        { value: "manyToMany", label: "Many-to-many (n↔n) – entries and targets can link freely" },
+        { value: "manyToOne", label: "[n - 1] One target per entry — many entries can share the same target" },
+        { value: "oneToMany", label: "[1 - n] Many targets per entry — but each target belongs to only one entry" },
+        { value: "manyToMany", label: "[n - n] Entries and targets can link to each other freely" },
       ],
     },
   ],

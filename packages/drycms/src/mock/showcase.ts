@@ -176,8 +176,9 @@ import { SettingsIcon } from 'drycms/components/icons';
   <span class="mono">0.0.1</span>
 </div>`,
   buttons: `<button type="button" class="sm">Small</button>
-<button type="button">Default</button>
+<button type="button">Medium</button>
 <button type="button" class="lg">Large</button>
+<button type="button" class="xl">Extra large</button>
 <button type="button" class="icon" aria-label="Settings">
   <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">…</svg>
 </button>

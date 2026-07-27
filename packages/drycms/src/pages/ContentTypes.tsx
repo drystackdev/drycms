@@ -17,7 +17,7 @@ import { useParam } from "../hooks/useParam.js";
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
   { kind: "singleton", label: "Single", icon: "Singleton" },
-  { kind: "component", label: "Component", icon: "Component" },
+  { kind: "component", label: "Component", icon: "Showcase" },
 ];
 
 interface Row extends Record<string, unknown> {
@@ -96,7 +96,10 @@ export default function ContentTypes() {
       {loadError ? (
         <span class="error">{loadError}</span>
       ) : definitions === null ? (
-        <span class="hint">Loading…</span>
+        <div class="empty">
+          <progress class="circle" />
+          <p>Loading content types...</p>
+        </div>
       ) : (
         <div class="content-types-grid">
           <ul class="content-types-nav">

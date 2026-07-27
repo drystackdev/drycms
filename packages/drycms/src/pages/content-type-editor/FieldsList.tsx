@@ -26,6 +26,7 @@ export interface FieldsListProps {
   /** ID always renders first, pinned, non-draggable, non-reorderable. */
   systemEntries: SystemFieldEntry[];
   fields: FieldDefinition[];
+  type: string;
   features?: ContentTypeFeatures;
   onEdit: (field: FieldDefinition) => void;
   onRemove: (fieldId: string) => void;
@@ -52,6 +53,7 @@ export default function FieldsList({
   onRemove,
   onReorderFields,
   onAdd,
+  type,
 }: FieldsListProps) {
   const [pendingRemove, setPendingRemove] = useState<FieldDefinition | null>(
     null,
@@ -116,7 +118,12 @@ export default function FieldsList({
     <div>
       <div class="row justify-between">
         <div>
-          <h3>Fields</h3>
+          <h3>
+            Fields
+            <div class="badge sm info" style={{ position: "relative", top: "-0.125rem", marginLeft: "0.5rem" }}>
+              {type}
+            </div>
+          </h3>
           <span class="hint">
             Define the columns used for data entry and storage
           </span>

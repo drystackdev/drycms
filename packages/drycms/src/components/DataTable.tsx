@@ -1,10 +1,12 @@
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
-  ArrowUpIcon
+  ArrowUpIcon,
+  SettingsIcon,
 } from "./icons.js";
+import { useStore } from "../hooks/useStore.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import type { JSX } from "preact/jsx-runtime";
 
@@ -14,6 +16,33 @@ export interface DataTableColumn<Row> {
   numeric?: boolean;
   sortable?: boolean;
   render?: (value: Row[keyof Row], row: Row) => JSX.Element;
+}
+
+export type SortState = { key: string; direction: "asc" | "desc" } | null;
+
+export interface DataTableServerQuery {
+  /** Total row count across every page (not just the current one) - drives
+   * the Prev/Next page count, since `rows` itself is only the current page. */
+  total: number;
+  page: number;
+  onPageChange: (page: number) => void;
+  sort: SortState;
+  onSortChange: (sort: SortState) => void;
+  /** Debounced (300ms) internally - server mode can't filter client-side, so
+   * every distinct search value is pushed up instead of computed here. */
+  onSearchChange?: (search: string) => void;
+  loading?: boolean;
+}
+
+export interface DataTableColumnToggle {
+  /** `useStore` key - persists which columns are visible across visits. */
+  storageKey: string;
+  /** Column `key`s visible the first time this table is ever shown. */
+  defaultVisible: string[];
+  /** Fires on mount and on every change, so a caller doing server-side
+   * search (which can only search *some* columns) knows which ones are
+   * currently toggled on. */
+  onVisibleChange?: (visible: string[]) => void;
 }
 
 export interface DataTableProps<Row extends Record<string, unknown>> {
@@ -35,9 +64,17 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * sort/filter/page instead of whatever row now occupies the same index.
    * Falls back to the row's index when omitted. */
   rowKey?: (row: Row) => string | number;
+  /** When set, `rows` is treated as already-sorted/paginated/filtered by the
+   * caller (e.g. a server query) - internal sort/paginate/slice is disabled
+   * and delegated to this instead. Omit for the original fully-client-side
+   * behavior. */
+  serverQuery?: DataTableServerQuery;
+  /** When set, adds a "Columns" toggle next to the search box so some
+   * columns can be hidden - only toggled-on columns render, and (per the
+   * content-entry list's requirement) only toggled-on columns are ever
+   * offered as `serverQuery`'s search target. */
+  columnToggle?: DataTableColumnToggle;
 }
-
-type SortState = { key: string; direction: "asc" | "desc" } | null;
 
 function toText(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -49,9 +86,14 @@ function compare(a: unknown, b: unknown): number {
   return toText(a).localeCompare(toText(b), undefined, { numeric: true });
 }
 
+const NO_COLUMN_TOGGLE_KEY = "datatable:unused-column-toggle";
+
 /**
  * Sortable, filterable, paginated table. Renders plain `<table>` markup so the
- * drycms stylesheet does all the styling.
+ * drycms stylesheet does all the styling. Fully client-side (in-memory) by
+ * default; pass `serverQuery` to instead delegate sort/page/search to a
+ * caller-owned server request, and/or `columnToggle` to let some columns be
+ * hidden (persisted via `useStore`).
  */
 export default function DataTable<Row extends Record<string, unknown>>({
   columns,
@@ -63,43 +105,98 @@ export default function DataTable<Row extends Record<string, unknown>>({
   onRowClick,
   actions,
   rowKey,
+  serverQuery,
+  columnToggle,
 }: DataTableProps<Row>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const { ref: scroll } = useOverlayScrollbars<HTMLDivElement>();
+  const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
+
+  const allKeys = columns.map((c) => c.key);
+  // When `columnToggle` is omitted, this still calls `useStore` (hooks must
+  // run unconditionally) but under a fixed, never-read-back key - `storedVisible`
+  // itself is ignored below in that case, so it's at most one harmless,
+  // write-once entry in the shared `drycms:store` blob for the whole app.
+  const [storedVisible, setStoredVisible] = useStore<string[]>(
+    columnToggle?.storageKey ?? NO_COLUMN_TOGGLE_KEY,
+    columnToggle?.defaultVisible ?? allKeys,
+  );
+  const visibleKeys = columnToggle ? (storedVisible ?? allKeys) : allKeys;
+  const visibleColumns = columns.filter((c) => visibleKeys.includes(c.key));
+
+  useEffect(() => {
+    columnToggle?.onVisibleChange?.(visibleKeys);
+    // Only the visible SET matters here, not the caller's callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnToggle && visibleKeys.join(",")]);
+
+  useEffect(() => () => clearTimeout(searchDebounce.current), []);
+
+  function toggleColumnVisible(key: string) {
+    setStoredVisible((current) => {
+      const set = new Set(current ?? allKeys);
+      if (set.has(key)) {
+        if (set.size <= 1) return current; // always keep at least one column visible.
+        set.delete(key);
+      } else {
+        set.add(key);
+      }
+      return allKeys.filter((k) => set.has(k)); // stable, declared column order.
+    });
+  }
+
+  function handleSearchInput(value: string) {
+    setQuery(value);
+    setPage(0);
+    if (!serverQuery) return;
+    clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => serverQuery.onSearchChange?.(value), 300);
+  }
 
   const filtered = useMemo(() => {
+    if (serverQuery) return rows; // already filtered server-side.
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((row) =>
-      columns.some((column) =>
+      visibleColumns.some((column) =>
         toText(row[column.key]).toLowerCase().includes(needle),
       ),
     );
-  }, [rows, columns, query]);
+  }, [rows, visibleColumns, query, serverQuery]);
 
   const sorted = useMemo(() => {
-    if (!sort) return filtered;
+    if (serverQuery || !sort) return filtered; // server mode: already sorted.
     const direction = sort.direction === "asc" ? 1 : -1;
     return [...filtered].sort(
       (a, b) => compare(a[sort.key], b[sort.key]) * direction,
     );
-  }, [filtered, sort]);
+  }, [filtered, sort, serverQuery]);
 
   const perPage = pageSize > 0 ? pageSize : sorted.length || 1;
-  const pageCount = Math.max(1, Math.ceil(sorted.length / perPage));
-  const current = Math.min(page, pageCount - 1);
-  const visible = sorted.slice(current * perPage, current * perPage + perPage);
+  const totalRows = serverQuery ? serverQuery.total : sorted.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / perPage));
+  const current = serverQuery ? serverQuery.page : Math.min(page, pageCount - 1);
+  const visible = serverQuery ? sorted : sorted.slice(current * perPage, current * perPage + perPage);
+  const activeSort = serverQuery ? serverQuery.sort : sort;
 
   const toggleSort = (key: string) => {
-    setPage(0);
-    setSort((previous) => {
+    const nextSort = (previous: SortState): SortState => {
       if (previous?.key !== key) return { key, direction: "asc" };
       if (previous.direction === "asc") return { key, direction: "desc" };
       return null;
-    });
+    };
+    if (serverQuery) {
+      serverQuery.onPageChange(0);
+      serverQuery.onSortChange(nextSort(serverQuery.sort));
+    } else {
+      setPage(0);
+      setSort(nextSort);
+    }
   };
+
+  const goToPage = (nextPage: number) => (serverQuery ? serverQuery.onPageChange(nextPage) : setPage(nextPage));
 
   return (
     <div class="stack">
@@ -111,15 +208,31 @@ export default function DataTable<Row extends Record<string, unknown>>({
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             style="max-width: 18rem"
-            onInput={(event) => {
-              setQuery((event.currentTarget as HTMLInputElement).value);
-              setPage(0);
-            }}
+            onInput={(event) => handleSearchInput((event.currentTarget as HTMLInputElement).value)}
           />
+          {columnToggle && (
+            <details class="column-toggle">
+              <summary class="ghost icon sm" aria-label="Choose visible columns" data-tooltip="Columns">
+                <SettingsIcon />
+              </summary>
+              <ul class="column-toggle-menu" role="menu">
+                {columns.map((column) => (
+                  <li key={column.key}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={visibleKeys.includes(column.key)}
+                        onChange={() => toggleColumnVisible(column.key)}
+                      />
+                      {column.label}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           <span class="spacer" />
-          <small>
-            {sorted.length} of {rows.length}
-          </small>
+          <small>{serverQuery?.loading ? "Loading…" : `${totalRows} of ${serverQuery ? serverQuery.total : rows.length}`}</small>
           {actions}
         </div>
       )}
@@ -128,16 +241,16 @@ export default function DataTable<Row extends Record<string, unknown>>({
         <table>
           <thead>
             <tr>
-              {columns.map((column) => {
+              {visibleColumns.map((column) => {
                 const sortable = column.sortable !== false;
-                const active = sort?.key === column.key;
+                const active = activeSort?.key === column.key;
                 return (
                   <th
                     key={column.key}
                     class={column.numeric ? "numeric" : undefined}
                     aria-sort={
                       active
-                        ? sort.direction === "asc"
+                        ? activeSort!.direction === "asc"
                           ? "ascending"
                           : "descending"
                         : "none"
@@ -151,7 +264,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
                       >
                         {column.label}
                         {active &&
-                          (sort.direction === "asc" ? (
+                          (activeSort!.direction === "asc" ? (
                             <ArrowUpIcon />
                           ) : (
                             <ArrowDownIcon />
@@ -168,7 +281,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={columns.length}>
+                <td colSpan={visibleColumns.length}>
                   <div class="empty">{emptyLabel}</div>
                 </td>
               </tr>
@@ -179,7 +292,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
                   style={onRowClick ? { cursor: "pointer" } : undefined}
                   onClick={() => onRowClick?.(row)}
                 >
-                  {columns.map((column) => (
+                  {visibleColumns.map((column) => (
                     <td
                       key={column.key}
                       class={column.numeric ? "numeric" : undefined}
@@ -206,7 +319,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
               type="button"
               class="outline sm"
               disabled={current === 0}
-              onClick={() => setPage(current - 1)}
+              onClick={() => goToPage(current - 1)}
             >
               <ArrowLeftIcon />
               Previous
@@ -215,7 +328,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
               type="button"
               class="outline sm"
               disabled={current >= pageCount - 1}
-              onClick={() => setPage(current + 1)}
+              onClick={() => goToPage(current + 1)}
             >
               Next
               <ArrowRightIcon />

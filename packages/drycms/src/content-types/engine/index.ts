@@ -1,5 +1,8 @@
 import type { ResolvedContentOption } from "../../integration/options.js";
 import { createD1ContentEngineAdapter } from "./d1.js";
+import { createD1ContentEntryEngineAdapter } from "./entries-d1.js";
+import { createSqliteContentEntryEngineAdapter } from "./entries-sqlite.js";
+import type { ContentEntryEngineAdapter } from "./entries-types.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
 import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
 
@@ -28,5 +31,26 @@ export function createContentEngineAdapter(
   }
 }
 
+/** Same dual-engine selection as `createContentEngineAdapter`, for the entry
+ * (row-CRUD) engine instead of the schema engine. */
+export function createContentEntryEngineAdapter(
+  option: ResolvedContentOption,
+  runtimeEnv?: Record<string, unknown>,
+): ContentEntryEngineAdapter {
+  switch (option.engine) {
+    case "sqlite":
+      return createSqliteContentEntryEngineAdapter(option);
+    case "D1":
+      return createD1ContentEntryEngineAdapter(option, runtimeEnv);
+    default:
+      throw new ContentEngineError(
+        "unsupported",
+        `content.engine "${(option as { engine: string }).engine}" is not implemented yet.`,
+      );
+  }
+}
+
 export { ContentEngineError };
 export type { ContentEngineAdapter, ContentEngineErrorCode } from "./types.js";
+export { ContentEntryError } from "./entries-types.js";
+export type { ContentEntryEngineAdapter, ContentEntryErrorCode, EntryPage, EntryQuery, EntryRow } from "./entries-types.js";

@@ -56,13 +56,13 @@ export default function FieldListItem({
         <DragHandleIcon />
       </button>
       <div class="stack spacer" style={{ gap: "0.125rem" }}>
-        <span>
+        <span class="row align-center" style={{ gap: "0.25rem" }}>
           {label}
-          <span class="badge sm secondary" style={{ marginLeft: "0.5rem" }}>
+          <span class="badge sm secondary">
             {typeLabel}
           </span>
           {system ? (
-            <span class="badge sm outline" style={{ marginLeft: "0.5rem" }}>
+            <span class="badge sm outline">
               System
             </span>
           ) : (
@@ -71,13 +71,12 @@ export default function FieldListItem({
           {locked && (
             <span
               class="badge sm outline"
-              style={{ marginLeft: "0.5rem" }}
               title="Required by default - view only, can't be edited or removed"
             >
               <LockIcon /> Locked
             </span>
           )}
-          {required && <span class="required-asterisk"> *</span>}
+          {required && <span class="required-asterisk">*</span>}
         </span>
         <small class="hint">
           {name}

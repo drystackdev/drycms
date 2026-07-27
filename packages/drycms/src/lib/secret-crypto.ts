@@ -22,13 +22,16 @@ const IV_BYTES = 12;
 
 let cachedKeyPromise: Promise<CryptoKey> | undefined;
 
-function base64Encode(bytes: Uint8Array): string {
+/** Exported so `lib/password-hash.ts` doesn't need its own copy - both modules
+ * store a self-contained "version tag + base64 payload" string for the same
+ * Web-Crypto-only-runtime reason documented above. */
+export function base64Encode(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 }
 
-function base64Decode(text: string): Uint8Array {
+export function base64Decode(text: string): Uint8Array {
   const binary = atob(text);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);

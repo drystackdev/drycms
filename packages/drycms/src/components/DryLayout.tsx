@@ -1,4 +1,4 @@
-import { useEffect } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -9,6 +9,9 @@ import type { IconName } from "./icons.js";
 import { path } from "virtual:drycms/config";
 import { collapsed } from "../store/dashboard.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { useStore } from "../hooks/useStore.js";
+import { createContentTypesApi } from "../content-types/http-api.js";
+import type { ContentTypeDefinition } from "../content-types/types.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -47,7 +50,7 @@ const NAV: {
     label: "Content",
     href: `${path}/content`,
     icon: "Content",
-    ready: false,
+    ready: true,
   },
   {
     key: "media",
@@ -59,9 +62,9 @@ const NAV: {
   {
     key: "users",
     label: "Users",
-    href: `${path}/users`,
+    href: `${path}/content/user`,
     icon: "Users",
-    ready: false,
+    ready: true,
   },
   {
     key: "settings",
@@ -93,6 +96,21 @@ export default function DryLayout({ children }: Props) {
     shell?.classList.toggle("collapsed", collapsed.value);
   }, [collapsed.value]);
 
+  // The "Content" submenu's own collapse/expand state, independent of the
+  // whole-sidebar `collapsed` signal above.
+  const [contentMenuOpen, setContentMenuOpen] = useStore("contentSubmenuOpen", true);
+  const [contentTypes, setContentTypes] = useState<ContentTypeDefinition[]>([]);
+  const contentTypesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  useEffect(() => {
+    contentTypesApi.list().then(setContentTypes).catch(() => setContentTypes([]));
+  }, [contentTypesApi]);
+  // System types (user/menu/aiKey/role/permission) get their own UI later
+  // and are deliberately left out of this generic list - see `status/content.md`.
+  const contentNavItems = useMemo(
+    () => contentTypes.filter((t) => t.kind !== "component" && !t.system),
+    [contentTypes],
+  );
+
   // `.main`, not `window`, is the actual scrolling element (`.shell` is
   // pinned to `100dvh`) - preact-iso's own scroll-to-top-on-navigation
   // logic calls `window.scrollTo`, which is a no-op here, so a page that
@@ -108,7 +126,7 @@ export default function DryLayout({ children }: Props) {
         <div class="sidebar-head">
           <a class="brand" href={`${path}/dashboard`}>
             <Icon name="Brand" />
-            <span>drycms</span>
+            <span>DRYCMS</span>
           </a>
 
           <button
@@ -126,7 +144,44 @@ export default function DryLayout({ children }: Props) {
         <nav aria-label="Admin">
           {!collapsed.value && <span class="nav-label">Manage</span>}
           {NAV.map((item) =>
-            item.ready ? (
+            item.key === "content" ? (
+              <div key={item.key} class="nav-group">
+                <div class="nav-group-header">
+                  <a
+                    href={item.href}
+                    aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
+                    data-tooltip={collapsed.value ? item.label : undefined}
+                    data-tooltip-placement="right"
+                  >
+                    <Icon name={item.icon} />
+                    <span>{item.label}</span>
+                  </a>
+                  {!collapsed.value && contentNavItems.length > 0 && (
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      aria-expanded={contentMenuOpen}
+                      aria-label={contentMenuOpen ? "Collapse Content menu" : "Expand Content menu"}
+                      onClick={() => setContentMenuOpen(!contentMenuOpen)}
+                    >
+                      <Icon name="ArrowDown" class={contentMenuOpen ? "nav-chevron" : "nav-chevron collapsed"} />
+                    </button>
+                  )}
+                </div>
+                {!collapsed.value && contentMenuOpen && (
+                  <div class="nav-subitems">
+                    {contentNavItems.map((type) => {
+                      const href = `${path}/content/${type.name}`;
+                      return (
+                        <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
+                          <span>{type.label}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : item.ready ? (
               <a
                 key={item.key}
                 href={item.href}

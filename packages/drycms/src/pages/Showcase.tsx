@@ -501,15 +501,18 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="buttons"
           title="Button sizes"
-          description=".sm/.lg set the height; .icon makes a square icon-only button; .block stretches to 100% width."
+          description=".sm/.md/.lg/.xl set the height, one tier below the same-named input size; a bare button defaults to .md. .icon makes a square icon-only button; .block stretches to 100% width."
           code={code.buttons!}
         >
           <button type="button" class="sm">
             Small
           </button>
-          <button type="button">Default</button>
+          <button type="button">Medium</button>
           <button type="button" class="lg">
             Large
+          </button>
+          <button type="button" class="xl">
+            Extra large
           </button>
           <button type="button" class="icon" aria-label="Settings">
             <Icon name="Settings" />

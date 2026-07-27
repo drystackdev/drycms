@@ -18,8 +18,10 @@
       justify-content: center;
       gap: 0.5rem;
       width: auto;
-      height: 2.75rem;
-      padding: 0 1rem;
+      /* One tier below the same-named input height (forms.css) - a bare
+			 * button is the "md" tier, matching input's "sm". */
+      height: 2.25rem;
+      padding: 0 0.5rem;
       font: inherit;
       font-weight: var(--dry-weight-button);
       white-space: nowrap;
@@ -246,26 +248,44 @@
       }
 
       &.sm {
+        height: 1.75rem;
+        padding-inline: 0.375rem;
+        font-size: var(--dry-text-xs);
+      }
+
+      &.md {
         height: 2.25rem;
         padding-inline: 0.5rem;
         font-size: var(--dry-text-xs);
       }
 
       &.lg {
+        height: 2.75rem;
+        padding-inline: 1rem;
+        font-size: var(--dry-text-sm);
+      }
+
+      &.xl {
         height: 3.25rem;
         padding-inline: 1.375rem;
         font-size: var(--dry-text-base);
       }
 
-      /* Square icon-only button; combine with `.sm`/`.lg` for other sizes. */
+      /* Square icon-only button; combine with a size class for other sizes. */
       &.icon {
-        width: 2.75rem;
+        width: 2.25rem;
         padding: 0;
 
         &.sm {
+          width: 1.75rem;
+        }
+        &.md {
           width: 2.25rem;
         }
         &.lg {
+          width: 2.75rem;
+        }
+        &.xl {
           width: 3.25rem;
         }
       }
@@ -1660,7 +1680,7 @@
 		 */
     progress.circle {
       --value: 0;
-      --size: 4rem;
+      --size: 3rem;
       --thickness: 0px;
       width: var(--size);
       height: var(--size);
@@ -1838,15 +1858,18 @@
 
     /* ----------------------------------------------------------- Empty state */
     .empty {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      place-items: center;
-      gap: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
       padding: 3rem 1.5rem;
       text-align: center;
       border: 1px dashed var(--dry-border);
       border-radius: var(--dry-radius-xl);
       color: var(--dry-muted-foreground);
+      & button {
+        margin-top: 1rem;
+      }
     }
 
     /* ----------------------------------------------------------- Admin shell */
@@ -1943,6 +1966,38 @@
       letter-spacing: 0.05em;
       color: var(--dry-muted-foreground);
       opacity: 0.6;
+    }
+
+    /* --- The "Content" nav item's collapsible submenu (DryLayout.tsx),
+     * listing every non-system collection/singleton. */
+    .nav-group-header {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+
+      & > a {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+
+    .nav-chevron {
+      transition: transform 150ms ease;
+
+      &.collapsed {
+        transform: rotate(-90deg);
+      }
+    }
+
+    .nav-subitems {
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .nav-subitem {
+      padding-inline-start: 2.75rem;
+      min-height: 2.25rem !important;
+      font-weight: 500 !important;
     }
 
     .main {
@@ -2095,8 +2150,8 @@
     }
 
     .required-asterisk {
-      margin-inline-start: 0.125rem;
       color: var(--dry-error);
+      font-weight: 900;
     }
 
     .content-type-editor-grid {
@@ -2135,6 +2190,68 @@
         margin-block-start: 0.25rem;
         color: var(--dry-muted-foreground);
         font-size: var(--dry-text-sm);
+      }
+    }
+
+    /* --- Content entry editor (pages/ContentEntryEditor.tsx) - same 3:1
+     * two-column shape as `.content-type-editor-grid` (left: scalar fields
+     * in metadata order; right: a bordered panel of relation/component
+     * fields), just under its own name since the right column here isn't a
+     * danger zone. */
+    .content-entry-editor-grid {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 3fr)
+        minmax(0, 1.3fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 48rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      & > *:first-child {
+        padding: 2rem;
+      }
+    }
+
+    .content-entry-editor-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      padding: 1.25rem 1.5rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+    }
+
+    .entry-relation-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+    }
+
+    .entry-relation-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+
+      & > button {
+        width: 1.25rem;
+        height: 1.25rem;
+      }
+    }
+
+    .entry-component-repeat-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0.25rem;
+
+      & li {
+        padding: 0.375rem 0.625rem;
+        border: 1px solid var(--dry-border);
+        border-radius: var(--dry-radius-md);
       }
     }
 
@@ -2190,6 +2307,30 @@
       font-size: var(--dry-text-sm);
       text-align: center;
       margin-block-start: 1.25rem;
+    }
+
+    /* Ref-picker dialog (content-entry-editor/RefPickerDialog.tsx) and the
+     * repeatable-component item dialog (ComponentItemDialog.tsx) - same
+     * fixed-header/scrolling-body shape as `.field-dialog[open]` above. */
+    .ref-picker-dialog[open],
+    .component-item-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    .ref-picker-body,
+    .component-item-dialog-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
     }
 
     /* Content Types list page: 1/4 icon-menu + 3/4 table. */
@@ -3080,6 +3221,58 @@
 
     .popover-menu-danger {
       color: light-dark(var(--dry-error-dark), var(--dry-error-light));
+    }
+
+    /* --- Column-visibility toggle (DataTable.tsx's `columnToggle` prop) - a
+     * native `<details>` disclosure instead of `Popover.tsx`: unlike an
+     * action menu, this one needs to stay open while several checkboxes get
+     * toggled in one go, which `Popover`'s close-on-click-anywhere-inside
+     * doesn't support. */
+    .column-toggle {
+      position: relative;
+      display: inline-flex;
+
+      & summary {
+        list-style: none;
+        cursor: pointer;
+
+        &::-webkit-details-marker {
+          display: none;
+        }
+      }
+    }
+
+    .column-toggle-menu {
+      position: absolute;
+      z-index: 10;
+      top: calc(100% + 0.25rem);
+      left: 0;
+      width: 12rem;
+      margin: 0;
+      padding: 0.375rem 0.5rem;
+      list-style: none;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      & li {
+        display: block;
+      }
+
+      & label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.375rem;
+        border-radius: var(--dry-radius-sm);
+        font-weight: 400;
+        cursor: pointer;
+
+        &:hover {
+          background-color: var(--dry-accent);
+        }
+      }
     }
 
     /* --- Rename / upload dialogs. */
