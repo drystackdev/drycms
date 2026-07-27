@@ -111,6 +111,45 @@ export function validateContentTypeDefinition(
   }
 }
 
+/** Feature flags whose synthetic fields (see `system-fields.ts`) a `system`
+ * content type is allowed to depend on for its default shape - only these
+ * are checked against being turned back off. */
+const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps"] as const;
+
+/**
+ * Guards a `system` content type's built-in shape (see `seed.ts`) against
+ * deletion-shaped edits: un-marking it back to a plain (non-`system`) type,
+ * removing a field the stored definition has `locked: true` on, or turning
+ * off a `features` flag the stored definition already has on. Everything
+ * else - adding fields, reordering, editing a locked field's label/
+ * description/validation/config, renaming the type - is left alone.
+ *
+ * Checks against `existing` (the version already in storage), never against
+ * `next`'s own `locked`/`system` claims - a single request can't strip
+ * `locked` off a field and remove it in the same save, since the removal is
+ * caught against what was actually stored beforehand.
+ */
+export function validateSystemProtections(next: ContentTypeDefinition, existing: ContentTypeDefinition | undefined): void {
+  if (!existing?.system) return;
+
+  if (!next.system) {
+    throw new NamingError(`"${existing.label}" is a built-in content type and can't be un-marked as system.`);
+  }
+
+  const nextFieldIds = new Set(next.fields.map((f) => f.id));
+  for (const field of existing.fields) {
+    if (field.locked && !nextFieldIds.has(field.id)) {
+      throw new NamingError(`Field "${field.label}" is required by "${existing.label}" and can't be removed.`);
+    }
+  }
+
+  for (const key of LOCKABLE_FEATURES) {
+    if (existing.features?.[key] && !next.features?.[key]) {
+      throw new NamingError(`"${key}" can't be turned off on "${existing.label}" - a built-in field depends on it.`);
+    }
+  }
+}
+
 /** Encodes an already-`serialize()`d field value as a SQL literal, for use in
  * generated `DEFAULT` clauses. Not used for query values in general (those
  * are always bound parameters) - `ALTER TABLE ... ADD COLUMN ... DEFAULT`

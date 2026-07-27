@@ -18,7 +18,7 @@
       justify-content: center;
       gap: 0.5rem;
       width: auto;
-      height: 2.25rem;
+      height: 2.75rem;
       padding: 0 1rem;
       font: inherit;
       font-weight: var(--dry-weight-button);
@@ -246,27 +246,27 @@
       }
 
       &.sm {
-        height: 1.875rem;
+        height: 2.25rem;
         padding-inline: 0.5rem;
         font-size: var(--dry-text-xs);
       }
 
       &.lg {
-        height: 3rem;
+        height: 3.25rem;
         padding-inline: 1.375rem;
         font-size: var(--dry-text-base);
       }
 
       /* Square icon-only button; combine with `.sm`/`.lg` for other sizes. */
       &.icon {
-        width: 2.25rem;
+        width: 2.75rem;
         padding: 0;
 
         &.sm {
-          width: 1.875rem;
+          width: 2.25rem;
         }
         &.lg {
-          width: 3rem;
+          width: 3.25rem;
         }
       }
 
@@ -291,7 +291,7 @@
       flex-wrap: wrap;
       gap: 0.375rem;
       width: 100%;
-      min-height: 2.5rem;
+      min-height: 2.75rem;
       padding: 0.375rem 0.5rem;
 
       /* Room for the absolutely-positioned trailing icon button, below. */
@@ -427,13 +427,17 @@
       box-shadow: var(--dry-shadow-xs);
     }
 
+    .select.datepicker-trigger {
+      padding-left: 0.875rem;
+    }
+
     /* Numeric input flanked by decrement/increment buttons. */
     .stepper {
       position: relative;
       display: flex;
       align-items: stretch;
       width: 100%;
-      height: 2.5rem;
+      height: 2.75rem;
       border: 1px solid var(--dry-input);
       border-radius: var(--dry-radius-md);
       box-shadow: var(--dry-shadow-xs);
@@ -480,7 +484,7 @@
 
       & > button {
         flex: none;
-        width: 2.5rem;
+        width: 2.75rem;
         height: 100%;
         padding: 0;
         border: none;
@@ -518,7 +522,7 @@
       align-items: center;
       gap: 0.625rem;
       width: 100%;
-      height: 2.5rem;
+      height: 2.75rem;
       background-color: transparent;
       transition:
         border-color 120ms ease,
@@ -537,6 +541,14 @@
       & > label {
         margin: 0;
         cursor: pointer;
+        display: inline-flex;
+        flex-direction: column;
+        & > small {
+          font-weight: 400;
+          font-size: var(--dry-text-xs);
+          margin-block-start: -0.25rem;
+          color: var(--dry-muted-foreground);
+        }
       }
     }
 
@@ -589,9 +601,6 @@
       top: calc(100% + 0.375rem);
       inset-inline: 0;
       max-height: 16rem;
-      overflow-y: auto;
-      /* Scrollable by mouse/trackpad, but the scrollbar itself stays hidden. */
-      scrollbar-width: none;
       margin: 0;
       padding-inline: 0.25rem;
       list-style: none;
@@ -599,10 +608,6 @@
       background-color: var(--dry-popover);
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
-
-      &::-webkit-scrollbar {
-        display: none;
-      }
 
       &.up {
         top: auto;
@@ -1131,9 +1136,16 @@
       align-items: center;
       gap: 1.25rem;
       border-bottom: 1px solid var(--dry-border);
-      /* Scrolls instead of pushing the page wide when tabs don't fit. */
+      /* Plain native fallback for a `role="tablist"` outside a drycms
+       * component (nothing calls `useOverlayScrollbars` on it); the
+       * Showcase demo's own tablist layers OverlayScrollbars on top via
+       * that hook, which takes over regardless of what's declared here. */
       overflow-x: auto;
       overscroll-behavior-x: contain;
+
+      & [data-overlayscrollbars-viewport] {
+        overscroll-behavior-x: contain;
+      }
 
       & > [role="tab"] {
         flex: none;
@@ -1415,19 +1427,19 @@
         cursor: grabbing;
       }
 
-      &.success svg {
+      &.success .toast-body > svg {
         color: var(--dry-success);
       }
 
-      &.error svg {
+      &.error .toast-body > svg {
         color: var(--dry-error);
       }
 
-      &.warning svg {
+      &.warning .toast-body > svg {
         color: var(--dry-warning);
       }
 
-      &.info svg {
+      &.info .toast-body > svg {
         color: var(--dry-info);
       }
     }
@@ -1816,8 +1828,6 @@
       position: sticky;
       top: 0;
       height: 100dvh;
-      overflow-y: auto;
-      overflow-x: hidden;
 
       & nav {
         display: grid;
@@ -1898,7 +1908,6 @@
 
     .main {
       height: 100dvh;
-      overflow-y: auto;
     }
 
     .topbar {
@@ -1947,7 +1956,6 @@
           width: 100%;
         }
       }
-
     }
 
     /* ---------------------------------------------------- Content types list */
@@ -2076,7 +2084,6 @@
     .field-dialog-scroll {
       flex: 1 1 auto;
       min-height: 0;
-      overflow-y: auto;
       /* Avoid clipping focus rings/shadows on inputs flush against the edge. */
       margin-inline: -1rem;
       padding-inline: 1.25rem;
@@ -2407,7 +2414,6 @@
       position: sticky;
       top: calc(var(--dry-topbar-height) + 1rem);
       max-height: calc(100dvh - var(--dry-topbar-height) - 2rem);
-      overflow-y: auto;
 
       & nav {
         display: grid;
@@ -2573,7 +2579,6 @@
       align-items: center;
       gap: 0.15rem;
       padding-block: 0.375rem;
-      background-color: var(--dry-card);
       font-size: var(--dry-text-sm);
 
       & button {
@@ -2614,6 +2619,8 @@
      * defined after it, so it wins the tie regardless of DOM depth. */
     .image-picker-dialog .file-breadcrumb {
       top: 0;
+      background-color: var(--dry-card);
+      padding-inline: 0.75rem;
     }
 
     .file-toolbar {
@@ -3034,7 +3041,6 @@
     .image-picker-body {
       flex: 1 1 auto;
       min-height: 0;
-      overflow-y: auto;
       & .file-selection-bar,
       & .file-table-selection {
         box-shadow: none;
@@ -3274,7 +3280,6 @@
       grid-area: film;
       display: flex;
       gap: 0.5rem;
-      overflow-x: auto;
       padding-block: 0.25rem;
       & img {
         object-fit: contain;
@@ -3325,7 +3330,7 @@
       }
 
       .datepicker-grid {
-        margin-inline: auto;
+        justify-content: center;
       }
 
       .select:has(> .select-popup)::before,
@@ -3342,18 +3347,42 @@
         -webkit-backdrop-filter: blur(5px);
       }
 
+      /*
+       * `.select-popup`/`.datepicker-popup` above are plain conditionally-
+       * rendered elements (Preact unmounts them on close), so a keyframe
+       * `animation` is the only way to animate them - there's nothing to
+       * transition *to* once they're gone. `.popover-menu` is a native
+       * `popover="auto"` element instead (see Popover.tsx): the UA keeps it
+       * in the top layer for the duration of any running transition on
+       * `display`/`overlay`, so a `transition` + `@starting-style` pair
+       * animates the close too, not just the open - `allow-discrete` is
+       * what lets the normally-unanimatable `display`/`overlay` swap
+       * participate in that transition instead of happening instantly.
+       */
       .popover-menu {
         position: fixed !important;
         inset-inline: 0 !important;
         top: auto !important;
         bottom: 0 !important;
         transform: none !important;
+        translate: 0 100%;
         width: auto;
         max-width: none;
         max-height: 70vh;
         z-index: 49;
         border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
-        animation: dry-sheet-up 200ms ease;
+        transition:
+          translate 200ms ease,
+          display 200ms ease allow-discrete,
+          overlay 200ms ease allow-discrete;
+
+        &:popover-open {
+          translate: 0 0;
+
+          @starting-style {
+            translate: 0 100%;
+          }
+        }
       }
 
       .popover:has(> .popover-menu:popover-open)::before {

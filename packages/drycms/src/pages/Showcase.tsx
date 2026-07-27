@@ -19,6 +19,7 @@ import {
 } from "../components/icons.js";
 import MultiSelect from "../components/MultiSelect.js";
 import NumberField from "../components/NumberField.js";
+import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
 import Popover from "../components/Popover.js";
 import Select from "../components/Select.js";
 import SlugField from "../components/SlugField.js";
@@ -64,7 +65,7 @@ export default function Showcase({ tab }: Props) {
   const prevId = order[index - 1];
   const nextId = order[index + 1];
 
-  const nav = useRef<HTMLElement>(null);
+  const { ref: nav } = useOverlayScrollbars<HTMLElement>();
 
   useDocumentTitle(`${labelFor(activeId)} – Showcase`);
 
@@ -168,6 +169,7 @@ export default function Showcase({ tab }: Props) {
  * the active showcase demo stays in the tree. */
 function TabsDemoPreview() {
   const ref = useRef<HTMLDivElement>(null);
+  const { ref: tablist } = useOverlayScrollbars<HTMLDivElement>();
 
   useEffect(() => {
     const group = ref.current;
@@ -189,7 +191,7 @@ function TabsDemoPreview() {
 
   return (
     <div class="stack" style="width: 100%" data-tabs ref={ref}>
-      <div role="tablist">
+      <div role="tablist" ref={tablist}>
         <button
           type="button"
           role="tab"
@@ -246,6 +248,7 @@ function TextFieldPreview() {
         label="Title"
         value={title}
         onChange={setTitle}
+        description="Shown as the page heading."
         helperText="Shown in listings and search results."
       />
       <TextField
@@ -278,6 +281,7 @@ function SlugFieldPreview() {
           setTitle(value);
           setSlug(slug);
         }}
+        description="Used in the public URL."
         helperText="Auto-derived from the title until you edit the slug directly."
       />
     </div>
@@ -296,6 +300,7 @@ function NumberFieldPreview() {
         onChange={setPriority}
         min={0}
         max={10}
+        description="Controls display order across listings."
         helperText="Higher numbers sort first."
       />
       <NumberField
@@ -332,6 +337,7 @@ function CheckFieldPreview() {
         label="Auto-publish"
         value={autoPublish}
         onChange={setAutoPublish}
+        description="Automatically publish new posts without review."
         ui="switch"
       />
     </div>
@@ -349,6 +355,7 @@ function DatePickerFieldPreview() {
         value={publishedAt}
         onChange={setPublishedAt}
         time
+        description="When this post goes live."
         helperText="Pick a day, then adjust the time below."
       />
       <DatePickerField
@@ -379,6 +386,7 @@ function ImageFieldPreview() {
         source={source}
         value={cover}
         onChange={setCover}
+        description="Recommended size: 1200×630."
         helperText="Shown at the top of the post."
       />
     </div>
@@ -693,6 +701,7 @@ function DemoContent({ id }: { id: string }) {
         >
           <div class="stack" style="width: 100%">
             <div class="alert">
+              <Icon name="InfoCircle" />
               <h4>Heads up</h4>
               <p>
                 This dashboard ships with sample data until a content source is
@@ -700,14 +709,17 @@ function DemoContent({ id }: { id: string }) {
               </p>
             </div>
             <div class="alert success">
+              <Icon name="CheckCircle" />
               <h4>Published</h4>
               <p>Your entry is now live.</p>
             </div>
             <div class="alert warning">
+              <Icon name="AlertTriangle" />
               <h4>Unsaved changes</h4>
               <p>Leaving this page will discard them.</p>
             </div>
             <div class="alert destructive">
+              <Icon name="Danger" />
               <h4>Failed to save</h4>
               <p>The server returned a 500. Try again.</p>
             </div>

@@ -5,6 +5,7 @@ import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import { thumbnailUrl } from "./file-manager-utils.js";
 import { CloseIcon, MediaIcon, UploadIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
+import { useOverlayScrollbars } from "./overlayscrollbars.js";
 
 export interface ImageFieldProps extends FieldProps<string> {
   /** Where the picker dialog's `FileManager` reads its files from. */
@@ -12,6 +13,7 @@ export interface ImageFieldProps extends FieldProps<string> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  description?: string;
 }
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
@@ -42,6 +44,7 @@ export default function ImageField({
   disabled = false,
   name,
   id,
+  description,
 }: ImageFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `image-field-${reactId}`;
@@ -50,6 +53,9 @@ export default function ImageField({
   const [pending, setPending] = useState(value);
   const [entry, setEntry] = useState<FileEntry | null>(null);
   const dialogRef = useDialogSync(open, () => setOpen(false));
+  // Deps include `open`: the body only mounts once the dialog opens, so the
+  // ref is still null on `ImageField`'s own first render.
+  const { ref: pickerBody } = useOverlayScrollbars<HTMLDivElement>([open]);
 
   // Resolves `value` (just an id) to the `FileEntry` behind it, for the
   // frame's thumbnail + name - re-lists on every change since a rename/move
@@ -84,6 +90,7 @@ export default function ImageField({
   return (
     <div class="field">
       <label for={fieldId}>{label}</label>
+      {description && <small>{description}</small>}
       <div class="image-field-box">
         {entry ? (
           <>
@@ -142,7 +149,7 @@ export default function ImageField({
             <header>
               <h3>Choose image</h3>
             </header>
-            <div class="image-picker-body">
+            <div class="image-picker-body" ref={pickerBody}>
               <FileManager
                 source={source}
                 value={pending}

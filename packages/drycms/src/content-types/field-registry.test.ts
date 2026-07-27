@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { numberFieldType, textFieldType } from "./field-registry.js";
+import { fieldTypes, numberFieldType, passwordFieldType, textFieldType } from "./field-registry.js";
 
 describe("numberFieldType", () => {
   it("defaults step to 1", () => {
@@ -23,5 +23,18 @@ describe("textFieldType validationFields", () => {
     const format = byKey("format");
     expect(format?.widget).toBe("select");
     expect(format?.options?.map((o) => o.value)).toEqual(["none", "email", "url", "slug"]);
+  });
+});
+
+describe("passwordFieldType", () => {
+  it("is registered under the 'password' key", () => {
+    expect(fieldTypes.password).toBe(passwordFieldType);
+  });
+
+  it("resolves to a TEXT column, marked internal and never FTS-eligible", () => {
+    expect(passwordFieldType.shape).toBe("column");
+    expect(passwordFieldType.sqlType?.({})).toBe("TEXT");
+    expect(passwordFieldType.internal).toBe(true);
+    expect(passwordFieldType.fts).toBe(false);
   });
 });

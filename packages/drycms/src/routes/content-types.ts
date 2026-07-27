@@ -5,7 +5,7 @@ import { content } from "virtual:drycms/content-config";
 import { createContentEngineAdapter } from "../content-types/engine/index.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../content-types/engine/types.js";
 import type { SavePlan } from "../content-types/migration.js";
-import { NamingError, validateContentTypeDefinition } from "../content-types/naming.js";
+import { NamingError, validateContentTypeDefinition, validateSystemProtections } from "../content-types/naming.js";
 import { collectTableNames, resolveTableTree } from "../content-types/tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { randomUUID } from "../lib/uuid.js";
@@ -17,6 +17,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   invalid_definition: 400,
   in_use: 409,
   unsupported: 501,
+  system_protected: 403,
 };
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -76,6 +77,10 @@ async function handleSave(
 ): Promise<Response> {
   const allTypes = await adapter.listContentTypes();
   validateContentTypeDefinition(definition, allTypes);
+  validateSystemProtections(
+    definition,
+    allTypes.find((t) => t.id === definition.id),
+  );
 
   // `validateContentTypeDefinition` only rules out two types sharing a
   // top-level *name* - it can't see that a repeatable field's generated

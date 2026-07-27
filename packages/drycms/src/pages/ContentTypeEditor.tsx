@@ -199,9 +199,15 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   }
 
   function removeField(fieldId: string) {
-    setDefinition((d) =>
-      d ? { ...d, fields: d.fields.filter((f) => f.id !== fieldId) } : d,
-    );
+    setDefinition((d) => {
+      if (!d) return d;
+      // Belt-and-suspenders: `FieldsList` already hides the Remove action for
+      // `locked` fields, but a locked field's removal is refused here too
+      // rather than trusting the UI alone - the server re-checks against the
+      // stored definition regardless either way (see `validateSystemProtections`).
+      if (d.fields.find((f) => f.id === fieldId)?.locked) return d;
+      return { ...d, fields: d.fields.filter((f) => f.id !== fieldId) };
+    });
   }
 
   function handleFieldSave(field: FieldDefinition) {
@@ -373,7 +379,20 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             }
           />
 
-          {!isNew && (
+          {!isNew && definition.system && (
+            <div class="content-type-editor-danger">
+              <div>
+                <h2>Built-in content type</h2>
+                <p>
+                  "{definition.label}" is one of the app's defaults and can't
+                  be deleted. Fields can still be added and reordered, but its
+                  locked fields can't be removed.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!isNew && !definition.system && (
             <div class="content-type-editor-danger">
               <div>
                 <h2>Danger zone</h2>

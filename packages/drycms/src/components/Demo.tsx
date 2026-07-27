@@ -1,5 +1,6 @@
 import { useMemo } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
+import { useOverlayScrollbars } from './overlayscrollbars.js';
 import Prism from 'prismjs';
 // jsx extends the markup grammar, so plain HTML snippets still highlight, and
 // the Preact samples get their braces/attributes tokenised too.
@@ -26,6 +27,7 @@ export default function Demo({ id, title, description, code, lang = 'jsx', child
 		() => Prism.highlight(code.trim(), Prism.languages[grammar]!, grammar),
 		[code, grammar],
 	);
+	const { ref: pre } = useOverlayScrollbars<HTMLPreElement>();
 
 	return (
 		<section id={id} class="demo">
@@ -38,7 +40,7 @@ export default function Demo({ id, title, description, code, lang = 'jsx', child
 
 			<div class="demo-code">
 				<span>Code</span>
-				<pre class={`language-${grammar}`}>
+				<pre class={`language-${grammar}`} ref={pre}>
 					<code dangerouslySetInnerHTML={{ __html: highlighted }} />
 				</pre>
 			</div>

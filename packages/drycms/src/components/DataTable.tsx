@@ -5,6 +5,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon
 } from "./icons.js";
+import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import type { JSX } from "preact/jsx-runtime";
 
 export interface DataTableColumn<Row> {
@@ -66,6 +67,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
+  const { ref: scroll } = useOverlayScrollbars<HTMLDivElement>();
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -122,7 +124,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
         </div>
       )}
 
-      <div class="scroll">
+      <div class="scroll" ref={scroll}>
         <table>
           <thead>
             <tr>

@@ -22,6 +22,7 @@ interface Row extends Record<string, unknown> {
   label: string;
   description: string;
   fieldCount: number;
+  system: boolean;
 }
 
 export default function ContentTypes() {
@@ -64,6 +65,7 @@ export default function ContentTypes() {
       label: d.label,
       description: d.description ?? "",
       fieldCount: d.fields.length,
+      system: !!d.system,
     }));
 
   const selectedGroup = GROUPS.find((g) => g.kind === selectedKind)!;
@@ -112,7 +114,14 @@ export default function ContentTypes() {
                   sortable: true,
                   render: (_value, row) => (
                     <div class="stack" style={{ gap: "0.125rem" }}>
-                      <span>{row.label}</span>
+                      <span>
+                        {row.label}
+                        {row.system && (
+                          <span class="badge sm outline" style={{ marginLeft: "0.5rem" }}>
+                            System
+                          </span>
+                        )}
+                      </span>
                       <span class="hint">
                         {row.description || <i>No description</i>}
                       </span>

@@ -141,6 +141,10 @@
       background-color: var(--dry-muted);
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-md);
+      /* Plain native fallback for a `<pre>` outside a drycms component
+       * (nothing calls `useOverlayScrollbars` on it); `Demo`'s own `<pre>`
+       * layers OverlayScrollbars on top via that hook, which takes over
+       * regardless of what's declared here. */
       overflow-x: auto;
 
       & code {

@@ -6,6 +6,7 @@ import {
   validateContentTypeDefinition,
   validateContentTypeName,
   validateFieldName,
+  validateSystemProtections,
 } from "./naming.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
@@ -73,6 +74,66 @@ describe("validateContentTypeDefinition", () => {
   it("passes for a well-formed definition with unique field names", () => {
     const def = contentType({ fields: [field({ id: "a", name: "body" }), field({ id: "b", name: "summary" })] });
     expect(() => validateContentTypeDefinition(def, [])).not.toThrow();
+  });
+});
+
+describe("validateSystemProtections", () => {
+  const lockedName = field({ id: "name", name: "name", locked: true });
+
+  it("is a no-op when there's no existing definition (a brand-new type)", () => {
+    expect(() => validateSystemProtections(contentType(), undefined)).not.toThrow();
+  });
+
+  it("is a no-op when the existing definition isn't a system type", () => {
+    const existing = contentType({ fields: [lockedName] });
+    expect(() => validateSystemProtections(contentType({ fields: [] }), existing)).not.toThrow();
+  });
+
+  it("rejects un-marking a system type back to non-system", () => {
+    const existing = contentType({ system: true, fields: [lockedName] });
+    const next = contentType({ system: false, fields: [lockedName] });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+  });
+
+  it("rejects removing a locked field", () => {
+    const existing = contentType({ system: true, fields: [lockedName] });
+    const next = contentType({ system: true, fields: [] });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+  });
+
+  it("allows editing a locked field's contents, as long as its id stays present", () => {
+    const existing = contentType({ system: true, fields: [lockedName] });
+    const edited = field({ id: "name", name: "name", label: "Full name", locked: true });
+    const next = contentType({ system: true, fields: [edited] });
+    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+  });
+
+  it("allows adding new fields alongside locked ones", () => {
+    const existing = contentType({ system: true, fields: [lockedName] });
+    const next = contentType({
+      system: true,
+      fields: [lockedName, field({ id: "extra", name: "extra" })],
+    });
+    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+  });
+
+  it("does not require an unlocked field to stay present", () => {
+    const unlocked = field({ id: "bio", name: "bio" });
+    const existing = contentType({ system: true, fields: [lockedName, unlocked] });
+    const next = contentType({ system: true, fields: [lockedName] });
+    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+  });
+
+  it("rejects turning off a feature the system type already depends on", () => {
+    const existing = contentType({ system: true, fields: [], features: { timestamps: true } });
+    const next = contentType({ system: true, fields: [], features: { timestamps: false } });
+    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+  });
+
+  it("allows a feature that was never on to stay off", () => {
+    const existing = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
+    const next = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
+    expect(() => validateSystemProtections(next, existing)).not.toThrow();
   });
 });
 

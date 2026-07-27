@@ -1,5 +1,6 @@
 import type { ResolvedD1ContentOption } from "../../integration/options.js";
 import { planDelete, planSave as planSaveEngine, type SavePlan, type Statement } from "../migration.js";
+import { pendingSeedStatements } from "../seed.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
@@ -75,6 +76,10 @@ export function createD1ContentEngineAdapter(
           )
           .run();
         await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`).run();
+
+        const existing = await db.prepare('SELECT "name" FROM "metadata";').all<{ name: string }>();
+        const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
+        await runBatch(db, statements);
       })();
     }
     return bootstrapped;
@@ -162,6 +167,9 @@ export function createD1ContentEngineAdapter(
     await ensureBootstrap();
     const existing = await getContentType(id);
     if (!existing) throw new ContentEngineError("not_found", `Content type "${id}" not found.`);
+    if (existing.system) {
+      throw new ContentEngineError("system_protected", `"${existing.label}" is a built-in content type and can't be deleted.`);
+    }
 
     const allTypes = await listContentTypes();
     if (existing.kind === "component") {

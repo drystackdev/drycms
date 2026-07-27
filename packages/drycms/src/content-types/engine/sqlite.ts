@@ -1,5 +1,6 @@
 import type { ResolvedSqliteContentOption } from "../../integration/options.js";
 import { planDelete, planSave as planSaveEngine, type SavePlan, type Statement } from "../migration.js";
+import { pendingSeedStatements } from "../seed.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
@@ -109,6 +110,20 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
             `);`,
         );
         handle.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`);
+
+        const existing = handle.all<{ name: string }>('SELECT "name" FROM "metadata";');
+        const statements = pendingSeedStatements(new Set(existing.map((row) => row.name.toLowerCase())));
+        if (statements.length > 0) {
+          handle.exec("BEGIN IMMEDIATE;");
+          try {
+            runStatements(handle, statements);
+            handle.exec("COMMIT;");
+          } catch (error) {
+            handle.exec("ROLLBACK;");
+            throw error;
+          }
+        }
+
         return handle;
       });
     }
@@ -203,6 +218,9 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
     const handle = await getHandle();
     const existing = await getContentType(id);
     if (!existing) throw new ContentEngineError("not_found", `Content type "${id}" not found.`);
+    if (existing.system) {
+      throw new ContentEngineError("system_protected", `"${existing.label}" is a built-in content type and can't be deleted.`);
+    }
 
     const allTypes = await listContentTypes();
     if (existing.kind === "component") {

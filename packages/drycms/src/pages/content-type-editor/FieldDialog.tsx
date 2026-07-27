@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import CheckField from "../../components/CheckField.js";
 import DatePickerField from "../../components/DatePickerField.js";
 import { useDialogSync } from "../../components/list-nav.js";
 import NumberField from "../../components/NumberField.js";
+import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
 import Select from "../../components/Select.js";
 import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
@@ -274,7 +275,7 @@ export default function FieldDialog({
   const dialogRef = useDialogSync(open, onCancel);
   // Deps include `open`: the grid only mounts once the dialog opens, so the
   // ref is still null on `FieldDialog`'s own first render.
-  const gridScroll = useRef<HTMLDivElement>(null);
+  const { ref: gridScroll } = useOverlayScrollbars<HTMLDivElement>([open]);
 
   const [draftType, setDraftType] = useState("text");
   const [draftName, setDraftName] = useState("");
@@ -395,10 +396,16 @@ export default function FieldDialog({
                 <div class="field">
                   <label>Type</label>
                   <Select
-                    options={Object.values(fieldTypes).map((t) => ({
-                      value: t.key,
-                      label: t.label,
-                    }))}
+                    options={Object.values(fieldTypes)
+                      // `internal` types (e.g. `password`) are seeded onto one
+                      // fixed spot by the system, not meant to be picked freely -
+                      // but an existing field already of that type (editing, not
+                      // adding) still needs to see its own type in the list.
+                      .filter((t) => !t.internal || t.key === draftType)
+                      .map((t) => ({
+                        value: t.key,
+                        label: t.label,
+                      }))}
                     value={draftType}
                     onChange={(value) => {
                       setDraftType(value);

@@ -46,6 +46,7 @@
     "@astrojs/preact": "^6.0.1",
     "@preact/signals": "^2.10.0",
     "dayjs": "^1.11.21",
+    "overlayscrollbars": "^2.16.0",
     "preact-iso": "^2.12.1",
     "prismjs": "^1.30.0"
   },

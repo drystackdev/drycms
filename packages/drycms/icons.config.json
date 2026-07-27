@@ -32,6 +32,7 @@
     "InfoCircle": "solar:info-circle-bold-duotone",
     "AlertTriangle": "solar:danger-triangle-bold-duotone",
     "XCircle": "solar:close-circle-bold-duotone",
+    "Danger": "solar:danger-bold-duotone",
 
     "MoreVertical": "lucide:ellipsis-vertical",
     "Copy": "solar:copy-linear",
@@ -48,11 +49,12 @@
     "Plus": "lucide:plus",
     "Minus": "lucide:minus",
     "Paste": "solar:clipboard-check-linear",
-    "Calendar": "solar:calendar-linear",
+    "Calendar": "solar:calendar-bold-duotone",
 
     "Collection": "solar:widget-4-bold-duotone",
     "Singleton": "solar:document-bold-duotone",
     "Component": "lucide:puzzle",
-    "DragHandle": "lucide:grip-vertical"
+    "DragHandle": "lucide:grip-vertical",
+    "Lock": "solar:lock-keyhole-linear"
   }
 }

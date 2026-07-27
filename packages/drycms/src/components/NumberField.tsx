@@ -11,6 +11,7 @@ export interface NumberFieldProps extends FieldProps<number> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  description?: string;
 }
 
 export default function NumberField({
@@ -26,6 +27,7 @@ export default function NumberField({
   disabled = false,
   name,
   id,
+  description,
 }: NumberFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `number-field-${reactId}`;
@@ -40,6 +42,7 @@ export default function NumberField({
   return (
     <div class="field">
       <label for={fieldId}>{label}</label>
+      {description && <small>{description}</small>}
       <div class="stepper">
         <button
           type="button"

@@ -38,9 +38,9 @@ export default function CheckField({
           aria-invalid={error || undefined}
           onChange={(event) => onChange((event.target as HTMLInputElement).checked)}
         />
-        <label for={fieldId} class="stack" style={{gap: 4}}>
+        <label for={fieldId} style={{gap: 4}}>
           {label}
-          {description && <span class="hint">{description}</span>}
+          {description && <small>{description}</small>}
         </label>
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}

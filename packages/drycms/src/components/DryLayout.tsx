@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -8,6 +8,7 @@ import Toaster from "./Toast.js";
 import type { IconName } from "./icons.js";
 import { path } from "virtual:drycms/config";
 import { collapsed } from "../store/dashboard.js";
+import { useOverlayScrollbars } from "./overlayscrollbars.js";
 
 const SIDEBAR_COLLAPSED_KEY = "drycms:sidebar-collapsed";
 
@@ -92,8 +93,8 @@ function isActiveNavItem(url: string, href: string): boolean {
 
 export default function DryLayout({ children }: Props) {
   const { url } = useLocation();
-  const sidebar = useRef<HTMLElement>(null);
-  const main = useRef<HTMLDivElement>(null);
+  const { ref: sidebar } = useOverlayScrollbars<HTMLElement>([], { overflow: { x: 'hidden' } });
+  const { ref: main, scrollToTop: scrollMainToTop } = useOverlayScrollbars<HTMLDivElement>();
 
   useEffect(() => {
     const stored = readStoredCollapsed();
@@ -124,7 +125,7 @@ export default function DryLayout({ children }: Props) {
   // mounts scrolled down (e.g. after leaving a long Dashboard) would
   // otherwise stay scrolled down on the next page too.
   useEffect(() => {
-    main.current?.scrollTo({ top: 0 });
+    scrollMainToTop();
   }, [url]);
 
   return (

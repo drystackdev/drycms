@@ -66,6 +66,12 @@ export interface FieldTypeDefinition<V = unknown> {
    * defaulting to 1 - without the dialog special-casing individual types. */
   defaultConfig?: Record<string, unknown>;
   defaultValidation?: Record<string, unknown>;
+  /** Excluded from the "Add Field" type picker (`FieldDialog`'s `<Select>`)
+   * - reserved for fields the system itself seeds onto one fixed spot (e.g.
+   * `password` on the built-in `user` collection, see `seed.ts`) rather than
+   * a type meant to be picked freely on arbitrary content types. An existing
+   * field of an internal type still renders/edits normally. */
+  internal?: boolean;
 }
 
 const REQUIRED_UNIQUE_VALIDATION: SettingDescriptor[] = [
@@ -194,6 +200,22 @@ export const imageFieldType: FieldTypeDefinition<string> = {
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };
 
+export const passwordFieldType: FieldTypeDefinition<string> = {
+  key: "password",
+  label: "Password",
+  shape: "column",
+  // No Editor: like relation/component, this is schema-definition-only until
+  // content-entry editing exists - and even then, a password's own hashing/
+  // entry UI wouldn't reuse the plain-text `TextField` editor.
+  sqlType: () => "TEXT",
+  // Never folded into FTS, regardless of the `sqlType() === 'TEXT'` default -
+  // a password column must never end up in a searchable index.
+  fts: false,
+  internal: true,
+  configFields: [],
+  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+};
+
 export interface RelationFieldConfig {
   /** Another `ContentTypeDefinition.id` (kind `'collection'`). */
   target: string;
@@ -247,6 +269,7 @@ export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [booleanFieldType.key]: booleanFieldType,
   [dateFieldType.key]: dateFieldType,
   [imageFieldType.key]: imageFieldType,
+  [passwordFieldType.key]: passwordFieldType,
   [relationFieldType.key]: relationFieldType,
   [componentFieldType.key]: componentFieldType,
 };

@@ -10,6 +10,7 @@ import {
 	usePopupFlip,
 	type ListOption,
 } from './list-nav.js';
+import { useOverlayScrollbars } from './overlayscrollbars.js';
 
 export type MultiSelectOption = ListOption;
 
@@ -52,6 +53,9 @@ export default function MultiSelect({
 
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
+	// Deps include `open`: the popup only mounts while open, so the ref is
+	// still null on `MultiSelect`'s own first render.
+	const { ref: listRef } = useOverlayScrollbars<HTMLUListElement>([open]);
 
 	const reactId = useId();
 	const listId = id ?? `multiselect-${reactId}`;
@@ -183,6 +187,7 @@ export default function MultiSelect({
 					class={openUp ? 'select-popup up' : 'select-popup'}
 					role="listbox"
 					aria-multiselectable="true"
+					ref={listRef}
 				>
 					{filtered.length === 0 ? (
 						<li class="muted" role="presentation">

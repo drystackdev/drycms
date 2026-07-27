@@ -12,6 +12,7 @@ import {
 	useTypeahead,
 	type ListOption,
 } from './list-nav.js';
+import { useOverlayScrollbars } from './overlayscrollbars.js';
 
 export type SelectOption = ListOption;
 
@@ -50,7 +51,9 @@ export default function Select({
 
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
-	const listRef = useRef<HTMLUListElement>(null);
+	// Deps include `open`: the popup only mounts while open, so the ref is
+	// still null on `Select`'s own first render.
+	const { ref: listRef } = useOverlayScrollbars<HTMLUListElement>([open]);
 	const optionRefs = useRef<(HTMLLIElement | null)[]>([]);
 
 	const reactId = useId();

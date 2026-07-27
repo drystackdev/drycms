@@ -28,7 +28,7 @@
       background-color: transparent;
       width: 100%;
       min-width: 0;
-      height: 2.5rem;
+      height: 2.75rem;
       padding: 0.5rem 0.875rem;
       border: 1px solid var(--dry-input);
       border-radius: var(--dry-radius-md);
@@ -74,7 +74,7 @@
         font-size: var(--dry-text-xs);
       }
       &.lg {
-        height: 2.75rem;
+        height: 3.25rem;
       }
     }
 
@@ -396,7 +396,10 @@
 
       & label {
         display: inline-block;
-        margin-left: 0.25rem;
+      }
+
+      & label ~ small {
+        margin-block-start: -0.35rem;
       }
 
       & :where(label) {

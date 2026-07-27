@@ -1,5 +1,5 @@
 import type { SortableHandleProps } from "../../lib/dnd/useSortableList.js";
-import { DragHandleIcon, TrashIcon } from "../../components/icons.js";
+import { DragHandleIcon, LockIcon, TrashIcon } from "../../components/icons.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 
 export interface FieldListItemProps {
@@ -15,6 +15,10 @@ export interface FieldListItemProps {
   /** System rows (Title/Slug/Draft/...) look identical to custom rows, just
    * without a click-to-edit or Remove action - they aren't user-editable. */
   system?: boolean;
+  /** A custom field that shipped as part of a `system` content type's
+   * default shape (see `seed.ts`) - still click-to-edit/reorderable like any
+   * other custom field, just without a Remove action. */
+  locked?: boolean;
   onEdit?: () => void;
   onRemove?: () => void;
   dragHandleProps?: SortableHandleProps;
@@ -30,6 +34,7 @@ export default function FieldListItem({
   name,
   description,
   system = false,
+  locked = false,
   onEdit,
   onRemove,
   dragHandleProps,
@@ -62,6 +67,15 @@ export default function FieldListItem({
           ) : (
             ""
           )}
+          {locked && (
+            <span
+              class="badge sm outline"
+              style={{ marginLeft: "0.5rem" }}
+              title="Required by default - can't be removed"
+            >
+              <LockIcon /> Locked
+            </span>
+          )}
           {required && <span class="required-asterisk"> *</span>}
         </span>
         <small class="hint">
@@ -69,7 +83,7 @@ export default function FieldListItem({
           {description ? ` • ${description}` : ""}
         </small>
       </div>
-      {!system && (
+      {!system && !locked && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
           <button type="button" class="ghost sm" onClick={onRemove}>
             <TrashIcon />
@@ -88,5 +102,6 @@ export function fieldListItemProps(field: FieldDefinition, typeLabel: string) {
     required: !!field.validation?.required,
     name: field.name,
     description: field.description,
+    locked: !!field.locked,
   };
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
+import { useLocation } from "preact-iso";
 import { CloseIcon, MenuIcon } from "./icons.js";
 import { collapsed } from "../store/dashboard.js";
 
@@ -7,12 +8,21 @@ import { collapsed } from "../store/dashboard.js";
  * on the shell element, which is all the CSS needs.
  */
 export default function SidebarToggle() {
+  const { url } = useLocation();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const shell = document.querySelector<HTMLElement>(".shell");
     shell?.classList.toggle("open", open);
   }, [open]);
+
+  /* Tapping a nav link navigates but is itself a click *inside* `.sidebar`,
+   * which the outside-click handler below deliberately ignores (see its
+   * comment) - so nothing else closes the drawer after navigating. Without
+   * this, the drawer (and its backdrop) is left open over the new page. */
+  useEffect(() => {
+    setOpen(false);
+  }, [url]);
 
   /* The off-canvas drawer only exists below the `48rem` breakpoint (see
    * `.shell.open` in components.css) - if the menu was left open there and

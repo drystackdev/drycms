@@ -18,6 +18,7 @@ export interface SlugFieldProps {
   name?: string;
   id?: string;
   required?: boolean;
+  description?: string;
   /** Overrides how the slug is derived from `value` (initial + "regenerate"
    * button). Defaults to `slugify` (hyphen-joined); pass `slugifyIdentifier`
    * when the slug must be a bare identifier, e.g. a content-type field name. */
@@ -70,6 +71,7 @@ export default function SlugField({
   name,
   id,
   required = false,
+  description,
   toSlug = slugify,
 }: SlugFieldProps) {
   const [slugTouched, setSlugTouched] = useState(false);
@@ -88,10 +90,11 @@ export default function SlugField({
         }}
         required={required}
         error={error}
+        description={description}
       />
       <div class="field">
         <label for={slugFieldId}>{slugLabel}</label>
-        <div class="select">
+        <div class="select" style={{ paddingLeft: "1rem" }}>
           <input
             id={slugFieldId}
             type="text"

@@ -28,6 +28,7 @@ export interface DatePickerFieldProps extends FieldProps<Date> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  description?: string;
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, day) => dayjs().day(day).format("dd"));
@@ -58,6 +59,7 @@ export default function DatePickerField({
   disabled = false,
   name,
   id,
+  description,
 }: DatePickerFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `datepicker-field-${reactId}`;
@@ -76,6 +78,7 @@ export default function DatePickerField({
     return (
       <div class="field">
         <label for={fieldId}>{label}</label>
+        {description && <small>{description}</small>}
         <input
           id={fieldId}
           type={nativeType}
@@ -126,6 +129,7 @@ export default function DatePickerField({
   return (
     <div class="field">
       <label for={fieldId}>{label}</label>
+      {description && <small>{description}</small>}
       <div class="select datepicker-trigger" ref={wrapRef}>
         <button
           id={fieldId}

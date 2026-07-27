@@ -46,9 +46,18 @@
       margin-inline: auto;
     }
 
+    /* Plain native fallback so `.scroll` still works if applied to markup
+     * outside a drycms component (nothing calls `useOverlayScrollbars` on
+     * it); drycms's own `.scroll` usages (`DataTable`, `FileManager`) layer
+     * OverlayScrollbars on top via that hook, which takes over regardless of
+     * what's declared here. */
     .scroll {
       overflow-x: auto;
       overscroll-behavior-x: contain;
+
+      & [data-overlayscrollbars-viewport] {
+        overscroll-behavior-x: contain;
+      }
     }
 
     .muted {

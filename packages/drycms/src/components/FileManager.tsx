@@ -3,6 +3,7 @@ import type { ComponentChildren } from "preact";
 import { readCachedFile } from "./file-manager-blob-cache.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import { useDialogSync } from "./list-nav.js";
+import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import {
   collectDescendantIds,
   folderPath,
@@ -409,8 +410,9 @@ function ListView({
   onPasteClipboard: () => void;
   onCancelClipboard: () => void;
 }) {
+  const { ref: scroll } = useOverlayScrollbars<HTMLDivElement>();
   return (
-    <div class="scroll">
+    <div class="scroll" ref={scroll}>
       <table class="file-table">
         <thead>
           {clipboard ? (
@@ -1245,6 +1247,12 @@ function PreviewDialog({
   const [zoom, setZoom] = useState(100);
   const [dragX, setDragX] = useState(0);
   const dragState = useRef<{ pointerId: number; startX: number } | null>(null);
+  // Deps match the filmstrip's own mount condition (`entry && scope.length >
+  // 1`) - the ref is still null until both are true.
+  const { ref: filmstrip } = useOverlayScrollbars<HTMLDivElement>([
+    entry !== null,
+    scope.length > 1,
+  ]);
   const canLoop = scope.length > 1;
   const previewSrc = usePreviewImageSrc(entry);
   const image = entry !== null && isImageEntry(entry) && !!previewSrc;
@@ -1471,6 +1479,7 @@ function PreviewDialog({
               class="file-preview-filmstrip"
               role="listbox"
               aria-label="Files in this folder"
+              ref={filmstrip}
             >
               {scope.map((item) => (
                 <button

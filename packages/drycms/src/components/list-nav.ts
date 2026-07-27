@@ -67,13 +67,42 @@ export function useTypeahead(onMatch: (buffer: string) => void) {
 	};
 }
 
-/** Closes an open popup when a pointer goes down outside every given ref. */
+/** Closes an open popup when a pointer goes down outside every given ref.
+ *
+ * On mobile, `.select`/`.datepicker-trigger`'s popup becomes a bottom sheet
+ * with a full-viewport dimming backdrop rendered as that same element's
+ * `::before` (components.css, `.select:has(> .datepicker-popup)::before` and
+ * the `.select-popup` equivalent) - not a real DOM node of its own. A tap
+ * anywhere on that backdrop is reported with `event.target` equal to the
+ * wrapper element itself (pseudo-elements aren't hit-testable targets in
+ * their own right), which is indistinguishable by `.contains()` alone from a
+ * real tap on the wrapper's own padding/gap (e.g. between MultiSelect's tag
+ * chips) - both need to keep working, but the backdrop case must close the
+ * popup while the padding case must not. The two differ in one way: real
+ * content (the trigger button, the popup and everything in it) is a proper
+ * descendant, so it's always "inside" regardless of where it's rendered
+ * (popups routinely extend past the wrapper's own box); a tap landing on the
+ * wrapper node exactly is only "inside" if the pointer coordinates are
+ * actually within ITS OWN rect - the backdrop covers the full viewport far
+ * beyond that small rect, so a coordinate check tells the two apart. */
 export function useOutsideClick(open: boolean, refs: RefObject<HTMLElement>[], onClose: () => void) {
 	useEffect(() => {
 		if (!open) return;
-		const handlePointerDown = (event: PointerEvent) => {
+		const isInside = (ref: RefObject<HTMLElement>, event: PointerEvent) => {
+			const el = ref.current;
 			const target = event.target as Node;
-			if (refs.some((ref) => ref.current?.contains(target))) return;
+			if (!el?.contains(target)) return false;
+			if (target !== el) return true;
+			const rect = el.getBoundingClientRect();
+			return (
+				event.clientX >= rect.left &&
+				event.clientX <= rect.right &&
+				event.clientY >= rect.top &&
+				event.clientY <= rect.bottom
+			);
+		};
+		const handlePointerDown = (event: PointerEvent) => {
+			if (refs.some((ref) => isInside(ref, event))) return;
 			onClose();
 		};
 		document.addEventListener('pointerdown', handlePointerDown);

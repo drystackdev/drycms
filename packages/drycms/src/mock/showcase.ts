@@ -243,11 +243,13 @@ import { SettingsIcon } from 'drycms/components/icons';
 <span class="badge filled warning">Warning</span>
 <span class="badge filled destructive">Destructive</span>`,
   alerts: `<div class="alert">
+  <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">…</svg>
   <h4>Heads up</h4>
   <p>This dashboard ships with sample data until a content source is wired up.</p>
 </div>
 
 <div class="alert success">
+  <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">…</svg>
   <h4>Published</h4>
   <p>Your entry is now live.</p>
 </div>
@@ -480,6 +482,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   label="Title"
   value={title}
   onChange={setTitle}
+  description="Shown as the page heading."
   helperText="Shown in listings and search results."
 />
 
@@ -507,6 +510,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
     setTitle(value);
     setSlug(slug);
   }}
+  description="Used in the public URL."
   helperText="Auto-derived from the title until you edit the slug directly."
 />`,
   numberField: `import NumberField from 'drycms/components/NumberField';
@@ -517,6 +521,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={setPriority}
   min={0}
   max={10}
+  description="Controls display order across listings."
   helperText="Higher numbers sort first."
 />
 
@@ -549,6 +554,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   label="Auto-publish"
   value={autoPublish}
   onChange={setAutoPublish}
+  description="Automatically publish new posts without review."
   ui="switch"
 />`,
   datePickerField: `import DatePickerField from 'drycms/components/DatePickerField';
@@ -558,6 +564,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   value={publishedAt}
   onChange={setPublishedAt}
   time
+  description="When this post goes live."
   helperText="Pick a day, then adjust the time below."
 />
 
@@ -583,6 +590,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   source={source}
   value={cover}
   onChange={setCover}
+  description="Recommended size: 1200×630."
   helperText="Shown at the top of the post."
 />`,
 };
