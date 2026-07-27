@@ -17,7 +17,7 @@ function applyTheme(theme: DryTheme) {
   if (theme !== "system") root.classList.add(theme);
 }
 
-/** Cycles system → light → dark, persisted via `useStore` (`__store.theme`
+/** Cycles system → light → dark, persisted via `useStore` (`drycms:store.theme`
  * in `localStorage`). The pre-mount flash is avoided separately, by
  * `app.astro`'s inline script reading the same storage before first paint. */
 export default function ThemeToggle() {

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "preact/hooks";
 import type { Dispatch, StateUpdater } from "preact/hooks";
 
-const STORAGE_KEY = "__store";
+export const STORAGE_KEY = "drycms:store";
 
 function readAll(): Record<string, unknown> {
   try {
@@ -20,8 +20,22 @@ function writeAll(store: Record<string, unknown>) {
   }
 }
 
+/** Reads the `key` entry of the shared `drycms:store` object, or `undefined` if
+ * it isn't set yet. For state that isn't owned by a single component (and so
+ * can't use the `useStore` hook below) - e.g. a `@preact/signals` signal
+ * shared across components, like `collapsed` in `store/dashboard.ts`. */
+export function readStoreValue<T>(key: string): T | undefined {
+  return readAll()[key] as T | undefined;
+}
+
+/** Writes `value` into the `key` entry of the shared `drycms:store` object. See
+ * `readStoreValue`. */
+export function writeStoreValue<T>(key: string, value: T): void {
+  writeAll({ ...readAll(), [key]: value });
+}
+
 /** Same signature/behavior as `useState`, but backed by the `key` entry of
- * a single `__store` object in `localStorage` instead of in-memory state.
+ * a single `drycms:store` object in `localStorage` instead of in-memory state.
  * If `key` isn't present yet, `initialValue` seeds it (and is persisted). */
 export function useStore<T>(
   key: string,
@@ -32,11 +46,11 @@ export function useStore<T = undefined>(
 ): [T | undefined, Dispatch<StateUpdater<T | undefined>>];
 export function useStore<T>(key: string, initialValue?: T | (() => T)) {
   const [value, setValue] = useState<T | undefined>(() => {
-    const store = readAll();
-    if (key in store) return store[key] as T;
+    const existing = readStoreValue<T>(key);
+    if (existing !== undefined) return existing;
     const initial =
       initialValue instanceof Function ? initialValue() : initialValue;
-    if (initial !== undefined) writeAll({ ...readAll(), [key]: initial });
+    if (initial !== undefined) writeStoreValue(key, initial);
     return initial;
   });
 
@@ -44,7 +58,7 @@ export function useStore<T>(key: string, initialValue?: T | (() => T)) {
     (next: T | undefined | ((prev: T | undefined) => T | undefined)) => {
       setValue((prev) => {
         const resolved = next instanceof Function ? next(prev) : next;
-        writeAll({ ...readAll(), [key]: resolved });
+        writeStoreValue(key, resolved);
         return resolved;
       });
     },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -9,16 +9,6 @@ import type { IconName } from "./icons.js";
 import { path } from "virtual:drycms/config";
 import { collapsed } from "../store/dashboard.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
-
-const SIDEBAR_COLLAPSED_KEY = "drycms:sidebar-collapsed";
-
-function readStoredCollapsed(): boolean {
-  try {
-    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
 
 interface Props {
   children?: ComponentChildren;
@@ -96,23 +86,7 @@ export default function DryLayout({ children }: Props) {
   const { ref: sidebar } = useOverlayScrollbars<HTMLElement>([], { overflow: { x: 'hidden' } });
   const { ref: main, scrollToTop: scrollMainToTop } = useOverlayScrollbars<HTMLDivElement>();
 
-  useEffect(() => {
-    const stored = readStoredCollapsed();
-    collapsed.value = stored;
-    document
-      .querySelector<HTMLElement>(".shell")
-      ?.classList.toggle("collapsed", stored);
-  }, []);
-
   const toggleCollapsed = () => (collapsed.value = !collapsed.value);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed.value));
-    } catch {
-      // Ignore localStorage errors (e.g. private mode)
-    }
-  }, [collapsed.value]);
 
   useEffect(() => {
     const shell = document.querySelector<HTMLElement>(".shell");

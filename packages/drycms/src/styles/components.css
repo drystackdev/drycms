@@ -546,7 +546,6 @@
         & > small {
           font-weight: 400;
           font-size: var(--dry-text-xs);
-          margin-block-start: -0.25rem;
           color: var(--dry-muted-foreground);
         }
       }
@@ -2028,7 +2027,7 @@
       display: grid;
       grid-template-columns:
         minmax(0, 3fr)
-        minmax(0, 1fr);
+        minmax(0, 1.3fr);
       gap: var(--dry-gap) 2rem;
       align-items: start;
 

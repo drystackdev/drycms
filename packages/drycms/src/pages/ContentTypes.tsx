@@ -106,8 +106,12 @@ export default function ContentTypes() {
                 </button>
               </li>
             ))}
-            <li style={{ marginTop: "1rem" }}>
+            <li>
+              <hr/>
+            </li>
+            <li>
               <CheckField
+                role="switch"
                 label="Show System Types"
                 value={showSystemTypes}
                 onChange={setShowSystemTypes}
