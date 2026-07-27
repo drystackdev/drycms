@@ -132,10 +132,41 @@ describe("validateSystemProtections", () => {
     expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
   });
 
-  it("allows editing a locked field's contents, as long as its id stays present", () => {
+  it("rejects editing a locked field's label (or any other content)", () => {
     const existing = contentType({ system: true, fields: [lockedName] });
     const edited = field({ id: "name", name: "name", label: "Full name", locked: true });
     const next = contentType({ system: true, fields: [edited] });
+    expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
+  });
+
+  it("rejects editing a locked field's type/config/validation/default too", () => {
+    const locked = field({
+      id: "count",
+      name: "count",
+      type: "number",
+      config: { step: 1 },
+      validation: { required: true },
+      default: 0,
+      locked: true,
+    });
+    const existing = contentType({ system: true, fields: [locked] });
+    const cases: Partial<FieldDefinition>[] = [
+      { type: "text" },
+      { config: { step: 2 } },
+      { validation: { required: false } },
+      { default: 5 },
+      { description: "changed" },
+    ];
+    for (const overrides of cases) {
+      const next = contentType({ system: true, fields: [{ ...locked, ...overrides }] });
+      expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
+    }
+  });
+
+  it("allows a locked field to move position (reordering doesn't count as editing)", () => {
+    const other = field({ id: "other", name: "other" });
+    const existing = contentType({ system: true, fields: [lockedName, other] });
+    const next = contentType({ system: true, fields: [other, lockedName] });
     expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
   });
 
@@ -205,10 +236,10 @@ describe("validateSystemProtections", () => {
       expect(() => validateSystemProtections(next, existing, undefined, true)).toThrow(NamingError);
     });
 
-    it("still allows editing/reordering existing fields", () => {
-      const existing = contentType({ system: true, fields: [lockedName] });
-      const edited = field({ id: "name", name: "name", label: "Full name", locked: true });
-      const next = contentType({ system: true, fields: [edited] });
+    it("still allows reordering existing fields (locked-field content editing is blocked universally, not only when structureLocked)", () => {
+      const other = field({ id: "other", name: "other" });
+      const existing = contentType({ system: true, fields: [lockedName, other] });
+      const next = contentType({ system: true, fields: [other, lockedName] });
       expect(() => validateSystemProtections(next, existing, undefined, true)).not.toThrow();
     });
 

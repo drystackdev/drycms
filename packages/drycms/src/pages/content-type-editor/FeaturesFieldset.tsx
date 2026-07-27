@@ -58,9 +58,14 @@ export interface FeaturesFieldsetProps {
    * `permission`/`aiKeyManagement` - see `types.ts`'s `structureLocked`):
    * disables every toggle. */
   disabled?: boolean;
+  /** Individual feature keys that can't be turned off because the built-in
+   * seed default already requires them on (e.g. `timestamps` on `User`/
+   * `Menu` - see `naming.ts`'s `LOCKABLE_FEATURES`). Ignored when `disabled`
+   * is already true (the whole fieldset is frozen either way). */
+  requiredKeys?: ReadonlySet<keyof ContentTypeFeatures>;
 }
 
-export default function FeaturesFieldset({ kind, features, onChange, disabled }: FeaturesFieldsetProps) {
+export default function FeaturesFieldset({ kind, features, onChange, disabled, requiredKeys }: FeaturesFieldsetProps) {
   const items = FEATURES_BY_KIND[kind];
   if (items.length === 0) return null;
   return (
@@ -69,7 +74,14 @@ export default function FeaturesFieldset({ kind, features, onChange, disabled }:
       <div class="stack" style={{marginBottom: '1rem'}}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
-            <CheckField role="switch" disabled={disabled} description={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
+            <CheckField
+              role="switch"
+              disabled={disabled || requiredKeys?.has(key)}
+              description={description}
+              label={label}
+              value={!!features?.[key]}
+              onChange={(value) => onChange(key, value)}
+            />
           </div>
         ))}
       </div>

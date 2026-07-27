@@ -26,8 +26,9 @@ export interface FieldDefinition {
    * regardless of what a client submits - see `routes/content-types.ts`. */
   order: number;
   /** True for fields that shipped as part of a `system` content type's
-   * default shape (see `seed.ts`) - can't be removed, though it can still be
-   * reordered or edited. Enforced server-side against the stored (not
+   * default shape (see `seed.ts`) - can't be removed or edited (name, label,
+   * type, description, config, validation, default all frozen), though it
+   * can still be reordered. Enforced server-side against the stored (not
    * client-submitted) definition, in `naming.ts`'s
    * `validateSystemProtections`. */
   locked?: boolean;

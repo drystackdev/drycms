@@ -16,8 +16,9 @@ export interface FieldListItemProps {
    * without a click-to-edit or Remove action - they aren't user-editable. */
   system?: boolean;
   /** A custom field that shipped as part of a `system` content type's
-   * default shape (see `seed.ts`) - still click-to-edit/reorderable like any
-   * other custom field, just without a Remove action. */
+   * default shape (see `seed.ts`) - still click-to-open/reorderable like any
+   * other custom field, but its dialog opens read-only (no Remove action
+   * either). */
   locked?: boolean;
   onEdit?: () => void;
   onRemove?: () => void;
@@ -71,7 +72,7 @@ export default function FieldListItem({
             <span
               class="badge sm outline"
               style={{ marginLeft: "0.5rem" }}
-              title="Required by default - can't be removed"
+              title="Required by default - view only, can't be edited or removed"
             >
               <LockIcon /> Locked
             </span>

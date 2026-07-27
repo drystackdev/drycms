@@ -32,6 +32,12 @@ export interface FieldDialogProps {
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   onCancel: () => void;
   onSave: (field: FieldDefinition) => void;
+  /** True when `editingField` is a `locked` field on a `system` content
+   * type: fully view-only - every control disabled, no Save button. Lets an
+   * admin still inspect a built-in field's full config/validation without
+   * being able to change it (see `naming.ts`'s `validateSystemProtections`,
+   * which enforces this same freeze server-side regardless). */
+  readOnly?: boolean;
 }
 
 /** Descriptor keys that share a row instead of each getting their own full
@@ -162,12 +168,16 @@ function SettingsForm({
   onChange,
   dynamicOptions,
   disabledKeys = [],
+  allDisabled = false,
 }: {
   descriptors: SettingDescriptor[];
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   disabledKeys?: string[];
+  /** Overrides `disabledKeys` - every control disabled, e.g. a read-only
+   * built-in field. */
+  allDisabled?: boolean;
 }) {
   if (descriptors.length === 0) return null;
   return (
@@ -186,7 +196,7 @@ function SettingsForm({
                   values,
                   onChange,
                   dynamicOptions,
-                  disabled: disabledKeys.includes(d.key),
+                  disabled: allDisabled || disabledKeys.includes(d.key),
                 })}
               </div>
             ))}
@@ -197,7 +207,7 @@ function SettingsForm({
             values,
             onChange,
             dynamicOptions,
-            disabled: disabledKeys.includes(row[0]!.key),
+            disabled: allDisabled || disabledKeys.includes(row[0]!.key),
           })
         ),
       )}
@@ -214,11 +224,13 @@ function DefaultValueInput({
   config,
   value,
   onChange,
+  disabled,
 }: {
   activeType: FieldTypeDefinition | undefined;
   config: unknown;
   value: unknown;
   onChange: (value: unknown) => void;
+  disabled?: boolean;
 }) {
   if (!activeType || resolveFieldShape(activeType, config) !== "column")
     return null;
@@ -229,6 +241,7 @@ function DefaultValueInput({
           label="Default value"
           placeholder="e.g. Untitled"
           value={typeof value === "string" ? value : ""}
+          disabled={disabled}
           onChange={onChange}
         />
       );
@@ -237,18 +250,20 @@ function DefaultValueInput({
         <NumberField
           label="Default value"
           value={typeof value === "number" ? value : 0}
+          disabled={disabled}
           onChange={onChange}
         />
       );
     case "boolean":
       return (
-        <CheckField label="Default value" value={!!value} onChange={onChange} />
+        <CheckField label="Default value" value={!!value} disabled={disabled} onChange={onChange} />
       );
     case "date":
       return (
         <DatePickerField
           label="Default value"
           value={value instanceof Date ? value : new Date()}
+          disabled={disabled}
           onChange={onChange}
         />
       );
@@ -258,12 +273,12 @@ function DefaultValueInput({
       return selectConfig.multiple ? (
         <div class="field">
           <label>Default value</label>
-          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} onChange={onChange} />
+          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} disabled={disabled} onChange={onChange} />
         </div>
       ) : (
         <div class="field">
           <label>Default value</label>
-          <Select options={options} value={typeof value === "string" ? value : undefined} onChange={onChange} />
+          <Select options={options} value={typeof value === "string" ? value : undefined} disabled={disabled} onChange={onChange} />
         </div>
       );
     }
@@ -300,6 +315,7 @@ export default function FieldDialog({
   dynamicOptions,
   onCancel,
   onSave,
+  readOnly = false,
 }: FieldDialogProps) {
   const dialogRef = useDialogSync(open, onCancel);
   // Deps include `open`: the grid only mounts once the dialog opens, so the
@@ -394,14 +410,21 @@ export default function FieldDialog({
   return (
     <dialog
       ref={dialogRef}
-      aria-label={editingField ? "Edit field" : "Add field"}
-      class="lg field-dialog"
+      aria-label={readOnly ? "View field" : editingField ? "Edit field" : "Add field"}
+      class="xl field-dialog"
     >
       {open && (
         <>
           <header>
-            <h3>{editingField ? "Edit field" : "Add field"}</h3>
+            <h3>
+              {readOnly ? "View field" : editingField ? "Edit field" : "Add field"}
+            </h3>
           </header>
+          {readOnly && (
+            <p class="hint" style={{ marginTop: 0 }}>
+              This field is required by the system and can't be edited.
+            </p>
+          )}
           <div class="field-dialog-scroll" ref={gridScroll}>
             <div class="field-dialog-grid">
               <div class="stack">
@@ -418,6 +441,7 @@ export default function FieldDialog({
                     setDraftLabel(label);
                     setDraftName(name);
                   }}
+                  disabled={readOnly}
                 />
                 <TextField
                   label="Description"
@@ -425,6 +449,7 @@ export default function FieldDialog({
                   placeholder="e.g. Shown as a hint in the entry editor"
                   value={draftDescription}
                   onChange={setDraftDescription}
+                  disabled={readOnly}
                 />
                 <div class="field">
                   <label>Type</label>
@@ -447,7 +472,7 @@ export default function FieldDialog({
                       setDraftValidation(type?.defaultValidation ?? {});
                       setDraftDefault(undefined);
                     }}
-                    disabled={editingField !== null}
+                    disabled={editingField !== null || readOnly}
                   />
                 </div>
               </div>
@@ -465,6 +490,7 @@ export default function FieldDialog({
                     config={draftConfig}
                     value={draftDefault}
                     onChange={setDraftDefault}
+                    disabled={readOnly}
                   />
                 )}
 
@@ -480,6 +506,7 @@ export default function FieldDialog({
                             setDraftConfig((c) => ({ ...c, [key]: value }))
                           }
                           dynamicOptions={dynamicOptions}
+                          allDisabled={readOnly}
                         />
                       </div>
                     </fieldset>
@@ -496,6 +523,7 @@ export default function FieldDialog({
                           onChange={handleValidationChange}
                           dynamicOptions={dynamicOptions}
                           disabledKeys={textDisabledKeys}
+                          allDisabled={readOnly}
                         />
                       </div>
                     </fieldset>
@@ -505,11 +533,13 @@ export default function FieldDialog({
           </div>
           <footer>
             <button type="button" class="outline" onClick={onCancel}>
-              Cancel
+              {readOnly ? "Close" : "Cancel"}
             </button>
-            <button type="button" onClick={handleSave}>
-              Save field
-            </button>
+            {!readOnly && (
+              <button type="button" onClick={handleSave}>
+                Save field
+              </button>
+            )}
           </footer>
         </>
       )}

@@ -52,9 +52,10 @@ function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinitio
  * (credentials for third-party AI providers), and `role`/`permission`
  * collections (role-based access control - see `status/role-permission.md`).
  * All seven are `system: true` (can't be deleted) and every declared field is
- * `locked: true` (can't be removed) - new fields can still be added, and
- * everything can still be reordered; see `naming.ts`'s
- * `validateSystemProtections` for the enforcement. `aiKeyManagement`,
+ * `locked: true` (can't be removed or edited - frozen view-only in the
+ * schema editor) - new custom fields can still be added, and everything can
+ * still be reordered; see `naming.ts`'s `validateSystemProtections` for the
+ * enforcement. `aiKeyManagement`,
  * `role`, and `permission` are additionally `structureLocked: true` - no new
  * fields can be added and no feature can be toggled at all; they're
  * display-only in the schema editor.

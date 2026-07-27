@@ -361,7 +361,14 @@
         align-items: center;
         justify-content: space-between;
         gap: 0.5rem;
+        min-width: 0;
         cursor: pointer;
+
+        & > span {
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
       }
 
       /*
@@ -631,6 +638,16 @@
         border-radius: var(--dry-radius-sm);
         cursor: pointer;
         outline: none;
+
+        /* Flex items refuse to shrink below their content's intrinsic width
+         * by default (`min-width: auto`) - a long, unbroken option label
+         * (e.g. Cardinality's "One-to-many (1→n) – each target belongs to
+         * only one entry here") would otherwise push past the popup's fixed
+         * `inset-inline: 0` width and spill off-screen instead of wrapping. */
+        & > span {
+          min-width: 0;
+          overflow-wrap: anywhere;
+        }
 
         & > svg {
           flex: none;
@@ -1318,8 +1335,6 @@
         justify-content: flex-end;
         gap: 0.5rem;
         margin-block-start: 1.5rem;
-        position: relative;
-        z-index: 2;
       }
     }
 

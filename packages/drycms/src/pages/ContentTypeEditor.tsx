@@ -8,8 +8,10 @@ import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { randomUUID } from "../lib/uuid.js";
 import type { DestructiveChange } from "../content-types/migration.js";
+import { defaultContentTypeDefinitions } from "../content-types/seed.js";
 import type {
   ContentTypeDefinition,
+  ContentTypeFeatures,
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
@@ -211,6 +213,25 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     [allTypes, definition?.id],
   );
 
+  // Sourced from the CURRENTLY installed defaults (never from the loaded
+  // `definition` itself) - a drycms upgrade that newly locks/requires
+  // something on an already-seeded built-in (e.g. `aiKeyManagement` gaining
+  // `structureLocked`) must reflect here immediately, not only after that
+  // row is next resaved. Mirrors `routes/content-types.ts`'s
+  // `validateSystemProtections` call, which is the actual authority.
+  const matchingDefault = useMemo(
+    () => (definition ? defaultContentTypeDefinitions().find((t) => t.id === definition.id) : undefined),
+    [definition?.id],
+  );
+  const structureLocked = !!matchingDefault?.structureLocked;
+  const requiredFeatureKeys = useMemo(() => {
+    const required = matchingDefault?.features;
+    if (!required) return undefined;
+    return new Set(
+      (Object.keys(required) as (keyof ContentTypeFeatures)[]).filter((key) => required[key]),
+    );
+  }, [matchingDefault]);
+
   // Keeps `order` an explicit mirror of each field's position in `fields[]` -
   // the array itself stays the real source of order; the server re-normalizes
   // this again unconditionally on save (`normalizeFieldOrder` in naming.ts),
@@ -377,7 +398,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setEditingField(null);
               setFieldDialogOpen(true);
             }}
-            structureLocked={definition.structureLocked}
+            structureLocked={structureLocked}
           />
         </legend>
         <div class="stack">
@@ -441,7 +462,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
                 d ? { ...d, features: { ...d.features, [key]: value } } : d,
               )
             }
-            disabled={definition.structureLocked}
+            disabled={structureLocked}
+            requiredKeys={requiredFeatureKeys}
           />
 
           {!isNew && definition.system && (
@@ -449,9 +471,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               <div>
                 <h2>Built-in content type</h2>
                 <p>
-                  {definition.structureLocked
+                  {structureLocked
                     ? `"${definition.label}" is one of the app's defaults and can't be deleted. Its structure is fully locked - no fields can be added or removed, and no feature can be toggled.`
-                    : `"${definition.label}" is one of the app's defaults and can't be deleted. Fields can still be added and reordered, but its locked fields can't be removed.`}
+                    : `"${definition.label}" is one of the app's defaults and can't be deleted. New fields can still be added and reordered, but its locked fields are view-only - they can't be edited or removed.`}
                 </p>
               </div>
             </div>
@@ -484,6 +506,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         dynamicOptions={dynamicOptions}
         onCancel={() => setFieldDialogOpen(false)}
         onSave={handleFieldSave}
+        readOnly={definition.system && !!editingField?.locked}
       />
 
       <ConfirmDialog

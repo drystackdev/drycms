@@ -130,6 +130,57 @@ export function useCloseOnBlur(open: boolean, ref: RefObject<HTMLElement>, onClo
 	}, [open, ref, onClose]);
 }
 
+/** Fixed-position coordinates for a popup anchored to `anchorRef`, full width
+ * by default - mirrors Popover.tsx's own position effect. `top` accounts for
+ * `openUp` by pointing at the anchor's top edge instead of its bottom; pair
+ * with `transform: translateY(-100%)` in the caller when `openUp` is true so
+ * the popup's own (unmeasured) height grows upward from that point instead of
+ * downward from it. */
+export function useFloatingPosition(
+	open: boolean,
+	anchorRef: RefObject<HTMLElement>,
+	openUp: boolean,
+	gap = 6,
+): { top: number; left: number; width: number } | null {
+	const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+
+	useLayoutEffect(() => {
+		if (!open) return;
+		const rect = anchorRef.current?.getBoundingClientRect();
+		if (!rect) return;
+		setPosition({
+			left: rect.left,
+			top: openUp ? rect.top - gap : rect.bottom + gap,
+			width: rect.width,
+		});
+	}, [open, openUp]);
+
+	return open ? position : null;
+}
+
+/** Wires a `popover="auto"` element's imperative show/hide to `open`, and
+ * listens for the native `toggle` event so `onLightDismiss` fires when the
+ * browser closes it itself (outside click, Escape) - keeps React state from
+ * going stale the same way Popover.tsx's own `toggle` listener does. */
+export function useNativePopover(open: boolean, ref: RefObject<HTMLElement>, onLightDismiss: () => void) {
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		if (open) el.showPopover?.();
+		else el.hidePopover?.();
+	}, [open]);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		const handleToggle = (event: Event) => {
+			if ((event as Event & { newState?: string }).newState === 'closed') onLightDismiss();
+		};
+		el.addEventListener('toggle', handleToggle);
+		return () => el.removeEventListener('toggle', handleToggle);
+	}, [onLightDismiss]);
+}
+
 /**
  * Locks every scrollable ancestor of `ref` (a plain `overflow: auto`
  * container, or the page itself) while `active` - keeps a popover's anchor

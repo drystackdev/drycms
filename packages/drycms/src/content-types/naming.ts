@@ -129,14 +129,16 @@ const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo", "so
 /**
  * Guards a `system` content type's built-in shape (see `seed.ts`) against
  * deletion-shaped edits: un-marking it back to a plain (non-`system`) type,
- * removing a field the stored definition has `locked: true` on, turning off
- * a feature the SEED itself requires, or renaming its Title/Table
- * Name/Description - those identify the type as the specific built-in the
- * rest of the app (routes, seed re-runs matching by name) expects to find.
- * Everything else - adding fields, reordering, editing a locked field's
- * label/description/validation/config, `livePreviewUrl`, and toggling any
- * feature the seed itself DIDN'T turn on (e.g. `user` opting into `slug`) -
- * is left alone, in both directions.
+ * removing OR editing a field the stored definition has `locked: true` on,
+ * turning off a feature the SEED itself requires, or renaming its Title/
+ * Table Name/Description - those identify the type as the specific built-in
+ * the rest of the app (routes, seed re-runs matching by name) expects to
+ * find. A locked field is fully frozen: name/label/type/description/config/
+ * validation/default must all stay byte-for-byte what's stored - only its
+ * position in `fields[]` may change (reordering is still free). Everything
+ * else - adding brand-new fields, reordering, `livePreviewUrl`, and toggling
+ * any feature the seed itself DIDN'T turn on (e.g. `user` opting into
+ * `slug`) - is left alone, in both directions.
  *
  * `requiredFeatures` must be the matching default definition's own
  * `features` (from `defaultContentTypeDefinitions()`, looked up by the
@@ -182,10 +184,23 @@ export function validateSystemProtections(
     throw new NamingError(`"${existing.label}"'s Description is set by the system and can't be changed.`);
   }
 
-  const nextFieldIds = new Set(next.fields.map((f) => f.id));
+  const nextFieldById = new Map(next.fields.map((f) => [f.id, f]));
   for (const field of existing.fields) {
-    if (field.locked && !nextFieldIds.has(field.id)) {
+    if (!field.locked) continue;
+    const nextField = nextFieldById.get(field.id);
+    if (!nextField) {
       throw new NamingError(`Field "${field.label}" is required by "${existing.label}" and can't be removed.`);
+    }
+    const unchanged =
+      nextField.name === field.name &&
+      nextField.label === field.label &&
+      nextField.type === field.type &&
+      (nextField.description ?? "") === (field.description ?? "") &&
+      JSON.stringify(nextField.config) === JSON.stringify(field.config) &&
+      JSON.stringify(nextField.validation) === JSON.stringify(field.validation) &&
+      JSON.stringify(nextField.default) === JSON.stringify(field.default);
+    if (!unchanged) {
+      throw new NamingError(`Field "${field.label}" is required by "${existing.label}" and can't be edited.`);
     }
   }
 
