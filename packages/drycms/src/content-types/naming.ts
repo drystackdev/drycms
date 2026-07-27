@@ -1,4 +1,4 @@
-import type { ContentTypeDefinition } from "./types.js";
+import type { ContentTypeDefinition, ContentTypeFeatures } from "./types.js";
 
 const CONTENT_TYPE_NAME_RE = /^[a-z][a-z0-9-]*$/i;
 const FIELD_NAME_RE = /^[a-z][a-z0-9]*$/i;
@@ -120,19 +120,35 @@ const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo"] as 
  * Guards a `system` content type's built-in shape (see `seed.ts`) against
  * deletion-shaped edits: un-marking it back to a plain (non-`system`) type,
  * removing a field the stored definition has `locked: true` on, turning off
- * a `features` flag the stored definition already has on, or renaming its
- * Title/Table Name/Description - those identify the type as the specific
- * built-in the rest of the app (routes, seed re-runs matching by name)
- * expects to find. Everything else - adding fields, reordering, editing a
- * locked field's label/description/validation/config, `livePreviewUrl` - is
- * left alone.
+ * a feature the SEED itself requires, or renaming its Title/Table
+ * Name/Description - those identify the type as the specific built-in the
+ * rest of the app (routes, seed re-runs matching by name) expects to find.
+ * Everything else - adding fields, reordering, editing a locked field's
+ * label/description/validation/config, `livePreviewUrl`, and toggling any
+ * feature the seed itself DIDN'T turn on (e.g. `user` opting into `slug`) -
+ * is left alone, in both directions.
  *
- * Checks against `existing` (the version already in storage), never against
- * `next`'s own `locked`/`system` claims - a single request can't strip
- * `locked` off a field and remove it in the same save, since the removal is
- * caught against what was actually stored beforehand.
+ * `requiredFeatures` must be the matching default definition's own
+ * `features` (from `defaultContentTypeDefinitions()`, looked up by the
+ * caller - `naming.ts` can't import `seed.ts` itself without a circular
+ * import, since `seed.ts` already depends on `migration.ts`, which depends
+ * on this file). Deliberately NOT `existing.features`: unlike `locked`
+ * (baked into each field forever once seeded), a feature flag carries no
+ * persisted "the seed required this" marker of its own - `existing.features`
+ * is just whatever's currently on, including anything the admin opted into
+ * afterward, which must stay freely revertible.
+ *
+ * Checks field/label/name/description against `existing` (the version
+ * already in storage), never against `next`'s own `locked`/`system` claims -
+ * a single request can't strip `locked` off a field and remove it in the
+ * same save, since the removal is caught against what was actually stored
+ * beforehand.
  */
-export function validateSystemProtections(next: ContentTypeDefinition, existing: ContentTypeDefinition | undefined): void {
+export function validateSystemProtections(
+  next: ContentTypeDefinition,
+  existing: ContentTypeDefinition | undefined,
+  requiredFeatures: ContentTypeFeatures | undefined,
+): void {
   if (!existing?.system) return;
 
   if (!next.system) {
@@ -157,7 +173,7 @@ export function validateSystemProtections(next: ContentTypeDefinition, existing:
   }
 
   for (const key of LOCKABLE_FEATURES) {
-    if (existing.features?.[key] && !next.features?.[key]) {
+    if (requiredFeatures?.[key] && !next.features?.[key]) {
       throw new NamingError(`"${key}" can't be turned off on "${existing.label}" - a built-in field depends on it.`);
     }
   }

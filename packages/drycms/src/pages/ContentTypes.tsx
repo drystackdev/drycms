@@ -10,6 +10,7 @@ import type {
   ContentTypeKind,
 } from "../content-types/types.js";
 import { useDocumentTitle } from "./page-common.js";
+import CheckField from "../components/CheckField.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
@@ -40,6 +41,7 @@ export default function ContentTypes() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] =
     useState<ContentTypeKind>("collection");
+  const [showSystemTypes, setShowSystemTypes] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -56,10 +58,10 @@ export default function ContentTypes() {
   }, []);
 
   const countByKind = (kind: ContentTypeKind) =>
-    (definitions ?? []).filter((d) => d.kind === kind).length;
+    (definitions ?? []).filter((d) => d.kind === kind && (showSystemTypes || !d.system)).length;
 
   const rows: Row[] = (definitions ?? [])
-    .filter((d) => d.kind === selectedKind)
+    .filter((d) => d.kind === selectedKind && (showSystemTypes || !d.system))
     .map((d) => ({
       id: d.id,
       label: d.label,
@@ -88,7 +90,7 @@ export default function ContentTypes() {
         <span class="hint">Loading…</span>
       ) : (
         <div class="content-types-grid">
-          <ul class="content-types-nav">
+            <ul class="content-types-nav">
             {GROUPS.map(({ kind, label, icon }) => (
               <li key={kind}>
                 <button
@@ -103,6 +105,14 @@ export default function ContentTypes() {
                 </button>
               </li>
             ))}
+            <li style={{ marginTop: "1rem" }}>
+              <CheckField
+                label="Show System Types"
+                value={showSystemTypes}
+                onChange={setShowSystemTypes}
+                description="Show content types that are used internally by DryCMS."
+              />
+            </li>
           </ul>
 
           <div class="content-types-panel">

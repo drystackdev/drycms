@@ -6,6 +6,7 @@ import { createContentEngineAdapter } from "../content-types/engine/index.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../content-types/engine/types.js";
 import type { SavePlan } from "../content-types/migration.js";
 import { NamingError, validateContentTypeDefinition, validateSystemProtections } from "../content-types/naming.js";
+import { defaultContentTypeDefinitions } from "../content-types/seed.js";
 import { collectTableNames, resolveTableTree } from "../content-types/tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { randomUUID } from "../lib/uuid.js";
@@ -80,6 +81,7 @@ async function handleSave(
   validateSystemProtections(
     definition,
     allTypes.find((t) => t.id === definition.id),
+    defaultContentTypeDefinitions().find((t) => t.id === definition.id)?.features,
   );
 
   // `validateContentTypeDefinition` only rules out two types sharing a

@@ -81,61 +81,61 @@ describe("validateSystemProtections", () => {
   const lockedName = field({ id: "name", name: "name", locked: true });
 
   it("is a no-op when there's no existing definition (a brand-new type)", () => {
-    expect(() => validateSystemProtections(contentType(), undefined)).not.toThrow();
+    expect(() => validateSystemProtections(contentType(), undefined, undefined)).not.toThrow();
   });
 
   it("is a no-op when the existing definition isn't a system type", () => {
     const existing = contentType({ fields: [lockedName] });
-    expect(() => validateSystemProtections(contentType({ fields: [] }), existing)).not.toThrow();
+    expect(() => validateSystemProtections(contentType({ fields: [] }), existing, undefined)).not.toThrow();
   });
 
   it("rejects un-marking a system type back to non-system", () => {
     const existing = contentType({ system: true, fields: [lockedName] });
     const next = contentType({ system: false, fields: [lockedName] });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
   });
 
   it("rejects renaming a system type's Title (label)", () => {
     const existing = contentType({ system: true, fields: [], label: "User" });
     const next = contentType({ system: true, fields: [], label: "Account" });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
   });
 
   it("rejects renaming a system type's Table Name (name)", () => {
     const existing = contentType({ system: true, fields: [], name: "user" });
     const next = contentType({ system: true, fields: [], name: "account" });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
   });
 
   it("rejects editing a system type's Description", () => {
     const existing = contentType({ system: true, fields: [], description: "Accounts able to sign in." });
     const next = contentType({ system: true, fields: [], description: "Something else." });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
   });
 
   it("treats an unset Description the same as an empty one (no false-positive reject)", () => {
     const existing = contentType({ system: true, fields: [], description: undefined });
     const next = contentType({ system: true, fields: [], description: "" });
-    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+    expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
   });
 
   it("allows setting livePreviewUrl on a system type", () => {
     const existing = contentType({ system: true, fields: [] });
     const next = contentType({ system: true, fields: [], livePreviewUrl: "https://example.com/preview" });
-    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+    expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
   });
 
   it("rejects removing a locked field", () => {
     const existing = contentType({ system: true, fields: [lockedName] });
     const next = contentType({ system: true, fields: [] });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, undefined)).toThrow(NamingError);
   });
 
   it("allows editing a locked field's contents, as long as its id stays present", () => {
     const existing = contentType({ system: true, fields: [lockedName] });
     const edited = field({ id: "name", name: "name", label: "Full name", locked: true });
     const next = contentType({ system: true, fields: [edited] });
-    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+    expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
   });
 
   it("allows adding new fields alongside locked ones", () => {
@@ -144,32 +144,44 @@ describe("validateSystemProtections", () => {
       system: true,
       fields: [lockedName, field({ id: "extra", name: "extra" })],
     });
-    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+    expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
   });
 
   it("does not require an unlocked field to stay present", () => {
     const unlocked = field({ id: "bio", name: "bio" });
     const existing = contentType({ system: true, fields: [lockedName, unlocked] });
     const next = contentType({ system: true, fields: [lockedName] });
-    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+    expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
   });
 
-  it("rejects turning off a feature the system type already depends on", () => {
+  it("rejects turning off a feature the SEED requires", () => {
     const existing = contentType({ system: true, fields: [], features: { timestamps: true } });
     const next = contentType({ system: true, fields: [], features: { timestamps: false } });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, { timestamps: true })).toThrow(NamingError);
   });
 
-  it("allows a feature that was never on to stay off", () => {
+  it("allows a feature the seed never required to stay off", () => {
     const existing = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
     const next = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
-    expect(() => validateSystemProtections(next, existing)).not.toThrow();
+    expect(() => validateSystemProtections(next, existing, { timestamps: true })).not.toThrow();
+  });
+
+  // Regression: turning `slug` ON for "User" (not in the seed's required
+  // set), saving, then turning it back OFF used to be rejected - the old
+  // check compared against `existing.features` (whatever's CURRENTLY
+  // stored, including anything opted into after seeding) instead of the
+  // seed's own required set, so a feature became permanently stuck on the
+  // moment anyone turned it on even once.
+  it("allows turning back off a feature that was optionally enabled after seeding, not part of the original required set", () => {
+    const existing = contentType({ system: true, fields: [], features: { timestamps: true, slug: true } });
+    const next = contentType({ system: true, fields: [], features: { timestamps: true, slug: false } });
+    expect(() => validateSystemProtections(next, existing, { timestamps: true })).not.toThrow();
   });
 
   it("also guards the seo feature, same as timestamps/slug/draft/schedule", () => {
     const existing = contentType({ system: true, fields: [], features: { seo: true } });
     const next = contentType({ system: true, fields: [], features: { seo: false } });
-    expect(() => validateSystemProtections(next, existing)).toThrow(NamingError);
+    expect(() => validateSystemProtections(next, existing, { seo: true })).toThrow(NamingError);
   });
 });
 
