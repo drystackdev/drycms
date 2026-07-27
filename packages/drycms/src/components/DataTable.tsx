@@ -4,11 +4,13 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
-  SettingsIcon,
+  ColumnsIcon,
 } from "./icons.js";
+import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import type { JSX } from "preact/jsx-runtime";
+import CheckField from "./CheckField.js";
 
 export interface DataTableColumn<Row> {
   key: string & keyof Row;
@@ -87,6 +89,10 @@ function compare(a: unknown, b: unknown): number {
 }
 
 const NO_COLUMN_TOGGLE_KEY = "datatable:unused-column-toggle";
+/** At most this many columns can be visible at once - showing more starts
+ * crowding the table, so past this the picker just disables the rest until
+ * one is unchecked first. */
+const MAX_VISIBLE_COLUMNS = 5;
 
 /**
  * Sortable, filterable, paginated table. Renders plain `<table>` markup so the
@@ -141,6 +147,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
         if (set.size <= 1) return current; // always keep at least one column visible.
         set.delete(key);
       } else {
+        if (set.size >= MAX_VISIBLE_COLUMNS) return current; // capped - see MAX_VISIBLE_COLUMNS.
         set.add(key);
       }
       return allKeys.filter((k) => set.has(k)); // stable, declared column order.
@@ -211,25 +218,31 @@ export default function DataTable<Row extends Record<string, unknown>>({
             onInput={(event) => handleSearchInput((event.currentTarget as HTMLInputElement).value)}
           />
           {columnToggle && (
-            <details class="column-toggle">
-              <summary class="ghost icon sm" aria-label="Choose visible columns" data-tooltip="Columns">
-                <SettingsIcon />
-              </summary>
-              <ul class="column-toggle-menu" role="menu">
-                {columns.map((column) => (
+            <Popover
+              label="Choose visible columns"
+              trigger={(onClick) => (
+                <button class="outline lg" onClick={onClick}>
+                  <ColumnsIcon />
+                  Column
+                  <span class="badge sm outline">{visibleKeys.length}</span>
+                </button>
+              )}
+            >
+              {columns.map((column) => {
+                const checked = visibleKeys.includes(column.key);
+                const disabled = !checked && visibleKeys.length >= MAX_VISIBLE_COLUMNS;
+                return (
                   <li key={column.key}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={visibleKeys.includes(column.key)}
-                        onChange={() => toggleColumnVisible(column.key)}
-                      />
-                      {column.label}
-                    </label>
+                    <CheckField
+                      label={column.label}
+                      value={checked}
+                      disabled={disabled}
+                      onChange={() => toggleColumnVisible(column.key)}
+                    />
                   </li>
-                ))}
-              </ul>
-            </details>
+                );
+              })}
+            </Popover>
           )}
           <span class="spacer" />
           <small>{serverQuery?.loading ? "Loading…" : `${totalRows} of ${serverQuery ? serverQuery.total : rows.length}`}</small>

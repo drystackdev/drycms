@@ -28,6 +28,8 @@ export default function NumberField({
   name,
   id,
   description,
+  class: className,
+  style,
 }: NumberFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `number-field-${reactId}`;
@@ -40,7 +42,7 @@ export default function NumberField({
   };
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
       <div class="stepper">

@@ -66,6 +66,8 @@ export default function DatePickerField({
   name,
   id,
   description,
+  class: className,
+  style,
 }: DatePickerFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `datepicker-field-${reactId}`;
@@ -86,7 +88,7 @@ export default function DatePickerField({
     const nativeType = time ? "datetime-local" : "date";
     const nativeFormat = time ? "YYYY-MM-DDTHH:mm" : "YYYY-MM-DD";
     return (
-      <div class="field">
+      <div class={`field${className ? ` ${className}` : ""}`} style={style}>
         <label for={fieldId}>{label}</label>
         {description && <small>{description}</small>}
         <input
@@ -141,7 +143,7 @@ export default function DatePickerField({
   );
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
       <div class="select datepicker-trigger" ref={wrapRef}>

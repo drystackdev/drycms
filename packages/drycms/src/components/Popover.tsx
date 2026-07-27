@@ -14,13 +14,22 @@ export type PopoverMenuEntry =
     };
 
 export interface PopoverProps {
-  /** Menu content, top to bottom - mix `{ type: "item", ... }` and `{ type: "separator" }`. */
-  items: PopoverMenuEntry[];
+  /** Menu content, top to bottom - mix `{ type: "item", ... }` and `{ type: "separator" }`.
+   * Omit and pass `children` instead (raw `<li>`s) for custom content that
+   * shouldn't auto-close on click, e.g. a group of checkboxes. */
+  items?: PopoverMenuEntry[];
+  /** Custom menu content (`<li>` elements) instead of `items` - clicking
+   * inside doesn't auto-close the popover, only outside-click/Escape does. */
+  children?: ComponentChildren;
   /** Accessible label for the trigger button, e.g. `More actions for readme.md`. */
   label: string;
-  /** Trigger button content. @default a kebab `MoreVerticalIcon` */
-  trigger?: ComponentChildren;
-  /** @default "More actions" */
+  /** Trigger content. Pass a callback to render a fully custom trigger
+   * element instead of the default button - call the given `onClick` on it
+   * to wire up open/close, and use `open` to react to the popover's own
+   * state (e.g. flip a chevron). @default a kebab `MoreVerticalIcon` button */
+  trigger?: ComponentChildren | ((onClick: (event: MouseEvent) => void, open: boolean) => ComponentChildren);
+  /** Set to `""` to omit the trigger's tooltip - e.g. when `trigger` already
+   * carries a visible label. @default "More actions" */
   tooltip?: string;
 }
 
@@ -39,6 +48,7 @@ export interface PopoverProps {
  */
 export default function Popover({
   items,
+  children,
   label,
   trigger,
   tooltip = "More actions",
@@ -70,8 +80,6 @@ export default function Popover({
     else el.hidePopover?.();
   }, [open]);
 
-  // `auto` popovers can close themselves (outside click, Escape) - listen so
-  // `open` (and the trigger's `aria-expanded`) don't go stale when that happens.
   useEffect(() => {
     const el = menuRef.current;
     if (!el) return;
@@ -89,27 +97,35 @@ export default function Popover({
     action();
   };
 
+  const handleTriggerClick = (event: MouseEvent) => {
+    event.stopPropagation();
+    setOpen((current) => !current);
+  };
+
   return (
     <div class="popover" ref={wrapRef}>
-      <button
-        type="button"
-        class="ghost icon sm"
-        data-tooltip={tooltip}
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen((current) => !current);
-        }}
-      >
-        {trigger ?? <MoreVerticalIcon />}
-      </button>
+      {typeof trigger === "function" ? (
+        trigger(handleTriggerClick, open)
+      ) : (
+        <button
+          type="button"
+          data-tooltip={tooltip || undefined}
+          aria-label={label}
+          aria-haspopup={children ? "true" : "menu"}
+          aria-expanded={open}
+          onClick={handleTriggerClick}
+        >
+          {trigger ?? <MoreVerticalIcon />}
+        </button>
+      )}
       <ul
         ref={menuRef}
         popover="auto"
-        class={openUp ? "popover-menu up" : "popover-menu"}
-        role="menu"
+        class={[
+          "popover-menu",
+          openUp && "up"
+        ].filter(Boolean).join(" ")}
+        role={children ? undefined : "menu"}
         style={
           position
             ? {
@@ -123,10 +139,9 @@ export default function Popover({
             : undefined
         }
       >
-        {items.map((entry, index) =>
+        {children ?? items?.map((entry, index) =>
           entry.type === "separator" ? (
             <li
-              // eslint-disable-next-line react/no-array-index-key
               key={`separator-${index}`}
               class="popover-menu-separator"
               role="separator"

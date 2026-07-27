@@ -104,6 +104,14 @@
       justify-content: center;
       align-items: center;
     }
+
+    .w-full{
+      width: 100%;
+    }
+    
+    .h-full{
+      height: 100%;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

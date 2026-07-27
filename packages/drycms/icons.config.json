@@ -56,6 +56,7 @@
     "Singleton": "solar:document-bold-duotone",
     "Component": "lucide:puzzle",
     "DragHandle": "lucide:grip-vertical",
-    "Lock": "solar:lock-keyhole-linear"
+    "Lock": "solar:lock-keyhole-linear",
+    "Columns": "solar:sidebar-minimalistic-bold"
   }
 }

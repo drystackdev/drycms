@@ -33,13 +33,15 @@ export default function SelectField({
   name,
   id,
   description,
+  class: className,
+  style,
 }: SelectFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `select-field-${reactId}`;
   const options: ListOption[] = config.options.map((text) => ({ value: text, label: text }));
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
       {config.multiple ? (

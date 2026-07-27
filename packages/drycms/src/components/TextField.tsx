@@ -25,12 +25,14 @@ export default function TextField({
   id,
   required = false,
   description,
+  class: className,
+  style,
 }: TextFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `text-field-${reactId}`;
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
       {multiline ? (

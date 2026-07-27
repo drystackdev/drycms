@@ -21,12 +21,14 @@ export default function CheckField({
   disabled = false,
   name,
   id,
+  class: className,
+  style,
 }: CheckFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `check-field-${reactId}`;
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <div class="toggle">
         <input
           id={fieldId}

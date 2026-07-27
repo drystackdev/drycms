@@ -31,12 +31,14 @@ export default function SecretKeyField({
   name,
   id,
   description,
+  class: className,
+  style,
 }: SecretKeyFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `secret-key-field-${reactId}`;
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
       <input

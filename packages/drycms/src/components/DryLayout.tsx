@@ -84,6 +84,17 @@ function isActiveNavItem(url: string, href: string): boolean {
   return url === href || url.startsWith(`${href}/`);
 }
 
+/** The "Content" header link is active for any `/content/*` page EXCEPT one
+ * that's also another NAV item's own dedicated href (e.g. "Users" pointing
+ * at `/content/user`) - otherwise both would light up at once whenever that
+ * shortcut's target happens to live under `/content`. */
+function isContentHeaderActive(url: string, contentHref: string): boolean {
+  if (!isActiveNavItem(url, contentHref)) return false;
+  return !NAV.some(
+    (other) => other.key !== "content" && other.ready && other.href !== contentHref && isActiveNavItem(url, other.href),
+  );
+}
+
 export default function DryLayout({ children }: Props) {
   const { url } = useLocation();
   const { ref: sidebar } = useOverlayScrollbars<HTMLElement>([], { overflow: { x: 'hidden' } });
@@ -149,7 +160,7 @@ export default function DryLayout({ children }: Props) {
                 <div class="nav-group-header">
                   <a
                     href={item.href}
-                    aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
+                    aria-current={isContentHeaderActive(url, item.href) ? "page" : undefined}
                     data-tooltip={collapsed.value ? item.label : undefined}
                     data-tooltip-placement="right"
                   >

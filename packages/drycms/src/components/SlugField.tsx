@@ -1,4 +1,5 @@
 import { useId, useState } from "preact/hooks";
+import type { JSX } from "preact/jsx-runtime";
 import TextField from "./TextField.js";
 import { slugify } from "../lib/slugify.js";
 
@@ -23,6 +24,10 @@ export interface SlugFieldProps {
    * button). Defaults to `slugify` (hyphen-joined); pass `slugifyIdentifier`
    * when the slug must be a bare identifier, e.g. a content-type field name. */
   toSlug?: (text: string) => string;
+  /** Extra class(es) for the outer wrapper, on top of the base class. */
+  class?: string;
+  /** Inline style for the outer wrapper. */
+  style?: JSX.CSSProperties;
 }
 
 /** `solar:refresh-square-linear`-style regenerate icon, hand-written from the
@@ -73,13 +78,15 @@ export default function SlugField({
   required = false,
   description,
   toSlug = slugify,
+  class: className,
+  style,
 }: SlugFieldProps) {
   const [slugTouched, setSlugTouched] = useState(false);
   const reactId = useId();
   const slugFieldId = id ?? `slug-field-${reactId}`;
 
   return (
-    <div class="stack">
+    <div class={`stack${className ? ` ${className}` : ""}`} style={style}>
       <TextField
         label={label}
         value={value}

@@ -45,6 +45,8 @@ export default function ImageField({
   name,
   id,
   description,
+  class: className,
+  style,
 }: ImageFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `image-field-${reactId}`;
@@ -88,7 +90,7 @@ export default function ImageField({
   };
 
   return (
-    <div class="field">
+    <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
       <div class="image-field-box">
