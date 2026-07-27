@@ -11,6 +11,7 @@ import type {
 } from "../content-types/types.js";
 import { useDocumentTitle } from "./page-common.js";
 import CheckField from "../components/CheckField.js";
+import { useStore } from "../hooks/useStore.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
@@ -41,7 +42,7 @@ export default function ContentTypes() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] =
     useState<ContentTypeKind>("collection");
-  const [showSystemTypes, setShowSystemTypes] = useState(false);
+  const [showSystemTypes, setShowSystemTypes] = useStore('showSystemTypes', true);
 
   useEffect(() => {
     (async () => {

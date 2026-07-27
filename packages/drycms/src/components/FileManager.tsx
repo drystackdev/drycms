@@ -4,6 +4,7 @@ import { readCachedFile } from "./file-manager-blob-cache.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import { useDialogSync } from "./list-nav.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { useStore } from "../hooks/useStore.js";
 import {
   collectDescendantIds,
   folderPath,
@@ -69,31 +70,6 @@ export interface FileManagerProps {
 }
 
 type MoveCopyState = { mode: "move" | "copy"; ids: string[] } | null;
-
-const VIEW_STORAGE_KEY = "drycms-file-manager-view";
-const PREVIEW_STORAGE_KEY = "drycms-file-manager-preview";
-
-/** Reads the last-used list/grid choice - shared across every `FileManager`
- * on the page, same as any other persisted user preference. Guarded for SSR
- * and for `localStorage` throwing (private browsing, disabled storage, ...). */
-function readStoredView(fallback: "list" | "grid"): "list" | "grid" {
-  try {
-    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
-    return stored === "list" || stored === "grid" ? stored : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-/** Same idea as `readStoredView`, for the uncontrolled preview toggle. */
-function readStoredPreview(fallback: boolean): boolean {
-  try {
-    const stored = localStorage.getItem(PREVIEW_STORAGE_KEY);
-    return stored === "true" || stored === "false" ? stored === "true" : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 const FOLDER_QUERY_KEY = "dry_folder";
 
@@ -1576,16 +1552,12 @@ export default function FileManager({
   /** Disables the buttons most likely to be double-clicked (dialog submits,
    * clipboard paste) while a `source` write is in flight. */
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<"list" | "grid">(() =>
-    readStoredView(defaultView),
+  /** Last-used list/grid choice - shared across every `FileManager` on the
+   * page, same as any other persisted user preference. */
+  const [view, setView] = useStore<"list" | "grid">(
+    "file-manager-view",
+    defaultView,
   );
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_STORAGE_KEY, view);
-    } catch {
-      // Storage unavailable (private browsing, quota, ...) - the choice just won't survive reload.
-    }
-  }, [view]);
   const [query, setQuery] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [uncontrolledSelected, setUncontrolledSelected] = useState<string[]>(
@@ -1616,14 +1588,7 @@ export default function FileManager({
   const [breadcrumbDragOverId, setBreadcrumbDragOverId] = useState<
     string | null | undefined
   >(undefined);
-  const [previewOn, setPreviewOn] = useState(() => readStoredPreview(false));
-  useEffect(() => {
-    try {
-      localStorage.setItem(PREVIEW_STORAGE_KEY, String(previewOn));
-    } catch {
-      // Storage unavailable (private browsing, quota, ...) - the choice just won't survive reload.
-    }
-  }, [previewOn]);
+  const [previewOn, setPreviewOn] = useStore("file-manager-preview", false);
 
   /** Fetches `folderId`'s children and replaces any entries already loaded
    * for it - called both by the lazy-load effect below (first visit) and

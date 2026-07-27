@@ -20,10 +20,13 @@ import 'drycms/styles.css';
 		</style>
 	</head>
 	<body class="dry">
-		{/* Applies the stored theme before first paint to avoid a flash. */}
+		{/* Applies the stored theme before first paint to avoid a flash.
+		Reads the same `__store.theme` entry that `useStore("theme", ...)`
+		(see ThemeToggle) reads/writes. */}
 		<script is:inline>
 			try {
-				const stored = localStorage.getItem('drycms:theme');
+				const store = JSON.parse(localStorage.getItem('__store') || '{}');
+				const stored = store.theme;
 				if (stored === 'light' || stored === 'dark') {
 					document.body.classList.add(stored);
 				}

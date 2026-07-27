@@ -1,9 +1,7 @@
-import { useEffect, useState } from "preact/hooks";
 import { MonitorIcon, MoonIcon, SunIcon } from "./icons.js";
+import { useStore } from "../hooks/useStore.js";
 
 export type DryTheme = "system" | "light" | "dark";
-
-export const THEME_STORAGE_KEY = "drycms:theme";
 
 const ORDER: DryTheme[] = ["system", "light", "dark"];
 
@@ -17,34 +15,13 @@ function applyTheme(theme: DryTheme) {
   const root = document.querySelector<HTMLElement>(".dry") ?? document.body;
   root.classList.remove("light", "dark");
   if (theme !== "system") root.classList.add(theme);
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // Private mode / storage disabled - the theme still applies for this page.
-  }
 }
 
-function readStoredTheme(): DryTheme {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system")
-      return stored;
-  } catch {
-    // ignore
-  }
-  return "system";
-}
-
-/**
- * Cycles system → light → dark. Starts from `system` so the server-rendered
- * markup matches the first client render, then syncs to storage on mount.
- */
+/** Cycles system → light → dark, persisted via `useStore` (`__store.theme`
+ * in `localStorage`). The pre-mount flash is avoided separately, by
+ * `app.astro`'s inline script reading the same storage before first paint. */
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<DryTheme>("system");
-
-  useEffect(() => {
-    setTheme(readStoredTheme());
-  }, []);
+  const [theme, setTheme] = useStore<DryTheme>("theme", "system");
 
   const next = () => {
     const value = ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length] as DryTheme;
