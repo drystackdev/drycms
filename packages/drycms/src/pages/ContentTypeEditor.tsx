@@ -6,6 +6,7 @@ import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
+import { randomUUID } from "../lib/uuid.js";
 import type { DestructiveChange } from "../content-types/migration.js";
 import type {
   ContentTypeDefinition,
@@ -133,7 +134,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           const initialKind: ContentTypeKind =
             kind === "singleton" || kind === "component" ? kind : "collection";
           loaded = {
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             kind: initialKind,
             name: "",
             label: "",

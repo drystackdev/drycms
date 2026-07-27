@@ -8,6 +8,7 @@ import type { SavePlan } from "../content-types/migration.js";
 import { NamingError, validateContentTypeDefinition } from "../content-types/naming.js";
 import { collectTableNames, resolveTableTree } from "../content-types/tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { randomUUID } from "../lib/uuid.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   not_found: 404,
@@ -128,7 +129,7 @@ export const POST: APIRoute = async (context) => {
 
     const definition: ContentTypeDefinition = {
       ...raw.definition,
-      id: raw.definition.id || crypto.randomUUID(),
+      id: raw.definition.id || randomUUID(),
       version: 0,
     };
     return await handleSave(adapter, definition, raw.confirm === true);

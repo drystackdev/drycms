@@ -8,6 +8,7 @@ import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
 import { toast } from "../../components/Toast.js";
 import { slugifyIdentifier } from "../../lib/slugify.js";
+import { randomUUID } from "../../lib/uuid.js";
 import {
   fieldTypes,
   resolveFieldShape,
@@ -341,7 +342,7 @@ export default function FieldDialog({
       return;
     }
     onSave({
-      id: editingField?.id ?? crypto.randomUUID(),
+      id: editingField?.id ?? randomUUID(),
       name: draftName.trim(),
       label: draftLabel.trim() || draftName.trim(),
       description: draftDescription.trim() || undefined,
