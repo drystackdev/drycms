@@ -1749,51 +1749,6 @@
       }
     }
 
-    /*
-     * Overlay scrollbar. `.scroll-over` is injected by `components/scrollbar.ts`
-     * as a sibling of `.scrollbar-auto` inside a `.scrollbar-auto-host`
-     * (utilities.css) - never as its child, since an absolutely-positioned
-     * child would scroll away with the content and a sticky one would join
-     * its grid/flex layout. `--dry-scroll-thumb-size`/`--dry-scroll-thumb-pos`
-     * are set inline by that module on every scroll/resize; CSS only renders
-     * them.
-     */
-    .scroll-over {
-      position: absolute;
-      inset-block: 0;
-      inset-inline-end: 0;
-      width: 20px;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 150ms ease;
-
-      &.visible {
-        opacity: 1;
-        pointer-events: auto;
-      }
-
-      &::before {
-        content: "";
-        position: absolute;
-        inset-block: 2px;
-        inset-inline-end: 7px;
-        width: 6px;
-        border-radius: 999px;
-        background: var(--dry-border);
-        opacity: 0.4;
-      }
-
-      &::after {
-        content: "";
-        position: absolute;
-        inset-inline-end: 7px;
-        width: 6px;
-        min-height: 24px;
-        border-radius: 999px;
-        background: var(--dry-foreground);
-        height: var(--dry-scroll-thumb-size, 20%);
-        transform: translateY(var(--dry-scroll-thumb-pos, 0px));
-      }
     }
 
     /* ------------------------------------------------------------ Breadcrumb */

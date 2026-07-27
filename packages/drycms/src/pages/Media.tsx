@@ -1,12 +1,11 @@
-import { useEffect, useMemo } from 'preact/hooks';
+import { useMemo } from 'preact/hooks';
 import { path } from 'virtual:drycms/config';
 import FileManager from '../components/FileManager.js';
 import { createHttpFileSource } from '../components/file-manager-http-source.js';
+import { useDocumentTitle } from './page-common.js';
 
 export default function Media() {
-	useEffect(() => {
-		document.title = 'Media';
-	}, []);
+	useDocumentTitle('Media');
 
 	// Stable across re-renders - a fresh source would drop FileManager's
 	// already-loaded folders and force a re-fetch of whatever's open.

@@ -73,7 +73,7 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
       fields.push(
         {
           id: SYSTEM_FIELD_IDS.createdAt,
-          name: "created_at",
+          name: "createdAt",
           label: "Created at",
           type: "date",
           config: { time: true },
@@ -81,7 +81,7 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
         },
         {
           id: SYSTEM_FIELD_IDS.updatedAt,
-          name: "updated_at",
+          name: "updatedAt",
           label: "Updated at",
           type: "date",
           config: { time: true },

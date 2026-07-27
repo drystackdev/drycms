@@ -13,3 +13,23 @@ export function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 }
+
+/** Same diacritic-stripping/lowercasing as `slugify`, but joins words in
+ * camelCase instead of hyphenating - for contexts where the result must be a
+ * bare identifier with no separator at all, e.g. a content-type field name
+ * (`content-types/naming.ts`'s `validateFieldName` rejects both "-" and "_",
+ * the latter being reserved as the flatten-prefix separator). "Số Tiền" →
+ * "soTien" instead of `slugify`'s "so-tien". */
+export function slugifyIdentifier(text: string): string {
+  const words = text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .trim()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  return words
+    .map((word, i) => (i === 0 ? word : word[0]!.toUpperCase() + word.slice(1)))
+    .join("");
+}

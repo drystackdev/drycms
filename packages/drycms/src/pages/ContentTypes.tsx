@@ -9,6 +9,7 @@ import type {
   ContentTypeDefinition,
   ContentTypeKind,
 } from "../content-types/types.js";
+import { useDocumentTitle } from "./page-common.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
@@ -24,9 +25,7 @@ interface Row extends Record<string, unknown> {
 }
 
 export default function ContentTypes() {
-  useEffect(() => {
-    document.title = "Content Types";
-  }, []);
+  useDocumentTitle("Content Types");
 
   const { route } = useLocation();
   const api = useMemo(
@@ -81,9 +80,9 @@ export default function ContentTypes() {
         </div>
       </div>
 
-      {loadError && <span class="error">{loadError}</span>}
-
-      {definitions === null && !loadError ? (
+      {loadError ? (
+        <span class="error">{loadError}</span>
+      ) : definitions === null ? (
         <span class="hint">Loading…</span>
       ) : (
         <div class="content-types-grid">

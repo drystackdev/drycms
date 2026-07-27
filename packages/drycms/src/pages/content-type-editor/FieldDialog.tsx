@@ -7,6 +7,7 @@ import Select from "../../components/Select.js";
 import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
 import { toast } from "../../components/Toast.js";
+import { slugifyIdentifier } from "../../lib/slugify.js";
 import {
   fieldTypes,
   resolveFieldShape,
@@ -377,6 +378,7 @@ export default function FieldDialog({
                   required
                   value={draftLabel}
                   slug={draftName}
+                  toSlug={slugifyIdentifier}
                   onChange={(label, name) => {
                     setDraftLabel(label);
                     setDraftName(name);

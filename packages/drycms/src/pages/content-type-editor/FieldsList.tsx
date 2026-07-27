@@ -13,7 +13,7 @@ export interface SystemFieldEntry {
   /** Combined-list id. */
   id: string;
   label: string;
-  /** Real technical column name (e.g. `created_at`, not `createdAt`). */
+  /** Real technical column name, as actually stored/migrated. */
   name: string;
   typeLabel: string;
 }

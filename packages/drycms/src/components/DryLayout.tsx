@@ -118,6 +118,15 @@ export default function DryLayout({ children }: Props) {
     shell?.classList.toggle("collapsed", collapsed.value);
   }, [collapsed.value]);
 
+  // `.main`, not `window`, is the actual scrolling element (`.shell` is
+  // pinned to `100dvh`) - preact-iso's own scroll-to-top-on-navigation
+  // logic calls `window.scrollTo`, which is a no-op here, so a page that
+  // mounts scrolled down (e.g. after leaving a long Dashboard) would
+  // otherwise stay scrolled down on the next page too.
+  useEffect(() => {
+    main.current?.scrollTo({ top: 0 });
+  }, [url]);
+
   return (
     <div class="shell">
       <aside class="sidebar" ref={sidebar}>

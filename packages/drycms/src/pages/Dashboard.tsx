@@ -1,6 +1,6 @@
-import { useEffect } from 'preact/hooks';
 import DataTable from '../components/DataTable.js';
 import Icon from '../components/Icon.js';
+import { useDocumentTitle } from './page-common.js';
 
 const stats = [
 	{ label: 'Entries', value: '128', delta: '+12 this week', tone: 'success' },
@@ -26,9 +26,7 @@ const rows = [
 ];
 
 export default function Dashboard() {
-	useEffect(() => {
-		document.title = 'Dashboard';
-	}, []);
+	useDocumentTitle('Dashboard');
 
 	return (
 		<>

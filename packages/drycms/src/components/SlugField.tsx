@@ -18,6 +18,10 @@ export interface SlugFieldProps {
   name?: string;
   id?: string;
   required?: boolean;
+  /** Overrides how the slug is derived from `value` (initial + "regenerate"
+   * button). Defaults to `slugify` (hyphen-joined); pass `slugifyIdentifier`
+   * when the slug must be a bare identifier, e.g. a content-type field name. */
+  toSlug?: (text: string) => string;
 }
 
 /** `solar:refresh-square-linear`-style regenerate icon, hand-written from the
@@ -66,6 +70,7 @@ export default function SlugField({
   name,
   id,
   required = false,
+  toSlug = slugify,
 }: SlugFieldProps) {
   const [slugTouched, setSlugTouched] = useState(false);
   const reactId = useId();
@@ -79,7 +84,7 @@ export default function SlugField({
         placeholder={placeholder}
         disabled={disabled}
         onChange={(nextValue) => {
-          onChange(nextValue, slugTouched ? slug : slugify(nextValue));
+          onChange(nextValue, slugTouched ? slug : toSlug(nextValue));
         }}
         required={required}
         error={error}
@@ -107,7 +112,7 @@ export default function SlugField({
             aria-label="Regenerate slug from title"
             onClick={() => {
               setSlugTouched(false);
-              onChange(value, slugify(value));
+              onChange(value, toSlug(value));
             }}
           >
             <RegenerateSlugIcon />

@@ -18,6 +18,7 @@ import FieldDialog from "./content-type-editor/FieldDialog.js";
 import FieldsList, {
   type SystemFieldEntry,
 } from "./content-type-editor/FieldsList.js";
+import { useDocumentTitle } from "./page-common.js";
 
 interface Props {
   id?: string;
@@ -67,13 +68,13 @@ function systemFieldsForUi(
         {
           id: "createdAt",
           label: "Created at",
-          name: "created_at",
+          name: "createdAt",
           typeLabel: "Date",
         },
         {
           id: "updatedAt",
           label: "Updated at",
-          name: "updated_at",
+          name: "updatedAt",
           typeLabel: "Date",
         },
       );
@@ -110,17 +111,28 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Snapshot of `definition` right after load/creation, before any edits -
+  // compared against the live value to detect unsaved changes so leaving
+  // the page (Cancel, back link, browser navigation) can warn first.
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  const isDirty =
+    initialSnapshot !== null &&
+    definition !== null &&
+    JSON.stringify(definition) !== initialSnapshot;
+
   useEffect(() => {
     (async () => {
       try {
         const types = await api.list();
         setAllTypes(types);
+        let loaded: ContentTypeDefinition;
         if (id) {
-          setDefinition(types.find((t) => t.id === id) ?? (await api.get(id)));
+          loaded = types.find((t) => t.id === id) ?? (await api.get(id));
         } else {
           const initialKind: ContentTypeKind =
             kind === "singleton" || kind === "component" ? kind : "collection";
-          setDefinition({
+          loaded = {
             id: crypto.randomUUID(),
             kind: initialKind,
             name: "",
@@ -129,8 +141,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             features: {},
             fields: [],
             version: 0,
-          });
+          };
         }
+        setDefinition(loaded);
+        setInitialSnapshot(JSON.stringify(loaded));
       } catch (error) {
         setLoadError(
           error instanceof Error
@@ -141,9 +155,31 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     })();
   }, [id, kind]);
 
+  useDocumentTitle(
+    isNew
+      ? "New content type"
+      : definition?.label || definition?.name || "Edit content type",
+  );
+
+  // Browser-level navigation (back/forward, refresh, closing the tab) can't
+  // be intercepted with a custom dialog - `beforeunload` only lets the
+  // browser show its own native prompt, triggered by setting `returnValue`.
   useEffect(() => {
-    document.title = isNew ? "New content type" : "Edit content type";
-  }, [isNew]);
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  /** In-app navigation away from the editor - confirms first when there are
+   * unsaved changes, via the same `ConfirmDialog` pattern as every other
+   * destructive action on this page. */
+  function requestLeave(to: string) {
+    if (isDirty) setLeaveTo(to);
+    else route(to);
+  }
 
   const dynamicOptions = useMemo(
     () => ({
@@ -244,7 +280,15 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   return (
     <>
       <div class="page-header">
-        <a role="button" href={`${path}/content-types/`} class="icon ghost">
+        <a
+          role="button"
+          href={`${path}/content-types/`}
+          class="icon ghost"
+          onClick={(event) => {
+            event.preventDefault();
+            requestLeave(`${path}/content-types`);
+          }}
+        >
           <ArrowLeftIcon />
         </a>
         <div style={{ flex: 1 }}>
@@ -263,7 +307,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <button
             type="button"
             class="outline"
-            onClick={() => route(`${path}/content-types`)}
+            onClick={() => requestLeave(`${path}/content-types`)}
           >
             Cancel
           </button>
@@ -403,6 +447,25 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      <ConfirmDialog
+        open={leaveTo !== null}
+        title="Discard unsaved changes?"
+        message={
+          <p>
+            You have unsaved changes to this {definition.kind}. Leaving now
+            will discard them.
+          </p>
+        }
+        confirmLabel="Discard changes"
+        destructive
+        onConfirm={() => {
+          const to = leaveTo!;
+          setLeaveTo(null);
+          route(to);
+        }}
+        onCancel={() => setLeaveTo(null)}
       />
     </>
   );
