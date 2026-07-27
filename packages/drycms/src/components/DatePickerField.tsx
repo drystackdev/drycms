@@ -34,6 +34,7 @@ export interface DatePickerFieldProps extends FieldProps<Date> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  required?: boolean;
   description?: string;
 }
 
@@ -65,6 +66,7 @@ export default function DatePickerField({
   disabled = false,
   name,
   id,
+  required = false,
   description,
   class: className,
   style,
@@ -89,7 +91,7 @@ export default function DatePickerField({
     const nativeFormat = time ? "YYYY-MM-DDTHH:mm" : "YYYY-MM-DD";
     return (
       <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-        <label for={fieldId}>{label}</label>
+        <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
         {description && <small>{description}</small>}
         <input
           id={fieldId}

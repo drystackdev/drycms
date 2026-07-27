@@ -10,6 +10,7 @@ export interface SelectFieldProps extends FieldProps<string | string[]> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  required?: boolean;
   description?: string;
 }
 
@@ -32,6 +33,7 @@ export default function SelectField({
   disabled = false,
   name,
   id,
+  required = false,
   description,
   class: className,
   style,
@@ -42,7 +44,7 @@ export default function SelectField({
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <label for={fieldId}>{label}</label>
+      <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
       {config.multiple ? (
         <MultiSelect

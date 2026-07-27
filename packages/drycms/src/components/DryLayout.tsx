@@ -75,6 +75,17 @@ const NAV: {
   },
 ];
 
+const CONTENT_PREFIX = `${path}/content/`;
+
+/** Content-type slugs with their own dedicated top-level nav entry (e.g.
+ * "Users" -> `/content/user`), derived from NAV so it can't drift out of
+ * sync. `ContentEntryList` uses this to skip its back button for these -
+ * they're primary destinations reached from the sidebar, not a drill-down
+ * from the generic "Content" list, so there's nothing to go "back" to. */
+export const pinnedContentTypeSlugs = new Set(
+  NAV.filter((item) => item.href.startsWith(CONTENT_PREFIX)).map((item) => item.href.slice(CONTENT_PREFIX.length)),
+);
+
 /** Whether `href` is the active nav item for `url` - an exact match, or a
  * path segment beneath it (`${href}/...`). A plain `url.startsWith(href)`
  * would also match "/content-types" against href "/content" (since one

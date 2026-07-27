@@ -114,8 +114,9 @@ export default function Popover({
           aria-haspopup={children ? "true" : "menu"}
           aria-expanded={open}
           onClick={handleTriggerClick}
+          class="icon ghost"
         >
-          {trigger ?? <MoreVerticalIcon />}
+          <MoreVerticalIcon />
         </button>
       )}
       <ul

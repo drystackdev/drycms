@@ -89,6 +89,7 @@ async function handleSave(
     definition,
     allTypes.find((t) => t.id === definition.id),
     matchingDefault?.features,
+    matchingDefault?.structureLocked,
   );
 
   // `validateContentTypeDefinition` only rules out two types sharing a

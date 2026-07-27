@@ -219,9 +219,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   );
 
   // Sourced from the CURRENTLY installed defaults (never from the loaded
-  // `definition` itself) - a drycms upgrade that newly requires a feature on
-  // an already-seeded built-in must reflect here immediately, not only after
-  // that row is next resaved. Mirrors `routes/content-types.ts`'s
+  // `definition` itself) - a drycms upgrade that newly locks/requires
+  // something on an already-seeded built-in (e.g. `aiKey` gaining
+  // `structureLocked`) must reflect here immediately, not only after that
+  // row is next resaved. Mirrors `routes/content-types.ts`'s
   // `validateSystemProtections` call, which is the actual authority.
   const matchingDefault = useMemo(
     () =>
@@ -230,6 +231,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         : undefined,
     [definition?.id],
   );
+  const structureLocked = !!matchingDefault?.structureLocked;
   const requiredFeatureKeys = useMemo(() => {
     const required = matchingDefault?.features;
     if (!required) return undefined;
@@ -411,6 +413,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setEditingField(null);
               setFieldDialogOpen(true);
             }}
+            structureLocked={structureLocked}
           />
         </legend>
         <div class="stack">
@@ -474,7 +477,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
                 d ? { ...d, features: { ...d.features, [key]: value } } : d,
               )
             }
-            disabled={definition.system}
+            disabled={structureLocked}
             requiredKeys={requiredFeatureKeys}
           />
 
@@ -483,7 +486,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               <div>
                 <h2>Built-in content type</h2>
                 <p>
-                  {`"${definition.label}" is one of the app's defaults and can't be deleted. New fields can still be added and reordered, but its locked fields are view-only and no feature can be toggled.`}
+                  {structureLocked
+                    ? `"${definition.label}" is one of the app's defaults and can't be deleted. Its structure is fully locked - no fields can be added or removed, and no feature can be toggled.`
+                    : `"${definition.label}" is one of the app's defaults and can't be deleted. New fields can still be added and reordered, but its locked fields are view-only - they can't be edited or removed.`}
                 </p>
               </div>
             </div>

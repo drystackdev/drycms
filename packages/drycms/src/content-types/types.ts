@@ -67,11 +67,16 @@ export interface ContentTypeDefinition {
   /** Optimistic-lock counter, incremented on every successful save. */
   version: number;
   /** True for the built-in defaults seeded at first boot (`user`, `menu`,
-   * `menuItem`, `seo`, `aiKey`, `role`, `permission` - see `seed.ts`).
-   * Protects the type itself from deletion and blocks un-marking it back to
-   * `false`; its `locked` fields stay frozen and `features` is entirely
-   * frozen too - no feature can be toggled on or off - see
-   * `validateSystemProtections`. New custom fields can still be added, and
-   * everything (system and custom fields alike) can still be reordered. */
+   * `menuItem` - see `seed.ts`). Protects the type itself from deletion and
+   * blocks un-marking it back to `false`; its `locked` fields and any
+   * feature already on stay required too - see `validateSystemProtections`.
+   * New fields can still be added and everything can still be reordered. */
   system?: boolean;
+  /** Only takes effect when `system` is also true. Freezes the shape
+   * entirely: no new fields can be added and no feature can be toggled at
+   * all (stricter than plain `system`, which still allows both) - the type
+   * is display-only in the schema editor. Used by `role`/`permission`/
+   * `aiKey` (see `seed.ts`); enforced in `naming.ts`'s
+   * `validateSystemProtections`. */
+  structureLocked?: boolean;
 }

@@ -4,9 +4,15 @@ import { path } from "virtual:drycms/config";
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import { toast } from "../components/Toast.js";
 import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
-import { ContentEntriesApiError, createContentEntriesApi } from "../content-types/entries-http-api.js";
+import {
+  ContentEntriesApiError,
+  createContentEntriesApi,
+} from "../content-types/entries-http-api.js";
 import type { EntryValue } from "../content-types/engine/entry-codec.js";
-import { buildEntryFieldTree, type EntryFieldNode } from "../content-types/engine/entry-tree.js";
+import {
+  buildEntryFieldTree,
+  type EntryFieldNode,
+} from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { SYSTEM_FIELD_IDS } from "../content-types/system-fields.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -23,7 +29,10 @@ interface Props {
 
 export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const { route } = useLocation();
-  const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const typesApi = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
@@ -40,10 +49,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
-  const isDirty = initialSnapshot !== null && value !== null && JSON.stringify(value) !== initialSnapshot;
+  const isDirty =
+    initialSnapshot !== null &&
+    value !== null &&
+    JSON.stringify(value) !== initialSnapshot;
 
-  const entriesApi = useMemo(() => (type ? createContentEntriesApi(`${path}/api/content`, type.name) : null), [type]);
-  const nodes: EntryFieldNode[] = useMemo(() => (type ? buildEntryFieldTree(type, allTypes) : []), [type, allTypes]);
+  const entriesApi = useMemo(
+    () =>
+      type ? createContentEntriesApi(`${path}/api/content`, type.name) : null,
+    [type],
+  );
+  const nodes: EntryFieldNode[] = useMemo(
+    () => (type ? buildEntryFieldTree(type, allTypes) : []),
+    [type, allTypes],
+  );
 
   const isSingleton = type?.kind === "singleton";
   const isNew = !isSingleton && !id;
@@ -53,14 +72,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       try {
         const types = await typesApi.list();
         setAllTypes(types);
-        const found = types.find((t) => t.name === typeSlug && t.kind !== "component");
+        const found = types.find(
+          (t) => t.name === typeSlug && t.kind !== "component",
+        );
         if (!found) {
           setLoadError(`Content type "${typeSlug}" not found.`);
           return;
         }
         setType(found);
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load content type.");
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load content type.",
+        );
       }
     })();
   }, [typeSlug]);
@@ -88,7 +113,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           setInitialSnapshot(JSON.stringify(blank));
         }
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load entry.");
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load entry.",
+        );
       }
     })();
     // `allTypes` deliberately excluded - it's only needed to resolve
@@ -97,7 +124,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, id]);
 
-  useDocumentTitle(type ? (isNew ? `New ${type.label}` : type.label) : "Content");
+  useDocumentTitle(
+    type ? (isNew ? `New ${type.label}` : type.label) : "Content",
+  );
 
   // Same `beforeunload` + confirm-before-navigating pattern as
   // `ContentTypeEditor.tsx` - see its doc comment for why browser-level
@@ -117,7 +146,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }
 
   function updateFieldValue(fieldName: string, fieldValue: unknown) {
-    setValue((current) => (current ? { ...current, [fieldName]: fieldValue } : current));
+    setValue((current) =>
+      current ? { ...current, [fieldName]: fieldValue } : current,
+    );
   }
 
   async function handleSave() {
@@ -187,9 +218,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // with "now" on a not-yet-created entry) would be misleading, so they're
   // left out of the form entirely. The List page's columns already show them.
   const isTimestampField = (node: EntryFieldNode) =>
-    node.kind === "column" && (node.fieldId === SYSTEM_FIELD_IDS.createdAt || node.fieldId === SYSTEM_FIELD_IDS.updatedAt);
-  const leftFields = nodes.filter((n) => (n.kind === "column" || n.kind === "flatten") && !isTimestampField(n));
-  const rightFields = nodes.filter((n) => n.kind === "relation" || n.kind === "component-repeat");
+    node.kind === "column" &&
+    (node.fieldId === SYSTEM_FIELD_IDS.createdAt ||
+      node.fieldId === SYSTEM_FIELD_IDS.updatedAt);
+  const leftFields = nodes.filter(
+    (n) =>
+      (n.kind === "column" || n.kind === "flatten") && !isTimestampField(n),
+  );
+  const rightFields = nodes.filter(
+    (n) => n.kind === "relation" || n.kind === "component-repeat",
+  );
 
   return (
     <>
@@ -213,7 +251,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         </div>
         <div class="row">
           {!isSingleton && (
-            <button type="button" class="outline" onClick={() => requestLeave(backTo)}>
+            <button
+              type="button"
+              class="outline"
+              onClick={() => requestLeave(backTo)}
+            >
               Cancel
             </button>
           )}
@@ -230,7 +272,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               key={node.fieldName}
               node={node}
               value={value[node.fieldName]}
-              onChange={(fieldValue) => updateFieldValue(node.fieldName, fieldValue)}
+              onChange={(fieldValue) =>
+                updateFieldValue(node.fieldName, fieldValue)
+              }
               error={fieldErrors[node.fieldName]}
               allTypes={allTypes}
             />
@@ -238,20 +282,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         </div>
 
         <div class="stack">
-          {rightFields.length > 0 && (
-            <div class="content-entry-editor-panel">
-              {rightFields.map((node) => (
-                <FieldRenderer
-                  key={node.fieldName}
-                  node={node}
-                  value={value[node.fieldName]}
-                  onChange={(fieldValue) => updateFieldValue(node.fieldName, fieldValue)}
-                  error={fieldErrors[node.fieldName]}
-                  allTypes={allTypes}
-                />
-              ))}
-            </div>
-          )}
+          {rightFields.map((node) => (
+            <FieldRenderer
+              key={node.fieldName}
+              node={node}
+              value={value[node.fieldName]}
+              onChange={(fieldValue) =>
+                updateFieldValue(node.fieldName, fieldValue)
+              }
+              error={fieldErrors[node.fieldName]}
+              allTypes={allTypes}
+            />
+          ))}
 
           {!isNew && !isSingleton && (
             <div class="content-type-editor-danger">
@@ -259,9 +301,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 <h2>Danger zone</h2>
                 <p>Delete this entry. This cannot be undone.</p>
               </div>
-              <button type="button" class="destructive" onClick={() => setShowDeleteConfirm(true)}>
-                <TrashIcon /> Delete entry
-              </button>
+              <div>
+                <button
+                  type="button"
+                  class="destructive"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <TrashIcon /> Delete entry
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -270,7 +318,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       <ConfirmDialog
         open={showDeleteConfirm}
         title="Delete this entry?"
-        message={<p>This permanently deletes the entry. This cannot be undone.</p>}
+        message={
+          <p>This permanently deletes the entry. This cannot be undone.</p>
+        }
         confirmLabel="Delete"
         destructive
         busy={deleting}
@@ -281,7 +331,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       <ConfirmDialog
         open={leaveTo !== null}
         title="Discard unsaved changes?"
-        message={<p>You have unsaved changes to this entry. Leaving now will discard them.</p>}
+        message={
+          <p>
+            You have unsaved changes to this entry. Leaving now will discard
+            them.
+          </p>
+        }
         confirmLabel="Discard changes"
         destructive
         onConfirm={() => {

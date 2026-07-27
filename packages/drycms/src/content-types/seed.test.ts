@@ -34,6 +34,16 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("permission").kind).toBe("collection");
   });
 
+  it("structureLocked: on for aiKey/role/permission, off for user/menu/menuItem/seo", () => {
+    expect(byName("aiKey").structureLocked).toBe(true);
+    expect(byName("role").structureLocked).toBe(true);
+    expect(byName("permission").structureLocked).toBe(true);
+    expect(byName("user").structureLocked).toBeFalsy();
+    expect(byName("menu").structureLocked).toBeFalsy();
+    expect(byName("menuItem").structureLocked).toBeFalsy();
+    expect(byName("seo").structureLocked).toBeFalsy();
+  });
+
   it("gives every type and field a stable, unique id", () => {
     const typeIds = defs.map((t) => t.id);
     expect(new Set(typeIds).size).toBe(typeIds.length);

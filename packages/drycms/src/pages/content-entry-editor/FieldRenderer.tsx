@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { path } from "virtual:drycms/config";
-import { PlusIcon, TrashIcon, XIcon } from "../../components/icons.js";
+import { PlusIcon, TrashIcon } from "../../components/icons.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import {
@@ -30,9 +30,22 @@ export interface FieldRendererProps {
  * `component-repeat` -> the bespoke controls below (`field-registry.ts` has
  * no `Editor` for either type - they're schema-definition-only there).
  */
-export default function FieldRenderer({ node, value, onChange, error, allTypes }: FieldRendererProps) {
+export default function FieldRenderer({
+  node,
+  value,
+  onChange,
+  error,
+  allTypes,
+}: FieldRendererProps) {
   if (node.kind === "column") {
-    return <ScalarField node={node} value={value} onChange={onChange} error={error} />;
+    return (
+      <ScalarField
+        node={node}
+        value={value}
+        onChange={onChange}
+        error={error}
+      />
+    );
   }
 
   if (node.kind === "flatten") {
@@ -40,13 +53,16 @@ export default function FieldRenderer({ node, value, onChange, error, allTypes }
     return (
       <fieldset>
         <legend>{node.label}</legend>
+        {node.description && <small>{node.description}</small>}
         <div class="stack">
           {node.children.map((child) => (
             <FieldRenderer
               key={child.fieldName}
               node={child}
               value={nested[child.fieldName]}
-              onChange={(childValue) => onChange({ ...nested, [child.fieldName]: childValue })}
+              onChange={(childValue) =>
+                onChange({ ...nested, [child.fieldName]: childValue })
+              }
               allTypes={allTypes}
             />
           ))}
@@ -56,10 +72,24 @@ export default function FieldRenderer({ node, value, onChange, error, allTypes }
   }
 
   if (node.kind === "relation") {
-    return <RelationField node={node} value={value} onChange={onChange} allTypes={allTypes} />;
+    return (
+      <RelationField
+        node={node}
+        value={value}
+        onChange={onChange}
+        allTypes={allTypes}
+      />
+    );
   }
 
-  return <ComponentRepeatField node={node} value={(value as EntryValue[]) ?? []} onChange={onChange} allTypes={allTypes} />;
+  return (
+    <ComponentRepeatField
+      node={node}
+      value={(value as EntryValue[]) ?? []}
+      onChange={onChange}
+      allTypes={allTypes}
+    />
+  );
 }
 
 function RelationField({
@@ -87,11 +117,18 @@ function RelationField({
   const [labels, setLabels] = useState<Record<string, string>>({});
 
   const entriesApi = useMemo(
-    () => (targetType ? createContentEntriesApi(`${path}/api/content`, targetType.name) : null),
+    () =>
+      targetType
+        ? createContentEntriesApi(`${path}/api/content`, targetType.name)
+        : null,
     [targetType],
   );
   const labelField = useMemo(
-    () => (targetType ? flattenQueryableColumns(buildEntryFieldTree(targetType, allTypes))[0]?.fieldName : undefined),
+    () =>
+      targetType
+        ? flattenQueryableColumns(buildEntryFieldTree(targetType, allTypes))[0]
+            ?.fieldName
+        : undefined,
     [targetType, allTypes],
   );
 
@@ -103,7 +140,10 @@ function RelationField({
       missing.map((id) =>
         entriesApi
           .get(id)
-          .then((entry): [string, string] => [id, labelField ? String(entry.value[labelField] ?? id) : id])
+          .then((entry): [string, string] => [
+            id,
+            labelField ? String(entry.value[labelField] ?? id) : id,
+          ])
           .catch((): [string, string] => [id, id]),
       ),
     ).then((pairs) => {
@@ -126,26 +166,25 @@ function RelationField({
     );
   }
 
-  function removeId(id: string) {
-    onChange(multiple ? selectedIds.filter((existing) => existing !== id) : null);
-  }
-
   return (
     <div class="field entry-relation-field">
       <label>{node.label}</label>
-      <div class="entry-relation-chips">
-        {selectedIds.length === 0 && <span class="hint">None selected.</span>}
-        {selectedIds.map((id) => (
-          <span key={id} class="badge outline entry-relation-chip">
-            {labels[id] ?? "…"}
-            <button type="button" class="ghost icon sm" aria-label={`Remove ${labels[id] ?? id}`} onClick={() => removeId(id)}>
-              <XIcon />
-            </button>
-          </span>
-        ))}
-      </div>
-      <button type="button" class="outline sm" onClick={() => setDialogOpen(true)}>
-        Choose {targetType.label}
+      {node.description && <small>{node.description}</small>}
+      <button
+        type="button"
+        class="entry-relation-card"
+        aria-haspopup="dialog"
+        onClick={() => setDialogOpen(true)}
+      >
+        {selectedIds.length === 0 ? (
+          <span class="hint">Click to choose {targetType.label}.</span>
+        ) : (
+          <ul class="entry-relation-card-list">
+            {selectedIds.map((id) => (
+              <li key={id}>{labels[id] ?? "..."}</li>
+            ))}
+          </ul>
+        )}
       </button>
 
       <RefPickerDialog
@@ -177,14 +216,20 @@ function ComponentRepeatField({
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const summaryField = node.itemFields.find((f) => f.kind === "column")?.fieldName;
+  const summaryField = node.itemFields.find(
+    (f) => f.kind === "column",
+  )?.fieldName;
 
   function removeItem(index: number) {
     onChange(value.filter((_, i) => i !== index));
   }
 
   function handleSave(item: EntryValue) {
-    onChange(editingIndex === null ? [...value, item] : value.map((existing, i) => (i === editingIndex ? item : existing)));
+    onChange(
+      editingIndex === null
+        ? [...value, item]
+        : value.map((existing, i) => (i === editingIndex ? item : existing)),
+    );
     setDialogOpen(false);
     setEditingIndex(null);
   }
@@ -192,6 +237,7 @@ function ComponentRepeatField({
   return (
     <div class="field entry-component-repeat">
       <label>{node.label}</label>
+      {node.description && <small>{node.description}</small>}
       <ul class="entry-component-repeat-list">
         {value.length === 0 && <li class="hint">No items yet.</li>}
         {value.map((item, index) => (
@@ -205,9 +251,16 @@ function ComponentRepeatField({
                 setDialogOpen(true);
               }}
             >
-              {summaryField ? String(item[summaryField] ?? `Item ${index + 1}`) : `Item ${index + 1}`}
+              {summaryField
+                ? String(item[summaryField] ?? `Item ${index + 1}`)
+                : `Item ${index + 1}`}
             </button>
-            <button type="button" class="ghost icon sm" aria-label="Remove item" onClick={() => removeItem(index)}>
+            <button
+              type="button"
+              class="ghost icon sm"
+              aria-label="Remove item"
+              onClick={() => removeItem(index)}
+            >
               <TrashIcon />
             </button>
           </li>
@@ -215,7 +268,7 @@ function ComponentRepeatField({
       </ul>
       <button
         type="button"
-        class="outline sm"
+        class="outline"
         onClick={() => {
           setEditingIndex(null);
           setDialogOpen(true);
@@ -226,9 +279,13 @@ function ComponentRepeatField({
 
       <ComponentItemDialog
         open={dialogOpen}
-        title={editingIndex === null ? `Add ${node.label}` : `Edit ${node.label}`}
+        title={
+          editingIndex === null ? `Add ${node.label}` : `Edit ${node.label}`
+        }
         itemFields={node.itemFields}
-        initialValue={editingIndex !== null ? (value[editingIndex] ?? null) : null}
+        initialValue={
+          editingIndex !== null ? (value[editingIndex] ?? null) : null
+        }
         allTypes={allTypes}
         onCancel={() => {
           setDialogOpen(false);

@@ -15,6 +15,7 @@ export interface EntryColumnNode {
   fieldId: string;
   fieldName: string;
   label: string;
+  description?: string;
   columnName: string;
   fieldType: string;
   fieldConfig: unknown;
@@ -27,6 +28,7 @@ export interface EntryColumnNode {
 export interface EntryFlattenNode {
   fieldName: string;
   label: string;
+  description?: string;
   kind: "flatten";
   children: EntryFieldNode[];
 }
@@ -36,6 +38,7 @@ export interface EntryComponentRepeatNode {
   kind: "component-repeat";
   fieldName: string;
   label: string;
+  description?: string;
   tableName: string;
   itemFields: EntryFieldNode[];
 }
@@ -47,6 +50,7 @@ export interface EntryRelationNode {
   kind: "relation";
   fieldName: string;
   label: string;
+  description?: string;
   cardinality: RelationCardinality;
   targetTypeId: string;
   columnName?: string;
@@ -80,6 +84,7 @@ function buildNodes(
           kind: "relation",
           fieldName: field.name,
           label: field.label,
+          description: field.description,
           cardinality: config.cardinality,
           targetTypeId: config.target,
           columnName: column.name,
@@ -90,6 +95,7 @@ function buildNodes(
         kind: "relation",
         fieldName: field.name,
         label: field.label,
+        description: field.description,
         cardinality: config.cardinality,
         targetTypeId: config.target,
         tableName: childRef.tableName,
@@ -108,6 +114,7 @@ function buildNodes(
           kind: "component-repeat",
           fieldName: field.name,
           label: field.label,
+          description: field.description,
           tableName: childRef.tableName,
           itemFields: buildNodes(component.fields, childRef.node, componentsById),
         };
@@ -116,6 +123,7 @@ function buildNodes(
         kind: "flatten",
         fieldName: field.name,
         label: field.label,
+        description: field.description,
         children: buildNodes(component.fields, tableNode, componentsById),
       };
     }
@@ -129,6 +137,7 @@ function buildNodes(
       fieldId: field.id,
       fieldName: field.name,
       label: field.label,
+      description: field.description,
       columnName: column.name,
       validation: field.validation,
       default: field.default,
@@ -151,19 +160,28 @@ export interface QueryableColumn {
   fieldConfig: unknown;
 }
 
+/** `password`/`secretkey` columns hold a one-way hash or ciphertext, never
+ * round-tripped to the client as a real value (see `entry-codec.ts`'s
+ * `MASKED_FIELD_TYPES`) - useless, and misleading, as a List-page column,
+ * sort key, search target, or relation-picker display field, so
+ * `flattenQueryableColumns` excludes them same as it excludes relations. */
+const UNQUERYABLE_FIELD_TYPES = new Set(["password", "secretkey"]);
+
 /**
  * Every `column` field, flattened into one list regardless of `flatten`
  * nesting - exactly the set of fields a List page's table can show a plain
  * column for, sort by, or search across. `relation`/`component-repeat`
  * fields are deliberately excluded: they're multi-valued/child-table-backed,
  * not a single column a `WHERE`/`ORDER BY` can target directly, and the List
- * page renders them as a summary instead (see `status/content.md`).
+ * page renders them as a summary instead (see `status/content.md`). Masked
+ * (`password`/`secretkey`) columns are excluded too, for the reasons above.
  */
 export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): QueryableColumn[] {
   const out: QueryableColumn[] = [];
   for (const node of nodes) {
     const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
     if (node.kind === "column") {
+      if (UNQUERYABLE_FIELD_TYPES.has(node.fieldType)) continue;
       out.push({
         fieldName,
         columnName: node.columnName,

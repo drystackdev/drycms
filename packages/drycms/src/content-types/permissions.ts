@@ -5,8 +5,8 @@ import type { ContentTypeDefinition } from "./types.js";
  * A deliberate, narrow exception to the "schema-definition only" boundary
  * documented in `engine/types.ts`: raw row-level SQL for exactly the `role`
  * and `permission` tables (see `status/role-permission.md`), not a general
- * row-CRUD feature. `role`/`permission` are `system: true` (see `seed.ts`),
- * so their table/column names below can never change.
+ * row-CRUD feature. `role`/`permission` are `system: true` + `structureLocked:
+ * true` (see `seed.ts`), so their table/column names below can never change.
  */
 
 /** Upserts a `permission` row for a saved collection/singleton, keyed by

@@ -59,7 +59,17 @@ describe("flattenQueryableColumns", () => {
     const nodes = buildEntryFieldTree(user, allTypes);
     const columns = flattenQueryableColumns(nodes);
 
-    expect(columns.map((c) => c.fieldName)).toEqual(["createdAt", "updatedAt", "name", "email", "password"]);
+    expect(columns.map((c) => c.fieldName)).toEqual(["createdAt", "updatedAt", "name", "email"]);
     expect(columns.find((c) => c.fieldName === "name")?.columnName).toBe("name");
+  });
+
+  it("excludes password/secretkey columns - masked values aren't a usable List column, sort key, or search target", () => {
+    const user = allTypes.find((t) => t.name === "user")!;
+    const userColumns = flattenQueryableColumns(buildEntryFieldTree(user, allTypes));
+    expect(userColumns.find((c) => c.fieldName === "password")).toBeUndefined();
+
+    const aiKey = allTypes.find((t) => t.name === "aiKey")!;
+    const aiKeyColumns = flattenQueryableColumns(buildEntryFieldTree(aiKey, allTypes));
+    expect(aiKeyColumns.find((c) => c.fieldName === "key")).toBeUndefined();
   });
 });

@@ -154,34 +154,43 @@ const LOCKABLE_FEATURES = [
  * Guards a `system` content type's built-in shape (see `seed.ts`) against
  * deletion-shaped edits: un-marking it back to a plain (non-`system`) type,
  * removing OR editing a field the stored definition has `locked: true` on,
- * changing any `features` flag at all, or renaming its Title/Table Name/
- * Description - those identify the type as the specific built-in the rest of
- * the app (routes, seed re-runs matching by name) expects to find. A locked
- * field is fully frozen: name/label/type/description/config/validation/
- * default must all stay byte-for-byte what's stored - only its position in
- * `fields[]` may change (reordering is still free). Adding brand-new fields,
- * reordering (system and custom fields alike), and `livePreviewUrl` are left
- * alone.
+ * turning off a feature the SEED itself requires, or renaming its Title/
+ * Table Name/Description - those identify the type as the specific built-in
+ * the rest of the app (routes, seed re-runs matching by name) expects to
+ * find. A locked field is fully frozen: name/label/type/description/config/
+ * validation/default must all stay byte-for-byte what's stored - only its
+ * position in `fields[]` may change (reordering is still free). Everything
+ * else - adding brand-new fields, reordering, `livePreviewUrl`, and toggling
+ * any feature the seed itself DIDN'T turn on (e.g. `user` opting into
+ * `slug`) - is left alone, in both directions.
  *
  * `requiredFeatures` must be the matching default definition's own
  * `features` (from `defaultContentTypeDefinitions()`, looked up by the
  * caller - `naming.ts` can't import `seed.ts` itself without a circular
  * import, since `seed.ts` already depends on `migration.ts`, which depends
- * on this file). It only feeds the friendlier, more specific error message
- * below for the common case (turning off a feature the seed requires) -
- * the general "features are frozen" check right after it catches every
- * other feature change regardless.
+ * on this file). Deliberately NOT `existing.features`: unlike `locked`
+ * (baked into each field forever once seeded), a feature flag carries no
+ * persisted "the seed required this" marker of its own - `existing.features`
+ * is just whatever's currently on, including anything the admin opted into
+ * afterward, which must stay freely revertible.
  *
  * Checks field/label/name/description against `existing` (the version
  * already in storage), never against `next`'s own `locked`/`system` claims -
  * a single request can't strip `locked` off a field and remove it in the
  * same save, since the removal is caught against what was actually stored
  * beforehand.
+ *
+ * `structureLocked` is, like `requiredFeatures`, sourced from the matching
+ * default definition (never from `existing.structureLocked`): a drycms
+ * upgrade that newly marks an already-seeded default (e.g. `aiKey`)
+ * as structure-locked must take effect on installs that seeded it before
+ * that flag existed, whose stored row will never have it set.
  */
 export function validateSystemProtections(
   next: ContentTypeDefinition,
   existing: ContentTypeDefinition | undefined,
   requiredFeatures: ContentTypeFeatures | undefined,
+  structureLocked?: boolean,
 ): void {
   if (!existing?.system) return;
 
@@ -240,13 +249,21 @@ export function validateSystemProtections(
     }
   }
 
-  if (
-    JSON.stringify(next.features ?? {}) !==
-    JSON.stringify(existing.features ?? {})
-  ) {
-    throw new NamingError(
-      `"${existing.label}"'s features are set by the system and can't be changed.`,
-    );
+  if (structureLocked) {
+    const existingFieldIds = new Set(existing.fields.map((f) => f.id));
+    if (next.fields.some((f) => !existingFieldIds.has(f.id))) {
+      throw new NamingError(
+        `"${existing.label}"'s structure is locked - fields can't be added.`,
+      );
+    }
+    if (
+      JSON.stringify(next.features ?? {}) !==
+      JSON.stringify(existing.features ?? {})
+    ) {
+      throw new NamingError(
+        `"${existing.label}"'s structure is locked - features can't be changed.`,
+      );
+    }
   }
 }
 

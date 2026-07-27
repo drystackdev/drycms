@@ -11,6 +11,7 @@ export interface NumberFieldProps extends FieldProps<number> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  required?: boolean;
   description?: string;
 }
 
@@ -27,6 +28,7 @@ export default function NumberField({
   disabled = false,
   name,
   id,
+  required = false,
   description,
   class: className,
   style,
@@ -43,7 +45,7 @@ export default function NumberField({
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <label for={fieldId}>{label}</label>
+      <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
       <div class="stepper">
         <button

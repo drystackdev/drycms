@@ -53,12 +53,14 @@ function lockedField(
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
  * (credentials for third-party AI providers), and `role`/`permission`
  * collections (role-based access control - see `status/role-permission.md`).
- * All seven are `system: true` (can't be deleted), every declared field is
+ * All seven are `system: true` (can't be deleted) and every declared field is
  * `locked: true` (can't be removed or edited - frozen view-only in the
- * schema editor), and `features` is entirely frozen - no feature can be
- * toggled on or off. New custom fields can still be added, and everything
- * (system and custom fields alike) can still be reordered; see `naming.ts`'s
- * `validateSystemProtections` for the enforcement.
+ * schema editor) - new custom fields can still be added, and everything can
+ * still be reordered; see `naming.ts`'s `validateSystemProtections` for the
+ * enforcement. `aiKey`,
+ * `role`, and `permission` are additionally `structureLocked: true` - no new
+ * fields can be added and no feature can be toggled at all; they're
+ * display-only in the schema editor.
  * `createdAt`/`updatedAt` ride on `features.timestamps` instead of being
  * declared fields - same protection, since a `system` type's already-on
  * features can't be turned off either.
@@ -284,6 +286,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     ],
     version: 0,
     system: true,
+    structureLocked: true,
   };
 
   const role: ContentTypeDefinition = {
@@ -324,6 +327,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     ],
     version: 0,
     system: true,
+    structureLocked: true,
   };
 
   const permission: ContentTypeDefinition = {
@@ -355,6 +359,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     ],
     version: 0,
     system: true,
+    structureLocked: true,
   };
 
   return [menuItem, seo, user, menu, aiKey, role, permission];

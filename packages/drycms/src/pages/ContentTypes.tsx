@@ -95,97 +95,94 @@ export default function ContentTypes() {
 
       {loadError ? (
         <span class="error">{loadError}</span>
-      ) : definitions === null ? (
-        <div class="empty">
-          <progress class="circle" />
-          <p>Loading content types...</p>
-        </div>
       ) : (
-        <div class="content-types-grid">
-          <ul class="content-types-nav">
-            {GROUPS.map(({ kind, label, icon }) => (
-              <li key={kind}>
-                <button
-                  type="button"
-                  aria-current={kind === selectedKind ? "page" : undefined}
-                  onClick={() => setSelectedKind(kind)}
-                >
-                  <Icon name={icon} />
-                  <span>{label}</span>
-                  <span class="spacer" />
-                  <span class="badge outline">{countByKind(kind)}</span>
-                </button>
+        definitions && (
+          <div class="content-types-grid">
+            <ul class="content-types-nav">
+              {GROUPS.map(({ kind, label, icon }) => (
+                <li key={kind}>
+                  <button
+                    type="button"
+                    aria-current={kind === selectedKind ? "page" : undefined}
+                    onClick={() => setSelectedKind(kind)}
+                  >
+                    <Icon name={icon} />
+                    <span>{label}</span>
+                    <span class="spacer" />
+                    <span class="badge outline">{countByKind(kind)}</span>
+                  </button>
+                </li>
+              ))}
+              <li>
+                <hr />
               </li>
-            ))}
-            <li>
-              <hr />
-            </li>
-            <li>
-              <CheckField
-                role="switch"
-                label="Show System Types"
-                value={showSystemTypes}
-                onChange={setShowSystemTypes}
-                description="Show content types that are used internally by DryCMS."
-              />
-            </li>
-          </ul>
+              <li>
+                <CheckField
+                  role="switch"
+                  label="Show System Types"
+                  value={showSystemTypes}
+                  onChange={setShowSystemTypes}
+                  description="Show content types that are used internally by DryCMS."
+                />
+              </li>
+            </ul>
 
-          <div class="content-types-panel">
-            <DataTable
-              columns={[
-                {
-                  key: "label",
-                  label: "Name",
-                  sortable: true,
-                  render: (_value, row) => (
-                    <div class="stack" style={{ gap: "0.125rem" }}>
-                      <span>
-                        {row.label}
-                        {row.system && (
-                          <span
-                            class="badge sm outline"
-                            style={{ marginLeft: "0.5rem" }}
-                          >
-                            System
-                          </span>
-                        )}
-                      </span>
-                      <span class="hint">
-                        {row.description || <i>No description</i>}
-                      </span>
-                    </div>
-                  ),
-                },
-                {
-                  key: "fieldCount",
-                  label: "Fields",
-                  numeric: true,
-                  sortable: true,
-                  render: (_v, row) => (
-                    <span class="badge outline">{row.fieldCount}</span>
-                  ),
-                },
-              ]}
-              rows={rows}
-              rowKey={(row) => row.id}
-              emptyLabel="None yet."
-              onRowClick={(row) =>
-                route(`${path}/content-types/${row.id}/edit`)
-              }
-              actions={
-                <button
-                  type="button"
-                  onClick={() =>
-                    route(`${path}/content-types/new/${selectedKind}`)
-                  }
-                >
-                  + Add {selectedGroup.label}
-                </button>
-              }
-            />
+            <div class="content-types-panel">
+              <DataTable
+                columns={[
+                  {
+                    key: "label",
+                    label: "Name",
+                    sortable: true,
+                    render: (_value, row) => (
+                      <div class="stack" style={{ gap: "0.125rem" }}>
+                        <span>
+                          {row.label}
+                          {row.system && (
+                            <span
+                              class="badge sm outline"
+                              style={{ marginLeft: "0.5rem" }}
+                            >
+                              System
+                            </span>
+                          )}
+                        </span>
+                        <span class="hint">
+                          {row.description || <i>No description</i>}
+                        </span>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "fieldCount",
+                    label: "Fields",
+                    numeric: true,
+                    sortable: true,
+                    render: (_v, row) => (
+                      <span class="badge outline">{row.fieldCount}</span>
+                    ),
+                  },
+                ]}
+                rows={rows}
+                rowKey={(row) => row.id}
+                emptyLabel="None yet."
+                onRowClick={(row) =>
+                  route(`${path}/content-types/${row.id}/edit`)
+                }
+                actions={
+                  <button
+                    type="button"
+                    onClick={() =>
+                      route(`${path}/content-types/new/${selectedKind}`)
+                    }
+                  >
+                    + Add {selectedGroup.label}
+                  </button>
+                }
+              />
+            </div>
           </div>
-        </div>
+        )
       )}
     </>
   );

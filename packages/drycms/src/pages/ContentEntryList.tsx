@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
+import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { ArrowLeftIcon, PlusIcon } from "../components/icons.js";
 import { flattenQueryableColumns, buildEntryFieldTree } from "../content-types/engine/entry-tree.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
@@ -120,8 +121,9 @@ function ContentEntryListCollection({
     };
   }, [entriesApi, page, sort, search, searchableFields]);
 
+  const isPinned = pinnedContentTypeSlugs.has(type.name);
+
   const columns: DataTableColumn<Row>[] = [
-    { key: "id", label: "ID", sortable: false },
     ...queryableColumns.map(
       (column): DataTableColumn<Row> => ({
         key: column.fieldName,
@@ -135,9 +137,11 @@ function ContentEntryListCollection({
   return (
     <>
       <div class="page-header">
-        <a role="button" href={`${path}/content`} class="icon ghost">
-          <ArrowLeftIcon />
-        </a>
+        {!isPinned && (
+          <a role="button" href={`${path}/content`} class="icon ghost">
+            <ArrowLeftIcon />
+          </a>
+        )}
         <div style={{ flex: 1 }}>
           <h1>{type.label}</h1>
           <p>{type.description || "Entries in this collection."}</p>

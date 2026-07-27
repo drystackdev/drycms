@@ -92,7 +92,7 @@ const NO_COLUMN_TOGGLE_KEY = "datatable:unused-column-toggle";
 /** At most this many columns can be visible at once - showing more starts
  * crowding the table, so past this the picker just disables the rest until
  * one is unchecked first. */
-const MAX_VISIBLE_COLUMNS = 5;
+const MAX_VISIBLE_COLUMNS = 7;
 
 /**
  * Sortable, filterable, paginated table. Renders plain `<table>` markup so the
@@ -245,7 +245,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
             </Popover>
           )}
           <span class="spacer" />
-          <small>{serverQuery?.loading ? "Loading…" : `${totalRows} of ${serverQuery ? serverQuery.total : rows.length}`}</small>
+          <small>{serverQuery?.loading ? "Loading..." : `${totalRows} of ${serverQuery ? serverQuery.total : rows.length}`}</small>
           {actions}
         </div>
       )}

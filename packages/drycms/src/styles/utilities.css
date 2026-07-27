@@ -104,12 +104,19 @@
       justify-content: center;
       align-items: center;
     }
+    
+    .action {
+      transition: background-color 120ms ease;
+      &:hover {
+        background-color: var(--dry-accent);
+      }
+    }
 
-    .w-full{
+    .w-full {
       width: 100%;
     }
-    
-    .h-full{
+
+    .h-full {
       height: 100%;
     }
   }

@@ -32,7 +32,7 @@ function isMaskedValue(value: unknown): value is MaskedValue {
  * following `SecretKeyField`'s "blank means keep the current value" pattern.
  */
 export default function ScalarField({ node, value, onChange, error }: Props) {
-  const { fieldType, label, validation } = node;
+  const { fieldType, label, description, validation } = node;
   const config = (node.fieldConfig ?? {}) as Record<string, unknown>;
   // Called unconditionally (rules of hooks) even though only the `image`
   // branch below actually uses it.
@@ -46,6 +46,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
           {label}
           {validation.required && <span class="required-asterisk">*</span>}
         </label>
+        {description && <small>{description}</small>}
         <input
           type="password"
           value={typeof value === "string" ? value : ""}
@@ -64,9 +65,11 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <SecretKeyField
         label={label}
+        description={description}
         value={typeof value === "string" ? value : ""}
         onChange={onChange}
         hasExistingValue={masked.hasExisting}
+        required={!!validation.required}
         error={!!error}
         helperText={error}
       />
@@ -77,6 +80,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <TextField
         label={label}
+        description={description}
         value={typeof value === "string" ? value : ""}
         onChange={onChange}
         multiline={!!config.multiline}
@@ -92,11 +96,13 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <NumberField
         label={label}
+        description={description}
         value={typeof value === "number" ? value : 0}
         onChange={onChange}
         min={validation.min as number | undefined}
         max={validation.max as number | undefined}
         step={(config.step as number | undefined) ?? 1}
+        required={!!validation.required}
         error={!!error}
         helperText={error}
       />
@@ -107,6 +113,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <CheckField
         label={label}
+        description={description}
         value={typeof value === "boolean" ? value : false}
         onChange={onChange}
         role={config.ui === "switch" ? "switch" : "checkbox"}
@@ -121,12 +128,14 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <DatePickerField
         label={label}
+        description={description}
         value={dateValue}
         onChange={onChange}
         mode={config.mode as DatePickerMode | undefined}
         time={!!config.time}
         min={validation.min as Date | undefined}
         max={validation.max as Date | undefined}
+        required={!!validation.required}
         error={!!error}
         helperText={error}
       />
@@ -137,9 +146,11 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <ImageField
         label={label}
+        description={description}
         value={typeof value === "string" ? value : ""}
         onChange={onChange}
         source={imageSource}
+        required={!!validation.required}
         error={!!error}
         helperText={error}
       />
@@ -151,9 +162,11 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
     return (
       <SelectField
         label={label}
+        description={description}
         value={(value as string | string[] | undefined) ?? (selectConfig.multiple ? [] : "")}
         onChange={onChange}
         config={selectConfig}
+        required={!!validation.required}
         error={!!error}
         helperText={error}
       />

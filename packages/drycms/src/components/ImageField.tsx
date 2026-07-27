@@ -13,6 +13,7 @@ export interface ImageFieldProps extends FieldProps<string> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  required?: boolean;
   description?: string;
 }
 
@@ -44,6 +45,7 @@ export default function ImageField({
   disabled = false,
   name,
   id,
+  required = false,
   description,
   class: className,
   style,
@@ -91,7 +93,7 @@ export default function ImageField({
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <label for={fieldId}>{label}</label>
+      <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
       <div class="image-field-box">
         {entry ? (
