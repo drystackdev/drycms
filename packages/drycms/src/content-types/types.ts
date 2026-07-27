@@ -18,6 +18,13 @@ export interface FieldDefinition {
   config: unknown;
   validation: FieldValidation;
   default?: unknown;
+  /** Explicit position among this type's other custom fields - always kept
+   * equal to this field's index in `fields[]` (the array itself stays the
+   * real source of order; this is just a durable, explicit mirror of it, so
+   * consumers don't have to rely on array position alone). Normalized
+   * server-side on every save via `normalizeFieldOrder()` in `naming.ts`,
+   * regardless of what a client submits - see `routes/content-types.ts`. */
+  order: number;
   /** True for fields that shipped as part of a `system` content type's
    * default shape (see `seed.ts`) - can't be removed, though it can still be
    * reordered or edited. Enforced server-side against the stored (not
@@ -35,6 +42,11 @@ export interface ContentTypeFeatures {
   /** Flattens the built-in `seo` component's fields (Title/Description/Image
    * - see `seed.ts`) in as `seo_metaTitle`/`seo_description`/`seo_image`. */
   seo?: boolean;
+  /** Adds a system `sortIndex` column (see `system-fields.ts`) so this
+   * collection's entries can be manually drag-reordered, independent of the
+   * `FieldDefinition.order` mirror of a content TYPE's own field order -
+   * this is about entry ROWS, not the schema's fields. `collection` only. */
+  sortable?: boolean;
 }
 
 export type ContentTypeKind = "collection" | "singleton" | "component";

@@ -62,4 +62,20 @@ describe("systemFieldsFor", () => {
     const fields = systemFieldsFor(contentType({ kind: "singleton", features: { seo: true } as never }));
     expect(fields.map((f) => f.id)).toContain(SYSTEM_FIELD_IDS.seo);
   });
+
+  it("adds no sortIndex field when the sortable feature is off", () => {
+    const fields = systemFieldsFor(contentType({ features: {} }));
+    expect(fields.map((f) => f.id)).not.toContain(SYSTEM_FIELD_IDS.sortIndex);
+  });
+
+  it("adds a sortIndex number field when the sortable feature is on", () => {
+    const fields = systemFieldsFor(contentType({ features: { sortable: true } }));
+    const sortField = fields.find((f) => f.id === SYSTEM_FIELD_IDS.sortIndex);
+    expect(sortField).toMatchObject({ name: "sortIndex", type: "number" });
+  });
+
+  it("never adds sortIndex on a singleton, even when the flag is set", () => {
+    const fields = systemFieldsFor(contentType({ kind: "singleton", features: { sortable: true } as never }));
+    expect(fields.map((f) => f.id)).not.toContain(SYSTEM_FIELD_IDS.sortIndex);
+  });
 });

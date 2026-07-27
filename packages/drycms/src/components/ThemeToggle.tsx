@@ -1,7 +1,6 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "./icons.js";
 import { useStore } from "../hooks/useStore.js";
-
-export type DryTheme = "system" | "light" | "dark";
+import { applyTheme, type DryTheme } from "./theme.js";
 
 const ORDER: DryTheme[] = ["system", "light", "dark"];
 
@@ -11,15 +10,12 @@ const LABELS: Record<DryTheme, string> = {
   dark: "Dark theme",
 };
 
-function applyTheme(theme: DryTheme) {
-  const root = document.querySelector<HTMLElement>(".dry") ?? document.body;
-  root.classList.remove("light", "dark");
-  if (theme !== "system") root.classList.add(theme);
-}
-
 /** Cycles system → light → dark, persisted via `useStore` (`drycms:store.theme`
- * in `localStorage`). The pre-mount flash is avoided separately, by
- * `app.astro`'s inline script reading the same storage before first paint. */
+ * in `localStorage`) and applied via `theme.ts`'s `applyTheme` - the same
+ * DOM logic a framework-free `[data-theme-toggle]` button uses, so a page
+ * mixing both stays in sync either way. The pre-mount flash is avoided
+ * separately, by `app.astro`'s inline script reading the same storage
+ * before first paint. */
 export default function ThemeToggle() {
   const [theme, setTheme] = useStore<DryTheme>("theme", "system");
 

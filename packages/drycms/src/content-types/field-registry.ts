@@ -3,6 +3,8 @@ import CheckField from "../components/CheckField.js";
 import DatePickerField from "../components/DatePickerField.js";
 import ImageField from "../components/ImageField.js";
 import NumberField from "../components/NumberField.js";
+import SecretKeyField from "../components/SecretKeyField.js";
+import SelectField from "../components/SelectField.js";
 import TextField from "../components/TextField.js";
 
 export type FieldShape = "column" | "flatten" | "child-table";
@@ -16,7 +18,7 @@ export interface SettingOption {
 export interface SettingDescriptor {
   key: string;
   label: string;
-  widget: "boolean" | "text" | "number" | "select";
+  widget: "boolean" | "text" | "number" | "select" | "option-list";
   /** `select` widget only. Either a fixed option list, or a marker telling
    * the "Add Field" form to populate options from the OTHER content types
    * that currently exist (`relation`'s `target`, `component`'s
@@ -200,6 +202,48 @@ export const imageFieldType: FieldTypeDefinition<string> = {
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };
 
+export interface SelectFieldConfig {
+  /** Fixed value set defined when the field itself is created - not editable
+   * per-entry, only here in the schema. Each option is a single bare string,
+   * used as both the stored value and the display label (no separate
+   * machine-value-vs-label pair to fill in). */
+  options: string[];
+  /** @default false - a single `Select`; `true` renders a `MultiSelect` and
+   * the stored value becomes a JSON-encoded array instead of a bare string. */
+  multiple: boolean;
+}
+
+export const selectFieldType: FieldTypeDefinition<string | string[]> = {
+  key: "select",
+  label: "Select",
+  shape: "column",
+  Editor: SelectField,
+  // TEXT either way: a bare option value in single mode, a JSON-encoded array
+  // of them in multiple mode.
+  sqlType: () => "TEXT",
+  serialize: (value) => (Array.isArray(value) ? JSON.stringify(value) : value),
+  deserialize: (raw) => {
+    if (typeof raw !== "string") return raw as string | string[];
+    if (raw.startsWith("[")) {
+      try {
+        return JSON.parse(raw) as string[];
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  },
+  // A controlled vocabulary of short values, not prose - excluded from FTS by
+  // default, same rationale as `date`/`image`.
+  fts: false,
+  configFields: [
+    { key: "options", label: "Options", widget: "option-list" },
+    { key: "multiple", label: "Allow multiple values", widget: "boolean" },
+  ],
+  defaultConfig: { options: [], multiple: false },
+  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+};
+
 export const passwordFieldType: FieldTypeDefinition<string> = {
   key: "password",
   label: "Password",
@@ -216,17 +260,53 @@ export const passwordFieldType: FieldTypeDefinition<string> = {
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };
 
+export type RelationCardinality = "manyToOne" | "oneToMany" | "manyToMany";
+
+export const secretKeyFieldType: FieldTypeDefinition<string> = {
+  key: "secretkey",
+  label: "Secret Key",
+  shape: "column",
+  // Unlike `password` (hashed, login-only, internal), a secret key is meant
+  // to be added freely to any collection (e.g. a third-party API key) - not
+  // `internal`. This Editor is write-only/masked (see `SecretKeyField.tsx`)
+  // and, same as `password`, isn't wired anywhere yet (no entry-CRUD UI
+  // exists). Encryption itself lives in `lib/secret-crypto.ts`'s
+  // `encryptSecret`/`decryptSecret` rather than this type's `serialize`/
+  // `deserialize` - those are synchronous, but Web Crypto (needed so this
+  // works on the D1/Workers content engine too, not just Node/Bun sqlite) is
+  // inherently async. A future entry-CRUD write/read path is expected to
+  // `await` them directly instead.
+  Editor: SecretKeyField,
+  sqlType: () => "TEXT",
+  // Never folded into FTS, regardless of the `sqlType() === 'TEXT'` default -
+  // an encrypted secret must never end up in a searchable index.
+  fts: false,
+  configFields: [],
+  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+};
+
 export interface RelationFieldConfig {
   /** Another `ContentTypeDefinition.id` (kind `'collection'`). */
   target: string;
-  cardinality: "one" | "many";
+  /**
+   * `manyToOne` (n→1): many rows here each point to one target row - stored
+   * as a plain `target_id` INTEGER column on this table (`shape: 'column'`).
+   * `oneToMany` (1→n): each target row is claimed by at most one row here -
+   * a child table like `manyToMany`'s, but its `target_id` column carries a
+   * UNIQUE constraint (see `tree.ts`'s `buildRelationChildTable`) so a target
+   * can't be claimed twice.
+   * `manyToMany` (n↔n): rows here and target rows can link freely in either
+   * direction - the same child-table shape as `oneToMany`, just without the
+   * uniqueness constraint.
+   */
+  cardinality: RelationCardinality;
 }
 
 export const relationFieldType: FieldTypeDefinition = {
   key: "relation",
   label: "Relation",
-  shape: (config) => ((config as RelationFieldConfig).cardinality === "many" ? "child-table" : "column"),
-  // Only consulted when cardinality is 'one' (resolved shape 'column') -
+  shape: (config) => ((config as RelationFieldConfig).cardinality === "manyToOne" ? "column" : "child-table"),
+  // Only consulted when cardinality is 'manyToOne' (resolved shape 'column') -
   // stores the target row's `id`.
   sqlType: () => "INTEGER",
   fts: false,
@@ -237,11 +317,13 @@ export const relationFieldType: FieldTypeDefinition = {
       label: "Cardinality",
       widget: "select",
       options: [
-        { value: "one", label: "One" },
-        { value: "many", label: "Many" },
+        { value: "manyToOne", label: "Many-to-one (n→1) – each entry links to one target" },
+        { value: "oneToMany", label: "One-to-many (1→n) – each target belongs to only one entry here" },
+        { value: "manyToMany", label: "Many-to-many (n↔n) – entries and targets can link freely" },
       ],
     },
   ],
+  defaultConfig: { target: "", cardinality: "manyToOne" },
   validationFields: [],
 };
 
@@ -269,7 +351,9 @@ export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [booleanFieldType.key]: booleanFieldType,
   [dateFieldType.key]: dateFieldType,
   [imageFieldType.key]: imageFieldType,
+  [selectFieldType.key]: selectFieldType,
   [passwordFieldType.key]: passwordFieldType,
+  [secretKeyFieldType.key]: secretKeyFieldType,
   [relationFieldType.key]: relationFieldType,
   [componentFieldType.key]: componentFieldType,
 };

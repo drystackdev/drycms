@@ -3,7 +3,7 @@ import { planMigration, planSave } from "./migration.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
 function field(overrides: Partial<FieldDefinition> = {}): FieldDefinition {
-  return { id: "f1", name: "field1", label: "Field 1", type: "text", config: {}, validation: {}, ...overrides };
+  return { id: "f1", name: "field1", label: "Field 1", type: "text", config: {}, validation: {}, order: 0, ...overrides };
 }
 
 function collection(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeDefinition {
@@ -84,13 +84,17 @@ describe("planMigration", () => {
     expect(sql(plan).some((s) => s.includes('RENAME TO "articles"'))).toBe(true);
   });
 
-  it("treats a relation flipping from one to many as a shape change, not a plain retype", () => {
+  it("treats a relation flipping from manyToOne to manyToMany as a shape change, not a plain retype", () => {
     const category = collection({ id: "cat", name: "categories" });
     const old = collection({
-      fields: [field({ id: "rel", name: "category", type: "relation", config: { target: "cat", cardinality: "one" } })],
+      fields: [
+        field({ id: "rel", name: "category", type: "relation", config: { target: "cat", cardinality: "manyToOne" } }),
+      ],
     });
     const next = collection({
-      fields: [field({ id: "rel", name: "category", type: "relation", config: { target: "cat", cardinality: "many" } })],
+      fields: [
+        field({ id: "rel", name: "category", type: "relation", config: { target: "cat", cardinality: "manyToMany" } }),
+      ],
     });
     const plan = planMigration({ target: next, oldAllTypes: [old, category], newAllTypes: [next, category] });
 
@@ -98,6 +102,25 @@ describe("planMigration", () => {
     expect(shapeChange).toBeDefined();
     // A new child table for the join is created alongside the parent's alter.
     expect(plan.tables.some((t) => t.tableName === "posts_category" && t.action === "create")).toBe(true);
+  });
+
+  it("adds a unique index on target_id when an existing manyToMany relation switches to oneToMany", () => {
+    const category = collection({ id: "cat", name: "categories" });
+    const old = collection({
+      fields: [
+        field({ id: "rel", name: "categories", type: "relation", config: { target: "cat", cardinality: "manyToMany" } }),
+      ],
+    });
+    const next = collection({
+      fields: [
+        field({ id: "rel", name: "categories", type: "relation", config: { target: "cat", cardinality: "oneToMany" } }),
+      ],
+    });
+    const plan = planMigration({ target: next, oldAllTypes: [old, category], newAllTypes: [next, category] });
+
+    const childTable = plan.tables.find((t) => t.tableName === "posts_categories");
+    expect(childTable).toBeDefined();
+    expect(sql(plan).some((s) => s.includes("CREATE UNIQUE INDEX") && s.includes("target_id"))).toBe(true);
   });
 
   it("drops the title column when the slug feature is turned off, since title is bundled with slug", () => {

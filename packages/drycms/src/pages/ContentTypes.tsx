@@ -12,6 +12,7 @@ import type {
 import { useDocumentTitle } from "./page-common.js";
 import CheckField from "../components/CheckField.js";
 import { useStore } from "../hooks/useStore.js";
+import { useParam } from "../hooks/useParam.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
@@ -40,9 +41,14 @@ export default function ContentTypes() {
     ContentTypeDefinition[] | null
   >(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selectedKind, setSelectedKind] =
-    useState<ContentTypeKind>("collection");
-  const [showSystemTypes, setShowSystemTypes] = useStore('showSystemTypes', true);
+  const [selectedKind, setSelectedKind] = useParam<ContentTypeKind>(
+    "selectedKind",
+    "collection",
+  );
+  const [showSystemTypes, setShowSystemTypes] = useStore(
+    "showSystemTypes",
+    true,
+  );
 
   useEffect(() => {
     (async () => {
@@ -59,7 +65,9 @@ export default function ContentTypes() {
   }, []);
 
   const countByKind = (kind: ContentTypeKind) =>
-    (definitions ?? []).filter((d) => d.kind === kind && (showSystemTypes || !d.system)).length;
+    (definitions ?? []).filter(
+      (d) => d.kind === kind && (showSystemTypes || !d.system),
+    ).length;
 
   const rows: Row[] = (definitions ?? [])
     .filter((d) => d.kind === selectedKind && (showSystemTypes || !d.system))
@@ -91,7 +99,7 @@ export default function ContentTypes() {
         <span class="hint">Loading…</span>
       ) : (
         <div class="content-types-grid">
-            <ul class="content-types-nav">
+          <ul class="content-types-nav">
             {GROUPS.map(({ kind, label, icon }) => (
               <li key={kind}>
                 <button
@@ -107,7 +115,7 @@ export default function ContentTypes() {
               </li>
             ))}
             <li>
-              <hr/>
+              <hr />
             </li>
             <li>
               <CheckField
@@ -132,7 +140,10 @@ export default function ContentTypes() {
                       <span>
                         {row.label}
                         {row.system && (
-                          <span class="badge sm outline" style={{ marginLeft: "0.5rem" }}>
+                          <span
+                            class="badge sm outline"
+                            style={{ marginLeft: "0.5rem" }}
+                          >
                             System
                           </span>
                         )}
@@ -148,7 +159,9 @@ export default function ContentTypes() {
                   label: "Fields",
                   numeric: true,
                   sortable: true,
-                  render: (_v, row) => <span class="badge outline">{row.fieldCount}</span>
+                  render: (_v, row) => (
+                    <span class="badge outline">{row.fieldCount}</span>
+                  ),
                 },
               ]}
               rows={rows}

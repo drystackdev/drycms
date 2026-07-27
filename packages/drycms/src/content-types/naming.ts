@@ -15,6 +15,7 @@ const RESERVED_NAMES = new Set([
   "slug",
   "draft",
   "schedule",
+  "sortindex",
   "parent_id",
   "position",
   "target_id",
@@ -111,10 +112,19 @@ export function validateContentTypeDefinition(
   }
 }
 
+/** Overwrites every field's `order` to match its current position in
+ * `fields[]` - the array is always the real source of truth for order; this
+ * makes that position an explicit, durable property instead of only ever
+ * being implicit, regardless of what a client submits. Called once, right
+ * before validating/planning a save (`routes/content-types.ts`). */
+export function normalizeFieldOrder(definition: ContentTypeDefinition): ContentTypeDefinition {
+  return { ...definition, fields: definition.fields.map((field, index) => ({ ...field, order: index })) };
+}
+
 /** Feature flags whose synthetic fields (see `system-fields.ts`) a `system`
  * content type is allowed to depend on for its default shape - only these
  * are checked against being turned back off. */
-const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo"] as const;
+const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo", "sortable"] as const;
 
 /**
  * Guards a `system` content type's built-in shape (see `seed.ts`) against

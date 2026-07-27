@@ -57,7 +57,12 @@ function systemFieldsForUi(
     );
   }
   if (definition.features?.seo) {
-    items.push({ id: "seo", label: "SEO", name: "seo", typeLabel: "Component" });
+    items.push({
+      id: "seo",
+      label: "SEO",
+      name: "seo",
+      typeLabel: "Component",
+    });
   }
   if (definition.kind === "collection") {
     if (definition.features?.draft) {
@@ -206,8 +211,18 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     [allTypes, definition?.id],
   );
 
+  // Keeps `order` an explicit mirror of each field's position in `fields[]` -
+  // the array itself stays the real source of order; the server re-normalizes
+  // this again unconditionally on save (`normalizeFieldOrder` in naming.ts),
+  // this just keeps the in-editor draft consistent before that ever happens.
+  function withNormalizedOrder(fields: FieldDefinition[]): FieldDefinition[] {
+    return fields.map((field, index) => ({ ...field, order: index }));
+  }
+
   function updateFields(fields: FieldDefinition[]) {
-    setDefinition((d) => (d ? { ...d, fields } : d));
+    setDefinition((d) =>
+      d ? { ...d, fields: withNormalizedOrder(fields) } : d,
+    );
   }
 
   function removeField(fieldId: string) {
@@ -218,7 +233,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       // rather than trusting the UI alone - the server re-checks against the
       // stored definition regardless either way (see `validateSystemProtections`).
       if (d.fields.find((f) => f.id === fieldId)?.locked) return d;
-      return { ...d, fields: d.fields.filter((f) => f.id !== fieldId) };
+      return {
+        ...d,
+        fields: withNormalizedOrder(d.fields.filter((f) => f.id !== fieldId)),
+      };
     });
   }
 
@@ -228,7 +246,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       const fields = editingField
         ? d.fields.map((f) => (f.id === editingField.id ? field : f))
         : [...d.fields, field];
-      return { ...d, fields };
+      return { ...d, fields: withNormalizedOrder(fields) };
     });
     setFieldDialogOpen(false);
   }
@@ -251,7 +269,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       }
       setPendingConfirm(null);
       toast.add({ type: "success", title: `Saved "${definition.label}".` });
-      route(`${path}/content-types`);
+      route(`${path}/content-types?selectedKind=${definition.kind}`);
     } catch (error) {
       toast.add({
         type: "error",
@@ -281,7 +299,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         type: "success",
         title: `Deleted "${definition.label || definition.name}".`,
       });
-      route(`${path}/content-types`);
+      route(`${path}/content-types?selectedKind=${definition.kind}`);
     } catch (error) {
       toast.add({
         type: "error",
@@ -296,30 +314,34 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   if (loadError) return <span class="error">{loadError}</span>;
   if (!definition) return <span class="hint">Loading…</span>;
 
+  // Back/Cancel return to the list on the tab matching this content type's
+  // kind, rather than resetting to whichever tab `selectedKind` defaults to.
+  const backTo = `${path}/content-types?selectedKind=${definition.kind}`;
+
   return (
     <>
       <div class="page-header">
         <a
           role="button"
-          href={`${path}/content-types/`}
+          href={backTo}
           class="icon ghost"
           onClick={(event) => {
             event.preventDefault();
-            requestLeave(`${path}/content-types`);
+            requestLeave(backTo);
           }}
         >
           <ArrowLeftIcon />
         </a>
         <div style={{ flex: 1 }}>
           <h1>
-            {isNew ? `New ${KIND_LABELS[definition.kind]}` : definition.label || definition.name}
-            {!isNew && (
-              <span class="badge sm outline" style={{ marginLeft: "0.5rem" }}>
-                {KIND_LABELS[definition.kind]}
-              </span>
-            )}
+            {isNew
+              ? `New ${KIND_LABELS[definition.kind]}`
+              : definition.label || definition.name}
           </h1>
           <p>
+            <span class="badge sm outline" style={{ marginRight: "0.5rem" }}>
+              {KIND_LABELS[definition.kind]}
+            </span>
             {definition.kind === "component"
               ? "Reusable field group, embeddable in other content types."
               : "Define the fields, data types, and structure used to store content for this content type."}
@@ -329,7 +351,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <button
             type="button"
             class="outline"
-            onClick={() => requestLeave(`${path}/content-types`)}
+            onClick={() => requestLeave(backTo)}
           >
             Cancel
           </button>
@@ -425,8 +447,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               <div>
                 <h2>Built-in content type</h2>
                 <p>
-                  "{definition.label}" is one of the app's defaults and can't
-                  be deleted. Fields can still be added and reordered, but its
+                  "{definition.label}" is one of the app's defaults and can't be
+                  deleted. Fields can still be added and reordered, but its
                   locked fields can't be removed.
                 </p>
               </div>
@@ -515,8 +537,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         title="Discard unsaved changes?"
         message={
           <p>
-            You have unsaved changes to this {definition.kind}. Leaving now
-            will discard them.
+            You have unsaved changes to this {definition.kind}. Leaving now will
+            discard them.
           </p>
         }
         confirmLabel="Discard changes"

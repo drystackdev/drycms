@@ -5,7 +5,12 @@ import { content } from "virtual:drycms/content-config";
 import { createContentEngineAdapter } from "../content-types/engine/index.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../content-types/engine/types.js";
 import type { SavePlan } from "../content-types/migration.js";
-import { NamingError, validateContentTypeDefinition, validateSystemProtections } from "../content-types/naming.js";
+import {
+  NamingError,
+  normalizeFieldOrder,
+  validateContentTypeDefinition,
+  validateSystemProtections,
+} from "../content-types/naming.js";
 import { defaultContentTypeDefinitions } from "../content-types/seed.js";
 import { collectTableNames, resolveTableTree } from "../content-types/tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -76,6 +81,7 @@ async function handleSave(
   definition: ContentTypeDefinition,
   confirm: boolean,
 ): Promise<Response> {
+  definition = normalizeFieldOrder(definition);
   const allTypes = await adapter.listContentTypes();
   validateContentTypeDefinition(definition, allTypes);
   validateSystemProtections(

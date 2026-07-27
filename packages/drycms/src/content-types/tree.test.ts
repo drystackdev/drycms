@@ -3,7 +3,7 @@ import { findDependents, resolveTableTree } from "./tree.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
 function field(overrides: Partial<FieldDefinition> = {}): FieldDefinition {
-  return { id: "f1", name: "field1", label: "Field 1", type: "text", config: {}, validation: {}, ...overrides };
+  return { id: "f1", name: "field1", label: "Field 1", type: "text", config: {}, validation: {}, order: 0, ...overrides };
 }
 
 function collection(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeDefinition {
@@ -88,11 +88,16 @@ describe("resolveTableTree", () => {
     expect(child.node.columns.map((c) => c.name)).toEqual(["id", "parent_id", "position", "text"]);
   });
 
-  it("gives a relation with cardinality 'many' a join child table", () => {
+  it("gives a relation with cardinality 'manyToMany' a join child table, target_id not unique", () => {
     const category = collection({ id: "cat", name: "categories" });
     const type = collection({
       fields: [
-        field({ id: "cats", name: "categories", type: "relation", config: { target: "cat", cardinality: "many" } }),
+        field({
+          id: "cats",
+          name: "categories",
+          type: "relation",
+          config: { target: "cat", cardinality: "manyToMany" },
+        }),
       ],
     });
     const tree = resolveTableTree(type, [type, category]);
@@ -102,12 +107,38 @@ describe("resolveTableTree", () => {
     expect(child.tableName).toBe("posts_categories");
     expect(child.kind).toBe("relation-many");
     expect(child.node.columns.map((c) => c.name)).toEqual(["id", "parent_id", "position", "target_id"]);
+    expect(child.node.columns.find((c) => c.name === "target_id")?.unique).toBe(false);
   });
 
-  it("a relation with cardinality 'one' is a plain column, not a child table", () => {
+  it("gives a relation with cardinality 'oneToMany' a join child table with target_id UNIQUE", () => {
     const category = collection({ id: "cat", name: "categories" });
     const type = collection({
-      fields: [field({ id: "cat-ref", name: "category", type: "relation", config: { target: "cat", cardinality: "one" } })],
+      fields: [
+        field({
+          id: "cats",
+          name: "categories",
+          type: "relation",
+          config: { target: "cat", cardinality: "oneToMany" },
+        }),
+      ],
+    });
+    const tree = resolveTableTree(type, [type, category]);
+
+    const child = tree.children[0]!;
+    expect(child.node.columns.find((c) => c.name === "target_id")?.unique).toBe(true);
+  });
+
+  it("a relation with cardinality 'manyToOne' is a plain column, not a child table", () => {
+    const category = collection({ id: "cat", name: "categories" });
+    const type = collection({
+      fields: [
+        field({
+          id: "cat-ref",
+          name: "category",
+          type: "relation",
+          config: { target: "cat", cardinality: "manyToOne" },
+        }),
+      ],
     });
     const tree = resolveTableTree(type, [type, category]);
 

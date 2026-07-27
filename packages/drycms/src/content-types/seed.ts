@@ -57,6 +57,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: { required: true },
+        order: 0,
       }),
       lockedField({
         id: IDS.menuItemDescription,
@@ -65,6 +66,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: {},
+        order: 1,
       }),
       lockedField({
         id: IDS.menuItemHref,
@@ -73,6 +75,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: { required: true, format: "url" },
+        order: 2,
       }),
     ],
     version: 0,
@@ -97,6 +100,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: {},
+        order: 0,
       }),
       lockedField({
         id: IDS.seoDescription,
@@ -105,6 +109,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: { multiline: true },
         validation: {},
+        order: 1,
       }),
       lockedField({
         id: IDS.seoImage,
@@ -113,6 +118,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "image",
         config: {},
         validation: {},
+        order: 2,
       }),
     ],
     version: 0,
@@ -134,6 +140,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: { required: true },
+        order: 0,
       }),
       lockedField({
         id: IDS.userEmail,
@@ -142,6 +149,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: { required: true, unique: true, format: "email" },
+        order: 1,
       }),
       lockedField({
         id: IDS.userPassword,
@@ -150,6 +158,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "password",
         config: {},
         validation: { required: true },
+        order: 2,
       }),
     ],
     version: 0,
@@ -171,6 +180,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "text",
         config: {},
         validation: { required: true, unique: true },
+        order: 0,
       }),
       lockedField({
         id: IDS.menuRefs,
@@ -179,6 +189,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "component",
         config: { componentId: IDS.menuItem, repeatable: true },
         validation: {},
+        order: 1,
       }),
     ],
     version: 0,

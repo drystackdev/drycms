@@ -2018,6 +2018,42 @@
       }
     }
 
+    /* Compact bordered block for Select's option list (see
+     * components/OptionListEditor.tsx) - deliberately its own class rather
+     * than reusing `.content-type-list`, which bleeds to the parent panel's
+     * edges (`margin-inline: -2rem`) - only right for the page-level Fields
+     * list, not a small block nested inside a field-dialog fieldset. */
+    .option-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      overflow: hidden;
+    }
+
+    .option-list-item {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.375rem;
+      margin: 0;
+      border-block-end: 1px solid var(--dry-border);
+
+      &:last-child {
+        border-block-end: none;
+      }
+
+      & > input {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      & > button {
+        flex: none;
+      }
+    }
+
     .required-asterisk {
       margin-inline-start: 0.125rem;
       color: var(--dry-error);

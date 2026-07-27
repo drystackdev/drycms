@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
@@ -165,32 +165,14 @@ export default function Showcase({ tab }: Props) {
   );
 }
 
-/** Native ARIA tabs need a little glue JS - re-wired on every mount since only
- * the active showcase demo stays in the tree. */
+/** Switching tabs is handled by the global `[role="tablist"]` delegated
+ * listener in `components/tabs.ts` (imported once, app-wide, by `App.tsx`) -
+ * nothing to wire up here. */
 function TabsDemoPreview() {
-  const ref = useRef<HTMLDivElement>(null);
   const { ref: tablist } = useOverlayScrollbars<HTMLDivElement>();
 
-  useEffect(() => {
-    const group = ref.current;
-    if (!group) return;
-    const onClick = (event: MouseEvent) => {
-      const tab = (event.target as HTMLElement).closest('[role="tab"]');
-      if (!tab || !group.contains(tab)) return;
-      for (const other of group.querySelectorAll('[role="tab"]')) {
-        const selected = other === tab;
-        other.setAttribute("aria-selected", String(selected));
-        const panelId = other.getAttribute("aria-controls");
-        const panel = panelId && document.getElementById(panelId);
-        if (panel) panel.toggleAttribute("hidden", !selected);
-      }
-    };
-    group.addEventListener("click", onClick);
-    return () => group.removeEventListener("click", onClick);
-  }, []);
-
   return (
-    <div class="stack" style="width: 100%" data-tabs ref={ref}>
+    <div class="stack" style="width: 100%">
       <div role="tablist" ref={tablist}>
         <button
           type="button"

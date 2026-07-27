@@ -2,7 +2,9 @@ import { useEffect, useState } from "preact/hooks";
 import CheckField from "../../components/CheckField.js";
 import DatePickerField from "../../components/DatePickerField.js";
 import { useDialogSync } from "../../components/list-nav.js";
+import MultiSelect from "../../components/MultiSelect.js";
 import NumberField from "../../components/NumberField.js";
+import OptionListEditor from "../../components/OptionListEditor.js";
 import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
 import Select from "../../components/Select.js";
 import SlugField from "../../components/SlugField.js";
@@ -14,6 +16,7 @@ import {
   fieldTypes,
   resolveFieldShape,
   type FieldTypeDefinition,
+  type SelectFieldConfig,
   type SettingDescriptor,
   type SettingOption,
 } from "../../content-types/field-registry.js";
@@ -114,6 +117,17 @@ function renderControl({
         value={
           typeof values[d.key] === "number" ? (values[d.key] as number) : 0
         }
+        disabled={disabled}
+        onChange={(v) => onChange(d.key, v)}
+      />
+    );
+  }
+  if (d.widget === "option-list") {
+    return (
+      <OptionListEditor
+        key={d.key}
+        label={d.label}
+        value={Array.isArray(values[d.key]) ? (values[d.key] as string[]) : []}
         disabled={disabled}
         onChange={(v) => onChange(d.key, v)}
       />
@@ -238,6 +252,21 @@ function DefaultValueInput({
           onChange={onChange}
         />
       );
+    case "select": {
+      const selectConfig = config as SelectFieldConfig;
+      const options = selectConfig.options.map((text) => ({ value: text, label: text }));
+      return selectConfig.multiple ? (
+        <div class="field">
+          <label>Default value</label>
+          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} onChange={onChange} />
+        </div>
+      ) : (
+        <div class="field">
+          <label>Default value</label>
+          <Select options={options} value={typeof value === "string" ? value : undefined} onChange={onChange} />
+        </div>
+      );
+    }
     default:
       return null;
   }
@@ -351,6 +380,10 @@ export default function FieldDialog({
       config: draftConfig,
       validation: draftValidation as FieldValidation,
       default: draftDefault,
+      // Placeholder - `ContentTypeEditor`'s `handleFieldSave` immediately
+      // renormalizes every field's `order` to its position in `fields[]`
+      // right after this fires.
+      order: editingField?.order ?? 0,
     });
   }
 

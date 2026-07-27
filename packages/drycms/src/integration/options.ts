@@ -186,7 +186,10 @@ function readDotEnv(): Record<string, string> {
   return dotEnvCache;
 }
 
-function readEnvVar(name: string): string | undefined {
+/** Exported for reuse outside config resolution too - `lib/secret-crypto.ts`
+ * reads `DRYCMS_SECRET_KEY` through this same `.env`-then-`process.env`
+ * fallback rather than duplicating the parsing logic. */
+export function readEnvVar(name: string): string | undefined {
   return process.env[name] || readDotEnv()[name];
 }
 

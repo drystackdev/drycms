@@ -14,6 +14,7 @@ export const SYSTEM_FIELD_IDS = {
   createdAt: "__system_created_at",
   updatedAt: "__system_updated_at",
   seo: "__system_seo",
+  sortIndex: "__system_sort_index",
 } as const;
 
 /** Fixed ids for the built-in components a feature toggle embeds (as opposed
@@ -35,7 +36,12 @@ export const SYSTEM_COMPONENT_IDS = {
  * `slug` (+ the `title` it brings with it) and `seo`; `component` has no
  * table of its own and never calls this. */
 export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] {
-  const fields: FieldDefinition[] = [];
+  // `order` is assigned once, below, from final push order - these synthetic
+  // fields aren't part of any persisted `fields[]` array (see `types.ts`'s
+  // `FieldDefinition.order` doc) and `order` plays no role in how `tree.ts`
+  // resolves them, so it's omitted here rather than threaded through every
+  // literal below.
+  const fields: Omit<FieldDefinition, "order">[] = [];
 
   if (type.features?.slug) {
     fields.push(
@@ -90,6 +96,20 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
         validation: {},
       });
     }
+    if (type.features?.sortable) {
+      // REAL (via the existing `number` field type) rather than INTEGER -
+      // manually reordering an entry only needs to set its `sortIndex` to
+      // something between its new neighbors (e.g. the average of theirs),
+      // never a full renumbering pass over every other row.
+      fields.push({
+        id: SYSTEM_FIELD_IDS.sortIndex,
+        name: "sortIndex",
+        label: "Sort Index",
+        type: "number",
+        config: {},
+        validation: {},
+      });
+    }
     if (type.features?.timestamps) {
       fields.push(
         {
@@ -112,5 +132,5 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
     }
   }
 
-  return fields;
+  return fields.map((field, index) => ({ ...field, order: index }));
 }

@@ -121,11 +121,17 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
     return { ...inner, columns: [SYSTEM_ID_COL, PARENT_ID_COL, POSITION_COL, ...inner.columns] };
   }
 
-  function buildRelationChildTable(tableName: string): TableNode {
+  function buildRelationChildTable(tableName: string, cardinality: RelationFieldConfig["cardinality"]): TableNode {
+    // 'oneToMany' claims each target row for at most one parent row - enforced
+    // by a UNIQUE constraint on target_id, the same mechanism any other
+    // column's `validation.unique` already goes through (see `migration.ts`'s
+    // `createUniqueIndexStatement`/`diffColumns`'s `uniqueToggles`).
+    // 'manyToMany' is the identical shape without that constraint.
+    const targetIdCol = cardinality === "oneToMany" ? { ...TARGET_ID_COL, unique: true } : TARGET_ID_COL;
     return {
       tableName,
       tableKind: "child",
-      columns: [SYSTEM_ID_COL, PARENT_ID_COL, POSITION_COL, TARGET_ID_COL],
+      columns: [SYSTEM_ID_COL, PARENT_ID_COL, POSITION_COL, targetIdCol],
       children: [],
       ftsColumns: [],
     };
@@ -189,7 +195,7 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
           const isComponent = "componentId" in config;
           const childNode = isComponent
             ? buildComponentChildTable(childTableName, config.componentId, seen)
-            : buildRelationChildTable(childTableName);
+            : buildRelationChildTable(childTableName, (config as RelationFieldConfig).cardinality);
           children.push({
             localIdPath: idPath,
             tableName: childTableName,

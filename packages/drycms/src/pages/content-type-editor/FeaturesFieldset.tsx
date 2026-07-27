@@ -33,6 +33,11 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
       label: "SEO",
       description: "Adds Title, Description, and Image fields for search engines and social previews.",
     },
+    {
+      key: "sortable",
+      label: "Sortable",
+      description: "Lets you manually drag-reorder this collection's entries.",
+    },
   ],
   singleton: [
     { key: "slug", label: "Slug", description: "Adds a URL-friendly Slug field, and a Title field to go with it." },

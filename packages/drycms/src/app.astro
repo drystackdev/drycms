@@ -21,13 +21,15 @@ import "drycms/styles.css";
   </head>
   <body class="dry">
     {
-      /* Applies the stored theme before first paint to avoid a flash.
-		Reads the same `drycms:store.theme` entry that `useStore("theme", ...)`
-		(see ThemeToggle) reads/writes. */
+      /* Applies the stored theme before first paint to avoid a flash. Reads
+		the same `drycms:store` entry's `theme` key that `useStore("theme", ...)`
+		(see ThemeToggle) and `components/theme.ts` read/write - "drycms:store"
+		is duplicated as a literal here (an `is:inline` script can't import the
+		shared STORAGE_KEY constant) so it must be kept in sync by hand. */
     }
     <script is:inline>
       try {
-        const store = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        const store = JSON.parse(localStorage.getItem("drycms:store") || "{}");
         const stored = store.theme;
         if (stored === "light" || stored === "dark") {
           document.body.classList.add(stored);

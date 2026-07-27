@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NamingError,
+  normalizeFieldOrder,
   quoteIdent,
   toSqlLiteral,
   validateContentTypeDefinition,
@@ -11,7 +12,7 @@ import {
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
 function field(overrides: Partial<FieldDefinition> = {}): FieldDefinition {
-  return { id: "f1", name: "body", label: "Body", type: "text", config: {}, validation: {}, ...overrides };
+  return { id: "f1", name: "body", label: "Body", type: "text", config: {}, validation: {}, order: 0, ...overrides };
 }
 
 function contentType(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeDefinition {
@@ -55,7 +56,7 @@ describe("validateFieldName", () => {
   });
 
   it("rejects reserved system column names", () => {
-    for (const reserved of ["id", "title", "slug", "draft", "schedule", "parent_id", "position", "target_id"]) {
+    for (const reserved of ["id", "title", "slug", "draft", "schedule", "sortIndex", "parent_id", "position", "target_id"]) {
       expect(() => validateFieldName(reserved)).toThrow(NamingError);
     }
   });
@@ -182,6 +183,28 @@ describe("validateSystemProtections", () => {
     const existing = contentType({ system: true, fields: [], features: { seo: true } });
     const next = contentType({ system: true, fields: [], features: { seo: false } });
     expect(() => validateSystemProtections(next, existing, { seo: true })).toThrow(NamingError);
+  });
+});
+
+describe("normalizeFieldOrder", () => {
+  it("overwrites every field's order to match its position in fields[]", () => {
+    const definition = contentType({
+      fields: [
+        field({ id: "a", name: "a", order: 99 }),
+        field({ id: "b", name: "b", order: 0 }),
+        field({ id: "c", name: "c", order: 1 }),
+      ],
+    });
+    const normalized = normalizeFieldOrder(definition);
+    expect(normalized.fields.map((f) => f.order)).toEqual([0, 1, 2]);
+    // Array order itself is untouched - only `order` is rewritten.
+    expect(normalized.fields.map((f) => f.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("does not mutate the input definition", () => {
+    const definition = contentType({ fields: [field({ id: "a", name: "a", order: 5 })] });
+    normalizeFieldOrder(definition);
+    expect(definition.fields[0]!.order).toBe(5);
   });
 });
 
