@@ -1,7 +1,8 @@
 {
   "$comment": "Icon manifest. Solar is preferred; fall back to lucide only when Solar has no equivalent. Run `bun run build:icons` after editing.",
   "icons": {
-    "Dashboard": "solar:widget-5-bold-duotone",
+    "Dashboard": "solar:pie-chart-2-bold-duotone",
+    "Showcase": "solar:widget-2-bold-duotone",
     "Content": "solar:documents-bold-duotone",
     "Media": "solar:gallery-wide-bold-duotone",
     "Users": "solar:users-group-rounded-bold-duotone",

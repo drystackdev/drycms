@@ -29,104 +29,122 @@ Call log:
   - generic [ref=e3]:
     - complementary [ref=e4]:
       - generic [ref=e5]:
-        - link "drycms" [ref=e6] [cursor=pointer]:
-          - /url: /dry/dashboard
-        - button "Collapse navigation" [expanded] [ref=e12] [cursor=pointer]
-      - navigation "Admin" [ref=e15]:
-        - generic [ref=e16]: Manage
-        - link "Dashboard" [ref=e17] [cursor=pointer]:
-          - /url: /dry/dashboard
-        - link "Showcase" [ref=e23] [cursor=pointer]:
-          - /url: /dry/showcase
-        - link "Content Types" [ref=e29] [cursor=pointer]:
-          - /url: /dry/content-types
-        - generic:
-          - generic: Content
-          - generic: Soon
-        - link "Media" [ref=e34] [cursor=pointer]:
-          - /url: /dry/media
-        - generic:
-          - generic: Users
-          - generic: Soon
-        - generic:
-          - generic: Settings
-          - generic: Soon
-      - generic [ref=e41]:
-        - text: Mounted at
-        - code [ref=e42]: /dry
-    - generic [ref=e43]:
-      - banner [ref=e44]:
-        - button "System theme" [ref=e45] [cursor=pointer]
-      - main [ref=e49]:
-        - generic [ref=e50]:
-          - button [ref=e51] [cursor=pointer]
-          - generic [ref=e54]:
-            - heading "New collection" [level=1] [ref=e55]
-            - paragraph [ref=e56]: Define the fields, data types, and structure used to store content for this content type.
-          - generic [ref=e57]:
-            - button "Cancel" [ref=e58] [cursor=pointer]
-            - button "Save & apply schema" [ref=e59] [cursor=pointer]
-        - generic [ref=e60]:
-          - generic [ref=e62]:
-            - generic [ref=e63]:
-              - generic [ref=e64]:
-                - heading "Fields" [level=3] [ref=e65]
+        - generic [ref=e6]:
+          - link "drycms" [ref=e7] [cursor=pointer]:
+            - /url: /dry/dashboard
+          - button "Collapse navigation" [expanded] [ref=e13] [cursor=pointer]
+        - navigation "Admin" [ref=e16]:
+          - generic [ref=e17]: Manage
+          - link "Dashboard" [ref=e18] [cursor=pointer]:
+            - /url: /dry/dashboard
+          - link "Showcase" [ref=e24] [cursor=pointer]:
+            - /url: /dry/showcase
+          - link "Content Types" [ref=e30] [cursor=pointer]:
+            - /url: /dry/content-types
+          - generic:
+            - generic: Content
+            - generic: Soon
+          - link "Media" [ref=e35] [cursor=pointer]:
+            - /url: /dry/media
+          - generic:
+            - generic: Users
+            - generic: Soon
+          - generic:
+            - generic: Settings
+            - generic: Soon
+        - generic [ref=e41]:
+          - text: Mounted at
+          - code [ref=e42]: /dry
+    - generic [ref=e44]:
+      - banner [ref=e45]:
+        - button "System theme" [ref=e46] [cursor=pointer]
+      - main [ref=e50]:
+        - generic [ref=e51]:
+          - button [ref=e52] [cursor=pointer]
+          - generic [ref=e55]:
+            - heading "New Collection" [level=1] [ref=e56]
+            - paragraph [ref=e57]:
+              - generic [ref=e58]: Collection
+              - text: Define the fields, data types, and structure used to store content for this content type.
+          - generic [ref=e59]:
+            - button "Cancel" [ref=e60] [cursor=pointer]
+            - button "Save & apply schema" [ref=e61] [cursor=pointer]
+        - generic [ref=e62]:
+          - generic [ref=e64]:
+            - generic [ref=e65]:
+              - generic [ref=e66]:
+                - heading "Fields" [level=3] [ref=e67]
                 - text: Define the columns used for data entry and storage
-              - button "Add Field" [ref=e66] [cursor=pointer]
-            - list [ref=e69]:
-              - listitem [ref=e70]:
+              - button "Add Field" [ref=e68] [cursor=pointer]
+            - list [ref=e71]:
+              - listitem [ref=e72]:
                 - button [disabled]
-                - generic [ref=e71]:
-                  - generic [ref=e72]:
+                - generic [ref=e73]:
+                  - generic [ref=e74]:
                     - text: ID
-                    - generic [ref=e73]: Number
-                    - generic [ref=e74]: System
-                  - generic [ref=e75]: id
-            - generic [ref=e76]: "Total: 1 field - 0 feature - 0 required"
-          - generic [ref=e77]:
-            - generic [ref=e78]:
-              - generic [ref=e79]:
-                - generic [ref=e80]: Table Name*
-                - textbox "Table Name*" [ref=e81]:
+                    - generic [ref=e75]: Number
+                    - generic [ref=e76]: System
+                  - generic [ref=e77]: id
+            - generic [ref=e78]: "Total: 1 field - 0 feature - 0 required"
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - generic [ref=e81]:
+                - generic [ref=e82]: Table Name*
+                - textbox "Table Name*" [ref=e83]:
                   - /placeholder: e.g. Blog Posts
-              - generic [ref=e82]:
-                - generic [ref=e83]: Table
-                - generic [ref=e84]:
-                  - textbox "Table" [ref=e85]:
+              - generic [ref=e84]:
+                - generic [ref=e85]: Table
+                - generic [ref=e86]:
+                  - textbox "Table" [ref=e87]:
                     - /placeholder: e.g. blog_posts
-                  - button "Regenerate slug from title" [ref=e86] [cursor=pointer]
-            - generic [ref=e90]:
-              - generic [ref=e91]: Description
-              - textbox "Description" [ref=e92]:
+                  - button "Regenerate slug from title" [ref=e88] [cursor=pointer]
+            - generic [ref=e92]:
+              - generic [ref=e93]: Description
+              - textbox "Description" [ref=e94]:
                 - /placeholder: e.g. Articles published on the company blog
-              - generic [ref=e93]: Optional description for this content type, shown in the admin UI.
-            - group "Features" [ref=e94]:
-              - generic [ref=e96]:
-                - generic [ref=e99]:
-                  - checkbox "Slug Adds a URL-friendly Slug field, and a Title field to go with it." [ref=e100] [cursor=pointer]
-                  - generic [ref=e101] [cursor=pointer]:
-                    - text: Slug
-                    - generic [ref=e102]: Adds a URL-friendly Slug field, and a Title field to go with it.
+              - generic [ref=e95]: Optional description for this content type, shown in the admin UI.
+            - generic [ref=e96]:
+              - generic [ref=e97]: Live Preview
+              - textbox "Live Preview" [ref=e98]:
+                - /placeholder: "e.g. https://example.com/posts/{slug}"
+              - generic [ref=e99]: URL the entry editor will open for a live preview.
+            - group "Features" [ref=e100]:
+              - generic [ref=e102]:
                 - generic [ref=e105]:
-                  - checkbox "Draft Lets you save an entry as a private draft before publishing it." [ref=e106] [cursor=pointer]
+                  - switch "Slug Adds a URL-friendly Slug field, and a Title field to go with it." [ref=e106] [cursor=pointer]
                   - generic [ref=e107] [cursor=pointer]:
-                    - text: Draft
-                    - generic [ref=e108]: Lets you save an entry as a private draft before publishing it.
+                    - text: Slug
+                    - generic [ref=e108]: Adds a URL-friendly Slug field, and a Title field to go with it.
                 - generic [ref=e111]:
-                  - checkbox "Schedule Lets you set a future date/time for an entry to go live automatically." [ref=e112] [cursor=pointer]
+                  - switch "Draft Lets you save an entry as a private draft before publishing it." [ref=e112] [cursor=pointer]
                   - generic [ref=e113] [cursor=pointer]:
-                    - text: Schedule
-                    - generic [ref=e114]: Lets you set a future date/time for an entry to go live automatically.
+                    - text: Draft
+                    - generic [ref=e114]: Lets you save an entry as a private draft before publishing it.
                 - generic [ref=e117]:
-                  - checkbox "Full-text search Makes every text field on this content type searchable." [ref=e118] [cursor=pointer]
+                  - switch "Schedule Lets you set a future date/time for an entry to go live automatically." [ref=e118] [cursor=pointer]
                   - generic [ref=e119] [cursor=pointer]:
-                    - text: Full-text search
-                    - generic [ref=e120]: Makes every text field on this content type searchable.
+                    - text: Schedule
+                    - generic [ref=e120]: Lets you set a future date/time for an entry to go live automatically.
                 - generic [ref=e123]:
-                  - checkbox "Timestamps Automatically records when each entry was created and last updated." [ref=e124] [cursor=pointer]
+                  - switch "Full-text search Makes every text field on this content type searchable." [ref=e124] [cursor=pointer]
                   - generic [ref=e125] [cursor=pointer]:
+                    - text: Full-text search
+                    - generic [ref=e126]: Makes every text field on this content type searchable.
+                - generic [ref=e129]:
+                  - switch "Timestamps Automatically records when each entry was created and last updated." [ref=e130] [cursor=pointer]
+                  - generic [ref=e131] [cursor=pointer]:
                     - text: Timestamps
-                    - generic [ref=e126]: Automatically records when each entry was created and last updated.
+                    - generic [ref=e132]: Automatically records when each entry was created and last updated.
+                - generic [ref=e135]:
+                  - switch "SEO Adds Title, Description, and Image fields for search engines and social previews." [ref=e136] [cursor=pointer]
+                  - generic [ref=e137] [cursor=pointer]:
+                    - text: SEO
+                    - generic [ref=e138]: Adds Title, Description, and Image fields for search engines and social previews.
+                - generic [ref=e141]:
+                  - switch "Sortable Lets you manually drag-reorder this collection's entries." [ref=e142] [cursor=pointer]
+                  - generic [ref=e143] [cursor=pointer]:
+                    - text: Sortable
+                    - generic [ref=e144]: Lets you manually drag-reorder this collection's entries.
     - region "Notifications"
   - tooltip
 ```

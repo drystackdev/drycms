@@ -32,7 +32,7 @@ const NAV: {
     key: "showcase",
     label: "Showcase",
     href: `${path}/showcase`,
-    icon: "Media",
+    icon: "Showcase",
     ready: true,
   },
   {

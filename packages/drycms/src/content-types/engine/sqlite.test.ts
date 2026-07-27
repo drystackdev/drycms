@@ -10,7 +10,10 @@ import { createSqliteContentEngineAdapter } from "./sqlite.js";
  * refused server-side, not just hidden by the editor UI. */
 function freshAdapter() {
   const dir = mkdtempSync(join(tmpdir(), "drycms-sqlite-test-"));
-  const adapter = createSqliteContentEngineAdapter({ engine: "sqlite", file: join(dir, "content.sqlite") });
+  const adapter = createSqliteContentEngineAdapter({
+    engine: "sqlite",
+    file: join(dir, "content.sqlite"),
+  });
   return { adapter, dir };
 }
 
@@ -37,13 +40,13 @@ afterEach(() => {
 });
 
 describe("createSqliteContentEngineAdapter", () => {
-  it("seeds the built-in user/menu/menuItem/aiKeyManagement/role/permission defaults on first boot", async () => {
+  it("seeds the built-in user/menu/menuItem/aiKey/role/permission defaults on first boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
     const types = await adapter.listContentTypes();
     expect(types.map((t) => t.name).sort()).toEqual([
-      "aiKeyManagement",
+      "aiKey",
       "menu",
       "menuItem",
       "permission",
@@ -59,7 +62,10 @@ describe("createSqliteContentEngineAdapter", () => {
     dirs.push(dir);
     await adapter.listContentTypes(); // triggers boot
 
-    const roles = await queryAll<{ name: string; isSuperAdmin: number }>(dir, 'SELECT "name", "isSuperAdmin" FROM "role";');
+    const roles = await queryAll<{ name: string; isSuperAdmin: number }>(
+      dir,
+      'SELECT "name", "isSuperAdmin" FROM "role";',
+    );
     expect(roles).toEqual([{ name: "Super Admin", isSuperAdmin: 1 }]);
   });
 
@@ -68,9 +74,12 @@ describe("createSqliteContentEngineAdapter", () => {
     dirs.push(dir);
     await adapter.listContentTypes(); // triggers boot
 
-    const permissions = await queryAll<{ name: string }>(dir, 'SELECT "name" FROM "permission" ORDER BY "name";');
+    const permissions = await queryAll<{ name: string }>(
+      dir,
+      'SELECT "name" FROM "permission" ORDER BY "name";',
+    );
     expect(permissions.map((p) => p.name)).toEqual([
-      "aiKeyManagement",
+      "aiKey",
       "menu",
       "permission",
       "role",
@@ -82,7 +91,9 @@ describe("createSqliteContentEngineAdapter", () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
-    const user = (await adapter.listContentTypes()).find((t) => t.name === "user")!;
+    const user = (await adapter.listContentTypes()).find(
+      (t) => t.name === "user",
+    )!;
     await expect(adapter.deleteContentType(user.id)).rejects.toMatchObject({
       name: "ContentEngineError",
       code: "system_protected",
@@ -108,7 +119,9 @@ describe("createSqliteContentEngineAdapter", () => {
     const plan = await adapter.planSave(custom);
     await adapter.applySave(custom, plan);
 
-    await expect(adapter.deleteContentType("custom-note")).resolves.toBeUndefined();
+    await expect(
+      adapter.deleteContentType("custom-note"),
+    ).resolves.toBeUndefined();
     expect(await adapter.getContentType("custom-note")).toBeNull();
   });
 
@@ -153,7 +166,10 @@ describe("createSqliteContentEngineAdapter", () => {
     const renamePlan = await adapter.planSave(renamed);
     await adapter.applySave(renamed, renamePlan);
 
-    const rows = await queryAll<{ name: string }>(dir, `SELECT "name" FROM "permission" WHERE "idTable" = 'custom-note';`);
+    const rows = await queryAll<{ name: string }>(
+      dir,
+      `SELECT "name" FROM "permission" WHERE "idTable" = 'custom-note';`,
+    );
     expect(rows).toEqual([{ name: "memo" }]);
   });
 
@@ -173,7 +189,10 @@ describe("createSqliteContentEngineAdapter", () => {
     await adapter.applySave(custom, plan);
     await adapter.deleteContentType("custom-note");
 
-    const rows = await queryAll(dir, `SELECT * FROM "permission" WHERE "idTable" = 'custom-note';`);
+    const rows = await queryAll(
+      dir,
+      `SELECT * FROM "permission" WHERE "idTable" = 'custom-note';`,
+    );
     expect(rows).toEqual([]);
   });
 });

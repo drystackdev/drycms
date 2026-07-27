@@ -2,7 +2,13 @@ import dayjs, { type Dayjs } from "dayjs";
 import { useId, useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon } from "./icons.js";
-import { useOutsideClick, usePopupFlip } from "./list-nav.js";
+import {
+  useFloatingPosition,
+  useNativePopover,
+  useOutsideClick,
+  usePopupFlip,
+  useScrollLock,
+} from "./list-nav.js";
 import NumberField from "./NumberField.js";
 
 export type DatePickerMode = "calendar" | "select" | "input";
@@ -67,8 +73,12 @@ export default function DatePickerField({
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => dayjs(value).startOf("month"));
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const openUp = usePopupFlip(open, wrapRef);
+  const position = useFloatingPosition(open, wrapRef, openUp);
   useOutsideClick(open, [wrapRef], () => setOpen(false));
+  useNativePopover(open, popupRef, () => {});
+  useScrollLock(open, wrapRef);
 
   const format = time ? "DD/MM/YYYY HH:mm" : "DD/MM/YYYY";
 
@@ -106,6 +116,10 @@ export default function DatePickerField({
   };
 
   const displayText = dayjs(value).format(format);
+
+  const popupStyle = position
+    ? { position: "fixed" as const, top: `${position.top}px`, left: `${position.left}px` }
+    : undefined;
 
   const timeControls = time && (
     <div class="datepicker-time">
@@ -147,7 +161,12 @@ export default function DatePickerField({
           <input type="hidden" name={name} value={dayjs(value).toISOString()} />
         )}
         {open && mode === "calendar" && (
-          <div class={openUp ? "datepicker-popup up" : "datepicker-popup"}>
+          <div
+            ref={popupRef}
+            popover="manual"
+            class={openUp ? "datepicker-popup up" : "datepicker-popup"}
+            style={popupStyle}
+          >
             <div class="datepicker-nav">
               <button
                 type="button"
@@ -193,7 +212,12 @@ export default function DatePickerField({
           </div>
         )}
         {open && mode === "select" && (
-          <div class={openUp ? "datepicker-popup up" : "datepicker-popup"}>
+          <div
+            ref={popupRef}
+            popover="manual"
+            class={openUp ? "datepicker-popup up" : "datepicker-popup"}
+            style={popupStyle}
+          >
             <div class="datepicker-select-row">
               <select
                 aria-label="Day"

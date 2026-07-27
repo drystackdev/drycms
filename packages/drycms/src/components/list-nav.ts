@@ -135,7 +135,12 @@ export function useCloseOnBlur(open: boolean, ref: RefObject<HTMLElement>, onClo
  * `openUp` by pointing at the anchor's top edge instead of its bottom; pair
  * with `transform: translateY(-100%)` in the caller when `openUp` is true so
  * the popup's own (unmeasured) height grows upward from that point instead of
- * downward from it. */
+ * downward from it.
+ *
+ * Re-measures on a `ResizeObserver` of the anchor, not just when `open`/
+ * `openUp` change - MultiSelect's anchor grows taller as picked chips wrap
+ * onto more lines, which would otherwise leave the popup floating at the
+ * anchor's pre-wrap (shorter) height instead of following it down. */
 export function useFloatingPosition(
 	open: boolean,
 	anchorRef: RefObject<HTMLElement>,
@@ -146,13 +151,20 @@ export function useFloatingPosition(
 
 	useLayoutEffect(() => {
 		if (!open) return;
-		const rect = anchorRef.current?.getBoundingClientRect();
-		if (!rect) return;
-		setPosition({
-			left: rect.left,
-			top: openUp ? rect.top - gap : rect.bottom + gap,
-			width: rect.width,
-		});
+		const anchor = anchorRef.current;
+		if (!anchor) return;
+		const measure = () => {
+			const rect = anchor.getBoundingClientRect();
+			setPosition({
+				left: rect.left,
+				top: openUp ? rect.top - gap : rect.bottom + gap,
+				width: rect.width,
+			});
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(anchor);
+		return () => observer.disconnect();
 	}, [open, openUp]);
 
 	return open ? position : null;

@@ -7,8 +7,11 @@ import {
 	nextEnabledIndex,
 	printableChar,
 	useCloseOnBlur,
+	useFloatingPosition,
+	useNativePopover,
 	useOutsideClick,
 	usePopupFlip,
+	useScrollLock,
 	useTypeahead,
 	type ListOption,
 } from './list-nav.js';
@@ -62,8 +65,11 @@ export default function Select({
 	const selectedIndex = options.findIndex((option) => option.value === current);
 	const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
 	const openUp = usePopupFlip(open, wrapRef);
+	const position = useFloatingPosition(open, wrapRef, openUp);
 
 	useOutsideClick(open, [wrapRef], () => setOpen(false));
+	useNativePopover(open, listRef, () => {});
+	useScrollLock(open, wrapRef);
 
 	const commit = (index: number) => {
 		const option = options[index];
@@ -155,6 +161,12 @@ export default function Select({
 					class={openUp ? 'select-popup up' : 'select-popup'}
 					role="listbox"
 					ref={listRef}
+					popover="manual"
+					style={
+						position
+							? { position: 'fixed', top: `${position.top}px`, left: `${position.left}px`, width: `${position.width}px` }
+							: undefined
+					}
 					tabIndex={-1}
 					onKeyDown={onListKeyDown}
 				>

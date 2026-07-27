@@ -599,24 +599,32 @@
       }
     }
 
-    /* Floating listbox popup, anchored to a `.select` wrapper. */
+    /* Floating listbox popup, anchored to a `.select` wrapper. Rendered via
+     * the Popover API (`popover="manual"`, see Select.tsx/Combobox.tsx/
+     * MultiSelect.tsx) rather than a portal: puts it in the browser's top
+     * layer so it escapes any scroll/overflow-clipped ancestor. `position`/
+     * `top`/`left`/`width` are set inline from JS (`useFloatingPosition`),
+     * computed from the anchor's own rect - only visual styling lives here.
+     * Border/margin/padding reset the Popover API's UA default styling
+     * (centered dialog-like box). */
     .select-popup {
-      position: absolute;
       z-index: 30;
-      top: calc(100% + 0.375rem);
-      inset-inline: 0;
       max-height: 16rem;
       margin: 0;
       padding-inline: 0.25rem;
+      padding-block: 0;
+      border-width: 0;
       list-style: none;
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-popover);
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
 
+      /* `top` (from `useFloatingPosition`) already points at the anchor's
+       * top edge when flipped up - shift the box up by its own height so it
+       * grows upward from that point instead of downward. */
       &.up {
-        top: auto;
-        bottom: calc(100% + 0.375rem);
+        transform: translateY(-100%);
       }
 
       &:focus-visible {
@@ -672,22 +680,23 @@
       }
     }
 
-    /* Calendar/select-triple popup for DatePickerField, anchored below `.select`. */
+    /* Calendar/select-triple popup for DatePickerField, anchored below
+     * `.select`. Same `popover="manual"` top-layer treatment as
+     * `.select-popup` above (see DatePickerField.tsx) - `top`/`left` come
+     * from `useFloatingPosition`, `width` stays content-sized. */
     .datepicker-popup {
-      position: absolute;
       z-index: 30;
-      top: calc(100% + 0.375rem);
-      left: 0;
       width: max-content;
+      margin: 0;
       padding: 0.75rem;
+      border-width: 0;
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-popover);
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
 
       &.up {
-        top: auto;
-        bottom: calc(100% + 0.375rem);
+        transform: translateY(-100%);
       }
     }
 
@@ -3357,25 +3366,26 @@
      * Mobile: any anchored popover-style panel - select/combobox/multi-select
      * listbox, date picker calendar/select-row, popover action menu - becomes
      * a full-width bottom drawer instead of a small anchored dropdown, same
-     * treatment as the sidebar's off-canvas drawer above. `.popover-menu`'s
-     * position/left/top/transform are computed inline by JS (see
-     * Popover.tsx) for desktop anchoring, so `!important` is needed there to
-     * win over the inline style - scoped to this one selector, this one
-     * breakpoint.
+     * treatment as the sidebar's off-canvas drawer above. Their
+     * position/left/top/width are computed inline by JS for desktop
+     * anchoring (`useFloatingPosition`/Popover.tsx's own effect), so
+     * `!important` is needed here to win over the inline style - scoped to
+     * this one selector list, this one breakpoint.
      */
     @media (width < 48rem) {
       .select-popup,
       .select-popup.up,
       .datepicker-popup,
       .datepicker-popup.up {
-        position: fixed;
+        position: fixed !important;
         z-index: 49;
-        inset-inline: 0;
-        top: auto;
-        bottom: 0;
-        width: auto;
+        inset-inline: 0 !important;
+        top: auto !important;
+        bottom: 0 !important;
+        width: auto !important;
         max-width: none;
         max-height: 70vh;
+        transform: none !important;
         border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
         box-shadow: var(--dry-shadow-lg);
         animation: dry-sheet-up 200ms ease;

@@ -36,7 +36,7 @@ export interface FieldsListProps {
   onReorderFields: (fields: FieldDefinition[]) => void;
   onAdd: () => void;
   /** When true, this content type's structure is fully frozen (`role`/
-   * `permission`/`aiKeyManagement` - see `types.ts`'s `structureLocked`):
+   * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
    * hides the "+ Add Field" button. Existing fields can still be reordered/
    * edited - only adding new ones is blocked. */
   structureLocked?: boolean;

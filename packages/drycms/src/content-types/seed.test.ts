@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { validateContentTypeDefinition } from "./naming.js";
-import { defaultContentTypeDefinitions, pendingSeedStatements } from "./seed.js";
+import {
+  defaultContentTypeDefinitions,
+  pendingSeedStatements,
+} from "./seed.js";
 import { resolveTableTree } from "./tree.js";
 import type { ContentTypeDefinition } from "./types.js";
 
@@ -8,9 +11,9 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKeyManagement, role, and permission (collections), all system + fully locked", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, and permission (collections), all system + fully locked", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
-      "aiKeyManagement",
+      "aiKey",
       "menu",
       "menuItem",
       "permission",
@@ -26,13 +29,13 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("seo").kind).toBe("component");
     expect(byName("user").kind).toBe("collection");
     expect(byName("menu").kind).toBe("collection");
-    expect(byName("aiKeyManagement").kind).toBe("collection");
+    expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
     expect(byName("permission").kind).toBe("collection");
   });
 
-  it("structureLocked: on for aiKeyManagement/role/permission, off for user/menu/menuItem/seo", () => {
-    expect(byName("aiKeyManagement").structureLocked).toBe(true);
+  it("structureLocked: on for aiKey/role/permission, off for user/menu/menuItem/seo", () => {
+    expect(byName("aiKey").structureLocked).toBe(true);
     expect(byName("role").structureLocked).toBe(true);
     expect(byName("permission").structureLocked).toBe(true);
     expect(byName("user").structureLocked).toBeFalsy();
@@ -64,13 +67,20 @@ describe("defaultContentTypeDefinitions", () => {
     const role = byName("role");
     expect(user.features?.timestamps).toBe(true);
     const email = user.fields.find((f) => f.name === "email")!;
-    expect(email.validation).toMatchObject({ required: true, unique: true, format: "email" });
+    expect(email.validation).toMatchObject({
+      required: true,
+      unique: true,
+      format: "email",
+    });
     const password = user.fields.find((f) => f.name === "password")!;
     expect(password.type).toBe("password");
     expect(password.validation.required).toBe(true);
     const roles = user.fields.find((f) => f.name === "roles")!;
     expect(roles.type).toBe("relation");
-    expect(roles.config).toMatchObject({ target: role.id, cardinality: "manyToMany" });
+    expect(roles.config).toMatchObject({
+      target: role.id,
+      cardinality: "manyToMany",
+    });
   });
 
   it("role: unique+required name, isSuperAdmin boolean, a manyToMany permissions relation", () => {
@@ -83,7 +93,10 @@ describe("defaultContentTypeDefinitions", () => {
     expect(isSuperAdmin.default).toBe(false);
     const permissions = role.fields.find((f) => f.name === "permissions")!;
     expect(permissions.type).toBe("relation");
-    expect(permissions.config).toMatchObject({ target: permission.id, cardinality: "manyToMany" });
+    expect(permissions.config).toMatchObject({
+      target: permission.id,
+      cardinality: "manyToMany",
+    });
   });
 
   it("permission: unique+required name and idTable", () => {
@@ -99,9 +112,13 @@ describe("defaultContentTypeDefinitions", () => {
     const role = byName("role");
     const user = byName("user");
     const roleTree = resolveTableTree(role, defs);
-    expect(roleTree.children.find((c) => c.tableName === "role_permissions")).toBeDefined();
+    expect(
+      roleTree.children.find((c) => c.tableName === "role_permissions"),
+    ).toBeDefined();
     const userTree = resolveTableTree(user, defs);
-    expect(userTree.children.find((c) => c.tableName === "user_roles")).toBeDefined();
+    expect(
+      userTree.children.find((c) => c.tableName === "user_roles"),
+    ).toBeDefined();
   });
 
   it("menu: unique+required name, a repeatable menuItem 'refs' field, timestamps on", () => {
@@ -112,21 +129,26 @@ describe("defaultContentTypeDefinitions", () => {
     expect(name.validation).toMatchObject({ required: true, unique: true });
     const refs = menu.fields.find((f) => f.name === "refs")!;
     expect(refs.type).toBe("component");
-    expect(refs.config).toMatchObject({ componentId: menuItem.id, repeatable: true });
+    expect(refs.config).toMatchObject({
+      componentId: menuItem.id,
+      repeatable: true,
+    });
   });
 
-  it("aiKeyManagement: required name/provider/key, optional description/url", () => {
-    const aiKeyManagement = byName("aiKeyManagement");
-    const provider = aiKeyManagement.fields.find((f) => f.name === "provider")!;
+  it("aiKey: required name/provider/key, optional description/url", () => {
+    const aiKey = byName("aiKey");
+    const provider = aiKey.fields.find((f) => f.name === "provider")!;
     expect(provider.type).toBe("select");
-    expect(provider.config).toMatchObject({ options: ["Google", "Anthropic", "ChatGPT", "Custom"] });
+    expect(provider.config).toMatchObject({
+      options: ["Google", "Anthropic", "ChatGPT", "Custom"],
+    });
     expect(provider.validation.required).toBe(true);
-    const key = aiKeyManagement.fields.find((f) => f.name === "key")!;
+    const key = aiKey.fields.find((f) => f.name === "key")!;
     expect(key.type).toBe("secretkey");
     expect(key.validation.required).toBe(true);
-    const description = aiKeyManagement.fields.find((f) => f.name === "description")!;
+    const description = aiKey.fields.find((f) => f.name === "description")!;
     expect(description.validation.required).toBeFalsy();
-    const url = aiKeyManagement.fields.find((f) => f.name === "url")!;
+    const url = aiKey.fields.find((f) => f.name === "url")!;
     expect(url.validation).toMatchObject({ format: "url" });
     expect(url.validation.required).toBeFalsy();
   });
@@ -147,7 +169,11 @@ describe("defaultContentTypeDefinitions", () => {
 
   it("seo: Title/Description/Image, none required (a page can opt out of any of them)", () => {
     const seo = byName("seo");
-    expect(seo.fields.map((f) => f.name).sort()).toEqual(["description", "image", "metaTitle"]);
+    expect(seo.fields.map((f) => f.name).sort()).toEqual([
+      "description",
+      "image",
+      "metaTitle",
+    ]);
     const image = seo.fields.find((f) => f.name === "image")!;
     expect(image.type).toBe("image");
   });
@@ -170,13 +196,13 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKeyManagement/role/permission/role_permissions/user_roles tables plus 7 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/permission/role_permissions/user_roles tables plus 7 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
-    expect(sql).toContain('CREATE TABLE "aiKeyManagement"');
+    expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
     expect(sql).toContain('CREATE TABLE "permission"');
     expect(sql).toContain('CREATE TABLE "role_permissions"');
@@ -184,13 +210,23 @@ describe("pendingSeedStatements", () => {
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
-    const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
+    const metadataInserts = statements.filter((s) =>
+      s.sql.startsWith('INSERT INTO "metadata"'),
+    );
     expect(metadataInserts).toHaveLength(7);
   });
 
   it("seeds nothing once every default name is already present", () => {
     const statements = pendingSeedStatements(
-      new Set(["user", "menu", "menuitem", "seo", "aikeymanagement", "role", "permission"]),
+      new Set([
+        "user",
+        "menu",
+        "menuitem",
+        "seo",
+        "aiKey",
+        "role",
+        "permission",
+      ]),
     );
     expect(statements).toEqual([]);
   });
@@ -201,11 +237,13 @@ describe("pendingSeedStatements", () => {
     expect(sql).not.toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
-    expect(sql).toContain('CREATE TABLE "aiKeyManagement"');
+    expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
     expect(sql).toContain('CREATE TABLE "permission"');
 
-    const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
+    const metadataInserts = statements.filter((s) =>
+      s.sql.startsWith('INSERT INTO "metadata"'),
+    );
     expect(metadataInserts).toHaveLength(6);
   });
 });

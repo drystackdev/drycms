@@ -38,7 +38,10 @@ export class NamingError extends Error {
   }
 }
 
-export function validateContentTypeName(name: string, allTypes: ContentTypeDefinition[]): void {
+export function validateContentTypeName(
+  name: string,
+  allTypes: ContentTypeDefinition[],
+): void {
   if (!CONTENT_TYPE_NAME_RE.test(name)) {
     throw new NamingError(
       `Content type name "${name}" must start with a letter and contain only letters, digits, and hyphens.`,
@@ -50,7 +53,9 @@ export function validateContentTypeName(name: string, allTypes: ContentTypeDefin
   const lower = name.toLowerCase();
   const collision = allTypes.find((t) => t.name.toLowerCase() === lower);
   if (collision) {
-    throw new NamingError(`Content type name "${name}" is already used by "${collision.name}".`);
+    throw new NamingError(
+      `Content type name "${name}" is already used by "${collision.name}".`,
+    );
   }
 }
 
@@ -97,7 +102,9 @@ export function validateContentTypeDefinition(
     const lower = field.name.toLowerCase();
     const existing = seen.get(lower);
     if (existing) {
-      throw new NamingError(`Field name "${field.name}" is used more than once on "${definition.name}".`);
+      throw new NamingError(
+        `Field name "${field.name}" is used more than once on "${definition.name}".`,
+      );
     }
     seen.set(lower, field.name);
 
@@ -106,7 +113,9 @@ export function validateContentTypeDefinition(
     // `crypto.randomUUID()`) would silently collapse two real columns into
     // one during diffing without this check ever catching it.
     if (seenIds.has(field.id)) {
-      throw new NamingError(`Field id "${field.id}" is used more than once on "${definition.name}".`);
+      throw new NamingError(
+        `Field id "${field.id}" is used more than once on "${definition.name}".`,
+      );
     }
     seenIds.add(field.id);
   }
@@ -117,14 +126,29 @@ export function validateContentTypeDefinition(
  * makes that position an explicit, durable property instead of only ever
  * being implicit, regardless of what a client submits. Called once, right
  * before validating/planning a save (`routes/content-types.ts`). */
-export function normalizeFieldOrder(definition: ContentTypeDefinition): ContentTypeDefinition {
-  return { ...definition, fields: definition.fields.map((field, index) => ({ ...field, order: index })) };
+export function normalizeFieldOrder(
+  definition: ContentTypeDefinition,
+): ContentTypeDefinition {
+  return {
+    ...definition,
+    fields: definition.fields.map((field, index) => ({
+      ...field,
+      order: index,
+    })),
+  };
 }
 
 /** Feature flags whose synthetic fields (see `system-fields.ts`) a `system`
  * content type is allowed to depend on for its default shape - only these
  * are checked against being turned back off. */
-const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo", "sortable"] as const;
+const LOCKABLE_FEATURES = [
+  "slug",
+  "draft",
+  "schedule",
+  "timestamps",
+  "seo",
+  "sortable",
+] as const;
 
 /**
  * Guards a `system` content type's built-in shape (see `seed.ts`) against
@@ -158,7 +182,7 @@ const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo", "so
  *
  * `structureLocked` is, like `requiredFeatures`, sourced from the matching
  * default definition (never from `existing.structureLocked`): a drycms
- * upgrade that newly marks an already-seeded default (e.g. `aiKeyManagement`)
+ * upgrade that newly marks an already-seeded default (e.g. `aiKey`)
  * as structure-locked must take effect on installs that seeded it before
  * that flag existed, whose stored row will never have it set.
  */
@@ -171,17 +195,25 @@ export function validateSystemProtections(
   if (!existing?.system) return;
 
   if (!next.system) {
-    throw new NamingError(`"${existing.label}" is a built-in content type and can't be un-marked as system.`);
+    throw new NamingError(
+      `"${existing.label}" is a built-in content type and can't be un-marked as system.`,
+    );
   }
 
   if (next.label !== existing.label) {
-    throw new NamingError(`"${existing.label}"'s Title is set by the system and can't be changed.`);
+    throw new NamingError(
+      `"${existing.label}"'s Title is set by the system and can't be changed.`,
+    );
   }
   if (next.name !== existing.name) {
-    throw new NamingError(`"${existing.label}"'s Table Name is set by the system and can't be changed.`);
+    throw new NamingError(
+      `"${existing.label}"'s Table Name is set by the system and can't be changed.`,
+    );
   }
   if ((next.description ?? "") !== (existing.description ?? "")) {
-    throw new NamingError(`"${existing.label}"'s Description is set by the system and can't be changed.`);
+    throw new NamingError(
+      `"${existing.label}"'s Description is set by the system and can't be changed.`,
+    );
   }
 
   const nextFieldById = new Map(next.fields.map((f) => [f.id, f]));
@@ -189,7 +221,9 @@ export function validateSystemProtections(
     if (!field.locked) continue;
     const nextField = nextFieldById.get(field.id);
     if (!nextField) {
-      throw new NamingError(`Field "${field.label}" is required by "${existing.label}" and can't be removed.`);
+      throw new NamingError(
+        `Field "${field.label}" is required by "${existing.label}" and can't be removed.`,
+      );
     }
     const unchanged =
       nextField.name === field.name &&
@@ -197,26 +231,38 @@ export function validateSystemProtections(
       nextField.type === field.type &&
       (nextField.description ?? "") === (field.description ?? "") &&
       JSON.stringify(nextField.config) === JSON.stringify(field.config) &&
-      JSON.stringify(nextField.validation) === JSON.stringify(field.validation) &&
+      JSON.stringify(nextField.validation) ===
+        JSON.stringify(field.validation) &&
       JSON.stringify(nextField.default) === JSON.stringify(field.default);
     if (!unchanged) {
-      throw new NamingError(`Field "${field.label}" is required by "${existing.label}" and can't be edited.`);
+      throw new NamingError(
+        `Field "${field.label}" is required by "${existing.label}" and can't be edited.`,
+      );
     }
   }
 
   for (const key of LOCKABLE_FEATURES) {
     if (requiredFeatures?.[key] && !next.features?.[key]) {
-      throw new NamingError(`"${key}" can't be turned off on "${existing.label}" - a built-in field depends on it.`);
+      throw new NamingError(
+        `"${key}" can't be turned off on "${existing.label}" - a built-in field depends on it.`,
+      );
     }
   }
 
   if (structureLocked) {
     const existingFieldIds = new Set(existing.fields.map((f) => f.id));
     if (next.fields.some((f) => !existingFieldIds.has(f.id))) {
-      throw new NamingError(`"${existing.label}"'s structure is locked - fields can't be added.`);
+      throw new NamingError(
+        `"${existing.label}"'s structure is locked - fields can't be added.`,
+      );
     }
-    if (JSON.stringify(next.features ?? {}) !== JSON.stringify(existing.features ?? {})) {
-      throw new NamingError(`"${existing.label}"'s structure is locked - features can't be changed.`);
+    if (
+      JSON.stringify(next.features ?? {}) !==
+      JSON.stringify(existing.features ?? {})
+    ) {
+      throw new NamingError(
+        `"${existing.label}"'s structure is locked - features can't be changed.`,
+      );
     }
   }
 }
@@ -231,7 +277,9 @@ export function toSqlLiteral(value: unknown): string {
   if (typeof value === "boolean") return value ? "1" : "0";
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new NamingError(`Cannot encode non-finite number ${value} as a SQL literal.`);
+      throw new NamingError(
+        `Cannot encode non-finite number ${value} as a SQL literal.`,
+      );
     }
     return String(value);
   }

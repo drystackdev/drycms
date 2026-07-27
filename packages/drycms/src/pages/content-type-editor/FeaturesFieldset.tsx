@@ -1,5 +1,8 @@
 import CheckField from "../../components/CheckField.js";
-import type { ContentTypeFeatures, ContentTypeKind } from "../../content-types/types.js";
+import type {
+  ContentTypeFeatures,
+  ContentTypeKind,
+} from "../../content-types/types.js";
 
 interface FeatureDescriptor {
   key: keyof ContentTypeFeatures;
@@ -11,12 +14,23 @@ interface FeatureDescriptor {
  * read the schema to understand what a toggle does. */
 export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
   collection: [
-    { key: "slug", label: "Slug", description: "Adds a URL-friendly Slug field, and a Title field to go with it." },
-    { key: "draft", label: "Draft", description: "Lets you save an entry as a private draft before publishing it." },
+    {
+      key: "slug",
+      label: "Slug",
+      description:
+        "Adds a URL-friendly Slug field, and a Title field to go with it.",
+    },
+    {
+      key: "draft",
+      label: "Draft",
+      description:
+        "Lets you save an entry as a private draft before publishing it.",
+    },
     {
       key: "schedule",
       label: "Schedule",
-      description: "Lets you set a future date/time for an entry to go live automatically.",
+      description:
+        "Lets you set a future date/time for an entry to go live automatically.",
     },
     {
       key: "fullSearch",
@@ -26,12 +40,14 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
     {
       key: "timestamps",
       label: "Timestamps",
-      description: "Automatically records when each entry was created and last updated.",
+      description:
+        "Automatically records when each entry was created and last updated.",
     },
     {
       key: "seo",
       label: "SEO",
-      description: "Adds Title, Description, and Image fields for search engines and social previews.",
+      description:
+        "Adds Title, Description, and Image fields for search engines and social previews.",
     },
     {
       key: "sortable",
@@ -40,11 +56,17 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
     },
   ],
   singleton: [
-    { key: "slug", label: "Slug", description: "Adds a URL-friendly Slug field, and a Title field to go with it." },
+    {
+      key: "slug",
+      label: "Slug",
+      description:
+        "Adds a URL-friendly Slug field, and a Title field to go with it.",
+    },
     {
       key: "seo",
       label: "SEO",
-      description: "Adds Title, Description, and Image fields for search engines and social previews.",
+      description:
+        "Adds Title, Description, and Image fields for search engines and social previews.",
     },
   ],
   component: [],
@@ -55,7 +77,7 @@ export interface FeaturesFieldsetProps {
   features: ContentTypeFeatures | undefined;
   onChange: (key: keyof ContentTypeFeatures, value: boolean) => void;
   /** When true, this content type's structure is fully frozen (`role`/
-   * `permission`/`aiKeyManagement` - see `types.ts`'s `structureLocked`):
+   * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
    * disables every toggle. */
   disabled?: boolean;
   /** Individual feature keys that can't be turned off because the built-in
@@ -65,13 +87,19 @@ export interface FeaturesFieldsetProps {
   requiredKeys?: ReadonlySet<keyof ContentTypeFeatures>;
 }
 
-export default function FeaturesFieldset({ kind, features, onChange, disabled, requiredKeys }: FeaturesFieldsetProps) {
+export default function FeaturesFieldset({
+  kind,
+  features,
+  onChange,
+  disabled,
+  requiredKeys,
+}: FeaturesFieldsetProps) {
   const items = FEATURES_BY_KIND[kind];
   if (items.length === 0) return null;
   return (
     <fieldset>
       <legend>Features</legend>
-      <div class="stack" style={{marginBottom: '1rem'}}>
+      <div class="stack" style={{ marginBottom: "1rem" }}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
             <CheckField

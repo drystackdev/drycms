@@ -6,8 +6,11 @@ import {
 	lastEnabledIndex,
 	nextEnabledIndex,
 	useCloseOnBlur,
+	useFloatingPosition,
+	useNativePopover,
 	useOutsideClick,
 	usePopupFlip,
+	useScrollLock,
 	type ListOption,
 } from './list-nav.js';
 import { useOverlayScrollbars } from './overlayscrollbars.js';
@@ -63,6 +66,7 @@ export default function MultiSelect({
 
 	const filtered = useMemo(() => filterOptions(options, open ? text : ''), [options, open, text]);
 	const openUp = usePopupFlip(open, wrapRef);
+	const position = useFloatingPosition(open, wrapRef, openUp);
 
 	const setValue = (next: string[]) => {
 		if (value === undefined) setUncontrolled(next);
@@ -96,6 +100,8 @@ export default function MultiSelect({
 
 	useOutsideClick(open, [wrapRef], close);
 	useCloseOnBlur(open, wrapRef, close);
+	useNativePopover(open, listRef, () => {});
+	useScrollLock(open, wrapRef);
 
 	const onKeyDown = (event: KeyboardEvent) => {
 		if (disabled) return;
@@ -188,6 +194,12 @@ export default function MultiSelect({
 					role="listbox"
 					aria-multiselectable="true"
 					ref={listRef}
+					popover="manual"
+					style={
+						position
+							? { position: 'fixed', top: `${position.top}px`, left: `${position.left}px`, width: `${position.width}px` }
+							: undefined
+					}
 				>
 					{filtered.length === 0 ? (
 						<li class="muted" role="presentation">

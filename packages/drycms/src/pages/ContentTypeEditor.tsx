@@ -215,12 +215,15 @@ export default function ContentTypeEditor({ id, kind }: Props) {
 
   // Sourced from the CURRENTLY installed defaults (never from the loaded
   // `definition` itself) - a drycms upgrade that newly locks/requires
-  // something on an already-seeded built-in (e.g. `aiKeyManagement` gaining
+  // something on an already-seeded built-in (e.g. `aiKey` gaining
   // `structureLocked`) must reflect here immediately, not only after that
   // row is next resaved. Mirrors `routes/content-types.ts`'s
   // `validateSystemProtections` call, which is the actual authority.
   const matchingDefault = useMemo(
-    () => (definition ? defaultContentTypeDefinitions().find((t) => t.id === definition.id) : undefined),
+    () =>
+      definition
+        ? defaultContentTypeDefinitions().find((t) => t.id === definition.id)
+        : undefined,
     [definition?.id],
   );
   const structureLocked = !!matchingDefault?.structureLocked;
@@ -228,7 +231,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     const required = matchingDefault?.features;
     if (!required) return undefined;
     return new Set(
-      (Object.keys(required) as (keyof ContentTypeFeatures)[]).filter((key) => required[key]),
+      (Object.keys(required) as (keyof ContentTypeFeatures)[]).filter(
+        (key) => required[key],
+      ),
     );
   }, [matchingDefault]);
 

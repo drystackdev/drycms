@@ -76,7 +76,7 @@ export interface ContentTypeDefinition {
    * entirely: no new fields can be added and no feature can be toggled at
    * all (stricter than plain `system`, which still allows both) - the type
    * is display-only in the schema editor. Used by `role`/`permission`/
-   * `aiKeyManagement` (see `seed.ts`); enforced in `naming.ts`'s
+   * `aiKey` (see `seed.ts`); enforced in `naming.ts`'s
    * `validateSystemProtections`. */
   structureLocked?: boolean;
 }

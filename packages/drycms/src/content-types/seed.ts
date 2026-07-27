@@ -23,12 +23,12 @@ const IDS = {
   seoMetaTitle: "system-seo-meta-title",
   seoDescription: "system-seo-description",
   seoImage: "system-seo-image",
-  aiKeyManagement: "system-ai-key-management",
-  aiKeyManagementName: "system-ai-key-management-name",
-  aiKeyManagementDescription: "system-ai-key-management-description",
-  aiKeyManagementProvider: "system-ai-key-management-provider",
-  aiKeyManagementKey: "system-ai-key-management-key",
-  aiKeyManagementUrl: "system-ai-key-management-url",
+  aiKey: "system-ai-key-management",
+  aiKeyName: "system-ai-key-management-name",
+  aiKeyDescription: "system-ai-key-management-description",
+  aiKeyProvider: "system-ai-key-management-provider",
+  aiKeyKey: "system-ai-key-management-key",
+  aiKeyUrl: "system-ai-key-management-url",
   userRoles: "system-user-roles",
   role: "system-role",
   roleName: "system-role-name",
@@ -39,7 +39,9 @@ const IDS = {
   permissionIdTable: "system-permission-id-table",
 } as const;
 
-function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinition {
+function lockedField(
+  overrides: Omit<FieldDefinition, "locked">,
+): FieldDefinition {
   return { ...overrides, locked: true };
 }
 
@@ -48,14 +50,14 @@ function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinitio
  * (for accounts able to sign in, with a `roles` relation to `role`), a `menu`
  * collection (a named group of links), the `menuItem` component `menu.refs`
  * repeats, an `seo` component any collection/singleton can flatten in via
- * `features.seo` (see `system-fields.ts`), an `aiKeyManagement` collection
+ * `features.seo` (see `system-fields.ts`), an `aiKey` collection
  * (credentials for third-party AI providers), and `role`/`permission`
  * collections (role-based access control - see `status/role-permission.md`).
  * All seven are `system: true` (can't be deleted) and every declared field is
  * `locked: true` (can't be removed or edited - frozen view-only in the
  * schema editor) - new custom fields can still be added, and everything can
  * still be reordered; see `naming.ts`'s `validateSystemProtections` for the
- * enforcement. `aiKeyManagement`,
+ * enforcement. `aiKey`,
  * `role`, and `permission` are additionally `structureLocked: true` - no new
  * fields can be added and no feature can be toggled at all; they're
  * display-only in the schema editor.
@@ -226,15 +228,15 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     system: true,
   };
 
-  const aiKeyManagement: ContentTypeDefinition = {
-    id: IDS.aiKeyManagement,
+  const aiKey: ContentTypeDefinition = {
+    id: IDS.aiKey,
     kind: "collection",
-    name: "aiKeyManagement",
-    label: "AI Key Management",
+    name: "aiKey",
+    label: "AI Key",
     description: "Credentials for third-party AI providers.",
     fields: [
       lockedField({
-        id: IDS.aiKeyManagementName,
+        id: IDS.aiKeyName,
         name: "name",
         label: "Name",
         type: "text",
@@ -243,7 +245,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         order: 0,
       }),
       lockedField({
-        id: IDS.aiKeyManagementDescription,
+        id: IDS.aiKeyDescription,
         name: "description",
         label: "Description",
         type: "text",
@@ -252,16 +254,19 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         order: 1,
       }),
       lockedField({
-        id: IDS.aiKeyManagementProvider,
+        id: IDS.aiKeyProvider,
         name: "provider",
         label: "Provider",
         type: "select",
-        config: { options: ["Google", "Anthropic", "ChatGPT", "Custom"], multiple: false },
+        config: {
+          options: ["Google", "Anthropic", "ChatGPT", "Custom"],
+          multiple: false,
+        },
         validation: { required: true },
         order: 2,
       }),
       lockedField({
-        id: IDS.aiKeyManagementKey,
+        id: IDS.aiKeyKey,
         name: "key",
         label: "Key",
         type: "secretkey",
@@ -270,7 +275,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         order: 3,
       }),
       lockedField({
-        id: IDS.aiKeyManagementUrl,
+        id: IDS.aiKeyUrl,
         name: "url",
         label: "URL",
         type: "text",
@@ -330,7 +335,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     kind: "collection",
     name: "permission",
     label: "Permission",
-    description: "Auto-synced, one per collection/singleton - governs which role can operate on it.",
+    description:
+      "Auto-synced, one per collection/singleton - governs which role can operate on it.",
     fields: [
       lockedField({
         id: IDS.permissionName,
@@ -356,7 +362,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     structureLocked: true,
   };
 
-  return [menuItem, seo, user, menu, aiKeyManagement, role, permission];
+  return [menuItem, seo, user, menu, aiKey, role, permission];
 }
 
 /**
@@ -371,9 +377,13 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
  * component from it even on a run where `menuItem` itself isn't being
  * (re-)created.
  */
-export function pendingSeedStatements(existingNamesLowercase: ReadonlySet<string>): Statement[] {
+export function pendingSeedStatements(
+  existingNamesLowercase: ReadonlySet<string>,
+): Statement[] {
   const all = defaultContentTypeDefinitions();
-  const missing = all.filter((t) => !existingNamesLowercase.has(t.name.toLowerCase()));
+  const missing = all.filter(
+    (t) => !existingNamesLowercase.has(t.name.toLowerCase()),
+  );
 
   const statements: Statement[] = [];
   for (const target of missing) {

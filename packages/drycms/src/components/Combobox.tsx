@@ -6,8 +6,11 @@ import {
 	lastEnabledIndex,
 	nextEnabledIndex,
 	useCloseOnBlur,
+	useFloatingPosition,
+	useNativePopover,
 	useOutsideClick,
 	usePopupFlip,
+	useScrollLock,
 	type ListOption,
 } from './list-nav.js';
 import { useOverlayScrollbars } from './overlayscrollbars.js';
@@ -50,6 +53,13 @@ export default function Combobox({
 	const labelFor = (val: string | undefined) => options.find((option) => option.value === val)?.label ?? '';
 
 	const [text, setText] = useState(() => labelFor(current));
+	// Separate from `text`: `text` is the input's resting display value (the
+	// selected option's label, kept even while closed), `query` is what
+	// actually filters the list. Opening via focus/click/arrow-key (not
+	// typing) resets `query` to '' - otherwise the popup would open already
+	// filtered down to just the currently-selected option, since `text` still
+	// holds its label at that point.
+	const [query, setQuery] = useState('');
 	const [open, setOpen] = useState(false);
 	const [activeIndex, setActiveIndex] = useState(-1);
 
@@ -63,8 +73,9 @@ export default function Combobox({
 	const listId = id ?? `combobox-${reactId}`;
 	const optionId = (index: number) => `${listId}-option-${index}`;
 
-	const filtered = useMemo(() => filterOptions(options, open ? text : ''), [options, open, text]);
+	const filtered = useMemo(() => filterOptions(options, open ? query : ''), [options, open, query]);
 	const openUp = usePopupFlip(open, wrapRef);
+	const position = useFloatingPosition(open, wrapRef, openUp);
 
 	// Controlled value changed elsewhere while the popup was closed - resync
 	// the display text. Also resyncs when `options` itself changes, so a
@@ -100,9 +111,13 @@ export default function Combobox({
 
 	useOutsideClick(open, [wrapRef], revert);
 	useCloseOnBlur(open, wrapRef, revert);
+	useNativePopover(open, listRef, () => {});
+	useScrollLock(open, wrapRef);
 
+	// Opens without filtering - see `query`'s comment above.
 	const openAt = (index: number) => {
 		setOpen(true);
+		setQuery('');
 		setActiveIndex(index);
 	};
 
@@ -110,11 +125,11 @@ export default function Combobox({
 		if (disabled) return;
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
-			if (!open) openAt(firstEnabledIndex(filterOptions(options, text)));
+			if (!open) openAt(firstEnabledIndex(options));
 			else setActiveIndex((i) => nextEnabledIndex(filtered, i, 1));
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
-			if (!open) openAt(lastEnabledIndex(filterOptions(options, text)));
+			if (!open) openAt(lastEnabledIndex(options));
 			else setActiveIndex((i) => nextEnabledIndex(filtered, i, -1));
 		} else if (event.key === 'Home' && open) {
 			event.preventDefault();
@@ -153,16 +168,17 @@ export default function Combobox({
 				value={text}
 				onFocus={(event) => {
 					event.currentTarget.select();
-					openAt(firstEnabledIndex(filterOptions(options, text)));
+					openAt(firstEnabledIndex(options));
 				}}
 				onClick={(event) => {
 					if (open) return;
 					(event.currentTarget as HTMLInputElement).select();
-					openAt(firstEnabledIndex(filterOptions(options, text)));
+					openAt(firstEnabledIndex(options));
 				}}
 				onInput={(event) => {
 					const next = (event.currentTarget as HTMLInputElement).value;
 					setText(next);
+					setQuery(next);
 					setOpen(true);
 					setActiveIndex(firstEnabledIndex(filterOptions(options, next)));
 				}}
@@ -184,6 +200,12 @@ export default function Combobox({
 					class={openUp ? 'select-popup up' : 'select-popup'}
 					role="listbox"
 					ref={listRef}
+					popover="manual"
+					style={
+						position
+							? { position: 'fixed', top: `${position.top}px`, left: `${position.left}px`, width: `${position.width}px` }
+							: undefined
+					}
 				>
 					{filtered.length === 0 ? (
 						<li class="muted" role="presentation">
