@@ -35,11 +35,6 @@ export interface FieldsListProps {
    * end up relative to each other. */
   onReorderFields: (fields: FieldDefinition[]) => void;
   onAdd: () => void;
-  /** When true, this content type's structure is fully frozen (`role`/
-   * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
-   * hides the "+ Add Field" button. Existing fields can still be reordered/
-   * edited - only adding new ones is blocked. */
-  structureLocked?: boolean;
 }
 
 /**
@@ -57,7 +52,6 @@ export default function FieldsList({
   onRemove,
   onReorderFields,
   onAdd,
-  structureLocked,
 }: FieldsListProps) {
   const [pendingRemove, setPendingRemove] = useState<FieldDefinition | null>(
     null,
@@ -127,11 +121,9 @@ export default function FieldsList({
             Define the columns used for data entry and storage
           </span>
         </div>
-        {!structureLocked && (
-          <button type="button" class="outline" onClick={onAdd}>
-            <PlusIcon /> Add Field
-          </button>
-        )}
+        <button type="button" class="outline" onClick={onAdd}>
+          <PlusIcon /> Add Field
+        </button>
       </div>
       <ul class="content-type-list" {...sortable.containerProps}>
         {idEntry && (

@@ -318,13 +318,10 @@ describe("validateSystemProtections", () => {
     ).not.toThrow();
   });
 
-  // Regression: turning `slug` ON for "User" (not in the seed's required
-  // set), saving, then turning it back OFF used to be rejected - the old
-  // check compared against `existing.features` (whatever's CURRENTLY
-  // stored, including anything opted into after seeding) instead of the
-  // seed's own required set, so a feature became permanently stuck on the
-  // moment anyone turned it on even once.
-  it("allows turning back off a feature that was optionally enabled after seeding, not part of the original required set", () => {
+  // Every system type's `features` is entirely frozen, not just the flags
+  // the seed itself requires on - so a feature that was optionally turned on
+  // after seeding can't be turned back off either.
+  it("rejects turning off a feature that was optionally enabled after seeding, not part of the original required set", () => {
     const existing = contentType({
       system: true,
       fields: [],
@@ -337,7 +334,7 @@ describe("validateSystemProtections", () => {
     });
     expect(() =>
       validateSystemProtections(next, existing, { timestamps: true }),
-    ).not.toThrow();
+    ).toThrow(NamingError);
   });
 
   it("also guards the seo feature, same as timestamps/slug/draft/schedule", () => {
@@ -356,23 +353,8 @@ describe("validateSystemProtections", () => {
     ).toThrow(NamingError);
   });
 
-  describe("structureLocked", () => {
-    // Sourced from the matching DEFAULT definition, same as `requiredFeatures`
-    // - never from `existing.structureLocked` (see the doc comment: an
-    // already-seeded row from before this flag existed would never have it
-    // set, and must still be enforced once the running app's defaults say so).
-    it("rejects adding a new field", () => {
-      const existing = contentType({ system: true, fields: [lockedName] });
-      const next = contentType({
-        system: true,
-        fields: [lockedName, field({ id: "extra", name: "extra" })],
-      });
-      expect(() =>
-        validateSystemProtections(next, existing, undefined, true),
-      ).toThrow(NamingError);
-    });
-
-    it("rejects turning on a feature that wasn't already on", () => {
+  describe("features are entirely frozen on every system type (role/permission/aiKey/user/menu alike)", () => {
+    it("rejects turning on a feature that wasn't already on, even one the seed never required", () => {
       const existing = contentType({ system: true, fields: [], features: {} });
       const next = contentType({
         system: true,
@@ -380,11 +362,22 @@ describe("validateSystemProtections", () => {
         features: { slug: true },
       });
       expect(() =>
-        validateSystemProtections(next, existing, undefined, true),
+        validateSystemProtections(next, existing, undefined),
       ).toThrow(NamingError);
     });
 
-    it("still allows reordering existing fields (locked-field content editing is blocked universally, not only when structureLocked)", () => {
+    it("still allows adding a new field, even on a type like role/permission/aiKey whose features are fully frozen", () => {
+      const existing = contentType({ system: true, fields: [lockedName] });
+      const next = contentType({
+        system: true,
+        fields: [lockedName, field({ id: "extra", name: "extra" })],
+      });
+      expect(() =>
+        validateSystemProtections(next, existing, undefined),
+      ).not.toThrow();
+    });
+
+    it("still allows reordering existing fields", () => {
       const other = field({ id: "other", name: "other" });
       const existing = contentType({
         system: true,
@@ -392,33 +385,8 @@ describe("validateSystemProtections", () => {
       });
       const next = contentType({ system: true, fields: [other, lockedName] });
       expect(() =>
-        validateSystemProtections(next, existing, undefined, true),
-      ).not.toThrow();
-    });
-
-    it("does not restrict adding fields/features when the default's structureLocked is unset/false, even on a system type", () => {
-      const existing = contentType({ system: true, fields: [lockedName] });
-      const next = contentType({
-        system: true,
-        fields: [lockedName, field({ id: "extra", name: "extra" })],
-        features: { slug: true },
-      });
-      expect(() =>
         validateSystemProtections(next, existing, undefined),
       ).not.toThrow();
-    });
-
-    it("enforces structureLocked even when the stored row predates the flag (e.g. aiKey upgrading in-place)", () => {
-      // `existing` here has no `structureLocked` of its own - simulates a row
-      // seeded before this drycms version added the flag to its default.
-      const existing = contentType({ system: true, fields: [lockedName] });
-      const next = contentType({
-        system: true,
-        fields: [lockedName, field({ id: "extra", name: "extra" })],
-      });
-      expect(() =>
-        validateSystemProtections(next, existing, undefined, true),
-      ).toThrow(NamingError);
     });
   });
 });

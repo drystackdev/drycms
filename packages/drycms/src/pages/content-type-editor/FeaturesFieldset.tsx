@@ -76,9 +76,8 @@ export interface FeaturesFieldsetProps {
   kind: ContentTypeKind;
   features: ContentTypeFeatures | undefined;
   onChange: (key: keyof ContentTypeFeatures, value: boolean) => void;
-  /** When true, this content type's structure is fully frozen (`role`/
-   * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
-   * disables every toggle. */
+  /** When true (a `system` content type - see `types.ts`), every feature is
+   * frozen exactly as seeded: disables every toggle. */
   disabled?: boolean;
   /** Individual feature keys that can't be turned off because the built-in
    * seed default already requires them on (e.g. `timestamps` on `User`/

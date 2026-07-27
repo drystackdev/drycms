@@ -1698,6 +1698,20 @@
       }
     }
 
+    /* Route-transition indicator (routers/App.tsx) - pinned to the top of
+     * the viewport while `<Router>` is waiting on a lazy chunk. z-index sits
+     * above the mobile sheet layer (49 above) since a route change can be
+     * triggered from inside one. */
+    progress.route-progress {
+      position: fixed;
+      inset-block-start: 0;
+      inset-inline: 0;
+      z-index: 60;
+      width: 100%;
+      height: 0.1875rem;
+      border-radius: 0;
+    }
+
     /*
      * Tooltip. `data-tooltip` is kept as an attribute (not a class) because,
      * like `title`, its value IS the content it renders - not a variant name.
@@ -2187,7 +2201,7 @@
       gap: var(--dry-gap) 2rem;
       align-items: start;
 
-      @media (width < 48rem) {
+      @media (width < 64rem) {
         grid-template-columns: minmax(0, 1fr);
       }
     }
