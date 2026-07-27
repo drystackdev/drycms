@@ -184,6 +184,55 @@ describe("validateSystemProtections", () => {
     const next = contentType({ system: true, fields: [], features: { seo: false } });
     expect(() => validateSystemProtections(next, existing, { seo: true })).toThrow(NamingError);
   });
+
+  describe("structureLocked", () => {
+    // Sourced from the matching DEFAULT definition, same as `requiredFeatures`
+    // - never from `existing.structureLocked` (see the doc comment: an
+    // already-seeded row from before this flag existed would never have it
+    // set, and must still be enforced once the running app's defaults say so).
+    it("rejects adding a new field", () => {
+      const existing = contentType({ system: true, fields: [lockedName] });
+      const next = contentType({
+        system: true,
+        fields: [lockedName, field({ id: "extra", name: "extra" })],
+      });
+      expect(() => validateSystemProtections(next, existing, undefined, true)).toThrow(NamingError);
+    });
+
+    it("rejects turning on a feature that wasn't already on", () => {
+      const existing = contentType({ system: true, fields: [], features: {} });
+      const next = contentType({ system: true, fields: [], features: { slug: true } });
+      expect(() => validateSystemProtections(next, existing, undefined, true)).toThrow(NamingError);
+    });
+
+    it("still allows editing/reordering existing fields", () => {
+      const existing = contentType({ system: true, fields: [lockedName] });
+      const edited = field({ id: "name", name: "name", label: "Full name", locked: true });
+      const next = contentType({ system: true, fields: [edited] });
+      expect(() => validateSystemProtections(next, existing, undefined, true)).not.toThrow();
+    });
+
+    it("does not restrict adding fields/features when the default's structureLocked is unset/false, even on a system type", () => {
+      const existing = contentType({ system: true, fields: [lockedName] });
+      const next = contentType({
+        system: true,
+        fields: [lockedName, field({ id: "extra", name: "extra" })],
+        features: { slug: true },
+      });
+      expect(() => validateSystemProtections(next, existing, undefined)).not.toThrow();
+    });
+
+    it("enforces structureLocked even when the stored row predates the flag (e.g. aiKeyManagement upgrading in-place)", () => {
+      // `existing` here has no `structureLocked` of its own - simulates a row
+      // seeded before this drycms version added the flag to its default.
+      const existing = contentType({ system: true, fields: [lockedName] });
+      const next = contentType({
+        system: true,
+        fields: [lockedName, field({ id: "extra", name: "extra" })],
+      });
+      expect(() => validateSystemProtections(next, existing, undefined, true)).toThrow(NamingError);
+    });
+  });
 });
 
 describe("normalizeFieldOrder", () => {

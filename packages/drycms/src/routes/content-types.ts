@@ -84,10 +84,12 @@ async function handleSave(
   definition = normalizeFieldOrder(definition);
   const allTypes = await adapter.listContentTypes();
   validateContentTypeDefinition(definition, allTypes);
+  const matchingDefault = defaultContentTypeDefinitions().find((t) => t.id === definition.id);
   validateSystemProtections(
     definition,
     allTypes.find((t) => t.id === definition.id),
-    defaultContentTypeDefinitions().find((t) => t.id === definition.id)?.features,
+    matchingDefault?.features,
+    matchingDefault?.structureLocked,
   );
 
   // `validateContentTypeDefinition` only rules out two types sharing a

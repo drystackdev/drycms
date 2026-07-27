@@ -1,5 +1,6 @@
 import type { ResolvedD1ContentOption } from "../../integration/options.js";
 import { planDelete, planSave as planSaveEngine, type SavePlan, type Statement } from "../migration.js";
+import { permissionDeleteStatement, permissionSyncStatement, superAdminSeedStatement } from "../permissions.js";
 import { pendingSeedStatements } from "../seed.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
@@ -80,6 +81,16 @@ export function createD1ContentEngineAdapter(
         const existing = await db.prepare('SELECT "name" FROM "metadata";').all<{ name: string }>();
         const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
         await runBatch(db, statements);
+
+        // Keep `permission` in sync with every current collection/singleton
+        // (including ones seeded on a prior boot, e.g. `user`/`menu` on an
+        // app upgrading to a drycms version that just added `role`/
+        // `permission`), and (re-)seed the permanent Super Admin role.
+        // Idempotent and cheap - safe to run unconditionally every boot.
+        const allTypesResult = await db.prepare('SELECT "definition" FROM "metadata";').all<{ definition: string }>();
+        const allTypes = (allTypesResult.results ?? []).map((row) => JSON.parse(row.definition) as ContentTypeDefinition);
+        const syncStatements = allTypes.map(permissionSyncStatement).filter((s): s is Statement => !!s);
+        await runBatch(db, [...syncStatements, superAdminSeedStatement()]);
       })();
     }
     return bootstrapped;
@@ -157,6 +168,8 @@ export function createD1ContentEngineAdapter(
         );
       }
     }
+    const syncStatement = permissionSyncStatement(next);
+    if (syncStatement) await prepare(db, syncStatement).run();
 
     const saved = await getContentType(next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
@@ -185,6 +198,8 @@ export function createD1ContentEngineAdapter(
     const dropStatements = planDelete(existing, allTypes);
     await runBatch(db, dropStatements);
     await db.prepare('DELETE FROM "metadata" WHERE "id" = ?;').bind(id).run();
+    const deleteStatement = permissionDeleteStatement(existing);
+    if (deleteStatement) await prepare(db, deleteStatement).run();
   }
 
   return { listContentTypes, getContentType, planSave, applySave, deleteContentType };

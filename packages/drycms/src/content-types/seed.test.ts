@@ -8,11 +8,13 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, and aiKeyManagement (collections), all system + fully locked", () => {
+  it("declares menuItem+seo (components), user, menu, aiKeyManagement, role, and permission (collections), all system + fully locked", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKeyManagement",
       "menu",
       "menuItem",
+      "permission",
+      "role",
       "seo",
       "user",
     ]);
@@ -25,6 +27,18 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("user").kind).toBe("collection");
     expect(byName("menu").kind).toBe("collection");
     expect(byName("aiKeyManagement").kind).toBe("collection");
+    expect(byName("role").kind).toBe("collection");
+    expect(byName("permission").kind).toBe("collection");
+  });
+
+  it("structureLocked: on for aiKeyManagement/role/permission, off for user/menu/menuItem/seo", () => {
+    expect(byName("aiKeyManagement").structureLocked).toBe(true);
+    expect(byName("role").structureLocked).toBe(true);
+    expect(byName("permission").structureLocked).toBe(true);
+    expect(byName("user").structureLocked).toBeFalsy();
+    expect(byName("menu").structureLocked).toBeFalsy();
+    expect(byName("menuItem").structureLocked).toBeFalsy();
+    expect(byName("seo").structureLocked).toBeFalsy();
   });
 
   it("gives every type and field a stable, unique id", () => {
@@ -45,14 +59,49 @@ describe("defaultContentTypeDefinitions", () => {
     }
   });
 
-  it("user: name, unique+required email, required password, timestamps on", () => {
+  it("user: name, unique+required email, required password, timestamps on, a manyToMany roles relation", () => {
     const user = byName("user");
+    const role = byName("role");
     expect(user.features?.timestamps).toBe(true);
     const email = user.fields.find((f) => f.name === "email")!;
     expect(email.validation).toMatchObject({ required: true, unique: true, format: "email" });
     const password = user.fields.find((f) => f.name === "password")!;
     expect(password.type).toBe("password");
     expect(password.validation.required).toBe(true);
+    const roles = user.fields.find((f) => f.name === "roles")!;
+    expect(roles.type).toBe("relation");
+    expect(roles.config).toMatchObject({ target: role.id, cardinality: "manyToMany" });
+  });
+
+  it("role: unique+required name, isSuperAdmin boolean, a manyToMany permissions relation", () => {
+    const role = byName("role");
+    const permission = byName("permission");
+    const name = role.fields.find((f) => f.name === "name")!;
+    expect(name.validation).toMatchObject({ required: true, unique: true });
+    const isSuperAdmin = role.fields.find((f) => f.name === "isSuperAdmin")!;
+    expect(isSuperAdmin.type).toBe("boolean");
+    expect(isSuperAdmin.default).toBe(false);
+    const permissions = role.fields.find((f) => f.name === "permissions")!;
+    expect(permissions.type).toBe("relation");
+    expect(permissions.config).toMatchObject({ target: permission.id, cardinality: "manyToMany" });
+  });
+
+  it("permission: unique+required name and idTable", () => {
+    const permission = byName("permission");
+    const name = permission.fields.find((f) => f.name === "name")!;
+    expect(name.validation).toMatchObject({ required: true, unique: true });
+    const idTable = permission.fields.find((f) => f.name === "idTable")!;
+    expect(idTable.type).toBe("text");
+    expect(idTable.validation).toMatchObject({ required: true, unique: true });
+  });
+
+  it("resolves role's permissions relation to a 'role_permissions' child table, and user's roles relation to a 'user_roles' child table", () => {
+    const role = byName("role");
+    const user = byName("user");
+    const roleTree = resolveTableTree(role, defs);
+    expect(roleTree.children.find((c) => c.tableName === "role_permissions")).toBeDefined();
+    const userTree = resolveTableTree(user, defs);
+    expect(userTree.children.find((c) => c.tableName === "user_roles")).toBeDefined();
   });
 
   it("menu: unique+required name, a repeatable menuItem 'refs' field, timestamps on", () => {
@@ -121,23 +170,27 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKeyManagement tables plus 5 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKeyManagement/role/permission/role_permissions/user_roles tables plus 7 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKeyManagement"');
+    expect(sql).toContain('CREATE TABLE "role"');
+    expect(sql).toContain('CREATE TABLE "permission"');
+    expect(sql).toContain('CREATE TABLE "role_permissions"');
+    expect(sql).toContain('CREATE TABLE "user_roles"');
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
     const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
-    expect(metadataInserts).toHaveLength(5);
+    expect(metadataInserts).toHaveLength(7);
   });
 
   it("seeds nothing once every default name is already present", () => {
     const statements = pendingSeedStatements(
-      new Set(["user", "menu", "menuitem", "seo", "aikeymanagement"]),
+      new Set(["user", "menu", "menuitem", "seo", "aikeymanagement", "role", "permission"]),
     );
     expect(statements).toEqual([]);
   });
@@ -149,8 +202,10 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKeyManagement"');
+    expect(sql).toContain('CREATE TABLE "role"');
+    expect(sql).toContain('CREATE TABLE "permission"');
 
     const metadataInserts = statements.filter((s) => s.sql.startsWith('INSERT INTO "metadata"'));
-    expect(metadataInserts).toHaveLength(4);
+    expect(metadataInserts).toHaveLength(6);
   });
 });

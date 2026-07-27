@@ -29,6 +29,14 @@ const IDS = {
   aiKeyManagementProvider: "system-ai-key-management-provider",
   aiKeyManagementKey: "system-ai-key-management-key",
   aiKeyManagementUrl: "system-ai-key-management-url",
+  userRoles: "system-user-roles",
+  role: "system-role",
+  roleName: "system-role-name",
+  roleIsSuperAdmin: "system-role-is-super-admin",
+  rolePermissions: "system-role-permissions",
+  permission: "system-permission",
+  permissionName: "system-permission-name",
+  permissionIdTable: "system-permission-id-table",
 } as const;
 
 function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinition {
@@ -37,14 +45,19 @@ function lockedField(overrides: Omit<FieldDefinition, "locked">): FieldDefinitio
 
 /**
  * The content types every app must have from first boot: a `user` collection
- * (for accounts able to sign in), a `menu` collection (a named group of
- * links), the `menuItem` component `menu.refs` repeats, an `seo` component
- * any collection/singleton can flatten in via `features.seo` (see
- * `system-fields.ts`), and an `aiKeyManagement` collection (credentials for
- * third-party AI providers). All five are `system: true` (can't be deleted)
- * and every declared field is `locked: true` (can't be removed) - new fields
- * can still be added, and everything can still be reordered; see
- * `naming.ts`'s `validateSystemProtections` for the enforcement.
+ * (for accounts able to sign in, with a `roles` relation to `role`), a `menu`
+ * collection (a named group of links), the `menuItem` component `menu.refs`
+ * repeats, an `seo` component any collection/singleton can flatten in via
+ * `features.seo` (see `system-fields.ts`), an `aiKeyManagement` collection
+ * (credentials for third-party AI providers), and `role`/`permission`
+ * collections (role-based access control - see `status/role-permission.md`).
+ * All seven are `system: true` (can't be deleted) and every declared field is
+ * `locked: true` (can't be removed) - new fields can still be added, and
+ * everything can still be reordered; see `naming.ts`'s
+ * `validateSystemProtections` for the enforcement. `aiKeyManagement`,
+ * `role`, and `permission` are additionally `structureLocked: true` - no new
+ * fields can be added and no feature can be toggled at all; they're
+ * display-only in the schema editor.
  * `createdAt`/`updatedAt` ride on `features.timestamps` instead of being
  * declared fields - same protection, since a `system` type's already-on
  * features can't be turned off either.
@@ -167,6 +180,15 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         validation: { required: true },
         order: 2,
       }),
+      lockedField({
+        id: IDS.userRoles,
+        name: "roles",
+        label: "Roles",
+        type: "relation",
+        config: { target: IDS.role, cardinality: "manyToMany" },
+        validation: {},
+        order: 3,
+      }),
     ],
     version: 0,
     system: true,
@@ -258,9 +280,82 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     ],
     version: 0,
     system: true,
+    structureLocked: true,
   };
 
-  return [menuItem, seo, user, menu, aiKeyManagement];
+  const role: ContentTypeDefinition = {
+    id: IDS.role,
+    kind: "collection",
+    name: "role",
+    label: "Role",
+    description: "A named set of permissions users can be assigned.",
+    fields: [
+      lockedField({
+        id: IDS.roleName,
+        name: "name",
+        label: "Name",
+        type: "text",
+        config: {},
+        validation: { required: true, unique: true },
+        order: 0,
+      }),
+      lockedField({
+        id: IDS.roleIsSuperAdmin,
+        name: "isSuperAdmin",
+        label: "Super Admin",
+        type: "boolean",
+        config: {},
+        validation: {},
+        default: false,
+        order: 1,
+      }),
+      lockedField({
+        id: IDS.rolePermissions,
+        name: "permissions",
+        label: "Permissions",
+        type: "relation",
+        config: { target: IDS.permission, cardinality: "manyToMany" },
+        validation: {},
+        order: 2,
+      }),
+    ],
+    version: 0,
+    system: true,
+    structureLocked: true,
+  };
+
+  const permission: ContentTypeDefinition = {
+    id: IDS.permission,
+    kind: "collection",
+    name: "permission",
+    label: "Permission",
+    description: "Auto-synced, one per collection/singleton - governs which role can operate on it.",
+    fields: [
+      lockedField({
+        id: IDS.permissionName,
+        name: "name",
+        label: "Name",
+        type: "text",
+        config: {},
+        validation: { required: true, unique: true },
+        order: 0,
+      }),
+      lockedField({
+        id: IDS.permissionIdTable,
+        name: "idTable",
+        label: "Table",
+        type: "text",
+        config: {},
+        validation: { required: true, unique: true },
+        order: 1,
+      }),
+    ],
+    version: 0,
+    system: true,
+    structureLocked: true,
+  };
+
+  return [menuItem, seo, user, menu, aiKeyManagement, role, permission];
 }
 
 /**

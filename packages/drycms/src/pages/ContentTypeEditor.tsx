@@ -377,6 +377,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setEditingField(null);
               setFieldDialogOpen(true);
             }}
+            structureLocked={definition.structureLocked}
           />
         </legend>
         <div class="stack">
@@ -440,6 +441,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
                 d ? { ...d, features: { ...d.features, [key]: value } } : d,
               )
             }
+            disabled={definition.structureLocked}
           />
 
           {!isNew && definition.system && (
@@ -447,9 +449,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               <div>
                 <h2>Built-in content type</h2>
                 <p>
-                  "{definition.label}" is one of the app's defaults and can't be
-                  deleted. Fields can still be added and reordered, but its
-                  locked fields can't be removed.
+                  {definition.structureLocked
+                    ? `"${definition.label}" is one of the app's defaults and can't be deleted. Its structure is fully locked - no fields can be added or removed, and no feature can be toggled.`
+                    : `"${definition.label}" is one of the app's defaults and can't be deleted. Fields can still be added and reordered, but its locked fields can't be removed.`}
                 </p>
               </div>
             </div>

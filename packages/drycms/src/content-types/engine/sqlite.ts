@@ -1,5 +1,6 @@
 import type { ResolvedSqliteContentOption } from "../../integration/options.js";
 import { planDelete, planSave as planSaveEngine, type SavePlan, type Statement } from "../migration.js";
+import { permissionDeleteStatement, permissionSyncStatement, superAdminSeedStatement } from "../permissions.js";
 import { pendingSeedStatements } from "../seed.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
@@ -124,6 +125,26 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
           }
         }
 
+        // Keep `permission` in sync with every current collection/singleton
+        // (including ones seeded on a prior boot, e.g. `user`/`menu` on an
+        // app upgrading to a drycms version that just added `role`/
+        // `permission`), and (re-)seed the permanent Super Admin role.
+        // Idempotent and cheap - safe to run unconditionally every boot.
+        const allTypes = handle
+          .all<{ definition: string }>('SELECT "definition" FROM "metadata";')
+          .map((row) => JSON.parse(row.definition) as ContentTypeDefinition);
+        const syncStatements = allTypes
+          .map(permissionSyncStatement)
+          .filter((s): s is Statement => !!s);
+        handle.exec("BEGIN IMMEDIATE;");
+        try {
+          runStatements(handle, [...syncStatements, superAdminSeedStatement()]);
+          handle.exec("COMMIT;");
+        } catch (error) {
+          handle.exec("ROLLBACK;");
+          throw error;
+        }
+
         return handle;
       });
     }
@@ -200,6 +221,8 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
             );
           }
         }
+        const syncStatement = permissionSyncStatement(next);
+        if (syncStatement) handle.run(syncStatement.sql, syncStatement.params ?? []);
         handle.exec("COMMIT;");
       } catch (error) {
         handle.exec("ROLLBACK;");
@@ -238,6 +261,8 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
     try {
       runStatements(handle, dropStatements);
       handle.run('DELETE FROM "metadata" WHERE "id" = ?;', [id]);
+      const deleteStatement = permissionDeleteStatement(existing);
+      if (deleteStatement) handle.run(deleteStatement.sql, deleteStatement.params ?? []);
       handle.exec("COMMIT;");
     } catch (error) {
       handle.exec("ROLLBACK;");

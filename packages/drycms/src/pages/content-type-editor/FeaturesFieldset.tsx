@@ -54,9 +54,13 @@ export interface FeaturesFieldsetProps {
   kind: ContentTypeKind;
   features: ContentTypeFeatures | undefined;
   onChange: (key: keyof ContentTypeFeatures, value: boolean) => void;
+  /** When true, this content type's structure is fully frozen (`role`/
+   * `permission`/`aiKeyManagement` - see `types.ts`'s `structureLocked`):
+   * disables every toggle. */
+  disabled?: boolean;
 }
 
-export default function FeaturesFieldset({ kind, features, onChange }: FeaturesFieldsetProps) {
+export default function FeaturesFieldset({ kind, features, onChange, disabled }: FeaturesFieldsetProps) {
   const items = FEATURES_BY_KIND[kind];
   if (items.length === 0) return null;
   return (
@@ -65,7 +69,7 @@ export default function FeaturesFieldset({ kind, features, onChange }: FeaturesF
       <div class="stack" style={{marginBottom: '1rem'}}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
-            <CheckField role="switch" description={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
+            <CheckField role="switch" disabled={disabled} description={description} label={label} value={!!features?.[key]} onChange={(value) => onChange(key, value)} />
           </div>
         ))}
       </div>

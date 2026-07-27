@@ -153,11 +153,18 @@ const LOCKABLE_FEATURES = ["slug", "draft", "schedule", "timestamps", "seo", "so
  * a single request can't strip `locked` off a field and remove it in the
  * same save, since the removal is caught against what was actually stored
  * beforehand.
+ *
+ * `structureLocked` is, like `requiredFeatures`, sourced from the matching
+ * default definition (never from `existing.structureLocked`): a drycms
+ * upgrade that newly marks an already-seeded default (e.g. `aiKeyManagement`)
+ * as structure-locked must take effect on installs that seeded it before
+ * that flag existed, whose stored row will never have it set.
  */
 export function validateSystemProtections(
   next: ContentTypeDefinition,
   existing: ContentTypeDefinition | undefined,
   requiredFeatures: ContentTypeFeatures | undefined,
+  structureLocked?: boolean,
 ): void {
   if (!existing?.system) return;
 
@@ -185,6 +192,16 @@ export function validateSystemProtections(
   for (const key of LOCKABLE_FEATURES) {
     if (requiredFeatures?.[key] && !next.features?.[key]) {
       throw new NamingError(`"${key}" can't be turned off on "${existing.label}" - a built-in field depends on it.`);
+    }
+  }
+
+  if (structureLocked) {
+    const existingFieldIds = new Set(existing.fields.map((f) => f.id));
+    if (next.fields.some((f) => !existingFieldIds.has(f.id))) {
+      throw new NamingError(`"${existing.label}"'s structure is locked - fields can't be added.`);
+    }
+    if (JSON.stringify(next.features ?? {}) !== JSON.stringify(existing.features ?? {})) {
+      throw new NamingError(`"${existing.label}"'s structure is locked - features can't be changed.`);
     }
   }
 }

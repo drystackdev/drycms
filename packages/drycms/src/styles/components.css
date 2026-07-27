@@ -534,8 +534,7 @@
 
       &:has(> input[disabled]) {
         cursor: not-allowed;
-        background-color: var(--dry-muted);
-        opacity: 0.7;
+        opacity: 0.5;
       }
 
       & > label {
