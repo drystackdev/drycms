@@ -506,35 +506,6 @@ function DemoContent({ id }: { id: string }) {
         </Demo>
       );
 
-    case "scrollbar-auto":
-      return (
-        <Demo
-          id="scrollbar-auto"
-          title="Scrollbar"
-          description="Just the one class - hides the native scrollbar; .scroll-over (thumb/track) is a body-portaled element that's created and positioned on hover or scroll, native scrolling underneath is untouched."
-          code={code.scrollbarAuto!}
-        >
-          <div class="scrollbar-auto stack" style="width: 240px; height: 220px">
-            <div class="card">Item 01</div>
-            <div class="card">Item 02</div>
-            <div class="card">Item 03</div>
-            <div class="card">Item 04</div>
-            <div class="card">Item 05</div>
-            <div class="card">Item 06</div>
-            <div class="card">Item 07</div>
-            <div class="card">Item 08</div>
-            <div class="card">Item 09</div>
-            <div class="card">Item 10</div>
-            <div class="card">Item 11</div>
-            <div class="card">Item 12</div>
-            <div class="card">Item 13</div>
-            <div class="card">Item 14</div>
-            <div class="card">Item 15</div>
-            <div class="card">Item 16</div>
-          </div>
-        </Demo>
-      );
-
     case "buttons":
       return (
         <Demo

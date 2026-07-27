@@ -44,7 +44,6 @@ export const groups: ShowcaseGroup[] = [
       { id: "typography", label: "Typography" },
       { id: "icons", label: "Icons" },
       { id: "layout", label: "Layout" },
-      { id: "scrollbar-auto", label: "Scrollbar" },
     ],
   },
   {
@@ -175,24 +174,6 @@ import { SettingsIcon } from 'drycms/components/icons';
 <div class="row justify-between">
   <span class="muted">.row.justify-between</span>
   <span class="mono">0.0.1</span>
-</div>`,
-  scrollbarAuto: `<div class="scrollbar-auto stack" style="width: 240px; height: 220px">
-  <div class="card">Item 01</div>
-  <div class="card">Item 02</div>
-  <div class="card">Item 03</div>
-  <div class="card">Item 04</div>
-  <div class="card">Item 05</div>
-  <div class="card">Item 06</div>
-  <div class="card">Item 07</div>
-  <div class="card">Item 08</div>
-  <div class="card">Item 09</div>
-  <div class="card">Item 10</div>
-  <div class="card">Item 11</div>
-  <div class="card">Item 12</div>
-  <div class="card">Item 13</div>
-  <div class="card">Item 14</div>
-  <div class="card">Item 15</div>
-  <div class="card">Item 16</div>
 </div>`,
   buttons: `<button type="button" class="sm">Small</button>
 <button type="button">Default</button>
