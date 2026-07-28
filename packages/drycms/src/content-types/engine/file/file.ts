@@ -103,16 +103,24 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
       }
     }
 
-    await driver.writeJson(typePath(next.id), { ...next, version: plan.primary.nextVersion });
-    for (const p of plan.cascaded) {
-      const dep = await getContentType(p.targetContentTypeId);
-      if (dep) await driver.writeJson(typePath(p.targetContentTypeId), { ...dep, version: p.nextVersion });
-    }
+    // Everything below - the primary type, every cascaded dependent, and
+    // every rewritten record - lands as ONE commit on `github`/`gitlab` (see
+    // `FileDriver.transaction()`): a save touching several files should
+    // never be observable as a half-migrated schema if a commit partway
+    // through failed. Permission sync runs in its own transaction right
+    // after (see that call site's comment) rather than joining this one.
+    await driver.transaction(async (tx) => {
+      await tx.writeJson(typePath(next.id), { ...next, version: plan.primary.nextVersion });
+      for (const p of plan.cascaded) {
+        const dep = await tx.readJson<ContentTypeDefinition>(typePath(p.targetContentTypeId));
+        if (dep) await tx.writeJson(typePath(p.targetContentTypeId), { ...dep, version: p.nextVersion });
+      }
 
-    if (plan.primary.needsRewrite) await applyFileRewrite(driver, plan.primary.typeName, plan.primary.rewrite);
-    for (const p of plan.cascaded) {
-      if (p.needsRewrite) await applyFileRewrite(driver, p.typeName, p.rewrite);
-    }
+      if (plan.primary.needsRewrite) await applyFileRewrite(tx, plan.primary.typeName, plan.primary.rewrite);
+      for (const p of plan.cascaded) {
+        if (p.needsRewrite) await applyFileRewrite(tx, p.typeName, p.rewrite);
+      }
+    });
 
     await syncFilePermissions(getEntryAdapter(), await readAllRaw());
 
@@ -137,16 +145,21 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
     }
 
     await deleteFilePermissions(getEntryAdapter(), allTypes, id);
-    await driver.removeJson(typePath(id));
 
-    if (existing.kind !== "component") {
-      await driver.removeDir(dataDir(existing.name));
-      const indexNames = await driver.listJsonFiles(".index");
-      const prefix = `${existing.name}.`;
-      for (const name of indexNames) {
-        if (name.startsWith(prefix)) await driver.removeJson(`.index/${name}.json`);
+    // The type definition itself, its whole data folder, and every stray
+    // index file - one commit, same rationale as `applySave`.
+    await driver.transaction(async (tx) => {
+      await tx.removeJson(typePath(id));
+
+      if (existing.kind !== "component") {
+        await tx.removeDir(dataDir(existing.name));
+        const indexNames = await tx.listJsonFiles(".index");
+        const prefix = `${existing.name}.`;
+        for (const name of indexNames) {
+          if (name.startsWith(prefix)) await tx.removeJson(`.index/${name}.json`);
+        }
       }
-    }
+    });
   }
 
   return { listContentTypes, getContentType, planSave, applySave, deleteContentType };

@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { JSX } from "preact/jsx-runtime";
-import { experimentalClientSearch, path } from "virtual:drycms/config";
+import { contentEngine, path } from "virtual:drycms/config";
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../components/file-manager-http-source.js";
@@ -32,11 +32,19 @@ interface Row extends Record<string, unknown> {
 const DEFAULT_PAGE_SIZE = 10;
 
 /**
- * TEMPORARY, see `DryOption.experimentalClientSearch`: how many rows a
- * single "fetch everything" request pulls down when that flag is on. Not a
- * real page size - just large enough that a typical collection's entries
- * all come back in one request so `DataTable` can search/sort/paginate
- * them in memory.
+ * `engine: "file"`'s `listEntries` re-scans every record on each call (see
+ * `entries-file.ts`) rather than running a SQL query, so round-tripping
+ * search/sort/pagination per keystroke would re-scan the whole collection
+ * repeatedly. Instead, for that engine only, rows are fetched once and
+ * `DataTable`'s existing fully-client-side mode (triggered below by omitting
+ * `serverQuery`) does search/sort/pagination in memory. `sqlite`/`D1` search
+ * server-side via SQL `LIKE` and don't need this.
+ */
+const useClientSearch = contentEngine === "file";
+
+/**
+ * Not a real page size - just large enough that a typical collection's
+ * entries all come back in one request when `useClientSearch` is true.
  */
 const CLIENT_SEARCH_FETCH_ALL_SIZE = 10_000;
 
@@ -385,11 +393,11 @@ function ContentEntryListCollection({
     setLoading(true);
     entriesApi
       .list(
-        // TEMPORARY branch, see `DryOption.experimentalClientSearch` - fetch
-        // once, unfiltered/unsorted/unpaginated, and let `DataTable`'s own
+        // See `useClientSearch` above - `engine: "file"` fetches once,
+        // unfiltered/unsorted/unpaginated, and lets `DataTable`'s own
         // client-side mode (triggered below by omitting `serverQuery`) do
         // the rest in memory.
-        experimentalClientSearch
+        useClientSearch
           ? { page: 0, pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE }
           : {
               page,
@@ -465,9 +473,9 @@ function ContentEntryListCollection({
       </div>
 
       {loadError && <span class="error">{loadError}</span>}
-      {/* TEMPORARY, see `DryOption.experimentalClientSearch` - `serverQuery`
-          below carries its own `loading` readout, which this mode doesn't use. */}
-      {experimentalClientSearch && loading && <span class="hint">Loading…</span>}
+      {/* See `useClientSearch` above - `serverQuery` below carries its own
+          `loading` readout, which this mode doesn't use. */}
+      {useClientSearch && loading && <span class="hint">Loading…</span>}
 
       <DataTable
         columns={columns}
@@ -483,11 +491,11 @@ function ContentEntryListCollection({
             setVisibleKeys(visible);
           },
         }}
-        // TEMPORARY branch, see `DryOption.experimentalClientSearch` -
-        // omitting `serverQuery` drops `DataTable` into its existing
-        // fully-client-side search/sort/paginate mode.
+        // See `useClientSearch` above - omitting `serverQuery` drops
+        // `DataTable` into its existing fully-client-side search/sort/
+        // paginate mode.
         serverQuery={
-          experimentalClientSearch
+          useClientSearch
             ? undefined
             : {
                 total,

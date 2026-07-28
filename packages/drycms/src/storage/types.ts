@@ -80,4 +80,10 @@ export interface StorageAdapter {
   copy(from: string, to: string): Promise<StorageStatEntry>;
   /** Recursive for folders. */
   remove(path: string): Promise<void>;
+  /** Writes/removes several paths as ONE commit on commit-based backends
+   * (`github`/`gitlab`) - `data: null` means remove. Optional: only
+   * implemented where "one commit" is a meaningful, cheaper-than-N-calls
+   * operation. Absent on `local` (no commit concept - callers fall back to
+   * sequential `write()`/`remove()`, already atomic per file there). */
+  writeBatch?(ops: { path: string; data: Uint8Array | null }[], message: string): Promise<void>;
 }

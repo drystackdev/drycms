@@ -473,17 +473,13 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   return (
     <>
       <div class="page-header">
-        <a
-          role="button"
-          href={backTo}
+        <button
+          type="button"
           class="icon ghost"
-          onClick={(event) => {
-            event.preventDefault();
-            requestLeave(backTo);
-          }}
+          onClick={() => requestLeave(backTo)}
         >
           <ArrowLeftIcon />
-        </a>
+        </button>
         <div style={{ flex: 1 }}>
           <h1>
             {isNew
@@ -504,7 +500,11 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           >
             Cancel
           </button>
-          <button type="button" disabled={saving} onClick={handleSaveClick}>
+          <button
+            type="button"
+            disabled={saving || !isDirty}
+            onClick={handleSaveClick}
+          >
             Save & apply schema
           </button>
         </div>

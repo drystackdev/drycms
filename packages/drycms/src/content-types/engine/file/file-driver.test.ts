@@ -109,3 +109,117 @@ describe("createFileDriver", () => {
     expect(ran).toBe(true);
   });
 });
+
+describe("transaction", () => {
+  it("nothing lands on the real driver until the callback resolves", async () => {
+    const { driver } = freshDriver();
+    let sawDuringTransaction: unknown;
+    await driver.transaction(async (tx) => {
+      await tx.writeJson("data/posts/1.json", { id: 1 });
+      sawDuringTransaction = await driver.readJson("data/posts/1.json");
+    });
+    expect(sawDuringTransaction).toBeNull();
+    expect(await driver.readJson("data/posts/1.json")).toEqual({ id: 1 });
+  });
+
+  it("nothing lands at all if the callback throws", async () => {
+    const { driver } = freshDriver();
+    await driver.writeJson("data/posts/1.json", { id: 1, title: "before" });
+
+    await expect(
+      driver.transaction(async (tx) => {
+        await tx.writeJson("data/posts/1.json", { id: 1, title: "changed" });
+        await tx.writeJson("data/posts/2.json", { id: 2 });
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(await driver.readJson("data/posts/1.json")).toEqual({ id: 1, title: "before" });
+    expect(await driver.readJson("data/posts/2.json")).toBeNull();
+  });
+
+  it("reads its own writes/removes inside the transaction, before falling back to the real driver", async () => {
+    const { driver } = freshDriver();
+    await driver.writeJson("data/posts/1.json", { id: 1, title: "real" });
+
+    await driver.transaction(async (tx) => {
+      expect(await tx.readJson("data/posts/1.json")).toEqual({ id: 1, title: "real" });
+      await tx.writeJson("data/posts/1.json", { id: 1, title: "staged" });
+      expect(await tx.readJson("data/posts/1.json")).toEqual({ id: 1, title: "staged" });
+      await tx.removeJson("data/posts/1.json");
+      expect(await tx.readJson("data/posts/1.json")).toBeNull();
+      // Untouched path still falls back to the real driver.
+      await driver.writeJson("data/other/9.json", { id: 9 });
+    });
+  });
+
+  it("listJsonFiles inside the transaction reflects staged writes/removes over a real listing", async () => {
+    const { driver } = freshDriver();
+    await driver.writeJson("data/posts/1.json", {});
+    await driver.writeJson("data/posts/2.json", {});
+
+    await driver.transaction(async (tx) => {
+      await tx.writeJson("data/posts/3.json", {});
+      await tx.removeJson("data/posts/1.json");
+      expect(await tx.listJsonFiles("data/posts")).toEqual(["2", "3"]);
+    });
+    expect(await driver.listJsonFiles("data/posts")).toEqual(["2", "3"]);
+  });
+
+  it("removeDir clears every known file under it, and a later write in the same transaction re-adds one", async () => {
+    const { driver } = freshDriver();
+    await driver.writeJson("data/posts/1.json", {});
+    await driver.writeJson("data/posts/2.json", {});
+
+    await driver.transaction(async (tx) => {
+      await tx.removeDir("data/posts");
+      expect(await tx.listJsonFiles("data/posts")).toEqual([]);
+      await tx.writeJson("data/posts/3.json", { id: 3 });
+      expect(await tx.listJsonFiles("data/posts")).toEqual(["3"]);
+    });
+
+    expect(await driver.listJsonFiles("data/posts")).toEqual(["3"]);
+    expect(await driver.readJson("data/posts/3.json")).toEqual({ id: 3 });
+  });
+
+  it("a nested transaction() call joins the outer one instead of opening a second", async () => {
+    const { driver } = freshDriver();
+    let sawInnerWriteFromOuterScope: unknown;
+    await driver.transaction(async (tx) => {
+      await tx.writeJson("data/posts/1.json", { id: 1 });
+      await tx.transaction(async (inner) => {
+        await inner.writeJson("data/posts/2.json", { id: 2 });
+      });
+      sawInnerWriteFromOuterScope = await tx.readJson("data/posts/2.json");
+    });
+    expect(sawInnerWriteFromOuterScope).toEqual({ id: 2 });
+    expect(await driver.readJson("data/posts/1.json")).toEqual({ id: 1 });
+    expect(await driver.readJson("data/posts/2.json")).toEqual({ id: 2 });
+  });
+
+  it("withLock inside a transaction still serializes against concurrent callers of the real driver's lock", async () => {
+    const { driver } = freshDriver();
+    const order: string[] = [];
+    await Promise.all([
+      driver.transaction(async (tx) =>
+        tx.withLock("k", async () => {
+          order.push("tx-start");
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          order.push("tx-end");
+        }),
+      ),
+      driver.withLock("k", async () => {
+        order.push("real-start");
+        order.push("real-end");
+      }),
+    ]);
+    // Whichever acquired the shared "k" lock first runs to completion before
+    // the other starts - never interleaved.
+    const firstEnd = order.includes("tx-end") && order.indexOf("tx-end") < order.indexOf("real-start") ? "tx" : "real";
+    if (firstEnd === "tx") {
+      expect(order).toEqual(["tx-start", "tx-end", "real-start", "real-end"]);
+    } else {
+      expect(order).toEqual(["real-start", "real-end", "tx-start", "tx-end"]);
+    }
+  });
+});

@@ -16,7 +16,6 @@ describe('dryVirtualConfig', () => {
 			storage: { kind: 'local', root: '/srv/storage' },
 			icons: { kind: 'local', root: '/srv/icons' },
 			content: { engine: 'sqlite', file: '/srv/content.sqlite' },
-			experimentalClientSearch: false,
 		});
 		const resolved = (plugin.resolveId as (id: string) => string | null)(VIRTUAL_CONFIG_ID);
 		expect(resolved).toBe(`\0${VIRTUAL_CONFIG_ID}`);
@@ -24,7 +23,19 @@ describe('dryVirtualConfig', () => {
 
 		const code = (plugin.load as (id: string) => string | null)(resolved!);
 		expect(code).toContain(`export const path = "/dry";`);
-			expect(code).toContain(`export const experimentalClientSearch = false;`);
+		expect(code).toContain(`export const contentEngine = "sqlite";`);
+	});
+
+	it('exposes contentEngine for the "file" engine too', () => {
+		const plugin = dryVirtualConfig({
+			path: '/dry',
+			storage: { kind: 'local', root: '/srv/storage' },
+			icons: { kind: 'local', root: '/srv/icons' },
+			content: { engine: 'file', kind: 'local', root: '/srv/content' },
+		});
+		const resolved = (plugin.resolveId as (id: string) => string | null)(VIRTUAL_CONFIG_ID);
+		const code = (plugin.load as (id: string) => string | null)(resolved!);
+		expect(code).toContain(`export const contentEngine = "file";`);
 	});
 
 	it('load() returns null for an unrelated id', () => {
@@ -33,7 +44,6 @@ describe('dryVirtualConfig', () => {
 			storage: { kind: 'local', root: '/srv/storage' },
 			icons: { kind: 'local', root: '/srv/icons' },
 			content: { engine: 'sqlite', file: '/srv/content.sqlite' },
-			experimentalClientSearch: false,
 		});
 		expect((plugin.load as (id: string) => string | null)('unrelated')).toBeNull();
 	});

@@ -12,6 +12,16 @@ const RESOLVED_CONFIG_ID = `\0${VIRTUAL_CONFIG_ID}`;
 /**
  * Exposes the resolved integration options to the injected `.astro` routes,
  * which cannot receive props from the integration any other way.
+ *
+ * `contentEngine` is just the `content.engine` tag ("sqlite"/"D1"/"file"),
+ * not the full `ResolvedContentOption` - that's the only part of `content`
+ * safe to ship to the browser (a `sqlite` config carries an absolute
+ * filesystem path, see `dryVirtualContentConfig`). Client code uses it to
+ * pick a search strategy: `ContentEntryList.tsx` does client-side
+ * search/sort/pagination for `"file"` (its `listEntries` re-scans every
+ * record on each request, so round-tripping per keystroke would be wasteful)
+ * and leaves search to the server for `"sqlite"`/`"D1"` (SQL `LIKE`, one
+ * query per request).
  */
 export function dryVirtualConfig(options: ResolvedDryOption): Plugin {
   return {
@@ -24,8 +34,8 @@ export function dryVirtualConfig(options: ResolvedDryOption): Plugin {
       if (id !== RESOLVED_CONFIG_ID) return null;
       return [
         `export const path = ${JSON.stringify(options.path)};`,
-        `export const experimentalClientSearch = ${JSON.stringify(options.experimentalClientSearch)};`,
-        "export default { path, experimentalClientSearch };",
+        `export const contentEngine = ${JSON.stringify(options.content.engine)};`,
+        "export default { path, contentEngine };",
       ].join("\n");
     },
   };
@@ -144,8 +154,8 @@ export function dryFixOptimizeDeps(aliases: Record<string, string>): Plugin {
 
 export const VIRTUAL_CONFIG_TYPES = `declare module '${VIRTUAL_CONFIG_ID}' {
 	export const path: string;
-	export const experimentalClientSearch: boolean;
-	const config: { path: string; experimentalClientSearch: boolean };
+	export const contentEngine: 'sqlite' | 'D1' | 'file';
+	const config: { path: string; contentEngine: 'sqlite' | 'D1' | 'file' };
 	export default config;
 }
 `;

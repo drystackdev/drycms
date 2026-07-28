@@ -303,17 +303,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     <>
       <div class="page-header">
         {!isSingleton && (
-          <a
-            role="button"
-            href={backTo}
+          <button
+            type="button"
             class="icon ghost"
-            onClick={(event) => {
-              event.preventDefault();
-              requestLeave(backTo);
-            }}
+            onClick={() => requestLeave(backTo)}
           >
             <ArrowLeftIcon />
-          </a>
+          </button>
         )}
         <div style={{ flex: 1 }}>
           <h1>{isNew ? `New ${type.label}` : type.label}</h1>

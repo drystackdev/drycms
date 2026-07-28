@@ -400,6 +400,27 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
     await commitActions(actions, commitMessage("remove", relPath));
   }
 
+  /** Gathers several file writes/removes into ONE commit via the Commits
+   * API's multi-`action` support (already used by `move`/`copy`/`remove`
+   * above) - unlike `write()`, which is one Contents-API call (and one
+   * commit) per file. */
+  async function writeBatch(ops: { path: string; data: Uint8Array | null }[], message: string): Promise<void> {
+    if (ops.length === 0) return;
+    const resolved = ops.map((op) => ({ ...op, prefix: fullPath(op.path) }));
+    const existing = await Promise.all(resolved.map((op) => statPath(op.path)));
+    const actions: GitlabCommitAction[] = resolved.map((op, i) => {
+      if (op.data === null) return { action: "delete", file_path: op.prefix };
+      const content = Buffer.from(op.data).toString("base64");
+      return {
+        action: existing[i] ? "update" : "create",
+        file_path: op.prefix,
+        content,
+        encoding: "base64",
+      };
+    });
+    await commitActions(actions, message);
+  }
+
   async function listAll(): Promise<StorageStatEntry[]> {
     const tree = await fetchTree(root, true);
     const items = tree ?? [];
@@ -433,5 +454,5 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
     return applyRecursiveFolderTotals(entries);
   }
 
-  return { list, listAll, stat, read, mkdir, write, move, copy, remove };
+  return { list, listAll, stat, read, mkdir, write, move, copy, remove, writeBatch };
 }

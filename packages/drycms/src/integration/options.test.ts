@@ -9,18 +9,9 @@ describe('resolveOptions', () => {
 			storage: { kind: 'local', root: resolve(process.cwd(), 'storage') },
 			icons: { kind: 'local', root: resolve(process.cwd(), 'icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), 'content.sqlite') },
-			experimentalClientSearch: false,
 		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);
-	});
-
-	it('honors experimentalClientSearch when set', () => {
-		expect(resolveOptions({ experimentalClientSearch: true }).experimentalClientSearch).toBe(true);
-	});
-
-	it('rejects a non-boolean experimentalClientSearch', () => {
-		expect(() => resolveOptions({ experimentalClientSearch: 'yes' as unknown as boolean })).toThrow(TypeError);
 	});
 
 	it('adds a leading slash', () => {

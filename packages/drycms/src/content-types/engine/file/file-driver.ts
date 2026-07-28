@@ -4,6 +4,7 @@ import type { ResolvedFileContentOption } from "../../../integration/options.js"
 import { randomUUID } from "../../../lib/uuid.js";
 import { createStorageAdapter, StorageError, type StorageAdapter } from "../../../storage/index.js";
 import { resolveWithinRoot } from "../../../storage/path.js";
+import { commitMessage } from "../../../storage/util.js";
 
 /** Rejects anything that isn't a single, literal path segment - guards
  * against a `type.name`/`FieldDefinition.id` (unlike a field's `name`,
@@ -56,6 +57,103 @@ export interface FileDriver {
    * file-database-engine.md`'s plan doc and this module's own doc comment
    * for why that's an accepted, documented limitation rather than a bug. */
   withLock<T>(key: string, fn: () => Promise<T>): Promise<T>;
+  /** Runs `fn` against a driver that stages every `writeJson`/`removeJson`/
+   * `removeDir` in memory instead of touching the backend immediately, then
+   * flushes them as ONE `StorageAdapter.writeBatch()` call (one commit, on
+   * `github`/`gitlab`) once `fn` resolves - nothing lands if `fn` throws.
+   * `readJson`/`listJsonFiles` on the staged driver see the staged writes
+   * ("read your own writes") before falling back to the real backend for
+   * paths this transaction hasn't touched. Calling `.transaction()` again on
+   * an already-staged driver (nested calls, e.g. a helper that itself opens
+   * a transaction, invoked from inside one already open) just joins the
+   * existing one - no extra commit, nothing flushes until the OUTERMOST
+   * transaction resolves. `local` has no commit concept, so its flush just
+   * replays the staged writes through the same atomic per-file write this
+   * driver already does outside a transaction. */
+  transaction<T>(fn: (tx: FileDriver) => Promise<T>): Promise<T>;
+}
+
+type StagedOp =
+  | { kind: "write"; path: string; value: unknown }
+  | { kind: "remove"; path: string }
+  | { kind: "removeDir"; prefix: string };
+
+function isUnderDir(path: string, dir: string): boolean {
+  return path === dir || path.startsWith(`${dir}/`);
+}
+
+/** `null` if `path` isn't a direct `.json` child of `dir` (a deeper nested
+ * path, or outside `dir` entirely). */
+function jsonBaseNameIn(path: string, dir: string): string | null {
+  if (!path.startsWith(`${dir}/`)) return null;
+  const rest = path.slice(dir.length + 1);
+  if (rest.includes("/") || !rest.endsWith(".json")) return null;
+  return rest.slice(0, -".json".length);
+}
+
+/** Wraps `real` with an in-memory op log staging every mutation - `readJson`/
+ * `listJsonFiles` replay the log (most recent op affecting a path wins)
+ * before falling back to `real`. Shares `real`'s lock map via `withLock`
+ * (delegates outright) so cross-request serialization on id counters/unique
+ * indexes/reverse indexes still holds inside a transaction. */
+function createStagingDriver(real: FileDriver, log: StagedOp[]): FileDriver {
+  async function readJson<T = unknown>(relPath: string): Promise<T | null> {
+    for (let i = log.length - 1; i >= 0; i--) {
+      const op = log[i]!;
+      if (op.kind === "write" && op.path === relPath) return structuredClone(op.value) as T;
+      if (op.kind === "remove" && op.path === relPath) return null;
+      if (op.kind === "removeDir" && isUnderDir(relPath, op.prefix)) return null;
+    }
+    return real.readJson<T>(relPath);
+  }
+
+  async function writeJson(relPath: string, value: unknown): Promise<void> {
+    log.push({ kind: "write", path: relPath, value: structuredClone(value) });
+  }
+
+  async function removeJson(relPath: string): Promise<void> {
+    log.push({ kind: "remove", path: relPath });
+  }
+
+  async function removeDir(relPath: string): Promise<void> {
+    log.push({ kind: "removeDir", prefix: relPath });
+  }
+
+  async function listJsonFiles(dirRelPath: string): Promise<string[]> {
+    let names: Set<string> | undefined;
+    let startIndex = 0;
+    for (let i = log.length - 1; i >= 0; i--) {
+      const op = log[i]!;
+      if (op.kind === "removeDir" && isUnderDir(dirRelPath, op.prefix)) {
+        names = new Set();
+        startIndex = i + 1;
+        break;
+      }
+    }
+    names ??= new Set(await real.listJsonFiles(dirRelPath));
+    for (let i = startIndex; i < log.length; i++) {
+      const op = log[i]!;
+      if (op.kind === "write") {
+        const base = jsonBaseNameIn(op.path, dirRelPath);
+        if (base) names.add(base);
+      } else if (op.kind === "remove") {
+        const base = jsonBaseNameIn(op.path, dirRelPath);
+        if (base) names.delete(base);
+      }
+    }
+    return [...names].sort();
+  }
+
+  function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    return real.withLock(key, fn);
+  }
+
+  function transaction<T>(fn: (tx: FileDriver) => Promise<T>): Promise<T> {
+    return fn(staging);
+  }
+
+  const staging: FileDriver = { readJson, writeJson, removeJson, removeDir, listJsonFiles, withLock, transaction };
+  return staging;
 }
 
 export function createFileDriver(option: ResolvedFileContentOption): FileDriver {
@@ -137,5 +235,54 @@ export function createFileDriver(option: ResolvedFileContentOption): FileDriver 
     return run;
   }
 
-  return { readJson, writeJson, removeJson, removeDir, listJsonFiles, withLock };
+  /** Replays a resolved op log into final per-path state - a `removeDir` is
+   * expanded, at the point it occurs, into explicit removes of every path
+   * known under its prefix so far (real files, via `listJsonFiles`, plus
+   * anything this same log already staged there); ops after it can freely
+   * re-add a path underneath. `listJsonFiles` only enumerates one directory
+   * level, matching every `removeDir` call site in this engine (always a
+   * flat `data/<type>/` collection folder, never a deeper tree). */
+  async function resolveFinalState(log: StagedOp[]): Promise<Map<string, { op: "write"; value: unknown } | { op: "remove" }>> {
+    const state = new Map<string, { op: "write"; value: unknown } | { op: "remove" }>();
+    for (const op of log) {
+      if (op.kind === "write") {
+        state.set(op.path, { op: "write", value: op.value });
+      } else if (op.kind === "remove") {
+        state.set(op.path, { op: "remove" });
+      } else {
+        const realNames = await listJsonFiles(op.prefix);
+        for (const name of realNames) state.set(`${op.prefix}/${name}.json`, { op: "remove" });
+        for (const [path] of state) {
+          if (isUnderDir(path, op.prefix)) state.set(path, { op: "remove" });
+        }
+      }
+    }
+    return state;
+  }
+
+  async function transaction<T>(fn: (tx: FileDriver) => Promise<T>): Promise<T> {
+    const log: StagedOp[] = [];
+    const staging = createStagingDriver(driver, log);
+    const result = await fn(staging);
+    if (log.length === 0) return result;
+
+    const finalState = await resolveFinalState(log);
+    if (adapter.writeBatch) {
+      const paths = [...finalState.keys()];
+      const ops = paths.map((path) => {
+        const entry = finalState.get(path)!;
+        return { path, data: entry.op === "remove" ? null : Buffer.from(JSON.stringify(entry.value, null, 2), "utf8") };
+      });
+      await adapter.writeBatch(ops, commitMessage("save", paths.length === 1 ? paths[0]! : `${paths.length} files`));
+    } else {
+      for (const [path, entry] of finalState) {
+        if (entry.op === "write") await writeJson(path, entry.value);
+        else await removeJson(path);
+      }
+    }
+    return result;
+  }
+
+  const driver: FileDriver = { readJson, writeJson, removeJson, removeDir, listJsonFiles, withLock, transaction };
+  return driver;
 }

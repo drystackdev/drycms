@@ -101,19 +101,6 @@ export interface DryOption {
   storage?: DryStorageOption;
   icons?: DryIconsOption;
   content?: DryContentOption;
-  /**
-   * TEMPORARY escape hatch, not meant to stick around: when `true`, the
-   * Content Entry List page fetches a collection's rows once and does
-   * search/sort/pagination entirely client-side instead of round-tripping
-   * every keystroke to `/api/content/:type`. It works by simply not passing
-   * `DataTable`'s `serverQuery` prop (see `ContentEntryList.tsx`), reusing
-   * that component's existing fully-client-side mode rather than adding a
-   * new one - so removing this flag later is deleting that one branch, not
-   * unwinding a parallel implementation.
-   *
-   * @default false
-   */
-  experimentalClientSearch?: boolean;
 }
 
 export interface ResolvedLocalStorageOption {
@@ -178,8 +165,6 @@ export interface ResolvedDryOption {
   storage: ResolvedStorageOption;
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
-  /** See `DryOption.experimentalClientSearch` - temporary. */
-  experimentalClientSearch: boolean;
 }
 
 /**
@@ -479,18 +464,10 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     );
   }
 
-  const experimentalClientSearch = options.experimentalClientSearch ?? false;
-  if (typeof experimentalClientSearch !== "boolean") {
-    throw new TypeError(
-      `[drycms] \`experimentalClientSearch\` must be a boolean, received ${typeof experimentalClientSearch}.`,
-    );
-  }
-
   return {
     path,
     storage: resolveStorageOption(options.storage),
     icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
-    experimentalClientSearch,
   };
 }

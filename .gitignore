@@ -31,6 +31,9 @@ status/
 # drycms Icon Management's own local file storage (see `icons.root` in astro.config.mjs)
 /icons/
 
+# drycms Content file
+/content/
+
 # Playwright artifacts (a command run from the wrong cwd can create these
 # under packages/drycms/ instead of the repo root - unanchored so both are caught)
 test-results/

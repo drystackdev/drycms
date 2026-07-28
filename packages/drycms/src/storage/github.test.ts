@@ -32,7 +32,27 @@ class FakeGithub {
   missingBranch = false;
   /** Simulates GitHub cutting off a recursive tree response past its size limit. */
   treeTruncated = false;
+  /** Makes the NEXT `PATCH .../git/refs/heads/{branch}` fail with a 422 (as if
+   * a concurrent commit had landed first) - `writeBatch`'s bounded retry
+   * should recover from exactly one of these. */
+  refConflictOnce = false;
   private counter = 0;
+
+  // Git Data API state for `writeBatch` - blobs created via `POST .../git/blobs`
+  // (not yet attached to a path in `files`), trees/commits built on top of
+  // them, and the branch ref's current head. A `PATCH` on the ref is where a
+  // batch actually lands: it replays the target commit's tree onto `files`,
+  // mirroring how the real API only makes a commit's contents observable via
+  // `contents`/`git/trees` once the ref points at it.
+  private blobs = new Map<string, Buffer>();
+  private trees = new Map<string, { path: string; sha: string | null }[]>();
+  private commits = new Map<string, { treeSha: string }>();
+  private headCommitSha = "commit-0";
+
+  constructor() {
+    this.trees.set("tree-0", []);
+    this.commits.set("commit-0", { treeSha: "tree-0" });
+  }
 
   private nextSha(): string {
     return `sha-${++this.counter}`;
@@ -137,6 +157,60 @@ class FakeGithub {
       const entry = [...this.files.values()].find((file) => file.sha === sha);
       if (!entry) return this.json({ message: "Not Found" }, 404);
       return this.json({ content: entry.content.toString("base64"), encoding: "base64" });
+    }
+
+    if (parsed.pathname === `${base}/git/blobs` && method === "POST") {
+      const body = JSON.parse(init!.body as string) as { content: string; encoding: string };
+      const sha = this.nextSha();
+      this.blobs.set(sha, Buffer.from(body.content, "base64"));
+      return this.json({ sha }, 201);
+    }
+
+    if (parsed.pathname === `${base}/git/trees` && method === "POST") {
+      const body = JSON.parse(init!.body as string) as { base_tree: string; tree: { path: string; sha: string | null }[] };
+      const sha = this.nextSha();
+      this.trees.set(sha, body.tree);
+      return this.json({ sha }, 201);
+    }
+
+    if (parsed.pathname === `${base}/git/commits` && method === "POST") {
+      const body = JSON.parse(init!.body as string) as { tree: string; parents: string[] };
+      const sha = this.nextSha();
+      this.commits.set(sha, { treeSha: body.tree });
+      return this.json({ sha }, 201);
+    }
+
+    if (parsed.pathname.startsWith(`${base}/git/commits/`) && method === "GET") {
+      const sha = parsed.pathname.slice(`${base}/git/commits/`.length);
+      const commit = this.commits.get(sha);
+      if (!commit) return this.json({ message: "Not Found" }, 404);
+      return this.json({ sha, tree: { sha: commit.treeSha } });
+    }
+
+    if (parsed.pathname === `${base}/git/refs/heads/${BRANCH}`) {
+      if (method === "GET") {
+        return this.json({ object: { sha: this.headCommitSha } });
+      }
+      if (method === "PATCH") {
+        if (this.refConflictOnce) {
+          this.refConflictOnce = false;
+          return this.json({ message: "Update is not a fast forward" }, 422);
+        }
+        const body = JSON.parse(init!.body as string) as { sha: string };
+        const commit = this.commits.get(body.sha);
+        if (!commit) return this.json({ message: "Not Found" }, 404);
+        const entries = this.trees.get(commit.treeSha) ?? [];
+        for (const entry of entries) {
+          if (entry.sha === null) {
+            this.files.delete(entry.path);
+          } else {
+            const content = this.blobs.get(entry.sha) ?? this.files.get(entry.path)?.content;
+            if (content) this.files.set(entry.path, { sha: entry.sha, content });
+          }
+        }
+        this.headCommitSha = body.sha;
+        return this.json({ ref: `refs/heads/${BRANCH}`, object: { sha: body.sha } });
+      }
     }
 
     throw new Error(`Unhandled fake GitHub request: ${method} ${url}`);
@@ -375,5 +449,49 @@ describe("createGithubStorageAdapter", () => {
     await adapter.write("notes.txt", new TextEncoder().encode("hi"));
     expect(putCalls).toHaveLength(1);
     expect(putCalls[0].message).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z write: notes\.txt$/);
+  });
+
+  describe("writeBatch", () => {
+    it("lands several writes/removes as one commit", async () => {
+      await adapter.write("keep.json", new TextEncoder().encode("{}"));
+      await adapter.write("gone.json", new TextEncoder().encode("{}"));
+
+      const commitCalls: unknown[] = [];
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/git/commits") && init?.method === "POST") commitCalls.push(JSON.parse(init.body as string));
+        return fake.handle(url, init);
+      });
+
+      await adapter.writeBatch!(
+        [
+          { path: "a.json", data: new TextEncoder().encode('{"a":1}') },
+          { path: "b.json", data: new TextEncoder().encode('{"b":2}') },
+          { path: "gone.json", data: null },
+        ],
+        "batch save",
+      );
+
+      // Exactly one commit for all three ops, not one per file.
+      expect(commitCalls).toHaveLength(1);
+      expect(fake.files.get("a.json")?.content.toString("utf8")).toBe('{"a":1}');
+      expect(fake.files.get("b.json")?.content.toString("utf8")).toBe('{"b":2}');
+      expect(fake.files.has("gone.json")).toBe(false);
+      // A path untouched by the batch survives.
+      expect(fake.files.get("keep.json")?.content.toString("utf8")).toBe("{}");
+    });
+
+    it("is a no-op given an empty op list", async () => {
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const before = fetchMock.mock.calls.length;
+      await adapter.writeBatch!([], "empty");
+      expect(fetchMock.mock.calls.length).toBe(before);
+    });
+
+    it("retries once on a ref conflict (a concurrent commit landing first), then succeeds", async () => {
+      fake.refConflictOnce = true;
+      await adapter.writeBatch!([{ path: "a.json", data: new TextEncoder().encode("{}") }], "retry me");
+      expect(fake.files.get("a.json")?.content.toString("utf8")).toBe("{}");
+    });
   });
 });

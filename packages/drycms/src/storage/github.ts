@@ -298,6 +298,98 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     };
   }
 
+  async function getBranchHead(): Promise<{ commitSha: string; treeSha: string }> {
+    const refResponse = await fetch(`${apiBase}/git/refs/heads/${encodeURIComponent(branch)}`, {
+      headers: authHeaders({ Accept: "application/vnd.github+json" }),
+    });
+    if (!refResponse.ok) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(refResponse)}`);
+    }
+    const ref = (await refResponse.json()) as { object: { sha: string } };
+    const commitResponse = await fetch(`${apiBase}/git/commits/${ref.object.sha}`, {
+      headers: authHeaders({ Accept: "application/vnd.github+json" }),
+    });
+    if (!commitResponse.ok) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(commitResponse)}`);
+    }
+    const commit = (await commitResponse.json()) as { tree: { sha: string } };
+    return { commitSha: ref.object.sha, treeSha: commit.tree.sha };
+  }
+
+  async function createBlob(bytes: Uint8Array): Promise<string> {
+    const response = await fetch(`${apiBase}/git/blobs`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+      body: JSON.stringify({ content: Buffer.from(bytes).toString("base64"), encoding: "base64" }),
+    });
+    if (!response.ok) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(response)}`);
+    }
+    const data = (await response.json()) as { sha: string };
+    return data.sha;
+  }
+
+  /** Attempts to land the ref update before giving up - a concurrent commit
+   * landing between `getBranchHead()` and the `PATCH` below moves the ref out
+   * from under this one (GitHub rejects a non-fast-forward-from-what-we-read
+   * update with 422), so this re-reads the branch head and rebuilds the tree
+   * against it. Blob shas are content-addressed and never need recreating.
+   * Best-effort optimistic concurrency, not a real lock - same documented
+   * limitation as `FileDriver.withLock` (only serializes writers in this one
+   * process), just surfacing here as a bounded retry instead. */
+  const WRITE_BATCH_MAX_ATTEMPTS = 3;
+
+  /** Writes/removes several files as ONE commit via the Git Data API
+   * (blobs -> tree -> commit -> ref update) - unlike `write()`/`remove()`
+   * above, which are one Contents-API call (and one commit) per file. Used
+   * where a single logical save touches several JSON files (a content type
+   * plus its cascaded dependents, or an entry plus its index files) and
+   * those should land as one atomic commit instead of several. */
+  async function writeBatch(ops: { path: string; data: Uint8Array | null }[], message: string): Promise<void> {
+    if (ops.length === 0) return;
+    const resolved = ops.map((op) => ({ path: fullPath(op.path), data: op.data }));
+    const blobShas: (string | null)[] = await Promise.all(
+      resolved.map((op) => (op.data === null ? Promise.resolve(null) : createBlob(op.data))),
+    );
+
+    for (let attempt = 1; attempt <= WRITE_BATCH_MAX_ATTEMPTS; attempt++) {
+      const { commitSha: baseCommitSha, treeSha: baseTreeSha } = await getBranchHead();
+
+      const treeResponse = await fetch(`${apiBase}/git/trees`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+        body: JSON.stringify({
+          base_tree: baseTreeSha,
+          tree: resolved.map((op, i) => ({ path: op.path, mode: "100644", type: "blob", sha: blobShas[i] })),
+        }),
+      });
+      if (!treeResponse.ok) {
+        throw new Error(`[drycms] GitHub API error: ${await readGithubError(treeResponse)}`);
+      }
+      const tree = (await treeResponse.json()) as { sha: string };
+
+      const commitResponse = await fetch(`${apiBase}/git/commits`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+        body: JSON.stringify({ message, tree: tree.sha, parents: [baseCommitSha] }),
+      });
+      if (!commitResponse.ok) {
+        throw new Error(`[drycms] GitHub API error: ${await readGithubError(commitResponse)}`);
+      }
+      const newCommit = (await commitResponse.json()) as { sha: string };
+
+      const refUpdateResponse = await fetch(`${apiBase}/git/refs/heads/${encodeURIComponent(branch)}`, {
+        method: "PATCH",
+        headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+        body: JSON.stringify({ sha: newCommit.sha }),
+      });
+      if (refUpdateResponse.ok) return;
+      if (refUpdateResponse.status !== 422 || attempt === WRITE_BATCH_MAX_ATTEMPTS) {
+        throw new Error(`[drycms] GitHub API error: ${await readGithubError(refUpdateResponse)}`);
+      }
+    }
+  }
+
   /** The whole branch's tree, flattened, in one call - shared by `blobsUnder`
    * (folder-wide move/copy/remove) and `listAll`. GitHub truncates this
    * response past a size limit (`truncated: true`, with `tree` cut short) -
@@ -435,5 +527,5 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     }
   }
 
-  return { list, listAll, stat, read, mkdir, write, move, copy, remove };
+  return { list, listAll, stat, read, mkdir, write, move, copy, remove, writeBatch };
 }

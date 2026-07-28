@@ -165,7 +165,7 @@ function compareValues(a: unknown, b: unknown): number {
 export function createFileContentEntryEngineAdapter(option: ResolvedFileContentOption): ContentEntryEngineAdapter {
   const driver: FileDriver = createFileDriver(option);
 
-  async function readRecord(typeName: string, id: number): Promise<Row | null> {
+  async function readRecord(driver: FileDriver, typeName: string, id: number): Promise<Row | null> {
     return driver.readJson<Row>(recordPath(typeName, id));
   }
 
@@ -176,16 +176,16 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
    * query), `relation` fields with `tableName` (the array is likewise
    * already in `row`), and `relation-mirror` (resolved from the
    * reverse-index instead of physical storage - it's never stored at all). */
-  async function populateFileChildFields(nodes: EntryFieldNode[], row: Row, id: number, value: EntryValue): Promise<void> {
+  async function populateFileChildFields(driver: FileDriver, nodes: EntryFieldNode[], row: Row, id: number, value: EntryValue): Promise<void> {
     for (const node of nodes) {
       if (node.kind === "flatten") {
-        await populateFileChildFields(node.children, row, id, value[node.fieldName] as EntryValue);
+        await populateFileChildFields(driver, node.children, row, id, value[node.fieldName] as EntryValue);
       } else if (node.kind === "component-repeat") {
         const rawItems = Array.isArray(row[node.tableName]) ? (row[node.tableName] as Row[]) : [];
         const items: EntryValue[] = [];
         for (const itemRow of rawItems) {
           const item = rowToValue(node.itemFields, itemRow);
-          await populateFileChildFields(node.itemFields, itemRow, id, item);
+          await populateFileChildFields(driver, node.itemFields, itemRow, id, item);
           items.push(item);
         }
         value[node.fieldName] = items;
@@ -229,6 +229,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
    * is rolled back and a field-level `ContentEntryError` is thrown, shaped
    * like `entries-sqlite.ts`'s `translateUniqueViolation` output. */
   async function reserveAll(
+    driver: FileDriver,
     typeName: string,
     id: number,
     uniqueFields: UniqueFieldRef[],
@@ -276,7 +277,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     }
   }
 
-  async function releaseAll(typeName: string, id: number, uniqueFields: UniqueFieldRef[], relations: MirrorableRelation[], existingRow: Row): Promise<void> {
+  async function releaseAll(driver: FileDriver, typeName: string, id: number, uniqueFields: UniqueFieldRef[], relations: MirrorableRelation[], existingRow: Row): Promise<void> {
     for (const uf of uniqueFields) {
       await releaseUnique(driver, typeName, uf.fieldId, id, existingRow[uf.columnName]);
     }
@@ -294,7 +295,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
    * WHERE target_id` pair does for SQL. A dangling `sourceId` (record since
    * deleted) is silently ignored, same as every other unenforced-FK read
    * elsewhere in this adapter. */
-  async function mutateSourceArray(sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, mutate: (ids: number[]) => number[], exclusive: boolean): Promise<void> {
+  async function mutateSourceArray(driver: FileDriver, sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, mutate: (ids: number[]) => number[], exclusive: boolean): Promise<void> {
     const path = recordPath(sourceTypeName, sourceId);
     const row = await driver.readJson<Row>(path);
     if (!row) return;
@@ -307,7 +308,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
 
   /** Same primitive as `mutateSourceArray`, for a `manyToOne` source field
    * (a single id, not an array). */
-  async function setSourceManyToOneValue(sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, newValue: number | null): Promise<void> {
+  async function setSourceManyToOneValue(driver: FileDriver, sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, newValue: number | null): Promise<void> {
     const path = recordPath(sourceTypeName, sourceId);
     const row = await driver.readJson<Row>(path);
     if (!row) return;
@@ -325,7 +326,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
    * relevant to THIS row's id (`targetId`), read from the reverse-index to
    * know its OWN previous claims, never disturbing unrelated rows. Mirrors
    * `entries-sqlite.ts`'s `writeRelationMirror`'s 3-way cardinality switch. */
-  async function writeRelationMirrorField(allTypes: ContentTypeDefinition[], node: ResolvedRelationMirrorNode, targetId: number, incoming: unknown): Promise<void> {
+  async function writeRelationMirrorField(driver: FileDriver, allTypes: ContentTypeDefinition[], node: ResolvedRelationMirrorNode, targetId: number, incoming: unknown): Promise<void> {
     const rel = resolveSourceRelation(allTypes, node.sourceTypeId, node.sourceFieldId);
     if (!rel) return; // source relation no longer exists/resolvable - degrade gracefully, same as a dangling reference elsewhere.
     const sourceType = allTypes.find((t) => t.id === node.sourceTypeId)!;
@@ -341,10 +342,10 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
       const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
       const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
       for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
-        await setSourceManyToOneValue(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, null);
+        await setSourceManyToOneValue(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, null);
       }
       for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
-        await setSourceManyToOneValue(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, targetId);
+        await setSourceManyToOneValue(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, targetId);
       }
       return;
     }
@@ -359,10 +360,10 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
       const newSourceId = typeof incoming === "number" ? incoming : null;
       if (oldSourceId === newSourceId) return;
       if (oldSourceId !== null) {
-        await mutateSourceArray(sourceTypeName, oldSourceId, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), rel.exclusive);
+        await mutateSourceArray(driver, sourceTypeName, oldSourceId, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), rel.exclusive);
       }
       if (newSourceId !== null) {
-        await mutateSourceArray(sourceTypeName, newSourceId, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), rel.exclusive);
+        await mutateSourceArray(driver, sourceTypeName, newSourceId, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), rel.exclusive);
       }
       return;
     }
@@ -371,29 +372,34 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
     const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
     for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
-      await mutateSourceArray(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), false);
+      await mutateSourceArray(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), false);
     }
     for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
-      await mutateSourceArray(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), false);
+      await mutateSourceArray(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), false);
     }
   }
 
-  async function writeRelationMirrorFields(nodes: EntryFieldNode[], allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<void> {
+  async function writeRelationMirrorFields(driver: FileDriver, nodes: EntryFieldNode[], allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<void> {
     for (const { node, fieldName } of collectRelationMirrorFields(nodes)) {
-      await writeRelationMirrorField(allTypes, node, id, value[fieldName]);
+      await writeRelationMirrorField(driver, allTypes, node, id, value[fieldName]);
     }
   }
 
-  async function getEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null> {
-    const row = await readRecord(type.name, id);
+  async function getEntry(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null> {
+    const row = await readRecord(driver, type.name, id);
     if (!row) return null;
     const nodes = buildEntryFieldTree(type, allTypes);
     const value = rowToValue(nodes, row);
-    await populateFileChildFields(nodes, row, id, value);
+    await populateFileChildFields(driver, nodes, row, id, value);
     return { id, value };
   }
 
-  async function createEntryWithId(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
+  /** The actual write logic behind `createEntry`/`saveSingletonEntry` -
+   * takes `driver` explicitly so both public entry points can run it inside
+   * their own `driver.transaction()` (see the returned object below): the
+   * record write, every unique/reverse-index reservation, and every
+   * relation-mirror write it touches on OTHER records land as one commit. */
+  async function createEntryWithId(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
     const nodes = buildEntryFieldTree(type, allTypes);
     assertValid(nodes, value);
 
@@ -403,23 +409,21 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
 
     const uniqueFields = collectUniqueColumns(nodes);
     const relations = collectMirrorableRelations(nodes);
-    await reserveAll(type.name, id, uniqueFields, relations, rowData, null);
+    await reserveAll(driver, type.name, id, uniqueFields, relations, rowData, null);
 
     await driver.writeJson(recordPath(type.name, id), rowData);
-    await writeRelationMirrorFields(nodes, allTypes, id, value);
-    return (await getEntry(type, allTypes, id))!;
+    await writeRelationMirrorFields(driver, nodes, allTypes, id, value);
+    return (await getEntry(driver, type, allTypes, id))!;
   }
 
-  async function createEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow> {
-    const id = await nextId(driver, type.name);
-    return createEntryWithId(type, allTypes, id, value);
-  }
-
-  async function updateEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
+  /** Same rationale as `createEntryWithId` - `driver` threaded through so
+   * `updateEntry` (the public method below) can run this inside one
+   * transaction. */
+  async function updateEntryWithDriver(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
     const nodes = buildEntryFieldTree(type, allTypes);
     assertValid(nodes, value);
 
-    const existingRow = await readRecord(type.name, id);
+    const existingRow = await readRecord(driver, type.name, id);
     if (!existingRow) {
       throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
     }
@@ -435,31 +439,25 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
 
     const uniqueFields = collectUniqueColumns(nodes);
     const relations = collectMirrorableRelations(nodes);
-    await reserveAll(type.name, id, uniqueFields, relations, rowData, existingRow);
+    await reserveAll(driver, type.name, id, uniqueFields, relations, rowData, existingRow);
 
     await driver.writeJson(recordPath(type.name, id), rowData);
-    await writeRelationMirrorFields(nodes, allTypes, id, value);
-    return (await getEntry(type, allTypes, id))!;
+    await writeRelationMirrorFields(driver, nodes, allTypes, id, value);
+    return (await getEntry(driver, type, allTypes, id))!;
   }
 
-  async function deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
+  /** Same rationale as `createEntryWithId` - `driver` threaded through so
+   * `deleteEntry` (the public method below) can run this inside one
+   * transaction. */
+  async function deleteEntryWithDriver(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
     const nodes = buildEntryFieldTree(type, allTypes);
-    const existingRow = await readRecord(type.name, id);
+    const existingRow = await readRecord(driver, type.name, id);
     if (!existingRow) return;
 
     const uniqueFields = collectUniqueColumns(nodes);
     const relations = collectMirrorableRelations(nodes);
-    await releaseAll(type.name, id, uniqueFields, relations, existingRow);
+    await releaseAll(driver, type.name, id, uniqueFields, relations, existingRow);
     await driver.removeJson(recordPath(type.name, id));
-  }
-
-  async function getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null> {
-    return getEntry(type, allTypes, SINGLETON_ID);
-  }
-
-  async function saveSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow> {
-    const existing = await readRecord(type.name, SINGLETON_ID);
-    return existing ? updateEntry(type, allTypes, SINGLETON_ID, value) : createEntryWithId(type, allTypes, SINGLETON_ID, value);
   }
 
   async function listEntries(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], query: EntryQuery): Promise<EntryPage> {
@@ -470,10 +468,10 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     for (const name of names) {
       const id = Number(name);
       if (!Number.isInteger(id)) continue;
-      const row = await readRecord(type.name, id);
+      const row = await readRecord(driver, type.name, id);
       if (!row) continue;
       const value = rowToValue(nodes, row);
-      await populateFileChildFields(nodes, row, id, value);
+      await populateFileChildFields(driver, nodes, row, id, value);
       rows.push({ id, value });
     }
 
@@ -500,5 +498,25 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     return { total, rows: rows.slice(offset, offset + pageSize) };
   }
 
-  return { listEntries, getEntry, createEntry, updateEntry, deleteEntry, getSingletonEntry, saveSingletonEntry };
+  return {
+    listEntries,
+    getEntry: (type, allTypes, id) => getEntry(driver, type, allTypes, id),
+    // Everything a create/update/delete touches - the record itself, its
+    // unique-index/reverse-index entries, and any relation-mirror writes it
+    // makes on OTHER records - lands as one commit (see
+    // `FileDriver.transaction()`).
+    createEntry: (type, allTypes, value) =>
+      driver.transaction(async (tx) => {
+        const id = await nextId(tx, type.name);
+        return createEntryWithId(tx, type, allTypes, id, value);
+      }),
+    updateEntry: (type, allTypes, id, value) => driver.transaction((tx) => updateEntryWithDriver(tx, type, allTypes, id, value)),
+    deleteEntry: (type, allTypes, id) => driver.transaction((tx) => deleteEntryWithDriver(tx, type, allTypes, id)),
+    getSingletonEntry: (type, allTypes) => getEntry(driver, type, allTypes, SINGLETON_ID),
+    saveSingletonEntry: (type, allTypes, value) =>
+      driver.transaction(async (tx) => {
+        const existing = await readRecord(tx, type.name, SINGLETON_ID);
+        return existing ? updateEntryWithDriver(tx, type, allTypes, SINGLETON_ID, value) : createEntryWithId(tx, type, allTypes, SINGLETON_ID, value);
+      }),
+  };
 }

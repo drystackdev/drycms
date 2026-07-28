@@ -4,8 +4,8 @@
 // `tsc` build (which compiles the `.tsx` files that import it) can see it.
 declare module "virtual:drycms/config" {
 	export const path: string;
-	export const experimentalClientSearch: boolean;
-	const config: { path: string; experimentalClientSearch: boolean };
+	export const contentEngine: "sqlite" | "D1" | "file";
+	const config: { path: string; contentEngine: "sqlite" | "D1" | "file" };
 	export default config;
 }
 

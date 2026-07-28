@@ -416,4 +416,55 @@ describe("createGitlabStorageAdapter", () => {
     expect(putCalls).toHaveLength(1);
     expect(putCalls[0].message).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z write: notes\.txt$/);
   });
+
+  describe("writeBatch", () => {
+    it("lands several writes/removes as one commit", async () => {
+      await adapter.write("keep.json", new TextEncoder().encode("{}"));
+      await adapter.write("gone.json", new TextEncoder().encode("{}"));
+
+      let commitPosts = 0;
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/repository/commits") && init?.method === "POST") commitPosts++;
+        return fake.handle(url, init);
+      });
+
+      await adapter.writeBatch!(
+        [
+          { path: "a.json", data: new TextEncoder().encode('{"a":1}') },
+          { path: "b.json", data: new TextEncoder().encode('{"b":2}') },
+          { path: "gone.json", data: null },
+        ],
+        "batch save",
+      );
+
+      // Exactly one commit for all three ops, not one per file.
+      expect(commitPosts).toBe(1);
+      expect(fake.lastCommitActions).toEqual(
+        expect.arrayContaining([
+          { action: "create", file_path: "a.json", content: expect.any(String), encoding: "base64" },
+          { action: "create", file_path: "b.json", content: expect.any(String), encoding: "base64" },
+          { action: "delete", file_path: "gone.json" },
+        ]),
+      );
+      expect(fake.files.get("a.json")?.content.toString("utf8")).toBe('{"a":1}');
+      expect(fake.files.get("b.json")?.content.toString("utf8")).toBe('{"b":2}');
+      expect(fake.files.has("gone.json")).toBe(false);
+      expect(fake.files.get("keep.json")?.content.toString("utf8")).toBe("{}");
+    });
+
+    it("uses an update action for a path that already exists", async () => {
+      await adapter.write("a.json", new TextEncoder().encode("old"));
+      await adapter.writeBatch!([{ path: "a.json", data: new TextEncoder().encode("new") }], "update via batch");
+      expect(fake.lastCommitActions).toEqual([{ action: "update", file_path: "a.json", content: expect.any(String), encoding: "base64" }]);
+      expect(fake.files.get("a.json")?.content.toString("utf8")).toBe("new");
+    });
+
+    it("is a no-op given an empty op list", async () => {
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const before = fetchMock.mock.calls.length;
+      await adapter.writeBatch!([], "empty");
+      expect(fetchMock.mock.calls.length).toBe(before);
+    });
+  });
 });
