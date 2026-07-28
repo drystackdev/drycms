@@ -108,6 +108,36 @@ function targetIdsFromRow(rel: MirrorableRelation, row: Row): number[] {
   return targetIds(rel.cardinality, rel.storageKey, row);
 }
 
+type ResolvedRelationMirrorNode = Extract<EntryFieldNode, { kind: "relation-mirror"; resolved: true }>;
+
+/** Only descends through `flatten`, same as `collectMirrorableRelations` -
+ * a `relation-mirror` field is itself never `child-table`-shaped (see
+ * `tree.ts`'s `walk()`), so it can only ever appear at the root or nested
+ * inside a non-repeatable component. */
+function collectRelationMirrorFields(nodes: EntryFieldNode[]): { node: ResolvedRelationMirrorNode; fieldName: string }[] {
+  const out: { node: ResolvedRelationMirrorNode; fieldName: string }[] = [];
+  for (const node of nodes) {
+    if (node.kind === "flatten") {
+      out.push(...collectRelationMirrorFields(node.children));
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      out.push({ node, fieldName: node.fieldName });
+    }
+  }
+  return out;
+}
+
+/** Resolves the mirrored field's OWN storage identity on `sourceTypeId` -
+ * same `MirrorableRelation` shape `collectMirrorableRelations` already
+ * produces for a type's OWN relation fields, just looked up by id on a
+ * DIFFERENT (source) type's tree, so writing through a mirror field reuses
+ * the exact same `storageKey`/`exclusive` semantics as a direct write. */
+function resolveSourceRelation(allTypes: ContentTypeDefinition[], sourceTypeId: string, sourceFieldId: string): MirrorableRelation | undefined {
+  const sourceType = allTypes.find((t) => t.id === sourceTypeId);
+  if (!sourceType) return undefined;
+  const sourceNodes = buildEntryFieldTree(sourceType, allTypes);
+  return collectMirrorableRelations(sourceNodes).find((r) => r.fieldId === sourceFieldId);
+}
+
 function assertValid(nodes: EntryFieldNode[], value: EntryValue): void {
   const errors = validateEntryValue(nodes, value);
   if (Object.keys(errors).length > 0) {
@@ -256,6 +286,104 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     }
   }
 
+  /** Reads `sourceId`'s own record on `sourceTypeName`, applies `mutate` to
+   * its relation array field at `storageKey`, writes it back, and patches
+   * that field's own reverse-index to match - the file-engine primitive
+   * `writeRelationMirrorField` composes to write THROUGH a mirror field, the
+   * same way `entries-sqlite.ts`'s `insertRelationChildRow`/`DELETE ...
+   * WHERE target_id` pair does for SQL. A dangling `sourceId` (record since
+   * deleted) is silently ignored, same as every other unenforced-FK read
+   * elsewhere in this adapter. */
+  async function mutateSourceArray(sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, mutate: (ids: number[]) => number[], exclusive: boolean): Promise<void> {
+    const path = recordPath(sourceTypeName, sourceId);
+    const row = await driver.readJson<Row>(path);
+    if (!row) return;
+    const oldIds = Array.isArray(row[storageKey]) ? (row[storageKey] as unknown[]).filter((v): v is number => typeof v === "number") : [];
+    const newIds = mutate(oldIds);
+    row[storageKey] = newIds;
+    await driver.writeJson(path, row);
+    await patchReverseIndex(driver, sourceTypeName, sourceFieldId, sourceId, oldIds, newIds, exclusive);
+  }
+
+  /** Same primitive as `mutateSourceArray`, for a `manyToOne` source field
+   * (a single id, not an array). */
+  async function setSourceManyToOneValue(sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, newValue: number | null): Promise<void> {
+    const path = recordPath(sourceTypeName, sourceId);
+    const row = await driver.readJson<Row>(path);
+    if (!row) return;
+    const oldValue = typeof row[storageKey] === "number" ? (row[storageKey] as number) : null;
+    if (oldValue === newValue) return;
+    row[storageKey] = newValue;
+    await driver.writeJson(path, row);
+    await patchReverseIndex(driver, sourceTypeName, sourceFieldId, sourceId, oldValue === null ? [] : [oldValue], newValue === null ? [] : [newValue], false);
+  }
+
+  /** Writes an edited `relation-mirror` field's value THROUGH the mirrored
+   * field's own physical storage on whichever OTHER record(s) it lives on -
+   * unlike a normal relation field (which owns its own row and can freely
+   * overwrite it), a mirror write must touch ONLY the source rows/links
+   * relevant to THIS row's id (`targetId`), read from the reverse-index to
+   * know its OWN previous claims, never disturbing unrelated rows. Mirrors
+   * `entries-sqlite.ts`'s `writeRelationMirror`'s 3-way cardinality switch. */
+  async function writeRelationMirrorField(allTypes: ContentTypeDefinition[], node: ResolvedRelationMirrorNode, targetId: number, incoming: unknown): Promise<void> {
+    const rel = resolveSourceRelation(allTypes, node.sourceTypeId, node.sourceFieldId);
+    if (!rel) return; // source relation no longer exists/resolvable - degrade gracefully, same as a dangling reference elsewhere.
+    const sourceType = allTypes.find((t) => t.id === node.sourceTypeId)!;
+    const sourceTypeName = sourceType.name;
+
+    if (node.reverseCardinality === "oneToMany") {
+      // Mirrors a `manyToOne` source field: incoming is number[] of source
+      // ids to claim EXCLUSIVELY for `targetId` - no exclusivity CHECK needed
+      // here (unlike `oneToMany`'s own forward write): a `manyToOne` column
+      // freely accepts being pointed at by any number of different targets
+      // over time, just never more than one at once per source row, which a
+      // plain overwrite already guarantees.
+      const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
+      const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+      for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
+        await setSourceManyToOneValue(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, null);
+      }
+      for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
+        await setSourceManyToOneValue(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, targetId);
+      }
+      return;
+    }
+
+    if (node.reverseCardinality === "manyToOne") {
+      // Mirrors a `oneToMany` source field: incoming is number|null - an
+      // exclusive claim, same as a direct `oneToMany` write (the source's own
+      // `exclusive: true` still applies, now enforced on whichever NEW source
+      // record is being claimed).
+      const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
+      const oldSourceId = oldSourceIds[0] ?? null;
+      const newSourceId = typeof incoming === "number" ? incoming : null;
+      if (oldSourceId === newSourceId) return;
+      if (oldSourceId !== null) {
+        await mutateSourceArray(sourceTypeName, oldSourceId, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), rel.exclusive);
+      }
+      if (newSourceId !== null) {
+        await mutateSourceArray(sourceTypeName, newSourceId, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), rel.exclusive);
+      }
+      return;
+    }
+
+    // Mirrors a `manyToMany` source field: incoming is number[], free linking.
+    const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
+    const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+    for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
+      await mutateSourceArray(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), false);
+    }
+    for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
+      await mutateSourceArray(sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), false);
+    }
+  }
+
+  async function writeRelationMirrorFields(nodes: EntryFieldNode[], allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<void> {
+    for (const { node, fieldName } of collectRelationMirrorFields(nodes)) {
+      await writeRelationMirrorField(allTypes, node, id, value[fieldName]);
+    }
+  }
+
   async function getEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null> {
     const row = await readRecord(type.name, id);
     if (!row) return null;
@@ -278,6 +406,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     await reserveAll(type.name, id, uniqueFields, relations, rowData, null);
 
     await driver.writeJson(recordPath(type.name, id), rowData);
+    await writeRelationMirrorFields(nodes, allTypes, id, value);
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -309,6 +438,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     await reserveAll(type.name, id, uniqueFields, relations, rowData, existingRow);
 
     await driver.writeJson(recordPath(type.name, id), rowData);
+    await writeRelationMirrorFields(nodes, allTypes, id, value);
     return (await getEntry(type, allTypes, id))!;
   }
 

@@ -26,6 +26,7 @@ import Popover from "../components/Popover.js";
 import RelationField, {
   type RelationFieldSource,
 } from "../components/RelationField.js";
+import Search from "../components/Search.js";
 import SecretField from "../components/SecretField.js";
 import Select from "../components/Select.js";
 import SelectField from "../components/SelectField.js";
@@ -254,6 +255,22 @@ function TextFieldPreview() {
         multiline
         placeholder="Write something…"
       />
+    </div>
+  );
+}
+
+function SearchPreview() {
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  return (
+    <div class="stack" style="width: 100%; max-width: 20rem">
+      <Search
+        value={query}
+        onChange={setQuery}
+        onDebouncedChange={setDebouncedQuery}
+        placeholder="Search entries…"
+      />
+      <small class="hint">Debounced: "{debouncedQuery}"</small>
     </div>
   );
 }
@@ -1650,6 +1667,18 @@ function DemoContent({ id }: { id: string }) {
               name="collections"
             />
           </div>
+        </Demo>
+      );
+
+    case "search":
+      return (
+        <Demo
+          id="search"
+          title="Search"
+          description="Input with a leading search icon (input[type='search']'s own CSS glyph) and built-in debouncing - onChange fires every keystroke, onDebouncedChange fires 300ms after typing settles."
+          code={code.search!}
+        >
+          <SearchPreview />
         </Demo>
       );
 

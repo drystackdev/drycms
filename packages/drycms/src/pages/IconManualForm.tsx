@@ -40,7 +40,9 @@ export default function IconManualForm({ name }: Props) {
       })
       .catch((error) => {
         if (cancelled) return;
-        setLoadError(error instanceof Error ? error.message : "Failed to load icon.");
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load icon.",
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -88,7 +90,8 @@ export default function IconManualForm({ name }: Props) {
       .then(() => route(`${path}/icon-management`))
       .catch((error) => {
         setSaving(false);
-        const message = error instanceof Error ? error.message : "Failed to save icon.";
+        const message =
+          error instanceof Error ? error.message : "Failed to save icon.";
         // Server-side collisions (already_exists) and content problems
         // (empty/invalid SVG after sanitization) surface on different fields
         // - inline on the field itself either way, never a toast, per the
@@ -104,7 +107,7 @@ export default function IconManualForm({ name }: Props) {
   if (loading) return <span class="hint">Loading…</span>;
 
   return (
-    <>
+    <div class="card" style={{ maxWidth: "64rem" }}>
       <div class="page-header">
         <div style={{ flex: 1 }}>
           <h1>{isEditing ? "Edit icon" : "Add icon Manual"}</h1>
@@ -114,39 +117,82 @@ export default function IconManualForm({ name }: Props) {
 
       {loadError && <span class="error">{loadError}</span>}
 
-      <div class="row" style={{ alignItems: "flex-end", gap: "1rem" }}>
-        <TextField
-          label="Name"
-          value={label}
-          onChange={setLabel}
-          placeholder="e.g. home-outline"
-          error={!!nameError}
-          helperText={nameError ?? undefined}
-          style={{ flex: 1 }}
-        />
-        <div class="icon-cell" style={{ width: "3rem", padding: 0 }}>
-          {previewUrl && <IconGlyph src={previewUrl} size={24} />}
+      <div class="under stack">
+        <div class="row" style={{ alignItems: "flex-end", gap: "1rem" }}>
+          <TextField
+            label="Name"
+            value={label}
+            onChange={setLabel}
+            placeholder="e.g. home-outline"
+            error={!!nameError}
+            helperText={nameError ?? undefined}
+            style={{ flex: 1 }}
+          />
+          <div class="row" style={{ gap: "0.5rem" }}>
+            <div
+              class="center"
+              data-tooltip="Primary"
+              style={{
+                width: "2.75rem",
+                height: "2.75rem",
+                border: "1px solid var(--dry-border)",
+                borderRadius: "var(--dry-radius-md)",
+                color: "var(--dry-primary)",
+              }}
+            >
+              {previewUrl && <IconGlyph src={previewUrl} size={24} />}
+            </div>
+            <div
+              class="center"
+              data-tooltip="Secondary"
+              style={{
+                width: "2.75rem",
+                height: "2.75rem",
+                color: "var(--dry-secondary)",
+                borderRadius: "var(--dry-radius-md)",
+                border: "1px solid var(--dry-border)",
+              }}
+            >
+              {previewUrl && <IconGlyph src={previewUrl} size={24} />}
+            </div>
+            <div
+              class="center"
+              data-tooltip="Text"
+              style={{
+                width: "2.75rem",
+                borderRadius: "var(--dry-radius-md)",
+                border: "1px solid var(--dry-border)",
+                height: "2.75rem",
+              }}
+            >
+              {previewUrl && <IconGlyph src={previewUrl} size={24} />}
+            </div>
+          </div>
         </div>
+
+        <TextField
+          label="SVG code"
+          value={svg}
+          onChange={setSvg}
+          multiline
+          placeholder='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">...</svg>'
+          error={!!svgError}
+          helperText={svgError ?? undefined}
+        />
       </div>
 
-      <TextField
-        label="SVG code"
-        value={svg}
-        onChange={setSvg}
-        multiline
-        placeholder='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">...</svg>'
-        error={!!svgError}
-        helperText={svgError ?? undefined}
-      />
-
       <div class="row justify-end">
-        <button type="button" class="outline" onClick={() => route(`${path}/icon-management`)}>
+        <button
+          type="button"
+          class="outline"
+          onClick={() => route(`${path}/icon-management`)}
+        >
           Cancel
         </button>
         <button type="button" disabled={saving} onClick={handleSave}>
           Save
         </button>
       </div>
-    </>
+    </div>
   );
 }

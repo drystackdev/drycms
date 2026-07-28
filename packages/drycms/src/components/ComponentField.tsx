@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import { useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import { DragHandleIcon, PlusIcon, TrashIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
@@ -62,6 +62,8 @@ export default function ComponentField<T = Record<string, unknown>>({
   class: className,
   style,
 }: ComponentFieldProps<T>) {
+  const reactId = useId();
+  const fieldId = `component-field-${reactId}`;
   const [open, setOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<T | null>(null);
@@ -128,10 +130,11 @@ export default function ComponentField<T = Record<string, unknown>>({
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <label>{label}</label>
+      <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
       <div style={{marginTop: "0.5rem"}}>
         <button
+          id={fieldId}
           type="button"
           class="outline"
           disabled={disabled}

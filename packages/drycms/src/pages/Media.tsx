@@ -12,7 +12,7 @@ export default function Media() {
 	const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
 
 	return (
-		<>
+		<div class="card">
 			<div class="page-header">
 				<div>
 					<h1>Media</h1>
@@ -20,7 +20,9 @@ export default function Media() {
 				</div>
 			</div>
 
-			<FileManager source={source} />
-		</>
+			<div class="under" style={{paddingTop: '1rem'}}>
+				<FileManager source={source} />
+			</div>
+		</div>
 	);
 }

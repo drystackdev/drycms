@@ -43,6 +43,7 @@ import { toast } from "./Toast.js";
 import ConfirmDialog from "./ConfirmDialog.js";
 import FileManagerUploadArtwork from "./FileManagerUploadArtwork.js";
 import Popover, { type PopoverMenuEntry } from "./Popover.js";
+import Search from "./Search.js";
 
 export interface FileManagerProps {
   /** Where data is read from and writes are sent - see `FileManagerSource`. */
@@ -255,15 +256,11 @@ function Toolbar({
 }: ToolbarProps) {
   return (
     <div class="file-toolbar row">
-      <input
-        type="search"
+      <Search
         value={query}
+        onChange={onQuery}
         placeholder="Search this folder…"
-        aria-label="Search this folder"
-        style="max-width: 18rem"
-        onInput={(event) =>
-          onQuery((event.currentTarget as HTMLInputElement).value)
-        }
+        style={{ maxWidth: "18rem" }}
       />
       <span class="spacer" />
       {loading && <span class="spinner" aria-hidden="true" />}

@@ -248,7 +248,7 @@ export default function IconSearchAdd() {
         />
       </div>
 
-      <div class="row just">
+      <div class="row">
         <div>
           {error && <span class="error">{error}</span>}
           {searching && <span class="hint">Searching...</span>}
@@ -260,6 +260,8 @@ export default function IconSearchAdd() {
             <span class="hint">No icons in this set.</span>
           )}
         </div>
+
+        <span class="spacer" />
 
         <div class="row">
           <button

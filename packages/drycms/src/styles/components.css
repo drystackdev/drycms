@@ -1009,6 +1009,13 @@
         gap: 0.5rem;
       }
 
+      & .under {
+        padding: 1.5rem;
+        border: 1px solid var(--dry-border);
+        border-radius: var(--dry-radius-lg);
+        background-color: var(--dry-background);
+      }
+
       &.flush {
         padding: 0;
 
@@ -2351,7 +2358,7 @@
       display: grid;
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-md);
-      
+
       & li {
         margin: 0;
         padding: 0.375rem 0.625rem;
@@ -2662,6 +2669,31 @@
       }
     }
 
+    /* Opt-in `CodeBlock` modifier: wraps long lines instead of scrolling
+     * horizontally, capping height (inline `maxHeight` style, see the
+     * component's `wrap` prop) and scrolling vertically past that. */
+    pre.wrap {
+      overflow-x: hidden;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      font-size: var(--dry-text-xs);
+      line-height: 1.6;
+    }
+
+    /* Positions `CodeBlock`'s optional copy button (its `copyable` prop) in
+     * the block's own corner - hover/press feedback comes from the button's
+     * own `ghost icon sm` classes, same as every other icon-only button. */
+    .code-block {
+      position: relative;
+
+      & .code-block-copy {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+      }
+    }
+
     /* Editable demo: a highlighted <pre> and a transparent <textarea> stacked
      * exactly on top of each other. Typing is invisible except for the caret;
      * the visible text always comes from the <pre> underneath. */
@@ -2787,12 +2819,24 @@
       grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
       gap: 0.75rem;
       width: 100%;
+
+      & > .empty {
+        grid-column: 1 / -1;
+      }
     }
 
     .icon-tool-search {
       & > * {
-        flex: 1
+        flex: 1;
       }
+    }
+
+    .icon-preview-body{
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      padding: 1.5rem;
+      width: fit-content;
+      margin-bottom: 1rem;
     }
 
     .icon-cell {
@@ -2804,8 +2848,7 @@
       border-radius: var(--dry-radius-md);
       text-align: center;
       overflow: hidden;
-      transition: 
-        background-color 180ms ease;
+      transition: background-color 180ms ease;
 
       &:hover {
         background-color: var(--dry-accent);
@@ -2923,6 +2966,7 @@
       gap: 0.15rem;
       padding-block: 0.375rem;
       font-size: var(--dry-text-sm);
+      background-color: var(--dry-background);
 
       & button {
         padding: 0.125rem 0.375rem !important;
@@ -2955,15 +2999,8 @@
       top: var(--dry-topbar-height);
     }
 
-    /* ...except inside ImageField's picker dialog: `<dialog>` breaks out of
-     * `.main`'s layout into the top layer, so there's no topbar sharing its
-     * scroll container - `.image-picker-body` is, and `top: 0` there is
-     * already correct. Same specificity as the rule above (two classes) -
-     * defined after it, so it wins the tie regardless of DOM depth. */
     .image-picker-dialog .file-breadcrumb {
-      top: 0;
-      background-color: var(--dry-card);
-      padding-inline: 0.75rem;
+      top: -1.5rem;
     }
 
     .file-toolbar {
@@ -3384,6 +3421,10 @@
     .image-picker-body {
       flex: 1 1 auto;
       min-height: 0;
+      padding: 1.5rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-background);
       & .file-selection-bar,
       & .file-table-selection {
         box-shadow: none;

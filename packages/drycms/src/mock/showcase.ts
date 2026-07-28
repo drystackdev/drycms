@@ -103,6 +103,7 @@ export const groups: ShowcaseGroup[] = [
       { id: "custom-select", label: "Select" },
       { id: "combobox", label: "Combobox" },
       { id: "multi-select", label: "Multi-select" },
+      { id: "search", label: "Search" },
       { id: "islands", label: "Theme & sidebar" },
     ],
   },
@@ -474,6 +475,14 @@ const options = [
 ];
 
 <MultiSelect options={options} defaultValue={['blog', 'docs']} name="collections" />`,
+  search: `import Search from 'drycms/components/Search';
+
+<Search
+  value={query}
+  onChange={setQuery}
+  onDebouncedChange={setDebouncedQuery}
+  placeholder="Search entries…"
+/>`,
   islands: `import ThemeToggle from 'drycms/components/ThemeToggle';
 import SidebarToggle from 'drycms/components/SidebarToggle';
 

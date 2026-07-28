@@ -5,7 +5,7 @@ import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
 import CodeBlock from "./CodeBlock.js";
 import ConfirmDialog from "./ConfirmDialog.js";
 import IconGlyph from "./IconGlyph.js";
-import { RenameIcon, TrashIcon } from "./icons.js";
+import { CloseIcon, RenameIcon, TrashIcon, XIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
 
 interface Props {
@@ -39,7 +39,11 @@ function maskSnippet(entry: IconEntry): string {
  * (multi-color/duotone icons collapse to a solid `currentColor` shape) - an
  * inherent limitation of `mask`, not a bug here.
  */
-export default function IconPreviewDialog({ entry, onClose, onDeleted }: Props) {
+export default function IconPreviewDialog({
+  entry,
+  onClose,
+  onDeleted,
+}: Props) {
   const { route } = useLocation();
   const ref = useDialogSync(true, onClose);
   const iconsApi = useMemo(() => createIconsApi(`${path}/api/icons`), []);
@@ -64,27 +68,50 @@ export default function IconPreviewDialog({ entry, onClose, onDeleted }: Props) 
 
   return (
     <>
-      <dialog ref={ref} class="md icon-preview-dialog" aria-label={`Preview: ${displayName}`}>
-        <header>
+      <dialog
+        ref={ref}
+        class="md icon-preview-dialog"
+        aria-label={`Preview: ${displayName}`}
+      >
+        <header class="row justify-between">
           <h3>{displayName}</h3>
+          <button onClick={onClose} class="icon ghost">
+            <XIcon />
+          </button>
         </header>
 
-        <div class="icon-preview-body" style={{ textAlign: "center" }}>
-          <IconGlyph src={entry.url} size={48} />
+        {error && <span class="error">{error}</span>}
+        <div class="row" style={{alignItems: 'flex-start'}}>
+          <div class="icon-preview-body center">
+            <IconGlyph src={entry.url} size={48} />
+          </div>
+
+          <CodeBlock
+            maxHeight="min(80vh, 20rem)"
+            code={maskSnippet(entry)}
+            lang="markup"
+            wrap
+            copyable
+            style={{flex: 1}}
+          />
         </div>
 
-        {error && <span class="error">{error}</span>}
-
-        <CodeBlock code={maskSnippet(entry)} lang="markup" />
-
         <footer>
-          <button type="button" class="destructive" onClick={() => setConfirmingDelete(true)}>
+          <button
+            type="button"
+            class="destructive"
+            onClick={() => setConfirmingDelete(true)}
+          >
             <TrashIcon /> Delete
           </button>
           <button
             type="button"
             class="outline"
-            onClick={() => route(`${path}/icon-management/manual/${encodeURIComponent(entry.name)}`)}
+            onClick={() =>
+              route(
+                `${path}/icon-management/manual/${encodeURIComponent(entry.name)}`,
+              )
+            }
           >
             <RenameIcon /> Edit
           </button>
