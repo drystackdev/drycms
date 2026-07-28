@@ -9,6 +9,7 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import { randomUUID } from "../lib/uuid.js";
 import type { DestructiveChange } from "../content-types/migration.js";
 import { defaultContentTypeDefinitions } from "../content-types/seed.js";
+import { SYSTEM_FIELD_IDS } from "../content-types/system-fields.js";
 import type {
   ContentTypeDefinition,
   ContentTypeFeatures,
@@ -54,13 +55,13 @@ function systemFieldsForUi(
       : [{ id: "id", label: "ID", name: "id", typeLabel: "Number" }];
   if (definition.features?.slug) {
     items.push(
-      { id: "title", label: "Title", name: "title", typeLabel: "Text" },
-      { id: "slug", label: "Slug", name: "slug", typeLabel: "Text" },
+      { id: SYSTEM_FIELD_IDS.title, label: "Title", name: "title", typeLabel: "Text" },
+      { id: SYSTEM_FIELD_IDS.slug, label: "Slug", name: "slug", typeLabel: "Text" },
     );
   }
   if (definition.features?.seo) {
     items.push({
-      id: "seo",
+      id: SYSTEM_FIELD_IDS.seo,
       label: "SEO",
       name: "seo",
       typeLabel: "Component",
@@ -69,7 +70,7 @@ function systemFieldsForUi(
   if (definition.kind === "collection") {
     if (definition.features?.draft) {
       items.push({
-        id: "draft",
+        id: SYSTEM_FIELD_IDS.draft,
         label: "Draft",
         name: "draft",
         typeLabel: "Boolean",
@@ -77,7 +78,7 @@ function systemFieldsForUi(
     }
     if (definition.features?.schedule) {
       items.push({
-        id: "schedule",
+        id: SYSTEM_FIELD_IDS.schedule,
         label: "Schedule",
         name: "schedule",
         typeLabel: "Date",
@@ -86,13 +87,13 @@ function systemFieldsForUi(
     if (definition.features?.timestamps) {
       items.push(
         {
-          id: "createdAt",
+          id: SYSTEM_FIELD_IDS.createdAt,
           label: "Created at",
           name: "createdAt",
           typeLabel: "Date",
         },
         {
-          id: "updatedAt",
+          id: SYSTEM_FIELD_IDS.updatedAt,
           label: "Updated at",
           name: "updatedAt",
           typeLabel: "Date",
@@ -402,6 +403,16 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             systemEntries={systemFieldsForUi(definition)}
             fields={definition.fields}
             features={definition.features}
+            fieldOrder={definition.fieldOrder}
+            fieldSides={definition.fieldSides}
+            onSideChange={(id, side) =>
+              setDefinition((d) =>
+                d
+                  ? { ...d, fieldSides: { ...d.fieldSides, [id]: side } }
+                  : d,
+              )
+            }
+            showSideToggle={definition.kind !== "component"}
             type={KIND_LABELS[definition.kind]}
             onEdit={(field) => {
               setEditingField(field);
@@ -409,6 +420,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             }}
             onRemove={removeField}
             onReorderFields={updateFields}
+            onReorderAll={(order) =>
+              setDefinition((d) => (d ? { ...d, fieldOrder: order } : d))
+            }
             onAdd={() => {
               setEditingField(null);
               setFieldDialogOpen(true);

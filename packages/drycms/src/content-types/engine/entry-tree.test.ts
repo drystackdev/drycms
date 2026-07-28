@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultContentTypeDefinitions } from "../seed.js";
+import { SYSTEM_FIELD_IDS } from "../system-fields.js";
+import type { ContentTypeDefinition } from "../types.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryColumnNode, type EntryRelationNode } from "./entry-tree.js";
 
 const allTypes = defaultContentTypeDefinitions();
@@ -50,6 +52,33 @@ describe("buildEntryFieldTree", () => {
     expect(refs.tableName).toBe("menu_refs");
     expect(refs.itemFields.map((f) => f.fieldName)).toEqual(["label", "description", "href"]);
     expect(refs.itemFields.every((f) => f.kind === "column")).toBe(true);
+  });
+
+  it("threads fieldId onto every node kind, not just columns - needed to resolve ContentTypeDefinition.fieldSides per field", () => {
+    const user = allTypes.find((t) => t.name === "user")!;
+    const roles = byName(buildEntryFieldTree(user, allTypes), "roles") as EntryRelationNode;
+    expect(roles.fieldId).toBe(user.fields.find((f) => f.name === "roles")!.id);
+
+    const menu = allTypes.find((t) => t.name === "menu")!;
+    const refs = byName(buildEntryFieldTree(menu, allTypes), "refs");
+    if (refs.kind !== "component-repeat") throw new Error("unreachable");
+    expect(refs.fieldId).toBe(menu.fields.find((f) => f.name === "refs")!.id);
+
+    // No seeded type ships with `features.seo` on - build a synthetic one to
+    // exercise the `flatten` node kind (the built-in seo component is still
+    // seeded in `allTypes` regardless, so it resolves fine).
+    const withSeo: ContentTypeDefinition = {
+      id: "t-with-seo",
+      kind: "collection",
+      name: "page",
+      label: "Page",
+      fields: [],
+      features: { seo: true },
+      version: 0,
+    };
+    const seo = byName(buildEntryFieldTree(withSeo, allTypes), "seo");
+    expect(seo.kind).toBe("flatten");
+    expect(seo.fieldId).toBe(SYSTEM_FIELD_IDS.seo);
   });
 });
 

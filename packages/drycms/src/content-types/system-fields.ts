@@ -134,3 +134,61 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
 
   return fields.map((field, index) => ({ ...field, order: index }));
 }
+
+/** Applies a stored display order (a permutation of `items`' own ids, see
+ * `types.ts`'s `ContentTypeDefinition.fieldOrder`) on top of their natural
+ * order: ids listed in `order` win, in that sequence; anything NOT listed -
+ * a field just added, or a system field a feature just turned on - is
+ * appended afterward, in its natural relative order. Self-healing by
+ * construction: `order` can freely go stale (reference a since-removed
+ * field/feature) without ever needing a migration - unresolvable ids are
+ * silently skipped. */
+export function applyFieldOrder<T extends { id: string }>(items: T[], order: string[] | undefined): T[] {
+  if (!order || order.length === 0) return items;
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const ordered: T[] = [];
+  for (const id of order) {
+    const item = byId.get(id);
+    if (item) {
+      ordered.push(item);
+      byId.delete(id);
+    }
+  }
+  for (const item of items) {
+    if (byId.has(item.id)) ordered.push(item);
+  }
+  return ordered;
+}
+
+export type FieldSide = "left" | "right";
+
+/** System fields that default to the right ("showcase") column despite being
+ * plain columns, not `relation`/`component` - `seo` is a `component` field
+ * anyway (covered either way), `draft`/`schedule` are the two feature-driven
+ * fields that carry a real input control (unlike read-only `createdAt`/
+ * `updatedAt`, which are excluded from the entry form entirely - see
+ * `ContentEntryEditor.tsx`'s `isTimestampField`). */
+const RIGHT_BY_DEFAULT_SYSTEM_FIELD_IDS: ReadonlySet<string> = new Set([
+  SYSTEM_FIELD_IDS.seo,
+  SYSTEM_FIELD_IDS.draft,
+  SYSTEM_FIELD_IDS.schedule,
+]);
+
+/** The column a field displays in absent an explicit `fieldSides` override -
+ * `isRelationOrComponent` is `field.type === "relation" || field.type ===
+ * "component"` for a custom field, or `EntryFieldNode.kind !== "column"` for
+ * an already-built entry-tree node (both mean the same thing: a relation or
+ * a component, repeatable or not). */
+export function defaultFieldSide(id: string, isRelationOrComponent: boolean): FieldSide {
+  if (isRelationOrComponent) return "right";
+  return RIGHT_BY_DEFAULT_SYSTEM_FIELD_IDS.has(id) ? "right" : "left";
+}
+
+/** Applies a stored `fieldSides` override (see `types.ts`'s
+ * `ContentTypeDefinition.fieldSides`) on top of `defaultFieldSide` - self-
+ * healing the same way `applyFieldOrder` is: an id missing from `sides` (a
+ * field just added, or never explicitly moved) just falls back to its
+ * computed default instead of erroring. */
+export function resolveFieldSide(id: string, isRelationOrComponent: boolean, sides: Record<string, FieldSide> | undefined): FieldSide {
+  return sides?.[id] ?? defaultFieldSide(id, isRelationOrComponent);
+}

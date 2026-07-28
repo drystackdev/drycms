@@ -3,6 +3,7 @@ import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
 import Combobox from "../components/Combobox.js";
+import ComponentField from "../components/ComponentField.js";
 import DataTable from "../components/DataTable.js";
 import DatePickerField from "../components/DatePickerField.js";
 import Demo from "../components/Demo.js";
@@ -21,6 +22,9 @@ import MultiSelect from "../components/MultiSelect.js";
 import NumberField from "../components/NumberField.js";
 import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
 import Popover from "../components/Popover.js";
+import RelationField, {
+  type RelationFieldSource,
+} from "../components/RelationField.js";
 import Select from "../components/Select.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
@@ -370,6 +374,96 @@ function ImageFieldPreview() {
         onChange={setCover}
         description="Recommended size: 1200×630."
         helperText="Shown at the top of the post."
+      />
+    </div>
+  );
+}
+
+interface MockAuthor {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const MOCK_AUTHORS: MockAuthor[] = [
+  { id: "1", name: "Ada Lovelace", email: "ada@example.com" },
+  { id: "2", name: "Alan Turing", email: "alan@example.com" },
+  { id: "3", name: "Grace Hopper", email: "grace@example.com" },
+  { id: "4", name: "Margaret Hamilton", email: "margaret@example.com" },
+];
+
+function RelationFieldPreview() {
+  const [author, setAuthor] = useState("1");
+  const source: RelationFieldSource<MockAuthor> = useMemo(
+    () => ({
+      columns: [
+        { key: "name", label: "Name" },
+        { key: "email", label: "Email" },
+      ],
+      fetchRows: async ({ search }) => {
+        const rows = search
+          ? MOCK_AUTHORS.filter((a) =>
+              a.name.toLowerCase().includes(search.toLowerCase()),
+            )
+          : MOCK_AUTHORS;
+        return { rows, total: rows.length };
+      },
+      resolveLabels: async (ids) =>
+        Object.fromEntries(
+          ids.map((id) => [id, MOCK_AUTHORS.find((a) => a.id === id)?.name ?? id]),
+        ),
+    }),
+    [],
+  );
+  return (
+    <div style="width: 100%; max-width: 24rem">
+      <RelationField
+        label="Author"
+        value={author}
+        onChange={(value) => setAuthor(value as string)}
+        source={source}
+        pickerTitle="Choose Author"
+        helperText="Click to pick one author from the list."
+      />
+    </div>
+  );
+}
+
+interface MockLink {
+  label: string;
+  url: string;
+}
+
+function ComponentFieldPreview() {
+  const [links, setLinks] = useState<MockLink[]>([
+    { label: "Docs", url: "https://example.com/docs" },
+  ]);
+  return (
+    <div style="width: 100%; max-width: 24rem">
+      <ComponentField<MockLink>
+        label="Links"
+        value={links}
+        onChange={setLinks}
+        itemLabel="link"
+        summaryOf={(item) => item.label}
+        blankItem={() => ({ label: "", url: "" })}
+        renderItem={(item, onChange) => (
+          <>
+            <TextField
+              label="Label"
+              value={item.label}
+              onChange={(value) => onChange({ ...item, label: value })}
+              placeholder="e.g. Docs"
+            />
+            <TextField
+              label="URL"
+              value={item.url}
+              onChange={(value) => onChange({ ...item, url: value })}
+              placeholder="e.g. https://example.com"
+            />
+          </>
+        )}
+        helperText="Add, edit, or remove repeatable link items."
       />
     </div>
   );
@@ -1033,6 +1127,30 @@ function DemoContent({ id }: { id: string }) {
           code={code.imageField!}
         >
           <ImageFieldPreview />
+        </Demo>
+      );
+
+    case "relation-field":
+      return (
+        <Demo
+          id="relation-field"
+          title="Relation field"
+          description="Same label + control + helper text contract as TextField; the control is a card that opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend."
+          code={code.relationField!}
+        >
+          <RelationFieldPreview />
+        </Demo>
+      );
+
+    case "component-field":
+      return (
+        <Demo
+          id="component-field"
+          title="Component field"
+          description="An editable list of summaries, each opening an add/edit dialog for one item; renderItem lets the caller plug in that item's own fields, so the item's shape is entirely up to the consumer."
+          code={code.componentField!}
+        >
+          <ComponentFieldPreview />
         </Demo>
       );
 

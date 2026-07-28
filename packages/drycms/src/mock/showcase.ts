@@ -35,6 +35,8 @@ export const groups: ShowcaseGroup[] = [
       { id: "check-field", label: "Check field" },
       { id: "date-picker-field", label: "Date picker field" },
       { id: "image-field", label: "Image field" },
+      { id: "relation-field", label: "Relation field" },
+      { id: "component-field", label: "Component field" },
     ],
   },
   {
@@ -593,5 +595,43 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={setCover}
   description="Recommended size: 1200×630."
   helperText="Shown at the top of the post."
+/>`,
+  relationField: `import RelationField from 'drycms/components/RelationField';
+
+<RelationField
+  label="Author"
+  value={author}
+  onChange={(value) => setAuthor(value)}
+  source={source}
+  pickerTitle="Choose Author"
+  helperText="Click to pick one author from the list."
+/>`,
+  componentField: `import ComponentField from 'drycms/components/ComponentField';
+import TextField from 'drycms/components/TextField';
+
+<ComponentField
+  label="Links"
+  value={links}
+  onChange={setLinks}
+  itemLabel="link"
+  summaryOf={(item) => item.label}
+  blankItem={() => ({ label: '', url: '' })}
+  renderItem={(item, onChange) => (
+    <>
+      <TextField
+        label="Label"
+        value={item.label}
+        onChange={(value) => onChange({ ...item, label: value })}
+        placeholder="e.g. Docs"
+      />
+      <TextField
+        label="URL"
+        value={item.url}
+        onChange={(value) => onChange({ ...item, url: value })}
+        placeholder="e.g. https://example.com"
+      />
+    </>
+  )}
+  helperText="Add, edit, or remove repeatable link items."
 />`,
 };

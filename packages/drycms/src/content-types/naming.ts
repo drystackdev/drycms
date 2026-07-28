@@ -184,7 +184,10 @@ const LOCKABLE_FEATURES = [
  * default definition (never from `existing.structureLocked`): a drycms
  * upgrade that newly marks an already-seeded default (e.g. `aiKey`)
  * as structure-locked must take effect on installs that seeded it before
- * that flag existed, whose stored row will never have it set.
+ * that flag existed, whose stored row will never have it set. `sortable` is
+ * excluded from the structure-locked features-freeze check - a narrow,
+ * deliberate exception, so even `aiKey`/`role`/`permission` may opt into
+ * manual drag-reordering while every other feature stays frozen.
  */
 export function validateSystemProtections(
   next: ContentTypeDefinition,
@@ -256,10 +259,14 @@ export function validateSystemProtections(
         `"${existing.label}"'s structure is locked - fields can't be added.`,
       );
     }
-    if (
-      JSON.stringify(next.features ?? {}) !==
-      JSON.stringify(existing.features ?? {})
-    ) {
+    // `sortable` is a narrow, deliberate exception: even a structure-locked
+    // type (aiKey/role/permission) may opt into manual drag-reordering -
+    // every OTHER feature stays frozen exactly as seeded.
+    const nextFeatures = { ...(next.features ?? {}) };
+    const existingFeatures = { ...(existing.features ?? {}) };
+    delete nextFeatures.sortable;
+    delete existingFeatures.sortable;
+    if (JSON.stringify(nextFeatures) !== JSON.stringify(existingFeatures)) {
       throw new NamingError(
         `"${existing.label}"'s structure is locked - features can't be changed.`,
       );

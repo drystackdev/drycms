@@ -14,7 +14,10 @@ import {
   type EntryFieldNode,
 } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
-import { SYSTEM_FIELD_IDS } from "../content-types/system-fields.js";
+import {
+  resolveFieldSide,
+  SYSTEM_FIELD_IDS,
+} from "../content-types/system-fields.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
@@ -221,13 +224,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     node.kind === "column" &&
     (node.fieldId === SYSTEM_FIELD_IDS.createdAt ||
       node.fieldId === SYSTEM_FIELD_IDS.updatedAt);
-  const leftFields = nodes.filter(
-    (n) =>
-      (n.kind === "column" || n.kind === "flatten") && !isTimestampField(n),
-  );
-  const rightFields = nodes.filter(
-    (n) => n.kind === "relation" || n.kind === "component-repeat",
-  );
+  const editableNodes = nodes.filter((n) => !isTimestampField(n));
+  const sideOf = (n: EntryFieldNode) =>
+    resolveFieldSide(n.fieldId, n.kind !== "column", type.fieldSides);
+  const leftFields = editableNodes.filter((n) => sideOf(n) === "left");
+  const rightFields = editableNodes.filter((n) => sideOf(n) === "right");
 
   return (
     <>
@@ -282,18 +283,22 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         </div>
 
         <div class="stack">
-          {rightFields.map((node) => (
-            <FieldRenderer
-              key={node.fieldName}
-              node={node}
-              value={value[node.fieldName]}
-              onChange={(fieldValue) =>
-                updateFieldValue(node.fieldName, fieldValue)
-              }
-              error={fieldErrors[node.fieldName]}
-              allTypes={allTypes}
-            />
-          ))}
+          {rightFields.length > 0 && (
+            <div class="content-entry-editor-panel">
+              {rightFields.map((node) => (
+                <FieldRenderer
+                  key={node.fieldName}
+                  node={node}
+                  value={value[node.fieldName]}
+                  onChange={(fieldValue) =>
+                    updateFieldValue(node.fieldName, fieldValue)
+                  }
+                  error={fieldErrors[node.fieldName]}
+                  allTypes={allTypes}
+                />
+              ))}
+            </div>
+          )}
 
           {!isNew && !isSingleton && (
             <div class="content-type-editor-danger">

@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import { fieldTypes } from "../../content-types/field-registry.js";
+import {
+  applyFieldOrder,
+  resolveFieldSide,
+  type FieldSide,
+} from "../../content-types/system-fields.js";
 import type {
   ContentTypeFeatures,
   FieldDefinition,
@@ -28,13 +33,33 @@ export interface FieldsListProps {
   fields: FieldDefinition[];
   type: string;
   features?: ContentTypeFeatures;
+  /** Persisted display order (see `types.ts`'s `ContentTypeDefinition.fieldOrder`) -
+   * a permutation of `systemEntries`'/`fields`' ids (`id` itself excluded, always
+   * pinned first regardless). Applied via `system-fields.ts`'s `applyFieldOrder`;
+   * missing/stale ids just fall back to natural order, so this never needs
+   * to be kept in lockstep with `systemEntries`/`fields` by the caller. */
+  fieldOrder?: string[];
+  /** Persisted per-field entry-editor column (see `types.ts`'s
+   * `ContentTypeDefinition.fieldSides`), keyed the same way as `fieldOrder`.
+   * Missing ids fall back to `system-fields.ts`'s `defaultFieldSide` via
+   * `resolveFieldSide`. */
+  fieldSides?: Record<string, FieldSide>;
+  onSideChange: (id: string, side: FieldSide) => void;
+  /** `false` for `component`-kind types: their fields only ever render
+   * nested inside a parent's flatten/repeat form (see `FieldRenderer.tsx`),
+   * which never splits left/right, so the toggle would have no effect. */
+  showSideToggle: boolean;
   onEdit: (field: FieldDefinition) => void;
   onRemove: (fieldId: string) => void;
   /** Fires with the custom fields' new relative order whenever the unified
-   * list is reordered - system rows never affect the real column order
-   * (see the "unified field list" decision), only where OTHER custom fields
-   * end up relative to each other. */
+   * list is reordered - drives the real column order (see `naming.ts`'s
+   * `normalizeFieldOrder`), independent of `onReorderAll`'s display order. */
   onReorderFields: (fields: FieldDefinition[]) => void;
+  /** Fires with the FULL combined id order (system rows and custom fields
+   * alike, `id` excluded) whenever the unified list is reordered - purely
+   * the on-screen order (`ContentTypeDefinition.fieldOrder`), never the real
+   * column order. */
+  onReorderAll: (order: string[]) => void;
   onAdd: () => void;
   /** When true, this content type's structure is fully frozen (`role`/
    * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
@@ -54,9 +79,14 @@ export default function FieldsList({
   systemEntries,
   fields,
   features,
+  fieldOrder,
+  fieldSides,
+  onSideChange,
+  showSideToggle,
   onEdit,
   onRemove,
   onReorderFields,
+  onReorderAll,
   onAdd,
   type,
   structureLocked,
@@ -76,35 +106,20 @@ export default function FieldsList({
     })),
     ...fields.map((field) => ({ id: field.id, system: false as const, field })),
   ];
-  const combinedIds = combined.map((e) => e.id);
 
-  // Ephemeral display order across system+custom rows (see the "unified
-  // field list" decision - this never affects the real column order, only
-  // where system rows visually sit relative to custom ones). Reconciled
-  // whenever the underlying id set changes: existing positions are kept,
-  // new ids (a field just added, or a feature just toggled on) are appended.
-  const [order, setOrder] = useState<string[]>(combinedIds);
-  useEffect(() => {
-    setOrder((prev) => {
-      const idSet = new Set(combinedIds);
-      const kept = prev.filter((id) => idSet.has(id));
-      const missing = combinedIds.filter((id) => !kept.includes(id));
-      return [...kept, ...missing];
-    });
-    // Re-run whenever the *set* of ids changes, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combinedIds.join(",")]);
-
-  const byId = new Map(combined.map((e) => [e.id, e]));
-  const orderedEntries = order
-    .map((id) => byId.get(id))
-    .filter((e): e is CombinedEntry => !!e);
+  // Display order is fully derived from props - `fieldOrder` (persisted) wins
+  // for whatever ids it lists, in that sequence; anything not listed (a field
+  // just added, or a feature just toggled on) keeps its natural position,
+  // appended after. No local state: reorders round-trip through the parent
+  // (`onReorderAll` -> `ContentTypeDefinition.fieldOrder` -> this `fieldOrder`
+  // prop), same one-way flow already used for `fields`/`onReorderFields`.
+  const orderedEntries = applyFieldOrder(combined, fieldOrder);
 
   const sortable = useSortableList<CombinedEntry>({
     items: orderedEntries,
     getId: (e) => e.id,
     onReorder: (next) => {
-      setOrder(next.map((e) => e.id));
+      onReorderAll(next.map((e) => e.id));
       const nextFields = next
         .filter((e): e is CombinedEntry & { system: false } => !e.system)
         .map((e) => e.field);
@@ -164,6 +179,16 @@ export default function FieldsList({
               typeLabel={item.entry.typeLabel}
               name={item.entry.name}
               system
+              side={
+                showSideToggle
+                  ? resolveFieldSide(item.id, false, fieldSides)
+                  : undefined
+              }
+              onSideChange={
+                showSideToggle
+                  ? (side) => onSideChange(item.id, side)
+                  : undefined
+              }
               dragHandleProps={sortable.getHandleProps(item.id)}
               dragging={sortable.draggingId === item.id}
             />
@@ -175,6 +200,21 @@ export default function FieldsList({
                 item.field,
                 fieldTypes[item.field.type]?.label ?? item.field.type,
               )}
+              side={
+                showSideToggle
+                  ? resolveFieldSide(
+                      item.id,
+                      item.field.type === "relation" ||
+                        item.field.type === "component",
+                      fieldSides,
+                    )
+                  : undefined
+              }
+              onSideChange={
+                showSideToggle
+                  ? (side) => onSideChange(item.id, side)
+                  : undefined
+              }
               onEdit={() => onEdit(item.field)}
               onRemove={() => setPendingRemove(item.field)}
               dragHandleProps={sortable.getHandleProps(item.id)}

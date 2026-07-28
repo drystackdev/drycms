@@ -64,6 +64,28 @@ export interface ContentTypeDefinition {
   livePreviewUrl?: string;
   features?: ContentTypeFeatures;
   fields: FieldDefinition[];
+  /** Display order for the unified system+custom fields list (the schema
+   * editor's field list and the entry editor's form) - a permutation of
+   * `SYSTEM_FIELD_IDS` values (for whichever `features` are on) and this
+   * type's own field ids, `id` itself excluded (always shown/reordered
+   * separately, pinned first - see `ContentTypeEditor.tsx`'s
+   * `systemFieldsForUi`). Purely cosmetic: it never affects the real column
+   * order in the database (see `tree.ts`'s `resolveTableTree`, which always
+   * puts system columns first) - only where things appear on screen. Applied
+   * via `system-fields.ts`'s `applyFieldOrder`, which is self-healing: an id
+   * missing here (a field just added, or a feature just turned on) is
+   * appended in its natural default position instead of erroring. */
+  fieldOrder?: string[];
+  /** Which column (the entry editor's left "main content" column vs. right
+   * "showcase" column - see `ContentEntryEditor.tsx`) each unified system+
+   * custom field displays in, keyed the same way as `fieldOrder`. Missing ids
+   * fall back to a computed default (`system-fields.ts`'s
+   * `defaultFieldSide`: Relation/Component fields and the Draft/Schedule
+   * system fields default to `"right"`, everything else `"left"`) - same
+   * self-healing shape as `fieldOrder`, just for column instead of sequence.
+   * Purely cosmetic, like `fieldOrder`: never affects the real column order
+   * in the database. */
+  fieldSides?: Record<string, "left" | "right">;
   /** Optimistic-lock counter, incremented on every successful save. */
   version: number;
   /** True for the built-in defaults seeded at first boot (`user`, `menu`,

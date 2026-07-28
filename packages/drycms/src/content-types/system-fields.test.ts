@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { SYSTEM_COMPONENT_IDS, SYSTEM_FIELD_IDS, systemFieldsFor } from "./system-fields.js";
+import {
+  defaultFieldSide,
+  resolveFieldSide,
+  SYSTEM_COMPONENT_IDS,
+  SYSTEM_FIELD_IDS,
+  systemFieldsFor,
+} from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 function contentType(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeDefinition {
@@ -77,5 +83,40 @@ describe("systemFieldsFor", () => {
   it("never adds sortIndex on a singleton, even when the flag is set", () => {
     const fields = systemFieldsFor(contentType({ kind: "singleton", features: { sortable: true } as never }));
     expect(fields.map((f) => f.id)).not.toContain(SYSTEM_FIELD_IDS.sortIndex);
+  });
+});
+
+describe("defaultFieldSide", () => {
+  it("defaults a relation/component field to the right column", () => {
+    expect(defaultFieldSide("custom-1", true)).toBe("right");
+  });
+
+  it("defaults draft/schedule/seo to the right column despite being plain columns", () => {
+    expect(defaultFieldSide(SYSTEM_FIELD_IDS.draft, false)).toBe("right");
+    expect(defaultFieldSide(SYSTEM_FIELD_IDS.schedule, false)).toBe("right");
+    expect(defaultFieldSide(SYSTEM_FIELD_IDS.seo, false)).toBe("right");
+  });
+
+  it("defaults every other field to the left column", () => {
+    expect(defaultFieldSide(SYSTEM_FIELD_IDS.title, false)).toBe("left");
+    expect(defaultFieldSide(SYSTEM_FIELD_IDS.slug, false)).toBe("left");
+    expect(defaultFieldSide(SYSTEM_FIELD_IDS.createdAt, false)).toBe("left");
+    expect(defaultFieldSide("custom-1", false)).toBe("left");
+  });
+});
+
+describe("resolveFieldSide", () => {
+  it("falls back to the computed default when the id is missing from sides", () => {
+    expect(resolveFieldSide("custom-1", true, undefined)).toBe("right");
+    expect(resolveFieldSide("custom-1", false, {})).toBe("left");
+  });
+
+  it("lets an explicit override win over the computed default", () => {
+    expect(resolveFieldSide("custom-1", true, { "custom-1": "left" })).toBe("left");
+    expect(resolveFieldSide(SYSTEM_FIELD_IDS.draft, false, { [SYSTEM_FIELD_IDS.draft]: "left" })).toBe("left");
+  });
+
+  it("ignores a stale override for a since-removed id (self-healing, same as applyFieldOrder)", () => {
+    expect(resolveFieldSide("custom-1", false, { "custom-removed": "right" })).toBe("left");
   });
 });
