@@ -33,7 +33,7 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const created = await entries.createEntry(user, allTypes, {
       name: "Ada",
       email: "ada@example.com",
-      password: "hunter2",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
       roles: [editorRole.id],
     });
     expect(created.value.name).toBe("Ada");
@@ -57,15 +57,92 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     expect(await entries.getEntry(user, allTypes, created.id)).toBeNull();
   });
 
+  it("changes a password on update when the correct current password is supplied", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    const created = await entries.createEntry(user, allTypes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+    });
+    const originalHash = (await rawQuery<{ password: string }>(dir, `SELECT "password" FROM "user" WHERE "id" = ${created.id};`))[0]!.password;
+
+    await entries.updateEntry(user, allTypes, created.id, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: true, old: "hunter2", new: "new-password" } satisfies MaskedValue,
+    });
+
+    const newHash = (await rawQuery<{ password: string }>(dir, `SELECT "password" FROM "user" WHERE "id" = ${created.id};`))[0]!.password;
+    expect(newHash).not.toBe(originalHash);
+  });
+
+  it("rejects a password change with a field-scoped error when the current password is wrong", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    const created = await entries.createEntry(user, allTypes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+    });
+
+    await expect(
+      entries.updateEntry(user, allTypes, created.id, {
+        name: "Ada",
+        email: "ada@example.com",
+        password: { hasExisting: true, old: "wrong-password", new: "new-password" } satisfies MaskedValue,
+      }),
+    ).rejects.toMatchObject({
+      name: "ContentEntryError",
+      code: "validation_failed",
+      fieldErrors: { password: "Current password is incorrect." },
+    });
+
+    // The row must be left untouched by the rejected attempt.
+    const stillHash = (await rawQuery<{ password: string }>(dir, `SELECT "password" FROM "user" WHERE "id" = ${created.id};`))[0]!.password;
+    const afterAttempt = await entries.getEntry(user, allTypes, created.id);
+    expect(afterAttempt?.value.password).toEqual({ hasExisting: true } satisfies MaskedValue);
+    expect(stillHash).toBeTruthy();
+  });
+
+  it("leaves the stored hash untouched when a password update leaves `new` blank", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    const created = await entries.createEntry(user, allTypes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+    });
+    const originalHash = (await rawQuery<{ password: string }>(dir, `SELECT "password" FROM "user" WHERE "id" = ${created.id};`))[0]!.password;
+
+    await entries.updateEntry(user, allTypes, created.id, {
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      password: { hasExisting: true } satisfies MaskedValue,
+    });
+
+    const sameHash = (await rawQuery<{ password: string }>(dir, `SELECT "password" FROM "user" WHERE "id" = ${created.id};`))[0]!.password;
+    expect(sameHash).toBe(originalHash);
+  });
+
   it("rejects a duplicate unique field with a field-scoped error", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);
     const allTypes = await schema.listContentTypes();
     const user = allTypes.find((t) => t.name === "user")!;
 
-    await entries.createEntry(user, allTypes, { name: "Ada", email: "dup@example.com", password: "hunter2" });
+    await entries.createEntry(user, allTypes, { name: "Ada", email: "dup@example.com", password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue });
     await expect(
-      entries.createEntry(user, allTypes, { name: "Grace", email: "dup@example.com", password: "hunter2" }),
+      entries.createEntry(user, allTypes, { name: "Grace", email: "dup@example.com", password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue }),
     ).rejects.toMatchObject({ name: "ContentEntryError", code: "validation_failed", fieldErrors: { email: expect.any(String) } });
   });
 
@@ -75,7 +152,7 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const allTypes = await schema.listContentTypes();
     const user = allTypes.find((t) => t.name === "user")!;
 
-    await expect(entries.createEntry(user, allTypes, { name: "", email: "a@b.com", password: "x" })).rejects.toMatchObject({
+    await expect(entries.createEntry(user, allTypes, { name: "", email: "a@b.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue })).rejects.toMatchObject({
       name: "ContentEntryError",
       code: "validation_failed",
       fieldErrors: { name: expect.any(String) },
@@ -117,9 +194,9 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const allTypes = await schema.listContentTypes();
     const user = allTypes.find((t) => t.name === "user")!;
 
-    await entries.createEntry(user, allTypes, { name: "Ada", email: "ada@example.com", password: "x" });
-    await entries.createEntry(user, allTypes, { name: "Grace", email: "grace@example.com", password: "x" });
-    await entries.createEntry(user, allTypes, { name: "Alan", email: "alan@example.com", password: "x" });
+    await entries.createEntry(user, allTypes, { name: "Ada", email: "ada@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue });
+    await entries.createEntry(user, allTypes, { name: "Grace", email: "grace@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue });
+    await entries.createEntry(user, allTypes, { name: "Alan", email: "alan@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue });
 
     const all = await entries.listEntries(user, allTypes, { page: 0, pageSize: 10 });
     expect(all.total).toBe(3);
@@ -162,8 +239,8 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const roleType = allTypes.find((t) => t.name === "role")!;
 
     const editor = await entries.createEntry(roleType, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
-    const ada = await entries.createEntry(user, allTypes, { name: "Ada", email: "ada@example.com", password: "x", roles: [editor.id] });
-    const grace = await entries.createEntry(user, allTypes, { name: "Grace", email: "grace@example.com", password: "x", roles: [editor.id] });
+    const ada = await entries.createEntry(user, allTypes, { name: "Ada", email: "ada@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue, roles: [editor.id] });
+    const grace = await entries.createEntry(user, allTypes, { name: "Grace", email: "grace@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue, roles: [editor.id] });
 
     // Isolation fixture: an unrelated role/user pair that must survive
     // editor's mirror write untouched.
@@ -171,7 +248,7 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const unrelatedUser = await entries.createEntry(user, allTypes, {
       name: "Zoe",
       email: "zoe@example.com",
-      password: "x",
+      password: { hasExisting: false, new: "x" } satisfies MaskedValue,
       roles: [unrelatedRole.id],
     });
 

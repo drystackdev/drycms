@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultContentTypeDefinitions } from "../seed.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "./entry-tree.js";
-import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type MaskedValue } from "./entry-codec.js";
+import { hashPassword } from "../../lib/password-hash.js";
+import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, verifyPasswordChanges, type MaskedValue } from "./entry-codec.js";
 
 const allTypes = defaultContentTypeDefinitions();
 const user = allTypes.find((t) => t.name === "user")!;
@@ -60,7 +61,12 @@ describe("rowToValue", () => {
 
 describe("valueToRow", () => {
   it("hashes a newly-typed password into the row", async () => {
-    const row = await valueToRow(userNodes, { name: "Ada", email: "ada@example.com", password: "hunter2", roles: [] });
+    const row = await valueToRow(userNodes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+      roles: [],
+    });
     expect(row.password).toMatch(/^v1:/);
     expect(row.password).not.toBe("hunter2");
     expect(row.name).toBe("Ada");
@@ -73,6 +79,15 @@ describe("valueToRow", () => {
       password: { hasExisting: true } satisfies MaskedValue,
     });
     expect("password" in row).toBe(false);
+  });
+
+  it("ignores `.confirm` and `.old` - only `.new` is ever hashed", async () => {
+    const row = await valueToRow(userNodes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: true, old: "oldpass", new: "hunter2", confirm: "something-else" } satisfies MaskedValue,
+    });
+    expect(row.password).toMatch(/^v1:/);
   });
 
   it("writes a manyToOne relation's numeric id to its column", async () => {
@@ -90,14 +105,60 @@ describe("valueToRow", () => {
   });
 });
 
+describe("verifyPasswordChanges", () => {
+  it("returns no errors when there's nothing staged to change", async () => {
+    const existingRow = { password: await hashPassword("current-pass") };
+    const errors = await verifyPasswordChanges(userNodes, { password: { hasExisting: true } satisfies MaskedValue }, existingRow);
+    expect(errors).toEqual({});
+  });
+
+  it("passes when the staged old password matches the stored hash", async () => {
+    const existingRow = { password: await hashPassword("current-pass") };
+    const errors = await verifyPasswordChanges(
+      userNodes,
+      { password: { hasExisting: true, old: "current-pass", new: "new-pass" } satisfies MaskedValue },
+      existingRow,
+    );
+    expect(errors).toEqual({});
+  });
+
+  it("rejects when the staged old password doesn't match the stored hash", async () => {
+    const existingRow = { password: await hashPassword("current-pass") };
+    const errors = await verifyPasswordChanges(
+      userNodes,
+      { password: { hasExisting: true, old: "wrong-pass", new: "new-pass" } satisfies MaskedValue },
+      existingRow,
+    );
+    expect(errors.password).toBe("Current password is incorrect.");
+  });
+
+  it("skips verification when the row has no password set yet (nothing to check against)", async () => {
+    const existingRow = { password: null };
+    const errors = await verifyPasswordChanges(
+      userNodes,
+      { password: { hasExisting: false, new: "new-pass" } satisfies MaskedValue },
+      existingRow,
+    );
+    expect(errors).toEqual({});
+  });
+});
+
 describe("validateEntryValue", () => {
   it("requires the name field", () => {
-    const errors = validateEntryValue(userNodes, { name: "", email: "a@b.com", password: "x" });
+    const errors = validateEntryValue(userNodes, {
+      name: "",
+      email: "a@b.com",
+      password: { hasExisting: false, new: "x" } satisfies MaskedValue,
+    });
     expect(errors.name).toBeDefined();
   });
 
   it("rejects an invalid email format", () => {
-    const errors = validateEntryValue(userNodes, { name: "Ada", email: "not-an-email", password: "x" });
+    const errors = validateEntryValue(userNodes, {
+      name: "Ada",
+      email: "not-an-email",
+      password: { hasExisting: false, new: "x" } satisfies MaskedValue,
+    });
     expect(errors.email).toBeDefined();
   });
 
@@ -119,8 +180,21 @@ describe("validateEntryValue", () => {
     expect(errors.password).toBeUndefined();
   });
 
+  it("does not flag a create-mode password as empty once a new value has been typed", () => {
+    const errors = validateEntryValue(userNodes, {
+      name: "Ada",
+      email: "a@b.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+    });
+    expect(errors.password).toBeUndefined();
+  });
+
   it("passes with fully valid data", () => {
-    const errors = validateEntryValue(userNodes, { name: "Ada", email: "ada@example.com", password: "hunter2" });
+    const errors = validateEntryValue(userNodes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+    });
     expect(Object.keys(errors)).toHaveLength(0);
   });
 });
@@ -144,7 +218,7 @@ describe("validateEntryValue - item count (multi-relation / repeatable component
     const errors = validateEntryValue(nodes, {
       name: "Ada",
       email: "a@b.com",
-      password: "x",
+      password: { hasExisting: false, new: "x" } satisfies MaskedValue,
       roles: ["r1"],
     });
     expect(errors.roles).toBe("Roles must have at least 2 items.");
@@ -155,7 +229,7 @@ describe("validateEntryValue - item count (multi-relation / repeatable component
     const errors = validateEntryValue(nodes, {
       name: "Ada",
       email: "a@b.com",
-      password: "x",
+      password: { hasExisting: false, new: "x" } satisfies MaskedValue,
       roles: ["r1", "r2"],
     });
     expect(errors.roles).toBe("Roles must have at most 1 item.");
@@ -166,7 +240,7 @@ describe("validateEntryValue - item count (multi-relation / repeatable component
     const errors = validateEntryValue(nodes, {
       name: "Ada",
       email: "a@b.com",
-      password: "x",
+      password: { hasExisting: false, new: "x" } satisfies MaskedValue,
       roles: ["r1"],
     });
     expect(errors.roles).toBeUndefined();

@@ -1,7 +1,7 @@
 import type { ResolvedSqliteContentOption } from "../../integration/options.js";
 import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
-import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
+import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, verifyPasswordChanges, type EntryValue } from "./entry-codec.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 import { resolveSqliteDriver, type SqliteHandle } from "./sqlite-driver.js";
@@ -341,9 +341,15 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     assertValid(nodes, value);
     const queryable = flattenQueryableColumns(nodes);
 
-    const existing = handle.all<{ id: number }>(`SELECT "id" FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
-    if (existing.length === 0) {
+    const existing = handle.all<Record<string, unknown>>(`SELECT * FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    const existingRow = existing[0];
+    if (!existingRow) {
       throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
+    }
+
+    const passwordErrors = await verifyPasswordChanges(nodes, value, existingRow);
+    if (Object.keys(passwordErrors).length > 0) {
+      throw new ContentEntryError("validation_failed", "Current password is incorrect.", passwordErrors);
     }
 
     const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "update");

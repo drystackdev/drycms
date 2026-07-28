@@ -11,6 +11,7 @@ import TextField from "../../components/TextField.js";
 import type { MaskedValue } from "../../content-types/engine/entry-codec.js";
 import type { EntryColumnNode } from "../../content-types/engine/entry-tree.js";
 import type { SelectFieldConfig } from "../../content-types/field-registry.js";
+import PasswordChangeField from "./PasswordChangeField.js";
 
 interface Props {
   node: EntryColumnNode;
@@ -39,24 +40,16 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
   const imageSource = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
 
   if (fieldType === "password") {
-    const masked = isMaskedValue(value) ? value : { hasExisting: false };
+    const masked: MaskedValue = isMaskedValue(value) ? value : { hasExisting: false };
     return (
-      <div class="field">
-        <label>
-          {label}
-          {validation.required && <span class="required-asterisk">*</span>}
-        </label>
-        {description && <small>{description}</small>}
-        <input
-          type="password"
-          value={typeof value === "string" ? value : ""}
-          autoComplete="new-password"
-          placeholder={masked.hasExisting ? "Leave blank to keep the current password" : "Enter a password"}
-          aria-invalid={!!error || undefined}
-          onInput={(event) => onChange((event.target as HTMLInputElement).value)}
-        />
-        {error && <span class="error">{error}</span>}
-      </div>
+      <PasswordChangeField
+        label={label}
+        description={description}
+        value={masked}
+        onChange={onChange}
+        required={!!validation.required}
+        error={error}
+      />
     );
   }
 

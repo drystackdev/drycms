@@ -11,16 +11,59 @@ export type FieldErrors = Record<string, string>;
  * a client bundle importing `validateEntryValue` for live in-dialog checks. */
 export interface MaskedValue {
   hasExisting: boolean;
+  /** `password` only - staged new plaintext value; hashed server-side, never sent
+   * anywhere else. Absent/empty means "keep the current value", same as `secretkey`'s
+   * untouched-marker behavior. */
+  new?: string;
+  /** `password` only, edit mode - current plaintext password, sent to the server to
+   * verify against the stored hash before the change is allowed. */
+  old?: string;
+  /** `password` only - client-side repeat-of-`new` for the confirm field. Never read
+   * past `findPasswordChangeErrors`/the UI layer - `valueToRow` only ever reads `.new`. */
+  confirm?: string;
 }
 
-function isMaskedValue(value: unknown): value is MaskedValue {
+export function isMaskedValue(value: unknown): value is MaskedValue {
   return typeof value === "object" && value !== null && "hasExisting" in (value as Record<string, unknown>);
 }
 
 function isEmptyValue(value: unknown): boolean {
   if (value === null || value === undefined || value === "") return true;
-  if (isMaskedValue(value)) return !value.hasExisting;
+  if (isMaskedValue(value)) return !value.hasExisting && !value.new;
   return false;
+}
+
+/** Edit-mode-only: a `password` field with a staged `new` value but no `old` can never
+ * be verified server-side, so this is caught client-side before it's even attempted. */
+export function passwordOldRequiredError(value: MaskedValue): string | undefined {
+  return value.hasExisting && value.new ? (value.old ? undefined : "Current password is required to set a new password.") : undefined;
+}
+
+/** `confirm` never reaches the server (see `MaskedValue.confirm`'s doc comment) - a
+ * mismatch can only ever be caught here, client-side. */
+export function passwordConfirmError(value: MaskedValue): string | undefined {
+  return value.new && value.new !== value.confirm ? "Passwords do not match." : undefined;
+}
+
+/** Pre-submit gate for `password` fields specifically (not a general client-side
+ * validation pass - everything else still relies on the server's response, see
+ * `ContentEntryEditor.tsx`'s `handleSave`). Same `column`/`flatten` recursion shape as
+ * `validateEntryValue` below, dotted-path-keyed the same way. */
+export function findPasswordChangeErrors(nodes: EntryFieldNode[], value: Record<string, unknown>, pathPrefix = ""): FieldErrors {
+  const errors: FieldErrors = {};
+  for (const node of nodes) {
+    const path = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+    if (node.kind === "flatten") {
+      Object.assign(errors, findPasswordChangeErrors(node.children, (value[node.fieldName] as Record<string, unknown>) ?? {}, path));
+      continue;
+    }
+    if (node.kind !== "column" || node.fieldType !== "password") continue;
+    const incoming = value[node.fieldName];
+    if (!isMaskedValue(incoming)) continue;
+    const issue = passwordOldRequiredError(incoming) ?? passwordConfirmError(incoming);
+    if (issue) errors[path] = issue;
+  }
+  return errors;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

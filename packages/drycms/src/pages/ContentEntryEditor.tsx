@@ -10,6 +10,7 @@ import {
   createContentEntriesApi,
 } from "../content-types/entries-http-api.js";
 import type { EntryValue } from "../content-types/engine/entry-codec.js";
+import { findPasswordChangeErrors } from "../content-types/engine/entry-validate.js";
 import {
   buildEntryFieldTree,
   type EntryFieldNode,
@@ -212,8 +213,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   async function handleSave() {
     if (!type || !entriesApi || !value) return;
-    setSaving(true);
     setFieldErrors({});
+
+    // Confirm-password mismatches (and a missing "current password" when setting a
+    // new one) only ever exist client-side - `confirm` never reaches the server - so
+    // this is the one pre-submit check the editor runs, ahead of the usual "just
+    // submit and surface whatever the server rejects" pattern below.
+    const passwordErrors = findPasswordChangeErrors(nodes, value);
+    if (Object.keys(passwordErrors).length > 0) {
+      setFieldErrors(passwordErrors);
+      toast.add({ type: "error", title: "Fix the highlighted fields." });
+      return;
+    }
+
+    setSaving(true);
     try {
       if (isSingleton) {
         const entry = await entriesApi.saveSingleton(value);
