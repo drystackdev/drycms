@@ -30,6 +30,7 @@ export const groups: ShowcaseGroup[] = [
     label: "Field inputs",
     items: [
       { id: "text-field", label: "Text field" },
+      { id: "richtext-field", label: "Rich text field" },
       { id: "slug-field", label: "Slug field" },
       { id: "password-field", label: "Password field" },
       { id: "secret-field", label: "Secret field" },
@@ -516,6 +517,26 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   multiline
   placeholder="Write something…"
 />`,
+  richTextField: `import RichTextField from 'drycms/components/RichTextField';
+
+<RichTextField
+  label="Body"
+  value={body}
+  onChange={setBody}
+  description="Bold, italic and underline formatting."
+  placeholder="Write something…"
+  outHTML={outHTML}
+/>
+
+<CheckField
+  label="Output as HTML"
+  value={outHTML}
+  onChange={setOutHTML}
+  role="switch"
+  description="Off reports Lexical's JSON editor state instead."
+/>
+
+<CodeBlock code={body} lang={outHTML ? "markup" : "json"} wrap copyable />`,
   slugField: `import SlugField from 'drycms/components/SlugField';
 
 <SlugField

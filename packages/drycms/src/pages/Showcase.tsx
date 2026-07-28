@@ -32,6 +32,8 @@ import Select from "../components/Select.js";
 import SelectField from "../components/SelectField.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
+import RichTextField from "../components/RichTextField.js";
+import CodeBlock from "../components/CodeBlock.js";
 import { toast } from "../components/Toast.js";
 import {
   code,
@@ -61,6 +63,35 @@ function labelFor(id: string | undefined): string {
 function groupLabelFor(id: string): string | undefined {
   return groups.find((group) => group.items.some((item) => item.id === id))
     ?.label;
+}
+
+/** Breaks Lexical's single-line HTML export into one tag per line, indented
+ * by nesting depth - just enough to review the markup, not a full parser. */
+const VOID_HTML_TAG =
+  /^<(?:br|hr|img|input|meta|link|col|area|base|embed|source|track|wbr)(?:[\s/][^>]*)?>$/i;
+function formatHtml(html: string): string {
+  if (!html) return html;
+  const lines = html.replace(/></g, ">\n<").split("\n");
+  const INDENT = "  ";
+  let depth = 0;
+  const out: string[] = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const isClosingTag = /^<\/[a-zA-Z][^>]*>$/.test(line);
+    const isVoidTag = VOID_HTML_TAG.test(line);
+    const isSelfClosingTag = line.endsWith("/>");
+    const isOpeningTagOnly =
+      !isClosingTag &&
+      !isVoidTag &&
+      !isSelfClosingTag &&
+      /^<[a-zA-Z][^>]*>$/.test(line) &&
+      !line.includes("</");
+    if (isClosingTag) depth = Math.max(depth - 1, 0);
+    out.push(INDENT.repeat(depth) + line);
+    if (isOpeningTagOnly) depth++;
+  }
+  return out.join("\n");
 }
 
 interface Props {
@@ -255,6 +286,51 @@ function TextFieldPreview() {
         multiline
         placeholder="Write something…"
       />
+    </div>
+  );
+}
+
+function RichTextFieldPreview() {
+  const [body, setBody] = useState("");
+  const [outHTML, setOutHTML] = useState(true);
+
+  const code = useMemo(() => {
+    if (!body) return body;
+    if (outHTML) return formatHtml(body);
+    try {
+      return JSON.stringify(JSON.parse(body), null, 4);
+    } catch {
+      return body;
+    }
+  }, [body, outHTML]);
+
+  return (
+    <div class="stack" style={{width: '100%'}}>
+      <RichTextField
+        label="Body"
+        value={body}
+        onChange={setBody}
+        description="Bold, italic and underline formatting."
+        placeholder="Write something…"
+        outHTML={outHTML}
+      />
+      <CheckField
+        label="Output as HTML"
+        value={outHTML}
+        onChange={setOutHTML}
+        role="switch"
+        description="Off reports Lexical's JSON editor state instead."
+      />
+      <div class="field">
+        <label>Output ({outHTML ? "HTML" : "JSON"})</label>
+        <CodeBlock
+          maxHeight="32rem"
+          code={code}
+          lang={outHTML ? "markup" : "json"}
+          wrap
+          copyable
+        />
+      </div>
     </div>
   );
 }
@@ -1198,6 +1274,18 @@ function DemoContent({ id }: { id: string }) {
           code={code.textField!}
         >
           <TextFieldPreview />
+        </Demo>
+      );
+
+    case "richtext-field":
+      return (
+        <Demo
+          id="richtext-field"
+          title="Rich text field"
+          description="MVP1: a contenteditable surface wired up from Lexical's core package, with a toolbar for the three inline formats - Bold, Italic, Underline. Looks like the multiline TextField with a toolbar docked on top; value is the JSON-serialized Lexical editor state."
+          code={code.richTextField!}
+        >
+          <RichTextFieldPreview />
         </Demo>
       );
 

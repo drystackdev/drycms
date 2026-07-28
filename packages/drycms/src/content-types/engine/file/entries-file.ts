@@ -19,8 +19,8 @@ type Row = Record<string, unknown>;
 
 /** Singletons are stored at the fixed id `1` - same `data/<type>/<id>.json`
  * layout as a collection, just never anything else in that folder, so
- * `getEntry`/`createEntry`(-with-id)/`updateEntry` are reusable as-is
- * instead of needing a parallel "look for any row" scan the way
+ * `getFileEntry`/`createFileEntry`(-with-id)/`updateFileEntry` are reusable
+ * as-is instead of needing a parallel "look for any row" scan the way
  * `entries-sqlite.ts` does. */
 const SINGLETON_ID = 1;
 
@@ -162,361 +162,367 @@ function compareValues(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b));
 }
 
-export function createFileContentEntryEngineAdapter(option: ResolvedFileContentOption): ContentEntryEngineAdapter {
-  const driver: FileDriver = createFileDriver(option);
+async function readRecord(driver: FileDriver, typeName: string, id: number): Promise<Row | null> {
+  return driver.readJson<Row>(recordPath(typeName, id));
+}
 
-  async function readRecord(driver: FileDriver, typeName: string, id: number): Promise<Row | null> {
-    return driver.readJson<Row>(recordPath(typeName, id));
-  }
-
-  /** Fills in every field `rowToValue` (reused, unchanged) deliberately
-   * skips: `component-repeat` items (recursing `rowToValue` per item, same
-   * as `entries-sqlite.ts`'s `populateChildFields`, just reading a nested
-   * JSON array already sitting in `row` instead of running a child-table
-   * query), `relation` fields with `tableName` (the array is likewise
-   * already in `row`), and `relation-mirror` (resolved from the
-   * reverse-index instead of physical storage - it's never stored at all). */
-  async function populateFileChildFields(driver: FileDriver, nodes: EntryFieldNode[], row: Row, id: number, value: EntryValue): Promise<void> {
-    for (const node of nodes) {
-      if (node.kind === "flatten") {
-        await populateFileChildFields(driver, node.children, row, id, value[node.fieldName] as EntryValue);
-      } else if (node.kind === "component-repeat") {
-        const rawItems = Array.isArray(row[node.tableName]) ? (row[node.tableName] as Row[]) : [];
-        const items: EntryValue[] = [];
-        for (const itemRow of rawItems) {
-          const item = rowToValue(node.itemFields, itemRow);
-          await populateFileChildFields(driver, node.itemFields, itemRow, id, item);
-          items.push(item);
-        }
-        value[node.fieldName] = items;
-      } else if (node.kind === "relation" && node.tableName) {
-        value[node.fieldName] = targetIds(node.cardinality, node.tableName, row);
-      } else if (node.kind === "relation-mirror" && node.resolved) {
-        const targets = await readReverseTargets(driver, node.sourceTableName, node.sourceFieldId, id);
-        value[node.fieldName] = node.reverseCardinality === "manyToOne" ? (targets[0] ?? null) : targets;
+/** Fills in every field `rowToValue` (reused, unchanged) deliberately
+ * skips: `component-repeat` items (recursing `rowToValue` per item, same
+ * as `entries-sqlite.ts`'s `populateChildFields`, just reading a nested
+ * JSON array already sitting in `row` instead of running a child-table
+ * query), `relation` fields with `tableName` (the array is likewise
+ * already in `row`), and `relation-mirror` (resolved from the
+ * reverse-index instead of physical storage - it's never stored at all). */
+async function populateFileChildFields(driver: FileDriver, nodes: EntryFieldNode[], row: Row, id: number, value: EntryValue): Promise<void> {
+  for (const node of nodes) {
+    if (node.kind === "flatten") {
+      await populateFileChildFields(driver, node.children, row, id, value[node.fieldName] as EntryValue);
+    } else if (node.kind === "component-repeat") {
+      const rawItems = Array.isArray(row[node.tableName]) ? (row[node.tableName] as Row[]) : [];
+      const items: EntryValue[] = [];
+      for (const itemRow of rawItems) {
+        const item = rowToValue(node.itemFields, itemRow);
+        await populateFileChildFields(driver, node.itemFields, itemRow, id, item);
+        items.push(item);
       }
+      value[node.fieldName] = items;
+    } else if (node.kind === "relation" && node.tableName) {
+      value[node.fieldName] = targetIds(node.cardinality, node.tableName, row);
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      const targets = await readReverseTargets(driver, node.sourceTableName, node.sourceFieldId, id);
+      value[node.fieldName] = node.reverseCardinality === "manyToOne" ? (targets[0] ?? null) : targets;
     }
   }
+}
 
-  /** Fills in the row keys `valueToRow` (reused, unchanged) deliberately
-   * skips - the counterpart to `populateFileChildFields`, on the write
-   * side. Mutates `row` in place; must run AFTER `valueToRow`/
-   * `applyTimestamps` have already populated it. */
-  async function assembleWritableFields(nodes: EntryFieldNode[], value: EntryValue, row: Row): Promise<void> {
-    for (const node of nodes) {
-      if (node.kind === "flatten") {
-        await assembleWritableFields(node.children, (value[node.fieldName] as EntryValue) ?? {}, row);
-      } else if (node.kind === "component-repeat") {
-        const items = Array.isArray(value[node.fieldName]) ? (value[node.fieldName] as EntryValue[]) : [];
-        const itemRows: Row[] = [];
-        for (const item of items) {
-          const itemRow = await valueToRow(node.itemFields, item);
-          await assembleWritableFields(node.itemFields, item, itemRow);
-          itemRows.push(itemRow);
-        }
-        row[node.tableName] = itemRows;
-      } else if (node.kind === "relation" && node.tableName) {
-        const targetIds = Array.isArray(value[node.fieldName]) ? (value[node.fieldName] as unknown[]) : [];
-        row[node.tableName] = targetIds.filter((v): v is number => typeof v === "number");
+/** Fills in the row keys `valueToRow` (reused, unchanged) deliberately
+ * skips - the counterpart to `populateFileChildFields`, on the write
+ * side. Mutates `row` in place; must run AFTER `valueToRow`/
+ * `applyTimestamps` have already populated it. */
+async function assembleWritableFields(nodes: EntryFieldNode[], value: EntryValue, row: Row): Promise<void> {
+  for (const node of nodes) {
+    if (node.kind === "flatten") {
+      await assembleWritableFields(node.children, (value[node.fieldName] as EntryValue) ?? {}, row);
+    } else if (node.kind === "component-repeat") {
+      const items = Array.isArray(value[node.fieldName]) ? (value[node.fieldName] as EntryValue[]) : [];
+      const itemRows: Row[] = [];
+      for (const item of items) {
+        const itemRow = await valueToRow(node.itemFields, item);
+        await assembleWritableFields(node.itemFields, item, itemRow);
+        itemRows.push(itemRow);
       }
+      row[node.tableName] = itemRows;
+    } else if (node.kind === "relation" && node.tableName) {
+      const targetIds = Array.isArray(value[node.fieldName]) ? (value[node.fieldName] as unknown[]) : [];
+      row[node.tableName] = targetIds.filter((v): v is number => typeof v === "number");
     }
   }
+}
 
-  /** Reserves every `validation.unique` field's new value and every
-   * exclusive (`oneToMany`) relation's new target claims BEFORE the record
-   * itself is written, so a genuine conflict never leaves a partial record
-   * behind - on any conflict, everything already reserved in this same call
-   * is rolled back and a field-level `ContentEntryError` is thrown, shaped
-   * like `entries-sqlite.ts`'s `translateUniqueViolation` output. */
-  async function reserveAll(
-    driver: FileDriver,
-    typeName: string,
-    id: number,
-    uniqueFields: UniqueFieldRef[],
-    relations: MirrorableRelation[],
-    rowData: Row,
-    existingRow: Row | null,
-  ): Promise<void> {
-    const appliedUnique: UniqueFieldRef[] = [];
-    const appliedRelations: MirrorableRelation[] = [];
-    try {
-      for (const uf of uniqueFields) {
-        const oldValue = existingRow ? existingRow[uf.columnName] : undefined;
-        await reserveUnique(driver, typeName, uf.fieldId, id, rowData[uf.columnName], oldValue);
-        appliedUnique.push(uf);
-      }
-      for (const rel of relations) {
-        const oldTargetIds = existingRow ? targetIdsFromRow(rel, existingRow) : [];
-        const newTargetIds = targetIdsFromRow(rel, rowData);
-        await patchReverseIndex(driver, typeName, rel.fieldId, id, oldTargetIds, newTargetIds, rel.exclusive);
-        appliedRelations.push(rel);
-      }
-    } catch (error) {
-      for (const rel of appliedRelations) {
-        const oldTargetIds = existingRow ? targetIdsFromRow(rel, existingRow) : [];
-        const newTargetIds = targetIdsFromRow(rel, rowData);
-        await patchReverseIndex(driver, typeName, rel.fieldId, id, newTargetIds, oldTargetIds, false).catch(() => undefined);
-      }
-      for (const uf of appliedUnique) {
-        await releaseUnique(driver, typeName, uf.fieldId, id, rowData[uf.columnName]).catch(() => undefined);
-        if (existingRow) {
-          await reserveUnique(driver, typeName, uf.fieldId, id, existingRow[uf.columnName], undefined).catch(() => undefined);
-        }
-      }
-      if (error instanceof UniqueConflictError) {
-        const uf = uniqueFields.find((f) => f.fieldId === error.fieldId)!;
-        const message = `"${uf.label}" is already in use.`;
-        throw new ContentEntryError("validation_failed", message, { [uf.fieldName]: message });
-      }
-      if (error instanceof RelationTargetClaimedError) {
-        const rel = relations.find((r) => r.fieldId === error.fieldId)!;
-        const message = `"${rel.label}" target is already claimed by another entry.`;
-        throw new ContentEntryError("validation_failed", message, { [rel.fieldName]: message });
-      }
-      throw error;
-    }
-  }
-
-  async function releaseAll(driver: FileDriver, typeName: string, id: number, uniqueFields: UniqueFieldRef[], relations: MirrorableRelation[], existingRow: Row): Promise<void> {
+/** Reserves every `validation.unique` field's new value and every
+ * exclusive (`oneToMany`) relation's new target claims BEFORE the record
+ * itself is written, so a genuine conflict never leaves a partial record
+ * behind - on any conflict, everything already reserved in this same call
+ * is rolled back and a field-level `ContentEntryError` is thrown, shaped
+ * like `entries-sqlite.ts`'s `translateUniqueViolation` output. */
+async function reserveAll(
+  driver: FileDriver,
+  typeName: string,
+  id: number,
+  uniqueFields: UniqueFieldRef[],
+  relations: MirrorableRelation[],
+  rowData: Row,
+  existingRow: Row | null,
+): Promise<void> {
+  const appliedUnique: UniqueFieldRef[] = [];
+  const appliedRelations: MirrorableRelation[] = [];
+  try {
     for (const uf of uniqueFields) {
-      await releaseUnique(driver, typeName, uf.fieldId, id, existingRow[uf.columnName]);
+      const oldValue = existingRow ? existingRow[uf.columnName] : undefined;
+      await reserveUnique(driver, typeName, uf.fieldId, id, rowData[uf.columnName], oldValue);
+      appliedUnique.push(uf);
     }
     for (const rel of relations) {
-      const oldTargetIds = targetIdsFromRow(rel, existingRow);
-      await patchReverseIndex(driver, typeName, rel.fieldId, id, oldTargetIds, [], false);
+      const oldTargetIds = existingRow ? targetIdsFromRow(rel, existingRow) : [];
+      const newTargetIds = targetIdsFromRow(rel, rowData);
+      await patchReverseIndex(driver, typeName, rel.fieldId, id, oldTargetIds, newTargetIds, rel.exclusive);
+      appliedRelations.push(rel);
     }
-  }
-
-  /** Reads `sourceId`'s own record on `sourceTypeName`, applies `mutate` to
-   * its relation array field at `storageKey`, writes it back, and patches
-   * that field's own reverse-index to match - the file-engine primitive
-   * `writeRelationMirrorField` composes to write THROUGH a mirror field, the
-   * same way `entries-sqlite.ts`'s `insertRelationChildRow`/`DELETE ...
-   * WHERE target_id` pair does for SQL. A dangling `sourceId` (record since
-   * deleted) is silently ignored, same as every other unenforced-FK read
-   * elsewhere in this adapter. */
-  async function mutateSourceArray(driver: FileDriver, sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, mutate: (ids: number[]) => number[], exclusive: boolean): Promise<void> {
-    const path = recordPath(sourceTypeName, sourceId);
-    const row = await driver.readJson<Row>(path);
-    if (!row) return;
-    const oldIds = Array.isArray(row[storageKey]) ? (row[storageKey] as unknown[]).filter((v): v is number => typeof v === "number") : [];
-    const newIds = mutate(oldIds);
-    row[storageKey] = newIds;
-    await driver.writeJson(path, row);
-    await patchReverseIndex(driver, sourceTypeName, sourceFieldId, sourceId, oldIds, newIds, exclusive);
-  }
-
-  /** Same primitive as `mutateSourceArray`, for a `manyToOne` source field
-   * (a single id, not an array). */
-  async function setSourceManyToOneValue(driver: FileDriver, sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, newValue: number | null): Promise<void> {
-    const path = recordPath(sourceTypeName, sourceId);
-    const row = await driver.readJson<Row>(path);
-    if (!row) return;
-    const oldValue = typeof row[storageKey] === "number" ? (row[storageKey] as number) : null;
-    if (oldValue === newValue) return;
-    row[storageKey] = newValue;
-    await driver.writeJson(path, row);
-    await patchReverseIndex(driver, sourceTypeName, sourceFieldId, sourceId, oldValue === null ? [] : [oldValue], newValue === null ? [] : [newValue], false);
-  }
-
-  /** Writes an edited `relation-mirror` field's value THROUGH the mirrored
-   * field's own physical storage on whichever OTHER record(s) it lives on -
-   * unlike a normal relation field (which owns its own row and can freely
-   * overwrite it), a mirror write must touch ONLY the source rows/links
-   * relevant to THIS row's id (`targetId`), read from the reverse-index to
-   * know its OWN previous claims, never disturbing unrelated rows. Mirrors
-   * `entries-sqlite.ts`'s `writeRelationMirror`'s 3-way cardinality switch. */
-  async function writeRelationMirrorField(driver: FileDriver, allTypes: ContentTypeDefinition[], node: ResolvedRelationMirrorNode, targetId: number, incoming: unknown): Promise<void> {
-    const rel = resolveSourceRelation(allTypes, node.sourceTypeId, node.sourceFieldId);
-    if (!rel) return; // source relation no longer exists/resolvable - degrade gracefully, same as a dangling reference elsewhere.
-    const sourceType = allTypes.find((t) => t.id === node.sourceTypeId)!;
-    const sourceTypeName = sourceType.name;
-
-    if (node.reverseCardinality === "oneToMany") {
-      // Mirrors a `manyToOne` source field: incoming is number[] of source
-      // ids to claim EXCLUSIVELY for `targetId` - no exclusivity CHECK needed
-      // here (unlike `oneToMany`'s own forward write): a `manyToOne` column
-      // freely accepts being pointed at by any number of different targets
-      // over time, just never more than one at once per source row, which a
-      // plain overwrite already guarantees.
-      const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
-      const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
-      for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
-        await setSourceManyToOneValue(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, null);
-      }
-      for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
-        await setSourceManyToOneValue(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, targetId);
-      }
-      return;
+  } catch (error) {
+    for (const rel of appliedRelations) {
+      const oldTargetIds = existingRow ? targetIdsFromRow(rel, existingRow) : [];
+      const newTargetIds = targetIdsFromRow(rel, rowData);
+      await patchReverseIndex(driver, typeName, rel.fieldId, id, newTargetIds, oldTargetIds, false).catch(() => undefined);
     }
-
-    if (node.reverseCardinality === "manyToOne") {
-      // Mirrors a `oneToMany` source field: incoming is number|null - an
-      // exclusive claim, same as a direct `oneToMany` write (the source's own
-      // `exclusive: true` still applies, now enforced on whichever NEW source
-      // record is being claimed).
-      const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
-      const oldSourceId = oldSourceIds[0] ?? null;
-      const newSourceId = typeof incoming === "number" ? incoming : null;
-      if (oldSourceId === newSourceId) return;
-      if (oldSourceId !== null) {
-        await mutateSourceArray(driver, sourceTypeName, oldSourceId, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), rel.exclusive);
+    for (const uf of appliedUnique) {
+      await releaseUnique(driver, typeName, uf.fieldId, id, rowData[uf.columnName]).catch(() => undefined);
+      if (existingRow) {
+        await reserveUnique(driver, typeName, uf.fieldId, id, existingRow[uf.columnName], undefined).catch(() => undefined);
       }
-      if (newSourceId !== null) {
-        await mutateSourceArray(driver, sourceTypeName, newSourceId, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), rel.exclusive);
-      }
-      return;
     }
+    if (error instanceof UniqueConflictError) {
+      const uf = uniqueFields.find((f) => f.fieldId === error.fieldId)!;
+      const message = `"${uf.label}" is already in use.`;
+      throw new ContentEntryError("validation_failed", message, { [uf.fieldName]: message });
+    }
+    if (error instanceof RelationTargetClaimedError) {
+      const rel = relations.find((r) => r.fieldId === error.fieldId)!;
+      const message = `"${rel.label}" target is already claimed by another entry.`;
+      throw new ContentEntryError("validation_failed", message, { [rel.fieldName]: message });
+    }
+    throw error;
+  }
+}
 
-    // Mirrors a `manyToMany` source field: incoming is number[], free linking.
+async function releaseAll(driver: FileDriver, typeName: string, id: number, uniqueFields: UniqueFieldRef[], relations: MirrorableRelation[], existingRow: Row): Promise<void> {
+  for (const uf of uniqueFields) {
+    await releaseUnique(driver, typeName, uf.fieldId, id, existingRow[uf.columnName]);
+  }
+  for (const rel of relations) {
+    const oldTargetIds = targetIdsFromRow(rel, existingRow);
+    await patchReverseIndex(driver, typeName, rel.fieldId, id, oldTargetIds, [], false);
+  }
+}
+
+/** Reads `sourceId`'s own record on `sourceTypeName`, applies `mutate` to
+ * its relation array field at `storageKey`, writes it back, and patches
+ * that field's own reverse-index to match - the file-engine primitive
+ * `writeRelationMirrorField` composes to write THROUGH a mirror field, the
+ * same way `entries-sqlite.ts`'s `insertRelationChildRow`/`DELETE ...
+ * WHERE target_id` pair does for SQL. A dangling `sourceId` (record since
+ * deleted) is silently ignored, same as every other unenforced-FK read
+ * elsewhere in this adapter. */
+async function mutateSourceArray(driver: FileDriver, sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, mutate: (ids: number[]) => number[], exclusive: boolean): Promise<void> {
+  const path = recordPath(sourceTypeName, sourceId);
+  const row = await driver.readJson<Row>(path);
+  if (!row) return;
+  const oldIds = Array.isArray(row[storageKey]) ? (row[storageKey] as unknown[]).filter((v): v is number => typeof v === "number") : [];
+  const newIds = mutate(oldIds);
+  row[storageKey] = newIds;
+  await driver.writeJson(path, row);
+  await patchReverseIndex(driver, sourceTypeName, sourceFieldId, sourceId, oldIds, newIds, exclusive);
+}
+
+/** Same primitive as `mutateSourceArray`, for a `manyToOne` source field
+ * (a single id, not an array). */
+async function setSourceManyToOneValue(driver: FileDriver, sourceTypeName: string, sourceId: number, storageKey: string, sourceFieldId: string, newValue: number | null): Promise<void> {
+  const path = recordPath(sourceTypeName, sourceId);
+  const row = await driver.readJson<Row>(path);
+  if (!row) return;
+  const oldValue = typeof row[storageKey] === "number" ? (row[storageKey] as number) : null;
+  if (oldValue === newValue) return;
+  row[storageKey] = newValue;
+  await driver.writeJson(path, row);
+  await patchReverseIndex(driver, sourceTypeName, sourceFieldId, sourceId, oldValue === null ? [] : [oldValue], newValue === null ? [] : [newValue], false);
+}
+
+/** Writes an edited `relation-mirror` field's value THROUGH the mirrored
+ * field's own physical storage on whichever OTHER record(s) it lives on -
+ * unlike a normal relation field (which owns its own row and can freely
+ * overwrite it), a mirror write must touch ONLY the source rows/links
+ * relevant to THIS row's id (`targetId`), read from the reverse-index to
+ * know its OWN previous claims, never disturbing unrelated rows. Mirrors
+ * `entries-sqlite.ts`'s `writeRelationMirror`'s 3-way cardinality switch. */
+async function writeRelationMirrorField(driver: FileDriver, allTypes: ContentTypeDefinition[], node: ResolvedRelationMirrorNode, targetId: number, incoming: unknown): Promise<void> {
+  const rel = resolveSourceRelation(allTypes, node.sourceTypeId, node.sourceFieldId);
+  if (!rel) return; // source relation no longer exists/resolvable - degrade gracefully, same as a dangling reference elsewhere.
+  const sourceType = allTypes.find((t) => t.id === node.sourceTypeId)!;
+  const sourceTypeName = sourceType.name;
+
+  if (node.reverseCardinality === "oneToMany") {
+    // Mirrors a `manyToOne` source field: incoming is number[] of source
+    // ids to claim EXCLUSIVELY for `targetId` - no exclusivity CHECK needed
+    // here (unlike `oneToMany`'s own forward write): a `manyToOne` column
+    // freely accepts being pointed at by any number of different targets
+    // over time, just never more than one at once per source row, which a
+    // plain overwrite already guarantees.
     const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
     const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
     for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
-      await mutateSourceArray(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), false);
+      await setSourceManyToOneValue(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, null);
     }
     for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
-      await mutateSourceArray(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), false);
+      await setSourceManyToOneValue(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, targetId);
     }
+    return;
   }
 
-  async function writeRelationMirrorFields(driver: FileDriver, nodes: EntryFieldNode[], allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<void> {
-    for (const { node, fieldName } of collectRelationMirrorFields(nodes)) {
-      await writeRelationMirrorField(driver, allTypes, node, id, value[fieldName]);
+  if (node.reverseCardinality === "manyToOne") {
+    // Mirrors a `oneToMany` source field: incoming is number|null - an
+    // exclusive claim, same as a direct `oneToMany` write (the source's own
+    // `exclusive: true` still applies, now enforced on whichever NEW source
+    // record is being claimed).
+    const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
+    const oldSourceId = oldSourceIds[0] ?? null;
+    const newSourceId = typeof incoming === "number" ? incoming : null;
+    if (oldSourceId === newSourceId) return;
+    if (oldSourceId !== null) {
+      await mutateSourceArray(driver, sourceTypeName, oldSourceId, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), rel.exclusive);
     }
+    if (newSourceId !== null) {
+      await mutateSourceArray(driver, sourceTypeName, newSourceId, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), rel.exclusive);
+    }
+    return;
   }
 
-  async function getEntry(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null> {
+  // Mirrors a `manyToMany` source field: incoming is number[], free linking.
+  const oldSourceIds = await readReverseTargets(driver, sourceTypeName, node.sourceFieldId, targetId);
+  const newSourceIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+  for (const sid of oldSourceIds.filter((id) => !newSourceIds.includes(id))) {
+    await mutateSourceArray(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => ids.filter((id) => id !== targetId), false);
+  }
+  for (const sid of newSourceIds.filter((id) => !oldSourceIds.includes(id))) {
+    await mutateSourceArray(driver, sourceTypeName, sid, rel.storageKey, node.sourceFieldId, (ids) => (ids.includes(targetId) ? ids : [...ids, targetId]), false);
+  }
+}
+
+async function writeRelationMirrorFields(driver: FileDriver, nodes: EntryFieldNode[], allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<void> {
+  for (const { node, fieldName } of collectRelationMirrorFields(nodes)) {
+    await writeRelationMirrorField(driver, allTypes, node, id, value[fieldName]);
+  }
+}
+
+/** Driver-parameterized read - no transaction needed (read-only), but takes
+ * `driver` explicitly (rather than a fixed adapter-bound instance) so it can
+ * also be called with a `tx` mid-transaction, reading back a just-staged
+ * write (see `createFileEntry`/`updateFileEntry` below). */
+export async function getFileEntry(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null> {
+  const row = await readRecord(driver, type.name, id);
+  if (!row) return null;
+  const nodes = buildEntryFieldTree(type, allTypes);
+  const value = rowToValue(nodes, row);
+  await populateFileChildFields(driver, nodes, row, id, value);
+  return { id, value };
+}
+
+/** The actual write logic behind `createFileEntry`/`saveFileSingletonEntry` -
+ * takes `driver` explicitly so callers can run several of these inside ONE
+ * shared `driver.transaction()` (e.g. `permissions-file.ts` batching many
+ * rows into a single commit at boot), rather than each call opening its own
+ * transaction: the record write, every unique/reverse-index reservation, and
+ * every relation-mirror write it touches on OTHER records all land together. */
+export async function createFileEntryWithId(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
+  const nodes = buildEntryFieldTree(type, allTypes);
+  assertValid(nodes, value);
+
+  const rowData: Row = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
+  rowData.id = id;
+  await assembleWritableFields(nodes, value, rowData);
+
+  const uniqueFields = collectUniqueColumns(nodes);
+  const relations = collectMirrorableRelations(nodes);
+  await reserveAll(driver, type.name, id, uniqueFields, relations, rowData, null);
+
+  await driver.writeJson(recordPath(type.name, id), rowData);
+  await writeRelationMirrorFields(driver, nodes, allTypes, id, value);
+  return (await getFileEntry(driver, type, allTypes, id))!;
+}
+
+/** Auto-assigns the next id, then delegates to `createFileEntryWithId` - the
+ * driver-parameterized counterpart to `ContentEntryEngineAdapter.createEntry`. */
+export async function createFileEntry(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow> {
+  const id = await nextId(driver, type.name);
+  return createFileEntryWithId(driver, type, allTypes, id, value);
+}
+
+/** Same rationale as `createFileEntryWithId` - the driver-parameterized
+ * counterpart to `ContentEntryEngineAdapter.updateEntry`. */
+export async function updateFileEntry(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
+  const nodes = buildEntryFieldTree(type, allTypes);
+  assertValid(nodes, value);
+
+  const existingRow = await readRecord(driver, type.name, id);
+  if (!existingRow) {
+    throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
+  }
+
+  const passwordErrors = await verifyPasswordChanges(nodes, value, existingRow);
+  if (Object.keys(passwordErrors).length > 0) {
+    throw new ContentEntryError("validation_failed", "Current password is incorrect.", passwordErrors);
+  }
+
+  const rowData: Row = applyTimestamps(nodes, await valueToRow(nodes, value), "update");
+  rowData.id = id;
+  await assembleWritableFields(nodes, value, rowData);
+
+  const uniqueFields = collectUniqueColumns(nodes);
+  const relations = collectMirrorableRelations(nodes);
+  await reserveAll(driver, type.name, id, uniqueFields, relations, rowData, existingRow);
+
+  await driver.writeJson(recordPath(type.name, id), rowData);
+  await writeRelationMirrorFields(driver, nodes, allTypes, id, value);
+  return (await getFileEntry(driver, type, allTypes, id))!;
+}
+
+/** Same rationale as `createFileEntryWithId` - the driver-parameterized
+ * counterpart to `ContentEntryEngineAdapter.deleteEntry`. */
+export async function deleteFileEntry(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
+  const nodes = buildEntryFieldTree(type, allTypes);
+  const existingRow = await readRecord(driver, type.name, id);
+  if (!existingRow) return;
+
+  const uniqueFields = collectUniqueColumns(nodes);
+  const relations = collectMirrorableRelations(nodes);
+  await releaseAll(driver, type.name, id, uniqueFields, relations, existingRow);
+  await driver.removeJson(recordPath(type.name, id));
+}
+
+async function listEntries(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], query: EntryQuery): Promise<EntryPage> {
+  const nodes = buildEntryFieldTree(type, allTypes);
+  const names = await driver.listJsonFiles(dataDir(type.name));
+
+  let rows: EntryRow[] = [];
+  for (const name of names) {
+    const id = Number(name);
+    if (!Number.isInteger(id)) continue;
     const row = await readRecord(driver, type.name, id);
-    if (!row) return null;
-    const nodes = buildEntryFieldTree(type, allTypes);
+    if (!row) continue;
     const value = rowToValue(nodes, row);
     await populateFileChildFields(driver, nodes, row, id, value);
-    return { id, value };
+    rows.push({ id, value });
   }
 
-  /** The actual write logic behind `createEntry`/`saveSingletonEntry` -
-   * takes `driver` explicitly so both public entry points can run it inside
-   * their own `driver.transaction()` (see the returned object below): the
-   * record write, every unique/reverse-index reservation, and every
-   * relation-mirror write it touches on OTHER records land as one commit. */
-  async function createEntryWithId(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
-    const nodes = buildEntryFieldTree(type, allTypes);
-    assertValid(nodes, value);
-
-    const rowData: Row = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
-    rowData.id = id;
-    await assembleWritableFields(nodes, value, rowData);
-
-    const uniqueFields = collectUniqueColumns(nodes);
-    const relations = collectMirrorableRelations(nodes);
-    await reserveAll(driver, type.name, id, uniqueFields, relations, rowData, null);
-
-    await driver.writeJson(recordPath(type.name, id), rowData);
-    await writeRelationMirrorFields(driver, nodes, allTypes, id, value);
-    return (await getEntry(driver, type, allTypes, id))!;
+  if (query.search && query.searchableFields && query.searchableFields.length > 0) {
+    const term = query.search.toLowerCase();
+    rows = rows.filter((row) =>
+      query.searchableFields!.some((field) => {
+        const v = getAtPath(row.value, field);
+        return typeof v === "string" && v.toLowerCase().includes(term);
+      }),
+    );
   }
 
-  /** Same rationale as `createEntryWithId` - `driver` threaded through so
-   * `updateEntry` (the public method below) can run this inside one
-   * transaction. */
-  async function updateEntryWithDriver(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
-    const nodes = buildEntryFieldTree(type, allTypes);
-    assertValid(nodes, value);
-
-    const existingRow = await readRecord(driver, type.name, id);
-    if (!existingRow) {
-      throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
-    }
-
-    const passwordErrors = await verifyPasswordChanges(nodes, value, existingRow);
-    if (Object.keys(passwordErrors).length > 0) {
-      throw new ContentEntryError("validation_failed", "Current password is incorrect.", passwordErrors);
-    }
-
-    const rowData: Row = applyTimestamps(nodes, await valueToRow(nodes, value), "update");
-    rowData.id = id;
-    await assembleWritableFields(nodes, value, rowData);
-
-    const uniqueFields = collectUniqueColumns(nodes);
-    const relations = collectMirrorableRelations(nodes);
-    await reserveAll(driver, type.name, id, uniqueFields, relations, rowData, existingRow);
-
-    await driver.writeJson(recordPath(type.name, id), rowData);
-    await writeRelationMirrorFields(driver, nodes, allTypes, id, value);
-    return (await getEntry(driver, type, allTypes, id))!;
+  if (query.sortField) {
+    const dir = query.sortDir === "asc" ? 1 : -1;
+    rows = [...rows].sort((a, b) => dir * compareValues(getAtPath(a.value, query.sortField!), getAtPath(b.value, query.sortField!)));
+  } else {
+    rows = [...rows].sort((a, b) => b.id - a.id);
   }
 
-  /** Same rationale as `createEntryWithId` - `driver` threaded through so
-   * `deleteEntry` (the public method below) can run this inside one
-   * transaction. */
-  async function deleteEntryWithDriver(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
-    const nodes = buildEntryFieldTree(type, allTypes);
-    const existingRow = await readRecord(driver, type.name, id);
-    if (!existingRow) return;
+  const total = rows.length;
+  const pageSize = Math.max(1, query.pageSize);
+  const offset = Math.max(0, query.page) * pageSize;
+  return { total, rows: rows.slice(offset, offset + pageSize) };
+}
 
-    const uniqueFields = collectUniqueColumns(nodes);
-    const relations = collectMirrorableRelations(nodes);
-    await releaseAll(driver, type.name, id, uniqueFields, relations, existingRow);
-    await driver.removeJson(recordPath(type.name, id));
-  }
-
-  async function listEntries(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], query: EntryQuery): Promise<EntryPage> {
-    const nodes = buildEntryFieldTree(type, allTypes);
-    const names = await driver.listJsonFiles(dataDir(type.name));
-
-    let rows: EntryRow[] = [];
-    for (const name of names) {
-      const id = Number(name);
-      if (!Number.isInteger(id)) continue;
-      const row = await readRecord(driver, type.name, id);
-      if (!row) continue;
-      const value = rowToValue(nodes, row);
-      await populateFileChildFields(driver, nodes, row, id, value);
-      rows.push({ id, value });
-    }
-
-    if (query.search && query.searchableFields && query.searchableFields.length > 0) {
-      const term = query.search.toLowerCase();
-      rows = rows.filter((row) =>
-        query.searchableFields!.some((field) => {
-          const v = getAtPath(row.value, field);
-          return typeof v === "string" && v.toLowerCase().includes(term);
-        }),
-      );
-    }
-
-    if (query.sortField) {
-      const dir = query.sortDir === "asc" ? 1 : -1;
-      rows = [...rows].sort((a, b) => dir * compareValues(getAtPath(a.value, query.sortField!), getAtPath(b.value, query.sortField!)));
-    } else {
-      rows = [...rows].sort((a, b) => b.id - a.id);
-    }
-
-    const total = rows.length;
-    const pageSize = Math.max(1, query.pageSize);
-    const offset = Math.max(0, query.page) * pageSize;
-    return { total, rows: rows.slice(offset, offset + pageSize) };
-  }
+export function createFileContentEntryEngineAdapter(option: ResolvedFileContentOption): ContentEntryEngineAdapter {
+  const driver: FileDriver = createFileDriver(option);
 
   return {
-    listEntries,
-    getEntry: (type, allTypes, id) => getEntry(driver, type, allTypes, id),
+    listEntries: (type, allTypes, query) => listEntries(driver, type, allTypes, query),
+    getEntry: (type, allTypes, id) => getFileEntry(driver, type, allTypes, id),
     // Everything a create/update/delete touches - the record itself, its
     // unique-index/reverse-index entries, and any relation-mirror writes it
     // makes on OTHER records - lands as one commit (see
     // `FileDriver.transaction()`).
-    createEntry: (type, allTypes, value) =>
-      driver.transaction(async (tx) => {
-        const id = await nextId(tx, type.name);
-        return createEntryWithId(tx, type, allTypes, id, value);
-      }),
-    updateEntry: (type, allTypes, id, value) => driver.transaction((tx) => updateEntryWithDriver(tx, type, allTypes, id, value)),
-    deleteEntry: (type, allTypes, id) => driver.transaction((tx) => deleteEntryWithDriver(tx, type, allTypes, id)),
-    getSingletonEntry: (type, allTypes) => getEntry(driver, type, allTypes, SINGLETON_ID),
+    createEntry: (type, allTypes, value) => driver.transaction((tx) => createFileEntry(tx, type, allTypes, value)),
+    updateEntry: (type, allTypes, id, value) => driver.transaction((tx) => updateFileEntry(tx, type, allTypes, id, value)),
+    deleteEntry: (type, allTypes, id) => driver.transaction((tx) => deleteFileEntry(tx, type, allTypes, id)),
+    getSingletonEntry: (type, allTypes) => getFileEntry(driver, type, allTypes, SINGLETON_ID),
     saveSingletonEntry: (type, allTypes, value) =>
       driver.transaction(async (tx) => {
         const existing = await readRecord(tx, type.name, SINGLETON_ID);
-        return existing ? updateEntryWithDriver(tx, type, allTypes, SINGLETON_ID, value) : createEntryWithId(tx, type, allTypes, SINGLETON_ID, value);
+        return existing ? updateFileEntry(tx, type, allTypes, SINGLETON_ID, value) : createFileEntryWithId(tx, type, allTypes, SINGLETON_ID, value);
       }),
   };
 }

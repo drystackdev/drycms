@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -182,5 +182,65 @@ describe("createFileContentEngineAdapter", () => {
     await adapter.applySave(note, await adapter.planSave(note));
 
     await expect(adapter.deleteContentType("custom-badge")).rejects.toMatchObject({ name: "ContentEngineError", code: "in_use" });
+  });
+
+  describe("content-types index cache", () => {
+    function cachePath(dir: string) {
+      return join(dir, ".index", "content-types.json");
+    }
+
+    it("warms a single aggregate cache file on first boot, instead of leaving reads to re-scan every type file", async () => {
+      const { adapter, dir } = freshAdapter();
+      dirs.push(dir);
+
+      const listed = await adapter.listContentTypes();
+      expect(existsSync(cachePath(dir))).toBe(true);
+
+      const cached = JSON.parse(readFileSync(cachePath(dir), "utf8")) as ContentTypeDefinition[];
+      expect(cached.map((t) => t.name).sort()).toEqual(listed.map((t) => t.name).sort());
+    });
+
+    it("applySave keeps the cache in sync with the saved type", async () => {
+      const { adapter, dir } = freshAdapter();
+      dirs.push(dir);
+
+      const note: ContentTypeDefinition = { id: "custom-note", kind: "collection", name: "note", label: "Note", fields: [], version: 0 };
+      const saved = await adapter.applySave(note, await adapter.planSave(note));
+
+      const cached = JSON.parse(readFileSync(cachePath(dir), "utf8")) as ContentTypeDefinition[];
+      expect(cached.find((t) => t.id === "custom-note")).toEqual(saved);
+
+      // getContentType/listContentTypes read the cache, not a fresh scan -
+      // both must agree with what's actually on disk.
+      expect(await adapter.getContentType("custom-note")).toEqual(saved);
+    });
+
+    it("deleteContentType removes the type from the cache too", async () => {
+      const { adapter, dir } = freshAdapter();
+      dirs.push(dir);
+
+      const note: ContentTypeDefinition = { id: "custom-note", kind: "collection", name: "note", label: "Note", fields: [], version: 0 };
+      await adapter.applySave(note, await adapter.planSave(note));
+      await adapter.deleteContentType("custom-note");
+
+      const cached = JSON.parse(readFileSync(cachePath(dir), "utf8")) as ContentTypeDefinition[];
+      expect(cached.some((t) => t.id === "custom-note")).toBe(false);
+      expect(await adapter.getContentType("custom-note")).toBeNull();
+    });
+
+    it("self-heals - a missing/corrupt cache file is rebuilt from the real content-types/*.json files", async () => {
+      const { adapter, dir } = freshAdapter();
+      dirs.push(dir);
+      await adapter.listContentTypes(); // warm it once
+
+      unlinkSync(cachePath(dir));
+      const reread = await adapter.listContentTypes();
+      expect(reread.map((t) => t.name).sort()).toEqual(["aiKey", "menu", "menuItem", "permission", "role", "seo", "user"]);
+      // The repair write put the cache back.
+      expect(existsSync(cachePath(dir))).toBe(true);
+
+      writeFileSync(cachePath(dir), "not json");
+      await expect(adapter.listContentTypes()).rejects.toThrow();
+    });
   });
 });

@@ -49,6 +49,7 @@ export default function ConfirmDialog({
               type="button"
               class={destructive ? "destructive" : undefined}
               disabled={busy}
+              aria-busy={busy}
               onClick={onConfirm}
             >
               {confirmLabel}

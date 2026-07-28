@@ -104,15 +104,93 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     return encoded ? `${apiBase}/contents/${encoded}` : `${apiBase}/contents`;
   }
 
+  /** The sha a freshly-created branch should point at: the repo's default
+   * branch HEAD, or - for a repo with no commits at all yet - a brand new
+   * commit over an empty tree (a branch always has to point SOMEWHERE, and
+   * git has no concept of a ref onto nothing). */
+  async function resolveBaseSha(): Promise<string> {
+    const repoResponse = await fetch(apiBase, { headers: authHeaders({ Accept: "application/vnd.github+json" }) });
+    if (!repoResponse.ok) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(repoResponse)}`);
+    }
+    const { default_branch: defaultBranch } = (await repoResponse.json()) as { default_branch: string };
+
+    const defaultRefResponse = await fetch(`${apiBase}/git/refs/heads/${encodeURIComponent(defaultBranch)}`, {
+      headers: authHeaders({ Accept: "application/vnd.github+json" }),
+    });
+    if (defaultRefResponse.ok) {
+      const defaultRef = (await defaultRefResponse.json()) as { object: { sha: string } };
+      return defaultRef.object.sha;
+    }
+    if (defaultRefResponse.status !== 404) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(defaultRefResponse)}`);
+    }
+
+    const treeResponse = await fetch(`${apiBase}/git/trees`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+      body: JSON.stringify({ tree: [] }),
+    });
+    if (!treeResponse.ok) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(treeResponse)}`);
+    }
+    const tree = (await treeResponse.json()) as { sha: string };
+
+    const commitResponse = await fetch(`${apiBase}/git/commits`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+      body: JSON.stringify({ message: "Initial commit", tree: tree.sha, parents: [] }),
+    });
+    if (!commitResponse.ok) {
+      throw new Error(`[drycms] GitHub API error: ${await readGithubError(commitResponse)}`);
+    }
+    const commit = (await commitResponse.json()) as { sha: string };
+    return commit.sha;
+  }
+
+  /** Lazily creates `branch` the first time this adapter touches it, if it
+   * doesn't already exist - pointed at the repo's default branch (or a fresh
+   * initial commit, for a totally empty repo). Memoized for this adapter's
+   * lifetime, same pattern as `local.ts`'s `ensureRoot()`: a `GITHUB_BRANCH`
+   * naming a branch that simply hasn't been created yet shouldn't be a hard
+   * config error the user has to go fix by hand in the GitHub UI first. */
+  let branchReady: Promise<void> | null = null;
+  function ensureBranch(): Promise<void> {
+    branchReady ??= (async () => {
+      const refResponse = await fetch(`${apiBase}/git/refs/heads/${encodeURIComponent(branch)}`, {
+        headers: authHeaders({ Accept: "application/vnd.github+json" }),
+      });
+      if (refResponse.ok) return;
+      if (refResponse.status !== 404) {
+        throw new Error(`[drycms] GitHub API error: ${await readGithubError(refResponse)}`);
+      }
+
+      const baseSha = await resolveBaseSha();
+      const createResponse = await fetch(`${apiBase}/git/refs`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
+      });
+      // 422 = the ref now exists (a concurrent caller/request created it
+      // first between the GET above and this POST) - not an error.
+      if (!createResponse.ok && createResponse.status !== 422) {
+        throw new Error(`[drycms] GitHub API error: ${await readGithubError(createResponse)}`);
+      }
+    })();
+    return branchReady;
+  }
+
   /** `null` on 404 - a file/folder not existing is an expected outcome here,
-   * not an error, since every caller uses this for existence/sha checks.
-   * A missing *branch*, though, is not: GitHub's own 404 body distinguishes
-   * the two ("No commit found for the ref ..." vs. a plain "Not Found"), and
-   * without checking for it a bad `GITHUB_BRANCH` would silently read back as
-   * an empty (rather than nonexistent) storage root - see `list("")`. */
+   * not an error, since every caller uses this for existence/sha checks. A
+   * missing *branch* is handled proactively by `ensureBranch()` before this
+   * ever runs; the check below stays as a defensive fallback for the rare
+   * race where the branch is deleted out from under this adapter after
+   * creation - GitHub's own 404 body distinguishes the two ("No commit found
+   * for the ref ..." vs. a plain "Not Found"). */
   async function getContent(
     path: string,
   ): Promise<GithubContentItem | GithubContentItem[] | null> {
+    await ensureBranch();
     const query = new URLSearchParams({ ref: branch });
     const response = await fetch(`${contentsPath(path)}?${query}`, {
       headers: authHeaders({ Accept: "application/vnd.github+json" }),
@@ -136,6 +214,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
    * modification time, so this is the only accurate source for
    * `modifiedAt`. One request per entry; callers run these in parallel. */
   async function lastModified(path: string): Promise<string> {
+    await ensureBranch();
     const query = new URLSearchParams({ sha: branch, per_page: "1" });
     if (path) query.set("path", path);
     const response = await fetch(`${apiBase}/commits?${query}`, {
@@ -154,6 +233,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     message: string,
     sha?: string,
   ): Promise<void> {
+    await ensureBranch();
     const body: Record<string, unknown> = { message, branch, content };
     if (sha) body.sha = sha;
     const response = await fetch(contentsPath(path), {
@@ -167,6 +247,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
   }
 
   async function deleteContent(path: string, sha: string, message: string): Promise<void> {
+    await ensureBranch();
     const response = await fetch(contentsPath(path), {
       method: "DELETE",
       headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
@@ -299,6 +380,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
   }
 
   async function getBranchHead(): Promise<{ commitSha: string; treeSha: string }> {
+    await ensureBranch();
     const refResponse = await fetch(`${apiBase}/git/refs/heads/${encodeURIComponent(branch)}`, {
       headers: authHeaders({ Accept: "application/vnd.github+json" }),
     });
@@ -396,6 +478,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
    * silently proceeding would make `remove`/`move`/`listAll` act on a subset
    * of the real tree, so this throws instead of returning a partial view. */
   async function fetchRecursiveTree(): Promise<GithubTreeEntry[]> {
+    await ensureBranch();
     const response = await fetch(`${apiBase}/git/trees/${encodeURIComponent(branch)}?recursive=1`, {
       headers: authHeaders({ Accept: "application/vnd.github+json" }),
     });

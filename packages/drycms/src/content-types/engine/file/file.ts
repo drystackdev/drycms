@@ -17,6 +17,29 @@ function dataDir(typeName: string): string {
   return `data/${safePathSegment(typeName)}`;
 }
 
+/** Every content type's definition, aggregated into ONE file - a normal read
+ * (`listContentTypes`/`getContentType`) then costs 1 request instead of
+ * `listJsonFiles("content-types")` + one `readJson` per type. Same "derived,
+ * rebuildable cache" principle `index-store.ts` already documents for entry
+ * indexes: `content-types/<id>.json` stays the only source of truth, this is
+ * purely an accelerator - self-healing (rebuilt + re-cached) if ever missing
+ * or empty, same as every other `.index/*` file (malformed-but-present JSON
+ * is a real error there too, not specially recovered), and kept current by
+ * every write path (`ensureBooted`, `applySave`, `deleteContentType`) inside
+ * their own transaction, so the cache update is atomic with the type write
+ * it reflects. */
+const CONTENT_TYPES_INDEX_PATH = ".index/content-types.json";
+
+async function rebuildAllRaw(driver: FileDriver): Promise<ContentTypeDefinition[]> {
+  const names = await driver.listJsonFiles("content-types");
+  const out: ContentTypeDefinition[] = [];
+  for (const name of names) {
+    const def = await driver.readJson<ContentTypeDefinition>(`content-types/${name}.json`);
+    if (def) out.push(def);
+  }
+  return out;
+}
+
 export function createFileContentEngineAdapter(option: ResolvedFileContentOption): ContentEngineAdapter {
   const driver: FileDriver = createFileDriver(option);
   let entryAdapter: ContentEntryEngineAdapter | undefined;
@@ -26,13 +49,13 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
   }
 
   async function readAllRaw(): Promise<ContentTypeDefinition[]> {
-    const names = await driver.listJsonFiles("content-types");
-    const out: ContentTypeDefinition[] = [];
-    for (const name of names) {
-      const def = await driver.readJson<ContentTypeDefinition>(`content-types/${name}.json`);
-      if (def) out.push(def);
-    }
-    return out;
+    const cached = await driver.readJson<ContentTypeDefinition[]>(CONTENT_TYPES_INDEX_PATH);
+    if (cached) return cached;
+    // Cache missing/corrupt (first boot ever, or a manual repo edit) -
+    // rebuild from the real source of truth and repair the cache for next time.
+    const rebuilt = await rebuildAllRaw(driver);
+    await driver.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
+    return rebuilt;
   }
 
   /** Seeds whichever default content types (`seed.ts`) aren't already
@@ -47,11 +70,19 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
       const existing = await readAllRaw();
       const existingNames = new Set(existing.map((t) => t.name.toLowerCase()));
       const missing = defaultContentTypeDefinitions().filter((t) => !existingNames.has(t.name.toLowerCase()));
-      for (const target of missing) {
-        await driver.writeJson(typePath(target.id), target);
+      let allTypes = existing;
+      if (missing.length > 0) {
+        // Every missing default type, plus the refreshed cache, land in one commit.
+        allTypes = await driver.transaction(async (tx) => {
+          for (const target of missing) {
+            await tx.writeJson(typePath(target.id), target);
+          }
+          const rebuilt = await rebuildAllRaw(tx);
+          await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
+          return rebuilt;
+        });
       }
-      const allTypes = missing.length > 0 ? await readAllRaw() : existing;
-      await syncFilePermissions(getEntryAdapter(), allTypes);
+      await syncFilePermissions(driver, getEntryAdapter(), allTypes);
     })();
     return bootPromise;
   }
@@ -63,7 +94,8 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
 
   async function getContentType(id: string): Promise<ContentTypeDefinition | null> {
     await ensureBooted();
-    return driver.readJson<ContentTypeDefinition>(typePath(id));
+    const all = await readAllRaw();
+    return all.find((t) => t.id === id) ?? null;
   }
 
   async function planSave(next: ContentTypeDefinition): Promise<FileSavePlan> {
@@ -120,9 +152,12 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
       for (const p of plan.cascaded) {
         if (p.needsRewrite) await applyFileRewrite(tx, p.typeName, p.rewrite);
       }
+
+      const rebuilt = await rebuildAllRaw(tx);
+      await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
     });
 
-    await syncFilePermissions(getEntryAdapter(), await readAllRaw());
+    await syncFilePermissions(driver, getEntryAdapter(), await readAllRaw());
 
     const saved = await getContentType(next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
@@ -144,7 +179,7 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
       }
     }
 
-    await deleteFilePermissions(getEntryAdapter(), allTypes, id);
+    await deleteFilePermissions(driver, getEntryAdapter(), allTypes, id);
 
     // The type definition itself, its whole data folder, and every stray
     // index file - one commit, same rationale as `applySave`.
@@ -159,6 +194,9 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
           if (name.startsWith(prefix)) await tx.removeJson(`.index/${name}.json`);
         }
       }
+
+      const rebuilt = await rebuildAllRaw(tx);
+      await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
     });
   }
 

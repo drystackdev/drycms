@@ -62,6 +62,10 @@
       &[aria-busy="true"] {
         pointer-events: none;
 
+        & > svg:first-child {
+          display: none;
+        }
+
         &::before {
           content: "";
           width: 0.875rem;

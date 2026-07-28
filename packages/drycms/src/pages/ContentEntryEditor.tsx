@@ -325,7 +325,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               Cancel
             </button>
           )}
-          <button type="button" disabled={saving} onClick={handleSave}>
+          <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>
             Save
           </button>
         </div>

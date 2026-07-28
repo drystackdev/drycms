@@ -3,7 +3,7 @@ import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import DataTable from "../components/DataTable.js";
 import Icon from "../components/Icon.js";
-import type { IconName } from "../components/icons.js";
+import { PlusIcon, type IconName } from "../components/icons.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type {
   ContentTypeDefinition,
@@ -86,70 +86,70 @@ export default function ContentTypes() {
       {loadError ? (
         <span class="error">{loadError}</span>
       ) : (
-        definitions && (
-          <div class="content-types-grid">
-            <div class="content-types-panel">
-              <DataTable
-                columns={[
-                  {
-                    key: "label",
-                    label: "Name",
-                    sortable: true,
-                    render: (_value, row) => (
-                      <div class="stack" style={{ gap: "0.125rem" }}>
-                        <span>{row.label}</span>
-                        <span class="hint">
-                          {row.description || <i>No description</i>}
-                        </span>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "fieldCount",
-                    label: "Fields",
-                    numeric: true,
-                    sortable: true,
-                    render: (_v, row) => (
-                      <span class="badge outline">{row.fieldCount}</span>
-                    ),
-                  },
-                ]}
-                rows={rows}
-                rowKey={(row) => row.id}
-                emptyLabel="None yet."
-                onRowClick={(row) =>
-                  route(`${path}/content-types/${row.id}/edit`)
-                }
-                actions={
-                  <button
-                    type="button"
-                    onClick={() =>
-                      route(`${path}/content-types/new/${selectedKind}`)
-                    }
-                  >
-                    + Add {selectedGroup.label}
-                  </button>
-                }
-              />
-            </div>
-            <ul class="content-types-nav">
-              {GROUPS.map(({ kind, label, icon }) => (
-                <li key={kind}>
-                  <button
-                    type="button"
-                    aria-current={kind === selectedKind ? "page" : undefined}
-                    onClick={() => setSelectedKind(kind)}
-                  >
-                    <Icon name={icon} />
-                    <span>{label}</span>
-                    <span class="spacer" />
-                    <span class="badge outline">{countByKind(kind)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+        <div class="content-types-grid">
+          <div class="content-types-panel">
+            <DataTable
+              columns={[
+                {
+                  key: "label",
+                  label: "Name",
+                  sortable: true,
+                  render: (_value, row) => (
+                    <div class="stack" style={{ gap: "0.125rem" }}>
+                      <span>{row.label}</span>
+                      <span class="hint">
+                        {row.description || <i>No description</i>}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  key: "fieldCount",
+                  label: "Fields",
+                  numeric: true,
+                  sortable: true,
+                  render: (_v, row) => (
+                    <span class="badge outline">{row.fieldCount}</span>
+                  ),
+                },
+              ]}
+              rows={rows}
+              rowKey={(row) => row.id}
+              emptyLabel="None yet."
+              onRowClick={(row) =>
+                route(`${path}/content-types/${row.id}/edit`)
+              }
+              actions={
+                <button
+                  aria-busy={definitions ? false : true}
+                  disabled={!definitions}
+                  type="button"
+                  onClick={() =>
+                    route(`${path}/content-types/new/${selectedKind}`)
+                  }
+                >
+                  <PlusIcon /> Add {selectedGroup.label}
+                </button>
+              }
+            />
           </div>
-        )
+          <ul class="content-types-nav">
+            {GROUPS.map(({ kind, label, icon }) => (
+              <li key={kind}>
+                <button
+                  type="button"
+                  aria-current={kind === selectedKind ? "page" : undefined}
+                  onClick={() => setSelectedKind(kind)}
+                >
+                  <Icon name={icon} />
+                  <span>{label}</span>
+                  <span class="spacer" />
+                  <span class="badge outline">{countByKind(kind)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </>
   );

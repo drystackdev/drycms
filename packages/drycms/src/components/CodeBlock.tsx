@@ -3,6 +3,7 @@ import Prism from "prismjs";
 // jsx extends the markup grammar, so plain HTML/XML snippets still highlight
 // fine under it too - see `Demo.tsx`'s own note, this is the same import.
 import "prismjs/components/prism-jsx";
+import "prismjs/components/prism-json";
 import { toast } from "./Toast.js";
 import { CopyIcon } from "./icons.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";

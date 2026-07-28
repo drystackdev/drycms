@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
+import Combobox, { type ComboboxOption } from "../components/Combobox.js";
 import { ArrowLeftIcon, ArrowRightIcon } from "../components/icons.js";
 import IconGlyph from "../components/IconGlyph.js";
-import Select, { type SelectOption } from "../components/Select.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import {
@@ -70,7 +70,7 @@ export default function IconSearchAdd() {
       });
   }, [iconifyApi]);
 
-  const collectionOptions: SelectOption[] = useMemo(() => {
+  const collectionOptions: ComboboxOption[] = useMemo(() => {
     const known = collections.some((c) => c.prefix === DEFAULT_PREFIX);
     const base = known
       ? collections
@@ -218,7 +218,7 @@ export default function IconSearchAdd() {
   };
 
   return (
-    <>
+    <div class="card">
       <div class="page-header">
         <div style={{ flex: 1 }}>
           <h1>Add icon</h1>
@@ -232,7 +232,7 @@ export default function IconSearchAdd() {
           onInput={(e) => setQuery(e.currentTarget.value)}
           placeholder="e.g. home, arrow, user"
         />
-        <Select
+        <Combobox
           options={collectionOptions}
           value={category}
           onChange={setCategory}
@@ -281,32 +281,35 @@ export default function IconSearchAdd() {
         </div>
       </div>
 
-      <div class="icon-grid">
-        {displayIds.map((id) => (
-          <button
-            type="button"
-            key={id}
-            class={
-              "ghost " + (selected.has(id) ? "icon-cell selected" : "icon-cell")
-            }
-            onClick={() => toggleSelect(id)}
-            style={{
-              height: "unset",
-            }}
-          >
-            {previews[id] ? (
-              <IconGlyph src={svgToDataUri(previews[id])} size={24} />
-            ) : (
-              <div class="center">
-                <progress
-                  class="circle"
-                  style={{ height: "1.75rem", width: "1.75rem" }}
-                />
-              </div>
-            )}
-            <small class="mono">{splitId(id)[1]}</small>
-          </button>
-        ))}
+      <div class="under" style={{minHeight: 545}}>
+        <div class="icon-grid">
+          {displayIds.map((id) => (
+            <button
+              type="button"
+              key={id}
+              class={
+                "ghost " +
+                (selected.has(id) ? "icon-cell selected" : "icon-cell")
+              }
+              onClick={() => toggleSelect(id)}
+              style={{
+                height: "unset",
+              }}
+            >
+              {previews[id] ? (
+                <IconGlyph src={svgToDataUri(previews[id])} size={24} />
+              ) : (
+                <div class="center">
+                  <progress
+                    class="circle"
+                    style={{ height: "1.75rem", width: "1.75rem" }}
+                  />
+                </div>
+              )}
+              <small class="mono">{splitId(id)[1]}</small>
+            </button>
+          ))}
+        </div>
       </div>
 
       {isBrowsing && browsePageCount > 1 && (
@@ -336,6 +339,6 @@ export default function IconSearchAdd() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

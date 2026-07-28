@@ -503,6 +503,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           <button
             type="button"
             disabled={saving || !isDirty}
+            aria-busy={saving}
             onClick={handleSaveClick}
           >
             Save & apply schema

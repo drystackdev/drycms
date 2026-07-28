@@ -38,24 +38,56 @@ class FakeGithub {
   refConflictOnce = false;
   private counter = 0;
 
-  // Git Data API state for `writeBatch` - blobs created via `POST .../git/blobs`
-  // (not yet attached to a path in `files`), trees/commits built on top of
-  // them, and the branch ref's current head. A `PATCH` on the ref is where a
-  // batch actually lands: it replays the target commit's tree onto `files`,
-  // mirroring how the real API only makes a commit's contents observable via
-  // `contents`/`git/trees` once the ref points at it.
+  /** The repo's `default_branch`, as reported by `GET {base}` - what
+   * `ensureBranch()`'s `resolveBaseSha()` falls back to when the configured
+   * branch doesn't exist yet. */
+  defaultBranch = BRANCH;
+
+  // Git Data API state for `writeBatch`/`ensureBranch` - blobs created via
+  // `POST .../git/blobs` (not yet attached to a path in `files`),
+  // trees/commits built on top of them, and every branch ref's current head
+  // (keyed by branch name, not just the adapter's configured `BRANCH` - the
+  // branch-auto-create tests point an adapter at a DIFFERENT, not-yet-created
+  // branch). A `PATCH`/`POST` on a ref is where a batch/branch-creation
+  // actually lands: it replays the target commit's tree onto `files`,
+  // mirroring how the real API only makes a commit's contents observable once
+  // a ref points at it.
   private blobs = new Map<string, Buffer>();
   private trees = new Map<string, { path: string; sha: string | null }[]>();
   private commits = new Map<string, { treeSha: string }>();
-  private headCommitSha = "commit-0";
+  private refs = new Map<string, string>([[BRANCH, "commit-0"]]);
 
   constructor() {
     this.trees.set("tree-0", []);
     this.commits.set("commit-0", { treeSha: "tree-0" });
   }
 
+  /** Simulates a brand new GitHub repo: no branches, no commits at all yet -
+   * `refs` starts with `BRANCH` pre-created (like a normal, already-used
+   * test repo); this clears it back out. */
+  wipeAllRefs(): void {
+    this.refs.clear();
+  }
+
   private nextSha(): string {
     return `sha-${++this.counter}`;
+  }
+
+  /** Replays a commit's tree onto `files` - shared by landing a `writeBatch`
+   * (`PATCH` on an existing branch's ref) and landing a newly-created branch
+   * (`POST /git/refs`, which for a non-empty repo points at an already-real
+   * commit, so this is a no-op replay of state that's already correct). */
+  private landCommit(commitSha: string): void {
+    const commit = this.commits.get(commitSha);
+    const entries = commit ? (this.trees.get(commit.treeSha) ?? []) : [];
+    for (const entry of entries) {
+      if (entry.sha === null) {
+        this.files.delete(entry.path);
+      } else {
+        const content = this.blobs.get(entry.sha) ?? this.files.get(entry.path)?.content;
+        if (content) this.files.set(entry.path, { sha: entry.sha, content });
+      }
+    }
   }
 
   private basename(path: string): string {
@@ -187,9 +219,17 @@ class FakeGithub {
       return this.json({ sha, tree: { sha: commit.treeSha } });
     }
 
-    if (parsed.pathname === `${base}/git/refs/heads/${BRANCH}`) {
+    if (parsed.pathname === base && method === "GET") {
+      return this.json({ default_branch: this.defaultBranch });
+    }
+
+    const refsHeadsPrefix = `${base}/git/refs/heads/`;
+    if (parsed.pathname.startsWith(refsHeadsPrefix)) {
+      const name = decodeURIComponent(parsed.pathname.slice(refsHeadsPrefix.length));
       if (method === "GET") {
-        return this.json({ object: { sha: this.headCommitSha } });
+        const sha = this.refs.get(name);
+        if (!sha) return this.json({ message: `No commit found for the ref ${name}` }, 404);
+        return this.json({ object: { sha } });
       }
       if (method === "PATCH") {
         if (this.refConflictOnce) {
@@ -197,20 +237,19 @@ class FakeGithub {
           return this.json({ message: "Update is not a fast forward" }, 422);
         }
         const body = JSON.parse(init!.body as string) as { sha: string };
-        const commit = this.commits.get(body.sha);
-        if (!commit) return this.json({ message: "Not Found" }, 404);
-        const entries = this.trees.get(commit.treeSha) ?? [];
-        for (const entry of entries) {
-          if (entry.sha === null) {
-            this.files.delete(entry.path);
-          } else {
-            const content = this.blobs.get(entry.sha) ?? this.files.get(entry.path)?.content;
-            if (content) this.files.set(entry.path, { sha: entry.sha, content });
-          }
-        }
-        this.headCommitSha = body.sha;
-        return this.json({ ref: `refs/heads/${BRANCH}`, object: { sha: body.sha } });
+        this.landCommit(body.sha);
+        this.refs.set(name, body.sha);
+        return this.json({ ref: `refs/heads/${name}`, object: { sha: body.sha } });
       }
+    }
+
+    if (parsed.pathname === `${base}/git/refs` && method === "POST") {
+      const body = JSON.parse(init!.body as string) as { ref: string; sha: string };
+      const name = body.ref.replace(/^refs\/heads\//, "");
+      if (this.refs.has(name)) return this.json({ message: "Reference already exists" }, 422);
+      this.landCommit(body.sha);
+      this.refs.set(name, body.sha);
+      return this.json({ ref: body.ref, object: { sha: body.sha } }, 201);
     }
 
     throw new Error(`Unhandled fake GitHub request: ${method} ${url}`);
@@ -492,6 +531,46 @@ describe("createGithubStorageAdapter", () => {
       fake.refConflictOnce = true;
       await adapter.writeBatch!([{ path: "a.json", data: new TextEncoder().encode("{}") }], "retry me");
       expect(fake.files.get("a.json")?.content.toString("utf8")).toBe("{}");
+    });
+  });
+
+  describe("a configured branch that doesn't exist yet", () => {
+    function adapterOnBranch(branch: string) {
+      return createGithubStorageAdapter({ kind: "github", owner: OWNER, repo: REPO, branch, token: "test-token", root: "" });
+    }
+
+    it("is created off the repo's default branch before the first operation, instead of throwing", async () => {
+      // The default branch ("main") already has a commit/file on it; "feature-x" doesn't exist yet.
+      await adapter.write("existing.txt", new TextEncoder().encode("hi"));
+      const onFeature = adapterOnBranch("feature-x");
+
+      await expect(onFeature.list("")).resolves.toEqual([expect.objectContaining({ path: "existing.txt" })]);
+
+      const entry = await onFeature.write("new.txt", new TextEncoder().encode("hello"));
+      expect(entry.kind).toBe("file");
+      expect(fake.files.get("new.txt")?.content.toString("utf8")).toBe("hello");
+    });
+
+    it("is created from a fresh empty initial commit when the whole repo has no commits yet", async () => {
+      fake.wipeAllRefs();
+      fake.defaultBranch = "main";
+      // Neither "main" nor "feature-x" has ever been created.
+      const scratch = createGithubStorageAdapter({ kind: "github", owner: OWNER, repo: REPO, branch: "feature-x", token: "test-token", root: "" });
+      await expect(scratch.list("")).resolves.toEqual([]);
+      await expect(scratch.write("a.txt", new TextEncoder().encode("hi"))).resolves.toMatchObject({ path: "a.txt" });
+    });
+
+    it("only creates the branch once across several concurrent operations", async () => {
+      let createCalls = 0;
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/git/refs") && init?.method === "POST") createCalls++;
+        return fake.handle(url, init);
+      });
+
+      const onFeature = adapterOnBranch("feature-x");
+      await Promise.all([onFeature.list(""), onFeature.stat("a.txt"), onFeature.list("")]);
+      expect(createCalls).toBe(1);
     });
   });
 });
