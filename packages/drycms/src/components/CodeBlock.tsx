@@ -7,6 +7,7 @@ import "prismjs/components/prism-jsx";
 import { toast } from "./Toast.js";
 import { CopyIcon } from "./icons.js";
 import type { CSSProperties } from "preact";
+import { useOverlayScrollbars } from "./overlayscrollbars.js";
 
 const JSX_GRAMMAR = Prism.languages.jsx!;
 
@@ -90,6 +91,7 @@ export default function CodeBlock({
   // preview mirroring a field's value), and `useState(_code)` would freeze
   // that at whatever `_code` was on first mount.
   const [localCode, setLocalCode] = useState(() => _code.trim());
+  const { ref: divRef } = useOverlayScrollbars<HTMLDivElement>();
   const code = editable ? localCode : _code;
   // Trimming is only for the initial/static display (drops incidental
   // leading/trailing blank lines from a template-literal `code` prop) - once
@@ -112,10 +114,7 @@ export default function CodeBlock({
   };
 
   const highlightedPre = (
-    <pre
-      class={wrap ? "language-jsx wrap" : "language-jsx"}
-      style={wrap ? { maxHeight } : undefined}
-    >
+    <pre class={wrap ? "language-jsx wrap" : "language-jsx"}>
       <code dangerouslySetInnerHTML={{ __html: highlighted }} />
     </pre>
   );
@@ -125,8 +124,14 @@ export default function CodeBlock({
   // text always comes from the re-highlighted `pre` underneath. Not wrapped
   // for the (default) non-editable case, so existing consumers keep getting
   // a bare `<pre>` (e.g. Demo.tsx's `.demo-code > pre` styling).
+  //
+  // `divRef` must land on whichever element actually owns the overflow -
+  // OverlayScrollbars turns that element's own content into a scrolling
+  // viewport, it doesn't reach into a descendant's overflow. So it's the
+  // `.editor` div when editable, and the `.code-scroll` div (not the `pre`
+  // itself) when `wrap` caps the height - never a plain ancestor wrapper.
   const block = editable ? (
-    <div class="editor">
+    <div class="editor" ref={divRef}>
       {highlightedPre}
       <textarea
         value={displayCode}
@@ -137,6 +142,10 @@ export default function CodeBlock({
           onChange?.(next);
         }}
       />
+    </div>
+  ) : wrap ? (
+    <div class="code-scroll" ref={divRef} style={{ maxHeight }}>
+      {highlightedPre}
     </div>
   ) : (
     highlightedPre

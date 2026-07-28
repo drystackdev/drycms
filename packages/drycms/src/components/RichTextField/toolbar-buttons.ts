@@ -1,11 +1,13 @@
 import {
   $getSelection,
   $isRangeSelection,
+  $setTextFormat,
   FORMAT_TEXT_COMMAND,
   REDO_COMMAND,
   UNDO_COMMAND,
   type LexicalEditor,
 } from "lexical";
+import { $patchStyleText } from "@lexical/selection";
 import type { JSX } from "preact";
 import {
   BoldIcon,
@@ -19,6 +21,7 @@ import {
 import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
+import ImageInsertButton from "./image-insert-button.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
 
 /**
@@ -51,6 +54,9 @@ export interface ToolbarCustomItem {
    * `inline` prop is set, unlike `ColorMenu` (a `<span style="color:...">`
    * is inline, same as bold/italic/underline). */
   blockOnly?: boolean;
+  /** Needs `ToolbarCustomProps.source` to do anything (`ImageInsertButton`) -
+   * hidden by `toolbar.tsx` when `RichTextField` gets no `source` prop. */
+  requiresSource?: boolean;
 }
 
 export type ToolbarItem = ToolbarButton | ToolbarCustomItem;
@@ -59,9 +65,15 @@ function clearFormat(editor: LexicalEditor) {
   editor.update(() => {
     const selection = $getSelection();
     if (!$isRangeSelection(selection)) return;
-    (["bold", "italic", "underline"] as const).forEach((type) => {
-      if (selection.hasFormat(type)) selection.formatText(type);
-    });
+    // `$setTextFormat` (unlike `FORMAT_TEXT_COMMAND`'s `selection.formatText`,
+    // a *toggle*) sets each bit to an exact value - so a selection mixing
+    // e.g. a bold-only run with a bold+italic run still comes out fully
+    // unformatted. A toggle-based approach would get this backwards for a
+    // mixed/nested selection: since it isn't uniformly "on" for the
+    // not-yet-cleared format, a single `formatText` call would turn that
+    // format ON everywhere instead of off.
+    $setTextFormat(selection, { bold: false, italic: false, underline: false });
+    $patchStyleText(selection, { color: null });
   });
 }
 
@@ -92,7 +104,7 @@ const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
     label: "Clear format",
     Icon: ClearFormatIcon,
     run: clearFormat,
-    isDisabled: (state: ToolbarState) => !(state.format.bold || state.format.italic || state.format.underline),
+    isDisabled: (state: ToolbarState) => !state.clearable,
   },
 ];
 
@@ -126,5 +138,6 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   [
     { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
+    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
   ],
 ];

@@ -1,5 +1,6 @@
 import { Fragment, type RefObject } from "preact";
 import type { LexicalEditor } from "lexical";
+import type { FileManagerSource } from "../file-manager-types.js";
 import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarState } from "./types.js";
 
@@ -14,6 +15,10 @@ export interface RichTextToolbarProps {
   /** Hides `blockOnly` items (`BlockTypeMenu`, `AlignMenu`) - see
    * `RichTextField`'s own `inline` prop. @default false */
   inline?: boolean;
+  /** Passed through to every custom item as `ToolbarCustomProps.source` -
+   * only `ImageInsertButton` reads it. Absent hides that button (see
+   * `requiresSource` in `toolbar-buttons.ts`). */
+  source?: FileManagerSource;
 }
 
 /** Purely presentational - rendering whatever `./toolbar-buttons.ts` lists.
@@ -24,6 +29,7 @@ export default function RichTextToolbar({
   disabled = false,
   contentRef,
   inline = false,
+  source,
 }: RichTextToolbarProps) {
   // A plain click on a toolbar button would blur the contenteditable and
   // collapse its selection before the click handler ever runs.
@@ -40,7 +46,11 @@ export default function RichTextToolbar({
   // align-only group under `inline`) - drop those so the `index > 0`
   // separator below doesn't leave a stray `<hr>` next to nothing.
   const visibleGroups = TOOLBAR_GROUPS.map((group) =>
-    group.filter((item) => !(inline && item.type === "custom" && item.blockOnly)),
+    group.filter(
+      (item) =>
+        !(inline && item.type === "custom" && item.blockOnly) &&
+        !(item.type === "custom" && item.requiresSource && !source),
+    ),
   ).filter((group) => group.length > 0);
 
   return (
@@ -56,6 +66,7 @@ export default function RichTextToolbar({
                 contentRef={contentRef}
                 state={state}
                 disabled={disabled}
+                source={source}
               />
             ) : (
               <button

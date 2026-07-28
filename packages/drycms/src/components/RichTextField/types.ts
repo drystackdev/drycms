@@ -1,5 +1,6 @@
 import type { LexicalEditor } from "lexical";
 import type { RefObject } from "preact";
+import type { FileManagerSource } from "../file-manager-types.js";
 
 export type InlineFormat = "bold" | "italic" | "underline";
 
@@ -33,6 +34,13 @@ export interface ToolbarState {
    * in `useRichTextEditor.ts`). */
   color: string;
   blockType: BlockType;
+  /** Whether "Clear format" has anything to do - unlike `format` above
+   * (which reads `false` for a bit that's only *partially* applied across
+   * the selection, since `RangeSelection.hasFormat` requires uniformity),
+   * this is `true` as soon as ANY selected text carries a format or color,
+   * so a selection mixing (e.g.) bold-only and bold+italic runs still
+   * enables the button. */
+  clearable: boolean;
   canUndo: boolean;
   canRedo: boolean;
 }
@@ -48,6 +56,10 @@ export interface ToolbarCustomProps {
   contentRef: RefObject<HTMLElement>;
   state: ToolbarState;
   disabled?: boolean;
+  /** Where the "Insert image" button's picker dialog reads its files from -
+   * only that item reads this; every other custom item ignores it. Absent
+   * entirely hides that button (see `requiresSource` in `toolbar-buttons.ts`). */
+  source?: FileManagerSource;
 }
 
 /** Shared by `useRichTextEditor.ts` (reading `ElementNode.getFormatType()`)

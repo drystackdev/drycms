@@ -84,6 +84,16 @@ export function isHiddenEntry(entry: FileEntry): boolean {
 	return entry.kind === 'file' && entry.name === '.dir';
 }
 
+/** `id`s are paths (see `FileManagerSource`) - the folder containing one is
+ * everything before its last `/`, root when there isn't one. Shared by
+ * `ImageField` and `RichTextField`'s image-insert picker, both of which need
+ * to re-scope a `FileManager` dialog to wherever a previously-picked id
+ * actually lives. */
+export function parentFolderOf(id: string): string | null {
+	const slash = id.lastIndexOf('/');
+	return slash === -1 ? null : id.slice(0, slash);
+}
+
 export function formatBytes(bytes: number | undefined): string {
 	if (bytes === undefined) return '';
 	if (bytes === 0) return '0 B';

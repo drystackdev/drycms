@@ -12,7 +12,7 @@ export interface OverlayScrollbarsHandle<T extends HTMLElement> {
 const defaultOptions: PartialOptions = {
 	scrollbars: {
 		theme: 'os-theme-dry',
-		autoHide: 'leave',
+		autoHide: 'move',
 		autoHideDelay: 400,
 	},
 };

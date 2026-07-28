@@ -2673,15 +2673,21 @@
     }
 
     /* Opt-in `CodeBlock` modifier: wraps long lines instead of scrolling
-     * horizontally, capping height (inline `maxHeight` style, see the
-     * component's `wrap` prop) and scrolling vertically past that. */
+     * horizontally. */
     pre.wrap {
-      overflow-x: hidden;
-      overflow-y: auto;
       white-space: pre-wrap;
       overflow-wrap: break-word;
       font-size: var(--dry-text-xs);
       line-height: 1.6;
+    }
+
+    /* Hosts OverlayScrollbars for `CodeBlock`'s `wrap` mode - caps height
+     * (inline `maxHeight` style, see the component's `wrap` prop) and scrolls
+     * vertically past that. Overflow must live on this wrapper rather than
+     * the `pre.wrap` it contains, since OverlayScrollbars only manages the
+     * element it's initialized on, not a descendant's overflow. */
+    .code-scroll {
+      overflow-y: auto;
     }
 
     /* Positions `CodeBlock`'s optional copy button (its `copyable` prop) in
@@ -2704,6 +2710,7 @@
       position: relative;
       margin: 0;
       padding: 0.875rem 1rem;
+      overflow: hidden;
       background-color: var(--dry-muted);
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-md);
@@ -3105,7 +3112,7 @@
       }
 
       & > hr.separator {
-        margin-inline: 0.5rem;
+        margin-inline: 0.25rem;
       }
     }
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import { Fragment } from "preact";
+import type { SerializedEditorState } from "lexical";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
 import Combobox from "../components/Combobox.js";
@@ -262,44 +263,43 @@ function TextFieldPreview() {
 }
 
 function RichTextFieldPreview() {
+  const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const [body, setBody] = useState("");
-  const [outHTML, setOutHTML] = useState(true);
+  const [json, setJson] = useState<SerializedEditorState>();
 
-  const code = useMemo(() => {
-    if (!body) return body;
-    if (outHTML) return body;
-    try {
-      return JSON.stringify(JSON.parse(body), null, 4);
-    } catch {
-      return body;
-    }
-  }, [body, outHTML]);
+  const jsonCode = useMemo(
+    () => (json ? JSON.stringify(json, null, 2) : ""),
+    [json],
+  );
 
   return (
     <div class="stack" style={{ width: "100%" }}>
+      <a href={`${path}/richtext-demo`} class="hint">
+        Open the standalone demo →
+      </a>
       <RichTextField
         label="Body"
         value={body}
         onChange={setBody}
+        json={json}
+        onJsonChange={setJson}
         description="Bold, italic, underline, alignment and text color."
         placeholder="Write something…"
-        outHTML={outHTML}
+        source={source}
       />
-      <CheckField
-        label="Output as HTML"
-        value={outHTML}
-        onChange={setOutHTML}
-        role="switch"
-        description="Off reports Lexical's JSON editor state instead."
-      />
-      <div class="field">
-        <label>Output ({outHTML ? "HTML" : "JSON"})</label>
-        <CodeBlock
-          maxHeight="32rem"
-          code={code}
-          wrap
-          copyable
-        />
+      <div class="grid cols-2" style={{ width: "100%" }}>
+        <div>
+          <div class="field">
+            <label>Output (JSON)</label>
+            <CodeBlock maxHeight="32rem" code={jsonCode} wrap copyable />
+          </div>
+        </div>
+        <div>
+          <div class="field">
+            <label>Output (HTML)</label>
+            <CodeBlock maxHeight="32rem" code={body} formatHtml wrap copyable />
+          </div>
+        </div>
       </div>
     </div>
   );

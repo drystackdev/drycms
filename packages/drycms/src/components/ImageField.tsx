@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import FileManager from "./FileManager.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
-import { thumbnailUrl } from "./file-manager-utils.js";
+import { parentFolderOf, thumbnailUrl } from "./file-manager-utils.js";
 import { CloseIcon, MediaIcon, UploadIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
@@ -18,13 +18,6 @@ export interface ImageFieldProps extends FieldProps<string> {
 }
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
-
-/** `id`s are paths (see `FileManagerSource`) - the folder containing one is
- * everything before its last `/`, root when there isn't one. */
-function parentFolderOf(id: string): string | null {
-  const slash = id.lastIndexOf("/");
-  return slash === -1 ? null : id.slice(0, slash);
-}
 
 /**
  * Single-image picker: a 4:3 frame that opens a `FileManager`-backed dialog

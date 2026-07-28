@@ -11,6 +11,7 @@ import '../components/native.js';
 // form-input component - keeping it out of Dashboard's chunk matters here.
 const Dashboard = lazy(() => import('../pages/Dashboard.js'));
 const Showcase = lazy(() => import('../pages/Showcase.js'));
+const RichTextDemo = lazy(() => import('../pages/RichTextDemo.js'));
 const Media = lazy(() => import('../pages/Media.js'));
 const ContentTypes = lazy(() => import('../pages/ContentTypes.js'));
 const ContentTypeEditor = lazy(() => import('../pages/ContentTypeEditor.js'));
@@ -99,6 +100,10 @@ export default function App() {
 							<Route path={path} component={() => <Redirect to={`${path}/dashboard`} />} />
 							<Route path={`${path}/dashboard`} component={Dashboard} />
 							<Route path={`${path}/showcase/:tab?`} component={Showcase} />
+							{/* Not in the sidebar NAV - a dev-only sandbox for iterating on
+							 * RichTextField specifically, reached via a direct URL or the
+							 * link on Showcase's "Rich text field" tab. */}
+							<Route path={`${path}/richtext-demo`} component={RichTextDemo} />
 							<Route path={`${path}/media`} component={Media} />
 							<Route path={`${path}/icon-management`} component={IconManagement} />
 							<Route path={`${path}/icon-management/add`} component={IconSearchAdd} />

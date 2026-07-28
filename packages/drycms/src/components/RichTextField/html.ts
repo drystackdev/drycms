@@ -9,6 +9,7 @@ import {
   type LexicalNode,
 } from "lexical";
 import { $blockTag, $blockTypeFromTagName, $createBlockNode, $getBlockType } from "./block-nodes.js";
+import { $createImageNode, $isImageNode } from "./image-node.js";
 import { normalizeTextAlign } from "./types.js";
 
 /**
@@ -17,9 +18,10 @@ import { normalizeTextAlign } from "./types.js";
  * never have, wrapping every run in `<span style="white-space: pre-wrap;">`
  * plus a redundant `<b>`/`<i>` around the semantic tag). Only the marks this
  * field's toolbar can produce need to survive the trip: `<strong>`, `<em>`,
- * `<u>`, a `<span style="color: ...">` (see color-menu.tsx), `<br>`, plain
- * text, one block element (`<p>`, `<h2>`-`<h6>`, `<blockquote>` - see
- * `block-nodes.ts`) per top-level element.
+ * `<u>`, a `<span style="color: ...">` (see color-menu.tsx), `<br>`, an
+ * inline `<img>` (see image-node.ts), plain text, one block element (`<p>`,
+ * `<h2>`-`<h6>`, `<blockquote>` - see `block-nodes.ts`) per top-level
+ * element.
  */
 
 function escapeHtml(text: string): string {
@@ -45,6 +47,7 @@ export function $exportCleanHtml(): string {
       const inner = node
         .getChildren()
         .map((child) => {
+          if ($isImageNode(child)) return `<img src="${escapeAttr(child.getSrc())}" alt="${escapeAttr(child.getAlt())}">`;
           if ($isLineBreakNode(child)) return "<br>";
           if (!$isTextNode(child)) return "";
           let text = escapeHtml(child.getTextContent());
@@ -88,6 +91,10 @@ function $walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): LexicalN
     return [textNode];
   }
   if (domNode.nodeName === "BR") return [$createLineBreakNode()];
+  if (domNode.nodeName === "IMG") {
+    const img = domNode as HTMLImageElement;
+    return [$createImageNode(img.getAttribute("src") ?? "", img.getAttribute("alt") ?? "")];
+  }
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
 
   const tag = domNode.nodeName;
@@ -109,6 +116,18 @@ export function $importCleanHtml(html: string): void {
   const blocks = dom.body.children.length > 0 ? Array.from(dom.body.children) : [dom.body];
   const noFormat: InlineAncestry = { bold: false, italic: false, underline: false, color: "" };
   for (const block of blocks) {
+    // A bare top-level `<img>` (hand-written HTML, never something this
+    // field's own export produces - see `$exportCleanHtml` above, where an
+    // image only ever appears inside a block's `inner`) has no block wrapper
+    // to carry it - and no children for `$walkInlineHtml` below to find it
+    // through either. Synthesize the paragraph it'd otherwise have lived in.
+    if (block.tagName === "IMG") {
+      const img = block as HTMLImageElement;
+      const paragraph = $createParagraphNode();
+      paragraph.append($createImageNode(img.getAttribute("src") ?? "", img.getAttribute("alt") ?? ""));
+      root.append(paragraph);
+      continue;
+    }
     const element = $createBlockNode($blockTypeFromTagName(block.tagName));
     const align = normalizeTextAlign(
       block instanceof HTMLElement ? block.style.textAlign : undefined,

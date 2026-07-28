@@ -523,20 +523,14 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   label="Body"
   value={body}
   onChange={setBody}
+  json={json}
+  onJsonChange={setJson}
   description="Bold, italic, underline, alignment and text color."
   placeholder="Write something…"
-  outHTML={outHTML}
 />
 
-<CheckField
-  label="Output as HTML"
-  value={outHTML}
-  onChange={setOutHTML}
-  role="switch"
-  description="Off reports Lexical's JSON editor state instead."
-/>
-
-<CodeBlock code={body} wrap copyable />`,
+<CodeBlock code={JSON.stringify(json, null, 2)} wrap copyable />
+<CodeBlock code={body} formatHtml wrap copyable />`,
   slugField: `import SlugField from 'drycms/components/SlugField';
 
 <SlugField

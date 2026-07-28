@@ -9,6 +9,7 @@ import {
   $getSelection,
   $isElementNode,
   $isRangeSelection,
+  $isTextNode,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_EDITOR,
@@ -25,6 +26,7 @@ import {
 } from "lexical";
 import { $createBlockNode, $getBlockType, FORMAT_BLOCK_TYPE_COMMAND, HeadingNode, QuoteNode } from "./block-nodes.js";
 import { $exportCleanHtml, $importCleanHtml } from "./html.js";
+import { ImageNode } from "./image-node.js";
 import { NO_FORMAT, normalizeTextAlign, type ToolbarState } from "./types.js";
 
 export interface UseRichTextEditorOptions {
@@ -71,6 +73,7 @@ export function useRichTextEditor({
   const [align, setAlign] = useState<ToolbarState["align"]>("left");
   const [color, setColor] = useState("");
   const [blockType, setBlockType] = useState<ToolbarState["blockType"]>("paragraph");
+  const [clearable, setClearable] = useState(false);
   const [empty, setEmpty] = useState(true);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -86,7 +89,7 @@ export function useRichTextEditor({
     const editor = createEditor({
       namespace: "drycms-richtext",
       onError: (err) => console.error(err),
-      nodes: [HeadingNode, QuoteNode],
+      nodes: [HeadingNode, QuoteNode, ImageNode],
       theme: {
         // Lexical's DOM tag for a text run is picked by priority (bold beats
         // italic beats plain <span>), so a bold+italic run only gets <strong>
@@ -126,6 +129,7 @@ export function useRichTextEditor({
       if (!$isRangeSelection(selection)) {
         setFormat(NO_FORMAT);
         setColor("");
+        setClearable(false);
         return;
       }
       setFormat({
@@ -137,6 +141,22 @@ export function useRichTextEditor({
       setAlign(normalizeTextAlign(element.getFormatType()));
       setColor($getSelectionStyleValueForProperty(selection, "color", ""));
       setBlockType($getBlockType(element));
+      // Unlike `format` above, this has to look at every selected text node
+      // individually rather than trust `selection.hasFormat` - that reads
+      // `false` for a bit that's only *partially* applied (e.g. one run
+      // bold+italic, the next just bold), which would otherwise leave
+      // "Clear format" disabled for exactly the mixed/nested selections it
+      // most needs to handle.
+      setClearable(
+        !selection.isCollapsed() &&
+          selection
+            .getNodes()
+            .some(
+              (node) =>
+                $isTextNode(node) &&
+                (node.hasFormat("bold") || node.hasFormat("italic") || node.hasFormat("underline") || !!node.getStyle()),
+            ),
+      );
     };
 
     const unregisterFns = [
@@ -207,17 +227,17 @@ export function useRichTextEditor({
       // COMMAND_PRIORITY_EDITOR, see above) always inserts a soft line break
       // - there's no "new block" concept in plain-text mode. This field does
       // have block types (paragraph/heading/quote, see block-nodes.ts), so it
-      // needs the richer split-into-a-new-block behavior instead - but a
-      // Cmd/Ctrl+Enter should still fall through to a plain <br>, matching
-      // the common "soft break vs. new paragraph" convention. Must run ahead
-      // of registerPlainText's handler to intercept the plain-Enter case.
+      // needs the richer split-into-a-new-block behavior instead - but
+      // Shift+Enter should still fall through to a plain <br>, matching the
+      // common "soft break vs. new paragraph" convention. Must run ahead of
+      // registerPlainText's handler to intercept the plain-Enter case.
       editor.registerCommand<KeyboardEvent>(
         KEY_ENTER_COMMAND,
         (event) => {
           const selection = $getSelection();
           if (!$isRangeSelection(selection)) return false;
           event?.preventDefault();
-          if (event?.ctrlKey || event?.metaKey) {
+          if (event?.shiftKey) {
             selection.insertLineBreak();
           } else {
             selection.insertParagraph();
@@ -293,5 +313,5 @@ export function useRichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- init once, see comment above
   }, []);
 
-  return { contentRef, editorRef, state: { format, align, color, blockType, canUndo, canRedo }, empty };
+  return { contentRef, editorRef, state: { format, align, color, blockType, clearable, canUndo, canRedo }, empty };
 }

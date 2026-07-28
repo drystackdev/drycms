@@ -39,6 +39,13 @@ const NAV: {
     ready: true,
   },
   {
+    key: "richtext-demo",
+    label: "Rich Text Demo",
+    href: `${path}/richtext-demo`,
+    icon: "Content",
+    ready: true,
+  },
+  {
     key: "content-types",
     label: "Content Types",
     href: `${path}/content-types`,

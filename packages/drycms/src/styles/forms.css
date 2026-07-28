@@ -490,6 +490,20 @@
       & .rte-underline {
         text-decoration: underline;
       }
+
+      /* Overrides base.css's `:where(img, ...) { display: block }` reset -
+       * needed since that rule sets `display` and this one otherwise
+       * wouldn't, not because of specificity (`:where()` never carries any -
+       * a plain class already beats it regardless). Without this, an
+       * `.richtext-image` renders on its own line instead of flowing inline
+       * with the surrounding text, same as `<em>`/`<strong>` do. */
+      & .richtext-image {
+        display: inline;
+        max-width: 100%;
+        max-height: 20rem;
+        vertical-align: middle;
+        border-radius: var(--dry-radius-sm);
+      }
     }
   }
 
