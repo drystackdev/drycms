@@ -130,6 +130,35 @@ export function useCloseOnBlur(open: boolean, ref: RefObject<HTMLElement>, onClo
 	}, [open, ref, onClose]);
 }
 
+/** Closes an open popup on window resize, mirroring `tooltip.ts`'s own
+ * resize-dismiss: a popup's `position: fixed` coordinates (`useFloatingPosition`
+ * below, or `Popover.tsx`'s own position effect) are measured once when it
+ * opens and don't track the trigger through a reflow, so after a resize they
+ * point at empty space - dropped rather than re-measured, same reasoning as
+ * the tooltip. */
+export function useCloseOnResize(open: boolean, onClose: () => void) {
+	// `onClose` via a ref, not a `useEffect` dep - callers pass a fresh inline
+	// closure each render, and depending on it directly would tear down and
+	// re-add the listener on every one of those renders (not just when `open`
+	// changes). That churn is more than wasted work: a real window resize can
+	// fire other listeners registered earlier (`usePopupFlip`'s own resize
+	// handler among them) whose state update triggers a synchronous re-render
+	// between listener invocations of the *same* dispatch - if that re-render
+	// happens to detach and re-add this listener mid-dispatch, the spec skips
+	// it for the event already in flight (a listener added during dispatch
+	// only applies to future events), so it silently never fires for that
+	// resize at all.
+	const onCloseRef = useRef(onClose);
+	onCloseRef.current = onClose;
+
+	useEffect(() => {
+		if (!open) return;
+		const handler = () => onCloseRef.current();
+		window.addEventListener('resize', handler);
+		return () => window.removeEventListener('resize', handler);
+	}, [open]);
+}
+
 /** Fixed-position coordinates for a popup anchored to `anchorRef`, full width
  * by default - mirrors Popover.tsx's own position effect. `top` accounts for
  * `openUp` by pointing at the anchor's top edge instead of its bottom; pair

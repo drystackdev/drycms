@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { MoreVerticalIcon } from "./icons.js";
-import { usePopupFlip, useScrollLock } from "./list-nav.js";
+import { useCloseOnResize, usePopupFlip, useScrollLock } from "./list-nav.js";
 
 export type PopoverMenuEntry =
   | { type: "separator" }
@@ -62,6 +62,7 @@ export default function Popover({
     left: number;
   } | null>(null);
   useScrollLock(open, wrapRef);
+  useCloseOnResize(open, () => setOpen(false));
 
   useLayoutEffect(() => {
     if (!open) return;

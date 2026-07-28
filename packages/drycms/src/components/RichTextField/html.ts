@@ -3,11 +3,12 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getRoot,
+  $isElementNode,
   $isLineBreakNode,
-  $isParagraphNode,
   $isTextNode,
   type LexicalNode,
 } from "lexical";
+import { $blockTag, $blockTypeFromTagName, $createBlockNode, $getBlockType } from "./block-nodes.js";
 import { normalizeTextAlign } from "./types.js";
 
 /**
@@ -16,18 +17,31 @@ import { normalizeTextAlign } from "./types.js";
  * never have, wrapping every run in `<span style="white-space: pre-wrap;">`
  * plus a redundant `<b>`/`<i>` around the semantic tag). Only the marks this
  * field's toolbar can produce need to survive the trip: `<strong>`, `<em>`,
- * `<u>`, `<br>`, plain text, one `<p>` per paragraph.
+ * `<u>`, a `<span style="color: ...">` (see color-menu.tsx), `<br>`, plain
+ * text, one block element (`<p>`, `<h2>`-`<h6>`, `<blockquote>` - see
+ * `block-nodes.ts`) per top-level element.
  */
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function escapeAttr(text: string): string {
+  return escapeHtml(text).replace(/"/g, "&quot;");
+}
+
+/** `TextNode.getStyle()` is a single free-form CSS string - this field only
+ * ever writes a `color` property into it (see color-menu.tsx), so pulling
+ * just that back out is enough to round-trip. */
+function extractColor(style: string): string {
+  return /color:\s*([^;]+)/i.exec(style)?.[1]?.trim() ?? "";
+}
+
 export function $exportCleanHtml(): string {
   return $getRoot()
     .getChildren()
     .map((node) => {
-      if (!$isParagraphNode(node)) return "";
+      if (!$isElementNode(node)) return "";
       const inner = node
         .getChildren()
         .map((child) => {
@@ -37,6 +51,8 @@ export function $exportCleanHtml(): string {
           if (child.hasFormat("bold")) text = `<strong>${text}</strong>`;
           if (child.hasFormat("italic")) text = `<em>${text}</em>`;
           if (child.hasFormat("underline")) text = `<u>${text}</u>`;
+          const color = extractColor(child.getStyle());
+          if (color) text = `<span style="color: ${escapeAttr(color)}">${text}</span>`;
           return text;
         })
         .join("");
@@ -44,7 +60,8 @@ export function $exportCleanHtml(): string {
       // survive the round trip as an explicit style.
       const align = normalizeTextAlign(node.getFormatType());
       const style = align === "left" ? "" : ` style="text-align: ${align}"`;
-      return `<p${style}>${inner}</p>`;
+      const tag = $blockTag($getBlockType(node));
+      return `<${tag}${style}>${inner}</${tag}>`;
     })
     .join("");
 }
@@ -53,6 +70,10 @@ interface InlineAncestry {
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  /** CSS `color` value, or `""` for none - unlike the booleans above, a
+   * nested element's own `color` replaces rather than ORs with the
+   * ancestor's (see `nextAncestry` below). */
+  color: string;
 }
 
 function $walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): LexicalNode[] {
@@ -63,6 +84,7 @@ function $walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): LexicalN
     if (ancestry.bold) textNode.toggleFormat("bold");
     if (ancestry.italic) textNode.toggleFormat("italic");
     if (ancestry.underline) textNode.toggleFormat("underline");
+    if (ancestry.color) textNode.setStyle(`color: ${ancestry.color}`);
     return [textNode];
   }
   if (domNode.nodeName === "BR") return [$createLineBreakNode()];
@@ -73,6 +95,7 @@ function $walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): LexicalN
     bold: ancestry.bold || tag === "STRONG" || tag === "B",
     italic: ancestry.italic || tag === "EM" || tag === "I",
     underline: ancestry.underline || tag === "U",
+    color: (domNode instanceof HTMLElement && domNode.style.color) || ancestry.color,
   };
   return Array.from(domNode.childNodes).flatMap((child) => $walkInlineHtml(child, nextAncestry));
 }
@@ -84,16 +107,16 @@ export function $importCleanHtml(html: string): void {
   const dom = new DOMParser().parseFromString(html, "text/html");
   const root = $getRoot();
   const blocks = dom.body.children.length > 0 ? Array.from(dom.body.children) : [dom.body];
-  const noFormat: InlineAncestry = { bold: false, italic: false, underline: false };
+  const noFormat: InlineAncestry = { bold: false, italic: false, underline: false, color: "" };
   for (const block of blocks) {
-    const paragraph = $createParagraphNode();
+    const element = $createBlockNode($blockTypeFromTagName(block.tagName));
     const align = normalizeTextAlign(
       block instanceof HTMLElement ? block.style.textAlign : undefined,
     );
-    if (align !== "left") paragraph.setFormat(align);
+    if (align !== "left") element.setFormat(align);
     const inlineNodes = Array.from(block.childNodes).flatMap((child) => $walkInlineHtml(child, noFormat));
-    paragraph.append(...inlineNodes);
-    root.append(paragraph);
+    element.append(...inlineNodes);
+    root.append(element);
   }
   if (root.getChildrenSize() === 0) root.append($createParagraphNode());
 }

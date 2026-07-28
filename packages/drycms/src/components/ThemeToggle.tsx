@@ -1,4 +1,6 @@
-import { MonitorIcon, MoonIcon, SunIcon } from "./icons.js";
+import type { JSX } from "preact";
+import { MonitorIcon, MoonIcon, SunIcon, type IconProps } from "./icons.js";
+import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
 import { applyTheme, type DryTheme } from "./theme.js";
 
@@ -10,36 +12,54 @@ const LABELS: Record<DryTheme, string> = {
   dark: "Dark theme",
 };
 
-/** Cycles system → light → dark, persisted via `useStore` (`drycms:store.theme`
- * in `localStorage`) and applied via `theme.ts`'s `applyTheme` - the same
- * DOM logic a framework-free `[data-theme-toggle]` button uses, so a page
- * mixing both stays in sync either way. The pre-mount flash is avoided
- * separately, by `app.astro`'s inline script reading the same storage
- * before first paint. */
+const ICONS: Record<DryTheme, (props: IconProps) => JSX.Element> = {
+  system: MonitorIcon,
+  light: SunIcon,
+  dark: MoonIcon,
+};
+
+/** A popover offering the three theme options - like align-menu.tsx, the
+ * trigger shows whichever option is currently active rather than a fixed
+ * icon. Selection is persisted via `useStore` (`drycms:store.theme` in
+ * `localStorage`) and applied via `theme.ts`'s `applyTheme` - the same DOM
+ * logic a framework-free `[data-theme-toggle]` button uses, so a page mixing
+ * both stays in sync either way. The pre-mount flash is avoided separately,
+ * by `app.astro`'s inline script reading the same storage before first
+ * paint. */
 export default function ThemeToggle() {
   const [theme, setTheme] = useStore<DryTheme>("theme", "system");
 
-  const next = () => {
-    const value = ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length] as DryTheme;
+  const choose = (value: DryTheme) => {
     setTheme(value);
     applyTheme(value);
   };
 
+  const CurrentIcon = ICONS[theme];
+
   return (
-    <button
-      type="button"
-      class="ghost icon"
-      onClick={next}
-      title={LABELS[theme]}
-      aria-label={LABELS[theme]}
-    >
-      {theme === "dark" ? (
-        <MoonIcon />
-      ) : theme === "light" ? (
-        <SunIcon />
-      ) : (
-        <MonitorIcon />
+    <Popover
+      label="Theme"
+      tooltip="Theme"
+      items={ORDER.map((value) => {
+        const Icon = ICONS[value];
+        return {
+          type: "item" as const,
+          label: LABELS[value],
+          icon: <Icon />,
+          onClick: () => choose(value),
+        };
+      })}
+      trigger={(onClick) => (
+        <button
+          type="button"
+          class="ghost icon"
+          onClick={onClick}
+          title={LABELS[theme]}
+          aria-label={LABELS[theme]}
+        >
+          <CurrentIcon />
+        </button>
       )}
-    </button>
+    />
   );
 }

@@ -65,6 +65,7 @@
     "Bold": "solar:text-bold-linear",
     "Italic": "solar:text-italic-linear",
     "Underline": "solar:text-underline-linear",
+    "Baseline": "lucide:baseline",
     "Undo": "lucide:undo",
     "Redo": "lucide:redo",
     "ClearFormat": "lucide:remove-formatting",
@@ -72,6 +73,14 @@
     "AlignLeft": "lucide:align-left",
     "AlignCenter": "lucide:align-center",
     "AlignRight": "lucide:align-right",
-    "AlignJustify": "lucide:align-justify"
+    "AlignJustify": "lucide:align-justify",
+
+    "Paragraph": "lucide:pilcrow",
+    "Heading2": "lucide:heading-2",
+    "Heading3": "lucide:heading-3",
+    "Heading4": "lucide:heading-4",
+    "Heading5": "lucide:heading-5",
+    "Heading6": "lucide:heading-6",
+    "Quote": "lucide:quote"
   }
 }

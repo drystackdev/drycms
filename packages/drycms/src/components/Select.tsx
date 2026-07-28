@@ -7,6 +7,7 @@ import {
 	nextEnabledIndex,
 	printableChar,
 	useCloseOnBlur,
+	useCloseOnResize,
 	useFloatingPosition,
 	useNativePopover,
 	useOutsideClick,
@@ -70,6 +71,7 @@ export default function Select({
 	useOutsideClick(open, [wrapRef], () => setOpen(false));
 	useNativePopover(open, listRef, () => {});
 	useScrollLock(open, wrapRef);
+	useCloseOnResize(open, () => setOpen(false));
 
 	const commit = (index: number) => {
 		const option = options[index];

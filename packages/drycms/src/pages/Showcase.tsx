@@ -281,7 +281,7 @@ function RichTextFieldPreview() {
         label="Body"
         value={body}
         onChange={setBody}
-        description="Bold, italic and underline formatting."
+        description="Bold, italic, underline, alignment and text color."
         placeholder="Write something…"
         outHTML={outHTML}
       />

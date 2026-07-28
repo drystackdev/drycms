@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import { registerPlainText } from "@lexical/plain-text";
 import { createEmptyHistoryState, registerHistory } from "@lexical/history";
+import { $getSelectionStyleValueForProperty } from "@lexical/selection";
 import {
   $createParagraphNode,
   $getRoot,
@@ -11,22 +12,31 @@ import {
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_EDITOR,
+  COMMAND_PRIORITY_HIGH,
   FORMAT_ELEMENT_COMMAND,
   FORMAT_TEXT_COMMAND,
+  KEY_DOWN_COMMAND,
+  KEY_ENTER_COMMAND,
   SELECTION_CHANGE_COMMAND,
   createEditor,
   type ElementNode,
   type LexicalEditor,
+  type SerializedEditorState,
 } from "lexical";
+import { $createBlockNode, $getBlockType, FORMAT_BLOCK_TYPE_COMMAND, HeadingNode, QuoteNode } from "./block-nodes.js";
 import { $exportCleanHtml, $importCleanHtml } from "./html.js";
 import { NO_FORMAT, normalizeTextAlign, type ToolbarState } from "./types.js";
 
 export interface UseRichTextEditorOptions {
+  /** HTML string - always the primary seed when non-empty (see `json`
+   * below for the fallback). Reported on every change via `onChange`. */
   value: string;
   onChange: (value: string) => void;
-  /** Report/seed `value` as an HTML string instead of Lexical's JSON editor
-   * state. */
-  outHTML: boolean;
+  /** Lexical's serialized editor state, as an object rather than a JSON
+   * string - optional secondary seed/report pair alongside `value`/
+   * `onChange`. Only used to seed the document when `value` is empty. */
+  json?: SerializedEditorState;
+  onJsonChange?: (json: SerializedEditorState) => void;
 }
 
 export interface UseRichTextEditorResult {
@@ -44,16 +54,23 @@ export interface UseRichTextEditorResult {
  * belongs here - `RichTextField.tsx` itself should stay a thin
  * props-in/JSX-out wrapper around this hook.
  */
-export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEditorOptions): UseRichTextEditorResult {
+export function useRichTextEditor({
+  value,
+  onChange,
+  json,
+  onJsonChange,
+}: UseRichTextEditorOptions): UseRichTextEditorResult {
   const contentRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<LexicalEditor | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const outHTMLRef = useRef(outHTML);
-  outHTMLRef.current = outHTML;
+  const onJsonChangeRef = useRef(onJsonChange);
+  onJsonChangeRef.current = onJsonChange;
 
   const [format, setFormat] = useState(NO_FORMAT);
   const [align, setAlign] = useState<ToolbarState["align"]>("left");
+  const [color, setColor] = useState("");
+  const [blockType, setBlockType] = useState<ToolbarState["blockType"]>("paragraph");
   const [empty, setEmpty] = useState(true);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -69,6 +86,7 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
     const editor = createEditor({
       namespace: "drycms-richtext",
       onError: (err) => console.error(err),
+      nodes: [HeadingNode, QuoteNode],
       theme: {
         // Lexical's DOM tag for a text run is picked by priority (bold beats
         // italic beats plain <span>), so a bold+italic run only gets <strong>
@@ -84,14 +102,17 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
     let seeded = false;
     if (value) {
       try {
-        if (outHTML) {
-          editor.update(() => $importCleanHtml(value));
-        } else {
-          editor.setEditorState(editor.parseEditorState(value));
-        }
+        editor.update(() => $importCleanHtml(value));
         seeded = true;
       } catch (err) {
         console.error("[drycms] Failed to parse RichTextField value", err);
+      }
+    } else if (json) {
+      try {
+        editor.setEditorState(editor.parseEditorState(json));
+        seeded = true;
+      } catch (err) {
+        console.error("[drycms] Failed to parse RichTextField json", err);
       }
     }
     if (!seeded) {
@@ -104,6 +125,7 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
       const selection = $getSelection();
       if (!$isRangeSelection(selection)) {
         setFormat(NO_FORMAT);
+        setColor("");
         return;
       }
       setFormat({
@@ -113,6 +135,8 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
       });
       const element = selection.anchor.getNode().getTopLevelElementOrThrow();
       setAlign(normalizeTextAlign(element.getFormatType()));
+      setColor($getSelectionStyleValueForProperty(selection, "color", ""));
+      setBlockType($getBlockType(element));
     };
 
     const unregisterFns = [
@@ -154,6 +178,79 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
         },
         COMMAND_PRIORITY_EDITOR,
       ),
+      // Like `FORMAT_ELEMENT_COMMAND` above, this touches whole top-level
+      // elements - but changing block type needs a new node instance
+      // (a `<p>` can't become a `<h2>` in place), so each touched element is
+      // replaced rather than mutated. `replace(..., true)` carries the old
+      // element's children over onto the new one.
+      editor.registerCommand(
+        FORMAT_BLOCK_TYPE_COMMAND,
+        (blockType) => {
+          const selection = $getSelection();
+          if (!$isRangeSelection(selection)) return false;
+          const elements = new Set<ElementNode>();
+          for (const node of selection.getNodes()) {
+            const element = $isElementNode(node) ? node : node.getTopLevelElementOrThrow();
+            if ($isElementNode(element)) elements.add(element);
+          }
+          for (const element of elements) {
+            if ($getBlockType(element) === blockType) continue;
+            const replacement = $createBlockNode(blockType);
+            replacement.setFormat(element.getFormatType());
+            element.replace(replacement, true);
+          }
+          return true;
+        },
+        COMMAND_PRIORITY_EDITOR,
+      ),
+      // registerPlainText's own KEY_ENTER_COMMAND handler (registered at
+      // COMMAND_PRIORITY_EDITOR, see above) always inserts a soft line break
+      // - there's no "new block" concept in plain-text mode. This field does
+      // have block types (paragraph/heading/quote, see block-nodes.ts), so it
+      // needs the richer split-into-a-new-block behavior instead - but a
+      // Cmd/Ctrl+Enter should still fall through to a plain <br>, matching
+      // the common "soft break vs. new paragraph" convention. Must run ahead
+      // of registerPlainText's handler to intercept the plain-Enter case.
+      editor.registerCommand<KeyboardEvent>(
+        KEY_ENTER_COMMAND,
+        (event) => {
+          const selection = $getSelection();
+          if (!$isRangeSelection(selection)) return false;
+          event?.preventDefault();
+          if (event?.ctrlKey || event?.metaKey) {
+            selection.insertLineBreak();
+          } else {
+            selection.insertParagraph();
+          }
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
+      // A plain (non-Ctrl/Cmd) End keypress doesn't collapse-and-move the
+      // caret in this editor: Lexical core's own default KEY_DOWN_COMMAND
+      // handler (registered internally, ahead of anything below) doesn't
+      // special-case End either, but unconditionally returns `true`, which
+      // stops the command from reaching the browser's native default action
+      // - so End silently becomes a no-op instead of falling through.  Left
+      // alone, a selection built on End (e.g. "End, then Shift+Left x N" to
+      // grab a trailing substring) silently selects the wrong range instead
+      // - the caret stays wherever it already was. This has to run at a
+      // higher priority than COMMAND_PRIORITY_EDITOR to get first look, and
+      // `Selection.modify` reproduces the layout-aware line-boundary move
+      // Home already gets natively - which, unlike a plain keypress here,
+      // reliably fires `selectionchange` and syncs Lexical's model.
+      editor.registerCommand<KeyboardEvent>(
+        KEY_DOWN_COMMAND,
+        (event) => {
+          if (event.key !== "End" || event.ctrlKey || event.metaKey) return false;
+          const domSelection = window.getSelection();
+          if (!domSelection) return false;
+          event.preventDefault();
+          domSelection.modify(event.shiftKey ? "extend" : "move", "forward", "lineboundary");
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH,
+      ),
       editor.registerCommand(
         SELECTION_CHANGE_COMMAND,
         () => {
@@ -183,10 +280,8 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
           readSelectionFormat();
           setEmpty($getRoot().getTextContent().length === 0);
         });
-        const output = outHTMLRef.current
-          ? editorState.read(() => $exportCleanHtml())
-          : JSON.stringify(editorState.toJSON());
-        onChangeRef.current(output);
+        onChangeRef.current(editorState.read(() => $exportCleanHtml()));
+        onJsonChangeRef.current?.(editorState.toJSON());
       }),
     ];
 
@@ -198,5 +293,5 @@ export function useRichTextEditor({ value, onChange, outHTML }: UseRichTextEdito
     // eslint-disable-next-line react-hooks/exhaustive-deps -- init once, see comment above
   }, []);
 
-  return { contentRef, editorRef, state: { format, align, canUndo, canRedo }, empty };
+  return { contentRef, editorRef, state: { format, align, color, blockType, canUndo, canRedo }, empty };
 }

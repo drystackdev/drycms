@@ -51,6 +51,7 @@
     "@preact/signals": "^2.10.0",
     "@lexical/history": "^0.48.0",
     "@lexical/plain-text": "^0.48.0",
+    "@lexical/selection": "^0.48.0",
     "dayjs": "^1.11.21",
     "lexical": "^0.48.0",
     "overlayscrollbars": "^2.16.0",

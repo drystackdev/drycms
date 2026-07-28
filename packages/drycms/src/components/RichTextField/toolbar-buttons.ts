@@ -16,14 +16,22 @@ import {
   UndoIcon,
   type IconProps,
 } from "../icons.js";
-import type { InlineFormat, ToolbarState } from "./types.js";
+import AlignMenu from "./align-menu.js";
+import BlockTypeMenu from "./block-menu.js";
+import ColorMenu from "./color-menu.js";
+import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
 
 /**
- * The toolbar's button registry - `toolbar.tsx` only knows how to render
+ * The toolbar's item registry - `toolbar.tsx` only knows how to render
  * whatever's in `TOOLBAR_GROUPS` (one `<hr>` gap per group), so adding or
- * removing a formatting feature is just editing the list below.
+ * removing a formatting feature is just editing the list below. Most items
+ * are a `ToolbarButton` (a single toggle/action button); `AlignMenu`,
+ * `BlockTypeMenu` and `ColorMenu` are `ToolbarCustomItem`s instead - each
+ * renders its own trigger/popover because "one of several options" or "a
+ * whole color grid" doesn't fit a single button's on/off `isActive`.
  */
 export interface ToolbarButton {
+  type: "button";
   key: string;
   label: string;
   Icon: (props: IconProps) => JSX.Element;
@@ -33,6 +41,19 @@ export interface ToolbarButton {
   isActive?: (state: ToolbarState) => boolean;
   isDisabled?: (state: ToolbarState) => boolean;
 }
+
+export interface ToolbarCustomItem {
+  type: "custom";
+  key: string;
+  Component: (props: ToolbarCustomProps) => JSX.Element;
+  /** Operates on a whole block element (`BlockTypeMenu`, `AlignMenu`) rather
+   * than an inline text run - hidden by `toolbar.tsx` when `RichTextField`'s
+   * `inline` prop is set, unlike `ColorMenu` (a `<span style="color:...">`
+   * is inline, same as bold/italic/underline). */
+  blockOnly?: boolean;
+}
+
+export type ToolbarItem = ToolbarButton | ToolbarCustomItem;
 
 function clearFormat(editor: LexicalEditor) {
   editor.update(() => {
@@ -58,6 +79,7 @@ const INLINE_TOGGLES: { key: InlineFormat; label: string; Icon: ToolbarButton["I
 
 const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
   ...INLINE_TOGGLES.map(({ key, label, Icon }) => ({
+    type: "button" as const,
     key,
     label,
     Icon,
@@ -65,6 +87,7 @@ const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
     isActive: (state: ToolbarState) => state.format[key],
   })),
   {
+    type: "button",
     key: "clear-format",
     label: "Clear format",
     Icon: ClearFormatIcon,
@@ -73,9 +96,10 @@ const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
   },
 ];
 
-export const TOOLBAR_GROUPS: ToolbarButton[][] = [
+export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   [
     {
+      type: "button",
       key: "undo",
       label: "Undo",
       Icon: UndoIcon,
@@ -83,6 +107,7 @@ export const TOOLBAR_GROUPS: ToolbarButton[][] = [
       isDisabled: (state) => !state.canUndo,
     },
     {
+      type: "button",
       key: "redo",
       label: "Redo",
       Icon: RedoIcon,
@@ -90,5 +115,16 @@ export const TOOLBAR_GROUPS: ToolbarButton[][] = [
       isDisabled: (state) => !state.canRedo,
     },
   ],
-  INLINE_FORMAT_BUTTONS,
+  // Inline group: every item here formats a text run (a Lexical format bit
+  // or a `<span style="color:...">`) - kept together, and separate from the
+  // block group below, so `inline` mode (see `toolbar.tsx`) can drop the
+  // latter as one unit.
+  [...INLINE_FORMAT_BUTTONS, { type: "custom", key: "color", Component: ColorMenu }],
+  // Block group: every item here acts on a whole top-level element
+  // (paragraph/heading/quote node, or its alignment) rather than a run of
+  // text - both flagged `blockOnly` so `inline` mode hides them together.
+  [
+    { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
+    { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
+  ],
 ];

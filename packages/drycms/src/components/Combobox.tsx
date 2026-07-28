@@ -6,6 +6,7 @@ import {
 	lastEnabledIndex,
 	nextEnabledIndex,
 	useCloseOnBlur,
+	useCloseOnResize,
 	useFloatingPosition,
 	useNativePopover,
 	useOutsideClick,
@@ -113,6 +114,7 @@ export default function Combobox({
 	useCloseOnBlur(open, wrapRef, revert);
 	useNativePopover(open, listRef, () => {});
 	useScrollLock(open, wrapRef);
+	useCloseOnResize(open, revert);
 
 	// Opens without filtering - see `query`'s comment above.
 	const openAt = (index: number) => {

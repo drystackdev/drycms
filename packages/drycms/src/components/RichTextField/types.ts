@@ -1,3 +1,6 @@
+import type { LexicalEditor } from "lexical";
+import type { RefObject } from "preact";
+
 export type InlineFormat = "bold" | "italic" | "underline";
 
 /** The 4 alignments this field's menu offers - Lexical's own
@@ -5,6 +8,11 @@ export type InlineFormat = "bold" | "italic" | "underline";
  * never sets and folds back to `"left"` for display (see readAlign in
  * `useRichTextEditor.ts`). */
 export type TextAlign = "left" | "center" | "right" | "justify";
+
+/** The block-level element a top-level selection currently sits in -
+ * `"paragraph"` is the default `<p>`; `"h2"`-`"h6"` and `"quote"` are the
+ * other blocks `./block-nodes.ts` defines nodes for. */
+export type BlockType = "paragraph" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote";
 
 export interface ActiveFormat {
   bold: boolean;
@@ -20,8 +28,26 @@ export const NO_FORMAT: ActiveFormat = { bold: false, italic: false, underline: 
 export interface ToolbarState {
   format: ActiveFormat;
   align: TextAlign;
+  /** CSS `color` value currently applied to the selection - `""` when unset
+   * or mixed across the selection (see `$getSelectionStyleValueForProperty`
+   * in `useRichTextEditor.ts`). */
+  color: string;
+  blockType: BlockType;
   canUndo: boolean;
   canRedo: boolean;
+}
+
+/** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)
+ * receives - unlike a `ToolbarButton` these render their own trigger/popover
+ * instead of a single button `toolbar.tsx` can render generically, so they
+ * need the full live state plus what it takes to run editor commands. Lives
+ * here rather than `toolbar-buttons.ts` so that file can import the menu
+ * components without a cycle (they only need this type back). */
+export interface ToolbarCustomProps {
+  editorRef: RefObject<LexicalEditor | null>;
+  contentRef: RefObject<HTMLElement>;
+  state: ToolbarState;
+  disabled?: boolean;
 }
 
 /** Shared by `useRichTextEditor.ts` (reading `ElementNode.getFormatType()`)

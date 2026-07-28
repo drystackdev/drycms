@@ -10,6 +10,10 @@ export interface RichTextFieldProps extends FieldProps<string> {
   /** Report/seed `value` as an HTML string instead of Lexical's JSON editor
    * state. @default false */
   outHTML?: boolean;
+  /** Restricts the toolbar to inline formatting and undo/redo, hiding the
+   * block-level "turn into" and alignment menus - for fields that should
+   * only ever hold a single inline run (e.g. a title). @default false */
+  inline?: boolean;
 }
 
 /** Public entry point - stays a thin props-in/JSX-out wrapper around
@@ -27,6 +31,7 @@ export default function RichTextField({
   required = false,
   description,
   outHTML = true,
+  inline = false,
   class: className,
   style,
 }: RichTextFieldProps) {
@@ -40,7 +45,13 @@ export default function RichTextField({
       </label>
       {description && <small>{description}</small>}
       <div class="richtext" aria-invalid={error || undefined}>
-        <RichTextToolbar editorRef={editorRef} state={state} disabled={disabled} contentRef={contentRef} />
+        <RichTextToolbar
+          editorRef={editorRef}
+          state={state}
+          disabled={disabled}
+          contentRef={contentRef}
+          inline={inline}
+        />
         <div
           ref={contentRef}
           class={`richtext-content${empty ? " is-empty" : ""}`}

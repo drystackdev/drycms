@@ -6,6 +6,7 @@ import {
 	lastEnabledIndex,
 	nextEnabledIndex,
 	useCloseOnBlur,
+	useCloseOnResize,
 	useFloatingPosition,
 	useNativePopover,
 	useOutsideClick,
@@ -102,6 +103,7 @@ export default function MultiSelect({
 	useCloseOnBlur(open, wrapRef, close);
 	useNativePopover(open, listRef, () => {});
 	useScrollLock(open, wrapRef);
+	useCloseOnResize(open, close);
 
 	const onKeyDown = (event: KeyboardEvent) => {
 		if (disabled) return;

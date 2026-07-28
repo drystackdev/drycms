@@ -3,6 +3,7 @@ import { useId, useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon } from "./icons.js";
 import {
+  useCloseOnResize,
   useFloatingPosition,
   useNativePopover,
   useOutsideClick,
@@ -83,6 +84,7 @@ export default function DatePickerField({
   useOutsideClick(open, [wrapRef], () => setOpen(false));
   useNativePopover(open, popupRef, () => {});
   useScrollLock(open, wrapRef);
+  useCloseOnResize(open, () => setOpen(false));
 
   const format = time ? "DD/MM/YYYY HH:mm" : "DD/MM/YYYY";
 

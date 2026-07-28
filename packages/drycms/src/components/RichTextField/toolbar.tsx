@@ -1,15 +1,7 @@
 import { Fragment, type RefObject } from "preact";
 import type { LexicalEditor } from "lexical";
-import AlignMenu from "./align-menu.js";
 import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarState } from "./types.js";
-
-/** `TOOLBAR_GROUPS` index after which the (non-`ToolbarButton`) alignment
- * popover is inserted - currently right after the bold/italic/underline
- * group. If a second bespoke, non-toggle item shows up, generalize
- * `ToolbarButton` into a button-or-custom union instead of hardcoding a
- * second index here. */
-const ALIGN_MENU_AFTER_GROUP = 1;
 
 export interface RichTextToolbarProps {
   /** The ref itself, not `editorRef.current` - the editor is only assigned
@@ -19,11 +11,20 @@ export interface RichTextToolbarProps {
   state: ToolbarState;
   disabled?: boolean;
   contentRef: RefObject<HTMLElement>;
+  /** Hides `blockOnly` items (`BlockTypeMenu`, `AlignMenu`) - see
+   * `RichTextField`'s own `inline` prop. @default false */
+  inline?: boolean;
 }
 
 /** Purely presentational - rendering whatever `./toolbar-buttons.ts` lists.
  * Shouldn't need to change when a button is added/removed/edited. */
-export default function RichTextToolbar({ editorRef, state, disabled = false, contentRef }: RichTextToolbarProps) {
+export default function RichTextToolbar({
+  editorRef,
+  state,
+  disabled = false,
+  contentRef,
+  inline = false,
+}: RichTextToolbarProps) {
   // A plain click on a toolbar button would blur the contenteditable and
   // collapse its selection before the click handler ever runs.
   const preserveSelection = (event: MouseEvent) => event.preventDefault();
@@ -35,31 +36,42 @@ export default function RichTextToolbar({ editorRef, state, disabled = false, co
     button.run(editor);
   };
 
+  // Groups can end up empty once `blockOnly` items are filtered out (e.g. the
+  // align-only group under `inline`) - drop those so the `index > 0`
+  // separator below doesn't leave a stray `<hr>` next to nothing.
+  const visibleGroups = TOOLBAR_GROUPS.map((group) =>
+    group.filter((item) => !(inline && item.type === "custom" && item.blockOnly)),
+  ).filter((group) => group.length > 0);
+
   return (
     <div class="richtext-toolbar" role="group" aria-label="Formatting">
-      {TOOLBAR_GROUPS.map((group, index) => (
+      {visibleGroups.map((group, index) => (
         <Fragment key={index}>
           {index > 0 && <hr class="separator" role="separator" aria-orientation="vertical" />}
-          {group.map((button) => (
-            <button
-              key={button.key}
-              type="button"
-              class="ghost icon sm"
-              aria-label={button.label}
-              data-tooltip={button.label}
-              aria-pressed={button.isActive?.(state)}
-              disabled={disabled || button.isDisabled?.(state)}
-              onMouseDown={preserveSelection}
-              onClick={() => runButton(button)}
-            >
-              <button.Icon />
-            </button>
-          ))}
-          {index === ALIGN_MENU_AFTER_GROUP && (
-            <>
-              <hr class="separator" role="separator" aria-orientation="vertical" />
-              <AlignMenu editorRef={editorRef} contentRef={contentRef} align={state.align} disabled={disabled} />
-            </>
+          {group.map((item) =>
+            item.type === "custom" ? (
+              <item.Component
+                key={item.key}
+                editorRef={editorRef}
+                contentRef={contentRef}
+                state={state}
+                disabled={disabled}
+              />
+            ) : (
+              <button
+                key={item.key}
+                type="button"
+                class="ghost icon sm"
+                aria-label={item.label}
+                data-tooltip={item.label}
+                aria-pressed={item.isActive?.(state)}
+                disabled={disabled || item.isDisabled?.(state)}
+                onMouseDown={preserveSelection}
+                onClick={() => runButton(item)}
+              >
+                <item.Icon />
+              </button>
+            ),
           )}
         </Fragment>
       ))}
