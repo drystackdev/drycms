@@ -28,6 +28,7 @@ import RelationField, {
 } from "../components/RelationField.js";
 import SecretField from "../components/SecretField.js";
 import Select from "../components/Select.js";
+import SelectField from "../components/SelectField.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
@@ -375,6 +376,34 @@ function CheckFieldPreview() {
         onChange={setAutoPublish}
         description="Automatically publish new posts without review."
         role="switch"
+      />
+    </div>
+  );
+}
+
+function SelectFieldPreview() {
+  const [collection, setCollection] = useState("Blog");
+  const [tags, setTags] = useState<string[]>([]);
+  return (
+    <div class="grid cols-2" style="width: 100%">
+      <SelectField
+        label="Collection"
+        config={{ options: ["Blog", "Docs", "Changelog"], multiple: false }}
+        value={collection}
+        onChange={(value) => setCollection(value as string)}
+        description="Where this entry is filed."
+        helperText="Fixed options, set once on the field itself."
+      />
+      <SelectField
+        label="Tags"
+        config={{
+          options: ["Design", "Engineering", "Marketing", "Product"],
+          multiple: true,
+        }}
+        value={tags}
+        onChange={(value) => setTags(value as string[])}
+        error
+        helperText="Pick at least one tag."
       />
     </div>
   );
@@ -1212,6 +1241,18 @@ function DemoContent({ id }: { id: string }) {
           code={code.checkField!}
         >
           <CheckFieldPreview />
+        </Demo>
+      );
+
+    case "select-field":
+      return (
+        <Demo
+          id="select-field"
+          title="Select field"
+          description="Same label + control + helper text contract as TextField; config.multiple picks between the Select and MultiSelect controls against a fixed config.options list defined on the field itself."
+          code={code.selectField!}
+        >
+          <SelectFieldPreview />
         </Demo>
       );
 

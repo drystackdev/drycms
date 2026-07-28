@@ -210,6 +210,11 @@ export function dry(options: DryOption = {}): AstroIntegration {
             `content: "sqlite" database lives at ${resolved.content.file} - add it to .gitignore if this is a fresh project.`,
           );
         }
+        if (resolved.content.engine === "file" && resolved.content.kind === "local") {
+          logger.info(
+            `content: "file" (local) records live under ${resolved.content.root} - add "content/" to .gitignore if this is a fresh project.`,
+          );
+        }
       },
 
       "astro:config:done": ({ injectTypes }) => {

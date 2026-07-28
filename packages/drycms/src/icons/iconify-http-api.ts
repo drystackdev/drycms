@@ -10,6 +10,12 @@ export interface IconifyCollection {
   category?: string;
 }
 
+export interface IconifyListResult {
+  prefix: string;
+  names: string[];
+  total: number;
+}
+
 export class IconifyApiError extends Error {}
 
 async function assertOk(res: Response, fallback: string): Promise<void> {
@@ -46,7 +52,15 @@ export function createIconifyApi(baseUrl: string) {
     return (await res.json()).icons;
   }
 
-  return { search, collections, previewIcons };
+  /** Every icon name in one set, flattened/de-duped/sorted - used to browse
+   * a category page by page when there's no search query yet. */
+  async function list(prefix: string): Promise<IconifyListResult> {
+    const res = await fetch(`${baseUrl}/list?prefix=${encodeURIComponent(prefix)}`);
+    await assertOk(res, "Failed to list icons for this set.");
+    return res.json();
+  }
+
+  return { search, collections, previewIcons, list };
 }
 
 export type IconifyApi = ReturnType<typeof createIconifyApi>;

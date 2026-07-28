@@ -2789,6 +2789,12 @@
       width: 100%;
     }
 
+    .icon-tool-search {
+      & > * {
+        flex: 1
+      }
+    }
+
     .icon-cell {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -2798,6 +2804,8 @@
       border-radius: var(--dry-radius-md);
       text-align: center;
       overflow: hidden;
+      transition: 
+        background-color 180ms ease;
 
       &:hover {
         background-color: var(--dry-accent);
@@ -2807,11 +2815,16 @@
        * grid - distinct from `:hover` so a selection stays visible once the
        * pointer moves off. */
       &.selected {
-        background-color: color-mix(in srgb, var(--dry-primary) 14%, transparent);
-        box-shadow: inset 0 0 0 1px var(--dry-primary);
+        background-color: var(--dry-accent) !important;
+        outline: 1px solid var(--dry-border);
       }
 
       & small {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         font-size: 0.6875rem;
       }
     }

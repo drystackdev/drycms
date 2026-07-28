@@ -4,6 +4,7 @@ import { path } from "virtual:drycms/config";
 import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
 import CodeBlock from "./CodeBlock.js";
 import ConfirmDialog from "./ConfirmDialog.js";
+import IconGlyph from "./IconGlyph.js";
 import { RenameIcon, TrashIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
 
@@ -29,11 +30,10 @@ function maskSnippet(entry: IconEntry): string {
  * an edit action (-> the manual add/edit form, prefilled), a destructive
  * delete (behind the same `ConfirmDialog` every other destructive action in
  * this codebase uses), and a copy-pasteable `<i>` snippet using Iconify's own
- * CSS-mask technique against this icon's own storage URL. Only renders the
- * icon via `<img src={entry.url}>`, never `dangerouslySetInnerHTML` - the
- * bytes behind that URL are sanitized on write, but this is the one place a
- * saved icon actually gets displayed back to an admin, so it stays on the
- * safe rendering path regardless.
+ * CSS-mask technique against this icon's own storage URL. Renders its own
+ * preview via `IconGlyph` (the same mask technique, live) rather than
+ * `dangerouslySetInnerHTML` - the bytes behind that URL are sanitized on
+ * write, but this stays on the safe rendering path regardless.
  *
  * Note: the mask-image technique only reproduces monochrome icons correctly
  * (multi-color/duotone icons collapse to a solid `currentColor` shape) - an
@@ -70,7 +70,7 @@ export default function IconPreviewDialog({ entry, onClose, onDeleted }: Props) 
         </header>
 
         <div class="icon-preview-body" style={{ textAlign: "center" }}>
-          <img src={entry.url} alt="" width={48} height={48} />
+          <IconGlyph src={entry.url} size={48} />
         </div>
 
         {error && <span class="error">{error}</span>}

@@ -50,12 +50,12 @@ export interface DryIconsOption {
 export interface DryContentOption {
   /**
    * Which backend the Content-Type Builder generates/migrates tables into.
-   * `"file"` (GitHub/GitLab-backed) is on the roadmap but not implemented
-   * yet - there's no notion of a SQL column to add/drop there.
+   * `"file"` stores each record as a JSON file instead of a SQL table - no
+   * DDL, no SQL parser, git-diffable.
    *
    * @default "sqlite"
    */
-  engine?: "sqlite" | "D1";
+  engine?: "sqlite" | "D1" | "file";
   /**
    * `sqlite` only: path to the database file, relative to the consuming
    * project's cwd (or an absolute path).
@@ -71,6 +71,23 @@ export interface DryContentOption {
    * JSON-serializable value, unlike every other resolved option).
    */
   binding?: string;
+  /**
+   * `engine: "file"` only: which backend serves the JSON content store -
+   * same `local`/`github`/`gitlab` choice as `storage.kind`/`icons.kind`,
+   * sharing the same env-var credentials for `github`/`gitlab` (see those
+   * options' docs) - `content` is a third root within the same repo/disk,
+   * not a separate credential.
+   *
+   * @default "local"
+   */
+  kind?: "local" | "github" | "gitlab";
+  /**
+   * `engine: "file"` only: same semantics as `DryStorageOption.root`, but
+   * for the JSON content store's own root.
+   *
+   * @default "content"
+   */
+  root?: string;
 }
 
 export interface DryOption {
@@ -149,9 +166,12 @@ export interface ResolvedD1ContentOption {
   binding: string;
 }
 
-/** A union so a future `"file"` engine can be added without widening every
- * existing branch. */
-export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption;
+/** Same `local`/`github`/`gitlab` shape as `ResolvedStorageOption` - the file
+ * content engine reuses `createStorageAdapter()` unchanged, same as
+ * `ResolvedIconsOption` does, just pointed at a third root. */
+export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOption;
+
+export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
 
 export interface ResolvedDryOption {
   path: string;
@@ -210,6 +230,7 @@ export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = "storage";
 export const DEFAULT_ICONS_ROOT = "icons";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";
+export const DEFAULT_CONTENT_ROOT = "content";
 
 let dotEnvCache: Record<string, string> | undefined;
 
@@ -383,9 +404,9 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
   if (typeof engine !== "string") {
     throw new TypeError(`[drycms] \`content.engine\` must be a string, received ${typeof engine}.`);
   }
-  if (engine !== "sqlite" && engine !== "D1") {
+  if (engine !== "sqlite" && engine !== "D1" && engine !== "file") {
     throw new Error(
-      `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite" and "D1" are available today ("file" is on the roadmap).`,
+      `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite", "D1" and "file" are available today.`,
     );
   }
   // A `binding` only means anything under `engine: "D1"` - silently falling
@@ -397,6 +418,11 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
       '[drycms] `content.binding` is only used with `content.engine: "D1"` - add `engine: "D1"` or remove `binding`.',
     );
   }
+  if (engine !== "file" && (content.kind !== undefined || content.root !== undefined)) {
+    throw new Error(
+      '[drycms] `content.kind`/`content.root` are only used with `content.engine: "file"` - add `engine: "file"` or remove them.',
+    );
+  }
 
   if (engine === "D1") {
     const binding = content.binding;
@@ -406,6 +432,11 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
       );
     }
     return { engine: "D1", binding };
+  }
+
+  if (engine === "file") {
+    const storageOption = resolveFileBackedOption({ kind: content.kind, root: content.root }, DEFAULT_CONTENT_ROOT, "content");
+    return { engine: "file", ...storageOption };
   }
 
   const file = content.file ?? DEFAULT_CONTENT_FILE;

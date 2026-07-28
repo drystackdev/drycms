@@ -30,7 +30,11 @@ declare module "virtual:drycms/icons-config" {
 }
 
 declare module "virtual:drycms/content-config" {
-	type ContentConfig = { engine: "sqlite"; file: string } | { engine: "D1"; binding: string };
+	type StorageBackend =
+		| { kind: "local"; root: string }
+		| { kind: "github"; owner: string; repo: string; branch: string; token: string; root: string }
+		| { kind: "gitlab"; host: string; project: string; branch: string; token: string; root: string };
+	type ContentConfig = { engine: "sqlite"; file: string } | { engine: "D1"; binding: string } | ({ engine: "file" } & StorageBackend);
 	export const content: ContentConfig;
 	const config: { content: ContentConfig };
 	export default config;

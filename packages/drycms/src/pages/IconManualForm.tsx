@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
+import IconGlyph from "../components/IconGlyph.js";
 import TextField from "../components/TextField.js";
 import { createIconsApi } from "../icons/icons-http-api.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -51,8 +52,9 @@ export default function IconManualForm({ name }: Props) {
 
   // A blob URL sidesteps every SVG-encoding pitfall a data: URI has, and -
   // same as everywhere else this feature displays a possibly-untrusted icon -
-  // loading it as an <img> means the browser never executes anything inside
-  // it, regardless of what the textarea currently contains.
+  // feeding it to a mask-image (via `IconGlyph`) means the browser never
+  // executes anything inside it, regardless of what the textarea currently
+  // contains.
   const previewUrl = useMemo(() => {
     if (!svg.trim()) return null;
     return URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
@@ -123,7 +125,7 @@ export default function IconManualForm({ name }: Props) {
           style={{ flex: 1 }}
         />
         <div class="icon-cell" style={{ width: "3rem", padding: 0 }}>
-          {previewUrl && <img src={previewUrl} alt="" width={24} height={24} />}
+          {previewUrl && <IconGlyph src={previewUrl} size={24} />}
         </div>
       </div>
 

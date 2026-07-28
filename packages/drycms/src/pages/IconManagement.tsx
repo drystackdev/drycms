@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
+import IconGlyph from "../components/IconGlyph.js";
 import { ArrowLeftIcon, ArrowRightIcon, PlusIcon } from "../components/icons.js";
 import IconPreviewDialog from "../components/IconPreviewDialog.js";
 import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
@@ -70,7 +71,7 @@ export default function IconManagement() {
       <div class="icon-grid">
         {entries.map((entry) => (
           <button type="button" class="ghost icon-cell" key={entry.id} onClick={() => setSelected(entry)}>
-            <img src={entry.url} alt="" width={24} height={24} />
+            <IconGlyph src={entry.url} size={24} />
             <small class="mono">{entry.name.replace(/\.svg$/, "")}</small>
           </button>
         ))}

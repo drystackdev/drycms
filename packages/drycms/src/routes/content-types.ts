@@ -3,8 +3,7 @@ export const prerender = false;
 import type { APIContext, APIRoute } from "astro";
 import { content } from "virtual:drycms/content-config";
 import { createContentEngineAdapter } from "../content-types/engine/index.js";
-import { ContentEngineError, type ContentEngineAdapter } from "../content-types/engine/types.js";
-import type { SavePlan } from "../content-types/migration.js";
+import { ContentEngineError, type AnySavePlan, type ContentEngineAdapter } from "../content-types/engine/types.js";
 import {
   NamingError,
   normalizeFieldOrder,
@@ -41,13 +40,16 @@ function errorResponse(error: unknown): Response {
 }
 
 /**
- * `sqlite` is cheap and safe to share across requests (a single open
- * connection, module-cached exactly like `routes/storage.ts`'s adapter).
- * `D1` cannot be: its live binding only exists per-request
- * (`context.locals.runtime.env`), so that branch is constructed fresh on
- * every call instead - see `ResolvedD1ContentOption`'s docs.
+ * `sqlite` and `file` are both cheap and safe to share across requests (a
+ * single open connection / a `StorageAdapter` that resolves its own
+ * credentials from static config, module-cached exactly like
+ * `routes/storage.ts`'s adapter - no local/github/gitlab backend needs a
+ * per-request Cloudflare binding). `D1` cannot be: its live binding only
+ * exists per-request (`context.locals.runtime.env`), so that branch is
+ * constructed fresh on every call instead - see `ResolvedD1ContentOption`'s
+ * docs.
  */
-const moduleAdapter: ContentEngineAdapter | undefined = content.engine === "sqlite" ? createContentEngineAdapter(content) : undefined;
+const moduleAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
 
 function getAdapter(context: APIContext): ContentEngineAdapter {
   if (moduleAdapter) return moduleAdapter;
@@ -87,7 +89,11 @@ async function handleSave(
   // child table (e.g. "posts_categories") might collide with some OTHER
   // type's table name, since that's a property of the resolved tree, not
   // the definition itself. Components never produce tables of their own.
-  if (definition.kind !== "component") {
+  // SQL/D1 only - the `file` engine never generates a separate physical
+  // table for a repeatable component/relation-many field (it nests directly
+  // in the owning record's own JSON), so this whole collision class doesn't
+  // exist there.
+  if (definition.kind !== "component" && content.engine !== "file") {
     const newTableNames = collectTableNames(resolveTableTree(definition, allTypes));
     const others = allTypes.filter((t) => t.id !== definition.id && t.kind !== "component");
     for (const other of others) {
@@ -101,7 +107,7 @@ async function handleSave(
     }
   }
 
-  const plan: SavePlan = await adapter.planSave(definition);
+  const plan: AnySavePlan = await adapter.planSave(definition);
   if (plan.destructiveSummary.length > 0 && !confirm) {
     return jsonResponse({ requiresConfirm: true, destructiveSummary: plan.destructiveSummary });
   }

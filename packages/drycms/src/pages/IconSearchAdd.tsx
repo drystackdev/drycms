@@ -2,22 +2,30 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
+import { ArrowLeftIcon, ArrowRightIcon } from "../components/icons.js";
+import IconGlyph from "../components/IconGlyph.js";
 import Select, { type SelectOption } from "../components/Select.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
-import { createIconifyApi, type IconifyCollection } from "../icons/iconify-http-api.js";
+import {
+  createIconifyApi,
+  type IconifyCollection,
+} from "../icons/iconify-http-api.js";
 import { createIconsApi } from "../icons/icons-http-api.js";
 import { useDocumentTitle } from "./page-common.js";
 
 const DEFAULT_PREFIX = "solar";
 const SEARCH_LIMIT = 64;
 const SEARCH_DEBOUNCE_MS = 300;
+/** Matches `IconManagement`'s own grid page size, for a consistent pager
+ * feel between "browse a saved icon" and "browse a category to import from". */
+const BROWSE_PAGE_SIZE = 48;
 
 /** A percent-encoded (not base64) SVG data URI - simpler and more robust
- * than `btoa`, which throws on anything outside Latin1. Same "always render
- * as an <img>, never dangerouslySetInnerHTML" rule as the rest of this
- * feature applies here too, even though these are only-just-fetched
- * previews of icons that haven't been saved yet. */
+ * than `btoa`, which throws on anything outside Latin1. Fed to `IconGlyph`
+ * (a CSS mask, not `dangerouslySetInnerHTML`) same as everywhere else this
+ * feature displays an icon, even though these are only-just-fetched previews
+ * that haven't been saved yet. */
 function svgToDataUri(svg: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
@@ -44,15 +52,29 @@ export default function IconSearchAdd() {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Browsing: the full (flattened/de-duped) name list for `category`, shown
+  // page by page when there's no query yet instead of an empty grid -
+  // "Search all icon sets" has no single-category listing to browse, so
+  // that combination still waits for a real query, same as before.
+  const [browseNames, setBrowseNames] = useState<string[]>([]);
+  const [browsePage, setBrowsePage] = useState(0);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  const isBrowsing = !query.trim() && !searchAll;
+
   useEffect(() => {
-    iconifyApi.collections().then(setCollections).catch(() => {
-      // Non-fatal: the Select just falls back to the default "solar" option below.
-    });
+    iconifyApi
+      .collections()
+      .then(setCollections)
+      .catch(() => {
+        // Non-fatal: the Select just falls back to the default "solar" option below.
+      });
   }, [iconifyApi]);
 
   const collectionOptions: SelectOption[] = useMemo(() => {
     const known = collections.some((c) => c.prefix === DEFAULT_PREFIX);
-    const base = known ? collections : [{ prefix: DEFAULT_PREFIX, name: "Solar" }, ...collections];
+    const base = known
+      ? collections
+      : [{ prefix: DEFAULT_PREFIX, name: "Solar" }, ...collections];
     return base
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -70,22 +92,74 @@ export default function IconSearchAdd() {
     setSearching(true);
     const handle = setTimeout(() => {
       iconifyApi
-        .search({ query, prefixes: searchAll ? undefined : [category], limit: SEARCH_LIMIT })
+        .search({
+          query,
+          prefixes: searchAll ? undefined : [category],
+          limit: SEARCH_LIMIT,
+        })
         .then((result) => {
           setResultIds(result.icons);
           setError(null);
         })
-        .catch((err) => setError(err instanceof Error ? err.message : "Search failed."))
+        .catch((err) =>
+          setError(err instanceof Error ? err.message : "Search failed."),
+        )
         .finally(() => setSearching(false));
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [iconifyApi, query, category, searchAll]);
 
-  // Fetches previews for whichever result ids aren't already cached -
-  // `previews` is deliberately excluded from the deps below (read only to
+  // Prefetches the current category's full name listing whenever it changes
+  // (regardless of whether the search box is empty right now) - so clearing
+  // the query shows the browse grid immediately instead of a loading flash.
+  useEffect(() => {
+    if (searchAll) return;
+    let cancelled = false;
+    setBrowseLoading(true);
+    setBrowsePage(0);
+    iconifyApi
+      .list(category)
+      .then((result) => {
+        if (cancelled) return;
+        setBrowseNames(result.names);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(
+          err instanceof Error ? err.message : "Failed to load this icon set.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setBrowseLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [iconifyApi, category, searchAll]);
+
+  const browsePageCount = Math.max(
+    1,
+    Math.ceil(browseNames.length / BROWSE_PAGE_SIZE),
+  );
+  const browsePageIds = useMemo(
+    () =>
+      browseNames
+        .slice(
+          browsePage * BROWSE_PAGE_SIZE,
+          browsePage * BROWSE_PAGE_SIZE + BROWSE_PAGE_SIZE,
+        )
+        .map((name) => `${category}:${name}`),
+    [browseNames, browsePage, category],
+  );
+  const displayIds = isBrowsing ? browsePageIds : resultIds;
+
+  // Fetches previews for whichever *currently displayed* ids aren't already
+  // cached (search results or the current browse page, whichever is showing)
+  // - `previews` is deliberately excluded from the deps below (read only to
   // compute `missing`, not to retrigger this effect on every fetch).
   useEffect(() => {
-    const missing = resultIds.filter((id) => !(id in previews));
+    const missing = displayIds.filter((id) => !(id in previews));
     if (missing.length === 0) return;
     let cancelled = false;
     iconifyApi
@@ -101,7 +175,7 @@ export default function IconSearchAdd() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `previews` intentionally excluded, see comment above.
-  }, [resultIds, iconifyApi]);
+  }, [displayIds, iconifyApi]);
 
   const toggleSelect = (id: string) => {
     setSelected((current) => {
@@ -124,7 +198,9 @@ export default function IconSearchAdd() {
     }
 
     Promise.all(
-      [...namesByPrefix.entries()].map(([prefix, names]) => iconsApi.importFromIconify({ prefix, names })),
+      [...namesByPrefix.entries()].map(([prefix, names]) =>
+        iconsApi.importFromIconify({ prefix, names }),
+      ),
     )
       .then((results) => {
         const created = results.reduce((sum, r) => sum + r.created.length, 0);
@@ -150,13 +226,11 @@ export default function IconSearchAdd() {
         </div>
       </div>
 
-      <div class="row" style={{ gap: "1rem", alignItems: "flex-end" }}>
-        <TextField
-          label="Search"
+      <div class="row icon-tool-search">
+        <input
           value={query}
-          onChange={setQuery}
+          onInput={(e) => setQuery(e.currentTarget.value)}
           placeholder="e.g. home, arrow, user"
-          style={{ flex: 1 }}
         />
         <Select
           options={collectionOptions}
@@ -165,29 +239,67 @@ export default function IconSearchAdd() {
           disabled={searchAll}
           placeholder="Icon set"
         />
-        <CheckField value={searchAll} onChange={setSearchAll} label="Search all icon sets" role="switch" />
+        <CheckField
+          outline
+          value={searchAll}
+          onChange={setSearchAll}
+          label="Search all icon sets"
+          role="switch"
+        />
       </div>
 
-      {error && <span class="error">{error}</span>}
-      {searching && <span class="hint">Searching…</span>}
-      {!searching && query.trim() && resultIds.length === 0 && <span class="hint">No results.</span>}
+      <div class="row just">
+        <div>
+          {error && <span class="error">{error}</span>}
+          {searching && <span class="hint">Searching...</span>}
+          {!searching && query.trim() && resultIds.length === 0 && (
+            <span class="hint">No results.</span>
+          )}
+          {isBrowsing && browseLoading && <span class="hint">Loading...</span>}
+          {isBrowsing && !browseLoading && browseNames.length === 0 && (
+            <span class="hint">No icons in this set.</span>
+          )}
+        </div>
+
+        <div class="row">
+          <button
+            type="button"
+            class="outline"
+            onClick={() => route(`${path}/icon-management`)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={selected.size === 0 || importing}
+            onClick={handleAdd}
+          >
+            Add <small class="badge secondary">{selected.size}</small>
+          </button>
+        </div>
+      </div>
 
       <div class="icon-grid">
-        {resultIds.map((id) => (
+        {displayIds.map((id) => (
           <button
             type="button"
             key={id}
-            class={'ghost ' + (selected.has(id) ? "icon-cell selected" : "icon-cell")}
+            class={
+              "ghost " + (selected.has(id) ? "icon-cell selected" : "icon-cell")
+            }
             onClick={() => toggleSelect(id)}
             style={{
-              height: 'unset'
+              height: "unset",
             }}
           >
             {previews[id] ? (
-              <img src={svgToDataUri(previews[id])} alt="" width={24} height={24} />
+              <IconGlyph src={svgToDataUri(previews[id])} size={24} />
             ) : (
               <div class="center">
-                <progress class="circle"/>
+                <progress
+                  class="circle"
+                  style={{ height: "1.75rem", width: "1.75rem" }}
+                />
               </div>
             )}
             <small class="mono">{splitId(id)[1]}</small>
@@ -195,14 +307,33 @@ export default function IconSearchAdd() {
         ))}
       </div>
 
-      <div class="row justify-end">
-        <button type="button" class="outline" onClick={() => route(`${path}/icon-management`)}>
-          Cancel
-        </button>
-        <button type="button" disabled={selected.size === 0 || importing} onClick={handleAdd}>
-          Add [{selected.size}]
-        </button>
-      </div>
+      {isBrowsing && browsePageCount > 1 && (
+        <div class="row justify-between">
+          <small>
+            Page {browsePage + 1} of {browsePageCount}
+          </small>
+          <div class="row">
+            <button
+              type="button"
+              class="outline sm"
+              disabled={browsePage === 0}
+              onClick={() => setBrowsePage(browsePage - 1)}
+            >
+              <ArrowLeftIcon />
+              Previous
+            </button>
+            <button
+              type="button"
+              class="outline sm"
+              disabled={browsePage >= browsePageCount - 1}
+              onClick={() => setBrowsePage(browsePage + 1)}
+            >
+              Next
+              <ArrowRightIcon />
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

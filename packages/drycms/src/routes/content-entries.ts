@@ -36,14 +36,14 @@ function errorResponse(error: unknown): Response {
   );
 }
 
-/** Same module-cache-for-sqlite/fresh-per-request-for-D1 split as
- * `routes/content-types.ts` - one pair of adapters here since this route
- * needs both the schema adapter (to resolve `typeSlug` -> `ContentTypeDefinition`)
- * and the entry adapter (for the actual row CRUD). */
+/** Same module-cache/fresh-per-request split as `routes/content-types.ts` -
+ * one pair of adapters here since this route needs both the schema adapter
+ * (to resolve `typeSlug` -> `ContentTypeDefinition`) and the entry adapter
+ * (for the actual row CRUD). */
 const moduleSchemaAdapter: ContentEngineAdapter | undefined =
-  content.engine === "sqlite" ? createContentEngineAdapter(content) : undefined;
+  content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
 const moduleEntryAdapter: ContentEntryEngineAdapter | undefined =
-  content.engine === "sqlite" ? createContentEntryEngineAdapter(content) : undefined;
+  content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
 
 function runtimeEnvOf(context: APIContext): Record<string, unknown> | undefined {
   return (context.locals as { runtime?: { env?: Record<string, unknown> } }).runtime?.env;

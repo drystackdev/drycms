@@ -1,6 +1,8 @@
 import type { ResolvedContentOption } from "../../integration/options.js";
 import { createD1ContentEngineAdapter } from "./d1.js";
 import { createD1ContentEntryEngineAdapter } from "./entries-d1.js";
+import { createFileContentEntryEngineAdapter } from "./file/entries-file.js";
+import { createFileContentEngineAdapter } from "./file/file.js";
 import { createSqliteContentEntryEngineAdapter } from "./entries-sqlite.js";
 import type { ContentEntryEngineAdapter } from "./entries-types.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
@@ -23,6 +25,8 @@ export function createContentEngineAdapter(
       return createSqliteContentEngineAdapter(option);
     case "D1":
       return createD1ContentEngineAdapter(option, runtimeEnv);
+    case "file":
+      return createFileContentEngineAdapter(option);
     default:
       throw new ContentEngineError(
         "unsupported",
@@ -42,6 +46,8 @@ export function createContentEntryEngineAdapter(
       return createSqliteContentEntryEngineAdapter(option);
     case "D1":
       return createD1ContentEntryEngineAdapter(option, runtimeEnv);
+    case "file":
+      return createFileContentEntryEngineAdapter(option);
     default:
       throw new ContentEngineError(
         "unsupported",

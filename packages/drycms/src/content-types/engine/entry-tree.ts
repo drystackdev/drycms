@@ -104,6 +104,13 @@ export type EntryRelationMirrorNode =
        * SEEN FROM THIS SIDE, not the source's own. */
       reverseCardinality: RelationCardinality;
       sourceTypeId: string;
+      /** The mirrored `relation` field's own `FieldDefinition.id` on
+       * `sourceTypeId` - the file content engine's reverse-index is keyed by
+       * this (plus `sourceTableName`, which for a root-table relation always
+       * equals `sourceTypeId`'s own `ContentTypeDefinition.name` - see
+       * `tree.ts`'s `resolveTableTree`) instead of a SQL column/table name,
+       * since it has no table to query directly. */
+      sourceFieldId: string;
       sourceTableName: string;
       /** Set iff `reverseCardinality === "oneToMany"` (source was `manyToOne`) -
        * a plain column on `sourceTableName`. */
@@ -180,6 +187,7 @@ function buildRelationMirrorNode(field: FieldDefinition, allTypes: ContentTypeDe
       resolved: true,
       reverseCardinality,
       sourceTypeId: sourceType.id,
+      sourceFieldId: sourceField.id,
       sourceTableName: sourceTree.tableName,
       sourceColumnName: column.name,
     };
@@ -191,6 +199,7 @@ function buildRelationMirrorNode(field: FieldDefinition, allTypes: ContentTypeDe
     resolved: true,
     reverseCardinality,
     sourceTypeId: sourceType.id,
+    sourceFieldId: sourceField.id,
     sourceTableName: sourceTree.tableName,
     sourceChildTableName: childRef.tableName,
   };

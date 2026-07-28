@@ -1,5 +1,14 @@
 import type { SavePlan } from "../migration.js";
 import type { ContentTypeDefinition } from "../types.js";
+import type { FileSavePlan } from "./file/migration-file.js";
+
+/** `sqlite`/`D1` produce a `SavePlan` (DDL `Statement`s); `file` produces a
+ * `FileSavePlan` (a bulk-rewrite description) - see `engine/index.ts`'s
+ * `createContentEngineAdapter`. Callers (`routes/content-types.ts`) only
+ * ever touch the one field common to both, `destructiveSummary`, so the
+ * adapter contract just widens to the union rather than needing a generic
+ * parameter threaded through every engine module. */
+export type AnySavePlan = SavePlan | FileSavePlan;
 
 export type ContentEngineErrorCode =
   | "not_found"
@@ -30,10 +39,10 @@ export interface ContentEngineAdapter {
   getContentType(id: string): Promise<ContentTypeDefinition | null>;
   /** Dry-run: computes the plan (including the destructive-change summary
    * for a confirm dialog) without writing anything. */
-  planSave(next: ContentTypeDefinition): Promise<SavePlan>;
+  planSave(next: ContentTypeDefinition): Promise<AnySavePlan>;
   /** Executes a previously-computed plan. Throws `ContentEngineError`
    * (`"version_conflict"`) if the row changed since the plan was computed. */
-  applySave(next: ContentTypeDefinition, plan: SavePlan): Promise<ContentTypeDefinition>;
+  applySave(next: ContentTypeDefinition, plan: AnySavePlan): Promise<ContentTypeDefinition>;
   /** Drops every child table, then the root table, then the metadata row. */
   deleteContentType(id: string): Promise<void>;
 }

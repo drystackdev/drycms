@@ -46,6 +46,33 @@ async function proxyCollections(): Promise<Response> {
   return jsonResponse(trimmed);
 }
 
+interface IconifyCollectionListing {
+  categories?: Record<string, string[]>;
+  uncategorized?: string[];
+}
+
+/** Full icon-name listing for one set, used to browse-by-category when the
+ * search box is empty (rather than showing nothing until the admin types
+ * something) - Iconify's `/collection` groups names by category, with some
+ * names repeated across categories, so this flattens + de-dupes + sorts
+ * into one flat list. Deliberately excludes `hidden` (deprecated icons
+ * Iconify's own tools don't surface either) and `aliases` (alternate names
+ * for icons already included under their canonical name - listing both
+ * would just show visual duplicates). */
+async function proxyList(url: URL): Promise<Response> {
+  const prefix = (url.searchParams.get("prefix") ?? "").trim();
+  if (!prefix) throw new Error("`prefix` is required.");
+
+  const res = await fetch(`${ICONIFY_API_BASE}/collection?prefix=${encodeURIComponent(prefix)}`);
+  if (!res.ok) throw new Error(`Iconify collection listing for "${prefix}" failed with HTTP ${res.status}.`);
+  const data = (await res.json()) as IconifyCollectionListing;
+
+  const names = [
+    ...new Set([...(data.uncategorized ?? []), ...Object.values(data.categories ?? {}).flat()]),
+  ].sort();
+  return jsonResponse({ prefix, names, total: names.length });
+}
+
 /** Renders not-yet-saved search-result tiles: `ids` is a comma-separated
  * list of `"prefix:name"` pairs, grouped by prefix so each distinct icon set
  * costs one Iconify request regardless of how many of its icons are
@@ -92,6 +119,7 @@ export const GET: APIRoute = async (context) => {
     const endpoint = context.params.slug;
     if (endpoint === "search") return await proxySearch(context.url);
     if (endpoint === "collections") return await proxyCollections();
+    if (endpoint === "list") return await proxyList(context.url);
     if (endpoint === "icons") return await proxyIconsPreview(context.url);
     return jsonResponse({ error: "not_found", message: `Unknown Iconify endpoint "${String(endpoint)}".` }, 404);
   } catch (error) {

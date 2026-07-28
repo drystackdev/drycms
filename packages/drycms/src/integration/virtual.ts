@@ -167,7 +167,7 @@ export const VIRTUAL_ICONS_CONFIG_TYPES = `declare module '${VIRTUAL_ICONS_CONFI
 }
 `;
 
-const CONTENT_CONFIG_TYPE = "{ engine: 'sqlite'; file: string } | { engine: 'D1'; binding: string }";
+const CONTENT_CONFIG_TYPE = `{ engine: 'sqlite'; file: string } | { engine: 'D1'; binding: string } | ({ engine: 'file' } & ${STORAGE_CONFIG_TYPE})`;
 
 export const VIRTUAL_CONTENT_CONFIG_TYPES = `declare module '${VIRTUAL_CONTENT_CONFIG_ID}' {
 	export const content: ${CONTENT_CONFIG_TYPE};

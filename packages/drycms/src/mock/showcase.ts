@@ -35,6 +35,7 @@ export const groups: ShowcaseGroup[] = [
       { id: "secret-field", label: "Secret field" },
       { id: "number-field", label: "Number field" },
       { id: "check-field", label: "Check field" },
+      { id: "select-field", label: "Select field" },
       { id: "date-picker-field", label: "Date picker field" },
       { id: "image-field", label: "Image field" },
       { id: "relation-field", label: "Relation field" },
@@ -594,6 +595,25 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={setAutoPublish}
   description="Automatically publish new posts without review."
   ui="switch"
+/>`,
+  selectField: `import SelectField from 'drycms/components/SelectField';
+
+<SelectField
+  label="Collection"
+  config={{ options: ['Blog', 'Docs', 'Changelog'], multiple: false }}
+  value={collection}
+  onChange={setCollection}
+  description="Where this entry is filed."
+  helperText="Fixed options, set once on the field itself."
+/>
+
+<SelectField
+  label="Tags"
+  config={{ options: ['Design', 'Engineering', 'Marketing', 'Product'], multiple: true }}
+  value={tags}
+  onChange={setTags}
+  error
+  helperText="Pick at least one tag."
 />`,
   datePickerField: `import DatePickerField from 'drycms/components/DatePickerField';
 

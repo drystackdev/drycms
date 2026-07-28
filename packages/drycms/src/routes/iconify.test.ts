@@ -66,6 +66,37 @@ describe("GET /dry/api/iconify/collections", () => {
   });
 });
 
+describe("GET /dry/api/iconify/list", () => {
+  it("flattens categories, de-dupes names repeated across categories, and sorts", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        prefix: "solar",
+        categories: {
+          Arrows: ["zebra", "apple"],
+          Weather: ["apple", "mango"], // "apple" repeated across categories
+        },
+        hidden: ["deprecated-one"],
+      }),
+    );
+    const response = await GET(context("list", { prefix: "solar" }));
+    expect(await response.json()).toEqual({
+      prefix: "solar",
+      names: ["apple", "mango", "zebra"],
+      total: 3,
+    });
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("api.iconify.design/collection?prefix=solar");
+  });
+
+  it("includes uncategorized names alongside categorized ones", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ prefix: "mdi", categories: { A: ["a-icon"] }, uncategorized: ["loose-icon"] }),
+    );
+    const response = await GET(context("list", { prefix: "mdi" }));
+    expect(await response.json()).toEqual({ prefix: "mdi", names: ["a-icon", "loose-icon"], total: 2 });
+  });
+});
+
 describe("GET /dry/api/iconify/icons (preview)", () => {
   it("groups requested ids by prefix and sanitizes each result", async () => {
     fetchMock.mockImplementation(async (url: string) => {
