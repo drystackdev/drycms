@@ -1,5 +1,10 @@
 import type { Plugin } from "vite";
-import type { ResolvedContentOption, ResolvedDryOption, ResolvedStorageOption } from "./options.js";
+import type {
+  ResolvedContentOption,
+  ResolvedDryOption,
+  ResolvedIconsOption,
+  ResolvedStorageOption,
+} from "./options.js";
 
 export const VIRTUAL_CONFIG_ID = "virtual:drycms/config";
 const RESOLVED_CONFIG_ID = `\0${VIRTUAL_CONFIG_ID}`;
@@ -19,7 +24,8 @@ export function dryVirtualConfig(options: ResolvedDryOption): Plugin {
       if (id !== RESOLVED_CONFIG_ID) return null;
       return [
         `export const path = ${JSON.stringify(options.path)};`,
-        "export default { path };",
+        `export const experimentalClientSearch = ${JSON.stringify(options.experimentalClientSearch)};`,
+        "export default { path, experimentalClientSearch };",
       ].join("\n");
     },
   };
@@ -46,6 +52,33 @@ export function dryVirtualStorageConfig(storage: ResolvedStorageOption): Plugin 
       return [
         `export const storage = ${JSON.stringify(storage)};`,
         "export default { storage };",
+      ].join("\n");
+    },
+  };
+}
+
+export const VIRTUAL_ICONS_CONFIG_ID = "virtual:drycms/icons-config";
+const RESOLVED_ICONS_CONFIG_ID = `\0${VIRTUAL_ICONS_CONFIG_ID}`;
+
+/**
+ * Exposes the resolved `icons` option to `routes/icons.ts` only. Kept as its
+ * own virtual module rather than folded into `virtual:drycms/storage-config` -
+ * Icon Management's storage root is deliberately independent of Media's, and
+ * this keeps `routes/icons.ts` from having to import Media's config just to
+ * get its own absolute path.
+ */
+export function dryVirtualIconsConfig(icons: ResolvedIconsOption): Plugin {
+  return {
+    name: "drycms:virtual-icons-config",
+    resolveId(id) {
+      if (id === VIRTUAL_ICONS_CONFIG_ID) return RESOLVED_ICONS_CONFIG_ID;
+      return null;
+    },
+    load(id) {
+      if (id !== RESOLVED_ICONS_CONFIG_ID) return null;
+      return [
+        `export const icons = ${JSON.stringify(icons)};`,
+        "export default { icons };",
       ].join("\n");
     },
   };
@@ -111,7 +144,8 @@ export function dryFixOptimizeDeps(aliases: Record<string, string>): Plugin {
 
 export const VIRTUAL_CONFIG_TYPES = `declare module '${VIRTUAL_CONFIG_ID}' {
 	export const path: string;
-	const config: { path: string };
+	export const experimentalClientSearch: boolean;
+	const config: { path: string; experimentalClientSearch: boolean };
 	export default config;
 }
 `;
@@ -122,6 +156,13 @@ const STORAGE_CONFIG_TYPE =
 export const VIRTUAL_STORAGE_CONFIG_TYPES = `declare module '${VIRTUAL_STORAGE_CONFIG_ID}' {
 	export const storage: ${STORAGE_CONFIG_TYPE};
 	const config: { storage: ${STORAGE_CONFIG_TYPE} };
+	export default config;
+}
+`;
+
+export const VIRTUAL_ICONS_CONFIG_TYPES = `declare module '${VIRTUAL_ICONS_CONFIG_ID}' {
+	export const icons: ${STORAGE_CONFIG_TYPE};
+	const config: { icons: ${STORAGE_CONFIG_TYPE} };
 	export default config;
 }
 `;

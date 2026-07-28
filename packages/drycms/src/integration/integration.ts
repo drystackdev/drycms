@@ -5,6 +5,8 @@ import {
   APP_ENTRYPOINT,
   CONTENT_ENTRIES_ROUTE_ENTRYPOINT,
   CONTENT_ROUTE_ENTRYPOINT,
+  ICONIFY_ROUTE_ENTRYPOINT,
+  ICONS_ROUTE_ENTRYPOINT,
   STORAGE_ROUTE_ENTRYPOINT,
   type DryOption,
   resolveOptions,
@@ -12,10 +14,12 @@ import {
 import {
   VIRTUAL_CONFIG_TYPES,
   VIRTUAL_CONTENT_CONFIG_TYPES,
+  VIRTUAL_ICONS_CONFIG_TYPES,
   VIRTUAL_STORAGE_CONFIG_TYPES,
   dryFixOptimizeDeps,
   dryVirtualConfig,
   dryVirtualContentConfig,
+  dryVirtualIconsConfig,
   dryVirtualStorageConfig,
 } from "./virtual.js";
 
@@ -128,6 +132,7 @@ export function dry(options: DryOption = {}): AstroIntegration {
             plugins: [
               dryVirtualConfig(resolved),
               dryVirtualStorageConfig(resolved.storage),
+              dryVirtualIconsConfig(resolved.icons),
               dryVirtualContentConfig(resolved.content),
               // Only needed for drycms's OWN `preactAliases()` (`aliases`
               // is `{}` when the consumer supplies `@astrojs/preact`
@@ -159,6 +164,20 @@ export function dry(options: DryOption = {}): AstroIntegration {
           entrypoint: STORAGE_ROUTE_ENTRYPOINT,
         });
 
+        // Server-rendered API endpoint backing Icon Management's own file
+        // storage (separate root from Media's `storage/`) - see `routes/icons.ts`.
+        injectRoute({
+          pattern: `${resolved.path}/api/icons/[...slug]`,
+          entrypoint: ICONS_ROUTE_ENTRYPOINT,
+        });
+
+        // Stateless proxy for the public Iconify API - see `routes/iconify.ts`.
+        // The browser never calls `api.iconify.design` directly.
+        injectRoute({
+          pattern: `${resolved.path}/api/iconify/[...slug]`,
+          entrypoint: ICONIFY_ROUTE_ENTRYPOINT,
+        });
+
         // Server-rendered API endpoint backing the Content-Type Builder -
         // see `routes/content-types.ts`.
         injectRoute({
@@ -181,6 +200,11 @@ export function dry(options: DryOption = {}): AstroIntegration {
             `storage: "local" files live under ${resolved.storage.root} - add "storage/" to .gitignore if this is a fresh project.`,
           );
         }
+        if (resolved.icons.kind === "local") {
+          logger.info(
+            `icons: "local" files live under ${resolved.icons.root} - add "icons/" to .gitignore if this is a fresh project.`,
+          );
+        }
         if (resolved.content.engine === "sqlite") {
           logger.info(
             `content: "sqlite" database lives at ${resolved.content.file} - add it to .gitignore if this is a fresh project.`,
@@ -193,6 +217,10 @@ export function dry(options: DryOption = {}): AstroIntegration {
         injectTypes({
           filename: "storage-types.d.ts",
           content: VIRTUAL_STORAGE_CONFIG_TYPES,
+        });
+        injectTypes({
+          filename: "icons-types.d.ts",
+          content: VIRTUAL_ICONS_CONFIG_TYPES,
         });
         injectTypes({
           filename: "content-types-config-types.d.ts",

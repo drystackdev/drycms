@@ -60,6 +60,13 @@ const NAV: {
     ready: true,
   },
   {
+    key: "icon-management",
+    label: "Icon Management",
+    href: `${path}/icon-management`,
+    icon: "IconManagement",
+    ready: true,
+  },
+  {
     key: "users",
     label: "Users",
     href: `${path}/content/user`,

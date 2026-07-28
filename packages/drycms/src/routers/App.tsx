@@ -16,6 +16,9 @@ const ContentTypes = lazy(() => import('../pages/ContentTypes.js'));
 const ContentTypeEditor = lazy(() => import('../pages/ContentTypeEditor.js'));
 const ContentEntryList = lazy(() => import('../pages/ContentEntryList.js'));
 const ContentEntryEditor = lazy(() => import('../pages/ContentEntryEditor.js'));
+const IconManagement = lazy(() => import('../pages/IconManagement.js'));
+const IconSearchAdd = lazy(() => import('../pages/IconSearchAdd.js'));
+const IconManualForm = lazy(() => import('../pages/IconManualForm.js'));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
  * base path and any unmatched path have to be sent to `/dashboard` here. */
@@ -97,6 +100,10 @@ export default function App() {
 							<Route path={`${path}/dashboard`} component={Dashboard} />
 							<Route path={`${path}/showcase/:tab?`} component={Showcase} />
 							<Route path={`${path}/media`} component={Media} />
+							<Route path={`${path}/icon-management`} component={IconManagement} />
+							<Route path={`${path}/icon-management/add`} component={IconSearchAdd} />
+							<Route path={`${path}/icon-management/manual`} component={IconManualForm} />
+							<Route path={`${path}/icon-management/manual/:name`} component={IconManualForm} />
 							<Route path={`${path}/content-types`} component={ContentTypes} />
 							<Route path={`${path}/content-types/new/:kind`} component={ContentTypeEditor} />
 							<Route path={`${path}/content-types/:id/edit`} component={ContentTypeEditor} />

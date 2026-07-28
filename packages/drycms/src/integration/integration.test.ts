@@ -39,10 +39,10 @@ describe('dry()', () => {
 		expect(dry().name).toBe('drycms');
 	});
 
-	it('injects the app catch-all route, the storage API route, the content-types API route, and the content-entries API route', () => {
+	it('injects the app catch-all route, the storage/icons API routes, the Iconify proxy, the content-types API route, and the content-entries API route', () => {
 		const { injectRoute } = runSetup(dry());
 
-		expect(injectRoute).toHaveBeenCalledTimes(4);
+		expect(injectRoute).toHaveBeenCalledTimes(6);
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/[...slug]',
 			entrypoint: 'drycms/app.astro',
@@ -50,6 +50,14 @@ describe('dry()', () => {
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/api/storage/[...slug]',
 			entrypoint: 'drycms/routes/storage.ts',
+		});
+		expect(injectRoute).toHaveBeenCalledWith({
+			pattern: '/dry/api/icons/[...slug]',
+			entrypoint: 'drycms/routes/icons.ts',
+		});
+		expect(injectRoute).toHaveBeenCalledWith({
+			pattern: '/dry/api/iconify/[...slug]',
+			entrypoint: 'drycms/routes/iconify.ts',
 		});
 		expect(injectRoute).toHaveBeenCalledWith({
 			pattern: '/dry/api/content-types/[...slug]',
@@ -70,6 +78,15 @@ describe('dry()', () => {
 			.flatMap((call) => (call[0] as { vite?: { plugins?: { name: string }[] } }).vite?.plugins ?? [])
 			.map((plugin) => plugin.name);
 		expect(plugins).toContain('drycms:virtual-storage-config');
+	});
+
+	it('registers an icons virtual-config plugin', () => {
+		const { updateConfig } = runSetup(dry());
+
+		const plugins = updateConfig.mock.calls
+			.flatMap((call) => (call[0] as { vite?: { plugins?: { name: string }[] } }).vite?.plugins ?? [])
+			.map((plugin) => plugin.name);
+		expect(plugins).toContain('drycms:virtual-icons-config');
 	});
 
 	it('switches the project to server output', () => {

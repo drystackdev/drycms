@@ -1,10 +1,5 @@
-import { useMemo } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { useOverlayScrollbars } from './overlayscrollbars.js';
-import Prism from 'prismjs';
-// jsx extends the markup grammar, so plain HTML snippets still highlight, and
-// the Preact samples get their braces/attributes tokenised too.
-import 'prismjs/components/prism-jsx';
+import CodeBlock from './CodeBlock.js';
 
 /**
  * One showcase entry: a live preview plus the markup that produced it. The
@@ -21,14 +16,7 @@ interface Props {
 	children?: ComponentChildren;
 }
 
-export default function Demo({ id, title, description, code, lang = 'jsx', children }: Props) {
-	const grammar = Prism.languages[lang] ? lang : 'jsx';
-	const highlighted = useMemo(
-		() => Prism.highlight(code.trim(), Prism.languages[grammar]!, grammar),
-		[code, grammar],
-	);
-	const { ref: pre } = useOverlayScrollbars<HTMLPreElement>();
-
+export default function Demo({ id, title, description, code, lang, children }: Props) {
 	return (
 		<section id={id} class="demo">
 			<header>
@@ -40,9 +28,7 @@ export default function Demo({ id, title, description, code, lang = 'jsx', child
 
 			<div class="demo-code">
 				<span>Code</span>
-				<pre class={`language-${grammar}`} ref={pre}>
-					<code dangerouslySetInnerHTML={{ __html: highlighted }} />
-				</pre>
+				<CodeBlock code={code} lang={lang} />
 			</div>
 		</section>
 	);

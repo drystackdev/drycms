@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { JSX } from "preact/jsx-runtime";
-import { path } from "virtual:drycms/config";
+import { experimentalClientSearch, path } from "virtual:drycms/config";
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../components/file-manager-http-source.js";
@@ -30,6 +30,15 @@ interface Row extends Record<string, unknown> {
 }
 
 const DEFAULT_PAGE_SIZE = 10;
+
+/**
+ * TEMPORARY, see `DryOption.experimentalClientSearch`: how many rows a
+ * single "fetch everything" request pulls down when that flag is on. Not a
+ * real page size - just large enough that a typical collection's entries
+ * all come back in one request so `DataTable` can search/sort/paginate
+ * them in memory.
+ */
+const CLIENT_SEARCH_FETCH_ALL_SIZE = 10_000;
 
 function isMaskedValue(value: unknown): value is MaskedValue {
   return typeof value === "object" && value !== null && "hasExisting" in (value as Record<string, unknown>);
@@ -375,14 +384,22 @@ function ContentEntryListCollection({
     let cancelled = false;
     setLoading(true);
     entriesApi
-      .list({
-        page,
-        pageSize: DEFAULT_PAGE_SIZE,
-        sortField: sort?.key,
-        sortDir: sort?.direction,
-        search: search || undefined,
-        searchableFields,
-      })
+      .list(
+        // TEMPORARY branch, see `DryOption.experimentalClientSearch` - fetch
+        // once, unfiltered/unsorted/unpaginated, and let `DataTable`'s own
+        // client-side mode (triggered below by omitting `serverQuery`) do
+        // the rest in memory.
+        experimentalClientSearch
+          ? { page: 0, pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE }
+          : {
+              page,
+              pageSize: DEFAULT_PAGE_SIZE,
+              sortField: sort?.key,
+              sortDir: sort?.direction,
+              search: search || undefined,
+              searchableFields,
+            },
+      )
       .then((result) => {
         if (cancelled) return;
         setRows(result.rows.map((r) => ({ id: r.id, ...flattenRowValue(r.value) })));
@@ -448,6 +465,9 @@ function ContentEntryListCollection({
       </div>
 
       {loadError && <span class="error">{loadError}</span>}
+      {/* TEMPORARY, see `DryOption.experimentalClientSearch` - `serverQuery`
+          below carries its own `loading` readout, which this mode doesn't use. */}
+      {experimentalClientSearch && loading && <span class="hint">Loading…</span>}
 
       <DataTable
         columns={columns}
@@ -463,15 +483,22 @@ function ContentEntryListCollection({
             setVisibleKeys(visible);
           },
         }}
-        serverQuery={{
-          total,
-          page,
-          onPageChange: setPage,
-          sort,
-          onSortChange: setSort,
-          onSearchChange: setSearch,
-          loading,
-        }}
+        // TEMPORARY branch, see `DryOption.experimentalClientSearch` -
+        // omitting `serverQuery` drops `DataTable` into its existing
+        // fully-client-side search/sort/paginate mode.
+        serverQuery={
+          experimentalClientSearch
+            ? undefined
+            : {
+                total,
+                page,
+                onPageChange: setPage,
+                sort,
+                onSortChange: setSort,
+                onSearchChange: setSearch,
+                loading,
+              }
+        }
         actions={
           <button type="button" onClick={() => route(`${path}/content/${type.name}/new`)}>
             <PlusIcon /> Add

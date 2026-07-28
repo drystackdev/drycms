@@ -2803,6 +2803,14 @@
         background-color: var(--dry-accent);
       }
 
+      /* Toggled-selected state for the Icon Management "Add icon" search
+       * grid - distinct from `:hover` so a selection stays visible once the
+       * pointer moves off. */
+      &.selected {
+        background-color: color-mix(in srgb, var(--dry-primary) 14%, transparent);
+        box-shadow: inset 0 0 0 1px var(--dry-primary);
+      }
+
       & small {
         font-size: 0.6875rem;
       }

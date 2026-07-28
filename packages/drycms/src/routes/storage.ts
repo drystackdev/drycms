@@ -1,120 +1,31 @@
 export const prerender = false;
 
 import { Readable } from "node:stream";
-import type { APIContext, APIRoute } from "astro";
+import type { APIRoute } from "astro";
 import { storage } from "virtual:drycms/storage-config";
 import type { FileEntry } from "../components/file-manager-types.js";
 import { extensionToCategory } from "../components/file-manager-utils.js";
+import {
+  apiBaseFrom,
+  errorResponse,
+  jsonResponse,
+  mimeType,
+  readLeafName,
+  readSlug,
+  toUrlPath,
+} from "./route-helpers.js";
 import { toFileEntry } from "../storage/entry.js";
 import { createStorageAdapter } from "../storage/index.js";
-import {
-  joinStoragePath,
-  normalizeStoragePath,
-  storagePathParent,
-} from "../storage/path.js";
+import { joinStoragePath, normalizeStoragePath, storagePathParent } from "../storage/path.js";
 import { StorageError } from "../storage/types.js";
 
 const adapter = createStorageAdapter(storage);
-
-const STATUS_BY_CODE: Record<string, number> = {
-  invalid_path: 400,
-  not_found: 404,
-  already_exists: 409,
-  unsupported: 501,
-};
-
-const MIME_TYPES: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  svg: "image/svg+xml",
-  webp: "image/webp",
-  mp4: "video/mp4",
-  mov: "video/quicktime",
-  webm: "video/webm",
-  avi: "video/x-msvideo",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  pdf: "application/pdf",
-  txt: "text/plain",
-  md: "text/markdown",
-  csv: "text/csv",
-  json: "application/json",
-  zip: "application/zip",
-};
-
-function mimeType(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot <= 0) return "application/octet-stream";
-  return MIME_TYPES[name.slice(dot + 1).toLowerCase()] ?? "application/octet-stream";
-}
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function errorResponse(error: unknown): Response {
-  if (error instanceof StorageError) {
-    return jsonResponse(
-      { error: error.code, message: error.message },
-      STATUS_BY_CODE[error.code] ?? 500,
-    );
-  }
-  return jsonResponse(
-    { error: "internal", message: error instanceof Error ? error.message : "Internal error." },
-    500,
-  );
-}
-
-/** `context.params.slug` is the raw, still percent-encoded path segment
- * (Astro doesn't decode rest params) - has to be decoded here, at the URL
- * boundary, rather than inside `normalizeStoragePath` itself, since that
- * function is also used to validate body fields (`to`, `name`) that are
- * plain JSON strings and were never encoded to begin with. */
-function readSlug(context: APIContext): string {
-  const raw = context.params.slug as string | undefined;
-  if (raw === undefined) return normalizeStoragePath(undefined);
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    throw new StorageError("invalid_path", "Path contains invalid percent-encoding.");
-  }
-  return normalizeStoragePath(decoded);
-}
-
-/** The literal `/api/storage` segment always immediately precedes the slug,
- * regardless of the (configurable) admin base path - safe to derive from any
- * request to this route. Used to build `previewUrl`s pointing at this same route. */
-function apiBaseFrom(url: URL): string {
-  return url.pathname.replace(/\/api\/storage\/.+$/, "/api/storage");
-}
-
-function toUrlPath(relativePath: string): string {
-  return relativePath.split("/").map(encodeURIComponent).join("/");
-}
 
 function withPreview(entry: FileEntry, apiBase: string): FileEntry {
   if (entry.kind === "file" && entry.ext && extensionToCategory(entry.ext) === "image") {
     return { ...entry, previewUrl: `${apiBase}/${toUrlPath(entry.id)}` };
   }
   return entry;
-}
-
-/** A name for a single new file/folder within an existing parent - not a
- * general slug, so multi-segment names are rejected up front (nested-path
- * creation isn't a supported product surface yet). */
-function readLeafName(raw: unknown): string {
-  const name = typeof raw === "string" ? raw.trim() : "";
-  if (!name || name.includes("/")) {
-    throw new StorageError("invalid_path", `Invalid name "${String(raw)}".`);
-  }
-  return name;
 }
 
 /** `?tree` prefetches the whole storage tree in one response (see
@@ -137,7 +48,7 @@ export const GET: APIRoute = async (context) => {
       if (path !== "") {
         throw new StorageError("invalid_path", "`?tree` is only valid at the storage root.");
       }
-      return await handleTree(apiBaseFrom(context.url));
+      return await handleTree(apiBaseFrom(context.url, "storage"));
     }
 
     const stat = await adapter.stat(path);
@@ -145,7 +56,7 @@ export const GET: APIRoute = async (context) => {
 
     if (stat.kind === "folder") {
       const children = await adapter.list(path);
-      const apiBase = apiBaseFrom(context.url);
+      const apiBase = apiBaseFrom(context.url, "storage");
       const entries = children.map((child) => withPreview(toFileEntry(child), apiBase));
       return jsonResponse({ path, entries });
     }
@@ -218,7 +129,7 @@ export const POST: APIRoute = async (context) => {
     const path = readSlug(context);
     const contentType = context.request.headers.get("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
-      return await handleUpload(context.request, path, apiBaseFrom(context.url));
+      return await handleUpload(context.request, path, apiBaseFrom(context.url, "storage"));
     }
     if (contentType.includes("application/json")) {
       return await handleCreateFolder(context.request, path);
@@ -254,7 +165,7 @@ export const PUT: APIRoute = async (context) => {
       ? Readable.fromWeb(body as unknown as Parameters<typeof Readable.fromWeb>[0])
       : new Uint8Array();
     const stat = await adapter.write(path, data);
-    return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBaseFrom(context.url)) }, 200);
+    return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBaseFrom(context.url, "storage")) }, 200);
   } catch (error) {
     return errorResponse(error);
   }
@@ -272,7 +183,7 @@ export const PATCH: APIRoute = async (context) => {
     const to = normalizeStoragePath(typeof body.to === "string" ? body.to : undefined);
     if (!to) throw new StorageError("invalid_path", "A destination path is required.");
 
-    const apiBase = apiBaseFrom(context.url);
+    const apiBase = apiBaseFrom(context.url, "storage");
     // Same-path is a legitimate no-op for `move` (dropping a file back where
     // it started), but NOT for `copy` - falling through there lets the
     // adapter's normal existing-destination check 409, which is what the

@@ -4,7 +4,8 @@
 // `tsc` build (which compiles the `.tsx` files that import it) can see it.
 declare module "virtual:drycms/config" {
 	export const path: string;
-	const config: { path: string };
+	export const experimentalClientSearch: boolean;
+	const config: { path: string; experimentalClientSearch: boolean };
 	export default config;
 }
 
@@ -15,6 +16,16 @@ declare module "virtual:drycms/storage-config" {
 		| { kind: "gitlab"; host: string; project: string; branch: string; token: string; root: string };
 	export const storage: StorageConfig;
 	const config: { storage: StorageConfig };
+	export default config;
+}
+
+declare module "virtual:drycms/icons-config" {
+	type IconsConfig =
+		| { kind: "local"; root: string }
+		| { kind: "github"; owner: string; repo: string; branch: string; token: string; root: string }
+		| { kind: "gitlab"; host: string; project: string; branch: string; token: string; root: string };
+	export const icons: IconsConfig;
+	const config: { icons: IconsConfig };
 	export default config;
 }
 

@@ -3,14 +3,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveOptions } from './options.js';
 
 describe('resolveOptions', () => {
-	it('defaults to /dry and local storage under ./storage', () => {
+	it('defaults to /dry and local storage under ./storage and ./icons', () => {
 		const expected = {
 			path: '/dry',
 			storage: { kind: 'local', root: resolve(process.cwd(), 'storage') },
+			icons: { kind: 'local', root: resolve(process.cwd(), 'icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), 'content.sqlite') },
+			experimentalClientSearch: false,
 		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);
+	});
+
+	it('honors experimentalClientSearch when set', () => {
+		expect(resolveOptions({ experimentalClientSearch: true }).experimentalClientSearch).toBe(true);
+	});
+
+	it('rejects a non-boolean experimentalClientSearch', () => {
+		expect(() => resolveOptions({ experimentalClientSearch: 'yes' as unknown as boolean })).toThrow(TypeError);
 	});
 
 	it('adds a leading slash', () => {
@@ -90,6 +100,28 @@ describe('resolveOptions', () => {
 
 	it('rejects a non-string storage.root', () => {
 		expect(() => resolveOptions({ storage: { root: 42 as unknown as string } })).toThrow(TypeError);
+	});
+
+	it('resolves a relative icons.root against cwd, independently of storage.root', () => {
+		expect(resolveOptions({ icons: { root: 'my-icons' } }).icons).toEqual({
+			kind: 'local',
+			root: resolve(process.cwd(), 'my-icons'),
+		});
+	});
+
+	it('passes an absolute icons.root through unchanged', () => {
+		const absolute = resolve('/tmp/drycms-icons');
+		expect(resolveOptions({ icons: { root: absolute } }).icons.root).toBe(absolute);
+	});
+
+	it('rejects an unrecognized icons.kind', () => {
+		expect(() => resolveOptions({ icons: { kind: 'made-up' as unknown as 'local' } })).toThrow(
+			/not a recognized storage kind/,
+		);
+	});
+
+	it('rejects a non-string icons.root', () => {
+		expect(() => resolveOptions({ icons: { root: 42 as unknown as string } })).toThrow(TypeError);
 	});
 
 	describe('storage.kind: "github"', () => {
@@ -193,6 +225,48 @@ describe('resolveOptions', () => {
 			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
 			vi.stubEnv('GITLAB_PAT_KEY', undefined);
 			expect(() => resolveOptions({ storage: { kind: 'gitlab' } })).toThrow(/GITLAB_PAT_KEY/);
+		});
+	});
+
+	describe('icons.kind: "github"/"gitlab" (same env vars as storage - a different root within the same repo)', () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it('resolves icons independently of storage, sharing the same GITHUB_* credentials', () => {
+			vi.stubEnv('GITHUB_REPO', 'acme/media');
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+
+			const resolved = resolveOptions({ storage: { kind: 'local' }, icons: { kind: 'github', root: 'icons' } });
+			expect(resolved.icons).toEqual({
+				kind: 'github',
+				owner: 'acme',
+				repo: 'media',
+				branch: 'main',
+				token: 'ghp_test_token',
+				root: 'icons',
+			});
+			expect(resolved.storage).toEqual({ kind: 'local', root: resolve(process.cwd(), 'storage') });
+		});
+
+		it('resolves icons as gitlab-backed independently of storage', () => {
+			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
+			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
+
+			expect(resolveOptions({ icons: { kind: 'gitlab', root: 'icons' } }).icons).toEqual({
+				kind: 'gitlab',
+				host: 'https://gitlab.com',
+				project: 'acme/media',
+				branch: 'main',
+				token: 'glpat_test_token',
+				root: 'icons',
+			});
+		});
+
+		it('rejects a missing GITHUB_REPO for icons.kind: "github"', () => {
+			vi.stubEnv('GITHUB_REPO', undefined);
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+			expect(() => resolveOptions({ icons: { kind: 'github' } })).toThrow(/GITHUB_REPO/);
 		});
 	});
 });

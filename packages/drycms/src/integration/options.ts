@@ -26,6 +26,27 @@ export interface DryStorageOption {
   root?: string;
 }
 
+export interface DryIconsOption {
+  /**
+   * Which backend serves `/dry/api/icons/**`. Same env-var-backed
+   * `github`/`gitlab` credentials as `storage.kind` (`GITHUB_REPO`/
+   * `GITHUB_PAT_KEY`/`GITHUB_BRANCH` or `GITLAB_PROJECT`/`GITLAB_PAT_KEY`/
+   * `GITLAB_BRANCH`/`GITLAB_HOST`) - `icons` and `storage` are two roots
+   * within the same repo/disk, not two separate credentials.
+   *
+   * @default "local"
+   */
+  kind?: "local" | "github" | "gitlab";
+  /**
+   * Same semantics as `DryStorageOption.root`, but for the Icon Management
+   * feature's own storage root - kept separate from `storage.root` so
+   * managed UI icons never mix with user-uploaded media.
+   *
+   * @default "icons"
+   */
+  root?: string;
+}
+
 export interface DryContentOption {
   /**
    * Which backend the Content-Type Builder generates/migrates tables into.
@@ -61,7 +82,21 @@ export interface DryOption {
    */
   path?: string;
   storage?: DryStorageOption;
+  icons?: DryIconsOption;
   content?: DryContentOption;
+  /**
+   * TEMPORARY escape hatch, not meant to stick around: when `true`, the
+   * Content Entry List page fetches a collection's rows once and does
+   * search/sort/pagination entirely client-side instead of round-tripping
+   * every keystroke to `/api/content/:type`. It works by simply not passing
+   * `DataTable`'s `serverQuery` prop (see `ContentEntryList.tsx`), reusing
+   * that component's existing fully-client-side mode rather than adding a
+   * new one - so removing this flag later is deleting that one branch, not
+   * unwinding a parallel implementation.
+   *
+   * @default false
+   */
+  experimentalClientSearch?: boolean;
 }
 
 export interface ResolvedLocalStorageOption {
@@ -100,6 +135,10 @@ export type ResolvedStorageOption =
   | ResolvedGithubStorageOption
   | ResolvedGitlabStorageOption;
 
+/** Same shape as `ResolvedStorageOption` - the Icon Management feature reuses
+ * `createStorageAdapter()` unchanged, it just points at a different root. */
+export type ResolvedIconsOption = ResolvedStorageOption;
+
 export interface ResolvedSqliteContentOption {
   engine: "sqlite";
   file: string;
@@ -117,7 +156,10 @@ export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1Cont
 export interface ResolvedDryOption {
   path: string;
   storage: ResolvedStorageOption;
+  icons: ResolvedIconsOption;
   content: ResolvedContentOption;
+  /** See `DryOption.experimentalClientSearch` - temporary. */
+  experimentalClientSearch: boolean;
 }
 
 /**
@@ -148,8 +190,25 @@ export const CONTENT_ROUTE_ENTRYPOINT = "drycms/routes/content-types.ts";
  */
 export const CONTENT_ENTRIES_ROUTE_ENTRYPOINT = "drycms/routes/content-entries.ts";
 
+/**
+ * The Astro API endpoint backing the Icon Management feature's own file
+ * storage (list/create/rename/delete `.svg` files), serving
+ * `${path}/api/icons/**`. Distinct from `ICONIFY_ROUTE_ENTRYPOINT`, which
+ * proxies the third-party Iconify API rather than touching this storage root.
+ */
+export const ICONS_ROUTE_ENTRYPOINT = "drycms/routes/icons.ts";
+
+/**
+ * Stateless proxy for the public Iconify API (search/collections/icon
+ * lookup), serving `${path}/api/iconify/**`. The browser never calls
+ * `api.iconify.design` directly - same rationale as routing storage through
+ * our own API instead of a client-side GitHub/GitLab client.
+ */
+export const ICONIFY_ROUTE_ENTRYPOINT = "drycms/routes/iconify.ts";
+
 export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = "storage";
+export const DEFAULT_ICONS_ROOT = "icons";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";
 
 let dotEnvCache: Record<string, string> | undefined;
@@ -267,26 +326,37 @@ function resolveGitlabStorageOption(root: string): ResolvedGitlabStorageOption {
   };
 }
 
-function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOption {
-  const kind = storage.kind ?? "local";
+/**
+ * Shared by `resolveStorageOption` and `resolveIconsOption` - both are just a
+ * `{kind?, root?}` bag resolving to a `local`/`github`/`gitlab` root, differing
+ * only in which config key/default root they read. `optionName` is used
+ * purely for error messages (`"storage"` or `"icons"`).
+ */
+function resolveFileBackedOption(
+  option: { kind?: unknown; root?: unknown } | undefined,
+  defaultRoot: string,
+  optionName: string,
+): ResolvedStorageOption {
+  const { kind: rawKind, root: rawRoot } = option ?? {};
+  const kind = rawKind ?? "local";
   if (typeof kind !== "string") {
     throw new TypeError(
-      `[drycms] \`storage.kind\` must be a string, received ${typeof kind}.`,
+      `[drycms] \`${optionName}.kind\` must be a string, received ${typeof kind}.`,
     );
   }
   if (kind !== "local" && kind !== "github" && kind !== "gitlab") {
     const roadmap = PLANNED_STORAGE_KINDS.includes(kind)
-      ? ` \`storage.kind: "${kind}"\` is on the roadmap but not implemented yet.`
+      ? ` \`${optionName}.kind: "${kind}"\` is on the roadmap but not implemented yet.`
       : ` "${kind}" is not a recognized storage kind.`;
     throw new Error(
       `[drycms]${roadmap} Only "local", "github" and "gitlab" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
     );
   }
 
-  const root = storage.root ?? DEFAULT_STORAGE_ROOT;
+  const root = rawRoot ?? defaultRoot;
   if (typeof root !== "string") {
     throw new TypeError(
-      `[drycms] \`storage.root\` must be a string, received ${typeof root}.`,
+      `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
     );
   }
   // `local` normalizes trailing slashes away via `resolvePath` - github/gitlab
@@ -298,6 +368,14 @@ function resolveStorageOption(storage: DryStorageOption = {}): ResolvedStorageOp
   if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot);
 
   return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };
+}
+
+function resolveStorageOption(storage?: DryStorageOption): ResolvedStorageOption {
+  return resolveFileBackedOption(storage, DEFAULT_STORAGE_ROOT, "storage");
+}
+
+function resolveIconsOption(icons?: DryIconsOption): ResolvedIconsOption {
+  return resolveFileBackedOption(icons, DEFAULT_ICONS_ROOT, "icons");
 }
 
 function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
@@ -370,9 +448,18 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     );
   }
 
+  const experimentalClientSearch = options.experimentalClientSearch ?? false;
+  if (typeof experimentalClientSearch !== "boolean") {
+    throw new TypeError(
+      `[drycms] \`experimentalClientSearch\` must be a boolean, received ${typeof experimentalClientSearch}.`,
+    );
+  }
+
   return {
     path,
     storage: resolveStorageOption(options.storage),
+    icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
+    experimentalClientSearch,
   };
 }
