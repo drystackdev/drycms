@@ -88,7 +88,7 @@ export default function FeaturesFieldset({
   return (
     <fieldset>
       <legend>Features</legend>
-      <div class="stack" style={{ marginBottom: "1rem" }}>
+      <div class="stack" style={{ marginBottom: "0.5rem", gap: "1rem" }}>
         {items.map(({ key, label, description }) => (
           <div key={key}>
             <CheckField

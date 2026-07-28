@@ -8,6 +8,7 @@ export interface CheckFieldProps extends FieldProps<boolean> {
   disabled?: boolean;
   name?: string;
   id?: string;
+  outline?: boolean;
 }
 
 export default function CheckField({
@@ -23,13 +24,14 @@ export default function CheckField({
   id,
   class: className,
   style,
+  outline = false
 }: CheckFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `check-field-${reactId}`;
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <div class="toggle">
+      <div class={`toggle${outline?' outline':''}`}>
         <input
           id={fieldId}
           type="checkbox"

@@ -6,6 +6,7 @@ import RelationField, {
 } from "../../components/RelationField.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
+import { validateEntryValue } from "../../content-types/engine/entry-validate.js";
 import {
   buildEntryFieldTree,
   flattenQueryableColumns,
@@ -303,7 +304,8 @@ function ComponentRepeatFieldAdapter({
       itemLabel={node.label}
       summaryOf={(item) => (summaryField ? String(item[summaryField] ?? "") : "")}
       blankItem={() => blankEntryValue(node.itemFields)}
-      renderItem={(item, setItem) =>
+      validateItem={(item) => validateEntryValue(node.itemFields, item)}
+      renderItem={(item, setItem, errors) =>
         node.itemFields.map((child) => (
           <FieldRenderer
             key={child.fieldName}
@@ -312,6 +314,7 @@ function ComponentRepeatFieldAdapter({
             onChange={(childValue) =>
               setItem({ ...item, [child.fieldName]: childValue })
             }
+            error={errors[child.fieldName]}
             allTypes={allTypes}
           />
         ))

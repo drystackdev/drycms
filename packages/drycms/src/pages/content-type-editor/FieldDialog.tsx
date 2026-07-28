@@ -132,12 +132,14 @@ function renderControl({
   onChange,
   dynamicOptions,
   disabled,
+  showErrors,
 }: {
   d: SettingDescriptor;
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   disabled: boolean;
+  showErrors: boolean;
 }) {
   if (d.widget === "boolean") {
     return (
@@ -147,6 +149,7 @@ function renderControl({
         value={!!values[d.key]}
         disabled={disabled}
         onChange={(v) => onChange(d.key, v)}
+        outline
       />
     );
   }
@@ -184,6 +187,7 @@ function renderControl({
         label={d.label}
         value={Array.isArray(values[d.key]) ? (values[d.key] as string[]) : []}
         disabled={disabled}
+        showErrors={showErrors}
         onChange={(v) => onChange(d.key, v)}
       />
     );
@@ -217,12 +221,14 @@ function SettingsForm({
   onChange,
   dynamicOptions,
   disabledKeys = [],
+  showErrors = false,
 }: {
   descriptors: SettingDescriptor[];
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   disabledKeys?: string[];
+  showErrors?: boolean;
 }) {
   if (descriptors.length === 0) return null;
   return (
@@ -242,6 +248,7 @@ function SettingsForm({
                   onChange,
                   dynamicOptions,
                   disabled: disabledKeys.includes(d.key),
+                  showErrors,
                 })}
               </div>
             ))}
@@ -253,6 +260,7 @@ function SettingsForm({
             onChange,
             dynamicOptions,
             disabled: disabledKeys.includes(row[0]!.key),
+            showErrors,
           })
         ),
       )}
@@ -383,9 +391,14 @@ export default function FieldDialog({
   >({});
   const [draftDefault, setDraftDefault] = useState<unknown>(undefined);
   const [draftSide, setDraftSide] = useState<FieldSide>("left");
+  // Gates OptionListEditor's per-row error highlighting - stays quiet while
+  // the user is still filling the list in, same as `ComponentField`'s
+  // `attempted` flag for its own item-list dialog.
+  const [saveAttempted, setSaveAttempted] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setSaveAttempted(false);
     if (editingField) {
       setDraftType(editingField.type);
       setDraftName(editingField.name);
@@ -464,6 +477,26 @@ export default function FieldDialog({
     if (!draftName.trim()) {
       toast.add({ type: "error", title: "Field name is required." });
       return;
+    }
+    if (draftType === "select") {
+      const trimmedOptions = (
+        Array.isArray(draftConfig.options) ? (draftConfig.options as string[]) : []
+      ).map((option) => option.trim());
+      if (trimmedOptions.every((option) => option === "")) {
+        setSaveAttempted(true);
+        toast.add({ type: "error", title: "Add at least one option." });
+        return;
+      }
+      if (trimmedOptions.some((option) => option === "")) {
+        setSaveAttempted(true);
+        toast.add({ type: "error", title: "Option text can't be empty." });
+        return;
+      }
+      if (new Set(trimmedOptions).size !== trimmedOptions.length) {
+        setSaveAttempted(true);
+        toast.add({ type: "error", title: "Options must be unique." });
+        return;
+      }
     }
     onSave(
       {
@@ -560,6 +593,7 @@ export default function FieldDialog({
                       setDraftConfig(type?.defaultConfig ?? {});
                       setDraftValidation(type?.defaultValidation ?? {});
                       setDraftDefault(undefined);
+                      setSaveAttempted(false);
                       // Only when adding - editing an existing field already
                       // seeded `draftSide` from its real id/`fieldSides`
                       // above, and the Type select is disabled then anyway.
@@ -622,6 +656,7 @@ export default function FieldDialog({
                           onChange={handleConfigChange}
                           dynamicOptions={dynamicOptions}
                           disabledKeys={configDisabledKeys}
+                          showErrors={saveAttempted}
                         />
                       </div>
                     </fieldset>

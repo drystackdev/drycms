@@ -1,6 +1,11 @@
 import type { ResolvedD1ContentOption } from "../../integration/options.js";
-import { planDelete, planSave as planSaveEngine, type SavePlan, type Statement } from "../migration.js";
-import { permissionDeleteStatement, permissionSyncStatement, superAdminSeedStatement } from "../permissions.js";
+import { planDelete, planSave as planSaveEngine, type SavePlan } from "../migration.js";
+import {
+  permissionDeleteStatements,
+  permissionSyncStatements,
+  permissionUniqueIndexStatement,
+  superAdminSeedStatement,
+} from "../permissions.js";
 import { pendingSeedStatements } from "../seed.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
@@ -51,6 +56,8 @@ export function createD1ContentEngineAdapter(
         const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
         await runBatch(db, statements);
 
+        await db.prepare(permissionUniqueIndexStatement().sql).run();
+
         // Keep `permission` in sync with every current collection/singleton
         // (including ones seeded on a prior boot, e.g. `user`/`menu` on an
         // app upgrading to a drycms version that just added `role`/
@@ -58,7 +65,7 @@ export function createD1ContentEngineAdapter(
         // Idempotent and cheap - safe to run unconditionally every boot.
         const allTypesResult = await db.prepare('SELECT "definition" FROM "metadata";').all<{ definition: string }>();
         const allTypes = (allTypesResult.results ?? []).map((row) => JSON.parse(row.definition) as ContentTypeDefinition);
-        const syncStatements = allTypes.map(permissionSyncStatement).filter((s): s is Statement => !!s);
+        const syncStatements = allTypes.flatMap(permissionSyncStatements);
         await runBatch(db, [...syncStatements, superAdminSeedStatement()]);
       })();
     }
@@ -137,8 +144,7 @@ export function createD1ContentEngineAdapter(
         );
       }
     }
-    const syncStatement = permissionSyncStatement(next);
-    if (syncStatement) await prepare(db, syncStatement).run();
+    for (const s of permissionSyncStatements(next)) await prepare(db, s).run();
 
     const saved = await getContentType(next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
@@ -164,8 +170,7 @@ export function createD1ContentEngineAdapter(
     const dropStatements = planDelete(existing, allTypes);
     await runBatch(db, dropStatements);
     await db.prepare('DELETE FROM "metadata" WHERE "id" = ?;').bind(id).run();
-    const deleteStatement = permissionDeleteStatement(existing);
-    if (deleteStatement) await prepare(db, deleteStatement).run();
+    for (const s of permissionDeleteStatements(existing)) await prepare(db, s).run();
   }
 
   return { listContentTypes, getContentType, planSave, applySave, deleteContentType };

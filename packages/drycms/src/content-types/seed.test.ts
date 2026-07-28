@@ -88,13 +88,22 @@ describe("defaultContentTypeDefinitions", () => {
     });
   });
 
-  it("permission: unique+required name and idTable", () => {
+  it("permission: required (non-unique) name and idTable, a required action select", () => {
     const permission = byName("permission");
     const name = permission.fields.find((f) => f.name === "name")!;
-    expect(name.validation).toMatchObject({ required: true, unique: true });
+    expect(name.validation).toMatchObject({ required: true });
+    expect(name.validation.unique).toBeFalsy();
     const idTable = permission.fields.find((f) => f.name === "idTable")!;
     expect(idTable.type).toBe("text");
-    expect(idTable.validation).toMatchObject({ required: true, unique: true });
+    expect(idTable.validation).toMatchObject({ required: true });
+    expect(idTable.validation.unique).toBeFalsy();
+    const action = permission.fields.find((f) => f.name === "action")!;
+    expect(action.type).toBe("select");
+    expect(action.config).toMatchObject({
+      options: ["create", "read", "edit", "delete"],
+      multiple: false,
+    });
+    expect(action.validation).toMatchObject({ required: true });
   });
 
   it("resolves role's permissions relation to a 'role_permissions' child table, and user's roles relation to a 'user_roles' child table", () => {

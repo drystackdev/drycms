@@ -69,21 +69,36 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(roles).toEqual([{ name: "Super Admin", isSuperAdmin: 1 }]);
   });
 
-  it("creates a permission row for every built-in collection/singleton at boot", async () => {
+  it("creates 4 permission rows (create/read/edit/delete) for every built-in collection/singleton at boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
     await adapter.listContentTypes(); // triggers boot
 
-    const permissions = await queryAll<{ name: string }>(
+    const permissions = await queryAll<{ name: string; action: string }>(
       dir,
-      'SELECT "name" FROM "permission" ORDER BY "name";',
+      'SELECT "name", "action" FROM "permission" ORDER BY "name", "action";',
     );
-    expect(permissions.map((p) => p.name)).toEqual([
-      "aiKey",
-      "menu",
-      "permission",
-      "role",
-      "user",
+    expect(permissions).toEqual([
+      { name: "aiKey", action: "create" },
+      { name: "aiKey", action: "delete" },
+      { name: "aiKey", action: "edit" },
+      { name: "aiKey", action: "read" },
+      { name: "menu", action: "create" },
+      { name: "menu", action: "delete" },
+      { name: "menu", action: "edit" },
+      { name: "menu", action: "read" },
+      { name: "permission", action: "create" },
+      { name: "permission", action: "delete" },
+      { name: "permission", action: "edit" },
+      { name: "permission", action: "read" },
+      { name: "role", action: "create" },
+      { name: "role", action: "delete" },
+      { name: "role", action: "edit" },
+      { name: "role", action: "read" },
+      { name: "user", action: "create" },
+      { name: "user", action: "delete" },
+      { name: "user", action: "edit" },
+      { name: "user", action: "read" },
     ]);
   });
 
@@ -121,7 +136,7 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(await adapter.getContentType("custom-note")).toBeNull();
   });
 
-  it("creates a matching permission row when a new collection is saved", async () => {
+  it("creates 4 matching permission rows (create/read/edit/delete) when a new collection is saved", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -136,14 +151,19 @@ describe("createSqliteContentEngineAdapter", () => {
     const plan = await adapter.planSave(custom);
     await adapter.applySave(custom, plan);
 
-    const rows = await queryAll<{ name: string; idTable: string }>(
+    const rows = await queryAll<{ name: string; idTable: string; action: string }>(
       dir,
-      `SELECT "name", "idTable" FROM "permission" WHERE "idTable" = 'custom-note';`,
+      `SELECT "name", "idTable", "action" FROM "permission" WHERE "idTable" = 'custom-note' ORDER BY "action";`,
     );
-    expect(rows).toEqual([{ name: "note", idTable: "custom-note" }]);
+    expect(rows).toEqual([
+      { name: "note", idTable: "custom-note", action: "create" },
+      { name: "note", idTable: "custom-note", action: "delete" },
+      { name: "note", idTable: "custom-note", action: "edit" },
+      { name: "note", idTable: "custom-note", action: "read" },
+    ]);
   });
 
-  it("updates the permission row's name when the collection is renamed", async () => {
+  it("updates every action's permission row name when the collection is renamed", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -164,12 +184,17 @@ describe("createSqliteContentEngineAdapter", () => {
 
     const rows = await queryAll<{ name: string }>(
       dir,
-      `SELECT "name" FROM "permission" WHERE "idTable" = 'custom-note';`,
+      `SELECT "name" FROM "permission" WHERE "idTable" = 'custom-note' ORDER BY "action";`,
     );
-    expect(rows).toEqual([{ name: "memo" }]);
+    expect(rows).toEqual([
+      { name: "memo" },
+      { name: "memo" },
+      { name: "memo" },
+      { name: "memo" },
+    ]);
   });
 
-  it("removes the permission row when the collection is deleted", async () => {
+  it("removes every action's permission row when the collection is deleted", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 

@@ -119,6 +119,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         role={config.ui === "switch" ? "switch" : "checkbox"}
         error={!!error}
         helperText={error}
+        outline
       />
     );
   }

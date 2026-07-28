@@ -219,5 +219,18 @@
       text-align: end;
       font-variant-numeric: tabular-nums;
     }
+
+    /* A leading row-selection checkbox column (see e.g. FileManager's
+     * `.file-table-check`) would otherwise get an equal share of the table's
+     * 100% width like any text column - `width: 1%` is the standard
+     * shrink-to-fit trick: it still can't go below the cell's actual min
+     * content width, but it stops the auto layout algorithm from handing
+     * this column any of the table's leftover space. Scoped to `:first-child`
+     * so it only targets a selection checkbox, not an arbitrary boolean/switch
+     * value column elsewhere in the row. */
+    :where(td:first-child):has(> input[type="checkbox"]) {
+      width: 1%;
+      white-space: nowrap;
+    }
   }
 }

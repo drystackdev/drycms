@@ -48,16 +48,15 @@ type CombinedEntry =
   | { id: string; system: false; field: FieldDefinition };
 
 export interface FieldsListProps {
-  /** ID always renders first, pinned, non-draggable, non-reorderable. */
   systemEntries: SystemFieldEntry[];
   fields: FieldDefinition[];
   type: string;
   features?: ContentTypeFeatures;
   /** Persisted display order (see `types.ts`'s `ContentTypeDefinition.fieldOrder`) -
-   * a permutation of `systemEntries`'/`fields`' ids (`id` itself excluded, always
-   * pinned first regardless). Applied via `system-fields.ts`'s `applyFieldOrder`;
-   * missing/stale ids just fall back to natural order, so this never needs
-   * to be kept in lockstep with `systemEntries`/`fields` by the caller. */
+   * a permutation of `systemEntries`'/`fields`' ids. Applied via
+   * `system-fields.ts`'s `applyFieldOrder`; missing/stale ids just fall back
+   * to natural order, so this never needs to be kept in lockstep with
+   * `systemEntries`/`fields` by the caller. */
   fieldOrder?: string[];
   onEdit: (field: FieldDefinition) => void;
   onRemove: (fieldId: string) => void;
@@ -70,9 +69,9 @@ export interface FieldsListProps {
    * `normalizeFieldOrder`), independent of `onReorderAll`'s display order. */
   onReorderFields: (fields: FieldDefinition[]) => void;
   /** Fires with the FULL combined id order (system rows and custom fields
-   * alike, `id` excluded) whenever the unified list is reordered - purely
-   * the on-screen order (`ContentTypeDefinition.fieldOrder`), never the real
-   * column order. */
+   * alike) whenever the unified list is reordered - purely the on-screen
+   * order (`ContentTypeDefinition.fieldOrder`), never the real column
+   * order. */
   onReorderAll: (order: string[]) => void;
   onAdd: () => void;
 }
@@ -81,9 +80,7 @@ export interface FieldsListProps {
  * The unified System + custom Fields list: one flowing, drag-reorderable
  * `<ul>` (system rows look identical to custom ones, just without a
  * click-to-edit or Remove action - EXCEPT `mirror` rows, which get both, see
- * `SystemFieldEntry.mirror`). `ID` is excluded from the reorderable set
- * entirely and always pinned first - it's a real, fixed primary key, not a
- * field with a position.
+ * `SystemFieldEntry.mirror`).
  */
 export default function FieldsList({
   systemEntries,
@@ -103,11 +100,8 @@ export default function FieldsList({
     null,
   );
 
-  const idEntry = systemEntries.find((e) => e.id === "id");
-  const reorderableSystem = systemEntries.filter((e) => e.id !== "id");
-
   const combined: CombinedEntry[] = [
-    ...reorderableSystem.map((entry) => ({
+    ...systemEntries.map((entry) => ({
       id: entry.id,
       system: true as const,
       entry,
@@ -164,16 +158,7 @@ export default function FieldsList({
         </button>
       </div>
       <ul class="content-type-list" {...sortable.containerProps}>
-        {idEntry && (
-          <FieldListItem
-            id={idEntry.id}
-            label={idEntry.label}
-            typeLabel={idEntry.typeLabel}
-            name={idEntry.name}
-            system
-          />
-        )}
-        {orderedEntries.length === 0 && !idEntry && (
+        {orderedEntries.length === 0 && (
           <li class="hint empty" style={{ marginInline: "1rem" }}>
             No fields yet.
           </li>

@@ -19,8 +19,18 @@ export interface ComponentFieldProps<
   /** Renders the item's own fields inside the add/edit dialog - the actual
    * field shape (which may itself nest relations/components) is the
    * caller's concern, same as `ImageField` delegates file-browsing specifics
-   * to `FileManager` while still owning its own dialog chrome. */
-  renderItem: (value: T, onChange: (value: T) => void) => ComponentChildren;
+   * to `FileManager` while still owning its own dialog chrome. `errors` is
+   * only populated once the user has tried (and failed) to Save this item -
+   * see `validateItem`. */
+  renderItem: (value: T, onChange: (value: T) => void, errors: Record<string, string>) => ComponentChildren;
+  /** Runs against the draft on Save; a non-empty result (keyed the same way
+   * `renderItem` expects to read `errors`) blocks the save and is threaded
+   * back into `renderItem` instead, e.g. `FieldRenderer.tsx`'s
+   * `ComponentRepeatFieldAdapter` passes `entry-validate.ts`'s
+   * `validateEntryValue` bound to this field's own item schema - the same
+   * rules the server would otherwise reject the whole entry save for.
+   * Omitted entirely (as in `Showcase.tsx`'s demo) means no gate at all. */
+  validateItem?: (item: T) => Record<string, string>;
   disabled?: boolean;
   description?: string;
   /** Lets the item list be manually drag-reordered (via `useSortableList`,
@@ -45,6 +55,7 @@ export default function ComponentField<T = Record<string, unknown>>({
   summaryOf,
   blankItem,
   renderItem,
+  validateItem,
   disabled = false,
   description,
   sortable = false,
@@ -54,6 +65,11 @@ export default function ComponentField<T = Record<string, unknown>>({
   const [open, setOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState<T | null>(null);
+  // Only shown once a Save attempt on THIS draft has actually failed - stays
+  // live after that (recomputed on every keystroke below) so the error
+  // clears the moment the offending field is fixed, without a second click.
+  const [attempted, setAttempted] = useState(false);
+  const draftErrors = attempted && draft !== null && validateItem ? validateItem(draft) : {};
   const dialogRef = useDialogSync(open, () => setOpen(false));
   // Deps include `open`: the body only mounts once the dialog opens, so the
   // ref is still null on this component's own first render.
@@ -68,12 +84,14 @@ export default function ComponentField<T = Record<string, unknown>>({
   function openAdd() {
     setEditingIndex(null);
     setDraft(blankItem());
+    setAttempted(false);
     setOpen(true);
   }
 
   function openEdit(index: number) {
     setEditingIndex(index);
     setDraft(value[index] ?? blankItem());
+    setAttempted(false);
     setOpen(true);
   }
 
@@ -84,6 +102,10 @@ export default function ComponentField<T = Record<string, unknown>>({
 
   function save() {
     if (draft === null) return;
+    if (validateItem && Object.keys(validateItem(draft)).length > 0) {
+      setAttempted(true);
+      return;
+    }
     if (editingIndex === null) {
       onChange([...value, draft]);
       setItemIds((ids) => [...ids, randomUUID()]);
@@ -179,9 +201,14 @@ export default function ComponentField<T = Record<string, unknown>>({
               </h3>
             </header>
             <div class="component-item-dialog-body" ref={bodyScroll}>
-              <div class="stack">{renderItem(draft, setDraft)}</div>
+              <div class="stack">{renderItem(draft, setDraft, draftErrors)}</div>
             </div>
             <footer class="row justify-end">
+              {attempted && Object.keys(draftErrors).length > 0 && (
+                <span class="error" style={{ marginRight: "auto" }}>
+                  Fix the highlighted fields.
+                </span>
+              )}
               <button
                 type="button"
                 class="outline"

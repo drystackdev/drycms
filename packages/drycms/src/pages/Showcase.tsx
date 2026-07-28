@@ -21,10 +21,12 @@ import {
 import MultiSelect from "../components/MultiSelect.js";
 import NumberField from "../components/NumberField.js";
 import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
+import PasswordField from "../components/PasswordField.js";
 import Popover from "../components/Popover.js";
 import RelationField, {
   type RelationFieldSource,
 } from "../components/RelationField.js";
+import SecretField from "../components/SecretField.js";
 import Select from "../components/Select.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
@@ -274,6 +276,53 @@ function SlugFieldPreview() {
   );
 }
 
+function PasswordFieldPreview() {
+  const [password, setPassword] = useState("hunter2");
+  const [confirm, setConfirm] = useState("hunter2");
+  return (
+    <div class="grid cols-2" style="width: 100%">
+      <PasswordField
+        label="Password"
+        value={password}
+        onChange={setPassword}
+        placeholder="Enter a password"
+        helperText="At least 8 characters."
+      />
+      <PasswordField
+        label="Confirm password"
+        value={confirm}
+        onChange={setConfirm}
+        placeholder="Re-enter the password"
+        helperText="Shares the show/hide toggle with the field on the left."
+      />
+    </div>
+  );
+}
+
+function SecretFieldPreview() {
+  const [privateKey, setPrivateKey] = useState(
+    "-----BEGIN PRIVATE KEY-----\nMIIBVgIBADANBgkqhkiG9w0BAQEFAASCAT8w...\n-----END PRIVATE KEY-----",
+  );
+  const [notes, setNotes] = useState("Rotate every 90 days.");
+  return (
+    <div class="grid cols-2" style="width: 100%">
+      <SecretField
+        label="Private key"
+        value={privateKey}
+        onChange={setPrivateKey}
+        placeholder="Paste a private key"
+        helperText="Its own show/hide toggle, independent of PasswordField's."
+      />
+      <SecretField
+        label="Rotation notes"
+        value={notes}
+        onChange={setNotes}
+        placeholder="Optional notes"
+      />
+    </div>
+  );
+}
+
 function NumberFieldPreview() {
   const [priority, setPriority] = useState(5);
   const [wordCount, setWordCount] = useState(0);
@@ -314,6 +363,7 @@ function CheckFieldPreview() {
   return (
     <div class="row" style="gap: 1.5rem">
       <CheckField
+        outline
         label="Visible in listings"
         value={visible}
         onChange={setVisible}
@@ -1114,6 +1164,30 @@ function DemoContent({ id }: { id: string }) {
           code={code.slugField!}
         >
           <SlugFieldPreview />
+        </Demo>
+      );
+
+    case "password-field":
+      return (
+        <Demo
+          id="password-field"
+          title="Password field"
+          description="Same label + control + helper text contract as TextField; the trailing eye button toggles type='password' to type='text'. Its show/hide state is one signal shared by every PasswordField on the page - toggle one, they all reveal - independent of SecretField's own toggle."
+          code={code.passwordField!}
+        >
+          <PasswordFieldPreview />
+        </Demo>
+      );
+
+    case "secret-field":
+      return (
+        <Demo
+          id="secret-field"
+          title="Secret field"
+          description="Multiline counterpart to PasswordField, for values too long for one line. A textarea has no native masking, so hiding it toggles a .masked class (-webkit-text-security) instead - Firefox has no equivalent and always shows the value in the clear there."
+          code={code.secretField!}
+        >
+          <SecretFieldPreview />
         </Demo>
       );
 

@@ -37,6 +37,7 @@ const IDS = {
   permission: "system-permission",
   permissionName: "system-permission-name",
   permissionIdTable: "system-permission-id-table",
+  permissionAction: "system-permission-action",
 } as const;
 
 /**
@@ -324,7 +325,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "permission",
     label: "Permission",
     description:
-      "Auto-synced, one per collection/singleton - governs which role can operate on it.",
+      "Auto-synced, 4 rows (one per action) per collection/singleton - governs which role can do what on it.",
     fields: [
       {
         id: IDS.permissionName,
@@ -332,7 +333,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         label: "Name",
         type: "text",
         config: {},
-        validation: { required: true, unique: true },
+        validation: { required: true },
         order: 0,
       },
       {
@@ -341,8 +342,17 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         label: "Table",
         type: "text",
         config: {},
-        validation: { required: true, unique: true },
+        validation: { required: true },
         order: 1,
+      },
+      {
+        id: IDS.permissionAction,
+        name: "action",
+        label: "Action",
+        type: "select",
+        config: { options: ["create", "read", "edit", "delete"], multiple: false },
+        validation: { required: true },
+        order: 2,
       },
     ],
     version: 0,

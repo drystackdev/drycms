@@ -8,6 +8,11 @@ export interface OptionListEditorProps {
   value: string[];
   onChange: (value: string[]) => void;
   disabled?: boolean;
+  /** Surfaces per-row "required"/"duplicate" errors and the empty-list error
+   * once the caller has attempted to save - mirrors `ComponentField`'s
+   * `attempted` gate so a freshly added blank row isn't flagged red before
+   * the user has had a chance to fill it in. */
+  showErrors?: boolean;
 }
 
 interface Row {
@@ -34,7 +39,13 @@ interface Row {
  * point the lazy `useState` initializer below picks up the new value
  * correctly. No reconciliation effect is needed.
  */
-export default function OptionListEditor({ label, value, onChange, disabled = false }: OptionListEditorProps) {
+export default function OptionListEditor({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  showErrors = false,
+}: OptionListEditorProps) {
   const [rows, setRows] = useState<Row[]>(() => value.map((text) => ({ id: randomUUID(), text })));
 
   function commit(next: Row[]) {
@@ -70,37 +81,52 @@ export default function OptionListEditor({ label, value, onChange, disabled = fa
         </button>
       </div>
       {rows.length === 0 ? (
-        <small class="hint">No options yet.</small>
+        <small class={showErrors ? "error" : "hint"}>
+          {showErrors ? "Add at least one option." : "No options yet."}
+        </small>
       ) : (
         <ul class="option-list" {...sortable.containerProps}>
-          {rows.map((row) => (
-            <li
-              key={row.id}
-              data-sortable-id={row.id}
-              class={`option-list-item${sortable.draggingId === row.id ? " dnd-drag-placeholder" : ""}`}
-            >
-              <button type="button" class="ghost icon sm" {...sortable.getHandleProps(row.id)}>
-                <DragHandleIcon />
-              </button>
-              <input
-                type="text"
-                class="sm"
-                value={row.text}
-                placeholder="e.g. In Progress"
-                disabled={disabled}
-                onInput={(event) => updateRow(row.id, (event.target as HTMLInputElement).value)}
-              />
-              <button
-                type="button"
-                class="ghost icon sm"
-                disabled={disabled}
-                aria-label="Remove option"
-                onClick={() => removeRow(row.id)}
+          {rows.map((row) => {
+            const trimmed = row.text.trim();
+            const isEmpty = trimmed === "";
+            const isDuplicate =
+              !isEmpty && rows.filter((other) => other.text.trim() === trimmed).length > 1;
+            const invalid = showErrors && (isEmpty || isDuplicate);
+            return (
+              <li
+                key={row.id}
+                data-sortable-id={row.id}
+                class={`option-list-item${sortable.draggingId === row.id ? " dnd-drag-placeholder" : ""}`}
               >
-                <XIcon />
-              </button>
-            </li>
-          ))}
+                <div class="row">
+                  <button type="button" class="ghost icon sm" {...sortable.getHandleProps(row.id)}>
+                    <DragHandleIcon />
+                  </button>
+                  <input
+                    type="text"
+                    class="sm"
+                    value={row.text}
+                    placeholder="e.g. In Progress"
+                    disabled={disabled}
+                    aria-invalid={invalid || undefined}
+                    onInput={(event) => updateRow(row.id, (event.target as HTMLInputElement).value)}
+                  />
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    disabled={disabled}
+                    aria-label="Remove option"
+                    onClick={() => removeRow(row.id)}
+                  >
+                    <XIcon />
+                  </button>
+                </div>
+                {invalid && (
+                  <span class="error">{isEmpty ? "Required." : "Duplicate."}</span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

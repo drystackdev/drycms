@@ -43,9 +43,9 @@ const KIND_LABELS: Record<ContentTypeKind, string> = {
 
 /** ID is a real column, baked directly into every generated `CREATE TABLE`
  * rather than going through `systemFieldsFor` - see that file's doc comment
- * - and can't be dragged/reordered/removed. It's hidden from the UI for
- * singletons (a single row's numeric id isn't meaningful to show) even
- * though the column itself still exists.
+ * - and can't be dragged/reordered/removed. It's never shown in this UI -
+ * every content type implicitly has one, so listing it as a row is just
+ * noise - even though the column itself still exists.
  * Title is bundled with Slug (turning `slug` on adds both, in that order) -
  * shown/dragged here as a single "Title & Slug" row (see `SystemFieldEntry.
  * groupedIds`), even though both remain separate real columns underneath.
@@ -63,10 +63,7 @@ function systemFieldsForUi(
   allTypes: ContentTypeDefinition[],
 ): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
-  const items: SystemFieldEntry[] =
-    definition.kind === "singleton"
-      ? []
-      : [{ id: "id", label: "ID", name: "id", typeLabel: "Number" }];
+  const items: SystemFieldEntry[] = [];
   if (definition.features?.slug) {
     items.push({
       id: SYSTEM_FIELD_IDS.slug,

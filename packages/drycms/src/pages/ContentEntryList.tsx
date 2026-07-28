@@ -35,6 +35,27 @@ function isMaskedValue(value: unknown): value is MaskedValue {
   return typeof value === "object" && value !== null && "hasExisting" in (value as Record<string, unknown>);
 }
 
+/** Flattens a nested `flatten`-component entry value (e.g. `{ seo: { metaTitle:
+ * ... } }`, see `FieldRenderer.tsx`'s `flatten` case) into the same dotted-path
+ * keys `collectListCells` gives those fields' columns (e.g. `"seo.metaTitle"`,
+ * matching `entry-tree.ts`'s `flattenDisplayColumns` convention) - `DataTable`
+ * looks values up by a flat `row[column.key]`, so nested values need this
+ * before they're usable as row data. Only descends into plain objects: arrays
+ * (relation id lists, repeatable-component rows, neither of which get a
+ * dotted-path column here) and other value types are left as-is. */
+function flattenRowValue(value: Record<string, unknown>, prefix = ""): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value)) {
+    const fieldName = prefix ? `${prefix}.${key}` : key;
+    if (val !== null && typeof val === "object" && !Array.isArray(val) && !isMaskedValue(val)) {
+      Object.assign(out, flattenRowValue(val as Record<string, unknown>, fieldName));
+    } else {
+      out[fieldName] = val;
+    }
+  }
+  return out;
+}
+
 /**
  * Renders one List page cell, dispatching on the column's `fieldType` (plus
  * `fieldName`/`validation.format` for the couple of cases that need finer
@@ -364,7 +385,7 @@ function ContentEntryListCollection({
       })
       .then((result) => {
         if (cancelled) return;
-        setRows(result.rows.map((r) => ({ id: r.id, ...r.value })));
+        setRows(result.rows.map((r) => ({ id: r.id, ...flattenRowValue(r.value) })));
         setTotal(result.total);
         setLoadError(null);
       })
