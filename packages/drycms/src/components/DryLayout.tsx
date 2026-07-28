@@ -126,8 +126,9 @@ export default function DryLayout({ children }: Props) {
   useEffect(() => {
     contentTypesApi.list().then(setContentTypes).catch(() => setContentTypes([]));
   }, [contentTypesApi]);
-  // System types (user/menu/aiKey/role/permission) get their own UI later
-  // and are deliberately left out of this generic list - see `status/content.md`.
+  // `system` is no longer set on any built-in default (user/menu/aiKey/role/
+  // permission) - purely a cosmetic label a type could still carry, so this
+  // filter is inert today, kept only in case something opts back into it.
   const contentNavItems = useMemo(
     () => contentTypes.filter((t) => t.kind !== "component" && !t.system),
     [contentTypes],

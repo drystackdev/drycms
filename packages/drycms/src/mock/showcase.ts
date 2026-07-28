@@ -605,6 +605,16 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   source={source}
   pickerTitle="Choose Author"
   helperText="Click to pick one author from the list."
+/>
+
+<RelationField
+  label="Contributors"
+  value={contributors}
+  onChange={(value) => setContributors(value)}
+  source={source}
+  multiple
+  pickerTitle="Choose Contributors"
+  helperText="Click to pick multiple contributors from the list."
 />`,
   componentField: `import ComponentField from 'drycms/components/ComponentField';
 import TextField from 'drycms/components/TextField';
@@ -613,6 +623,7 @@ import TextField from 'drycms/components/TextField';
   label="Links"
   value={links}
   onChange={setLinks}
+  sortable
   itemLabel="link"
   summaryOf={(item) => item.label}
   blankItem={() => ({ label: '', url: '' })}
@@ -632,6 +643,6 @@ import TextField from 'drycms/components/TextField';
       />
     </>
   )}
-  helperText="Add, edit, or remove repeatable link items."
+  helperText="Add, edit, or remove repeatable link items. Drag the handle to reorder."
 />`,
 };

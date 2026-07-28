@@ -1,3 +1,4 @@
+import type { RelationFieldConfig, RelationMirrorFieldConfig } from "./field-registry.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
 /** Fixed, stable synthetic ids for the fields a `features` toggle implies -
@@ -133,6 +134,74 @@ export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] 
   }
 
   return fields.map((field, index) => ({ ...field, order: index }));
+}
+
+/** Stable, deterministic id for the synthetic `relationmirror` field
+ * `relationMirrorFieldsFor` generates for a given `(source type, relation
+ * field)` pair - both ids are already globally unique, so this is really
+ * just a namespaced, debuggable composite of them. */
+function mirrorFieldId(sourceTypeId: string, sourceFieldId: string): string {
+  return `__mirror_${sourceTypeId}_${sourceFieldId}`;
+}
+
+/**
+ * The `relationmirror` fields implied by every OTHER content type's
+ * `relation` fields that target `type` - the reverse-lookup side of a
+ * relation is entirely auto-generated, never hand-added (see
+ * `field-registry.ts`'s `relationMirrorFieldType`, `internal: true`). Mixed
+ * into `type.fields` the same way `systemFieldsFor`'s output is: by
+ * `entry-tree.ts`'s `buildEntryFieldTree` for entry read/write, and by
+ * `ContentTypeEditor.tsx`'s `systemFieldsForUi` for the schema editor's
+ * Fields list - appearing/disappearing automatically as relations are
+ * added/removed/retargeted elsewhere, exactly like a feature-driven system
+ * field appears/disappears with its toggle. A self-relation (the source type
+ * IS `type` itself) is included - e.g. `Employee.manager` (relation) mirrors
+ * back onto `Employee` itself as a synthetic "Employee" field.
+ *
+ * Only `collection`s are ever valid relation targets (see
+ * `ContentTypeEditor.tsx`'s `dynamicOptions.collections`), so this always
+ * returns `[]` for `component`/`singleton` types - not just an optimization,
+ * a correctness fact worth short-circuiting explicitly.
+ *
+ * Label collision handling: when the SAME source type has more than one
+ * `relation` field targeting `type` (e.g. `User.friends` and
+ * `User.blockedUsers` both targeting `User`), the plain `source.label`
+ * (e.g. "User") would be ambiguous repeated twice - disambiguated to
+ * `"${source.label} (${field.label})"` only for that source type's mirrors,
+ * everyone else keeps the plain label.
+ */
+export function relationMirrorFieldsFor(
+  type: ContentTypeDefinition,
+  allTypes: ContentTypeDefinition[],
+): FieldDefinition[] {
+  if (type.kind !== "collection") return [];
+
+  const matches: { source: ContentTypeDefinition; field: FieldDefinition }[] = [];
+  for (const source of allTypes) {
+    for (const field of source.fields) {
+      if (field.type !== "relation") continue;
+      if ((field.config as RelationFieldConfig).target !== type.id) continue;
+      matches.push({ source, field });
+    }
+  }
+
+  const countBySource = new Map<string, number>();
+  for (const { source } of matches) {
+    countBySource.set(source.id, (countBySource.get(source.id) ?? 0) + 1);
+  }
+
+  return matches.map(({ source, field }, index) => {
+    const disambiguate = (countBySource.get(source.id) ?? 0) > 1;
+    return {
+      id: mirrorFieldId(source.id, field.id),
+      name: disambiguate ? `${source.name}${field.name.charAt(0).toUpperCase()}${field.name.slice(1)}` : source.name,
+      label: disambiguate ? `${source.label} (${field.label})` : source.label,
+      type: "relationmirror",
+      config: { sourceTypeId: source.id, sourceFieldId: field.id } satisfies RelationMirrorFieldConfig,
+      validation: {},
+      order: index,
+    };
+  });
 }
 
 /** Applies a stored display order (a permutation of `items`' own ids, see

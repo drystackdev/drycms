@@ -1,5 +1,5 @@
 import type { SortableHandleProps } from "../../lib/dnd/useSortableList.js";
-import { DragHandleIcon, LockIcon, TrashIcon } from "../../components/icons.js";
+import { DragHandleIcon, TrashIcon } from "../../components/icons.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 
 export interface FieldListItemProps {
@@ -13,13 +13,9 @@ export interface FieldListItemProps {
   name: string;
   description?: string;
   /** System rows (Title/Slug/Draft/...) look identical to custom rows, just
-   * without a click-to-edit or Remove action - they aren't user-editable. */
+   * without a click-to-edit or Remove action - they aren't real fields, just
+   * synthetic columns a feature toggle adds. */
   system?: boolean;
-  /** A custom field that shipped as part of a `system` content type's
-   * default shape (see `seed.ts`) - still click-to-open/reorderable like any
-   * other custom field, but its dialog opens read-only (no Remove action
-   * either). */
-  locked?: boolean;
   onEdit?: () => void;
   onRemove?: () => void;
   dragHandleProps?: SortableHandleProps;
@@ -35,7 +31,6 @@ export default function FieldListItem({
   name,
   description,
   system = false,
-  locked = false,
   onEdit,
   onRemove,
   dragHandleProps,
@@ -68,14 +63,6 @@ export default function FieldListItem({
           ) : (
             ""
           )}
-          {locked && (
-            <span
-              class="badge sm outline"
-              title="Required by default - view only, can't be edited or removed"
-            >
-              <LockIcon /> Locked
-            </span>
-          )}
           {required && <span class="required-asterisk">*</span>}
         </span>
         <small class="hint">
@@ -83,7 +70,7 @@ export default function FieldListItem({
           {description ? ` • ${description}` : ""}
         </small>
       </div>
-      {!system && !locked && (
+      {!system && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
           <button type="button" class="ghost sm" onClick={onRemove}>
             <TrashIcon />
@@ -102,6 +89,5 @@ export function fieldListItemProps(field: FieldDefinition, typeLabel: string) {
     required: !!field.validation?.required,
     name: field.name,
     description: field.description,
-    locked: !!field.locked,
   };
 }

@@ -60,6 +60,34 @@ async function populateChildFields(db: D1Database, nodes: EntryFieldNode[], pare
         [parentId],
       );
       value[node.fieldName] = rows.map((r) => Number(r.target_id));
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      if (node.sourceColumnName) {
+        // reverse oneToMany (source was manyToOne) - many source rows may point at me.
+        const rows = await dbAll<{ id: number }>(
+          db,
+          `SELECT "id" FROM ${quoteIdent(node.sourceTableName)} WHERE ${quoteIdent(node.sourceColumnName)} = ? ORDER BY "id" ASC;`,
+          [parentId],
+        );
+        value[node.fieldName] = rows.map((r) => Number(r.id));
+      } else if (node.reverseCardinality === "manyToOne") {
+        // reverse manyToOne (source was oneToMany) - at most 1 row, UNIQUE target_id.
+        const rows = await dbAll<{ parent_id: number }>(
+          db,
+          `SELECT "parent_id" FROM ${quoteIdent(node.sourceChildTableName!)} WHERE "target_id" = ?;`,
+          [parentId],
+        );
+        value[node.fieldName] = rows[0] ? Number(rows[0].parent_id) : null;
+      } else {
+        // reverse manyToMany (source was manyToMany) - ordered by the child
+        // table's own synthetic id (insertion order), NOT "position" - see
+        // entries-sqlite.ts's identical branch for why.
+        const rows = await dbAll<{ parent_id: number }>(
+          db,
+          `SELECT "parent_id" FROM ${quoteIdent(node.sourceChildTableName!)} WHERE "target_id" = ? ORDER BY "id" ASC;`,
+          [parentId],
+        );
+        value[node.fieldName] = rows.map((r) => Number(r.parent_id));
+      }
     }
   }
 }
@@ -116,8 +144,64 @@ async function writeChildFields(db: D1Database, nodes: EntryFieldNode[], parentI
           targetId,
         ]);
       }
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      await writeRelationMirror(db, node, parentId, value[node.fieldName]);
     }
   }
+}
+
+/** D1 counterpart to `entries-sqlite.ts`'s `writeRelationMirror` - same SQL,
+ * same "touch only this row's links, never the mirrored field's other
+ * rows/positions" contract, `await dbRun`/`dbAll` instead of `handle.run`/
+ * `handle.all`. */
+async function writeRelationMirror(
+  db: D1Database,
+  node: Extract<EntryFieldNode, { kind: "relation-mirror"; resolved: true }>,
+  parentId: number,
+  incoming: unknown,
+): Promise<void> {
+  if (node.sourceColumnName) {
+    const ids = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+    const table = quoteIdent(node.sourceTableName);
+    const col = quoteIdent(node.sourceColumnName);
+    if (ids.length === 0) {
+      await dbRun(db, `UPDATE ${table} SET ${col} = NULL WHERE ${col} = ?;`, [parentId]);
+    } else {
+      const placeholders = ids.map(() => "?").join(",");
+      await dbRun(db, `UPDATE ${table} SET ${col} = NULL WHERE ${col} = ? AND "id" NOT IN (${placeholders});`, [parentId, ...ids]);
+      await dbRun(db, `UPDATE ${table} SET ${col} = ? WHERE "id" IN (${placeholders});`, [parentId, ...ids]);
+    }
+    return;
+  }
+
+  const childTable = quoteIdent(node.sourceChildTableName!);
+  if (node.reverseCardinality === "manyToOne") {
+    await dbRun(db, `DELETE FROM ${childTable} WHERE "target_id" = ?;`, [parentId]);
+    const newParentId = typeof incoming === "number" ? incoming : null;
+    if (newParentId !== null) {
+      await insertRelationChildRow(db, childTable, newParentId, parentId);
+    }
+    return;
+  }
+
+  await dbRun(db, `DELETE FROM ${childTable} WHERE "target_id" = ?;`, [parentId]);
+  const newParentIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+  for (const newParentId of newParentIds) {
+    await insertRelationChildRow(db, childTable, newParentId, parentId);
+  }
+}
+
+async function insertRelationChildRow(db: D1Database, childTable: string, newParentId: number, targetId: number): Promise<void> {
+  const rows = await dbAll<{ next: number }>(
+    db,
+    `SELECT COALESCE(MAX("position"), -1) + 1 AS next FROM ${childTable} WHERE "parent_id" = ?;`,
+    [newParentId],
+  );
+  await dbRun(db, `INSERT INTO ${childTable} ("parent_id","position","target_id") VALUES (?,?,?);`, [
+    newParentId,
+    rows[0]!.next,
+    targetId,
+  ]);
 }
 
 function assertValid(nodes: EntryFieldNode[], value: EntryValue): void {

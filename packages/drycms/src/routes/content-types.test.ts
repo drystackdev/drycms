@@ -79,7 +79,7 @@ async function findByName(name: string): Promise<ContentTypeDefinition> {
 }
 
 describe("GET /dry/api/content-types", () => {
-  it("lists the built-in system content types on first boot", async () => {
+  it("lists the built-in default content types on first boot", async () => {
     const { status, json } = await get();
     expect(status).toBe(200);
     expect((json.definitions as ContentTypeDefinition[]).map((t) => t.name).sort()).toEqual([
@@ -91,7 +91,7 @@ describe("GET /dry/api/content-types", () => {
       "seo",
       "user",
     ]);
-    expect((json.definitions as ContentTypeDefinition[]).every((t) => t.system)).toBe(true);
+    expect((json.definitions as ContentTypeDefinition[]).every((t) => !t.system)).toBe(true);
   });
 });
 
@@ -223,11 +223,12 @@ describe("PUT /dry/api/content-types/[slug] (update)", () => {
     expect(applied.json.definition.version).toBe(2);
   });
 
-  it("400s un-marking a built-in content type back to non-system (delegates to validateSystemProtections)", async () => {
+  it("allows freely setting `system` on any content type (purely a UI label, not enforced)", async () => {
     const menu = await findByName("menu");
-    const { status, json } = await put(menu.id, { definition: { ...menu, system: false } });
-    expect(status).toBe(400);
-    expect(json.error).toBe("invalid_definition");
+    expect(menu.system).toBeFalsy();
+    const { status, json } = await put(menu.id, { definition: { ...menu, system: true } });
+    expect(status).toBe(200);
+    expect(json.definition.system).toBe(true);
   });
 });
 
@@ -251,11 +252,11 @@ describe("DELETE /dry/api/content-types/[slug]", () => {
     expect((await response.json()).error).toBe("invalid_definition");
   });
 
-  it("403s deleting a built-in content type", async () => {
+  it("allows deleting a built-in content type, same as any other", async () => {
     const role = await findByName("role");
     const response = await del(role.id);
-    expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe("system_protected");
+    expect(response.status).toBe(204);
+    expect((await get(role.id)).status).toBe(404);
   });
 
   it("409s deleting a component that's still embedded by another content type", async () => {

@@ -7,15 +7,15 @@ import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { randomUUID } from "../lib/uuid.js";
+import type { RelationMirrorFieldConfig } from "../content-types/field-registry.js";
 import type { DestructiveChange } from "../content-types/migration.js";
-import { defaultContentTypeDefinitions } from "../content-types/seed.js";
 import {
+  relationMirrorFieldsFor,
   SYSTEM_FIELD_IDS,
   type FieldSide,
 } from "../content-types/system-fields.js";
 import type {
   ContentTypeDefinition,
-  ContentTypeFeatures,
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
@@ -46,10 +46,21 @@ const KIND_LABELS: Record<ContentTypeKind, string> = {
  * - and can't be dragged/reordered/removed. It's hidden from the UI for
  * singletons (a single row's numeric id isn't meaningful to show) even
  * though the column itself still exists.
- * Title is bundled with Slug (turning `slug` on adds both, in that order);
- * Draft/Schedule/Timestamps are collection-only. */
+ * Title is bundled with Slug (turning `slug` on adds both, in that order) -
+ * shown/dragged here as a single "Title & Slug" row (see `SystemFieldEntry.
+ * groupedIds`), even though both remain separate real columns underneath.
+ * Created at/Updated at are bundled the same way, as a single "Timestamps"
+ * row, when `features.timestamps` is on.
+ * Draft/Schedule/Timestamps are collection-only.
+ * Trailing `relationmirror` rows come from `relationMirrorFieldsFor` - one
+ * per OTHER content type's `relation` field that targets this one, entirely
+ * auto-derived (never hand-added, see `field-registry.ts`'s
+ * `relationMirrorFieldType`) - so they render exactly like a system row:
+ * no click-to-edit, no Remove action, appearing/disappearing on their own as
+ * relations elsewhere are added/removed/retargeted. */
 function systemFieldsForUi(
   definition: ContentTypeDefinition,
+  allTypes: ContentTypeDefinition[],
 ): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
   const items: SystemFieldEntry[] =
@@ -57,10 +68,13 @@ function systemFieldsForUi(
       ? []
       : [{ id: "id", label: "ID", name: "id", typeLabel: "Number" }];
   if (definition.features?.slug) {
-    items.push(
-      { id: SYSTEM_FIELD_IDS.title, label: "Title", name: "title", typeLabel: "Text" },
-      { id: SYSTEM_FIELD_IDS.slug, label: "Slug", name: "slug", typeLabel: "Text" },
-    );
+    items.push({
+      id: SYSTEM_FIELD_IDS.slug,
+      label: "Title & Slug",
+      name: "title, slug",
+      typeLabel: "Slug",
+      groupedIds: [SYSTEM_FIELD_IDS.title, SYSTEM_FIELD_IDS.slug],
+    });
   }
   if (definition.features?.seo) {
     items.push({
@@ -88,21 +102,35 @@ function systemFieldsForUi(
       });
     }
     if (definition.features?.timestamps) {
-      items.push(
-        {
-          id: SYSTEM_FIELD_IDS.createdAt,
-          label: "Created at",
-          name: "createdAt",
-          typeLabel: "Date",
-        },
-        {
-          id: SYSTEM_FIELD_IDS.updatedAt,
-          label: "Updated at",
-          name: "updatedAt",
-          typeLabel: "Date",
-        },
-      );
+      items.push({
+        id: SYSTEM_FIELD_IDS.createdAt,
+        label: "Timestamps",
+        name: "createdAt, updatedAt",
+        typeLabel: "Date",
+        groupedIds: [SYSTEM_FIELD_IDS.createdAt, SYSTEM_FIELD_IDS.updatedAt],
+      });
     }
+  }
+  for (const mirror of relationMirrorFieldsFor(definition, allTypes)) {
+    const config = mirror.config as RelationMirrorFieldConfig;
+    const sourceType = allTypes.find((t) => t.id === config.sourceTypeId);
+    const sourceField = sourceType?.fields.find((f) => f.id === config.sourceFieldId);
+    items.push({
+      id: mirror.id,
+      label: mirror.label,
+      name: mirror.name,
+      typeLabel: "Relation Mirror",
+      description: definition.fieldDescriptions?.[mirror.id],
+      mirror:
+        sourceType && sourceField
+          ? {
+              sourceTypeId: sourceType.id,
+              sourceTypeLabel: sourceType.label,
+              sourceFieldId: sourceField.id,
+              sourceFieldLabel: sourceField.label,
+            }
+          : undefined,
+    });
   }
   return items;
 }
@@ -127,6 +155,17 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [editingField, setEditingField] = useState<FieldDefinition | null>(
     null,
   );
+
+  // Mirror-row remove state - see `deleteMirrorSource`'s doc comment for why
+  // removing a mirror row is a cross-type operation, not a local edit. Its
+  // EDIT path reuses `fieldDialogOpen`/`editingField` above instead - see
+  // `mirrorEntryToFieldDefinition`.
+  const [pendingMirrorRemove, setPendingMirrorRemove] =
+    useState<SystemFieldEntry | null>(null);
+  const [mirrorDestructiveSummary, setMirrorDestructiveSummary] = useState<
+    DestructiveChange[] | null
+  >(null);
+  const [mirrorRemoving, setMirrorRemoving] = useState(false);
 
   const [pendingConfirm, setPendingConfirm] = useState<
     DestructiveChange[] | null
@@ -208,10 +247,18 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   // System components (e.g. the built-in `seo` component) are excluded here -
   // they're implementation details of other system types, not meant to be
   // picked as a re-usable field group on user-authored content types.
+  //
+  // `collections` deliberately does NOT exclude the type being edited from
+  // its own relation-`target` picker (unlike `components`, where excluding
+  // self prevents infinite recursion - a component's fields get inlined). A
+  // `relation` is just an id column/child-table row, not inlined, so it has
+  // no such recursion risk - excluding it here previously made a
+  // self-relation (e.g. `Employee.manager -> Employee`) impossible to even
+  // configure through this editor.
   const dynamicOptions = useMemo(
     () => ({
       collections: allTypes
-        .filter((t) => t.kind === "collection" && t.id !== definition?.id)
+        .filter((t) => t.kind === "collection")
         .map((t) => ({ value: t.id, label: t.label })),
       components: allTypes
         .filter(
@@ -221,30 +268,6 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     }),
     [allTypes, definition?.id],
   );
-
-  // Sourced from the CURRENTLY installed defaults (never from the loaded
-  // `definition` itself) - a drycms upgrade that newly locks/requires
-  // something on an already-seeded built-in (e.g. `aiKey` gaining
-  // `structureLocked`) must reflect here immediately, not only after that
-  // row is next resaved. Mirrors `routes/content-types.ts`'s
-  // `validateSystemProtections` call, which is the actual authority.
-  const matchingDefault = useMemo(
-    () =>
-      definition
-        ? defaultContentTypeDefinitions().find((t) => t.id === definition.id)
-        : undefined,
-    [definition?.id],
-  );
-  const structureLocked = !!matchingDefault?.structureLocked;
-  const requiredFeatureKeys = useMemo(() => {
-    const required = matchingDefault?.features;
-    if (!required) return undefined;
-    return new Set(
-      (Object.keys(required) as (keyof ContentTypeFeatures)[]).filter(
-        (key) => required[key],
-      ),
-    );
-  }, [matchingDefault]);
 
   // Keeps `order` an explicit mirror of each field's position in `fields[]` -
   // the array itself stays the real source of order; the server re-normalizes
@@ -263,11 +286,6 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   function removeField(fieldId: string) {
     setDefinition((d) => {
       if (!d) return d;
-      // Belt-and-suspenders: `FieldsList` already hides the Remove action for
-      // `locked` fields, but a locked field's removal is refused here too
-      // rather than trusting the UI alone - the server re-checks against the
-      // stored definition regardless either way (see `validateSystemProtections`).
-      if (d.fields.find((f) => f.id === fieldId)?.locked) return d;
       return {
         ...d,
         fields: withNormalizedOrder(d.fields.filter((f) => f.id !== fieldId)),
@@ -278,6 +296,18 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   function handleFieldSave(field: FieldDefinition, side: FieldSide) {
     setDefinition((d) => {
       if (!d) return d;
+      // A mirror row isn't a real field - `FieldDialog` only ever lets its
+      // Description/Display side change (Label/Name/Type are locked, see
+      // `FieldDialog.tsx`'s `isMirror`), so only persist those, through the
+      // same self-healing per-id maps `fieldSides` already uses - never add
+      // it to `fields[]`.
+      if (field.type === "relationmirror") {
+        return {
+          ...d,
+          fieldSides: { ...d.fieldSides, [field.id]: side },
+          fieldDescriptions: { ...d.fieldDescriptions, [field.id]: field.description ?? "" },
+        };
+      }
       const fields = editingField
         ? d.fields.map((f) => (f.id === editingField.id ? field : f))
         : [...d.fields, field];
@@ -288,6 +318,85 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       };
     });
     setFieldDialogOpen(false);
+  }
+
+  /** Synthesizes a `FieldDefinition`-shaped draft for a mirror row so it can
+   * open through the SAME `FieldDialog` a real field uses (not a separate,
+   * bespoke UI) - `FieldDialog` locks Label/Name/Type for it (`isMirror`)
+   * since none of those are real/editable, but Description and Display side
+   * both round-trip through `handleFieldSave` above like any other field. */
+  function mirrorEntryToFieldDefinition(entry: SystemFieldEntry): FieldDefinition {
+    const mirror = entry.mirror!;
+    return {
+      id: entry.id,
+      name: entry.name,
+      label: entry.label,
+      description: entry.description,
+      type: "relationmirror",
+      config: {
+        sourceTypeId: mirror.sourceTypeId,
+        sourceFieldId: mirror.sourceFieldId,
+      } satisfies RelationMirrorFieldConfig,
+      validation: {},
+      order: 0,
+    };
+  }
+
+  /** A mirror row isn't a real field on `definition` - it's a reflection of
+   * a `relation` field declared on ANOTHER content type (`entry.mirror.
+   * sourceTypeId`/`sourceFieldId`). The only way to make the relationship
+   * itself go away is to remove that real field, on that OTHER type - so
+   * this saves a SEPARATE `ContentTypeDefinition` through the same API,
+   * independent of this page's own `definition`/`submit`. Reuses the
+   * server's normal destructive-change confirmation (`requiresConfirm`) -
+   * dropping a `relation` field can drop a real column/child-table. */
+  async function deleteMirrorSource(entry: SystemFieldEntry, confirm: boolean) {
+    const mirror = entry.mirror;
+    if (!mirror) return;
+    const sourceType = allTypes.find((t) => t.id === mirror.sourceTypeId);
+    if (!sourceType) {
+      toast.add({ type: "error", title: `"${mirror.sourceTypeLabel}" no longer exists.` });
+      setPendingMirrorRemove(null);
+      return;
+    }
+    const updatedSource: ContentTypeDefinition = {
+      ...sourceType,
+      fields: withNormalizedOrder(
+        sourceType.fields.filter((f) => f.id !== mirror.sourceFieldId),
+      ),
+    };
+    setMirrorRemoving(true);
+    try {
+      const response = await api.update(updatedSource, confirm);
+      if (response.requiresConfirm) {
+        setMirrorDestructiveSummary(response.destructiveSummary ?? []);
+        return;
+      }
+      const saved = response.definition ?? updatedSource;
+      setAllTypes((types) => types.map((t) => (t.id === saved.id ? saved : t)));
+      // A self-relation mirrors back onto the SAME type currently open in
+      // this editor - keep its own draft in sync with what the server just
+      // saved, same as `allTypes` above, rather than leaving stale fields
+      // sitting in local state until the next reload.
+      if (definition && definition.id === saved.id) {
+        setDefinition(saved);
+        setInitialSnapshot(JSON.stringify(saved));
+      }
+      setMirrorDestructiveSummary(null);
+      setPendingMirrorRemove(null);
+      toast.add({
+        type: "success",
+        title: `Removed "${mirror.sourceFieldLabel}" from "${mirror.sourceTypeLabel}".`,
+      });
+    } catch (error) {
+      toast.add({
+        type: "error",
+        title: "Remove failed",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setMirrorRemoving(false);
+    }
   }
 
   async function submit(confirm: boolean) {
@@ -407,7 +516,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       <div class="content-type-editor-grid">
         <legend class="stack">
           <FieldsList
-            systemEntries={systemFieldsForUi(definition)}
+            systemEntries={systemFieldsForUi(definition, allTypes)}
             fields={definition.fields}
             features={definition.features}
             fieldOrder={definition.fieldOrder}
@@ -417,6 +526,11 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setFieldDialogOpen(true);
             }}
             onRemove={removeField}
+            onEditMirror={(entry) => {
+              setEditingField(mirrorEntryToFieldDefinition(entry));
+              setFieldDialogOpen(true);
+            }}
+            onRemoveMirror={setPendingMirrorRemove}
             onReorderFields={updateFields}
             onReorderAll={(order) =>
               setDefinition((d) => (d ? { ...d, fieldOrder: order } : d))
@@ -425,7 +539,6 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setEditingField(null);
               setFieldDialogOpen(true);
             }}
-            structureLocked={structureLocked}
           />
         </legend>
         <div class="stack">
@@ -441,13 +554,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setDefinition((d) => (d ? { ...d, label, name } : d));
             }}
             required
-            disabled={definition.system}
             error={!!tableNameError}
-            helperText={
-              definition.system
-                ? "Set by the system and can't be changed."
-                : (tableNameError ?? undefined)
-            }
+            helperText={tableNameError ?? undefined}
           />
           <TextField
             label="Description"
@@ -457,12 +565,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             onChange={(v) =>
               setDefinition((d) => (d ? { ...d, description: v } : d))
             }
-            disabled={definition.system}
-            helperText={
-              definition.system
-                ? "Set by the system and can't be changed."
-                : "Optional description for this content type, shown in the admin UI."
-            }
+            helperText="Optional description for this content type, shown in the admin UI."
           />
 
           {definition.kind !== "component" && (
@@ -489,24 +592,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
                 d ? { ...d, features: { ...d.features, [key]: value } } : d,
               )
             }
-            disabled={structureLocked}
-            requiredKeys={requiredFeatureKeys}
           />
 
-          {!isNew && definition.system && (
-            <div class="content-type-editor-danger">
-              <div>
-                <h2>Built-in content type</h2>
-                <p>
-                  {structureLocked
-                    ? `"${definition.label}" is one of the app's defaults and can't be deleted. Its structure is fully locked - no fields can be added or removed, and no feature can be toggled.`
-                    : `"${definition.label}" is one of the app's defaults and can't be deleted. New fields can still be added and reordered, but its locked fields are view-only - they can't be edited or removed.`}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {!isNew && !definition.system && (
+          {!isNew && (
             <div class="content-type-editor-danger">
               <div>
                 <h2>Danger zone</h2>
@@ -535,7 +623,44 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         showSideToggle={definition.kind !== "component"}
         onCancel={() => setFieldDialogOpen(false)}
         onSave={handleFieldSave}
-        readOnly={definition.system && !!editingField?.locked}
+      />
+
+      <ConfirmDialog
+        open={pendingMirrorRemove !== null}
+        title={`Remove "${pendingMirrorRemove?.mirror?.sourceFieldLabel ?? ""}"?`}
+        message={
+          <p>
+            This deletes "{pendingMirrorRemove?.mirror?.sourceFieldLabel}" from
+            "{pendingMirrorRemove?.mirror?.sourceTypeLabel}" - saving that
+            content type will drop its column/table, and any data in it.
+          </p>
+        }
+        confirmLabel="Remove"
+        destructive
+        busy={mirrorRemoving}
+        onConfirm={() => {
+          if (pendingMirrorRemove) deleteMirrorSource(pendingMirrorRemove, false);
+        }}
+        onCancel={() => setPendingMirrorRemove(null)}
+      />
+
+      <ConfirmDialog
+        open={mirrorDestructiveSummary !== null}
+        title="This will lose data"
+        message={
+          <ul>
+            {(mirrorDestructiveSummary ?? []).map((change, index) => (
+              <li key={index}>{describeDestructiveChange(change)}</li>
+            ))}
+          </ul>
+        }
+        confirmLabel="Remove anyway"
+        destructive
+        busy={mirrorRemoving}
+        onConfirm={() => {
+          if (pendingMirrorRemove) deleteMirrorSource(pendingMirrorRemove, true);
+        }}
+        onCancel={() => setMirrorDestructiveSummary(null)}
       />
 
       <ConfirmDialog

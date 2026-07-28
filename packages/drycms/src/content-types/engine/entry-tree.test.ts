@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { defaultContentTypeDefinitions } from "../seed.js";
 import { SYSTEM_FIELD_IDS } from "../system-fields.js";
-import type { ContentTypeDefinition } from "../types.js";
-import { buildEntryFieldTree, flattenQueryableColumns, type EntryColumnNode, type EntryRelationNode } from "./entry-tree.js";
+import type { ContentTypeDefinition, FieldDefinition } from "../types.js";
+import {
+  buildEntryFieldTree,
+  flattenQueryableColumns,
+  type EntryColumnNode,
+  type EntryRelationMirrorNode,
+  type EntryRelationNode,
+} from "./entry-tree.js";
 
 const allTypes = defaultContentTypeDefinitions();
 
@@ -79,6 +85,189 @@ describe("buildEntryFieldTree", () => {
     const seo = byName(buildEntryFieldTree(withSeo, allTypes), "seo");
     expect(seo.kind).toBe("flatten");
     expect(seo.fieldId).toBe(SYSTEM_FIELD_IDS.seo);
+  });
+});
+
+describe("buildEntryFieldTree - relationmirror resolution", () => {
+  function relationMirrorField(overrides: Partial<FieldDefinition> & { config: Record<string, unknown> }): FieldDefinition {
+    return {
+      id: "f-mirror",
+      name: "mirror",
+      label: "Mirror",
+      type: "relationmirror",
+      validation: {},
+      order: 0,
+      ...overrides,
+    };
+  }
+
+  it("resolves a mirror of a manyToMany relation to reverseCardinality manyToMany, pointed at the source's child table", () => {
+    // Reuses the seed's real user.roles (manyToMany -> role) pair as the
+    // source, mirrored back onto role - exactly the User/Role example from
+    // the original ask.
+    const user = allTypes.find((t) => t.name === "user")!;
+    const role = allTypes.find((t) => t.name === "role")!;
+    const rolesField = user.fields.find((f) => f.name === "roles")!;
+
+    const roleWithMirror: ContentTypeDefinition = {
+      ...role,
+      fields: [
+        ...role.fields,
+        relationMirrorField({
+          id: "role-users-mirror",
+          name: "users",
+          config: { sourceTypeId: user.id, sourceFieldId: rolesField.id },
+        }),
+      ],
+    };
+    const typesWithMirror = allTypes.map((t) => (t.id === role.id ? roleWithMirror : t));
+
+    const mirror = byName(buildEntryFieldTree(roleWithMirror, typesWithMirror), "users") as EntryRelationMirrorNode;
+    expect(mirror.kind).toBe("relation-mirror");
+    if (!mirror.resolved) throw new Error("expected mirror to resolve");
+    expect(mirror.reverseCardinality).toBe("manyToMany");
+    expect(mirror.sourceTypeId).toBe(user.id);
+    expect(mirror.sourceTableName).toBe("user");
+    expect(mirror.sourceChildTableName).toBe("user_roles");
+    expect(mirror.sourceColumnName).toBeUndefined();
+  });
+
+  it("resolves a mirror of a manyToOne relation to reverseCardinality oneToMany, pointed at the source's own column - also covers a self-relation", () => {
+    // A single self-referencing type: `manager` is manyToOne -> itself,
+    // mirrored back as `directReports` - proves self-relations need no
+    // special-casing (source type === the mirror field's own type).
+    const employee: ContentTypeDefinition = {
+      id: "t-employee",
+      kind: "collection",
+      name: "employee",
+      label: "Employee",
+      fields: [
+        {
+          id: "f-manager",
+          name: "manager",
+          label: "Manager",
+          type: "relation",
+          config: { target: "t-employee", cardinality: "manyToOne" },
+          validation: {},
+          order: 0,
+        },
+        relationMirrorField({
+          id: "f-direct-reports",
+          name: "directReports",
+          config: { sourceTypeId: "t-employee", sourceFieldId: "f-manager" },
+        }),
+      ],
+      version: 0,
+    };
+
+    const mirror = byName(buildEntryFieldTree(employee, [employee]), "directReports") as EntryRelationMirrorNode;
+    if (!mirror.resolved) throw new Error("expected mirror to resolve");
+    expect(mirror.reverseCardinality).toBe("oneToMany");
+    expect(mirror.sourceTypeId).toBe("t-employee");
+    expect(mirror.sourceTableName).toBe("employee");
+    expect(mirror.sourceColumnName).toBe("manager");
+    expect(mirror.sourceChildTableName).toBeUndefined();
+  });
+
+  it("resolves a mirror of a oneToMany relation to reverseCardinality manyToOne, pointed at the source's child table", () => {
+    // `department.employees` claims each `employee2` row for at most one
+    // department (oneToMany); mirrored back on `employee2` as a single-value
+    // `department` field (manyToOne reverse).
+    const department: ContentTypeDefinition = {
+      id: "t-department",
+      kind: "collection",
+      name: "department",
+      label: "Department",
+      fields: [
+        {
+          id: "f-employees",
+          name: "employees",
+          label: "Employees",
+          type: "relation",
+          config: { target: "t-employee2", cardinality: "oneToMany" },
+          validation: {},
+          order: 0,
+        },
+      ],
+      version: 0,
+    };
+    const employee2: ContentTypeDefinition = {
+      id: "t-employee2",
+      kind: "collection",
+      name: "employee2",
+      label: "Employee 2",
+      fields: [
+        relationMirrorField({
+          id: "f-department-mirror",
+          name: "department",
+          config: { sourceTypeId: "t-department", sourceFieldId: "f-employees" },
+        }),
+      ],
+      version: 0,
+    };
+
+    const mirror = byName(buildEntryFieldTree(employee2, [department, employee2]), "department") as EntryRelationMirrorNode;
+    if (!mirror.resolved) throw new Error("expected mirror to resolve");
+    expect(mirror.reverseCardinality).toBe("manyToOne");
+    expect(mirror.sourceTypeId).toBe("t-department");
+    expect(mirror.sourceTableName).toBe("department");
+    expect(mirror.sourceChildTableName).toBe("department_employees");
+    expect(mirror.sourceColumnName).toBeUndefined();
+  });
+
+  it("degrades gracefully (resolved: false) when sourceTypeId doesn't exist", () => {
+    const orphan: ContentTypeDefinition = {
+      id: "t-orphan",
+      kind: "collection",
+      name: "orphan",
+      label: "Orphan",
+      fields: [relationMirrorField({ config: { sourceTypeId: "does-not-exist", sourceFieldId: "nope" } })],
+      version: 0,
+    };
+    const mirror = byName(buildEntryFieldTree(orphan, [orphan]), "mirror") as EntryRelationMirrorNode;
+    expect(mirror.resolved).toBe(false);
+  });
+
+  it("degrades gracefully (resolved: false) when sourceFieldId doesn't exist on sourceTypeId", () => {
+    const source: ContentTypeDefinition = {
+      id: "t-source",
+      kind: "collection",
+      name: "source",
+      label: "Source",
+      fields: [],
+      version: 0,
+    };
+    const mirroring: ContentTypeDefinition = {
+      id: "t-mirroring",
+      kind: "collection",
+      name: "mirroring",
+      label: "Mirroring",
+      fields: [relationMirrorField({ config: { sourceTypeId: "t-source", sourceFieldId: "no-such-field" } })],
+      version: 0,
+    };
+    const mirror = byName(buildEntryFieldTree(mirroring, [source, mirroring]), "mirror") as EntryRelationMirrorNode;
+    expect(mirror.resolved).toBe(false);
+  });
+
+  it("degrades gracefully (resolved: false) when sourceFieldId points at a field that isn't type 'relation'", () => {
+    const source: ContentTypeDefinition = {
+      id: "t-scalar-source",
+      kind: "collection",
+      name: "scalarSource",
+      label: "Scalar Source",
+      fields: [{ id: "f-name", name: "name", label: "Name", type: "text", config: {}, validation: {}, order: 0 }],
+      version: 0,
+    };
+    const mirroring: ContentTypeDefinition = {
+      id: "t-mirroring-scalar",
+      kind: "collection",
+      name: "mirroringScalar",
+      label: "Mirroring Scalar",
+      fields: [relationMirrorField({ config: { sourceTypeId: "t-scalar-source", sourceFieldId: "f-name" } })],
+      version: 0,
+    };
+    const mirror = byName(buildEntryFieldTree(mirroring, [source, mirroring]), "mirror") as EntryRelationMirrorNode;
+    expect(mirror.resolved).toBe(false);
   });
 });
 

@@ -6,14 +6,15 @@ import { path } from "virtual:drycms/config";
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../components/file-manager-http-source.js";
-import { ArrowDownIcon, ArrowLeftIcon, PlusIcon } from "../components/icons.js";
+import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, PlusIcon } from "../components/icons.js";
 import {
-  flattenDisplayColumns,
   flattenQueryableColumns,
   buildEntryFieldTree,
+  type EntryFieldNode,
   type QueryableColumn,
 } from "../content-types/engine/entry-tree.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
+import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
@@ -69,18 +70,14 @@ function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Elem
     );
   }
 
-  if (value === null || value === undefined || value === "") return <>—</>;
+  if (value === null || value === undefined || value === "") return <small><i>No value</i></small>;
 
   // The system `slug` field (`features.slug` - see `system-fields.ts`) always
   // ships paired with a sibling `title` field; a manually `format: "slug"`
   // text field may not have one, so this still degrades to just the slug.
   if (column.fieldType === "text" && (column.fieldName === "slug" || column.validation.format === "slug")) {
-    const title = row.title;
     return (
-      <span class="stack" style={{ gap: "0.125rem" }}>
-        {title !== null && title !== undefined && title !== "" && <span>{String(title)}</span>}
-        <small class="hint">{String(value)}</small>
-      </span>
+      <small class="hint">{String(value)}</small>
     );
   }
 
@@ -116,6 +113,78 @@ function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Elem
 
   if (Array.isArray(value)) return <>{value.join(", ")}</>;
   return <>{String(value)}</>;
+}
+
+interface RelationColumn {
+  fieldName: string;
+  label: string;
+  targetTypeId: string;
+  cardinality: RelationCardinality;
+}
+
+type ListCell = { kind: "field"; column: QueryableColumn } | { kind: "relation"; column: RelationColumn };
+
+/** Mirrors `entry-tree.ts`'s own `UNDISPLAYABLE_FIELD_TYPES` (kept private
+ * there) - `password` is never worth a List column, even masked. */
+const UNDISPLAYABLE_FIELD_TYPES = new Set(["password"]);
+
+/**
+ * A List page's own walk of the entry field tree - unlike `entry-tree.ts`'s
+ * `flattenDisplayColumns` (`column`/`flatten` kinds only), this ALSO keeps
+ * `relation` nodes of every cardinality, in the same true schema order they'd
+ * appear in the entry editor. Kept local rather than folded into
+ * `entry-tree.ts` itself: that file is mid-flight on the `relationmirror`
+ * feature elsewhere in the repo, and this walk doesn't need touching it -
+ * `relation-mirror`/`component-repeat` nodes are silently skipped, same as
+ * `flattenDisplayColumns` already does.
+ */
+function collectListCells(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): ListCell[] {
+  const out: ListCell[] = [];
+  for (const node of nodes) {
+    const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+    const label = labelPrefix ? `${labelPrefix} / ${node.label}` : node.label;
+    if (node.kind === "column") {
+      if (UNDISPLAYABLE_FIELD_TYPES.has(node.fieldType)) continue;
+      out.push({
+        kind: "field",
+        column: {
+          fieldName,
+          columnName: node.columnName,
+          label,
+          fieldType: node.fieldType,
+          fieldConfig: node.fieldConfig,
+          validation: node.validation,
+        },
+      });
+    } else if (node.kind === "flatten") {
+      out.push(...collectListCells(node.children, fieldName, label));
+    } else if (node.kind === "relation") {
+      out.push({ kind: "relation", column: { fieldName, label, targetTypeId: node.targetTypeId, cardinality: node.cardinality } });
+    }
+  }
+  return out;
+}
+
+/**
+ * `manyToOne`'s target id rides along as a plain value on the row itself
+ * (see `entry-codec.ts`'s `rowToValue`) - `ids` arrives already resolved,
+ * either `[]` or `[thatId]`. `oneToMany`/`manyToMany` need a per-row fetch
+ * instead (`listEntries` doesn't run the child-table query a paginated List
+ * page would need) - `ids` is `undefined` while that fetch is still in
+ * flight, so this can tell "not loaded yet" apart from "genuinely none".
+ * No icon in `icons.tsx` reads as "relation" specifically - `ComponentIcon`
+ * (already used for the schema editor's Component field type) doubles as a
+ * generic "structured/linked data" marker here too.
+ */
+function renderRelationCell(ids: string[] | undefined, lookupLabel: (id: string) => string | undefined): JSX.Element {
+  if (ids === undefined) return <>…</>;
+  if (ids.length === 0) return <>—</>;
+  return (
+    <span class="badge lg info">
+      <ComponentIcon />
+      {ids.map((id) => lookupLabel(id) ?? "…").join(", ")}
+    </span>
+  );
 }
 
 export default function ContentEntryList({ typeSlug }: Props) {
@@ -160,16 +229,33 @@ function ContentEntryListCollection({
 }) {
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, type.name), [type.name]);
   const fieldTree = useMemo(() => buildEntryFieldTree(type, allTypes), [type, allTypes]);
-  // `displayColumns` is what the table shows (includes a masked `secretkey`
-  // placeholder column); `queryableFieldNames` is the narrower subset a
-  // sort/search request may actually target - see `entry-tree.ts`'s doc
-  // comments on `flattenDisplayColumns`/`flattenQueryableColumns`.
-  const displayColumns = useMemo(() => flattenDisplayColumns(fieldTree), [fieldTree]);
+  // `queryableFieldNames` is the subset a sort/search request may actually
+  // target - see `entry-tree.ts`'s doc comments on `flattenQueryableColumns`.
   const queryableFieldNames = useMemo(
     () => new Set(flattenQueryableColumns(fieldTree).map((c) => c.fieldName)),
     [fieldTree],
   );
-  const defaultVisible = useMemo(() => displayColumns.slice(0, 5).map((c) => c.fieldName), [displayColumns]);
+  // `listCells` is what the table shows, in true schema order - plain
+  // columns (including a masked `secretkey` placeholder) interleaved with
+  // relation columns of every cardinality, unlike `entry-tree.ts`'s own
+  // `flattenDisplayColumns` (which only has the former).
+  const listCells = useMemo(() => collectListCells(fieldTree), [fieldTree]);
+  const relationColumns = useMemo(() => listCells.filter((c) => c.kind === "relation").map((c) => c.column), [listCells]);
+  const defaultVisible = useMemo(() => listCells.slice(0, 5).map((c) => c.column.fieldName), [listCells]);
+  // One `entriesApi`/label field per relation column's target type - reused
+  // across every row instead of rebuilt per cell.
+  const relationTargets = useMemo(() => {
+    const map = new Map<string, { entriesApi: ReturnType<typeof createContentEntriesApi>; labelField?: string }>();
+    for (const column of relationColumns) {
+      const targetType = allTypes.find((t) => t.id === column.targetTypeId);
+      if (!targetType) continue;
+      map.set(column.fieldName, {
+        entriesApi: createContentEntriesApi(`${path}/api/content`, targetType.name),
+        labelField: flattenQueryableColumns(buildEntryFieldTree(targetType, allTypes))[0]?.fieldName,
+      });
+    }
+    return map;
+  }, [relationColumns, allTypes]);
 
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<SortState>(null);
@@ -177,10 +263,92 @@ function ContentEntryListCollection({
   const [searchableFields, setSearchableFields] = useState<string[]>(
     defaultVisible.filter((key) => queryableFieldNames.has(key)),
   );
+  const [visibleKeys, setVisibleKeys] = useState<string[]>(defaultVisible);
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // fieldName -> target id -> resolved label. Only fetched for relation
+  // columns the user actually has visible (`visibleKeys`) - `entriesApi.get`
+  // is one request per distinct id, not worth paying for a hidden column.
+  const [relationLabels, setRelationLabels] = useState<Record<string, Record<string, string>>>({});
+  // row id -> fieldName -> resolved target ids, for `oneToMany`/`manyToMany`
+  // relation columns only - `manyToOne`'s id is already on the row itself,
+  // no need for this extra step (see `renderRelationCell`'s doc).
+  const [rowRelationValues, setRowRelationValues] = useState<Record<string, Record<string, string[]>>>({});
+
+  // Populates `rowRelationValues`: one `entriesApi.get(row.id)` per row still
+  // missing a visible multi-cardinality column's value - `listEntries` (the
+  // paginated query `rows` came from) doesn't run the child-table query a
+  // `oneToMany`/`manyToMany` value needs, but the single-entry `get` already
+  // does (see `entries-sqlite.ts`'s `populateChildFields`), so this reuses
+  // that instead of touching the paginated query itself.
+  useEffect(() => {
+    let cancelled = false;
+    const multiColumns = relationColumns.filter((c) => c.cardinality !== "manyToOne" && visibleKeys.includes(c.fieldName));
+    if (multiColumns.length === 0) return;
+    const missingRows = rows.filter((row) => multiColumns.some((c) => rowRelationValues[row.id]?.[c.fieldName] === undefined));
+    if (missingRows.length === 0) return;
+    Promise.all(
+      missingRows.map((row) =>
+        entriesApi
+          .get(row.id)
+          .then((entry): [string, Record<string, string[]>] => [
+            row.id,
+            Object.fromEntries(multiColumns.map((c) => [c.fieldName, (entry.value[c.fieldName] as string[] | undefined) ?? []])),
+          ])
+          .catch((): [string, Record<string, string[]>] => [row.id, Object.fromEntries(multiColumns.map((c) => [c.fieldName, []]))]),
+      ),
+    ).then((pairs) => {
+      if (cancelled) return;
+      setRowRelationValues((current) => {
+        const next = { ...current };
+        for (const [rowId, values] of pairs) next[rowId] = { ...next[rowId], ...values };
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rowRelationValues` deliberately excluded: read only to skip rows already resolved, not to retrigger this effect.
+  }, [rows, relationColumns, visibleKeys, entriesApi]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const idsForRow = (column: RelationColumn, row: Row): string[] => {
+      if (column.cardinality === "manyToOne") {
+        const value = row[column.fieldName];
+        return typeof value === "string" && value !== "" ? [value] : [];
+      }
+      return rowRelationValues[row.id]?.[column.fieldName] ?? [];
+    };
+    for (const column of relationColumns) {
+      if (!visibleKeys.includes(column.fieldName)) continue;
+      const target = relationTargets.get(column.fieldName);
+      if (!target) continue;
+      const known = relationLabels[column.fieldName] ?? {};
+      const ids = [...new Set(rows.flatMap((row) => idsForRow(column, row)).filter((id) => !(id in known)))];
+      if (ids.length === 0) continue;
+      Promise.all(
+        ids.map((id) =>
+          target.entriesApi
+            .get(id)
+            .then((entry): [string, string] => [id, target.labelField ? String(entry.value[target.labelField] ?? id) : id])
+            .catch((): [string, string] => [id, id]),
+        ),
+      ).then((pairs) => {
+        if (cancelled) return;
+        setRelationLabels((current) => ({
+          ...current,
+          [column.fieldName]: { ...current[column.fieldName], ...Object.fromEntries(pairs) },
+        }));
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `relationLabels` deliberately excluded: it's read to skip refetching, not to retrigger this effect (that update comes back through `rows`/`rowRelationValues`/`visibleKeys` instead).
+  }, [rows, relationColumns, relationTargets, visibleKeys, rowRelationValues]);
 
   useEffect(() => {
     let cancelled = false;
@@ -214,17 +382,35 @@ function ContentEntryListCollection({
 
   const isPinned = pinnedContentTypeSlugs.has(type.name);
 
-  const columns: DataTableColumn<Row>[] = displayColumns.map(
-    (column): DataTableColumn<Row> => ({
+  const columns: DataTableColumn<Row>[] = listCells.map((cell): DataTableColumn<Row> => {
+    if (cell.kind === "field") {
+      const column = cell.column;
+      return {
+        key: column.fieldName,
+        label: column.label,
+        numeric: column.fieldType === "number",
+        // `image` is technically queryable (it's a plain TEXT column of file
+        // paths), but sorting by that path is meaningless for a thumbnail cell.
+        sortable: queryableFieldNames.has(column.fieldName) && column.fieldType !== "image",
+        render: (value, row) => renderCell(column, value, row),
+      };
+    }
+    const column = cell.column;
+    return {
       key: column.fieldName,
       label: column.label,
-      numeric: column.fieldType === "number",
-      // `image` is technically queryable (it's a plain TEXT column of file
-      // paths), but sorting by that path is meaningless for a thumbnail cell.
-      sortable: queryableFieldNames.has(column.fieldName) && column.fieldType !== "image",
-      render: (value, row) => renderCell(column, value, row),
-    }),
-  );
+      sortable: false,
+      render: (value, row) => {
+        const ids =
+          column.cardinality === "manyToOne"
+            ? typeof value === "string" && value !== ""
+              ? [value]
+              : []
+            : rowRelationValues[row.id]?.[column.fieldName];
+        return renderRelationCell(ids, (id) => relationLabels[column.fieldName]?.[id]);
+      },
+    };
+  });
 
   return (
     <>
@@ -251,7 +437,10 @@ function ContentEntryListCollection({
         columnToggle={{
           storageKey: `contentList:${type.name}:columns`,
           defaultVisible,
-          onVisibleChange: (visible) => setSearchableFields(visible.filter((key) => queryableFieldNames.has(key))),
+          onVisibleChange: (visible) => {
+            setSearchableFields(visible.filter((key) => queryableFieldNames.has(key)));
+            setVisibleKeys(visible);
+          },
         }}
         serverQuery={{
           total,

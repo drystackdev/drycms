@@ -10,8 +10,6 @@ import type {
   ContentTypeKind,
 } from "../content-types/types.js";
 import { useDocumentTitle } from "./page-common.js";
-import CheckField from "../components/CheckField.js";
-import { useStore } from "../hooks/useStore.js";
 import { useParam } from "../hooks/useParam.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
@@ -25,7 +23,6 @@ interface Row extends Record<string, unknown> {
   label: string;
   description: string;
   fieldCount: number;
-  system: boolean;
 }
 
 export default function ContentTypes() {
@@ -45,10 +42,6 @@ export default function ContentTypes() {
     "selectedKind",
     "collection",
   );
-  const [showSystemTypes, setShowSystemTypes] = useStore(
-    "showSystemTypes",
-    true,
-  );
 
   useEffect(() => {
     (async () => {
@@ -65,18 +58,15 @@ export default function ContentTypes() {
   }, []);
 
   const countByKind = (kind: ContentTypeKind) =>
-    (definitions ?? []).filter(
-      (d) => d.kind === kind && (showSystemTypes || !d.system),
-    ).length;
+    (definitions ?? []).filter((d) => d.kind === kind).length;
 
   const rows: Row[] = (definitions ?? [])
-    .filter((d) => d.kind === selectedKind && (showSystemTypes || !d.system))
+    .filter((d) => d.kind === selectedKind)
     .map((d) => ({
       id: d.id,
       label: d.label,
       description: d.description ?? "",
       fieldCount: d.fields.length,
-      system: !!d.system,
     }));
 
   const selectedGroup = GROUPS.find((g) => g.kind === selectedKind)!;
@@ -98,35 +88,6 @@ export default function ContentTypes() {
       ) : (
         definitions && (
           <div class="content-types-grid">
-            <ul class="content-types-nav">
-              {GROUPS.map(({ kind, label, icon }) => (
-                <li key={kind}>
-                  <button
-                    type="button"
-                    aria-current={kind === selectedKind ? "page" : undefined}
-                    onClick={() => setSelectedKind(kind)}
-                  >
-                    <Icon name={icon} />
-                    <span>{label}</span>
-                    <span class="spacer" />
-                    <span class="badge outline">{countByKind(kind)}</span>
-                  </button>
-                </li>
-              ))}
-              <li>
-                <hr />
-              </li>
-              <li>
-                <CheckField
-                  role="switch"
-                  label="Show System Types"
-                  value={showSystemTypes}
-                  onChange={setShowSystemTypes}
-                  description="Show content types that are used internally by DryCMS."
-                />
-              </li>
-            </ul>
-
             <div class="content-types-panel">
               <DataTable
                 columns={[
@@ -136,17 +97,7 @@ export default function ContentTypes() {
                     sortable: true,
                     render: (_value, row) => (
                       <div class="stack" style={{ gap: "0.125rem" }}>
-                        <span>
-                          {row.label}
-                          {row.system && (
-                            <span
-                              class="badge sm outline"
-                              style={{ marginLeft: "0.5rem" }}
-                            >
-                              System
-                            </span>
-                          )}
-                        </span>
+                        <span>{row.label}</span>
                         <span class="hint">
                           {row.description || <i>No description</i>}
                         </span>
@@ -181,6 +132,22 @@ export default function ContentTypes() {
                 }
               />
             </div>
+            <ul class="content-types-nav">
+              {GROUPS.map(({ kind, label, icon }) => (
+                <li key={kind}>
+                  <button
+                    type="button"
+                    aria-current={kind === selectedKind ? "page" : undefined}
+                    onClick={() => setSelectedKind(kind)}
+                  >
+                    <Icon name={icon} />
+                    <span>{label}</span>
+                    <span class="spacer" />
+                    <span class="badge outline">{countByKind(kind)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )
       )}

@@ -157,9 +157,6 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
     const handle = await getHandle();
     const existing = await getContentType(id);
     if (!existing) throw new ContentEngineError("not_found", `Content type "${id}" not found.`);
-    if (existing.system) {
-      throw new ContentEngineError("system_protected", `"${existing.label}" is a built-in content type and can't be deleted.`);
-    }
 
     const allTypes = await listContentTypes();
     if (existing.kind === "component") {

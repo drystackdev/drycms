@@ -7,7 +7,7 @@ import SecretKeyField from "../components/SecretKeyField.js";
 import SelectField from "../components/SelectField.js";
 import TextField from "../components/TextField.js";
 
-export type FieldShape = "column" | "flatten" | "child-table";
+export type FieldShape = "column" | "flatten" | "child-table" | "virtual";
 export type SqlColumnType = "TEXT" | "INTEGER" | "REAL";
 
 export interface SettingOption {
@@ -334,6 +334,11 @@ export interface ComponentFieldConfig {
   /** Another `ContentTypeDefinition.id` (kind `'component'`). */
   componentId: string;
   repeatable: boolean;
+  /** Only meaningful when `repeatable` is on - lets the entry editor's item
+   * list (`components/ComponentField.tsx`) be manually drag-reordered.
+   * Meaningless (and kept disabled/cleared - see `FieldDialog.tsx`) on a
+   * non-repeatable component, which only ever has the one inline instance. */
+  sortable?: boolean;
 }
 
 export const componentFieldType: FieldTypeDefinition = {
@@ -344,7 +349,46 @@ export const componentFieldType: FieldTypeDefinition = {
   configFields: [
     { key: "componentId", label: "Component", widget: "select", optionsSource: "components" },
     { key: "repeatable", label: "Repeatable", widget: "boolean" },
+    { key: "sortable", label: "Sortable (drag to reorder items)", widget: "boolean" },
   ],
+  validationFields: [],
+};
+
+export interface RelationMirrorFieldConfig {
+  /** Another `ContentTypeDefinition.id` that owns the REAL `relation` field
+   * being mirrored - may equal the id of the type this mirror field is
+   * itself declared on (a self-relation, e.g. `Employee.manager` mirrored
+   * back as `Employee.directReports`). */
+  sourceTypeId: string;
+  /** `FieldDefinition.id` (not name) of the `relation`-type field on
+   * `sourceTypeId` that targets THIS type. The target is implicit here
+   * (always "whichever type this mirror field lives on"), unlike
+   * `RelationFieldConfig`, which declares `target` explicitly. */
+  sourceFieldId: string;
+}
+
+/**
+ * `internal: true` - never appears in the "Add Field" type picker.
+ * `relationmirror` fields are auto-generated, not hand-added: every
+ * `relation` field anywhere that targets a given collection gets a matching
+ * mirror field synthesized onto that collection automatically (see
+ * `system-fields.ts`'s `relationMirrorFieldsFor`, injected in
+ * `entry-tree.ts`'s `buildEntryFieldTree` and `ContentTypeEditor.tsx`'s
+ * `systemFieldsForUi`) - appears/disappears with the relation itself, same
+ * as `id`/`createdAt`/other synthetic fields, rather than being a real entry
+ * in anyone's `fields[]`. No column, no child table either way - see
+ * `tree.ts`'s `walk()`. The mirrored relation's own cardinality/data lives
+ * entirely on `sourceTypeId`'s side; this field is a read/write view over
+ * it, never physical storage of its own (see `entry-tree.ts`'s
+ * `buildRelationMirrorNode`).
+ */
+export const relationMirrorFieldType: FieldTypeDefinition = {
+  key: "relationmirror",
+  label: "Relation Mirror",
+  shape: "virtual",
+  fts: false,
+  internal: true,
+  configFields: [],
   validationFields: [],
 };
 
@@ -359,4 +403,5 @@ export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [secretKeyFieldType.key]: secretKeyFieldType,
   [relationFieldType.key]: relationFieldType,
   [componentFieldType.key]: componentFieldType,
+  [relationMirrorFieldType.key]: relationMirrorFieldType,
 };

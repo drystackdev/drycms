@@ -5,6 +5,7 @@ import {
   numberFieldType,
   passwordFieldType,
   relationFieldType,
+  relationMirrorFieldType,
   secretKeyFieldType,
   textFieldType,
   type RelationFieldConfig,
@@ -108,5 +109,18 @@ describe("relationFieldType cardinality", () => {
   it("offers exactly the 3 cardinality options", () => {
     const cardinality = relationFieldType.configFields?.find((d) => d.key === "cardinality");
     expect(cardinality?.options?.map((o) => o.value)).toEqual(["manyToOne", "oneToMany", "manyToMany"]);
+  });
+});
+
+describe("relationMirrorFieldType", () => {
+  it("is registered under the 'relationmirror' key, resolves to a virtual shape (no physical storage), and is internal (never manually addable - see system-fields.ts's relationMirrorFieldsFor)", () => {
+    expect(fieldTypes.relationmirror).toBe(relationMirrorFieldType);
+    expect(relationMirrorFieldType.shape).toBe("virtual");
+    expect(relationMirrorFieldType.internal).toBe(true);
+  });
+
+  it("has no configFields or validationFields - it's never hand-configured through the Add Field dialog", () => {
+    expect(relationMirrorFieldType.configFields).toEqual([]);
+    expect(relationMirrorFieldType.validationFields).toEqual([]);
   });
 });

@@ -9,9 +9,7 @@ import {
   NamingError,
   normalizeFieldOrder,
   validateContentTypeDefinition,
-  validateSystemProtections,
 } from "../content-types/naming.js";
-import { defaultContentTypeDefinitions } from "../content-types/seed.js";
 import { collectTableNames, resolveTableTree } from "../content-types/tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { randomUUID } from "../lib/uuid.js";
@@ -23,7 +21,6 @@ const STATUS_BY_CODE: Record<string, number> = {
   invalid_definition: 400,
   in_use: 409,
   unsupported: 501,
-  system_protected: 403,
 };
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -84,13 +81,6 @@ async function handleSave(
   definition = normalizeFieldOrder(definition);
   const allTypes = await adapter.listContentTypes();
   validateContentTypeDefinition(definition, allTypes);
-  const matchingDefault = defaultContentTypeDefinitions().find((t) => t.id === definition.id);
-  validateSystemProtections(
-    definition,
-    allTypes.find((t) => t.id === definition.id),
-    matchingDefault?.features,
-    matchingDefault?.structureLocked,
-  );
 
   // `validateContentTypeDefinition` only rules out two types sharing a
   // top-level *name* - it can't see that a repeatable field's generated

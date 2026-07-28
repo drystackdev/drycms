@@ -128,6 +128,23 @@ describe("resolveTableTree", () => {
     expect(child.node.columns.find((c) => c.name === "target_id")?.unique).toBe(true);
   });
 
+  it("gives a relationmirror field no column and no child table (virtual shape) - invisible to migration diffing", () => {
+    const type = collection({
+      fields: [
+        field({
+          id: "mirror",
+          name: "referencingPosts",
+          type: "relationmirror",
+          config: { sourceTypeId: "other", sourceFieldId: "other-field" },
+        }),
+      ],
+    });
+    const tree = resolveTableTree(type, [type]);
+
+    expect(tree.columns).toHaveLength(0);
+    expect(tree.children).toHaveLength(0);
+  });
+
   it("a relation with cardinality 'manyToOne' is a plain column, not a child table", () => {
     const category = collection({ id: "cat", name: "categories" });
     const type = collection({

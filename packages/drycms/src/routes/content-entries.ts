@@ -105,6 +105,15 @@ function encodeRelationIds(nodes: EntryFieldNode[], value: EntryValue): EntryVal
         : Array.isArray(raw)
           ? raw.filter((v): v is number => typeof v === "number").map(encodeEntryId)
           : [];
+    } else if (node.kind === "relation-mirror") {
+      const raw = value[node.fieldName];
+      out[node.fieldName] = !node.resolved
+        ? null
+        : node.reverseCardinality === "manyToOne"
+          ? (typeof raw === "number" ? encodeEntryId(raw) : null)
+          : Array.isArray(raw)
+            ? raw.filter((v): v is number => typeof v === "number").map(encodeEntryId)
+            : [];
     }
   }
   return out;
@@ -127,6 +136,15 @@ function decodeRelationIds(nodes: EntryFieldNode[], value: EntryValue): EntryVal
         : Array.isArray(raw)
           ? raw.map((v) => (typeof v === "string" ? decodeEntryId(v) : null)).filter((v): v is number => v !== null)
           : [];
+    } else if (node.kind === "relation-mirror") {
+      const raw = value[node.fieldName];
+      out[node.fieldName] = !node.resolved
+        ? null
+        : node.reverseCardinality === "manyToOne"
+          ? (typeof raw === "string" ? decodeEntryId(raw) : null)
+          : Array.isArray(raw)
+            ? raw.map((v) => (typeof v === "string" ? decodeEntryId(v) : null)).filter((v): v is number => v !== null)
+            : [];
     }
   }
   return out;

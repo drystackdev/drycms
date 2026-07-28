@@ -17,6 +17,30 @@ export interface SystemFieldEntry {
   /** Real technical column name, as actually stored/migrated. */
   name: string;
   typeLabel: string;
+  /** When this one row actually stands for more than one real system field id
+   * (e.g. the `features.slug` Title+Slug pair, shown/dragged as a single
+   * "Title & Slug" row) - the full list of real ids, in their fixed relative
+   * order, to write into `fieldOrder` in this row's place. Defaults to `[id]`
+   * when absent. */
+  groupedIds?: string[];
+  /** Only for a system row with no description of its own (i.e. a
+   * `relationmirror` row - see `mirror` below); real custom fields carry
+   * their own `FieldDefinition.description` instead, threaded through
+   * `fieldListItemProps`. */
+  description?: string;
+  /** Set only for an auto-generated `relationmirror` row (see
+   * `system-fields.ts`'s `relationMirrorFieldsFor`) - unlike every other
+   * system row, these ARE clickable (opens the same `FieldDialog` as a real
+   * field, with Label/Name/Type locked but Description and Display side
+   * still editable) and removable (deletes the REAL `relation` field on the
+   * OTHER type this one mirrors, since the row itself is just a reflection,
+   * not a field of its own to remove). */
+  mirror?: {
+    sourceTypeId: string;
+    sourceTypeLabel: string;
+    sourceFieldId: string;
+    sourceFieldLabel: string;
+  };
 }
 
 type CombinedEntry =
@@ -37,6 +61,10 @@ export interface FieldsListProps {
   fieldOrder?: string[];
   onEdit: (field: FieldDefinition) => void;
   onRemove: (fieldId: string) => void;
+  /** Fires when a `mirror` system row is clicked - see `SystemFieldEntry.mirror`. */
+  onEditMirror: (entry: SystemFieldEntry) => void;
+  /** Fires when a `mirror` system row's Remove is clicked. */
+  onRemoveMirror: (entry: SystemFieldEntry) => void;
   /** Fires with the custom fields' new relative order whenever the unified
    * list is reordered - drives the real column order (see `naming.ts`'s
    * `normalizeFieldOrder`), independent of `onReorderAll`'s display order. */
@@ -47,19 +75,15 @@ export interface FieldsListProps {
    * column order. */
   onReorderAll: (order: string[]) => void;
   onAdd: () => void;
-  /** When true, this content type's structure is fully frozen (`role`/
-   * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
-   * hides the "+ Add Field" button. Existing fields can still be reordered/
-   * edited - only adding new ones is blocked. */
-  structureLocked?: boolean;
 }
 
 /**
  * The unified System + custom Fields list: one flowing, drag-reorderable
  * `<ul>` (system rows look identical to custom ones, just without a
- * click-to-edit or Remove action). `ID` is excluded from the reorderable
- * set entirely and always pinned first - it's a real, fixed primary key,
- * not a field with a position.
+ * click-to-edit or Remove action - EXCEPT `mirror` rows, which get both, see
+ * `SystemFieldEntry.mirror`). `ID` is excluded from the reorderable set
+ * entirely and always pinned first - it's a real, fixed primary key, not a
+ * field with a position.
  */
 export default function FieldsList({
   systemEntries,
@@ -68,11 +92,12 @@ export default function FieldsList({
   fieldOrder,
   onEdit,
   onRemove,
+  onEditMirror,
+  onRemoveMirror,
   onReorderFields,
   onReorderAll,
   onAdd,
   type,
-  structureLocked,
 }: FieldsListProps) {
   const [pendingRemove, setPendingRemove] = useState<FieldDefinition | null>(
     null,
@@ -102,7 +127,9 @@ export default function FieldsList({
     items: orderedEntries,
     getId: (e) => e.id,
     onReorder: (next) => {
-      onReorderAll(next.map((e) => e.id));
+      onReorderAll(
+        next.flatMap((e) => (e.system ? (e.entry.groupedIds ?? [e.id]) : [e.id])),
+      );
       const nextFields = next
         .filter((e): e is CombinedEntry & { system: false } => !e.system)
         .map((e) => e.field);
@@ -132,11 +159,9 @@ export default function FieldsList({
             Define the columns used for data entry and storage
           </span>
         </div>
-        {!structureLocked && (
-          <button type="button" class="outline" onClick={onAdd}>
-            <PlusIcon /> Add Field
-          </button>
-        )}
+        <button type="button" class="outline" onClick={onAdd}>
+          <PlusIcon /> Add Field
+        </button>
       </div>
       <ul class="content-type-list" {...sortable.containerProps}>
         {idEntry && (
@@ -161,7 +186,10 @@ export default function FieldsList({
               label={item.entry.label}
               typeLabel={item.entry.typeLabel}
               name={item.entry.name}
-              system
+              description={item.entry.description}
+              system={!item.entry.mirror}
+              onEdit={item.entry.mirror ? () => onEditMirror(item.entry) : undefined}
+              onRemove={item.entry.mirror ? () => onRemoveMirror(item.entry) : undefined}
               dragHandleProps={sortable.getHandleProps(item.id)}
               dragging={sortable.draggingId === item.id}
             />

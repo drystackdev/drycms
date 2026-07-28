@@ -28,6 +28,8 @@ export function blankEntryValue(nodes: EntryFieldNode[]): EntryValue {
       value[node.fieldName] = [];
     } else if (node.kind === "relation") {
       value[node.fieldName] = node.cardinality === "manyToOne" ? null : [];
+    } else if (node.kind === "relation-mirror") {
+      value[node.fieldName] = node.resolved && node.reverseCardinality === "manyToOne" ? null : [];
     }
   }
   return value;

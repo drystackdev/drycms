@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import ConfirmDialog from "../components/ConfirmDialog.js";
+import SlugField from "../components/SlugField.js";
 import { toast } from "../components/Toast.js";
 import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
 import {
@@ -28,6 +29,61 @@ interface Props {
   /** Absent for a brand-new collection entry, or for a singleton (which has
    * no id of its own in the URL - see `ContentEntryList.tsx`). */
   id?: string;
+}
+
+/** Renders a run of field nodes for one side of the entry form, pairing the
+ * `features.slug` system Title field with its immediately-following Slug
+ * field into one `SlugField` control (label -> auto-derived, editable slug)
+ * instead of two independent text inputs - mirrors the schema editor's single
+ * "Title & Slug" row (see `ContentTypeEditor.tsx`'s `systemFieldsForUi`). */
+function renderFieldNodes(
+  nodes: EntryFieldNode[],
+  value: EntryValue,
+  fieldErrors: Record<string, string>,
+  onFieldChange: (fieldName: string, fieldValue: unknown) => void,
+  allTypes: ContentTypeDefinition[],
+) {
+  const elements = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    const next = nodes[i + 1];
+    if (
+      node.kind === "column" &&
+      node.fieldId === SYSTEM_FIELD_IDS.title &&
+      next?.kind === "column" &&
+      next.fieldId === SYSTEM_FIELD_IDS.slug
+    ) {
+      elements.push(
+        <SlugField
+          key={node.fieldName}
+          label={node.label}
+          slugLabel={next.label}
+          value={typeof value[node.fieldName] === "string" ? (value[node.fieldName] as string) : ""}
+          slug={typeof value[next.fieldName] === "string" ? (value[next.fieldName] as string) : ""}
+          onChange={(titleValue, slugValue) => {
+            onFieldChange(node.fieldName, titleValue);
+            onFieldChange(next.fieldName, slugValue);
+          }}
+          required={!!node.validation.required}
+          error={!!fieldErrors[node.fieldName] || !!fieldErrors[next.fieldName]}
+          helperText={fieldErrors[node.fieldName] ?? fieldErrors[next.fieldName]}
+        />,
+      );
+      i++; // Slug node already rendered alongside Title above.
+      continue;
+    }
+    elements.push(
+      <FieldRenderer
+        key={node.fieldName}
+        node={node}
+        value={value[node.fieldName]}
+        onChange={(fieldValue) => onFieldChange(node.fieldName, fieldValue)}
+        error={fieldErrors[node.fieldName]}
+        allTypes={allTypes}
+      />,
+    );
+  }
+  return elements;
 }
 
 export default function ContentEntryEditor({ typeSlug, id }: Props) {
@@ -268,33 +324,23 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
       <div class="content-entry-editor-grid">
         <div class="stack">
-          {leftFields.map((node) => (
-            <FieldRenderer
-              key={node.fieldName}
-              node={node}
-              value={value[node.fieldName]}
-              onChange={(fieldValue) =>
-                updateFieldValue(node.fieldName, fieldValue)
-              }
-              error={fieldErrors[node.fieldName]}
-              allTypes={allTypes}
-            />
-          ))}
+          {renderFieldNodes(
+            leftFields,
+            value,
+            fieldErrors,
+            updateFieldValue,
+            allTypes,
+          )}
         </div>
 
         <div class="stack">
-          {rightFields.map((node) => (
-            <FieldRenderer
-              key={node.fieldName}
-              node={node}
-              value={value[node.fieldName]}
-              onChange={(fieldValue) =>
-                updateFieldValue(node.fieldName, fieldValue)
-              }
-              error={fieldErrors[node.fieldName]}
-              allTypes={allTypes}
-            />
-          ))}
+          {renderFieldNodes(
+            rightFields,
+            value,
+            fieldErrors,
+            updateFieldValue,
+            allTypes,
+          )}
 
           {!isNew && !isSingleton && (
             <div class="content-type-editor-danger">

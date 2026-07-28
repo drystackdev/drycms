@@ -62,6 +62,32 @@ async function populateChildFields(
         [parentId],
       );
       value[node.fieldName] = rows.map((r) => Number(r.target_id));
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      if (node.sourceColumnName) {
+        // reverse oneToMany (source was manyToOne) - many source rows may point at me.
+        const rows = handle.all<{ id: number }>(
+          `SELECT "id" FROM ${quoteIdent(node.sourceTableName)} WHERE ${quoteIdent(node.sourceColumnName)} = ? ORDER BY "id" ASC;`,
+          [parentId],
+        );
+        value[node.fieldName] = rows.map((r) => Number(r.id));
+      } else if (node.reverseCardinality === "manyToOne") {
+        // reverse manyToOne (source was oneToMany) - at most 1 row, UNIQUE target_id.
+        const rows = handle.all<{ parent_id: number }>(
+          `SELECT "parent_id" FROM ${quoteIdent(node.sourceChildTableName!)} WHERE "target_id" = ?;`,
+          [parentId],
+        );
+        value[node.fieldName] = rows[0] ? Number(rows[0].parent_id) : null;
+      } else {
+        // reverse manyToMany (source was manyToMany) - ordered by the child
+        // table's own synthetic id (insertion order), NOT "position": position
+        // is scoped per parent_id, meaningless once grouped by target_id
+        // across rows that may each belong to a different parent.
+        const rows = handle.all<{ parent_id: number }>(
+          `SELECT "parent_id" FROM ${quoteIdent(node.sourceChildTableName!)} WHERE "target_id" = ? ORDER BY "id" ASC;`,
+          [parentId],
+        );
+        value[node.fieldName] = rows.map((r) => Number(r.parent_id));
+      }
     }
   }
 }
@@ -133,8 +159,75 @@ async function writeChildFields(
           targetId,
         ]);
       }
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      writeRelationMirror(handle, node, parentId, value[node.fieldName]);
     }
   }
+}
+
+/** Writes back a `relationmirror` field's edited value THROUGH the mirrored
+ * field's own physical storage - unlike a normal child-table field (which
+ * owns its whole table for `parentId` and can safely delete-then-reinsert
+ * everything), a mirror write must touch ONLY rows/links relevant to THIS
+ * row's id, never disturbing other unrelated rows or their own `position`
+ * ordering. No transaction wrapping, matching every other statement in this
+ * adapter (none of them are wrapped either). */
+function writeRelationMirror(
+  handle: SqliteHandle,
+  node: Extract<EntryFieldNode, { kind: "relation-mirror"; resolved: true }>,
+  parentId: number,
+  incoming: unknown,
+): void {
+  if (node.sourceColumnName) {
+    // reverse oneToMany: incoming is number[] of source-row ids to claim
+    // exclusively for this row - unclaim removed ones, claim new ones,
+    // without touching source rows unrelated to this mirror field at all.
+    const ids = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+    const table = quoteIdent(node.sourceTableName);
+    const col = quoteIdent(node.sourceColumnName);
+    if (ids.length === 0) {
+      handle.run(`UPDATE ${table} SET ${col} = NULL WHERE ${col} = ?;`, [parentId]);
+    } else {
+      const placeholders = ids.map(() => "?").join(",");
+      handle.run(`UPDATE ${table} SET ${col} = NULL WHERE ${col} = ? AND "id" NOT IN (${placeholders});`, [parentId, ...ids]);
+      handle.run(`UPDATE ${table} SET ${col} = ? WHERE "id" IN (${placeholders});`, [parentId, ...ids]);
+    }
+    return;
+  }
+
+  const childTable = quoteIdent(node.sourceChildTableName!);
+  if (node.reverseCardinality === "manyToOne") {
+    // reverse manyToOne: incoming is number|null - an exclusive claim (the
+    // source's own UNIQUE target_id already guarantees at most one owner).
+    handle.run(`DELETE FROM ${childTable} WHERE "target_id" = ?;`, [parentId]);
+    const newParentId = typeof incoming === "number" ? incoming : null;
+    if (newParentId !== null) {
+      insertRelationChildRow(handle, childTable, newParentId, parentId);
+    }
+    return;
+  }
+
+  // reverse manyToMany: incoming is number[] of parent-row ids, free linking.
+  handle.run(`DELETE FROM ${childTable} WHERE "target_id" = ?;`, [parentId]);
+  const newParentIds = (Array.isArray(incoming) ? incoming : []).filter((v): v is number => typeof v === "number");
+  for (const newParentId of newParentIds) {
+    insertRelationChildRow(handle, childTable, newParentId, parentId);
+  }
+}
+
+/** Appends one new link row at the end of `newParentId`'s own `position`
+ * sequence in the mirrored field's child table - other parents' sequences
+ * (and this same parent's OTHER links) are left untouched. */
+function insertRelationChildRow(handle: SqliteHandle, childTable: string, newParentId: number, targetId: number): void {
+  const nextPosition = handle.all<{ next: number }>(
+    `SELECT COALESCE(MAX("position"), -1) + 1 AS next FROM ${childTable} WHERE "parent_id" = ?;`,
+    [newParentId],
+  )[0]!.next;
+  handle.run(`INSERT INTO ${childTable} ("parent_id","position","target_id") VALUES (?,?,?);`, [
+    newParentId,
+    nextPosition,
+    targetId,
+  ]);
 }
 
 function assertValid(nodes: EntryFieldNode[], value: EntryValue): void {

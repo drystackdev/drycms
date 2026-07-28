@@ -1,6 +1,6 @@
 import { planMigration, type Statement } from "./migration.js";
 import { SYSTEM_COMPONENT_IDS } from "./system-fields.js";
-import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
+import type { ContentTypeDefinition } from "./types.js";
 
 /** Fixed ids for the built-in default content types/fields, so re-running
  * `pendingSeedStatements` on every boot (see the engine adapters) always
@@ -39,12 +39,6 @@ const IDS = {
   permissionIdTable: "system-permission-id-table",
 } as const;
 
-function lockedField(
-  overrides: Omit<FieldDefinition, "locked">,
-): FieldDefinition {
-  return { ...overrides, locked: true };
-}
-
 /**
  * The content types every app must have from first boot: a `user` collection
  * (for accounts able to sign in, with a `roles` relation to `role`), a `menu`
@@ -53,17 +47,19 @@ function lockedField(
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
  * (credentials for third-party AI providers), and `role`/`permission`
  * collections (role-based access control - see `status/role-permission.md`).
- * All seven are `system: true` (can't be deleted) and every declared field is
- * `locked: true` (can't be removed or edited - frozen view-only in the
- * schema editor) - new custom fields can still be added, and everything can
- * still be reordered; see `naming.ts`'s `validateSystemProtections` for the
- * enforcement. `aiKey`,
- * `role`, and `permission` are additionally `structureLocked: true` - no new
- * fields can be added and no feature can be toggled at all; they're
- * display-only in the schema editor.
+ * None of the seven are marked `system` - they're plain, ordinary content
+ * types the admin can freely rename, edit, or delete, indistinguishable from
+ * anything created by hand. Note that `pendingSeedStatements` re-seeds a
+ * missing default by NAME on the next boot (it has no other way to tell
+ * "missing" apart from "renamed") - so deleting one of these just gets it
+ * silently re-created fresh next boot, while renaming one makes that boot
+ * add a brand-new second copy under the original name instead. Deleting
+ * `role`/`permission`/`aiKey`/`menuItem`/`seo` (even though it'll come back)
+ * or renaming any of them will also break the functionality that depends on
+ * their fixed shape/name in the meantime (raw SQL in `permissions.ts`, the
+ * `seo`/`user.roles` features) - that's on the admin.
  * `createdAt`/`updatedAt` ride on `features.timestamps` instead of being
- * declared fields - same protection, since a `system` type's already-on
- * features can't be turned off either.
+ * declared fields.
  */
 export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
   const menuItem: ContentTypeDefinition = {
@@ -73,7 +69,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "Menu Item",
     description: "One link in a menu.",
     fields: [
-      lockedField({
+      {
         id: IDS.menuItemLabel,
         name: "label",
         label: "Label",
@@ -81,8 +77,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true },
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.menuItemDescription,
         name: "description",
         label: "Description",
@@ -90,8 +86,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: {},
         order: 1,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.menuItemHref,
         name: "href",
         label: "Href",
@@ -99,10 +95,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true, format: "url" },
         order: 2,
-      }),
+      },
     ],
     version: 0,
-    system: true,
   };
 
   const seo: ContentTypeDefinition = {
@@ -116,7 +111,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
       // bare "title" on any field (it's the synthetic column `features.slug`
       // adds), even though this one would only ever appear prefixed
       // (`seo_metaTitle`) once flattened.
-      lockedField({
+      {
         id: IDS.seoMetaTitle,
         name: "metaTitle",
         label: "Title",
@@ -124,8 +119,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: {},
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.seoDescription,
         name: "description",
         label: "Description",
@@ -133,8 +128,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: { multiline: true },
         validation: {},
         order: 1,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.seoImage,
         name: "image",
         label: "Image",
@@ -142,10 +137,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: {},
         order: 2,
-      }),
+      },
     ],
     version: 0,
-    system: true,
   };
 
   const user: ContentTypeDefinition = {
@@ -156,7 +150,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     description: "Accounts able to sign in.",
     features: { timestamps: true },
     fields: [
-      lockedField({
+      {
         id: IDS.userName,
         name: "name",
         label: "Name",
@@ -164,8 +158,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true },
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.userEmail,
         name: "email",
         label: "Email",
@@ -173,8 +167,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true, unique: true, format: "email" },
         order: 1,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.userPassword,
         name: "password",
         label: "Password",
@@ -182,8 +176,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true },
         order: 2,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.userRoles,
         name: "roles",
         label: "Roles",
@@ -191,10 +185,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: { target: IDS.role, cardinality: "manyToMany" },
         validation: {},
         order: 3,
-      }),
+      },
     ],
     version: 0,
-    system: true,
   };
 
   const menu: ContentTypeDefinition = {
@@ -205,7 +198,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     description: "A named group of links, e.g. the site's main navigation.",
     features: { timestamps: true },
     fields: [
-      lockedField({
+      {
         id: IDS.menuName,
         name: "name",
         label: "Name",
@@ -213,19 +206,18 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true, unique: true },
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.menuRefs,
         name: "refs",
         label: "Items",
         type: "component",
-        config: { componentId: IDS.menuItem, repeatable: true },
+        config: { componentId: IDS.menuItem, repeatable: true, sortable: true },
         validation: {},
         order: 1,
-      }),
+      },
     ],
     version: 0,
-    system: true,
   };
 
   const aiKey: ContentTypeDefinition = {
@@ -235,7 +227,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "AI Key",
     description: "Credentials for third-party AI providers.",
     fields: [
-      lockedField({
+      {
         id: IDS.aiKeyName,
         name: "name",
         label: "Name",
@@ -243,8 +235,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true },
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.aiKeyDescription,
         name: "description",
         label: "Description",
@@ -252,8 +244,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: {},
         order: 1,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.aiKeyProvider,
         name: "provider",
         label: "Provider",
@@ -264,8 +256,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         },
         validation: { required: true },
         order: 2,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.aiKeyKey,
         name: "key",
         label: "Key",
@@ -273,8 +265,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true },
         order: 3,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.aiKeyUrl,
         name: "url",
         label: "URL",
@@ -282,11 +274,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { format: "url" },
         order: 4,
-      }),
+      },
     ],
     version: 0,
-    system: true,
-    structureLocked: true,
   };
 
   const role: ContentTypeDefinition = {
@@ -296,7 +286,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "Role",
     description: "A named set of permissions users can be assigned.",
     fields: [
-      lockedField({
+      {
         id: IDS.roleName,
         name: "name",
         label: "Name",
@@ -304,8 +294,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true, unique: true },
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.roleIsSuperAdmin,
         name: "isSuperAdmin",
         label: "Super Admin",
@@ -314,8 +304,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         validation: {},
         default: false,
         order: 1,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.rolePermissions,
         name: "permissions",
         label: "Permissions",
@@ -323,11 +313,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: { target: IDS.permission, cardinality: "manyToMany" },
         validation: {},
         order: 2,
-      }),
+      },
     ],
     version: 0,
-    system: true,
-    structureLocked: true,
   };
 
   const permission: ContentTypeDefinition = {
@@ -338,7 +326,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     description:
       "Auto-synced, one per collection/singleton - governs which role can operate on it.",
     fields: [
-      lockedField({
+      {
         id: IDS.permissionName,
         name: "name",
         label: "Name",
@@ -346,8 +334,8 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true, unique: true },
         order: 0,
-      }),
-      lockedField({
+      },
+      {
         id: IDS.permissionIdTable,
         name: "idTable",
         label: "Table",
@@ -355,11 +343,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: { required: true, unique: true },
         order: 1,
-      }),
+      },
     ],
     version: 0,
-    system: true,
-    structureLocked: true,
   };
 
   return [menuItem, seo, user, menu, aiKey, role, permission];

@@ -150,6 +150,181 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     expect(paged.rows.map((r) => r.value.name)).toEqual(["Grace"]);
   });
 
+  it("reads and writes back an auto-generated relationmirror field reflecting a manyToMany relation (role.user mirrors user.roles)", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+    // No manual schema edit needed - `role` automatically gets a `user`
+    // relationmirror field the moment `user.roles` (a real relation
+    // targeting `role`) exists, which the seed already provides. See
+    // `system-fields.ts`'s `relationMirrorFieldsFor`.
+    const roleType = allTypes.find((t) => t.name === "role")!;
+
+    const editor = await entries.createEntry(roleType, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
+    const ada = await entries.createEntry(user, allTypes, { name: "Ada", email: "ada@example.com", password: "x", roles: [editor.id] });
+    const grace = await entries.createEntry(user, allTypes, { name: "Grace", email: "grace@example.com", password: "x", roles: [editor.id] });
+
+    // Isolation fixture: an unrelated role/user pair that must survive
+    // editor's mirror write untouched.
+    const unrelatedRole = await entries.createEntry(roleType, allTypes, { name: "Unrelated", isSuperAdmin: false, permissions: [] });
+    const unrelatedUser = await entries.createEntry(user, allTypes, {
+      name: "Zoe",
+      email: "zoe@example.com",
+      password: "x",
+      roles: [unrelatedRole.id],
+    });
+
+    const editorEntry = await entries.getEntry(roleType, allTypes, editor.id);
+    expect(editorEntry?.value.user).toEqual([ada.id, grace.id]);
+
+    // Editing the mirror field (dropping grace) must write back through to
+    // user_roles: grace's link to editor is removed, ada's survives.
+    await entries.updateEntry(roleType, allTypes, editor.id, {
+      name: "Editor",
+      isSuperAdmin: false,
+      permissions: [],
+      user: [ada.id],
+    });
+
+    expect((await entries.getEntry(roleType, allTypes, editor.id))?.value.user).toEqual([ada.id]);
+    expect((await entries.getEntry(user, allTypes, ada.id))?.value.roles).toEqual([editor.id]);
+    expect((await entries.getEntry(user, allTypes, grace.id))?.value.roles).toEqual([]);
+    // Isolation: unrelated role/user pair untouched by editor's mirror write.
+    expect((await entries.getEntry(roleType, allTypes, unrelatedRole.id))?.value.user).toEqual([unrelatedUser.id]);
+    expect((await entries.getEntry(user, allTypes, unrelatedUser.id))?.value.roles).toEqual([unrelatedRole.id]);
+  });
+
+  it("reads and writes back an auto-generated relationmirror field reflecting a manyToOne relation (project.team mirrors team.project)", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+
+    const project: ContentTypeDefinition = {
+      id: "custom-project",
+      kind: "collection",
+      name: "project",
+      label: "Project",
+      fields: [],
+      version: 0,
+    };
+    await schema.applySave(project, await schema.planSave(project));
+
+    let allTypes = await schema.listContentTypes();
+    const projectType = allTypes.find((t) => t.name === "project")!;
+    const team: ContentTypeDefinition = {
+      id: "custom-team",
+      kind: "collection",
+      name: "team",
+      label: "Team",
+      fields: [
+        {
+          id: "f-team-project",
+          name: "project",
+          label: "Project",
+          type: "relation",
+          config: { target: projectType.id, cardinality: "manyToOne" },
+          validation: {},
+          order: 0,
+        },
+      ],
+      version: 0,
+    };
+    // No manual mirror field needed on `project` - saving `team.project`
+    // (a real relation targeting it) is enough for `project` to auto-gain a
+    // `team` relationmirror field, per `system-fields.ts`'s
+    // `relationMirrorFieldsFor`.
+    await schema.applySave(team, await schema.planSave(team));
+
+    allTypes = await schema.listContentTypes();
+    const finalProjectType = allTypes.find((t) => t.name === "project")!;
+    const finalTeamType = allTypes.find((t) => t.name === "team")!;
+
+    const alpha = await entries.createEntry(finalProjectType, allTypes, { team: [] });
+    const beta = await entries.createEntry(finalProjectType, allTypes, { team: [] });
+    const frontend = await entries.createEntry(finalTeamType, allTypes, { project: alpha.id });
+    const backend = await entries.createEntry(finalTeamType, allTypes, { project: alpha.id });
+    // Isolation fixture: a team already on the OTHER project.
+    const platform = await entries.createEntry(finalTeamType, allTypes, { project: beta.id });
+
+    expect((await entries.getEntry(finalProjectType, allTypes, alpha.id))?.value.team).toEqual([frontend.id, backend.id]);
+
+    // Drop backend, keep frontend - backend.project must be nulled out,
+    // frontend.project left alone, and beta/platform (unrelated) untouched.
+    await entries.updateEntry(finalProjectType, allTypes, alpha.id, { team: [frontend.id] });
+
+    expect((await entries.getEntry(finalProjectType, allTypes, alpha.id))?.value.team).toEqual([frontend.id]);
+    expect((await entries.getEntry(finalTeamType, allTypes, frontend.id))?.value.project).toBe(alpha.id);
+    expect((await entries.getEntry(finalTeamType, allTypes, backend.id))?.value.project).toBeNull();
+    expect((await entries.getEntry(finalProjectType, allTypes, beta.id))?.value.team).toEqual([platform.id]);
+    expect((await entries.getEntry(finalTeamType, allTypes, platform.id))?.value.project).toBe(beta.id);
+  });
+
+  it("reads and writes back an auto-generated relationmirror field reflecting a oneToMany relation (product.cart mirrors cart.items)", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+
+    const product: ContentTypeDefinition = {
+      id: "custom-product",
+      kind: "collection",
+      name: "product",
+      label: "Product",
+      fields: [],
+      version: 0,
+    };
+    await schema.applySave(product, await schema.planSave(product));
+
+    let allTypes = await schema.listContentTypes();
+    const productType = allTypes.find((t) => t.name === "product")!;
+    const cart: ContentTypeDefinition = {
+      id: "custom-cart",
+      kind: "collection",
+      name: "cart",
+      label: "Cart",
+      fields: [
+        {
+          id: "f-cart-items",
+          name: "items",
+          label: "Items",
+          type: "relation",
+          config: { target: productType.id, cardinality: "oneToMany" },
+          validation: {},
+          order: 0,
+        },
+      ],
+      version: 0,
+    };
+    // No manual mirror field needed on `product` - saving `cart.items` (a
+    // real relation targeting it) is enough for `product` to auto-gain a
+    // `cart` relationmirror field, per `system-fields.ts`'s
+    // `relationMirrorFieldsFor`.
+    await schema.applySave(cart, await schema.planSave(cart));
+
+    allTypes = await schema.listContentTypes();
+    const finalProductType = allTypes.find((t) => t.name === "product")!;
+    const finalCartType = allTypes.find((t) => t.name === "cart")!;
+
+    const cartA = await entries.createEntry(finalCartType, allTypes, { items: [] });
+    const cartB = await entries.createEntry(finalCartType, allTypes, { items: [] });
+    const widget = await entries.createEntry(finalProductType, allTypes, { cart: null });
+    // Isolation fixture: a product already claimed by the OTHER cart.
+    const gadget = await entries.createEntry(finalProductType, allTypes, { cart: cartB.id });
+
+    expect((await entries.getEntry(finalCartType, allTypes, cartB.id))?.value.items).toEqual([gadget.id]);
+
+    // Claim widget for cartA through its mirror field.
+    await entries.updateEntry(finalProductType, allTypes, widget.id, { cart: cartA.id });
+    expect((await entries.getEntry(finalCartType, allTypes, cartA.id))?.value.items).toEqual([widget.id]);
+    expect((await entries.getEntry(finalProductType, allTypes, widget.id))?.value.cart).toBe(cartA.id);
+    // Isolation: cartB/gadget's link untouched.
+    expect((await entries.getEntry(finalCartType, allTypes, cartB.id))?.value.items).toEqual([gadget.id]);
+    expect((await entries.getEntry(finalProductType, allTypes, gadget.id))?.value.cart).toBe(cartB.id);
+
+    // Release widget's claim entirely.
+    await entries.updateEntry(finalProductType, allTypes, widget.id, { cart: null });
+    expect((await entries.getEntry(finalCartType, allTypes, cartA.id))?.value.items).toEqual([]);
+    expect((await entries.getEntry(finalProductType, allTypes, widget.id))?.value.cart).toBeNull();
+  });
+
   it("getSingletonEntry/saveSingletonEntry upsert the one row a singleton has", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);

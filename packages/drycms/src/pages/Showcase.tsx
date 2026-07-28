@@ -84,11 +84,7 @@ export default function Showcase({ tab }: Props) {
       </div>
 
       <div class="showcase">
-        <aside
-          class="showcase-nav"
-          aria-label="Showcase sections"
-          ref={nav}
-        >
+        <aside class="showcase-nav" aria-label="Showcase sections" ref={nav}>
           <nav>
             {groups.map((group) => (
               <Fragment key={group.label}>
@@ -118,7 +114,11 @@ export default function Showcase({ tab }: Props) {
                 role="button"
                 class="outline pager-btn"
                 href={`${path}/showcase/${prevId}`}
-                style={{paddingBlock: `0.5rem`, textAlign: 'left', height: 'unset'}}
+                style={{
+                  paddingBlock: `0.5rem`,
+                  textAlign: "left",
+                  height: "unset",
+                }}
               >
                 <Icon name="ArrowLeft" />
                 <span class="pager-text">
@@ -145,7 +145,7 @@ export default function Showcase({ tab }: Props) {
                 role="button"
                 class="pager-btn pager-btn-next"
                 href={`${path}/showcase/${nextId}`}
-				style={{paddingBlock: `0.5rem`, height: 'unset'}}
+                style={{ paddingBlock: `0.5rem`, height: "unset" }}
               >
                 <span class="pager-text">
                   <small>Next</small>
@@ -394,6 +394,7 @@ const MOCK_AUTHORS: MockAuthor[] = [
 
 function RelationFieldPreview() {
   const [author, setAuthor] = useState("1");
+  const [contributors, setContributors] = useState<string[]>(["2", "3"]);
   const source: RelationFieldSource<MockAuthor> = useMemo(
     () => ({
       columns: [
@@ -410,21 +411,39 @@ function RelationFieldPreview() {
       },
       resolveLabels: async (ids) =>
         Object.fromEntries(
-          ids.map((id) => [id, MOCK_AUTHORS.find((a) => a.id === id)?.name ?? id]),
+          ids.map((id) => [
+            id,
+            MOCK_AUTHORS.find((a) => a.id === id)?.name ?? id,
+          ]),
         ),
     }),
     [],
   );
   return (
-    <div style="width: 100%; max-width: 24rem">
-      <RelationField
-        label="Author"
-        value={author}
-        onChange={(value) => setAuthor(value as string)}
-        source={source}
-        pickerTitle="Choose Author"
-        helperText="Click to pick one author from the list."
-      />
+    <div class="grid cols-2" style="width: 100%">
+      <div>
+        <RelationField
+          label="Author"
+          value={author}
+          onChange={(value) => setAuthor(value as string)}
+          source={source}
+          pickerTitle="Choose Author"
+          description="The main author of this post."
+          helperText="Click to pick one author from the list."
+        />
+      </div>
+      <div>
+        <RelationField
+          label="Contributors"
+          value={contributors}
+          onChange={(value) => setContributors(value as string[])}
+          source={source}
+          multiple
+          description="Other contributors to this post."
+          pickerTitle="Choose Contributors"
+          helperText="Click to pick multiple contributors from the list."
+        />
+      </div>
     </div>
   );
 }
@@ -437,6 +456,7 @@ interface MockLink {
 function ComponentFieldPreview() {
   const [links, setLinks] = useState<MockLink[]>([
     { label: "Docs", url: "https://example.com/docs" },
+    { label: "GitHub", url: "https://example.com/github" },
   ]);
   return (
     <div style="width: 100%; max-width: 24rem">
@@ -444,6 +464,7 @@ function ComponentFieldPreview() {
         label="Links"
         value={links}
         onChange={setLinks}
+        sortable
         itemLabel="link"
         summaryOf={(item) => item.label}
         blankItem={() => ({ label: "", url: "" })}
@@ -463,7 +484,7 @@ function ComponentFieldPreview() {
             />
           </>
         )}
-        helperText="Add, edit, or remove repeatable link items."
+        helperText="Add, edit, or remove repeatable link items. Drag the handle to reorder."
       />
     </div>
   );
@@ -482,11 +503,15 @@ function DemoContent({ id }: { id: string }) {
           <div class="stack" style="width: 100%">
             <div class="row">
               {intents.map((intent) => (
-                <div class="swatch" key={intent} data-tooltip={`--dry-${intent === "secondary" ? "secondary-main" : intent}`}>
+                <div
+                  class="swatch"
+                  key={intent}
+                  data-tooltip={`--dry-${intent === "secondary" ? "secondary-main" : intent}`}
+                >
                   <span
                     style={`background: var(--dry-${intent === "secondary" ? "secondary-main" : intent})`}
                   />
-				  <small class="mono">{intent}</small>
+                  <small class="mono">{intent}</small>
                 </div>
               ))}
             </div>
@@ -883,8 +908,18 @@ function DemoContent({ id }: { id: string }) {
           code={code.progressCircle!}
         >
           <div class="row" style="gap: 1.5rem">
-            <progress value="72" max="100" class="circle" style="--value: 72"></progress>
-            <progress value="28" max="100" class="circle" style="--value: 28"></progress>
+            <progress
+              value="72"
+              max="100"
+              class="circle"
+              style="--value: 72"
+            ></progress>
+            <progress
+              value="28"
+              max="100"
+              class="circle"
+              style="--value: 28"
+            ></progress>
             <progress class="circle"></progress>
           </div>
         </Demo>
@@ -1135,7 +1170,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="relation-field"
           title="Relation field"
-          description="Same label + control + helper text contract as TextField; the control is a card that opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend."
+          description="Same label + control + helper text contract as TextField; the control is a card that opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend. multiple swaps the picker's radio column for checkboxes and stores an array of ids instead of one."
           code={code.relationField!}
         >
           <RelationFieldPreview />
@@ -1323,28 +1358,36 @@ function DemoContent({ id }: { id: string }) {
             <button
               type="button"
               class="success"
-              onClick={() => toast.add({ title: "Entry published", type: "success" })}
+              onClick={() =>
+                toast.add({ title: "Entry published", type: "success" })
+              }
             >
               Success
             </button>
             <button
               type="button"
               class="destructive"
-              onClick={() => toast.add({ title: "Something went wrong", type: "error" })}
+              onClick={() =>
+                toast.add({ title: "Something went wrong", type: "error" })
+              }
             >
               Error
             </button>
             <button
               type="button"
               class="warning"
-              onClick={() => toast.add({ title: "Quota almost reached", type: "warning" })}
+              onClick={() =>
+                toast.add({ title: "Quota almost reached", type: "warning" })
+              }
             >
               Warning
             </button>
             <button
               type="button"
               class="info"
-              onClick={() => toast.add({ title: "A new version is available", type: "info" })}
+              onClick={() =>
+                toast.add({ title: "A new version is available", type: "info" })
+              }
             >
               Info
             </button>
@@ -1367,12 +1410,19 @@ function DemoContent({ id }: { id: string }) {
                 toast
                   .promise(
                     new Promise<void>((resolve, reject) =>
-                      setTimeout(() => (Math.random() > 0.5 ? resolve() : reject(new Error("Network error"))), 1200),
+                      setTimeout(
+                        () =>
+                          Math.random() > 0.5
+                            ? resolve()
+                            : reject(new Error("Network error")),
+                        1200,
+                      ),
                     ),
                     {
                       loading: "Saving…",
                       success: "Saved",
-                      error: (err: unknown) => `Failed: ${(err as Error).message}`,
+                      error: (err: unknown) =>
+                        `Failed: ${(err as Error).message}`,
                     },
                   )
                   .catch(() => {})

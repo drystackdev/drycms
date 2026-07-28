@@ -185,6 +185,12 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
             throw new TreeResolutionError(`Circular component reference via "${component.id}".`);
           }
           walk(component.fields, [...namePrefix, field.name], idPath, new Set([...seen, component.id]));
+        } else if (shape === "virtual") {
+          // relationmirror: contributes nothing physically - its value is
+          // computed at read/write time from the MIRRORED field's own
+          // column/child table (see `entry-tree.ts`'s `buildRelationMirrorNode`).
+          // No column, no child pushed here: entirely invisible to
+          // `migration.ts`'s diffing, which only ever reads `columns`/`children`.
         } else {
           // child-table: repeatable component, or relation with cardinality 'many'.
           // Table name inherits the FULL local flatten-prefix chain (not just

@@ -2404,7 +2404,7 @@
      * proportional column - a 1/4-width nav looked oversized for 3 items. */
     .content-types-grid {
       display: grid;
-      grid-template-columns: 16rem minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) 16rem;
       gap: var(--dry-gap) 2rem;
       align-items: start;
 

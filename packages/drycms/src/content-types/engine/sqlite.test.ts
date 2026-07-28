@@ -54,7 +54,7 @@ describe("createSqliteContentEngineAdapter", () => {
       "seo",
       "user",
     ]);
-    expect(types.every((t) => t.system)).toBe(true);
+    expect(types.every((t) => !t.system)).toBe(true);
   });
 
   it("seeds the permanent Super Admin role at boot", async () => {
@@ -87,21 +87,17 @@ describe("createSqliteContentEngineAdapter", () => {
     ]);
   });
 
-  it("refuses to delete a built-in content type", async () => {
+  it("allows deleting a built-in content type, same as any other (system is purely a UI label)", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
     const user = (await adapter.listContentTypes()).find(
       (t) => t.name === "user",
     )!;
-    await expect(adapter.deleteContentType(user.id)).rejects.toMatchObject({
-      name: "ContentEngineError",
-      code: "system_protected",
-    });
+    await adapter.deleteContentType(user.id);
 
-    // Not just a rejected promise - nothing was actually dropped either.
     const stillThere = await adapter.getContentType(user.id);
-    expect(stillThere).not.toBeNull();
+    expect(stillThere).toBeNull();
   });
 
   it("still allows deleting an ordinary, non-system content type", async () => {

@@ -11,7 +11,7 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role, and permission (collections), all system + fully locked", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, and permission (collections), none marked system", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
       "menu",
@@ -22,8 +22,7 @@ describe("defaultContentTypeDefinitions", () => {
       "user",
     ]);
     for (const def of defs) {
-      expect(def.system).toBe(true);
-      expect(def.fields.every((f) => f.locked)).toBe(true);
+      expect(def.system).toBeFalsy();
     }
     expect(byName("menuItem").kind).toBe("component");
     expect(byName("seo").kind).toBe("component");
@@ -32,16 +31,6 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
     expect(byName("permission").kind).toBe("collection");
-  });
-
-  it("structureLocked: on for aiKey/role/permission, off for user/menu/menuItem/seo", () => {
-    expect(byName("aiKey").structureLocked).toBe(true);
-    expect(byName("role").structureLocked).toBe(true);
-    expect(byName("permission").structureLocked).toBe(true);
-    expect(byName("user").structureLocked).toBeFalsy();
-    expect(byName("menu").structureLocked).toBeFalsy();
-    expect(byName("menuItem").structureLocked).toBeFalsy();
-    expect(byName("seo").structureLocked).toBeFalsy();
   });
 
   it("gives every type and field a stable, unique id", () => {
@@ -132,6 +121,7 @@ describe("defaultContentTypeDefinitions", () => {
     expect(refs.config).toMatchObject({
       componentId: menuItem.id,
       repeatable: true,
+      sortable: true,
     });
   });
 

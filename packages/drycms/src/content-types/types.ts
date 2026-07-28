@@ -25,13 +25,6 @@ export interface FieldDefinition {
    * server-side on every save via `normalizeFieldOrder()` in `naming.ts`,
    * regardless of what a client submits - see `routes/content-types.ts`. */
   order: number;
-  /** True for fields that shipped as part of a `system` content type's
-   * default shape (see `seed.ts`) - can't be removed or edited (name, label,
-   * type, description, config, validation, default all frozen), though it
-   * can still be reordered. Enforced server-side against the stored (not
-   * client-submitted) definition, in `naming.ts`'s
-   * `validateSystemProtections`. */
-  locked?: boolean;
 }
 
 export interface ContentTypeFeatures {
@@ -86,19 +79,22 @@ export interface ContentTypeDefinition {
    * Purely cosmetic, like `fieldOrder`: never affects the real column order
    * in the database. */
   fieldSides?: Record<string, "left" | "right">;
+  /** Per-id description override, keyed the same way as `fieldOrder`/
+   * `fieldSides` - but unlike those, only ever meaningful for a synthetic
+   * `relationmirror` row (see `system-fields.ts`'s `relationMirrorFieldsFor`),
+   * which has no `FieldDefinition.description` of its own to edit since it
+   * isn't a real entry in `fields[]`. A real field's description just lives
+   * on the field itself and never touches this map. Same self-healing shape:
+   * a stale id (the relation it described no longer exists) is simply never
+   * looked up again. */
+  fieldDescriptions?: Record<string, string>;
   /** Optimistic-lock counter, incremented on every successful save. */
   version: number;
   /** True for the built-in defaults seeded at first boot (`user`, `menu`,
-   * `menuItem` - see `seed.ts`). Protects the type itself from deletion and
-   * blocks un-marking it back to `false`; its `locked` fields and any
-   * feature already on stay required too - see `validateSystemProtections`.
-   * New fields can still be added and everything can still be reordered. */
+   * `menuItem`, `seo`, `aiKey`, `role`, `permission` - see `seed.ts`).
+   * Purely for identification in the admin UI (a "System" badge, and the
+   * ability to filter them out of the Content nav) - imposes no editing
+   * restrictions of its own; fields, features, name, and the type itself
+   * can all be freely changed or deleted, same as any other content type. */
   system?: boolean;
-  /** Only takes effect when `system` is also true. Freezes the shape
-   * entirely: no new fields can be added and no feature can be toggled at
-   * all (stricter than plain `system`, which still allows both) - the type
-   * is display-only in the schema editor. Used by `role`/`permission`/
-   * `aiKey` (see `seed.ts`); enforced in `naming.ts`'s
-   * `validateSystemProtections`. */
-  structureLocked?: boolean;
 }

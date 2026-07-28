@@ -76,23 +76,12 @@ export interface FeaturesFieldsetProps {
   kind: ContentTypeKind;
   features: ContentTypeFeatures | undefined;
   onChange: (key: keyof ContentTypeFeatures, value: boolean) => void;
-  /** When true, this content type's structure is fully frozen (`role`/
-   * `permission`/`aiKey` - see `types.ts`'s `structureLocked`):
-   * disables every toggle. */
-  disabled?: boolean;
-  /** Individual feature keys that can't be turned off because the built-in
-   * seed default already requires them on (e.g. `timestamps` on `User`/
-   * `Menu` - see `naming.ts`'s `LOCKABLE_FEATURES`). Ignored when `disabled`
-   * is already true (the whole fieldset is frozen either way). */
-  requiredKeys?: ReadonlySet<keyof ContentTypeFeatures>;
 }
 
 export default function FeaturesFieldset({
   kind,
   features,
   onChange,
-  disabled,
-  requiredKeys,
 }: FeaturesFieldsetProps) {
   const items = FEATURES_BY_KIND[kind];
   if (items.length === 0) return null;
@@ -104,7 +93,6 @@ export default function FeaturesFieldset({
           <div key={key}>
             <CheckField
               role="switch"
-              disabled={disabled || requiredKeys?.has(key)}
               description={description}
               label={label}
               value={!!features?.[key]}

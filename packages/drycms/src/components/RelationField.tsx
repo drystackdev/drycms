@@ -177,7 +177,9 @@ export default function RelationField({
         onClick={() => setOpen(true)}
       >
         {selectedIds.length === 0 ? (
-          <span class="hint">Click to choose.</span>
+          <div style={{ textAlign: "center", paddingBlock: "1.5rem" }}>
+            <span class="hint">Click to choose.</span>
+          </div>
         ) : (
           <ul class="entry-relation-card-list">
             {selectedIds.map((sid) => (

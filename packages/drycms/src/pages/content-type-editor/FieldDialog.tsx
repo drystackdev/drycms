@@ -30,8 +30,9 @@ import type {
   FieldValidation,
 } from "../../content-types/types.js";
 
-/** Right-side-emphasized two-panel icon for the Display-side toggle below. */
-function SideRightIcon() {
+/** Right-side-emphasized two-panel icon for the Display-side toggle below -
+ * exported for `MirrorFieldDialog.tsx`'s identical toggle. */
+export function SideRightIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
       <path d="M0 0h24v24H0z" fill="none" />
@@ -50,8 +51,9 @@ function SideRightIcon() {
   );
 }
 
-/** Left-side-emphasized two-panel icon for the Display-side toggle below. */
-function SideLeftIcon() {
+/** Left-side-emphasized two-panel icon for the Display-side toggle below -
+ * exported for `MirrorFieldDialog.tsx`'s identical toggle. */
+export function SideLeftIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
       <path d="M0 0h24v24H0z" fill="none" />
@@ -85,15 +87,6 @@ export interface FieldDialogProps {
   showSideToggle: boolean;
   onCancel: () => void;
   onSave: (field: FieldDefinition, side: FieldSide) => void;
-  /** True when `editingField` is a `locked` field on a `system` content
-   * type: fully view-only - every control disabled, no Save button - EXCEPT
-   * the Display side control, which stays interactive even here: it's
-   * purely cosmetic (like `FieldsList.tsx`'s row toggle, never gated by
-   * `locked`/`structureLocked` either). Lets an admin still inspect a
-   * built-in field's full config/validation without being able to change it
-   * (see `naming.ts`'s `validateSystemProtections`, which enforces this same
-   * freeze server-side regardless). */
-  readOnly?: boolean;
 }
 
 /** Descriptor keys that share a row instead of each getting their own full
@@ -224,16 +217,12 @@ function SettingsForm({
   onChange,
   dynamicOptions,
   disabledKeys = [],
-  allDisabled = false,
 }: {
   descriptors: SettingDescriptor[];
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   disabledKeys?: string[];
-  /** Overrides `disabledKeys` - every control disabled, e.g. a read-only
-   * built-in field. */
-  allDisabled?: boolean;
 }) {
   if (descriptors.length === 0) return null;
   return (
@@ -252,7 +241,7 @@ function SettingsForm({
                   values,
                   onChange,
                   dynamicOptions,
-                  disabled: allDisabled || disabledKeys.includes(d.key),
+                  disabled: disabledKeys.includes(d.key),
                 })}
               </div>
             ))}
@@ -263,7 +252,7 @@ function SettingsForm({
             values,
             onChange,
             dynamicOptions,
-            disabled: allDisabled || disabledKeys.includes(row[0]!.key),
+            disabled: disabledKeys.includes(row[0]!.key),
           })
         ),
       )}
@@ -273,20 +262,19 @@ function SettingsForm({
 
 /** Type-appropriate "Default value" input - not routed through
  * `SettingsForm` since its value type must match the field's own value type,
- * not a generic widget. No default for image/relation/component: a static
- * default doesn't make sense for an uploaded asset or a relation. */
+ * not a generic widget. No default for image/relation/component/
+ * relationmirror: a static default doesn't make sense for an uploaded asset
+ * or a relation (real or mirrored). */
 function DefaultValueInput({
   activeType,
   config,
   value,
   onChange,
-  disabled,
 }: {
   activeType: FieldTypeDefinition | undefined;
   config: unknown;
   value: unknown;
   onChange: (value: unknown) => void;
-  disabled?: boolean;
 }) {
   if (!activeType || resolveFieldShape(activeType, config) !== "column")
     return null;
@@ -297,7 +285,6 @@ function DefaultValueInput({
           label="Default value"
           placeholder="e.g. Untitled"
           value={typeof value === "string" ? value : ""}
-          disabled={disabled}
           onChange={onChange}
         />
       );
@@ -306,20 +293,18 @@ function DefaultValueInput({
         <NumberField
           label="Default value"
           value={typeof value === "number" ? value : 0}
-          disabled={disabled}
           onChange={onChange}
         />
       );
     case "boolean":
       return (
-        <CheckField label="Default value" value={!!value} disabled={disabled} onChange={onChange} />
+        <CheckField label="Default value" value={!!value} onChange={onChange} />
       );
     case "date":
       return (
         <DatePickerField
           label="Default value"
           value={value instanceof Date ? value : new Date()}
-          disabled={disabled}
           onChange={onChange}
         />
       );
@@ -329,12 +314,12 @@ function DefaultValueInput({
       return selectConfig.multiple ? (
         <div class="field">
           <label>Default value</label>
-          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} disabled={disabled} onChange={onChange} />
+          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} onChange={onChange} />
         </div>
       ) : (
         <div class="field">
           <label>Default value</label>
-          <Select options={options} value={typeof value === "string" ? value : undefined} disabled={disabled} onChange={onChange} />
+          <Select options={options} value={typeof value === "string" ? value : undefined} onChange={onChange} />
         </div>
       );
     }
@@ -365,6 +350,15 @@ function textValidationDisabledKeys(
   return disabled;
 }
 
+/** `component`'s `sortable` only means anything once `repeatable` is on (see
+ * `field-registry.ts`'s `ComponentFieldConfig`) - a non-repeatable component
+ * only ever has the one inline instance, nothing to reorder. */
+function componentConfigDisabledKeys(
+  config: Record<string, unknown>,
+): string[] {
+  return config.repeatable ? [] : ["sortable"];
+}
+
 export default function FieldDialog({
   open,
   editingField,
@@ -373,7 +367,6 @@ export default function FieldDialog({
   showSideToggle,
   onCancel,
   onSave,
-  readOnly = false,
 }: FieldDialogProps) {
   const dialogRef = useDialogSync(open, onCancel);
   // Deps include `open`: the grid only mounts once the dialog opens, so the
@@ -406,7 +399,9 @@ export default function FieldDialog({
       setDraftSide(
         resolveFieldSide(
           editingField.id,
-          editingField.type === "relation" || editingField.type === "component",
+          editingField.type === "relation" ||
+            editingField.type === "component" ||
+            editingField.type === "relationmirror",
           fieldSides,
         ),
       );
@@ -427,6 +422,18 @@ export default function FieldDialog({
     // is open (the user's own toggle clicks would otherwise get clobbered).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingField]);
+
+  function handleConfigChange(key: string, value: unknown) {
+    setDraftConfig((prev) => {
+      const next: Record<string, unknown> = { ...prev, [key]: value };
+      // Turning `repeatable` off makes `sortable` meaningless - clear it
+      // rather than leaving a stale `true` sitting invisibly disabled.
+      if (draftType === "component" && key === "repeatable" && !value) {
+        next.sortable = false;
+      }
+      return next;
+    });
+  }
 
   function handleValidationChange(key: string, value: unknown) {
     setDraftValidation((prev) => {
@@ -478,25 +485,34 @@ export default function FieldDialog({
   }
 
   const activeFieldType = fieldTypes[draftType];
+  // A `relationmirror` row isn't a real field (see `system-fields.ts`'s
+  // `relationMirrorFieldsFor`) - its Label/Name/Type are derived from the
+  // `relation` field it mirrors and can't be renamed independently, but its
+  // Description and Display side genuinely belong to THIS type and stay
+  // editable (see `ContentTypeEditor.tsx`'s `handleFieldSave`).
+  const isMirror = editingField?.type === "relationmirror";
   const textDisabledKeys =
     draftType === "text" ? textValidationDisabledKeys(draftValidation) : [];
+  const configDisabledKeys =
+    draftType === "component" ? componentConfigDisabledKeys(draftConfig) : [];
 
   return (
     <dialog
       ref={dialogRef}
-      aria-label={readOnly ? "View field" : editingField ? "Edit field" : "Add field"}
+      aria-label={editingField ? "Edit field" : "Add field"}
       class="xl field-dialog"
     >
       {open && (
         <>
           <header>
-            <h3>
-              {readOnly ? "View field" : editingField ? "Edit field" : "Add field"}
-            </h3>
+            <h3>{editingField ? "Edit field" : "Add field"}</h3>
           </header>
-          {readOnly && (
+          {isMirror && (
             <p class="hint" style={{ marginTop: 0 }}>
-              This field is required by the system and can't be edited.
+              This field mirrors a relation field declared on another content
+              type - its Label, Name, and Type can't be changed here.
+              Removing it (from the Fields list, not here) deletes that
+              relation field instead.
             </p>
           )}
           <div class="field-dialog-scroll" ref={gridScroll}>
@@ -515,7 +531,7 @@ export default function FieldDialog({
                     setDraftLabel(label);
                     setDraftName(name);
                   }}
-                  disabled={readOnly}
+                  disabled={isMirror}
                 />
                 <TextField
                   label="Description"
@@ -523,7 +539,6 @@ export default function FieldDialog({
                   placeholder="e.g. Shown as a hint in the entry editor"
                   value={draftDescription}
                   onChange={setDraftDescription}
-                  disabled={readOnly}
                 />
                 <div class="field">
                   <label>Type</label>
@@ -554,7 +569,7 @@ export default function FieldDialog({
                         );
                       }
                     }}
-                    disabled={editingField !== null || readOnly}
+                    disabled={editingField !== null}
                   />
                 </div>
               </div>
@@ -572,7 +587,6 @@ export default function FieldDialog({
                     config={draftConfig}
                     value={draftDefault}
                     onChange={setDraftDefault}
-                    disabled={readOnly}
                   />
                 )}
 
@@ -583,43 +597,31 @@ export default function FieldDialog({
                       <div class="stack">
                         {showSideToggle && (
                           <div class="field">
-                            <label>Side</label>
-                            <div
-                              class="file-view-toggle"
-                              role="group"
-                              aria-label="Display side"
+                            <label>Side layout</label>
+                            <button
+                              type="button"
+                              class="outline lg"
+                              style={{ justifyContent: "flex-start" }}
+                              aria-label={
+                                draftSide === "left"
+                                  ? "Shown on the left - click to move to the right"
+                                  : "Shown on the right - click to move to the left"
+                              }
+                              onClick={() =>
+                                setDraftSide((s) => (s === "left" ? "right" : "left"))
+                              }
                             >
-                              <button
-                                type="button"
-                                class="ghost icon sm"
-                                data-tooltip="Show on left"
-                                aria-pressed={draftSide === "left"}
-                                aria-label="Show on left"
-                                onClick={() => setDraftSide("left")}
-                              >
-                                <SideLeftIcon />
-                              </button>
-                              <button
-                                type="button"
-                                class="ghost icon sm"
-                                data-tooltip="Show on right"
-                                aria-pressed={draftSide === "right"}
-                                aria-label="Show on right"
-                                onClick={() => setDraftSide("right")}
-                              >
-                                <SideRightIcon />
-                              </button>
-                            </div>
+                              {draftSide === "left" ? <SideLeftIcon /> : <SideRightIcon />}
+                              {draftSide === "left" ? "Set layout to left" : "Set layout to right"}
+                            </button>
                           </div>
                         )}
                         <SettingsForm
                           descriptors={activeFieldType.configFields ?? []}
                           values={draftConfig}
-                          onChange={(key, value) =>
-                            setDraftConfig((c) => ({ ...c, [key]: value }))
-                          }
+                          onChange={handleConfigChange}
                           dynamicOptions={dynamicOptions}
-                          allDisabled={readOnly}
+                          disabledKeys={configDisabledKeys}
                         />
                       </div>
                     </fieldset>
@@ -636,7 +638,6 @@ export default function FieldDialog({
                           onChange={handleValidationChange}
                           dynamicOptions={dynamicOptions}
                           disabledKeys={textDisabledKeys}
-                          allDisabled={readOnly}
                         />
                       </div>
                     </fieldset>
@@ -646,17 +647,11 @@ export default function FieldDialog({
           </div>
           <footer>
             <button type="button" class="outline" onClick={onCancel}>
-              {readOnly ? "Close" : "Cancel"}
+              Cancel
             </button>
-            {/* Even a read-only (locked-field) dialog keeps a working Save -
-             * every other draft value stays exactly what `editingField` seeded
-             * (its inputs are all disabled), so this can only ever change the
-             * Display side, never the frozen field itself. */}
-            {(!readOnly || showSideToggle) && (
-              <button type="button" onClick={handleSave}>
-                Save field
-              </button>
-            )}
+            <button type="button" onClick={handleSave}>
+              Save field
+            </button>
           </footer>
         </>
       )}
