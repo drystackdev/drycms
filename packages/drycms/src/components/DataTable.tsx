@@ -5,6 +5,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   ColumnsIcon,
+  SortIcon,
 } from "./icons.js";
 import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
@@ -276,12 +277,15 @@ export default function DataTable<Row extends Record<string, unknown>>({
                         onClick={() => toggleSort(column.key)}
                       >
                         {column.label}
-                        {active &&
-                          (activeSort!.direction === "asc" ? (
+                        {active ? (
+                          activeSort!.direction === "asc" ? (
                             <ArrowUpIcon />
                           ) : (
                             <ArrowDownIcon />
-                          ))}
+                          )
+                        ) : (
+                          <SortIcon />
+                        )}
                       </button>
                     ) : (
                       column.label

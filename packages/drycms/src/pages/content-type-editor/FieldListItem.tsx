@@ -1,12 +1,5 @@
 import type { SortableHandleProps } from "../../lib/dnd/useSortableList.js";
-import type { FieldSide } from "../../content-types/system-fields.js";
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  DragHandleIcon,
-  LockIcon,
-  TrashIcon,
-} from "../../components/icons.js";
+import { DragHandleIcon, LockIcon, TrashIcon } from "../../components/icons.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 
 export interface FieldListItemProps {
@@ -31,13 +24,6 @@ export interface FieldListItemProps {
   onRemove?: () => void;
   dragHandleProps?: SortableHandleProps;
   dragging?: boolean;
-  /** Which entry-editor column (see `ContentEntryEditor.tsx`) this field
-   * displays in - the Left/Right toggle only renders when both this and
-   * `onSideChange` are provided (omitted entirely for the pinned `id` row,
-   * which is never part of the entry form). Editable regardless of `system`/
-   * `locked`: purely cosmetic, like drag-reordering already is. */
-  side?: FieldSide;
-  onSideChange?: (side: FieldSide) => void;
 }
 
 /** One row in the unified Fields list (system + custom together). */
@@ -54,8 +40,6 @@ export default function FieldListItem({
   onRemove,
   dragHandleProps,
   dragging = false,
-  side,
-  onSideChange,
 }: FieldListItemProps) {
   return (
     <li
@@ -99,35 +83,6 @@ export default function FieldListItem({
           {description ? ` • ${description}` : ""}
         </small>
       </div>
-      {side && onSideChange && (
-        <div
-          class="file-view-toggle"
-          role="group"
-          aria-label="Display side"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            class="ghost icon sm"
-            data-tooltip="Show on left"
-            aria-pressed={side === "left"}
-            aria-label="Show on left"
-            onClick={() => onSideChange("left")}
-          >
-            <ArrowLeftIcon />
-          </button>
-          <button
-            type="button"
-            class="ghost icon sm"
-            data-tooltip="Show on right"
-            aria-pressed={side === "right"}
-            aria-label="Show on right"
-            onClick={() => onSideChange("right")}
-          >
-            <ArrowRightIcon />
-          </button>
-        </div>
-      )}
       {!system && !locked && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
           <button type="button" class="ghost sm" onClick={onRemove}>

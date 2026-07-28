@@ -1,11 +1,18 @@
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
+import type { JSX } from "preact/jsx-runtime";
 import { path } from "virtual:drycms/config";
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
-import { ArrowLeftIcon, PlusIcon } from "../components/icons.js";
-import { flattenQueryableColumns, buildEntryFieldTree } from "../content-types/engine/entry-tree.js";
+import { encodePath } from "../components/file-manager-http-source.js";
+import { ArrowDownIcon, ArrowLeftIcon, PlusIcon } from "../components/icons.js";
+import {
+  flattenDisplayColumns,
+  flattenQueryableColumns,
+  buildEntryFieldTree,
+  type QueryableColumn,
+} from "../content-types/engine/entry-tree.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -27,16 +34,88 @@ function isMaskedValue(value: unknown): value is MaskedValue {
   return typeof value === "object" && value !== null && "hasExisting" in (value as Record<string, unknown>);
 }
 
-function renderCellValue(fieldType: string, value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (isMaskedValue(value)) return value.hasExisting ? "••••••••" : "—";
-  if (fieldType === "boolean") return value ? "Yes" : "No";
-  if (fieldType === "date") {
-    const parsed = dayjs(value as string);
-    return parsed.isValid() ? parsed.format("YYYY-MM-DD HH:mm") : String(value);
+/**
+ * Renders one List page cell, dispatching on the column's `fieldType` (plus
+ * `fieldName`/`validation.format` for the couple of cases that need finer
+ * detail than the type alone gives) - each field type gets the read-only
+ * treatment its data shape calls for, instead of one generic stringify.
+ */
+function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Element {
+  const config = (column.fieldConfig ?? {}) as Record<string, unknown>;
+
+  // Never a real value client-side (see `entry-codec.ts`'s `MASKED_FIELD_TYPES`)
+  // - only whether one is currently set, so this is purely decorative.
+  if (column.fieldType === "secretkey") {
+    const hasValue = isMaskedValue(value) ? value.hasExisting : !!value;
+    if (!hasValue) return <>—</>;
+    return (
+      <span class="secret-dots" aria-label="Secret key set" title="Secret key set">
+        {Array.from({ length: 6 }, (_, index) => (
+          <span key={index} />
+        ))}
+      </span>
+    );
   }
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
+
+  // Always has a value either way (see `field-registry.ts`'s `booleanFieldType`
+  // doc), so this branch runs before the shared empty-value check below.
+  if (column.fieldType === "boolean") {
+    const on = !!value;
+    return (
+      <span class="row" style={{ gap: "0.375rem" }}>
+        <input type="checkbox" role="switch" checked={on} disabled aria-label={on ? "On" : "Off"} />
+        <span>{on ? "On" : "Off"}</span>
+      </span>
+    );
+  }
+
+  if (value === null || value === undefined || value === "") return <>—</>;
+
+  // The system `slug` field (`features.slug` - see `system-fields.ts`) always
+  // ships paired with a sibling `title` field; a manually `format: "slug"`
+  // text field may not have one, so this still degrades to just the slug.
+  if (column.fieldType === "text" && (column.fieldName === "slug" || column.validation.format === "slug")) {
+    const title = row.title;
+    return (
+      <span class="stack" style={{ gap: "0.125rem" }}>
+        {title !== null && title !== undefined && title !== "" && <span>{String(title)}</span>}
+        <small class="hint">{String(value)}</small>
+      </span>
+    );
+  }
+
+  if (column.validation.format === "email") {
+    return <span class="badge secondary">{String(value)}</span>;
+  }
+
+  if (column.fieldType === "date") {
+    const parsed = dayjs(value as string);
+    if (!parsed.isValid()) return <>{String(value)}</>;
+    return (
+      <span class="stack" style={{ gap: "0.125rem" }}>
+        <span>{parsed.format("YYYY-MM-DD")}</span>
+        <small class="hint">{parsed.format("HH:mm")}</small>
+      </span>
+    );
+  }
+
+  if (column.fieldType === "image") {
+    const src = `${path}/api/storage/${encodePath(String(value))}`;
+    return config.isAvatar ? <img class="cell-avatar" src={src} alt="" /> : <img class="cell-image" src={src} alt="" />;
+  }
+
+  if (column.fieldType === "select") {
+    const values = Array.isArray(value) ? value : [value];
+    return (
+      <span class="badge outline lg">
+        {values.join(", ")}
+        <ArrowDownIcon />
+      </span>
+    );
+  }
+
+  if (Array.isArray(value)) return <>{value.join(", ")}</>;
+  return <>{String(value)}</>;
 }
 
 export default function ContentEntryList({ typeSlug }: Props) {
@@ -80,12 +159,24 @@ function ContentEntryListCollection({
   route: (path: string) => void;
 }) {
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, type.name), [type.name]);
-  const queryableColumns = useMemo(() => flattenQueryableColumns(buildEntryFieldTree(type, allTypes)), [type, allTypes]);
+  const fieldTree = useMemo(() => buildEntryFieldTree(type, allTypes), [type, allTypes]);
+  // `displayColumns` is what the table shows (includes a masked `secretkey`
+  // placeholder column); `queryableFieldNames` is the narrower subset a
+  // sort/search request may actually target - see `entry-tree.ts`'s doc
+  // comments on `flattenDisplayColumns`/`flattenQueryableColumns`.
+  const displayColumns = useMemo(() => flattenDisplayColumns(fieldTree), [fieldTree]);
+  const queryableFieldNames = useMemo(
+    () => new Set(flattenQueryableColumns(fieldTree).map((c) => c.fieldName)),
+    [fieldTree],
+  );
+  const defaultVisible = useMemo(() => displayColumns.slice(0, 5).map((c) => c.fieldName), [displayColumns]);
 
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<SortState>(null);
   const [search, setSearch] = useState("");
-  const [searchableFields, setSearchableFields] = useState<string[]>(queryableColumns.slice(0, 5).map((c) => c.fieldName));
+  const [searchableFields, setSearchableFields] = useState<string[]>(
+    defaultVisible.filter((key) => queryableFieldNames.has(key)),
+  );
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -123,16 +214,17 @@ function ContentEntryListCollection({
 
   const isPinned = pinnedContentTypeSlugs.has(type.name);
 
-  const columns: DataTableColumn<Row>[] = [
-    ...queryableColumns.map(
-      (column): DataTableColumn<Row> => ({
-        key: column.fieldName,
-        label: column.label,
-        numeric: column.fieldType === "number",
-        render: (value) => <>{renderCellValue(column.fieldType, value)}</>,
-      }),
-    ),
-  ];
+  const columns: DataTableColumn<Row>[] = displayColumns.map(
+    (column): DataTableColumn<Row> => ({
+      key: column.fieldName,
+      label: column.label,
+      numeric: column.fieldType === "number",
+      // `image` is technically queryable (it's a plain TEXT column of file
+      // paths), but sorting by that path is meaningless for a thumbnail cell.
+      sortable: queryableFieldNames.has(column.fieldName) && column.fieldType !== "image",
+      render: (value, row) => renderCell(column, value, row),
+    }),
+  );
 
   return (
     <>
@@ -158,8 +250,8 @@ function ContentEntryListCollection({
         onRowClick={(row) => route(`${path}/content/${type.name}/${row.id}`)}
         columnToggle={{
           storageKey: `contentList:${type.name}:columns`,
-          defaultVisible: queryableColumns.slice(0, 5).map((c) => c.fieldName),
-          onVisibleChange: (visible) => setSearchableFields(visible.filter((k) => k !== "id")),
+          defaultVisible,
+          onVisibleChange: (visible) => setSearchableFields(visible.filter((key) => queryableFieldNames.has(key))),
         }}
         serverQuery={{
           total,

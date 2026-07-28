@@ -1098,6 +1098,43 @@
       }
     }
 
+    /* ------------------------------------------------------- List cell kinds */
+    /* `image` field cells (see `ContentEntryList.tsx`) - a small crop, never
+     * the full `ImageField` picker frame. `config.isAvatar` picks the shape. */
+    .cell-image {
+      display: block;
+      width: calc(4rem * 16 / 9);
+      height: 4rem;
+      object-fit: cover;
+      border-radius: var(--dry-radius-sm);
+      background-color: var(--dry-muted);
+    }
+
+    .cell-avatar {
+      display: block;
+      width: 2.25rem;
+      height: 2.25rem;
+      object-fit: cover;
+      border-radius: 50%;
+      background-color: var(--dry-muted);
+    }
+
+    /* `secretkey` field cells - purely decorative, there's no real value to
+     * show (it's encrypted server-side, never round-tripped to the client -
+     * see `entry-codec.ts`'s `MASKED_FIELD_TYPES`), just whether one is set. */
+    .secret-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+
+      & > span {
+        width: 1rem;
+        height: 1rem;
+        border-radius: 50%;
+        background-color: var(--dry-muted-foreground);
+      }
+    }
+
     /* ----------------------------------------------------------------- Alert */
     .alert {
       display: grid;
@@ -2195,7 +2232,7 @@
       flex-direction: column;
       gap: 1rem;
       padding: 1.25rem 1.5rem;
-      border: 1px solid var(--dry-error);
+      border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-lg);
 
       & h2 {
@@ -2233,15 +2270,6 @@
           padding: 0;
         }
       }
-    }
-
-    .content-entry-editor-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-      padding: 1.25rem 1.5rem;
-      border: 1px solid var(--dry-border);
-      border-radius: var(--dry-radius-lg);
     }
 
     button.entry-relation-card {
@@ -2347,9 +2375,9 @@
       margin-block-start: 1.25rem;
     }
 
-    /* Ref-picker dialog (content-entry-editor/RefPickerDialog.tsx) and the
-     * repeatable-component item dialog (ComponentItemDialog.tsx) - same
-     * fixed-header/scrolling-body shape as `.field-dialog[open]` above. */
+    /* Ref-picker dialog (components/RelationField.tsx) and the
+     * repeatable-component item dialog (components/ComponentField.tsx) -
+     * same fixed-header/scrolling-body shape as `.field-dialog[open]` above. */
     .ref-picker-dialog[open],
     .component-item-dialog[open] {
       display: flex;

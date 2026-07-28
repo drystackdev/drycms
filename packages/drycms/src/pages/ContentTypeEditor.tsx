@@ -9,7 +9,10 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import { randomUUID } from "../lib/uuid.js";
 import type { DestructiveChange } from "../content-types/migration.js";
 import { defaultContentTypeDefinitions } from "../content-types/seed.js";
-import { SYSTEM_FIELD_IDS } from "../content-types/system-fields.js";
+import {
+  SYSTEM_FIELD_IDS,
+  type FieldSide,
+} from "../content-types/system-fields.js";
 import type {
   ContentTypeDefinition,
   ContentTypeFeatures,
@@ -272,13 +275,17 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     });
   }
 
-  function handleFieldSave(field: FieldDefinition) {
+  function handleFieldSave(field: FieldDefinition, side: FieldSide) {
     setDefinition((d) => {
       if (!d) return d;
       const fields = editingField
         ? d.fields.map((f) => (f.id === editingField.id ? field : f))
         : [...d.fields, field];
-      return { ...d, fields: withNormalizedOrder(fields) };
+      return {
+        ...d,
+        fields: withNormalizedOrder(fields),
+        fieldSides: { ...d.fieldSides, [field.id]: side },
+      };
     });
     setFieldDialogOpen(false);
   }
@@ -404,15 +411,6 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             fields={definition.fields}
             features={definition.features}
             fieldOrder={definition.fieldOrder}
-            fieldSides={definition.fieldSides}
-            onSideChange={(id, side) =>
-              setDefinition((d) =>
-                d
-                  ? { ...d, fieldSides: { ...d.fieldSides, [id]: side } }
-                  : d,
-              )
-            }
-            showSideToggle={definition.kind !== "component"}
             type={KIND_LABELS[definition.kind]}
             onEdit={(field) => {
               setEditingField(field);
@@ -533,6 +531,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         open={fieldDialogOpen}
         editingField={editingField}
         dynamicOptions={dynamicOptions}
+        fieldSides={definition.fieldSides}
+        showSideToggle={definition.kind !== "component"}
         onCancel={() => setFieldDialogOpen(false)}
         onSave={handleFieldSave}
         readOnly={definition.system && !!editingField?.locked}

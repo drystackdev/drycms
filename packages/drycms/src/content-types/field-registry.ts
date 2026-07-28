@@ -198,7 +198,10 @@ export const imageFieldType: FieldTypeDefinition<string> = {
   Editor: ImageField,
   sqlType: () => "TEXT",
   fts: false,
-  configFields: [],
+  // `isAvatar` only affects read-only display (the List page's cell
+  // renderer - see `ContentEntryList.tsx`), not `ImageField` itself: the
+  // picker frame stays the same 4:3 box either way.
+  configFields: [{ key: "isAvatar", label: "Show as a circular avatar in lists", widget: "boolean" }],
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };
 

@@ -20,7 +20,7 @@ function idFor(folderId: string | null): string {
   return folderId ?? "";
 }
 
-function encodePath(path: string): string {
+export function encodePath(path: string): string {
   return path
     .split("/")
     .filter(Boolean)

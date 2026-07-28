@@ -20,23 +20,79 @@ import {
   type SettingDescriptor,
   type SettingOption,
 } from "../../content-types/field-registry.js";
+import {
+  defaultFieldSide,
+  resolveFieldSide,
+  type FieldSide,
+} from "../../content-types/system-fields.js";
 import type {
   FieldDefinition,
   FieldValidation,
 } from "../../content-types/types.js";
+
+/** Right-side-emphasized two-panel icon for the Display-side toggle below. */
+function SideRightIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path
+        fill="currentColor"
+        d="M22 11v2c0 3.771 0 5.657-1.172 6.828c-.974.975-2.442 1.139-5.078 1.166V3.006c2.636.027 4.104.191 5.078 1.166C22 5.343 22 7.229 22 11"
+      />
+      <path
+        fill="currentColor"
+        opacity="0.1"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 3h4.25v18H10c-3.771 0-5.657 0-6.828-1.172S2 16.771 2 13v-2c0-3.771 0-5.657 1.172-6.828S6.229 3 10 3m-5.25 7a.75.75 0 0 1 .75-.75h6a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1-.75-.75m1 4a.75.75 0 0 1 .75-.75h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1-.75-.75"
+      />
+    </svg>
+  );
+}
+
+/** Left-side-emphasized two-panel icon for the Display-side toggle below. */
+function SideLeftIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path
+        fill="currentColor"
+        opacity="0.1"
+        d="M22 11v2c0 3.771 0 5.657-1.172 6.828c-.974.975-2.442 1.139-5.078 1.166V3.006c2.636.027 4.104.191 5.078 1.166C22 5.343 22 7.229 22 11"
+      />
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 3h4.25v18H10c-3.771 0-5.657 0-6.828-1.172S2 16.771 2 13v-2c0-3.771 0-5.657 1.172-6.828S6.229 3 10 3m-5.25 7a.75.75 0 0 1 .75-.75h6a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1-.75-.75m1 4a.75.75 0 0 1 .75-.75h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1-.75-.75"
+      />
+    </svg>
+  );
+}
 
 export interface FieldDialogProps {
   open: boolean;
   /** `null` means "Add field"; otherwise the field being edited. */
   editingField: FieldDefinition | null;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
+  /** Persisted per-field display side (see `types.ts`'s
+   * `ContentTypeDefinition.fieldSides`) - seeds the Display side control
+   * below when editing an existing field; ignored when adding one (no id
+   * yet - the default is derived purely from the picked type instead). */
+  fieldSides?: Record<string, FieldSide>;
+  /** `false` for `component`-kind types - see `FieldsList.tsx`'s identical
+   * prop for why (their fields never render in a split left/right form). */
+  showSideToggle: boolean;
   onCancel: () => void;
-  onSave: (field: FieldDefinition) => void;
+  onSave: (field: FieldDefinition, side: FieldSide) => void;
   /** True when `editingField` is a `locked` field on a `system` content
-   * type: fully view-only - every control disabled, no Save button. Lets an
-   * admin still inspect a built-in field's full config/validation without
-   * being able to change it (see `naming.ts`'s `validateSystemProtections`,
-   * which enforces this same freeze server-side regardless). */
+   * type: fully view-only - every control disabled, no Save button - EXCEPT
+   * the Display side control, which stays interactive even here: it's
+   * purely cosmetic (like `FieldsList.tsx`'s row toggle, never gated by
+   * `locked`/`structureLocked` either). Lets an admin still inspect a
+   * built-in field's full config/validation without being able to change it
+   * (see `naming.ts`'s `validateSystemProtections`, which enforces this same
+   * freeze server-side regardless). */
   readOnly?: boolean;
 }
 
@@ -313,6 +369,8 @@ export default function FieldDialog({
   open,
   editingField,
   dynamicOptions,
+  fieldSides,
+  showSideToggle,
   onCancel,
   onSave,
   readOnly = false,
@@ -331,6 +389,7 @@ export default function FieldDialog({
     Record<string, unknown>
   >({});
   const [draftDefault, setDraftDefault] = useState<unknown>(undefined);
+  const [draftSide, setDraftSide] = useState<FieldSide>("left");
 
   useEffect(() => {
     if (!open) return;
@@ -344,6 +403,13 @@ export default function FieldDialog({
         (editingField.validation as Record<string, unknown>) ?? {},
       );
       setDraftDefault(editingField.default);
+      setDraftSide(
+        resolveFieldSide(
+          editingField.id,
+          editingField.type === "relation" || editingField.type === "component",
+          fieldSides,
+        ),
+      );
     } else {
       // No type pre-selected - the right column stays an empty frame until
       // the user picks one (see the Type <Select>'s onChange below).
@@ -354,7 +420,12 @@ export default function FieldDialog({
       setDraftConfig({});
       setDraftValidation({});
       setDraftDefault(undefined);
+      setDraftSide("left");
     }
+    // `fieldSides` deliberately excluded - only meant to seed the draft once
+    // per open/editingField change, not to keep re-syncing while the dialog
+    // is open (the user's own toggle clicks would otherwise get clobbered).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingField]);
 
   function handleValidationChange(key: string, value: unknown) {
@@ -387,20 +458,23 @@ export default function FieldDialog({
       toast.add({ type: "error", title: "Field name is required." });
       return;
     }
-    onSave({
-      id: editingField?.id ?? randomUUID(),
-      name: draftName.trim(),
-      label: draftLabel.trim() || draftName.trim(),
-      description: draftDescription.trim() || undefined,
-      type: draftType,
-      config: draftConfig,
-      validation: draftValidation as FieldValidation,
-      default: draftDefault,
-      // Placeholder - `ContentTypeEditor`'s `handleFieldSave` immediately
-      // renormalizes every field's `order` to its position in `fields[]`
-      // right after this fires.
-      order: editingField?.order ?? 0,
-    });
+    onSave(
+      {
+        id: editingField?.id ?? randomUUID(),
+        name: draftName.trim(),
+        label: draftLabel.trim() || draftName.trim(),
+        description: draftDescription.trim() || undefined,
+        type: draftType,
+        config: draftConfig,
+        validation: draftValidation as FieldValidation,
+        default: draftDefault,
+        // Placeholder - `ContentTypeEditor`'s `handleFieldSave` immediately
+        // renormalizes every field's `order` to its position in `fields[]`
+        // right after this fires.
+        order: editingField?.order ?? 0,
+      },
+      draftSide,
+    );
   }
 
   const activeFieldType = fieldTypes[draftType];
@@ -471,6 +545,14 @@ export default function FieldDialog({
                       setDraftConfig(type?.defaultConfig ?? {});
                       setDraftValidation(type?.defaultValidation ?? {});
                       setDraftDefault(undefined);
+                      // Only when adding - editing an existing field already
+                      // seeded `draftSide` from its real id/`fieldSides`
+                      // above, and the Type select is disabled then anyway.
+                      if (!editingField) {
+                        setDraftSide(
+                          defaultFieldSide("", value === "relation" || value === "component"),
+                        );
+                      }
                     }}
                     disabled={editingField !== null || readOnly}
                   />
@@ -495,10 +577,41 @@ export default function FieldDialog({
                 )}
 
                 {activeFieldType &&
-                  (activeFieldType.configFields?.length ?? 0) > 0 && (
+                  (showSideToggle || (activeFieldType.configFields?.length ?? 0) > 0) && (
                     <fieldset>
                       <legend>Display</legend>
                       <div class="stack">
+                        {showSideToggle && (
+                          <div class="field">
+                            <label>Side</label>
+                            <div
+                              class="file-view-toggle"
+                              role="group"
+                              aria-label="Display side"
+                            >
+                              <button
+                                type="button"
+                                class="ghost icon sm"
+                                data-tooltip="Show on left"
+                                aria-pressed={draftSide === "left"}
+                                aria-label="Show on left"
+                                onClick={() => setDraftSide("left")}
+                              >
+                                <SideLeftIcon />
+                              </button>
+                              <button
+                                type="button"
+                                class="ghost icon sm"
+                                data-tooltip="Show on right"
+                                aria-pressed={draftSide === "right"}
+                                aria-label="Show on right"
+                                onClick={() => setDraftSide("right")}
+                              >
+                                <SideRightIcon />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         <SettingsForm
                           descriptors={activeFieldType.configFields ?? []}
                           values={draftConfig}
@@ -535,7 +648,11 @@ export default function FieldDialog({
             <button type="button" class="outline" onClick={onCancel}>
               {readOnly ? "Close" : "Cancel"}
             </button>
-            {!readOnly && (
+            {/* Even a read-only (locked-field) dialog keeps a working Save -
+             * every other draft value stays exactly what `editingField` seeded
+             * (its inputs are all disabled), so this can only ever change the
+             * Display side, never the frozen field itself. */}
+            {(!readOnly || showSideToggle) && (
               <button type="button" onClick={handleSave}>
                 Save field
               </button>

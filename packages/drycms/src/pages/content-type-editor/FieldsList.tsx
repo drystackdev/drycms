@@ -1,11 +1,7 @@
 import { useMemo, useState } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import { fieldTypes } from "../../content-types/field-registry.js";
-import {
-  applyFieldOrder,
-  resolveFieldSide,
-  type FieldSide,
-} from "../../content-types/system-fields.js";
+import { applyFieldOrder } from "../../content-types/system-fields.js";
 import type {
   ContentTypeFeatures,
   FieldDefinition,
@@ -39,16 +35,6 @@ export interface FieldsListProps {
    * missing/stale ids just fall back to natural order, so this never needs
    * to be kept in lockstep with `systemEntries`/`fields` by the caller. */
   fieldOrder?: string[];
-  /** Persisted per-field entry-editor column (see `types.ts`'s
-   * `ContentTypeDefinition.fieldSides`), keyed the same way as `fieldOrder`.
-   * Missing ids fall back to `system-fields.ts`'s `defaultFieldSide` via
-   * `resolveFieldSide`. */
-  fieldSides?: Record<string, FieldSide>;
-  onSideChange: (id: string, side: FieldSide) => void;
-  /** `false` for `component`-kind types: their fields only ever render
-   * nested inside a parent's flatten/repeat form (see `FieldRenderer.tsx`),
-   * which never splits left/right, so the toggle would have no effect. */
-  showSideToggle: boolean;
   onEdit: (field: FieldDefinition) => void;
   onRemove: (fieldId: string) => void;
   /** Fires with the custom fields' new relative order whenever the unified
@@ -80,9 +66,6 @@ export default function FieldsList({
   fields,
   features,
   fieldOrder,
-  fieldSides,
-  onSideChange,
-  showSideToggle,
   onEdit,
   onRemove,
   onReorderFields,
@@ -179,16 +162,6 @@ export default function FieldsList({
               typeLabel={item.entry.typeLabel}
               name={item.entry.name}
               system
-              side={
-                showSideToggle
-                  ? resolveFieldSide(item.id, false, fieldSides)
-                  : undefined
-              }
-              onSideChange={
-                showSideToggle
-                  ? (side) => onSideChange(item.id, side)
-                  : undefined
-              }
               dragHandleProps={sortable.getHandleProps(item.id)}
               dragging={sortable.draggingId === item.id}
             />
@@ -200,21 +173,6 @@ export default function FieldsList({
                 item.field,
                 fieldTypes[item.field.type]?.label ?? item.field.type,
               )}
-              side={
-                showSideToggle
-                  ? resolveFieldSide(
-                      item.id,
-                      item.field.type === "relation" ||
-                        item.field.type === "component",
-                      fieldSides,
-                    )
-                  : undefined
-              }
-              onSideChange={
-                showSideToggle
-                  ? (side) => onSideChange(item.id, side)
-                  : undefined
-              }
               onEdit={() => onEdit(item.field)}
               onRemove={() => setPendingRemove(item.field)}
               dragHandleProps={sortable.getHandleProps(item.id)}

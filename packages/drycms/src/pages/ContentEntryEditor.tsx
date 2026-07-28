@@ -283,22 +283,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         </div>
 
         <div class="stack">
-          {rightFields.length > 0 && (
-            <div class="content-entry-editor-panel">
-              {rightFields.map((node) => (
-                <FieldRenderer
-                  key={node.fieldName}
-                  node={node}
-                  value={value[node.fieldName]}
-                  onChange={(fieldValue) =>
-                    updateFieldValue(node.fieldName, fieldValue)
-                  }
-                  error={fieldErrors[node.fieldName]}
-                  allTypes={allTypes}
-                />
-              ))}
-            </div>
-          )}
+          {rightFields.map((node) => (
+            <FieldRenderer
+              key={node.fieldName}
+              node={node}
+              value={value[node.fieldName]}
+              onChange={(fieldValue) =>
+                updateFieldValue(node.fieldName, fieldValue)
+              }
+              error={fieldErrors[node.fieldName]}
+              allTypes={allTypes}
+            />
+          ))}
 
           {!isNew && !isSingleton && (
             <div class="content-type-editor-danger">

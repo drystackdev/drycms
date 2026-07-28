@@ -1,6 +1,6 @@
 import type { ComponentFieldConfig, RelationCardinality, RelationFieldConfig } from "../field-registry.js";
 import { fieldTypes } from "../field-registry.js";
-import { systemFieldsFor } from "../system-fields.js";
+import { applyFieldOrder, systemFieldsFor } from "../system-fields.js";
 import { resolveTableTree, type TableNode } from "../tree.js";
 import type { ContentTypeDefinition, FieldDefinition, FieldValidation } from "../types.js";
 
@@ -26,6 +26,11 @@ export interface EntryColumnNode {
 /** A non-repeatable `component` field - its own fields live inline on the
  * SAME table as their parent, just name-prefixed (see `tree.ts`'s `walk`). */
 export interface EntryFlattenNode {
+  /** The `FieldDefinition.id`/`SYSTEM_FIELD_IDS` value this node came from -
+   * see `EntryColumnNode.fieldId`'s doc comment; also used to key into
+   * `ContentTypeDefinition.fieldSides` (`system-fields.ts`'s
+   * `resolveFieldSide`). */
+  fieldId: string;
   fieldName: string;
   label: string;
   description?: string;
@@ -36,6 +41,7 @@ export interface EntryFlattenNode {
 /** A repeatable `component` field - one child table, one row per item. */
 export interface EntryComponentRepeatNode {
   kind: "component-repeat";
+  fieldId: string;
   fieldName: string;
   label: string;
   description?: string;
@@ -48,6 +54,7 @@ export interface EntryComponentRepeatNode {
  * `manyToMany` store one row per link in a child table (`tableName` set). */
 export interface EntryRelationNode {
   kind: "relation";
+  fieldId: string;
   fieldName: string;
   label: string;
   description?: string;
@@ -82,6 +89,7 @@ function buildNodes(
         const column = columnsByLeaf.get(field.id)!;
         return {
           kind: "relation",
+          fieldId: field.id,
           fieldName: field.name,
           label: field.label,
           description: field.description,
@@ -93,6 +101,7 @@ function buildNodes(
       const childRef = childrenByLeaf.get(field.id)!;
       return {
         kind: "relation",
+        fieldId: field.id,
         fieldName: field.name,
         label: field.label,
         description: field.description,
@@ -112,6 +121,7 @@ function buildNodes(
         const childRef = childrenByLeaf.get(field.id)!;
         return {
           kind: "component-repeat",
+          fieldId: field.id,
           fieldName: field.name,
           label: field.label,
           description: field.description,
@@ -121,6 +131,7 @@ function buildNodes(
       }
       return {
         kind: "flatten",
+        fieldId: field.id,
         fieldName: field.name,
         label: field.label,
         description: field.description,
@@ -158,43 +169,58 @@ export interface QueryableColumn {
   label: string;
   fieldType: string;
   fieldConfig: unknown;
+  validation: FieldValidation;
 }
 
-/** `password`/`secretkey` columns hold a one-way hash or ciphertext, never
- * round-tripped to the client as a real value (see `entry-codec.ts`'s
- * `MASKED_FIELD_TYPES`) - useless, and misleading, as a List-page column,
- * sort key, search target, or relation-picker display field, so
- * `flattenQueryableColumns` excludes them same as it excludes relations. */
-const UNQUERYABLE_FIELD_TYPES = new Set(["password", "secretkey"]);
+/** `password` holds a one-way hash, never round-tripped to the client as a
+ * real value (see `entry-codec.ts`'s `MASKED_FIELD_TYPES`) - useless, and
+ * misleading, as a List-page column even in its masked form, so
+ * `flattenDisplayColumns` excludes it same as it excludes relations. */
+const UNDISPLAYABLE_FIELD_TYPES = new Set(["password"]);
+
+/** On top of `UNDISPLAYABLE_FIELD_TYPES`, also excludes `secretkey` - its
+ * masked placeholder is still worth a glance on a List page (see
+ * `ContentEntryList.tsx`), but the ciphertext behind it can't be sorted or
+ * searched, so `flattenQueryableColumns` (the sort/search-safe subset) drops
+ * it too. */
+const UNQUERYABLE_FIELD_TYPES = new Set([...UNDISPLAYABLE_FIELD_TYPES, "secretkey"]);
 
 /**
  * Every `column` field, flattened into one list regardless of `flatten`
  * nesting - exactly the set of fields a List page's table can show a plain
- * column for, sort by, or search across. `relation`/`component-repeat`
- * fields are deliberately excluded: they're multi-valued/child-table-backed,
- * not a single column a `WHERE`/`ORDER BY` can target directly, and the List
- * page renders them as a summary instead (see `status/content.md`). Masked
- * (`password`/`secretkey`) columns are excluded too, for the reasons above.
+ * column for. `relation`/`component-repeat` fields are deliberately
+ * excluded: they're multi-valued/child-table-backed, not a single column a
+ * cell can render directly, and the List page has no summary rendering for
+ * them yet. `password` is excluded too - see `UNDISPLAYABLE_FIELD_TYPES`.
  */
-export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): QueryableColumn[] {
+export function flattenDisplayColumns(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): QueryableColumn[] {
   const out: QueryableColumn[] = [];
   for (const node of nodes) {
     const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
     if (node.kind === "column") {
-      if (UNQUERYABLE_FIELD_TYPES.has(node.fieldType)) continue;
+      if (UNDISPLAYABLE_FIELD_TYPES.has(node.fieldType)) continue;
       out.push({
         fieldName,
         columnName: node.columnName,
         label: labelPrefix ? `${labelPrefix} / ${node.label}` : node.label,
         fieldType: node.fieldType,
         fieldConfig: node.fieldConfig,
+        validation: node.validation,
       });
     } else if (node.kind === "flatten") {
       const label = labelPrefix ? `${labelPrefix} / ${node.label}` : node.label;
-      out.push(...flattenQueryableColumns(node.children, fieldName, label));
+      out.push(...flattenDisplayColumns(node.children, fieldName, label));
     }
   }
   return out;
+}
+
+/** The subset of `flattenDisplayColumns` a `WHERE`/`ORDER BY` can safely
+ * target - also what a List page should offer to sort by, search across, or
+ * use as a relation-picker display field (see `FieldRenderer.tsx`'s
+ * `RelationFieldAdapter`). */
+export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): QueryableColumn[] {
+  return flattenDisplayColumns(nodes, pathPrefix, labelPrefix).filter((c) => !UNQUERYABLE_FIELD_TYPES.has(c.fieldType));
 }
 
 /**
@@ -202,12 +228,15 @@ export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = ""
  * same field-id-keyed matching against the resolved `TableNode`, but keyed by
  * *field name* (for reading/writing entry values) instead of SQL identity.
  * Includes the synthetic system fields (`title`/`slug`/`draft`/.../`seo`) a
- * `features` toggle implies, in the same front-of-`fields[]` position
- * `systemFieldsFor` always uses.
+ * `features` toggle implies, defaulting to the same front-of-`fields[]`
+ * position `systemFieldsFor` always uses in `resolveTableTree` - but, unlike
+ * the real column order, this DISPLAY order is then permuted by
+ * `type.fieldOrder` (see `types.ts`), so system and custom fields can freely
+ * interleave on screen without touching the underlying table.
  */
 export function buildEntryFieldTree(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): EntryFieldNode[] {
   const componentsById = new Map(allTypes.filter((t) => t.kind === "component").map((t) => [t.id, t]));
   const rootTree = resolveTableTree(type, allTypes);
-  const rootFields = [...systemFieldsFor(type), ...type.fields];
+  const rootFields = applyFieldOrder([...systemFieldsFor(type), ...type.fields], type.fieldOrder);
   return buildNodes(rootFields, rootTree, componentsById);
 }
