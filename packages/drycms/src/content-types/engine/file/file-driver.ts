@@ -211,7 +211,9 @@ export function createFileDriver(option: ResolvedFileContentOption): FileDriver 
   async function listJsonFiles(dirRelPath: string): Promise<string[]> {
     let entries;
     try {
-      entries = await adapter.list(dirRelPath);
+      // `listNames` is `list()` minus the per-entry `modifiedAt` lookup -
+      // dropped here anyway since only `.name` is ever used below.
+      entries = adapter.listNames ? await adapter.listNames(dirRelPath) : await adapter.list(dirRelPath);
     } catch (error) {
       if (error instanceof StorageError && (error.code === "not_found" || error.code === "invalid_path")) return [];
       throw error;

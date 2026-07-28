@@ -10,7 +10,10 @@ export interface FileEntry {
 	ext?: string;
 	/** Bytes. For folders this is a mock aggregate size (shown alongside `fileCount`). */
 	size?: number;
-	modifiedAt: string;
+	/** Absent when the backend didn't resolve it (`github`/`gitlab`'s
+	 * `list()`/`listAll()` skip a per-entry commit lookup for performance -
+	 * see `StorageStatEntry.modifiedAt`). */
+	modifiedAt?: string;
 	/** Folders only: shown next to their size, e.g. "1.12 Gb · 200 files". */
 	fileCount?: number;
 	/** Object URL for files uploaded this session (real `File` blob) - lets the preview show the actual image instead of a placeholder. */

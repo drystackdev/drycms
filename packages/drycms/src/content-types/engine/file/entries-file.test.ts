@@ -223,6 +223,27 @@ describe("createFileContentEntryEngineAdapter", () => {
     expect((await entries.getEntry(user, allTypes, unrelatedUser.id))?.value.roles).toEqual([unrelatedRole.id]);
   });
 
+  it("listEntries resolves a relationmirror field per-record, not the same value for every row sharing the reverse-index file", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+    const roleType = allTypes.find((t) => t.name === "role")!;
+
+    const editor = await entries.createEntry(roleType, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
+    const viewer = await entries.createEntry(roleType, allTypes, { name: "Viewer", isSuperAdmin: false, permissions: [] });
+    const empty = await entries.createEntry(roleType, allTypes, { name: "Empty", isSuperAdmin: false, permissions: [] });
+
+    const ada = await entries.createEntry(user, allTypes, { name: "Ada", email: "ada@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue, roles: [editor.id] });
+    const grace = await entries.createEntry(user, allTypes, { name: "Grace", email: "grace@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue, roles: [editor.id, viewer.id] });
+
+    const { rows } = await entries.listEntries(roleType, allTypes, { page: 0, pageSize: 10, sortField: "name", sortDir: "asc" });
+    const byId = new Map(rows.map((row) => [row.id, row.value.user]));
+    expect(byId.get(editor.id)).toEqual([ada.id, grace.id]);
+    expect(byId.get(viewer.id)).toEqual([grace.id]);
+    expect(byId.get(empty.id)).toEqual([]);
+  });
+
   it("reads and writes back an auto-generated relationmirror field reflecting a manyToOne relation (project.team mirrors team.project)", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileEntry } from "./file-manager-types.js";
-import { retargetSubtree } from "./file-manager-utils.js";
+import { formatDate, retargetSubtree } from "./file-manager-utils.js";
 
 const folder = (id: string, parentId: string | null): FileEntry => ({
   id,
@@ -69,5 +69,17 @@ describe("retargetSubtree", () => {
     const entries = [file("a.txt", null)];
     expect(retargetSubtree(entries, "missing", null, "x")).toBe(entries);
     expect(retargetSubtree(entries, "a.txt", null, "a.txt")).toBe(entries);
+  });
+});
+
+describe("formatDate", () => {
+  it("formats a real ISO timestamp into locale date/time strings", () => {
+    const result = formatDate("2026-01-01T00:00:00.000Z");
+    expect(result.date).not.toBe("");
+    expect(result.time).not.toBe("");
+  });
+
+  it("renders blank, not 'Invalid Date', when the backend didn't resolve a modifiedAt (github/gitlab's list()/listAll())", () => {
+    expect(formatDate(undefined)).toEqual({ date: "", time: "" });
   });
 });

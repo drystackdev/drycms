@@ -20,7 +20,7 @@ export function applyRecursiveFolderTotals(entries: StorageStatEntry[]): Storage
     let parent: string | undefined = storagePathParent(entry.path);
     while (parent !== undefined) {
       const running = totals.get(parent) ?? { size: 0, fileCount: 0 };
-      running.size += entry.size;
+      running.size += entry.size ?? 0;
       running.fileCount += 1;
       totals.set(parent, running);
       parent = parent === "" ? undefined : storagePathParent(parent);

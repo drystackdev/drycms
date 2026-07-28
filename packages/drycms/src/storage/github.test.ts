@@ -289,6 +289,41 @@ describe("createGithubStorageAdapter", () => {
     await expect(adapter.list("")).rejects.toThrow(/branch "main" does not exist/);
   });
 
+  it("list() never issues a /commits request - files carry size/contentHash but no modifiedAt", async () => {
+    await adapter.write("a.txt", new TextEncoder().encode("hello"));
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    const listed = await adapter.list("");
+
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/commits"))).toBe(false);
+    const file = listed.find((entry) => entry.path === "a.txt");
+    expect(file).toMatchObject({ kind: "file", size: 5 });
+    expect(file?.modifiedAt).toBeUndefined();
+  });
+
+  it("listNames returns names/kind without the per-entry lastModified lookup", async () => {
+    await adapter.mkdir("docs");
+    await adapter.write("docs/a.json", new TextEncoder().encode("{}"));
+    await adapter.write("docs/b.json", new TextEncoder().encode("{}"));
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    const names = await adapter.listNames!("docs");
+    expect([...names].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+      { name: "a.json", kind: "file" },
+      { name: "b.json", kind: "file" },
+    ]);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/commits"))).toBe(false);
+  });
+
+  it("listNames matches list()'s not_found/empty-root semantics", async () => {
+    expect(await adapter.listNames!("")).toEqual([]);
+    await expect(adapter.listNames!("missing")).rejects.toMatchObject({ code: "not_found" });
+  });
+
   it("mkdir creates a folder with a hidden .dir marker, excluded from list()", async () => {
     const entry = await adapter.mkdir("docs");
     expect(entry).toMatchObject({ path: "docs", name: "docs", kind: "folder", fileCount: 0 });
@@ -445,6 +480,22 @@ describe("createGithubStorageAdapter", () => {
       size: 4,
       fileCount: 1,
     });
+  });
+
+  it("listAll never issues a /commits request - no modifiedAt, everything else comes free off the one recursive tree call", async () => {
+    await adapter.mkdir("docs");
+    await adapter.write("docs/a.txt", new TextEncoder().encode("12345"));
+    await adapter.write("top.txt", new TextEncoder().encode("x"));
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    const all = await adapter.listAll!();
+
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/commits"))).toBe(false);
+    const file = all.find((entry) => entry.path === "top.txt");
+    expect(file).toMatchObject({ kind: "file", size: 1 });
+    expect(file?.modifiedAt).toBeUndefined();
   });
 
   it("listAll on an empty root is an empty array", async () => {

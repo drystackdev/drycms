@@ -178,23 +178,20 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
     return heads.reduce((total, head) => total + (head?.size ?? 0), 0);
   }
 
+  /** No `size`/`modifiedAt` (unlike `stat()`'s equivalent) - deliberately
+   * skips the `headFile()`/`lastModified()`/`folderChildrenSize()` calls
+   * `list()`/`listAll()` would otherwise pay per entry (GitLab's Tree API
+   * carries neither). `contentHash` stays free for files - `item.id` is
+   * already the blob sha, the same fallback `headFile()`'s absence already
+   * used. */
   async function childStatEntry(item: GitlabTreeItem, parentRelPath: string): Promise<StorageStatEntry> {
     const relPath = joinStoragePath(parentRelPath, item.name);
     if (item.type === "blob") {
-      const [head, modifiedAt] = await Promise.all([headFile(item.path), lastModified(item.path)]);
-      return {
-        path: relPath,
-        name: item.name,
-        kind: "file",
-        size: head?.size ?? 0,
-        modifiedAt,
-        contentHash: head?.blobId || item.id,
-      };
+      return { path: relPath, name: item.name, kind: "file", contentHash: item.id };
     }
-    const [children, modifiedAt] = await Promise.all([fetchTree(item.path, false), lastModified(item.path)]);
+    const children = await fetchTree(item.path, false);
     const visible = (children ?? []).filter((child) => child.name !== MARKER_FILE);
-    const size = await folderChildrenSize(children ?? []);
-    return { path: relPath, name: item.name, kind: "folder", size, fileCount: visible.length, modifiedAt };
+    return { path: relPath, name: item.name, kind: "folder", fileCount: visible.length };
   }
 
   async function list(relPath: string): Promise<StorageStatEntry[]> {
@@ -209,6 +206,26 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
     }
     const visible = children.filter((item) => item.name !== MARKER_FILE);
     return Promise.all(visible.map((item) => childStatEntry(item, relPath)));
+  }
+
+  /** `list()` without the per-entry `HEAD`/`lastModified` round trips - just
+   * the Repository Tree API pages already fetched to resolve names. Callers
+   * that only need filenames (the file content engine enumerating
+   * `<id>.json` records) skip the up-to-two extra requests per entry
+   * `childStatEntry` pays. */
+  async function listNames(relPath: string): Promise<{ name: string; kind: "file" | "folder" }[]> {
+    const prefix = fullPath(relPath);
+    const children = await fetchTree(prefix, false);
+    if (children === null) {
+      if (relPath === "") return [];
+      if (await headFile(prefix)) {
+        throw new StorageError("invalid_path", `"${relPath}" is not a folder.`);
+      }
+      throw new StorageError("not_found", `"${relPath}" does not exist.`);
+    }
+    return children
+      .filter((item) => item.name !== MARKER_FILE)
+      .map((item) => ({ name: item.name, kind: item.type === "tree" ? ("folder" as const) : ("file" as const) }));
   }
 
   async function stat(relPath: string): Promise<StorageStatEntry | null> {
@@ -425,34 +442,24 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
     const tree = await fetchTree(root, true);
     const items = tree ?? [];
 
-    interface ScopedNode {
-      relPath: string;
-      type: "blob" | "tree";
-      fullPath: string;
-    }
-    const scoped: ScopedNode[] = [];
+    // Every folder's *recursive* size/fileCount comes from this same flat
+    // list afterward (`applyRecursiveFolderTotals`); no `size`/`modifiedAt` -
+    // same doc rationale as `childStatEntry`. `contentHash` for files is
+    // free - `entry.id` is already the blob sha, recursive or not.
+    const entries: StorageStatEntry[] = [];
     for (const entry of items) {
       const relPath = stripRoot(root, entry.path);
       if (relPath === null || relPath === "") continue;
-      if (storagePathName(relPath) === MARKER_FILE) continue;
-      scoped.push({ relPath, type: entry.type, fullPath: entry.path });
+      const name = storagePathName(relPath);
+      if (name === MARKER_FILE) continue;
+      entries.push(
+        entry.type === "blob"
+          ? { path: relPath, name, kind: "file", contentHash: entry.id }
+          : { path: relPath, name, kind: "folder", size: 0, fileCount: 0 },
+      );
     }
-
-    // Every folder's *recursive* size/fileCount comes from this same flat
-    // list afterward (`applyRecursiveFolderTotals`), same as `github.ts` -
-    // only `modifiedAt` (and, here, size/blob-id for files) needs a request
-    // per entry.
-    const entries = await mapWithConcurrency(scoped, CONCURRENCY_LIMIT, async (node): Promise<StorageStatEntry> => {
-      const name = storagePathName(node.relPath);
-      if (node.type === "blob") {
-        const [head, modifiedAt] = await Promise.all([headFile(node.fullPath), lastModified(node.fullPath)]);
-        return { path: node.relPath, name, kind: "file", size: head?.size ?? 0, modifiedAt, contentHash: head?.blobId };
-      }
-      const modifiedAt = await lastModified(node.fullPath);
-      return { path: node.relPath, name, kind: "folder", size: 0, fileCount: 0, modifiedAt };
-    });
     return applyRecursiveFolderTotals(entries);
   }
 
-  return { list, listAll, stat, read, mkdir, write, move, copy, remove, writeBatch };
+  return { list, listNames, listAll, stat, read, mkdir, write, move, copy, remove, writeBatch };
 }

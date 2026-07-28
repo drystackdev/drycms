@@ -56,6 +56,44 @@ function preactAliases(): Record<string, string> {
   return alias;
 }
 
+// Third-party deps the admin app's lazy-loaded routes/components pull in
+// (see App.tsx's `lazy(() => import(...))` list and each dep's own
+// importer: @preact/signals - store/dashboard.ts, field-visibility.ts;
+// overlayscrollbars - components/overlayscrollbars.ts; preact-iso -
+// routers/App.tsx; lexical/@lexical/plain-text - the rich text field;
+// dayjs - date fields; prismjs(+components) - CodeBlock.tsx). They live in
+// drycms's own `node_modules` (a nested workspace package), not the
+// consumer project's, so Vite can't resolve the bare specifiers below from
+// project root without an alias - same problem `preactAliases` solves for
+// `@astrojs/preact`.
+// The `prismjs/components/prism-jsx` subpath must come before the bare
+// `prismjs` entry: Vite's alias matcher takes the first pattern where
+// `importee === pattern || importee.startsWith(pattern + "/")`, so if the
+// bare `prismjs` entry (which resolves to prismjs's main *file*, not its
+// directory) were checked first, its `startsWith` branch would swallow the
+// subpath import too and splice the subpath onto that file's path instead
+// of a real one (e.g. `.../prismjs/prism.js/components/prism-jsx`).
+const DRY_DEP_IDS = [
+  "prismjs/components/prism-jsx",
+  "@preact/signals",
+  "overlayscrollbars",
+  "preact-iso",
+  "@lexical/history",
+  "@lexical/plain-text",
+  "dayjs",
+  "lexical",
+  "prismjs",
+];
+
+function dryDepAliases(): Record<string, string> {
+  const alias: Record<string, string> = {};
+  for (const id of DRY_DEP_IDS) {
+    const resolved = resolveFromHere(id);
+    if (resolved) alias[id] = resolved;
+  }
+  return alias;
+}
+
 type AddRenderer = Parameters<
   NonNullable<AstroIntegration["hooks"]["astro:config:setup"]>
 >[0]["addRenderer"];
@@ -109,7 +147,7 @@ export function dry(options: DryOption = {}): AstroIntegration {
           });
         }
 
-        const aliases = hasPreact ? {} : preactAliases();
+        const aliases = { ...(hasPreact ? {} : preactAliases()), ...dryDepAliases() };
 
         // The admin UI is routed entirely client-side by the Preact app, so
         // its single Astro entrypoint has to be rendered on demand rather
@@ -145,7 +183,20 @@ export function dry(options: DryOption = {}): AstroIntegration {
             // The package ships uncompiled `.astro`/`.css`, so it must go through
             // the Astro/Vite pipeline instead of being externalized.
             ssr: { noExternal: ["drycms"] },
-            optimizeDeps: { exclude: ["drycms"] },
+            // The admin app is a single `client:only` SPA that code-splits
+            // every route with `lazy(() => import(...))` (see App.tsx) for
+            // production bundle size. In dev, that means Vite's crawler
+            // never sees a route's own third-party deps until that route is
+            // actually visited - discovering one mid-session forces a
+            // dependency re-optimization + full page reload, which can land
+            // mid-render (e.g. right after a click's state update) and throw
+            // a Preact `insertBefore` DOM error before the reload lands.
+            // Listing them here gets them all prebundled at server start
+            // instead, so no route visit ever triggers a fresh optimize.
+            optimizeDeps: {
+              exclude: ["drycms"],
+              include: DRY_DEP_IDS,
+            },
           },
         });
 

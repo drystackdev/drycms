@@ -536,7 +536,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   description="Off reports Lexical's JSON editor state instead."
 />
 
-<CodeBlock code={body} lang={outHTML ? "markup" : "json"} wrap copyable />`,
+<CodeBlock code={body} wrap copyable />`,
   slugField: `import SlugField from 'drycms/components/SlugField';
 
 <SlugField

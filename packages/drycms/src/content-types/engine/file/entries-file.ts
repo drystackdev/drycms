@@ -4,10 +4,12 @@ import type { ContentTypeDefinition } from "../../types.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, verifyPasswordChanges, type EntryValue } from "../entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "../entries-types.js";
+import { mapWithConcurrency } from "../../../storage/util.js";
 import { createFileDriver, safePathSegment, type FileDriver } from "./file-driver.js";
 import {
   nextId,
   patchReverseIndex,
+  readReverseIndexMap,
   readReverseTargets,
   releaseUnique,
   reserveUnique,
@@ -166,33 +168,56 @@ async function readRecord(driver: FileDriver, typeName: string, id: number): Pro
   return driver.readJson<Row>(recordPath(typeName, id));
 }
 
+/** Per-call cache for `readReverseIndexMap`, keyed by `sourceTypeName` +
+ * `sourceFieldId` - a `relation-mirror` field's reverse-index file is the
+ * SAME file for every record of the type being resolved, so a caller
+ * resolving a page of N records (`listEntries`) passes one shared cache down
+ * through the recursion instead of re-fetching that file N times. */
+type ReverseIndexCache = Map<string, Promise<Record<string, number[]>>>;
+
+function cachedReverseIndexMap(driver: FileDriver, cache: ReverseIndexCache | undefined, sourceTypeName: string, sourceFieldId: string): Promise<Record<string, number[]>> {
+  if (!cache) return readReverseIndexMap(driver, sourceTypeName, sourceFieldId);
+  const key = `${sourceTypeName} ${sourceFieldId}`;
+  let mapPromise = cache.get(key);
+  if (!mapPromise) {
+    mapPromise = readReverseIndexMap(driver, sourceTypeName, sourceFieldId);
+    cache.set(key, mapPromise);
+  }
+  return mapPromise;
+}
+
 /** Fills in every field `rowToValue` (reused, unchanged) deliberately
  * skips: `component-repeat` items (recursing `rowToValue` per item, same
  * as `entries-sqlite.ts`'s `populateChildFields`, just reading a nested
  * JSON array already sitting in `row` instead of running a child-table
  * query), `relation` fields with `tableName` (the array is likewise
  * already in `row`), and `relation-mirror` (resolved from the
- * reverse-index instead of physical storage - it's never stored at all). */
-async function populateFileChildFields(driver: FileDriver, nodes: EntryFieldNode[], row: Row, id: number, value: EntryValue): Promise<void> {
-  for (const node of nodes) {
-    if (node.kind === "flatten") {
-      await populateFileChildFields(driver, node.children, row, id, value[node.fieldName] as EntryValue);
-    } else if (node.kind === "component-repeat") {
-      const rawItems = Array.isArray(row[node.tableName]) ? (row[node.tableName] as Row[]) : [];
-      const items: EntryValue[] = [];
-      for (const itemRow of rawItems) {
-        const item = rowToValue(node.itemFields, itemRow);
-        await populateFileChildFields(driver, node.itemFields, itemRow, id, item);
-        items.push(item);
+ * reverse-index instead of physical storage - it's never stored at all).
+ * Sibling fields are independent writes into `value`, so they resolve
+ * concurrently rather than one at a time. */
+async function populateFileChildFields(driver: FileDriver, nodes: EntryFieldNode[], row: Row, id: number, value: EntryValue, cache?: ReverseIndexCache): Promise<void> {
+  await Promise.all(
+    nodes.map(async (node) => {
+      if (node.kind === "flatten") {
+        await populateFileChildFields(driver, node.children, row, id, value[node.fieldName] as EntryValue, cache);
+      } else if (node.kind === "component-repeat") {
+        const rawItems = Array.isArray(row[node.tableName]) ? (row[node.tableName] as Row[]) : [];
+        value[node.fieldName] = await Promise.all(
+          rawItems.map(async (itemRow) => {
+            const item = rowToValue(node.itemFields, itemRow);
+            await populateFileChildFields(driver, node.itemFields, itemRow, id, item, cache);
+            return item;
+          }),
+        );
+      } else if (node.kind === "relation" && node.tableName) {
+        value[node.fieldName] = targetIds(node.cardinality, node.tableName, row);
+      } else if (node.kind === "relation-mirror" && node.resolved) {
+        const map = await cachedReverseIndexMap(driver, cache, node.sourceTableName, node.sourceFieldId);
+        const targets = map[String(id)] ?? [];
+        value[node.fieldName] = node.reverseCardinality === "manyToOne" ? (targets[0] ?? null) : targets;
       }
-      value[node.fieldName] = items;
-    } else if (node.kind === "relation" && node.tableName) {
-      value[node.fieldName] = targetIds(node.cardinality, node.tableName, row);
-    } else if (node.kind === "relation-mirror" && node.resolved) {
-      const targets = await readReverseTargets(driver, node.sourceTableName, node.sourceFieldId, id);
-      value[node.fieldName] = node.reverseCardinality === "manyToOne" ? (targets[0] ?? null) : targets;
-    }
-  }
+    }),
+  );
 }
 
 /** Fills in the row keys `valueToRow` (reused, unchanged) deliberately
@@ -467,20 +492,28 @@ export async function deleteFileEntry(driver: FileDriver, type: ContentTypeDefin
   await driver.removeJson(recordPath(type.name, id));
 }
 
+/** Bounds how many records a single `listEntries` page reads at once on
+ * `github`/`gitlab` - same rationale as `github.ts`'s `LISTALL_DATE_CONCURRENCY`:
+ * bounded parallel reads instead of either the sequential-`await` cost of one
+ * at a time, or an unbounded `Promise.all` opening a socket per record. */
+const LIST_ENTRIES_READ_CONCURRENCY = 24;
+
 async function listEntries(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], query: EntryQuery): Promise<EntryPage> {
   const nodes = buildEntryFieldTree(type, allTypes);
   const names = await driver.listJsonFiles(dataDir(type.name));
+  const ids = names.map(Number).filter((id) => Number.isInteger(id));
 
-  let rows: EntryRow[] = [];
-  for (const name of names) {
-    const id = Number(name);
-    if (!Number.isInteger(id)) continue;
+  // One reverse-index file per `relation-mirror` field, shared across the
+  // whole page instead of re-read once per record (see `ReverseIndexCache`).
+  const reverseCache: ReverseIndexCache = new Map();
+  const resolved = await mapWithConcurrency(ids, LIST_ENTRIES_READ_CONCURRENCY, async (id): Promise<EntryRow | null> => {
     const row = await readRecord(driver, type.name, id);
-    if (!row) continue;
+    if (!row) return null;
     const value = rowToValue(nodes, row);
-    await populateFileChildFields(driver, nodes, row, id, value);
-    rows.push({ id, value });
-  }
+    await populateFileChildFields(driver, nodes, row, id, value, reverseCache);
+    return { id, value };
+  });
+  let rows: EntryRow[] = resolved.filter((row): row is EntryRow => row !== null);
 
   if (query.search && query.searchableFields && query.searchableFields.length > 0) {
     const term = query.search.toLowerCase();

@@ -203,6 +203,44 @@ describe("createGitlabStorageAdapter", () => {
     expect(await adapter.list("")).toEqual([]);
   });
 
+  it("list() never issues a HEAD or /commits request - files carry contentHash but no size/modifiedAt", async () => {
+    await adapter.write("a.txt", new TextEncoder().encode("hello"));
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    const listed = await adapter.list("");
+
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "HEAD")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/repository/commits"))).toBe(false);
+    const file = listed.find((entry) => entry.path === "a.txt");
+    expect(file).toMatchObject({ kind: "file", contentHash: fake.files.get("a.txt")?.id });
+    expect(file?.size).toBeUndefined();
+    expect(file?.modifiedAt).toBeUndefined();
+  });
+
+  it("listNames returns names/kind without the per-entry HEAD/lastModified lookups", async () => {
+    await adapter.mkdir("docs");
+    await adapter.write("docs/a.json", new TextEncoder().encode("{}"));
+    await adapter.write("docs/b.json", new TextEncoder().encode("{}"));
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    const names = await adapter.listNames!("docs");
+    expect([...names].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+      { name: "a.json", kind: "file" },
+      { name: "b.json", kind: "file" },
+    ]);
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "HEAD")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/repository/commits"))).toBe(false);
+  });
+
+  it("listNames matches list()'s not_found/empty-root semantics", async () => {
+    expect(await adapter.listNames!("")).toEqual([]);
+    await expect(adapter.listNames!("missing")).rejects.toMatchObject({ code: "not_found" });
+  });
+
   it("mkdir creates a folder with a hidden .dir marker, excluded from list()", async () => {
     const entry = await adapter.mkdir("docs");
     expect(entry).toMatchObject({ path: "docs", name: "docs", kind: "folder", fileCount: 0 });
@@ -353,7 +391,7 @@ describe("createGitlabStorageAdapter", () => {
     await expect(adapter.copy("", "x")).rejects.toThrow(StorageError);
   });
 
-  it("listAll flattens every file/folder at every depth, with recursive folder size/fileCount", async () => {
+  it("listAll flattens every file/folder at every depth, with recursive folder fileCount - no size/modifiedAt (GitLab's Tree API reports neither without a per-entry request)", async () => {
     await adapter.mkdir("docs");
     await adapter.write("docs/a.txt", new TextEncoder().encode("12345"));
     await adapter.mkdir("docs/nested");
@@ -363,12 +401,30 @@ describe("createGitlabStorageAdapter", () => {
     const all = await adapter.listAll!();
     const paths = all.map((entry) => entry.path).sort();
     expect(paths).toEqual(["docs", "docs/a.txt", "docs/nested", "docs/nested/deep.txt", "top.txt"]);
-    expect(all.find((entry) => entry.path === "docs")).toMatchObject({ kind: "folder", size: 9, fileCount: 2 });
+    expect(all.find((entry) => entry.path === "docs")).toMatchObject({ kind: "folder", size: 0, fileCount: 2 });
     expect(all.find((entry) => entry.path === "docs/nested")).toMatchObject({
       kind: "folder",
-      size: 4,
+      size: 0,
       fileCount: 1,
     });
+    const file = all.find((entry) => entry.path === "docs/a.txt");
+    expect(file).toMatchObject({ kind: "file", contentHash: fake.files.get("docs/a.txt")?.id });
+    expect(file?.size).toBeUndefined();
+    expect(file?.modifiedAt).toBeUndefined();
+  });
+
+  it("listAll never issues a HEAD or /commits request - everything comes from the one paginated Tree API call", async () => {
+    await adapter.mkdir("docs");
+    await adapter.write("docs/a.txt", new TextEncoder().encode("12345"));
+    await adapter.write("top.txt", new TextEncoder().encode("x"));
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    await adapter.listAll!();
+
+    expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "HEAD")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/repository/commits"))).toBe(false);
   });
 
   it("listAll on an empty root is an empty array", async () => {

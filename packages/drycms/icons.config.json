@@ -60,6 +60,18 @@
     "Component": "lucide:puzzle",
     "DragHandle": "lucide:grip-vertical",
     "Lock": "solar:lock-keyhole-linear",
-    "Columns": "solar:sidebar-minimalistic-bold"
+    "Columns": "solar:sidebar-minimalistic-bold",
+
+    "Bold": "solar:text-bold-linear",
+    "Italic": "solar:text-italic-linear",
+    "Underline": "solar:text-underline-linear",
+    "Undo": "lucide:undo",
+    "Redo": "lucide:redo",
+    "ClearFormat": "lucide:remove-formatting",
+
+    "AlignLeft": "lucide:align-left",
+    "AlignCenter": "lucide:align-center",
+    "AlignRight": "lucide:align-right",
+    "AlignJustify": "lucide:align-justify"
   }
 }

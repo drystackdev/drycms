@@ -9,7 +9,7 @@ import {
   type StorageReadResult,
   type StorageStatEntry,
 } from "./types.js";
-import { bufferOf, commitMessage, mapWithConcurrency, stripRoot } from "./util.js";
+import { bufferOf, commitMessage, stripRoot } from "./util.js";
 
 /** Empty-folder marker - see `local.ts`'s `MARKER_FILE`. Doubly necessary
  * here: git has no native concept of an empty directory at all, so without
@@ -60,12 +60,6 @@ interface GithubTreeEntry {
 function encodePath(path: string): string {
   return path.split("/").filter(Boolean).map(encodeURIComponent).join("/");
 }
-
-/** Max concurrent `lastModified` lookups while resolving dates for `listAll`.
- * `list()`/`stat()` are bounded by "however many items are in one folder" and
- * can fire every lookup at once; `listAll` can cover an entire repo, so an
- * unbounded `Promise.all` there risks opening far too many sockets at once. */
-const LISTALL_DATE_CONCURRENCY = 24;
 
 /**
  * Backend for `kind: 'github'`: reads/writes a GitHub repo's contents via the
@@ -258,21 +252,22 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     }
   }
 
+  /** No `modifiedAt` (unlike `stat()`'s equivalent) - deliberately skips the
+   * `lastModified()` call `list()`/`listAll()` would otherwise pay once per
+   * entry, since neither caller needs a per-file commit date badly enough to
+   * justify that fan-out. `size`/`sha` are free here regardless - already
+   * present on `item`/in the folder's own `getContent()` response. */
   async function toStatEntry(item: GithubContentItem, parentRelPath: string): Promise<StorageStatEntry> {
     const relPath = joinStoragePath(parentRelPath, item.name);
     if (item.type !== "dir") {
-      const modifiedAt = await lastModified(item.path);
-      return { path: relPath, name: item.name, kind: "file", size: item.size, modifiedAt, contentHash: item.sha };
+      return { path: relPath, name: item.name, kind: "file", size: item.size, contentHash: item.sha };
     }
-    // A folder needs both its last-commit date and its own children (for
-    // size/fileCount) - two independent GitHub calls, fetched concurrently
-    // instead of paying for both round trips in sequence.
-    const [modifiedAt, children] = await Promise.all([lastModified(item.path), getContent(item.path)]);
+    const children = await getContent(item.path);
     const childArray = Array.isArray(children) ? children : [];
     const visible = childArray.filter((child) => child.name !== MARKER_FILE);
     let size = 0;
     for (const child of childArray) if (child.type === "file") size += child.size;
-    return { path: relPath, name: item.name, kind: "folder", size, fileCount: visible.length, modifiedAt };
+    return { path: relPath, name: item.name, kind: "folder", size, fileCount: visible.length };
   }
 
   async function list(relPath: string): Promise<StorageStatEntry[]> {
@@ -289,6 +284,22 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     return Promise.all(
       data.filter((item) => item.name !== MARKER_FILE).map((item) => toStatEntry(item, relPath)),
     );
+  }
+
+  /** `list()` without the per-entry `lastModified` lookup - one Contents-API
+   * call for the whole directory instead of that plus N `/commits` calls.
+   * Callers that only need filenames (the file content engine enumerating
+   * `<id>.json` records) skip the N extra round trips entirely. */
+  async function listNames(relPath: string): Promise<{ name: string; kind: "file" | "folder" }[]> {
+    const data = await getContent(fullPath(relPath));
+    if (data === null) {
+      if (relPath === "") return [];
+      throw new StorageError("not_found", `"${relPath}" does not exist.`);
+    }
+    if (!Array.isArray(data)) throw new StorageError("invalid_path", `"${relPath}" is not a folder.`);
+    return data
+      .filter((item) => item.name !== MARKER_FILE)
+      .map((item) => ({ name: item.name, kind: item.type === "dir" ? ("folder" as const) : ("file" as const) }));
   }
 
   async function stat(relPath: string): Promise<StorageStatEntry | null> {
@@ -524,16 +535,15 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
 
     // Every folder's *recursive* size/fileCount is derived from this same
     // flat tree afterward (`applyRecursiveFolderTotals`) - no extra GitHub
-    // calls needed for structure, only `modifiedAt` below actually requires
-    // one request per entry. Folders start at size 0/fileCount 0, overwritten
-    // by that pass.
-    const entries = await mapWithConcurrency(scoped, LISTALL_DATE_CONCURRENCY, async (node): Promise<StorageStatEntry> => {
-      const modifiedAt = await lastModified(fullPath(node.relPath));
+    // calls needed for anything here, `size`/`sha` already sat on `tree`.
+    // No `modifiedAt` - see `toStatEntry`'s doc comment. Folders start at
+    // size 0/fileCount 0, overwritten by that pass.
+    const entries: StorageStatEntry[] = scoped.map((node) => {
       const name = storagePathName(node.relPath);
       if (node.type === "blob") {
-        return { path: node.relPath, name, kind: "file", size: node.size, modifiedAt, contentHash: node.sha };
+        return { path: node.relPath, name, kind: "file", size: node.size, contentHash: node.sha };
       }
-      return { path: node.relPath, name, kind: "folder", size: 0, fileCount: 0, modifiedAt };
+      return { path: node.relPath, name, kind: "folder", size: 0, fileCount: 0 };
     });
     return applyRecursiveFolderTotals(entries);
   }
@@ -610,5 +620,5 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     }
   }
 
-  return { list, listAll, stat, read, mkdir, write, move, copy, remove, writeBatch };
+  return { list, listNames, listAll, stat, read, mkdir, write, move, copy, remove, writeBatch };
 }

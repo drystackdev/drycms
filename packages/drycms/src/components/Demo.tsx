@@ -11,12 +11,10 @@ interface Props {
 	title: string;
 	description?: string;
 	code: string;
-	/** Prism grammar to highlight with. @default "jsx" */
-	lang?: string;
 	children?: ComponentChildren;
 }
 
-export default function Demo({ id, title, description, code, lang, children }: Props) {
+export default function Demo({ id, title, description, code, children }: Props) {
 	return (
 		<section id={id} class="demo">
 			<header>
@@ -28,7 +26,7 @@ export default function Demo({ id, title, description, code, lang, children }: P
 
 			<div class="demo-code">
 				<span>Code</span>
-				<CodeBlock code={code} lang={lang} />
+				<CodeBlock editable code={code} />
 			</div>
 		</section>
 	);

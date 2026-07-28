@@ -104,6 +104,29 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     return entries;
   }
 
+  /** `list()` without the per-entry `fs.stat` - names/kind only, straight off
+   * the one `readdir`. Local disk reads are cheap either way, but this keeps
+   * the interface honest and callers uniform across backends. */
+  async function listNames(relPath: string): Promise<{ name: string; kind: "file" | "folder" }[]> {
+    await ensureRoot();
+    const dir = relPath === "" ? root : resolveWithinRoot(root, relPath);
+    let dirents: import("node:fs").Dirent[];
+    try {
+      dirents = await fs.readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if (isErrno(error, "ENOENT")) {
+        throw new StorageError("not_found", `"${relPath}" does not exist.`);
+      }
+      if (isErrno(error, "ENOTDIR")) {
+        throw new StorageError("invalid_path", `"${relPath}" is not a folder.`);
+      }
+      throw error;
+    }
+    return dirents
+      .filter((dirent) => dirent.name !== MARKER_FILE)
+      .map((dirent) => ({ name: dirent.name, kind: dirent.isDirectory() ? ("folder" as const) : ("file" as const) }));
+  }
+
   /** Every file/folder under `root`, flattened - one recursive walk on the
    * same disk `list()`/`stat()` already hit, so unlike `github`'s equivalent
    * there's no network round trip to amortize; still one `readdir`+`stat`
@@ -216,5 +239,5 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     await fs.rm(absPath, { recursive: true, force: true });
   }
 
-  return { list, listAll, stat, read, mkdir, write, move, copy, remove };
+  return { list, listNames, listAll, stat, read, mkdir, write, move, copy, remove };
 }

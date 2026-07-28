@@ -3,7 +3,8 @@ import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
 import Combobox, { type ComboboxOption } from "../components/Combobox.js";
-import { ArrowLeftIcon, ArrowRightIcon } from "../components/icons.js";
+import { ArrowLeftIcon, ArrowRightIcon, CopyIcon } from "../components/icons.js";
+import IconCopyDialog from "../components/IconCopyDialog.js";
 import IconGlyph from "../components/IconGlyph.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
@@ -51,6 +52,7 @@ export default function IconSearchAdd() {
   const [searching, setSearching] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
 
   // Browsing: the full (flattened/de-duped) name list for `category`, shown
   // page by page when there's no query yet instead of an empty grid -
@@ -271,6 +273,15 @@ export default function IconSearchAdd() {
           >
             Cancel
           </button>
+          {selected.size > 0 && (
+            <button
+              type="button"
+              class="outline"
+              onClick={() => setCopying(true)}
+            >
+              <CopyIcon /> Copy
+            </button>
+          )}
           <button
             type="button"
             disabled={selected.size === 0 || importing}
@@ -299,12 +310,7 @@ export default function IconSearchAdd() {
               {previews[id] ? (
                 <IconGlyph src={svgToDataUri(previews[id])} size={24} />
               ) : (
-                <div class="center">
-                  <progress
-                    class="circle"
-                    style={{ height: "1.75rem", width: "1.75rem" }}
-                  />
-                </div>
+                <span class="skeleton" style="height: 1.75rem; width: 1.75rem; border-radius: 50%"></span>
               )}
               <small class="mono">{splitId(id)[1]}</small>
             </button>
@@ -338,6 +344,14 @@ export default function IconSearchAdd() {
             </button>
           </div>
         </div>
+      )}
+
+      {copying && (
+        <IconCopyDialog
+          ids={[...selected]}
+          previews={previews}
+          onClose={() => setCopying(false)}
+        />
       )}
     </div>
   );

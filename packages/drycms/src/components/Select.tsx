@@ -56,7 +56,7 @@ export default function Select({
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	// Deps include `open`: the popup only mounts while open, so the ref is
 	// still null on `Select`'s own first render.
-	const { ref: listRef } = useOverlayScrollbars<HTMLUListElement>([open]);
+	const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([open]);
 	const optionRefs = useRef<(HTMLLIElement | null)[]>([]);
 
 	const reactId = useId();
@@ -156,10 +156,14 @@ export default function Select({
 			</button>
 			{name && <input type="hidden" name={name} value={current ?? ''} />}
 			{open && (
-				<ul
-					id={listId}
+				// OverlayScrollbars moves its host's children into an internal
+				// `.os-viewport` it generates (see overlayscrollbars.ts) - putting
+				// `listRef` on this wrapper instead of the `<ul>` itself means that
+				// one-time reparent only ever touches the `<ul>` (a single stable
+				// child), leaving Preact free to keep diffing the `<li>` options
+				// underneath without fighting over who the real DOM parent is.
+				<div
 					class={openUp ? 'select-popup up' : 'select-popup'}
-					role="listbox"
 					ref={listRef}
 					popover="manual"
 					style={
@@ -167,30 +171,30 @@ export default function Select({
 							? { position: 'fixed', top: `${position.top}px`, left: `${position.left}px`, width: `${position.width}px` }
 							: undefined
 					}
-					tabIndex={-1}
-					onKeyDown={onListKeyDown}
 				>
-					{options.map((option, index) => (
-						<li
-							key={option.value}
-							ref={(el) => {
-								optionRefs.current[index] = el;
-							}}
-							role="option"
-							tabIndex={-1}
-							aria-selected={option.value === current}
-							aria-disabled={option.disabled || undefined}
-							onClick={() => {
-								if (option.disabled) return;
-								commit(index);
-								close(true);
-							}}
-						>
-							<span>{option.label}</span>
-							{option.value === current && <CheckIcon />}
-						</li>
-					))}
-				</ul>
+					<ul id={listId} role="listbox" tabIndex={-1} onKeyDown={onListKeyDown}>
+						{options.map((option, index) => (
+							<li
+								key={option.value}
+								ref={(el) => {
+									optionRefs.current[index] = el;
+								}}
+								role="option"
+								tabIndex={-1}
+								aria-selected={option.value === current}
+								aria-disabled={option.disabled || undefined}
+								onClick={() => {
+									if (option.disabled) return;
+									commit(index);
+									close(true);
+								}}
+							>
+								<span>{option.label}</span>
+								{option.value === current && <CheckIcon />}
+							</li>
+						))}
+					</ul>
+				</div>
 			)}
 		</div>
 	);

@@ -113,11 +113,21 @@ export async function releaseUnique(driver: FileDriver, typeName: string, fieldI
   });
 }
 
+/** The full `targetId -> sourceIds[]` map backing every `relationmirror`
+ * field resolved through `(sourceTypeName, sourceFieldId)` - factored out of
+ * `readReverseTargets` so a caller resolving the same field across many
+ * records (`listEntries`) can fetch this once and look up each record's id
+ * in memory, instead of paying one `readJson` per record for what is always
+ * the same file. */
+export async function readReverseIndexMap(driver: FileDriver, sourceTypeName: string, sourceFieldId: string): Promise<Record<string, number[]>> {
+  return (await driver.readJson<Record<string, number[]>>(reversePath(sourceTypeName, sourceFieldId))) ?? {};
+}
+
 /** Every source-record id currently pointing at `targetId` through
  * `(sourceTypeName, sourceFieldId)`'s relation field - the read side of a
  * `relationmirror` field. */
 export async function readReverseTargets(driver: FileDriver, sourceTypeName: string, sourceFieldId: string, targetId: number): Promise<number[]> {
-  const map = (await driver.readJson<Record<string, number[]>>(reversePath(sourceTypeName, sourceFieldId))) ?? {};
+  const map = await readReverseIndexMap(driver, sourceTypeName, sourceFieldId);
   return map[String(targetId)] ?? [];
 }
 

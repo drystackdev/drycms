@@ -67,7 +67,7 @@ export default function Combobox({
 	const inputRef = useRef<HTMLInputElement>(null);
 	// Deps include `open`: the popup only mounts while open, so the ref is
 	// still null on `Combobox`'s own first render.
-	const { ref: listRef } = useOverlayScrollbars<HTMLUListElement>([open]);
+	const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([open]);
 
 	const reactId = useId();
 	const listId = id ?? `combobox-${reactId}`;
@@ -195,10 +195,15 @@ export default function Combobox({
 			</button>
 			{name && <input type="hidden" name={name} value={current ?? ''} />}
 			{open && (
-				<ul
-					id={listId}
+				// OverlayScrollbars moves its host's children into an internal
+				// `.os-viewport` it generates (see overlayscrollbars.ts) - putting
+				// `listRef` on this wrapper instead of the `<ul>` itself means that
+				// one-time reparent only ever touches the `<ul>` (a single stable
+				// child), leaving Preact free to keep diffing the filtered `<li>`
+				// options underneath without fighting over who the real DOM
+				// parent is (this list is re-filtered on every keystroke).
+				<div
 					class={openUp ? 'select-popup up' : 'select-popup'}
-					role="listbox"
 					ref={listRef}
 					popover="manual"
 					style={
@@ -207,26 +212,28 @@ export default function Combobox({
 							: undefined
 					}
 				>
-					{filtered.length === 0 ? (
-						<li class="muted" role="presentation">
-							{noResultsLabel}
-						</li>
-					) : (
-						filtered.map((option, index) => (
-							<li
-								key={option.value}
-								id={optionId(index)}
-								role="option"
-								class={index === activeIndex ? 'active' : undefined}
-								aria-selected={option.value === current}
-								aria-disabled={option.disabled || undefined}
-								onClick={() => commit(option)}
-							>
-								<span>{option.label}</span>
+					<ul id={listId} role="listbox">
+						{filtered.length === 0 ? (
+							<li class="muted" role="presentation">
+								{noResultsLabel}
 							</li>
-						))
-					)}
-				</ul>
+						) : (
+							filtered.map((option, index) => (
+								<li
+									key={option.value}
+									id={optionId(index)}
+									role="option"
+									class={index === activeIndex ? 'active' : undefined}
+									aria-selected={option.value === current}
+									aria-disabled={option.disabled || undefined}
+									onClick={() => commit(option)}
+								>
+									<span>{option.label}</span>
+								</li>
+							))
+						)}
+					</ul>
+				</div>
 			)}
 		</div>
 	);

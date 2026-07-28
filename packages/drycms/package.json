@@ -16,6 +16,10 @@
     "./styles/*": "./src/styles/*",
     "./app.astro": "./src/app.astro",
     "./routes/*": "./src/routes/*",
+    "./components/RichTextField": {
+      "types": "./dist/components/RichTextField/index.d.ts",
+      "default": "./dist/components/RichTextField/index.js"
+    },
     "./components/*": {
       "types": "./dist/components/*.d.ts",
       "default": "./dist/components/*.js"
@@ -45,6 +49,7 @@
   "dependencies": {
     "@astrojs/preact": "^6.0.1",
     "@preact/signals": "^2.10.0",
+    "@lexical/history": "^0.48.0",
     "@lexical/plain-text": "^0.48.0",
     "dayjs": "^1.11.21",
     "lexical": "^0.48.0",

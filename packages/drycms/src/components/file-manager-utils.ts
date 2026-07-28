@@ -93,7 +93,8 @@ export function formatBytes(bytes: number | undefined): string {
 	return `${exponent === 0 ? value : value.toFixed(2)} ${units[exponent]}`;
 }
 
-export function formatDate(iso: string): { date: string; time: string } {
+export function formatDate(iso: string | undefined): { date: string; time: string } {
+	if (iso === undefined) return { date: '', time: '' };
 	const d = new Date(iso);
 	return {
 		date: d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }),

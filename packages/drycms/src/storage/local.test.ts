@@ -23,6 +23,19 @@ describe("createLocalStorageAdapter", () => {
     expect(await adapter.list("")).toEqual([]);
   });
 
+  it("listNames returns names/kind, matching list()'s .dir-marker exclusion", async () => {
+    await adapter.mkdir("docs");
+    await adapter.write("docs/a.json", new TextEncoder().encode("{}"));
+
+    expect(await adapter.listNames!("docs")).toEqual([{ name: "a.json", kind: "file" }]);
+  });
+
+  it("listNames matches list()'s not_found/invalid_path errors", async () => {
+    await expect(adapter.listNames!("missing")).rejects.toMatchObject({ code: "not_found" });
+    await adapter.write("notes.txt", new TextEncoder().encode("hi"));
+    await expect(adapter.listNames!("notes.txt")).rejects.toMatchObject({ code: "invalid_path" });
+  });
+
   it("mkdir creates a folder with a hidden .dir marker, excluded from list()", async () => {
     const entry = await adapter.mkdir("docs");
     expect(entry).toMatchObject({ path: "docs", name: "docs", kind: "folder", fileCount: 0 });

@@ -60,6 +60,16 @@ export const iconBodies = {
 	DragHandle: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><circle cx=\"9\" cy=\"12\" r=\"1\"/><circle cx=\"9\" cy=\"5\" r=\"1\"/><circle cx=\"9\" cy=\"19\" r=\"1\"/><circle cx=\"15\" cy=\"12\" r=\"1\"/><circle cx=\"15\" cy=\"5\" r=\"1\"/><circle cx=\"15\" cy=\"19\" r=\"1\"/></g>",
 	Lock: "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M2 16c0-2.828 0-4.243.879-5.121C3.757 10 5.172 10 8 10h8c2.828 0 4.243 0 5.121.879C22 11.757 22 13.172 22 16s0 4.243-.879 5.121C20.243 22 18.828 22 16 22H8c-2.828 0-4.243 0-5.121-.879C2 20.243 2 18.828 2 16Z\"/><circle cx=\"12\" cy=\"16\" r=\"2\"/><path stroke-linecap=\"round\" d=\"M6 10V8a6 6 0 1 1 12 0v2\"/></g>",
 	Columns: "<path fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M3.172 4.172C2 5.343 2 7.229 2 11v2c0 3.771 0 5.657 1.172 6.828S6.229 21 10 21h4.25V3H10C6.229 3 4.343 3 3.172 4.172M15.75 3.006v17.988c2.636-.027 4.104-.191 5.078-1.166C22 18.657 22 16.771 22 13v-2c0-3.771 0-5.657-1.172-6.828c-.974-.975-2.442-1.139-5.078-1.166\" clip-rule=\"evenodd\"/>",
+	Bold: "<path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" d=\"M5 4.609A2.61 2.61 0 0 1 7.609 2H12a5 5 0 0 1 0 10H5zM5 12h9a5 5 0 0 1 0 10H7.059A2.06 2.06 0 0 1 5 19.941z\"/>",
+	Italic: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M3 22h12M9 2h12M9 22l6-20\"/>",
+	Underline: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M4 21h16M4 3v6a8 8 0 1 0 16 0V3\"/>",
+	Undo: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M3 7v6h6\"/><path d=\"M21 17a9 9 0 0 0-9-9a9 9 0 0 0-6 2.3L3 13\"/></g>",
+	Redo: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M21 7v6h-6\"/><path d=\"M3 17a9 9 0 0 1 9-9a9 9 0 0 1 6 2.3l3 2.7\"/></g>",
+	ClearFormat: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 7V4h16v3M5 20h6m2-16L8 20m7-5l5 5m0-5l-5 5\"/>",
+	AlignLeft: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M15 12H3m14 6H3M21 6H3\"/>",
+	AlignCenter: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M17 12H7m12 6H5M21 6H3\"/>",
+	AlignRight: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M21 12H9m12 6H7M21 6H3\"/>",
+	AlignJustify: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M3 12h18M3 18h18M3 6h18\"/>",
 } as const;
 
 /** `viewBox` matching each entry in `iconBodies`. */
@@ -117,6 +127,16 @@ export const iconViewBoxes = {
 	DragHandle: "0 0 24 24",
 	Lock: "0 0 24 24",
 	Columns: "0 0 24 24",
+	Bold: "0 0 24 24",
+	Italic: "0 0 24 24",
+	Underline: "0 0 24 24",
+	Undo: "0 0 24 24",
+	Redo: "0 0 24 24",
+	ClearFormat: "0 0 24 24",
+	AlignLeft: "0 0 24 24",
+	AlignCenter: "0 0 24 24",
+	AlignRight: "0 0 24 24",
+	AlignJustify: "0 0 24 24",
 } as const;
 
 export type IconName = keyof typeof iconBodies;
@@ -489,5 +509,75 @@ export function LockIcon(props: IconProps) {
 export function ColumnsIcon(props: IconProps) {
 	return (
 		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"currentColor\" fill-rule=\"evenodd\" d=\"M3.172 4.172C2 5.343 2 7.229 2 11v2c0 3.771 0 5.657 1.172 6.828S6.229 21 10 21h4.25V3H10C6.229 3 4.343 3 3.172 4.172M15.75 3.006v17.988c2.636-.027 4.104-.191 5.078-1.166C22 18.657 22 16.771 22 13v-2c0-3.771 0-5.657-1.172-6.828c-.974-.975-2.442-1.139-5.078-1.166\" clip-rule=\"evenodd\"/>" }} />
+	);
+}
+
+/** `solar:text-bold-linear` */
+export function BoldIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" d=\"M5 4.609A2.61 2.61 0 0 1 7.609 2H12a5 5 0 0 1 0 10H5zM5 12h9a5 5 0 0 1 0 10H7.059A2.06 2.06 0 0 1 5 19.941z\"/>" }} />
+	);
+}
+
+/** `solar:text-italic-linear` */
+export function ItalicIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M3 22h12M9 2h12M9 22l6-20\"/>" }} />
+	);
+}
+
+/** `solar:text-underline-linear` */
+export function UnderlineIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M4 21h16M4 3v6a8 8 0 1 0 16 0V3\"/>" }} />
+	);
+}
+
+/** `lucide:undo` */
+export function UndoIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M3 7v6h6\"/><path d=\"M21 17a9 9 0 0 0-9-9a9 9 0 0 0-6 2.3L3 13\"/></g>" }} />
+	);
+}
+
+/** `lucide:redo` */
+export function RedoIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M21 7v6h-6\"/><path d=\"M3 17a9 9 0 0 1 9-9a9 9 0 0 1 6 2.3l3 2.7\"/></g>" }} />
+	);
+}
+
+/** `lucide:remove-formatting` */
+export function ClearFormatIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 7V4h16v3M5 20h6m2-16L8 20m7-5l5 5m0-5l-5 5\"/>" }} />
+	);
+}
+
+/** `lucide:align-left` */
+export function AlignLeftIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M15 12H3m14 6H3M21 6H3\"/>" }} />
+	);
+}
+
+/** `lucide:align-center` */
+export function AlignCenterIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M17 12H7m12 6H5M21 6H3\"/>" }} />
+	);
+}
+
+/** `lucide:align-right` */
+export function AlignRightIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M21 12H9m12 6H7M21 6H3\"/>" }} />
+	);
+}
+
+/** `lucide:align-justify` */
+export function AlignJustifyIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M3 12h18M3 18h18M3 6h18\"/>" }} />
 	);
 }

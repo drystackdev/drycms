@@ -10,8 +10,15 @@ export interface StorageStatEntry {
    * reports a true recursive aggregate instead (every descendant file at any
    * depth) - see `applyRecursiveFolderTotals`, free there since the whole
    * tree is already in memory. */
-  size: number;
-  modifiedAt: string;
+  /** Absent from `github`/`gitlab`'s `list()`/`listAll()` results for a
+   * plain file where getting it would cost an extra request beyond what's
+   * already fetched (GitLab never reports file size at all without one) -
+   * `stat()` on either backend always resolves a real value. */
+  size?: number;
+  /** Same absence rule as `size`: `github`/`gitlab`'s `list()`/`listAll()`
+   * skip the extra per-entry commit lookup this would otherwise cost;
+   * `stat()` always resolves a real value. */
+  modifiedAt?: string;
   /** Folders only. Immediate children from `list()`/`stat()`; every
    * descendant file (recursive, not counting subfolders themselves) from
    * `listAll()` - same size/recursive split as above. */
@@ -57,6 +64,13 @@ export class StorageError extends Error {
 export interface StorageAdapter {
   /** One level deep. `.dir` marker files are excluded. */
   list(path: string): Promise<StorageStatEntry[]>;
+  /** Same directory `list()` reads, but names/kind only - no `modifiedAt`.
+   * On `github`/`gitlab`, `list()` pays one extra API call per entry to
+   * resolve its last-commit date; callers that only need filenames (the file
+   * content engine enumerating `<id>.json` records) skip that entirely.
+   * Optional: falls back to `list()` (dropping the extra fields) wherever a
+   * backend doesn't override it. */
+  listNames?(path: string): Promise<{ name: string; kind: "file" | "folder" }[]>;
   /** Every file/folder at every depth, flattened, in one round trip - lets a
    * client prefetch the whole tree instead of paying a `list()` per folder as
    * the user navigates. Optional: only implemented where a full tree is

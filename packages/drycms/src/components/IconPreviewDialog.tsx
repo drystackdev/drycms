@@ -89,7 +89,6 @@ export default function IconPreviewDialog({
           <CodeBlock
             maxHeight="min(80vh, 20rem)"
             code={maskSnippet(entry)}
-            lang="markup"
             wrap
             copyable
             style={{flex: 1}}

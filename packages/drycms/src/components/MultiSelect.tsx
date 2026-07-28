@@ -58,7 +58,7 @@ export default function MultiSelect({
 	const inputRef = useRef<HTMLInputElement>(null);
 	// Deps include `open`: the popup only mounts while open, so the ref is
 	// still null on `MultiSelect`'s own first render.
-	const { ref: listRef } = useOverlayScrollbars<HTMLUListElement>([open]);
+	const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([open]);
 
 	const reactId = useId();
 	const listId = id ?? `multiselect-${reactId}`;
@@ -188,11 +188,15 @@ export default function MultiSelect({
 			</button>
 			{name && current.map((val) => <input key={val} type="hidden" name={name} value={val} />)}
 			{open && (
-				<ul
-					id={listId}
+				// OverlayScrollbars moves its host's children into an internal
+				// `.os-viewport` it generates (see overlayscrollbars.ts) - putting
+				// `listRef` on this wrapper instead of the `<ul>` itself means that
+				// one-time reparent only ever touches the `<ul>` (a single stable
+				// child), leaving Preact free to keep diffing the filtered `<li>`
+				// options underneath without fighting over who the real DOM
+				// parent is (this list is re-filtered on every keystroke).
+				<div
 					class={openUp ? 'select-popup up' : 'select-popup'}
-					role="listbox"
-					aria-multiselectable="true"
 					ref={listRef}
 					popover="manual"
 					style={
@@ -201,30 +205,32 @@ export default function MultiSelect({
 							: undefined
 					}
 				>
-					{filtered.length === 0 ? (
-						<li class="muted" role="presentation">
-							{noResultsLabel}
-						</li>
-					) : (
-						filtered.map((option, index) => {
-							const checked = current.includes(option.value);
-							return (
-								<li
-									key={option.value}
-									id={optionId(index)}
-									role="option"
-									class={index === activeIndex ? 'active' : undefined}
-									aria-selected={checked}
-									aria-disabled={option.disabled || undefined}
-									onClick={() => toggle(option)}
-								>
-									<span>{option.label}</span>
-									{checked && <CheckIcon />}
-								</li>
-							);
-						})
-					)}
-				</ul>
+					<ul id={listId} role="listbox" aria-multiselectable="true">
+						{filtered.length === 0 ? (
+							<li class="muted" role="presentation">
+								{noResultsLabel}
+							</li>
+						) : (
+							filtered.map((option, index) => {
+								const checked = current.includes(option.value);
+								return (
+									<li
+										key={option.value}
+										id={optionId(index)}
+										role="option"
+										class={index === activeIndex ? 'active' : undefined}
+										aria-selected={checked}
+										aria-disabled={option.disabled || undefined}
+										onClick={() => toggle(option)}
+									>
+										<span>{option.label}</span>
+										{checked && <CheckIcon />}
+									</li>
+								);
+							})
+						)}
+					</ul>
+				</div>
 			)}
 		</div>
 	);
