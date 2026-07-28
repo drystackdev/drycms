@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  componentFieldType,
   selectFieldType,
   fieldTypes,
   numberFieldType,
   passwordFieldType,
   relationFieldType,
   relationMirrorFieldType,
+  resolveValidationFields,
   secretKeyFieldType,
   textFieldType,
   type RelationFieldConfig,
@@ -89,6 +91,14 @@ describe("selectFieldType", () => {
     expect(selectFieldType.deserialize?.('["a","b"]')).toEqual(["a", "b"]);
     expect(selectFieldType.deserialize?.("a")).toBe("a");
   });
+
+  it("only offers min/max item count once 'multiple' is on", () => {
+    const single = resolveValidationFields(selectFieldType, { options: [], multiple: false });
+    expect(single.map((d) => d.key)).toEqual(["required"]);
+
+    const multi = resolveValidationFields(selectFieldType, { options: [], multiple: true });
+    expect(multi.map((d) => d.key)).toEqual(["required", "min", "max"]);
+  });
 });
 
 describe("relationFieldType cardinality", () => {
@@ -109,6 +119,25 @@ describe("relationFieldType cardinality", () => {
   it("offers exactly the 3 cardinality options", () => {
     const cardinality = relationFieldType.configFields?.find((d) => d.key === "cardinality");
     expect(cardinality?.options?.map((o) => o.value)).toEqual(["manyToOne", "oneToMany", "manyToMany"]);
+  });
+
+  it("only offers min/max item count once cardinality is multi-valued", () => {
+    expect(resolveValidationFields(relationFieldType, { target: "t", cardinality: "manyToOne" })).toEqual([]);
+
+    const oneToMany = resolveValidationFields(relationFieldType, { target: "t", cardinality: "oneToMany" });
+    expect(oneToMany.map((d) => d.key)).toEqual(["min", "max"]);
+
+    const manyToMany = resolveValidationFields(relationFieldType, { target: "t", cardinality: "manyToMany" });
+    expect(manyToMany.map((d) => d.key)).toEqual(["min", "max"]);
+  });
+});
+
+describe("componentFieldType", () => {
+  it("only offers min/max item count once 'repeatable' is on", () => {
+    expect(resolveValidationFields(componentFieldType, { componentId: "c", repeatable: false })).toEqual([]);
+
+    const repeatable = resolveValidationFields(componentFieldType, { componentId: "c", repeatable: true });
+    expect(repeatable.map((d) => d.key)).toEqual(["min", "max"]);
   });
 });
 

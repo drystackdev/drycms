@@ -198,6 +198,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "Menu",
     description: "A named group of links, e.g. the site's main navigation.",
     features: { timestamps: true },
+    fieldSides: { [IDS.menuRefs]: "left" },
     fields: [
       {
         id: IDS.menuName,

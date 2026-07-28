@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultContentTypeDefinitions } from "../seed.js";
+import type { ContentTypeDefinition } from "../types.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "./entry-tree.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type MaskedValue } from "./entry-codec.js";
 
@@ -121,6 +122,94 @@ describe("validateEntryValue", () => {
   it("passes with fully valid data", () => {
     const errors = validateEntryValue(userNodes, { name: "Ada", email: "ada@example.com", password: "hunter2" });
     expect(Object.keys(errors)).toHaveLength(0);
+  });
+});
+
+describe("validateEntryValue - item count (multi-relation / repeatable component)", () => {
+  function withFieldValidation(
+    type: ContentTypeDefinition,
+    fieldName: string,
+    validation: Record<string, unknown>,
+  ): ContentTypeDefinition {
+    return {
+      ...type,
+      fields: type.fields.map((f) => (f.name === fieldName ? { ...f, validation } : f)),
+    };
+  }
+
+  const menu = allTypes.find((t) => t.name === "menu")!;
+
+  it("rejects a manyToMany relation with fewer items than min", () => {
+    const nodes = buildEntryFieldTree(withFieldValidation(user, "roles", { min: 2 }), allTypes);
+    const errors = validateEntryValue(nodes, {
+      name: "Ada",
+      email: "a@b.com",
+      password: "x",
+      roles: ["r1"],
+    });
+    expect(errors.roles).toBe("Roles must have at least 2 items.");
+  });
+
+  it("rejects a manyToMany relation with more items than max", () => {
+    const nodes = buildEntryFieldTree(withFieldValidation(user, "roles", { max: 1 }), allTypes);
+    const errors = validateEntryValue(nodes, {
+      name: "Ada",
+      email: "a@b.com",
+      password: "x",
+      roles: ["r1", "r2"],
+    });
+    expect(errors.roles).toBe("Roles must have at most 1 item.");
+  });
+
+  it("passes a manyToMany relation within min/max bounds", () => {
+    const nodes = buildEntryFieldTree(withFieldValidation(user, "roles", { min: 1, max: 2 }), allTypes);
+    const errors = validateEntryValue(nodes, {
+      name: "Ada",
+      email: "a@b.com",
+      password: "x",
+      roles: ["r1"],
+    });
+    expect(errors.roles).toBeUndefined();
+  });
+
+  it("never count-checks a manyToOne relation, even with min/max stored on it", () => {
+    const employee: ContentTypeDefinition = {
+      id: "t-employee",
+      kind: "collection",
+      name: "employee",
+      label: "Employee",
+      fields: [
+        {
+          id: "f-manager",
+          name: "manager",
+          label: "Manager",
+          type: "relation",
+          config: { target: "t-employee", cardinality: "manyToOne" },
+          validation: { min: 1 },
+          order: 0,
+        },
+      ],
+      version: 0,
+    };
+    const nodes = buildEntryFieldTree(employee, [employee]);
+    const errors = validateEntryValue(nodes, { manager: null });
+    expect(errors.manager).toBeUndefined();
+  });
+
+  it("rejects a repeatable component with fewer items than min", () => {
+    const nodes = buildEntryFieldTree(withFieldValidation(menu, "refs", { min: 1 }), allTypes);
+    const errors = validateEntryValue(nodes, { name: "Main", refs: [] });
+    expect(errors.refs).toBe("Items must have at least 1 item.");
+  });
+
+  it("reports both the item-count error and per-item field errors together", () => {
+    const nodes = buildEntryFieldTree(withFieldValidation(menu, "refs", { max: 1 }), allTypes);
+    const errors = validateEntryValue(nodes, {
+      name: "Main",
+      refs: [{ label: "", href: "" }, { label: "", href: "" }],
+    });
+    expect(errors.refs).toBe("Items must have at most 1 item.");
+    expect(errors["refs[0].label"]).toBeDefined();
   });
 });
 

@@ -2221,8 +2221,8 @@
       }
 
       & > .row {
-        gap: 0.375rem;
-        flex-wrap: nowrap;
+        gap: 0.375rem !important;
+        flex-wrap: nowrap !important;
       }
 
       & > .row > input {

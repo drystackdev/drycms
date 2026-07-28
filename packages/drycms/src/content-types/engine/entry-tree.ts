@@ -52,6 +52,10 @@ export interface EntryComponentRepeatNode {
    * sort-index column - see `ContentEntryEditor.tsx`'s save flow, which
    * always resubmits the whole array). */
   sortable: boolean;
+  /** Only ever carries `min`/`max` (item count) - see `field-registry.ts`'s
+   * conditional `validationFields` (shown only when `repeatable` is on) and
+   * `entry-validate.ts`'s count check that enforces them. */
+  validation: FieldValidation;
 }
 
 /** A `relation` field, either cardinality. `manyToOne` stores a single
@@ -67,6 +71,11 @@ export interface EntryRelationNode {
   targetTypeId: string;
   columnName?: string;
   tableName?: string;
+  /** Only ever carries `min`/`max` (item count) - see `field-registry.ts`'s
+   * conditional `validationFields` (shown only when `cardinality` is
+   * multi-valued) and `entry-validate.ts`'s count check that enforces them.
+   * Meaningless on a `manyToOne` node (single target, nothing to count). */
+  validation: FieldValidation;
 }
 
 /**
@@ -218,6 +227,7 @@ function buildNodes(
           cardinality: config.cardinality,
           targetTypeId: config.target,
           columnName: column.name,
+          validation: field.validation,
         };
       }
       const childRef = childrenByLeaf.get(field.id)!;
@@ -230,6 +240,7 @@ function buildNodes(
         cardinality: config.cardinality,
         targetTypeId: config.target,
         tableName: childRef.tableName,
+        validation: field.validation,
       };
     }
 
@@ -250,6 +261,7 @@ function buildNodes(
           tableName: childRef.tableName,
           itemFields: buildNodes(component.fields, childRef.node, componentsById, allTypes),
           sortable: !!config.sortable,
+          validation: field.validation,
         };
       }
       return {

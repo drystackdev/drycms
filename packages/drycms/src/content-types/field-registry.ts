@@ -61,7 +61,15 @@ export interface FieldTypeDefinition<V = unknown> {
    * form per type. `configFields` write into `FieldDefinition.config`;
    * `validationFields` write into `FieldDefinition.validation`. */
   configFields?: SettingDescriptor[];
-  validationFields?: SettingDescriptor[];
+  /**
+   * Fixed for most types; a function for types whose available validation
+   * rules depend on their own `config` - `relation`'s min/max item count only
+   * means anything once `cardinality` is multi-valued, `component`'s once
+   * `repeatable` is on, `select`'s once `multiple` is on. Always go through
+   * `resolveValidationFields()` rather than reading `.validationFields`
+   * directly.
+   */
+  validationFields?: SettingDescriptor[] | ((config: unknown) => SettingDescriptor[]);
   /** Seeded into `draftConfig`/`draftValidation` when this type is picked in
    * the "Add Field" dialog (replacing the previous unconditional reset to
    * `{}`), so a type can declare sensible defaults - e.g. `number`'s `step`
@@ -84,6 +92,20 @@ const REQUIRED_UNIQUE_VALIDATION: SettingDescriptor[] = [
 export function resolveFieldShape(def: FieldTypeDefinition, config: unknown): FieldShape {
   return typeof def.shape === "function" ? def.shape(config) : def.shape;
 }
+
+export function resolveValidationFields(def: FieldTypeDefinition, config: unknown): SettingDescriptor[] {
+  return typeof def.validationFields === "function" ? def.validationFields(config) : (def.validationFields ?? []);
+}
+
+/** Shared `min`/`max` item-count descriptors for the 3 field types whose
+ * `validationFields` become count-limited only once their own config makes
+ * them multi-valued (`relation`'s non-`manyToOne` cardinality, `component`'s
+ * `repeatable`, `select`'s `multiple`) - see each type's `validationFields`
+ * below and `entry-validate.ts`'s count check that enforces them. */
+const ITEM_COUNT_VALIDATION: SettingDescriptor[] = [
+  { key: "min", label: "Min items", widget: "number" },
+  { key: "max", label: "Max items", widget: "number" },
+];
 
 export function resolveFts(def: FieldTypeDefinition, config: Record<string, unknown>): boolean {
   if (typeof def.fts === "function") return def.fts(config);
@@ -244,7 +266,12 @@ export const selectFieldType: FieldTypeDefinition<string | string[]> = {
     { key: "multiple", label: "Allow multiple values", widget: "boolean" },
   ],
   defaultConfig: { options: [], multiple: false },
-  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+  // Min/max item count only means anything once `multiple` is on - a
+  // single-value select has exactly 0 or 1 selections either way.
+  validationFields: (config) => [
+    { key: "required", label: "Required", widget: "boolean" },
+    ...((config as SelectFieldConfig).multiple ? ITEM_COUNT_VALIDATION : []),
+  ],
 };
 
 export const passwordFieldType: FieldTypeDefinition<string> = {
@@ -327,7 +354,11 @@ export const relationFieldType: FieldTypeDefinition = {
     },
   ],
   defaultConfig: { target: "", cardinality: "manyToOne" },
-  validationFields: [],
+  // Min/max item count only means anything once cardinality is multi-valued
+  // (`oneToMany`/`manyToMany`) - `manyToOne` stores a single target, nothing
+  // to count-limit.
+  validationFields: (config) =>
+    (config as RelationFieldConfig).cardinality !== "manyToOne" ? ITEM_COUNT_VALIDATION : [],
 };
 
 export interface ComponentFieldConfig {
@@ -351,7 +382,9 @@ export const componentFieldType: FieldTypeDefinition = {
     { key: "repeatable", label: "Repeatable", widget: "boolean" },
     { key: "sortable", label: "Sortable (drag to reorder items)", widget: "boolean" },
   ],
-  validationFields: [],
+  // Min/max item count only means anything once `repeatable` is on - a
+  // non-repeatable component only ever has the one inline instance.
+  validationFields: (config) => ((config as ComponentFieldConfig).repeatable ? ITEM_COUNT_VALIDATION : []),
 };
 
 export interface RelationMirrorFieldConfig {

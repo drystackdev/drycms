@@ -9,12 +9,12 @@ import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
 import Select from "../../components/Select.js";
 import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
-import { toast } from "../../components/Toast.js";
 import { slugifyIdentifier } from "../../lib/slugify.js";
 import { randomUUID } from "../../lib/uuid.js";
 import {
   fieldTypes,
   resolveFieldShape,
+  resolveValidationFields,
   type FieldTypeDefinition,
   type SelectFieldConfig,
   type SettingDescriptor,
@@ -188,6 +188,9 @@ function renderControl({
         value={Array.isArray(values[d.key]) ? (values[d.key] as string[]) : []}
         disabled={disabled}
         showErrors={showErrors}
+        // The only `option-list` widget today is `select`'s own Options -
+        // always mandatory (see `OptionListEditorProps.required`'s doc).
+        required
         onChange={(v) => onChange(d.key, v)}
       />
     );
@@ -367,6 +370,19 @@ function componentConfigDisabledKeys(
   return config.repeatable ? [] : ["sortable"];
 }
 
+/** A `select` field needs at least one non-blank, unique option - shared
+ * between `handleSave`'s save-blocking check and the footer's "Fix the
+ * highlighted fields." summary below, so both agree on the same condition
+ * `OptionListEditor` itself already renders per-row/empty-list errors for
+ * (via its own `showErrors` prop - see its doc comment). */
+function selectOptionsInvalid(config: Record<string, unknown>): boolean {
+  const trimmedOptions = (Array.isArray(config.options) ? (config.options as string[]) : []).map((o) =>
+    o.trim(),
+  );
+  if (trimmedOptions.length === 0 || trimmedOptions.some((o) => o === "")) return true;
+  return new Set(trimmedOptions).size !== trimmedOptions.length;
+}
+
 export default function FieldDialog({
   open,
   editingField,
@@ -437,15 +453,31 @@ export default function FieldDialog({
   }, [open, editingField]);
 
   function handleConfigChange(key: string, value: unknown) {
-    setDraftConfig((prev) => {
-      const next: Record<string, unknown> = { ...prev, [key]: value };
-      // Turning `repeatable` off makes `sortable` meaningless - clear it
-      // rather than leaving a stale `true` sitting invisibly disabled.
-      if (draftType === "component" && key === "repeatable" && !value) {
-        next.sortable = false;
-      }
-      return next;
-    });
+    const nextConfig: Record<string, unknown> = { ...draftConfig, [key]: value };
+    // Turning `repeatable` off makes `sortable` meaningless - clear it
+    // rather than leaving a stale `true` sitting invisibly disabled.
+    if (draftType === "component" && key === "repeatable" && !value) {
+      nextConfig.sortable = false;
+    }
+    setDraftConfig(nextConfig);
+
+    // A config change can make previously-shown validation fields disappear
+    // (relation cardinality back to `manyToOne`, component `repeatable` off,
+    // select `multiple` off - see `field-registry.ts`'s conditional
+    // `validationFields`) - drop any values already typed into those now-
+    // hidden fields (e.g. a leftover `min`/`max`) rather than saving a stale
+    // constraint the user can no longer see or edit.
+    const type = fieldTypes[draftType];
+    if (type) {
+      const allowedKeys = new Set(resolveValidationFields(type, nextConfig).map((d) => d.key));
+      setDraftValidation((prev) => {
+        const next: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (allowedKeys.has(k)) next[k] = v;
+        }
+        return next;
+      });
+    }
   }
 
   function handleValidationChange(key: string, value: unknown) {
@@ -470,34 +502,15 @@ export default function FieldDialog({
   }
 
   function handleSave() {
-    if (!draftType) {
-      toast.add({ type: "error", title: "Pick a field type first." });
-      return;
-    }
-    if (!draftName.trim()) {
-      toast.add({ type: "error", title: "Field name is required." });
-      return;
-    }
-    if (draftType === "select") {
-      const trimmedOptions = (
-        Array.isArray(draftConfig.options) ? (draftConfig.options as string[]) : []
-      ).map((option) => option.trim());
-      if (trimmedOptions.every((option) => option === "")) {
-        setSaveAttempted(true);
-        toast.add({ type: "error", title: "Add at least one option." });
-        return;
-      }
-      if (trimmedOptions.some((option) => option === "")) {
-        setSaveAttempted(true);
-        toast.add({ type: "error", title: "Option text can't be empty." });
-        return;
-      }
-      if (new Set(trimmedOptions).size !== trimmedOptions.length) {
-        setSaveAttempted(true);
-        toast.add({ type: "error", title: "Options must be unique." });
-        return;
-      }
-    }
+    // Surfaces every failing control's own inline error (Type select,
+    // Label/Name, select's Options list) instead of a single generic toast -
+    // same "attempted" gate `ComponentField.tsx`'s item dialog uses for its
+    // own per-field errors, plus the shared "Fix the highlighted fields."
+    // summary line below.
+    setSaveAttempted(true);
+    if (!draftType) return;
+    if (!draftName.trim()) return;
+    if (draftType === "select" && selectOptionsInvalid(draftConfig)) return;
     onSave(
       {
         id: editingField?.id ?? randomUUID(),
@@ -528,6 +541,14 @@ export default function FieldDialog({
     draftType === "text" ? textValidationDisabledKeys(draftValidation) : [];
   const configDisabledKeys =
     draftType === "component" ? componentConfigDisabledKeys(draftConfig) : [];
+  const activeValidationFields = activeFieldType
+    ? resolveValidationFields(activeFieldType, draftConfig)
+    : [];
+  const hasSaveErrors =
+    saveAttempted &&
+    (!draftType ||
+      !draftName.trim() ||
+      (draftType === "select" && selectOptionsInvalid(draftConfig)));
 
   return (
     <dialog
@@ -565,6 +586,10 @@ export default function FieldDialog({
                     setDraftName(name);
                   }}
                   disabled={isMirror}
+                  error={saveAttempted && !draftName.trim()}
+                  helperText={
+                    saveAttempted && !draftName.trim() ? "Field name is required." : undefined
+                  }
                 />
                 <TextField
                   label="Description"
@@ -574,8 +599,11 @@ export default function FieldDialog({
                   onChange={setDraftDescription}
                 />
                 <div class="field">
-                  <label>Type</label>
+                  <label>
+                    Type<span class="required-asterisk">*</span>
+                  </label>
                   <Select
+                    invalid={saveAttempted && !draftType}
                     options={Object.values(fieldTypes)
                       // `internal` types (e.g. `password`) are seeded onto one
                       // fixed spot by the system, not meant to be picked freely -
@@ -605,6 +633,9 @@ export default function FieldDialog({
                     }}
                     disabled={editingField !== null}
                   />
+                  {saveAttempted && !draftType && (
+                    <span class="error">Pick a field type first.</span>
+                  )}
                 </div>
               </div>
 
@@ -663,12 +694,12 @@ export default function FieldDialog({
                   )}
 
                 {activeFieldType &&
-                  (activeFieldType.validationFields?.length ?? 0) > 0 && (
+                  activeValidationFields.length > 0 && (
                     <fieldset>
                       <legend>Validation</legend>
                       <div class="stack">
                         <SettingsForm
-                          descriptors={activeFieldType.validationFields ?? []}
+                          descriptors={activeValidationFields}
                           values={draftValidation}
                           onChange={handleValidationChange}
                           dynamicOptions={dynamicOptions}
@@ -681,6 +712,11 @@ export default function FieldDialog({
             </div>
           </div>
           <footer>
+            {hasSaveErrors && (
+              <span class="error" style={{ marginRight: "auto" }}>
+                Fix the highlighted fields.
+              </span>
+            )}
             <button type="button" class="outline" onClick={onCancel}>
               Cancel
             </button>

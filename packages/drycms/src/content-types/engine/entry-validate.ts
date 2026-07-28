@@ -77,6 +77,20 @@ function validateColumn(node: EntryColumnNode, value: unknown, path: string, err
   }
 }
 
+/** Item-count check for multi-valued `relation` (non-`manyToOne`) and
+ * `component-repeat` fields - `validation.min`/`max` mean "number of items"
+ * there instead of the numeric-value bounds `validateColumn` above checks
+ * (see `field-registry.ts`'s conditional `validationFields`, shown only once
+ * the field is actually multi-valued). */
+function validateItemCount(validation: FieldValidation, value: unknown, label: string, path: string, errors: FieldErrors): void {
+  const count = Array.isArray(value) ? value.length : 0;
+  if (validation.min !== undefined && count < Number(validation.min)) {
+    errors[path] = `${label} must have at least ${validation.min} item${Number(validation.min) === 1 ? "" : "s"}.`;
+  } else if (validation.max !== undefined && count > Number(validation.max)) {
+    errors[path] = `${label} must have at most ${validation.max} item${Number(validation.max) === 1 ? "" : "s"}.`;
+  }
+}
+
 /** Validates one root (or repeatable-component-item) value against its
  * fields' `FieldValidation` rules. `unique` isn't checked here - it's an SQL
  * unique index already, surfaced as a field error when the adapter's insert/
@@ -102,15 +116,18 @@ export function validateEntryValue(nodes: EntryFieldNode[], value: Record<string
     } else if (node.kind === "flatten") {
       Object.assign(errors, validateEntryValue(node.children, (value[node.fieldName] as Record<string, unknown>) ?? {}, path));
     } else if (node.kind === "component-repeat") {
+      validateItemCount(node.validation, value[node.fieldName], node.label, path, errors);
       const items = Array.isArray(value[node.fieldName]) ? (value[node.fieldName] as Record<string, unknown>[]) : [];
       items.forEach((item, index) => {
         Object.assign(errors, validateEntryValue(node.itemFields, item, `${path}[${index}]`));
       });
+    } else if (node.kind === "relation" && node.cardinality !== "manyToOne") {
+      // `manyToOne` stores a single target (or none) - nothing to
+      // count-limit, and `field-registry.ts` never surfaces min/max for it.
+      validateItemCount(node.validation, value[node.fieldName], node.label, path, errors);
     }
-    // `relation` has no `FieldValidation` of its own to check either way
-    // (`field-registry.ts` declares `validationFields: []`) - existence of
-    // the referenced target row(s) isn't verified here, same as every other
-    // generated table's lack of real `FOREIGN KEY` constraints.
+    // Existence of the referenced target row(s) isn't verified here, same as
+    // every other generated table's lack of real `FOREIGN KEY` constraints.
   }
   return errors;
 }

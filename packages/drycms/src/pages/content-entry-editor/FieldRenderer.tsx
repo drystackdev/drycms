@@ -86,6 +86,7 @@ export default function FieldRenderer({
         value={value}
         onChange={onChange}
         allTypes={allTypes}
+        error={error}
       />
     );
   }
@@ -97,6 +98,7 @@ export default function FieldRenderer({
         value={value}
         onChange={onChange}
         allTypes={allTypes}
+        error={error}
       />
     );
   }
@@ -107,6 +109,7 @@ export default function FieldRenderer({
       value={(value as EntryValue[]) ?? []}
       onChange={onChange}
       allTypes={allTypes}
+      error={error}
     />
   );
 }
@@ -182,11 +185,13 @@ function RelationFieldAdapter({
   value,
   onChange,
   allTypes,
+  error,
 }: {
   node: EntryRelationNode;
   value: unknown;
   onChange: (value: unknown) => void;
   allTypes: ContentTypeDefinition[];
+  error?: string;
 }) {
   const targetType = allTypes.find((t) => t.id === node.targetTypeId);
   const multiple = node.cardinality !== "manyToOne";
@@ -220,6 +225,8 @@ function RelationFieldAdapter({
       multiple={multiple}
       source={source}
       pickerTitle={`Choose ${targetType.label}`}
+      error={!!error}
+      helperText={error}
     />
   );
 }
@@ -236,11 +243,13 @@ function RelationMirrorFieldAdapter({
   value,
   onChange,
   allTypes,
+  error,
 }: {
   node: EntryRelationMirrorNode;
   value: unknown;
   onChange: (value: unknown) => void;
   allTypes: ContentTypeDefinition[];
+  error?: string;
 }) {
   const sourceType = node.resolved ? allTypes.find((t) => t.id === node.sourceTypeId) : undefined;
   const multiple = node.resolved && node.reverseCardinality !== "manyToOne";
@@ -274,6 +283,8 @@ function RelationMirrorFieldAdapter({
       multiple={multiple}
       source={source}
       pickerTitle={`Choose ${sourceType.label}`}
+      error={!!error}
+      helperText={error}
     />
   );
 }
@@ -286,11 +297,13 @@ function ComponentRepeatFieldAdapter({
   value,
   onChange,
   allTypes,
+  error,
 }: {
   node: EntryComponentRepeatNode;
   value: EntryValue[];
   onChange: (value: unknown) => void;
   allTypes: ContentTypeDefinition[];
+  error?: string;
 }) {
   const summaryField = node.itemFields.find((f) => f.kind === "column")?.fieldName;
 
@@ -301,6 +314,8 @@ function ComponentRepeatFieldAdapter({
       value={value}
       onChange={onChange}
       sortable={node.sortable}
+      error={!!error}
+      helperText={error}
       itemLabel={node.label}
       summaryOf={(item) => (summaryField ? String(item[summaryField] ?? "") : "")}
       blankItem={() => blankEntryValue(node.itemFields)}

@@ -61,7 +61,7 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * cell-level `render` buttons should still call `stopPropagation()` so
    * they don't also trigger the row click. */
   onRowClick?: (row: Row) => void;
-  actions?: JSX.Element
+  actions?: JSX.Element;
   /** Stable identity for a row, so per-row UI state (an open menu, an
    * inline input from `render`) stays with the right row across
    * sort/filter/page instead of whatever row now occupies the same index.
@@ -160,7 +160,10 @@ export default function DataTable<Row extends Record<string, unknown>>({
     setPage(0);
     if (!serverQuery) return;
     clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => serverQuery.onSearchChange?.(value), 300);
+    searchDebounce.current = setTimeout(
+      () => serverQuery.onSearchChange?.(value),
+      300,
+    );
   }
 
   const filtered = useMemo(() => {
@@ -185,8 +188,12 @@ export default function DataTable<Row extends Record<string, unknown>>({
   const perPage = pageSize > 0 ? pageSize : sorted.length || 1;
   const totalRows = serverQuery ? serverQuery.total : sorted.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / perPage));
-  const current = serverQuery ? serverQuery.page : Math.min(page, pageCount - 1);
-  const visible = serverQuery ? sorted : sorted.slice(current * perPage, current * perPage + perPage);
+  const current = serverQuery
+    ? serverQuery.page
+    : Math.min(page, pageCount - 1);
+  const visible = serverQuery
+    ? sorted
+    : sorted.slice(current * perPage, current * perPage + perPage);
   const activeSort = serverQuery ? serverQuery.sort : sort;
 
   const toggleSort = (key: string) => {
@@ -204,19 +211,22 @@ export default function DataTable<Row extends Record<string, unknown>>({
     }
   };
 
-  const goToPage = (nextPage: number) => (serverQuery ? serverQuery.onPageChange(nextPage) : setPage(nextPage));
+  const goToPage = (nextPage: number) =>
+    serverQuery ? serverQuery.onPageChange(nextPage) : setPage(nextPage);
 
   return (
     <div class="stack">
       {searchable && (
-        <div class="row" style={{gap: '0.5rem'}}>
+        <div class="row" style={{ gap: "0.5rem" }}>
           <input
             type="search"
             value={query}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             style="max-width: 18rem"
-            onInput={(event) => handleSearchInput((event.currentTarget as HTMLInputElement).value)}
+            onInput={(event) =>
+              handleSearchInput((event.currentTarget as HTMLInputElement).value)
+            }
           />
           {columnToggle && (
             <Popover
@@ -225,13 +235,13 @@ export default function DataTable<Row extends Record<string, unknown>>({
                 <button class="outline lg" onClick={onClick}>
                   <ColumnsIcon />
                   Column
-                  <span class="badge sm outline">{visibleKeys.length}</span>
                 </button>
               )}
             >
               {columns.map((column) => {
                 const checked = visibleKeys.includes(column.key);
-                const disabled = !checked && visibleKeys.length >= MAX_VISIBLE_COLUMNS;
+                const disabled =
+                  !checked && visibleKeys.length >= MAX_VISIBLE_COLUMNS;
                 return (
                   <li key={column.key}>
                     <CheckField
@@ -246,7 +256,11 @@ export default function DataTable<Row extends Record<string, unknown>>({
             </Popover>
           )}
           <span class="spacer" />
-          <small>{serverQuery?.loading ? "Loading..." : `${totalRows} of ${serverQuery ? serverQuery.total : rows.length}`}</small>
+          <small>
+            {serverQuery?.loading
+              ? "Loading..."
+              : `${totalRows} of ${serverQuery ? serverQuery.total : rows.length}`}
+          </small>
           {actions}
         </div>
       )}

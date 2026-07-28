@@ -13,6 +13,13 @@ export interface OptionListEditorProps {
    * `attempted` gate so a freshly added blank row isn't flagged red before
    * the user has had a chance to fill it in. */
   showErrors?: boolean;
+  /** Shows the same trailing `*` other field labels render when mandatory
+   * (see `TextField`/`NumberField`/etc.) - `select`'s own Options list is
+   * always required (a select with zero options can't be used), so its
+   * caller passes this unconditionally rather than exposing a matching
+   * `SettingDescriptor.required` the registry would need for just this one
+   * widget. */
+  required?: boolean;
 }
 
 interface Row {
@@ -45,6 +52,7 @@ export default function OptionListEditor({
   onChange,
   disabled = false,
   showErrors = false,
+  required = false,
 }: OptionListEditorProps) {
   const [rows, setRows] = useState<Row[]>(() => value.map((text) => ({ id: randomUUID(), text })));
 
@@ -75,7 +83,10 @@ export default function OptionListEditor({
   return (
     <div class="field">
       <div class="row justify-between" style={{ alignItems: "center" }}>
-        <label>{label}</label>
+        <label>
+          {label}
+          {required && <span class="required-asterisk">*</span>}
+        </label>
         <button type="button" class="ghost icon sm" disabled={disabled} aria-label="Add option" onClick={addRow}>
           <PlusIcon />
         </button>
