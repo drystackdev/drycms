@@ -101,20 +101,21 @@ export default function FieldsList({
   );
 
   const combined: CombinedEntry[] = [
+    ...fields.map((field) => ({ id: field.id, system: false as const, field })),
     ...systemEntries.map((entry) => ({
       id: entry.id,
       system: true as const,
       entry,
     })),
-    ...fields.map((field) => ({ id: field.id, system: false as const, field })),
   ];
 
   // Display order is fully derived from props - `fieldOrder` (persisted) wins
   // for whatever ids it lists, in that sequence; anything not listed (a field
-  // just added, or a feature just toggled on) keeps its natural position,
-  // appended after. No local state: reorders round-trip through the parent
-  // (`onReorderAll` -> `ContentTypeDefinition.fieldOrder` -> this `fieldOrder`
-  // prop), same one-way flow already used for `fields`/`onReorderFields`.
+  // just added, or a feature just toggled on) keeps its natural position -
+  // custom fields first, system/mirror rows after - appended there. No local
+  // state: reorders round-trip through the parent (`onReorderAll` ->
+  // `ContentTypeDefinition.fieldOrder` -> this `fieldOrder` prop), same
+  // one-way flow already used for `fields`/`onReorderFields`.
   const orderedEntries = applyFieldOrder(combined, fieldOrder);
 
   const sortable = useSortableList<CombinedEntry>({

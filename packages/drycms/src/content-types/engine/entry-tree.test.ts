@@ -19,13 +19,13 @@ function byName(nodes: ReturnType<typeof buildEntryFieldTree>, name: string) {
 }
 
 describe("buildEntryFieldTree", () => {
-  it("maps the user collection's scalar fields to columns, in field order plus system fields first", () => {
+  it("maps the user collection's scalar fields to columns, in field order plus system fields after", () => {
     const user = allTypes.find((t) => t.name === "user")!;
     const nodes = buildEntryFieldTree(user, allTypes);
 
-    // `timestamps` is user's only feature - createdAt/updatedAt lead, then
-    // the declared fields in their own order.
-    expect(nodes.map((n) => n.fieldName)).toEqual(["createdAt", "updatedAt", "name", "email", "password", "roles"]);
+    // The declared fields lead, in their own order; `timestamps` is user's
+    // only feature, so createdAt/updatedAt trail after them.
+    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "email", "password", "roles", "createdAt", "updatedAt"]);
 
     const name = byName(nodes, "name") as EntryColumnNode;
     expect(name.kind).toBe("column");
@@ -277,7 +277,7 @@ describe("flattenQueryableColumns", () => {
     const nodes = buildEntryFieldTree(user, allTypes);
     const columns = flattenQueryableColumns(nodes);
 
-    expect(columns.map((c) => c.fieldName)).toEqual(["createdAt", "updatedAt", "name", "email"]);
+    expect(columns.map((c) => c.fieldName)).toEqual(["name", "email", "createdAt", "updatedAt"]);
     expect(columns.find((c) => c.fieldName === "name")?.columnName).toBe("name");
   });
 

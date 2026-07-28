@@ -27,15 +27,20 @@ export const SYSTEM_COMPONENT_IDS = {
   seo: "system-seo",
 } as const;
 
-/** The synthetic fields implied by `type.features`, in front of `type.fields`
- * every time a table tree is resolved. `title` is NOT a standalone default -
- * it's bundled with `slug` (turning `slug` on adds both); `id` is never in
- * here at all, unconditionally on every root table (see `migration.ts`'s
- * `CREATE TABLE ... INTEGER PRIMARY KEY AUTOINCREMENT` codegen) - it is
- * baked directly into the DDL rather than being a diffable field. `draft`/
- * `schedule`/`timestamps` are collection-only; `singleton` only ever gets
- * `slug` (+ the `title` it brings with it) and `seo`; `component` has no
- * table of its own and never calls this. */
+/** The synthetic fields implied by `type.features` - in front of `type.fields`
+ * for the real DB column order (`tree.ts`'s `resolveTableTree`), but AFTER
+ * `type.fields` for on-screen display order (`entry-tree.ts`'s
+ * `buildEntryFieldTree`, `ContentTypeEditor.tsx`'s `systemFieldsForUi` +
+ * `FieldsList.tsx`) - a feature toggled on lands after the fields someone
+ * already set up, not shoved in front of them; both are then still freely
+ * reorderable via `type.fieldOrder`/`applyFieldOrder`. `title` is NOT a
+ * standalone default - it's bundled with `slug` (turning `slug` on adds
+ * both); `id` is never in here at all, unconditionally on every root table
+ * (see `migration.ts`'s `CREATE TABLE ... INTEGER PRIMARY KEY AUTOINCREMENT`
+ * codegen) - it is baked directly into the DDL rather than being a diffable
+ * field. `draft`/`schedule`/`timestamps` are collection-only; `singleton`
+ * only ever gets `slug` (+ the `title` it brings with it) and `seo`;
+ * `component` has no table of its own and never calls this. */
 export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] {
   // `order` is assigned once, below, from final push order - these synthetic
   // fields aren't part of any persisted `fields[]` array (see `types.ts`'s

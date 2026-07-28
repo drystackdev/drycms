@@ -363,20 +363,19 @@ export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = ""
  * same field-id-keyed matching against the resolved `TableNode`, but keyed by
  * *field name* (for reading/writing entry values) instead of SQL identity.
  * Includes the synthetic system fields (`title`/`slug`/`draft`/.../`seo`) a
- * `features` toggle implies, defaulting to the same front-of-`fields[]`
- * position `systemFieldsFor` always uses in `resolveTableTree`, PLUS the
- * synthetic `relationmirror` fields `relationMirrorFieldsFor` derives from
- * every OTHER type's `relation` fields targeting this one, appended after
- * `type.fields` - but, unlike the real column order, this DISPLAY order is
- * then permuted by `type.fieldOrder` (see `types.ts`), so system, custom,
- * and mirror fields can freely interleave on screen without touching the
- * underlying table.
+ * `features` toggle implies, PLUS the synthetic `relationmirror` fields
+ * `relationMirrorFieldsFor` derives from every OTHER type's `relation` fields
+ * targeting this one - unlike `resolveTableTree`'s real (front-of-`fields[]`)
+ * column order, this DISPLAY order defaults to `type.fields` FIRST, both auto
+ * groups appended after, then permuted by `type.fieldOrder` (see `types.ts`)
+ * on top - so system, custom, and mirror fields can freely interleave on
+ * screen without touching the underlying table.
  */
 export function buildEntryFieldTree(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): EntryFieldNode[] {
   const componentsById = new Map(allTypes.filter((t) => t.kind === "component").map((t) => [t.id, t]));
   const rootTree = resolveTableTree(type, allTypes);
   const rootFields = applyFieldOrder(
-    [...systemFieldsFor(type), ...type.fields, ...relationMirrorFieldsFor(type, allTypes)],
+    [...type.fields, ...systemFieldsFor(type), ...relationMirrorFieldsFor(type, allTypes)],
     type.fieldOrder,
   );
   return buildNodes(rootFields, rootTree, componentsById, allTypes);
