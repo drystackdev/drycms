@@ -262,6 +262,31 @@ export const PUT: APIRoute = async (context) => {
   }
 };
 
+/**
+ * Bulk-persists a `features.sortable` collection's drag-reordered
+ * `sortIndex` values - unlike PUT (one entry at a time), this always
+ * targets the collection itself, never a single entry id, since the List
+ * page's Save action renumbers the whole visible order in one request (see
+ * `ContentEntryEngineAdapter.reorderEntries`'s doc comment).
+ */
+export const PATCH: APIRoute = async (context) => {
+  try {
+    const { typeSlug, hashedId } = parseSlug(context);
+    if (hashedId) throw new ContentEntryError("not_found", "PATCH reorders the whole collection - it doesn't take an id.");
+    const { type, allTypes } = await resolveType(context, typeSlug);
+    if (type.kind !== "collection" || !type.features?.sortable) {
+      throw new ContentEntryError("unsupported", `"${typeSlug}" isn't a sortable collection.`);
+    }
+    const entryAdapter = getEntryAdapter(context);
+    const body = (await context.request.json()) as { updates?: { id: string; sortIndex: number }[] };
+    const updates = (body.updates ?? []).map((u) => ({ id: decodeIdOrThrow(u.id), sortIndex: u.sortIndex }));
+    await entryAdapter.reorderEntries(type, allTypes, updates);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+};
+
 export const DELETE: APIRoute = async (context) => {
   try {
     const { typeSlug, hashedId } = parseSlug(context);

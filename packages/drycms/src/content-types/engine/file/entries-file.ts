@@ -489,6 +489,23 @@ export async function deleteFileEntry(driver: FileDriver, type: ContentTypeDefin
   await driver.removeJson(recordPath(type.name, id));
 }
 
+/** Driver-parameterized counterpart to `ContentEntryEngineAdapter.reorderEntries`
+ * - a direct `sortIndex` patch per record (skipping `updateFileEntry`'s
+ * unique/relation-mirror bookkeeping entirely, since a reorder never touches
+ * any other field) rather than a full `updateFileEntry` call per row. */
+export async function reorderFileEntries(
+  driver: FileDriver,
+  type: ContentTypeDefinition,
+  updates: { id: number; sortIndex: number }[],
+): Promise<void> {
+  for (const { id, sortIndex } of updates) {
+    const row = await readRecord(driver, type.name, id);
+    if (!row) continue;
+    row.sortIndex = sortIndex;
+    await driver.writeJson(recordPath(type.name, id), row);
+  }
+}
+
 /** Bounds how many records a single `listEntries` page reads at once on
  * `github`/`gitlab` - same rationale as `github.ts`'s `LISTALL_DATE_CONCURRENCY`:
  * bounded parallel reads instead of either the sequential-`await` cost of one
@@ -561,6 +578,11 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     deleteEntry: (type, allTypes, id) =>
       driver.transaction(async (tx) => {
         await deleteFileEntry(tx, type, allTypes, id);
+        await bumpDataVersion(tx, type.name);
+      }),
+    reorderEntries: (type, allTypes, updates) =>
+      driver.transaction(async (tx) => {
+        await reorderFileEntries(tx, type, updates);
         await bumpDataVersion(tx, type.name);
       }),
     getSingletonEntry: (type, allTypes) => getFileEntry(driver, type, allTypes, SINGLETON_ID),

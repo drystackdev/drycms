@@ -131,6 +131,19 @@ export function createContentEntriesApi(baseUrl: string, typeSlug: string) {
     await assertOk(res, "Failed to delete entry.");
   }
 
+  /** `features.sortable` collections only - bulk-persists the List page's
+   * drag-reordered `sortIndex` values in one request (see
+   * `routes/content-entries.ts`'s `PATCH` handler). */
+  async function reorder(updates: { id: string; sortIndex: number }[]): Promise<void> {
+    const res = await fetch(typeUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates }),
+    });
+    if (res.status === 204) return;
+    await assertOk(res, "Failed to save the new order.");
+  }
+
   /** `useFetch()`-oriented counterpart to `list()` - same query, but carries
    * `ifVersion` as `X-Data-Version` and returns the `changed`/`version`
    * envelope instead of the bare result (see `status/build-cache.md`). */
@@ -166,7 +179,7 @@ export function createContentEntriesApi(baseUrl: string, typeSlug: string) {
     return body.changed ? { changed: true, version: body.version, data: body.entry } : { changed: false, version: body.version };
   }
 
-  return { list, get, getSingleton, create, update, saveSingleton, remove, listVersioned, getVersioned, getSingletonVersioned };
+  return { list, get, getSingleton, create, update, saveSingleton, remove, reorder, listVersioned, getVersioned, getSingletonVersioned };
 }
 
 export type ContentEntriesApi = ReturnType<typeof createContentEntriesApi>;

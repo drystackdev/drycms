@@ -5,11 +5,13 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   ColumnsIcon,
+  DragHandleIcon,
   SortIcon,
 } from "./icons.js";
 import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { useSortableList } from "../lib/dnd/useSortableList.js";
 import type { JSX } from "preact/jsx-runtime";
 import CheckField from "./CheckField.js";
 
@@ -35,6 +37,18 @@ export interface DataTableServerQuery {
    * every distinct search value is pushed up instead of computed here. */
   onSearchChange?: (search: string) => void;
   loading?: boolean;
+}
+
+export interface DataTableDragReorder<Row> {
+  /** Stable identity for a row - required (unlike the table's own optional
+   * `rowKey`) since it also becomes `data-sortable-id`, which the drag hook
+   * relies on to track a row through DOM reorders. */
+  getId: (row: Row) => string;
+  /** Fires with `rows` in the new order on every drop - live, not debounced;
+   * the caller decides whether/when to persist it (e.g. behind its own
+   * "Save" action once the order actually differs from what's saved). */
+  onReorder: (nextRows: Row[]) => void;
+  disabled?: boolean;
 }
 
 export interface DataTableColumnToggle {
@@ -77,6 +91,12 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * content-entry list's requirement) only toggled-on columns are ever
    * offered as `serverQuery`'s search target. */
   columnToggle?: DataTableColumnToggle;
+  /** Turns every row into a drag handle-reorderable item, in exactly the
+   * order `rows` is passed in - client-side search/sort/pagination are all
+   * disabled while this is set (a filtered/sorted/paginated view has no
+   * single well-defined "new order" to report back), so the caller should
+   * pass `searchable={false}` and `pageSize={0}` alongside it. */
+  dragReorder?: DataTableDragReorder<Row>;
 }
 
 function toText(value: unknown): string {
@@ -114,12 +134,24 @@ export default function DataTable<Row extends Record<string, unknown>>({
   rowKey,
   serverQuery,
   columnToggle,
+  dragReorder,
 }: DataTableProps<Row>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const { ref: scroll } = useOverlayScrollbars<HTMLDivElement>();
   const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
+
+  // Called unconditionally (rules of hooks) even when `dragReorder` is
+  // omitted - `disabled: true` in that case just means `getHandleProps`'
+  // `onPointerDown` no-ops, same pattern `columnToggle`'s always-called
+  // `useStore` above already uses.
+  const sortableList = useSortableList<Row>({
+    items: rows,
+    getId: dragReorder?.getId ?? (() => ""),
+    onReorder: (next) => dragReorder?.onReorder(next),
+    disabled: !dragReorder || dragReorder.disabled,
+  });
 
   const allKeys = columns.map((c) => c.key);
   // When `columnToggle` is omitted, this still calls `useStore` (hooks must
@@ -167,7 +199,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   }
 
   const filtered = useMemo(() => {
-    if (serverQuery) return rows; // already filtered server-side.
+    if (serverQuery || dragReorder) return rows; // already filtered server-side, or reorder mode - always the full, as-given order.
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((row) =>
@@ -175,15 +207,15 @@ export default function DataTable<Row extends Record<string, unknown>>({
         toText(row[column.key]).toLowerCase().includes(needle),
       ),
     );
-  }, [rows, visibleColumns, query, serverQuery]);
+  }, [rows, visibleColumns, query, serverQuery, dragReorder]);
 
   const sorted = useMemo(() => {
-    if (serverQuery || !sort) return filtered; // server mode: already sorted.
+    if (serverQuery || dragReorder || !sort) return filtered; // server mode/reorder mode: already sorted, or never re-sorted.
     const direction = sort.direction === "asc" ? 1 : -1;
     return [...filtered].sort(
       (a, b) => compare(a[sort.key], b[sort.key]) * direction,
     );
-  }, [filtered, sort, serverQuery]);
+  }, [filtered, sort, serverQuery, dragReorder]);
 
   const perPage = pageSize > 0 ? pageSize : sorted.length || 1;
   const totalRows = serverQuery ? serverQuery.total : sorted.length;
@@ -191,9 +223,13 @@ export default function DataTable<Row extends Record<string, unknown>>({
   const current = serverQuery
     ? serverQuery.page
     : Math.min(page, pageCount - 1);
-  const visible = serverQuery
+  // Reorder mode always shows every row unpaginated - dragging across a
+  // hidden page boundary has no sensible "new order" to report back.
+  const visible = dragReorder
     ? sorted
-    : sorted.slice(current * perPage, current * perPage + perPage);
+    : serverQuery
+      ? sorted
+      : sorted.slice(current * perPage, current * perPage + perPage);
   const activeSort = serverQuery ? serverQuery.sort : sort;
 
   const toggleSort = (key: string) => {
@@ -216,18 +252,20 @@ export default function DataTable<Row extends Record<string, unknown>>({
 
   return (
     <div class="stack">
-      {searchable && (
+      {(searchable || actions) && (
         <div class="row" style={{ gap: "0.5rem" }}>
-          <input
-            type="search"
-            value={query}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            style="max-width: 18rem"
-            onInput={(event) =>
-              handleSearchInput((event.currentTarget as HTMLInputElement).value)
-            }
-          />
+          {searchable && (
+            <input
+              type="search"
+              value={query}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              style="max-width: 18rem"
+              onInput={(event) =>
+                handleSearchInput((event.currentTarget as HTMLInputElement).value)
+              }
+            />
+          )}
           {columnToggle && (
             <Popover
               label="Choose visible columns"
@@ -269,8 +307,9 @@ export default function DataTable<Row extends Record<string, unknown>>({
         <table>
           <thead>
             <tr>
+              {dragReorder && <th aria-hidden="true" />}
               {visibleColumns.map((column) => {
-                const sortable = column.sortable !== false;
+                const sortable = !dragReorder && column.sortable !== false;
                 const active = activeSort?.key === column.key;
                 return (
                   <th
@@ -309,38 +348,53 @@ export default function DataTable<Row extends Record<string, unknown>>({
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody {...(dragReorder ? sortableList.containerProps : undefined)}>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length}>
+                <td colSpan={visibleColumns.length + (dragReorder ? 1 : 0)}>
                   <div class="empty">{emptyLabel}</div>
                 </td>
               </tr>
             ) : (
-              visible.map((row, index) => (
-                <tr
-                  key={rowKey ? rowKey(row) : index}
-                  style={onRowClick ? { cursor: "pointer" } : undefined}
-                  onClick={() => onRowClick?.(row)}
-                >
-                  {visibleColumns.map((column) => (
-                    <td
-                      key={column.key}
-                      class={column.numeric ? "numeric" : undefined}
-                    >
-                      {column.render
-                        ? column.render(row[column.key], row)
-                        : (row[column.key] as never)}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              visible.map((row, index) => {
+                const id = dragReorder ? dragReorder.getId(row) : undefined;
+                return (
+                  <tr
+                    key={rowKey ? rowKey(row) : index}
+                    data-sortable-id={id}
+                    style={onRowClick ? { cursor: "pointer" } : undefined}
+                    onClick={() => onRowClick?.(row)}
+                  >
+                    {dragReorder && (
+                      <td onClick={(event) => event.stopPropagation()}>
+                        <button
+                          type="button"
+                          class="ghost icon sm"
+                          {...sortableList.getHandleProps(id!)}
+                        >
+                          <DragHandleIcon />
+                        </button>
+                      </td>
+                    )}
+                    {visibleColumns.map((column) => (
+                      <td
+                        key={column.key}
+                        class={column.numeric ? "numeric" : undefined}
+                      >
+                        {column.render
+                          ? column.render(row[column.key], row)
+                          : (row[column.key] as never)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {pageSize > 0 && pageCount > 1 && (
+      {!dragReorder && pageSize > 0 && pageCount > 1 && (
         <div class="row justify-between">
           <small>
             Page {current + 1} of {pageCount}

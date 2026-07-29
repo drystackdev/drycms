@@ -425,6 +425,25 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     }
   }
 
+  async function reorderEntries(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    updates: { id: number; sortIndex: number }[],
+  ): Promise<void> {
+    const handle = await getHandle();
+    handle.exec("BEGIN IMMEDIATE;");
+    try {
+      for (const { id, sortIndex } of updates) {
+        handle.run(`UPDATE ${quoteIdent(type.name)} SET ${quoteIdent("sortIndex")} = ? WHERE "id" = ?;`, [sortIndex, id]);
+      }
+      bumpResourceVersion(handle, type.name);
+      handle.exec("COMMIT;");
+    } catch (error) {
+      handle.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   async function getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null> {
     const handle = await getHandle();
     const rows = handle.all<{ id: number }>(`SELECT "id" FROM ${quoteIdent(type.name)} LIMIT 1;`);
@@ -450,6 +469,7 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     createEntry,
     updateEntry,
     deleteEntry,
+    reorderEntries,
     getSingletonEntry,
     saveSingletonEntry,
     getResourceVersion: async (type) => {

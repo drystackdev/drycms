@@ -11,13 +11,17 @@ async function createTestCollection(page: Page, options?: { slug?: boolean }): P
   const uniqueTitle = `E2E Test ${Date.now()}`;
   await page.getByLabel("Table Name*", { exact: true }).fill(uniqueTitle);
   if (options?.slug) {
-    // `CheckField`'s description text lives inside the same `<label>`, so the
-    // accessible name is "Slug Adds a URL-friendly Slug field, ..." - matched
-    // as a prefix rather than pinned to that whole description string.
-    await page.getByLabel(/^Slug\b/).check();
+    // `CheckField`'s description text lives inside the same `<label>` with no
+    // separator, so the accessible name is "SlugAdds a URL-friendly Slug
+    // field, ..." (no space between label and description) - matched as a
+    // prefix rather than pinned to that whole description string. No `\b`
+    // here: "g"/"A" are both word characters, so a boundary never appears.
+    await page.getByLabel(/^Slug/).check();
   }
   await page.getByRole("button", { name: "Save & apply schema" }).click();
-  await page.waitForURL("**/dry/content-types");
+  // The list page now persists the selected kind in a query string
+  // (`?selectedKind=collection`), so the pattern needs a trailing wildcard.
+  await page.waitForURL("**/dry/content-types**");
   // Filter down to the one row - repeated runs leave earlier collections
   // around, which would otherwise push this one onto a later table page.
   await page.getByPlaceholder("Filter…").fill(uniqueTitle);
@@ -32,7 +36,7 @@ async function createTestCollection(page: Page, options?: { slug?: boolean }): P
 async function addTextField(page: Page, label: string): Promise<void> {
   await page.getByRole("button", { name: "Add Field" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Label", { exact: true }).fill(label);
+  await dialog.getByLabel("Label*", { exact: true }).fill(label);
   await dialog.getByRole("button", { name: "Select…" }).click();
   await page.getByRole("option", { name: "Text" }).click();
   await dialog.getByRole("button", { name: "Save field" }).click();
@@ -92,8 +96,10 @@ test.describe("Content Type editor", () => {
     await expect(dialog.getByLabel("Default value", { exact: true })).toHaveCount(0);
 
     // Label -> Name via the dialog's own SlugField.
-    await dialog.getByLabel("Label", { exact: true }).fill("My Field");
-    await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("my-field");
+    await dialog.getByLabel("Label*", { exact: true }).fill("My Field");
+    // Field names are camelCase identifiers now (matching JS property-name
+    // convention), not kebab-case slugs like a content type's own "Table".
+    await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("myField");
 
     await dialog.getByRole("button", { name: "Select…" }).click();
     await page.getByRole("option", { name: "Text" }).click();
@@ -193,11 +199,17 @@ test.describe("Content Type editor", () => {
   test("Editing an existing content type shows the apply-schema confirm before saving", async ({ page }) => {
     const { id } = await createTestCollection(page);
     try {
+      // "Save & apply schema" is disabled until the form is actually dirty
+      // (`disabled={saving || !isDirty}` in ContentTypeEditor.tsx) - add a
+      // field first so there's a real schema change to confirm.
+      await addTextField(page, "Some Field");
       await page.getByRole("button", { name: "Save & apply schema" }).click();
       const confirm = page.getByRole("dialog", { name: "Apply schema changes?" });
       await expect(confirm).toBeVisible();
       await confirm.getByRole("button", { name: "Save & apply" }).click();
-      await page.waitForURL("**/dry/content-types");
+      // The list page now persists the selected kind in a query string
+  // (`?selectedKind=collection`), so the pattern needs a trailing wildcard.
+  await page.waitForURL("**/dry/content-types**");
     } finally {
       await deleteContentType(page, id);
     }

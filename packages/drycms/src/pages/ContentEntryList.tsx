@@ -7,6 +7,7 @@ import DataTable, { type DataTableColumn, type SortState } from "../components/D
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../components/file-manager-http-source.js";
 import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, PlusIcon } from "../components/icons.js";
+import { toast } from "../components/Toast.js";
 import {
   flattenQueryableColumns,
   buildEntryFieldTree,
@@ -31,17 +32,6 @@ interface Row extends Record<string, unknown> {
 }
 
 const DEFAULT_PAGE_SIZE = 10;
-
-/**
- * `engine: "file"`'s `listEntries` re-scans every record on each call (see
- * `entries-file.ts`) rather than running a SQL query, so round-tripping
- * search/sort/pagination per keystroke would re-scan the whole collection
- * repeatedly. Instead, for that engine only, rows are fetched once and
- * `DataTable`'s existing fully-client-side mode (triggered below by omitting
- * `serverQuery`) does search/sort/pagination in memory. `sqlite`/`D1` search
- * server-side via SQL `LIKE` and don't need this.
- */
-const useClientSearch = contentEngine === "file";
 
 /**
  * Not a real page size - just large enough that a typical collection's
@@ -255,6 +245,17 @@ function ContentEntryListCollection({
   route: (path: string) => void;
 }) {
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, type.name), [type.name]);
+  const isSortable = !!type.features?.sortable;
+  // `engine: "file"`'s `listEntries` re-scans every record on each call (see
+  // `entries-file.ts`) rather than running a SQL query, so round-tripping
+  // search/sort/pagination per keystroke would re-scan the whole collection
+  // repeatedly - rows are fetched once instead and `DataTable`'s existing
+  // fully-client-side mode (triggered below by omitting `serverQuery`) does
+  // search/sort/pagination in memory. A `sortable` collection needs the same
+  // "fetch everything up front" treatment regardless of engine: dragging a
+  // row only makes sense against the WHOLE order, never just the current
+  // page/search-filtered slice.
+  const useClientSearch = contentEngine === "file" || isSortable;
   const fieldTree = useMemo(() => buildEntryFieldTree(type, allTypes), [type, allTypes]);
   // `queryableFieldNames` is the subset a sort/search request may actually
   // target - see `entry-tree.ts`'s doc comments on `flattenQueryableColumns`.
@@ -301,22 +302,59 @@ function ContentEntryListCollection({
   const listFetcher = useCallback(
     (ifVersion: number | undefined, signal: AbortSignal) =>
       entriesApi.listVersioned(
-        // See `useClientSearch` above - `engine: "file"` fetches once,
-        // unfiltered/unsorted/unpaginated, and lets `DataTable`'s own
+        // See `useClientSearch` above - `engine: "file"`/`sortable` fetch
+        // once, unfiltered/unpaginated, and let `DataTable`'s own
         // client-side mode (triggered below by omitting `serverQuery`) do
-        // the rest in memory.
+        // the rest in memory. A `sortable` collection additionally requests
+        // `sortIndex asc` explicitly - no engine defaults to that order on
+        // its own (see `entries-sqlite.ts`/`entries-d1.ts`/`entries-file.ts`'s
+        // shared "no `sortField` -> id desc" fallback), so without this the
+        // drag list would start in an arbitrary, not-yet-dragged order.
         useClientSearch
-          ? { page: 0, pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE }
+          ? {
+              page: 0,
+              pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE,
+              ...(isSortable ? { sortField: "sortIndex", sortDir: "asc" as const } : {}),
+            }
           : { page, pageSize: DEFAULT_PAGE_SIZE, sortField: sort?.key, sortDir: sort?.direction, search: search || undefined, searchableFields },
         ifVersion,
         signal,
       ),
-    [entriesApi, page, sort, search, searchableFields],
+    [entriesApi, page, sort, search, searchableFields, isSortable],
   );
-  const { data: listData, loading, error: listError } = useFetch<EntryListResult>(listCacheKey, listFetcher);
+  const { data: listData, loading, error: listError, reload } = useFetch<EntryListResult>(listCacheKey, listFetcher);
   const rows: Row[] = useMemo(() => (listData?.rows ?? []).map((r) => ({ id: r.id, ...flattenRowValue(r.value) })), [listData]);
   const total = listData?.total ?? 0;
   const loadError = listError ? (listError instanceof Error ? listError.message : "Failed to load entries.") : null;
+
+  // The in-progress drag order, pending a Save - `null` means "unchanged
+  // from the fetched order". Reset whenever a fresh `rows` lands (initial
+  // load, or the `reload()` a successful Save triggers below): `rows` only
+  // ever changes via a version-bumped refetch (see `useFetch`'s data-version
+  // protocol), never spontaneously mid-drag, so this can't clobber unsaved
+  // work.
+  const [dragOrder, setDragOrder] = useState<Row[] | null>(null);
+  useEffect(() => setDragOrder(null), [rows]);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const displayRows = isSortable ? (dragOrder ?? rows) : rows;
+
+  async function handleSaveOrder() {
+    if (!dragOrder) return;
+    setSavingOrder(true);
+    try {
+      await entriesApi.reorder(dragOrder.map((row, index) => ({ id: row.id, sortIndex: index })));
+      await reload();
+      toast.add({ type: "success", title: "Order saved." });
+    } catch (error) {
+      toast.add({
+        type: "error",
+        title: "Failed to save the new order.",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setSavingOrder(false);
+    }
+  }
 
   // fieldName -> target id -> resolved label. Only fetched for relation
   // columns the user actually has visible (`visibleKeys`) - `entriesApi.get`
@@ -453,9 +491,14 @@ function ContentEntryListCollection({
 
       <DataTable
         columns={columns}
-        rows={rows}
+        rows={displayRows}
         rowKey={(row) => row.id}
         emptyLabel="No entries yet."
+        // `features.sortable` disables client search entirely (see
+        // `dragReorder` below) - a filtered view has no single well-defined
+        // drag order to save.
+        searchable={!isSortable}
+        pageSize={isSortable ? 0 : undefined}
         onRowClick={(row) => route(`${path}/content/${type.name}/${row.id}`)}
         columnToggle={{
           storageKey: `contentList:${type.name}:columns`,
@@ -481,10 +524,22 @@ function ContentEntryListCollection({
                 loading,
               }
         }
+        dragReorder={
+          isSortable
+            ? { getId: (row) => row.id, onReorder: setDragOrder, disabled: savingOrder }
+            : undefined
+        }
         actions={
-          <button type="button" onClick={() => route(`${path}/content/${type.name}/new`)}>
-            <PlusIcon /> Add
-          </button>
+          <>
+            {isSortable && dragOrder && (
+              <button type="button" class="outline" disabled={savingOrder} aria-busy={savingOrder} onClick={handleSaveOrder}>
+                Save order
+              </button>
+            )}
+            <button type="button" onClick={() => route(`${path}/content/${type.name}/new`)}>
+              <PlusIcon /> Add
+            </button>
+          </>
         }
       />
     </>

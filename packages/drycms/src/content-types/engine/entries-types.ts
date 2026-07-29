@@ -62,6 +62,16 @@ export interface ContentEntryEngineAdapter {
   getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null>;
   saveSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow>;
   /**
+   * Bulk-writes every listed row's `sortIndex` column in one call - the
+   * List page's drag-reorder Save action (see `features.sortable`,
+   * `system-fields.ts`) renumbers the WHOLE currently-visible order at once
+   * rather than patching just the moved row, so this always receives every
+   * row's new value together instead of one `updateEntry` call per row.
+   * `collection` types with `features.sortable` only - never called
+   * otherwise.
+   */
+  reorderEntries(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], updates: { id: number; sortIndex: number }[]): Promise<void>;
+  /**
    * The resource's current *data* version (see `status/build-cache.md`) -
    * bumped by `createEntry`/`updateEntry`/`deleteEntry`/`saveSingletonEntry`,
    * distinct from `ContentTypeDefinition.version` (schema/optimistic-

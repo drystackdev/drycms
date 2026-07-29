@@ -12,7 +12,9 @@ vi.mock("virtual:drycms/content-config", async () => {
   return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
 });
 
-const { GET, POST } = await import("./content-entries.js");
+const { GET, POST, PATCH } = await import("./content-entries.js");
+const { createContentEngineAdapter } = await import("../content-types/engine/index.js");
+const { content } = await import("virtual:drycms/content-config");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -36,6 +38,11 @@ async function get(slug: string, ifVersion?: number) {
 async function post(slug: string, body: unknown) {
   const response = await POST(context({ slug, method: "POST", body: JSON.stringify(body) }));
   return { status: response.status, json: (await response.json()) as any };
+}
+
+async function patch(slug: string, body: unknown) {
+  const response = await PATCH(context({ slug, method: "PATCH", body: JSON.stringify(body) }));
+  return { status: response.status, json: response.status === 204 ? null : ((await response.json()) as any) };
 }
 
 describe("content-entries route - data-version protocol", () => {
@@ -72,5 +79,43 @@ describe("content-entries route - data-version protocol", () => {
 
     const unchanged = await get(`role/${id}`, first.json.version);
     expect(unchanged.json).toEqual({ changed: false, version: first.json.version });
+  });
+});
+
+describe("content-entries route - PATCH (reorder)", () => {
+  it("bulk-persists sortIndex for a features.sortable collection, and rejects one that isn't sortable", async () => {
+    const schema = createContentEngineAdapter(content);
+    const item = {
+      id: "custom-item",
+      kind: "collection" as const,
+      name: "item",
+      label: "Item",
+      features: { sortable: true },
+      fields: [{ id: "f-name", name: "name", label: "Name", type: "text", config: {}, validation: {}, order: 0 }],
+      version: 0,
+    };
+    await schema.applySave(item, await schema.planSave(item));
+
+    const a = (await post("item", { name: "A" })).json.entry;
+    const b = (await post("item", { name: "B" })).json.entry;
+
+    const reordered = await patch("item", {
+      updates: [
+        { id: b.id, sortIndex: 0 },
+        { id: a.id, sortIndex: 1 },
+      ],
+    });
+    expect(reordered.status).toBe(204);
+
+    const listed = await get("item");
+    expect(
+      listed.json.rows
+        .slice()
+        .sort((x: any, y: any) => x.value.sortIndex - y.value.sortIndex)
+        .map((r: any) => r.value.name),
+    ).toEqual(["B", "A"]);
+
+    const rejected = await patch("role", { updates: [] });
+    expect(rejected.status).toBe(501);
   });
 });

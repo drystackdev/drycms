@@ -1,7 +1,7 @@
 import type { ResolvedD1ContentOption } from "../../integration/options.js";
 import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
-import type { D1Database } from "./d1-driver.js";
+import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
@@ -401,6 +401,26 @@ export function createD1ContentEntryEngineAdapter(
     await bumpResourceVersion(type.name);
   }
 
+  async function reorderEntries(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    updates: { id: number; sortIndex: number }[],
+  ): Promise<void> {
+    // One atomic `db.batch()` (D1's own multi-statement transaction, unlike
+    // the rest of this adapter - see `bumpResourceVersion`'s caveat) rather
+    // than a loop of individual `dbRun` calls, so a reorder either lands
+    // fully or not at all.
+    await runBatch(
+      db,
+      updates.map(({ id, sortIndex }) => ({
+        sql: `UPDATE ${quoteIdent(type.name)} SET ${quoteIdent("sortIndex")} = ? WHERE "id" = ?;`,
+        params: [sortIndex, id],
+        description: `Reorder ${type.name} #${id}`,
+      })),
+    );
+    await bumpResourceVersion(type.name);
+  }
+
   async function getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null> {
     const rows = await dbAll<{ id: number }>(db, `SELECT "id" FROM ${quoteIdent(type.name)} LIMIT 1;`);
     const row = rows[0];
@@ -424,6 +444,7 @@ export function createD1ContentEntryEngineAdapter(
     createEntry,
     updateEntry,
     deleteEntry,
+    reorderEntries,
     getSingletonEntry,
     saveSingletonEntry,
     getResourceVersion: (type) => getResourceVersionValue(type.name),

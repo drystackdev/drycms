@@ -293,7 +293,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     node.kind === "column" &&
     (node.fieldId === SYSTEM_FIELD_IDS.createdAt ||
       node.fieldId === SYSTEM_FIELD_IDS.updatedAt);
-  const editableNodes = nodes.filter((n) => !isTimestampField(n));
+  // `sortIndex` (see `system-fields.ts`'s `features.sortable`) is only ever
+  // written by the List page's drag-reorder Save action, never manually
+  // typed - same rationale as excluding `createdAt`/`updatedAt` above.
+  const isSortIndexField = (node: EntryFieldNode) =>
+    node.kind === "column" && node.fieldId === SYSTEM_FIELD_IDS.sortIndex;
+  const editableNodes = nodes.filter((n) => !isTimestampField(n) && !isSortIndexField(n));
   const sideOf = (n: EntryFieldNode) =>
     resolveFieldSide(n.fieldId, n.kind !== "column", type.fieldSides);
   const leftFields = editableNodes.filter((n) => sideOf(n) === "left");

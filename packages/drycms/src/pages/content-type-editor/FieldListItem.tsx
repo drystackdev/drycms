@@ -72,7 +72,7 @@ export default function FieldListItem({
       </div>
       {!system && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
-          <button type="button" class="ghost sm" onClick={onRemove}>
+          <button type="button" class="ghost sm" aria-label="Remove" onClick={onRemove}>
             <TrashIcon />
           </button>
         </div>

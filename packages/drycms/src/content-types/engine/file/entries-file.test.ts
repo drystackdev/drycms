@@ -367,6 +367,39 @@ describe("createFileContentEntryEngineAdapter", () => {
     expect(await entries.getResourceVersion(user)).toBe(1);
   });
 
+  it("reorderEntries bulk-writes sortIndex for every listed row and bumps the resource version once", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+
+    const item: ContentTypeDefinition = {
+      id: "custom-item",
+      kind: "collection",
+      name: "item",
+      label: "Item",
+      features: { sortable: true },
+      fields: [{ id: "f-name", name: "name", label: "Name", type: "text", config: {}, validation: {}, order: 0 }],
+      version: 0,
+    };
+    await schema.applySave(item, await schema.planSave(item));
+    const allTypes = await schema.listContentTypes();
+    const itemType = allTypes.find((t) => t.name === "item")!;
+
+    const a = await entries.createEntry(itemType, allTypes, { name: "A" });
+    const b = await entries.createEntry(itemType, allTypes, { name: "B" });
+    const c = await entries.createEntry(itemType, allTypes, { name: "C" });
+    const versionBefore = await entries.getResourceVersion(itemType);
+
+    await entries.reorderEntries(itemType, allTypes, [
+      { id: c.id, sortIndex: 0 },
+      { id: a.id, sortIndex: 1 },
+      { id: b.id, sortIndex: 2 },
+    ]);
+
+    const ordered = await entries.listEntries(itemType, allTypes, { page: 0, pageSize: 10, sortField: "sortIndex", sortDir: "asc" });
+    expect(ordered.rows.map((r) => r.value.name)).toEqual(["C", "A", "B"]);
+    expect(await entries.getResourceVersion(itemType)).toBe(versionBefore + 1);
+  });
+
   it("tracks each resource's data version independently", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);
