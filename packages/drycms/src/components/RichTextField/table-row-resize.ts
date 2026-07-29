@@ -6,7 +6,7 @@ import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
  * (`~/drystack/.../editor/table-row-resize.ts`), already vanilla
  * `prosemirror-state`/`-view` (its only non-portable bit was `css()` from
  * `@keystar/ui/style` for the resize-cursor class, swapped below for a plain
- * `.dry-tx-table-resize-cursor` class in `richtext-content.css`). Unlike column-width
+ * `.dry-tx-table-resize-cursor` class in `content-shadow-styles.ts`). Unlike column-width
  * resizing (the `columnResizing()` plugin, built into `prosemirror-tables`),
  * there's no upstream equivalent for rows, so this stays hand-rolled.
  */

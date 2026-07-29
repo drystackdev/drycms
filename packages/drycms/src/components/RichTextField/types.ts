@@ -97,6 +97,13 @@ export interface ToolbarCustomProps {
    * optionality as `source`/`ImageInsertButton` above. */
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Whether the grid feature's outline/resize handles are currently shown,
+   * and the toggle for it - only `grid-mode-button.tsx` reads either. Unlike
+   * `fullscreen` (pure CSS, never touches ProseMirror), this also has to
+   * reach `grid-column-resize.ts`'s plugin state - see the `gridMode` effect
+   * in `useRichTextEditor.ts`. */
+  gridMode?: boolean;
+  onToggleGridMode?: () => void;
 }
 
 /** Shared by `useRichTextEditor.ts` (reading `ElementNode.getFormatType()`)

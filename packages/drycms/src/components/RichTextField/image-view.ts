@@ -215,7 +215,7 @@ export class ImageNodeView implements NodeView {
    * it out of flow while leaving this outer wrapper in flow with nothing to
    * size itself by, collapsing it to a zero-size box at the image's text
    * position. `left`/`right` just float the wrapper (already `inline-block`
-   * via richtext-content.css's `.dry-tx-image-wrapper`, so floating changes nothing
+   * via content-shadow-styles.ts's `.dry-tx-image-wrapper`, so floating changes nothing
    * else about its sizing); `center` stretches it to the paragraph's full
    * width via `min-width: 100%` (matching `schema.ts`'s `imageAlignStyleString`,
    * the exported HTML's own encoding of this) rather than `display: block` -
@@ -249,7 +249,7 @@ export class ImageNodeView implements NodeView {
   selectNode() {
     // On `imageBox`, not `dom` - the outline/handles both need to track the
     // same box, and `dom` (which also holds the caption once one exists)
-    // isn't it; see `.dry-tx-image-box`'s own doc comment in richtext-content.css.
+    // isn't it; see `.dry-tx-image-box`'s own doc comment in content-shadow-styles.ts.
     this.imageBox.classList.add("is-selected");
     for (const el of this.handleEls) this.imageBox.appendChild(el);
   }

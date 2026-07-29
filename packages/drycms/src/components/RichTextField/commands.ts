@@ -2,7 +2,7 @@ import type { MarkType, Node as PMNode } from "prosemirror-model";
 import { NodeSelection } from "prosemirror-state";
 import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign, type ImageObjectFit } from "./schema.js";
+import { blockNodeTypeAndAttrs, blockTypeOfNode, GRID_COLUMNS, schema, type ImageAlign, type ImageObjectFit } from "./schema.js";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -173,7 +173,7 @@ export function setBlockTypeCommand(target: BlockType): Command {
       if (!node.isTextblock) return;
       applied = true;
       if (dispatch) {
-        tr = tr.setNodeMarkup(pos, type, { ...attrs, textAlign: node.attrs.textAlign ?? null }, node.marks);
+        tr = tr.setNodeMarkup(pos, type, { ...attrs, textAlign: node.attrs.textAlign ?? null, colSpan: node.attrs.colSpan ?? GRID_COLUMNS }, node.marks);
       }
     });
     if (!applied) return false;

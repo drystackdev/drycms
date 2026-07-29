@@ -28,6 +28,10 @@ export interface RichTextToolbarProps {
    * `fullscreen-button.tsx` reads either. */
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Passed through to every custom item, same as `fullscreen` - only
+   * `grid-mode-button.tsx` reads either. */
+  gridMode?: boolean;
+  onToggleGridMode?: () => void;
 }
 
 /** Purely presentational - rendering whatever `./toolbar-buttons.ts` lists.
@@ -42,6 +46,8 @@ export default function RichTextToolbar({
   iconSize = "md",
   fullscreen,
   onToggleFullscreen,
+  gridMode,
+  onToggleGridMode,
 }: RichTextToolbarProps) {
   // A plain click on a toolbar button would blur the contenteditable and
   // collapse its selection before the click handler ever runs.
@@ -81,6 +87,8 @@ export default function RichTextToolbar({
                 iconSize={iconSize}
                 fullscreen={fullscreen}
                 onToggleFullscreen={onToggleFullscreen}
+                gridMode={gridMode}
+                onToggleGridMode={onToggleGridMode}
               />
             ) : (
               <button

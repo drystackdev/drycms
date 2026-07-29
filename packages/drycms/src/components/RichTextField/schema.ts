@@ -24,10 +24,56 @@ function getTextAlignAttrs(dom: HTMLElement | string): { textAlign: TextAlign | 
 
 /** Only non-default ("left") alignment needs to survive as an explicit
  * style - mirrors `$exportCleanHtml`'s old behavior. */
-function withTextAlign(attrs: Record<string, string>, textAlign: string | null): Record<string, string> {
-  if (!textAlign || textAlign === "left") return attrs;
-  return { ...attrs, style: `text-align: ${textAlign}` };
+function withTextAlignStyle(textAlign: string | null): string {
+  if (!textAlign || textAlign === "left") return "";
+  return `text-align: ${textAlign}`;
 }
+
+/** Joins whichever of a node's several independent inline-style contributions
+ * (text-align, grid column span, ...) are actually non-empty into one `style`
+ * value - needed once a node can carry more than one of these at a time
+ * (every grid-item block below carries `colSpan` on top of whatever style it
+ * already had). */
+export function combineStyles(...parts: Array<string | null | undefined>): string {
+  return parts.filter((part): part is string => Boolean(part)).join(";");
+}
+
+/** How many columns the section's grid is fixed at - shared by every place
+ * that needs to format/parse/clamp a `colSpan` value or build the section's
+ * own `grid-template-columns`. */
+export const GRID_COLUMNS = 12;
+
+/** The number of columns (out of the section's fixed `GRID_COLUMNS`) a
+ * grid-item block spans - every direct child of `section` carries this.
+ * Unlike `withTextAlignStyle`/`rowHeightStyleString`, the default (full-width)
+ * still needs an explicit style: an unset `grid-column` defaults to `auto`
+ * (span exactly 1 track), not "stretch across the row" - every grid item
+ * needs its span written out, or it collapses to a sliver instead of
+ * spanning the full width every unresized block is supposed to have. */
+export function colSpanStyleString(colSpan: number): string {
+  return `grid-column:span ${colSpan}`;
+}
+
+const GRID_COLUMN_SPAN = /(?:^|;)\s*grid-column\s*:\s*span\s+(\d+)/;
+
+/** Inverse of `colSpanStyleString` - reads a grid-item block's column span
+ * back off its inline style, clamped to `1..GRID_COLUMNS` and defaulting to
+ * `GRID_COLUMNS` (full-width, i.e. "no grid style yet") when absent or
+ * unparseable - the shape every pre-grid-feature document (and any
+ * hand-written HTML) is in. */
+export function colSpanFromStyle(style: string): number {
+  const match = GRID_COLUMN_SPAN.exec(style);
+  if (!match) return GRID_COLUMNS;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? Math.min(GRID_COLUMNS, Math.max(1, Math.round(value))) : GRID_COLUMNS;
+}
+
+/** The section's own fixed grid CSS - always inlined (not gated by any
+ * "inline style" toggle, unlike decorative typography): without it, the
+ * column arrangement authored via the grid feature wouldn't render as a grid
+ * anywhere outside this editor's own shadow-DOM styling. Shared by this
+ * node's own `toDOM` and `html.ts`'s export. */
+export const SECTION_GRID_STYLE = `display:grid;grid-template-columns:repeat(${GRID_COLUMNS},1fr)`;
 
 function parseImageSize(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -97,7 +143,7 @@ export function imageAlignStyleString(align: ImageAlign | null): string {
 /** The inline `style` for an image's explicit size (set via the resize
  * handles - see `image-view.ts`) and `object-fit` (`image-menu.tsx`'s edit
  * dialog) - `max-width`/`max-height: none` override this field's own
- * default cap on an unsized image (`.dry-tx-image` in richtext-content.css), which
+ * default cap on an unsized image (`.dry-tx-image` in content-shadow-styles.ts), which
  * would otherwise clamp a deliberately-resized-larger image right back
  * down. Split out from `imageStyleString` below so a captioned image
  * (`exportCleanHtml`'s `<figure>` case) can put size/fit on the `<img>`
@@ -196,7 +242,7 @@ function getTableAttrs(dom: HTMLElement | string): { caption: string; colWidths:
 /** `<colgroup>` `DOMOutputSpec` built from `colWidths` - shared by this
  * node's own `toDOM` below and `html.ts`'s manual export (`colgroupHtml`).
  * `null` (the "split evenly" default) omits the colgroup entirely -
- * `table-layout: fixed` (richtext-content.css) already splits unset columns
+ * `table-layout: fixed` (content-shadow-styles.ts) already splits unset columns
  * evenly, matching this field's previous (pre-resize) behavior. */
 function colgroupDOMSpec(colWidths: number[] | null): DOMOutputSpec | null {
   if (!colWidths || colWidths.length === 0) return null;
@@ -231,37 +277,47 @@ const tableNodeSpecs = tableNodes({
 
 export const schema = new Schema({
   nodes: {
-    doc: { content: "block+" },
+    doc: { content: "section" },
+    section: {
+      content: "block+",
+      toDOM(): DOMOutputSpec {
+        return ["section", { style: SECTION_GRID_STYLE }, 0];
+      },
+      parseDOM: [{ tag: "section" }],
+    },
     paragraph: {
       group: "block",
       content: "inline*",
-      attrs: { textAlign: { default: null } },
+      attrs: { textAlign: { default: null }, colSpan: { default: GRID_COLUMNS } },
       parseDOM: [{ tag: "p", getAttrs: getTextAlignAttrs }],
       toDOM(node): DOMOutputSpec {
-        return ["p", withTextAlign({}, node.attrs.textAlign as string | null), 0];
+        const style = combineStyles(withTextAlignStyle(node.attrs.textAlign as string | null), colSpanStyleString(node.attrs.colSpan as number));
+        return ["p", style ? { style } : {}, 0];
       },
     },
     heading: {
       group: "block",
       content: "inline*",
       defining: true,
-      attrs: { level: { default: 2 }, textAlign: { default: null } },
+      attrs: { level: { default: 2 }, textAlign: { default: null }, colSpan: { default: GRID_COLUMNS } },
       parseDOM: HEADING_LEVELS.map((level) => ({
         tag: `h${level}`,
         getAttrs: (dom: HTMLElement | string) => ({ level, ...getTextAlignAttrs(dom) }),
       })),
       toDOM(node): DOMOutputSpec {
         const level = node.attrs.level as number;
-        return [`h${level}`, withTextAlign({}, node.attrs.textAlign as string | null), 0];
+        const style = combineStyles(withTextAlignStyle(node.attrs.textAlign as string | null), colSpanStyleString(node.attrs.colSpan as number));
+        return [`h${level}`, style ? { style } : {}, 0];
       },
     },
     blockquote: {
       group: "block",
       content: "inline*",
-      attrs: { textAlign: { default: null } },
+      attrs: { textAlign: { default: null }, colSpan: { default: GRID_COLUMNS } },
       parseDOM: [{ tag: "blockquote", getAttrs: getTextAlignAttrs }],
       toDOM(node): DOMOutputSpec {
-        return ["blockquote", withTextAlign({}, node.attrs.textAlign as string | null), 0];
+        const style = combineStyles(withTextAlignStyle(node.attrs.textAlign as string | null), colSpanStyleString(node.attrs.colSpan as number));
+        return ["blockquote", style ? { style } : {}, 0];
       },
     },
     list_item: {
@@ -275,15 +331,17 @@ export const schema = new Schema({
     bullet_list: {
       group: "block",
       content: "list_item+",
+      attrs: { colSpan: { default: GRID_COLUMNS } },
       parseDOM: [{ tag: "ul" }],
-      toDOM(): DOMOutputSpec {
-        return ulDOM;
+      toDOM(node): DOMOutputSpec {
+        const style = colSpanStyleString(node.attrs.colSpan as number);
+        return ["ul", style ? { style } : {}, 0];
       },
     },
     ordered_list: {
       group: "block",
       content: "list_item+",
-      attrs: { start: { default: 1 } },
+      attrs: { start: { default: 1 }, colSpan: { default: GRID_COLUMNS } },
       parseDOM: [
         {
           tag: "ol",
@@ -295,12 +353,16 @@ export const schema = new Schema({
         },
       ],
       toDOM(node): DOMOutputSpec {
-        return node.attrs.start === 1 ? olDOM : ["ol", { start: node.attrs.start as number }, 0];
+        const attrs: Record<string, string> = {};
+        if (node.attrs.start !== 1) attrs.start = String(node.attrs.start as number);
+        const style = colSpanStyleString(node.attrs.colSpan as number);
+        if (style) attrs.style = style;
+        return ["ol", attrs, 0];
       },
     },
     table: {
       ...tableNodeSpecs.table,
-      attrs: { caption: { default: "" }, colWidths: { default: null } },
+      attrs: { caption: { default: "" }, colWidths: { default: null }, colSpan: { default: GRID_COLUMNS } },
       parseDOM: [{ tag: "table", getAttrs: getTableAttrs }],
       toDOM(node): DOMOutputSpec {
         const caption = node.attrs.caption as string;
@@ -309,7 +371,8 @@ export const schema = new Schema({
         if (caption) children.push(["caption", { contenteditable: "false" }, caption]);
         if (colgroup) children.push(colgroup);
         children.push(["tbody", 0]);
-        return ["div", { class: "tableWrapper" }, ["table", ...children]];
+        const style = colSpanStyleString(node.attrs.colSpan as number);
+        return ["div", { class: "tableWrapper", ...(style ? { style } : {}) }, ["table", ...children]];
       },
     },
     table_row: {

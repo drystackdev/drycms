@@ -1,28 +1,19 @@
 /**
- * Generated from ../../styles/richtext-content.css by
- * scripts/build-richtext-content-styles.mjs - do not hand-edit. Run
- * `bun run build:richtext-styles` after changing that file instead.
- */
-export const richtextContentShadowStyles = `
-/*
- * RichTextField's editable surface - injected into its own shadow root by
- * \`useRichTextEditor.ts\` (see \`content-shadow-styles.ts\`, generated from
- * this file by \`scripts/build-richtext-content-styles.mjs\` - run
- * \`bun run build:richtext-styles\` after editing this file) rather than
- * loaded as part of the app-wide \`index.css\` cascade layers. That isolates
- * the editable content's own styling from the host page/app's CSS in both
- * directions - nothing here can leak out, and (this file's whole reason to
- * exist) none of \`dry.base\`'s \`:where(h2)\`/\`:where(p)\`/\`:where(ul, ol)\`/...
- * resets, and none of \`dry.forms\`/\`dry.components\`'s own rules, can reach
- * in - so everything those global layers used to supply for free (heading
- * sizes, paragraph/list margins, box-sizing, ...) has to be repeated here
- * instead.
+ * The stylesheet injected into RichTextField's own shadow root (see
+ * \`useRichTextEditor.ts\`) rather than loaded as part of the app-wide
+ * \`index.css\` cascade layers. That isolates the editable content's own
+ * styling from the host page/app's CSS in both directions - nothing here
+ * can leak out, and (this file's whole reason to exist) none of
+ * \`dry.base\`'s \`:where(h2)\`/\`:where(p)\`/\`:where(ul, ol)\`/... resets, and
+ * none of \`dry.forms\`/\`dry.components\`'s own rules, can reach in - so
+ * everything those global layers used to supply for free (heading sizes,
+ * paragraph/list margins, box-sizing, ...) has to be repeated here instead.
  *
- * This file is also exported directly (see this package's own
- * \`package.json\` "exports" - \`"./styles/*": "./src/styles/*"\`, the same
- * mapping every other file in this directory already uses) so it can be
- * fetched/copied/read on its own if you want to see or reuse exactly what
- * the editor renders with, independent of the generated \`.ts\` copy.
+ * Hand-authored directly in this file - edit the CSS text below and it
+ * takes effect immediately, no separate \`.css\` source file or build step
+ * involved (an earlier version of this file was regenerated from
+ * \`../../styles/richtext-content.css\` by a build script - that indirection
+ * has been dropped).
  *
  * CSS custom properties (\`--dry-*\`) are the one thing that DOES still cross
  * a shadow boundary (custom properties inherit through it like any other
@@ -33,12 +24,12 @@ export const richtextContentShadowStyles = `
  * Deliberately flat (no \`&\` nesting) even though the rest of this app's
  * authored CSS uses it freely - that authoring-time nesting is flattened by
  * the Astro demo app's own CSS pipeline before it ever reaches a browser,
- * but this file is injected as a \`<style>\` tag's raw text and parsed by the
- * browser directly at runtime with no build step in between, so it has to
- * already be in a form every target browser's CSS engine accepts
+ * but this string is assigned as a \`<style>\` tag's raw text and parsed by
+ * the browser directly at runtime with no build step in between, so it has
+ * to already be in a form every target browser's CSS engine accepts
  * unprocessed.
  */
-
+export const richtextContentShadowStyles = `
 :host {
   display: block;
 }
@@ -303,5 +294,68 @@ th {
  * own doc comment), just the cursor swap. */
 .dry-tx-content.dry-tx-table-col-resize-cursor {
   cursor: col-resize;
+}
+
+/* \`grid-column-resize.ts\`'s own equivalent of the above, for a grid item's
+ * right-edge handle. */
+.dry-tx-content.dry-tx-grid-resize-cursor {
+  cursor: col-resize;
+}
+
+/* Idle-state affordances while grid mode is on (see \`grid-column-resize.ts\`'s
+ * \`attributes()\`/\`decorations()\`) - no outline on \`section\` itself; instead,
+ * each direct child gets its own outline: a light one on hover (pure CSS,
+ * any block), and a stronger one on whichever block currently has the
+ * selection (\`.dry-tx-grid-focused\`, a \`Decoration\` driven by
+ * \`focusedGridItemPos\`). Every block already spans all \`GRID_COLUMNS\`
+ * columns by default, so this - plus the hover grab bar below - is the only
+ * visible change grid mode makes until a block is actually resized. */
+.dry-tx-content.dry-tx-grid-mode section > * {
+  position: relative;
+  outline-offset: 1px;
+  border-radius: 1px;
+}
+
+.dry-tx-content.dry-tx-grid-mode section > *:hover {
+  outline: 1px dashed var(--dry-border);
+}
+
+.dry-tx-content.dry-tx-grid-mode section > *.dry-tx-grid-focused {
+  outline: 1px solid var(--dry-foreground);
+  outline-offset: 4px;
+}
+
+/* Wider than the plain col-resize cursor's own hitbox affordance would
+ * suggest - matches \`grid-column-resize.ts\`'s own widened \`HANDLE_HITBOX\`
+ * (10px), so the visible bar roughly covers the actual grabbable zone. */
+.dry-tx-content.dry-tx-grid-mode section > *:hover::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  width: 6px;
+  background-color: var(--dry-foreground);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* The floating "{n}/GRID_COLUMNS" label rendered (as a \`Decoration.widget\`)
+ * next to the pointer while a column-span drag is in progress - positioned
+ * via its own inline \`left\`/\`top\` (see \`grid-column-resize.ts\`'s
+ * \`buildLabelEl\`), this only supplies its look. Same neutral dark/white
+ * treatment as this app's own tooltip (\`.dry-tooltip\` in components.css)
+ * rather than the primary brand color, which this field reserves for actual
+ * selection state (image/cell) elsewhere. */
+.dry-tx-grid-label {
+  z-index: 10;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--dry-radius-sm);
+  background-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+  color: #ffffff;
+  font-size: var(--dry-text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
 }
 `;

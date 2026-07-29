@@ -18,6 +18,7 @@ import {
   getTextAlignState,
   getTextColorState,
 } from "./commands.js";
+import { gridColumnResizing, gridColumnResizingKey } from "./grid-column-resize.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
@@ -45,6 +46,11 @@ export interface UseRichTextEditorOptions {
   label: string;
   placeholder?: string;
   disabled: boolean;
+  /** Whether the grid feature's outline/resize handles are currently shown -
+   * synced into `grid-column-resize.ts`'s own plugin state via a meta
+   * transaction (see the effect below), since that's otherwise just Preact
+   * state with no way to reach the plugin on its own. @default false */
+  gridMode?: boolean;
 }
 
 export interface UseRichTextEditorResult {
@@ -117,6 +123,7 @@ export function useRichTextEditor({
   label,
   placeholder,
   disabled,
+  gridMode = false,
 }: UseRichTextEditorOptions): UseRichTextEditorResult {
   const contentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -204,6 +211,7 @@ export function useRichTextEditor({
         tableEditing(),
         tableColumnResizing(),
         tableRowResizing(),
+        gridColumnResizing(),
       ],
     });
 
@@ -246,6 +254,19 @@ export function useRichTextEditor({
       attributes: (state) => buildAttributes(state, disabled, placeholder, label),
     });
   }, [disabled, placeholder, label]);
+
+  // Grid mode is plain Preact state (owned by `RichTextField.tsx`, same as
+  // `fullscreen`) with no way to reach `grid-column-resize.ts`'s own plugin
+  // state on its own - this meta transaction is that bridge, mirroring how
+  // the plugin's own drag-preview updates bypass `onChange` (`setMeta` +
+  // `view.updateState` there; a real `dispatch` here is fine since toggling
+  // grid mode itself shouldn't be undoable/reported as a content change, and
+  // `dispatchTransaction` only forwards to `onChange` when `tr.docChanged`).
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch(view.state.tr.setMeta(gridColumnResizingKey, { setGridMode: gridMode }));
+  }, [gridMode]);
 
   return { contentRef, viewRef, state, empty };
 }

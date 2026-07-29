@@ -77,7 +77,7 @@ export function formatHtml(html: string): string {
 export default function CodeBlock({
   code: _code,
   wrap = false,
-  maxHeight = "7rem",
+  maxHeight = "100dvh",
   copyable = false,
   formatHtml: shouldFormatHtml = false,
   editable = false,

@@ -43,7 +43,6 @@
     "build": "tsc -p tsconfig.build.json",
     "build:icons": "node scripts/build-icons.mjs",
     "build:file-icons": "node scripts/build-file-icons.mjs",
-    "build:richtext-styles": "node scripts/build-richtext-content-styles.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run"
   },
