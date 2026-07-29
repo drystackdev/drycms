@@ -5,11 +5,7 @@ import {
   blockTypeOfNode,
   captionFromElement,
   colgroupHtml,
-  colSpanFromStyle,
-  colSpanStyleString,
   colWidthsFromElement,
-  combineStyles,
-  GRID_COLUMNS,
   heightPxFromStyle,
   imageAlignStyleString,
   imageObjectFitFromElement,
@@ -19,7 +15,6 @@ import {
   parseImageAlign,
   rowHeightStyleString,
   schema,
-  SECTION_GRID_STYLE,
   type ImageAlign,
   type ImageObjectFit,
 } from "./schema.js";
@@ -182,38 +177,30 @@ function tableRowsHtml(tableNode: PMNode): string {
  * for everything else. Used both for the doc's own top-level children and,
  * recursively, for whatever sits inside a `list_item` or table cell. */
 function exportBlockHtml(node: PMNode): string {
-  const colSpan = colSpanStyleString(node.attrs.colSpan as number);
   if (node.type === schema.nodes.bullet_list) {
-    return `<ul${colSpan ? ` style="${escapeAttr(colSpan)}"` : ""}>${listItemsHtml(node)}</ul>`;
+    return `<ul>${listItemsHtml(node)}</ul>`;
   }
   if (node.type === schema.nodes.ordered_list) {
     const start = node.attrs.start as number;
-    const attrs = `${start !== 1 ? ` start="${start}"` : ""}${colSpan ? ` style="${escapeAttr(colSpan)}"` : ""}`;
-    return `<ol${attrs}>${listItemsHtml(node)}</ol>`;
+    return `<ol${start !== 1 ? ` start="${start}"` : ""}>${listItemsHtml(node)}</ol>`;
   }
   if (node.type === schema.nodes.table) {
     const caption = node.attrs.caption as string;
     const captionHtml = caption ? `<caption>${escapeHtml(caption)}</caption>` : "";
-    return `<table${colSpan ? ` style="${escapeAttr(colSpan)}"` : ""}>${captionHtml}${colgroupHtml(node.attrs.colWidths as number[] | null)}<tbody>${tableRowsHtml(node)}</tbody></table>`;
+    return `<table>${captionHtml}${colgroupHtml(node.attrs.colWidths as number[] | null)}<tbody>${tableRowsHtml(node)}</tbody></table>`;
   }
   const tag = blockTag(blockTypeOfNode(node));
   const align = (node.attrs.textAlign as string | null) ?? "left";
-  const style = combineStyles(align !== "left" ? `text-align: ${align}` : "", colSpan);
-  return `<${tag}${style ? ` style="${escapeAttr(style)}"` : ""}>${inlineChildrenHtml(node)}</${tag}>`;
+  const style = align === "left" ? "" : ` style="text-align: ${align}"`;
+  return `<${tag}${style}>${inlineChildrenHtml(node)}</${tag}>`;
 }
 
-/** The doc's own single `section` child (see `schema.ts`) - always exactly
- * one, always wrapping every top-level block. `SECTION_GRID_STYLE` is
- * inlined unconditionally (not gated by any "inline style" toggle): without
- * it the column arrangement authored via the grid feature wouldn't render as
- * a grid anywhere outside this editor's own shadow-DOM styling. */
 export function exportCleanHtml(doc: PMNode): string {
-  const section = doc.firstChild!;
-  let inner = "";
-  section.forEach((node) => {
-    inner += exportBlockHtml(node);
+  let out = "";
+  doc.forEach((node) => {
+    out += exportBlockHtml(node);
   });
-  return `<section style="${escapeAttr(SECTION_GRID_STYLE)}">${inner}</section>`;
+  return out;
 }
 
 interface InlineAncestry {
@@ -294,19 +281,12 @@ function cellSpanFromElement(el: Element, attr: "colspan" | "rowspan"): number {
   return Number.isInteger(value) && value > 0 ? value : 1;
 }
 
-/** Reads a top-level grid-item element's own column span back off its
- * inline style - full-width for anything absent, unparseable, or predating
- * this feature. Shared by every `importBlockElement` branch. */
-function colSpanFromElement(el: Element): number {
-  return el instanceof HTMLElement ? colSpanFromStyle(el.style.cssText) : GRID_COLUMNS;
-}
-
 /** A flat textblock element (`<p>`/`<h2>`-`<h6>`/`<blockquote>`) - the
  * import-side counterpart of `exportBlockHtml`'s own fallback case. */
 function importTextblockElement(el: Element): PMNode {
   const { type, attrs } = blockNodeTypeAndAttrs(blockTypeFromTagName(el.tagName));
   const align = normalizeTextAlign(el instanceof HTMLElement ? el.style.textAlign : undefined);
-  const finalAttrs = { ...(attrs ?? {}), colSpan: colSpanFromElement(el), ...(align !== "left" ? { textAlign: align } : {}) };
+  const finalAttrs = align !== "left" ? { ...(attrs ?? {}), textAlign: align } : attrs;
   const inlineNodes = Array.from(el.childNodes).flatMap((child) => walkInlineHtml(child, NO_MARKS));
   return type.create(finalAttrs, inlineNodes);
 }
@@ -316,10 +296,9 @@ function importListElement(el: Element, ordered: boolean): PMNode {
     .filter((child) => child.tagName === "LI")
     .map((li) => schema.nodes.list_item!.create(null, blockChildrenFromContainer(li)));
   if (items.length === 0) items.push(schema.nodes.list_item!.create(null, [schema.nodes.paragraph!.create()]));
-  const colSpan = colSpanFromElement(el);
-  if (!ordered) return schema.nodes.bullet_list!.create({ colSpan }, items);
+  if (!ordered) return schema.nodes.bullet_list!.create(null, items);
   const startAttr = Number(el.getAttribute("start"));
-  return schema.nodes.ordered_list!.create({ start: Number.isFinite(startAttr) && startAttr > 0 ? startAttr : 1, colSpan }, items);
+  return schema.nodes.ordered_list!.create({ start: Number.isFinite(startAttr) && startAttr > 0 ? startAttr : 1 }, items);
 }
 
 function importTableElement(el: Element): PMNode {
@@ -338,10 +317,7 @@ function importTableElement(el: Element): PMNode {
     rows.push(schema.nodes.table_row!.create({ heightPx }, cells));
   }
   if (rows.length === 0) rows.push(schema.nodes.table_row!.create(null, [schema.nodes.table_cell!.createAndFill()!]));
-  return schema.nodes.table!.create(
-    { caption: captionFromElement(el), colWidths: colWidthsFromElement(el), colSpan: colSpanFromElement(el) },
-    rows,
-  );
+  return schema.nodes.table!.create({ caption: captionFromElement(el), colWidths: colWidthsFromElement(el) }, rows);
 }
 
 /** One top-level-shaped block element - dispatches to a list/table (each
@@ -404,18 +380,8 @@ function blockChildrenFromContainer(container: Element): PMNode[] {
 
 /** Accepts this field's own clean export, or any simple hand-written HTML
  * using the same handful of tags - unrecognized wrapper elements are just
- * unwrapped rather than rejected. The doc always has exactly one `section`
- * child (see `schema.ts`) regardless of what's parsed here: if the body's
- * own sole child is already a `<section>` (this field's own prior export),
- * its children become the block list; otherwise (legacy content predating
- * this feature, or arbitrary hand-written HTML with blocks directly at the
- * top level) the body's own children are used as-is and get wrapped in a
- * new `section` - every block defaults to full-width (`GRID_COLUMNS`), so the
- * result looks identical to how this content always rendered. */
+ * unwrapped rather than rejected. */
 export function importCleanHtml(html: string): PMNode {
   const dom = new DOMParser().parseFromString(html, "text/html");
-  const bodyChildren = Array.from(dom.body.children);
-  const container = bodyChildren.length === 1 && bodyChildren[0]!.tagName === "SECTION" ? bodyChildren[0]! : dom.body;
-  const section = schema.nodes.section!.create(null, blockChildrenFromContainer(container));
-  return schema.nodes.doc!.create(null, section);
+  return schema.nodes.doc!.create(null, blockChildrenFromContainer(dom.body));
 }

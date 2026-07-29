@@ -15,7 +15,6 @@ import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
 import FullscreenButton from "./fullscreen-button.js";
-import GridModeButton from "./grid-mode-button.js";
 import ImageInsertButton from "./image-insert-button.js";
 import ListMenu from "./list-menu.js";
 import TableInsertButton from "./table-insert-button.js";
@@ -124,7 +123,6 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
     { type: "custom", key: "insert-table", Component: TableInsertButton, blockOnly: true },
     { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
-    { type: "custom", key: "grid-mode", Component: GridModeButton, blockOnly: true },
   ],
   // Its own trailing group (own separator) - unlike everything above,
   // fullscreen isn't inline-vs-block formatting, so it stays visible under

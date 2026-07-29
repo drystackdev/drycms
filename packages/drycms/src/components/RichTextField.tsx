@@ -57,7 +57,6 @@ export default function RichTextField({
   class: className,
   style,
 }: RichTextFieldProps) {
-  const [gridMode, setGridMode] = useState(false);
   const { contentRef, viewRef, state } = useRichTextEditor({
     value,
     onChange,
@@ -66,7 +65,6 @@ export default function RichTextField({
     label,
     placeholder,
     disabled,
-    gridMode,
   });
 
   const richtextRef = useRef<HTMLDivElement>(null);
@@ -117,8 +115,6 @@ export default function RichTextField({
           iconSize={iconSize}
           fullscreen={fullscreen}
           onToggleFullscreen={() => setFullscreen((current) => !current)}
-          gridMode={gridMode}
-          onToggleGridMode={() => setGridMode((current) => !current)}
         />
         {/* ProseMirror's `EditorView` appends its own contenteditable dom as
          * a CHILD of this mount node (rather than using it directly) and
