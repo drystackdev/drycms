@@ -60,6 +60,13 @@ const PRESETS: Preset[] = [
     html: "<p>An inline image, for testing insertion and drag-to-resize: <img src=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232563eb'/%3E%3C/svg%3E\" alt=\"Placeholder rectangle\"></p>",
   },
   {
+    key: "image-caption",
+    label: "Captioned image",
+    html:
+      "<p><figure style=\"margin:0\"><img src=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232563eb'/%3E%3C/svg%3E\" alt=\"Placeholder rectangle\" style=\"object-fit:cover\">" +
+      "<figcaption>A placeholder rectangle, for testing the figure/figcaption round trip.</figcaption></figure></p>",
+  },
+  {
     key: "long",
     label: "Long content",
     html:

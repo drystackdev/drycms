@@ -45,6 +45,23 @@ export function imageSizeFromElement(el: HTMLElement): { width: number | null; h
   };
 }
 
+/** The 3 `object-fit` choices `image-menu.tsx`'s edit dialog offers -
+ * replaces what used to be this field's own hardcoded, unconditional
+ * `object-fit: contain` whenever an image had an explicit width or height.
+ * "Full" in the dialog's own label maps to CSS `fill` (stretches to the
+ * given box, distorting the ratio if it doesn't match). */
+export type ImageObjectFit = "fill" | "cover" | "contain";
+
+const IMAGE_OBJECT_FIT_VALUES = new Set<ImageObjectFit>(["fill", "cover", "contain"]);
+
+/** Reads an image's `object-fit` back off its inline style - unrecognized
+ * or absent (an image sized before this attr existed) falls back to
+ * "contain", this field's original hardcoded behavior. */
+export function imageObjectFitFromElement(el: HTMLElement): ImageObjectFit {
+  const value = el.style.objectFit;
+  return IMAGE_OBJECT_FIT_VALUES.has(value as ImageObjectFit) ? (value as ImageObjectFit) : "contain";
+}
+
 /** The 3 float/center layouts `image-menu.tsx`'s align buttons offer -
  * `null` (the default) leaves the image flowing inline with surrounding
  * text, same as before this attr existed. Ported from drystack's
@@ -52,41 +69,58 @@ export function imageSizeFromElement(el: HTMLElement): { width: number | null; h
 export type ImageAlign = "left" | "center" | "right";
 
 /** Inverse of `imageAlignStyleString` below - reads which layout (if any)
- * an `<img>`'s inline style currently encodes. `display: block` only ever
+ * an `<img>`'s inline style currently encodes. `min-width: 100%` only ever
  * comes from the "center" encoding here (a plain unaligned image never sets
  * it), so it's an unambiguous marker even without checking `margin-inline`. */
 export function parseImageAlign(el: HTMLElement): ImageAlign | null {
   if (el.style.float === "left" || el.style.float === "right") return el.style.float;
-  if (el.style.display === "block") return "center";
+  if (el.style.minWidth === "100%") return "center";
   return null;
 }
 
 /** The inline `style` for an image's align attr - `left`/`right` float it
  * (matching drystack's own `imageContainerAlignStyle`, physical rather than
- * logical directions since `float` itself already is), `center` blocks it
- * and centers it via `margin-inline: auto` (the standard auto-margin
- * centering trick, which only kicks in on a block box - hence `display:
- * block`, not this schema's usual inline flow). */
+ * logical directions since `float` itself already is), `center` stretches it
+ * to the paragraph's full width via `min-width: 100%` (an `<img>` is a
+ * replaced element, so `min-width` takes effect regardless of its default
+ * inline display - no `display: block` needed) - `margin-inline: auto` is a
+ * no-op once the image already fills the line, kept only for parity with
+ * `image-view.ts`'s own wrapper-based centering. */
 export function imageAlignStyleString(align: ImageAlign | null): string {
   if (align === "left") return "float:left;margin-inline-end:1em;margin-block:0.5em";
   if (align === "right") return "float:right;margin-inline-start:1em;margin-block:0.5em";
-  if (align === "center") return "display:block;margin-inline:auto";
+  if (align === "center") return "min-width:100%;margin-inline:auto";
   return "";
 }
 
 /** The inline `style` for an image's explicit size (set via the resize
- * handles - see `image-view.ts`) plus its align (`image-menu.tsx`) -
- * `max-width`/`max-height: none` override this field's own default cap on
- * an unsized image (`.richtext-image` in forms.css), which would otherwise
- * clamp a deliberately-resized-larger image right back down. */
-export function imageStyleString(width: number | null, height: number | null, align: ImageAlign | null): string {
+ * handles - see `image-view.ts`) and `object-fit` (`image-menu.tsx`'s edit
+ * dialog) - `max-width`/`max-height: none` override this field's own
+ * default cap on an unsized image (`.richtext-image` in forms.css), which
+ * would otherwise clamp a deliberately-resized-larger image right back
+ * down. Split out from `imageStyleString` below so a captioned image
+ * (`exportCleanHtml`'s `<figure>` case) can put size/fit on the `<img>`
+ * itself and align on the `<figure>` wrapping it, instead of both landing
+ * on the same element the way the uncaptioned case does. */
+export function imageSizeAndFitStyleString(width: number | null, height: number | null, objectFit: ImageObjectFit): string {
   const parts: string[] = [];
   if (width != null) parts.push(`width:${width}px`, "max-width:none");
   if (height != null) parts.push(`height:${height}px`, "max-height:none");
-  if (width != null || height != null) parts.push("object-fit:contain");
-  const alignStyle = imageAlignStyleString(align);
-  if (alignStyle) parts.push(alignStyle);
+  if (width != null || height != null) parts.push(`object-fit:${objectFit}`);
   return parts.join(";");
+}
+
+/** `imageSizeAndFitStyleString` + `imageAlignStyleString` combined onto one
+ * element - this field's own uncaptioned `<img>` (both this schema's own
+ * `toDOM` and `exportCleanHtml`'s bare-image case) has no wrapper to split
+ * them across, unlike the captioned `<figure>` case. */
+export function imageStyleString(
+  width: number | null,
+  height: number | null,
+  align: ImageAlign | null,
+  objectFit: ImageObjectFit,
+): string {
+  return [imageSizeAndFitStyleString(width, height, objectFit), imageAlignStyleString(align)].filter(Boolean).join(";");
 }
 
 export const schema = new Schema({
@@ -138,7 +172,27 @@ export const schema = new Schema({
       group: "inline",
       inline: true,
       atom: true,
-      attrs: { src: {}, alt: { default: "" }, width: { default: null }, height: { default: null }, align: { default: null } },
+      attrs: {
+        src: {},
+        alt: { default: "" },
+        width: { default: null },
+        height: { default: null },
+        align: { default: null },
+        objectFit: { default: "contain" },
+        // Read/written by `html.ts`'s manual `<figure>`/`<figcaption>`
+        // handling, not by this node's own `parseDOM`/`toDOM` below (which
+        // only ever see the bare `<img>` - a caption lives on a *sibling*
+        // element, outside what a single-tag `parseDOM` rule can reach).
+        // Clipboard-pasted HTML from outside this field therefore keeps an
+        // image's caption only if it round-trips through `html.ts` first.
+        caption: { default: "" },
+        // Editor-only convenience flag for the resize handles (`image-view.ts`)
+        // and the edit dialog's width/height fields (`image-menu.tsx`) - not
+        // read by `parseDOM`/written by `toDOM` below, so it resets to its
+        // default on reload rather than round-tripping through saved HTML.
+        // Defaults locked, matching drystack's own default.
+        lockAspectRatio: { default: true },
+      },
       parseDOM: [
         {
           tag: "img[src]",
@@ -149,6 +203,7 @@ export const schema = new Schema({
               alt: dom.getAttribute("alt") ?? "",
               ...imageSizeFromElement(dom),
               align: parseImageAlign(dom),
+              objectFit: imageObjectFitFromElement(dom),
             };
           },
         },
@@ -158,6 +213,7 @@ export const schema = new Schema({
           node.attrs.width as number | null,
           node.attrs.height as number | null,
           node.attrs.align as ImageAlign | null,
+          node.attrs.objectFit as ImageObjectFit,
         );
         return [
           "img",

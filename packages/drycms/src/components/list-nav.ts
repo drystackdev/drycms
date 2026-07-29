@@ -199,12 +199,17 @@ export function useFloatingPosition(
 	return open ? position : null;
 }
 
-/** Re-runs `onMeasure` on scroll (any scroll-clipped ancestor, via capture)
- * and resize - of the window and of `element` itself - coalesced to at most
- * one call per animation frame so a scroll storm doesn't force a synchronous
- * re-render on every event. For a popup that tracks its anchor's live screen
- * position instead of locking background scroll while open (`useScrollLock`
- * above) - see Popover.tsx and FloatingPanel.tsx. */
+/** Re-runs `onMeasure` on scroll (any scroll-clipped ancestor, via capture),
+ * resize (of the window and of `element` itself), and a `style`/`class`
+ * mutation on `element` - coalesced to at most one call per animation frame
+ * so a scroll storm doesn't force a synchronous re-render on every event.
+ * The `MutationObserver` matters for moves a `ResizeObserver` alone misses:
+ * e.g. `RichTextField`'s image menu re-anchoring when the image's `align`
+ * toggles `float: left/right` on the very same element - same box size,
+ * different screen position, nothing for `ResizeObserver` to fire on. For a
+ * popup that tracks its anchor's live screen position instead of locking
+ * background scroll while open (`useScrollLock` above) - see Popover.tsx and
+ * FloatingPanel.tsx. */
 export function useTrackRect(active: boolean, element: HTMLElement | null, onMeasure: () => void) {
 	const onMeasureRef = useRef(onMeasure);
 	onMeasureRef.current = onMeasure;
@@ -221,12 +226,15 @@ export function useTrackRect(active: boolean, element: HTMLElement | null, onMea
 			});
 		};
 		onMeasureRef.current();
-		const observer = new ResizeObserver(scheduleMeasure);
-		observer.observe(element);
+		const resizeObserver = new ResizeObserver(scheduleMeasure);
+		resizeObserver.observe(element);
+		const mutationObserver = new MutationObserver(scheduleMeasure);
+		mutationObserver.observe(element, { attributes: true, attributeFilter: ['style', 'class'] });
 		window.addEventListener('scroll', scheduleMeasure, true);
 		window.addEventListener('resize', scheduleMeasure);
 		return () => {
-			observer.disconnect();
+			resizeObserver.disconnect();
+			mutationObserver.disconnect();
 			window.removeEventListener('scroll', scheduleMeasure, true);
 			window.removeEventListener('resize', scheduleMeasure);
 		};

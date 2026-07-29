@@ -67,11 +67,18 @@ function readToolbarState(state: EditorState): ToolbarState {
   };
 }
 
-/** Matches the old Lexical version's emptiness check
- * (`$getRoot().getTextContent().length === 0`) - a doc holding only an
- * image and no text still counts as "empty" for the placeholder. */
+/** Unlike the old Lexical version's emptiness check
+ * (`$getRoot().getTextContent().length === 0`), a doc holding an image and
+ * no text does NOT count as "empty" here - `textContent` alone misses the
+ * image (an atom node contributes nothing to it), so a doc is only empty
+ * once it has neither text nor an image. */
 function isDocEmpty(state: EditorState): boolean {
-  return state.doc.textContent.length === 0;
+  if (state.doc.textContent.length > 0) return false;
+  let hasImage = false;
+  state.doc.descendants((node) => {
+    if (node.type === schema.nodes.image) hasImage = true;
+  });
+  return !hasImage;
 }
 
 function buildAttributes(state: EditorState, disabled: boolean, placeholder: string | undefined, label: string) {

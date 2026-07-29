@@ -2,7 +2,7 @@ import type { MarkType, Node as PMNode } from "prosemirror-model";
 import { NodeSelection } from "prosemirror-state";
 import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign } from "./schema.js";
+import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign, type ImageObjectFit } from "./schema.js";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -207,6 +207,40 @@ export function setImageAlign(pos: number, align: ImageAlign | null): Command {
     const node = state.doc.nodeAt(pos);
     if (!node || node.type !== schema.nodes.image) return false;
     if (dispatch) dispatch(state.tr.setNodeAttribute(pos, "align", align));
+    return true;
+  };
+}
+
+/** Patches any combination of the image at `pos`'s own editable attrs in one
+ * transaction - shared by `image-menu.tsx`'s standalone lock-aspect-ratio
+ * toggle (just `lockAspectRatio`, plus a recomputed `height` when it turns
+ * on) and its edit dialog's Save button (`alt`/`width`/`height`/
+ * `lockAspectRatio` together, so the whole edit is one undo step). One
+ * `setNodeAttribute` per key rather than a single `setNodeMarkup` - like
+ * `setImageAlign` above, not `replaceImageSrc` below: `setNodeMarkup` on a
+ * leaf/atom node (this schema's `image`) replaces the node outright, which
+ * drops the `NodeSelection` the floating menu itself depends on - so
+ * toggling the lock or saving the edit dialog would immediately close the
+ * very menu the button lives on. */
+export function setImageAttrs(
+  pos: number,
+  patch: Partial<{
+    alt: string;
+    width: number | null;
+    height: number | null;
+    objectFit: ImageObjectFit;
+    caption: string;
+    lockAspectRatio: boolean;
+  }>,
+): Command {
+  return (state, dispatch) => {
+    const node = state.doc.nodeAt(pos);
+    if (!node || node.type !== schema.nodes.image) return false;
+    if (dispatch) {
+      let tr = state.tr;
+      for (const [key, value] of Object.entries(patch)) tr = tr.setNodeAttribute(pos, key, value);
+      dispatch(tr);
+    }
     return true;
   };
 }

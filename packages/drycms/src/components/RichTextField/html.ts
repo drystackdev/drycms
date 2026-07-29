@@ -4,11 +4,15 @@ import {
   blockTypeFromTagName,
   blockTypeOfNode,
   createEmptyDoc,
+  imageAlignStyleString,
+  imageObjectFitFromElement,
+  imageSizeAndFitStyleString,
   imageSizeFromElement,
   imageStyleString,
   parseImageAlign,
   schema,
   type ImageAlign,
+  type ImageObjectFit,
 } from "./schema.js";
 import { normalizeTextAlign, type BlockType } from "./types.js";
 
@@ -45,6 +49,39 @@ function textNodeToHtml(node: PMNode): string {
   return text;
 }
 
+/** An image child's own HTML - a bare `<img>` (size/fit + align both on the
+ * one tag) when it has no caption, same as always; `<figure><img>...
+ * <figcaption>...</figcaption></figure>` when it does. Size/fit stays on
+ * the `<img>` either way, but align moves to the `<figure>` (the new
+ * outermost box) once there's a second element - the figcaption - sharing
+ * it, the same reason `image-view.ts`'s own wrapper `<span>` carries align
+ * instead of the `<img>` it contains. `margin:0` resets the UA's own
+ * default `<figure>` margin, which would otherwise stack with (or fight)
+ * the align margins alongside it. Nesting a `<figure>` (flow content)
+ * inside the caller's `<p>` is invalid HTML when the image shares its
+ * paragraph with other inline content, but a browser's own error-recovery
+ * parsing splits it into separate siblings without losing anything - same
+ * tradeoff drystack's own `figureWrap` makes, and for the same reason:
+ * dropping the caption instead would actively lose user content. */
+function imageChildHtml(node: PMNode): string {
+  const width = node.attrs.width as number | null;
+  const height = node.attrs.height as number | null;
+  const align = node.attrs.align as ImageAlign | null;
+  const objectFit = node.attrs.objectFit as ImageObjectFit;
+  const caption = node.attrs.caption as string;
+  const src = escapeAttr(node.attrs.src as string);
+  const alt = escapeAttr(node.attrs.alt as string);
+  if (!caption) {
+    const style = imageStyleString(width, height, align, objectFit);
+    return `<img src="${src}" alt="${alt}"${style ? ` style="${escapeAttr(style)}"` : ""}>`;
+  }
+  const imgStyle = imageSizeAndFitStyleString(width, height, objectFit);
+  const alignStyle = imageAlignStyleString(align);
+  const figureStyle = alignStyle ? `margin:0;${alignStyle}` : "margin:0";
+  const img = `<img src="${src}" alt="${alt}"${imgStyle ? ` style="${escapeAttr(imgStyle)}"` : ""}>`;
+  return `<figure style="${escapeAttr(figureStyle)}">${img}<figcaption>${escapeHtml(caption)}</figcaption></figure>`;
+}
+
 export function exportCleanHtml(doc: PMNode): string {
   const parts: string[] = [];
   doc.forEach((node) => {
@@ -54,12 +91,7 @@ export function exportCleanHtml(doc: PMNode): string {
     let inner = "";
     node.forEach((child) => {
       if (child.type === schema.nodes.image) {
-        const style = imageStyleString(
-          child.attrs.width as number | null,
-          child.attrs.height as number | null,
-          child.attrs.align as ImageAlign | null,
-        );
-        inner += `<img src="${escapeAttr(child.attrs.src as string)}" alt="${escapeAttr(child.attrs.alt as string)}"${style ? ` style="${escapeAttr(style)}"` : ""}>`;
+        inner += imageChildHtml(child);
       } else if (child.type === schema.nodes.hard_break) {
         inner += "<br>";
       } else if (child.isText) {
@@ -82,6 +114,33 @@ interface InlineAncestry {
 
 const NO_MARKS: InlineAncestry = { bold: false, italic: false, underline: false, color: "" };
 
+/** The image node attrs a bare `<img>` carries - shared by every import
+ * path that reaches one (`walkInlineHtml`, `importCleanHtml`'s top-level
+ * case, and `imageNodeFromFigure` below for the `<img>` nested inside a
+ * `<figure>`). `caption` is deliberately absent here - a bare `<img>` never
+ * carries one; only `imageNodeFromFigure` sets it. */
+function imageAttrsFromElement(img: HTMLImageElement): Record<string, unknown> {
+  return {
+    src: img.getAttribute("src") ?? "",
+    alt: img.getAttribute("alt") ?? "",
+    ...imageSizeFromElement(img),
+    align: parseImageAlign(img),
+    objectFit: imageObjectFitFromElement(img),
+  };
+}
+
+/** Reads a captioned image back from `<figure><img>...<figcaption>...
+ * </figcaption></figure>` - the inverse of `imageChildHtml`'s own
+ * `figureWrap`-equivalent above. `null` for a figure with no `<img>`
+ * inside (nothing this schema can represent), so callers fall back to
+ * treating it as an ordinary unrecognized wrapper instead of losing it. */
+function imageNodeFromFigure(figure: Element): PMNode | null {
+  const img = figure.querySelector("img");
+  if (!img) return null;
+  const caption = figure.querySelector("figcaption")?.textContent ?? "";
+  return schema.nodes.image!.create({ ...imageAttrsFromElement(img), caption });
+}
+
 function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] {
   if (domNode.nodeType === Node.TEXT_NODE) {
     const text = domNode.textContent ?? "";
@@ -95,15 +154,11 @@ function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] 
   }
   if (domNode.nodeName === "BR") return [schema.nodes.hard_break!.create()];
   if (domNode.nodeName === "IMG") {
-    const img = domNode as HTMLImageElement;
-    return [
-      schema.nodes.image!.create({
-        src: img.getAttribute("src") ?? "",
-        alt: img.getAttribute("alt") ?? "",
-        ...imageSizeFromElement(img),
-        align: parseImageAlign(img),
-      }),
-    ];
+    return [schema.nodes.image!.create(imageAttrsFromElement(domNode as HTMLImageElement))];
+  }
+  if (domNode.nodeName === "FIGURE") {
+    const node = imageNodeFromFigure(domNode as Element);
+    if (node) return [node];
   }
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
 
@@ -127,21 +182,21 @@ export function importCleanHtml(html: string): PMNode {
   for (const block of blocks) {
     // A bare top-level `<img>` (hand-written HTML, never something this
     // field's own export produces) has no block wrapper to carry it -
-    // synthesize the paragraph it'd otherwise have lived in.
+    // synthesize the paragraph it'd otherwise have lived in. A top-level
+    // `<figure>` (this field's own export of a captioned image alone in
+    // its paragraph - see `imageChildHtml`) gets the same treatment.
     if (block.tagName === "IMG") {
-      const img = block as HTMLImageElement;
       blockNodes.push(
-        schema.nodes.paragraph!.create(
-          null,
-          schema.nodes.image!.create({
-            src: img.getAttribute("src") ?? "",
-            alt: img.getAttribute("alt") ?? "",
-            ...imageSizeFromElement(img),
-            align: parseImageAlign(img),
-          }),
-        ),
+        schema.nodes.paragraph!.create(null, schema.nodes.image!.create(imageAttrsFromElement(block as HTMLImageElement))),
       );
       continue;
+    }
+    if (block.tagName === "FIGURE") {
+      const imageNode = imageNodeFromFigure(block);
+      if (imageNode) {
+        blockNodes.push(schema.nodes.paragraph!.create(null, imageNode));
+        continue;
+      }
     }
     const { type, attrs } = blockNodeTypeAndAttrs(blockTypeFromTagName(block.tagName));
     const align = normalizeTextAlign(block instanceof HTMLElement ? block.style.textAlign : undefined);

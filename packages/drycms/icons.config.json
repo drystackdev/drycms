@@ -60,6 +60,8 @@
     "Component": "lucide:puzzle",
     "DragHandle": "lucide:grip-vertical",
     "Lock": "solar:lock-keyhole-linear",
+    "LockOpen": "solar:lock-keyhole-unlocked-linear",
+    "Edit": "solar:pen-2-linear",
     "Columns": "solar:sidebar-minimalistic-bold",
 
     "Bold": "solar:text-bold-linear",

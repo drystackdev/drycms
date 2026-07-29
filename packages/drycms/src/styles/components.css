@@ -3135,7 +3135,7 @@
       }
 
       & > hr.separator {
-        margin-inline: 0.25rem;
+        margin-inline: 0.125rem;
       }
     }
 
@@ -3587,7 +3587,9 @@
       box-shadow: none;
 
       &[aria-pressed="true"] {
-        box-shadow: 0 0 0 2px var(--dry-popover), 0 0 0 3.5px var(--dry-foreground);
+        box-shadow:
+          0 0 0 2px var(--dry-popover),
+          0 0 0 3.5px var(--dry-foreground);
       }
     }
 
@@ -3609,12 +3611,18 @@
       /* Checkerboard behind the semi-transparent overlay span, so the
        * chosen opacity is actually visible rather than just fading into
        * the popover's own background. */
-      background-image:
-        conic-gradient(var(--dry-grey-300) 90deg, transparent 90deg 180deg, var(--dry-grey-300) 180deg 270deg, transparent 270deg);
+      background-image: conic-gradient(
+        var(--dry-grey-300) 90deg,
+        transparent 90deg 180deg,
+        var(--dry-grey-300) 180deg 270deg,
+        transparent 270deg
+      );
       background-size: 0.5rem 0.5rem;
 
       &[aria-pressed="true"] {
-        box-shadow: 0 0 0 2px var(--dry-popover), 0 0 0 3.5px var(--dry-foreground);
+        box-shadow:
+          0 0 0 2px var(--dry-popover),
+          0 0 0 3.5px var(--dry-foreground);
       }
 
       & > span {
@@ -3969,7 +3977,6 @@
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
       }
-
     }
   }
 
