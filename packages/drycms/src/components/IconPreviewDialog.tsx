@@ -91,6 +91,7 @@ export default function IconPreviewDialog({
             code={maskSnippet(entry)}
             wrap
             copyable
+            formatHtml
             style={{flex: 1}}
           />
         </div>

@@ -1,7 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { MoreVerticalIcon } from "./icons.js";
-import { useCloseOnResize, usePopupFlip, useScrollLock } from "./list-nav.js";
+import { useCloseOnResize, usePopupFlip, useTrackRect } from "./list-nav.js";
+
+/** Matches `.popover-menu`'s `width: 11rem` in components.css. */
+const MENU_WIDTH = 176;
+const EDGE_MARGIN = 8;
 
 export type PopoverMenuEntry =
   | { type: "separator" }
@@ -44,7 +48,9 @@ export interface PopoverProps {
  * not - can never paint above the top layer regardless of z-index. `auto`
  * mode gets outside-click/Escape dismissal for free, unlike Toast.tsx's
  * `popover="manual"` (a toast stack needs custom show/hide timing instead).
- * Flips upward when there isn't room below (see `usePopupFlip`).
+ * Flips upward when there isn't room below (see `usePopupFlip`). Background
+ * scroll is left free rather than locked - the menu tracks the trigger's
+ * live position instead (`useTrackRect`), same mechanism as FloatingPanel.tsx.
  */
 export default function Popover({
   items,
@@ -60,19 +66,28 @@ export default function Popover({
   const [position, setPosition] = useState<{
     top: number;
     left: number;
+    alignRight: boolean;
   } | null>(null);
-  useScrollLock(open, wrapRef);
   useCloseOnResize(open, () => setOpen(false));
 
-  useLayoutEffect(() => {
-    if (!open) return;
+  useTrackRect(open, wrapRef.current, () => {
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
+    // Right-aligned by default (menu's right edge under the trigger's), but
+    // shifted to left-aligned instead when that would run the menu off the
+    // left edge of the viewport - a trigger near the left side of a narrow
+    // (mobile) screen, now that this no longer becomes a full-width bottom
+    // drawer there. `MENU_WIDTH` is a stand-in for the menu's own rendered
+    // width (not yet knowable here - the `popover="auto"` element is still
+    // closed at this point in the commit, so measuring it would read 0),
+    // same role as `usePopupFlip`'s `estimatedHeight` above.
+    const alignRight = rect.right - MENU_WIDTH >= EDGE_MARGIN;
     setPosition({
-      left: rect.right,
+      left: alignRight ? rect.right : rect.left,
       top: openUp ? rect.top - 4 : rect.bottom + 4,
+      alignRight,
     });
-  }, [open, openUp]);
+  });
 
   useEffect(() => {
     const el = menuRef.current;
@@ -134,9 +149,7 @@ export default function Popover({
                 position: "fixed",
                 left: `${position.left}px`,
                 top: `${position.top}px`,
-                transform: openUp
-                  ? "translate(-100%, -100%)"
-                  : "translate(-100%, 0)",
+                transform: `translate(${position.alignRight ? "-100%" : "0"}, ${openUp ? "-100%" : "0"})`,
               }
             : undefined
         }

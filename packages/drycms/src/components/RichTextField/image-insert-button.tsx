@@ -1,40 +1,29 @@
 import { useRef, useState } from "preact/hooks";
-import {
-  $createParagraphNode,
-  $getNodeByKey,
-  $getRoot,
-  $getSelection,
-  $isElementNode,
-  $isRangeSelection,
-} from "lexical";
 import FileManager from "../FileManager.js";
 import type { FileEntry } from "../file-manager-types.js";
 import { parentFolderOf } from "../file-manager-utils.js";
 import { MediaIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import { useOverlayScrollbars } from "../overlayscrollbars.js";
-import { $createImageNode } from "./image-node.js";
+import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
 
 /**
  * Toolbar button opening a `FileManager`-backed picker dialog (same shape as
- * `ImageField`'s) and inserting the chosen file as an inline `ImageNode` -
- * appended into whichever block (paragraph/heading/quote) had focus when the
- * dialog opened, the same way `<em>`/`<strong>` sit among a block's other
- * inline content rather than as their own top-level element (see
- * `image-node.ts`). The dialog steals focus/selection away from the editor,
- * so there's no live selection left to insert at by the time "Insert" is
- * clicked - the focused block's key is captured up front instead
- * (`openPicker`) and resolved back at insert time; if it's gone (or was
- * never available), the image is appended to the last block in the document
- * instead.
+ * `ImageField`'s) and inserting the chosen file as an inline image node at
+ * wherever the selection was when the dialog opened. The dialog steals
+ * focus away from the editor, but ProseMirror's own state (unlike Lexical's)
+ * isn't reset by losing DOM focus - the position is still captured up front
+ * (`openPicker`) since `disabled`/other state could in principle change
+ * before "Insert" is clicked; if it's out of range (or was never available),
+ * the image is inserted at the end of the document instead.
  */
-export default function ImageInsertButton({ editorRef, contentRef, disabled = false, source }: ToolbarCustomProps) {
+export default function ImageInsertButton({ viewRef, disabled = false, source, iconSize }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState("");
-  const anchorKeyRef = useRef<string | null>(null);
+  const anchorPosRef = useRef<number | null>(null);
   const dialogRef = useDialogSync(open, () => setOpen(false));
   const { ref: pickerBody } = useOverlayScrollbars<HTMLDivElement>([open]);
 
@@ -42,33 +31,19 @@ export default function ImageInsertButton({ editorRef, contentRef, disabled = fa
 
   const openPicker = () => {
     if (disabled) return;
-    anchorKeyRef.current = null;
-    editorRef.current?.getEditorState().read(() => {
-      const selection = $getSelection();
-      if ($isRangeSelection(selection)) {
-        anchorKeyRef.current = selection.anchor.getNode().getTopLevelElementOrThrow().getKey();
-      }
-    });
+    anchorPosRef.current = viewRef.current?.state.selection.to ?? null;
     setPending("");
     setOpen(true);
   };
 
   const insertImage = (entry: FileEntry) => {
-    const editor = editorRef.current;
-    if (!editor || !entry.previewUrl) return;
-    contentRef.current?.focus();
-    editor.update(() => {
-      const imageNode = $createImageNode(entry.previewUrl!, entry.name);
-      const anchor = anchorKeyRef.current ? $getNodeByKey(anchorKeyRef.current) : null;
-      const block = anchor && $isElementNode(anchor) ? anchor : $getRoot().getLastChild();
-      if (block && $isElementNode(block)) {
-        block.append(imageNode);
-      } else {
-        const paragraph = $createParagraphNode();
-        paragraph.append(imageNode);
-        $getRoot().append(paragraph);
-      }
-    });
+    const view = viewRef.current;
+    if (!view || !entry.previewUrl) return;
+    const imageNode = schema.nodes.image!.create({ src: entry.previewUrl, alt: entry.name });
+    const docSize = view.state.doc.content.size;
+    const pos = anchorPosRef.current !== null && anchorPosRef.current <= docSize ? anchorPosRef.current : docSize;
+    view.dispatch(view.state.tr.insert(pos, imageNode));
+    view.focus();
   };
 
   const confirm = async () => {
@@ -84,7 +59,7 @@ export default function ImageInsertButton({ editorRef, contentRef, disabled = fa
     <>
       <button
         type="button"
-        class="ghost icon sm"
+        class={`ghost icon ${iconSize}`}
         aria-label="Insert image"
         data-tooltip="Insert image"
         aria-haspopup="dialog"

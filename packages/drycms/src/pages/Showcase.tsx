@@ -1,13 +1,14 @@
-import { useMemo, useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
-import type { SerializedEditorState } from "lexical";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
 import Combobox from "../components/Combobox.js";
 import ComponentField from "../components/ComponentField.js";
+import ContextMenu from "../components/ContextMenu.js";
 import DataTable from "../components/DataTable.js";
 import DatePickerField from "../components/DatePickerField.js";
 import Demo from "../components/Demo.js";
+import FloatingPanel from "../components/FloatingPanel.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import FileManager from "../components/FileManager.js";
 import Icon from "../components/Icon.js";
@@ -34,6 +35,7 @@ import SelectField from "../components/SelectField.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import RichTextField from "../components/RichTextField/index.js";
+import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { toast } from "../components/Toast.js";
 import {
@@ -265,7 +267,7 @@ function TextFieldPreview() {
 function RichTextFieldPreview() {
   const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const [body, setBody] = useState("");
-  const [json, setJson] = useState<SerializedEditorState>();
+  const [json, setJson] = useState<RichTextJSON>();
 
   const jsonCode = useMemo(
     () => (json ? JSON.stringify(json, null, 2) : ""),
@@ -521,6 +523,103 @@ function ImageFieldPreview() {
   );
 }
 
+interface FloatingPanelBox {
+  id: string;
+  label: string;
+  align: "left" | "center" | "right";
+}
+
+/** Two independent anchors sharing one FloatingPanel instance - selecting a
+ * box swaps which element the panel follows; deleting the selected one
+ * clears the anchor (hiding the panel) instead of leaving it stranded. */
+function FloatingPanelPreview() {
+  const [boxes, setBoxes] = useState<FloatingPanelBox[]>([
+    { id: "a", label: "Photo A", align: "left" },
+    { id: "b", label: "Photo B", align: "left" },
+  ]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const boxRefs = useRef<Record<string, HTMLElement | null>>({});
+  const selected = boxes.find((box) => box.id === selectedId) ?? null;
+
+  const setAlign = (align: FloatingPanelBox["align"]) => {
+    if (!selected) return;
+    setBoxes((current) =>
+      current.map((box) => (box.id === selected.id ? { ...box, align } : box)),
+    );
+  };
+
+  const remove = () => {
+    if (!selected) return;
+    setBoxes((current) => current.filter((box) => box.id !== selected.id));
+    setSelectedId(null);
+  };
+
+  return (
+    <div class="stack" style={{ width: "100%" }}>
+      <p class="hint">Select a box, then align or delete it - the panel follows whichever one is selected.</p>
+      <div class="row" style={{ gap: "1.5rem" }}>
+        {boxes.map((box) => (
+          <button
+            key={box.id}
+            type="button"
+            class={box.id === selectedId ? undefined : "outline"}
+            style={{ width: "8rem", textAlign: box.align }}
+            ref={(el) => {
+              boxRefs.current[box.id] = el;
+            }}
+            onClick={() =>
+              setSelectedId((current) => (current === box.id ? null : box.id))
+            }
+          >
+            {box.label}
+          </button>
+        ))}
+      </div>
+      <FloatingPanel
+        anchor={selected ? (boxRefs.current[selected.id] ?? null) : null}
+      >
+        <div class="row" style={{ padding: "0.25rem", gap: "0.25rem" }}>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label="Align left"
+            aria-pressed={selected?.align === "left"}
+            onClick={() => setAlign("left")}
+          >
+            <Icon name="AlignLeft" />
+          </button>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label="Align center"
+            aria-pressed={selected?.align === "center"}
+            onClick={() => setAlign("center")}
+          >
+            <Icon name="AlignCenter" />
+          </button>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label="Align right"
+            aria-pressed={selected?.align === "right"}
+            onClick={() => setAlign("right")}
+          >
+            <Icon name="AlignRight" />
+          </button>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label="Delete"
+            onClick={remove}
+          >
+            <Icon name="Trash" />
+          </button>
+        </div>
+      </FloatingPanel>
+    </div>
+  );
+}
+
 interface MockAuthor {
   id: string;
   name: string;
@@ -687,8 +786,13 @@ function DemoContent({ id }: { id: string }) {
             <h1>Heading 1</h1>
             <h2>Heading 2</h2>
             <h3>Heading 3</h3>
+            <h4>Heading 4</h4>
+            <h5>Heading 5</h5>
+            <h6>Heading 6</h6>
+
             <p>Body text sits at 14px with a 1.5 line height.</p>
             <small>Small text is muted by default.</small>
+            
             <p>
               Inline <code>code</code>, a <kbd>Ctrl</kbd> key, and a{" "}
               <a href={`${path}/showcase/colors`} class="underline">
@@ -1252,7 +1356,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="richtext-field"
           title="Rich text field"
-          description="MVP1: a contenteditable surface wired up from Lexical's core package, with a toolbar for the three inline formats - Bold, Italic, Underline. Looks like the multiline TextField with a toolbar docked on top; value is the JSON-serialized Lexical editor state."
+          description="A ProseMirror-backed contenteditable surface with a toolbar for undo/redo, bold/italic/underline, clear formatting, text color, block type (paragraph/headings/quote), alignment, and inserting a drag-to-resize image. Looks like the multiline TextField with a toolbar docked on top; value is clean HTML, with the ProseMirror doc available as JSON alongside it."
           code={code.richTextField!}
         >
           <RichTextFieldPreview />
@@ -1657,6 +1761,58 @@ function DemoContent({ id }: { id: string }) {
               },
             ]}
           />
+        </Demo>
+      );
+
+    case "context-menu":
+      return (
+        <Demo
+          id="context-menu"
+          title="Context menu"
+          description="Right-click counterpart to Popover - children is the trigger itself, opening items at the cursor instead of anchored to a button. Same popover-menu markup/CSS (and popover='auto' top-layer behavior), so the two look identical."
+          code={code.contextMenu!}
+        >
+          <ContextMenu
+            label="Row actions"
+            items={[
+              {
+                type: "item",
+                label: "Rename",
+                icon: <RenameIcon />,
+                onClick: () => toast.add({ title: "Renamed" }),
+              },
+              {
+                type: "item",
+                label: "Duplicate",
+                icon: <CopyIcon />,
+                onClick: () => toast.add({ title: "Duplicated" }),
+              },
+              { type: "separator" },
+              {
+                type: "item",
+                label: "Delete",
+                icon: <TrashIcon />,
+                danger: true,
+                onClick: () => toast.add({ title: "Deleted", type: "error" }),
+              },
+            ]}
+          >
+            <div class="card" style={{ padding: "3rem", textAlign: "center", cursor: "context-menu" }}>
+              Right-click here
+            </div>
+          </ContextMenu>
+        </Demo>
+      );
+
+    case "floating-panel":
+      return (
+        <Demo
+          id="floating-panel"
+          title="Floating panel"
+          description="Anchors to any DOM element and follows it (position, size via ResizeObserver, scroll) instead of being tied to its own trigger like Popover. Generic - the anchor can be a plain ref, a ProseMirror node's DOM, a hovered table row, anything. Selecting a different element swaps the anchor; a null anchor hides the panel."
+          code={code.floatingPanel!}
+        >
+          <FloatingPanelPreview />
         </Demo>
       );
 

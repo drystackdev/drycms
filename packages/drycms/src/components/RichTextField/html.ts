@@ -1,27 +1,22 @@
+import type { Node as PMNode } from "prosemirror-model";
 import {
-  $createLineBreakNode,
-  $createParagraphNode,
-  $createTextNode,
-  $getRoot,
-  $isElementNode,
-  $isLineBreakNode,
-  $isTextNode,
-  type LexicalNode,
-} from "lexical";
-import { $blockTag, $blockTypeFromTagName, $createBlockNode, $getBlockType } from "./block-nodes.js";
-import { $createImageNode, $isImageNode } from "./image-node.js";
-import { normalizeTextAlign } from "./types.js";
+  blockNodeTypeAndAttrs,
+  blockTypeFromTagName,
+  blockTypeOfNode,
+  createEmptyDoc,
+  imageSizeFromElement,
+  imageStyleString,
+  schema,
+} from "./schema.js";
+import { normalizeTextAlign, type BlockType } from "./types.js";
 
 /**
- * RichTextField's own HTML <-> node-tree conversion - kept separate from
- * `@lexical/html` (which round-trips arbitrary node types this field will
- * never have, wrapping every run in `<span style="white-space: pre-wrap;">`
- * plus a redundant `<b>`/`<i>` around the semantic tag). Only the marks this
- * field's toolbar can produce need to survive the trip: `<strong>`, `<em>`,
- * `<u>`, a `<span style="color: ...">` (see color-menu.tsx), `<br>`, an
- * inline `<img>` (see image-node.ts), plain text, one block element (`<p>`,
- * `<h2>`-`<h6>`, `<blockquote>` - see `block-nodes.ts`) per top-level
- * element.
+ * RichTextField's own HTML <-> ProseMirror doc conversion (rewritten from
+ * the Lexical version of this file, same file name/shape). Only the marks
+ * this field's toolbar can produce need to survive the trip: `<strong>`,
+ * `<em>`, `<u>`, a `<span style="color: ...">` (see color-menu.tsx), `<br>`,
+ * an inline `<img>` (see schema.ts), plain text, one block element (`<p>`,
+ * `<h2>`-`<h6>`, `<blockquote>`) per top-level element.
  */
 
 function escapeHtml(text: string): string {
@@ -32,68 +27,72 @@ function escapeAttr(text: string): string {
   return escapeHtml(text).replace(/"/g, "&quot;");
 }
 
-/** `TextNode.getStyle()` is a single free-form CSS string - this field only
- * ever writes a `color` property into it (see color-menu.tsx), so pulling
- * just that back out is enough to round-trip. */
-function extractColor(style: string): string {
-  return /color:\s*([^;]+)/i.exec(style)?.[1]?.trim() ?? "";
+function blockTag(type: BlockType): string {
+  if (type === "quote") return "blockquote";
+  if (type === "paragraph") return "p";
+  return type;
 }
 
-export function $exportCleanHtml(): string {
-  return $getRoot()
-    .getChildren()
-    .map((node) => {
-      if (!$isElementNode(node)) return "";
-      const inner = node
-        .getChildren()
-        .map((child) => {
-          if ($isImageNode(child)) return `<img src="${escapeAttr(child.getSrc())}" alt="${escapeAttr(child.getAlt())}">`;
-          if ($isLineBreakNode(child)) return "<br>";
-          if (!$isTextNode(child)) return "";
-          let text = escapeHtml(child.getTextContent());
-          if (child.hasFormat("bold")) text = `<strong>${text}</strong>`;
-          if (child.hasFormat("italic")) text = `<em>${text}</em>`;
-          if (child.hasFormat("underline")) text = `<u>${text}</u>`;
-          const color = extractColor(child.getStyle());
-          if (color) text = `<span style="color: ${escapeAttr(color)}">${text}</span>`;
-          return text;
-        })
-        .join("");
-      // "left" is the default alignment - only non-default values need to
-      // survive the round trip as an explicit style.
-      const align = normalizeTextAlign(node.getFormatType());
-      const style = align === "left" ? "" : ` style="text-align: ${align}"`;
-      const tag = $blockTag($getBlockType(node));
-      return `<${tag}${style}>${inner}</${tag}>`;
-    })
-    .join("");
+function textNodeToHtml(node: PMNode): string {
+  let text = escapeHtml(node.text ?? "");
+  if (schema.marks.bold!.isInSet(node.marks)) text = `<strong>${text}</strong>`;
+  if (schema.marks.italic!.isInSet(node.marks)) text = `<em>${text}</em>`;
+  if (schema.marks.underline!.isInSet(node.marks)) text = `<u>${text}</u>`;
+  const colorMark = schema.marks.textColor!.isInSet(node.marks);
+  if (colorMark) text = `<span style="color: ${escapeAttr(colorMark.attrs.value as string)}">${text}</span>`;
+  return text;
+}
+
+export function exportCleanHtml(doc: PMNode): string {
+  const parts: string[] = [];
+  doc.forEach((node) => {
+    const tag = blockTag(blockTypeOfNode(node));
+    const align = (node.attrs.textAlign as string | null) ?? "left";
+    const style = align === "left" ? "" : ` style="text-align: ${align}"`;
+    let inner = "";
+    node.forEach((child) => {
+      if (child.type === schema.nodes.image) {
+        const style = imageStyleString(child.attrs.width as number | null, child.attrs.height as number | null);
+        inner += `<img src="${escapeAttr(child.attrs.src as string)}" alt="${escapeAttr(child.attrs.alt as string)}"${style ? ` style="${escapeAttr(style)}"` : ""}>`;
+      } else if (child.type === schema.nodes.hard_break) {
+        inner += "<br>";
+      } else if (child.isText) {
+        inner += textNodeToHtml(child);
+      }
+    });
+    parts.push(`<${tag}${style}>${inner}</${tag}>`);
+  });
+  return parts.join("");
 }
 
 interface InlineAncestry {
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  /** CSS `color` value, or `""` for none - unlike the booleans above, a
-   * nested element's own `color` replaces rather than ORs with the
-   * ancestor's (see `nextAncestry` below). */
+  /** CSS `color` value, or `""` for none - a nested element's own `color`
+   * replaces rather than combines with the ancestor's. */
   color: string;
 }
 
-function $walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): LexicalNode[] {
+const NO_MARKS: InlineAncestry = { bold: false, italic: false, underline: false, color: "" };
+
+function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] {
   if (domNode.nodeType === Node.TEXT_NODE) {
     const text = domNode.textContent ?? "";
     if (!text) return [];
-    const textNode = $createTextNode(text);
-    if (ancestry.bold) textNode.toggleFormat("bold");
-    if (ancestry.italic) textNode.toggleFormat("italic");
-    if (ancestry.underline) textNode.toggleFormat("underline");
-    if (ancestry.color) textNode.setStyle(`color: ${ancestry.color}`);
-    return [textNode];
+    const marks = [];
+    if (ancestry.bold) marks.push(schema.marks.bold!.create());
+    if (ancestry.italic) marks.push(schema.marks.italic!.create());
+    if (ancestry.underline) marks.push(schema.marks.underline!.create());
+    if (ancestry.color) marks.push(schema.marks.textColor!.create({ value: ancestry.color }));
+    return [schema.text(text, marks)];
   }
-  if (domNode.nodeName === "BR") return [$createLineBreakNode()];
+  if (domNode.nodeName === "BR") return [schema.nodes.hard_break!.create()];
   if (domNode.nodeName === "IMG") {
     const img = domNode as HTMLImageElement;
-    return [$createImageNode(img.getAttribute("src") ?? "", img.getAttribute("alt") ?? "")];
+    return [
+      schema.nodes.image!.create({ src: img.getAttribute("src") ?? "", alt: img.getAttribute("alt") ?? "", ...imageSizeFromElement(img) }),
+    ];
   }
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
 
@@ -104,38 +103,36 @@ function $walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): LexicalN
     underline: ancestry.underline || tag === "U",
     color: (domNode instanceof HTMLElement && domNode.style.color) || ancestry.color,
   };
-  return Array.from(domNode.childNodes).flatMap((child) => $walkInlineHtml(child, nextAncestry));
+  return Array.from(domNode.childNodes).flatMap((child) => walkInlineHtml(child, nextAncestry));
 }
 
 /** Accepts this field's own clean export, or any simple hand-written HTML
  * using the same handful of tags - unrecognized wrapper elements are just
  * unwrapped rather than rejected. */
-export function $importCleanHtml(html: string): void {
+export function importCleanHtml(html: string): PMNode {
   const dom = new DOMParser().parseFromString(html, "text/html");
-  const root = $getRoot();
   const blocks = dom.body.children.length > 0 ? Array.from(dom.body.children) : [dom.body];
-  const noFormat: InlineAncestry = { bold: false, italic: false, underline: false, color: "" };
+  const blockNodes: PMNode[] = [];
   for (const block of blocks) {
     // A bare top-level `<img>` (hand-written HTML, never something this
-    // field's own export produces - see `$exportCleanHtml` above, where an
-    // image only ever appears inside a block's `inner`) has no block wrapper
-    // to carry it - and no children for `$walkInlineHtml` below to find it
-    // through either. Synthesize the paragraph it'd otherwise have lived in.
+    // field's own export produces) has no block wrapper to carry it -
+    // synthesize the paragraph it'd otherwise have lived in.
     if (block.tagName === "IMG") {
       const img = block as HTMLImageElement;
-      const paragraph = $createParagraphNode();
-      paragraph.append($createImageNode(img.getAttribute("src") ?? "", img.getAttribute("alt") ?? ""));
-      root.append(paragraph);
+      blockNodes.push(
+        schema.nodes.paragraph!.create(
+          null,
+          schema.nodes.image!.create({ src: img.getAttribute("src") ?? "", alt: img.getAttribute("alt") ?? "", ...imageSizeFromElement(img) }),
+        ),
+      );
       continue;
     }
-    const element = $createBlockNode($blockTypeFromTagName(block.tagName));
-    const align = normalizeTextAlign(
-      block instanceof HTMLElement ? block.style.textAlign : undefined,
-    );
-    if (align !== "left") element.setFormat(align);
-    const inlineNodes = Array.from(block.childNodes).flatMap((child) => $walkInlineHtml(child, noFormat));
-    element.append(...inlineNodes);
-    root.append(element);
+    const { type, attrs } = blockNodeTypeAndAttrs(blockTypeFromTagName(block.tagName));
+    const align = normalizeTextAlign(block instanceof HTMLElement ? block.style.textAlign : undefined);
+    const finalAttrs = align !== "left" ? { ...(attrs ?? {}), textAlign: align } : attrs;
+    const inlineNodes = Array.from(block.childNodes).flatMap((child) => walkInlineHtml(child, NO_MARKS));
+    blockNodes.push(type.create(finalAttrs, inlineNodes));
   }
-  if (root.getChildrenSize() === 0) root.append($createParagraphNode());
+  if (blockNodes.length === 0) return createEmptyDoc();
+  return schema.nodes.doc!.create(null, blockNodes);
 }

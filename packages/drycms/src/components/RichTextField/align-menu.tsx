@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { FORMAT_ELEMENT_COMMAND } from "lexical";
+import { runCommand, setTextAlign } from "./commands.js";
 import Popover from "../Popover.js";
 import { AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, type IconProps } from "../icons.js";
 import type { TextAlign, ToolbarCustomProps } from "./types.js";
@@ -16,14 +16,13 @@ const ALIGN_OPTIONS: { value: TextAlign; label: string; Icon: (props: IconProps)
  * a bit that flips on/off, and the trigger shows whichever option is
  * currently active (see `current` below) rather than a fixed icon.
  */
-export default function AlignMenu({ editorRef, contentRef, state, disabled = false }: ToolbarCustomProps) {
+export default function AlignMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
   const current = ALIGN_OPTIONS.find((option) => option.value === state.align) ?? ALIGN_OPTIONS[0]!;
 
   const applyAlign = (value: TextAlign) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    contentRef.current?.focus();
-    editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, value);
+    const view = viewRef.current;
+    if (!view) return;
+    runCommand(view, setTextAlign(value));
   };
 
   return (
@@ -38,7 +37,7 @@ export default function AlignMenu({ editorRef, contentRef, state, disabled = fal
       trigger={(onClick) => (
         <button
           type="button"
-          class="ghost icon sm"
+          class={`ghost icon ${iconSize}`}
           aria-label="Align text"
           data-tooltip={`Align: ${current.label}`}
           disabled={disabled}

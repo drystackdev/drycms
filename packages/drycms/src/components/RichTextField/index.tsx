@@ -1,8 +1,8 @@
-import type { SerializedEditorState } from "lexical";
 import type { FieldProps } from "../field-common.js";
 import type { FileManagerSource } from "../file-manager-types.js";
 import RichTextToolbar from "./toolbar.js";
-import { useRichTextEditor } from "./useRichTextEditor.js";
+import type { ToolbarIconSize } from "./types.js";
+import { useRichTextEditor, type RichTextJSON } from "./useRichTextEditor.js";
 
 export interface RichTextFieldProps extends FieldProps<string> {
   placeholder?: string;
@@ -13,16 +13,19 @@ export interface RichTextFieldProps extends FieldProps<string> {
    * button (and the picker dialog behind it) only exists when this is set,
    * same optionality as `ImageField`'s own `source` prop. */
   source?: FileManagerSource;
-  /** Lexical's serialized editor state, as an object rather than a JSON
-   * string - reported on every change alongside `value` (always HTML), and
-   * used to seed the document only when `value` is empty. Optional: most
-   * consumers only need `value`/`onChange`. */
-  json?: SerializedEditorState;
-  onJsonChange?: (json: SerializedEditorState) => void;
+  /** ProseMirror's serialized doc, as an object rather than a JSON string -
+   * reported on every change alongside `value` (always HTML), and used to
+   * seed the document only when `value` is empty. Optional: most consumers
+   * only need `value`/`onChange`. */
+  json?: RichTextJSON;
+  onJsonChange?: (json: RichTextJSON) => void;
   /** Restricts the toolbar to inline formatting and undo/redo, hiding the
    * block-level "turn into" and alignment menus - for fields that should
    * only ever hold a single inline run (e.g. a title). @default false */
   inline?: boolean;
+  /** Applied to every toolbar button's icon sizing class, same scale as
+   * every other icon-only button in drycms. @default "md" */
+  iconSize?: ToolbarIconSize;
 }
 
 /** Public entry point - stays a thin props-in/JSX-out wrapper around
@@ -43,10 +46,19 @@ export default function RichTextField({
   onJsonChange,
   inline = false,
   source,
+  iconSize,
   class: className,
   style,
 }: RichTextFieldProps) {
-  const { contentRef, editorRef, state, empty } = useRichTextEditor({ value, onChange, json, onJsonChange });
+  const { contentRef, viewRef, state } = useRichTextEditor({
+    value,
+    onChange,
+    json,
+    onJsonChange,
+    label,
+    placeholder,
+    disabled,
+  });
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
@@ -57,22 +69,18 @@ export default function RichTextField({
       {description && <small>{description}</small>}
       <div class="richtext" aria-invalid={error || undefined}>
         <RichTextToolbar
-          editorRef={editorRef}
+          viewRef={viewRef}
           state={state}
           disabled={disabled}
           contentRef={contentRef}
           inline={inline}
           source={source}
+          iconSize={iconSize}
         />
-        <div
-          ref={contentRef}
-          class={`richtext-content${empty ? " is-empty" : ""}`}
-          contentEditable={!disabled}
-          role="textbox"
-          aria-multiline="true"
-          aria-label={label}
-          data-placeholder={placeholder}
-        />
+        {/* ProseMirror's `EditorView` appends its own contenteditable dom
+         * into this mount node and owns its attributes/content from then on -
+         * see `useRichTextEditor.ts`'s `buildAttributes`. */}
+        <div ref={contentRef} />
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>

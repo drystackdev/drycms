@@ -60,11 +60,11 @@ function preactAliases(): Record<string, string> {
 // (see App.tsx's `lazy(() => import(...))` list and each dep's own
 // importer: @preact/signals - store/dashboard.ts, field-visibility.ts;
 // overlayscrollbars - components/overlayscrollbars.ts; preact-iso -
-// routers/App.tsx; lexical/@lexical/plain-text - the rich text field;
-// dayjs - date fields; prismjs(+components) - CodeBlock.tsx). They live in
-// drycms's own `node_modules` (a nested workspace package), not the
-// consumer project's, so Vite can't resolve the bare specifiers below from
-// project root without an alias - same problem `preactAliases` solves for
+// routers/App.tsx; prosemirror-* - the rich text field; dayjs - date
+// fields; prismjs(+components) - CodeBlock.tsx). They live in drycms's own
+// `node_modules` (a nested workspace package), not the consumer project's,
+// so Vite can't resolve the bare specifiers below from project root
+// without an alias - same problem `preactAliases` solves for
 // `@astrojs/preact`.
 // The `prismjs/components/prism-jsx` subpath must come before the bare
 // `prismjs` entry: Vite's alias matcher takes the first pattern where
@@ -78,10 +78,13 @@ const DRY_DEP_IDS = [
   "@preact/signals",
   "overlayscrollbars",
   "preact-iso",
-  "@lexical/history",
-  "@lexical/plain-text",
+  "prosemirror-commands",
+  "prosemirror-history",
+  "prosemirror-keymap",
+  "prosemirror-model",
+  "prosemirror-state",
+  "prosemirror-view",
   "dayjs",
-  "lexical",
   "prismjs",
 ];
 
@@ -243,6 +246,11 @@ export function dry(options: DryOption = {}): AstroIntegration {
         injectRoute({
           pattern: `${resolved.path}/api/content/[...slug]`,
           entrypoint: CONTENT_ENTRIES_ROUTE_ENTRYPOINT,
+        });
+
+        injectRoute({
+          pattern: `${resolved.path}/api/__debugtest123/[...slug]`,
+          entrypoint: "drycms/routes/debugtest.ts",
         });
 
         logger.info(`admin UI mounted at ${resolved.path}`);

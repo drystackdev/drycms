@@ -1,5 +1,4 @@
-import { $getSelection, $isRangeSelection } from "lexical";
-import { $patchStyleText } from "@lexical/selection";
+import { runCommand, setTextColor } from "./commands.js";
 import Popover from "../Popover.js";
 import { BaselineIcon } from "../icons.js";
 import type { ToolbarCustomProps } from "./types.js";
@@ -72,37 +71,28 @@ function parseColorValue(value: string): { base: string; alphaPct: number } {
 
 /**
  * A popover offering a 6-hue x 6-level color grid plus a 6-step opacity row,
- * both writing into the selection's `color` CSS style (via
- * `@lexical/selection`'s `$patchStyleText`) rather than a Lexical format
- * bit - `useRichTextEditor.ts` reads it back with
- * `$getSelectionStyleValueForProperty` and `html.ts` round-trips it through
- * an exported `<span style="color: ...">`.
+ * both writing into the selection via the `textColor` mark (`commands.ts`'s
+ * `setTextColor`) rather than a plain toggle - `useRichTextEditor.ts` reads
+ * it back with `getTextColorState` and `html.ts` round-trips it through an
+ * exported `<span style="color: ...">`.
  */
-export default function ColorMenu({ editorRef, contentRef, state, disabled = false }: ToolbarCustomProps) {
+export default function ColorMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
   const { base, alphaPct } = parseColorValue(state.color);
 
   const preserveSelection = (event: MouseEvent) => event.preventDefault();
 
   const applyColor = (nextBase: string, nextAlphaPct: number) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    contentRef.current?.focus();
+    const view = viewRef.current;
+    if (!view) return;
     const value =
       nextBase === "currentColor" || nextAlphaPct >= 100 ? nextBase : `${nextBase}${alphaHex(nextAlphaPct)}`;
-    editor.update(() => {
-      const selection = $getSelection();
-      if ($isRangeSelection(selection)) $patchStyleText(selection, { color: value });
-    });
+    runCommand(view, setTextColor(value));
   };
 
   const clearColor = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    contentRef.current?.focus();
-    editor.update(() => {
-      const selection = $getSelection();
-      if ($isRangeSelection(selection)) $patchStyleText(selection, { color: null });
-    });
+    const view = viewRef.current;
+    if (!view) return;
+    runCommand(view, setTextColor(null));
   };
 
   return (
@@ -112,7 +102,7 @@ export default function ColorMenu({ editorRef, contentRef, state, disabled = fal
       trigger={(onClick) => (
         <button
           type="button"
-          class="ghost icon sm"
+          class={`ghost icon ${iconSize}`}
           aria-label="Text color"
           data-tooltip="Text color"
           disabled={disabled}

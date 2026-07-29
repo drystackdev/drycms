@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { FORMAT_BLOCK_TYPE_COMMAND } from "./block-nodes.js";
+import { runCommand, setBlockTypeCommand } from "./commands.js";
 import Popover from "../Popover.js";
 import {
   Heading2Icon,
@@ -29,14 +29,13 @@ const BLOCK_TYPE_OPTIONS: { value: BlockType; label: string; Icon: (props: IconP
  * currently active (see `current` below) rather than a fixed icon. Mirrors
  * `AlignMenu`.
  */
-export default function BlockTypeMenu({ editorRef, contentRef, state, disabled = false }: ToolbarCustomProps) {
+export default function BlockTypeMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
   const current = BLOCK_TYPE_OPTIONS.find((option) => option.value === state.blockType) ?? BLOCK_TYPE_OPTIONS[0]!;
 
   const applyBlockType = (value: BlockType) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    contentRef.current?.focus();
-    editor.dispatchCommand(FORMAT_BLOCK_TYPE_COMMAND, value);
+    const view = viewRef.current;
+    if (!view) return;
+    runCommand(view, setBlockTypeCommand(value));
   };
 
   return (
@@ -51,7 +50,7 @@ export default function BlockTypeMenu({ editorRef, contentRef, state, disabled =
       trigger={(onClick) => (
         <button
           type="button"
-          class="ghost icon sm"
+          class={`ghost icon ${iconSize}`}
           aria-label="Turn into"
           data-tooltip={`Turn into: ${current.label}`}
           disabled={disabled}

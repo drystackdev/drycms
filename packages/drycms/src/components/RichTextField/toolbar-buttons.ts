@@ -1,13 +1,6 @@
-import {
-  $getSelection,
-  $isRangeSelection,
-  $setTextFormat,
-  FORMAT_TEXT_COMMAND,
-  REDO_COMMAND,
-  UNDO_COMMAND,
-  type LexicalEditor,
-} from "lexical";
-import { $patchStyleText } from "@lexical/selection";
+import { toggleMark } from "prosemirror-commands";
+import { redo, undo } from "prosemirror-history";
+import type { Command } from "prosemirror-state";
 import type { JSX } from "preact";
 import {
   BoldIcon,
@@ -22,6 +15,8 @@ import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
 import ImageInsertButton from "./image-insert-button.js";
+import { removeAllMarks } from "./commands.js";
+import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
 
 /**
@@ -38,9 +33,9 @@ export interface ToolbarButton {
   key: string;
   label: string;
   Icon: (props: IconProps) => JSX.Element;
-  /** Runs inside the button's onClick, after focus/selection have been
-   * restored to the editor - just dispatch a command or call `editor.update`. */
-  run: (editor: LexicalEditor) => void;
+  /** A plain `prosemirror-state` `Command` - `toolbar.tsx` runs it via
+   * `commands.ts`'s `runCommand`, which also restores focus to the editor. */
+  run: Command;
   isActive?: (state: ToolbarState) => boolean;
   isDisabled?: (state: ToolbarState) => boolean;
 }
@@ -61,24 +56,8 @@ export interface ToolbarCustomItem {
 
 export type ToolbarItem = ToolbarButton | ToolbarCustomItem;
 
-function clearFormat(editor: LexicalEditor) {
-  editor.update(() => {
-    const selection = $getSelection();
-    if (!$isRangeSelection(selection)) return;
-    // `$setTextFormat` (unlike `FORMAT_TEXT_COMMAND`'s `selection.formatText`,
-    // a *toggle*) sets each bit to an exact value - so a selection mixing
-    // e.g. a bold-only run with a bold+italic run still comes out fully
-    // unformatted. A toggle-based approach would get this backwards for a
-    // mixed/nested selection: since it isn't uniformly "on" for the
-    // not-yet-cleared format, a single `formatText` call would turn that
-    // format ON everywhere instead of off.
-    $setTextFormat(selection, { bold: false, italic: false, underline: false });
-    $patchStyleText(selection, { color: null });
-  });
-}
-
 // Only the true toggles go through this generic transform - each shares the
-// same `run`/`isActive` shape, keyed off `state.format[key]`. `clearFormat`
+// same `run`/`isActive` shape, keyed off `state.format[key]`. "Clear format"
 // below has its own `run`/`isDisabled` and must NOT be folded into this
 // `.map()` (it did briefly - `state.format["clear-format"]` isn't a real
 // format bit, so `isActive` was always undefined and its real `isDisabled`
@@ -95,15 +74,16 @@ const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
     key,
     label,
     Icon,
-    run: (editor: LexicalEditor) => editor.dispatchCommand(FORMAT_TEXT_COMMAND, key),
+    run: toggleMark(schema.marks[key]!),
     isActive: (state: ToolbarState) => state.format[key],
+    isDisabled: (state: ToolbarState) => !state.inlineEditable,
   })),
   {
     type: "button",
     key: "clear-format",
     label: "Clear format",
     Icon: ClearFormatIcon,
-    run: clearFormat,
+    run: removeAllMarks(),
     isDisabled: (state: ToolbarState) => !state.clearable,
   },
 ];
@@ -115,7 +95,7 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
       key: "undo",
       label: "Undo",
       Icon: UndoIcon,
-      run: (editor) => editor.dispatchCommand(UNDO_COMMAND, undefined),
+      run: undo,
       isDisabled: (state) => !state.canUndo,
     },
     {
@@ -123,14 +103,13 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
       key: "redo",
       label: "Redo",
       Icon: RedoIcon,
-      run: (editor) => editor.dispatchCommand(REDO_COMMAND, undefined),
+      run: redo,
       isDisabled: (state) => !state.canRedo,
     },
   ],
-  // Inline group: every item here formats a text run (a Lexical format bit
-  // or a `<span style="color:...">`) - kept together, and separate from the
-  // block group below, so `inline` mode (see `toolbar.tsx`) can drop the
-  // latter as one unit.
+  // Inline group: every item here formats a text run (a mark) - kept
+  // together, and separate from the block group below, so `inline` mode
+  // (see `toolbar.tsx`) can drop the latter as one unit.
   [...INLINE_FORMAT_BUTTONS, { type: "custom", key: "color", Component: ColorMenu }],
   // Block group: every item here acts on a whole top-level element
   // (paragraph/heading/quote node, or its alignment) rather than a run of

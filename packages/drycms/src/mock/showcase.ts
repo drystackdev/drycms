@@ -100,6 +100,8 @@ export const groups: ShowcaseGroup[] = [
       { id: "dialog", label: "Dialog" },
       { id: "toast", label: "Toast" },
       { id: "popover", label: "Popover" },
+      { id: "context-menu", label: "Context menu" },
+      { id: "floating-panel", label: "Floating panel" },
       { id: "datatable", label: "DataTable" },
       { id: "custom-select", label: "Select" },
       { id: "combobox", label: "Combobox" },
@@ -431,6 +433,36 @@ const items = [
 ];
 
 <Popover label="Row actions" items={items} />`,
+  contextMenu: `import ContextMenu from 'drycms/components/ContextMenu';
+import { RenameIcon, CopyIcon, TrashIcon } from 'drycms/components/icons';
+
+// Same item shape as Popover - only the trigger differs: right-click
+// anywhere on the children instead of clicking a button.
+const items = [
+  { type: 'item', label: 'Rename', icon: <RenameIcon />, onClick: () => rename() },
+  { type: 'item', label: 'Duplicate', icon: <CopyIcon />, onClick: () => duplicate() },
+  { type: 'separator' },
+  { type: 'item', label: 'Delete', icon: <TrashIcon />, danger: true, onClick: () => remove() },
+];
+
+<ContextMenu label="Row actions" items={items}>
+  <div class="card">Right-click here</div>
+</ContextMenu>`,
+  floatingPanel: `import FloatingPanel from 'drycms/components/FloatingPanel';
+
+// anchor is any DOM element - a ref, a ProseMirror nodeDOM, a hovered row,
+// ...; the panel follows it (position, size, scroll) and disappears when
+// anchor is null. Selecting a different element just swaps the anchor.
+<button ref={(el) => (boxRef.current = el)} onClick={select}>
+  Photo A
+</button>
+
+<FloatingPanel anchor={selected ? boxRef.current : null}>
+  <button onClick={() => setAlign('left')}><AlignLeftIcon /></button>
+  <button onClick={() => setAlign('center')}><AlignCenterIcon /></button>
+  <button onClick={() => setAlign('right')}><AlignRightIcon /></button>
+  <button onClick={remove}><TrashIcon /></button>
+</FloatingPanel>`,
   datatable: `import DataTable from 'drycms/components/DataTable';
 
 const columns = [

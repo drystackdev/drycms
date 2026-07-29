@@ -199,6 +199,40 @@ export function useFloatingPosition(
 	return open ? position : null;
 }
 
+/** Re-runs `onMeasure` on scroll (any scroll-clipped ancestor, via capture)
+ * and resize - of the window and of `element` itself - coalesced to at most
+ * one call per animation frame so a scroll storm doesn't force a synchronous
+ * re-render on every event. For a popup that tracks its anchor's live screen
+ * position instead of locking background scroll while open (`useScrollLock`
+ * above) - see Popover.tsx and FloatingPanel.tsx. */
+export function useTrackRect(active: boolean, element: HTMLElement | null, onMeasure: () => void) {
+	const onMeasureRef = useRef(onMeasure);
+	onMeasureRef.current = onMeasure;
+
+	useLayoutEffect(() => {
+		if (!active || !element) return;
+		let scheduled = false;
+		const scheduleMeasure = () => {
+			if (scheduled) return;
+			scheduled = true;
+			requestAnimationFrame(() => {
+				scheduled = false;
+				onMeasureRef.current();
+			});
+		};
+		onMeasureRef.current();
+		const observer = new ResizeObserver(scheduleMeasure);
+		observer.observe(element);
+		window.addEventListener('scroll', scheduleMeasure, true);
+		window.addEventListener('resize', scheduleMeasure);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('scroll', scheduleMeasure, true);
+			window.removeEventListener('resize', scheduleMeasure);
+		};
+	}, [active, element]);
+}
+
 /** Wires a `popover="auto"` element's imperative show/hide to `open`, and
  * listens for the native `toggle` event so `onLightDismiss` fires when the
  * browser closes it itself (outside click, Escape) - keeps React state from

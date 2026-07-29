@@ -1,12 +1,12 @@
 import { useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import type { SerializedEditorState } from "lexical";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import { ArrowLeftIcon } from "../components/icons.js";
 import RichTextField from "../components/RichTextField/index.js";
+import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import TextField from "../components/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -55,6 +55,12 @@ const PRESETS: Preset[] = [
       '<p style="text-align: justify">Justified text runs long enough to actually wrap onto a second line, so the justification is visible.</p>',
   },
   {
+    key: "image",
+    label: "Image",
+    html:
+      '<p>An inline image, for testing insertion and drag-to-resize: <img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'120\' height=\'80\'%3E%3Crect width=\'120\' height=\'80\' fill=\'%232563eb\'/%3E%3C/svg%3E" alt="Placeholder rectangle"></p>',
+  },
+  {
     key: "long",
     label: "Long content",
     html:
@@ -86,7 +92,7 @@ export default function RichTextDemo() {
   };
 
   const [body, setBody] = useState("");
-  const [json, setJson] = useState<SerializedEditorState>();
+  const [json, setJson] = useState<RichTextJSON>();
   const jsonCode = useMemo(
     () => (json ? JSON.stringify(json, null, 2) : ""),
     [json],
@@ -99,6 +105,7 @@ export default function RichTextDemo() {
   const [required, setRequired] = useState(false);
   const [error, setError] = useState(false);
   const [inline, setInline] = useState(false);
+  const [iconSize, setIconSize] = useState<"sm" | "md" | "lg" | "xl">("md");
 
   return (
     <div class="card">
@@ -184,6 +191,22 @@ export default function RichTextDemo() {
               role="switch"
             />
           </div>
+          <div class="field">
+            <label>Icon size</label>
+            <div class="row" style={{ flexWrap: "wrap" }}>
+              {(["sm", "md", "lg", "xl"] as const).map((size) => (
+                <button
+                  type="button"
+                  key={size}
+                  class={iconSize === size ? "sm" : "outline sm"}
+                  aria-pressed={iconSize === size}
+                  onClick={() => setIconSize(size)}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <RichTextField
           key={seedKey}
@@ -199,6 +222,7 @@ export default function RichTextDemo() {
           required={required}
           inline={inline}
           source={source}
+          iconSize={iconSize}
         />
 
         <div class="grid cols-2" style={{ width: "100%" }}>

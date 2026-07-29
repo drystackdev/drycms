@@ -114,7 +114,10 @@ export default function CodeBlock({
   };
 
   const highlightedPre = (
-    <pre class={wrap ? "language-jsx wrap" : "language-jsx"}>
+    <pre
+      class={wrap ? "language-jsx wrap" : "language-jsx"}
+      style={wrap ? { maxHeight } : undefined}
+    >
       <code dangerouslySetInnerHTML={{ __html: highlighted }} />
     </pre>
   );
@@ -124,14 +127,8 @@ export default function CodeBlock({
   // text always comes from the re-highlighted `pre` underneath. Not wrapped
   // for the (default) non-editable case, so existing consumers keep getting
   // a bare `<pre>` (e.g. Demo.tsx's `.demo-code > pre` styling).
-  //
-  // `divRef` must land on whichever element actually owns the overflow -
-  // OverlayScrollbars turns that element's own content into a scrolling
-  // viewport, it doesn't reach into a descendant's overflow. So it's the
-  // `.editor` div when editable, and the `.code-scroll` div (not the `pre`
-  // itself) when `wrap` caps the height - never a plain ancestor wrapper.
   const block = editable ? (
-    <div class="editor" ref={divRef}>
+    <div class="editor">
       {highlightedPre}
       <textarea
         value={displayCode}
@@ -143,10 +140,6 @@ export default function CodeBlock({
         }}
       />
     </div>
-  ) : wrap ? (
-    <div class="code-scroll" ref={divRef} style={{ maxHeight }}>
-      {highlightedPre}
-    </div>
   ) : (
     highlightedPre
   );
@@ -154,8 +147,10 @@ export default function CodeBlock({
   if (!copyable) return block;
 
   return (
-    <div class={`code-block ${className}`} style={style}>
-      {block}
+    <div class={`code-block ${className}`} ref={divRef} style={style}>
+      <div >
+        {block}
+      </div>
       <button
         type="button"
         class="code-block-copy ghost icon sm"

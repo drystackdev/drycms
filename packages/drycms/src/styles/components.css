@@ -3483,6 +3483,20 @@
       color: light-dark(var(--dry-error-dark), var(--dry-error-light));
     }
 
+    /* --- FloatingPanel: follows an arbitrary/moving anchor element instead
+     * of a fixed trigger (see `FloatingPanel.tsx`) - `popover="manual"` for
+     * the same top-layer reasons as `.popover-menu` above, but shown/hidden
+     * imperatively by the component rather than native light-dismiss. */
+    .floating-panel {
+      border-width: 0;
+      margin: 0;
+      padding: 0.375rem 0.5rem;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+    }
+
     /* --- RichTextField's color picker (color-menu.tsx) - swatch buttons
      * need to beat `.popover-menu button`'s `width: 100%; height: 2rem`
      * (menu-item sizing), so every selector here chains two classes to
@@ -3848,13 +3862,14 @@
 
     /*
      * Mobile: any anchored popover-style panel - select/combobox/multi-select
-     * listbox, date picker calendar/select-row, popover action menu - becomes
-     * a full-width bottom drawer instead of a small anchored dropdown, same
-     * treatment as the sidebar's off-canvas drawer above. Their
-     * position/left/top/width are computed inline by JS for desktop
-     * anchoring (`useFloatingPosition`/Popover.tsx's own effect), so
+     * listbox, date picker calendar/select-row - becomes a full-width bottom
+     * drawer instead of a small anchored dropdown, same treatment as the
+     * sidebar's off-canvas drawer above. Their position/left/top/width are
+     * computed inline by JS for desktop anchoring (`useFloatingPosition`), so
      * `!important` is needed here to win over the inline style - scoped to
-     * this one selector list, this one breakpoint.
+     * this one selector list, this one breakpoint. Popover.tsx's own menu is
+     * deliberately excluded - it stays a small anchored dropdown at every
+     * width instead of becoming a drawer.
      */
     @media (width < 48rem) {
       .select-popup,
@@ -3893,56 +3908,6 @@
         -webkit-backdrop-filter: blur(5px);
       }
 
-      /*
-       * `.select-popup`/`.datepicker-popup` above are plain conditionally-
-       * rendered elements (Preact unmounts them on close), so a keyframe
-       * `animation` is the only way to animate them - there's nothing to
-       * transition *to* once they're gone. `.popover-menu` is a native
-       * `popover="auto"` element instead (see Popover.tsx): the UA keeps it
-       * in the top layer for the duration of any running transition on
-       * `display`/`overlay`, so a `transition` + `@starting-style` pair
-       * animates the close too, not just the open - `allow-discrete` is
-       * what lets the normally-unanimatable `display`/`overlay` swap
-       * participate in that transition instead of happening instantly.
-       */
-      .popover-menu {
-        position: fixed !important;
-        inset-inline: 0 !important;
-        top: auto !important;
-        bottom: 0 !important;
-        transform: none !important;
-        translate: 0 100%;
-        width: auto;
-        max-width: none;
-        max-height: 70vh;
-        z-index: 49;
-        border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
-        transition:
-          translate 200ms ease,
-          display 200ms ease allow-discrete,
-          overlay 200ms ease allow-discrete;
-
-        &:popover-open {
-          translate: 0 0;
-
-          @starting-style {
-            translate: 0 100%;
-          }
-        }
-      }
-
-      .popover:has(> .popover-menu:popover-open)::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        z-index: 48;
-        background-color: light-dark(
-          rgb(var(--dry-grey-channel) / 80%),
-          rgb(0 0 0 / 35%)
-        );
-        backdrop-filter: blur(5px);
-        -webkit-backdrop-filter: blur(5px);
-      }
     }
   }
 

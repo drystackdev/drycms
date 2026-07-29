@@ -310,7 +310,7 @@ export default function IconSearchAdd() {
               {previews[id] ? (
                 <IconGlyph src={svgToDataUri(previews[id])} size={24} />
               ) : (
-                <span class="skeleton" style="height: 1.75rem; width: 1.75rem; border-radius: 50%"></span>
+                <span class="skeleton" style="height: 1.5rem; width: 1.5rem; border-radius: 50%"></span>
               )}
               <small class="mono">{splitId(id)[1]}</small>
             </button>

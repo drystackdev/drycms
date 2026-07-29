@@ -31,30 +31,85 @@
 
     :where(h1, h2, h3, h4, h5, h6) {
       margin: 0;
-      font-weight: 600;
-      line-height: 1.25;
       letter-spacing: -0.01em;
       text-wrap: balance;
     }
 
     :where(h1) {
-      font-size: 1.875rem;
+      font-size: 2.5rem;
+      font-weight: 800;
+      line-height: 1.25;
       letter-spacing: -0.02em;
     }
     :where(h2) {
-      font-size: 1.5rem;
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1.33;
     }
     :where(h3) {
-      font-size: 1.25rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.5;
     }
     :where(h4) {
-      font-size: 1.125rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.5;
     }
     :where(h5) {
-      font-size: 1rem;
+      font-size: 1.125rem;
+      font-weight: 700;
+      line-height: 1.5;
     }
     :where(h6) {
-      font-size: var(--dry-text-sm);
+      font-size: 1.0625rem;
+      font-weight: 600;
+      line-height: 1.56;
+    }
+
+    @media (width >= 37.5rem) {
+      :where(h1) {
+        font-size: 3.25rem;
+      }
+      :where(h2) {
+        font-size: 2.5rem;
+      }
+      :where(h3) {
+        font-size: 1.625rem;
+      }
+      :where(h5) {
+        font-size: 1.1875rem;
+      }
+      :where(h6) {
+        font-size: 1.125rem;
+      }
+    }
+
+    @media (width >= 56.25rem) {
+      :where(h1) {
+        font-size: 3.625rem;
+      }
+      :where(h2) {
+        font-size: 2.75rem;
+      }
+      :where(h3) {
+        font-size: 1.875rem;
+      }
+      :where(h4) {
+        font-size: 1.5rem;
+      }
+    }
+
+    @media (width >= 75rem) {
+      :where(h1) {
+        font-size: 4rem;
+      }
+      :where(h2) {
+        font-size: 3rem;
+      }
+      :where(h3) {
+        font-size: 2rem;
+      }
     }
 
     :where(p) {
@@ -154,7 +209,7 @@
     }
 
     :where(img, svg, video, canvas) {
-      display: block;
+      display: inline-block;
       max-width: 100%;
     }
 

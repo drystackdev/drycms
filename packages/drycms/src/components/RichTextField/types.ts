@@ -1,4 +1,4 @@
-import type { LexicalEditor } from "lexical";
+import type { EditorView } from "prosemirror-view";
 import type { RefObject } from "preact";
 import type { FileManagerSource } from "../file-manager-types.js";
 
@@ -12,7 +12,7 @@ export type TextAlign = "left" | "center" | "right" | "justify";
 
 /** The block-level element a top-level selection currently sits in -
  * `"paragraph"` is the default `<p>`; `"h2"`-`"h6"` and `"quote"` are the
- * other blocks `./block-nodes.ts` defines nodes for. */
+ * other blocks `./schema.ts` defines nodes for. */
 export type BlockType = "paragraph" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote";
 
 export interface ActiveFormat {
@@ -43,6 +43,11 @@ export interface ToolbarState {
   clearable: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Whether the selection has any actual text in it - `false` for e.g. a
+   * `NodeSelection` around the image node, which can't carry inline marks
+   * at all. Disables bold/italic/underline rather than leaving them
+   * clickable no-ops. */
+  inlineEditable: boolean;
 }
 
 /** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)
@@ -51,8 +56,12 @@ export interface ToolbarState {
  * need the full live state plus what it takes to run editor commands. Lives
  * here rather than `toolbar-buttons.ts` so that file can import the menu
  * components without a cycle (they only need this type back). */
+/** Matches the `sm`/`md`/`lg`/`xl` scale every other icon-only button in
+ * drycms uses (see `class="ghost icon <size>"` throughout the app). */
+export type ToolbarIconSize = "sm" | "md" | "lg" | "xl";
+
 export interface ToolbarCustomProps {
-  editorRef: RefObject<LexicalEditor | null>;
+  viewRef: RefObject<EditorView | null>;
   contentRef: RefObject<HTMLElement>;
   state: ToolbarState;
   disabled?: boolean;
@@ -60,6 +69,11 @@ export interface ToolbarCustomProps {
    * only that item reads this; every other custom item ignores it. Absent
    * entirely hides that button (see `requiresSource` in `toolbar-buttons.ts`). */
   source?: FileManagerSource;
+  /** Applied to this item's own trigger button (`class="ghost icon
+   * <iconSize>"`), same as every plain `ToolbarButton` - `toolbar.tsx`
+   * always resolves and passes this down, so custom items never need their
+   * own default. */
+  iconSize: ToolbarIconSize;
 }
 
 /** Shared by `useRichTextEditor.ts` (reading `ElementNode.getFormatType()`)
