@@ -676,6 +676,16 @@
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
 
+      /* The OverlayScrollbars wrapper (see comment on `listRef` in
+       * Select.tsx) puts the `<ul>` one level below this div instead of on
+       * it, so the UA's default list padding/markers never get reset by the
+       * rest of this rule - reset them here explicitly. */
+      & ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
       /* `top` (from `useFloatingPosition`) already points at the anchor's
        * top edge when flipped up - shift the box up by its own height so it
        * grows upward from that point instead of downward. */

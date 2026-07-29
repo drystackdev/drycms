@@ -31,6 +31,35 @@ function dataDir(typeName: string): string {
   return `data/${safePathSegment(typeName)}`;
 }
 
+function versionPath(typeName: string): string {
+  return `.index/${safePathSegment(typeName)}._version.json`;
+}
+
+/** `typeName`'s current data version (see `status/build-cache.md`) - `0` if
+ * the resource has never been mutated through this adapter yet (no
+ * `.index/<type>._version.json` written). Distinct from
+ * `ContentTypeDefinition.version` (schema version), which lives in
+ * `content-types/*.json`, not here. */
+export async function getDataVersion(driver: FileDriver, typeName: string): Promise<number> {
+  const current = await driver.readJson<{ version: number }>(versionPath(typeName));
+  return current?.version ?? 0;
+}
+
+/** Increments `typeName`'s data version by 1 and returns the new value -
+ * same `withLock` pattern as `nextId`, so concurrent bumps from this same
+ * process never race and lose an increment. Callers (`entries-file.ts`) run
+ * this LAST inside the same `driver.transaction()` as the mutation it's
+ * versioning, so on `github`/`gitlab` the bump lands in the same commit as
+ * the data change - never one without the other. */
+export async function bumpDataVersion(driver: FileDriver, typeName: string): Promise<number> {
+  return driver.withLock(`version:${typeName}`, async () => {
+    const current = await driver.readJson<{ version: number }>(versionPath(typeName));
+    const next = (current?.version ?? 0) + 1;
+    await driver.writeJson(versionPath(typeName), { version: next });
+    return next;
+  });
+}
+
 /** Core resilience principle (see the plan doc): the record file under
  * `data/<type>/<id>.json` is the only source of truth. Every `.index/*`
  * file below is a derived, rebuildable cache - if it's ever missing or

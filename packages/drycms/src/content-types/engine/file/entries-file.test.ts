@@ -331,4 +331,51 @@ describe("createFileContentEntryEngineAdapter", () => {
     expect(updated.id).toBe(created.id);
     expect(updated.value.tagline).toBe("Updated");
   });
+
+  it("bumps the resource's data version on create/update/delete, starting at 0", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const role = allTypes.find((t) => t.name === "role")!;
+
+    expect(await entries.getResourceVersion(role)).toBe(0);
+
+    const created = await entries.createEntry(role, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
+    expect(await entries.getResourceVersion(role)).toBe(1);
+
+    await entries.updateEntry(role, allTypes, created.id, { name: "Editor 2", isSuperAdmin: false, permissions: [] });
+    expect(await entries.getResourceVersion(role)).toBe(2);
+
+    await entries.deleteEntry(role, allTypes, created.id);
+    expect(await entries.getResourceVersion(role)).toBe(3);
+  });
+
+  it("does not bump the data version when create fails validation (rolled back in the same transaction)", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    expect(await entries.getResourceVersion(user)).toBe(0);
+
+    await entries.createEntry(user, allTypes, { name: "Ada", email: "dup@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue });
+    expect(await entries.getResourceVersion(user)).toBe(1);
+
+    await expect(
+      entries.createEntry(user, allTypes, { name: "Grace", email: "dup@example.com", password: { hasExisting: false, new: "x" } satisfies MaskedValue }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+    expect(await entries.getResourceVersion(user)).toBe(1);
+  });
+
+  it("tracks each resource's data version independently", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const role = allTypes.find((t) => t.name === "role")!;
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    await entries.createEntry(role, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
+    expect(await entries.getResourceVersion(role)).toBe(1);
+    expect(await entries.getResourceVersion(user)).toBe(0);
+  });
 });

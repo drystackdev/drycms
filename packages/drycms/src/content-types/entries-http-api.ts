@@ -18,6 +18,18 @@ export interface EntryListResult {
   total: number;
 }
 
+/**
+ * The data-version protocol's response envelope (see `status/build-cache.md`)
+ * - `changed: false` means the caller's `ifVersion` still matches the
+ * server's, so `data` is omitted entirely (nothing to update); `changed:
+ * true` always carries fresh `data` alongside the new `version`.
+ */
+export interface VersionedResult<T> {
+  changed: boolean;
+  version: number;
+  data?: T;
+}
+
 export class ContentEntriesApiError extends Error {
   /** Field name (dotted path for nested `flatten` fields) -> message, set
    * only for a 422 validation failure - see `routes/content-entries.ts`. */
@@ -47,6 +59,10 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
  * mirroring `content-types/http-api.ts`'s role for the schema API - one
  * instance is scoped to a single content type's own entries (`typeSlug` is
  * `ContentTypeDefinition.name`, e.g. `"user"`). */
+function versionHeaders(ifVersion?: number): Record<string, string> | undefined {
+  return ifVersion === undefined ? undefined : { "X-Data-Version": String(ifVersion) };
+}
+
 export function createContentEntriesApi(baseUrl: string, typeSlug: string) {
   const typeUrl = `${baseUrl}/${encodeURIComponent(typeSlug)}`;
 
@@ -115,7 +131,42 @@ export function createContentEntriesApi(baseUrl: string, typeSlug: string) {
     await assertOk(res, "Failed to delete entry.");
   }
 
-  return { list, get, getSingleton, create, update, saveSingleton, remove };
+  /** `useFetch()`-oriented counterpart to `list()` - same query, but carries
+   * `ifVersion` as `X-Data-Version` and returns the `changed`/`version`
+   * envelope instead of the bare result (see `status/build-cache.md`). */
+  async function listVersioned(query: EntryListQuery, ifVersion?: number, signal?: AbortSignal): Promise<VersionedResult<EntryListResult>> {
+    const params = new URLSearchParams();
+    params.set("page", String(query.page));
+    params.set("pageSize", String(query.pageSize));
+    if (query.sortField) params.set("sortField", query.sortField);
+    if (query.sortDir) params.set("sortDir", query.sortDir);
+    if (query.search) params.set("search", query.search);
+    if (query.searchableFields && query.searchableFields.length > 0) {
+      params.set("searchableFields", query.searchableFields.join(","));
+    }
+    const res = await fetch(`${typeUrl}?${params.toString()}`, { headers: versionHeaders(ifVersion), signal });
+    await assertOk(res, "Failed to list entries.");
+    const body = await res.json();
+    return body.changed ? { changed: true, version: body.version, data: { rows: body.rows, total: body.total } } : { changed: false, version: body.version };
+  }
+
+  /** `useFetch()`-oriented counterpart to `get()`. */
+  async function getVersioned(id: string, ifVersion?: number, signal?: AbortSignal): Promise<VersionedResult<EntrySummary>> {
+    const res = await fetch(`${typeUrl}/${encodeURIComponent(id)}`, { headers: versionHeaders(ifVersion), signal });
+    await assertOk(res, "Failed to load entry.");
+    const body = await res.json();
+    return body.changed ? { changed: true, version: body.version, data: body.entry } : { changed: false, version: body.version };
+  }
+
+  /** `useFetch()`-oriented counterpart to `getSingleton()`. */
+  async function getSingletonVersioned(ifVersion?: number, signal?: AbortSignal): Promise<VersionedResult<EntrySummary | null>> {
+    const res = await fetch(typeUrl, { headers: versionHeaders(ifVersion), signal });
+    await assertOk(res, "Failed to load entry.");
+    const body = await res.json();
+    return body.changed ? { changed: true, version: body.version, data: body.entry } : { changed: false, version: body.version };
+  }
+
+  return { list, get, getSingleton, create, update, saveSingleton, remove, listVersioned, getVersioned, getSingletonVersioned };
 }
 
 export type ContentEntriesApi = ReturnType<typeof createContentEntriesApi>;

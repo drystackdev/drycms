@@ -3,6 +3,7 @@ import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
 import SidebarToggle from "./SidebarToggle.js";
+import SyncIndicator from "./SyncIndicator.js";
 import ThemeToggle from "./ThemeToggle.js";
 import Toaster from "./Toast.js";
 import type { IconName } from "./icons.js";
@@ -256,6 +257,7 @@ export default function DryLayout({ children }: Props) {
         <header class="topbar">
           <SidebarToggle />
           <span class="spacer"></span>
+          <SyncIndicator />
           <ThemeToggle />
         </header>
 

@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { JSX } from "preact/jsx-runtime";
 import { contentEngine, path } from "virtual:drycms/config";
@@ -13,11 +13,12 @@ import {
   type EntryFieldNode,
   type QueryableColumn,
 } from "../content-types/engine/entry-tree.js";
-import { createContentEntriesApi } from "../content-types/entries-http-api.js";
+import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";
 import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
+import { useFetch } from "../hooks/useFetch.js";
 import ContentEntryEditor from "./ContentEntryEditor.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -302,10 +303,34 @@ function ContentEntryListCollection({
     defaultVisible.filter((key) => queryableFieldNames.has(key)),
   );
   const [visibleKeys, setVisibleKeys] = useState<string[]>(defaultVisible);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Cache key must cover everything that affects the response (mục 24) - the
+  // `useClientSearch` mode always fetches the same unfiltered/unpaginated
+  // query, so it gets one fixed key; the server-query mode's key mirrors
+  // every param the query below actually sends.
+  const listCacheKey = useClientSearch
+    ? `entries:${type.name}:all`
+    : `entries:${type.name}:list:${page}:${sort?.key ?? ""}:${sort?.direction ?? ""}:${search}:${searchableFields.join(",")}`;
+  const listFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) =>
+      entriesApi.listVersioned(
+        // See `useClientSearch` above - `engine: "file"` fetches once,
+        // unfiltered/unsorted/unpaginated, and lets `DataTable`'s own
+        // client-side mode (triggered below by omitting `serverQuery`) do
+        // the rest in memory.
+        useClientSearch
+          ? { page: 0, pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE }
+          : { page, pageSize: DEFAULT_PAGE_SIZE, sortField: sort?.key, sortDir: sort?.direction, search: search || undefined, searchableFields },
+        ifVersion,
+        signal,
+      ),
+    [entriesApi, page, sort, search, searchableFields],
+  );
+  const { data: listData, loading, error: listError } = useFetch<EntryListResult>(listCacheKey, listFetcher);
+  const rows: Row[] = useMemo(() => (listData?.rows ?? []).map((r) => ({ id: r.id, ...flattenRowValue(r.value) })), [listData]);
+  const total = listData?.total ?? 0;
+  const loadError = listError ? (listError instanceof Error ? listError.message : "Failed to load entries.") : null;
+
   // fieldName -> target id -> resolved label. Only fetched for relation
   // columns the user actually has visible (`visibleKeys`) - `entriesApi.get`
   // is one request per distinct id, not worth paying for a hidden column.
@@ -387,44 +412,6 @@ function ContentEntryListCollection({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `relationLabels` deliberately excluded: it's read to skip refetching, not to retrigger this effect (that update comes back through `rows`/`rowRelationValues`/`visibleKeys` instead).
   }, [rows, relationColumns, relationTargets, visibleKeys, rowRelationValues]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    entriesApi
-      .list(
-        // See `useClientSearch` above - `engine: "file"` fetches once,
-        // unfiltered/unsorted/unpaginated, and lets `DataTable`'s own
-        // client-side mode (triggered below by omitting `serverQuery`) do
-        // the rest in memory.
-        useClientSearch
-          ? { page: 0, pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE }
-          : {
-              page,
-              pageSize: DEFAULT_PAGE_SIZE,
-              sortField: sort?.key,
-              sortDir: sort?.direction,
-              search: search || undefined,
-              searchableFields,
-            },
-      )
-      .then((result) => {
-        if (cancelled) return;
-        setRows(result.rows.map((r) => ({ id: r.id, ...flattenRowValue(r.value) })));
-        setTotal(result.total);
-        setLoadError(null);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setLoadError(error instanceof Error ? error.message : "Failed to load entries.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [entriesApi, page, sort, search, searchableFields]);
 
   const isPinned = pinnedContentTypeSlugs.has(type.name);
 

@@ -7,6 +7,8 @@ import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type
 import { mapWithConcurrency } from "../../../storage/util.js";
 import { createFileDriver, safePathSegment, type FileDriver } from "./file-driver.js";
 import {
+  bumpDataVersion,
+  getDataVersion,
   nextId,
   patchReverseIndex,
   readReverseIndexMap,
@@ -540,17 +542,37 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
     listEntries: (type, allTypes, query) => listEntries(driver, type, allTypes, query),
     getEntry: (type, allTypes, id) => getFileEntry(driver, type, allTypes, id),
     // Everything a create/update/delete touches - the record itself, its
-    // unique-index/reverse-index entries, and any relation-mirror writes it
-    // makes on OTHER records - lands as one commit (see
-    // `FileDriver.transaction()`).
-    createEntry: (type, allTypes, value) => driver.transaction((tx) => createFileEntry(tx, type, allTypes, value)),
-    updateEntry: (type, allTypes, id, value) => driver.transaction((tx) => updateFileEntry(tx, type, allTypes, id, value)),
-    deleteEntry: (type, allTypes, id) => driver.transaction((tx) => deleteFileEntry(tx, type, allTypes, id)),
+    // unique-index/reverse-index entries, any relation-mirror writes it
+    // makes on OTHER records, and the data-version bump - lands as one
+    // commit (see `FileDriver.transaction()`), so a version bump can never
+    // be observed without its data change or vice versa.
+    createEntry: (type, allTypes, value) =>
+      driver.transaction(async (tx) => {
+        const row = await createFileEntry(tx, type, allTypes, value);
+        await bumpDataVersion(tx, type.name);
+        return row;
+      }),
+    updateEntry: (type, allTypes, id, value) =>
+      driver.transaction(async (tx) => {
+        const row = await updateFileEntry(tx, type, allTypes, id, value);
+        await bumpDataVersion(tx, type.name);
+        return row;
+      }),
+    deleteEntry: (type, allTypes, id) =>
+      driver.transaction(async (tx) => {
+        await deleteFileEntry(tx, type, allTypes, id);
+        await bumpDataVersion(tx, type.name);
+      }),
     getSingletonEntry: (type, allTypes) => getFileEntry(driver, type, allTypes, SINGLETON_ID),
     saveSingletonEntry: (type, allTypes, value) =>
       driver.transaction(async (tx) => {
         const existing = await readRecord(tx, type.name, SINGLETON_ID);
-        return existing ? updateFileEntry(tx, type, allTypes, SINGLETON_ID, value) : createFileEntryWithId(tx, type, allTypes, SINGLETON_ID, value);
+        const row = existing
+          ? await updateFileEntry(tx, type, allTypes, SINGLETON_ID, value)
+          : await createFileEntryWithId(tx, type, allTypes, SINGLETON_ID, value);
+        await bumpDataVersion(tx, type.name);
+        return row;
       }),
+    getResourceVersion: (type) => getDataVersion(driver, type.name),
   };
 }

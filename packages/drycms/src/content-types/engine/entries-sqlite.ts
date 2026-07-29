@@ -237,10 +237,45 @@ function assertValid(nodes: EntryFieldNode[], value: EntryValue): void {
   }
 }
 
+/** `resource`'s current data version (see `status/build-cache.md`) - `0` if
+ * `_versions` has no row for it yet. Distinct from
+ * `ContentTypeDefinition.version` (schema version, tracked in `metadata`,
+ * the schema-engine's own table - unrelated to this one). */
+function getResourceVersion(handle: SqliteHandle, resource: string): number {
+  const rows = handle.all<{ version: number }>('SELECT "version" FROM "_versions" WHERE "resource" = ?;', [resource]);
+  return rows[0]?.version ?? 0;
+}
+
+/** Increments `resource`'s data version by 1 and returns the new value.
+ * Callers run this as the LAST statement inside the same `BEGIN`/`COMMIT`
+ * transaction as the mutation it's versioning, so a version bump can never
+ * commit without its data change or vice versa (see `status/
+ * build-cache.md`'s "same transaction" requirement). */
+function bumpResourceVersion(handle: SqliteHandle, resource: string): number {
+  const next = getResourceVersion(handle, resource) + 1;
+  handle.run(
+    'INSERT INTO "_versions" ("resource","version","updated_at") VALUES (?,?,?) ' +
+      'ON CONFLICT("resource") DO UPDATE SET "version" = excluded."version", "updated_at" = excluded."updated_at";',
+    [resource, next, Date.now()],
+  );
+  return next;
+}
+
 export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteContentOption): ContentEntryEngineAdapter {
   let handlePromise: Promise<SqliteHandle> | undefined;
   async function getHandle(): Promise<SqliteHandle> {
-    if (!handlePromise) handlePromise = resolveSqliteDriver(option.file);
+    if (!handlePromise) {
+      handlePromise = resolveSqliteDriver(option.file).then((handle) => {
+        handle.exec(
+          `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+            `  "resource" TEXT PRIMARY KEY,\n` +
+            `  "version" INTEGER NOT NULL,\n` +
+            `  "updated_at" INTEGER NOT NULL\n` +
+            `);`,
+        );
+        return handle;
+      });
+    }
     return handlePromise;
   }
 
@@ -312,6 +347,12 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
     const columns = Object.keys(rowData);
     let id: number;
+    // The insert, every child-table write, and the data-version bump all run
+    // inside one transaction (see `status/build-cache.md`'s "same
+    // transaction" requirement) - a crash/error partway rolls back the whole
+    // thing, so `_versions` can never claim a version whose data didn't
+    // actually land.
+    handle.exec("BEGIN IMMEDIATE;");
     try {
       if (columns.length === 0) {
         const result = handle.run(`INSERT INTO ${quoteIdent(type.name)} DEFAULT VALUES;`);
@@ -322,11 +363,14 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
         const result = handle.run(`INSERT INTO ${quoteIdent(type.name)} (${columnList}) VALUES (${placeholders});`, columns.map((c) => rowData[c]));
         id = result.lastInsertRowid!;
       }
+      await writeChildFields(handle, nodes, id, value);
+      bumpResourceVersion(handle, type.name);
+      handle.exec("COMMIT;");
     } catch (error) {
+      handle.exec("ROLLBACK;");
       throw translateUniqueViolation(error, queryable) ?? error;
     }
 
-    await writeChildFields(handle, nodes, id, value);
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -349,24 +393,36 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
 
     const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "update");
     const columns = Object.keys(rowData);
-    if (columns.length > 0) {
-      try {
+    handle.exec("BEGIN IMMEDIATE;");
+    try {
+      if (columns.length > 0) {
         const setSql = columns.map((c) => `${quoteIdent(c)} = ?`).join(",");
         handle.run(`UPDATE ${quoteIdent(type.name)} SET ${setSql} WHERE "id" = ?;`, [...columns.map((c) => rowData[c]), id]);
-      } catch (error) {
-        throw translateUniqueViolation(error, queryable) ?? error;
       }
+      await writeChildFields(handle, nodes, id, value);
+      bumpResourceVersion(handle, type.name);
+      handle.exec("COMMIT;");
+    } catch (error) {
+      handle.exec("ROLLBACK;");
+      throw translateUniqueViolation(error, queryable) ?? error;
     }
 
-    await writeChildFields(handle, nodes, id, value);
     return (await getEntry(type, allTypes, id))!;
   }
 
   async function deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
     const handle = await getHandle();
     const nodes = buildEntryFieldTree(type, allTypes);
-    await deleteChildFields(handle, nodes, id);
-    handle.run(`DELETE FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    handle.exec("BEGIN IMMEDIATE;");
+    try {
+      await deleteChildFields(handle, nodes, id);
+      handle.run(`DELETE FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+      bumpResourceVersion(handle, type.name);
+      handle.exec("COMMIT;");
+    } catch (error) {
+      handle.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   async function getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null> {
@@ -388,5 +444,17 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     return existingId === null ? createEntry(type, allTypes, value) : updateEntry(type, allTypes, existingId, value);
   }
 
-  return { listEntries, getEntry, createEntry, updateEntry, deleteEntry, getSingletonEntry, saveSingletonEntry };
+  return {
+    listEntries,
+    getEntry,
+    createEntry,
+    updateEntry,
+    deleteEntry,
+    getSingletonEntry,
+    saveSingletonEntry,
+    getResourceVersion: async (type) => {
+      const handle = await getHandle();
+      return getResourceVersion(handle, type.name);
+    },
+  };
 }

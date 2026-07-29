@@ -61,4 +61,12 @@ export interface ContentEntryEngineAdapter {
   deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void>;
   getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null>;
   saveSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow>;
+  /**
+   * The resource's current *data* version (see `status/build-cache.md`) -
+   * bumped by `createEntry`/`updateEntry`/`deleteEntry`/`saveSingletonEntry`,
+   * distinct from `ContentTypeDefinition.version` (schema/optimistic-
+   * concurrency version, unrelated). `0` if the resource has never been
+   * mutated through this adapter yet.
+   */
+  getResourceVersion(type: ContentTypeDefinition): Promise<number>;
 }

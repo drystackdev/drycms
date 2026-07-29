@@ -83,6 +83,16 @@ function decodeIdOrThrow(hashedId: string): number {
   return id;
 }
 
+/** The data-version protocol (see `status/build-cache.md`) - `undefined` if
+ * the client sent nothing or an unparseable value, which the GET handler
+ * treats the same as "no cached version, always send the full payload". */
+function parseIfVersion(context: APIContext): number | undefined {
+  const header = context.request.headers.get("X-Data-Version");
+  if (header === null) return undefined;
+  const n = Number(header);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
 /** A `relation` field's target id(s) are just as sequentially-guessable as
  * an entry's own `id` - hashed/unhashed here, at the same HTTP boundary,
  * recursing into `flatten`/`component-repeat` fields (which can themselves
@@ -157,15 +167,31 @@ export const GET: APIRoute = async (context) => {
     const entryAdapter = getEntryAdapter(context);
     const nodes = buildEntryFieldTree(type, allTypes);
 
+    // Data-version protocol (see `status/build-cache.md`, mục 9-11): a
+    // client that already has this resource cached sends back the version it
+    // last saw via `X-Data-Version`. If it still matches, skip the real
+    // query entirely (not just the response body) and tell the client
+    // nothing changed; otherwise run the query as normal and include the
+    // current version alongside it.
+    const version = await entryAdapter.getResourceVersion(type);
+    const ifVersion = parseIfVersion(context);
+    if (ifVersion !== undefined && ifVersion === version) {
+      return jsonResponse({ changed: false, version });
+    }
+
     if (type.kind === "singleton") {
       const row = await entryAdapter.getSingletonEntry(type, allTypes);
-      return jsonResponse({ entry: row ? { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } : null });
+      return jsonResponse({
+        changed: true,
+        version,
+        entry: row ? { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } : null,
+      });
     }
 
     if (hashedId) {
       const row = await entryAdapter.getEntry(type, allTypes, decodeIdOrThrow(hashedId));
       if (!row) throw new ContentEntryError("not_found", `Entry "${hashedId}" not found.`);
-      return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
+      return jsonResponse({ changed: true, version, entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
     }
 
     const url = new URL(context.request.url);
@@ -187,6 +213,8 @@ export const GET: APIRoute = async (context) => {
       searchableFields,
     });
     return jsonResponse({
+      changed: true,
+      version,
       rows: page1.rows.map((row) => ({ id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) })),
       total: page1.total,
     });

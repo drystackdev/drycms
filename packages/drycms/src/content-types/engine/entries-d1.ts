@@ -230,6 +230,54 @@ export function createD1ContentEntryEngineAdapter(
   }
   const db: D1Database = maybeDb;
 
+  // Same `_versions` table/shape as `entries-sqlite.ts`, bootstrapped lazily
+  // on first use rather than eagerly (mirrors `d1.ts`'s own
+  // `ensureBootstrap`, since a D1 binding is only resolvable per-request).
+  let versionsBootstrapped: Promise<void> | undefined;
+  async function ensureVersionsTable(): Promise<void> {
+    versionsBootstrapped ??= db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+          `  "resource" TEXT PRIMARY KEY,\n` +
+          `  "version" INTEGER NOT NULL,\n` +
+          `  "updated_at" INTEGER NOT NULL\n` +
+          `);`,
+      )
+      .run()
+      .then(() => undefined);
+    return versionsBootstrapped;
+  }
+
+  /** `resource`'s current data version (see `status/build-cache.md`) - `0`
+   * if `_versions` has no row for it yet. Distinct from
+   * `ContentTypeDefinition.version` (schema version, tracked in `metadata`
+   * by the schema engine - unrelated to this one). */
+  async function getResourceVersionValue(resource: string): Promise<number> {
+    await ensureVersionsTable();
+    const rows = await dbAll<{ version: number }>(db, 'SELECT "version" FROM "_versions" WHERE "resource" = ?;', [resource]);
+    return rows[0]?.version ?? 0;
+  }
+
+  /** Increments `resource`'s data version by 1. Unlike `entries-sqlite.ts`,
+   * this can't share a real `BEGIN`/`COMMIT` transaction with the data write
+   * that precedes it - D1 has no cross-statement transaction the way local
+   * SQLite does (see `d1.ts`'s identical caveat on its own `metadata`
+   * version bump). Callers `await` this only AFTER every data/child-table
+   * write for the mutation has already succeeded, so the ordering guarantee
+   * is "version never bumps without its data having landed first" - not
+   * full atomicity; a crash between the data write and this call leaves a
+   * stale (not wrong) version, self-healing on the resource's next edit. */
+  async function bumpResourceVersion(resource: string): Promise<void> {
+    await ensureVersionsTable();
+    const next = (await getResourceVersionValue(resource)) + 1;
+    await dbRun(
+      db,
+      'INSERT INTO "_versions" ("resource","version","updated_at") VALUES (?,?,?) ' +
+        'ON CONFLICT("resource") DO UPDATE SET "version" = excluded."version", "updated_at" = excluded."updated_at";',
+      [resource, next, Date.now()],
+    );
+  }
+
   async function listEntries(
     type: ContentTypeDefinition,
     allTypes: ContentTypeDefinition[],
@@ -310,6 +358,7 @@ export function createD1ContentEntryEngineAdapter(
     }
 
     await writeChildFields(db, nodes, id, value);
+    await bumpResourceVersion(type.name);
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -341,6 +390,7 @@ export function createD1ContentEntryEngineAdapter(
     }
 
     await writeChildFields(db, nodes, id, value);
+    await bumpResourceVersion(type.name);
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -348,6 +398,7 @@ export function createD1ContentEntryEngineAdapter(
     const nodes = buildEntryFieldTree(type, allTypes);
     await deleteChildFields(db, nodes, id);
     await dbRun(db, `DELETE FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    await bumpResourceVersion(type.name);
   }
 
   async function getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null> {
@@ -367,5 +418,14 @@ export function createD1ContentEntryEngineAdapter(
     return existingId === null ? createEntry(type, allTypes, value) : updateEntry(type, allTypes, existingId, value);
   }
 
-  return { listEntries, getEntry, createEntry, updateEntry, deleteEntry, getSingletonEntry, saveSingletonEntry };
+  return {
+    listEntries,
+    getEntry,
+    createEntry,
+    updateEntry,
+    deleteEntry,
+    getSingletonEntry,
+    saveSingletonEntry,
+    getResourceVersion: (type) => getResourceVersionValue(type.name),
+  };
 }
