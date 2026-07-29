@@ -90,65 +90,6 @@ function dropTitleIndexStatement(tableName: string): Statement {
 }
 
 // ---------------------------------------------------------------------------
-// FTS5
-// ---------------------------------------------------------------------------
-
-function ftsTableName(tableName: string): string {
-  return `${tableName}_fts`;
-}
-
-function ftsTriggerNames(tableName: string): { ai: string; au: string; ad: string } {
-  const base = ftsTableName(tableName);
-  return { ai: `${base}_ai`, au: `${base}_au`, ad: `${base}_ad` };
-}
-
-function dropFtsStatements(tableName: string): Statement[] {
-  const { ai, au, ad } = ftsTriggerNames(tableName);
-  const fts = ftsTableName(tableName);
-  return [
-    { sql: `DROP TRIGGER IF EXISTS ${quoteIdent(ai)};`, description: `Drop FTS insert trigger for ${tableName}` },
-    { sql: `DROP TRIGGER IF EXISTS ${quoteIdent(au)};`, description: `Drop FTS update trigger for ${tableName}` },
-    { sql: `DROP TRIGGER IF EXISTS ${quoteIdent(ad)};`, description: `Drop FTS delete trigger for ${tableName}` },
-    { sql: `DROP TABLE IF EXISTS ${quoteIdent(fts)};`, description: `Drop FTS table for ${tableName}` },
-  ];
-}
-
-function createFtsStatements(tableName: string, ftsColumns: string[]): Statement[] {
-  if (ftsColumns.length === 0) return [];
-  const fts = ftsTableName(tableName);
-  const { ai, au, ad } = ftsTriggerNames(tableName);
-  const colList = ftsColumns.map(quoteIdent).join(", ");
-  const newColList = ftsColumns.map((c) => `new.${quoteIdent(c)}`).join(", ");
-  const oldColList = ftsColumns.map((c) => `old.${quoteIdent(c)}`).join(", ");
-
-  return [
-    {
-      sql: `CREATE VIRTUAL TABLE ${quoteIdent(fts)} USING fts5(${colList}, content=${toSqlLiteral(tableName)}, content_rowid='id');`,
-      description: `Create FTS table for ${tableName}`,
-    },
-    {
-      sql: `INSERT INTO ${quoteIdent(fts)}(rowid, ${colList}) SELECT "id", ${colList} FROM ${quoteIdent(tableName)};`,
-      description: `Backfill FTS table for ${tableName}`,
-    },
-    {
-      sql: `CREATE TRIGGER ${quoteIdent(ai)} AFTER INSERT ON ${quoteIdent(tableName)} BEGIN INSERT INTO ${quoteIdent(fts)}(rowid, ${colList}) VALUES (new."id", ${newColList}); END;`,
-      description: `Create FTS insert trigger for ${tableName}`,
-    },
-    {
-      sql: `CREATE TRIGGER ${quoteIdent(ad)} AFTER DELETE ON ${quoteIdent(tableName)} BEGIN INSERT INTO ${quoteIdent(fts)}(${quoteIdent(fts)}, rowid, ${colList}) VALUES ('delete', old."id", ${oldColList}); END;`,
-      description: `Create FTS delete trigger for ${tableName}`,
-    },
-    {
-      sql:
-        `CREATE TRIGGER ${quoteIdent(au)} AFTER UPDATE ON ${quoteIdent(tableName)} BEGIN ` +
-        `INSERT INTO ${quoteIdent(fts)}(${quoteIdent(fts)}, rowid, ${colList}) VALUES ('delete', old."id", ${oldColList}); ` +
-        `INSERT INTO ${quoteIdent(fts)}(rowid, ${colList}) VALUES (new."id", ${newColList}); END;`,
-      description: `Create FTS update trigger for ${tableName}`,
-    },
-  ];
-}
-
-// ---------------------------------------------------------------------------
 // CREATE TABLE
 // ---------------------------------------------------------------------------
 
@@ -181,16 +122,11 @@ function createTableStatements(node: TableNode): Statement[] {
     if (col.unique) statements.push(createUniqueIndexStatement(node.tableName, col));
   }
 
-  statements.push(...createFtsStatements(node.tableName, node.ftsColumns));
-
   return statements;
 }
 
-function dropTableStatements(tableName: string, hadFts: boolean): Statement[] {
-  const statements: Statement[] = [];
-  if (hadFts) statements.push(...dropFtsStatements(tableName));
-  statements.push({ sql: `DROP TABLE ${quoteIdent(tableName)};`, description: `Drop table ${tableName}` });
-  return statements;
+function dropTableStatements(tableName: string): Statement[] {
+  return [{ sql: `DROP TABLE ${quoteIdent(tableName)};`, description: `Drop table ${tableName}` }];
 }
 
 // ---------------------------------------------------------------------------
@@ -346,7 +282,6 @@ function recreateTableStatements(oldNode: TableNode, newNode: TableNode, diff: C
         `SELECT "id", ${selectExprs.join(", ")} FROM ${quoteIdent(oldNode.tableName)};`,
       description: `Copy data into rebuilt ${newNode.tableName}`,
     },
-    ...(oldNode.ftsColumns.length > 0 ? dropFtsStatements(oldNode.tableName) : []),
     { sql: `DROP TABLE ${quoteIdent(oldNode.tableName)};`, description: `Drop old ${oldNode.tableName}` },
     {
       sql: `ALTER TABLE ${quoteIdent(tmpName)} RENAME TO ${quoteIdent(newNode.tableName)};`,
@@ -366,7 +301,6 @@ function recreateTableStatements(oldNode: TableNode, newNode: TableNode, diff: C
   for (const col of rest) {
     if (col.unique) statements.push(createUniqueIndexStatement(newNode.tableName, col));
   }
-  statements.push(...createFtsStatements(newNode.tableName, newNode.ftsColumns));
 
   // No generated DDL declares a `FOREIGN KEY`/`REFERENCES` yet (`parent_id`/
   // `target_id` are plain `INTEGER` columns) - this currently verifies
@@ -394,7 +328,7 @@ function diffOneTable(oldNode: TableNode | undefined, newNode: TableNode | undef
     return {
       tableName: oldNode.tableName,
       action: "drop",
-      statements: dropTableStatements(oldNode.tableName, oldNode.ftsColumns.length > 0),
+      statements: dropTableStatements(oldNode.tableName),
       destructive: [{ kind: "drop-table", tableName: oldNode.tableName }],
     };
   }
@@ -403,7 +337,6 @@ function diffOneTable(oldNode: TableNode | undefined, newNode: TableNode | undef
   const old = oldNode!;
   const next = newNode!;
   const diff = diffColumns(old, next);
-  const ftsChanged = old.ftsColumns.join(",") !== next.ftsColumns.join(",");
 
   if (diff.retypes.length > 0) {
     return {
@@ -416,44 +349,22 @@ function diffOneTable(oldNode: TableNode | undefined, newNode: TableNode | undef
 
   const tableRenamed = old.tableName !== next.tableName;
   const hasChange = diff.adds.length > 0 || diff.drops.length > 0 || diff.renames.length > 0 || diff.uniqueToggles.length > 0;
-  if (!hasChange && !ftsChanged && !tableRenamed) {
+  if (!hasChange && !tableRenamed) {
     return { tableName: next.tableName, action: "noop", statements: [], destructive: [] };
   }
 
   const statements: Statement[] = [];
   if (tableRenamed) {
-    // Renamed FIRST - every statement after this (column ops, unique index
-    // names, FTS) targets the table under its FINAL name, so a later
-    // migration recomputing index/FTS names from the tree never mismatches
-    // what this one actually created.
-    if (old.ftsColumns.length > 0) statements.push(...dropFtsStatements(old.tableName));
     statements.push({
       sql: `ALTER TABLE ${quoteIdent(old.tableName)} RENAME TO ${quoteIdent(next.tableName)};`,
       description: `Rename table ${old.tableName} to ${next.tableName}`,
     });
-  } else if (ftsChanged && old.ftsColumns.length > 0) {
-    // Must drop BEFORE the column ops below - the old triggers reference
-    // the old column set (e.g. `new.title`), and SQLite validates trigger
-    // bodies against the post-drop schema during `ALTER TABLE ... DROP
-    // COLUMN`, so a stale trigger referencing a dropped column fails the
-    // whole statement.
-    statements.push(...dropFtsStatements(old.tableName));
   }
   statements.push(...alterTableStatements(next.tableName, diff));
-  // FTS5 doesn't support in-place column add/remove - whenever the eligible
-  // column set changes, rebuild it fully after the base table's own
-  // migration is applied (needs the FINAL column names/set).
-  if (ftsChanged) {
-    statements.push(...createFtsStatements(next.tableName, next.ftsColumns));
-  } else if (tableRenamed && old.ftsColumns.length > 0) {
-    // Not otherwise rebuilt this pass (column set unchanged) - just needs to
-    // exist again under the new table name (dropped above as part of rename).
-    statements.push(...createFtsStatements(next.tableName, next.ftsColumns));
-  }
 
   return {
     tableName: next.tableName,
-    action: hasChange || ftsChanged || tableRenamed ? "alter" : "noop",
+    action: hasChange || tableRenamed ? "alter" : "noop",
     statements,
     destructive: diff.destructive,
   };
@@ -543,7 +454,7 @@ export function planDelete(target: ContentTypeDefinition, allTypes: ContentTypeD
   const tree = resolveTableTree(target, allTypes);
   const tables: TableNode[] = [];
   collectTablesPostOrder(tree, tables);
-  return tables.flatMap((node) => dropTableStatements(node.tableName, node.ftsColumns.length > 0));
+  return tables.flatMap((node) => dropTableStatements(node.tableName));
 }
 
 /** Orchestration entry point: handles the component-cascade fan-out - saving

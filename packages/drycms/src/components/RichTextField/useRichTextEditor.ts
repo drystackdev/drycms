@@ -23,7 +23,7 @@ import { exportCleanHtml, importCleanHtml } from "./html.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
 import { createEmptyDoc, schema } from "./schema.js";
-import { getSelectedTable } from "./table.js";
+import { exitTableDownward, exitTableForward, getSelectedTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
 import { TableNodeView } from "./table-node-view.js";
 import { tableRowResizing } from "./table-row-resize.js";
@@ -201,8 +201,9 @@ export function useRichTextEditor({
           "Mod-y": redo,
           "Shift-Mod-z": redo,
           Enter: splitListItem(schema.nodes.list_item!),
-          Tab: chainCommands(sinkListItem(schema.nodes.list_item!), goToNextCell(1)),
+          Tab: chainCommands(sinkListItem(schema.nodes.list_item!), goToNextCell(1), exitTableForward()),
           "Shift-Tab": chainCommands(liftListItem(schema.nodes.list_item!), goToNextCell(-1)),
+          ArrowDown: exitTableDownward(),
         }),
         keymap(baseKeymap),
         // Both resize plugins before `tableEditing()` - ProseMirror tries each

@@ -45,4 +45,14 @@ export interface ContentEngineAdapter {
   applySave(next: ContentTypeDefinition, plan: AnySavePlan): Promise<ContentTypeDefinition>;
   /** Drops every child table, then the root table, then the metadata row. */
   deleteContentType(id: string): Promise<void>;
+  /**
+   * The content-types COLLECTION's data version (see `status/
+   * build-cache.md`) - one counter for the whole list, bumped by
+   * `applySave`/`deleteContentType` (and initial default-type seeding).
+   * Distinct from any individual `ContentTypeDefinition.version` (that
+   * one's per-definition schema/optimistic-concurrency version - mục 4.1
+   * explicitly says not to reuse it for caching). `0` if nothing has ever
+   * changed through this adapter yet.
+   */
+  getResourceVersion(): Promise<number>;
 }

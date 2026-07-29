@@ -25,7 +25,6 @@ function isReserved(name: string): boolean {
   const lower = name.toLowerCase();
   return (
     RESERVED_NAMES.has(lower) ||
-    lower.endsWith("_fts") ||
     lower === "__migrate_tmp" ||
     lower.startsWith("__rename_tmp_")
   );

@@ -19,18 +19,17 @@ afterAll(async () => {
   await rm(tempDirBox.path, { recursive: true, force: true });
 });
 
-function context(opts: { slug?: string; method?: string; body?: string }): APIContext {
+function context(opts: { slug?: string; method?: string; body?: string; ifVersion?: number }): APIContext {
   const url = new URL(`http://localhost/dry/api/content-types/${opts.slug ?? ""}`);
-  const request = new Request(url, {
-    method: opts.method ?? "GET",
-    body: opts.body,
-    headers: opts.body ? { "content-type": "application/json" } : undefined,
-  });
+  const headers: Record<string, string> = {};
+  if (opts.body) headers["content-type"] = "application/json";
+  if (opts.ifVersion !== undefined) headers["X-Data-Version"] = String(opts.ifVersion);
+  const request = new Request(url, { method: opts.method ?? "GET", body: opts.body, headers });
   return { params: { slug: opts.slug }, request, url } as unknown as APIContext;
 }
 
-async function get(id?: string) {
-  const response = await GET(context({ slug: id }));
+async function get(id?: string, ifVersion?: number) {
+  const response = await GET(context({ slug: id, ifVersion }));
   return { status: response.status, json: (await response.json()) as any };
 }
 
@@ -118,6 +117,25 @@ describe("GET /dry/api/content-types/[slug]", () => {
   it("decodes a percent-encoded id before looking it up", async () => {
     const { status } = await get(encodeURIComponent("weird id, with comma"));
     expect(status).toBe(404); // proves it decoded cleanly rather than 400ing
+  });
+});
+
+describe("GET /dry/api/content-types - data-version protocol", () => {
+  it("always includes `version`/`changed:true`, and a stale X-Data-Version after a create returns changed+data while a fresh one returns changed:false with no definitions", async () => {
+    const before = (await get()).json.version as number;
+    expect(typeof before).toBe("number");
+
+    const created = await post({ definition: type("custom-version-probe", "versionprobe") });
+    expect(created.status).toBe(200);
+
+    const stale = await get(undefined, before);
+    expect(stale.json.changed).toBe(true);
+    expect(stale.json.version).toBeGreaterThan(before);
+    expect(stale.json.definitions.some((d: ContentTypeDefinition) => d.name === "versionprobe")).toBe(true);
+
+    const fresh = await get(undefined, stale.json.version);
+    expect(fresh.json).toEqual({ changed: false, version: stale.json.version });
+    expect(fresh.json.definitions).toBeUndefined();
   });
 });
 

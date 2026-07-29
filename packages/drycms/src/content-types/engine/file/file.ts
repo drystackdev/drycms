@@ -6,8 +6,17 @@ import type { ContentEntryEngineAdapter } from "../entries-types.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../types.js";
 import { createFileContentEntryEngineAdapter } from "./entries-file.js";
 import { createFileDriver, safePathSegment, type FileDriver } from "./file-driver.js";
+import { bumpDataVersion, getDataVersion } from "./index-store.js";
 import { applyFileRewrite, planFileSave, type FileSavePlan } from "./migration-file.js";
 import { deleteFilePermissions, syncFilePermissions } from "./permissions-file.js";
+
+/** The whole content-types collection is one resource for versioning
+ * purposes (see `status/build-cache.md`) - `"__content-types__"` can never
+ * collide with a real content type name (`naming.ts`'s `CONTENT_TYPE_NAME_RE`
+ * forbids a leading underscore). Reuses `index-store.ts`'s generic
+ * `.index/<resource>._version.json` mechanism (same one entries use), just
+ * keyed by this fixed resource name instead of a content type's own. */
+const CONTENT_TYPES_RESOURCE = "__content-types__";
 
 function typePath(id: string): string {
   return `content-types/${safePathSegment(id)}.json`;
@@ -79,6 +88,7 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
           }
           const rebuilt = await rebuildAllRaw(tx);
           await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
+          await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
           return rebuilt;
         });
       }
@@ -155,6 +165,7 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
 
       const rebuilt = await rebuildAllRaw(tx);
       await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
+      await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
     });
 
     await syncFilePermissions(driver, getEntryAdapter(), await readAllRaw());
@@ -197,8 +208,16 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
 
       const rebuilt = await rebuildAllRaw(tx);
       await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
+      await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
     });
   }
 
-  return { listContentTypes, getContentType, planSave, applySave, deleteContentType };
+  return {
+    listContentTypes,
+    getContentType,
+    planSave,
+    applySave,
+    deleteContentType,
+    getResourceVersion: () => getDataVersion(driver, CONTENT_TYPES_RESOURCE),
+  };
 }

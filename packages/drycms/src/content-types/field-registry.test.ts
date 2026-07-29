@@ -43,11 +43,10 @@ describe("passwordFieldType", () => {
     expect(fieldTypes.password).toBe(passwordFieldType);
   });
 
-  it("resolves to a TEXT column, marked internal and never FTS-eligible", () => {
+  it("resolves to a TEXT column, marked internal", () => {
     expect(passwordFieldType.shape).toBe("column");
     expect(passwordFieldType.sqlType?.({})).toBe("TEXT");
     expect(passwordFieldType.internal).toBe(true);
-    expect(passwordFieldType.fts).toBe(false);
   });
 });
 
@@ -57,10 +56,9 @@ describe("secretKeyFieldType", () => {
     expect(secretKeyFieldType.internal).toBeUndefined();
   });
 
-  it("resolves to a TEXT column, never FTS-eligible", () => {
+  it("resolves to a TEXT column", () => {
     expect(secretKeyFieldType.shape).toBe("column");
     expect(secretKeyFieldType.sqlType?.({})).toBe("TEXT");
-    expect(secretKeyFieldType.fts).toBe(false);
   });
 });
 
@@ -70,10 +68,9 @@ describe("selectFieldType", () => {
     expect(selectFieldType.defaultConfig).toEqual({ options: [], multiple: false });
   });
 
-  it("resolves to a TEXT column, never FTS-eligible", () => {
+  it("resolves to a TEXT column", () => {
     expect(selectFieldType.shape).toBe("column");
     expect(selectFieldType.sqlType?.({})).toBe("TEXT");
-    expect(selectFieldType.fts).toBe(false);
   });
 
   it("declares an 'options' option-list config field and a 'multiple' toggle", () => {

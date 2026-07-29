@@ -35,7 +35,11 @@ test.describe("Content entries list - IndexedDB cache + background sync (status/
     // to actually land before reading it back below.
     await page.waitForTimeout(500);
 
-    const cached = await readCacheEntry(page, "entries:role:list:");
+    // Prefix only, not the full key: `ContentEntryList.tsx` uses a paginated
+    // `entries:role:list:...` key normally, but switches to one fixed
+    // `entries:role:all` key when `content.engine === "file"` (see
+    // `useClientSearch` there) - this test should pass under either.
+    const cached = await readCacheEntry(page, "entries:role:");
     expect(cached).not.toBeNull();
     expect(typeof cached!.version).toBe("number");
 

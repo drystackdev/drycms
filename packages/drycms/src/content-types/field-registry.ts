@@ -48,13 +48,6 @@ export interface FieldTypeDefinition<V = unknown> {
   sqlType?: (config: Record<string, unknown>) => SqlColumnType;
   serialize?: (value: V) => unknown;
   deserialize?: (raw: unknown) => V;
-  /**
-   * Whether a `column`-shaped instance of this type should be folded into
-   * its table's FTS5 index. Defaults to `sqlType(config) === 'TEXT'` when
-   * omitted - true for `text` by that default; `date`/`image` are both TEXT
-   * but not prose, so they override to `false`.
-   */
-  fts?: boolean | ((config: unknown) => boolean);
   /** Drives the "Add Field" dialog's per-type settings form: one shared
    * form component renders these descriptors (via `CheckField`/`TextField`/
    * `NumberField`/`Select`) instead of hand-building a bespoke settings
@@ -106,12 +99,6 @@ const ITEM_COUNT_VALIDATION: SettingDescriptor[] = [
   { key: "min", label: "Min items", widget: "number" },
   { key: "max", label: "Max items", widget: "number" },
 ];
-
-export function resolveFts(def: FieldTypeDefinition, config: Record<string, unknown>): boolean {
-  if (typeof def.fts === "function") return def.fts(config);
-  if (typeof def.fts === "boolean") return def.fts;
-  return def.sqlType?.(config) === "TEXT";
-}
 
 export const textFieldType: FieldTypeDefinition<string> = {
   key: "text",
@@ -196,7 +183,6 @@ export const dateFieldType: FieldTypeDefinition<Date> = {
   // round-tripped through JSON (see `migration.ts`'s `defaultLiteralFor`).
   serialize: (value) => (value instanceof Date ? value : new Date(value)).toISOString(),
   deserialize: (raw) => new Date(raw as string),
-  fts: false,
   configFields: [
     {
       key: "mode",
@@ -219,7 +205,6 @@ export const imageFieldType: FieldTypeDefinition<string> = {
   shape: "column",
   Editor: ImageField,
   sqlType: () => "TEXT",
-  fts: false,
   // `isAvatar` only affects read-only display (the List page's cell
   // renderer - see `ContentEntryList.tsx`), not `ImageField` itself: the
   // picker frame stays the same 4:3 box either way.
@@ -258,9 +243,6 @@ export const selectFieldType: FieldTypeDefinition<string | string[]> = {
     }
     return raw;
   },
-  // A controlled vocabulary of short values, not prose - excluded from FTS by
-  // default, same rationale as `date`/`image`.
-  fts: false,
   configFields: [
     { key: "options", label: "Options", widget: "option-list" },
     { key: "multiple", label: "Allow multiple values", widget: "boolean" },
@@ -282,9 +264,6 @@ export const passwordFieldType: FieldTypeDefinition<string> = {
   // content-entry editing exists - and even then, a password's own hashing/
   // entry UI wouldn't reuse the plain-text `TextField` editor.
   sqlType: () => "TEXT",
-  // Never folded into FTS, regardless of the `sqlType() === 'TEXT'` default -
-  // a password column must never end up in a searchable index.
-  fts: false,
   internal: true,
   configFields: [],
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
@@ -308,9 +287,6 @@ export const secretKeyFieldType: FieldTypeDefinition<string> = {
   // `await` them directly instead.
   Editor: SecretKeyField,
   sqlType: () => "TEXT",
-  // Never folded into FTS, regardless of the `sqlType() === 'TEXT'` default -
-  // an encrypted secret must never end up in a searchable index.
-  fts: false,
   configFields: [],
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };
@@ -339,7 +315,6 @@ export const relationFieldType: FieldTypeDefinition = {
   // Only consulted when cardinality is 'manyToOne' (resolved shape 'column') -
   // stores the target row's `id`.
   sqlType: () => "INTEGER",
-  fts: false,
   configFields: [
     { key: "target", label: "Target collection", widget: "select", optionsSource: "collections" },
     {
@@ -419,7 +394,6 @@ export const relationMirrorFieldType: FieldTypeDefinition = {
   key: "relationmirror",
   label: "Relation Mirror",
   shape: "virtual",
-  fts: false,
   internal: true,
   configFields: [],
   validationFields: [],

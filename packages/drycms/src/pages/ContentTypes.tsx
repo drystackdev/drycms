@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useMemo } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import DataTable from "../components/DataTable.js";
@@ -9,6 +9,7 @@ import type {
   ContentTypeDefinition,
   ContentTypeKind,
 } from "../content-types/types.js";
+import { useFetch } from "../hooks/useFetch.js";
 import { useDocumentTitle } from "./page-common.js";
 import { useParam } from "../hooks/useParam.js";
 
@@ -34,28 +35,17 @@ export default function ContentTypes() {
     [],
   );
 
-  const [definitions, setDefinitions] = useState<
-    ContentTypeDefinition[] | null
-  >(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] = useParam<ContentTypeKind>(
     "selectedKind",
     "collection",
   );
 
-  useEffect(() => {
-    (async () => {
-      try {
-        setDefinitions(await api.list());
-      } catch (error) {
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load content types.",
-        );
-      }
-    })();
-  }, []);
+  const listFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) => api.listVersioned(ifVersion, signal),
+    [api],
+  );
+  const { data: definitions, error } = useFetch<ContentTypeDefinition[]>("content-types:list", listFetcher);
+  const loadError = error ? (error instanceof Error ? error.message : "Failed to load content types.") : null;
 
   const countByKind = (kind: ContentTypeKind) =>
     (definitions ?? []).filter((d) => d.kind === kind).length;

@@ -1,5 +1,5 @@
 import type { ComponentFieldConfig, RelationFieldConfig, SqlColumnType } from "./field-registry.js";
-import { fieldTypes, resolveFieldShape, resolveFts } from "./field-registry.js";
+import { fieldTypes, resolveFieldShape } from "./field-registry.js";
 import { systemFieldsFor } from "./system-fields.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
@@ -11,7 +11,6 @@ export interface ColumnSpec {
    * the table it lives in (not globally - a child table's own path starts
    * fresh). */
   localIdPath: string[];
-  fts: boolean;
   unique: boolean;
   /** Raw (pre-`serialize()`) default from the `FieldDefinition`. */
   default?: unknown;
@@ -34,8 +33,6 @@ export interface TableNode {
   tableKind: "root-collection" | "root-singleton" | "child";
   columns: ColumnSpec[];
   children: ChildTableRef[];
-  /** Column names eligible for FTS (root tables only in v1). */
-  ftsColumns: string[];
 }
 
 class TreeResolutionError extends Error {
@@ -64,7 +61,6 @@ const SYSTEM_ID_COL: ColumnSpec = {
   name: "id",
   sqlType: "INTEGER",
   localIdPath: ["__child_id"],
-  fts: false,
   unique: false,
   fieldType: "__system_pk",
   fieldConfig: {},
@@ -73,7 +69,6 @@ const PARENT_ID_COL: ColumnSpec = {
   name: "parent_id",
   sqlType: "INTEGER",
   localIdPath: ["__child_parent_id"],
-  fts: false,
   unique: false,
   fieldType: "__system_fk",
   fieldConfig: {},
@@ -82,7 +77,6 @@ const POSITION_COL: ColumnSpec = {
   name: "position",
   sqlType: "INTEGER",
   localIdPath: ["__child_position"],
-  fts: false,
   unique: false,
   fieldType: "__system_position",
   fieldConfig: {},
@@ -91,7 +85,6 @@ const TARGET_ID_COL: ColumnSpec = {
   name: "target_id",
   sqlType: "INTEGER",
   localIdPath: ["__child_target_id"],
-  fts: false,
   unique: false,
   fieldType: "__system_fk",
   fieldConfig: {},
@@ -115,9 +108,7 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
     if (seen.has(component.id)) {
       throw new TreeResolutionError(`Circular component reference via "${component.id}".`);
     }
-    // Child tables are out of FTS scope in v1 (see status/content-type-ui.md) -
-    // always resolved with fullSearch off, regardless of the root's own setting.
-    const inner = buildTable(tableName, "child", component.fields, new Set([...seen, component.id]), false);
+    const inner = buildTable(tableName, "child", component.fields, new Set([...seen, component.id]));
     return { ...inner, columns: [SYSTEM_ID_COL, PARENT_ID_COL, POSITION_COL, ...inner.columns] };
   }
 
@@ -133,7 +124,6 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
       tableKind: "child",
       columns: [SYSTEM_ID_COL, PARENT_ID_COL, POSITION_COL, targetIdCol],
       children: [],
-      ftsColumns: [],
     };
   }
 
@@ -142,7 +132,6 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
     tableKind: TableNode["tableKind"],
     ownFields: FieldDefinition[],
     seenComponentIds: ReadonlySet<string>,
-    fullSearchEnabled: boolean,
   ): TableNode {
     const columns: ColumnSpec[] = [];
     const children: ChildTableRef[] = [];
@@ -167,7 +156,6 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
             name: [...namePrefix, field.name].join("_"),
             sqlType,
             localIdPath: idPath,
-            fts: resolveFts(fieldType, field.config as Record<string, unknown>),
             unique: !!field.validation.unique,
             default: field.default,
             fieldType: field.type,
@@ -213,8 +201,7 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
     }
 
     walk(ownFields, [], [], seenComponentIds);
-    const ftsColumns = fullSearchEnabled ? columns.filter((c) => c.fts).map((c) => c.name) : [];
-    return { tableName, tableKind, columns, children, ftsColumns };
+    return { tableName, tableKind, columns, children };
   }
 
   const rootFields = [...systemFieldsFor(type), ...type.fields];
@@ -223,7 +210,6 @@ export function resolveTableTree(type: ContentTypeDefinition, allTypes: ContentT
     type.kind === "singleton" ? "root-singleton" : "root-collection",
     rootFields,
     new Set(),
-    !!type.features?.fullSearch,
   );
 }
 

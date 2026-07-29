@@ -4,6 +4,7 @@ import { SYSTEM_FIELD_IDS } from "../system-fields.js";
 import type { ContentTypeDefinition, FieldDefinition } from "../types.js";
 import {
   buildEntryFieldTree,
+  flattenDisplayColumns,
   flattenQueryableColumns,
   type EntryColumnNode,
   type EntryRelationMirrorNode,
@@ -288,6 +289,12 @@ describe("flattenQueryableColumns", () => {
 
     const aiKey = allTypes.find((t) => t.name === "aiKey")!;
     const aiKeyColumns = flattenQueryableColumns(buildEntryFieldTree(aiKey, allTypes));
+    expect(aiKeyColumns.find((c) => c.fieldName === "key")).toBeUndefined();
+  });
+
+  it("also excludes secretkey from flattenDisplayColumns - the List page never shows it, not even masked", () => {
+    const aiKey = allTypes.find((t) => t.name === "aiKey")!;
+    const aiKeyColumns = flattenDisplayColumns(buildEntryFieldTree(aiKey, allTypes));
     expect(aiKeyColumns.find((c) => c.fieldName === "key")).toBeUndefined();
   });
 });

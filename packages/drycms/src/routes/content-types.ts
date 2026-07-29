@@ -57,6 +57,18 @@ function getAdapter(context: APIContext): ContentEngineAdapter {
   return createContentEngineAdapter(content, runtimeEnv);
 }
 
+/** The data-version protocol (see `status/build-cache.md`) - `undefined` if
+ * the client sent nothing or an unparseable value, which the GET handler
+ * treats the same as "no cached version, always send the full payload".
+ * Same helper as `routes/content-entries.ts`'s (kept as its own copy - these
+ * two routes don't share an adapter type to hang a shared utility off of). */
+function parseIfVersion(context: APIContext): number | undefined {
+  const header = context.request.headers.get("X-Data-Version");
+  if (header === null) return undefined;
+  const n = Number(header);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
 function readId(context: APIContext): string | undefined {
   const raw = context.params.slug as string | undefined;
   if (!raw) return undefined;
@@ -119,14 +131,25 @@ async function handleSave(
 export const GET: APIRoute = async (context) => {
   try {
     const adapter = getAdapter(context);
+
+    // Data-version protocol (see `status/build-cache.md`) - the whole
+    // content-types collection is one resource, so this check covers both
+    // the list AND single-`id` branches below identically to
+    // `routes/content-entries.ts`.
+    const version = await adapter.getResourceVersion();
+    const ifVersion = parseIfVersion(context);
+    if (ifVersion !== undefined && ifVersion === version) {
+      return jsonResponse({ changed: false, version });
+    }
+
     const id = readId(context);
     if (id) {
       const definition = await adapter.getContentType(id);
       if (!definition) throw new ContentEngineError("not_found", `Content type "${id}" not found.`);
-      return jsonResponse({ definition });
+      return jsonResponse({ changed: true, version, definition });
     }
     const definitions = await adapter.listContentTypes();
-    return jsonResponse({ definitions });
+    return jsonResponse({ changed: true, version, definitions });
   } catch (error) {
     return errorResponse(error);
   }

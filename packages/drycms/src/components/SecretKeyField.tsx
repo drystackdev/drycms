@@ -13,13 +13,15 @@ export interface SecretKeyFieldProps extends FieldProps<string> {
 }
 
 /**
- * `secretkey`'s Editor: a write-only masked input that never receives the
- * decrypted value as `value` - typing stages a NEW secret to be (re-)encrypted
- * on save, leaving the field blank means "keep the current secret" when
- * editing an existing entry. Not called anywhere yet (no entry-CRUD UI
- * exists - see `content-types/field-registry.ts`'s doc comments on
- * `relation`/`component`/`password`), same as this project's other unwired
- * Editors.
+ * `secretkey`'s Editor: a write-only, unmasked multiline input that never
+ * receives the decrypted value as `value` - typing stages a NEW secret to be
+ * (re-)encrypted on save, leaving the field blank means "keep the current
+ * secret" when editing an existing entry. Plain text rather than masked: the
+ * value is often a multi-line blob (private key, JSON credentials) where
+ * masking would make it impossible to proofread before saving, and the
+ * List page never displays this field anyway (see `ContentEntryList.tsx`'s
+ * `UNDISPLAYABLE_FIELD_TYPES`), so there's nothing shoulder-surfing gains
+ * over a normal `<textarea>`.
  */
 export default function SecretKeyField({
   value,
@@ -43,16 +45,15 @@ export default function SecretKeyField({
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
-      <input
+      <textarea
         id={fieldId}
-        type="password"
         name={name}
         value={value}
-        autoComplete="new-password"
+        autoComplete="off"
         placeholder={hasExistingValue ? "Leave blank to keep the current secret" : "Enter a value"}
         disabled={disabled}
         aria-invalid={error || undefined}
-        onInput={(event) => onChange((event.target as HTMLInputElement).value)}
+        onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
       />
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>

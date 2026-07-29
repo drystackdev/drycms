@@ -26,8 +26,9 @@ test.describe("Icon Management", () => {
     await page.getByLabel("Name").fill("E2E Test Icon");
     await page.getByLabel("SVG code").fill(TEST_SVG);
 
-    // Live preview renders from the textarea content before Save is even clicked.
-    await expect(page.locator(".icon-cell img")).toBeVisible();
+    // Live preview renders from the textarea content before Save is even clicked
+    // - `IconGlyph` masks a `<span>` (for `currentColor` tinting), not an `<img>`.
+    await expect(page.locator('[data-tooltip="Primary"] span')).toBeVisible();
 
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page).toHaveURL(/\/dry\/icon-management$/);
@@ -35,7 +36,9 @@ test.describe("Icon Management", () => {
     // --- Appears in the grid ---
     const cell = page.locator(".icon-grid .icon-cell", { hasText: "e2e-test-icon" });
     await expect(cell).toBeVisible();
-    await expect(cell.locator("img")).toHaveAttribute("src", /\/api\/icons\/e2e-test-icon\.svg$/);
+    // Same `IconGlyph` span (mask-image), not an `<img src>` - the icon URL
+    // shows up inside the `style` attribute's `mask: url(...)` instead.
+    await expect(cell.locator("span").first()).toHaveAttribute("style", /\/api\/icons\/e2e-test-icon\.svg/);
 
     // --- Preview dialog ---
     await cell.click();

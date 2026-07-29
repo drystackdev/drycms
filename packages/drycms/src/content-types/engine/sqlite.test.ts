@@ -216,4 +216,30 @@ describe("createSqliteContentEngineAdapter", () => {
     );
     expect(rows).toEqual([]);
   });
+
+  it("bumps the content-types collection's data version on boot seed, save, and delete", async () => {
+    const { adapter, dir } = freshAdapter();
+    dirs.push(dir);
+
+    await adapter.listContentTypes(); // triggers the boot seed
+    const afterBoot = await adapter.getResourceVersion();
+    expect(afterBoot).toBeGreaterThan(0);
+
+    const custom: ContentTypeDefinition = {
+      id: "custom-note",
+      kind: "collection",
+      name: "note",
+      label: "Note",
+      fields: [],
+      version: 0,
+    };
+    const plan = await adapter.planSave(custom);
+    await adapter.applySave(custom, plan);
+    const afterSave = await adapter.getResourceVersion();
+    expect(afterSave).toBe(afterBoot + 1);
+
+    await adapter.deleteContentType("custom-note");
+    const afterDelete = await adapter.getResourceVersion();
+    expect(afterDelete).toBe(afterSave + 1);
+  });
 });

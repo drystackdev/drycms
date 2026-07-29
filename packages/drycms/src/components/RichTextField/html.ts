@@ -75,7 +75,17 @@ function textNodeToHtml(node: PMNode): string {
  * paragraph with other inline content, but a browser's own error-recovery
  * parsing splits it into separate siblings without losing anything - same
  * tradeoff drystack's own `figureWrap` makes, and for the same reason:
- * dropping the caption instead would actively lose user content. */
+ * dropping the caption instead would actively lose user content.
+ *
+ * `display:table` on the figure (rather than the UA default `block`, which
+ * stretches to the paragraph's full width) shrink-wraps it to the `<img>` -
+ * its only other child, auto-boxed into the table's row/cell - so the
+ * `<figcaption>` (given `display:table-caption`, the one display value
+ * whose box is forced to exactly the table's own width) centers under the
+ * image and word-wraps once its text outgrows it, instead of overflowing
+ * or stretching the figure wider than the image. `caption-side:bottom`
+ * is required alongside it - a table-caption box always renders at its
+ * specified side regardless of DOM order, and the default is `top`. */
 function imageChildHtml(node: PMNode): string {
   const width = node.attrs.width as number | null;
   const height = node.attrs.height as number | null;
@@ -93,9 +103,10 @@ function imageChildHtml(node: PMNode): string {
   }
   const imgStyle = imageSizeAndFitStyleString(width, height, objectFit);
   const alignStyle = imageAlignStyleString(align);
-  const figureStyle = alignStyle ? `margin:0;${alignStyle}` : "margin:0";
+  const figureStyle = ["margin:0", "display:table", alignStyle].filter(Boolean).join(";");
+  const captionStyle = "display:table-caption;caption-side:bottom;text-align:center";
   const img = `<img src="${src}" alt="${alt}"${imgStyle ? ` style="${escapeAttr(imgStyle)}"` : ""}>`;
-  return `<figure style="${escapeAttr(figureStyle)}">${img}<figcaption>${escapeHtml(caption)}</figcaption></figure>`;
+  return `<figure style="${escapeAttr(figureStyle)}">${img}<figcaption style="${escapeAttr(captionStyle)}">${escapeHtml(caption)}</figcaption></figure>`;
 }
 
 /** A flat textblock's (paragraph/heading/blockquote) own inline content -

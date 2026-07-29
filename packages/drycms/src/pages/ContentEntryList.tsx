@@ -83,20 +83,6 @@ function flattenRowValue(value: Record<string, unknown>, prefix = ""): Record<st
 function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Element {
   const config = (column.fieldConfig ?? {}) as Record<string, unknown>;
 
-  // Never a real value client-side (see `entry-codec.ts`'s `MASKED_FIELD_TYPES`)
-  // - only whether one is currently set, so this is purely decorative.
-  if (column.fieldType === "secretkey") {
-    const hasValue = isMaskedValue(value) ? value.hasExisting : !!value;
-    if (!hasValue) return <>—</>;
-    return (
-      <span class="secret-dots" aria-label="Secret key set" title="Secret key set">
-        {Array.from({ length: 6 }, (_, index) => (
-          <span key={index} />
-        ))}
-      </span>
-    );
-  }
-
   // Always has a value either way (see `field-registry.ts`'s `booleanFieldType`
   // doc), so this branch runs before the shared empty-value check below.
   if (column.fieldType === "boolean") {
@@ -164,8 +150,10 @@ interface RelationColumn {
 type ListCell = { kind: "field"; column: QueryableColumn } | { kind: "relation"; column: RelationColumn };
 
 /** Mirrors `entry-tree.ts`'s own `UNDISPLAYABLE_FIELD_TYPES` (kept private
- * there) - `password` is never worth a List column, even masked. */
-const UNDISPLAYABLE_FIELD_TYPES = new Set(["password"]);
+ * there) - `password` and `secretkey` never round-trip a real value to the
+ * client (see `entry-codec.ts`'s `MASKED_FIELD_TYPES`), so neither is worth
+ * a List column, even masked. */
+const UNDISPLAYABLE_FIELD_TYPES = new Set(["password", "secretkey"]);
 
 /**
  * A List page's own walk of the entry field tree - unlike `entry-tree.ts`'s
@@ -275,9 +263,8 @@ function ContentEntryListCollection({
     [fieldTree],
   );
   // `listCells` is what the table shows, in true schema order - plain
-  // columns (including a masked `secretkey` placeholder) interleaved with
-  // relation columns of every cardinality, unlike `entry-tree.ts`'s own
-  // `flattenDisplayColumns` (which only has the former).
+  // columns interleaved with relation columns of every cardinality, unlike
+  // `entry-tree.ts`'s own `flattenDisplayColumns` (which only has the former).
   const listCells = useMemo(() => collectListCells(fieldTree), [fieldTree]);
   const relationColumns = useMemo(() => listCells.filter((c) => c.kind === "relation").map((c) => c.column), [listCells]);
   const defaultVisible = useMemo(() => listCells.slice(0, 5).map((c) => c.column.fieldName), [listCells]);

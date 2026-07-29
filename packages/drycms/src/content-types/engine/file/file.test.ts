@@ -91,6 +91,24 @@ describe("createFileContentEngineAdapter", () => {
     expect(await adapter.getContentType("custom-note")).toBeNull();
   });
 
+  it("bumps the content-types collection's data version on boot seed, save, and delete", async () => {
+    const { adapter, dir } = freshAdapter();
+    dirs.push(dir);
+
+    await adapter.listContentTypes(); // triggers the boot seed
+    const afterBoot = await adapter.getResourceVersion();
+    expect(afterBoot).toBeGreaterThan(0);
+
+    const custom: ContentTypeDefinition = { id: "custom-note", kind: "collection", name: "note", label: "Note", fields: [], version: 0 };
+    await adapter.applySave(custom, await adapter.planSave(custom));
+    const afterSave = await adapter.getResourceVersion();
+    expect(afterSave).toBe(afterBoot + 1);
+
+    await adapter.deleteContentType("custom-note");
+    const afterDelete = await adapter.getResourceVersion();
+    expect(afterDelete).toBe(afterSave + 1);
+  });
+
   it("creates 4 matching permission rows when a new collection is saved, updates them on rename, and removes them on delete", async () => {
     const { adapter, entries, dir } = freshAdapter();
     dirs.push(dir);

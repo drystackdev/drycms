@@ -316,18 +316,15 @@ export interface QueryableColumn {
   validation: FieldValidation;
 }
 
-/** `password` holds a one-way hash, never round-tripped to the client as a
- * real value (see `entry-codec.ts`'s `MASKED_FIELD_TYPES`) - useless, and
- * misleading, as a List-page column even in its masked form, so
- * `flattenDisplayColumns` excludes it same as it excludes relations. */
-const UNDISPLAYABLE_FIELD_TYPES = new Set(["password"]);
+/** `password` and `secretkey` never round-trip a real value to the client
+ * (see `entry-codec.ts`'s `MASKED_FIELD_TYPES`) - useless, and misleading, as
+ * a List-page column even in masked form, so `flattenDisplayColumns` excludes
+ * both, same as it excludes relations. */
+const UNDISPLAYABLE_FIELD_TYPES = new Set(["password", "secretkey"]);
 
-/** On top of `UNDISPLAYABLE_FIELD_TYPES`, also excludes `secretkey` - its
- * masked placeholder is still worth a glance on a List page (see
- * `ContentEntryList.tsx`), but the ciphertext behind it can't be sorted or
- * searched, so `flattenQueryableColumns` (the sort/search-safe subset) drops
- * it too. */
-const UNQUERYABLE_FIELD_TYPES = new Set([...UNDISPLAYABLE_FIELD_TYPES, "secretkey"]);
+/** Every undisplayable field is unqueryable too - there's nothing sortable
+ * or searchable behind a value that never reaches the client. */
+const UNQUERYABLE_FIELD_TYPES = UNDISPLAYABLE_FIELD_TYPES;
 
 /**
  * Every `column` field, flattened into one list regardless of `flatten`

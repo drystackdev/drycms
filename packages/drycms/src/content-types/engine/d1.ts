@@ -35,6 +35,34 @@ export function createD1ContentEngineAdapter(
   // though the throw above guarantees it's set by the time any of them run.
   const db: D1Database = maybeDb;
 
+  // The whole content-types collection is one resource for versioning
+  // purposes (see `status/build-cache.md`) - `"__content-types__"` can never
+  // collide with a real content type name (`naming.ts`'s
+  // `CONTENT_TYPE_NAME_RE` forbids a leading underscore). Same `_versions`
+  // shape as `entries-d1.ts`'s per-resource data version; kept as its own
+  // copy rather than a shared import, same precedent as everywhere else in
+  // this file.
+  const CONTENT_TYPES_RESOURCE = "__content-types__";
+
+  async function getResourceVersionValue(resource: string): Promise<number> {
+    const rows = await db.prepare('SELECT "version" FROM "_versions" WHERE "resource" = ?;').bind(resource).all<{ version: number }>();
+    return rows.results?.[0]?.version ?? 0;
+  }
+
+  /** Same "not a real transaction, just sequenced after the data write"
+   * caveat as `entries-d1.ts`'s `bumpResourceVersion` - see that file's doc
+   * comment. */
+  async function bumpResourceVersion(resource: string): Promise<void> {
+    const next = (await getResourceVersionValue(resource)) + 1;
+    await db
+      .prepare(
+        'INSERT INTO "_versions" ("resource","version","updated_at") VALUES (?,?,?) ' +
+          'ON CONFLICT("resource") DO UPDATE SET "version" = excluded."version", "updated_at" = excluded."updated_at";',
+      )
+      .bind(resource, next, Date.now())
+      .run();
+  }
+
   let bootstrapped: Promise<void> | undefined;
   async function ensureBootstrap(): Promise<void> {
     if (!bootstrapped) {
@@ -51,10 +79,20 @@ export function createD1ContentEngineAdapter(
           )
           .run();
         await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`).run();
+        await db
+          .prepare(
+            `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+              `  "resource" TEXT PRIMARY KEY,\n` +
+              `  "version" INTEGER NOT NULL,\n` +
+              `  "updated_at" INTEGER NOT NULL\n` +
+              `);`,
+          )
+          .run();
 
         const existing = await db.prepare('SELECT "name" FROM "metadata";').all<{ name: string }>();
         const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
         await runBatch(db, statements);
+        if (statements.length > 0) await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
 
         await db.prepare(permissionUniqueIndexStatement().sql).run();
 
@@ -145,6 +183,7 @@ export function createD1ContentEngineAdapter(
       }
     }
     for (const s of permissionSyncStatements(next)) await prepare(db, s).run();
+    await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
 
     const saved = await getContentType(next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
@@ -171,7 +210,18 @@ export function createD1ContentEngineAdapter(
     await runBatch(db, dropStatements);
     await db.prepare('DELETE FROM "metadata" WHERE "id" = ?;').bind(id).run();
     for (const s of permissionDeleteStatements(existing)) await prepare(db, s).run();
+    await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
   }
 
-  return { listContentTypes, getContentType, planSave, applySave, deleteContentType };
+  return {
+    listContentTypes,
+    getContentType,
+    planSave,
+    applySave,
+    deleteContentType,
+    getResourceVersion: async () => {
+      await ensureBootstrap();
+      return getResourceVersionValue(CONTENT_TYPES_RESOURCE);
+    },
+  };
 }

@@ -16,6 +16,30 @@ function runStatements(handle: SqliteHandle, statements: Statement[]): void {
   for (const stmt of statements) handle.run(stmt.sql, stmt.params ?? []);
 }
 
+/** The whole content-types collection is one resource for versioning
+ * purposes - `"__content-types__"` can never collide with a real content
+ * type name (`naming.ts`'s `CONTENT_TYPE_NAME_RE` forbids underscores).
+ * Same `_versions` table shape/SQL as `entries-sqlite.ts`'s per-resource
+ * data version - kept as its own copy here rather than a shared import,
+ * matching this codebase's existing precedent of each engine adapter being
+ * a full standalone implementation (see `entries-d1.ts`'s doc comment). */
+const CONTENT_TYPES_RESOURCE = "__content-types__";
+
+function getResourceVersion(handle: SqliteHandle, resource: string): number {
+  const rows = handle.all<{ version: number }>('SELECT "version" FROM "_versions" WHERE "resource" = ?;', [resource]);
+  return rows[0]?.version ?? 0;
+}
+
+function bumpResourceVersion(handle: SqliteHandle, resource: string): number {
+  const next = getResourceVersion(handle, resource) + 1;
+  handle.run(
+    'INSERT INTO "_versions" ("resource","version","updated_at") VALUES (?,?,?) ' +
+      'ON CONFLICT("resource") DO UPDATE SET "version" = excluded."version", "updated_at" = excluded."updated_at";',
+    [resource, next, Date.now()],
+  );
+  return next;
+}
+
 export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOption): ContentEngineAdapter {
   let handlePromise: Promise<SqliteHandle> | undefined;
 
@@ -32,6 +56,13 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
             `);`,
         );
         handle.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`);
+        handle.exec(
+          `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+            `  "resource" TEXT PRIMARY KEY,\n` +
+            `  "version" INTEGER NOT NULL,\n` +
+            `  "updated_at" INTEGER NOT NULL\n` +
+            `);`,
+        );
 
         const existing = handle.all<{ name: string }>('SELECT "name" FROM "metadata";');
         const statements = pendingSeedStatements(new Set(existing.map((row) => row.name.toLowerCase())));
@@ -39,6 +70,7 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
           handle.exec("BEGIN IMMEDIATE;");
           try {
             runStatements(handle, statements);
+            bumpResourceVersion(handle, CONTENT_TYPES_RESOURCE);
             handle.exec("COMMIT;");
           } catch (error) {
             handle.exec("ROLLBACK;");
@@ -143,6 +175,7 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
           }
         }
         runStatements(handle, permissionSyncStatements(next));
+        bumpResourceVersion(handle, CONTENT_TYPES_RESOURCE);
         handle.exec("COMMIT;");
       } catch (error) {
         handle.exec("ROLLBACK;");
@@ -179,6 +212,7 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
       runStatements(handle, dropStatements);
       handle.run('DELETE FROM "metadata" WHERE "id" = ?;', [id]);
       runStatements(handle, permissionDeleteStatements(existing));
+      bumpResourceVersion(handle, CONTENT_TYPES_RESOURCE);
       handle.exec("COMMIT;");
     } catch (error) {
       handle.exec("ROLLBACK;");
@@ -186,5 +220,15 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
     }
   }
 
-  return { listContentTypes, getContentType, planSave, applySave, deleteContentType };
+  return {
+    listContentTypes,
+    getContentType,
+    planSave,
+    applySave,
+    deleteContentType,
+    getResourceVersion: async () => {
+      const handle = await getHandle();
+      return getResourceVersion(handle, CONTENT_TYPES_RESOURCE);
+    },
+  };
 }

@@ -143,23 +143,6 @@ describe("planMigration", () => {
     expect(columnDropIdx).toBeGreaterThan(indexDropIdx);
   });
 
-  it("drops the FTS triggers before dropping a column they reference (turning off slug + fullSearch together)", () => {
-    const old = collection({ features: { slug: true, fullSearch: true } });
-    const next = collection({ features: {} });
-    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
-
-    expect(plan.tables[0]!.action).toBe("alter");
-    // The FTS triggers reference `new.title`/`old.title` - they must be torn
-    // down before `ALTER TABLE ... DROP COLUMN "title"`, or SQLite rejects
-    // the drop with "error in trigger posts_fts_ai after drop column: no
-    // such column: new.title".
-    const sqls = plan.tables[0]!.statements.map((s) => s.sql);
-    const triggerDropIdx = sqls.findIndex((s) => s.includes('DROP TRIGGER IF EXISTS "posts_fts_ai"'));
-    const columnDropIdx = sqls.findIndex((s) => s.includes('DROP COLUMN "title"'));
-    expect(triggerDropIdx).toBeGreaterThanOrEqual(0);
-    expect(columnDropIdx).toBeGreaterThan(triggerDropIdx);
-  });
-
   it("does nothing when nothing changed", () => {
     const type = collection({ fields: [field({ id: "f1", name: "body" })] });
     const plan = planMigration({ target: type, oldAllTypes: [type], newAllTypes: [type] });

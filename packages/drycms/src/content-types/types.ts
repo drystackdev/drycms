@@ -31,7 +31,6 @@ export interface ContentTypeFeatures {
   slug?: boolean;
   draft?: boolean;
   schedule?: boolean;
-  fullSearch?: boolean;
   timestamps?: boolean;
   /** Flattens the built-in `seo` component's fields (Title/Description/Image
    * - see `seed.ts`) in as `seo_metaTitle`/`seo_description`/`seo_image`. */

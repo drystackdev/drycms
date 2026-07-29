@@ -33,11 +33,6 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
         "Lets you set a future date/time for an entry to go live automatically.",
     },
     {
-      key: "fullSearch",
-      label: "Full-text search",
-      description: "Makes every text field on this content type searchable.",
-    },
-    {
       key: "timestamps",
       label: "Timestamps",
       description:

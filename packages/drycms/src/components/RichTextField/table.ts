@@ -1,5 +1,5 @@
 import type { Node as PMNode } from "prosemirror-model";
-import type { Command, EditorState } from "prosemirror-state";
+import type { Command, EditorState, Transaction } from "prosemirror-state";
 import { Selection } from "prosemirror-state";
 import {
   CellSelection,
@@ -333,6 +333,66 @@ export function getCellAlignState(state: EditorState): { hAlign: CellHAlign; vAl
     return e.hAlign !== first.hAlign || e.vAlign !== first.vAlign;
   });
   return { ...first, mixed, disabled: false };
+}
+
+/** Shared by `exitTableForward`/`exitTableDownward` below - moves the
+ * selection into whatever follows `table` at `pos`, inserting a fresh empty
+ * paragraph first if the table is the very last thing in the document
+ * (mirroring `insertTable`'s own trailing-paragraph fix-up above for the
+ * same "table at the end of the doc" case), rather than leaving the caret
+ * with nowhere to go. */
+function moveAfterTable(state: EditorState, dispatch: (tr: Transaction) => void, table: { pos: number; node: PMNode }) {
+  const after = table.pos + table.node.nodeSize;
+  let tr = state.tr;
+  if (after >= state.doc.content.size) {
+    tr = tr.insert(after, schema.nodes.paragraph!.createAndFill()!);
+  }
+  const selection = Selection.near(tr.doc.resolve(after), 1);
+  dispatch(tr.setSelection(selection).scrollIntoView());
+}
+
+/** `Tab` in the table's last cell - where `goToNextCell(1)` (prosemirror-
+ * tables) has nowhere left to go and returns `false` - moves out of the
+ * table entirely instead of leaving the keystroke unhandled, which the
+ * browser would otherwise take as "move focus to the next focusable
+ * element", tabbing straight out of the field. Chained after
+ * `goToNextCell(1)` in the `Tab` keymap (`useRichTextEditor.ts`), so this
+ * only ever runs once that's confirmed there's no next cell; `getSelectedTable`
+ * returning `null` (not in a table at all) is the other way `goToNextCell`
+ * can fail, so that's declined here too, leaving Tab's usual behavior
+ * everywhere else in the document untouched. */
+export function exitTableForward(): Command {
+  return (state, dispatch) => {
+    const selected = getSelectedTable(state);
+    if (!selected) return false;
+    if (dispatch) moveAfterTable(state, dispatch, selected);
+    return true;
+  };
+}
+
+/** `ArrowDown` in the table's last row, once the caret's already on the
+ * last visual line of its own cell - same "nowhere further to go, so leave
+ * the table" idea as `exitTableForward` above, just for vertical movement.
+ * `view.endOfTextblock("down")` (rather than a node-boundary check) is what
+ * accounts for wrapped multi-line cell content: it only reports true once
+ * there's truly no further line *within* the cell either, matching the
+ * ProseMirror-recommended pattern for "exit this block on arrow-key-at-the-
+ * edge" (the same technique the `exitCode` example uses for code blocks).
+ * Every other row already has a cell directly below for the browser's own
+ * native caret movement to land in on its own - `selectedRect(state).bottom
+ * === rect.map.height` (true only in the table's last row) keeps this from
+ * hijacking `ArrowDown` there and skipping straight over the rest of the
+ * table instead of moving down one row like it normally would. */
+export function exitTableDownward(): Command {
+  return (state, dispatch, view) => {
+    const selected = getSelectedTable(state);
+    if (!selected) return false;
+    if (!view || !view.endOfTextblock("down")) return false;
+    const rect = selectedRect(state);
+    if (rect.bottom !== rect.map.height) return false;
+    if (dispatch) moveAfterTable(state, dispatch, selected);
+    return true;
+  };
 }
 
 /** Sets both alignment attrs together on every selected cell, in one

@@ -1167,22 +1167,6 @@
       background-color: var(--dry-muted);
     }
 
-    /* `secretkey` field cells - purely decorative, there's no real value to
-     * show (it's encrypted server-side, never round-tripped to the client -
-     * see `entry-codec.ts`'s `MASKED_FIELD_TYPES`), just whether one is set. */
-    .secret-dots {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-
-      & > span {
-        width: 1rem;
-        height: 1rem;
-        border-radius: 50%;
-        background-color: var(--dry-muted-foreground);
-      }
-    }
-
     /* ----------------------------------------------------------------- Alert */
     .alert {
       display: grid;
@@ -3117,58 +3101,51 @@
         border-radius: var(--dry-radius-sm);
       }
 
-      /* Inverted fg/bg (not a brand-color tint) for maximum contrast -
-       * active formatting needs to read at a glance across a toolbar full
-       * of individually-toggleable buttons, not just differ technically
-       * from the barely-there white-on-muted this used to be. Its own
-       * `:hover` (higher specificity than the base `.ghost:hover`'s
-       * `var(--dry-accent)` wash, so it wins without `!important`) - a
-       * softened version of the same fill, so hovering an already-active
-       * button still reads as "active" instead of flashing the same accent
-       * wash an inactive button's hover gets. */
-      & button[aria-pressed="true"] {
-        background-color: var(--dry-foreground);
-        color: var(--dry-background);
-
-        &:hover {
-          background-color: color-mix(in srgb, var(--dry-foreground) 85%, transparent);
-        }
+      & button[aria-pressed="true"],
+      & button[style*="color"] {
+        background-color: var(--dry-muted);
+        color: var(--dry-foreground);
+        border: 1px solid var(--dry-border);
       }
     }
 
     /* Shared "boxed group of related controls" look, used by every
      * `.richtext-toolbar` group (toolbar.tsx wraps each `TOOLBAR_GROUPS`
      * entry in one - undo/redo; inline formatting + image; block-level
-     * menus) plus `.richtext-table-menu` below, instead of the flat row of
-     * buttons divided by `<hr>` separators this used to be: a background/
-     * border/shadow reads as "these buttons belong together" without
-     * needing a line drawn between every unrelated pair. No button/pressed-
-     * state styling of its own - `.richtext-toolbar`'s own `& button` rules
-     * below already reach every button nested inside one of these via the
-     * ordinary descendant combinator, `.richtext-table-menu`'s own card
-     * included now that it docks inside the toolbar rather than floating
-     * separately (unlike `.richtext-image-menu` below, which still does, so
-     * still carries its own copy). */
+     * menus) plus `TableInsertButton`'s own card (table-menu.tsx), instead
+     * of the flat row of buttons divided by `<hr>` separators this used to
+     * be: a background/border/shadow reads as "these buttons belong
+     * together" without needing a line drawn between every unrelated pair.
+     * No button/pressed-state styling of its own - `.richtext-toolbar`'s own
+     * `& button` rules below already reach every button nested inside one of
+     * these via the ordinary descendant combinator (unlike
+     * `.richtext-image-menu` below, which still floats separately from the
+     * toolbar, so still carries its own copy). `.richtext-table-menu-
+     * controls-wrap` (below) is a close cousin - same look, but `display:
+     * grid` instead of `flex` for its own width-collapse transition, so it
+     * can't share this class outright. */
     .richtext-toolbar-block {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 0.375rem;
       padding: 0.25rem 0.375rem;
       flex-shrink: 0;
       max-width: 100%;
-      overflow-x: auto;
+      min-width: 0;
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-card);
       box-shadow: var(--dry-shadow-xs);
-      /* `overflow-x: auto` (rather than the default `visible`) also flips
-       * this flex item's *automatic* minimum width from its content size
-       * down to 0 per the flexbox spec - without that, `max-width: 100%`
-       * above couldn't actually shrink it below that content size, and a
-       * block wider than the toolbar itself (e.g. `.richtext-table-menu`
-       * with its controls expanded) would overflow and get clipped by
-       * `.richtext`'s `overflow: hidden` instead of scrolling internally. */
-      & .popover-menu{
+      /* Wraps onto a second row inside its own card rather than scrolling
+       * horizontally - a mobile-width toolbar block that scrolled instead
+       * left later icons sitting past the edge with no visual hint they
+       * were there. `min-width: 0` (the flexbox default is `auto`, i.e. the
+       * content's own width) is what lets `max-width: 100%` above actually
+       * shrink this below its content width so wrapping ever kicks in; a
+       * block wider than the toolbar itself wraps rather than overflowing
+       * and getting clipped by `.richtext`'s own `overflow: hidden`. */
+      & .popover-menu {
         width: fit-content;
       }
     }
@@ -3187,66 +3164,64 @@
       }
 
       & button[aria-pressed="true"] {
-        background-color: var(--dry-foreground);
-        color: var(--dry-background);
-
-        &:hover {
-          background-color: color-mix(in srgb, var(--dry-foreground) 85%, transparent);
-        }
+        background-color: var(--dry-muted);
+        color: var(--dry-foreground);
+        border: 1px solid var(--dry-border);
       }
     }
 
     /* RichTextField's table tool-group (table-menu.tsx) - docked at the end
      * of `.richtext-toolbar` rather than floating over the table, so no
      * positioning of its own here (unlike `.richtext-image-menu` below).
-     * Otherwise carries no rules of its own beyond `gap: 0` - applied
-     * alongside `.richtext-toolbar-block` above in the markup for its card
-     * look, same as every other toolbar group, but that shared class's own
-     * `gap` (between this card's two children: `TableInsertButton` and the
-     * controls wrap below) would still hold the two apart even while the
-     * wrap is collapsed to zero width - a flex `gap` reserves space next to
-     * an item regardless of that item's own content width. Zeroing it here
-     * and folding the same spacing into `-controls-wrap`'s own
-     * `margin-inline-start` instead (below) lets that space collapse away
-     * together with the width, rather than leaving a dead gap to the right
-     * of the button whenever no table is selected. Unlike the
-     * contextual controls nested inside it (below), this card itself is
-     * always visible: `TableInsertButton` docked at its start needs no
-     * table selected to be useful, so the card never collapses away
-     * entirely. */
-    .richtext-table-menu {
-      gap: 0;
-    }
-
-    /* The row/column/header/merge/caption/delete controls nested inside
-     * `.richtext-table-menu` above - unlike that outer card, these only make
-     * sense once a table's actually selected, so `-controls-wrap` collapses
-     * them to zero width via the same `grid-template-columns` transition
-     * `.shell`'s sidebar collapse uses, whenever the selection isn't inside
-     * a table (the card itself stays put - see above). `margin-inline-start`
-     * (0 collapsed, `0.375rem` expanded - the toolbar-wide button gap,
-     * see `.richtext-toolbar-block`) stands in for the flex `gap`
-     * `.richtext-table-menu` above deliberately doesn't have, animated in
-     * lockstep with the width so the space itself collapses away rather
-     * than leaving a dead margin next to `TableInsertButton`. `flex-shrink: 0`
-     * on every direct child of `-controls` keeps the buttons/separators/
-     * popovers at full size as the wrap shrinks - `overflow: hidden` on that
-     * element (the grid item being sized) clips them progressively instead
-     * of squishing them, so the group visibly "springs open" within the
-     * card rather than fading in. */
+     * `TableInsertButton` (always visible, so there's always a way to insert
+     * a table) sits in its own plain `.richtext-toolbar-block` card, no
+     * override needed - the row/column/etc controls below are a *second*,
+     * independent card that comes and goes with the table selection, rather
+     * than a zone nested inside the first: `.richtext-toolbar`'s own flex
+     * `gap` already spaces the two apart whenever both are rendered, and
+     * collapses to nothing on its own once the second one unmounts, so
+     * unlike the old single-card layout this needed no margin/gap-zeroing
+     * trick of its own.
+     *
+     * `-controls-wrap` carries its own card chrome (border/background/
+     * shadow, same look as `.richtext-toolbar-block`) plus the
+     * `grid-template-columns` collapse transition `.shell`'s sidebar
+     * collapse uses, to animate its width open/shut around the intrinsic
+     * (`auto`, otherwise untransitionable) width of the buttons inside -
+     * `table-menu.tsx`'s `controlsMounted`/`controlsShown` state is what
+     * actually unmounts this element ~200ms after the collapse finishes, so
+     * the card's own border/padding disappear entirely instead of lingering
+     * as a thin bordered nub - `min-width: 0` is what lets a card this wide
+     * ever shrink toward the collapsed 0fr column instead of a flex item's
+     * default `auto` min-width (its content size) overriding it. */
     .richtext-table-menu-controls-wrap {
       display: grid;
       grid-template-columns: 0fr;
       min-width: 0;
-      margin-inline-start: 0;
-      transition: grid-template-columns 180ms ease, margin-inline-start 180ms ease;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+      padding: 0.25rem 0.375rem;
+      transition: grid-template-columns 180ms ease;
 
       &.expanded {
         grid-template-columns: 1fr;
-        margin-inline-start: 0.375rem;
       }
     }
 
+    /* The actual row/column/header/merge/caption/delete buttons, nested one
+     * level inside `-controls-wrap` above rather than carrying its collapse
+     * transition directly - `flex-shrink: 0` on every direct child keeps
+     * them all at full size as the wrap shrinks, and `overflow: hidden`
+     * here clips them progressively instead of squishing, so the group
+     * visibly "springs open" within the card rather than fading in.
+     * Deliberately kept `nowrap` (unlike the plain `.richtext-toolbar-block`
+     * groups, which do wrap on narrow viewports) - wrapping here would size
+     * this row's own height off whatever width the collapse animation
+     * happens to be transiting through, including the near-zero extreme,
+     * where every button would wrap onto its own line and balloon the
+     * whole card's height for the ~180ms the animation is mid-flight. */
     .richtext-table-menu-controls {
       display: flex;
       align-items: center;
@@ -3256,18 +3231,6 @@
 
       & > * {
         flex-shrink: 0;
-      }
-    }
-
-    /* The caption popover's own small form (table-menu.tsx) - just enough
-     * padding around the shared `.stack`/`.row` utility layout (same one
-     * `image-menu.tsx`'s edit dialog uses) to sit comfortably inside a
-     * `.popover-menu`. */
-    .richtext-table-caption-popover {
-      padding: 0.5rem 0.25rem;
-
-      & .row {
-        justify-content: flex-end;
       }
     }
 
@@ -3322,6 +3285,42 @@
       font-size: var(--dry-text-xs);
       color: var(--dry-muted-foreground);
       text-align: center;
+    }
+
+    /* --- Cell alignment picker (table-cell-align-button.tsx) - a 3x3 grid
+     * of separate rounded/bordered cells (`.color-swatch`'s own look) rather
+     * than `.richtext-table-grid*`'s flush, seamless-bordered cells above:
+     * that grid deliberately reads as a miniature table for "insert a
+     * table"; this one picks an alignment, so it shouldn't look like one. */
+    .richtext-align-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      width: fit-content;
+      margin-inline: auto;
+    }
+
+    .richtext-align-grid-row {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    .richtext-align-grid .richtext-align-grid-cell {
+      width: 1.4rem;
+      height: 1.4rem;
+      padding: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-sm);
+      background-color: var(--dry-muted);
+      box-shadow: none;
+
+      &.active {
+        background-color: var(--dry-accent);
+        border-color: var(--dry-primary);
+        box-shadow:
+          0 0 0 2px var(--dry-popover),
+          0 0 0 3.5px var(--dry-primary);
+      }
     }
 
     /* --- List view: rows are separated, rounded, solid-bordered "pills"

@@ -1,24 +1,52 @@
 import type { IconProps } from "../icons.js";
+import type { CellHAlign, CellVAlign } from "./schema.js";
+
+const H_INDEX: Record<CellHAlign, number> = { left: 0, center: 1, right: 2 };
+const V_INDEX: Record<CellVAlign, number> = { top: 0, middle: 1, bottom: 2 };
+
+/** 16px grid: 3 squares (`CELL`) + 2 gaps (`GAP`) exactly fill the viewBox. */
+const CELL = 4;
+const GAP = 2;
+const POS = [0, CELL + GAP, (CELL + GAP) * 2];
+
+export interface CellAlignIconProps extends IconProps {
+  /** Which of the 9 dots reads as "current" - defaults match
+   * `getCellAlignState`'s own no-selection fallback (`table.ts`). */
+  hAlign?: CellHAlign;
+  vAlign?: CellVAlign;
+  /** Selection spans cells with different alignments - no single dot can
+   * speak for all of them, so every dot dims equally (same "no answer"
+   * idiom as the grid picker's own `!mixed &&` active check). */
+  mixed?: boolean;
+}
 
 /**
  * Hand-added exception to the generated `icons.tsx` (`scripts/build-icons.mjs`
  * only embeds icons looked up by Solar/Lucide id from `icons.config.json`) -
- * the requested 3x3 cell-position glyph (one highlighted square, the other 8
- * dimmed) has no equivalent in either icon set, so this carries the exact
- * markup it was given instead of substituting a visually different icon.
+ * the requested 3x3 cell-position glyph has no equivalent in either icon set.
+ * Built from 9 plain `<rect>`s (rather than a fixed hand-drawn path) so the
+ * highlighted dot can track the cell's actual `hAlign`/`vAlign` instead of
+ * always sitting top-left.
  */
-export function CellAlignIcon(props: IconProps) {
+export function CellAlignIcon({ hAlign = "left", vAlign = "middle", mixed = false, ...props }: CellAlignIconProps) {
+  const activeCol = H_INDEX[hAlign];
+  const activeRow = V_INDEX[vAlign];
   return (
-    <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props}>
-      <path
-        fill="currentColor"
-        d="M0 1.84C0 1.196 0 .874.125.63C.235.414.411.238.628.127c.246-.125.568-.125 1.21-.125h.32c.644 0 .966 0 1.21.125c.216.11.392.286.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.286.392-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503C0 3.124 0 2.802 0 2.16z"
-      />
-      <path
-        fill="currentColor"
-        opacity=".3"
-        d="M2.16 12c.644 0 .966 0 1.21.125c.216.11.393.286.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.287.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.287-.393.503-.503C.876 12 1.198 12 1.84 12zm6 0c.644 0 .966 0 1.21.125c.216.11.393.286.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.287.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.287-.393.503-.503C6.876 12 7.198 12 7.84 12zm6.04 0c.644 0 .966 0 1.21.125c.216.11.393.286.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.286.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.286-.393.503-.503c.246-.125.568-.125 1.21-.125zM2.16 6c.644 0 .966 0 1.21.125c.216.11.393.287.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.287.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503C.002 9.122.002 8.8.002 8.158v-.32c0-.644 0-.966.125-1.21c.11-.216.287-.393.503-.503C.876 6 1.198 6 1.84 6zm6 0c.644 0 .966 0 1.21.125c.216.11.393.287.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.287.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.287-.393.503-.503C6.876 6 7.198 6 7.84 6zm6.04 0c.644 0 .966 0 1.21.125c.216.11.393.287.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.286.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.286-.393.503-.503C12.916 6 13.238 6 13.88 6zM8.16 0c.644 0 .966 0 1.21.125c.216.11.393.287.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.287.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.287-.393.503-.503C6.876 0 7.198 0 7.84 0zm6.04 0c.644 0 .966 0 1.21.125c.216.11.393.287.503.503c.125.246.125.568.125 1.21v.32c0 .644 0 .966-.125 1.21c-.11.216-.286.393-.503.503c-.246.125-.568.125-1.21.125h-.32c-.644 0-.966 0-1.21-.125a1.15 1.15 0 0 1-.503-.503c-.125-.246-.125-.568-.125-1.21v-.32c0-.644 0-.966.125-1.21c.11-.216.286-.393.503-.503C12.916 0 13.238 0 13.88 0z"
-      />
+    <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true" {...props}>
+      {POS.map((y, row) =>
+        POS.map((x, col) => (
+          <rect
+            key={`${row}-${col}`}
+            x={x}
+            y={y}
+            width={CELL}
+            height={CELL}
+            rx="1.2"
+            fill="currentColor"
+            opacity={!mixed && row === activeRow && col === activeCol ? 1 : 0.3}
+          />
+        )),
+      )}
     </svg>
   );
 }

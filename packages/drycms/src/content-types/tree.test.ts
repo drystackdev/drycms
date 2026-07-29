@@ -164,24 +164,6 @@ describe("resolveTableTree", () => {
     expect(col?.sqlType).toBe("INTEGER");
   });
 
-  it("only fills ftsColumns when features.fullSearch is on", () => {
-    const withSearch = collection({
-      features: { fullSearch: true, slug: true },
-      fields: [field({ id: "f1", name: "body" })],
-    });
-    const withoutSearch = collection({ features: { slug: true }, fields: [field({ id: "f1", name: "body" })] });
-
-    expect(resolveTableTree(withSearch, [withSearch]).ftsColumns).toEqual(["title", "slug", "body"]);
-    expect(resolveTableTree(withoutSearch, [withoutSearch]).ftsColumns).toEqual([]);
-  });
-
-  it("excludes date/image columns from FTS even when fullSearch is on", () => {
-    const type = collection({
-      features: { fullSearch: true, slug: true },
-      fields: [field({ id: "d1", name: "published", type: "date" }), field({ id: "i1", name: "cover", type: "image" })],
-    });
-    expect(resolveTableTree(type, [type]).ftsColumns).toEqual(["title", "slug"]);
-  });
 });
 
 describe("findDependents", () => {

@@ -27,8 +27,8 @@ test.describe("Content Types list page", () => {
     const headers = await table.locator("th").allTextContents();
     expect(headers).toEqual(["Name", "Fields"]);
 
-    // The "+ Add <Kind>" button lives alongside the table's search bar.
-    await expect(page.locator(".content-types-panel").getByRole("button", { name: "+ Add Collection" })).toBeVisible();
+    // The "Add <Kind>" button (icon + text, no literal "+") lives alongside the table's search bar.
+    await expect(page.locator(".content-types-panel").getByRole("button", { name: "Add Collection" })).toBeVisible();
   });
 
   test("switching the left menu changes which kind's table is shown, and the Add button's label", async ({
@@ -41,7 +41,7 @@ test.describe("Content Types list page", () => {
       "aria-current",
       "page",
     );
-    await expect(page.locator(".content-types-panel").getByRole("button", { name: "+ Add Component" })).toBeVisible();
+    await expect(page.locator(".content-types-panel").getByRole("button", { name: "Add Component" })).toBeVisible();
   });
 
   test("nav stays sticky while the table scrolls", async ({ page }) => {

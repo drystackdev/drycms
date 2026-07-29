@@ -9,6 +9,14 @@ export interface SaveResponse {
 
 export class ContentTypesApiError extends Error {}
 
+/** Same envelope shape `entries-http-api.ts`'s `VersionedResult` uses - see
+ * `status/build-cache.md`. */
+export interface VersionedResult<T> {
+  changed: boolean;
+  version: number;
+  data?: T;
+}
+
 async function readJson(res: Response): Promise<any> {
   try {
     return await res.json();
@@ -64,7 +72,20 @@ export function createContentTypesApi(baseUrl: string) {
     await assertOk(res, "Failed to delete content type.");
   }
 
-  return { list, get, create, update, remove };
+  /** `useFetch()`-oriented counterpart to `list()` - sends `ifVersion` as
+   * `X-Data-Version`, returns the `changed`/`version` envelope instead of
+   * the bare array (see `status/build-cache.md`). */
+  async function listVersioned(ifVersion?: number, signal?: AbortSignal): Promise<VersionedResult<ContentTypeDefinition[]>> {
+    const res = await fetch(baseUrl, {
+      headers: ifVersion === undefined ? undefined : { "X-Data-Version": String(ifVersion) },
+      signal,
+    });
+    await assertOk(res, "Failed to list content types.");
+    const body = await res.json();
+    return body.changed ? { changed: true, version: body.version, data: body.definitions } : { changed: false, version: body.version };
+  }
+
+  return { list, get, create, update, remove, listVersioned };
 }
 
 export type ContentTypesApi = ReturnType<typeof createContentTypesApi>;

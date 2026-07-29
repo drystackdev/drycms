@@ -9,9 +9,12 @@ import { expect, test, type Page } from "@playwright/test";
 async function createTestCollection(page: Page, options?: { slug?: boolean }): Promise<{ id: string; title: string }> {
   await page.goto("/dry/content-types/new/collection");
   const uniqueTitle = `E2E Test ${Date.now()}`;
-  await page.getByLabel("Title", { exact: true }).fill(uniqueTitle);
+  await page.getByLabel("Table Name*", { exact: true }).fill(uniqueTitle);
   if (options?.slug) {
-    await page.getByLabel("Slug", { exact: true }).check();
+    // `CheckField`'s description text lives inside the same `<label>`, so the
+    // accessible name is "Slug Adds a URL-friendly Slug field, ..." - matched
+    // as a prefix rather than pinned to that whole description string.
+    await page.getByLabel(/^Slug\b/).check();
   }
   await page.getByRole("button", { name: "Save & apply schema" }).click();
   await page.waitForURL("**/dry/content-types");
@@ -27,7 +30,7 @@ async function createTestCollection(page: Page, options?: { slug?: boolean }): P
 
 /** Adds a custom text field via the dialog, using its default settings. */
 async function addTextField(page: Page, label: string): Promise<void> {
-  await page.getByRole("button", { name: "+ Add Field" }).click();
+  await page.getByRole("button", { name: "Add Field" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Label", { exact: true }).fill(label);
   await dialog.getByRole("button", { name: "Select…" }).click();
@@ -51,8 +54,8 @@ test.describe("Content Type editor", () => {
   test("SlugField auto-derives the slug from the title, editably", async ({ page }) => {
     await page.goto("/dry/content-types/new/collection");
 
-    const titleInput = page.getByLabel("Title", { exact: true });
-    const slugInput = page.getByLabel("Table Name", { exact: true });
+    const titleInput = page.getByLabel("Table Name*", { exact: true });
+    const slugInput = page.getByLabel("Table", { exact: true });
 
     await titleInput.fill("My Blog Post");
     await expect(slugInput).toHaveValue("my-blog-post");
@@ -71,9 +74,9 @@ test.describe("Content Type editor", () => {
     page,
   }) => {
     await page.goto("/dry/content-types/new/collection");
-    await page.getByLabel("Title", { exact: true }).fill("Dialog Test");
+    await page.getByLabel("Table Name*", { exact: true }).fill("Dialog Test");
 
-    await page.getByRole("button", { name: "+ Add Field" }).click();
+    await page.getByRole("button", { name: "Add Field" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
@@ -105,8 +108,8 @@ test.describe("Content Type editor", () => {
     page,
   }) => {
     await page.goto("/dry/content-types/new/collection");
-    await page.getByLabel("Title", { exact: true }).fill("Dialog Test 2");
-    await page.getByRole("button", { name: "+ Add Field" }).click();
+    await page.getByLabel("Table Name*", { exact: true }).fill("Dialog Test 2");
+    await page.getByRole("button", { name: "Add Field" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Select…" }).click();
     await page.getByRole("option", { name: "Text" }).click();
@@ -153,9 +156,9 @@ test.describe("Content Type editor", () => {
   test("Add Field dialog scrolls its own body instead of the window when content overflows", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 500 });
     await page.goto("/dry/content-types/new/collection");
-    await page.getByLabel("Title", { exact: true }).fill("Scroll Test");
+    await page.getByLabel("Table Name*", { exact: true }).fill("Scroll Test");
 
-    await page.getByRole("button", { name: "+ Add Field" }).click();
+    await page.getByRole("button", { name: "Add Field" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Select…" }).click();
     await page.getByRole("option", { name: "Text" }).click();

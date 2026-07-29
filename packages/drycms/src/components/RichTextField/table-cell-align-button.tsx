@@ -18,15 +18,16 @@ export interface TableCellAlignButtonProps {
 
 /**
  * Cell alignment picker docked in `table-menu.tsx`'s controls row - a 3x3
- * grid (`vAlign` rows x `hAlign` columns) reusing `table-insert-button.tsx`'s
- * own seamless-cell grid classes (`.richtext-table-grid*`) rather than
- * duplicating that CSS, just a fixed 3x3 with a single active cell instead of
- * a variable hover-highlighted range. Applies to every cell in a multi-cell
- * `CellSelection` at once, not just wherever the cursor happens to sit - see
- * `setCellAlign`'s own doc comment in `table.ts`. Left open after a click
- * (unlike `TableInsertButton`'s one-shot close) so trying a few combinations
- * in a row doesn't mean reopening the popover each time - same idiom as
- * `ColorMenu`'s swatches.
+ * grid (`vAlign` rows x `hAlign` columns) with its own gapped/bordered/rounded
+ * cell classes (`.richtext-align-grid*`) rather than reusing
+ * `table-insert-button.tsx`'s seamless-cell `.richtext-table-grid*` - that
+ * grid's flush-bordered cells read as a literal miniature table, which fits
+ * "insert a table" but misleads for "pick an alignment". Applies to every
+ * cell in a multi-cell `CellSelection` at once, not just wherever the cursor
+ * happens to sit - see `setCellAlign`'s own doc comment in `table.ts`. Left
+ * open after a click (unlike `TableInsertButton`'s one-shot close) so trying
+ * a few combinations in a row doesn't mean reopening the popover each time -
+ * same idiom as `ColorMenu`'s swatches.
  */
 export default function TableCellAlignButton({ viewRef, disabled = false, iconSize }: TableCellAlignButtonProps) {
   const view = viewRef.current;
@@ -55,19 +56,19 @@ export default function TableCellAlignButton({ viewRef, disabled = false, iconSi
           onMouseDown={(event) => event.preventDefault()}
           onClick={onClick}
         >
-          <CellAlignIcon />
+          <CellAlignIcon hAlign={hAlign} vAlign={vAlign} mixed={mixed} />
         </button>
       )}
     >
-      <li role="none" class="richtext-table-grid-picker">
-        <div class="richtext-table-grid" role="group" aria-label="Cell alignment">
+      <li role="none" class="richtext-align-grid-picker">
+        <div class="richtext-align-grid" role="group" aria-label="Cell alignment">
           {V_ALIGNS.map((v) => (
-            <div class="richtext-table-grid-row" key={v}>
+            <div class="richtext-align-grid-row" key={v}>
               {H_ALIGNS.map((h) => (
                 <button
                   type="button"
                   key={h}
-                  class={`richtext-table-grid-cell${!mixed && h === hAlign && v === vAlign ? " active" : ""}`}
+                  class={`richtext-align-grid-cell${!mixed && h === hAlign && v === vAlign ? " active" : ""}`}
                   aria-label={`${v}, ${h}`}
                   aria-pressed={!mixed && h === hAlign && v === vAlign}
                   onMouseDown={(event) => event.preventDefault()}
