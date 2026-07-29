@@ -32,6 +32,7 @@ export default function AlignMenu({ viewRef, state, disabled = false, iconSize }
         type: "item" as const,
         label: option.label,
         icon: <option.Icon />,
+        checked: option.value === current.value,
         onClick: () => applyAlign(option.value),
       }))}
       trigger={(onClick) => (

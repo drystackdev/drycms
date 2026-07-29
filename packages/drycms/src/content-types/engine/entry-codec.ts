@@ -1,9 +1,9 @@
 import { fieldTypes } from "../field-registry.js";
 import { encryptSecret } from "../../lib/secret-crypto.js";
-import { hashPassword, verifyPassword } from "../../lib/password-hash.js";
+import { hashPassword } from "../../lib/password-hash.js";
 import { SYSTEM_FIELD_IDS } from "../system-fields.js";
 import type { EntryFieldNode } from "./entry-tree.js";
-import { isMaskedValue, type FieldErrors, type MaskedValue } from "./entry-validate.js";
+import { isMaskedValue, type MaskedValue } from "./entry-validate.js";
 
 export type EntryValue = Record<string, unknown>;
 
@@ -108,39 +108,6 @@ export async function valueToRow(nodes: EntryFieldNode[], value: EntryValue): Pr
     row[node.columnName] = serialize ? serialize(incoming) : incoming;
   }
   return row;
-}
-
-/** Verifies a `password` field's staged `old` value against the row's currently-stored
- * hash before `updateEntry` is allowed to overwrite it with a new one - called by both
- * `entries-sqlite.ts`/`entries-d1.ts` with the full existing row (already fetched for
- * their own not-found check) right before `valueToRow`. Only columns with a staged
- * `.new` value are checked - untouched fields never call `verifyPassword` at all. A
- * `null`/empty stored hash (no password ever set on this row) has nothing to verify
- * against, so it's treated as verified - matches the client, which never even shows an
- * "old password" input in that case (`rowToValue`'s `hasExisting` would be `false`).
- * Returns field errors (fieldName -> message, dotted path for `flatten` children); empty
- * when there's nothing to verify or everything matches. */
-export async function verifyPasswordChanges(
-  nodes: EntryFieldNode[],
-  value: EntryValue,
-  existingRow: Record<string, unknown>,
-  pathPrefix = "",
-): Promise<FieldErrors> {
-  const errors: FieldErrors = {};
-  for (const node of nodes) {
-    const path = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
-    if (node.kind === "flatten") {
-      Object.assign(errors, await verifyPasswordChanges(node.children, (value[node.fieldName] as EntryValue) ?? {}, existingRow, path));
-      continue;
-    }
-    if (node.kind !== "column" || node.fieldType !== "password") continue;
-    const incoming = value[node.fieldName];
-    if (!isMaskedValue(incoming) || !incoming.new) continue;
-    const storedHash = existingRow[node.columnName];
-    const ok = typeof storedHash === "string" && storedHash.length > 0 ? await verifyPassword(incoming.old ?? "", storedHash) : true;
-    if (!ok) errors[path] = "Current password is incorrect.";
-  }
-  return errors;
 }
 
 /**

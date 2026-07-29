@@ -80,6 +80,17 @@ export const iconBodies = {
 	Heading5: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 12h8m-8 6V6m8 12V6m5 7v-3h4m-4 7.7c.4.2.8.3 1.3.3c1.5 0 2.7-1.1 2.7-2.5S19.8 13 18.3 13H17\"/>",
 	Heading6: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M4 12h8m-8 6V6m8 12V6\"/><circle cx=\"19\" cy=\"16\" r=\"2\"/><path d=\"M20 10c-2 2-3 3.5-3 6\"/></g>",
 	Quote: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1a6 6 0 0 0 6-6V5a2 2 0 0 0-2-2zM5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1a6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z\"/>",
+	BulletList: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13\"/>",
+	OrderedList: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M11 5h10m-10 7h10m-10 7h10M4 4h1v5M4 9h2m.5 11H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02\"/>",
+	Table: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18\"/>",
+	TableRows: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M21 9H3m18 6H3\"/></g>",
+	TableColumns: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M9 3v18m6-18v18\"/></g>",
+	TableHeaderRow: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M3 9h18\"/></g>",
+	MergeCells: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M12 21v-6m0-6V3M3 15h18M3 9h18\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/></g>",
+	SplitCells: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M12 15V9m-9 6h18M3 9h18\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/></g>",
+	Caption: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"2\" ry=\"2\"/><path d=\"M7 15h4m4 0h2M7 11h2m4 0h4\"/></g>",
+	Fullscreen: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\" d=\"M22 14c0 3.771 0 5.657-1.172 6.828S17.771 22 14 22m-4 0c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14m8-12C6.229 2 4.343 2 3.172 3.172S2 6.229 2 10m12-8c3.771 0 5.657 0 6.828 1.172S22 6.229 22 10\"/>",
+	FullscreenExit: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\" d=\"M14 22c0-3.771 0-5.657 1.172-6.828S18.229 14 22 14M2 14c3.771 0 5.657 0 6.828 1.172S10 18.229 10 22M2 10c3.771 0 5.657 0 6.828-1.172S10 5.771 10 2m12 8c-3.771 0-5.657 0-6.828-1.172S14 5.771 14 2\"/>",
 } as const;
 
 /** `viewBox` matching each entry in `iconBodies`. */
@@ -157,6 +168,17 @@ export const iconViewBoxes = {
 	Heading5: "0 0 24 24",
 	Heading6: "0 0 24 24",
 	Quote: "0 0 24 24",
+	BulletList: "0 0 24 24",
+	OrderedList: "0 0 24 24",
+	Table: "0 0 24 24",
+	TableRows: "0 0 24 24",
+	TableColumns: "0 0 24 24",
+	TableHeaderRow: "0 0 24 24",
+	MergeCells: "0 0 24 24",
+	SplitCells: "0 0 24 24",
+	Caption: "0 0 24 24",
+	Fullscreen: "0 0 24 24",
+	FullscreenExit: "0 0 24 24",
 } as const;
 
 export type IconName = keyof typeof iconBodies;
@@ -669,5 +691,82 @@ export function Heading6Icon(props: IconProps) {
 export function QuoteIcon(props: IconProps) {
 	return (
 		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1a6 6 0 0 0 6-6V5a2 2 0 0 0-2-2zM5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1a6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z\"/>" }} />
+	);
+}
+
+/** `lucide:list` */
+export function BulletListIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13\"/>" }} />
+	);
+}
+
+/** `lucide:list-ordered` */
+export function OrderedListIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M11 5h10m-10 7h10m-10 7h10M4 4h1v5M4 9h2m.5 11H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02\"/>" }} />
+	);
+}
+
+/** `lucide:table-2` */
+export function TableIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18\"/>" }} />
+	);
+}
+
+/** `lucide:rows-3` */
+export function TableRowsIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M21 9H3m18 6H3\"/></g>" }} />
+	);
+}
+
+/** `lucide:columns-3` */
+export function TableColumnsIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M9 3v18m6-18v18\"/></g>" }} />
+	);
+}
+
+/** `lucide:panel-top` */
+export function TableHeaderRowIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M3 9h18\"/></g>" }} />
+	);
+}
+
+/** `lucide:table-cells-merge` */
+export function MergeCellsIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M12 21v-6m0-6V3M3 15h18M3 9h18\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/></g>" }} />
+	);
+}
+
+/** `lucide:table-cells-split` */
+export function SplitCellsIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M12 15V9m-9 6h18M3 9h18\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/></g>" }} />
+	);
+}
+
+/** `lucide:captions` */
+export function CaptionIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><rect width=\"18\" height=\"14\" x=\"3\" y=\"5\" rx=\"2\" ry=\"2\"/><path d=\"M7 15h4m4 0h2M7 11h2m4 0h4\"/></g>" }} />
+	);
+}
+
+/** `solar:full-screen-linear` */
+export function FullscreenIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\" d=\"M22 14c0 3.771 0 5.657-1.172 6.828S17.771 22 14 22m-4 0c-3.771 0-5.657 0-6.828-1.172S2 17.771 2 14m8-12C6.229 2 4.343 2 3.172 3.172S2 6.229 2 10m12-8c3.771 0 5.657 0 6.828 1.172S22 6.229 22 10\"/>" }} />
+	);
+}
+
+/** `solar:quit-full-screen-linear` */
+export function FullscreenExitIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\" d=\"M14 22c0-3.771 0-5.657 1.172-6.828S18.229 14 22 14M2 14c3.771 0 5.657 0 6.828 1.172S10 18.229 10 22M2 10c3.771 0 5.657 0 6.828-1.172S10 5.771 10 2m12 8c-3.771 0-5.657 0-6.828-1.172S14 5.771 14 2\"/>" }} />
 	);
 }

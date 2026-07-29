@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultContentTypeDefinitions } from "../seed.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "./entry-tree.js";
-import { hashPassword } from "../../lib/password-hash.js";
-import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, verifyPasswordChanges, type MaskedValue } from "./entry-codec.js";
+import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type MaskedValue } from "./entry-codec.js";
 
 const allTypes = defaultContentTypeDefinitions();
 const user = allTypes.find((t) => t.name === "user")!;
@@ -81,11 +80,11 @@ describe("valueToRow", () => {
     expect("password" in row).toBe(false);
   });
 
-  it("ignores `.confirm` and `.old` - only `.new` is ever hashed", async () => {
+  it("ignores `.confirm` - only `.new` is ever hashed", async () => {
     const row = await valueToRow(userNodes, {
       name: "Ada",
       email: "ada@example.com",
-      password: { hasExisting: true, old: "oldpass", new: "hunter2", confirm: "something-else" } satisfies MaskedValue,
+      password: { hasExisting: true, new: "hunter2", confirm: "something-else" } satisfies MaskedValue,
     });
     expect(row.password).toMatch(/^v1:/);
   });
@@ -102,44 +101,6 @@ describe("valueToRow", () => {
     const row = await valueToRow(aiKeyNodes, { name: "OpenAI", provider: "ChatGPT", key: "sk_live_abc" });
     expect(row.key).toMatch(/^v1:/);
     expect(row.key).not.toBe("sk_live_abc");
-  });
-});
-
-describe("verifyPasswordChanges", () => {
-  it("returns no errors when there's nothing staged to change", async () => {
-    const existingRow = { password: await hashPassword("current-pass") };
-    const errors = await verifyPasswordChanges(userNodes, { password: { hasExisting: true } satisfies MaskedValue }, existingRow);
-    expect(errors).toEqual({});
-  });
-
-  it("passes when the staged old password matches the stored hash", async () => {
-    const existingRow = { password: await hashPassword("current-pass") };
-    const errors = await verifyPasswordChanges(
-      userNodes,
-      { password: { hasExisting: true, old: "current-pass", new: "new-pass" } satisfies MaskedValue },
-      existingRow,
-    );
-    expect(errors).toEqual({});
-  });
-
-  it("rejects when the staged old password doesn't match the stored hash", async () => {
-    const existingRow = { password: await hashPassword("current-pass") };
-    const errors = await verifyPasswordChanges(
-      userNodes,
-      { password: { hasExisting: true, old: "wrong-pass", new: "new-pass" } satisfies MaskedValue },
-      existingRow,
-    );
-    expect(errors.password).toBe("Current password is incorrect.");
-  });
-
-  it("skips verification when the row has no password set yet (nothing to check against)", async () => {
-    const existingRow = { password: null };
-    const errors = await verifyPasswordChanges(
-      userNodes,
-      { password: { hasExisting: false, new: "new-pass" } satisfies MaskedValue },
-      existingRow,
-    );
-    expect(errors).toEqual({});
   });
 });
 

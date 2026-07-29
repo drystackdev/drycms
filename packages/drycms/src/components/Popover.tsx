@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { MoreVerticalIcon } from "./icons.js";
+import { CheckIcon, MoreVerticalIcon } from "./icons.js";
 import { useCloseOnResize, usePopupFlip, useTrackRect } from "./list-nav.js";
 
 /** Matches `.popover-menu`'s `width: 11rem` in components.css. */
@@ -15,6 +15,11 @@ export type PopoverMenuEntry =
       icon?: ComponentChildren;
       onClick: () => void;
       danger?: boolean;
+      /** Marks this item as the currently active choice in a one-of-many
+       * menu (e.g. text align, block type) - renders a trailing checkmark
+       * and swaps the item's role to `menuitemradio`. Omit entirely for
+       * plain action menus, where no item is ever "current". */
+      checked?: boolean;
     };
 
 export interface PopoverProps {
@@ -165,11 +170,13 @@ export default function Popover({
             <li key={entry.label} role="none">
               <button
                 type="button"
-                role="menuitem"
+                role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
+                aria-checked={entry.checked}
                 class={entry.danger ? "popover-menu-danger" : undefined}
                 onClick={() => run(entry.onClick)}
               >
                 {entry.icon} {entry.label}
+                {entry.checked && <CheckIcon class="popover-menu-check" />}
               </button>
             </li>
           ),

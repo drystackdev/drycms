@@ -24,6 +24,10 @@ export interface RichTextToolbarProps {
    * icon <iconSize>"`), both the plain toolbar buttons and each custom
    * item's own trigger button. @default "md" */
   iconSize?: ToolbarIconSize;
+  /** Passed through to every custom item, same as `source` - only
+   * `fullscreen-button.tsx` reads either. */
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 /** Purely presentational - rendering whatever `./toolbar-buttons.ts` lists.
@@ -35,7 +39,9 @@ export default function RichTextToolbar({
   contentRef,
   inline = false,
   source,
-  iconSize = "md"
+  iconSize = "md",
+  fullscreen,
+  onToggleFullscreen,
 }: RichTextToolbarProps) {
   // A plain click on a toolbar button would blur the contenteditable and
   // collapse its selection before the click handler ever runs.
@@ -73,6 +79,8 @@ export default function RichTextToolbar({
                 disabled={disabled}
                 source={source}
                 iconSize={iconSize}
+                fullscreen={fullscreen}
+                onToggleFullscreen={onToggleFullscreen}
               />
             ) : (
               <button

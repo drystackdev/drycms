@@ -83,6 +83,18 @@
     "Heading4": "lucide:heading-4",
     "Heading5": "lucide:heading-5",
     "Heading6": "lucide:heading-6",
-    "Quote": "lucide:quote"
+    "Quote": "lucide:quote",
+
+    "BulletList": "lucide:list",
+    "OrderedList": "lucide:list-ordered",
+    "Table": "lucide:table-2",
+    "TableRows": "lucide:rows-3",
+    "TableColumns": "lucide:columns-3",
+    "TableHeaderRow": "lucide:panel-top",
+    "MergeCells": "lucide:table-cells-merge",
+    "SplitCells": "lucide:table-cells-split",
+    "Caption": "lucide:captions",
+    "Fullscreen": "solar:full-screen-linear",
+    "FullscreenExit": "solar:quit-full-screen-linear"
   }
 }

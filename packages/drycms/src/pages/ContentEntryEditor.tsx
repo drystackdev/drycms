@@ -215,10 +215,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     if (!type || !entriesApi || !value) return;
     setFieldErrors({});
 
-    // Confirm-password mismatches (and a missing "current password" when setting a
-    // new one) only ever exist client-side - `confirm` never reaches the server - so
-    // this is the one pre-submit check the editor runs, ahead of the usual "just
-    // submit and surface whatever the server rejects" pattern below.
+    // Confirm-password mismatches only ever exist client-side - `confirm` never
+    // reaches the server - so this is the one pre-submit check the editor runs,
+    // ahead of the usual "just submit and surface whatever the server rejects"
+    // pattern below.
     const passwordErrors = findPasswordChangeErrors(nodes, value);
     if (Object.keys(passwordErrors).length > 0) {
       setFieldErrors(passwordErrors);

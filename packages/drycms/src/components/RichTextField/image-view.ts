@@ -13,12 +13,15 @@ import type { ImageAlign, ImageObjectFit } from "./schema.js";
  * preserves the image's natural ratio exactly like drystack does, unlocked
  * resizes each dragged handle's own axis independently.
  *
- * DOM shape: `dom` (`.richtext-image-wrapper`, carries align/float/the
- * `.is-selected` outline - the live-editor equivalent of `html.ts`'s
- * exported `<figure>`) > `imageBox` (`.richtext-image-box`, `position:
- * relative` - what the resize handles' `top`/`left` percentages actually
- * anchor to) > `img`, plus the handles themselves while selected; and a
- * `figcaption` sibling of `imageBox` for `node.attrs.caption`. The handles
+ * DOM shape: `dom` (`.dry-tx-image-wrapper`, carries align/float - the
+ * live-editor equivalent of `html.ts`'s exported `<figure>`) > `imageBox`
+ * (`.dry-tx-image-box`, `position: relative` and the `.is-selected` outline -
+ * what the resize handles' `top`/`left` percentages actually anchor to)
+ * > `img`, plus the handles themselves while selected; and a
+ * `figcaption` sibling of `imageBox`, appended only once `node.attrs.caption`
+ * is actually set (and removed again if it's cleared back to empty) rather
+ * than kept in the DOM permanently and just hidden - so an uncaptioned image
+ * carries no `<figcaption>` at all, live or exported. The handles
  * anchor to `imageBox` rather than `dom` directly so a caption's own
  * height (a block box stacked below `imageBox` once one exists) can't
  * shift what "100%" means for a handle meant to sit at the image's own
@@ -85,14 +88,14 @@ export class ImageNodeView implements NodeView {
     this.getPos = getPos;
 
     this.dom = document.createElement("span");
-    this.dom.className = "richtext-image-wrapper";
+    this.dom.className = "dry-tx-image-wrapper";
 
     this.imageBox = document.createElement("span");
-    this.imageBox.className = "richtext-image-box";
+    this.imageBox.className = "dry-tx-image-box";
     this.dom.appendChild(this.imageBox);
 
     this.img = document.createElement("img");
-    this.img.className = "richtext-image";
+    this.img.className = "dry-tx-image";
     this.img.draggable = false;
     this.img.addEventListener("load", () => {
       if (this.img.naturalHeight) this.naturalRatio = this.img.naturalWidth / this.img.naturalHeight;
@@ -100,13 +103,14 @@ export class ImageNodeView implements NodeView {
     this.imageBox.appendChild(this.img);
 
     this.captionEl = document.createElement("figcaption");
-    this.captionEl.className = "richtext-image-caption";
+    this.captionEl.className = "dry-tx-image-caption";
     this.captionEl.contentEditable = "false";
-    this.dom.appendChild(this.captionEl);
+    // Not appended here - `render()` attaches/detaches it based on whether
+    // `node.attrs.caption` is actually set (see the class doc comment above).
 
     for (const handle of HANDLES) {
       const el = document.createElement("span");
-      el.className = "richtext-image-handle";
+      el.className = "dry-tx-image-handle";
       el.style.top = handle.top;
       el.style.left = handle.left;
       el.style.cursor = handle.cursor;
@@ -187,10 +191,20 @@ export class ImageNodeView implements NodeView {
     this.img.style.height = height != null ? `${height}px` : "";
     this.img.style.maxWidth = width != null ? "none" : "";
     this.img.style.maxHeight = height != null ? "none" : "";
-    this.img.style.objectFit = width != null || height != null ? (this.node.attrs.objectFit as ImageObjectFit) : "";
+    // Locked means width/height always move together in the image's own
+    // natural ratio, so object-fit can't have any visible effect there -
+    // same reasoning as `imageSizeAndFitStyleString` in schema.ts, which
+    // `html.ts`'s export shares this with (this node view has its own
+    // direct `.style` write instead, but the condition must stay identical).
+    const lockedRatio = !!this.node.attrs.lockAspectRatio;
+    this.img.style.objectFit = !lockedRatio && (width != null || height != null) ? (this.node.attrs.objectFit as ImageObjectFit) : "";
     const caption = (this.node.attrs.caption as string) ?? "";
     this.captionEl.textContent = caption;
-    this.captionEl.style.display = caption ? "" : "none";
+    if (caption) {
+      if (!this.captionEl.isConnected) this.dom.appendChild(this.captionEl);
+    } else if (this.captionEl.isConnected) {
+      this.captionEl.remove();
+    }
     this.renderAlign(this.node.attrs.align as ImageAlign | null);
   }
 
@@ -201,7 +215,7 @@ export class ImageNodeView implements NodeView {
    * it out of flow while leaving this outer wrapper in flow with nothing to
    * size itself by, collapsing it to a zero-size box at the image's text
    * position. `left`/`right` just float the wrapper (already `inline-block`
-   * via forms.css's `.richtext-image-wrapper`, so floating changes nothing
+   * via richtext-content.css's `.dry-tx-image-wrapper`, so floating changes nothing
    * else about its sizing); `center` stretches it to the paragraph's full
    * width via `min-width: 100%` (matching `schema.ts`'s `imageAlignStyleString`,
    * the exported HTML's own encoding of this) rather than `display: block` -
@@ -233,12 +247,15 @@ export class ImageNodeView implements NodeView {
   }
 
   selectNode() {
-    this.dom.classList.add("is-selected");
+    // On `imageBox`, not `dom` - the outline/handles both need to track the
+    // same box, and `dom` (which also holds the caption once one exists)
+    // isn't it; see `.dry-tx-image-box`'s own doc comment in richtext-content.css.
+    this.imageBox.classList.add("is-selected");
     for (const el of this.handleEls) this.imageBox.appendChild(el);
   }
 
   deselectNode() {
-    this.dom.classList.remove("is-selected");
+    this.imageBox.classList.remove("is-selected");
     for (const el of this.handleEls) el.remove();
   }
 

@@ -1,4 +1,5 @@
 import { Schema, type Attrs, type DOMOutputSpec, type Node as PMNode, type NodeType } from "prosemirror-model";
+import { tableNodes } from "prosemirror-tables";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -96,17 +97,27 @@ export function imageAlignStyleString(align: ImageAlign | null): string {
 /** The inline `style` for an image's explicit size (set via the resize
  * handles - see `image-view.ts`) and `object-fit` (`image-menu.tsx`'s edit
  * dialog) - `max-width`/`max-height: none` override this field's own
- * default cap on an unsized image (`.richtext-image` in forms.css), which
+ * default cap on an unsized image (`.dry-tx-image` in richtext-content.css), which
  * would otherwise clamp a deliberately-resized-larger image right back
  * down. Split out from `imageStyleString` below so a captioned image
  * (`exportCleanHtml`'s `<figure>` case) can put size/fit on the `<img>`
  * itself and align on the `<figure>` wrapping it, instead of both landing
- * on the same element the way the uncaptioned case does. */
-export function imageSizeAndFitStyleString(width: number | null, height: number | null, objectFit: ImageObjectFit): string {
+ * on the same element the way the uncaptioned case does.
+ *
+ * `objectFit: null` (callers pass this whenever `node.attrs.lockAspectRatio`
+ * is true) omits the declaration entirely rather than writing it out anyway:
+ * a locked image's box is always in its own natural ratio, so `fill`/`cover`/
+ * `contain` render identically either way - there's nothing for the attr to
+ * *do* until the box can actually differ from that ratio (i.e. unlocked). */
+export function imageSizeAndFitStyleString(
+  width: number | null,
+  height: number | null,
+  objectFit: ImageObjectFit | null,
+): string {
   const parts: string[] = [];
   if (width != null) parts.push(`width:${width}px`, "max-width:none");
   if (height != null) parts.push(`height:${height}px`, "max-height:none");
-  if (width != null || height != null) parts.push(`object-fit:${objectFit}`);
+  if (objectFit && (width != null || height != null)) parts.push(`object-fit:${objectFit}`);
   return parts.join(";");
 }
 
@@ -118,10 +129,105 @@ export function imageStyleString(
   width: number | null,
   height: number | null,
   align: ImageAlign | null,
-  objectFit: ImageObjectFit,
+  objectFit: ImageObjectFit | null,
 ): string {
   return [imageSizeAndFitStyleString(width, height, objectFit), imageAlignStyleString(align)].filter(Boolean).join(";");
 }
+
+const olDOM: DOMOutputSpec = ["ol", 0];
+const ulDOM: DOMOutputSpec = ["ul", 0];
+const liDOM: DOMOutputSpec = ["li", 0];
+
+/** Reads a `<tr>`'s own resized height back off its inline `style` - shared
+ * by this schema's `table_row.parseDOM` and `html.ts`'s import walk (which,
+ * like the image node, doesn't go through `parseDOM` for tables either -
+ * see `table.ts`'s own doc comment for why). */
+export function heightPxFromStyle(style: string): number | null {
+  const match = /(?:^|;)\s*height\s*:\s*([\d.]+)px/.exec(style);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function getRowHeightAttrs(dom: HTMLElement | string): { heightPx: number | null } {
+  if (typeof dom === "string") return { heightPx: null };
+  return { heightPx: heightPxFromStyle(dom.style.cssText) };
+}
+
+/** The inline `style` for a resized row - shared by this schema's
+ * `table_row.toDOM` and `html.ts`'s export. */
+export function rowHeightStyleString(heightPx: number | null): string {
+  return heightPx != null ? `height:${heightPx}px` : "";
+}
+
+/** Reads a `<table>`'s own `<caption>` text back - shared by this schema's
+ * `table.parseDOM` and `html.ts`'s import walk (which, like the row/image
+ * nodes, doesn't go through `parseDOM` for tables either - see that file's
+ * own doc comment). The only other caption-shaped element in this schema is
+ * a captioned image's `<figcaption>` (`imageNodeFromFigure` in `html.ts`). */
+export function captionFromElement(dom: Element | string): string {
+  if (typeof dom === "string") return "";
+  return dom.querySelector(":scope > caption")?.textContent ?? "";
+}
+
+const COL_WIDTH_PERCENT = /(?:^|;)\s*width\s*:\s*([\d.]+)%/;
+
+/** Reads a `<table>`'s own `<colgroup><col style="width:N%"></colgroup>`
+ * back into per-column integer percentages - `null` (meaning "no explicit
+ * widths, split evenly") if there's no colgroup, or any `<col>` is missing a
+ * parseable percent width. Shared by this schema's `table.parseDOM` and
+ * `html.ts`'s import walk. */
+export function colWidthsFromElement(dom: Element | string): number[] | null {
+  if (typeof dom === "string") return null;
+  const cols = Array.from(dom.querySelectorAll(":scope > colgroup > col"));
+  if (cols.length === 0) return null;
+  const widths = cols.map((col) => {
+    const match = COL_WIDTH_PERCENT.exec((col as HTMLElement).style.cssText);
+    const value = match ? Number(match[1]) : NaN;
+    return Number.isFinite(value) ? Math.round(value) : null;
+  });
+  return widths.every((width): width is number => width != null) ? (widths as number[]) : null;
+}
+
+function getTableAttrs(dom: HTMLElement | string): { caption: string; colWidths: number[] | null } {
+  return { caption: captionFromElement(dom), colWidths: colWidthsFromElement(dom) };
+}
+
+/** `<colgroup>` `DOMOutputSpec` built from `colWidths` - shared by this
+ * node's own `toDOM` below and `html.ts`'s manual export (`colgroupHtml`).
+ * `null` (the "split evenly" default) omits the colgroup entirely -
+ * `table-layout: fixed` (richtext-content.css) already splits unset columns
+ * evenly, matching this field's previous (pre-resize) behavior. */
+function colgroupDOMSpec(colWidths: number[] | null): DOMOutputSpec | null {
+  if (!colWidths || colWidths.length === 0) return null;
+  return ["colgroup", ...colWidths.map((width): DOMOutputSpec => ["col", { style: `width:${width}%` }])];
+}
+
+/** `html.ts`'s own export-side equivalent of `colgroupDOMSpec` above (that
+ * file builds HTML strings directly rather than going through this schema's
+ * `toDOM`/`DOMSerializer` - see its own doc comment). */
+export function colgroupHtml(colWidths: number[] | null): string {
+  if (!colWidths || colWidths.length === 0) return "";
+  return `<colgroup>${colWidths.map((width) => `<col style="width:${width}%">`).join("")}</colgroup>`;
+}
+
+/** `table`/`table_row`/`table_cell`/`table_header` node specs from
+ * `prosemirror-tables`. Column-width resizing is hand-rolled
+ * (`table-column-resize.ts`) rather than the package's own `columnResizing()`
+ * plugin: that plugin's per-cell, pixel-based `colwidth` model doesn't fit
+ * this field's own contract (table-level, integer-percent widths via a
+ * `<colgroup>`, no colored resize-handle bar) - same reasoning
+ * `table-row-resize.ts` already gives for hand-rolling row-height resizing.
+ * `table` below adds `caption`/`colWidths` on top of the generated spec;
+ * `table_row` adds `heightPx` (see `table-row-resize.ts`). `colspan`/
+ * `rowspan` (from the generated `cellAttrs`) back this field's merge/split
+ * cell actions (`table.ts`'s `unmergeCell`, `prosemirror-tables`' own
+ * `mergeCells`). */
+const tableNodeSpecs = tableNodes({
+  tableGroup: "block",
+  cellContent: "block+",
+  cellAttributes: {},
+});
 
 export const schema = new Schema({
   nodes: {
@@ -158,6 +264,65 @@ export const schema = new Schema({
         return ["blockquote", withTextAlign({}, node.attrs.textAlign as string | null), 0];
       },
     },
+    list_item: {
+      content: "block+",
+      defining: true,
+      parseDOM: [{ tag: "li" }],
+      toDOM(): DOMOutputSpec {
+        return liDOM;
+      },
+    },
+    bullet_list: {
+      group: "block",
+      content: "list_item+",
+      parseDOM: [{ tag: "ul" }],
+      toDOM(): DOMOutputSpec {
+        return ulDOM;
+      },
+    },
+    ordered_list: {
+      group: "block",
+      content: "list_item+",
+      attrs: { start: { default: 1 } },
+      parseDOM: [
+        {
+          tag: "ol",
+          getAttrs(dom: HTMLElement | string) {
+            if (typeof dom === "string") return { start: 1 };
+            const start = Number((dom as HTMLOListElement).start);
+            return { start: Number.isFinite(start) && start > 0 ? start : 1 };
+          },
+        },
+      ],
+      toDOM(node): DOMOutputSpec {
+        return node.attrs.start === 1 ? olDOM : ["ol", { start: node.attrs.start as number }, 0];
+      },
+    },
+    table: {
+      ...tableNodeSpecs.table,
+      attrs: { caption: { default: "" }, colWidths: { default: null } },
+      parseDOM: [{ tag: "table", getAttrs: getTableAttrs }],
+      toDOM(node): DOMOutputSpec {
+        const caption = node.attrs.caption as string;
+        const colgroup = colgroupDOMSpec(node.attrs.colWidths as number[] | null);
+        const children: DOMOutputSpec[] = [];
+        if (caption) children.push(["caption", { contenteditable: "false" }, caption]);
+        if (colgroup) children.push(colgroup);
+        children.push(["tbody", 0]);
+        return ["div", { class: "tableWrapper" }, ["table", ...children]];
+      },
+    },
+    table_row: {
+      ...tableNodeSpecs.table_row,
+      attrs: { heightPx: { default: null } },
+      parseDOM: [{ tag: "tr", getAttrs: getRowHeightAttrs }],
+      toDOM(node): DOMOutputSpec {
+        const style = rowHeightStyleString(node.attrs.heightPx as number | null);
+        return ["tr", style ? { style } : {}, 0];
+      },
+    },
+    table_cell: tableNodeSpecs.table_cell,
+    table_header: tableNodeSpecs.table_header,
     text: { group: "inline" },
     hard_break: {
       group: "inline",
@@ -213,14 +378,14 @@ export const schema = new Schema({
           node.attrs.width as number | null,
           node.attrs.height as number | null,
           node.attrs.align as ImageAlign | null,
-          node.attrs.objectFit as ImageObjectFit,
+          node.attrs.lockAspectRatio ? null : (node.attrs.objectFit as ImageObjectFit),
         );
         return [
           "img",
           {
             src: node.attrs.src as string,
             alt: node.attrs.alt as string,
-            class: "richtext-image",
+            class: "dry-tx-image",
             ...(style ? { style } : {}),
           },
         ];

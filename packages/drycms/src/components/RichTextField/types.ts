@@ -2,6 +2,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import type { RefObject } from "preact";
 import type { FileManagerSource } from "../file-manager-types.js";
+import type { ListType } from "./lists.js";
 
 export type InlineFormat = "bold" | "italic" | "underline";
 
@@ -56,6 +57,15 @@ export interface ToolbarState {
    * on some other node - there are none yet, but this stays accurate if one's
    * ever added). */
   selectedImage: { pos: number; node: PMNode } | null;
+  /** Which list (if any) the selection's top-level block currently sits
+   * directly inside - drives `list-menu.tsx`'s trigger icon (see
+   * `getListType` in `lists.ts`). */
+  listType: ListType;
+  /** The table containing the selection, if any - drives `table-menu.tsx`'s
+   * visibility/anchor (see `getSelectedTable` in `table.ts`). Unlike
+   * `selectedImage`, this isn't a `NodeSelection` check: the cursor normally
+   * sits *inside* one of the table's cells, not on the table node itself. */
+  selectedTable: { pos: number; node: PMNode } | null;
 }
 
 /** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)
@@ -82,6 +92,11 @@ export interface ToolbarCustomProps {
    * always resolves and passes this down, so custom items never need their
    * own default. */
   iconSize: ToolbarIconSize;
+  /** Whether `RichTextField` is currently expanded fullscreen, and the
+   * toggle for it - only `fullscreen-button.tsx` reads either, same
+   * optionality as `source`/`ImageInsertButton` above. */
+  fullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
 /** Shared by `useRichTextEditor.ts` (reading `ElementNode.getFormatType()`)

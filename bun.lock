@@ -49,6 +49,7 @@
         "prosemirror-schema-list": "^1.5.1",
         "prosemirror-state": "^1.4.2",
         "prosemirror-tables": "^1.8.5",
+        "prosemirror-transform": "^1.10.5",
         "prosemirror-view": "^1.30.2",
       },
       "devDependencies": {

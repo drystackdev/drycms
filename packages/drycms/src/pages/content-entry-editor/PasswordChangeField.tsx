@@ -1,7 +1,7 @@
 import type { JSX } from "preact/jsx-runtime";
 import PasswordField from "../../components/PasswordField.js";
 import type { MaskedValue } from "../../content-types/engine/entry-codec.js";
-import { passwordConfirmError, passwordOldRequiredError } from "../../content-types/engine/entry-validate.js";
+import { passwordConfirmError } from "../../content-types/engine/entry-validate.js";
 
 export interface PasswordChangeFieldProps {
   label: string;
@@ -9,10 +9,8 @@ export interface PasswordChangeFieldProps {
   value: MaskedValue;
   onChange: (value: MaskedValue) => void;
   required?: boolean;
-  /** Server- (or gate-) sourced error - "Current password is incorrect." in edit mode,
-   * a `required` violation in create mode. Shown under whichever single input that
-   * message can actually be about (see doc comment below); confirm-mismatch and
-   * missing-old-password are computed live from `value` instead, independent of this. */
+  /** Server- (or gate-) sourced `required` violation, create mode only - belongs under
+   * "Password". Confirm-mismatch is computed live from `value` instead, independent of this. */
   error?: string;
   disabled?: boolean;
   class?: string;
@@ -20,19 +18,13 @@ export interface PasswordChangeFieldProps {
 }
 
 /**
- * Composite editor for a `password`-type field: create mode ("no existing value yet)
- * renders "Password" + "Confirm password"; edit mode adds a "Current password" input
- * ahead of them, required to change the value - verified server-side against the
- * stored hash (`entry-codec.ts`'s `verifyPasswordChanges`) rather than trusted blindly.
- * Each input is a plain `PasswordField`, so all of them - including these 2-3 siblings -
- * share that component's page-wide reveal toggle (`store/field-visibility.ts`);
- * revealing one reveals the rest, by design, not a bug.
- *
- * The two modes are mutually exclusive by construction (`entry-validate.ts`'s
- * `isEmptyValue` never flags an edit-mode password as empty), so the single incoming
- * `error` string is unambiguous: in create mode it's a `required` violation and belongs
- * under "Password"; in edit mode it can only be "Current password is incorrect." from
- * `verifyPasswordChanges`, so it belongs under "Current password".
+ * Composite editor for a `password`-type field: create mode (no existing value yet)
+ * renders "Password" + "Confirm password"; edit mode relabels them "New password" +
+ * "Confirm new password". This is the admin content-entry editor - it can already write
+ * any field on the row, so setting a new password (an admin-triggered reset) doesn't
+ * require the current one; that stays a login-only credential, never re-collected here.
+ * Each input is a plain `PasswordField`, so both share that component's page-wide reveal
+ * toggle (`store/field-visibility.ts`); revealing one reveals the other, by design, not a bug.
  */
 export default function PasswordChangeField({
   label,
@@ -45,7 +37,6 @@ export default function PasswordChangeField({
   class: className,
   style,
 }: PasswordChangeFieldProps) {
-  const oldError = passwordOldRequiredError(value);
   const confirmError = passwordConfirmError(value);
 
   return (
@@ -56,17 +47,6 @@ export default function PasswordChangeField({
       </legend>
       {description && <small>{description}</small>}
       <div class="stack">
-        {value.hasExisting && (
-          <PasswordField
-            label="Current password"
-            value={value.old ?? ""}
-            onChange={(old) => onChange({ ...value, old })}
-            placeholder="Enter the current password"
-            disabled={disabled}
-            error={!!error || !!oldError}
-            helperText={error ?? oldError}
-          />
-        )}
         <PasswordField
           label={value.hasExisting ? "New password" : "Password"}
           value={value.new ?? ""}

@@ -27,9 +27,14 @@ import type { ToolbarIconSize, ToolbarState } from "./types.js";
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
 const MIN_IMAGE_SIZE = 24;
 
-/** "Full" is this dialog's own friendlier label for CSS `object-fit: fill`. */
+/** "Auto scale" is this dialog's own friendlier label for CSS `object-fit:
+ * fill` - width and height scale independently to match the box exactly,
+ * distorting the image's own ratio if the box's doesn't match it. Only
+ * visibly differs from `cover`/`contain` once the box IS a different ratio
+ * than the image - i.e. only while aspect ratio is unlocked (see `editLock`
+ * disabling this whole select below). */
 const OBJECT_FIT_OPTIONS: SelectOption[] = [
-  { value: "fill", label: "Full" },
+  { value: "fill", label: "Auto scale" },
   { value: "cover", label: "Cover" },
   { value: "contain", label: "Contain" },
 ];
@@ -316,31 +321,12 @@ export default function ImageMenu({ viewRef, state, disabled = false, source, ic
               <h3>Edit image</h3>
             </header>
             <div class="stack">
-              <div class="row" style={{ alignItems: "flex-end" }}>
-                <TextField
-                  label="Alt text"
-                  value={editAlt}
-                  onChange={setEditAlt}
-                  placeholder="e.g. A mountain landscape at sunset"
-                  style={{ flex: 1, minWidth: 0 }}
-                />
-                {source && (
-                  <button
-                    type="button"
-                    class="outline icon lg"
-                    aria-label="Replace image"
-                    data-tooltip="Replace image"
-                    aria-haspopup="dialog"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => {
-                      setEditOpen(false);
-                      openReplace();
-                    }}
-                  >
-                    <ReplaceIcon />
-                  </button>
-                )}
-              </div>
+              <TextField
+                label="Alt text"
+                value={editAlt}
+                onChange={setEditAlt}
+                placeholder="e.g. A mountain landscape at sunset"
+              />
               <TextField
                 label="Caption"
                 value={editCaption}
@@ -376,9 +362,33 @@ export default function ImageMenu({ viewRef, state, disabled = false, source, ic
                   <LockIcon />
                 </button>
               </div>
-              <div class="field">
-                <label>Fit</label>
-                <Select options={OBJECT_FIT_OPTIONS} value={editObjectFit} onChange={(value) => setEditObjectFit(value as ImageObjectFit)} />
+              <div class="row" style={{ alignItems: "flex-end" }}>
+                <div class="field" style={{ flex: 1, minWidth: 0 }}>
+                  <label>Fit</label>
+                  {/* Only visibly differs from cover/contain once the box is
+                   * a different ratio than the image - impossible while
+                   * locked (width/height always move together, in ratio). */}
+                  <Select
+                    options={OBJECT_FIT_OPTIONS}
+                    value={editObjectFit}
+                    onChange={(value) => setEditObjectFit(value as ImageObjectFit)}
+                    disabled={editLock}
+                  />
+                </div>
+                {source && (
+                  <button
+                    type="button"
+                    class="outline lg"
+                    aria-haspopup="dialog"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setEditOpen(false);
+                      openReplace();
+                    }}
+                  >
+                    <ReplaceIcon /> Replace image
+                  </button>
+                )}
               </div>
             </div>
             <footer>

@@ -20,7 +20,6 @@ interface Preset {
  * `RichTextField` round-trips (see `html.ts`) so a regression in any one of
  * them shows up immediately after a click, without hand-typing it first. */
 const PRESETS: Preset[] = [
-  { key: "empty", label: "Empty", html: "" },
   {
     key: "plain",
     label: "Plain paragraph",
@@ -67,6 +66,24 @@ const PRESETS: Preset[] = [
       "<figcaption>A placeholder rectangle, for testing the figure/figcaption round trip.</figcaption></figure></p>",
   },
   {
+    key: "lists",
+    label: "Lists",
+    html:
+      "<p>Intro paragraph before the lists.</p>" +
+      "<ul><li>First bullet</li><li>Second bullet with <strong>bold</strong> text</li></ul>" +
+      '<ol start="3"><li>Third numbered item (list starts at 3)</li><li>Fourth item</li></ol>',
+  },
+  {
+    key: "table",
+    label: "Table",
+    html:
+      "<table><tbody>" +
+      "<tr><th>Name</th><th>Role</th></tr>" +
+      '<tr style="height:60px"><td data-colwidth="200">Alice</td><td>Engineer</td></tr>' +
+      "<tr><td>Bob</td><td>Designer</td></tr>" +
+      "</tbody></table>",
+  },
+  {
     key: "long",
     label: "Long content",
     html:
@@ -111,7 +128,7 @@ export default function RichTextDemo() {
   const [required, setRequired] = useState(false);
   const [error, setError] = useState(false);
   const [inline, setInline] = useState(false);
-  const [iconSize, setIconSize] = useState<"sm" | "md" | "lg" | "xl">("md");
+  const [iconSize, setIconSize] = useState<"sm" | "md" | "lg" | "xl">("sm");
 
   return (
     <div class="card">

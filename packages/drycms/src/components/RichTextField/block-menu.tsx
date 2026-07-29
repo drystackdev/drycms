@@ -45,6 +45,7 @@ export default function BlockTypeMenu({ viewRef, state, disabled = false, iconSi
         type: "item" as const,
         label: option.label,
         icon: <option.Icon />,
+        checked: option.value === current.value,
         onClick: () => applyBlockType(option.value),
       }))}
       trigger={(onClick) => (

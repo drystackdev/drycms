@@ -61,7 +61,7 @@ describe("createFileContentEntryEngineAdapter", () => {
     expect(await entries.getEntry(user, allTypes, created.id)).toBeNull();
   });
 
-  it("changes a password on update when the correct current password is supplied", async () => {
+  it("changes a password on update without requiring the current one (admin reset)", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);
     const allTypes = await schema.listContentTypes();
@@ -77,39 +77,11 @@ describe("createFileContentEntryEngineAdapter", () => {
     await entries.updateEntry(user, allTypes, created.id, {
       name: "Ada",
       email: "ada@example.com",
-      password: { hasExisting: true, old: "hunter2", new: "new-password" } satisfies MaskedValue,
+      password: { hasExisting: true, new: "new-password" } satisfies MaskedValue,
     });
 
     const newHash = readRecord(dir, "user", created.id).password as string;
     expect(newHash).not.toBe(originalHash);
-  });
-
-  it("rejects a password change with a field-scoped error when the current password is wrong", async () => {
-    const { schema, entries, dir } = freshAdapters();
-    dirs.push(dir);
-    const allTypes = await schema.listContentTypes();
-    const user = allTypes.find((t) => t.name === "user")!;
-
-    const created = await entries.createEntry(user, allTypes, {
-      name: "Ada",
-      email: "ada@example.com",
-      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
-    });
-
-    await expect(
-      entries.updateEntry(user, allTypes, created.id, {
-        name: "Ada",
-        email: "ada@example.com",
-        password: { hasExisting: true, old: "wrong-password", new: "new-password" } satisfies MaskedValue,
-      }),
-    ).rejects.toMatchObject({
-      name: "ContentEntryError",
-      code: "validation_failed",
-      fieldErrors: { password: "Current password is incorrect." },
-    });
-
-    const afterAttempt = await entries.getEntry(user, allTypes, created.id);
-    expect(afterAttempt?.value.password).toEqual({ hasExisting: true } satisfies MaskedValue);
   });
 
   it("rejects a duplicate unique field with a field-scoped error, and does not reserve it", async () => {

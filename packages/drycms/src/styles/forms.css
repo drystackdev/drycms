@@ -452,111 +452,61 @@
         border-color 120ms ease,
         box-shadow 120ms ease;
 
+      /* `:focus-within` (not `:has(.dry-tx-content:focus-visible)`, which
+       * this used to be) - the focused contenteditable now lives inside
+       * `.richtext-content-mount`'s own shadow root, and `:has()`'s relative
+       * selector can't match a descendant in a different tree scope the way
+       * a plain `:focus-within` still can - its cross-shadow reach (it
+       * matches on the "flat tree", shadow trees included) is a special
+       * case the CSS Selectors spec carves out specifically for this. */
       &[aria-invalid="true"] {
         border-color: var(--dry-error);
 
-        &:has(.richtext-content:focus-visible) {
+        &:focus-within {
           border-color: var(--dry-error);
           box-shadow: inset 0 0 0 1px var(--dry-error);
         }
       }
-    }
 
-    .richtext-content {
-      position: relative;
-      min-height: 10rem;
-      padding: 0.5rem 0.875rem;
-      color: var(--dry-foreground);
-      outline: none;
+      /* `fullscreen-button.tsx`'s own toggle - takes the whole field out of
+       * flow to fill the viewport. Above the mobile sidebar drawer (`.sidebar`'s
+       * own `z-index: 40` in components.css) but below the mobile sheet layer
+       * (49) and the route-progress bar above that (60), so neither gets
+       * stuck behind it. `useScrollLock` (in `RichTextField.tsx`) locks the
+       * page's own scroll for as long as this is active. */
+      &.richtext-fullscreen {
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border-radius: 0;
+        background-color: var(--dry-background);
 
-      &.is-empty::before {
-        content: attr(data-placeholder);
-        position: absolute;
-        color: var(--dry-muted-foreground);
-        pointer-events: none;
-      }
-
-      /* Overrides base.css's `:where(img, ...) { display: block }` reset -
-       * needed since that rule sets `display` and this one otherwise
-       * wouldn't, not because of specificity (`:where()` never carries any -
-       * a plain class already beats it regardless). Without this, an
-       * `.richtext-image` renders on its own line instead of flowing inline
-       * with the surrounding text, same as `<em>`/`<strong>` do. */
-      & .richtext-image {
-        display: inline;
-        object-fit: contain;
-        max-width: 100%;
-        max-height: 20rem;
-        border-radius: var(--dry-radius-sm);
-
-        /* A `NodeSelection` (ProseMirror's selection type for the whole
-         * image, not text inside it) is realized as a real DOM Range around
-         * this element, so the browser paints its native selection style
-         * over it too - here that's base.css's app-wide `::selection`
-         * (a translucent primary-color tint) sitting right on top of the
-         * image. Transparent here leaves `.is-selected` below (an outline +
-         * shadow, no fill) as the only visible "selected" indicator. */
-        &::selection {
-          background-color: transparent;
+        /* The backdrop fills the viewport above, but the toolbar/content
+         * themselves stay a comfortable reading column - same width cap
+         * (and viewport-gutter idiom) as `dialog.xl` in components.css.
+         * `.richtext-content-mount` (not `.richtext-content` itself) is the
+         * actual flex item here - see the comment on that div in
+         * `RichTextField.tsx` for why they're 2 different elements. */
+        & .richtext-toolbar,
+        & .richtext-content-mount {
+          width: 100%;
+          max-width: min(64rem, calc(100vw - 4rem));
         }
-      }
 
-      /* Outer node-view root (`image-view.ts`'s `dom`) - the live-editor
-       * equivalent of `html.ts`'s exported `<figure>`: carries align/float
-       * and the `.is-selected` outline/shadow, over both `.richtext-image-box`
-       * and (once there's a caption) `.richtext-image-caption` below it.
-       * `vertical-align: baseline` (the default for every other inline tag
-       * here - <em>/<strong>/plain text) keeps an uncaptioned image sitting
-       * on the text baseline like a normal inline element; `middle` would
-       * center surrounding text on the image's own vertical middle instead. */
-      & .richtext-image-wrapper {
-        display: inline-block;
-        vertical-align: baseline;
-
-        &.is-selected {
-          outline: 2px solid var(--dry-primary);
-          outline-offset: 1px;
-          box-shadow: 0 0 0 4px color-mix(in srgb, var(--dry-primary) 18%, transparent);
+        /* `.richtext-content` itself is inside the shadow root now (see
+         * `useRichTextEditor.ts`), so it can't be targeted from out here
+         * anymore - `content-shadow-styles.ts`'s own `height: 100%` on it
+         * takes care of filling whatever height `.richtext-content-mount`
+         * ends up with instead (including this flex:1 one). */
+        & .richtext-content-mount {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-height: 0;
         }
-      }
-
-      /* Wraps just the `<img>` (+ resize handles) so their `top`/`left`
-       * percentages (see image-view.ts) anchor to a box that hugs the image
-       * exactly, regardless of whether `.richtext-image-caption` below adds
-       * height to the wrapper above - `line-height: 0` keeps this box from
-       * adding baseline strut space around the (inline) image. */
-      & .richtext-image-box {
-        position: relative;
-        display: inline-block;
-        line-height: 0;
-      }
-
-      & .richtext-image-handle {
-        position: absolute;
-        width: 0.625rem;
-        height: 0.625rem;
-        transform: translate(-50%, -50%);
-        box-sizing: border-box;
-        border-radius: 50%;
-        background: var(--dry-background);
-        border: 2px solid var(--dry-primary);
-        z-index: 1;
-      }
-
-      /* Admin-editing-only skin, matching drystack's own `figcaptionClass`:
-       * the exported `<figcaption>` (`html.ts`'s `imageChildHtml`) carries
-       * none of this, so a consumer page's own typography is what actually
-       * renders once published - this is purely what the caption looks like
-       * while editing. `contentEditable="false"` (set in image-view.ts) - it
-       * isn't itself editable text, only the edit dialog's Caption field is. */
-      & .richtext-image-caption {
-        display: block;
-        margin-block-start: 0.375rem;
-        font-size: var(--dry-text-xs);
-        font-style: italic;
-        line-height: var(--dry-leading);
-        color: var(--dry-muted-foreground);
-        text-align: center;
       }
     }
   }

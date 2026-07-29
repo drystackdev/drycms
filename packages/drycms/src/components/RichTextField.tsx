@@ -1,6 +1,9 @@
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import type { FileManagerSource } from "./file-manager-types.js";
+import { useScrollLock } from "./list-nav.js";
 import ImageMenu from "./RichTextField/image-menu.js";
+import TableMenu from "./RichTextField/table-menu.js";
 import RichTextToolbar from "./RichTextField/toolbar.js";
 import type { ToolbarIconSize } from "./RichTextField/types.js";
 import {
@@ -50,7 +53,7 @@ export default function RichTextField({
   onJsonChange,
   inline = false,
   source,
-  iconSize,
+  iconSize = "sm",
   class: className,
   style,
 }: RichTextFieldProps) {
@@ -64,6 +67,32 @@ export default function RichTextField({
     disabled,
   });
 
+  const richtextRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useScrollLock(fullscreen, richtextRef);
+
+  // Escape exits fullscreen - same "window-level keydown while open" pattern
+  // as SidebarToggle.tsx's own outside-click/Escape handling.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
+  // Toggling fullscreen moves e.g. `TableMenu`'s/`ImageMenu`'s anchor
+  // (a node inside `.richtext-content`) without changing its own size, so
+  // `useTrackRect`'s `ResizeObserver` (in list-nav.ts) never fires for it -
+  // it only re-measures on the anchor's own resize or a window scroll/resize
+  // event. A synthetic resize next frame (once the class change has
+  // actually reflowed) nudges any open floating panel back into place.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    return () => cancelAnimationFrame(raf);
+  }, [fullscreen]);
+
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label>
@@ -71,7 +100,11 @@ export default function RichTextField({
         {required && <span class="required-asterisk">*</span>}
       </label>
       {description && <small>{description}</small>}
-      <div class="richtext" aria-invalid={error || undefined}>
+      <div
+        ref={richtextRef}
+        class={`richtext${fullscreen ? " richtext-fullscreen" : ""}`}
+        aria-invalid={error || undefined}
+      >
         <RichTextToolbar
           viewRef={viewRef}
           state={state}
@@ -80,16 +113,28 @@ export default function RichTextField({
           inline={inline}
           source={source}
           iconSize={iconSize}
+          fullscreen={fullscreen}
+          onToggleFullscreen={() => setFullscreen((current) => !current)}
         />
-        {/* ProseMirror's `EditorView` appends its own contenteditable dom
-         * into this mount node and owns its attributes/content from then on -
-         * see `useRichTextEditor.ts`'s `buildAttributes`. */}
-        <div ref={contentRef} />
+        {/* ProseMirror's `EditorView` appends its own contenteditable dom as
+         * a CHILD of this mount node (rather than using it directly) and
+         * owns its attributes/content from then on - see
+         * `useRichTextEditor.ts`'s `buildAttributes`. The mount node itself
+         * still needs its own class: it (not the `.richtext-content` it
+         * wraps) is the actual flex item fullscreen mode sizes - see
+         * `.richtext-content-mount` in forms.css. */}
+        <div ref={contentRef} class="richtext-content-mount" />
         <ImageMenu
           viewRef={viewRef}
           state={state}
           disabled={disabled}
           source={source}
+          iconSize={iconSize}
+        />
+        <TableMenu
+          viewRef={viewRef}
+          state={state}
+          disabled={disabled}
           iconSize={iconSize}
         />
       </div>

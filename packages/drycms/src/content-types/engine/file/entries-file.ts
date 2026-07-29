@@ -1,7 +1,7 @@
 import type { ResolvedFileContentOption } from "../../../integration/options.js";
 import type { RelationCardinality } from "../../field-registry.js";
 import type { ContentTypeDefinition } from "../../types.js";
-import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, verifyPasswordChanges, type EntryValue } from "../entry-codec.js";
+import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "../entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "../entries-types.js";
 import { mapWithConcurrency } from "../../../storage/util.js";
@@ -459,11 +459,6 @@ export async function updateFileEntry(driver: FileDriver, type: ContentTypeDefin
   const existingRow = await readRecord(driver, type.name, id);
   if (!existingRow) {
     throw new ContentEntryError("not_found", `Entry ${id} not found on "${type.name}".`);
-  }
-
-  const passwordErrors = await verifyPasswordChanges(nodes, value, existingRow);
-  if (Object.keys(passwordErrors).length > 0) {
-    throw new ContentEntryError("validation_failed", "Current password is incorrect.", passwordErrors);
   }
 
   const rowData: Row = applyTimestamps(nodes, await valueToRow(nodes, value), "update");

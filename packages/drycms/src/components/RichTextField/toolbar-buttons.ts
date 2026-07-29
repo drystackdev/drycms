@@ -14,7 +14,10 @@ import {
 import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
+import FullscreenButton from "./fullscreen-button.js";
 import ImageInsertButton from "./image-insert-button.js";
+import ListMenu from "./list-menu.js";
+import TableInsertButton from "./table-insert-button.js";
 import { removeAllMarks } from "./commands.js";
 import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
@@ -117,6 +120,12 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   [
     { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
+    { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
+    { type: "custom", key: "insert-table", Component: TableInsertButton, blockOnly: true },
     { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
   ],
+  // Its own trailing group (own separator) - unlike everything above,
+  // fullscreen isn't inline-vs-block formatting, so it stays visible under
+  // `inline` mode too (not flagged `blockOnly`).
+  [{ type: "custom", key: "fullscreen", Component: FullscreenButton }],
 ];

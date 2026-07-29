@@ -15,9 +15,6 @@ export interface MaskedValue {
    * anywhere else. Absent/empty means "keep the current value", same as `secretkey`'s
    * untouched-marker behavior. */
   new?: string;
-  /** `password` only, edit mode - current plaintext password, sent to the server to
-   * verify against the stored hash before the change is allowed. */
-  old?: string;
   /** `password` only - client-side repeat-of-`new` for the confirm field. Never read
    * past `findPasswordChangeErrors`/the UI layer - `valueToRow` only ever reads `.new`. */
   confirm?: string;
@@ -31,12 +28,6 @@ function isEmptyValue(value: unknown): boolean {
   if (value === null || value === undefined || value === "") return true;
   if (isMaskedValue(value)) return !value.hasExisting && !value.new;
   return false;
-}
-
-/** Edit-mode-only: a `password` field with a staged `new` value but no `old` can never
- * be verified server-side, so this is caught client-side before it's even attempted. */
-export function passwordOldRequiredError(value: MaskedValue): string | undefined {
-  return value.hasExisting && value.new ? (value.old ? undefined : "Current password is required to set a new password.") : undefined;
 }
 
 /** `confirm` never reaches the server (see `MaskedValue.confirm`'s doc comment) - a
@@ -60,7 +51,7 @@ export function findPasswordChangeErrors(nodes: EntryFieldNode[], value: Record<
     if (node.kind !== "column" || node.fieldType !== "password") continue;
     const incoming = value[node.fieldName];
     if (!isMaskedValue(incoming)) continue;
-    const issue = passwordOldRequiredError(incoming) ?? passwordConfirmError(incoming);
+    const issue = passwordConfirmError(incoming);
     if (issue) errors[path] = issue;
   }
   return errors;
