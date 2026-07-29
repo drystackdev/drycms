@@ -13,6 +13,7 @@ import {
   isClearable,
   isMarkActive,
   hasInlineContent,
+  hasTextSelection,
   getBlockType,
   getSelectedImage,
   getTextAlignState,
@@ -24,6 +25,7 @@ import { getListType } from "./lists.js";
 import { createEmptyDoc, schema } from "./schema.js";
 import { getSelectedTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
+import { TableNodeView } from "./table-node-view.js";
 import { tableRowResizing } from "./table-row-resize.js";
 import { NO_FORMAT, type ToolbarState } from "./types.js";
 
@@ -70,6 +72,7 @@ function readToolbarState(state: EditorState): ToolbarState {
     canUndo: undoDepth(state) > 0,
     canRedo: redoDepth(state) > 0,
     inlineEditable: hasInlineContent(state),
+    hasSelection: hasTextSelection(state),
     selectedImage: getSelectedImage(state),
     listType: getListType(state),
     selectedTable: getSelectedTable(state),
@@ -134,6 +137,7 @@ export function useRichTextEditor({
     canUndo: false,
     canRedo: false,
     inlineEditable: true,
+    hasSelection: false,
     selectedImage: null,
     listType: "none",
     selectedTable: null,
@@ -201,9 +205,26 @@ export function useRichTextEditor({
           "Shift-Tab": chainCommands(liftListItem(schema.nodes.list_item!), goToNextCell(-1)),
         }),
         keymap(baseKeymap),
-        tableEditing(),
+        // Both resize plugins before `tableEditing()` - ProseMirror tries each
+        // plugin's `handleDOMEvents.mousedown` in array order, and `someProp`
+        // only short-circuits on a *truthy* return; `tableEditing()`'s own
+        // handler (prosemirror-tables' `handleMouseDown$1`) runs its full body
+        // - including unconditionally attaching its own `mousemove` cell-
+        // selection tracker whenever the mousedown lands inside any table cell
+        // - before returning falsy to let the next plugin have a turn. Listed
+        // after it, our own `mousedown`/`pointerdown` handlers would already be
+        // too late: dragging a column boundary crosses into the neighboring
+        // cell, which that tracker reads as "selecting into a new cell" and
+        // dispatches a real `CellSelection` transaction for on every such
+        // crossing - each one redraws the table from its still-unchanged
+        // `colWidths`/`heightPx` attrs, undoing `table-column-resize.ts`'s
+        // (and, latently, `table-row-resize.ts`'s) live drag preview almost as
+        // soon as it's applied. Listed first, our own handlers get to return
+        // `true` and claim the event outright, so `tableEditing()`'s handler -
+        // and the competing tracker it would've installed - never runs at all.
         tableColumnResizing(),
         tableRowResizing(),
+        tableEditing(),
       ],
     });
 
@@ -213,6 +234,7 @@ export function useRichTextEditor({
       attributes: (state) => buildAttributes(state, disabled, placeholder, label),
       nodeViews: {
         image: (node, editorView, getPos) => new ImageNodeView(node, editorView, getPos),
+        table: (node) => new TableNodeView(node),
       },
       dispatchTransaction(tr) {
         const newState = view.state.apply(tr);

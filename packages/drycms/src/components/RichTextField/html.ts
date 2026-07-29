@@ -4,6 +4,10 @@ import {
   blockTypeFromTagName,
   blockTypeOfNode,
   captionFromElement,
+  cellHAlignFromElement,
+  cellHAlignStyle,
+  cellVAlignFromElement,
+  cellVAlignStyle,
   colgroupHtml,
   colWidthsFromElement,
   heightPxFromStyle,
@@ -15,6 +19,8 @@ import {
   parseImageAlign,
   rowHeightStyleString,
   schema,
+  type CellHAlign,
+  type CellVAlign,
   type ImageAlign,
   type ImageObjectFit,
 } from "./schema.js";
@@ -157,6 +163,14 @@ function cellSpanAttrString(cell: PMNode): string {
   return `${colspan > 1 ? ` colspan="${colspan}"` : ""}${rowspan > 1 ? ` rowspan="${rowspan}"` : ""}`;
 }
 
+/** `text-align`/`vertical-align` style fragment for a cell's own
+ * `hAlign`/`vAlign` attrs (`table-cell-align-button.tsx`) - only the
+ * non-default half of each ever contributes anything, matching every other
+ * "only the non-default case needs an explicit style" spot in this file. */
+function cellAlignStyleString(cell: PMNode): string {
+  return cellHAlignStyle(cell.attrs.hAlign as CellHAlign | null) + cellVAlignStyle(cell.attrs.vAlign as CellVAlign | null);
+}
+
 function tableRowsHtml(tableNode: PMNode): string {
   let inner = "";
   tableNode.forEach((row) => {
@@ -164,7 +178,8 @@ function tableRowsHtml(tableNode: PMNode): string {
     inner += `<tr${style ? ` style="${escapeAttr(style)}"` : ""}>`;
     row.forEach((cell) => {
       const tag = cell.type === schema.nodes.table_header ? "th" : "td";
-      inner += `<${tag}${cellSpanAttrString(cell)}>${containerContentHtml(cell)}</${tag}>`;
+      const style = cellAlignStyleString(cell);
+      inner += `<${tag}${cellSpanAttrString(cell)}${style ? ` style="${escapeAttr(style)}"` : ""}>${containerContentHtml(cell)}</${tag}>`;
     });
     inner += "</tr>";
   });
@@ -309,7 +324,12 @@ function importTableElement(el: Element): PMNode {
       .filter((cellEl) => cellEl.tagName === "TD" || cellEl.tagName === "TH")
       .map((cellEl) => {
         const cellType = cellEl.tagName === "TH" ? schema.nodes.table_header! : schema.nodes.table_cell!;
-        const attrs = { colspan: cellSpanFromElement(cellEl, "colspan"), rowspan: cellSpanFromElement(cellEl, "rowspan") };
+        const attrs = {
+          colspan: cellSpanFromElement(cellEl, "colspan"),
+          rowspan: cellSpanFromElement(cellEl, "rowspan"),
+          hAlign: cellEl instanceof HTMLElement ? cellHAlignFromElement(cellEl) : null,
+          vAlign: cellEl instanceof HTMLElement ? cellVAlignFromElement(cellEl) : null,
+        };
         return cellType.create(attrs, blockChildrenFromContainer(cellEl));
       });
     if (cells.length === 0) continue;

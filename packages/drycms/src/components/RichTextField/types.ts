@@ -50,6 +50,12 @@ export interface ToolbarState {
    * at all. Disables bold/italic/underline rather than leaving them
    * clickable no-ops. */
   inlineEditable: boolean;
+  /** Whether the selection spans an actual range rather than sitting
+   * collapsed - see `hasTextSelection` in `commands.ts`. Only `ColorMenu`
+   * reads this (disabling the text-color button when nothing's highlighted);
+   * every other inline-format button stays usable on a collapsed cursor via
+   * `inlineEditable` above. */
+  hasSelection: boolean;
   /** The image node currently selected as a whole (a `NodeSelection` sitting
    * on it), if any - drives the floating per-image menu (`image-menu.tsx`),
    * same way `align`/`blockType` above drive their own toolbar items. `null`

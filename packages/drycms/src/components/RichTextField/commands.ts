@@ -56,6 +56,16 @@ export function hasInlineContent(state: EditorState): boolean {
   return sawText;
 }
 
+/** Whether the selection currently spans an actual range - unlike
+ * `hasInlineContent` above, a collapsed cursor does NOT count here. Used to
+ * disable the text-color button specifically: unlike bold/italic/underline
+ * (toggling those with nothing selected usefully seeds `storedMarks` for the
+ * next typed character), applying a color with nothing highlighted has
+ * nothing to visibly color and would read as broken. */
+export function hasTextSelection(state: EditorState): boolean {
+  return !state.selection.empty;
+}
+
 /** Mirrors the old `ToolbarState.clearable`: true as soon as ANY selected
  * text carries a mark (bold/italic/underline/textColor - the only marks
  * this schema has), not just one that's uniformly applied. */

@@ -11,6 +11,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   CaptionIcon,
+  EraserIcon,
   MergeCellsIcon,
   SplitCellsIcon,
   TableColumnsIcon,
@@ -19,10 +20,13 @@ import {
   TrashIcon,
 } from "../icons.js";
 import { runCommand } from "./commands.js";
+import TableCellAlignButton from "./table-cell-align-button.js";
 import TableInsertButton from "./table-insert-button.js";
 import {
   canMergeCells,
   canUnmergeCell,
+  clearColumnWidths,
+  clearRowHeights,
   insertColumnAfter,
   insertColumnBefore,
   isHeaderRowActive,
@@ -119,6 +123,9 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
             items={[
               { type: "item", label: "Insert row above", icon: <ArrowUpIcon />, onClick: () => run(addRowBefore) },
               { type: "item", label: "Insert row below", icon: <ArrowDownIcon />, onClick: () => run(addRowAfter) },
+              { type: "separator" },
+              { type: "item", label: "Clear row height", icon: <EraserIcon />, onClick: () => run(clearRowHeights()) },
+              { type: "separator" },
               { type: "item", label: "Delete row", icon: <TrashIcon />, onClick: () => run(deleteRow), danger: true },
             ]}
             trigger={(onClick) => (
@@ -142,6 +149,9 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
             items={[
               { type: "item", label: "Insert column left", icon: <ArrowLeftIcon />, onClick: () => run(insertColumnBefore()) },
               { type: "item", label: "Insert column right", icon: <ArrowRightIcon />, onClick: () => run(insertColumnAfter()) },
+              { type: "separator" },
+              { type: "item", label: "Clear column widths", icon: <EraserIcon />, onClick: () => run(clearColumnWidths()) },
+              { type: "separator" },
               { type: "item", label: "Delete column", icon: <TrashIcon />, onClick: () => run(removeSelectedColumns()), danger: true },
             ]}
             trigger={(onClick) => (
@@ -182,6 +192,7 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
           >
             {unmerging ? <SplitCellsIcon /> : <MergeCellsIcon />}
           </button>
+          <TableCellAlignButton viewRef={viewRef} disabled={controlsDisabled} iconSize={iconSize} />
           <Popover
             label="Caption"
             tooltip="Caption"

@@ -94,6 +94,7 @@
     "MergeCells": "lucide:table-cells-merge",
     "SplitCells": "lucide:table-cells-split",
     "Caption": "lucide:captions",
+    "Eraser": "solar:eraser-bold",
     "Fullscreen": "solar:full-screen-linear",
     "FullscreenExit": "solar:quit-full-screen-linear"
   }

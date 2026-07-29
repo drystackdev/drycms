@@ -107,7 +107,7 @@ export default function RichTextDemo() {
   const { route } = useLocation();
   const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
 
-  const [seedHtml, setSeedHtml] = useState("");
+  const [seedHtml, setSeedHtml] = useState(PRESETS[0]?.html!);
   const [seedKey, setSeedKey] = useState(0);
   const loadPreset = (html: string) => {
     setSeedHtml(html);
@@ -251,12 +251,6 @@ export default function RichTextDemo() {
         <div class="grid cols-2" style={{ width: "100%" }}>
           <div>
             <div class="field">
-              <label>Output (JSON)</label>
-              <CodeBlock maxHeight="24rem" code={jsonCode} wrap copyable />
-            </div>
-          </div>
-          <div>
-            <div class="field">
               <label>Output (HTML)</label>
               <CodeBlock
                 maxHeight="24rem"
@@ -267,6 +261,13 @@ export default function RichTextDemo() {
               />
             </div>
           </div>
+          <div>
+            <div class="field">
+              <label>Output (JSON)</label>
+              <CodeBlock maxHeight="24rem" code={jsonCode} wrap copyable />
+            </div>
+          </div>
+          
         </div>
       </div>
     </div>

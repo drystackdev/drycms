@@ -1,8 +1,18 @@
 import type { Node as PMNode } from "prosemirror-model";
 import type { Command, EditorState } from "prosemirror-state";
 import { Selection } from "prosemirror-state";
-import { TableMap, addColumn, isInTable, mergeCells, removeColumn, selectedRect, splitCellWithType } from "prosemirror-tables";
-import { schema } from "./schema.js";
+import {
+  CellSelection,
+  TableMap,
+  addColumn,
+  isInTable,
+  mergeCells,
+  removeColumn,
+  selectedRect,
+  selectionCell,
+  splitCellWithType,
+} from "prosemirror-tables";
+import { schema, type CellHAlign, type CellVAlign } from "./schema.js";
 
 /**
  * Table-specific commands not already covered by `prosemirror-tables`
@@ -242,6 +252,101 @@ export function removeSelectedColumns(): Command {
         if (neighbor >= 0) next[neighbor] = (next[neighbor] ?? 0) + removedSum;
         tr.setNodeAttribute(tableStart - 1, "colWidths", next.length > 0 ? next : null);
       }
+      dispatch(tr);
+    }
+    return true;
+  };
+}
+
+/** Resets every column back to an even split by clearing the table's own
+ * `colWidths` attr - the "undo all my dragging" counterpart to
+ * `table-column-resize.ts`'s drag-to-resize, same clear idiom as
+ * `ColorMenu`'s "Default color". Lives in `table-menu.tsx`'s "Column"
+ * popover (not a standalone button) alongside insert/delete, per that
+ * popover's own "everything about columns" scope. */
+export function clearColumnWidths(): Command {
+  return (state, dispatch) => {
+    const selected = getSelectedTable(state);
+    if (!selected || selected.node.attrs.colWidths == null) return false;
+    if (dispatch) dispatch(state.tr.setNodeAttribute(selected.pos, "colWidths", null));
+    return true;
+  };
+}
+
+/** Resets every row's height back to auto by clearing each `table_row`'s own
+ * `heightPx` attr, table-wide - the "undo all my dragging" counterpart to
+ * `table-row-resize.ts`'s drag-to-resize. Lives in `table-menu.tsx`'s "Row"
+ * popover, mirroring `clearColumnWidths` above. */
+export function clearRowHeights(): Command {
+  return (state, dispatch) => {
+    const selected = getSelectedTable(state);
+    if (!selected) return false;
+    let applied = false;
+    const tr = state.tr;
+    selected.node.forEach((row, offset) => {
+      if (row.attrs.heightPx != null) {
+        applied = true;
+        tr.setNodeAttribute(selected.pos + 1 + offset, "heightPx", null);
+      }
+    });
+    if (!applied) return false;
+    if (dispatch) dispatch(tr);
+    return true;
+  };
+}
+
+/** Every cell node currently under the selection - a `CellSelection`'s own
+ * (possibly multi-cell) span, or just the single cell the cursor/selection
+ * sits inside otherwise. Empty when the selection isn't inside a table at
+ * all. Shared by `getCellAlignState`/`setCellAlign` below - both need *every*
+ * selected cell, not just one, so a multi-cell selection applies/reflects
+ * alignment across the whole selection rather than only wherever the cursor
+ * happens to be. */
+function cellsInSelection(state: EditorState): { node: PMNode; pos: number }[] {
+  const cells: { node: PMNode; pos: number }[] = [];
+  if (state.selection instanceof CellSelection) {
+    state.selection.forEachCell((node, pos) => cells.push({ node, pos }));
+  } else if (isInTable(state)) {
+    const $cell = selectionCell(state);
+    cells.push({ node: $cell.nodeAfter!, pos: $cell.pos });
+  }
+  return cells;
+}
+
+/** The combined h/v alignment `table-cell-align-button.tsx`'s 3x3 grid
+ * highlights - `"left"`/`"middle"` (this schema's own browser-matching
+ * defaults, see `schema.ts`'s `cellHAlignStyle`/`cellVAlignStyle`) whenever a
+ * cell's own attr is unset, and `mixed: true` (so the grid highlights
+ * nothing, same "no single answer" idiom as `getTextAlignState`'s own mixed
+ * case) whenever the selected cells don't all agree. `disabled` whenever the
+ * selection isn't inside a table cell at all. */
+export function getCellAlignState(state: EditorState): { hAlign: CellHAlign; vAlign: CellVAlign; mixed: boolean; disabled: boolean } {
+  const cells = cellsInSelection(state);
+  if (cells.length === 0) return { hAlign: "left", vAlign: "middle", mixed: false, disabled: true };
+  const effective = (node: PMNode) => ({
+    hAlign: (node.attrs.hAlign as CellHAlign | null) ?? "left",
+    vAlign: (node.attrs.vAlign as CellVAlign | null) ?? "middle",
+  });
+  const first = effective(cells[0]!.node);
+  const mixed = cells.some(({ node }) => {
+    const e = effective(node);
+    return e.hAlign !== first.hAlign || e.vAlign !== first.vAlign;
+  });
+  return { ...first, mixed, disabled: false };
+}
+
+/** Sets both alignment attrs together on every selected cell, in one
+ * transaction/undo step - mirrors `prosemirror-tables`' own `setCellAttr`
+ * (including its `CellSelection`-vs-single-cell branching), just setting
+ * `hAlign`/`vAlign` as a pair rather than one attr at a time (a combined
+ * pick from the 3x3 grid, not 2 separate ones). */
+export function setCellAlign(hAlign: CellHAlign, vAlign: CellVAlign): Command {
+  return (state, dispatch) => {
+    const cells = cellsInSelection(state);
+    if (cells.length === 0) return false;
+    if (dispatch) {
+      const tr = state.tr;
+      for (const { node, pos } of cells) tr.setNodeMarkup(pos, undefined, { ...node.attrs, hAlign, vAlign });
       dispatch(tr);
     }
     return true;

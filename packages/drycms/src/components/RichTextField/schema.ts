@@ -198,7 +198,7 @@ function getTableAttrs(dom: HTMLElement | string): { caption: string; colWidths:
  * `null` (the "split evenly" default) omits the colgroup entirely -
  * `table-layout: fixed` (content-shadow-styles.ts) already splits unset columns
  * evenly, matching this field's previous (pre-resize) behavior. */
-function colgroupDOMSpec(colWidths: number[] | null): DOMOutputSpec | null {
+export function colgroupDOMSpec(colWidths: number[] | null): DOMOutputSpec | null {
   if (!colWidths || colWidths.length === 0) return null;
   return ["colgroup", ...colWidths.map((width): DOMOutputSpec => ["col", { style: `width:${width}%` }])];
 }
@@ -209,6 +209,43 @@ function colgroupDOMSpec(colWidths: number[] | null): DOMOutputSpec | null {
 export function colgroupHtml(colWidths: number[] | null): string {
   if (!colWidths || colWidths.length === 0) return "";
   return `<colgroup>${colWidths.map((width) => `<col style="width:${width}%">`).join("")}</colgroup>`;
+}
+
+/** The 2 axes `table-cell-align-button.tsx`'s 3x3 grid picks from - kept as
+ * separate attrs (rather than one combined 9-value string) since a cell's
+ * `text-align`/`vertical-align` are independent CSS properties. */
+export type CellHAlign = "left" | "center" | "right";
+export type CellVAlign = "top" | "middle" | "bottom";
+
+const CELL_H_ALIGN_VALUES = new Set<string>(["left", "center", "right"]);
+const CELL_V_ALIGN_VALUES = new Set<string>(["top", "middle", "bottom"]);
+
+/** Read a cell's own inline `text-align`/`vertical-align` back into this
+ * schema's 2 cell-alignment attrs - shared by `cellAttributes`'s own
+ * `getFromDOM` below (the live editor's `parseDOM`) and `html.ts`'s
+ * `importTableElement` (built by hand rather than through this schema's
+ * `parseDOM` - see that file's own doc comment, and `colWidthsFromElement`
+ * above for the same split). */
+export function cellHAlignFromElement(dom: HTMLElement | string): CellHAlign | null {
+  if (typeof dom === "string") return null;
+  const value = dom.style.textAlign;
+  return CELL_H_ALIGN_VALUES.has(value) ? (value as CellHAlign) : null;
+}
+export function cellVAlignFromElement(dom: HTMLElement | string): CellVAlign | null {
+  if (typeof dom === "string") return null;
+  const value = dom.style.verticalAlign;
+  return CELL_V_ALIGN_VALUES.has(value) ? (value as CellVAlign) : null;
+}
+
+/** Only non-default (`"left"`/`"middle"`, this schema's own browser-matching
+ * defaults) alignment needs an explicit style fragment - mirrors
+ * `withTextAlign`'s convention above. Shared by `cellAttributes`'s own
+ * `setDOMAttr`s below and `html.ts`'s manual export equivalent. */
+export function cellHAlignStyle(hAlign: CellHAlign | null): string {
+  return hAlign && hAlign !== "left" ? `text-align:${hAlign};` : "";
+}
+export function cellVAlignStyle(vAlign: CellVAlign | null): string {
+  return vAlign && vAlign !== "middle" ? `vertical-align:${vAlign};` : "";
 }
 
 /** `table`/`table_row`/`table_cell`/`table_header` node specs from
@@ -222,11 +259,32 @@ export function colgroupHtml(colWidths: number[] | null): string {
  * `table_row` adds `heightPx` (see `table-row-resize.ts`). `colspan`/
  * `rowspan` (from the generated `cellAttrs`) back this field's merge/split
  * cell actions (`table.ts`'s `unmergeCell`, `prosemirror-tables`' own
- * `mergeCells`). */
+ * `mergeCells`). `hAlign`/`vAlign` (`table-cell-align-button.tsx`) ride along
+ * on `cellAttributes` - the package's own generated `parseDOM`/`toDOM` calls
+ * each entry's `getFromDOM`/`setDOMAttr` for every `table_cell`/`table_header`
+ * automatically, so neither node needs its own override the way `table`/
+ * `table_row` do above for their own extra attrs. */
 const tableNodeSpecs = tableNodes({
   tableGroup: "block",
   cellContent: "block+",
-  cellAttributes: {},
+  cellAttributes: {
+    hAlign: {
+      default: null,
+      getFromDOM: cellHAlignFromElement,
+      setDOMAttr(value, attrs) {
+        const style = cellHAlignStyle(value as CellHAlign | null);
+        if (style) attrs.style = `${attrs.style ?? ""}${style}`;
+      },
+    },
+    vAlign: {
+      default: null,
+      getFromDOM: cellVAlignFromElement,
+      setDOMAttr(value, attrs) {
+        const style = cellVAlignStyle(value as CellVAlign | null);
+        if (style) attrs.style = `${attrs.style ?? ""}${style}`;
+      },
+    },
+  },
 });
 
 export const schema = new Schema({

@@ -290,6 +290,33 @@ export function tableColumnResizing(): Plugin<PluginState> {
           event.preventDefault();
           return true;
         },
+        // A real mouse fires a separate native `mousedown` right alongside
+        // `pointerdown` above, and `prosemirror-tables`' own `tableEditing()`
+        // plugin claims it (`handleMouseDown$1`) to support click-dragging a
+        // cell selection - its handler runs (and, whenever the mousedown
+        // lands inside any table cell, unconditionally attaches its own
+        // `mousemove` tracker) regardless of what it eventually returns.
+        // Dragging a column boundary crosses into the neighboring cell,
+        // which that tracker reads as "selecting into a new cell" and
+        // dispatches a real `CellSelection` transaction for on every such
+        // crossing - each one is a genuine transaction, so it redraws the
+        // table from its still-unchanged `colWidths` attr regardless of
+        // `table-node-view.ts`'s `ignoreMutation` (that only suppresses the
+        // reconciliation *our own* DOM-only writes would otherwise trigger,
+        // not a redraw prompted by an unrelated real dispatch), wiping
+        // `applyLiveWidths`'s preview almost as soon as it lands. This
+        // plugin is listed *before* `tableEditing()` in `useRichTextEditor.ts`
+        // specifically so this handler gets first crack at every `mousedown`;
+        // claiming it here too (whenever a handle's active/being dragged) and
+        // returning `true` short-circuits ProseMirror's plugin loop before
+        // `tableEditing()`'s handler - and the competing tracker it would've
+        // installed - ever runs.
+        mousedown(view, event) {
+          const pluginState = tableColumnResizingKey.getState(view.state);
+          if (!pluginState || (pluginState.activeHandle === -1 && !pluginState.dragging)) return false;
+          event.preventDefault();
+          return true;
+        },
       },
     },
   });
