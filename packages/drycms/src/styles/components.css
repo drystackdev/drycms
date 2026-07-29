@@ -3270,6 +3270,13 @@
     .richtext-table-grid {
       display: flex;
       flex-direction: column;
+      /* Shrink to the cells' own total width and center that block inside
+       * the picker - `display: flex` alone stretches to the popover's full
+       * (fixed 11rem) content width, leaving the actually-filled cells
+       * hugging the left edge while `.richtext-table-grid-label` below
+       * centers over the full width, so the two visibly didn't line up. */
+      width: fit-content;
+      margin-inline: auto;
 
       & .richtext-table-grid-row:not(:first-child) {
         margin-top: -1px;
@@ -3284,6 +3291,12 @@
       width: 1.4rem;
       height: 1.4rem;
       padding: 0;
+      /* Square corners: these sit flush against their neighbors (see the
+       * overlap trick below), so a rounded corner - inherited from the base
+       * `button` rule otherwise - shows as a stray white notch at every
+       * seam, worst on the hovered/active block where it cuts diamond-
+       * shaped gaps out of an otherwise solid fill. */
+      border-radius: 0;
       border: 1px solid var(--dry-border);
       background-color: var(--dry-muted);
       box-shadow: none;
