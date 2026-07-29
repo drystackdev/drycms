@@ -1,7 +1,8 @@
-import { Fragment, type RefObject } from "preact";
+import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import { runCommand } from "./commands.js";
 import type { FileManagerSource } from "../file-manager-types.js";
+import TableMenu from "./table-menu.js";
 import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 
@@ -13,8 +14,10 @@ export interface RichTextToolbarProps {
   state: ToolbarState;
   disabled?: boolean;
   contentRef: RefObject<HTMLElement>;
-  /** Hides `blockOnly` items (`BlockTypeMenu`, `AlignMenu`) - see
-   * `RichTextField`'s own `inline` prop. @default false */
+  /** Hides `blockOnly` items (`BlockTypeMenu`, `AlignMenu`) and the whole
+   * `TableMenu` card (tables are block-level too, but it isn't part of
+   * `TOOLBAR_GROUPS` for `blockOnly` to reach) - see `RichTextField`'s own
+   * `inline` prop. @default false */
   inline?: boolean;
   /** Passed through to every custom item as `ToolbarCustomProps.source` -
    * only `ImageInsertButton` reads it. Absent hides that button (see
@@ -31,7 +34,16 @@ export interface RichTextToolbarProps {
 }
 
 /** Purely presentational - rendering whatever `./toolbar-buttons.ts` lists.
- * Shouldn't need to change when a button is added/removed/edited. */
+ * Shouldn't need to change when a button is added/removed/edited. Each
+ * group renders as its own bordered `.richtext-toolbar-block` (undo/redo;
+ * inline formatting + image; block-level menus, fullscreen now among them)
+ * rather than being separated by an `<hr>` - a group of *related* controls
+ * reading as one visual unit, not a flat row divided by lines. `TableMenu`
+ * is the one exception, rendered directly rather than through
+ * `TOOLBAR_GROUPS`: it's a card with its own internal collapse/expand
+ * transition (see that file) this generic per-group wrapper has no notion
+ * of, so it keeps building its own card rather than being wrapped in a
+ * second one here. */
 export default function RichTextToolbar({
   viewRef,
   state,
@@ -54,8 +66,8 @@ export default function RichTextToolbar({
   };
 
   // Groups can end up empty once `blockOnly` items are filtered out (e.g. the
-  // align-only group under `inline`) - drop those so the `index > 0`
-  // separator below doesn't leave a stray `<hr>` next to nothing.
+  // align-only group under `inline`) - drop those so an empty block never
+  // renders as a bare, content-less bordered box.
   const visibleGroups = TOOLBAR_GROUPS.map((group) =>
     group.filter(
       (item) =>
@@ -67,8 +79,7 @@ export default function RichTextToolbar({
   return (
     <div class="richtext-toolbar" role="group" aria-label="Formatting">
       {visibleGroups.map((group, index) => (
-        <Fragment key={index}>
-          {index > 0 && <hr class="separator" role="separator" aria-orientation="vertical" />}
+        <div class="richtext-toolbar-block" key={index}>
           {group.map((item) =>
             item.type === "custom" ? (
               <item.Component
@@ -98,8 +109,9 @@ export default function RichTextToolbar({
               </button>
             ),
           )}
-        </Fragment>
+        </div>
       ))}
+      {!inline && <TableMenu viewRef={viewRef} state={state} disabled={disabled} iconSize={iconSize} />}
     </div>
   );
 }

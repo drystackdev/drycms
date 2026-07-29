@@ -3,7 +3,6 @@ import type { FieldProps } from "./field-common.js";
 import type { FileManagerSource } from "./file-manager-types.js";
 import { useScrollLock } from "./list-nav.js";
 import ImageMenu from "./RichTextField/image-menu.js";
-import TableMenu from "./RichTextField/table-menu.js";
 import RichTextToolbar from "./RichTextField/toolbar.js";
 import type { ToolbarIconSize } from "./RichTextField/types.js";
 import {
@@ -82,12 +81,12 @@ export default function RichTextField({
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
-  // Toggling fullscreen moves e.g. `TableMenu`'s/`ImageMenu`'s anchor
-  // (a node inside `.richtext-content`) without changing its own size, so
-  // `useTrackRect`'s `ResizeObserver` (in list-nav.ts) never fires for it -
-  // it only re-measures on the anchor's own resize or a window scroll/resize
-  // event. A synthetic resize next frame (once the class change has
-  // actually reflowed) nudges any open floating panel back into place.
+  // Toggling fullscreen moves `ImageMenu`'s anchor (a node inside
+  // `.richtext-content`) without changing its own size, so `useTrackRect`'s
+  // `ResizeObserver` (in list-nav.ts) never fires for it - it only
+  // re-measures on the anchor's own resize or a window scroll/resize event.
+  // A synthetic resize next frame (once the class change has actually
+  // reflowed) nudges any open floating panel back into place.
   useEffect(() => {
     const raf = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     return () => cancelAnimationFrame(raf);
@@ -129,12 +128,6 @@ export default function RichTextField({
           state={state}
           disabled={disabled}
           source={source}
-          iconSize={iconSize}
-        />
-        <TableMenu
-          viewRef={viewRef}
-          state={state}
-          disabled={disabled}
           iconSize={iconSize}
         />
       </div>

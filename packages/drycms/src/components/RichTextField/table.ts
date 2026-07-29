@@ -1,5 +1,6 @@
 import type { Node as PMNode } from "prosemirror-model";
 import type { Command, EditorState } from "prosemirror-state";
+import { Selection } from "prosemirror-state";
 import { TableMap, addColumn, isInTable, mergeCells, removeColumn, selectedRect, splitCellWithType } from "prosemirror-tables";
 import { schema } from "./schema.js";
 
@@ -34,12 +35,70 @@ function buildTable(rows: number, cols: number): PMNode {
 
 /** Inserts a fresh `rows`x`cols` table at the selection, header row on by
  * default (first row's cells are `table_header`, matching the "table mặc
- * định bật header" requirement) - `table-insert-button.tsx`'s 10x10 grid
+ * định bật header" requirement) - `table-insert-button.tsx`'s 6x6 grid
  * picker passes the size the user hovered; resizing afterward happens via
- * `table-menu.tsx`'s insert row/column actions. */
+ * `table-menu.tsx`'s insert row/column actions. Also appends an empty
+ * paragraph after the table if the selection sat at the very end of the
+ * document - `Selection.atEnd(state.doc)` is the innermost end position
+ * (it descends into whatever the last leaf/textblock actually is), unlike
+ * a raw `state.doc.content.size` comparison: a cursor resting at the end
+ * of the last textblock's own text sits one position *before* that (every
+ * enclosing node it's inside still needs its own closing token counted),
+ * so comparing directly against `content.size` never matches and silently
+ * skips the very case this is for. Without this fix-up, a table inserted
+ * at the end of the document leaves nothing after it for the cursor to
+ * move into, silently swallowing anything typed next. Any other insertion
+ * position already gets a sibling for free, whether that's the existing
+ * block that followed the cursor or the tail end of a split paragraph, so
+ * this only ever fires for the trailing case. */
 export function insertTable(rows = DEFAULT_ROWS, cols = DEFAULT_COLS): Command {
   return (state, dispatch) => {
-    if (dispatch) dispatch(state.tr.replaceSelectionWith(buildTable(rows, cols)).scrollIntoView());
+    if (dispatch) {
+      let tr = state.tr.replaceSelectionWith(buildTable(rows, cols));
+      if (Selection.atEnd(state.doc).from === state.selection.to) {
+        tr = tr.insert(tr.doc.content.size, schema.nodes.paragraph!.createAndFill()!);
+      }
+      dispatch(tr.scrollIntoView());
+    }
+    return true;
+  };
+}
+
+/** Deletes the table at `pos`, plus any empty paragraph(s) immediately
+ * following it - the trailing paragraph `insertTable` above adds so the
+ * cursor has somewhere to land, cleaned back up if the table's removed
+ * before that paragraph ever picks up real content (checked by
+ * `content.size === 0`, not just "is a paragraph" - a paragraph the user
+ * actually typed into is content, not table debris). Keeps extending the
+ * removed range as long as the next node is still an empty paragraph,
+ * since nothing rules out more than one accumulating - all read off the
+ * original, untouched `state.doc` before any deletion happens. Table-
+ * specific rather than folded into `commands.ts`'s generic `removeNodeAt`
+ * (which `image-menu.tsx`'s own "Remove image" button still uses as-is):
+ * images never leave a paired paragraph behind, so that cleanup step would
+ * be dead weight there. When the removed range spans the *entire*
+ * document (a lone table with no other content - `doc`'s content is flat
+ * `block+`, see `schema.ts`, so `pos === 0 && end === doc.content.size`
+ * exactly captures that), replaces it with a fresh empty paragraph in one
+ * step via `replaceWith` instead of deleting first and inserting after:
+ * `tr.delete` alone would pass through a zero-block document, which
+ * `block+` forbids - `Transform`'s own fit-checking throws on that
+ * intermediate state before a follow-up insert ever gets a chance to run. */
+export function removeTable(pos: number, nodeSize: number): Command {
+  return (state, dispatch) => {
+    if (dispatch) {
+      let end = pos + nodeSize;
+      while (true) {
+        const after = state.doc.nodeAt(end);
+        if (!after || after.type !== schema.nodes.paragraph || after.content.size > 0) break;
+        end += after.nodeSize;
+      }
+      const tr =
+        pos === 0 && end === state.doc.content.size
+          ? state.tr.replaceWith(pos, end, schema.nodes.paragraph!.createAndFill()!)
+          : state.tr.delete(pos, end);
+      dispatch(tr);
+    }
     return true;
   };
 }

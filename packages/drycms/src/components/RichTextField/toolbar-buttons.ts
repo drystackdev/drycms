@@ -17,19 +17,19 @@ import ColorMenu from "./color-menu.js";
 import FullscreenButton from "./fullscreen-button.js";
 import ImageInsertButton from "./image-insert-button.js";
 import ListMenu from "./list-menu.js";
-import TableInsertButton from "./table-insert-button.js";
 import { removeAllMarks } from "./commands.js";
 import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
 
 /**
  * The toolbar's item registry - `toolbar.tsx` only knows how to render
- * whatever's in `TOOLBAR_GROUPS` (one `<hr>` gap per group), so adding or
- * removing a formatting feature is just editing the list below. Most items
- * are a `ToolbarButton` (a single toggle/action button); `AlignMenu`,
- * `BlockTypeMenu` and `ColorMenu` are `ToolbarCustomItem`s instead - each
- * renders its own trigger/popover because "one of several options" or "a
- * whole color grid" doesn't fit a single button's on/off `isActive`.
+ * whatever's in `TOOLBAR_GROUPS` (one bordered `.richtext-toolbar-block` per
+ * group, not an `<hr>` gap), so adding or removing a formatting feature is
+ * just editing the list below. Most items are a `ToolbarButton` (a single
+ * toggle/action button); `AlignMenu`, `BlockTypeMenu` and `ColorMenu` are
+ * `ToolbarCustomItem`s instead - each renders its own trigger/popover
+ * because "one of several options" or "a whole color grid" doesn't fit a
+ * single button's on/off `isActive`.
  */
 export interface ToolbarButton {
   type: "button";
@@ -110,22 +110,29 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
       isDisabled: (state) => !state.canRedo,
     },
   ],
-  // Inline group: every item here formats a text run (a mark) - kept
-  // together, and separate from the block group below, so `inline` mode
-  // (see `toolbar.tsx`) can drop the latter as one unit.
-  [...INLINE_FORMAT_BUTTONS, { type: "custom", key: "color", Component: ColorMenu }],
+  // Inline group: every item here either formats a text run (a mark) or
+  // inserts an image inline with one - kept together since both operate at
+  // "the current spot in the text" rather than a whole top-level element,
+  // unlike the block group below. `insert-image` still carries its own
+  // `blockOnly` (an image insertion doesn't belong in a single-run `inline`
+  // field either), so it still drops out on its own under `inline` mode
+  // rather than needing this whole group flagged.
+  [
+    ...INLINE_FORMAT_BUTTONS,
+    { type: "custom", key: "color", Component: ColorMenu },
+    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
+  ],
   // Block group: every item here acts on a whole top-level element
   // (paragraph/heading/quote node, or its alignment) rather than a run of
-  // text - both flagged `blockOnly` so `inline` mode hides them together.
+  // text - all flagged `blockOnly` so `inline` mode hides them together.
+  // Fullscreen joins this group too: expanding the whole field to fill the
+  // viewport is a page-layout concern, not text formatting, but it's no
+  // more useful in a single-inline-run field (a title, say) than the
+  // block-type/align/list menus it now sits alongside.
   [
     { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
-    { type: "custom", key: "insert-table", Component: TableInsertButton, blockOnly: true },
-    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
+    { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
   ],
-  // Its own trailing group (own separator) - unlike everything above,
-  // fullscreen isn't inline-vs-block formatting, so it stays visible under
-  // `inline` mode too (not flagged `blockOnly`).
-  [{ type: "custom", key: "fullscreen", Component: FullscreenButton }],
 ];
