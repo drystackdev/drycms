@@ -54,11 +54,24 @@ export default function ContextMenu({ label, items, children }: ContextMenuProps
   const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault();
     setPosition({ left: event.clientX, top: event.clientY });
-    // Deferred a tick: showing the popover synchronously, inside the same
-    // gesture that right-clicked it open, races the browser's own
-    // `popover="auto"` light-dismiss (tied to this same click's mouseup) -
-    // it opens and is immediately dismissed again.
-    setTimeout(() => setOpen(true), 0);
+    // Right-click dispatches mousedown -> contextmenu -> mouseup as
+    // separate tasks (not one synchronous call stack) - a plain
+    // `setTimeout(fn, 0)` here can fire and open the popover *before* that
+    // trailing mouseup, which the native `popover="auto"` light-dismiss
+    // then reads as an outside click and closes it again (opens and
+    // instantly flickers shut). Waiting for the real mouseup first
+    // guarantees this same gesture has fully ended before we open - with a
+    // short fallback timeout for a keyboard/long-press `contextmenu` that
+    // has no mouseup to wait for at all.
+    let opened = false;
+    const openOnce = () => {
+      if (opened) return;
+      opened = true;
+      document.removeEventListener("mouseup", openOnce);
+      setOpen(true);
+    };
+    document.addEventListener("mouseup", openOnce, { once: true });
+    setTimeout(openOnce, 150);
   };
 
   const run = (action: () => void) => {

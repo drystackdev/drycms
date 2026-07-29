@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import preactIntegration from "@astrojs/preact";
 import type { AstroIntegration } from "astro";
 import {
@@ -33,11 +34,32 @@ const PREACT_INTEGRATION_NAME = "@astrojs/preact";
  */
 const require = createRequire(import.meta.url);
 
+/**
+ * `import.meta.resolve` first, not `require.resolve`: the result becomes a
+ * Vite `resolve.alias` target (see `dryDepAliases`), and Vite's dev SSR
+ * module runner evaluates whatever file that absolute path points to as
+ * plain ESM with no CommonJS interop. `require.resolve` follows a dual
+ * package's `"require"` export condition, which for a package that ships a
+ * real ESM build too (e.g. `overlayscrollbars`) lands on its raw `.cjs`
+ * file - `exports.foo = …` with no `exports`/`module` shim in that eval
+ * context throws `ReferenceError: exports is not defined` on the very
+ * first SSR request that reaches it (directly or transitively), and
+ * Astro's dev router silently swallows that and falls back to the next
+ * matching route instead of surfacing it. `import.meta.resolve` follows
+ * the `"import"` condition instead, landing on the genuine ESM entry when
+ * one exists; for CJS-only packages (no `"import"` condition) it resolves
+ * the same file `require.resolve` would have, so this is a strict
+ * improvement, not a behavior change for those.
+ */
 function resolveFromHere(specifier: string): string | undefined {
   try {
-    return require.resolve(specifier);
+    return fileURLToPath(import.meta.resolve(specifier));
   } catch {
-    return undefined;
+    try {
+      return require.resolve(specifier);
+    } catch {
+      return undefined;
+    }
   }
 }
 
@@ -246,11 +268,6 @@ export function dry(options: DryOption = {}): AstroIntegration {
         injectRoute({
           pattern: `${resolved.path}/api/content/[...slug]`,
           entrypoint: CONTENT_ENTRIES_ROUTE_ENTRYPOINT,
-        });
-
-        injectRoute({
-          pattern: `${resolved.path}/api/__debugtest123/[...slug]`,
-          entrypoint: "drycms/routes/debugtest.ts",
         });
 
         logger.info(`admin UI mounted at ${resolved.path}`);

@@ -11,6 +11,7 @@ import {
   isMarkActive,
   hasInlineContent,
   getBlockType,
+  getSelectedImage,
   getTextAlignState,
   getTextColorState,
 } from "./commands.js";
@@ -62,6 +63,7 @@ function readToolbarState(state: EditorState): ToolbarState {
     canUndo: undoDepth(state) > 0,
     canRedo: redoDepth(state) > 0,
     inlineEditable: hasInlineContent(state),
+    selectedImage: getSelectedImage(state),
   };
 }
 
@@ -116,6 +118,7 @@ export function useRichTextEditor({
     canUndo: false,
     canRedo: false,
     inlineEditable: true,
+    selectedImage: null,
   });
   const [empty, setEmpty] = useState(true);
 

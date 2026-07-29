@@ -45,16 +45,47 @@ export function imageSizeFromElement(el: HTMLElement): { width: number | null; h
   };
 }
 
+/** The 3 float/center layouts `image-menu.tsx`'s align buttons offer -
+ * `null` (the default) leaves the image flowing inline with surrounding
+ * text, same as before this attr existed. Ported from drystack's
+ * `ImageAlign`, minus its own `null` already meaning the same thing there. */
+export type ImageAlign = "left" | "center" | "right";
+
+/** Inverse of `imageAlignStyleString` below - reads which layout (if any)
+ * an `<img>`'s inline style currently encodes. `display: block` only ever
+ * comes from the "center" encoding here (a plain unaligned image never sets
+ * it), so it's an unambiguous marker even without checking `margin-inline`. */
+export function parseImageAlign(el: HTMLElement): ImageAlign | null {
+  if (el.style.float === "left" || el.style.float === "right") return el.style.float;
+  if (el.style.display === "block") return "center";
+  return null;
+}
+
+/** The inline `style` for an image's align attr - `left`/`right` float it
+ * (matching drystack's own `imageContainerAlignStyle`, physical rather than
+ * logical directions since `float` itself already is), `center` blocks it
+ * and centers it via `margin-inline: auto` (the standard auto-margin
+ * centering trick, which only kicks in on a block box - hence `display:
+ * block`, not this schema's usual inline flow). */
+export function imageAlignStyleString(align: ImageAlign | null): string {
+  if (align === "left") return "float:left;margin-inline-end:1em;margin-block:0.5em";
+  if (align === "right") return "float:right;margin-inline-start:1em;margin-block:0.5em";
+  if (align === "center") return "display:block;margin-inline:auto";
+  return "";
+}
+
 /** The inline `style` for an image's explicit size (set via the resize
- * handles - see `image-view.ts`) - `max-width`/`max-height: none` override
- * this field's own default cap on an unsized image (`.richtext-image` in
- * forms.css), which would otherwise clamp a deliberately-resized-larger
- * image right back down. */
-export function imageStyleString(width: number | null, height: number | null): string {
+ * handles - see `image-view.ts`) plus its align (`image-menu.tsx`) -
+ * `max-width`/`max-height: none` override this field's own default cap on
+ * an unsized image (`.richtext-image` in forms.css), which would otherwise
+ * clamp a deliberately-resized-larger image right back down. */
+export function imageStyleString(width: number | null, height: number | null, align: ImageAlign | null): string {
   const parts: string[] = [];
   if (width != null) parts.push(`width:${width}px`, "max-width:none");
   if (height != null) parts.push(`height:${height}px`, "max-height:none");
   if (width != null || height != null) parts.push("object-fit:contain");
+  const alignStyle = imageAlignStyleString(align);
+  if (alignStyle) parts.push(alignStyle);
   return parts.join(";");
 }
 
@@ -107,18 +138,27 @@ export const schema = new Schema({
       group: "inline",
       inline: true,
       atom: true,
-      attrs: { src: {}, alt: { default: "" }, width: { default: null }, height: { default: null } },
+      attrs: { src: {}, alt: { default: "" }, width: { default: null }, height: { default: null }, align: { default: null } },
       parseDOM: [
         {
           tag: "img[src]",
           getAttrs(dom: HTMLElement | string) {
             if (typeof dom === "string") return false;
-            return { src: dom.getAttribute("src") ?? "", alt: dom.getAttribute("alt") ?? "", ...imageSizeFromElement(dom) };
+            return {
+              src: dom.getAttribute("src") ?? "",
+              alt: dom.getAttribute("alt") ?? "",
+              ...imageSizeFromElement(dom),
+              align: parseImageAlign(dom),
+            };
           },
         },
       ],
       toDOM(node): DOMOutputSpec {
-        const style = imageStyleString(node.attrs.width as number | null, node.attrs.height as number | null);
+        const style = imageStyleString(
+          node.attrs.width as number | null,
+          node.attrs.height as number | null,
+          node.attrs.align as ImageAlign | null,
+        );
         return [
           "img",
           {

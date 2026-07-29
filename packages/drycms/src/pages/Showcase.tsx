@@ -34,7 +34,7 @@ import Select from "../components/Select.js";
 import SelectField from "../components/SelectField.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
-import RichTextField from "../components/RichTextField/index.js";
+import RichTextField from "../components/RichTextField.js";
 import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { toast } from "../components/Toast.js";
@@ -556,7 +556,10 @@ function FloatingPanelPreview() {
 
   return (
     <div class="stack" style={{ width: "100%" }}>
-      <p class="hint">Select a box, then align or delete it - the panel follows whichever one is selected.</p>
+      <p class="hint">
+        Select a box, then align or delete it - the panel follows whichever one
+        is selected.
+      </p>
       <div class="row" style={{ gap: "1.5rem" }}>
         {boxes.map((box) => (
           <button
@@ -792,7 +795,7 @@ function DemoContent({ id }: { id: string }) {
 
             <p>Body text sits at 14px with a 1.5 line height.</p>
             <small>Small text is muted by default.</small>
-            
+
             <p>
               Inline <code>code</code>, a <kbd>Ctrl</kbd> key, and a{" "}
               <a href={`${path}/showcase/colors`} class="underline">
@@ -1797,7 +1800,14 @@ function DemoContent({ id }: { id: string }) {
               },
             ]}
           >
-            <div class="card" style={{ padding: "3rem", textAlign: "center", cursor: "context-menu" }}>
+            <div
+              class="card"
+              style={{
+                padding: "3rem",
+                textAlign: "center",
+                cursor: "context-menu",
+              }}
+            >
               Right-click here
             </div>
           </ContextMenu>

@@ -3116,6 +3116,29 @@
       }
     }
 
+    /* RichTextField's floating per-image menu (image-menu.tsx) - shown via
+     * FloatingPanel.tsx anchored to the selected image node. Same button/
+     * separator treatment as `.richtext-toolbar` above, minus its muted
+     * background (`.floating-panel` in this same layer already supplies
+     * one) - and the pressed state uses that muted color instead, so it
+     * reads against the panel's own `--dry-popover` background. */
+    .richtext-image-menu {
+      display: flex;
+      gap: 0.375rem;
+
+      & button {
+        border-radius: var(--dry-radius-sm);
+      }
+
+      & button[aria-pressed="true"] {
+        background-color: var(--dry-muted);
+      }
+
+      & > hr.separator {
+        margin-inline: 0.25rem;
+      }
+    }
+
     /* --- List view: rows are separated, rounded, solid-bordered "pills"
      * rather than base.css's collapsed/dashed dividers - border-spacing
      * opens the vertical gap, and radius/border live on the first & last
@@ -3486,7 +3509,21 @@
     /* --- FloatingPanel: follows an arbitrary/moving anchor element instead
      * of a fixed trigger (see `FloatingPanel.tsx`) - `popover="manual"` for
      * the same top-layer reasons as `.popover-menu` above, but shown/hidden
-     * imperatively by the component rather than native light-dismiss. */
+     * imperatively by the component rather than native light-dismiss.
+     *
+     * `display`/`overlay` are transitioned (with `allow-discrete`) so the
+     * fade/scale below animates the close as well as the open, not just the
+     * open - same technique as `.field-dialog`'s open animation, extended to
+     * cover the native popover's discrete display swap.
+     *
+     * `left`/`top` are deliberately NOT in the base transition list - only
+     * `.floating-panel-tracking` (added by FloatingPanel.tsx once the panel
+     * has already appeared at least once for its current anchor) adds them,
+     * so the panel glides on a discrete anchor swap or while continuously
+     * re-tracking the same anchor as the page scrolls (`useTrackRect`) - but
+     * its first-ever appearance snaps straight to the correct spot instead of
+     * visibly flying in from wherever `left`/`top` last resolved to (0 - the
+     * element had no box to measure while `display: none`). */
     .floating-panel {
       border-width: 0;
       margin: 0;
@@ -3495,6 +3532,31 @@
       background-color: var(--dry-popover);
       color: var(--dry-popover-foreground);
       box-shadow: var(--dry-shadow-lg);
+      opacity: 1;
+      scale: 1;
+      transition:
+        opacity 120ms ease,
+        scale 120ms ease,
+        display 120ms ease allow-discrete,
+        overlay 120ms ease allow-discrete;
+
+      &.floating-panel-tracking {
+        transition-property: left, top, opacity, scale, display, overlay;
+        transition-duration: 120ms, 120ms, 120ms, 120ms, 120ms, 120ms;
+        transition-timing-function: ease-out, ease-out, ease, ease, ease, ease;
+      }
+
+      &:not(:popover-open) {
+        opacity: 0;
+        scale: 0.92;
+      }
+
+      @starting-style {
+        &:popover-open {
+          opacity: 0;
+          scale: 0.92;
+        }
+      }
     }
 
     /* --- RichTextField's color picker (color-menu.tsx) - swatch buttons

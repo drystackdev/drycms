@@ -1,3 +1,4 @@
+import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import type { RefObject } from "preact";
 import type { FileManagerSource } from "../file-manager-types.js";
@@ -48,6 +49,13 @@ export interface ToolbarState {
    * at all. Disables bold/italic/underline rather than leaving them
    * clickable no-ops. */
   inlineEditable: boolean;
+  /** The image node currently selected as a whole (a `NodeSelection` sitting
+   * on it), if any - drives the floating per-image menu (`image-menu.tsx`),
+   * same way `align`/`blockType` above drive their own toolbar items. `null`
+   * whenever the selection isn't exactly an image (including a `NodeSelection`
+   * on some other node - there are none yet, but this stays accurate if one's
+   * ever added). */
+  selectedImage: { pos: number; node: PMNode } | null;
 }
 
 /** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)

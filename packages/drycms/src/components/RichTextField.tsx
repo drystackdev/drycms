@@ -1,8 +1,12 @@
-import type { FieldProps } from "../field-common.js";
-import type { FileManagerSource } from "../file-manager-types.js";
-import RichTextToolbar from "./toolbar.js";
-import type { ToolbarIconSize } from "./types.js";
-import { useRichTextEditor, type RichTextJSON } from "./useRichTextEditor.js";
+import type { FieldProps } from "./field-common.js";
+import type { FileManagerSource } from "./file-manager-types.js";
+import ImageMenu from "./RichTextField/image-menu.js";
+import RichTextToolbar from "./RichTextField/toolbar.js";
+import type { ToolbarIconSize } from "./RichTextField/types.js";
+import {
+  useRichTextEditor,
+  type RichTextJSON,
+} from "./RichTextField/useRichTextEditor.js";
 
 export interface RichTextFieldProps extends FieldProps<string> {
   placeholder?: string;
@@ -81,6 +85,13 @@ export default function RichTextField({
          * into this mount node and owns its attributes/content from then on -
          * see `useRichTextEditor.ts`'s `buildAttributes`. */}
         <div ref={contentRef} />
+        <ImageMenu
+          viewRef={viewRef}
+          state={state}
+          disabled={disabled}
+          source={source}
+          iconSize={iconSize}
+        />
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>

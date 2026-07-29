@@ -5,7 +5,7 @@ import CheckField from "../components/CheckField.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import { ArrowLeftIcon } from "../components/icons.js";
-import RichTextField from "../components/RichTextField/index.js";
+import RichTextField from "../components/RichTextField.js";
 import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import TextField from "../components/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -57,8 +57,7 @@ const PRESETS: Preset[] = [
   {
     key: "image",
     label: "Image",
-    html:
-      '<p>An inline image, for testing insertion and drag-to-resize: <img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'120\' height=\'80\'%3E%3Crect width=\'120\' height=\'80\' fill=\'%232563eb\'/%3E%3C/svg%3E" alt="Placeholder rectangle"></p>',
+    html: "<p>An inline image, for testing insertion and drag-to-resize: <img src=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232563eb'/%3E%3C/svg%3E\" alt=\"Placeholder rectangle\"></p>",
   },
   {
     key: "long",

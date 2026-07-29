@@ -1,7 +1,8 @@
-import type { MarkType } from "prosemirror-model";
+import type { MarkType, Node as PMNode } from "prosemirror-model";
+import { NodeSelection } from "prosemirror-state";
 import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { blockNodeTypeAndAttrs, blockTypeOfNode, schema } from "./schema.js";
+import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign } from "./schema.js";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -184,6 +185,54 @@ export function setBlockTypeCommand(target: BlockType): Command {
 export function insertHardBreak(): Command {
   return (state, dispatch) => {
     if (dispatch) dispatch(state.tr.replaceSelectionWith(schema.nodes.hard_break!.create()).scrollIntoView());
+    return true;
+  };
+}
+
+/** Drives `image-menu.tsx`'s visibility/anchor - `null` unless the selection
+ * is exactly a `NodeSelection` around an image node. */
+export function getSelectedImage(state: EditorState): { pos: number; node: PMNode } | null {
+  const { selection } = state;
+  if (selection instanceof NodeSelection && selection.node.type === schema.nodes.image) {
+    return { pos: selection.from, node: selection.node };
+  }
+  return null;
+}
+
+/** Toggles one of the 3 float/center layouts on the image at `pos` - the
+ * caller (`image-menu.tsx`) passes `null` itself to turn the active one back
+ * off, same one-of-four-but-toggleable shape as `setTextAlign` above. */
+export function setImageAlign(pos: number, align: ImageAlign | null): Command {
+  return (state, dispatch) => {
+    const node = state.doc.nodeAt(pos);
+    if (!node || node.type !== schema.nodes.image) return false;
+    if (dispatch) dispatch(state.tr.setNodeAttribute(pos, "align", align));
+    return true;
+  };
+}
+
+/** Swaps the image at `pos` for a different file picked from the library -
+ * `align` carries over (still the same spot in the document's layout) but
+ * `width`/`height` reset: the old size was fit to the previous image's own
+ * aspect ratio, and keeping it would squash/stretch a differently-shaped
+ * replacement rather than just showing it at its own natural size. */
+export function replaceImageSrc(pos: number, src: string, alt: string): Command {
+  return (state, dispatch) => {
+    const node = state.doc.nodeAt(pos);
+    if (!node || node.type !== schema.nodes.image) return false;
+    if (dispatch) {
+      const tr = state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, src, alt, width: null, height: null });
+      dispatch(tr.setSelection(NodeSelection.create(tr.doc, pos)));
+    }
+    return true;
+  };
+}
+
+/** Deletes whatever node sits at `pos` - used by `image-menu.tsx`'s "Remove
+ * image" button, but not itself image-specific. */
+export function removeNodeAt(pos: number, nodeSize: number): Command {
+  return (state, dispatch) => {
+    if (dispatch) dispatch(state.tr.delete(pos, pos + nodeSize));
     return true;
   };
 }

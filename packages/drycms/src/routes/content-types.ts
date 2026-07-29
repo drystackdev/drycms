@@ -49,15 +49,7 @@ function errorResponse(error: unknown): Response {
  * constructed fresh on every call instead - see `ResolvedD1ContentOption`'s
  * docs.
  */
-console.error("!!! content-types.ts module top-level evaluating, content =", JSON.stringify(content));
-let moduleAdapter: ContentEngineAdapter | undefined;
-try {
-  moduleAdapter = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
-  console.error("!!! content-types.ts moduleAdapter created OK");
-} catch (e) {
-  console.error("!!! content-types.ts moduleAdapter THREW:", e);
-  throw e;
-}
+const moduleAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
 
 function getAdapter(context: APIContext): ContentEngineAdapter {
   if (moduleAdapter) return moduleAdapter;
@@ -125,7 +117,6 @@ async function handleSave(
 }
 
 export const GET: APIRoute = async (context) => {
-  console.error("!!! content-types GET handler hit", context.url.pathname);
   try {
     const adapter = getAdapter(context);
     const id = readId(context);

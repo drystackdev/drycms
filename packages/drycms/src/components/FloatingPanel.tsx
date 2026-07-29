@@ -49,6 +49,33 @@ export default function FloatingPanel({
     openUp: boolean;
   } | null>(null);
 
+  // False for the frame(s) where the panel first appears from hidden (mount,
+  // or coming back from `anchor === null`), true from the next animation
+  // frame on - so a fresh appearance snaps straight to place while a swap
+  // between two already-visible anchors keeps gliding (tracking was already
+  // true going in, so it's never reset for that case). Deliberately timed
+  // via its own rAF rather than inferred from `useTrackRect`'s internal
+  // effect: that hook may re-measure (and re-render) more than once before
+  // the first paint - e.g. a `ResizeObserver` is specified to report an
+  // element's size once right after `observe()` starts, on top of the
+  // synchronous initial call already made here - and nothing guarantees
+  // this component's own effects run in between those in a fixed order
+  // relative to them.
+  const [tracking, setTracking] = useState(false);
+  const previousAnchorRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const reappearing = !previousAnchorRef.current;
+    previousAnchorRef.current = anchor;
+    if (!anchor) {
+      setTracking(false);
+      return;
+    }
+    if (!reappearing) return;
+    setTracking(false);
+    const raf = requestAnimationFrame(() => setTracking(true));
+    return () => cancelAnimationFrame(raf);
+  }, [anchor]);
+
   // Unlike Popover.tsx's trigger+menu (which used to lock background scroll
   // while open so its one-shot position never went stale, before it also
   // moved to this same tracker), this panel was never scroll-locked in the
@@ -77,7 +104,13 @@ export default function FloatingPanel({
     <div
       ref={panelRef}
       popover="manual"
-      class={["floating-panel", className].filter(Boolean).join(" ")}
+      class={[
+        "floating-panel",
+        tracking && "floating-panel-tracking",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={
         position
           ? {

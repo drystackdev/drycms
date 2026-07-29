@@ -39,8 +39,20 @@ export interface DatePickerFieldProps extends FieldProps<Date> {
   description?: string;
 }
 
-const WEEKDAYS = Array.from({ length: 7 }, (_, day) => dayjs().day(day).format("dd"));
-const MONTHS = Array.from({ length: 12 }, (_, month) => dayjs().month(month).format("MMMM"));
+// Lazy + memoized rather than computed at module scope: this file is
+// imported into server-only code too (`field-registry.ts` -> `migration.ts`
+// -> the content-type engines), which never renders the component but would
+// otherwise still pay for (and be able to break on) a `dayjs()` call just by
+// being imported.
+let weekdaysCache: string[] | undefined;
+function getWeekdays(): string[] {
+  return (weekdaysCache ??= Array.from({ length: 7 }, (_, day) => dayjs().day(day).format("dd")));
+}
+
+let monthsCache: string[] | undefined;
+function getMonths(): string[] {
+  return (monthsCache ??= Array.from({ length: 12 }, (_, month) => dayjs().month(month).format("MMMM")));
+}
 
 function buildCalendarGrid(viewMonth: Dayjs): Dayjs[] {
   const start = viewMonth.startOf("month").subtract(viewMonth.startOf("month").day(), "day");
@@ -191,7 +203,7 @@ export default function DatePickerField({
               </button>
             </div>
             <div class="datepicker-grid">
-              {WEEKDAYS.map((weekday) => (
+              {getWeekdays().map((weekday) => (
                 <span key={weekday} class="datepicker-weekday">
                   {weekday}
                 </span>
@@ -256,7 +268,7 @@ export default function DatePickerField({
                   )
                 }
               >
-                {MONTHS.map((monthName, index) => (
+                {getMonths().map((monthName, index) => (
                   <option key={monthName} value={index}>
                     {monthName}
                   </option>

@@ -6,7 +6,9 @@ import {
   createEmptyDoc,
   imageSizeFromElement,
   imageStyleString,
+  parseImageAlign,
   schema,
+  type ImageAlign,
 } from "./schema.js";
 import { normalizeTextAlign, type BlockType } from "./types.js";
 
@@ -52,7 +54,11 @@ export function exportCleanHtml(doc: PMNode): string {
     let inner = "";
     node.forEach((child) => {
       if (child.type === schema.nodes.image) {
-        const style = imageStyleString(child.attrs.width as number | null, child.attrs.height as number | null);
+        const style = imageStyleString(
+          child.attrs.width as number | null,
+          child.attrs.height as number | null,
+          child.attrs.align as ImageAlign | null,
+        );
         inner += `<img src="${escapeAttr(child.attrs.src as string)}" alt="${escapeAttr(child.attrs.alt as string)}"${style ? ` style="${escapeAttr(style)}"` : ""}>`;
       } else if (child.type === schema.nodes.hard_break) {
         inner += "<br>";
@@ -91,7 +97,12 @@ function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] 
   if (domNode.nodeName === "IMG") {
     const img = domNode as HTMLImageElement;
     return [
-      schema.nodes.image!.create({ src: img.getAttribute("src") ?? "", alt: img.getAttribute("alt") ?? "", ...imageSizeFromElement(img) }),
+      schema.nodes.image!.create({
+        src: img.getAttribute("src") ?? "",
+        alt: img.getAttribute("alt") ?? "",
+        ...imageSizeFromElement(img),
+        align: parseImageAlign(img),
+      }),
     ];
   }
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
@@ -122,7 +133,12 @@ export function importCleanHtml(html: string): PMNode {
       blockNodes.push(
         schema.nodes.paragraph!.create(
           null,
-          schema.nodes.image!.create({ src: img.getAttribute("src") ?? "", alt: img.getAttribute("alt") ?? "", ...imageSizeFromElement(img) }),
+          schema.nodes.image!.create({
+            src: img.getAttribute("src") ?? "",
+            alt: img.getAttribute("alt") ?? "",
+            ...imageSizeFromElement(img),
+            align: parseImageAlign(img),
+          }),
         ),
       );
       continue;

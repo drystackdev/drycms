@@ -1,5 +1,6 @@
 import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView, NodeView } from "prosemirror-view";
+import type { ImageAlign } from "./schema.js";
 
 /**
  * Drag-to-resize handles for the inline image node - ported from drystack's
@@ -150,6 +151,32 @@ export class ImageNodeView implements NodeView {
     this.img.style.maxWidth = width != null ? "none" : "";
     this.img.style.maxHeight = height != null ? "none" : "";
     this.img.style.objectFit = width != null || height != null ? "contain" : "";
+    this.renderAlign(this.node.attrs.align as ImageAlign | null);
+  }
+
+  /**
+   * Applied to `this.dom` (the node view's own root, tracked by ProseMirror)
+   * rather than `this.img` - ported from drystack's `imageContainerAlignStyle`,
+   * whose comment explains why: floating the inner `<img>` alone would take
+   * it out of flow while leaving this outer wrapper in flow with nothing to
+   * size itself by, collapsing it to a zero-size box at the image's text
+   * position. `left`/`right` just float the wrapper (already `inline-block`
+   * via forms.css's `.richtext-image-wrapper`, so floating changes nothing
+   * else about its sizing); `center` needs an explicit `display: block` since
+   * nothing else here makes it one, and `width: fit-content` so the wrapper
+   * (a `<span>`) doesn't stretch to the paragraph's full width once it is.
+   */
+  private renderAlign(align: ImageAlign | null) {
+    this.dom.style.float = align === "left" || align === "right" ? align : "";
+    this.dom.style.display = align === "center" ? "block" : "";
+    this.dom.style.width = align === "center" ? "fit-content" : "";
+    // Longhand, not the `margin-inline` shorthand: unlike `margin-inline-start`/
+    // `-end` below (which do take effect), assigning the shorthand's camelCase
+    // form through `CSSStyleDeclaration` is a silent no-op in this app's target
+    // browsers - confirmed via the RichTextField image-menu Playwright check.
+    this.dom.style.marginInlineStart = align === "center" ? "auto" : align === "right" ? "1em" : "";
+    this.dom.style.marginInlineEnd = align === "center" ? "auto" : align === "left" ? "1em" : "";
+    this.dom.style.marginBlock = align === "left" || align === "right" ? "0.5em" : "";
   }
 
   update(node: PMNode): boolean {
