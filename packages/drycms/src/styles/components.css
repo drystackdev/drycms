@@ -3148,6 +3148,9 @@
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-card);
       box-shadow: var(--dry-shadow-xs);
+      & .popover-menu{
+        width: fit-content;
+      }
     }
 
     /* RichTextField's floating per-image menu (image-menu.tsx) - shown via
@@ -3248,25 +3251,6 @@
       }
     }
 
-    /* The 6x6 table-size grid picker (table-insert-button.tsx) - small
-     * square buttons (out-specificing `.popover-menu button`'s own
-     * `width: 100%; height: 2rem`, same two-class-chain trick
-     * `.color-swatch-grid .color-swatch` above uses) filled in from the
-     * top-right corner down/left to whichever cell is hovered, Word/Docs/
-     * Notion-style (mirrored to top-right rather than their usual top-left).
-     * Same `1.4rem` cell size as `.color-swatch-grid`'s own swatches above,
-     * but flush against each other rather than gapped: unlike a swatch grid
-     * (individually-meaningful, discrete choices), a gap here is dead space
-     * a hover/click over it doesn't land on any cell, so `onMouseEnter`
-     * never fires and the picker reads as unresponsive right at the seam
-     * between two cells - flush cells (plus a shared `-1px` margin so each
-     * cell's own border overlaps its neighbor's rather than doubling up,
-     * `.active` bumped above that overlap via `z-index` so its colored
-     * border always wins the seam) leave no such gap. */
-    .richtext-table-grid-picker {
-      padding: 0.5rem 0.25rem 0.375rem;
-    }
-
     .richtext-table-grid {
       display: flex;
       flex-direction: column;
@@ -3308,7 +3292,7 @@
       &.active {
         position: relative;
         z-index: 1;
-        background-color: var(--dry-primary);
+        background-color: var(--dry-accent);
         border-color: var(--dry-primary);
       }
     }
