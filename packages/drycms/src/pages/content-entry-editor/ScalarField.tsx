@@ -10,7 +10,7 @@ import SelectField from "../../components/SelectField.js";
 import TextField from "../../components/TextField.js";
 import type { MaskedValue } from "../../content-types/engine/entry-codec.js";
 import type { EntryColumnNode } from "../../content-types/engine/entry-tree.js";
-import type { SelectFieldConfig } from "../../content-types/field-registry.js";
+import type { ImageFieldConfig, SelectFieldConfig } from "../../content-types/field-registry.js";
 import PasswordChangeField from "./PasswordChangeField.js";
 
 interface Props {
@@ -137,13 +137,26 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
   }
 
   if (fieldType === "image") {
+    const imageConfig = config as unknown as ImageFieldConfig;
+    const multiple = !!imageConfig.multiple;
     return (
       <ImageField
         label={label}
         description={description}
-        value={typeof value === "string" ? value : ""}
+        value={
+          multiple
+            ? Array.isArray(value)
+              ? value
+              : value
+                ? [value as string]
+                : []
+            : typeof value === "string"
+              ? value
+              : ""
+        }
         onChange={onChange}
         source={imageSource}
+        multiple={multiple ? { min: validation.min as number | undefined, max: validation.max as number | undefined } : false}
         required={!!validation.required}
         error={!!error}
         helperText={error}

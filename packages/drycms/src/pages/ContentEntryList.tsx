@@ -112,8 +112,20 @@ function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Elem
   }
 
   if (column.fieldType === "image") {
-    const src = `${path}/api/storage/${encodePath(String(value))}`;
-    return config.isAvatar ? <img class="cell-avatar" src={src} alt="" /> : <img class="cell-image" src={src} alt="" />;
+    // `config.multiple` stores a comma-joined id list (see `field-registry.ts`'s
+    // `imageFieldType`), deserialized to a plain array by the time it gets here -
+    // a bare non-multiple value renders identically to before via the 1-item array.
+    const ids = Array.isArray(value) ? value : [value];
+    const cellClass = config.isAvatar ? "cell-avatar" : "cell-image";
+    const shown = ids.slice(0, 3);
+    return (
+      <span class="row" style={{ gap: "0.375rem" }}>
+        {shown.map((id) => (
+          <img key={String(id)} class={cellClass} src={`${path}/api/storage/${encodePath(String(id))}`} alt="" />
+        ))}
+        {ids.length > shown.length && <small class="hint">+{ids.length - shown.length}</small>}
+      </span>
+    );
   }
 
   if (column.fieldType === "select") {

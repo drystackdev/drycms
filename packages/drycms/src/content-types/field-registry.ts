@@ -199,17 +199,49 @@ export const dateFieldType: FieldTypeDefinition<Date> = {
   validationFields: REQUIRED_UNIQUE_VALIDATION,
 };
 
-export const imageFieldType: FieldTypeDefinition<string> = {
+export interface ImageFieldConfig {
+  /** Read-only display only (the List page's cell renderer - see
+   * `ContentEntryList.tsx`), not `ImageField` itself: the picker frame stays
+   * the same 4:3 box either way. */
+  isAvatar?: boolean;
+  /** @default false - a single image; `true` lets `ImageField`'s own
+   * `multiple` mode pick several, stored as a comma-joined id list instead
+   * of a bare id (see `serialize`/`deserialize` below). */
+  multiple?: boolean;
+}
+
+export const imageFieldType: FieldTypeDefinition<string | string[]> = {
   key: "image",
   label: "Image",
   shape: "column",
   Editor: ImageField,
   sqlType: () => "TEXT",
-  // `isAvatar` only affects read-only display (the List page's cell
-  // renderer - see `ContentEntryList.tsx`), not `ImageField` itself: the
-  // picker frame stays the same 4:3 box either way.
-  configFields: [{ key: "isAvatar", label: "Show as a circular avatar in lists", widget: "boolean" }],
-  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+  // TEXT either way: a bare image id in single mode, a comma-joined list of
+  // them in multiple mode - chosen over `select`'s JSON-encoded array so a
+  // multi-image column stays a plain readable "a,b,c" string. Only splits on
+  // "," when one is actually present, so a lone id round-trips as a bare
+  // string exactly like single mode always has (an id containing a literal
+  // comma is the one case this can't tell apart from multiple values - not
+  // expected from `ImageField`'s own storage-backed ids). The single-item-
+  // in-multiple-mode case (no comma, still meant to be an array) is instead
+  // disambiguated where `config.multiple` is known - see `ScalarField.tsx`'s
+  // `image` branch.
+  serialize: (value) => (Array.isArray(value) ? value.join(",") : value),
+  deserialize: (raw) => {
+    if (typeof raw !== "string" || !raw.includes(",")) return raw as string;
+    return raw.split(",");
+  },
+  configFields: [
+    { key: "isAvatar", label: "Show as a circular avatar in lists", widget: "boolean" },
+    { key: "multiple", label: "Allow multiple images", widget: "boolean" },
+  ],
+  defaultConfig: { multiple: false },
+  // Min/max item count only means anything once `multiple` is on - a
+  // single-image field has exactly 0 or 1 selections either way.
+  validationFields: (config) => [
+    { key: "required", label: "Required", widget: "boolean" },
+    ...((config as ImageFieldConfig).multiple ? ITEM_COUNT_VALIDATION : []),
+  ],
 };
 
 export interface SelectFieldConfig {

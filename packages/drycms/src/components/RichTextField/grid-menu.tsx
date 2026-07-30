@@ -25,8 +25,10 @@ const COLLAPSE_DURATION = 200;
 /**
  * The grid tool-group docked in the main toolbar, mirroring `table-menu.tsx`'s
  * own expand/collapse-on-selection card (unlike that file, there's no
- * always-present "insert" half - `toolbar-buttons.ts`'s plain "Insert grid"
- * button already covers that, so this card is purely contextual). Contains
+ * always-present "insert" half here - that button lives inside
+ * `table-menu.tsx`'s own permanent card instead, right next to "Insert
+ * table" (its own doc comment explains why), so this card is purely
+ * contextual). Contains
  * 3 actions: a columns picker (a `Popover` listing `GRID_COLUMN_OPTIONS`,
  * same one-of-many pattern as `align-menu.tsx` - picking a value calls
  * `setGridColumns` in `grid.ts`, which also rescales every item's `colSpan`

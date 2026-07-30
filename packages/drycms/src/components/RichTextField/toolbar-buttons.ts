@@ -5,7 +5,6 @@ import type { JSX } from "preact";
 import {
   BoldIcon,
   ClearFormatIcon,
-  GridIcon,
   ItalicIcon,
   RedoIcon,
   UnderlineIcon,
@@ -16,7 +15,6 @@ import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
 import FullscreenButton from "./fullscreen-button.js";
-import { insertGrid } from "./grid.js";
 import ImageInsertButton from "./image-insert-button.js";
 import LinkMenu from "./link-menu.js";
 import ListMenu from "./list-menu.js";
@@ -142,18 +140,9 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
-    {
-      type: "button",
-      key: "insert-grid",
-      label: "Insert grid",
-      Icon: GridIcon,
-      run: insertGrid(),
-      blockOnly: true,
-      // Nesting is allowed - `insertGrid` (grid.ts) routes through
-      // `insertBlockAfterFocusedGridItem` whenever the caret's already
-      // inside a grid, landing the new grid inside that cell rather than
-      // escaping it.
-    },
     { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
   ],
+  // "Insert grid" itself isn't here - it sits next to "Insert table" in
+  // `TableMenu`'s own always-present card instead (`table-menu.tsx`), not
+  // through this generic registry. See that file's own doc comment.
 ];

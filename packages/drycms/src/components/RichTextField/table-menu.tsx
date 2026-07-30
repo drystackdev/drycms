@@ -12,6 +12,7 @@ import {
   ArrowUpIcon,
   CaptionIcon,
   EraserIcon,
+  GridIcon,
   MergeCellsIcon,
   SplitCellsIcon,
   TableColumnsIcon,
@@ -21,6 +22,7 @@ import {
 } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import { runCommand } from "./commands.js";
+import { insertGrid } from "./grid.js";
 import TableCellAlignButton from "./table-cell-align-button.js";
 import TableInsertButton from "./table-insert-button.js";
 import {
@@ -57,12 +59,15 @@ const COLLAPSE_DURATION = 200;
  * whole separate panel over the content instead of reading as part of the
  * toolbar. Renders as *two* independent `.richtext-toolbar-block` cards
  * (a `Fragment`, not one wrapping div) rather than a single card split into
- * zones internally: `TableInsertButton` in its own permanent card so
- * there's always a way to insert a table, and the row/column/etc controls
- * (only meaningful once a table's actually selected) in a second card that
- * comes and goes with the selection - `.richtext-toolbar`'s own flex `gap`
- * (components.css) spaces the two apart automatically when both are
- * present, with no dead gap left behind once the second one is gone.
+ * zones internally: `TableInsertButton` plus a plain "Insert grid" button
+ * share one permanent card (the two live together on purpose - both are
+ * "insert a layout block" actions, and `grid-menu.tsx`'s own card has no
+ * insert half of its own, only the contextual controls for a grid that's
+ * already selected), and the row/column/etc controls (only meaningful once
+ * a table's actually selected) in a second card that comes and goes with
+ * the selection - `.richtext-toolbar`'s own flex `gap` (components.css)
+ * spaces the two apart automatically when both are present, with no dead
+ * gap left behind once the second one is gone.
  *
  * That second card doesn't just disappear, though: `controlsMounted`/
  * `controlsShown` below stagger it across two frames on the way in and out,
@@ -162,6 +167,17 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
     <>
       <div class="richtext-toolbar-block">
         <TableInsertButton viewRef={viewRef} disabled={disabled} iconSize={iconSize} />
+        <button
+          type="button"
+          class={`ghost icon ${iconSize}`}
+          aria-label="Insert grid"
+          data-tooltip="Insert grid"
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => view && runCommand(view, insertGrid())}
+        >
+          <GridIcon />
+        </button>
       </div>
       {controlsMounted && (
         <div class={`richtext-table-menu-controls-wrap${controlsShown ? " expanded" : ""}`} aria-hidden={!expanded}>
