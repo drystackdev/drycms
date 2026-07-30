@@ -10,7 +10,7 @@ import type { ComponentType, JSX } from "preact";
  * `.required()` needs to change the type parameter (`Req`), which nothing
  * can do to an already-created value.
  */
-export type FieldKind = "string" | "int" | "image" | "array" | "object";
+export type FieldKind = "string" | "int" | "image" | "array" | "object" | "boolean";
 
 export interface FieldDef<T, Req extends boolean = boolean> {
   readonly kind: FieldKind;
@@ -20,6 +20,26 @@ export interface FieldDef<T, Req extends boolean = boolean> {
   readonly inner?: FieldDef<unknown>;
   /** Only set when `kind === "object"` - the nested shape. */
   readonly shape?: Record<string, FieldDef<unknown>>;
+  /** Item-count bounds - only ever set on an `array` field (`array(item, {min,
+   * max})`, or `images({min, max})`'s own sugar for it). Same `min`/`max`
+   * naming the main content-types system uses for item-count bounds on a
+   * multi Relation/repeatable Component/multi Select field
+   * (`field-registry.ts`'s `ITEM_COUNT_VALIDATION`) - stored under
+   * `minCount`/`maxCount` here only to avoid colliding with a same-named
+   * chain *method* (same reason `req`/`defaultValue` back `required()`/
+   * `default()` instead of reusing those names directly). */
+  readonly minCount?: number;
+  readonly maxCount?: number;
+  /** Character-length bounds - only ever set on a `string` field. Same
+   * `minLength`/`maxLength` naming the main content-types system uses for a
+   * text field's own length validation (`field-registry.ts`'s
+   * `textFieldType.validationFields`). */
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  /** Shown under the field's label in the props-edit dialog
+   * (`dry-component-props-form.tsx`) - same `label` + `<small>{description}</small>`
+   * shape `ComponentField.tsx`'s own field wrapper uses. */
+  readonly description?: string;
   required(): FieldDef<T, true>;
   default(value: T): FieldDef<T, Req>;
 }
@@ -28,7 +48,7 @@ function makeField<T, Req extends boolean>(
   kind: FieldKind,
   req: Req,
   defaultValue: T | undefined,
-  extra?: Pick<FieldDef<T>, "inner" | "shape">,
+  extra?: Pick<FieldDef<T>, "inner" | "shape" | "minCount" | "maxCount" | "minLength" | "maxLength" | "description">,
 ): FieldDef<T, Req> {
   return {
     kind,
@@ -36,6 +56,11 @@ function makeField<T, Req extends boolean>(
     defaultValue,
     inner: extra?.inner,
     shape: extra?.shape,
+    minCount: extra?.minCount,
+    maxCount: extra?.maxCount,
+    minLength: extra?.minLength,
+    maxLength: extra?.maxLength,
+    description: extra?.description,
     required: () => makeField<T, true>(kind, true, defaultValue, extra),
     default: (value: T) => makeField<T, Req>(kind, req, value, extra),
   };
@@ -51,26 +76,49 @@ export type InferShape<S extends Record<string, FieldDef<unknown>>> = {
   [K in keyof S]: InferField<S[K]>;
 };
 
-function string(): FieldDef<string, false> {
-  return makeField<string, false>("string", false, undefined);
+function string(opts?: { minLength?: number; maxLength?: number; description?: string }): FieldDef<string, false> {
+  return makeField<string, false>("string", false, undefined, {
+    minLength: opts?.minLength,
+    maxLength: opts?.maxLength,
+    description: opts?.description,
+  });
 }
 
-function int(): FieldDef<number, false> {
-  return makeField<number, false>("int", false, undefined);
+function int(opts?: { description?: string }): FieldDef<number, false> {
+  return makeField<number, false>("int", false, undefined, { description: opts?.description });
 }
 
-function image(): FieldDef<string, false> {
-  return makeField<string, false>("image", false, undefined);
+function image(opts?: { description?: string }): FieldDef<string, false> {
+  return makeField<string, false>("image", false, undefined, { description: opts?.description });
 }
 
-function array<F extends FieldDef<unknown>>(item: F): FieldDef<InferField<F>[], false> {
-  return makeField<InferField<F>[], false>("array", false, undefined, { inner: item as FieldDef<unknown> });
+function boolean(opts?: { description?: string }): FieldDef<boolean, false> {
+  return makeField<boolean, false>("boolean", false, false, { description: opts?.description });
+}
+
+function array<F extends FieldDef<unknown>>(
+  item: F,
+  opts?: { min?: number; max?: number; description?: string },
+): FieldDef<InferField<F>[], false> {
+  return makeField<InferField<F>[], false>("array", false, undefined, {
+    inner: item as FieldDef<unknown>,
+    minCount: opts?.min,
+    maxCount: opts?.max,
+    description: opts?.description,
+  });
+}
+
+/** Sugar for `array(image(), opts)` - a multi-image picker with the same
+ * item-count bounds any other `array` field can take. */
+function images(opts?: { min?: number; max?: number; description?: string }) {
+  return array(image(), opts);
 }
 
 function object<Shape extends Record<string, FieldDef<unknown>>>(
   shape: Shape,
+  opts?: { description?: string },
 ): FieldDef<InferShape<Shape>, false> {
-  return makeField<InferShape<Shape>, false>("object", false, undefined, { shape });
+  return makeField<InferShape<Shape>, false>("object", false, undefined, { shape, description: opts?.description });
 }
 
 export interface PropsBuilder {
@@ -78,6 +126,8 @@ export interface PropsBuilder {
   string: typeof string;
   int: typeof int;
   image: typeof image;
+  images: typeof images;
+  boolean: typeof boolean;
   array: typeof array;
   object: typeof object;
 }
@@ -86,6 +136,8 @@ const p = ((shape) => shape) as PropsBuilder;
 p.string = string;
 p.int = int;
 p.image = image;
+p.images = images;
+p.boolean = boolean;
 p.array = array;
 p.object = object;
 
@@ -100,6 +152,8 @@ function fallbackDefault(field: FieldDef<unknown>): unknown {
       return "";
     case "int":
       return 0;
+    case "boolean":
+      return false;
     case "array":
       return [];
     case "object":

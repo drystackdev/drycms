@@ -4436,10 +4436,9 @@
     margin: 0;
   }
 
-  .dry-component-props-array-item {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.5rem;
+  .dry-component-props-array-item-field {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   /* Selected `<dry-*>` custom element inside the editor - `DryComponentNodeView`

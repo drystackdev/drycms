@@ -14,6 +14,11 @@ export interface PlainFieldDef {
   defaultValue?: unknown;
   inner?: PlainFieldDef;
   shape?: Record<string, PlainFieldDef>;
+  minCount?: number;
+  maxCount?: number;
+  minLength?: number;
+  maxLength?: number;
+  description?: string;
 }
 
 /**
