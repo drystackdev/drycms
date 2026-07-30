@@ -116,15 +116,23 @@ function resolveDefaults(shape: Record<string, FieldDef<unknown>>): Record<strin
   return defaults;
 }
 
-export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>>> {
+export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> = Record<string, never>> {
   /** Slug - becomes the custom element tag, `<dry-{name}>`. */
   name: string;
   label: string;
+  /** Shown alongside the label wherever this component is listed (the
+   * component management admin page, mục 3, and the richtext editor's own
+   * insert dialog, mục 4) - a short blurb helping whoever's authoring
+   * content tell components apart without opening each one. */
+  description?: string;
   /** @default "inline" */
   type?: "inline" | "block";
   /** Mount this component's render into its own shadow root. @default false */
   shadow?: boolean;
-  props: (p: PropsBuilder) => S;
+  /** Optional - a component with nothing to configure (a static block, say)
+   * doesn't need a schema at all; omitting this is the same as
+   * `props: (p) => p({})`. */
+  props?: (p: PropsBuilder) => S;
   component: (props: InferShape<S>) => JSX.Element | null;
 }
 
@@ -132,6 +140,7 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   readonly __dryComponent: true;
   name: string;
   label: string;
+  description: string;
   type: "inline" | "block";
   shadow: boolean;
   schema: S;
@@ -146,14 +155,15 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
  * eagerly here, so what gets persisted to storage later is always a plain,
  * already-resolved object - never the builder function itself.
  */
-export function DryEditerComponent<S extends Record<string, FieldDef<unknown>>>(
+export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> = Record<string, never>>(
   config: DryComponentConfig<S>,
 ): DryComponentDefinition<S> {
-  const schema = config.props(p);
+  const schema = (config.props?.(p) ?? {}) as S;
   return {
     __dryComponent: true,
     name: config.name,
     label: config.label,
+    description: config.description ?? "",
     type: config.type ?? "inline",
     shadow: config.shadow ?? false,
     schema,

@@ -490,9 +490,25 @@ th {
    rather than reusing .is-selected: these wrap/select an arbitrary custom
    element (a dynamic dry-name tag with its own author-defined internals),
    so a shared name risks colliding with that component's own styles. */
+/* bottom, not baseline like .dry-tx-image-wrapper above - confirmed
+   empirically (Playwright) this is NOT the same case as image: for a true
+   replaced element (a real img tag), vertical-align: baseline reliably
+   means "this element's bottom edge sits on the line's text baseline",
+   spec-mandated and consistent regardless of surrounding content order.
+   This wrapper is a plain inline-block, not a replaced element - its
+   baseline is only inferred (falls back to its own bottom margin edge
+   since it has no in-flow line boxes inside), and that inference turned out
+   to be order-sensitive in Chrome: identical markup/CSS rendered correctly
+   with the component before surrounding text, but visibly mid-line when
+   placed after text on the same line - same computed wrapper rect either
+   way, so it was the text's own baseline shifting inside the (very tall)
+   line box, not the wrapper. bottom sidesteps the inference entirely -
+   "this box's bottom edge sits on the line box's own bottom edge" doesn't
+   depend on any baseline computation, so it can't be order-sensitive the
+   same way. */
 .dry-component-wrapper {
   display: inline-block;
-  vertical-align: baseline;
+  vertical-align: bottom;
 }
 
 /* line-height: 0 - same reason as .dry-tx-image-box above: keeps this box's

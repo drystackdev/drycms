@@ -63,6 +63,7 @@ export const GET: APIRoute = async (context) => {
 interface ConfirmBody {
   name: unknown;
   label: unknown;
+  description: unknown;
   type: unknown;
   shadow: unknown;
   props: unknown;
@@ -86,6 +87,7 @@ export const POST: APIRoute = async (context) => {
     const body = (await context.request.json()) as ConfirmBody;
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const label = typeof body.label === "string" ? body.label.trim() : "";
+    const description = typeof body.description === "string" ? body.description.trim() : "";
     const type = body.type === "block" ? "block" : "inline";
     const shadow = body.shadow === true;
     const sourcePath = typeof body.sourcePath === "string" ? body.sourcePath : "";
@@ -95,6 +97,7 @@ export const POST: APIRoute = async (context) => {
     const record: DryComponentRecord = {
       name,
       label,
+      description,
       type,
       shadow,
       props: asPlainFieldShape(body.props),

@@ -70,6 +70,7 @@ export default function RichtextComponents() {
           body: JSON.stringify({
             name: item.def.name,
             label: item.def.label,
+            description: item.def.description,
             type: item.def.type,
             shadow: item.def.shadow,
             props: item.def.schema,
@@ -126,6 +127,7 @@ export default function RichtextComponents() {
               </div>
               <div class="dry-component-admin-card-body">
                 <strong>{item.def.label}</strong>
+                {item.def.description && <p class="dry-component-admin-card-description">{item.def.description}</p>}
                 <span class="dry-component-admin-card-meta">
                   <code>{`<dry-${item.def.name}>`}</code> · {item.def.type}
                   {item.def.shadow ? " · shadow" : ""}
@@ -148,6 +150,7 @@ export default function RichtextComponents() {
           <>
             <header>
               <h3>{previewing.def.label}</h3>
+              {previewing.def.description && <p class="hint">{previewing.def.description}</p>}
             </header>
             <div class="dry-component-preview-large">
               <ComponentPreview

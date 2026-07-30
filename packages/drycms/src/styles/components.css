@@ -4323,6 +4323,12 @@
     gap: 0.25rem;
   }
 
+  .dry-component-admin-card-description {
+    margin: 0;
+    font-size: var(--dry-text-sm);
+    color: var(--dry-muted-foreground);
+  }
+
   .dry-component-admin-card-meta {
     font-size: var(--dry-text-xs);
     color: var(--dry-muted-foreground);

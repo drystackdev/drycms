@@ -24,6 +24,7 @@ export interface PlainFieldDef {
 export interface DryComponentRecord {
   name: string;
   label: string;
+  description: string;
   type: "inline" | "block";
   shadow: boolean;
   props: Record<string, PlainFieldDef>;

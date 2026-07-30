@@ -37,6 +37,7 @@ function Carousel({ images, caption }: InferShape<ReturnType<typeof carouselProp
 export default DryEditerComponent({
   name: "carousel",
   label: "Carousel",
+  description: "An inline image carousel with prev/next controls and an optional caption.",
   type: "inline",
   props: carouselProps,
   shadow: true,

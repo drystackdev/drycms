@@ -103,6 +103,7 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
                     type="button"
                     key={record.name}
                     class={`dry-component-picker-item${pending === record.name ? " is-selected" : ""}`}
+                    data-tooltip={record.description || undefined}
                     onClick={() => setPending(record.name)}
                   >
                     <ComponentPreview name={record.name} label={record.label} defaults={record.defaults} load={load} />
