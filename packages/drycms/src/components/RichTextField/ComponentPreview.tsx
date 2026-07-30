@@ -9,6 +9,12 @@ export interface ComponentPreviewProps {
   defaults: Record<string, unknown>;
   load: DryComponentLoader;
   shadow: boolean;
+  /** Default light-DOM HTML for a `children: true` component - see
+   * `DryComponentConfig.children`'s own doc comment (register-component.ts).
+   * Set as the mounted `<dry-{name}>` element's own `innerHTML`, exactly
+   * where the editor's real projected content would otherwise live, so the
+   * native `<slot>` inside its shadow root has something to show here. */
+  childrenHtml?: string;
 }
 
 /**
@@ -25,7 +31,7 @@ export interface ComponentPreviewProps {
  * Loads in parallel with sibling previews, never blocking whatever list/grid
  * it's placed into - a skeleton placeholder fills in until `load()` resolves.
  */
-export default function ComponentPreview({ name, label, defaults, load, shadow }: ComponentPreviewProps) {
+export default function ComponentPreview({ name, label, defaults, load, shadow, childrenHtml }: ComponentPreviewProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -66,7 +72,10 @@ export default function ComponentPreview({ name, label, defaults, load, shadow }
 
   return (
     <div class="dry-component-preview" data-component={name}>
-      {h(`dry-${name}`, { props: JSON.stringify(defaults) })}
+      {h(`dry-${name}`, {
+        props: JSON.stringify(defaults),
+        ...(childrenHtml ? { dangerouslySetInnerHTML: { __html: childrenHtml } } : {}),
+      })}
     </div>
   );
 }

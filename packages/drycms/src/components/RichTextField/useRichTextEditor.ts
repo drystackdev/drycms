@@ -9,7 +9,6 @@ import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { goToNextCell, tableEditing } from "prosemirror-tables";
 import { path as basePath } from "virtual:drycms/config";
-import { components as componentModules } from "virtual:drycms/richtext-components";
 import type { DryComponentRecord } from "./component-registry-types.js";
 import { richtextContentShadowStyles } from "./content-shadow-styles.js";
 import {
@@ -25,7 +24,7 @@ import {
   getTextColorState,
 } from "./commands.js";
 import { DryComponentNodeView } from "./dry-component-view.js";
-import { defineDryComponent } from "./dry-component-runtime.js";
+import { defineDryComponent, loadBuiltComponent } from "./dry-component-runtime.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
 import { exitGridDownward, getSelectedGrid, splitGridItem } from "./grid.js";
 import { GridItemNodeView } from "./grid-item-view.js";
@@ -112,17 +111,29 @@ function readToolbarState(state: EditorState): ToolbarState {
 }
 
 /** Unlike the old Lexical version's emptiness check
- * (`$getRoot().getTextContent().length === 0`), a doc holding an image and
- * no text does NOT count as "empty" here - `textContent` alone misses the
- * image (an atom node contributes nothing to it), so a doc is only empty
- * once it has neither text nor an image. */
+ * (`$getRoot().getTextContent().length === 0`), a doc holding non-text
+ * content and no text does NOT count as "empty" here - `textContent` alone
+ * misses any of it (an atom/block node contributes nothing to it). Rather
+ * than special-casing every such node type by name (this used to check only
+ * for `image`, so a table, a grid, or a `dry-*` component dropped in with no
+ * text left the placeholder showing right on top of it), anything that
+ * isn't a textblock (paragraph/heading/code block - the node kinds whose
+ * content model is inline, and which `textContent` above already accounts
+ * for) counts as real content: an image, a `dry_*` component (inline or
+ * block), a table/row/cell, a grid/grid item, an `hr`, and whatever future
+ * node type joins them, all for free. */
 function isDocEmpty(state: EditorState): boolean {
   if (state.doc.textContent.length > 0) return false;
-  let hasImage = false;
+  let empty = true;
   state.doc.descendants((node) => {
-    if (node.type === schema.nodes.image) hasImage = true;
+    if (!empty) return false;
+    if (!node.isTextblock) {
+      empty = false;
+      return false;
+    }
+    return true;
   });
-  return !hasImage;
+  return empty;
 }
 
 function buildAttributes(state: EditorState, disabled: boolean, placeholder: string | undefined, label: string) {
@@ -206,8 +217,7 @@ export function useRichTextEditor({
       setRichtextComponents(components);
       const dryNodeViews: Record<string, (node: PMNode, editorView: EditorView, getPos: () => number | undefined) => DryComponentNodeView> = {};
       for (const component of components) {
-        const loader = componentModules[component.sourcePath];
-        if (!loader) continue;
+        const loader = loadBuiltComponent(basePath, component.name);
         defineDryComponent(component.name, loader, component.shadow);
         const tag = `dry-${component.name}`;
         dryNodeViews[`dry_${component.name}`] = (node, editorView, getPos) =>

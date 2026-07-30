@@ -3,9 +3,21 @@ import { path } from "virtual:drycms/config";
 import { components as componentModules } from "virtual:drycms/richtext-components";
 import CheckField from "../components/CheckField.js";
 import ComponentPreview from "../components/RichTextField/ComponentPreview.js";
-import type { DryComponentRecord } from "../components/RichTextField/component-registry-types.js";
+import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
+import DryComponentPropsForm from "../components/RichTextField/dry-component-props-form.js";
 import { isDryComponentDefinition, type DryComponentDefinition } from "../components/RichTextField/register-component.js";
+import { useDialogSync } from "../components/list-nav.js";
+import { ReplaceIcon, SettingsIcon } from "../components/icons.js";
 import { useDocumentTitle } from "./page-common.js";
+
+async function readErrorMessage(res: Response): Promise<string> {
+  try {
+    const data = (await res.json()) as { message?: string };
+    return data.message ?? "Build failed.";
+  } catch {
+    return "Build failed.";
+  }
+}
 
 interface Discovered {
   sourcePath: string;
@@ -34,6 +46,14 @@ export default function RichtextComponents() {
   const [discovered, setDiscovered] = useState<Discovered[] | null>(null);
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [buildErrors, setBuildErrors] = useState<Record<string, string>>({});
+  // Per-component preview overrides - client-only, never persisted; lets an
+  // admin try different prop values in `ComponentPreview` above without
+  // touching the confirmed record's own `defaults`.
+  const [previewOverrides, setPreviewOverrides] = useState<Record<string, Record<string, unknown>>>({});
+  const [configuring, setConfiguring] = useState<Discovered | null>(null);
+  const [propsDraft, setPropsDraft] = useState<Record<string, unknown>>({});
+  const configureDialogRef = useDialogSync(!!configuring, () => setConfiguring(null));
 
   const reloadRecords = () => {
     fetchRecords().then(setRecords);
@@ -58,9 +78,13 @@ export default function RichtextComponents() {
   const toggleUse = async (item: Discovered, use: boolean) => {
     const busyKey = item.def.name;
     setBusy(busyKey);
+    setBuildErrors((prev) => ({ ...prev, [busyKey]: "" }));
     try {
       if (use) {
-        await fetch(`${path}/api/richtext-components`, {
+        // Confirming builds the bundle server-side first - a build failure
+        // aborts the whole confirm (no `.json`/`.js` written), surfaced here
+        // rather than silently leaving the toggle looking like it worked.
+        const res = await fetch(`${path}/api/richtext-components`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -70,11 +94,16 @@ export default function RichtextComponents() {
             type: item.def.type,
             shadow: item.def.shadow,
             children: item.def.children,
+            childrenDefaultHtml: item.def.childrenDefaultHtml,
             props: item.def.schema,
             defaults: item.def.defaults,
             sourcePath: item.sourcePath,
           }),
         });
+        if (!res.ok) {
+          const message = await readErrorMessage(res);
+          setBuildErrors((prev) => ({ ...prev, [busyKey]: message }));
+        }
       } else {
         await fetch(`${path}/api/richtext-components/${encodeURIComponent(item.def.name)}`, { method: "DELETE" });
       }
@@ -82,6 +111,38 @@ export default function RichtextComponents() {
     } finally {
       setBusy(null);
     }
+  };
+
+  /** Rebuilds an already-confirmed component's bundle from its stored
+   * `sourcePath` - lets an admin pick up a source edit without toggling
+   * "Use in editor" off/on. Doesn't touch the `.json` record either way; a
+   * failed rebuild leaves the previous, still-working bundle in place. */
+  const rebuild = async (item: Discovered) => {
+    const busyKey = item.def.name;
+    setBusy(busyKey);
+    setBuildErrors((prev) => ({ ...prev, [busyKey]: "" }));
+    try {
+      const res = await fetch(`${path}/api/richtext-components/${encodeURIComponent(item.def.name)}/build`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const message = await readErrorMessage(res);
+        setBuildErrors((prev) => ({ ...prev, [busyKey]: message }));
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openConfigure = (item: Discovered) => {
+    setConfiguring(item);
+    setPropsDraft({ ...(previewOverrides[item.def.name] ?? item.def.defaults) });
+  };
+
+  const applyPreview = () => {
+    if (!configuring) return;
+    setPreviewOverrides((prev) => ({ ...prev, [configuring.def.name]: propsDraft }));
+    setConfiguring(null);
   };
 
   return (
@@ -101,37 +162,101 @@ export default function RichtextComponents() {
         <p>No components found. Add a <code>DryEditerComponent(...)</code>-exporting <code>index.tsx</code> under your configured directory.</p>
       )}
 
-      <div class="dry-component-admin-grid">
+      <div class="dry-component-admin-grid under">
         {discovered?.map((item) => {
           const record = records.find((r) => r.name === item.def.name);
           const load = componentModules[item.sourcePath]!;
+          const hasProps = Object.keys(item.def.schema).length > 0;
           return (
             <div
-              class={`dry-component-admin-card dry-component-admin-card-${item.def.type}`}
+              class="card dry-component-admin-card"
               key={item.sourcePath}
             >
-              <ComponentPreview name={item.def.name} label={item.def.label} defaults={item.def.defaults} load={load} shadow={item.def.shadow} />
+              <ComponentPreview
+                name={item.def.name}
+                label={item.def.label}
+                defaults={previewOverrides[item.def.name] ?? item.def.defaults}
+                load={load}
+                shadow={item.def.shadow}
+                childrenHtml={item.def.childrenDefaultHtml}
+              />
               <div class="dry-component-admin-card-body">
                 <strong>{item.def.label}</strong>
-                {item.def.description && <p class="dry-component-admin-card-description">{item.def.description}</p>}
+                <p class="dry-component-admin-card-description">{item.def.description}</p>
                 <span class="dry-component-admin-card-meta">
                   <small class="badge secondary">{`<dry-${item.def.name}>`}</small>
                   <small class="badge outline">{item.def.type}</small>
                   {item.def.shadow && <small class="badge outline">shadow</small>}
                   {item.def.children && <small class="badge outline">children</small>}
                 </span>
-                <CheckField
-                  label="Use in editor"
-                  role="switch"
-                  value={!!record}
-                  disabled={busy === item.def.name}
-                  onChange={(next) => toggleUse(item, next)}
-                />
+                <div class="row">
+                  <CheckField
+                    label="Use in editor"
+                    role="switch"
+                    value={!!record}
+                    disabled={busy === item.def.name}
+                    onChange={(next) => toggleUse(item, next)}
+                  />
+                  {record && (
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      aria-label={`Build ${item.def.label}`}
+                      data-tooltip="Rebuild bundle"
+                      disabled={busy === item.def.name}
+                      onClick={() => rebuild(item)}
+                    >
+                      <ReplaceIcon />
+                    </button>
+                  )}
+                  {hasProps && (
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      aria-label={`Preview ${item.def.label} with different props`}
+                      data-tooltip="Preview props"
+                      onClick={() => openConfigure(item)}
+                    >
+                      <SettingsIcon />
+                    </button>
+                  )}
+                </div>
+                {buildErrors[item.def.name] && <span class="error">{buildErrors[item.def.name]}</span>}
               </div>
             </div>
           );
         })}
       </div>
+
+      <dialog
+        ref={configureDialogRef}
+        class="md"
+        aria-label={configuring ? `${configuring.def.label} preview props` : "Preview props"}
+      >
+        {configuring && (
+          <>
+            <header>
+              <h3>{configuring.def.label}</h3>
+              <p class="hint">Try different prop values in the preview above - not saved anywhere.</p>
+            </header>
+            <div class="stack">
+              <DryComponentPropsForm
+                schema={configuring.def.schema as Record<string, PlainFieldDef>}
+                value={propsDraft}
+                onChange={setPropsDraft}
+              />
+            </div>
+            <footer>
+              <button type="button" class="outline" onClick={() => setConfiguring(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={applyPreview}>
+                Preview
+              </button>
+            </footer>
+          </>
+        )}
+      </dialog>
     </div>
   );
 }

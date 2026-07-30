@@ -7,7 +7,17 @@
  * `getBoundingClientRect`) whenever a `[data-tooltip]` element is hovered or
  * focused - a fixed, body-level element instead of a CSS pseudo-element on
  * the trigger so it isn't clipped by a scroll-overflowed ancestor (a table's
- * `.scroll` wrapper, ...). Dismissed on
+ * `.scroll` wrapper, ...). Rendered via the Popover API (`popover="manual"`),
+ * same reasoning as `Toaster` in Toast.tsx: it puts the tooltip in the
+ * browser's top layer, so a tooltip on a trigger inside (or behind) an open
+ * native `<dialog>` still floats above it - a bare `z-index` on a normal-flow
+ * element never could, since a top-layer `<dialog>` always wins regardless of
+ * z-index. Re-promoted (`hidePopover` + `showPopover`) on every `show()` for
+ * the same "last shown wins" reason `Toaster` re-promotes on every new toast -
+ * `hide()` itself never calls `hidePopover`, since that would flip the
+ * element to `display: none` immediately (per the `[popover]` UA
+ * stylesheet) and cut the opacity/scale fade-out short; staying open but
+ * `opacity: 0`/`pointer-events: none` is enough to make it inert. Dismissed on
  * mouseout/blur same as a native tooltip, and also on scroll (capturing, so
  * it catches any scrollable ancestor, not just the window) or window resize -
  * once the trigger has moved (or the layout has reflowed), the tooltip's
@@ -31,6 +41,7 @@ function initTooltip() {
 	const el = document.createElement('div');
 	el.className = 'dry-tooltip';
 	el.setAttribute('role', 'tooltip');
+	el.setAttribute('popover', 'manual');
 	document.body.append(el);
 	let trigger: HTMLElement | null = null;
 
@@ -44,6 +55,11 @@ function initTooltip() {
 		if (!message) return;
 		trigger = next;
 		el.textContent = message;
+		// Top-layer entries stack by "last shown wins" - re-promoting here
+		// keeps this tooltip above any `<dialog>` (or other popover) opened
+		// since the last time it was shown.
+		if (el.matches?.(':popover-open')) el.hidePopover?.();
+		el.showPopover?.();
 		const rect = next.getBoundingClientRect();
 		const right = next.getAttribute('data-tooltip-placement') === 'right';
 		const above = !right && rect.top > 40;

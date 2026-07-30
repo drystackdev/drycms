@@ -27,6 +27,22 @@ export class DryComponentErrorBoundary extends Component<{ children: ComponentCh
 export type DryComponentLoader = () => Promise<{ default?: unknown }>;
 
 /**
+ * Loader for a confirmed component's pre-built bundle
+ * (`routes/richtext-components.ts`'s `GET .../{name}.js`) - a genuinely
+ * self-contained ES module (Preact + the component's own code inlined, see
+ * `build-component-bundle.ts`), so the editor and the published site never
+ * need `componentsDir`'s raw source (or their own `preact` dependency) in
+ * their own build graph. Used everywhere a *confirmed* component is loaded
+ * (`useRichTextEditor.ts`, `dry-component-insert-button.tsx`,
+ * `richtext-runtime.ts`); the admin page's own discovery/preview grid is the
+ * one place that still loads straight from source, since it lists
+ * unconfirmed components too.
+ */
+export function loadBuiltComponent(basePath: string, name: string): DryComponentLoader {
+  return () => import(/* @vite-ignore */ `${basePath}/api/richtext-components/${name}.js`);
+}
+
+/**
  * Registers `<dry-{name}>` as a native custom element wrapping a lazily-
  * loaded Preact component - hand-rolled (no `preact-custom-element`
  * dependency, mục 7 of `status/register-compoennt.md`) since the only thing
@@ -50,13 +66,18 @@ export function defineDryComponent(name: string, load: DryComponentLoader, shado
 
       connectedCallback() {
         if (shadow) this.#root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
-        load().then((mod) => {
-          // `mod.default` is the whole `DryEditerComponent(...)` result,
-          // not the Preact component itself - see `isDryComponentDefinition`.
-          if (!isDryComponentDefinition(mod.default)) return;
-          this.#Comp = mod.default.component as ComponentType<Record<string, unknown>>;
-          this.#render();
-        });
+        load()
+          .then((mod) => {
+            // `mod.default` is the whole `DryEditerComponent(...)` result,
+            // not the Preact component itself - see `isDryComponentDefinition`.
+            if (!isDryComponentDefinition(mod.default)) return;
+            this.#Comp = mod.default.component as ComponentType<Record<string, unknown>>;
+            this.#render();
+          })
+          .catch(() => {
+            // Confirmed but never (yet) built (e.g. a 404 on its `.js`) -
+            // leave this instance blank rather than an unhandled rejection.
+          });
       }
 
       attributeChangedCallback() {

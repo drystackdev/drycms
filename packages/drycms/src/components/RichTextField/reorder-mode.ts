@@ -9,12 +9,20 @@ import { DEFAULT_GRID_COLUMNS, schema } from "./schema.js";
  * block into a drag-and-drop-reorderable card: typing/formatting is
  * suspended (`useRichTextEditor.ts`'s `editable` reads `isReorderActive`),
  * every `group:"block"` node (paragraph/heading/blockquote/bullet_list/
- * ordered_list/table/grid - schema.ts) gets a light-gray background + a
- * drag handle pinned to its own top-left corner, `table`/`grid` (this
- * schema's only 2 "container" node types) additionally get an outline, and
- * any block can be dragged into any other container (including nested
- * grid/table cells) or back out to top level. Cmd/Ctrl+click on a handle
- * multi-selects several blocks to drag as one batch.
+ * ordered_list/table/grid/dry-component - schema.ts) gets a light-gray
+ * background, and any block can be dragged into any other container
+ * (including nested grid/table cells or a `children:true` dry component) or
+ * back out to top level. A "container" node - `table`/`grid`, plus any
+ * `children:true` dry component (identified generically by `content ===
+ * "block+"`, the shape `buildDryNodeSpecs` in schema.ts gives those - see
+ * `isContainerNode`) - additionally gets an outline AND is the only kind of
+ * block with its own drag handle pinned to its top-left corner; a
+ * non-container block has no handle and is instead dragged by a pointerdown
+ * anywhere on the block itself (`onBlockPointerDown`'s `handleDOMEvents`),
+ * since it can never contain other blocks worth clicking into while reorder
+ * mode already has editing suspended. Cmd/Ctrl+click (on a handle, or
+ * anywhere on a non-container block) multi-selects several blocks to drag as
+ * one batch.
  *
  * State lives in this plugin (not Preact state, unlike `fullscreen` in
  * `RichTextField.tsx`) since `editable` and `decorations` both need to read
@@ -86,6 +94,16 @@ function isBlockGroupNode(node: PMNode): boolean {
   return node.type.spec.group === "block";
 }
 
+/** `table`/`grid`, or a `children:true` dry component - the latter is the
+ * only OTHER `group:"block"` node whose `content` spec is exactly `"block+"`
+ * (`buildDryNodeSpecs` in schema.ts; every other block-group node either has
+ * no content at all, or a narrower one like `"inline*"`/`"list_item+"`), so
+ * checking that string is a generic stand-in for "is a dry component with
+ * `children: true`" without importing the component registry here. */
+function isContainerNode(node: PMNode): boolean {
+  return node.type === schema.nodes.grid || node.type === schema.nodes.table || node.type.spec.content === "block+";
+}
+
 /** Whether `pos` falls inside (or exactly at) any of the currently-dragged
  * nodes' own ranges - guards against a nonsensical/corrupting drop (e.g.
  * dropping a grid onto one of its own descendant cells), by rejecting that
@@ -107,7 +125,7 @@ function buildDecorations(state: EditorState, pluginState: ReorderState): Decora
 
   state.doc.descendants((node, pos) => {
     if (isBlockGroupNode(node)) {
-      const isContainer = node.type === schema.nodes.grid || node.type === schema.nodes.table;
+      const isContainer = isContainerNode(node);
       const isDragged = draggedSet.has(pos);
       let className = "dry-tx-reorder-block";
       if (isContainer) className += " dry-tx-reorder-container";
@@ -117,7 +135,7 @@ function buildDecorations(state: EditorState, pluginState: ReorderState): Decora
         className += target.kind === "before" ? " dry-tx-reorder-drop-before" : " dry-tx-reorder-drop-after";
       }
       decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: className, style: "position:relative" }));
-      if (!isDragged) {
+      if (!isDragged && isContainer) {
         decorations.push(
           Decoration.widget(pos + 1, (view) => buildHandle(view), { side: -1, stopEvent: () => true }),
         );
@@ -365,11 +383,12 @@ function startReorderDrag(view: EditorView, positions: number[], event: PointerE
   win.addEventListener("pointerup", finish);
 }
 
-function onHandlePointerDown(view: EditorView, handle: HTMLElement, event: PointerEvent): void {
-  event.preventDefault();
-  event.stopPropagation();
-  const pos = posBeforeElement(view, handle.parentElement!);
-  if (pos == null) return;
+/** Shared by `onHandlePointerDown` (container blocks, via their handle) and
+ * `onBlockPointerDown` (every non-container block, via a pointerdown
+ * anywhere on the block itself) - toggles `pos` into/out of the
+ * multi-selection on Cmd/Ctrl+click, otherwise starts a drag of `pos` (or,
+ * if `pos` is already part of a multi-selection, the whole selection). */
+function startReorderInteraction(view: EditorView, pos: number, event: PointerEvent): void {
   const pluginState = reorderModeKey.getState(view.state);
   if (!pluginState?.active) return;
 
@@ -386,6 +405,35 @@ function onHandlePointerDown(view: EditorView, handle: HTMLElement, event: Point
     view.dispatch(view.state.tr.setMeta(reorderModeKey, { setSelected: positions }));
   }
   startReorderDrag(view, positions, event);
+}
+
+function onHandlePointerDown(view: EditorView, handle: HTMLElement, event: PointerEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+  const pos = posBeforeElement(view, handle.parentElement!);
+  if (pos == null) return;
+  startReorderInteraction(view, pos, event);
+}
+
+/** `handleDOMEvents.pointerdown` - a non-container block (anything other
+ * than `table`/`grid`/a `children:true` dry component, see `isContainerNode`)
+ * has no drag handle of its own, so the whole block acts as one: a
+ * pointerdown anywhere inside it (as long as it doesn't land on a *nested*
+ * container's own handle or on a deeper non-container block's own area
+ * first - `closest` naturally finds the innermost match) starts the drag.
+ * Native event, attached to `view.dom` by ProseMirror itself - runs in the
+ * bubble phase, so a container's own handle (whose listener calls
+ * `stopPropagation`) never reaches here. */
+function onBlockPointerDown(view: EditorView, event: PointerEvent): boolean {
+  const pluginState = reorderModeKey.getState(view.state);
+  if (!pluginState?.active) return false;
+  const blockEl = (event.target as Element | null)?.closest(".dry-tx-reorder-block:not(.dry-tx-reorder-container)");
+  if (!blockEl) return false;
+  const pos = posBeforeElement(view, blockEl);
+  if (pos == null) return false;
+  event.preventDefault();
+  startReorderInteraction(view, pos, event);
+  return true;
 }
 
 export function reorderMode(): Plugin<ReorderState> {
@@ -422,6 +470,9 @@ export function reorderMode(): Plugin<ReorderState> {
     props: {
       decorations(state) {
         return buildDecorations(state, reorderModeKey.getState(state) ?? EMPTY_STATE);
+      },
+      handleDOMEvents: {
+        pointerdown: onBlockPointerDown,
       },
     },
   });

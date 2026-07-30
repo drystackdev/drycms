@@ -191,8 +191,16 @@ export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> 
    * shadow tree Preact renders. Requires `shadow: true` (slot projection
    * only happens inside a shadow tree) and `type: "block"` (an inline
    * component has no outer block context to hold nested block content) -
-   * ignored with a console warning otherwise. @default false */
-  children?: boolean;
+   * ignored with a console warning otherwise. @default false
+   *
+   * A string instead of `true` enables the same thing AND doubles as default
+   * light-DOM HTML - used *only* by `ComponentPreview` (the admin grid/insert
+   * dialog's "no real editor content yet" preview, `dry-component-runtime.ts`
+   * `#render` never touches the host element's own light DOM), set as its raw
+   * `innerHTML` so the browser's own `<slot>` projection shows *something*
+   * there. Not parsed into ProseMirror content - a freshly-inserted instance
+   * still starts from a single empty paragraph (`dry-component-insert-button.tsx`). */
+  children?: boolean | string;
   /** Optional - a component with nothing to configure (a static block, say)
    * doesn't need a schema at all; omitting this is the same as
    * `props: (p) => p({})`. */
@@ -208,6 +216,9 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   type: "inline" | "block";
   shadow: boolean;
   children: boolean;
+  /** Only set when `config.children` was a string - see its own doc comment
+   * on `DryComponentConfig`. */
+  childrenDefaultHtml?: string;
   schema: S;
   defaults: InferShape<S>;
   component: ComponentType<InferShape<S>>;
@@ -226,12 +237,14 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> =
   const schema = (config.props?.(p) ?? {}) as S;
   const type = config.type ?? "inline";
   const shadow = config.shadow ?? false;
-  let children = config.children ?? false;
+  let children = config.children !== undefined && config.children !== false;
+  let childrenDefaultHtml = typeof config.children === "string" ? config.children : undefined;
   if (children && (!shadow || type !== "block")) {
     console.warn(
       `[drycms] Richtext component "${config.name}": "children" requires "shadow: true" and "type: \\"block\\"" - ignoring.`,
     );
     children = false;
+    childrenDefaultHtml = undefined;
   }
   return {
     __dryComponent: true,
@@ -241,6 +254,7 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> =
     type,
     shadow,
     children,
+    childrenDefaultHtml,
     schema,
     defaults: resolveDefaults(schema) as InferShape<S>,
     component: config.component,

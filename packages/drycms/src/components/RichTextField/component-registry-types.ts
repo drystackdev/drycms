@@ -33,6 +33,9 @@ export interface DryComponentRecord {
   type: "inline" | "block";
   shadow: boolean;
   children: boolean;
+  /** Default light-DOM HTML for `children: true` components - preview-only,
+   * see `DryComponentConfig.children`'s own doc comment. */
+  childrenDefaultHtml?: string;
   props: Record<string, PlainFieldDef>;
   defaults: Record<string, unknown>;
   /** The glob key (`import.meta.glob`'s map key) this record was confirmed

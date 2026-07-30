@@ -32,7 +32,12 @@ export default DryEditerComponent({
     "Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.",
   type: "block",
   shadow: true,
-  children: true,
+  children: `
+  <h3>Wraps nested rich text and changes its color</h3>
+  <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
+  <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
+  <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
+  `,
   props: colorTextProps,
   component: ColorText,
 });

@@ -401,16 +401,36 @@ th {
 
 /* Every \`group:"block"\` node (schema.ts) while reorder mode is active - a
  * light tint just visible enough to read as "this is now a movable card",
- * not a real background change. */
+ * no \`border-radius\` (these are plain content blocks, not chrome/controls),
+ * strengthened slightly on hover so a block reads as interactive before the
+ * pointer is even pressed down. */
 .dry-tx-reorder-block {
   background-color: color-mix(in srgb, var(--dry-foreground) 6%, transparent);
-  border-radius: var(--dry-radius-sm);
 }
 
-/* \`table\`/\`grid\` - this schema's only 2 "container" block types - get an
+.dry-tx-reorder-block:hover {
+  background-color: color-mix(in srgb, var(--dry-foreground) 12%, transparent);
+}
+
+/* A non-container block (anything other than \`.dry-tx-reorder-container\`
+ * below) has no drag handle of its own - the whole block IS the handle
+ * (\`onBlockPointerDown\` in reorder-mode.ts), so it gets \`grab\`/\`grabbing\`
+ * the same way \`.dry-tx-reorder-handle\` does for a container. */
+.dry-tx-reorder-block:not(.dry-tx-reorder-container) {
+  cursor: grab;
+}
+
+.dry-tx-reorder-block:not(.dry-tx-reorder-container):active {
+  cursor: grabbing;
+}
+
+/* \`table\`/\`grid\`, plus any \`children:true\` dry component (\`isContainerNode\`
+ * in reorder-mode.ts) - this schema's "container" block types - get an
  * outline in the same color as body text on top of the tint above, so a
  * container reads as visually distinct from a plain paragraph/heading at a
- * glance. */
+ * glance. Only these get a drag handle (below); dragging a container itself
+ * always goes through that handle, never a click on its own body (which may
+ * contain other draggable blocks of its own). */
 .dry-tx-reorder-container {
   outline: 1px solid var(--dry-foreground);
   outline-offset: 2px;

@@ -2,9 +2,10 @@ import { expect, test } from "@playwright/test";
 
 /** Covers the RichText "reorder mode" feature (RichTextField/reorder-mode.ts)
  * end-to-end against the "Rich Text Demo" sandbox page: the toggle's chrome
- * (gray background + handle on every block, an extra outline on grid/table
- * containers), every other control (and typing itself) suspended while it's
- * on, a real pointer-drag actually committing a new block order (not just
+ * (gray background on every block, an extra outline + own drag handle only
+ * on grid/table/children-component containers), every other control (and
+ * typing itself) suspended while it's on, a real pointer-drag on a plain
+ * (non-container) block actually committing a new block order (not just
  * previewing one), dropping into a grid cell, and toggling back off restoring
  * normal editing. Asserts on computed styles/classes rather than just
  * screenshots, same established convention `richtext-grid.spec.ts` already
@@ -43,10 +44,12 @@ test("reorder mode toggle: chrome, suspended editing, and a real drag actually r
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-  // Every block-level node gets the gray-background/handle chrome.
+  // Every block-level node gets the gray-background chrome, but none of
+  // these are containers (no grid/table/children-component here) - so none
+  // of them get a drag handle of their own.
   const blocks = content.locator(".dry-tx-reorder-block");
   await expect(blocks).toHaveCount(5); // h2, h3, h4, blockquote, trailing paragraph
-  await expect(content.locator(".dry-tx-reorder-handle")).toHaveCount(5);
+  await expect(content.locator(".dry-tx-reorder-handle")).toHaveCount(0);
 
   // Every other toolbar control (undo, bold, block-type, ...) is suspended -
   // the toggle button itself stays the one exception.
@@ -59,15 +62,16 @@ test("reorder mode toggle: chrome, suspended editing, and a real drag actually r
   await page.keyboard.type("SHOULD_NOT_APPEAR");
   await expect(h2).toHaveText("Heading two");
 
-  // Drag h2's own handle down past h4 - drop target is decided by pointer Y
-  // vs. the hovered sibling's own vertical midpoint (`computeDropTarget` in
-  // reorder-mode.ts), so landing near h4's bottom edge means "after h4".
-  const handle = h2.locator(".dry-tx-reorder-handle");
-  const handleBox = await handle.boundingBox();
+  // Drag h2 down past h4 by pressing on the block itself - h2 is a plain,
+  // non-container block, so it has no handle of its own; the whole block IS
+  // the handle (`onBlockPointerDown` in reorder-mode.ts). Drop target is
+  // decided by pointer Y vs. the hovered sibling's own vertical midpoint
+  // (`computeDropTarget`), so landing near h4's bottom edge means "after h4".
+  const h2Box = await h2.boundingBox();
   const targetBox = await h4.boundingBox();
-  if (!handleBox || !targetBox) throw new Error("missing bounding box for drag handle or drop target");
+  if (!h2Box || !targetBox) throw new Error("missing bounding box for dragged block or drop target");
 
-  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.move(h2Box.x + h2Box.width / 2, h2Box.y + h2Box.height / 2);
   await page.mouse.down();
   await expect(h2).toHaveClass(/dry-tx-reorder-dragging/);
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height * 0.85, { steps: 10 });
@@ -104,8 +108,8 @@ test("reorder mode toggle: chrome, suspended editing, and a real drag actually r
  * cardinality-1 container (`grid_item.content = "block"`), where landing on
  * an *occupied* cell must append a new sibling cell rather than trying to
  * replace/merge into it (see `computeDropTarget`'s own doc comment in
- * reorder-mode.ts), and the container itself gets the extra outline class
- * plain blocks don't. */
+ * reorder-mode.ts), and the container itself (unlike a plain block) gets both
+ * the extra outline class AND its own drag handle. */
 test("reorder mode: grid/table containers get the extra outline, and dropping onto an occupied cell adds a new sibling cell", async ({
   page,
 }) => {
@@ -135,20 +139,24 @@ test("reorder mode: grid/table containers get the extra outline, and dropping on
   await toggle.click();
 
   // Both container types (only the grid exists on this doc, but the class
-  // itself is shared) get the outline on top of the plain gray background.
+  // itself is shared) get the outline on top of the plain gray background,
+  // plus their own drag handle - the one thing a plain block doesn't get.
   await expect(grid).toHaveClass(/dry-tx-reorder-container/);
   await expect(grid).toHaveClass(/dry-tx-reorder-block/);
+  await expect(grid.locator(":scope > .dry-tx-reorder-handle")).toHaveCount(1);
   // The grid_item cell itself isn't a `group:"block"` node - no handle of
   // its own, only its enclosing grid does.
   await expect(gridItem.locator(":scope > .dry-tx-reorder-handle")).toHaveCount(0);
 
+  // The dragged paragraph is a plain, non-container block - no handle of its
+  // own, so pressing down anywhere on the block itself starts the drag.
   const draggedParagraph = content.locator("p", { hasText: "dragged paragraph" });
-  const handle = draggedParagraph.locator(".dry-tx-reorder-handle");
-  const handleBox = await handle.boundingBox();
+  await expect(draggedParagraph.locator(".dry-tx-reorder-handle")).toHaveCount(0);
+  const paragraphBox = await draggedParagraph.boundingBox();
   const cellBox = await gridItem.boundingBox();
-  if (!handleBox || !cellBox) throw new Error("missing bounding box for drag handle or grid cell");
+  if (!paragraphBox || !cellBox) throw new Error("missing bounding box for dragged paragraph or grid cell");
 
-  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.move(paragraphBox.x + paragraphBox.width / 2, paragraphBox.y + paragraphBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(cellBox.x + cellBox.width / 2, cellBox.y + cellBox.height / 2, { steps: 10 });
   // Dropping onto the occupied cell highlights the whole grid_item, not a

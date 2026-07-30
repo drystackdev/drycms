@@ -1,7 +1,10 @@
 export const prerender = false;
 
+import { Readable } from "node:stream";
+import { join } from "node:path";
 import type { APIRoute } from "astro";
 import { richtextComponentsStorage } from "virtual:drycms/richtext-components-config";
+import { buildComponentBundle } from "../components/RichTextField/build-component-bundle.js";
 import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
 import { slugify } from "../lib/slugify.js";
 import { createStorageAdapter } from "../storage/index.js";
@@ -31,17 +34,38 @@ async function readRecord(filename: string): Promise<DryComponentRecord | null> 
   return JSON.parse(buf.toString("utf8")) as DryComponentRecord;
 }
 
-function fileNameFor(name: string): string {
+function slugFor(name: string): string {
   const slug = slugify(name);
   if (!slug) throw new StorageError("invalid_path", `Component name "${name}" has no usable characters.`);
-  return `${slug}.json`;
+  return slug;
 }
 
-/** GET `/api/richtext-components` (list every confirmed record) or
- * `/api/richtext-components/{name}` (one record) - the toolbar insert
- * dialog and editor bootstrap only ever need the list; the admin page also
- * uses the single-record form to detect "already confirmed" per discovered
- * file. */
+function fileNameFor(name: string): string {
+  return `${slugFor(name)}.json`;
+}
+
+/** Builds a component's real source (`sourcePath`, a leading-`/`
+ * root-relative glob key like `/src/dry-components/Carousel/index.tsx`) into
+ * a self-contained JS bundle and stores it as `{slug}.js` alongside the
+ * `{slug}.json` record - `join`, not `path.resolve`: `resolve()` would treat
+ * that leading slash as already-absolute and discard `process.cwd()`. Dev
+ * only (mirrors `buildComponentBundle`'s own dev-only tooling) - a deployed
+ * build may not have the raw `.tsx` source on disk at all. */
+async function buildAndStore(sourcePath: string, slug: string): Promise<void> {
+  if (!import.meta.env.DEV) {
+    throw new StorageError("unsupported", "Building richtext components is only available in dev.");
+  }
+  const entryAbsPath = join(process.cwd(), sourcePath);
+  const code = await buildComponentBundle(entryAbsPath);
+  await adapter.write(`${slug}.js`, Buffer.from(code, "utf8"));
+}
+
+/** GET `/api/richtext-components` (list every confirmed record),
+ * `/api/richtext-components/{name}` (one record), or
+ * `/api/richtext-components/{name}.js` (its compiled bundle, streamed with a
+ * JS content type) - the toolbar insert dialog and editor bootstrap only
+ * ever need the list; the admin page also uses the single-record form to
+ * detect "already confirmed" per discovered file. */
 export const GET: APIRoute = async (context) => {
   try {
     const name = readSlug(context);
@@ -51,6 +75,14 @@ export const GET: APIRoute = async (context) => {
         await Promise.all(entries.map((entry) => readRecord(entry.path)))
       ).filter((record): record is DryComponentRecord => record !== null);
       return jsonResponse({ records });
+    }
+    if (name.endsWith(".js")) {
+      const slug = slugFor(name.slice(0, -".js".length));
+      const result = await adapter.read(`${slug}.js`);
+      return new Response(Readable.toWeb(result.stream) as unknown as ReadableStream, {
+        status: 200,
+        headers: { "Content-Type": "text/javascript" },
+      });
     }
     const record = await readRecord(fileNameFor(name));
     if (!record) throw new StorageError("not_found", `No confirmed component named "${name}".`);
@@ -67,6 +99,7 @@ interface ConfirmBody {
   type: unknown;
   shadow: unknown;
   children: unknown;
+  childrenDefaultHtml: unknown;
   props: unknown;
   defaults: unknown;
   sourcePath: unknown;
@@ -79,12 +112,31 @@ function asPlainFieldShape(value: unknown): Record<string, PlainFieldDef> {
   return value as Record<string, PlainFieldDef>;
 }
 
-/** POST `/api/richtext-components` - "Xác nhận dùng" (mục 3): persists a
- * plain, already-resolved `{schema, defaults}` (never the builder function -
+const BUILD_ACTION_SUFFIX = "/build";
+
+/** POST `/api/richtext-components` - "Xác nhận dùng" (mục 3): builds the
+ * component's real source into a JS bundle, then persists a plain,
+ * already-resolved `{schema, defaults}` record (never the builder function -
  * the admin page/editor resolve `DryEditerComponent(...)`'s output before
- * ever calling this). Create-or-overwrite, keyed by `name`. */
+ * ever calling this). A failed build throws before either the `.js` or the
+ * `.json` record is written - confirming never leaves a broken/half-set-up
+ * component behind. Create-or-overwrite, keyed by `name`.
+ *
+ * POST `/api/richtext-components/{name}/build` - rebuilds an already-
+ * confirmed component's bundle from its stored `sourcePath` (mục "nút Build"
+ * on the admin page) without touching the `.json` record at all; a failed
+ * rebuild leaves the previous, still-working `.js` in place. */
 export const POST: APIRoute = async (context) => {
   try {
+    const slug = readSlug(context);
+    if (slug.endsWith(BUILD_ACTION_SUFFIX)) {
+      const name = slug.slice(0, -BUILD_ACTION_SUFFIX.length);
+      const record = await readRecord(fileNameFor(name));
+      if (!record) throw new StorageError("not_found", `No confirmed component named "${name}".`);
+      await buildAndStore(record.sourcePath, slugFor(name));
+      return jsonResponse({ ok: true });
+    }
+
     const body = (await context.request.json()) as ConfirmBody;
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const label = typeof body.label === "string" ? body.label.trim() : "";
@@ -96,9 +148,12 @@ export const POST: APIRoute = async (context) => {
     // the schema/NodeView actually support (native `<slot>` projection only
     // happens inside a shadow tree of a top-level block element).
     const children = body.children === true && shadow && type === "block";
+    const childrenDefaultHtml = children && typeof body.childrenDefaultHtml === "string" ? body.childrenDefaultHtml : undefined;
     const sourcePath = typeof body.sourcePath === "string" ? body.sourcePath : "";
     if (!name) throw new StorageError("invalid_path", "`name` is required.");
     if (!label) throw new StorageError("invalid_path", "`label` is required.");
+
+    await buildAndStore(sourcePath, slugFor(name));
 
     const record: DryComponentRecord = {
       name,
@@ -107,6 +162,7 @@ export const POST: APIRoute = async (context) => {
       type,
       shadow,
       children,
+      ...(childrenDefaultHtml !== undefined ? { childrenDefaultHtml } : {}),
       props: asPlainFieldShape(body.props),
       defaults: (body.defaults && typeof body.defaults === "object" ? body.defaults : {}) as Record<string, unknown>,
       sourcePath,
@@ -121,13 +177,21 @@ export const POST: APIRoute = async (context) => {
 };
 
 /** DELETE `/api/richtext-components/{name}` - un-confirms a component
- * (removes it from the editor's insert list / dynamic schema); the source
- * file on disk is untouched. */
+ * (removes it from the editor's insert list / dynamic schema) and its built
+ * bundle; the source file on disk is untouched. */
 export const DELETE: APIRoute = async (context) => {
   try {
     const name = readSlug(context);
     if (!name) throw new StorageError("invalid_path", "A component name is required.");
-    await adapter.remove(fileNameFor(name));
+    const slug = slugFor(name);
+    await adapter.remove(`${slug}.json`);
+    try {
+      await adapter.remove(`${slug}.js`);
+    } catch (error) {
+      // A record confirmed before this feature existed may have no bundle
+      // at all - un-confirming still succeeds either way.
+      if (!(error instanceof StorageError && error.code === "not_found")) throw error;
+    }
     return jsonResponse({ ok: true });
   } catch (error) {
     return errorResponse(error);

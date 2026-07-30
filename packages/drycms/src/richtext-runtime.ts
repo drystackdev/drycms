@@ -1,7 +1,6 @@
 import { path } from "virtual:drycms/config";
-import { components as componentModules } from "virtual:drycms/richtext-components";
 import type { DryComponentRecord } from "./components/RichTextField/component-registry-types.js";
-import { defineDryComponent } from "./components/RichTextField/dry-component-runtime.js";
+import { defineDryComponent, loadBuiltComponent } from "./components/RichTextField/dry-component-runtime.js";
 
 /**
  * Published-site counterpart to `useRichTextEditor.ts`'s own component
@@ -28,9 +27,7 @@ async function bootstrapRichtextComponents(): Promise<void> {
     const data = await res.json();
     const records: DryComponentRecord[] = Array.isArray(data.records) ? data.records : [];
     for (const record of records) {
-      const load = componentModules[record.sourcePath];
-      if (!load) continue;
-      defineDryComponent(record.name, load, record.shadow);
+      defineDryComponent(record.name, loadBuiltComponent(path, record.name), record.shadow);
     }
   } catch {
     // No richtext content on this page, or the admin API isn't reachable

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Selection } from "prosemirror-state";
-import { components as componentModules } from "virtual:drycms/richtext-components";
+import { path as basePath } from "virtual:drycms/config";
 import { ComponentIcon, EyeIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import { useOverlayScrollbars } from "../overlayscrollbars.js";
 import Search from "../Search.js";
 import ComponentPreview from "./ComponentPreview.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
+import DryComponentPropsForm, { isDryComponentPropsValid } from "./dry-component-props-form.js";
+import { loadBuiltComponent } from "./dry-component-runtime.js";
 import { insertBlockAfterFocusedGridItem } from "./grid.js";
 import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
@@ -25,10 +27,13 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<DryComponentRecord | null>(null);
+  const [configuring, setConfiguring] = useState<DryComponentRecord | null>(null);
+  const [propsDraft, setPropsDraft] = useState<Record<string, unknown>>({});
   const [query, setQuery] = useState("");
   const anchorPosRef = useRef<number | null>(null);
   const dialogRef = useDialogSync(open, () => setOpen(false));
   const previewDialogRef = useDialogSync(!!previewing, () => setPreviewing(null));
+  const configureDialogRef = useDialogSync(!!configuring, () => setConfiguring(null));
   const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([open]);
 
   useEffect(() => {
@@ -57,10 +62,12 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
     return record.label.toLowerCase().includes(q) || record.name.toLowerCase().includes(q);
   });
 
-  const insert = () => {
+  /** Actually creates + places the node, given a resolved `props` value -
+   * shared by the no-props fast path (`record.defaults` as-is) and the
+   * "configure first" path below (`propsDraft`, once confirmed valid). */
+  const performInsert = (record: DryComponentRecord, props: Record<string, unknown>) => {
     const view = viewRef.current;
-    const record = records.find((r) => r.name === pending);
-    if (!view || !record) return;
+    if (!view) return;
 
     const nodeType = schema.nodes[`dry_${record.name}`];
     if (!nodeType) return;
@@ -68,8 +75,8 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
     // "block+"` (schema.ts) requires at least one block, same reason
     // `insertGrid`'s own `buildGrid` seeds a fresh grid item this way.
     const node = record.children
-      ? nodeType.create({ props: record.defaults }, schema.nodes.paragraph!.createAndFill()!)
-      : nodeType.create({ props: record.defaults });
+      ? nodeType.create({ props }, schema.nodes.paragraph!.createAndFill()!)
+      : nodeType.create({ props });
     const docSize = view.state.doc.content.size;
     const pos = anchorPosRef.current !== null && anchorPosRef.current <= docSize ? anchorPosRef.current : docSize;
 
@@ -88,9 +95,34 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       }
       view.dispatch(tr.scrollIntoView());
     }
-    setOpen(false);
     view.focus();
   };
+
+  /** Footer "Insert" button - a component with no props at all goes straight
+   * in with its defaults, same as before. One with props opens a settings
+   * dialog first (`DryComponentPropsForm`, the same widget `DryComponentMenu`
+   * uses to edit an already-placed instance) seeded with its defaults; the
+   * node is only actually created once that draft passes validation. */
+  const startInsert = () => {
+    const record = records.find((r) => r.name === pending);
+    if (!record) return;
+    if (Object.keys(record.props).length === 0) {
+      performInsert(record, record.defaults);
+      setOpen(false);
+      return;
+    }
+    setConfiguring(record);
+    setPropsDraft({ ...record.defaults });
+    setOpen(false);
+  };
+
+  const confirmConfigure = () => {
+    if (!configuring || !isDryComponentPropsValid(configuring.props, propsDraft)) return;
+    performInsert(configuring, propsDraft);
+    setConfiguring(null);
+  };
+
+  const configuringValid = configuring ? isDryComponentPropsValid(configuring.props, propsDraft) : false;
 
   return (
     <>
@@ -163,7 +195,7 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
               <button type="button" class="outline" onClick={() => setOpen(false)}>
                 Cancel
               </button>
-              <button type="button" disabled={!pending} onClick={insert}>
+              <button type="button" disabled={!pending} onClick={startInsert}>
                 Insert
               </button>
             </footer>
@@ -182,19 +214,42 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
               {previewing.description && <p class="hint">{previewing.description}</p>}
             </header>
             <div class="dry-component-preview-large">
-              {componentModules[previewing.sourcePath] && (
-                <ComponentPreview
-                  name={previewing.name}
-                  label={previewing.label}
-                  defaults={previewing.defaults}
-                  load={componentModules[previewing.sourcePath]!}
-                  shadow={previewing.shadow}
-                />
-              )}
+              <ComponentPreview
+                name={previewing.name}
+                label={previewing.label}
+                defaults={previewing.defaults}
+                load={loadBuiltComponent(basePath, previewing.name)}
+                shadow={previewing.shadow}
+                childrenHtml={previewing.childrenDefaultHtml}
+              />
             </div>
             <footer>
               <button type="button" onClick={() => setPreviewing(null)}>
                 Close
+              </button>
+            </footer>
+          </>
+        )}
+      </dialog>
+      <dialog
+        ref={configureDialogRef}
+        class="md"
+        aria-label={configuring ? `${configuring.label} settings` : "Component settings"}
+      >
+        {configuring && (
+          <>
+            <header>
+              <h3>{configuring.label}</h3>
+            </header>
+            <div class="stack">
+              <DryComponentPropsForm schema={configuring.props} value={propsDraft} onChange={setPropsDraft} />
+            </div>
+            <footer>
+              <button type="button" class="outline" onClick={() => setConfiguring(null)}>
+                Cancel
+              </button>
+              <button type="button" disabled={!configuringValid} onClick={confirmConfigure}>
+                Insert
               </button>
             </footer>
           </>

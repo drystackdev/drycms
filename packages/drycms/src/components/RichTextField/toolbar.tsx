@@ -119,7 +119,12 @@ export default function RichTextToolbar({
       ))}
       {!inline && <TableMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
       {!inline && <GridMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
-      <DryComponentMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} />
+      <DryComponentMenu
+        viewRef={viewRef}
+        state={state}
+        disabled={disabled || state.reorderModeActive}
+        iconSize={iconSize}
+      />
     </div>
   );
 }

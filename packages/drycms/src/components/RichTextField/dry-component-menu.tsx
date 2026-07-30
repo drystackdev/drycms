@@ -3,34 +3,50 @@ import type { RefObject } from "preact";
 import type { Node as PMNode } from "prosemirror-model";
 import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import FloatingPanel from "../FloatingPanel.js";
 import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, LockIcon, SettingsIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
 import DryComponentPropsForm from "./dry-component-props-form.js";
 import type { ImageAlign } from "./schema.js";
-import type { ToolbarState } from "./types.js";
+import type { ToolbarIconSize, ToolbarState } from "./types.js";
 import { loadRichtextComponents } from "./useRichTextEditor.js";
 
 export interface DryComponentMenuProps {
   viewRef: RefObject<EditorView | null>;
   state: ToolbarState;
   disabled?: boolean;
+  iconSize?: ToolbarIconSize;
 }
 
+/** Kept just above the CSS collapse transition (180ms, see
+ * `.richtext-dry-component-menu-controls-wrap` in components.css) so the
+ * card never gets unmounted mid-animation - same idiom `table-menu.tsx`'s/
+ * `grid-menu.tsx`'s own `COLLAPSE_DURATION` already use. */
+const COLLAPSE_DURATION = 200;
+
 /**
- * Floating anchor for a selected `<dry-{name}>` node - same always-mounted-
- * but-usually-invisible shape as `image-menu.tsx`/`table-menu.tsx`
- * (`FloatingPanel anchor={null}` renders nothing). Detects its own
- * selection locally (`viewRef.current.state.selection`) rather than through
- * a new `ToolbarState` field - none of its own fields are read here. `state`
- * is still accepted and passed through anyway (confirmed via a real browser
- * test, not just reasoning about it): a *new* prop reference each
- * transaction is what actually makes `toolbar.tsx`'s re-render reliably
- * reach this component on every dispatch - `viewRef` (a stable ref object)
- * and `disabled` (unchanged across most transactions) alone weren't enough
- * for that in practice, unlike prose-level reasoning about "the parent
- * re-rendered so this should too" would suggest.
+ * The dry-component tool-group docked in the main toolbar (rendered by
+ * `toolbar.tsx`, right after `GridMenu`) rather than floating over the
+ * component itself - this used to anchor via `FloatingPanel` (same mechanism
+ * as `image-menu.tsx`), the same migration `table-menu.tsx`/`grid-menu.tsx`
+ * already went through and for the same reason: a separate panel popping up
+ * over the content read as a different affordance than every other
+ * contextual control in this field, which all live in the toolbar itself.
+ * No permanent "insert" half to share a card with, same as `grid-menu.tsx` -
+ * `DryComponentInsertButton` (toolbar-buttons.ts) already covers that on its
+ * own - so this is purely the expand/collapse-on-selection card, mounted
+ * `COLLAPSE_DURATION` past the selection leaving so the width-collapse
+ * transition below has time to finish.
+ *
+ * Detects its own selection locally (`viewRef.current.state.selection`)
+ * rather than through a new `ToolbarState` field - none of its own fields are
+ * read here. `state` is still accepted and passed through anyway (confirmed
+ * via a real browser test, not just reasoning about it): a *new* prop
+ * reference each transaction is what actually makes `toolbar.tsx`'s
+ * re-render reliably reach this component on every dispatch - `viewRef` (a
+ * stable ref object) and `disabled` (unchanged across most transactions)
+ * alone weren't enough for that in practice, unlike prose-level reasoning
+ * about "the parent re-rendered so this should too" would suggest.
  *
  * Align/lock buttons mirror `image-menu.tsx`'s own exactly (same
  * `ImageAlign` type, same `lockAspectRatio` semantics) - only shown for an
@@ -39,7 +55,7 @@ export interface DryComponentMenuProps {
  * shown whenever the selected component's own schema has props, regardless
  * of inline/block.
  */
-export default function DryComponentMenu({ viewRef, disabled = false }: DryComponentMenuProps) {
+export default function DryComponentMenu({ viewRef, disabled = false, iconSize = "md" }: DryComponentMenuProps) {
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
@@ -80,7 +96,25 @@ export default function DryComponentMenu({ viewRef, disabled = false }: DryCompo
   const record = name ? (records.find((r) => r.name === name) ?? null) : null;
   const anchor = pos !== null && view ? (view.nodeDOM(pos) as HTMLElement | null) : null;
   const hasProps = record ? Object.keys(record.props).length > 0 : false;
-  const showPanel = !!record && (hasProps || isInline);
+  const expanded = !!record && (hasProps || isInline);
+
+  // Same expand/collapse-on-selection staging as `grid-menu.tsx`'s own
+  // `controlsMounted`/`controlsShown`: the card stays mounted
+  // `COLLAPSE_DURATION` past `expanded` going false so its width-collapse
+  // transition has time to play before it actually unmounts.
+  const [controlsMounted, setControlsMounted] = useState(expanded);
+  const [controlsShown, setControlsShown] = useState(expanded);
+  useEffect(() => {
+    if (expanded) {
+      setControlsMounted(true);
+      const raf = requestAnimationFrame(() => setControlsShown(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setControlsShown(false);
+    const timeout = setTimeout(() => setControlsMounted(false), COLLAPSE_DURATION);
+    return () => clearTimeout(timeout);
+  }, [expanded]);
+  const controlsDisabled = disabled || !expanded;
 
   const run = (mutate: (tr: Transaction) => Transaction) => {
     if (!view || pos === null) return;
@@ -119,8 +153,14 @@ export default function DryComponentMenu({ viewRef, disabled = false }: DryCompo
   };
 
   const openDialog = () => {
-    if (!node) return;
-    setDraft({ ...(node.attrs.props as Record<string, unknown>) });
+    if (!node || !record) return;
+    // `record.defaults` (register-component.ts's `resolveDefaults`) always
+    // has every prop key filled in; `node.attrs.props` doesn't, whenever the
+    // node predates a prop the schema has since gained (or was placed some
+    // other way than through this dialog) - defaulting those missing keys
+    // here means the form shows the component's real defaults instead of a
+    // blank/zero value the first time this dialog opens on such a node.
+    setDraft({ ...record.defaults, ...(node.attrs.props as Record<string, unknown>) });
     setOpen(true);
   };
 
@@ -132,76 +172,84 @@ export default function DryComponentMenu({ viewRef, disabled = false }: DryCompo
   };
 
   return (
-    <FloatingPanel anchor={showPanel ? anchor : null} class="dry-component-menu">
-      <div class="richtext-image-menu">
-        {isInline && (
-          <>
-            <button
-              type="button"
-              class="ghost icon sm"
-              aria-label="Align left"
-              data-tooltip="Align left"
-              aria-pressed={align === "left"}
-              disabled={disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => toggleAlign("left")}
-            >
-              <AlignLeftIcon />
-            </button>
-            <button
-              type="button"
-              class="ghost icon sm"
-              aria-label="Align center"
-              data-tooltip="Align center"
-              aria-pressed={align === "center"}
-              disabled={disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => toggleAlign("center")}
-            >
-              <AlignCenterIcon />
-            </button>
-            <button
-              type="button"
-              class="ghost icon sm"
-              aria-label="Align right"
-              data-tooltip="Align right"
-              aria-pressed={align === "right"}
-              disabled={disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => toggleAlign("right")}
-            >
-              <AlignRightIcon />
-            </button>
-            <button
-              type="button"
-              class="ghost icon sm"
-              aria-label={locked ? "Unlock aspect ratio" : "Lock aspect ratio"}
-              data-tooltip={locked ? "Unlock aspect ratio" : "Lock aspect ratio"}
-              aria-pressed={locked}
-              disabled={disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={toggleLock}
-            >
-              <LockIcon />
-            </button>
-            {hasProps && <hr class="separator" role="separator" aria-orientation="vertical" />}
-          </>
-        )}
-        {hasProps && (
-          <button
-            type="button"
-            class="ghost icon sm"
-            aria-label="Component settings"
-            data-tooltip="Settings"
-            disabled={disabled}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={openDialog}
-          >
-            <SettingsIcon />
-          </button>
-        )}
-      </div>
-      <dialog ref={dialogRef} aria-label={record ? `${record.label} settings` : "Component settings"}>
+    <>
+      {controlsMounted && (
+        <div
+          class={`richtext-dry-component-menu-controls-wrap${controlsShown ? " expanded" : ""}`}
+          aria-hidden={!expanded}
+        >
+          <div class="richtext-dry-component-menu-controls">
+            {isInline && (
+              <>
+                <button
+                  type="button"
+                  class={`ghost icon ${iconSize}`}
+                  aria-label="Align left"
+                  data-tooltip="Align left"
+                  aria-pressed={align === "left"}
+                  disabled={controlsDisabled}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => toggleAlign("left")}
+                >
+                  <AlignLeftIcon />
+                </button>
+                <button
+                  type="button"
+                  class={`ghost icon ${iconSize}`}
+                  aria-label="Align center"
+                  data-tooltip="Align center"
+                  aria-pressed={align === "center"}
+                  disabled={controlsDisabled}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => toggleAlign("center")}
+                >
+                  <AlignCenterIcon />
+                </button>
+                <button
+                  type="button"
+                  class={`ghost icon ${iconSize}`}
+                  aria-label="Align right"
+                  data-tooltip="Align right"
+                  aria-pressed={align === "right"}
+                  disabled={controlsDisabled}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => toggleAlign("right")}
+                >
+                  <AlignRightIcon />
+                </button>
+                <button
+                  type="button"
+                  class={`ghost icon ${iconSize}`}
+                  aria-label={locked ? "Unlock aspect ratio" : "Lock aspect ratio"}
+                  data-tooltip={locked ? "Unlock aspect ratio" : "Lock aspect ratio"}
+                  aria-pressed={locked}
+                  disabled={controlsDisabled}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={toggleLock}
+                >
+                  <LockIcon />
+                </button>
+                {hasProps && <hr class="separator" role="separator" aria-orientation="vertical" />}
+              </>
+            )}
+            {hasProps && (
+              <button
+                type="button"
+                class={`ghost icon ${iconSize}`}
+                aria-label="Component settings"
+                data-tooltip="Settings"
+                aria-haspopup="dialog"
+                disabled={controlsDisabled}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={openDialog}
+              >
+                <SettingsIcon />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      <dialog ref={dialogRef} class="md" aria-label={record ? `${record.label} settings` : "Component settings"}>
         {open && record && (
           <>
             <header>
@@ -221,6 +269,6 @@ export default function DryComponentMenu({ viewRef, disabled = false }: DryCompo
           </>
         )}
       </dialog>
-    </FloatingPanel>
+    </>
   );
 }

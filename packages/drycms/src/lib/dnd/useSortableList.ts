@@ -198,7 +198,14 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
         overlay.style.width = `${state.startRect.width}px`;
         overlay.style.margin = "0";
         overlay.style.zIndex = "50";
-        document.body.appendChild(overlay);
+        // Appended to the nearest open `<dialog>` (if the list being
+        // reordered lives inside one), not always `document.body` - a
+        // `<dialog>` is promoted to the top layer, which paints above
+        // regular `body` content regardless of z-index, so a plain
+        // `body`-level overlay dragged inside an open dialog would render
+        // *underneath* that same dialog. Appending inside it instead makes
+        // the clone part of the dialog's own top-layer subtree.
+        (container.closest("dialog[open]") ?? document.body).appendChild(overlay);
         state.overlay = overlay;
 
         // The row itself stays in flow, restyled as the "drop slot" - it
