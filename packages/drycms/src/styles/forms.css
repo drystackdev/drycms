@@ -468,8 +468,39 @@
         }
       }
 
+      /* Plain positioning/sizing wrapper around the real shadow host
+       * (`.richtext-content-host` below) - `position: relative` is what
+       * anchors `.richtext-placeholder`, absolutely-positioned on top of it. */
       & .richtext-content-mount {
+        position: relative;
         min-height: 16.75rem;
+      }
+
+      /* The actual shadow host `RichTextField.tsx`'s `contentRef` attaches
+       * to (see `useRichTextEditor.ts`) - a plain full-height fill of
+       * `.richtext-content-mount` above it. */
+      & .richtext-content-host {
+        display: block;
+        height: 100%;
+      }
+
+      /* Light-DOM placeholder/"Loading…" text (`RichTextField.tsx`) -
+       * deliberately NOT inside the shadow root `.richtext-content-host`
+       * hosts, unlike the old `::before` pseudo-element this replaced (see
+       * `content-shadow-styles.ts`'s own history), so it's easy to select/
+       * assert on from outside the field. Same padding/type treatment as
+       * `.dry-tx-content` in that shadow stylesheet, so it lines up with
+       * where the caret will land once it's dismissed. */
+      & .richtext-placeholder {
+        position: absolute;
+        inset-block-start: 0;
+        inset-inline-start: 0;
+        padding: 0.5rem 0.875rem;
+        color: var(--dry-muted-foreground);
+        font-family: var(--dry-font-sans);
+        font-size: var(--dry-text-sm);
+        line-height: var(--dry-leading);
+        pointer-events: none;
       }
 
       /* `fullscreen-button.tsx`'s own toggle - takes the whole field out of
@@ -527,11 +558,18 @@
         /* `.richtext-content` itself is inside the shadow root now (see
          * `useRichTextEditor.ts`), so it can't be targeted from out here
          * anymore - `content-shadow-styles.ts`'s own `height: 100%` on it
-         * takes care of filling whatever height `.richtext-content-mount`
-         * ends up with instead (including this flex:1 one). */
+         * takes care of filling whatever height `.richtext-content-host`
+         * ends up with instead (including this flex:1 one, passed down from
+         * the wrapper by the plain `.richtext-content-host` rule right
+         * below). */
         & .richtext-content-mount {
           display: flex;
           flex-direction: column;
+          flex: 1;
+          min-height: 0;
+        }
+
+        & .richtext-content-host {
           flex: 1;
           min-height: 0;
         }

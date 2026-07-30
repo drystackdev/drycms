@@ -741,6 +741,7 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={(value) => setContributors(value)}
   source={source}
   multiple
+  sortable
   pickerTitle="Choose Contributors"
   helperText="Click to pick multiple contributors from the list."
 />`,

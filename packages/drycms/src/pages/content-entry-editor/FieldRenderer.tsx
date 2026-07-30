@@ -223,6 +223,7 @@ function RelationFieldAdapter({
         onChange(multiple ? next : (next as string) === "" ? null : next)
       }
       multiple={multiple}
+      sortable={node.sortable}
       source={source}
       pickerTitle={`Choose ${targetType.label}`}
       error={!!error}

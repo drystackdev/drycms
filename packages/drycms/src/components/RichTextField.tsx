@@ -45,11 +45,10 @@ export default function RichTextField({
   class: className,
   style,
 }: RichTextFieldProps) {
-  const { contentRef, viewRef, state } = useRichTextEditor({
+  const { contentRef, viewRef, state, empty, loading } = useRichTextEditor({
     value,
     onChange,
     label,
-    placeholder,
     disabled,
   });
 
@@ -117,13 +116,34 @@ export default function RichTextField({
           onToggleFullscreen={() => setFullscreen((current) => !current)}
         />
         {/* ProseMirror's `EditorView` appends its own contenteditable dom as
-         * a CHILD of this mount node (rather than using it directly) and
-         * owns its attributes/content from then on - see
-         * `useRichTextEditor.ts`'s `buildAttributes`. The mount node itself
-         * still needs its own class: it (not the `.richtext-content` it
-         * wraps) is the actual flex item fullscreen mode sizes - see
-         * `.richtext-content-mount` in forms.css. */}
-        <div ref={contentRef} class="richtext-content-mount" />
+         * a CHILD of `.richtext-content-host` below (rather than using it
+         * directly) and owns its attributes/content from then on - see
+         * `useRichTextEditor.ts`'s `buildAttributes`. `.richtext-content-mount`
+         * itself stays a plain wrapper - still the actual flex item
+         * fullscreen mode sizes (see `.richtext-content-mount` in forms.css),
+         * and its `position: relative` there is what anchors
+         * `.richtext-placeholder` below. That placeholder is a real light-DOM
+         * element (unlike the old shadow-DOM-only `::before` it replaced) so
+         * it's easy to select/assert on from outside the field; it reads
+         * "Loading…" for as long as the hook's own async component-registry
+         * fetch (`loading`) hasn't resolved yet, since nothing else on
+         * screen otherwise shows the field isn't ready, then falls back to
+         * the real `placeholder` text once the doc is confirmed empty. */}
+        <div class="richtext-content-mount">
+          <div ref={contentRef} class="richtext-content-host" />
+          {loading ? (
+            <div class="richtext-placeholder" aria-hidden="true">
+              Loading…
+            </div>
+          ) : (
+            empty &&
+            placeholder && (
+              <div class="richtext-placeholder" aria-hidden="true">
+                {placeholder}
+              </div>
+            )
+          )}
+        </div>
         <ImageMenu
           viewRef={viewRef}
           state={state}

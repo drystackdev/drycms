@@ -90,8 +90,8 @@ test("reorder mode toggle: chrome, suspended editing, and a real drag actually r
   const targetBox = await h4.boundingBox();
   if (!targetBox) throw new Error("missing bounding box for drop target");
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height * 0.85, { steps: 1 });
-  // The hovered drop target gets its own highlight class while the drag is live.
-  await expect(h4).toHaveClass(/dry-tx-reorder-drop-after/);
+  // A "ghost slot" widget marks the live drop target while the drag is live.
+  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(1);
   await page.mouse.up();
 
   // h2 actually moved - now the 3rd top-level child, right after h4.
@@ -263,8 +263,13 @@ test("reorder mode: the block/container/nested-container mode selector", async (
   const cellBox = await gridItem.boundingBox();
   if (!cellBox) throw new Error("missing bounding box for grid cell");
   await page.mouse.move(cellBox.x + cellBox.width / 2, cellBox.y + cellBox.height / 2, { steps: 1 });
+  // The target computation is now rAF-throttled (reorder-mode.ts's
+  // `startReorderDrag`) - a fixed wait, not just polling, since a
+  // not-yet-run rAF would otherwise make these negative assertions pass
+  // trivially before they mean anything.
+  await page.waitForTimeout(50);
   await expect(gridItem).not.toHaveClass(/dry-tx-reorder-drop-target/);
-  await expect(body.locator(".dry-tx-reorder-drop-before, .dry-tx-reorder-drop-after")).toHaveCount(0);
+  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(0);
   await page.mouse.up();
   await expect(grid.locator(":scope > div.dry-tx-grid-item")).toHaveCount(1);
 
@@ -386,7 +391,8 @@ test("reorder mode: dragging hides the dragged block behind a floating clone; dr
   const h3Box = await h3.boundingBox();
   if (!h3Box) throw new Error("missing bounding box for h3");
   await page.mouse.move(h3Box.x + h3Box.width / 2, h3Box.y + h3Box.height * 0.1, { steps: 1 });
-  await expect(h3).toHaveClass(/dry-tx-reorder-drop-before/);
+  // A "ghost slot" widget marks the live drop target while the drag is live.
+  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(1);
   await page.mouse.up();
 
   // The actual reorder-on-drop commit path (`commitReorderMove`) is the

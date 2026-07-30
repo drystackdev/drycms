@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef } from "preact/hooks";
+import { useId, useMemo } from "preact/hooks";
 import Prism from "prismjs";
 import "prismjs/components/prism-jsx";
 import type { FieldProps } from "./field-common.js";
@@ -26,12 +26,10 @@ export interface CodeFieldProps extends FieldProps<string> {
  * wouldn't pick up an externally-changed `value`, unlike every other
  * controlled Field in this file's family.
  *
- * `.editor.code-field` (components.css) gives the two stacked layers a
- * fixed height and their own independent scroll, so the visible `pre` has
- * to be kept in sync by hand with whatever the (real, focusable) `textarea`
- * scrolls to - `onScroll` below mirrors its `scrollTop` onto `pre` on every
- * scroll (mouse wheel, or the browser auto-scrolling the textarea to keep
- * the caret in view as you type/navigate past the visible area).
+ * Plain `.editor` (no `code-field` modifier) grows to fit its content, same
+ * as `TextField`'s `multiline` textarea - the in-flow `pre` sizes the
+ * container and the absolutely-positioned `textarea` overlay just matches
+ * it, so there's no independent scrolling to keep in sync by hand.
  */
 export default function CodeField({
   value,
@@ -50,7 +48,6 @@ export default function CodeField({
 }: CodeFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `code-field-${reactId}`;
-  const preRef = useRef<HTMLPreElement>(null);
   const highlighted = useMemo(
     () => Prism.highlight(value, JSX_GRAMMAR, "jsx"),
     [value],
@@ -60,8 +57,8 @@ export default function CodeField({
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
-      <div class="editor code-field" aria-invalid={error || undefined}>
-        <pre class="language-jsx" ref={preRef}>
+      <div class="editor" aria-invalid={error || undefined}>
+        <pre class="language-jsx">
           <code dangerouslySetInnerHTML={{ __html: highlighted }} />
         </pre>
         <textarea
@@ -73,10 +70,6 @@ export default function CodeField({
           spellcheck={false}
           aria-invalid={error || undefined}
           onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
-          onScroll={(event) => {
-            const pre = preRef.current;
-            if (pre) pre.scrollTop = (event.target as HTMLTextAreaElement).scrollTop;
-          }}
         />
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}

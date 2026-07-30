@@ -370,6 +370,14 @@ function componentConfigDisabledKeys(
   return config.repeatable ? [] : ["sortable"];
 }
 
+/** `relation`'s `sortable` only means anything once `cardinality` is
+ * `manyToMany` (see `field-registry.ts`'s `RelationFieldConfig`). */
+function relationConfigDisabledKeys(
+  config: Record<string, unknown>,
+): string[] {
+  return config.cardinality === "manyToMany" ? [] : ["sortable"];
+}
+
 /** A `select` field needs at least one non-blank, unique option - shared
  * between `handleSave`'s save-blocking check and the footer's "Fix the
  * highlighted fields." summary below, so both agree on the same condition
@@ -459,6 +467,11 @@ export default function FieldDialog({
     if (draftType === "component" && key === "repeatable" && !value) {
       nextConfig.sortable = false;
     }
+    // Same for `relation`'s `sortable`, which only means anything at
+    // `manyToMany` cardinality.
+    if (draftType === "relation" && key === "cardinality" && value !== "manyToMany") {
+      nextConfig.sortable = false;
+    }
     setDraftConfig(nextConfig);
 
     // A config change can make previously-shown validation fields disappear
@@ -540,7 +553,11 @@ export default function FieldDialog({
   const textDisabledKeys =
     draftType === "text" ? textValidationDisabledKeys(draftValidation) : [];
   const configDisabledKeys =
-    draftType === "component" ? componentConfigDisabledKeys(draftConfig) : [];
+    draftType === "component"
+      ? componentConfigDisabledKeys(draftConfig)
+      : draftType === "relation"
+        ? relationConfigDisabledKeys(draftConfig)
+        : [];
   const activeValidationFields = activeFieldType
     ? resolveValidationFields(activeFieldType, draftConfig)
     : [];

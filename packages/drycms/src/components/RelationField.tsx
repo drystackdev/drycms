@@ -1,7 +1,9 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import DataTable, { type DataTableColumn, type SortState } from "./DataTable.js";
+import { DragHandleIcon, EditIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
+import { useSortableList } from "../lib/dnd/useSortableList.js";
 
 export interface RelationFieldQuery {
   page: number;
@@ -36,17 +38,28 @@ export interface RelationFieldProps extends FieldProps<string | string[]> {
   id?: string;
   required?: boolean;
   description?: string;
+  /** Lets the chosen-items list be manually drag-reordered (via
+   * `useSortableList`, same as `ComponentField`'s `sortable`) - only ever
+   * meaningful alongside `multiple` (a single value has nothing to reorder).
+   * Order is just `value`'s own array order, nothing extra to persist.
+   * @default false */
+  sortable?: boolean;
 }
 
 const PAGE_SIZE = 8;
 
 /**
- * Pick-one-or-many-rows field: a card showing the chosen rows' labels that
- * opens a searchable/paginated `DataTable` dialog on click - same
- * trigger+dialog shape as `ImageField`'s picker, just backed by an arbitrary
- * `RelationFieldSource` instead of a `FileManagerSource`. Empty is `""` when
- * `multiple` is off (same "no value" convention as `TextField`/`ImageField`),
- * `[]` when it's on.
+ * Pick-one-or-many-rows field: a card showing the chosen rows' labels, with a
+ * separate "Edit" button that opens a searchable/paginated `DataTable`
+ * dialog - the picker dialog itself is the same trigger+dialog shape
+ * `ImageField`'s picker uses, just backed by an arbitrary `RelationFieldSource`
+ * instead of a `FileManagerSource`. The Edit button is deliberately its own
+ * control rather than the whole card being clickable (as it used to be):
+ * when `sortable` is on, the chip list's rows carry a drag handle
+ * (`useSortableList`, same as `ComponentField`), and a native `<button>`
+ * can't cleanly host that without a pointerdown on the handle also firing the
+ * card's own click. Empty is `""` when `multiple` is off (same "no value"
+ * convention as `TextField`/`ImageField`), `[]` when it's on.
  */
 export default function RelationField({
   value,
@@ -62,6 +75,7 @@ export default function RelationField({
   id,
   required = false,
   description,
+  sortable = false,
   class: className,
   style,
 }: RelationFieldProps) {
@@ -134,6 +148,13 @@ export default function RelationField({
     };
   }, [open, source, page, sort, search]);
 
+  const dnd = useSortableList<{ id: string }>({
+    items: selectedIds.map((sid) => ({ id: sid })),
+    getId: (row) => row.id,
+    onReorder: (next) => onChange(multiple ? next.map((row) => row.id) : (next[0]?.id ?? "")),
+    disabled: disabled || !sortable || !multiple,
+  });
+
   function toggle(rowId: string) {
     setDraftSelected((current) => {
       if (!multiple) return current.has(rowId) ? new Set() : new Set([rowId]);
@@ -168,26 +189,47 @@ export default function RelationField({
         {required && <span class="required-asterisk">*</span>}
       </label>
       {description && <small>{description}</small>}
-      <button
-        id={fieldId}
-        type="button"
-        class="entry-relation-card"
-        aria-haspopup="dialog"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
+      <div style={{ marginTop: "0.5rem" }}>
+        <button
+          id={fieldId}
+          type="button"
+          class="outline"
+          aria-haspopup="dialog"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+        >
+          <EditIcon /> Edit
+        </button>
+      </div>
+      <div class="entry-relation-card">
         {selectedIds.length === 0 ? (
           <div style={{ textAlign: "center", paddingBlock: "1.5rem" }}>
-            <span class="hint">Click to choose.</span>
+            <span class="hint">No items selected.</span>
           </div>
         ) : (
-          <ul class="entry-relation-card-list">
+          <ul class="entry-relation-card-list" {...dnd.containerProps}>
             {selectedIds.map((sid) => (
-              <li key={sid}>{labels[sid] ?? "…"}</li>
+              <li
+                key={sid}
+                data-sortable-id={sortable && multiple ? sid : undefined}
+                class={dnd.draggingId === sid ? "dnd-drag-placeholder" : undefined}
+              >
+                {sortable && multiple && (
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    disabled={disabled}
+                    {...(disabled ? {} : dnd.getHandleProps(sid))}
+                  >
+                    <DragHandleIcon />
+                  </button>
+                )}
+                <span>{labels[sid] ?? "…"}</span>
+              </li>
             ))}
           </ul>
         )}
-      </button>
+      </div>
       {name && (
         <input type="hidden" name={name} value={selectedIds.join(",")} />
       )}

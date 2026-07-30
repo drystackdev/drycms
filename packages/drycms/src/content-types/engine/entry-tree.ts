@@ -71,6 +71,10 @@ export interface EntryRelationNode {
   targetTypeId: string;
   columnName?: string;
   tableName?: string;
+  /** From `RelationFieldConfig.sortable` - lets `components/RelationField.tsx`
+   * drag-reorder the picked items; only ever true when `cardinality` is
+   * `manyToMany` (see that config's own doc). */
+  sortable: boolean;
   /** Only ever carries `min`/`max` (item count) - see `field-registry.ts`'s
    * conditional `validationFields` (shown only when `cardinality` is
    * multi-valued) and `entry-validate.ts`'s count check that enforces them.
@@ -236,6 +240,7 @@ function buildNodes(
           cardinality: config.cardinality,
           targetTypeId: config.target,
           columnName: column.name,
+          sortable: false,
           validation: field.validation,
         };
       }
@@ -249,6 +254,7 @@ function buildNodes(
         cardinality: config.cardinality,
         targetTypeId: config.target,
         tableName: childRef.tableName,
+        sortable: config.cardinality === "manyToMany" && !!config.sortable,
         validation: field.validation,
       };
     }

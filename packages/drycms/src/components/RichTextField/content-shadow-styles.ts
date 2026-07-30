@@ -70,13 +70,6 @@ export const richtextContentShadowStyles =
   white-space: pre-wrap;
 }
 
-.dry-tx-content.is-empty::before {
-  content: attr(data-placeholder);
-  position: absolute;
-  color: var(--dry-muted-foreground);
-  pointer-events: none;
-}
-
 .dry-tx-content::selection,
 .dry-tx-content *::selection {
   background-color: color-mix(in srgb, var(--dry-primary) 25%, transparent);
@@ -490,22 +483,16 @@ th {
   box-shadow: var(--dry-shadow-lg);
 }
 
-/* Drop feedback - a highlight on whatever's currently under the pointer
- * during a drag. \`-before\`/\`-after\` (a specific sibling's own top/bottom
- * edge, in \`doc\`/a \`table_cell\`/a \`list_item\`/an empty \`grid_item\`'s slot)
- * and \`-drop-target\` (an *occupied* \`grid_item\` as a whole, which always
- * accepts a drop as "insert after" rather than needing before/after
- * disambiguation - see \`computeDropTarget\`'s own doc comment in
- * reorder-mode.ts) are mutually exclusive per render, but styled distinctly
- * in case that ever changes. */
-.dry-tx-reorder-drop-before {
-  box-shadow: inset 0 2px 0 0 var(--dry-primary);
-}
-
-.dry-tx-reorder-drop-after {
-  box-shadow: inset 0 -2px 0 0 var(--dry-primary);
-}
-
+/* Drop feedback for an *occupied* \`grid_item\`/table-cell-placeholder
+ * target as a whole (\`"replaceGridItem"\`/\`"replaceCellContent"\`, which
+ * always accept a drop as an outright replace rather than needing before/
+ * after disambiguation - see \`computeDropTarget\`'s own doc comment in
+ * reorder-mode.ts). A plain \`before\`/\`after\` target gets no highlight of
+ * its own anymore - just the ghost slot widget below, which used to sit
+ * alongside a thin edge-highlight box-shadow here too, dropped for the
+ * visible stutter it added (the sibling's own decoration tearing down and
+ * rebuilding on every target change, on top of the ghost widget doing the
+ * same). */
 .dry-tx-reorder-drop-target {
   outline: 2px dashed var(--dry-primary);
   outline-offset: 2px;
@@ -514,12 +501,10 @@ th {
 /* The "ghost slot" widget (\`buildGhostWidget\` in reorder-mode.ts) inserted
  * right at a live \`before\`/\`after\` target - own \`height\` set inline by
  * that function, matching the dragged content's combined height, so this
- * reads as "the real thing lands in exactly this much space" rather than
- * just the thin \`.dry-tx-reorder-drop-before\`/\`-after\` edge line above
- * (kept alongside this, not replaced by it - together they mark both WHICH
- * edge and HOW MUCH room). Same dashed-outline language
- * \`.dry-tx-reorder-drop-target\` above uses for its own "this exact spot"
- * signal, just filled in with the accent tint since this one has no real
+ * reads as "the real thing lands in exactly this much space". Same
+ * dashed-outline language \`.dry-tx-reorder-drop-target\` above uses for its
+ * own "this exact spot" signal, just filled in with the accent tint since
+ * this one has no real
  * content of its own to show through. */
 .dry-tx-reorder-ghost {
   margin: 0.25rem 0;

@@ -338,6 +338,18 @@ export interface RelationFieldConfig {
    * uniqueness constraint.
    */
   cardinality: RelationCardinality;
+  /** Only meaningful when `cardinality` is `manyToMany` - lets the entry
+   * editor's `components/RelationField.tsx` be manually drag-reordered (via
+   * `useSortableList`, same as `ComponentFieldConfig.sortable`). The junction
+   * table already carries an unconditional `position` column and already
+   * round-trips whatever order the forward array is submitted in (see
+   * `tree.ts`'s `buildRelationChildTable`/`entries-sqlite.ts`'s
+   * `populateChildFields`/`writeChildFields`) - this flag is purely a UI
+   * signal, no migration needed. Meaningless (and kept disabled/cleared - see
+   * `FieldDialog.tsx`) off `manyToMany`: `manyToOne` stores a single target,
+   * and `oneToMany`'s reverse mirror read isn't order-scoped per the forward
+   * side the way this option would imply. */
+  sortable?: boolean;
 }
 
 export const relationFieldType: FieldTypeDefinition = {
@@ -359,6 +371,7 @@ export const relationFieldType: FieldTypeDefinition = {
         { value: "manyToMany", label: "[n - n] Entries and targets can link to each other freely" },
       ],
     },
+    { key: "sortable", label: "Sortable (drag to reorder items)", widget: "boolean" },
   ],
   defaultConfig: { target: "", cardinality: "manyToOne" },
   // Min/max item count only means anything once cardinality is multi-valued

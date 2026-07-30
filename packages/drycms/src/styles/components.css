@@ -2405,23 +2405,10 @@
       }
     }
 
-    button.entry-relation-card {
-      display: block;
+    .entry-relation-card {
       width: 100%;
-      height: auto;
-      padding: 0;
       border: 1px solid var(--dry-input);
       border-radius: var(--dry-radius-md);
-      background-color: transparent;
-      box-shadow: none;
-      color: inherit;
-      font-weight: 400;
-      text-align: start;
-
-      &:hover:not(:disabled) {
-        background-color: rgb(var(--dry-grey-channel) / 8%);
-        color: var(--dry-foreground);
-      }
     }
 
     .entry-relation-card-list {
@@ -2432,6 +2419,9 @@
       gap: 0;
       font-size: var(--dry-text-sm);
       & > li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         margin: 0;
         padding: 0.75rem 1rem;
         & + li {
@@ -2832,13 +2822,10 @@
         border-color 120ms ease,
         box-shadow 120ms ease;
 
-      /* Only `CodeField` sets `aria-invalid`/uses focus - CodeBlock's
-       * `editable` demo samples never validate or take real keyboard focus
-       * intent beyond typing, so these states are inert there. */
-      &:focus-within {
-        border-color: var(--dry-ring);
-      }
-
+      /* Only `CodeField` sets `aria-invalid` - CodeBlock's `editable` demo
+       * samples never validate, so this state is inert there. Unlike every
+       * other field, focus itself draws no border-color change here - the
+       * caret is the only focus indicator needed. */
       &[aria-invalid="true"] {
         border-color: var(--dry-error);
 
@@ -2851,44 +2838,6 @@
       &:has(> textarea:disabled) {
         cursor: not-allowed;
         opacity: 0.5;
-      }
-
-      /* `CodeField`-only modifier: a fixed-height, internally-scrolling
-       * editor, instead of `.editor`'s default (used by CodeBlock's
-       * Showcase samples) of growing forever with its content. Bounding the
-       * height means `pre` can no longer be the in-flow element that sizes
-       * the container - both layers become absolutely-positioned overlays
-       * with their own independent scroll, so a keystroke or arrow key that
-       * scrolls the (real, focusable) textarea does NOT move the
-       * highlighted `pre` underneath unless something forces it to -
-       * `CodeField` does that by hand, mirroring the textarea's `scrollTop`
-       * onto `pre` on every `scroll` event. `scrollbar-gutter: stable` on
-       * both keeps their content width identical whether or not a scrollbar
-       * is actually showing - without it, `textarea`'s real scrollbar would
-       * narrow its usable width the moment it appears while `pre` (whose
-       * own scrollbar is hidden) stayed full-width, wrapping the two layers'
-       * text differently and throwing off the caret alignment. */
-      &.code-field {
-        height: 16rem;
-
-        & > pre,
-        & > textarea {
-          position: absolute;
-          inset: 0.875rem 1rem;
-          width: calc(100% - 2rem);
-          height: calc(100% - 1.75rem);
-          overflow-y: auto;
-          overflow-x: hidden;
-          scrollbar-gutter: stable;
-        }
-
-        & > pre {
-          scrollbar-width: none;
-
-          &::-webkit-scrollbar {
-            display: none;
-          }
-        }
       }
 
       & > pre,
@@ -2921,6 +2870,7 @@
         inset: 0.875rem 1rem;
         width: calc(100% - 2rem);
         height: calc(100% - 1.75rem);
+        overflow: hidden;
         resize: none;
         outline: none;
         box-shadow: none;

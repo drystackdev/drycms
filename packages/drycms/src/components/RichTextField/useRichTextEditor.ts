@@ -64,7 +64,6 @@ export interface UseRichTextEditorOptions {
   value: string;
   onChange: (value: string) => void;
   label: string;
-  placeholder?: string;
   disabled: boolean;
 }
 
@@ -73,6 +72,11 @@ export interface UseRichTextEditorResult {
   viewRef: RefObject<EditorView | null>;
   state: ToolbarState;
   empty: boolean;
+  /** True until the async component-registry fetch below resolves and the
+   * `EditorView` actually mounts - `RichTextField.tsx` shows a "Loading…"
+   * placeholder for as long as this is true, since nothing else on screen
+   * otherwise indicates the field isn't ready yet. */
+  loading: boolean;
 }
 
 function readToolbarState(state: EditorState): ToolbarState {
@@ -129,14 +133,13 @@ function isDocEmpty(state: EditorState): boolean {
   return empty;
 }
 
-function buildAttributes(state: EditorState, disabled: boolean, placeholder: string | undefined, label: string) {
+function buildAttributes(state: EditorState, disabled: boolean, label: string) {
   const reorderActive = isReorderActive(state);
   return {
-    class: `dry-tx-content${isDocEmpty(state) ? " is-empty" : ""}${reorderActive ? " dry-tx-reorder-active" : ""}`,
+    class: `dry-tx-content${reorderActive ? " dry-tx-reorder-active" : ""}`,
     role: "textbox",
     "aria-multiline": "true",
     "aria-label": label,
-    ...(placeholder ? { "data-placeholder": placeholder } : {}),
     ...(disabled ? { "aria-disabled": "true" } : {}),
     // `contentEditable` (driven by `editable` below) is what normally makes
     // this div focusable by click - reorder mode turns that off, which
@@ -161,7 +164,6 @@ export function useRichTextEditor({
   value,
   onChange,
   label,
-  placeholder,
   disabled,
 }: UseRichTextEditorOptions): UseRichTextEditorResult {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -189,6 +191,7 @@ export function useRichTextEditor({
     reorderSelectedCount: 0,
   });
   const [empty, setEmpty] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   // Editor state is owned by ProseMirror after mount; `value` only seeds the
   // initial document, matching how every ProseMirror framework binding
@@ -228,10 +231,15 @@ export function useRichTextEditor({
     // app/page's CSS in both directions - see `content-shadow-styles.ts`
     // for what that stylesheet has to independently supply as a result
     // (everything `dry.base`'s global element resets used to give it for
-    // free). `mountEl` itself (`.richtext-content-mount`) stays a normal
+    // free). `mountEl` itself (`.richtext-content-host`) stays a normal
     // light-DOM element - only what's *inside* it moves into the shadow
     // tree, so the toolbar/floating menus/dialogs elsewhere in this field
     // are untouched and keep using the app's own global styles as before.
+    // The placeholder/"Loading…" text (`RichTextField.tsx`) deliberately
+    // lives OUTSIDE this shadow tree, as a sibling in `.richtext-content-
+    // mount` - a plain light-DOM node is easy to select/assert on (devtools,
+    // Playwright, ...), unlike the old shadow-only `::before` pseudo-element
+    // this replaced.
     const shadowRoot = mountEl.attachShadow({ mode: "open" });
     const styleEl = document.createElement("style");
     styleEl.textContent = richtextContentShadowStyles;
@@ -242,7 +250,7 @@ export function useRichTextEditor({
     // itself). Needs its own `height: 100%` in the shadow stylesheet: it's
     // `.dry-tx-content`'s real DOM parent (and so its containing block
     // for `height: 100%` to resolve against there in turn), sitting between
-    // it and the shadow host `.richtext-content-mount`.
+    // it and the shadow host `.richtext-content-host`.
     const editorHost = document.createElement("div");
     editorHost.className = "dry-tx-content-host";
     shadowRoot.appendChild(editorHost);
@@ -312,7 +320,7 @@ export function useRichTextEditor({
     view = new EditorView(editorHost, {
       state: editorState,
       editable: (state) => !disabled && !isReorderActive(state),
-      attributes: (state) => buildAttributes(state, disabled, placeholder, label),
+      attributes: (state) => buildAttributes(state, disabled, label),
       nodeViews: {
         image: (node, editorView, getPos) => new ImageNodeView(node, editorView, getPos),
         table: (node) => new TableNodeView(node),
@@ -338,6 +346,7 @@ export function useRichTextEditor({
     viewRef.current = view;
     setState(readToolbarState(editorState));
     setEmpty(isDocEmpty(editorState));
+    setLoading(false);
     })();
 
     return () => {
@@ -355,16 +364,16 @@ export function useRichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- init once, see comment above
   }, []);
 
-  // `disabled`/`placeholder`/`label` can change after mount without a full
-  // remount - ProseMirror owns this dom node now, so pushing the update
-  // through `setProps` (rather than relying on Preact's own re-render) is
-  // what actually applies it.
+  // `disabled`/`label` can change after mount without a full remount -
+  // ProseMirror owns this dom node now, so pushing the update through
+  // `setProps` (rather than relying on Preact's own re-render) is what
+  // actually applies it.
   useEffect(() => {
     viewRef.current?.setProps({
       editable: (state) => !disabled && !isReorderActive(state),
-      attributes: (state) => buildAttributes(state, disabled, placeholder, label),
+      attributes: (state) => buildAttributes(state, disabled, label),
     });
-  }, [disabled, placeholder, label]);
+  }, [disabled, label]);
 
-  return { contentRef, viewRef, state, empty };
+  return { contentRef, viewRef, state, empty, loading };
 }

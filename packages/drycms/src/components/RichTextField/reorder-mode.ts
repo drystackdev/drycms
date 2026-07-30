@@ -278,7 +278,12 @@ function buildDecorations(state: EditorState, pluginState: ReorderState): Decora
       if (selectedSet.has(pos)) className += " dry-tx-reorder-selected";
       if (isDragged) className += " dry-tx-reorder-dragging";
       if (target && target.pos === pos && (target.kind === "before" || target.kind === "after")) {
-        className += target.kind === "before" ? " dry-tx-reorder-drop-before" : " dry-tx-reorder-drop-after";
+        // The ghost slot widget below is the only "landing here" indicator
+        // now - no extra edge-highlight class on the sibling itself (used
+        // to also add `dry-tx-reorder-drop-before`/`-after`, a thin inset
+        // box-shadow line; redundant once the ghost box already marks the
+        // exact spot, and dropped for a visible stutter it contributed
+        // during a live drag - see `content-shadow-styles.ts`).
         const widgetPos = target.kind === "before" ? pos : pos + node.nodeSize;
         decorations.push(
           Decoration.widget(widgetPos, buildGhostWidget(pluginState.dragging?.height ?? 0), {
@@ -743,22 +748,79 @@ function startReorderDrag(view: EditorView, positions: number[], mode: ReorderMo
   const overlay = buildDragOverlay(view, positions, event);
   view.dispatch(view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: null, height } }));
 
-  const move = (moveEvent: PointerEvent) => {
-    moveDragOverlay(overlay, moveEvent);
+  // Raw pointermove can fire far more often than the screen repaints (high
+  // polling-rate mice/trackpads easily exceed 60Hz) - `computeDropTarget`
+  // (a `document.elementFromPoint` hit-test plus a `getBoundingClientRect`)
+  // and, when it actually changes, a full decoration rebuild (including
+  // tearing down and recreating the ghost widget's own DOM node - visible
+  // as it flickering in and out) are real work, and running that work more
+  // often than the browser can even paint just burns cycles without any
+  // visible benefit - it reads as stutter instead. `moveDragOverlay` still
+  // runs on every raw event (just a `transform`, cheap enough not to need
+  // this), so the floating card itself stays perfectly smooth; only the
+  // expensive hit-test/redraw is coalesced to at most once per frame.
+  let pendingMoveEvent: PointerEvent | null = null;
+  let rafId: number | null = null;
+  // Losing the hit-test for a moment doesn't necessarily mean the pointer
+  // left every valid drop area - the ghost slot widget itself is
+  // `pointer-events: none` (content-shadow-styles.ts), so the instant the
+  // pointer sits ON it, `elementFromPoint` sees straight through to
+  // whatever's behind (usually just the plain content container, which
+  // matches nothing `computeRawDropTarget` looks for) and `computeDropTarget`
+  // comes back `null` - clearing the target right then would remove the
+  // ghost, close the gap it was holding open, shift whatever's now under
+  // the pointer, and often immediately re-find a target and show it again:
+  // a visible flicker loop for something that isn't actually a "the user
+  // moved away" event at all. So a `null` result only *schedules* a clear a
+  // beat later instead of applying it inline - a genuinely different real
+  // target (found before that timer fires) cancels it, same as the drag
+  // simply ending (`finish`, below) does.
+  let clearTargetTimer: number | null = null;
+  const cancelClearTarget = () => {
+    if (clearTargetTimer == null) return;
+    win.clearTimeout(clearTargetTimer);
+    clearTargetTimer = null;
+  };
+  const flushTargetUpdate = () => {
+    rafId = null;
+    const moveEvent = pendingMoveEvent;
+    pendingMoveEvent = null;
+    if (!moveEvent) return;
     const pluginState = reorderModeKey.getState(view.state);
     if (!pluginState?.dragging) return;
     const nextTarget = computeDropTarget(view, positions, moveEvent, mode);
-    if (!dropTargetsEqual(nextTarget, pluginState.dragging.target)) {
-      const tr = view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: nextTarget, height } });
-      view.updateState(view.state.apply(tr));
+    if (nextTarget) {
+      cancelClearTarget();
+      if (!dropTargetsEqual(nextTarget, pluginState.dragging.target)) {
+        const tr = view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: nextTarget, height } });
+        view.updateState(view.state.apply(tr));
+      }
+    } else if (pluginState.dragging.target != null && clearTargetTimer == null) {
+      clearTargetTimer = win.setTimeout(() => {
+        clearTargetTimer = null;
+        const latest = reorderModeKey.getState(view.state);
+        if (!latest?.dragging || latest.dragging.target == null) return;
+        const tr = view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: null, height } });
+        view.updateState(view.state.apply(tr));
+      }, 300);
     }
+  };
+
+  const move = (moveEvent: PointerEvent) => {
+    moveDragOverlay(overlay, moveEvent);
+    pendingMoveEvent = moveEvent;
+    rafId ??= win.requestAnimationFrame(flushTargetUpdate);
   };
   const finish = (upEvent: PointerEvent) => {
     win.removeEventListener("pointermove", move);
     win.removeEventListener("pointerup", finish);
+    if (rafId != null) win.cancelAnimationFrame(rafId);
+    cancelClearTarget();
     moveDragOverlay(overlay, upEvent);
-    const pluginState = reorderModeKey.getState(view.state);
-    const target = pluginState?.dragging?.target ?? computeDropTarget(view, positions, upEvent, mode);
+    // Recomputed fresh from `upEvent` rather than reusing whatever the last
+    // *flushed* target happened to be - a move and the up landing in the
+    // same frame would otherwise commit a target that's stale by one frame.
+    const target = computeDropTarget(view, positions, upEvent, mode);
     const overlayRect = removeDragOverlay(overlay);
     if (target) commitReorderMove(view, positions, target, overlayRect);
     else view.dispatch(view.state.tr.setMeta(reorderModeKey, { setDragging: null }));

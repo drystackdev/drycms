@@ -275,6 +275,7 @@ function CodeFieldPreview() {
       onChange={setRenderFn}
       description="Highlighted live as JSX."
       helperText="Runs on the server for each request."
+      style={{width: '100%'}}
     />
   );
 }
@@ -694,6 +695,7 @@ function RelationFieldPreview() {
           onChange={(value) => setContributors(value as string[])}
           source={source}
           multiple
+          sortable
           description="Other contributors to this post."
           pickerTitle="Choose Contributors"
           helperText="Click to pick multiple contributors from the list."
@@ -1490,7 +1492,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="relation-field"
           title="Relation field"
-          description="Same label + control + helper text contract as TextField; the control is a card that opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend. multiple swaps the picker's radio column for checkboxes and stores an array of ids instead of one."
+          description="Same label + control + helper text contract as TextField; a separate Edit button opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend. multiple swaps the picker's radio column for checkboxes and stores an array of ids instead of one; sortable (multiple only) lets the chosen list be drag-reordered."
           code={code.relationField!}
         >
           <RelationFieldPreview />
