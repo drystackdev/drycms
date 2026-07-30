@@ -129,6 +129,16 @@ export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> 
   type?: "inline" | "block";
   /** Mount this component's render into its own shadow root. @default false */
   shadow?: boolean;
+  /** Accept nested rich-text content, projected wherever the component's own
+   * render places a native `<slot />` element - ordinary browser slot
+   * projection, not a prop: the editor's own real editable content lives as
+   * this instance's light-DOM children (untouched by this component's own
+   * render), and the browser projects them into the `<slot />` inside the
+   * shadow tree Preact renders. Requires `shadow: true` (slot projection
+   * only happens inside a shadow tree) and `type: "block"` (an inline
+   * component has no outer block context to hold nested block content) -
+   * ignored with a console warning otherwise. @default false */
+  children?: boolean;
   /** Optional - a component with nothing to configure (a static block, say)
    * doesn't need a schema at all; omitting this is the same as
    * `props: (p) => p({})`. */
@@ -143,6 +153,7 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   description: string;
   type: "inline" | "block";
   shadow: boolean;
+  children: boolean;
   schema: S;
   defaults: InferShape<S>;
   component: ComponentType<InferShape<S>>;
@@ -159,13 +170,23 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> =
   config: DryComponentConfig<S>,
 ): DryComponentDefinition<S> {
   const schema = (config.props?.(p) ?? {}) as S;
+  const type = config.type ?? "inline";
+  const shadow = config.shadow ?? false;
+  let children = config.children ?? false;
+  if (children && (!shadow || type !== "block")) {
+    console.warn(
+      `[drycms] Richtext component "${config.name}": "children" requires "shadow: true" and "type: \\"block\\"" - ignoring.`,
+    );
+    children = false;
+  }
   return {
     __dryComponent: true,
     name: config.name,
     label: config.label,
     description: config.description ?? "",
-    type: config.type ?? "inline",
-    shadow: config.shadow ?? false,
+    type,
+    shadow,
+    children,
     schema,
     defaults: resolveDefaults(schema) as InferShape<S>,
     component: config.component,

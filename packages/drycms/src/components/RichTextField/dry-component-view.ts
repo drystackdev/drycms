@@ -1,6 +1,6 @@
 import type { Node as PMNode } from "prosemirror-model";
 import { NodeSelection } from "prosemirror-state";
-import type { EditorView, NodeView } from "prosemirror-view";
+import type { EditorView, NodeView, ViewMutationRecord } from "prosemirror-view";
 import type { ImageAlign } from "./schema.js";
 
 const MIN_SIZE = 24;
@@ -70,19 +70,43 @@ interface DragState {
  * entirely opaque to PM's `docView`, so a click landing on any of it (near
  * guaranteed) falls through to a plain text-position click instead.
  * Selecting explicitly on the outer element sidesteps that walk entirely.
+ *
+ * All of the above is for the ordinary atom (no-content) case. A
+ * `children: true` component (`hasContent` below, always `block`, never
+ * `isInline` - `register-component.ts`'s own validation) inverts every one
+ * of those: `this.element` itself becomes `contentDOM`, so its *light-DOM*
+ * children are real, ProseMirror-owned document content (a browser only
+ * projects light-DOM children into a shadow tree's `<slot />` - Preact's
+ * own render always targets the *shadow* root, `dry-component-runtime.ts`,
+ * so the two never collide). ProseMirror needs its own default mousedown/
+ * click handling back to place a cursor in there, so `stopEvent` and the
+ * `mousedown` listener below both go inert for this case, and
+ * `ignoreMutation` narrows to just the one `props` attribute mutation this
+ * view itself makes (same targeted scope `grid-item-view.ts` uses for its
+ * own live-resize `style` attribute) rather than ignoring everything.
  */
 export class DryComponentNodeView implements NodeView {
   dom: HTMLElement;
+  contentDOM?: HTMLElement;
   private node: PMNode;
   private readonly isInline: boolean;
+  private readonly hasContent: boolean;
   private box: HTMLElement;
   private element: HTMLElement;
   private handleEls: HTMLElement[] = [];
   private drag: DragState | null = null;
 
-  constructor(node: PMNode, tag: string, type: "inline" | "block", private view: EditorView, private getPos: () => number | undefined) {
+  constructor(
+    node: PMNode,
+    tag: string,
+    type: "inline" | "block",
+    hasContent: boolean,
+    private view: EditorView,
+    private getPos: () => number | undefined,
+  ) {
     this.node = node;
     this.isInline = type === "inline";
+    this.hasContent = hasContent && !this.isInline;
 
     if (!this.isInline) {
       // Block: no wrapper/box/handles needed (nothing to float or resize
@@ -91,6 +115,7 @@ export class DryComponentNodeView implements NodeView {
       this.element = document.createElement(tag);
       this.dom = this.element;
       this.box = this.element;
+      if (this.hasContent) this.contentDOM = this.element;
     } else {
       this.dom = document.createElement("span");
       this.dom.className = "dry-component-wrapper";
@@ -126,12 +151,17 @@ export class DryComponentNodeView implements NodeView {
       }
     }
 
-    this.dom.addEventListener("mousedown", (event) => {
-      const pos = this.getPos();
-      if (pos === undefined) return;
-      event.preventDefault();
-      this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)));
-    });
+    // Skipped for `hasContent` - it would hijack every click into content
+    // (real, cursor-placeable document text) as a whole-node select instead
+    // (see this class's own doc comment).
+    if (!this.hasContent) {
+      this.dom.addEventListener("mousedown", (event) => {
+        const pos = this.getPos();
+        if (pos === undefined) return;
+        event.preventDefault();
+        this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)));
+      });
+    }
 
     this.render();
   }
@@ -233,16 +263,25 @@ export class DryComponentNodeView implements NodeView {
     for (const el of this.handleEls) el.remove();
   }
 
-  ignoreMutation(): boolean {
+  /** `hasContent` narrows to just this view's own `props`-attribute write
+   * (`render()` below) - same targeted scope `grid-item-view.ts` uses for
+   * its own live-resize `style` attribute - so ProseMirror still observes
+   * real edits inside `contentDOM` normally. Otherwise unconditionally
+   * `true` - see this class's own doc comment. */
+  ignoreMutation(mutation: ViewMutationRecord): boolean {
+    if (this.hasContent) return mutation.type === "attributes" && mutation.target === this.element;
     return true;
   }
 
   /** Tells ProseMirror not to run its OWN default `mousedown` handling on
    * top of the listener above (see this class's own doc comment), and -
    * same as `image-view.ts` - keeps a handle drag from being treated as a
-   * text-selection drag inside the editor. */
+   * text-selection drag inside the editor. `hasContent` needs the opposite:
+   * ProseMirror's own default `mousedown` handling is what places a cursor
+   * inside real content, and this view no longer installs a competing
+   * listener of its own to replace it with. */
   stopEvent(event: Event): boolean {
-    if (event.type === "mousedown") return true;
+    if (event.type === "mousedown") return !this.hasContent;
     return event.type === "pointerdown" && this.handleEls.includes(event.target as HTMLElement);
   }
 }

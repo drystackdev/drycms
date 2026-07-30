@@ -420,10 +420,18 @@ const tableNodeSpecs = tableNodes({
 
 /**
  * One node spec per confirmed richtext component (`status/register-compoennt.md`
- * mục 5) - atom, no `content` (leaf, unlike `grid`/`table` which have real
- * children), `props` a single JSON-blob attr rather than one attr per field.
- * `toDOM` deliberately omits the trailing "hole" (`0`) `image`'s neighbors
- * use - this node has no children to project into one.
+ * mục 5) - atom, no `content` (leaf, same as `image`), `props` a single
+ * JSON-blob attr rather than one attr per field. `toDOM` omits the trailing
+ * "hole" (`0`) `image`'s neighbors use - no children to project into one.
+ *
+ * The one exception is a `children: true` component (mục "slot children",
+ * `register-component.ts`'s own doc comment) - there it's `content: "block+"`
+ * instead, same shape `grid`/`table` use, and `toDOM` DOES get the trailing
+ * hole: `dry-component-view.ts`'s NodeView owns that hole as its own
+ * `contentDOM`, and the browser's native `<slot>` projection (the component
+ * always being `shadow: true` when this is on) carries those real,
+ * ProseMirror-owned children into wherever the component's own render puts
+ * a `<slot />`.
  */
 /** `width`/`height`/`align`/`lockAspectRatio` for an `inline`-type dry
  * component, as one `style` string - reuses `image`'s own
@@ -449,10 +457,18 @@ function buildDryNodeSpecs(components: DryComponentRecord[]): Record<string, Nod
   for (const component of components) {
     const tag = `dry-${component.name}`;
     const isInline = component.type !== "block";
+    // `children: true` components (always `block`, enforced by
+    // `DryEditerComponent`/the confirm route) get real ProseMirror content -
+    // same shape `grid`'s own `content: "block+"` uses - instead of being a
+    // leaf/atom like every other dry component; `dry-component-view.ts`
+    // projects it into wherever the component's own render puts a native
+    // `<slot />`.
+    const hasContent = component.children;
     specs[`dry_${component.name}`] = {
       group: isInline ? "inline" : "block",
       inline: isInline,
-      atom: true,
+      atom: !hasContent,
+      content: hasContent ? "block+" : undefined,
       attrs: {
         props: { default: component.defaults },
         // Editor-level presentation attrs, layered on top of the
@@ -496,7 +512,7 @@ function buildDryNodeSpecs(components: DryComponentRecord[]): Record<string, Nod
           );
           if (style) attrs.style = style;
         }
-        return [tag, attrs];
+        return hasContent ? [tag, attrs, 0] : [tag, attrs];
       },
     };
   }

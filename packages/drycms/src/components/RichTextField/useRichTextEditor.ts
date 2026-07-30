@@ -211,7 +211,7 @@ export function useRichTextEditor({
         defineDryComponent(component.name, loader, component.shadow);
         const tag = `dry-${component.name}`;
         dryNodeViews[`dry_${component.name}`] = (node, editorView, getPos) =>
-          new DryComponentNodeView(node, tag, component.type, editorView, getPos);
+          new DryComponentNodeView(node, tag, component.type, component.children, editorView, getPos);
       }
 
     // Shadow-isolates the editable surface's own styling from the host

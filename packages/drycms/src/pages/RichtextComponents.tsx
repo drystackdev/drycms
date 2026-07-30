@@ -73,6 +73,7 @@ export default function RichtextComponents() {
             description: item.def.description,
             type: item.def.type,
             shadow: item.def.shadow,
+            children: item.def.children,
             props: item.def.schema,
             defaults: item.def.defaults,
             sourcePath: item.sourcePath,
@@ -114,7 +115,7 @@ export default function RichtextComponents() {
               key={item.sourcePath}
             >
               <div class="dry-component-admin-preview-wrap">
-                <ComponentPreview name={item.def.name} label={item.def.label} defaults={item.def.defaults} load={load} />
+                <ComponentPreview name={item.def.name} label={item.def.label} defaults={item.def.defaults} load={load} shadow={item.def.shadow} />
                 <button
                   type="button"
                   class="ghost icon sm dry-component-admin-view-btn"
@@ -129,8 +130,10 @@ export default function RichtextComponents() {
                 <strong>{item.def.label}</strong>
                 {item.def.description && <p class="dry-component-admin-card-description">{item.def.description}</p>}
                 <span class="dry-component-admin-card-meta">
-                  <code>{`<dry-${item.def.name}>`}</code> · {item.def.type}
-                  {item.def.shadow ? " · shadow" : ""}
+                  <small class="badge secondary">{`<dry-${item.def.name}>`}</small>
+                  <small class="badge outline">{item.def.type}</small>
+                  {item.def.shadow && <small class="badge secondary">shadow</small>}
+                  {item.def.children && <small class="badge secondary">children</small>}
                 </span>
                 <CheckField
                   label="Use in editor"
@@ -158,6 +161,7 @@ export default function RichtextComponents() {
                 label={previewing.def.label}
                 defaults={previewing.def.defaults}
                 load={componentModules[previewing.sourcePath]!}
+                shadow={previewing.def.shadow}
               />
             </div>
             <footer>

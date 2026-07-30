@@ -1,0 +1,22 @@
+.carousel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.carousel__content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.carousel__content img {
+  flex: 1;
+  border-radius: 0.5rem;
+}
+
+.carousel__caption {
+  margin: 0;
+  text-align: center;
+}

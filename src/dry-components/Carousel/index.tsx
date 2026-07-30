@@ -1,5 +1,10 @@
 import { useState } from "preact/hooks";
-import { DryEditerComponent, type InferShape, type PropsBuilder } from "drycms/components/RichTextField/register-component";
+import {
+  DryEditerComponent,
+  type InferShape,
+  type PropsBuilder,
+} from "drycms/components/RichTextField/register-component";
+import "./style.css"
 
 const SAMPLE_IMAGES = [
   "https://picsum.photos/seed/site-carousel-1/480/280",
@@ -13,23 +18,35 @@ const carouselProps = (p: PropsBuilder) =>
     caption: p.string(),
   });
 
-function Carousel({ images, caption }: InferShape<ReturnType<typeof carouselProps>>) {
+function Carousel({
+  images,
+  caption,
+}: InferShape<ReturnType<typeof carouselProps>>) {
   const [index, setIndex] = useState(0);
   const list = images && images.length > 0 ? images : SAMPLE_IMAGES;
   const current = Math.min(index, list.length - 1);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <button type="button" onClick={() => setIndex((i) => (i - 1 + list.length) % list.length)}>
+    <div className="carousel">
+      <div className="carousel__content">
+        <button
+          type="button"
+          onClick={() => setIndex((i) => (i - 1 + list.length) % list.length)}
+        >
           ‹
         </button>
-        <img src={list[current]} alt={caption || `Slide ${current + 1}`} style={{ flex: 1, borderRadius: "0.5rem" }} />
-        <button type="button" onClick={() => setIndex((i) => (i + 1) % list.length)}>
+
+        <img src={list[current]} alt={caption || `Slide ${current + 1}`} />
+
+        <button
+          type="button"
+          onClick={() => setIndex((i) => (i + 1) % list.length)}
+        >
           ›
         </button>
       </div>
-      {caption ? <p style={{ margin: 0, textAlign: "center" }}>{caption}</p> : null}
+
+      {caption ? <p className="carousel__caption">{caption}</p> : null}
     </div>
   );
 }
@@ -37,7 +54,8 @@ function Carousel({ images, caption }: InferShape<ReturnType<typeof carouselProp
 export default DryEditerComponent({
   name: "carousel",
   label: "Carousel",
-  description: "An inline image carousel with prev/next controls and an optional caption.",
+  description:
+    "An inline image carousel with prev/next controls and an optional caption.",
   type: "inline",
   props: carouselProps,
   shadow: true,

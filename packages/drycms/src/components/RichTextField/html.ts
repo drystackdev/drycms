@@ -130,7 +130,13 @@ function imageChildHtml(node: PMNode): string {
  * as children until an explicit `</dry-x>` (or, if none ever comes,
  * corrupting the rest of the document). Works for both `inline` and
  * `block` types - same tag shape either way, only where it's called from
- * differs (`inlineChildrenHtml` vs `exportBlockHtml`). */
+ * differs (`inlineChildrenHtml` vs `exportBlockHtml`).
+ *
+ * A `children: true` component (`node.type.spec.content` set, see
+ * `schema.ts`'s own `buildDryNodeSpecs`) writes its real `block+` content
+ * between the tags instead of leaving them empty - the light-DOM children a
+ * browser projects into the component's own `<slot />` (`dry-component-
+ * view.ts`), same idea as `exportGridHtml` writing a grid's own children. */
 function dryComponentHtml(node: PMNode): string {
   const tag = `dry-${node.type.name.slice("dry_".length)}`;
   const attrs: Record<string, string> = { props: escapeAttr(JSON.stringify(node.attrs.props)) };
@@ -145,7 +151,8 @@ function dryComponentHtml(node: PMNode): string {
   const attrString = Object.entries(attrs)
     .map(([key, value]) => ` ${key}="${value}"`)
     .join("");
-  return `<${tag}${attrString}></${tag}>`;
+  const inner = node.type.spec.content ? blockChildrenHtml(node) : "";
+  return `<${tag}${attrString}>${inner}</${tag}>`;
 }
 
 /** `null` for any tag that isn't `dry-*`, or one that is but has no
@@ -157,6 +164,12 @@ function dryComponentNodeType(tagName: string): NodeType | null {
   return schema.nodes[`dry_${tagName.slice("DRY-".length).toLowerCase()}`] ?? null;
 }
 
+/** Inverse of `dryComponentHtml` above - a `children: true` type reads its
+ * own element's children back via `blockChildrenFromContainer` (the same
+ * walk a `<li>`/table cell's content uses), which already synthesizes a
+ * lone empty paragraph for a childless/self-closed `<dry-x>` left over from
+ * before this node type had content, satisfying `content: "block+"`'s own
+ * minimum-one requirement without a separate empty-check here. */
 function dryComponentNodeFromElement(el: Element, type: NodeType): PMNode {
   let props: unknown = {};
   try {
@@ -165,6 +178,7 @@ function dryComponentNodeFromElement(el: Element, type: NodeType): PMNode {
     props = {};
   }
   const attrs = type.isInline ? { props, ...dryInlineAttrsFromElement(el as HTMLElement) } : { props };
+  if (type.spec.content) return type.create(attrs, blockChildrenFromContainer(el));
   return type.create(attrs);
 }
 

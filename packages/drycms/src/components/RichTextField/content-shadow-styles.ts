@@ -29,7 +29,9 @@
  * to already be in a form every target browser's CSS engine accepts
  * unprocessed.
  */
-export const richtextContentShadowStyles = `
+export const richtextContentShadowStyles =
+  //css
+  `
 :host {
   display: block;
 }
@@ -520,6 +522,9 @@ th {
   position: relative;
   display: inline-block;
   line-height: 0;
+  &>*:first-child{
+    overflow: hidden;
+  }
 }
 
 .dry-component-is-selected {

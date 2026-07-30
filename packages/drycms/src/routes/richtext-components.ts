@@ -66,6 +66,7 @@ interface ConfirmBody {
   description: unknown;
   type: unknown;
   shadow: unknown;
+  children: unknown;
   props: unknown;
   defaults: unknown;
   sourcePath: unknown;
@@ -90,6 +91,11 @@ export const POST: APIRoute = async (context) => {
     const description = typeof body.description === "string" ? body.description.trim() : "";
     const type = body.type === "block" ? "block" : "inline";
     const shadow = body.shadow === true;
+    // Mirrors `DryEditerComponent`'s own runtime validation - a
+    // hand-crafted/stale POST body can't smuggle `children: true` past what
+    // the schema/NodeView actually support (native `<slot>` projection only
+    // happens inside a shadow tree of a top-level block element).
+    const children = body.children === true && shadow && type === "block";
     const sourcePath = typeof body.sourcePath === "string" ? body.sourcePath : "";
     if (!name) throw new StorageError("invalid_path", "`name` is required.");
     if (!label) throw new StorageError("invalid_path", "`label` is required.");
@@ -100,6 +106,7 @@ export const POST: APIRoute = async (context) => {
       description,
       type,
       shadow,
+      children,
       props: asPlainFieldShape(body.props),
       defaults: (body.defaults && typeof body.defaults === "object" ? body.defaults : {}) as Record<string, unknown>,
       sourcePath,

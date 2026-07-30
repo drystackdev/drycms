@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import type { RefObject } from "preact";
+import type { Node as PMNode } from "prosemirror-model";
 import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import FloatingPanel from "../FloatingPanel.js";
@@ -50,12 +51,33 @@ export default function DryComponentMenu({ viewRef, disabled = false }: DryCompo
 
   const view = viewRef.current;
   const selection = view?.state.selection;
-  const isDrySelection = selection instanceof NodeSelection && selection.node.type.name.startsWith("dry_");
-  const node = isDrySelection ? (selection as NodeSelection).node : null;
+  // Either a `NodeSelection` sitting directly on the atom (the only way any
+  // dry component used to be selectable), or - for a `children: true`
+  // component - the cursor resolved somewhere *inside* its own content
+  // (`getSelectedGrid` in `grid.ts` is the same ancestor walk, for the same
+  // "selection is inside, not necessarily ON, this node" reason). Checked in
+  // that order so an explicit `NodeSelection` (still possible on a
+  // `children: true` component too, e.g. selecting it as a whole via
+  // keyboard) always wins over the ancestor walk.
+  let node: PMNode | null = null;
+  let pos: number | null = null;
+  if (selection instanceof NodeSelection && selection.node.type.name.startsWith("dry_")) {
+    node = selection.node;
+    pos = selection.from;
+  } else if (selection) {
+    const $from = selection.$from;
+    for (let d = $from.depth; d > 0; d--) {
+      const ancestor = $from.node(d);
+      if (ancestor.type.name.startsWith("dry_")) {
+        node = ancestor;
+        pos = $from.before(d);
+        break;
+      }
+    }
+  }
   const isInline = !!node?.type.isInline;
   const name = node ? node.type.name.slice("dry_".length) : null;
   const record = name ? (records.find((r) => r.name === name) ?? null) : null;
-  const pos = isDrySelection ? (selection as NodeSelection).from : null;
   const anchor = pos !== null && view ? (view.nodeDOM(pos) as HTMLElement | null) : null;
   const hasProps = record ? Object.keys(record.props).length > 0 : false;
   const showPanel = !!record && (hasProps || isInline);
