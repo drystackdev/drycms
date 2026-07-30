@@ -72,6 +72,10 @@ export interface ToolbarState {
    * `selectedImage`, this isn't a `NodeSelection` check: the cursor normally
    * sits *inside* one of the table's cells, not on the table node itself. */
   selectedTable: { pos: number; node: PMNode } | null;
+  /** The grid containing the selection, if any - drives `grid-menu.tsx`'s
+   * visibility/anchor (see `getSelectedGrid` in `grid.ts`). Same "walk
+   * ancestors" shape as `selectedTable` above, not a `NodeSelection` check. */
+  selectedGrid: { pos: number; node: PMNode } | null;
   /** The `link` mark on the current selection/cursor - see `getLinkState` in
    * `commands.ts` for what each field means and why a *collapsed* cursor can
    * still report one (unlike `color`/`format` above, which need a real

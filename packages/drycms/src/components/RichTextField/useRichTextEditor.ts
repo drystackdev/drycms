@@ -21,6 +21,9 @@ import {
   getTextColorState,
 } from "./commands.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
+import { getSelectedGrid, splitGridItem } from "./grid.js";
+import { GridItemNodeView } from "./grid-item-view.js";
+import { gridResizing } from "./grid-resize.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
 import { createEmptyDoc, schema } from "./schema.js";
@@ -77,6 +80,7 @@ function readToolbarState(state: EditorState): ToolbarState {
     selectedImage: getSelectedImage(state),
     listType: getListType(state),
     selectedTable: getSelectedTable(state),
+    selectedGrid: getSelectedGrid(state),
     link: getLinkState(state),
   };
 }
@@ -143,6 +147,7 @@ export function useRichTextEditor({
     selectedImage: null,
     listType: "none",
     selectedTable: null,
+    selectedGrid: null,
     link: { href: "", target: null, active: false, disabled: true },
   });
   const [empty, setEmpty] = useState(true);
@@ -203,7 +208,14 @@ export function useRichTextEditor({
           "Mod-z": undo,
           "Mod-y": redo,
           "Shift-Mod-z": redo,
-          Enter: splitListItem(schema.nodes.list_item!),
+          // `splitListItem` first (innermost - a list nested inside a grid
+          // cell should split its own item, not break out to a new grid
+          // cell), falling through to `splitGridItem` when the selection
+          // isn't inside a list, falling through again to `baseKeymap`'s
+          // own default Enter (below) everywhere else - see `grid.ts`'s own
+          // doc comment on `splitGridItem` for why plain Enter isn't legal
+          // inside a grid cell to begin with.
+          Enter: chainCommands(splitListItem(schema.nodes.list_item!), splitGridItem()),
           Tab: chainCommands(sinkListItem(schema.nodes.list_item!), goToNextCell(1), exitTableForward()),
           "Shift-Tab": chainCommands(liftListItem(schema.nodes.list_item!), goToNextCell(-1)),
           ArrowDown: exitTableDownward(),
@@ -229,6 +241,7 @@ export function useRichTextEditor({
         tableColumnResizing(),
         tableRowResizing(),
         tableEditing(),
+        gridResizing(),
       ],
     });
 
@@ -239,6 +252,7 @@ export function useRichTextEditor({
       nodeViews: {
         image: (node, editorView, getPos) => new ImageNodeView(node, editorView, getPos),
         table: (node) => new TableNodeView(node),
+        grid_item: (node, editorView, getPos) => new GridItemNodeView(node, editorView, getPos),
       },
       dispatchTransaction(tr) {
         const newState = view.state.apply(tr);

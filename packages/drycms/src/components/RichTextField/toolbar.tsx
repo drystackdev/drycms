@@ -2,6 +2,7 @@ import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import { runCommand } from "./commands.js";
 import type { FileManagerSource } from "../file-manager-types.js";
+import GridMenu from "./grid-menu.js";
 import TableMenu from "./table-menu.js";
 import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
@@ -71,7 +72,7 @@ export default function RichTextToolbar({
   const visibleGroups = TOOLBAR_GROUPS.map((group) =>
     group.filter(
       (item) =>
-        !(inline && item.type === "custom" && item.blockOnly) &&
+        !(inline && item.blockOnly) &&
         !(item.type === "custom" && item.requiresSource && !source),
     ),
   ).filter((group) => group.length > 0);
@@ -112,6 +113,7 @@ export default function RichTextToolbar({
         </div>
       ))}
       {!inline && <TableMenu viewRef={viewRef} state={state} disabled={disabled} iconSize={iconSize} />}
+      {!inline && <GridMenu viewRef={viewRef} state={state} disabled={disabled} iconSize={iconSize} />}
     </div>
   );
 }

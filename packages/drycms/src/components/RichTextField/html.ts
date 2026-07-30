@@ -10,6 +10,10 @@ import {
   cellVAlignStyle,
   colgroupHtml,
   colWidthsFromElement,
+  colSpanFromStyle,
+  GRID_COLUMNS,
+  gridContainerStyleString,
+  gridItemStyleString,
   heightPxFromStyle,
   imageAlignStyleString,
   imageObjectFitFromElement,
@@ -18,6 +22,7 @@ import {
   imageStyleString,
   parseImageAlign,
   rowHeightStyleString,
+  rowSpanFromStyle,
   schema,
   type CellHAlign,
   type CellVAlign,
@@ -203,6 +208,22 @@ function tableRowsHtml(tableNode: PMNode): string {
   return inner;
 }
 
+/** A grid's own `grid_item+` children, each rendered as
+ * `<div class="dry-tx-grid-item" style="...">` wrapping the one block it
+ * holds - the inverse of `importGridElement` below. Every item's style is
+ * written explicitly, including the all-default (full-width/single-row)
+ * case - see `gridItemStyleString`'s own doc comment for why that one isn't
+ * optional like every other "only non-default" style in this file. */
+function gridItemsHtml(gridNode: PMNode): string {
+  let inner = "";
+  gridNode.forEach((item) => {
+    const style = gridItemStyleString(item.attrs.colSpan as number, item.attrs.rowSpan as number);
+    const child = item.firstChild;
+    inner += `<div class="dry-tx-grid-item" style="${escapeAttr(style)}">${child ? exportBlockHtml(child) : ""}</div>`;
+  });
+  return inner;
+}
+
 /** Exports one block-level node - dispatches to `<ul>`/`<ol>` or `<table>`
  * for the 2 node types that themselves nest further blocks, or the flat
  * `<p>`/`<h2>`-`<h6>`/`<blockquote>` case (`blockTypeOfNode`'s own domain)
@@ -220,6 +241,9 @@ function exportBlockHtml(node: PMNode): string {
     const caption = node.attrs.caption as string;
     const captionHtml = caption ? `<caption>${escapeHtml(caption)}</caption>` : "";
     return `<table>${captionHtml}${colgroupHtml(node.attrs.colWidths as number[] | null)}<tbody>${tableRowsHtml(node)}</tbody></table>`;
+  }
+  if (node.type === schema.nodes.grid) {
+    return `<div class="dry-tx-grid" style="${escapeAttr(gridContainerStyleString())}">${gridItemsHtml(node)}</div>`;
   }
   const tag = blockTag(blockTypeOfNode(node));
   const align = (node.attrs.textAlign as string | null) ?? "left";
@@ -367,13 +391,50 @@ function importTableElement(el: Element): PMNode {
   return schema.nodes.table!.create({ caption: captionFromElement(el), colWidths: colWidthsFromElement(el) }, rows);
 }
 
-/** One top-level-shaped block element - dispatches to a list/table (each
- * recursing back into `blockChildrenFromContainer` for their own nested
- * content) or a flat textblock otherwise. */
+/** Whether `el` is this field's own grid wrapper - checked by class rather
+ * than a fixed tag+attribute combo (unlike `BLOCK_TAGS`'s plain tag-name
+ * lookup) since a `<div>` on its own is otherwise meaningless to this
+ * schema; any other `<div>` (from hand-written or foreign HTML) falls
+ * through to the same "unrecognized wrapper" handling every other stray
+ * element already gets in `blockChildrenFromContainer`. */
+function isGridElement(el: Element): boolean {
+  return el.tagName === "DIV" && el.classList.contains("dry-tx-grid");
+}
+function isGridItemElement(el: Element): boolean {
+  return el.tagName === "DIV" && el.classList.contains("dry-tx-grid-item");
+}
+
+/** Reads a grid back from `<div class="dry-tx-grid">`'s own
+ * `dry-tx-grid-item` children - the inverse of `gridItemsHtml` above. Each
+ * item recurses through `blockChildrenFromContainer` (same walk a `<li>`/
+ * `<td>` gets) but only ever keeps the first block it produces:
+ * `grid_item`'s content is exactly one block (see `schema.ts`), so a
+ * well-formed export never has more than one to begin with - only
+ * hand-edited HTML could, and dropping the extras there is preferable to
+ * producing a doc `schema.nodes.grid_item!.create` would just reject. */
+function importGridElement(el: Element): PMNode {
+  const items = Array.from(el.children)
+    .filter(isGridItemElement)
+    .map((itemEl) => {
+      const style = itemEl instanceof HTMLElement ? itemEl.style.cssText : "";
+      const attrs = { colSpan: colSpanFromStyle(style), rowSpan: rowSpanFromStyle(style) };
+      const blocks = blockChildrenFromContainer(itemEl);
+      return schema.nodes.grid_item!.create(attrs, blocks[0] ?? schema.nodes.paragraph!.create());
+    });
+  if (items.length === 0) {
+    items.push(schema.nodes.grid_item!.create({ colSpan: GRID_COLUMNS, rowSpan: 1 }, schema.nodes.paragraph!.create()));
+  }
+  return schema.nodes.grid!.create(null, items);
+}
+
+/** One top-level-shaped block element - dispatches to a list/table/grid
+ * (each recursing back into `blockChildrenFromContainer` for their own
+ * nested content) or a flat textblock otherwise. */
 function importBlockElement(el: Element): PMNode {
   if (el.tagName === "UL") return importListElement(el, false);
   if (el.tagName === "OL") return importListElement(el, true);
   if (el.tagName === "TABLE") return importTableElement(el);
+  if (isGridElement(el)) return importGridElement(el);
   return importTextblockElement(el);
 }
 
@@ -403,7 +464,7 @@ function blockChildrenFromContainer(container: Element): PMNode[] {
       continue;
     }
     const el = child as Element;
-    if (BLOCK_TAGS.has(el.tagName)) {
+    if (BLOCK_TAGS.has(el.tagName) || isGridElement(el)) {
       flushInline();
       blocks.push(importBlockElement(el));
       continue;

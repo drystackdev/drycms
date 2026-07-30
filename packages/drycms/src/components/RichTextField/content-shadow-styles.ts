@@ -300,4 +300,78 @@ th {
 .dry-tx-content.dry-tx-table-col-resize-cursor {
   cursor: col-resize;
 }
+
+/* Grid layout (\`grid.ts\`/\`schema.ts\`) - a fixed 12-column CSS grid
+ * wrapper, each cell (\`grid_item\`) owning its own \`colSpan\`/\`rowSpan\`.
+ * Unlike \`table\` above, none of the actual layout needs a rule here: the
+ * real \`display:grid\`/\`grid-column\`/\`grid-row\` values travel as inline
+ * \`style\` on the elements themselves (see \`gridContainerStyleString\`/
+ * \`gridItemStyleString\` in schema.ts), so both the live editor and exported
+ * HTML render identically with no shared stylesheet involved - what's here
+ * is purely editing chrome (highlight/focus/resize-handle skin). */
+.dry-tx-grid {
+  margin-block: 0.5rem;
+}
+
+.dry-tx-grid-item {
+  position: relative;
+  min-width: 0;
+}
+
+/* \`grid-resize.ts\`'s own \`highlightLine\` toggle - every cell gets a dashed
+ * outline while it's on, brightening on hover so which cell a click would
+ * land in reads clearly before it's actually focused. */
+.dry-tx-grid-highlight > .dry-tx-grid-item {
+  border: 1px dashed var(--dry-border);
+}
+
+.dry-tx-grid-highlight > .dry-tx-grid-item:hover {
+  border-color: var(--dry-foreground);
+}
+
+/* The currently-focused cell (selection sits inside it) - a stronger,
+ * offset outline so it doesn't collide with the plain dashed border every
+ * cell already carries above. */
+.dry-tx-grid-focused {
+  outline: 2px solid var(--dry-primary);
+  outline-offset: 0.25rem;
+}
+
+/* \`grid-item-view.ts\`'s own 2 resize handles - always in the DOM, but only
+ * shown once both \`.dry-tx-grid-highlight\` (the toggle is on) and
+ * \`.dry-tx-grid-focused\` (this is the focused cell) apply - see that
+ * file's own doc comment for why visibility lives here in CSS rather than
+ * in the node view's own JS. */
+.dry-tx-grid-handle {
+  display: none;
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  background: var(--dry-background);
+  border: 2px solid var(--dry-primary);
+}
+
+.dry-tx-grid-highlight > .dry-tx-grid-focused > .dry-tx-grid-handle {
+  display: block;
+}
+
+.dry-tx-grid-handle-col {
+  top: 50%;
+  right: 0;
+  width: 0.625rem;
+  height: 1.25rem;
+  border-radius: var(--dry-radius-sm);
+  transform: translate(50%, -50%);
+  cursor: col-resize;
+}
+
+.dry-tx-grid-handle-row {
+  right: 0;
+  bottom: 0;
+  width: 1.25rem;
+  height: 0.625rem;
+  border-radius: var(--dry-radius-sm);
+  transform: translate(50%, 50%);
+  cursor: row-resize;
+}
 `;

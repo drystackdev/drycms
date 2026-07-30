@@ -3234,6 +3234,39 @@
       }
     }
 
+    /* `grid-menu.tsx`'s own expand/collapse card - same shape as
+     * `.richtext-table-menu-controls-wrap`/`-controls` above (this pair
+     * exists only because a grid card, unlike table's, has no permanent
+     * "insert" half to share a single card with - `toolbar-buttons.ts`'s
+     * plain "Insert grid" button already covers that on its own). */
+    .richtext-grid-menu-controls-wrap {
+      display: grid;
+      grid-template-columns: 0fr;
+      min-width: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+      padding: 0.25rem 0.375rem;
+      transition: grid-template-columns 180ms ease;
+
+      &.expanded {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .richtext-grid-menu-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      overflow: hidden;
+      min-width: 0;
+
+      & > * {
+        flex-shrink: 0;
+      }
+    }
+
     .richtext-table-grid {
       display: flex;
       flex-direction: column;

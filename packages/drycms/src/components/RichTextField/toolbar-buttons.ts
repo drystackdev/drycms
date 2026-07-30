@@ -5,6 +5,7 @@ import type { JSX } from "preact";
 import {
   BoldIcon,
   ClearFormatIcon,
+  GridIcon,
   ItalicIcon,
   RedoIcon,
   UnderlineIcon,
@@ -15,6 +16,7 @@ import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
 import FullscreenButton from "./fullscreen-button.js";
+import { insertGrid } from "./grid.js";
 import ImageInsertButton from "./image-insert-button.js";
 import LinkMenu from "./link-menu.js";
 import ListMenu from "./list-menu.js";
@@ -42,6 +44,11 @@ export interface ToolbarButton {
   run: Command;
   isActive?: (state: ToolbarState) => boolean;
   isDisabled?: (state: ToolbarState) => boolean;
+  /** Same meaning as `ToolbarCustomItem.blockOnly` below - only "insert
+   * grid" needs this on a plain button so far, every other `ToolbarButton`
+   * (undo/redo, bold/italic/underline, clear format) is equally valid in a
+   * single-inline-run field. */
+  blockOnly?: boolean;
 }
 
 export interface ToolbarCustomItem {
@@ -135,6 +142,18 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
+    {
+      type: "button",
+      key: "insert-grid",
+      label: "Insert grid",
+      Icon: GridIcon,
+      run: insertGrid(),
+      blockOnly: true,
+      // No nested grids reachable from the toolbar - `insertGrid` doesn't
+      // guard against it itself (see `grid.ts`), so the button disables
+      // instead once the caret's already inside one.
+      isDisabled: (state: ToolbarState) => !!state.selectedGrid,
+    },
     { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
   ],
 ];

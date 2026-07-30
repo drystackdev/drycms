@@ -248,6 +248,66 @@ export function cellVAlignStyle(vAlign: CellVAlign | null): string {
   return vAlign && vAlign !== "middle" ? `vertical-align:${vAlign};` : "";
 }
 
+/** Fixed column count every grid uses - kept as one named constant (rather
+ * than scattered literals) per the lesson from this feature's first, fully
+ * reverted attempt, where the column count changed mid-session (24→12).
+ * Rows aren't tracked as a count at all: `grid_item.rowSpan` combined with
+ * native CSS grid auto-placement (`gridContainerStyleString` below) is
+ * enough for the browser to size rows on its own - see `grid.ts`'s own doc
+ * comment for why this is simpler and more robust than explicitly computing
+ * "the largest row in use". */
+export const GRID_COLUMNS = 12;
+
+/** The grid container's own inline style - fixed/constant across every grid
+ * instance (unlike `grid_item`'s own per-instance span below), so this
+ * never needs to vary by node attrs. `grid-auto-flow: row` (the default,
+ * spelled out explicitly rather than left implicit) deliberately avoids
+ * `dense`: with `dense`, the browser is free to reorder items visually
+ * ahead of earlier siblings to fill gaps, which would make the on-screen
+ * layout diverge from document order - confusing in a WYSIWYG editor where
+ * "the next block in the doc" should always render at or after every
+ * earlier one. */
+export function gridContainerStyleString(): string {
+  return `display:grid;grid-template-columns:repeat(${GRID_COLUMNS},1fr);grid-auto-flow:row`;
+}
+
+const GRID_SPAN = /(?:^|;)\s*grid-column\s*:\s*span\s+(\d+)/;
+const GRID_ROW_SPAN = /(?:^|;)\s*grid-row\s*:\s*span\s+(\d+)/;
+
+function clampSpan(value: number, max: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.min(Math.round(value), max) : 1;
+}
+
+/** Reads a `grid_item`'s own `colSpan`/`rowSpan` back off its inline style -
+ * shared by this schema's own `parseDOM` and `html.ts`'s import walk (which,
+ * like table/image, hand-walks grid rather than going through `parseDOM` -
+ * see that file's own doc comment). */
+export function colSpanFromStyle(style: string): number {
+  const match = GRID_SPAN.exec(style);
+  return match ? clampSpan(Number(match[1]), GRID_COLUMNS) : GRID_COLUMNS;
+}
+export function rowSpanFromStyle(style: string): number {
+  const match = GRID_ROW_SPAN.exec(style);
+  return match ? clampSpan(Number(match[1]), Number.POSITIVE_INFINITY) : 1;
+}
+
+/** A `grid_item`'s own inline style - shared by this schema's `toDOM` and
+ * `html.ts`'s export. Unlike every other "only non-default needs an
+ * explicit style" helper in this file, this one is NOT optional: an unset
+ * `grid-column`/`grid-row` defaults to `span 1` in CSS, not "full width" -
+ * omitting it at the default `colSpan`/`GRID_COLUMNS` value silently
+ * collapses the item to a sliver. Caught the hard way (real-browser
+ * verification, not the type checker) building this feature's first,
+ * reverted attempt - always write both values explicitly. */
+export function gridItemStyleString(colSpan: number, rowSpan: number): string {
+  return `grid-column:span ${colSpan};grid-row:span ${rowSpan}`;
+}
+
+function getGridItemAttrs(dom: HTMLElement | string): { colSpan: number; rowSpan: number } {
+  if (typeof dom === "string") return { colSpan: GRID_COLUMNS, rowSpan: 1 };
+  return { colSpan: colSpanFromStyle(dom.style.cssText), rowSpan: rowSpanFromStyle(dom.style.cssText) };
+}
+
 /** `table`/`table_row`/`table_cell`/`table_header` node specs from
  * `prosemirror-tables`. Column-width resizing is hand-rolled
  * (`table-column-resize.ts`) rather than the package's own `columnResizing()`
@@ -381,6 +441,30 @@ export const schema = new Schema({
     },
     table_cell: tableNodeSpecs.table_cell,
     table_header: tableNodeSpecs.table_header,
+    // A grid's own children are `grid_item+`, never bare blocks directly -
+    // each item owns exactly one block (`content: "block"`, cardinality
+    // exactly 1, not `"block+"`) so every block dropped into a grid is
+    // independently positionable/resizable, matching `status/grid.md`'s own
+    // flat `<p>`/`<table>` example. See `grid.ts`'s `splitGridItem` for why
+    // plain Enter needs its own command here, the same reason `list_item`
+    // needs `splitListItem` instead of relying on default Enter.
+    grid: {
+      group: "block",
+      content: "grid_item+",
+      parseDOM: [{ tag: "div.dry-tx-grid" }],
+      toDOM(): DOMOutputSpec {
+        return ["div", { class: "dry-tx-grid", style: gridContainerStyleString() }, 0];
+      },
+    },
+    grid_item: {
+      content: "block",
+      attrs: { colSpan: { default: GRID_COLUMNS }, rowSpan: { default: 1 } },
+      parseDOM: [{ tag: "div.dry-tx-grid-item", getAttrs: getGridItemAttrs }],
+      toDOM(node): DOMOutputSpec {
+        const style = gridItemStyleString(node.attrs.colSpan as number, node.attrs.rowSpan as number);
+        return ["div", { class: "dry-tx-grid-item", style }, 0];
+      },
+    },
     text: { group: "inline" },
     hard_break: {
       group: "inline",
