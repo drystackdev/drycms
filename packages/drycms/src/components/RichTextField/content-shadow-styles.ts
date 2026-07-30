@@ -133,6 +133,11 @@ blockquote {
   font-style: italic;
 }
 
+a {
+  color: var(--dry-primary);
+  text-decoration: underline;
+}
+
 ul, ol {
   margin: 0;
   padding-inline-start: 1.25rem;

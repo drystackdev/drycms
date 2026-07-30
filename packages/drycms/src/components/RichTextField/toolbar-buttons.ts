@@ -16,6 +16,7 @@ import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
 import FullscreenButton from "./fullscreen-button.js";
 import ImageInsertButton from "./image-insert-button.js";
+import LinkMenu from "./link-menu.js";
 import ListMenu from "./list-menu.js";
 import { removeAllMarks } from "./commands.js";
 import { schema } from "./schema.js";
@@ -120,6 +121,7 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   [
     ...INLINE_FORMAT_BUTTONS,
     { type: "custom", key: "color", Component: ColorMenu },
+    { type: "custom", key: "link", Component: LinkMenu },
     { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
   ],
   // Block group: every item here acts on a whole top-level element

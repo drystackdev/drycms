@@ -15,6 +15,7 @@ import {
   hasInlineContent,
   hasTextSelection,
   getBlockType,
+  getLinkState,
   getSelectedImage,
   getTextAlignState,
   getTextColorState,
@@ -76,6 +77,7 @@ function readToolbarState(state: EditorState): ToolbarState {
     selectedImage: getSelectedImage(state),
     listType: getListType(state),
     selectedTable: getSelectedTable(state),
+    link: getLinkState(state),
   };
 }
 
@@ -141,6 +143,7 @@ export function useRichTextEditor({
     selectedImage: null,
     listType: "none",
     selectedTable: null,
+    link: { href: "", target: null, active: false, disabled: true },
   });
   const [empty, setEmpty] = useState(true);
 

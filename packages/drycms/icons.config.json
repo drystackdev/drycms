@@ -68,6 +68,7 @@
     "Italic": "solar:text-italic-linear",
     "Underline": "solar:text-underline-linear",
     "Baseline": "lucide:baseline",
+    "Link": "solar:link-linear",
     "Undo": "lucide:undo",
     "Redo": "lucide:redo",
     "ClearFormat": "lucide:remove-formatting",

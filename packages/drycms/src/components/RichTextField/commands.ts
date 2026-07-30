@@ -1,4 +1,4 @@
-import type { MarkType, Node as PMNode } from "prosemirror-model";
+import type { MarkType, Node as PMNode, ResolvedPos } from "prosemirror-model";
 import { NodeSelection } from "prosemirror-state";
 import type { Command, EditorState } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
@@ -116,6 +116,119 @@ export function setTextColor(value: string | null): Command {
       if (value) tr = tr.addMark(from, to, schema.marks.textColor!.create({ value }));
       dispatch(tr.scrollIntoView());
     }
+    return true;
+  };
+}
+
+/** Extends a collapsed cursor resting inside (or at either edge of) a `link`
+ * run to the full contiguous range it covers - a mark only knows "is this
+ * text node in the set", not "where does this specific run start/end", so
+ * finding the boundaries means walking outward from the cursor's own text
+ * node. Same technique every ProseMirror-based link feature uses (e.g.
+ * Tiptap's `Link` extension); needed because `link` is `inclusive: false`
+ * (see schema.ts), so a plain `$pos.marks()` read goes empty right at the
+ * run's own edges - exactly where a user's cursor often lands after clicking
+ * into one. Returns `null` when `$pos` isn't actually sitting inside a link. */
+function linkMarkRange($pos: ResolvedPos): { from: number; to: number } | null {
+  const linkType = schema.marks.link!;
+  const parent = $pos.parent;
+  const offset = $pos.parentOffset;
+  // `childAfter` favors the run to the right of the cursor at a boundary
+  // between two runs; `childBefore` is only consulted as a fallback (cursor
+  // at the very end of `parent`, or right after a link with nothing linked
+  // following it).
+  let anchor = parent.childAfter(offset);
+  if (!anchor.node || !linkType.isInSet(anchor.node.marks)) anchor = parent.childBefore(offset);
+  if (!anchor.node || !linkType.isInSet(anchor.node.marks)) return null;
+
+  const anchorStart = $pos.start() + anchor.offset;
+  let startIndex = anchor.index;
+  let startPos = anchorStart;
+  while (startIndex > 0 && linkType.isInSet(parent.child(startIndex - 1).marks)) {
+    startIndex -= 1;
+    startPos -= parent.child(startIndex).nodeSize;
+  }
+
+  let endIndex = anchor.index + 1;
+  let endPos = anchorStart + anchor.node.nodeSize;
+  while (endIndex < parent.childCount && linkType.isInSet(parent.child(endIndex).marks)) {
+    endPos += parent.child(endIndex).nodeSize;
+    endIndex += 1;
+  }
+  return { from: startPos, to: endPos };
+}
+
+export interface LinkState {
+  href: string;
+  target: string | null;
+  /** Whether the selection/cursor is currently sitting on a single existing
+   * link - drives `link-menu.tsx`'s switch between "create" (a plain
+   * URL-only popover) and "edit" (a fuller dialog with the `target`
+   * toggle) rendering. */
+  active: boolean;
+  /** Nothing to act on: no selection, and the cursor isn't resting inside an
+   * existing link either. Mirrors `getTextColorState`'s own `disabled`, but
+   * a link additionally stays enabled on a *collapsed* cursor (via
+   * `linkMarkRange` above) so editing one never requires re-selecting it. */
+  disabled: boolean;
+}
+
+export function getLinkState(state: EditorState): LinkState {
+  const linkType = schema.marks.link!;
+  const { from, to, empty, $from } = state.selection;
+  if (empty) {
+    const range = linkMarkRange($from);
+    if (!range) return { href: "", target: null, active: false, disabled: true };
+    const node = state.doc.nodeAt(range.from);
+    const mark = node && linkType.isInSet(node.marks);
+    if (!mark) return { href: "", target: null, active: false, disabled: true };
+    return { href: mark.attrs.href as string, target: (mark.attrs.target as string | null) ?? null, active: true, disabled: false };
+  }
+  let href: string | undefined;
+  let target: string | null | undefined;
+  let mixed = false;
+  let sawText = false;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isText) return;
+    sawText = true;
+    const mark = linkType.isInSet(node.marks);
+    const v = (mark?.attrs.href as string | undefined) ?? "";
+    if (href === undefined) href = v;
+    else if (href !== v) mixed = true;
+    target = (mark?.attrs.target as string | null | undefined) ?? null;
+  });
+  if (!sawText) return { href: "", target: null, active: false, disabled: true };
+  const resolvedHref = mixed ? "" : (href ?? "");
+  return { href: resolvedHref, target: mixed ? null : (target ?? null), active: !mixed && !!resolvedHref, disabled: false };
+}
+
+/** Sets (or updates) the `link` mark's `href`/`target` over the selection -
+ * or, for a collapsed cursor, over whatever `linkMarkRange` finds it resting
+ * inside. Returns `false` (a no-op) for a collapsed cursor that isn't inside
+ * an existing link - creating a brand new link always needs a real selection
+ * to attach it to, same requirement `getLinkState`'s own `disabled` enforces
+ * for the toolbar button. */
+export function setLink(href: string, target: string | null): Command {
+  return (state, dispatch) => {
+    const { from, to, empty, $from } = state.selection;
+    const range = empty ? linkMarkRange($from) : { from, to };
+    if (!range) return false;
+    if (dispatch) {
+      const tr = state.tr
+        .removeMark(range.from, range.to, schema.marks.link!)
+        .addMark(range.from, range.to, schema.marks.link!.create({ href, target }));
+      dispatch(tr.scrollIntoView());
+    }
+    return true;
+  };
+}
+
+export function removeLink(): Command {
+  return (state, dispatch) => {
+    const { from, to, empty, $from } = state.selection;
+    const range = empty ? linkMarkRange($from) : { from, to };
+    if (!range) return false;
+    if (dispatch) dispatch(state.tr.removeMark(range.from, range.to, schema.marks.link!));
     return true;
   };
 }

@@ -59,6 +59,12 @@ function textNodeToHtml(node: PMNode): string {
   if (schema.marks.underline!.isInSet(node.marks)) text = `<u>${text}</u>`;
   const colorMark = schema.marks.textColor!.isInSet(node.marks);
   if (colorMark) text = `<span style="color: ${escapeAttr(colorMark.attrs.value as string)}">${text}</span>`;
+  const linkMark = schema.marks.link!.isInSet(node.marks);
+  if (linkMark) {
+    const target = linkMark.attrs.target as string | null;
+    const href = escapeAttr(linkMark.attrs.href as string);
+    text = `<a href="${href}"${target ? ` target="${escapeAttr(target)}" rel="noopener noreferrer"` : ""}>${text}</a>`;
+  }
   return text;
 }
 
@@ -236,9 +242,15 @@ interface InlineAncestry {
   /** CSS `color` value, or `""` for none - a nested element's own `color`
    * replaces rather than combines with the ancestor's. */
   color: string;
+  /** Nearest ancestor `<a href>`'s own `href`/`target`, or `""`/`null` for
+   * none - like `color` above, a nested `<a>` would replace rather than
+   * combine with an ancestor's (this schema's `link` mark isn't recursive
+   * either way, so nested anchors are a non-issue in practice). */
+  href: string;
+  target: string | null;
 }
 
-const NO_MARKS: InlineAncestry = { bold: false, italic: false, underline: false, color: "" };
+const NO_MARKS: InlineAncestry = { bold: false, italic: false, underline: false, color: "", href: "", target: null };
 
 /** The image node attrs a bare `<img>` carries - shared by every import
  * path that reaches one (`walkInlineHtml`, `importCleanHtml`'s top-level
@@ -276,6 +288,7 @@ function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] 
     if (ancestry.italic) marks.push(schema.marks.italic!.create());
     if (ancestry.underline) marks.push(schema.marks.underline!.create());
     if (ancestry.color) marks.push(schema.marks.textColor!.create({ value: ancestry.color }));
+    if (ancestry.href) marks.push(schema.marks.link!.create({ href: ancestry.href, target: ancestry.target }));
     return [schema.text(text, marks)];
   }
   if (domNode.nodeName === "BR") return [schema.nodes.hard_break!.create()];
@@ -289,11 +302,14 @@ function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] 
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
 
   const tag = domNode.nodeName;
+  const isAnchor = tag === "A" && domNode instanceof HTMLElement && domNode.hasAttribute("href");
   const nextAncestry: InlineAncestry = {
     bold: ancestry.bold || tag === "STRONG" || tag === "B",
     italic: ancestry.italic || tag === "EM" || tag === "I",
     underline: ancestry.underline || tag === "U",
     color: (domNode instanceof HTMLElement && domNode.style.color) || ancestry.color,
+    href: isAnchor ? ((domNode as HTMLElement).getAttribute("href") ?? "") : ancestry.href,
+    target: isAnchor ? (domNode as HTMLElement).getAttribute("target") : ancestry.target,
   };
   return Array.from(domNode.childNodes).flatMap((child) => walkInlineHtml(child, nextAncestry));
 }

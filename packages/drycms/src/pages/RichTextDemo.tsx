@@ -84,6 +84,11 @@ const PRESETS: Preset[] = [
       "</tbody></table>",
   },
   {
+    key: "link",
+    label: "Link",
+    html: '<p>Visit <a href="https://example.com" target="_blank" rel="noopener noreferrer">our site</a> for more.</p>',
+  },
+  {
     key: "long",
     label: "Long content",
     html:

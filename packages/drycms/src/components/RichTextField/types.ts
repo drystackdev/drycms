@@ -72,6 +72,11 @@ export interface ToolbarState {
    * `selectedImage`, this isn't a `NodeSelection` check: the cursor normally
    * sits *inside* one of the table's cells, not on the table node itself. */
   selectedTable: { pos: number; node: PMNode } | null;
+  /** The `link` mark on the current selection/cursor - see `getLinkState` in
+   * `commands.ts` for what each field means and why a *collapsed* cursor can
+   * still report one (unlike `color`/`format` above, which need a real
+   * selection). Drives `link-menu.tsx`'s create-vs-edit rendering. */
+  link: { href: string; target: string | null; active: boolean; disabled: boolean };
 }
 
 /** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)

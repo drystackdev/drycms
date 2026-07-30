@@ -66,6 +66,7 @@ export const iconBodies = {
 	Italic: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M3 22h12M9 2h12M9 22l6-20\"/>",
 	Underline: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M4 21h16M4 3v6a8 8 0 1 0 16 0V3\"/>",
 	Baseline: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 20h16M6 16l6-12l6 12M8 12h8\"/>",
+	Link: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\"><path d=\"M10.046 14c-1.506-1.512-1.37-4.1.303-5.779l4.848-4.866c1.673-1.68 4.25-1.816 5.757-.305s1.37 4.1-.303 5.78l-2.424 2.433\"/><path d=\"M13.954 10c1.506 1.512 1.37 4.1-.303 5.779l-2.424 2.433l-2.424 2.433c-1.673 1.68-4.25 1.816-5.757.305s-1.37-4.1.303-5.78l2.424-2.433\"/></g>",
 	Undo: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M3 7v6h6\"/><path d=\"M21 17a9 9 0 0 0-9-9a9 9 0 0 0-6 2.3L3 13\"/></g>",
 	Redo: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\"><path d=\"M21 7v6h-6\"/><path d=\"M3 17a9 9 0 0 1 9-9a9 9 0 0 1 6 2.3l3 2.7\"/></g>",
 	ClearFormat: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 7V4h16v3M5 20h6m2-16L8 20m7-5l5 5m0-5l-5 5\"/>",
@@ -155,6 +156,7 @@ export const iconViewBoxes = {
 	Italic: "0 0 24 24",
 	Underline: "0 0 24 24",
 	Baseline: "0 0 24 24",
+	Link: "0 0 24 24",
 	Undo: "0 0 24 24",
 	Redo: "0 0 24 24",
 	ClearFormat: "0 0 24 24",
@@ -595,6 +597,13 @@ export function UnderlineIcon(props: IconProps) {
 export function BaselineIcon(props: IconProps) {
 	return (
 		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 20h16M6 16l6-12l6 12M8 12h8\"/>" }} />
+	);
+}
+
+/** `solar:link-linear` */
+export function LinkIcon(props: IconProps) {
+	return (
+		<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true" {...props} dangerouslySetInnerHTML={{ __html: "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-width=\"1.5\"><path d=\"M10.046 14c-1.506-1.512-1.37-4.1.303-5.779l4.848-4.866c1.673-1.68 4.25-1.816 5.757-.305s1.37 4.1-.303 5.78l-2.424 2.433\"/><path d=\"M13.954 10c1.506 1.512 1.37 4.1-.303 5.779l-2.424 2.433l-2.424 2.433c-1.673 1.68-4.25 1.816-5.757.305s-1.37-4.1.303-5.78l2.424-2.433\"/></g>" }} />
 	);
 }
 

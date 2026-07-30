@@ -5,9 +5,9 @@ import type { BlockType, TextAlign } from "./types.js";
 /**
  * ProseMirror schema for this field - deliberately small, matching exactly
  * what the toolbar (`toolbar-buttons.ts`) can produce: paragraph/heading
- * (h2-h6)/blockquote blocks, bold/italic/underline/textColor marks, an
- * inline image, and `<br>`. Not a port of drystack's `schema.tsx` (which
- * also carries tables, grids, svg, content-refs, lists, links, code, font
+ * (h2-h6)/blockquote blocks, lists, tables, an inline image, `<br>`, and
+ * bold/italic/underline/textColor/link marks. Not a port of drystack's
+ * `schema.tsx` (which also carries grids, svg, content-refs, code, font
  * size...) - this field's own contract is HTML in/out, so it only needs the
  * handful of tags `html.ts` round-trips.
  */
@@ -486,6 +486,34 @@ export const schema = new Schema({
       ],
       toDOM(mark): DOMOutputSpec {
         return ["span", { style: `color: ${mark.attrs.value as string}` }, 0];
+      },
+    },
+    // `target` is only ever `"_blank"` (checked "Open in new tab" in
+    // `link-menu.tsx`'s edit dialog) or `null` (same tab) - `rel` isn't its
+    // own attr, just derived from `target` on export/import (see `html.ts`),
+    // matching every other mark here that only stores what the toolbar can
+    // actually produce. `inclusive: false` so typing right after a link
+    // doesn't silently continue it - the opposite of bold/italic/underline,
+    // which default to `inclusive: true`.
+    link: {
+      attrs: { href: {}, target: { default: null } },
+      inclusive: false,
+      parseDOM: [
+        {
+          tag: "a[href]",
+          getAttrs(dom: HTMLElement | string) {
+            if (typeof dom === "string") return false;
+            return { href: dom.getAttribute("href") ?? "", target: dom.getAttribute("target") };
+          },
+        },
+      ],
+      toDOM(mark): DOMOutputSpec {
+        const target = mark.attrs.target as string | null;
+        return [
+          "a",
+          { href: mark.attrs.href as string, ...(target ? { target, rel: "noopener noreferrer" } : {}) },
+          0,
+        ];
       },
     },
   },
