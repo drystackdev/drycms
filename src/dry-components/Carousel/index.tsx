@@ -4,14 +4,14 @@ import {
   type InferShape,
   type PropsBuilder,
 } from "drycms/components/RichTextField/register-component";
-import "./style.css"
+import css from "./style.css?raw";
+
 
 const SAMPLE_IMAGES = [
   "https://picsum.photos/seed/site-carousel-1/480/280",
   "https://picsum.photos/seed/site-carousel-2/480/280",
   "https://picsum.photos/seed/site-carousel-3/480/280",
 ];
-
 const carouselProps = (p: PropsBuilder) =>
   p({
     images: p.array(p.image()).default(SAMPLE_IMAGES),
@@ -28,6 +28,7 @@ function Carousel({
 
   return (
     <div className="carousel">
+      <style>{css}</style>
       <div className="carousel__content">
         <button
           type="button"
@@ -40,6 +41,7 @@ function Carousel({
 
         <button
           type="button"
+          style={{ right: 1 }}
           onClick={() => setIndex((i) => (i + 1) % list.length)}
         >
           ›

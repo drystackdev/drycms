@@ -4305,8 +4305,12 @@
 
   .dry-component-admin-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
+
+    @media (width < 48rem) {
+      grid-template-columns: 1fr;
+    }
   }
 
   .dry-component-admin-card {
@@ -4344,24 +4348,10 @@
      cells. */
   .dry-component-admin-card-block {
     grid-column: span 2;
-  }
 
-  .dry-component-admin-preview-wrap {
-    position: relative;
-  }
-
-  .dry-component-admin-view-btn {
-    position: absolute;
-    top: 0.375rem;
-    right: 0.375rem;
-    opacity: 0;
-    background: var(--dry-surface);
-    transition: opacity 0.15s;
-  }
-
-  .dry-component-admin-preview-wrap:hover .dry-component-admin-view-btn,
-  .dry-component-admin-preview-wrap:focus-within .dry-component-admin-view-btn {
-    opacity: 1;
+    @media (width < 48rem) {
+      grid-column: span 1;
+    }
   }
 
   .dry-component-preview-large .dry-component-preview {

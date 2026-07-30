@@ -142,9 +142,9 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
                       type="button"
                       class="ghost dry-component-picker-row-select"
                       onClick={() => setPending(record.name)}
+                      {...record.description && {"data-tooltip": record.description}}
                     >
                       <span class="dry-component-picker-label">{record.label}</span>
-                      {record.description && <span class="hint">{record.description}</span>}
                     </button>
                     <button
                       type="button"

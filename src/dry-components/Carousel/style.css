@@ -16,6 +16,11 @@
   border-radius: 0.5rem;
 }
 
+.carousel__content button {
+  position: absolute;
+  z-index: 2;
+}
+
 .carousel__caption {
   margin: 0;
   text-align: center;

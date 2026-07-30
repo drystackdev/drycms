@@ -5,8 +5,6 @@ import CheckField from "../components/CheckField.js";
 import ComponentPreview from "../components/RichTextField/ComponentPreview.js";
 import type { DryComponentRecord } from "../components/RichTextField/component-registry-types.js";
 import { isDryComponentDefinition, type DryComponentDefinition } from "../components/RichTextField/register-component.js";
-import { EyeIcon } from "../components/icons.js";
-import { useDialogSync } from "../components/list-nav.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface Discovered {
@@ -36,8 +34,6 @@ export default function RichtextComponents() {
   const [discovered, setDiscovered] = useState<Discovered[] | null>(null);
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
-  const [previewing, setPreviewing] = useState<Discovered | null>(null);
-  const previewDialogRef = useDialogSync(!!previewing, () => setPreviewing(null));
 
   const reloadRecords = () => {
     fetchRecords().then(setRecords);
@@ -114,26 +110,15 @@ export default function RichtextComponents() {
               class={`dry-component-admin-card dry-component-admin-card-${item.def.type}`}
               key={item.sourcePath}
             >
-              <div class="dry-component-admin-preview-wrap">
-                <ComponentPreview name={item.def.name} label={item.def.label} defaults={item.def.defaults} load={load} shadow={item.def.shadow} />
-                <button
-                  type="button"
-                  class="ghost icon sm dry-component-admin-view-btn"
-                  aria-label={`Preview ${item.def.label}`}
-                  data-tooltip="Preview"
-                  onClick={() => setPreviewing(item)}
-                >
-                  <EyeIcon />
-                </button>
-              </div>
+              <ComponentPreview name={item.def.name} label={item.def.label} defaults={item.def.defaults} load={load} shadow={item.def.shadow} />
               <div class="dry-component-admin-card-body">
                 <strong>{item.def.label}</strong>
                 {item.def.description && <p class="dry-component-admin-card-description">{item.def.description}</p>}
                 <span class="dry-component-admin-card-meta">
                   <small class="badge secondary">{`<dry-${item.def.name}>`}</small>
                   <small class="badge outline">{item.def.type}</small>
-                  {item.def.shadow && <small class="badge secondary">shadow</small>}
-                  {item.def.children && <small class="badge secondary">children</small>}
+                  {item.def.shadow && <small class="badge outline">shadow</small>}
+                  {item.def.children && <small class="badge outline">children</small>}
                 </span>
                 <CheckField
                   label="Use in editor"
@@ -147,31 +132,6 @@ export default function RichtextComponents() {
           );
         })}
       </div>
-
-      <dialog ref={previewDialogRef} class="dry-component-preview-dialog" aria-label={previewing ? `${previewing.def.label} preview` : "Component preview"}>
-        {previewing && (
-          <>
-            <header>
-              <h3>{previewing.def.label}</h3>
-              {previewing.def.description && <p class="hint">{previewing.def.description}</p>}
-            </header>
-            <div class="dry-component-preview-large">
-              <ComponentPreview
-                name={previewing.def.name}
-                label={previewing.def.label}
-                defaults={previewing.def.defaults}
-                load={componentModules[previewing.sourcePath]!}
-                shadow={previewing.def.shadow}
-              />
-            </div>
-            <footer>
-              <button type="button" onClick={() => setPreviewing(null)}>
-                Close
-              </button>
-            </footer>
-          </>
-        )}
-      </dialog>
     </div>
   );
 }
