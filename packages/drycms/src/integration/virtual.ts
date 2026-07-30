@@ -1,3 +1,4 @@
+import { relative } from "node:path";
 import type { Plugin } from "vite";
 import type {
   ResolvedContentOption,
@@ -122,6 +123,71 @@ export function dryVirtualContentConfig(content: ResolvedContentOption): Plugin 
   };
 }
 
+export const VIRTUAL_RICHTEXT_COMPONENTS_ID = "virtual:drycms/richtext-components";
+const RESOLVED_RICHTEXT_COMPONENTS_ID = `\0${VIRTUAL_RICHTEXT_COMPONENTS_ID}`;
+
+/**
+ * `import.meta.glob` has to appear as literal source in a module Vite itself
+ * transforms - it can't live inside `packages/drycms/dist` (prebuilt long
+ * before the *consumer's* `componentsDir` exists), nor be passed around as a
+ * runtime value. This virtual module's `load()` emits that literal, pointed
+ * at the resolved `componentsDir` - Vite's glob-import transform runs on
+ * generated/virtual module source the same as any real file (mục 2,
+ * `status/register-compoennt.md`). Consumed both by the editor (lazy-loading
+ * a component's real module for its `NodeView`) and the component
+ * management admin page (listing/previewing every discovered file, not just
+ * confirmed ones).
+ */
+export function dryVirtualRichtextComponents(componentsDir: string): Plugin {
+  return {
+    name: "drycms:virtual-richtext-components",
+    resolveId(id) {
+      if (id === VIRTUAL_RICHTEXT_COMPONENTS_ID) return RESOLVED_RICHTEXT_COMPONENTS_ID;
+      return null;
+    },
+    load(id) {
+      if (id !== RESOLVED_RICHTEXT_COMPONENTS_ID) return null;
+      // A leading-`/` `import.meta.glob` pattern is resolved by Vite
+      // relative to the *project root*, not as a real OS filesystem path -
+      // passing `componentsDir` (already absolute, from `resolveOptions`)
+      // straight through made Vite go looking for a literal `Users` folder
+      // under the project root. `relative()` converts it back to a root-
+      // relative path first (`componentsDir` is always inside the project
+      // by construction, so this is always a plain forward path, never
+      // `../`) - see `status/register-compoennt.md` mục 2.
+      const relativeDir = relative(process.cwd(), componentsDir).replace(/\\/g, "/");
+      const pattern = JSON.stringify(`/${relativeDir}/*/index.tsx`);
+      return `export const components = import.meta.glob(${pattern});\n`;
+    },
+  };
+}
+
+export const VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_ID = "virtual:drycms/richtext-components-config";
+const RESOLVED_RICHTEXT_COMPONENTS_CONFIG_ID = `\0${VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_ID}`;
+
+/**
+ * Exposes the resolved `richtext.storage` option to
+ * `routes/richtext-components.ts` only - same rationale/shape as
+ * `dryVirtualIconsConfig`, just a fourth independent root (confirmed
+ * component records never mix with Media/Icons/file-content storage).
+ */
+export function dryVirtualRichtextComponentsConfig(storage: ResolvedStorageOption): Plugin {
+  return {
+    name: "drycms:virtual-richtext-components-config",
+    resolveId(id) {
+      if (id === VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_ID) return RESOLVED_RICHTEXT_COMPONENTS_CONFIG_ID;
+      return null;
+    },
+    load(id) {
+      if (id !== RESOLVED_RICHTEXT_COMPONENTS_CONFIG_ID) return null;
+      return [
+        `export const richtextComponentsStorage = ${JSON.stringify(storage)};`,
+        "export default { richtextComponentsStorage };",
+      ].join("\n");
+    },
+  };
+}
+
 /**
  * `@astrojs/preact` seeds `optimizeDeps.include` with `@astrojs/preact > …`
  * dependency chains that only resolve when the integration is a direct
@@ -182,6 +248,18 @@ const CONTENT_CONFIG_TYPE = `{ engine: 'sqlite'; file: string } | { engine: 'D1'
 export const VIRTUAL_CONTENT_CONFIG_TYPES = `declare module '${VIRTUAL_CONTENT_CONFIG_ID}' {
 	export const content: ${CONTENT_CONFIG_TYPE};
 	const config: { content: ${CONTENT_CONFIG_TYPE} };
+	export default config;
+}
+`;
+
+export const VIRTUAL_RICHTEXT_COMPONENTS_TYPES = `declare module '${VIRTUAL_RICHTEXT_COMPONENTS_ID}' {
+	export const components: Record<string, () => Promise<{ default?: unknown }>>;
+}
+`;
+
+export const VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_TYPES = `declare module '${VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_ID}' {
+	export const richtextComponentsStorage: ${STORAGE_CONFIG_TYPE};
+	const config: { richtextComponentsStorage: ${STORAGE_CONFIG_TYPE} };
 	export default config;
 }
 `;

@@ -3,10 +3,14 @@ import type { RefObject } from "preact";
 import { baseKeymap, chainCommands } from "prosemirror-commands";
 import { history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
+import type { Node as PMNode } from "prosemirror-model";
 import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { goToNextCell, tableEditing } from "prosemirror-tables";
+import { path as basePath } from "virtual:drycms/config";
+import { components as componentModules } from "virtual:drycms/richtext-components";
+import type { DryComponentRecord } from "./component-registry-types.js";
 import { richtextContentShadowStyles } from "./content-shadow-styles.js";
 import {
   insertHardBreak,
@@ -20,18 +24,39 @@ import {
   getTextAlignState,
   getTextColorState,
 } from "./commands.js";
+import { DryComponentNodeView } from "./dry-component-view.js";
+import { defineDryComponent } from "./dry-component-runtime.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
 import { exitGridDownward, getSelectedGrid, splitGridItem } from "./grid.js";
 import { GridItemNodeView } from "./grid-item-view.js";
 import { gridResizing } from "./grid-resize.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
-import { createEmptyDoc, schema } from "./schema.js";
+import { isReorderActive, reorderMode } from "./reorder-mode.js";
+import { createEmptyDoc, schema, setRichtextComponents } from "./schema.js";
 import { exitTableDownward, exitTableForward, getSelectedTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
 import { TableNodeView } from "./table-node-view.js";
 import { tableRowResizing } from "./table-row-resize.js";
 import { NO_FORMAT, type ToolbarState } from "./types.js";
+
+/** Every `RichTextField` on a page shares one confirmed-component registry -
+ * fetched once (not per instance) and memoized here, module-scope. Resolves
+ * to `[]` on any failure (offline, integration not mounted, ...) rather than
+ * rejecting - a richtext field with no custom components available is a
+ * perfectly normal state, not an error the field itself should surface. */
+let richtextComponentsPromise: Promise<DryComponentRecord[]> | null = null;
+
+/** Exported for `dry-component-insert-button.tsx` to reuse - opening the
+ * insert dialog shouldn't pay a second round trip for a registry this same
+ * field instance already fetched on mount. */
+export function loadRichtextComponents(): Promise<DryComponentRecord[]> {
+  richtextComponentsPromise ??= fetch(`${basePath}/api/richtext-components`)
+    .then((res) => (res.ok ? res.json() : { records: [] }))
+    .then((data) => (Array.isArray(data.records) ? (data.records as DryComponentRecord[]) : []))
+    .catch(() => []);
+  return richtextComponentsPromise;
+}
 
 /** ProseMirror's own `EditorState.toJSON()` shape (`{ doc, selection,
  * storedMarks? }`) - this field's equivalent of Lexical's
@@ -82,6 +107,7 @@ function readToolbarState(state: EditorState): ToolbarState {
     selectedTable: getSelectedTable(state),
     selectedGrid: getSelectedGrid(state),
     link: getLinkState(state),
+    reorderModeActive: isReorderActive(state),
   };
 }
 
@@ -101,7 +127,7 @@ function isDocEmpty(state: EditorState): boolean {
 
 function buildAttributes(state: EditorState, disabled: boolean, placeholder: string | undefined, label: string) {
   return {
-    class: `dry-tx-content${isDocEmpty(state) ? " is-empty" : ""}`,
+    class: `dry-tx-content${isDocEmpty(state) ? " is-empty" : ""}${isReorderActive(state) ? " dry-tx-reorder-active" : ""}`,
     role: "textbox",
     "aria-multiline": "true",
     "aria-label": label,
@@ -149,6 +175,7 @@ export function useRichTextEditor({
     selectedTable: null,
     selectedGrid: null,
     link: { href: "", target: null, active: false, disabled: true },
+    reorderModeActive: false,
   });
   const [empty, setEmpty] = useState(true);
 
@@ -159,6 +186,33 @@ export function useRichTextEditor({
   useEffect(() => {
     const mountEl = contentRef.current;
     if (!mountEl) return;
+    // `EditorView` construction has to wait on the confirmed-component
+    // registry (mục 5, `status/register-compoennt.md`) - the schema itself
+    // (`setRichtextComponents`) and the `nodeViews` map below both need it
+    // resolved first, and unlike every other plugin/prop here that's an
+    // inherently async fetch (see `loadRichtextComponents`). `cancelled` +
+    // `view` hoisted to the effect's own scope (not just the `const` inside
+    // the old synchronous body) so the cleanup function - itself still
+    // synchronous, returned before any of this resolves - can both stop a
+    // late-arriving mount from happening at all, and still tear down a view
+    // that DID make it up before unmount.
+    let cancelled = false;
+    let view: EditorView | null = null;
+
+    void (async () => {
+      const components = await loadRichtextComponents();
+      if (cancelled) return;
+
+      setRichtextComponents(components);
+      const dryNodeViews: Record<string, (node: PMNode, editorView: EditorView, getPos: () => number | undefined) => DryComponentNodeView> = {};
+      for (const component of components) {
+        const loader = componentModules[component.sourcePath];
+        if (!loader) continue;
+        defineDryComponent(component.name, loader, component.shadow);
+        const tag = `dry-${component.name}`;
+        dryNodeViews[`dry_${component.name}`] = (node, editorView, getPos) =>
+          new DryComponentNodeView(node, tag, component.type, editorView, getPos);
+      }
 
     // Shadow-isolates the editable surface's own styling from the host
     // app/page's CSS in both directions - see `content-shadow-styles.ts`
@@ -202,6 +256,10 @@ export function useRichTextEditor({
       schema,
       doc,
       plugins: [
+        // First in the array so it gets first crack at every pointerdown on
+        // its own handle widgets, same "this plugin needs first dibs"
+        // precedent `tableColumnResizing()` documents below for itself.
+        reorderMode(),
         history(),
         keymap({
           "Shift-Enter": insertHardBreak(),
@@ -245,18 +303,25 @@ export function useRichTextEditor({
       ],
     });
 
-    const view = new EditorView(editorHost, {
+    view = new EditorView(editorHost, {
       state: editorState,
-      editable: () => !disabled,
+      editable: (state) => !disabled && !isReorderActive(state),
       attributes: (state) => buildAttributes(state, disabled, placeholder, label),
       nodeViews: {
         image: (node, editorView, getPos) => new ImageNodeView(node, editorView, getPos),
         table: (node) => new TableNodeView(node),
         grid_item: (node, editorView, getPos) => new GridItemNodeView(node, editorView, getPos),
+        ...dryNodeViews,
       },
       dispatchTransaction(tr) {
-        const newState = view.state.apply(tr);
-        view.updateState(newState);
+        // Non-null: only ever invoked after the `view =` assignment right
+        // below completes (ProseMirror never calls it during construction
+        // itself) - `let view: EditorView | null` (not `const`, see this
+        // effect's own doc comment above) means TS can't narrow that across
+        // this closure the way it could have for the old synchronous body's
+        // `const view`.
+        const newState = view!.state.apply(tr);
+        view!.updateState(newState);
         setState(readToolbarState(newState));
         setEmpty(isDocEmpty(newState));
         if (tr.docChanged) {
@@ -268,10 +333,19 @@ export function useRichTextEditor({
     viewRef.current = view;
     setState(readToolbarState(editorState));
     setEmpty(isDocEmpty(editorState));
+    })();
 
     return () => {
-      view.destroy();
-      viewRef.current = null;
+      cancelled = true;
+      // Only set if the async work above had already reached
+      // `new EditorView(...)` before this ran - a mount cancelled while
+      // still awaiting `loadRichtextComponents()` never got that far, and
+      // `cancelled` (checked right after that `await`) stops it from
+      // starting to build one at all.
+      if (view) {
+        view.destroy();
+        viewRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- init once, see comment above
   }, []);
@@ -282,7 +356,7 @@ export function useRichTextEditor({
   // what actually applies it.
   useEffect(() => {
     viewRef.current?.setProps({
-      editable: () => !disabled,
+      editable: (state) => !disabled && !isReorderActive(state),
       attributes: (state) => buildAttributes(state, disabled, placeholder, label),
     });
   }, [disabled, placeholder, label]);

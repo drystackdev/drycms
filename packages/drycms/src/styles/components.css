@@ -4278,6 +4278,154 @@
     }
   }
 
+  .dry-component-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 6rem;
+    padding: 0.75rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    overflow: hidden;
+  }
+
+  .dry-component-preview-skeleton {
+    background: linear-gradient(90deg, transparent, var(--dry-muted), transparent);
+    background-size: 200% 100%;
+    animation: dry-progress-indeterminate 1.4s infinite;
+  }
+
+  .dry-component-preview-error,
+  .dry-component-error {
+    color: var(--dry-error);
+    font-size: var(--dry-text-sm);
+    text-align: center;
+  }
+
+  .dry-component-admin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: 1rem;
+  }
+
+  .dry-component-admin-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-lg);
+    padding: 0.75rem;
+  }
+
+  .dry-component-admin-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .dry-component-admin-card-meta {
+    font-size: var(--dry-text-xs);
+    color: var(--dry-muted-foreground);
+  }
+
+  /* inline components get a compact 2-cell preview; block components (full
+     top-level elements, usually wider) get the whole row to themselves. */
+  .dry-component-admin-card-inline {
+    grid-column: span 2;
+  }
+
+  .dry-component-admin-card-block {
+    grid-column: 1 / -1;
+  }
+
+  .dry-component-admin-preview-wrap {
+    position: relative;
+  }
+
+  .dry-component-admin-view-btn {
+    position: absolute;
+    top: 0.375rem;
+    right: 0.375rem;
+    opacity: 0;
+    background: var(--dry-surface);
+    transition: opacity 0.15s;
+  }
+
+  .dry-component-admin-preview-wrap:hover .dry-component-admin-view-btn,
+  .dry-component-admin-preview-wrap:focus-within .dry-component-admin-view-btn {
+    opacity: 1;
+  }
+
+  .dry-component-preview-dialog {
+    width: min(90vw, 40rem);
+  }
+
+  .dry-component-preview-large .dry-component-preview {
+    min-height: 20rem;
+    padding: 1.5rem;
+  }
+
+  .dry-component-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 0.75rem;
+    max-height: 24rem;
+    overflow: auto;
+  }
+
+  .dry-component-picker-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.5rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    background: none;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .dry-component-picker-item.is-selected {
+    border-color: var(--dry-primary, var(--dry-border));
+    outline: 2px solid var(--dry-primary, transparent);
+    outline-offset: -1px;
+  }
+
+  .dry-component-picker-label {
+    font-size: var(--dry-text-sm);
+  }
+
+  .dry-component-picker-empty {
+    grid-column: 1 / -1;
+    color: var(--dry-muted-foreground);
+    text-align: center;
+  }
+
+  .dry-component-props-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    padding: 0.75rem;
+    margin: 0;
+  }
+
+  .dry-component-props-array-item {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+
+  /* Selected `<dry-*>` custom element inside the editor - `DryComponentNodeView`
+     toggles this class, same `.is-selected` convention as the image node
+     view's own resize box. */
+  [class^="dry-"].is-selected,
+  [class*=" dry-"].is-selected {
+    outline: 2px solid var(--dry-primary, var(--dry-border));
+    outline-offset: 2px;
+  }
+
   .dry-carousel {
     display: flex;
     flex-direction: column;

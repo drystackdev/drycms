@@ -2,9 +2,10 @@ import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import { runCommand } from "./commands.js";
 import type { FileManagerSource } from "../file-manager-types.js";
+import DryComponentMenu from "./dry-component-menu.js";
 import GridMenu from "./grid-menu.js";
 import TableMenu from "./table-menu.js";
-import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
+import { REORDER_MODE_TOGGLE_KEY, TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 
 export interface RichTextToolbarProps {
@@ -88,7 +89,7 @@ export default function RichTextToolbar({
                 viewRef={viewRef}
                 contentRef={contentRef}
                 state={state}
-                disabled={disabled}
+                disabled={disabled || state.reorderModeActive}
                 source={source}
                 iconSize={iconSize}
                 fullscreen={fullscreen}
@@ -102,7 +103,11 @@ export default function RichTextToolbar({
                 aria-label={item.label}
                 data-tooltip={item.label}
                 aria-pressed={item.isActive?.(state)}
-                disabled={disabled || item.isDisabled?.(state)}
+                disabled={
+                  disabled ||
+                  (item.key !== REORDER_MODE_TOGGLE_KEY && state.reorderModeActive) ||
+                  item.isDisabled?.(state)
+                }
                 onMouseDown={preserveSelection}
                 onClick={() => runButton(item)}
               >
@@ -112,8 +117,9 @@ export default function RichTextToolbar({
           )}
         </div>
       ))}
-      {!inline && <TableMenu viewRef={viewRef} state={state} disabled={disabled} iconSize={iconSize} />}
-      {!inline && <GridMenu viewRef={viewRef} state={state} disabled={disabled} iconSize={iconSize} />}
+      {!inline && <TableMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
+      {!inline && <GridMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
+      <DryComponentMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} />
     </div>
   );
 }

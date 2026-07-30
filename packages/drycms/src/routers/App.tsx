@@ -20,6 +20,7 @@ const ContentEntryEditor = lazy(() => import('../pages/ContentEntryEditor.js'));
 const IconManagement = lazy(() => import('../pages/IconManagement.js'));
 const IconSearchAdd = lazy(() => import('../pages/IconSearchAdd.js'));
 const IconManualForm = lazy(() => import('../pages/IconManualForm.js'));
+const RichtextComponents = lazy(() => import('../pages/RichtextComponents.js'));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
  * base path and any unmatched path have to be sent to `/dashboard` here. */
@@ -109,6 +110,7 @@ export default function App() {
 							<Route path={`${path}/icon-management/add`} component={IconSearchAdd} />
 							<Route path={`${path}/icon-management/manual`} component={IconManualForm} />
 							<Route path={`${path}/icon-management/manual/:name`} component={IconManualForm} />
+							<Route path={`${path}/richtext-components`} component={RichtextComponents} />
 							<Route path={`${path}/content-types`} component={ContentTypes} />
 							<Route path={`${path}/content-types/new/:kind`} component={ContentTypeEditor} />
 							<Route path={`${path}/content-types/:id/edit`} component={ContentTypeEditor} />

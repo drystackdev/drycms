@@ -1,4 +1,4 @@
-import type { Node as PMNode } from "prosemirror-model";
+import type { Node as PMNode, NodeType } from "prosemirror-model";
 import {
   blockNodeTypeAndAttrs,
   blockTypeFromTagName,
@@ -120,6 +120,39 @@ function imageChildHtml(node: PMNode): string {
   return `<figure style="${escapeAttr(figureStyle)}">${img}<figcaption style="${escapeAttr(captionStyle)}">${escapeHtml(caption)}</figcaption></figure>`;
 }
 
+/** Export half of a registered richtext component node (mục 6,
+ * `status/register-compoennt.md`) - always an explicit open+close tag pair,
+ * never self-closed (`<dry-x/>`): custom elements aren't in HTML5's void-
+ * element list, so a browser parsing this back as real HTML ignores a
+ * trailing `/` and keeps the element open, swallowing everything after it
+ * as children until an explicit `</dry-x>` (or, if none ever comes,
+ * corrupting the rest of the document). Works for both `inline` and
+ * `block` types - same tag shape either way, only where it's called from
+ * differs (`inlineChildrenHtml` vs `exportBlockHtml`). */
+function dryComponentHtml(node: PMNode): string {
+  const tag = `dry-${node.type.name.slice("dry_".length)}`;
+  return `<${tag} props="${escapeAttr(JSON.stringify(node.attrs.props))}"></${tag}>`;
+}
+
+/** `null` for any tag that isn't `dry-*`, or one that is but has no
+ * matching confirmed component in the *current* `schema` (an unconfirmed/
+ * removed component's markup left over in saved content) - callers fall
+ * back to treating it as unrecognized, same as any other foreign tag. */
+function dryComponentNodeType(tagName: string): NodeType | null {
+  if (!tagName.startsWith("DRY-")) return null;
+  return schema.nodes[`dry_${tagName.slice("DRY-".length).toLowerCase()}`] ?? null;
+}
+
+function dryComponentNodeFromElement(el: Element, type: NodeType): PMNode {
+  let props: unknown = {};
+  try {
+    props = JSON.parse(el.getAttribute("props") ?? "{}");
+  } catch {
+    props = {};
+  }
+  return type.create({ props });
+}
+
 /** A flat textblock's (paragraph/heading/blockquote) own inline content -
  * shared by `exportBlockHtml` for however many places one can occur
  * (top level, a list item, a table cell). */
@@ -130,6 +163,8 @@ function inlineChildrenHtml(node: PMNode): string {
       inner += imageChildHtml(child);
     } else if (child.type === schema.nodes.hard_break) {
       inner += "<br>";
+    } else if (child.type.name.startsWith("dry_")) {
+      inner += dryComponentHtml(child);
     } else if (child.isText) {
       inner += textNodeToHtml(child);
     }
@@ -266,6 +301,9 @@ function exportGridHtml(gridNode: PMNode, extraStyle?: string): string {
  * grid item's own span onto whichever tag this produces - every other
  * caller leaves it unset. */
 function exportBlockHtml(node: PMNode, extraStyle?: string): string {
+  if (node.type.name.startsWith("dry_")) {
+    return dryComponentHtml(node);
+  }
   if (node.type === schema.nodes.bullet_list) {
     return `<ul${styleAttr(extraStyle)}>${listItemsHtml(node)}</ul>`;
   }
@@ -360,6 +398,8 @@ function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] 
     const node = imageNodeFromFigure(domNode as Element);
     if (node) return [node];
   }
+  const inlineDryType = dryComponentNodeType(domNode.nodeName);
+  if (inlineDryType?.isInline) return [dryComponentNodeFromElement(domNode as Element, inlineDryType)];
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
 
   const tag = domNode.nodeName;
@@ -506,6 +546,12 @@ function blockChildrenFromContainer(container: Element): PMNode[] {
       continue;
     }
     const el = child as Element;
+    const blockDryType = dryComponentNodeType(el.tagName);
+    if (blockDryType && !blockDryType.isInline) {
+      flushInline();
+      blocks.push(dryComponentNodeFromElement(el, blockDryType));
+      continue;
+    }
     if (BLOCK_TAGS.has(el.tagName) || isGridElement(el)) {
       flushInline();
       blocks.push(importBlockElement(el));

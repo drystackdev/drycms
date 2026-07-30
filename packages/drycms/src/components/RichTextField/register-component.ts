@@ -161,3 +161,13 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>>>(
     component: config.component,
   };
 }
+
+/** Discriminates a file's default export (whatever `import.meta.glob`'s
+ * lazy loader resolves to) as a genuine `DryEditerComponent(...)` result -
+ * shared by `RichtextComponents.tsx` (mục 3, filtering scanned files down
+ * to valid ones) and `ComponentPreview.tsx` (unwrapping `mod.default` to
+ * find the real Preact component at `.component`, since the module's
+ * default export is this whole wrapper object, not the component itself). */
+export function isDryComponentDefinition(value: unknown): value is DryComponentDefinition {
+  return !!value && typeof value === "object" && (value as { __dryComponent?: unknown }).__dryComponent === true;
+}

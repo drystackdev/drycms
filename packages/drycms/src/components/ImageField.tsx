@@ -263,7 +263,7 @@ export default function ImageField({
                     ` (${min ?? 0}–${max ?? "∞"})`}
                 </small>
               )}
-              <div class={isMultiple ? "row" : undefined}>
+              <div class="row">
                 <button type="button" class="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </button>

@@ -378,4 +378,115 @@ th {
   transform: translate(50%, 50%);
   cursor: row-resize;
 }
+
+/* "Reorder mode" (\`reorder-mode.ts\`) - suppresses the caret/native text
+ * selection while it's on, since typing/formatting is suspended for the
+ * duration (\`useRichTextEditor.ts\`'s \`editable\`) and a lingering text
+ * cursor would otherwise look like editing still works. Also hides every
+ * other resize handle this field has (grid/table col/row) - those aren't
+ * gated by \`view.editable\` themselves, so without this they'd still work
+ * mid-reorder, which reads as a stray inconsistency during an otherwise
+ * fully "everything else is suspended" mode. */
+.dry-tx-content.dry-tx-reorder-active {
+  caret-color: transparent;
+  user-select: none;
+}
+
+.dry-tx-content.dry-tx-reorder-active .dry-tx-grid-handle,
+.dry-tx-content.dry-tx-reorder-active .dry-tx-image-handle {
+  display: none !important;
+}
+
+/* Every \`group:"block"\` node (schema.ts) while reorder mode is active - a
+ * light tint just visible enough to read as "this is now a movable card",
+ * not a real background change. */
+.dry-tx-reorder-block {
+  background-color: color-mix(in srgb, var(--dry-foreground) 6%, transparent);
+  border-radius: var(--dry-radius-sm);
+}
+
+/* \`table\`/\`grid\` - this schema's only 2 "container" block types - get an
+ * outline in the same color as body text on top of the tint above, so a
+ * container reads as visually distinct from a plain paragraph/heading at a
+ * glance. */
+.dry-tx-reorder-container {
+  outline: 1px solid var(--dry-foreground);
+  outline-offset: 2px;
+}
+
+/* Cmd/Ctrl+click multi-selection - a stronger, offset outline in the same
+ * accent color selection/focus chrome uses elsewhere in this field (e.g.
+ * \`.dry-tx-image-box.is-selected\`), layered on top of \`.dry-tx-reorder-container\`'s
+ * own outline rather than replacing it (a selected container still reads as
+ * a container). */
+.dry-tx-reorder-selected {
+  outline: 2px solid var(--dry-primary);
+  outline-offset: 3px;
+}
+
+/* The node(s) currently being dragged - dimmed in place while the drag is
+ * live, rather than hidden outright (hiding it would shift every sibling
+ * around it, which reads as the drop having already happened). */
+.dry-tx-reorder-dragging {
+  opacity: 0.4;
+}
+
+/* The drag handle itself (\`reorder-mode.ts\`'s \`buildHandle\`) - pinned to
+ * its own block's top-left corner (that block's own \`.dry-tx-reorder-block\`
+ * decoration carries \`position:relative\` alongside its background, see
+ * \`reorderDecorations\`), same "absolutely-positioned chrome anchored to a
+ * \`position:relative\` node decoration" idea \`.dry-tx-grid-handle\` above
+ * uses off its own node view's root instead. */
+.dry-tx-reorder-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-35%, -35%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--dry-radius-sm);
+  background: var(--dry-background);
+  border: 1px solid var(--dry-border);
+  color: var(--dry-muted-foreground);
+  cursor: grab;
+}
+
+.dry-tx-reorder-handle:active {
+  cursor: grabbing;
+}
+
+/* Drop feedback - a highlight on whatever's currently under the pointer
+ * during a drag. \`-before\`/\`-after\` (a specific sibling's own top/bottom
+ * edge, in \`doc\`/a \`table_cell\`/a \`list_item\`/an empty \`grid_item\`'s slot)
+ * and \`-drop-target\` (an *occupied* \`grid_item\` as a whole, which always
+ * accepts a drop as "insert after" rather than needing before/after
+ * disambiguation - see \`computeDropTarget\`'s own doc comment in
+ * reorder-mode.ts) are mutually exclusive per render, but styled distinctly
+ * in case that ever changes. */
+.dry-tx-reorder-drop-before {
+  box-shadow: inset 0 2px 0 0 var(--dry-primary);
+}
+
+.dry-tx-reorder-drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--dry-primary);
+}
+
+.dry-tx-reorder-drop-target {
+  outline: 2px dashed var(--dry-primary);
+  outline-offset: 2px;
+}
+
+/* Selected <dry-*> custom element (DryComponentNodeView) - own class rather
+   than reusing .is-selected above: that name already means something
+   different on .dry-tx-image-box/grid items, and unlike those this class
+   lives directly on the selected element itself (a dynamic dry-{name} tag),
+   so a shared name risks colliding with a component author's own styles. */
+.dry-component-is-selected {
+  outline: 2px solid var(--dry-primary);
+  outline-offset: 2px;
+}
 `;

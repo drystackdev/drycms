@@ -6,6 +6,7 @@ import {
   BoldIcon,
   ClearFormatIcon,
   ItalicIcon,
+  MoveIcon,
   RedoIcon,
   UnderlineIcon,
   UndoIcon,
@@ -14,13 +15,20 @@ import {
 import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
+import DryComponentInsertButton from "./dry-component-insert-button.js";
 import FullscreenButton from "./fullscreen-button.js";
 import ImageInsertButton from "./image-insert-button.js";
 import LinkMenu from "./link-menu.js";
 import ListMenu from "./list-menu.js";
 import { removeAllMarks } from "./commands.js";
+import { toggleReorderMode } from "./reorder-mode.js";
 import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
+
+/** The one `ToolbarButton.key` `toolbar.tsx` never additionally disables
+ * while reorder mode is active - every other control is suspended while
+ * it's on, since the doc stops accepting any other edit for the duration. */
+export const REORDER_MODE_TOGGLE_KEY = "reorder-mode";
 
 /**
  * The toolbar's item registry - `toolbar.tsx` only knows how to render
@@ -128,6 +136,7 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     { type: "custom", key: "color", Component: ColorMenu },
     { type: "custom", key: "link", Component: LinkMenu },
     { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
+    { type: "custom", key: "insert-component", Component: DryComponentInsertButton, blockOnly: true },
   ],
   // Block group: every item here acts on a whole top-level element
   // (paragraph/heading/quote node, or its alignment) rather than a run of
@@ -141,6 +150,21 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
     { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
+  ],
+  // Reorder mode: its own single-item group (own bordered card), same
+  // "related controls read as one visual unit" reasoning `TableMenu`/
+  // `GridMenu` already get their own card for - toggling it suspends every
+  // other control in this toolbar (see `REORDER_MODE_TOGGLE_KEY` above and
+  // `toolbar.tsx`'s per-button `disabled` expression).
+  [
+    {
+      type: "button",
+      key: REORDER_MODE_TOGGLE_KEY,
+      label: "Reorder blocks",
+      Icon: MoveIcon,
+      run: toggleReorderMode(),
+      isActive: (state) => state.reorderModeActive,
+    },
   ],
   // "Insert grid" itself isn't here - it sits next to "Insert table" in
   // `TableMenu`'s own always-present card instead (`table-menu.tsx`), not

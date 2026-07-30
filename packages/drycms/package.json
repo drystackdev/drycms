@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./richtext-runtime": {
+      "types": "./dist/richtext-runtime.d.ts",
+      "default": "./dist/richtext-runtime.js"
+    },
     "./styles.css": "./src/styles/index.css",
     "./styles/*": "./src/styles/*",
     "./app.astro": "./src/app.astro",

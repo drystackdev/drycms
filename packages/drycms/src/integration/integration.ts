@@ -8,6 +8,7 @@ import {
   CONTENT_ROUTE_ENTRYPOINT,
   ICONIFY_ROUTE_ENTRYPOINT,
   ICONS_ROUTE_ENTRYPOINT,
+  RICHTEXT_COMPONENTS_ROUTE_ENTRYPOINT,
   STORAGE_ROUTE_ENTRYPOINT,
   type DryOption,
   resolveOptions,
@@ -16,11 +17,15 @@ import {
   VIRTUAL_CONFIG_TYPES,
   VIRTUAL_CONTENT_CONFIG_TYPES,
   VIRTUAL_ICONS_CONFIG_TYPES,
+  VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_TYPES,
+  VIRTUAL_RICHTEXT_COMPONENTS_TYPES,
   VIRTUAL_STORAGE_CONFIG_TYPES,
   dryFixOptimizeDeps,
   dryVirtualConfig,
   dryVirtualContentConfig,
   dryVirtualIconsConfig,
+  dryVirtualRichtextComponents,
+  dryVirtualRichtextComponentsConfig,
   dryVirtualStorageConfig,
 } from "./virtual.js";
 
@@ -197,6 +202,8 @@ export function dry(options: DryOption = {}): AstroIntegration {
               dryVirtualStorageConfig(resolved.storage),
               dryVirtualIconsConfig(resolved.icons),
               dryVirtualContentConfig(resolved.content),
+              dryVirtualRichtextComponents(resolved.richtext.componentsDir),
+              dryVirtualRichtextComponentsConfig(resolved.richtext.storage),
               // Only needed for drycms's OWN `preactAliases()` (`aliases`
               // is `{}` when the consumer supplies `@astrojs/preact`
               // themselves) - registering it unconditionally would strip
@@ -270,6 +277,14 @@ export function dry(options: DryOption = {}): AstroIntegration {
           entrypoint: CONTENT_ENTRIES_ROUTE_ENTRYPOINT,
         });
 
+        // Server-rendered API endpoint backing confirmed richtext-component
+        // records (label/type/props/shadow, own storage root) - see
+        // `routes/richtext-components.ts`.
+        injectRoute({
+          pattern: `${resolved.path}/api/richtext-components/[...slug]`,
+          entrypoint: RICHTEXT_COMPONENTS_ROUTE_ENTRYPOINT,
+        });
+
         logger.info(`admin UI mounted at ${resolved.path}`);
         if (resolved.storage.kind === "local") {
           logger.info(
@@ -306,6 +321,14 @@ export function dry(options: DryOption = {}): AstroIntegration {
         injectTypes({
           filename: "content-types-config-types.d.ts",
           content: VIRTUAL_CONTENT_CONFIG_TYPES,
+        });
+        injectTypes({
+          filename: "richtext-components-types.d.ts",
+          content: VIRTUAL_RICHTEXT_COMPONENTS_TYPES,
+        });
+        injectTypes({
+          filename: "richtext-components-config-types.d.ts",
+          content: VIRTUAL_RICHTEXT_COMPONENTS_CONFIG_TYPES,
         });
       },
     },

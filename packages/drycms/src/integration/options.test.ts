@@ -9,6 +9,10 @@ describe('resolveOptions', () => {
 			storage: { kind: 'local', root: resolve(process.cwd(), 'storage') },
 			icons: { kind: 'local', root: resolve(process.cwd(), 'icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), 'content.sqlite') },
+			richtext: {
+				componentsDir: resolve(process.cwd(), 'src/dry-components'),
+				storage: { kind: 'local', root: resolve(process.cwd(), 'richtext-components') },
+			},
 		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);

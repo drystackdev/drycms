@@ -1,5 +1,6 @@
-import { Schema, type Attrs, type DOMOutputSpec, type Node as PMNode, type NodeType } from "prosemirror-model";
+import { Schema, type Attrs, type DOMOutputSpec, type Node as PMNode, type NodeSpec, type NodeType } from "prosemirror-model";
 import { tableNodes } from "prosemirror-tables";
+import type { DryComponentRecord } from "./component-registry-types.js";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -417,7 +418,47 @@ const tableNodeSpecs = tableNodes({
   },
 });
 
-export const schema = new Schema({
+/**
+ * One node spec per confirmed richtext component (`status/register-compoennt.md`
+ * mục 5) - atom, no `content` (leaf, unlike `grid`/`table` which have real
+ * children), `props` a single JSON-blob attr rather than one attr per field.
+ * `toDOM` deliberately omits the trailing "hole" (`0`) `image`'s neighbors
+ * use - this node has no children to project into one.
+ */
+function buildDryNodeSpecs(components: DryComponentRecord[]): Record<string, NodeSpec> {
+  const specs: Record<string, NodeSpec> = {};
+  for (const component of components) {
+    const tag = `dry-${component.name}`;
+    specs[`dry_${component.name}`] = {
+      group: component.type === "block" ? "block" : "inline",
+      inline: component.type !== "block",
+      atom: true,
+      attrs: { props: { default: component.defaults } },
+      parseDOM: [
+        {
+          tag,
+          getAttrs(dom: HTMLElement | string) {
+            if (typeof dom === "string") return false;
+            try {
+              return { props: JSON.parse(dom.getAttribute("props") ?? "{}") };
+            } catch {
+              // Hand-edited/corrupted HTML - fall back to defaults rather
+              // than throwing and taking the whole parse down with it.
+              return { props: {} };
+            }
+          },
+        },
+      ],
+      toDOM(node): DOMOutputSpec {
+        return [tag, { props: JSON.stringify(node.attrs.props) }];
+      },
+    };
+  }
+  return specs;
+}
+
+function buildSchema(components: DryComponentRecord[]): Schema {
+  return new Schema({
   nodes: {
     doc: { content: "block+" },
     paragraph: {
@@ -604,6 +645,7 @@ export const schema = new Schema({
         ];
       },
     },
+    ...buildDryNodeSpecs(components),
   },
   marks: {
     bold: {
@@ -672,7 +714,24 @@ export const schema = new Schema({
       },
     },
   },
-});
+  });
+}
+
+/** The field's live schema instance - starts with no `dry-*` node types,
+ * extended in place by `setRichtextComponents` once `useRichTextEditor.ts`
+ * resolves the confirmed-component registry. `export let` (not `const`) +
+ * reassignment, not a mutable `Schema` API (ProseMirror has none) - every
+ * other file in this directory reads `schema.nodes.x`/`schema.marks.x`
+ * inside function bodies, never destructured at module scope, so this
+ * reassignment is a live ES module binding update they all see for free,
+ * with no per-file changes needed (verified across the directory). Must be
+ * called before any `EditorState`/`EditorView` is constructed - one already
+ * mounted keeps referencing whatever schema object it was built with. */
+export let schema = buildSchema([]);
+
+export function setRichtextComponents(components: DryComponentRecord[]): void {
+  schema = buildSchema(components);
+}
 
 export function createEmptyDoc(): PMNode {
   return schema.nodes.doc!.createAndFill()!;

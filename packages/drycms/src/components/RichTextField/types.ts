@@ -81,6 +81,10 @@ export interface ToolbarState {
    * still report one (unlike `color`/`format` above, which need a real
    * selection). Drives `link-menu.tsx`'s create-vs-edit rendering. */
   link: { href: string; target: string | null; active: boolean; disabled: boolean };
+  /** Whether "reorder mode" (`reorder-mode.ts`) is currently on - drives its
+   * own toolbar toggle's pressed state and, in `toolbar.tsx`, disables every
+   * other control while it's active. */
+  reorderModeActive: boolean;
 }
 
 /** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)

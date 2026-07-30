@@ -75,6 +75,13 @@ const NAV: {
     ready: true,
   },
   {
+    key: "richtext-components",
+    label: "Custom Components",
+    href: `${path}/richtext-components`,
+    icon: "Content",
+    ready: true,
+  },
+  {
     key: "users",
     label: "Users",
     href: `${path}/content/user`,

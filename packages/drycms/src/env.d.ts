@@ -40,3 +40,17 @@ declare module "virtual:drycms/content-config" {
 	export default config;
 }
 
+declare module "virtual:drycms/richtext-components" {
+	export const components: Record<string, () => Promise<{ default?: unknown }>>;
+}
+
+declare module "virtual:drycms/richtext-components-config" {
+	type StorageConfig =
+		| { kind: "local"; root: string }
+		| { kind: "github"; owner: string; repo: string; branch: string; token: string; root: string }
+		| { kind: "gitlab"; host: string; project: string; branch: string; token: string; root: string };
+	export const richtextComponentsStorage: StorageConfig;
+	const config: { richtextComponentsStorage: StorageConfig };
+	export default config;
+}
+

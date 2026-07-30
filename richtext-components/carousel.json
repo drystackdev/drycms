@@ -1,0 +1,35 @@
+{
+  "name": "carousel",
+  "label": "Carousel",
+  "type": "inline",
+  "shadow": true,
+  "props": {
+    "images": {
+      "kind": "array",
+      "req": false,
+      "defaultValue": [
+        "https://picsum.photos/seed/site-carousel-1/480/280",
+        "https://picsum.photos/seed/site-carousel-2/480/280",
+        "https://picsum.photos/seed/site-carousel-3/480/280"
+      ],
+      "inner": {
+        "kind": "image",
+        "req": false
+      }
+    },
+    "caption": {
+      "kind": "string",
+      "req": false
+    }
+  },
+  "defaults": {
+    "images": [
+      "https://picsum.photos/seed/site-carousel-1/480/280",
+      "https://picsum.photos/seed/site-carousel-2/480/280",
+      "https://picsum.photos/seed/site-carousel-3/480/280"
+    ],
+    "caption": ""
+  },
+  "sourcePath": "/src/dry-components/Carousel/index.tsx",
+  "enabled": true
+}

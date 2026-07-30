@@ -1,4 +1,4 @@
-import { type IconName, iconBodies, iconViewBoxes } from './icons.js';
+import { type IconName, iconBodies } from './icons.js';
 
 interface Props {
 	name: IconName;
@@ -6,17 +6,20 @@ interface Props {
 	[key: string]: unknown;
 }
 
+const DEFAULT_VIEW_BOX = '0 0 24 24';
+
 export default function Icon({ name, size = '1em', ...rest }: Props) {
-	const body = iconBodies[name];
-	if (!body) {
+	const icon = iconBodies[name];
+	if (!icon) {
 		throw new Error(
 			`[drycms] Unknown icon "${name}". Available: ${Object.keys(iconBodies).join(', ')}`,
 		);
 	}
+	const { body, viewBox = DEFAULT_VIEW_BOX } = icon;
 
 	return (
 		<svg
-			viewBox={iconViewBoxes[name]}
+			viewBox={viewBox}
 			width={size}
 			height={size}
 			aria-hidden="true"
