@@ -703,9 +703,19 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   label="Cover image"
   source={source}
   value={cover}
-  onChange={setCover}
+  onChange={(value) => setCover(value)}
   description="Recommended size: 1200×630."
   helperText="Shown at the top of the post."
+/>
+
+<ImageField
+  label="Gallery"
+  source={source}
+  value={gallery}
+  onChange={(value) => setGallery(value)}
+  multiple={{ min: 1, max: 5 }}
+  description="Drag a row's handle to reorder."
+  helperText="Up to 5 images, shown in this order."
 />`,
   relationField: `import RelationField from 'drycms/components/RelationField';
 

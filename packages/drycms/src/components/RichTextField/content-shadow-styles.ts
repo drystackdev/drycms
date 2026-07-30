@@ -320,21 +320,25 @@ th {
 
 /* \`grid-resize.ts\`'s own \`highlightLine\` toggle - every cell gets a dashed
  * outline while it's on, brightening on hover so which cell a click would
- * land in reads clearly before it's actually focused. */
+ * land in reads clearly before it's actually focused. \`border-color\`
+ * (not \`border-style\`/\`border-width\`) is what \`.dry-tx-grid-focused\`
+ * below overrides to hide this on the focused cell specifically - keeping
+ * the same 1px border-width there avoids a layout shift when focus moves
+ * on/off a cell, unlike removing the border outright. */
 .dry-tx-grid-highlight > .dry-tx-grid-item {
-  border: 1px dashed var(--dry-border);
-}
-
-.dry-tx-grid-highlight > .dry-tx-grid-item:hover {
-  border-color: var(--dry-foreground);
+  outline: 1px dashed var(--dry-border);
 }
 
 /* The currently-focused cell (selection sits inside it) - a stronger,
- * offset outline so it doesn't collide with the plain dashed border every
- * cell already carries above. */
-.dry-tx-grid-focused {
-  outline: 2px solid var(--dry-primary);
-  outline-offset: 0.25rem;
+ * offset outline replaces the plain dashed border every other cell still
+ * carries (hidden via transparent, see above), rather than showing both at
+ * once. Selector kept as specific as \`.dry-tx-grid-highlight > .dry-tx-grid-item\`
+ * itself (not just \`.dry-tx-grid-focused\` alone) - a single-class selector
+ * loses the border-color cascade to that two-class rule regardless of
+ * source order, since specificity (not position) decides between rules
+ * that don't share it. */
+.dry-tx-grid-highlight > .dry-tx-grid-item.dry-tx-grid-focused {
+  outline: 1px solid var(--dry-primary);
 }
 
 /* \`grid-item-view.ts\`'s own 2 resize handles - always in the DOM, but only

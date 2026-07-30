@@ -989,6 +989,46 @@
       }
     }
 
+    /* ImageField `multiple` mode's reorderable row list, under the "Add
+     * images" trigger - drag-reorder driven by the same `useSortableList`
+     * hook as the Fields list/DataTable rows (see `.dnd-dragging`/
+     * `.dnd-drag-placeholder` above), just `<li>` rows instead of `<tr>`s. */
+    .image-field-list {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 16rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .image-field-list-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+    }
+
+    .image-field-list-thumb {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: var(--dry-radius-sm);
+      object-fit: cover;
+      background-color: var(--dry-muted);
+    }
+
+    .image-field-list-name {
+      overflow: hidden;
+      flex: 1;
+      font-size: var(--dry-text-sm);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .under {
       padding: 1.5rem;
       border: 1px solid var(--dry-border);

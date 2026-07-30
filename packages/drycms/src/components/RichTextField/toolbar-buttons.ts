@@ -149,10 +149,10 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
       Icon: GridIcon,
       run: insertGrid(),
       blockOnly: true,
-      // No nested grids reachable from the toolbar - `insertGrid` doesn't
-      // guard against it itself (see `grid.ts`), so the button disables
-      // instead once the caret's already inside one.
-      isDisabled: (state: ToolbarState) => !!state.selectedGrid,
+      // Nesting is allowed - `insertGrid` (grid.ts) routes through
+      // `insertBlockAfterFocusedGridItem` whenever the caret's already
+      // inside a grid, landing the new grid inside that cell rather than
+      // escaping it.
     },
     { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
   ],

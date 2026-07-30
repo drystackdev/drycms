@@ -1,6 +1,6 @@
 import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView, NodeView, ViewMutationRecord } from "prosemirror-view";
-import { GRID_COLUMNS, gridItemStyleString } from "./schema.js";
+import { DEFAULT_GRID_COLUMNS, gridItemStyleString, schema } from "./schema.js";
 
 /**
  * Drag-to-resize handles for a grid cell's own `colSpan`/`rowSpan` - same
@@ -37,6 +37,10 @@ interface DragState {
   pxPerRow: number;
   colSpan: number;
   rowSpan: number;
+  // Snapshotted at drag start from the enclosing grid's own `columns` attr -
+  // a grid's column count is per-instance now (`grid-menu.tsx`'s columns
+  // selector), not the fixed constant this clamp used to check against.
+  maxCol: number;
 }
 
 export class GridItemNodeView implements NodeView {
@@ -78,6 +82,18 @@ export class GridItemNodeView implements NodeView {
     this.dom.setAttribute("style", gridItemStyleString(this.node.attrs.colSpan as number, this.node.attrs.rowSpan as number));
   }
 
+  /** The enclosing grid's own `columns` attr - resolving `getPos()` (the
+   * position right before this item, i.e. inside the grid's own content)
+   * lands `$pos.parent` on that grid node. Falls back to
+   * `DEFAULT_GRID_COLUMNS` if the position can't be resolved (view not yet
+   * mounted) rather than throwing. */
+  private enclosingGridColumns(): number {
+    const pos = this.getPos();
+    if (pos == null) return DEFAULT_GRID_COLUMNS;
+    const parent = this.view.state.doc.resolve(pos).parent;
+    return parent.type === schema.nodes.grid ? (parent.attrs.columns as number) : DEFAULT_GRID_COLUMNS;
+  }
+
   private startDrag(axis: Axis, event: PointerEvent) {
     event.preventDefault();
     event.stopPropagation();
@@ -94,6 +110,7 @@ export class GridItemNodeView implements NodeView {
       pxPerRow: rect.height / rowSpan,
       colSpan,
       rowSpan,
+      maxCol: this.enclosingGridColumns(),
     };
     window.addEventListener("pointermove", this.onPointerMove);
     window.addEventListener("pointerup", this.onPointerUp);
@@ -104,7 +121,7 @@ export class GridItemNodeView implements NodeView {
     if (!drag) return;
     if (drag.axis === "col") {
       const deltaCols = drag.pxPerCol > 0 ? Math.round((event.clientX - drag.startClientX) / drag.pxPerCol) : 0;
-      drag.colSpan = Math.min(GRID_COLUMNS, Math.max(MIN_SPAN, drag.startColSpan + deltaCols));
+      drag.colSpan = Math.min(drag.maxCol, Math.max(MIN_SPAN, drag.startColSpan + deltaCols));
     } else {
       const deltaRows = drag.pxPerRow > 0 ? Math.round((event.clientY - drag.startClientY) / drag.pxPerRow) : 0;
       drag.rowSpan = Math.max(MIN_SPAN, drag.startRowSpan + deltaRows);

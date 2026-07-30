@@ -509,16 +509,30 @@ function DatePickerFieldPreview() {
 function ImageFieldPreview() {
   const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const [cover, setCover] = useState("image.png");
+  const [gallery, setGallery] = useState<string[]>(["images.jpeg", "image.png"]);
   return (
-    <div style="width: 100%; max-width: 20rem">
-      <ImageField
-        label="Cover image"
-        source={source}
-        value={cover}
-        onChange={setCover}
-        description="Recommended size: 1200×630."
-        helperText="Shown at the top of the post."
-      />
+    <div class="grid cols-2" style="width: 100%">
+      <div>
+        <ImageField
+          label="Cover image"
+          source={source}
+          value={cover}
+          onChange={(value) => setCover(value as string)}
+          description="Recommended size: 1200×630."
+          helperText="Shown at the top of the post."
+        />
+      </div>
+      <div>
+        <ImageField
+          label="Gallery"
+          source={source}
+          value={gallery}
+          onChange={(value) => setGallery(value as string[])}
+          multiple={{ min: 1, max: 5 }}
+          description="Drag a row's handle to reorder."
+          helperText="Up to 5 images, shown in this order."
+        />
+      </div>
     </div>
   );
 }
@@ -1455,7 +1469,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="image-field"
           title="Image field"
-          description="Same label + control + helper text contract as TextField; the control is a 4:3 frame that opens a FileManager-backed dialog restricted to images (accept), pre-scrolled to the current selection."
+          description="Same label + control + helper text contract as TextField; the control is a 4:3 frame that opens a FileManager-backed dialog restricted to images (accept), pre-scrolled to the current selection. multiple (true, or {min, max} to require/cap a count) switches to picking several images, rendered as a reorderable list you can drag to reorder below the picker."
           code={code.imageField!}
         >
           <ImageFieldPreview />

@@ -21,7 +21,7 @@ import {
   getTextColorState,
 } from "./commands.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
-import { getSelectedGrid, splitGridItem } from "./grid.js";
+import { exitGridDownward, getSelectedGrid, splitGridItem } from "./grid.js";
 import { GridItemNodeView } from "./grid-item-view.js";
 import { gridResizing } from "./grid-resize.js";
 import { ImageNodeView } from "./image-view.js";
@@ -218,7 +218,7 @@ export function useRichTextEditor({
           Enter: chainCommands(splitListItem(schema.nodes.list_item!), splitGridItem()),
           Tab: chainCommands(sinkListItem(schema.nodes.list_item!), goToNextCell(1), exitTableForward()),
           "Shift-Tab": chainCommands(liftListItem(schema.nodes.list_item!), goToNextCell(-1)),
-          ArrowDown: exitTableDownward(),
+          ArrowDown: chainCommands(exitTableDownward(), exitGridDownward()),
         }),
         keymap(baseKeymap),
         // Both resize plugins before `tableEditing()` - ProseMirror tries each

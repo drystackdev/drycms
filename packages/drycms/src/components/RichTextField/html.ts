@@ -9,9 +9,9 @@ import {
   cellVAlignFromElement,
   cellVAlignStyle,
   colgroupHtml,
-  colWidthsFromElement,
   colSpanFromStyle,
-  GRID_COLUMNS,
+  colWidthsFromElement,
+  gridColumnsFromStyle,
   gridContainerStyleString,
   gridItemStyleString,
   heightPxFromStyle,
@@ -208,47 +208,84 @@ function tableRowsHtml(tableNode: PMNode): string {
   return inner;
 }
 
-/** A grid's own `grid_item+` children, each rendered as
- * `<div class="dry-tx-grid-item" style="...">` wrapping the one block it
- * holds - the inverse of `importGridElement` below. Every item's style is
- * written explicitly, including the all-default (full-width/single-row)
- * case - see `gridItemStyleString`'s own doc comment for why that one isn't
- * optional like every other "only non-default" style in this file. */
-function gridItemsHtml(gridNode: PMNode): string {
-  let inner = "";
+function styleAttr(style: string | undefined): string {
+  return style ? ` style="${escapeAttr(style)}"` : "";
+}
+
+/** The one fixed (not per-instance) `<style>` block every exported grid
+ * carries: a default full-width/single-row rule for whichever items DON'T
+ * get their own inline `grid-column`/`grid-row` (see `exportGridHtml`
+ * below - only non-default items do, matching this file's usual "only the
+ * non-default case needs an explicit style" convention, which an inline
+ * style alone can't do here without this default rule backing it - an
+ * unset `grid-column` is `span 1`, not "full width", the exact bug that bit
+ * this feature's first, reverted attempt), plus a `!important` mobile
+ * override collapsing every item back to that same default regardless of
+ * its own inline span. `!important` is required there specifically because
+ * it has to beat an *inline* style, which normal specificity never can -
+ * every other rule in this file only ever competes with other stylesheet
+ * rules. Repeated verbatim in every grid's own export (rather than hoisted
+ * once per document) so a single grid `<div>` copied out on its own still
+ * renders correctly standalone - same self-contained reasoning as every
+ * other style in this file. `columns` is the specific grid's own column
+ * count (`grid.attrs.columns`, see `schema.ts`) - not a fixed constant,
+ * since each grid instance can carry a different one (`grid-menu.tsx`'s
+ * columns selector). */
+function gridStyleTag(columns: number): string {
+  const defaultStyle = gridItemStyleString(columns, 1);
+  const mobileStyle = `grid-column:span ${columns} !important;grid-row:span 1 !important`;
+  return `<style>.dry-tx-grid>*{${defaultStyle}}@media (width < 48rem){.dry-tx-grid>*{${mobileStyle}}}</style>`;
+}
+
+/** A grid's own export: each `grid_item`'s single inner block, unwrapped
+ * (no per-item wrapper element - the inverse of `importGridElement` below),
+ * carrying its own `colSpan`/`rowSpan` as a plain inline `style` on
+ * whatever tag that block itself exports as - but only when it differs
+ * from the all-default span `gridStyleTag`'s own default rule already
+ * covers; the default case gets no inline style at all. */
+function exportGridHtml(gridNode: PMNode, extraStyle?: string): string {
+  const columns = gridNode.attrs.columns as number;
+  const containerStyle = [gridContainerStyleString(columns), extraStyle].filter(Boolean).join(";");
+  let childrenHtml = "";
   gridNode.forEach((item) => {
-    const style = gridItemStyleString(item.attrs.colSpan as number, item.attrs.rowSpan as number);
-    const child = item.firstChild;
-    inner += `<div class="dry-tx-grid-item" style="${escapeAttr(style)}">${child ? exportBlockHtml(child) : ""}</div>`;
+    if (!item.firstChild) return;
+    const colSpan = item.attrs.colSpan as number;
+    const rowSpan = item.attrs.rowSpan as number;
+    const itemStyle = colSpan !== columns || rowSpan !== 1 ? gridItemStyleString(colSpan, rowSpan) : undefined;
+    childrenHtml += exportBlockHtml(item.firstChild, itemStyle);
   });
-  return inner;
+  return `<div class="dry-tx-grid"${styleAttr(containerStyle)}>${gridStyleTag(columns)}${childrenHtml}</div>`;
 }
 
 /** Exports one block-level node - dispatches to `<ul>`/`<ol>` or `<table>`
  * for the 2 node types that themselves nest further blocks, or the flat
  * `<p>`/`<h2>`-`<h6>`/`<blockquote>` case (`blockTypeOfNode`'s own domain)
  * for everything else. Used both for the doc's own top-level children and,
- * recursively, for whatever sits inside a `list_item` or table cell. */
-function exportBlockHtml(node: PMNode): string {
+ * recursively, for whatever sits inside a `list_item` or table cell.
+ * `extraStyle` is only ever passed by `exportGridHtml` above, to merge a
+ * grid item's own span onto whichever tag this produces - every other
+ * caller leaves it unset. */
+function exportBlockHtml(node: PMNode, extraStyle?: string): string {
   if (node.type === schema.nodes.bullet_list) {
-    return `<ul>${listItemsHtml(node)}</ul>`;
+    return `<ul${styleAttr(extraStyle)}>${listItemsHtml(node)}</ul>`;
   }
   if (node.type === schema.nodes.ordered_list) {
     const start = node.attrs.start as number;
-    return `<ol${start !== 1 ? ` start="${start}"` : ""}>${listItemsHtml(node)}</ol>`;
+    return `<ol${start !== 1 ? ` start="${start}"` : ""}${styleAttr(extraStyle)}>${listItemsHtml(node)}</ol>`;
   }
   if (node.type === schema.nodes.table) {
     const caption = node.attrs.caption as string;
     const captionHtml = caption ? `<caption>${escapeHtml(caption)}</caption>` : "";
-    return `<table>${captionHtml}${colgroupHtml(node.attrs.colWidths as number[] | null)}<tbody>${tableRowsHtml(node)}</tbody></table>`;
+    return `<table${styleAttr(extraStyle)}>${captionHtml}${colgroupHtml(node.attrs.colWidths as number[] | null)}<tbody>${tableRowsHtml(node)}</tbody></table>`;
   }
   if (node.type === schema.nodes.grid) {
-    return `<div class="dry-tx-grid" style="${escapeAttr(gridContainerStyleString())}">${gridItemsHtml(node)}</div>`;
+    return exportGridHtml(node, extraStyle);
   }
   const tag = blockTag(blockTypeOfNode(node));
   const align = (node.attrs.textAlign as string | null) ?? "left";
-  const style = align === "left" ? "" : ` style="text-align: ${align}"`;
-  return `<${tag}${style}>${inlineChildrenHtml(node)}</${tag}>`;
+  const alignStyle = align === "left" ? "" : `text-align: ${align}`;
+  const style = [alignStyle, extraStyle].filter(Boolean).join(";");
+  return `<${tag}${styleAttr(style)}>${inlineChildrenHtml(node)}</${tag}>`;
 }
 
 export function exportCleanHtml(doc: PMNode): string {
@@ -400,31 +437,36 @@ function importTableElement(el: Element): PMNode {
 function isGridElement(el: Element): boolean {
   return el.tagName === "DIV" && el.classList.contains("dry-tx-grid");
 }
-function isGridItemElement(el: Element): boolean {
-  return el.tagName === "DIV" && el.classList.contains("dry-tx-grid-item");
-}
+/** Matches one of `gridStyleTag`'s own generated `nth-child` rules,
+ * regardless of the (per-export-random) class prefix in front of it - e.g.
+ * `.g3f8k2>:nth-child(2){grid-column:span 6;grid-row:span 2}`. Only ever
+ * run against a `<style>` element this same field generated (see
+ * `importGridElement` below), so a foreign/hand-written `<div>` never gets
+ * misread as one. */
 
-/** Reads a grid back from `<div class="dry-tx-grid">`'s own
- * `dry-tx-grid-item` children - the inverse of `gridItemsHtml` above. Each
- * item recurses through `blockChildrenFromContainer` (same walk a `<li>`/
- * `<td>` gets) but only ever keeps the first block it produces:
- * `grid_item`'s content is exactly one block (see `schema.ts`), so a
- * well-formed export never has more than one to begin with - only
- * hand-edited HTML could, and dropping the extras there is preferable to
- * producing a doc `schema.nodes.grid_item!.create` would just reject. */
+/** Reads a grid back from `<div class="dry-tx-grid">`'s own children - the
+ * inverse of `exportGridHtml` above. Every non-`<style>` child is read as
+ * one item's sole block (`importBlockElement`, the same per-element
+ * dispatch a doc's own top-level children get - a grid item is never a
+ * wrapper element in this format, just the block itself), with its
+ * `colSpan`/`rowSpan` read directly off that same element's own inline
+ * `style` (`colSpanFromStyle`/`rowSpanFromStyle`, schema.ts) - already
+ * defaulting to the all-default span when there's no `grid-column`/
+ * `grid-row` in it at all, matching `exportGridHtml`'s own "no inline style
+ * for the default case" convention. */
 function importGridElement(el: Element): PMNode {
+  const columns = gridColumnsFromStyle(el instanceof HTMLElement ? el.style.cssText : "");
   const items = Array.from(el.children)
-    .filter(isGridItemElement)
-    .map((itemEl) => {
-      const style = itemEl instanceof HTMLElement ? itemEl.style.cssText : "";
-      const attrs = { colSpan: colSpanFromStyle(style), rowSpan: rowSpanFromStyle(style) };
-      const blocks = blockChildrenFromContainer(itemEl);
-      return schema.nodes.grid_item!.create(attrs, blocks[0] ?? schema.nodes.paragraph!.create());
+    .filter((child) => child.tagName !== "STYLE")
+    .map((childEl) => {
+      const style = childEl instanceof HTMLElement ? childEl.style.cssText : "";
+      const attrs = { colSpan: colSpanFromStyle(style, columns), rowSpan: rowSpanFromStyle(style) };
+      return schema.nodes.grid_item!.create(attrs, importBlockElement(childEl));
     });
   if (items.length === 0) {
-    items.push(schema.nodes.grid_item!.create({ colSpan: GRID_COLUMNS, rowSpan: 1 }, schema.nodes.paragraph!.create()));
+    items.push(schema.nodes.grid_item!.create({ colSpan: columns, rowSpan: 1 }, schema.nodes.paragraph!.create()));
   }
-  return schema.nodes.grid!.create(null, items);
+  return schema.nodes.grid!.create({ columns }, items);
 }
 
 /** One top-level-shaped block element - dispatches to a list/table/grid

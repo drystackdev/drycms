@@ -1,10 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
+import Popover from "../Popover.js";
 import { EyeClosedIcon, EyeIcon, TrashIcon } from "../icons.js";
 import { runCommand } from "./commands.js";
-import { removeGrid } from "./grid.js";
+import { removeGrid, setGridColumns } from "./grid.js";
 import { isHighlightLineOn, setHighlightLine } from "./grid-resize.js";
+import { GRID_COLUMN_OPTIONS } from "./schema.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 
 export interface GridMenuProps {
@@ -25,9 +27,20 @@ const COLLAPSE_DURATION = 200;
  * own expand/collapse-on-selection card (unlike that file, there's no
  * always-present "insert" half - `toolbar-buttons.ts`'s plain "Insert grid"
  * button already covers that, so this card is purely contextual). Contains
- * just 2 actions per `status/grid.md`'s own spec: the `highlightLine` toggle
- * (dashed borders + the 2 per-item resize handles - see `grid-resize.ts`/
- * `grid-item-view.ts`) and "Xoá grid" (unwrap - `removeGrid` in `grid.ts`).
+ * 3 actions: a columns picker (a `Popover` listing `GRID_COLUMN_OPTIONS`,
+ * same one-of-many pattern as `align-menu.tsx` - picking a value calls
+ * `setGridColumns` in `grid.ts`, which also rescales every item's `colSpan`
+ * proportionally so the layout stays roughly the same shape rather than
+ * items suddenly occupying a very different fraction of the row), the
+ * `highlightLine` toggle (dashed borders + the 2 per-item resize handles -
+ * see `grid-resize.ts`/`grid-item-view.ts`), and "Xoá grid" (unwrap -
+ * `removeGrid` in `grid.ts`).
+ *
+ * This card itself still collapses when the selection leaves the grid (same
+ * as `TableMenu`) - but `highlightLine` is anchored to the grid's own doc
+ * position in `grid-resize.ts`, not to live selection, so the dashed-border/
+ * handle chrome in the content area stays visible after that happens. Only
+ * clicking back into the grid (or its own "Xoá grid") changes it again.
  */
 export default function GridMenu({ viewRef, state, disabled = false, iconSize = "md" }: GridMenuProps) {
   const selected = state.selectedGrid;
@@ -50,11 +63,37 @@ export default function GridMenu({ viewRef, state, disabled = false, iconSize = 
 
   if (!controlsMounted) return null;
 
-  const highlightOn = view ? isHighlightLineOn(view.state) : false;
+  const highlightOn = view && selected ? isHighlightLineOn(view.state, selected.pos) : false;
+  const columns = (selected?.node.attrs.columns as number | undefined) ?? GRID_COLUMN_OPTIONS[0];
 
   return (
     <div class={`richtext-grid-menu-controls-wrap${controlsShown ? " expanded" : ""}`} aria-hidden={!expanded}>
       <div class="richtext-grid-menu-controls">
+        <Popover
+          label="Grid columns"
+          items={GRID_COLUMN_OPTIONS.map((value) => ({
+            type: "item" as const,
+            label: String(value),
+            checked: value === columns,
+            onClick: () => {
+              if (!selected || !view) return;
+              runCommand(view, setGridColumns(selected.pos, selected.node, value));
+            },
+          }))}
+          trigger={(onClick) => (
+            <button
+              type="button"
+              class={`ghost ${iconSize}`}
+              aria-label="Grid columns"
+              data-tooltip={`Columns: ${columns}`}
+              disabled={controlsDisabled}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={onClick}
+            >
+              {columns}
+            </button>
+          )}
+        />
         <button
           type="button"
           class={`ghost icon ${iconSize}`}
@@ -63,7 +102,7 @@ export default function GridMenu({ viewRef, state, disabled = false, iconSize = 
           aria-pressed={highlightOn}
           disabled={controlsDisabled}
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => view && setHighlightLine(view, !highlightOn)}
+          onClick={() => view && selected && setHighlightLine(view, selected.pos, !highlightOn)}
         >
           {highlightOn ? <EyeIcon /> : <EyeClosedIcon />}
         </button>

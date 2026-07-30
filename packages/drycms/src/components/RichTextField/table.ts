@@ -12,6 +12,7 @@ import {
   selectionCell,
   splitCellWithType,
 } from "prosemirror-tables";
+import { insertBlockAfterFocusedGridItem } from "./grid.js";
 import { schema, type CellHAlign, type CellVAlign } from "./schema.js";
 
 /**
@@ -60,12 +61,22 @@ function buildTable(rows: number, cols: number): PMNode {
  * move into, silently swallowing anything typed next. Any other insertion
  * position already gets a sibling for free, whether that's the existing
  * block that followed the cursor or the tail end of a split paragraph, so
- * this only ever fires for the trailing case. */
+ * this only ever fires for the trailing case.
+ *
+ * Inside a grid cell, plain `replaceSelectionWith` doesn't land the table
+ * inside that cell at all - `grid_item`'s content is exactly one block
+ * (schema.ts), so the generic fitting logic widens the replace past its
+ * boundary, and empirically past the whole grid's own boundary too. Routed
+ * through `insertBlockAfterFocusedGridItem` (grid.ts) instead whenever the
+ * selection is actually inside one, which appends the table as a new
+ * sibling cell right after the current one instead. */
 export function insertTable(rows = DEFAULT_ROWS, cols = DEFAULT_COLS): Command {
   return (state, dispatch) => {
     if (dispatch) {
-      let tr = state.tr.replaceSelectionWith(buildTable(rows, cols));
-      if (Selection.atEnd(state.doc).from === state.selection.to) {
+      const table = buildTable(rows, cols);
+      const gridTr = insertBlockAfterFocusedGridItem(state, table);
+      let tr = gridTr ?? state.tr.replaceSelectionWith(table);
+      if (!gridTr && Selection.atEnd(state.doc).from === state.selection.to) {
         tr = tr.insert(tr.doc.content.size, schema.nodes.paragraph!.createAndFill()!);
       }
       dispatch(tr.scrollIntoView());

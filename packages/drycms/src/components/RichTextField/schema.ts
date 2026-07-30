@@ -248,15 +248,52 @@ export function cellVAlignStyle(vAlign: CellVAlign | null): string {
   return vAlign && vAlign !== "middle" ? `vertical-align:${vAlign};` : "";
 }
 
-/** Fixed column count every grid uses - kept as one named constant (rather
- * than scattered literals) per the lesson from this feature's first, fully
- * reverted attempt, where the column count changed mid-session (24→12).
- * Rows aren't tracked as a count at all: `grid_item.rowSpan` combined with
- * native CSS grid auto-placement (`gridContainerStyleString` below) is
- * enough for the browser to size rows on its own - see `grid.ts`'s own doc
- * comment for why this is simpler and more robust than explicitly computing
- * "the largest row in use". */
-export const GRID_COLUMNS = 12;
+/** Default column count for a freshly-inserted grid, and the fallback used
+ * anywhere a column count can't otherwise be determined (e.g. parsing a
+ * `grid_item`'s own inline style with no ancestor grid element in reach -
+ * see `getGridItemAttrs` below). Each grid instance now owns its own column
+ * count (the `columns` attr on the `grid` node, changeable via
+ * `grid-menu.tsx`'s columns selector / `grid.ts`'s `setGridColumns`) rather
+ * than every grid sharing one fixed value - kept as one named constant
+ * (rather than scattered literals) per the lesson from this feature's first,
+ * fully reverted attempt, where the column count changed mid-session
+ * (24→12). Rows aren't tracked as a count at all: `grid_item.rowSpan`
+ * combined with native CSS grid auto-placement (`gridContainerStyleString`
+ * below) is enough for the browser to size rows on its own - see `grid.ts`'s
+ * own doc comment for why this is simpler and more robust than explicitly
+ * computing "the largest row in use". */
+export const DEFAULT_GRID_COLUMNS = 4;
+
+/** The fixed set of column counts `grid-menu.tsx`'s columns selector offers -
+ * not enforced anywhere else (a doc loaded from elsewhere with some other
+ * column count still renders/round-trips fine, see `gridColumnsFromStyle`
+ * below), just the UI's own set of presets. */
+export const GRID_COLUMN_OPTIONS = [4, 8, 12, 16, 24] as const;
+
+const MAX_GRID_COLUMNS = Math.max(...GRID_COLUMN_OPTIONS);
+
+/** Base height of one implicit row track, in rem - see `grid-auto-rows`
+ * below. Named for the same reason `GRID_COLUMNS` is: a value that showed
+ * up scattered as a literal before was exactly the "24→12 mid-session"
+ * trap this feature's first, reverted attempt already got burned by once.
+ *
+ * Deliberately a plain literal, not `calc(var(--dry-text-sm) * var(--dry-leading))`
+ * even though that's exactly where the number comes from
+ * (`content-shadow-styles.ts`'s own `.dry-tx-content` font-size/line-height):
+ * this value ships inside `gridContainerStyleString` below, which - unlike
+ * that stylesheet - also has to work in exported HTML with no shared
+ * stylesheet or custom properties available on an arbitrary consumer page
+ * (see that function's own doc comment). Matches a single default line of
+ * body text almost exactly, on purpose - a `minmax` floor *above* natural
+ * content height is what caused the actual bug this value fixes (a default,
+ * unresized cell rendering visibly taller than its own content, confirmed
+ * via the same real-browser measurement approach as the row-resize fix
+ * below: 21px settled naturally, an earlier 2.5rem/40px floor added ~19px
+ * of dead space under a single line of text). Erring at-or-slightly-under
+ * the natural value is the safe direction: `auto`'s own max still lets
+ * genuinely taller content (a heading, a table, wrapped text) grow past it
+ * with no ill effect either way. */
+const GRID_ROW_HEIGHT_REM = 1.3125;
 
 /** The grid container's own inline style - fixed/constant across every grid
  * instance (unlike `grid_item`'s own per-instance span below), so this
@@ -266,11 +303,23 @@ export const GRID_COLUMNS = 12;
  * ahead of earlier siblings to fill gaps, which would make the on-screen
  * layout diverge from document order - confusing in a WYSIWYG editor where
  * "the next block in the doc" should always render at or after every
- * earlier one. */
-export function gridContainerStyleString(): string {
-  return `display:grid;grid-template-columns:repeat(${GRID_COLUMNS},1fr);grid-auto-flow:row`;
+ * earlier one.
+ *
+ * `grid-auto-rows: minmax(${GRID_ROW_HEIGHT_REM}rem, auto)` - NOT bare
+ * `auto` - is required for `rowSpan` to have any visible effect at all: a
+ * bare-`auto` implicit track sizes purely off content that *starts* in it,
+ * so a row an item merely spans *into* (nothing of its own begins there)
+ * collapses to zero height, silently making every row-resize a no-op
+ * (confirmed via an actual drag in the browser - the `rowSpan` attr
+ * committed correctly, the rendered box never moved). `minmax`'s fixed
+ * minimum gives every implicit row a real floor regardless of what starts
+ * in it, while its `auto` maximum still lets a track grow past that floor
+ * when its own content genuinely needs more room. */
+export function gridContainerStyleString(columns: number): string {
+  return `display:grid;grid-template-columns:repeat(${columns},1fr);grid-auto-flow:row;grid-auto-rows:minmax(${GRID_ROW_HEIGHT_REM}rem,auto)`;
 }
 
+const GRID_TEMPLATE_COLUMNS = /(?:^|;)\s*grid-template-columns\s*:\s*repeat\(\s*(\d+)/;
 const GRID_SPAN = /(?:^|;)\s*grid-column\s*:\s*span\s+(\d+)/;
 const GRID_ROW_SPAN = /(?:^|;)\s*grid-row\s*:\s*span\s+(\d+)/;
 
@@ -278,13 +327,29 @@ function clampSpan(value: number, max: number): number {
   return Number.isFinite(value) && value > 0 ? Math.min(Math.round(value), max) : 1;
 }
 
+/** Reads a grid container's own `columns` attr back off its inline
+ * `grid-template-columns: repeat(N, 1fr)` - shared by this schema's own
+ * `parseDOM` and `html.ts`'s import walk. Falls back to
+ * `DEFAULT_GRID_COLUMNS` for anything unparseable, same as every other
+ * fallback in this file. */
+export function gridColumnsFromStyle(style: string): number {
+  const match = GRID_TEMPLATE_COLUMNS.exec(style);
+  const value = match ? Number(match[1]) : NaN;
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : DEFAULT_GRID_COLUMNS;
+}
+
 /** Reads a `grid_item`'s own `colSpan`/`rowSpan` back off its inline style -
  * shared by this schema's own `parseDOM` and `html.ts`'s import walk (which,
  * like table/image, hand-walks grid rather than going through `parseDOM` -
- * see that file's own doc comment). */
-export function colSpanFromStyle(style: string): number {
+ * see that file's own doc comment). `fallback` is the "no explicit
+ * grid-column at all" default - callers that know the enclosing grid's own
+ * `columns` (`html.ts`'s `importGridElement`) pass it explicitly so an
+ * unstyled item defaults to that specific grid's full width, not a fixed
+ * constant; callers with no such context (this schema's own `parseDOM`) fall
+ * back to `DEFAULT_GRID_COLUMNS`. */
+export function colSpanFromStyle(style: string, fallback: number = DEFAULT_GRID_COLUMNS): number {
   const match = GRID_SPAN.exec(style);
-  return match ? clampSpan(Number(match[1]), GRID_COLUMNS) : GRID_COLUMNS;
+  return match ? clampSpan(Number(match[1]), MAX_GRID_COLUMNS) : fallback;
 }
 export function rowSpanFromStyle(style: string): number {
   const match = GRID_ROW_SPAN.exec(style);
@@ -295,17 +360,22 @@ export function rowSpanFromStyle(style: string): number {
  * `html.ts`'s export. Unlike every other "only non-default needs an
  * explicit style" helper in this file, this one is NOT optional: an unset
  * `grid-column`/`grid-row` defaults to `span 1` in CSS, not "full width" -
- * omitting it at the default `colSpan`/`GRID_COLUMNS` value silently
- * collapses the item to a sliver. Caught the hard way (real-browser
- * verification, not the type checker) building this feature's first,
- * reverted attempt - always write both values explicitly. */
+ * omitting it at the default `colSpan`/the grid's own `columns` value
+ * silently collapses the item to a sliver. Caught the hard way
+ * (real-browser verification, not the type checker) building this feature's
+ * first, reverted attempt - always write both values explicitly. */
 export function gridItemStyleString(colSpan: number, rowSpan: number): string {
   return `grid-column:span ${colSpan};grid-row:span ${rowSpan}`;
 }
 
 function getGridItemAttrs(dom: HTMLElement | string): { colSpan: number; rowSpan: number } {
-  if (typeof dom === "string") return { colSpan: GRID_COLUMNS, rowSpan: 1 };
+  if (typeof dom === "string") return { colSpan: DEFAULT_GRID_COLUMNS, rowSpan: 1 };
   return { colSpan: colSpanFromStyle(dom.style.cssText), rowSpan: rowSpanFromStyle(dom.style.cssText) };
+}
+
+function getGridAttrs(dom: HTMLElement | string): { columns: number } {
+  if (typeof dom === "string") return { columns: DEFAULT_GRID_COLUMNS };
+  return { columns: gridColumnsFromStyle(dom.style.cssText) };
 }
 
 /** `table`/`table_row`/`table_cell`/`table_header` node specs from
@@ -451,14 +521,15 @@ export const schema = new Schema({
     grid: {
       group: "block",
       content: "grid_item+",
-      parseDOM: [{ tag: "div.dry-tx-grid" }],
-      toDOM(): DOMOutputSpec {
-        return ["div", { class: "dry-tx-grid", style: gridContainerStyleString() }, 0];
+      attrs: { columns: { default: DEFAULT_GRID_COLUMNS } },
+      parseDOM: [{ tag: "div.dry-tx-grid", getAttrs: getGridAttrs }],
+      toDOM(node): DOMOutputSpec {
+        return ["div", { class: "dry-tx-grid", style: gridContainerStyleString(node.attrs.columns as number) }, 0];
       },
     },
     grid_item: {
       content: "block",
-      attrs: { colSpan: { default: GRID_COLUMNS }, rowSpan: { default: 1 } },
+      attrs: { colSpan: { default: DEFAULT_GRID_COLUMNS }, rowSpan: { default: 1 } },
       parseDOM: [{ tag: "div.dry-tx-grid-item", getAttrs: getGridItemAttrs }],
       toDOM(node): DOMOutputSpec {
         const style = gridItemStyleString(node.attrs.colSpan as number, node.attrs.rowSpan as number);
