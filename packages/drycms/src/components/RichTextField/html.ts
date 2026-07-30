@@ -11,6 +11,8 @@ import {
   colgroupHtml,
   colSpanFromStyle,
   colWidthsFromElement,
+  dryInlineAttrsFromElement,
+  dryInlineStyleString,
   gridColumnsFromStyle,
   gridContainerStyleString,
   gridItemStyleString,
@@ -131,7 +133,19 @@ function imageChildHtml(node: PMNode): string {
  * differs (`inlineChildrenHtml` vs `exportBlockHtml`). */
 function dryComponentHtml(node: PMNode): string {
   const tag = `dry-${node.type.name.slice("dry_".length)}`;
-  return `<${tag} props="${escapeAttr(JSON.stringify(node.attrs.props))}"></${tag}>`;
+  const attrs: Record<string, string> = { props: escapeAttr(JSON.stringify(node.attrs.props)) };
+  if (node.type.isInline) {
+    const style = dryInlineStyleString(
+      node.attrs.width as number | null,
+      node.attrs.height as number | null,
+      node.attrs.align as ImageAlign | null,
+    );
+    if (style) attrs.style = escapeAttr(style);
+  }
+  const attrString = Object.entries(attrs)
+    .map(([key, value]) => ` ${key}="${value}"`)
+    .join("");
+  return `<${tag}${attrString}></${tag}>`;
 }
 
 /** `null` for any tag that isn't `dry-*`, or one that is but has no
@@ -150,7 +164,8 @@ function dryComponentNodeFromElement(el: Element, type: NodeType): PMNode {
   } catch {
     props = {};
   }
-  return type.create({ props });
+  const attrs = type.isInline ? { props, ...dryInlineAttrsFromElement(el as HTMLElement) } : { props };
+  return type.create(attrs);
 }
 
 /** A flat textblock's (paragraph/heading/blockquote) own inline content -

@@ -425,32 +425,78 @@ const tableNodeSpecs = tableNodes({
  * `toDOM` deliberately omits the trailing "hole" (`0`) `image`'s neighbors
  * use - this node has no children to project into one.
  */
+/** `width`/`height`/`align`/`lockAspectRatio` for an `inline`-type dry
+ * component, as one `style` string - reuses `image`'s own
+ * `imageSizeAndFitStyleString`/`imageAlignStyleString` (both already
+ * generic - neither actually contains anything image-specific despite the
+ * name, see their own doc comments) rather than re-deriving the same float/
+ * margin/size rules. No `objectFit` equivalent exists for an arbitrary
+ * component (that's a CSS property specific to replaced elements like
+ * `<img>`), so that argument is always `null` here. */
+export function dryInlineStyleString(width: number | null, height: number | null, align: ImageAlign | null): string {
+  return [imageSizeAndFitStyleString(width, height, null), imageAlignStyleString(align)].filter(Boolean).join(";");
+}
+
+/** Inverse of `dryInlineStyleString` - reads width/height/align back off a
+ * `dry-*` element's own inline style, same helpers `image`'s `parseDOM`
+ * uses for the same purpose. */
+export function dryInlineAttrsFromElement(dom: HTMLElement) {
+  return { ...imageSizeFromElement(dom), align: parseImageAlign(dom) };
+}
+
 function buildDryNodeSpecs(components: DryComponentRecord[]): Record<string, NodeSpec> {
   const specs: Record<string, NodeSpec> = {};
   for (const component of components) {
     const tag = `dry-${component.name}`;
+    const isInline = component.type !== "block";
     specs[`dry_${component.name}`] = {
-      group: component.type === "block" ? "block" : "inline",
-      inline: component.type !== "block",
+      group: isInline ? "inline" : "block",
+      inline: isInline,
       atom: true,
-      attrs: { props: { default: component.defaults } },
+      attrs: {
+        props: { default: component.defaults },
+        // Editor-level presentation attrs, layered on top of the
+        // component's own `props` the same way `image`'s `width`/`height`/
+        // `align`/`lockAspectRatio` sit alongside its content attrs
+        // (`src`/`alt`) - only `inline` components get them (mirrors
+        // `image`, itself always inline; a `block` component is already a
+        // full top-level element with nothing to float/center against).
+        ...(isInline
+          ? {
+              width: { default: null },
+              height: { default: null },
+              align: { default: null },
+              lockAspectRatio: { default: true },
+            }
+          : {}),
+      },
       parseDOM: [
         {
           tag,
           getAttrs(dom: HTMLElement | string) {
             if (typeof dom === "string") return false;
+            let props: unknown = {};
             try {
-              return { props: JSON.parse(dom.getAttribute("props") ?? "{}") };
+              props = JSON.parse(dom.getAttribute("props") ?? "{}");
             } catch {
               // Hand-edited/corrupted HTML - fall back to defaults rather
               // than throwing and taking the whole parse down with it.
-              return { props: {} };
             }
+            return isInline ? { props, ...dryInlineAttrsFromElement(dom) } : { props };
           },
         },
       ],
       toDOM(node): DOMOutputSpec {
-        return [tag, { props: JSON.stringify(node.attrs.props) }];
+        const attrs: Record<string, string> = { props: JSON.stringify(node.attrs.props) };
+        if (isInline) {
+          const style = dryInlineStyleString(
+            node.attrs.width as number | null,
+            node.attrs.height as number | null,
+            node.attrs.align as ImageAlign | null,
+          );
+          if (style) attrs.style = style;
+        }
+        return [tag, attrs];
       },
     };
   }

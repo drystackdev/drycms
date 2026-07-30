@@ -480,13 +480,47 @@ th {
   outline-offset: 2px;
 }
 
-/* Selected <dry-*> custom element (DryComponentNodeView) - own class rather
-   than reusing .is-selected above: that name already means something
-   different on .dry-tx-image-box/grid items, and unlike those this class
-   lives directly on the selected element itself (a dynamic dry-{name} tag),
-   so a shared name risks colliding with a component author's own styles. */
+/* dry-component-view.ts's own wrapper/box/handle set, same shape as
+   .dry-tx-image-wrapper/.dry-tx-image-box/.dry-tx-image-handle above (resize
+   handles anchor to the box's own edges, not the wrapper's) - inline-type
+   components only; block ones have no wrapper at all (nothing to float/
+   resize against, see schema.ts's buildDryNodeSpecs) and get
+   .dry-component-is-selected directly on the custom element itself instead -
+   one rule, applied wherever that class actually lands. Own class names
+   rather than reusing .is-selected: these wrap/select an arbitrary custom
+   element (a dynamic dry-name tag with its own author-defined internals),
+   so a shared name risks colliding with that component's own styles. */
+.dry-component-wrapper {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
+/* line-height: 0 - same reason as .dry-tx-image-box above: keeps this box's
+   own inline strut from adding baseline spacing around its content, which
+   is what was throwing off vertical-align: baseline on the wrapper (the
+   box's height was being padded by an invisible line box on top of the
+   actual custom element). */
+.dry-component-box {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
 .dry-component-is-selected {
   outline: 2px solid var(--dry-primary);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dry-primary) 18%, transparent);
+}
+
+.dry-component-handle {
+  position: absolute;
+  width: 0.625rem;
+  height: 0.625rem;
+  transform: translate(-50%, -50%);
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--dry-background);
+  border: 2px solid var(--dry-primary);
+  z-index: 1;
 }
 `;
