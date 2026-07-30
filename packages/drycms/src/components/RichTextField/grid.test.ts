@@ -13,6 +13,7 @@ import {
   splitGridItem,
 } from "./grid.js";
 import { DEFAULT_GRID_COLUMNS, schema } from "./schema.js";
+import { trailingParagraph } from "./trailing-paragraph.js";
 
 /** Minimal stand-in for the one `EditorView` method `exitGridDownward`
  * reads (`endOfTextblock`) - real `EditorView`s need a mounted DOM to
@@ -213,12 +214,22 @@ describe("exitGridDownward", () => {
     // Same "+1 into the grid, skip item 1, +1 into item 2, +1 into its
     // paragraph" math as the getSelectedGrid/getFocusedGridItem test above.
     const posInLastItem = 0 + 1 + firstItemSize + 1 + 1;
-    const state = EditorState.create({ schema, doc, selection: TextSelection.create(doc, posInLastItem) });
+    // `moveAfterGrid` (grid.ts) no longer adds the trailing paragraph
+    // itself - it leans on `trailing-paragraph.ts`'s standing invariant
+    // plugin for that now, so it needs to actually be in the plugin list
+    // here (and the resulting *state*, via `apply`, checked - not the raw
+    // `tr` - since `appendTransaction` only runs through `state.apply`).
+    const state = EditorState.create({
+      schema,
+      doc,
+      selection: TextSelection.create(doc, posInLastItem),
+      plugins: [trailingParagraph()],
+    });
 
     let tr: Transaction | null = null;
     const ok = exitGridDownward()(state, (t) => (tr = t), fakeView(true));
     expect(ok).toBe(true);
-    const nextDoc = tr!.doc;
+    const nextDoc = state.apply(tr!).doc;
     expect(nextDoc.lastChild!.type).toBe(schema.nodes.paragraph);
     expect(nextDoc.lastChild!.content.size).toBe(0);
   });

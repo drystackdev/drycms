@@ -21,7 +21,14 @@ import {
   SYSTEM_FIELD_IDS,
 } from "../content-types/system-fields.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { useParam } from "../hooks/useParam.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
+import {
+  dispatchFieldInput,
+  FIELD_ANCHOR_ATTR,
+  listenForFieldSet,
+  scrollToField,
+} from "./content-entry-editor/field-events.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -55,33 +62,40 @@ function renderFieldNodes(
       next.fieldId === SYSTEM_FIELD_IDS.slug
     ) {
       elements.push(
-        <SlugField
-          key={node.fieldName}
-          label={node.label}
-          slugLabel={next.label}
-          value={typeof value[node.fieldName] === "string" ? (value[node.fieldName] as string) : ""}
-          slug={typeof value[next.fieldName] === "string" ? (value[next.fieldName] as string) : ""}
-          onChange={(titleValue, slugValue) => {
-            onFieldChange(node.fieldName, titleValue);
-            onFieldChange(next.fieldName, slugValue);
-          }}
-          required={!!node.validation.required}
-          error={!!fieldErrors[node.fieldName] || !!fieldErrors[next.fieldName]}
-          helperText={fieldErrors[node.fieldName] ?? fieldErrors[next.fieldName]}
-        />,
+        // `data-field-name` (mục 6, status/continue.md): identifies this
+        // top-level field for the `dry:field-input`/`dry:field-set` events
+        // and `?_field=` deep link (`field-events.ts`) - the SlugField pair
+        // is addressed by the Title field's own name, since it's really one
+        // control on screen.
+        <div key={node.fieldName} data-field-name={node.fieldName}>
+          <SlugField
+            label={node.label}
+            slugLabel={next.label}
+            value={typeof value[node.fieldName] === "string" ? (value[node.fieldName] as string) : ""}
+            slug={typeof value[next.fieldName] === "string" ? (value[next.fieldName] as string) : ""}
+            onChange={(titleValue, slugValue) => {
+              onFieldChange(node.fieldName, titleValue);
+              onFieldChange(next.fieldName, slugValue);
+            }}
+            required={!!node.validation.required}
+            error={!!fieldErrors[node.fieldName] || !!fieldErrors[next.fieldName]}
+            helperText={fieldErrors[node.fieldName] ?? fieldErrors[next.fieldName]}
+          />
+        </div>,
       );
       i++; // Slug node already rendered alongside Title above.
       continue;
     }
     elements.push(
-      <FieldRenderer
-        key={node.fieldName}
-        node={node}
-        value={value[node.fieldName]}
-        onChange={(fieldValue) => onFieldChange(node.fieldName, fieldValue)}
-        error={fieldErrors[node.fieldName]}
-        allTypes={allTypes}
-      />,
+      <div key={node.fieldName} data-field-name={node.fieldName}>
+        <FieldRenderer
+          node={node}
+          value={value[node.fieldName]}
+          onChange={(fieldValue) => onFieldChange(node.fieldName, fieldValue)}
+          error={fieldErrors[node.fieldName]}
+          allTypes={allTypes}
+        />
+      </div>,
     );
   }
   return elements;
@@ -209,7 +223,34 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     setValue((current) =>
       current ? { ...current, [fieldName]: fieldValue } : current,
     );
+    // mục 6 (status/continue.md): a live "here's what the user is typing"
+    // signal for an AI feature/plugin outside this bundle - see
+    // `field-events.ts`'s own doc comment. Fires for every top-level field
+    // change regardless of source (typing, `SlugField`'s derived slug, the
+    // `dry:field-set` listener below) - a listener can't tell those apart,
+    // same as it can't for a real user's own edit.
+    dispatchFieldInput(fieldName, fieldValue, { typeSlug, entryId });
   }
+
+  // The other direction - an outside listener drives this form by
+  // dispatching `dry:field-set`, applied exactly like the user typing into
+  // that field would. Re-subscribes on `typeSlug`/`entryId` change (not just
+  // `[]`) so the closure `updateFieldValue` dispatches through never reports
+  // a stale `entryId` (e.g. right after a new entry's first save).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `updateFieldValue` isn't memoized; typeSlug/entryId are its only free variables that matter here
+  useEffect(() => listenForFieldSet(updateFieldValue), [typeSlug, entryId]);
+
+  // `?_field=` deep link - once the fields have actually rendered
+  // (`value !== null`), scroll straight to the one named in the URL and
+  // flash its outline. `scrollField` itself never changes without a
+  // navigation, but `value` flips from `null` exactly once per load - that's
+  // the real "fields are on screen now" signal this effect waits for.
+  const [scrollField] = useParam("_field");
+  useEffect(() => {
+    if (!scrollField || value === null) return;
+    scrollToField(scrollField);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when the field list actually (re)appears, not on every keystroke that changes `value`'s contents
+  }, [scrollField, value === null]);
 
   async function handleSave() {
     if (!type || !entriesApi || !value) return;

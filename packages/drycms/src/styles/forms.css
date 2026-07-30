@@ -468,6 +468,10 @@
         }
       }
 
+      & .richtext-content-mount {
+        min-height: 16.75rem;
+      }
+
       /* `fullscreen-button.tsx`'s own toggle - takes the whole field out of
        * flow to fill the viewport. Above the mobile sidebar drawer (`.sidebar`'s
        * own `z-index: 40` in components.css) but below the mobile sheet layer
@@ -490,10 +494,34 @@
          * `.richtext-content-mount` (not `.richtext-content` itself) is the
          * actual flex item here - see the comment on that div in
          * `RichTextField.tsx` for why they're 2 different elements. */
+        & .richtext-fullscreen-header,
         & .richtext-toolbar,
         & .richtext-content-mount {
           width: 100%;
           max-width: min(64rem, calc(100vw - 4rem));
+        }
+
+        /* `.field`'s own `display: grid; gap` (above) only spaces its
+         * *direct* children - this header lives inside `.richtext` instead,
+         * several levels deeper, so it needs the same label/description gap
+         * spelled out again on its own account. */
+        & .richtext-fullscreen-header {
+          display: flex;
+          flex-direction: column;
+          gap: 0.375rem;
+          padding-block: 1rem 0;
+        }
+
+        /* `.richtext-toolbar` is normally clipped to `.richtext`'s own
+         * rounded corners (its `overflow: hidden` above) - fullscreen drops
+         * that radius to 0 for the full-viewport backdrop, which would
+         * otherwise leave the toolbar's own `background-color` (set in
+         * components.css) a hard-edged rectangle floating in the middle of
+         * the screen. No same-property rule for this in components.css's
+         * own `.richtext-toolbar` block, so safe to set here despite the
+         * layer order (see this file's own top-of-section comment). */
+        & .richtext-toolbar {
+          border-radius: var(--dry-radius-md);
         }
 
         /* `.richtext-content` itself is inside the shadow root now (see

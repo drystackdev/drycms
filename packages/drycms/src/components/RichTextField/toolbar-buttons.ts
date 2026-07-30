@@ -124,39 +124,39 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
       isDisabled: (state) => !state.canRedo,
     },
   ],
-  // Inline group: every item here either formats a text run (a mark) or
-  // inserts an image inline with one - kept together since both operate at
-  // "the current spot in the text" rather than a whole top-level element,
-  // unlike the block group below. `insert-image` still carries its own
-  // `blockOnly` (an image insertion doesn't belong in a single-run `inline`
-  // field either), so it still drops out on its own under `inline` mode
-  // rather than needing this whole group flagged.
+  // Inline group: every item here formats a text run (a mark) at "the
+  // current spot in the text" rather than a whole top-level element, unlike
+  // the block/feature groups below.
   [
     ...INLINE_FORMAT_BUTTONS,
     { type: "custom", key: "color", Component: ColorMenu },
     { type: "custom", key: "link", Component: LinkMenu },
-    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
-    { type: "custom", key: "insert-component", Component: DryComponentInsertButton, blockOnly: true },
   ],
   // Block group: every item here acts on a whole top-level element
   // (paragraph/heading/quote node, or its alignment) rather than a run of
   // text - all flagged `blockOnly` so `inline` mode hides them together.
-  // Fullscreen joins this group too: expanding the whole field to fill the
-  // viewport is a page-layout concern, not text formatting, but it's no
-  // more useful in a single-inline-run field (a title, say) than the
-  // block-type/align/list menus it now sits alongside.
   [
     { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
-    { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
   ],
-  // Reorder mode: its own single-item group (own bordered card), same
-  // "related controls read as one visual unit" reasoning `TableMenu`/
-  // `GridMenu` already get their own card for - toggling it suspends every
-  // other control in this toolbar (see `REORDER_MODE_TOGGLE_KEY` above and
-  // `toolbar.tsx`'s per-button `disabled` expression).
+  // Feature group: both insert a whole standalone block (an image, or a dry
+  // component) rather than formatting text - `insert-image` also carries
+  // `requiresSource` (hidden with no `source` prop), both carry `blockOnly`
+  // (neither belongs in a single-inline-run field).
   [
+    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
+    { type: "custom", key: "insert-component", Component: DryComponentInsertButton, blockOnly: true },
+  ],
+  // View group: fullscreen and reorder mode both change how the whole field
+  // is presented rather than formatting its content, so they share one card.
+  // Fullscreen keeps `blockOnly` (no more useful in a single-inline-run field
+  // than the block-type/align/list menus above); reorder mode suspends every
+  // other control in this toolbar while active (see `REORDER_MODE_TOGGLE_KEY`
+  // above and `toolbar.tsx`'s per-button `disabled` expression), but the
+  // toggle itself stays clickable.
+  [
+    { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
     {
       type: "button",
       key: REORDER_MODE_TOGGLE_KEY,

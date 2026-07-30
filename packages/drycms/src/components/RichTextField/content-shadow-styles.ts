@@ -54,7 +54,6 @@ export const richtextContentShadowStyles =
 
 .dry-tx-content {
   position: relative;
-  min-height: 10rem;
   height: 100%;
   padding: 0.5rem 0.875rem;
   color: var(--dry-foreground);
@@ -400,40 +399,61 @@ th {
 }
 
 /* Every \`group:"block"\` node (schema.ts) while reorder mode is active - a
- * light tint just visible enough to read as "this is now a movable card",
- * no \`border-radius\` (these are plain content blocks, not chrome/controls),
- * strengthened slightly on hover so a block reads as interactive before the
- * pointer is even pressed down. */
+ * light tint, a real border/padding/margin (not just the tint) so adjacent
+ * AND nested blocks read as clearly separate cards rather than blurring
+ * together, and \`border-radius\` since these now read as chrome/controls for
+ * the duration, not plain content. Strengthened slightly on hover so a block
+ * reads as interactive before the pointer is even pressed down; \`grab\`/
+ * \`grabbing\` cursor since a pointerdown anywhere on a block starts dragging
+ * it - there's no separate drag handle (\`onBlockPointerDown\` in
+ * reorder-mode.ts). */
 .dry-tx-reorder-block {
+  padding: 0.5rem;
+  margin: 0.25rem 0;
+  border: 1px solid var(--dry-border);
+  border-radius: var(--dry-radius-sm);
   background-color: color-mix(in srgb, var(--dry-foreground) 6%, transparent);
+  cursor: grab;
 }
 
 .dry-tx-reorder-block:hover {
   background-color: color-mix(in srgb, var(--dry-foreground) 12%, transparent);
 }
 
-/* A non-container block (anything other than \`.dry-tx-reorder-container\`
- * below) has no drag handle of its own - the whole block IS the handle
- * (\`onBlockPointerDown\` in reorder-mode.ts), so it gets \`grab\`/\`grabbing\`
- * the same way \`.dry-tx-reorder-handle\` does for a container. */
-.dry-tx-reorder-block:not(.dry-tx-reorder-container) {
-  cursor: grab;
-}
-
-.dry-tx-reorder-block:not(.dry-tx-reorder-container):active {
+.dry-tx-reorder-block:active {
   cursor: grabbing;
 }
 
-/* \`table\`/\`grid\`, plus any \`children:true\` dry component (\`isContainerNode\`
- * in reorder-mode.ts) - this schema's "container" block types - get an
- * outline in the same color as body text on top of the tint above, so a
+/* \`grid\`, plus any \`children:true\` dry component (\`isContainerNode\` in
+ * reorder-mode.ts) - this schema's "container" block types - get an outline
+ * in the same color as body text on top of the border/tint above, so a
  * container reads as visually distinct from a plain paragraph/heading at a
- * glance. Only these get a drag handle (below); dragging a container itself
- * always goes through that handle, never a click on its own body (which may
- * contain other draggable blocks of its own). */
+ * glance. \`table\` is deliberately NOT included - see reorder-mode.ts's own
+ * top doc comment for why. */
 .dry-tx-reorder-container {
   outline: 1px solid var(--dry-foreground);
   outline-offset: 2px;
+}
+
+/* Undraggable in the current mode - the trailing landing-spot paragraph
+ * (below, hidden outright rather than just dimmed) and, under
+ * \`"nested-container"\` mode, any non-container block (\`isDraggableNode\` in
+ * reorder-mode.ts). Dimmed and reverted to the ordinary text cursor rather
+ * than \`grab\`, so it reads as inert without disappearing - it's still real
+ * content the user can look at, just not something this mode lets them pick
+ * up. */
+.dry-tx-reorder-frozen {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The empty paragraph \`insertTable\`/\`insertGrid\`/\`trailing-paragraph.ts\`
+ * leave (or maintain) after the last block so there's always somewhere to
+ * click - not real content, so reorder mode hides it outright rather than
+ * showing it as just another empty card (\`isTrailingEmptyParagraph\` in
+ * reorder-mode.ts). */
+.dry-tx-reorder-hidden {
+  display: none !important;
 }
 
 /* Cmd/Ctrl+click multi-selection - a stronger, offset outline in the same
@@ -446,39 +466,28 @@ th {
   outline-offset: 3px;
 }
 
-/* The node(s) currently being dragged - dimmed in place while the drag is
- * live, rather than hidden outright (hiding it would shift every sibling
- * around it, which reads as the drop having already happened). */
+/* The node(s) currently being dragged, at their ORIGINAL position - hidden
+ * outright; a real floating clone tracks the pointer instead
+ * (\`.dry-tx-reorder-overlay\` below, \`buildDragOverlay\` in
+ * reorder-mode.ts). */
 .dry-tx-reorder-dragging {
-  opacity: 0.4;
+  display: none;
 }
 
-/* The drag handle itself (\`reorder-mode.ts\`'s \`buildHandle\`) - pinned to
- * its own block's top-left corner (that block's own \`.dry-tx-reorder-block\`
- * decoration carries \`position:relative\` alongside its background, see
- * \`reorderDecorations\`), same "absolutely-positioned chrome anchored to a
- * \`position:relative\` node decoration" idea \`.dry-tx-grid-handle\` above
- * uses off its own node view's root instead. */
-.dry-tx-reorder-handle {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: translate(-35%, -35%);
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: var(--dry-radius-sm);
-  background: var(--dry-background);
-  border: 1px solid var(--dry-border);
-  color: var(--dry-muted-foreground);
-  cursor: grab;
+/* The floating clone stack itself (\`buildDragOverlay\` in reorder-mode.ts) -
+ * \`position\`/\`top\`/\`left\`/\`width\`/\`transform\` are all set inline by that
+ * function; a solid card background plus a real shadow (not just the plain
+ * tint every \`.dry-tx-reorder-block\` gets) so it reads as lifted off the
+ * page entirely, matching \`.dnd-dragging\` in components.css. */
+.dry-tx-reorder-overlay {
+  pointer-events: none;
+  z-index: 50;
 }
 
-.dry-tx-reorder-handle:active {
-  cursor: grabbing;
+.dry-tx-reorder-overlay .dry-tx-reorder-block {
+  margin: 0;
+  background-color: var(--dry-background);
+  box-shadow: var(--dry-shadow-lg);
 }
 
 /* Drop feedback - a highlight on whatever's currently under the pointer
@@ -500,6 +509,24 @@ th {
 .dry-tx-reorder-drop-target {
   outline: 2px dashed var(--dry-primary);
   outline-offset: 2px;
+}
+
+/* The "ghost slot" widget (\`buildGhostWidget\` in reorder-mode.ts) inserted
+ * right at a live \`before\`/\`after\` target - own \`height\` set inline by
+ * that function, matching the dragged content's combined height, so this
+ * reads as "the real thing lands in exactly this much space" rather than
+ * just the thin \`.dry-tx-reorder-drop-before\`/\`-after\` edge line above
+ * (kept alongside this, not replaced by it - together they mark both WHICH
+ * edge and HOW MUCH room). Same dashed-outline language
+ * \`.dry-tx-reorder-drop-target\` above uses for its own "this exact spot"
+ * signal, just filled in with the accent tint since this one has no real
+ * content of its own to show through. */
+.dry-tx-reorder-ghost {
+  margin: 0.25rem 0;
+  border: 2px dashed var(--dry-primary);
+  border-radius: var(--dry-radius-sm);
+  background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
+  pointer-events: none;
 }
 
 /* dry-component-view.ts's own wrapper/box/handle set, same shape as

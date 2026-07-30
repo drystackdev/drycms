@@ -5,10 +5,7 @@ import { useScrollLock } from "./list-nav.js";
 import ImageMenu from "./RichTextField/image-menu.js";
 import RichTextToolbar from "./RichTextField/toolbar.js";
 import type { ToolbarIconSize } from "./RichTextField/types.js";
-import {
-  useRichTextEditor,
-  type RichTextJSON,
-} from "./RichTextField/useRichTextEditor.js";
+import { useRichTextEditor } from "./RichTextField/useRichTextEditor.js";
 
 export interface RichTextFieldProps extends FieldProps<string> {
   placeholder?: string;
@@ -19,12 +16,6 @@ export interface RichTextFieldProps extends FieldProps<string> {
    * button (and the picker dialog behind it) only exists when this is set,
    * same optionality as `ImageField`'s own `source` prop. */
   source?: FileManagerSource;
-  /** ProseMirror's serialized doc, as an object rather than a JSON string -
-   * reported on every change alongside `value` (always HTML), and used to
-   * seed the document only when `value` is empty. Optional: most consumers
-   * only need `value`/`onChange`. */
-  json?: RichTextJSON;
-  onJsonChange?: (json: RichTextJSON) => void;
   /** Restricts the toolbar to inline formatting and undo/redo, hiding the
    * block-level "turn into" and alignment menus - for fields that should
    * only ever hold a single inline run (e.g. a title). @default false */
@@ -48,8 +39,6 @@ export default function RichTextField({
   disabled = false,
   required = false,
   description,
-  json,
-  onJsonChange,
   inline = false,
   source,
   iconSize = "sm",
@@ -59,8 +48,6 @@ export default function RichTextField({
   const { contentRef, viewRef, state } = useRichTextEditor({
     value,
     onChange,
-    json,
-    onJsonChange,
     label,
     placeholder,
     disabled,
@@ -104,6 +91,20 @@ export default function RichTextField({
         class={`richtext${fullscreen ? " richtext-fullscreen" : ""}`}
         aria-invalid={error || undefined}
       >
+        {/* Fullscreen takes `.richtext` out of flow to fill the viewport
+         * (see `.richtext-fullscreen` in forms.css), which leaves the real
+         * label/description above - siblings of `.richtext`, not inside it -
+         * hidden behind the overlay. A second copy, shown only here, is the
+         * only way fullscreen mode still identifies which field it is. */}
+        {fullscreen && (
+          <div class="richtext-fullscreen-header">
+            <label>
+              {label}
+              {required && <span class="required-asterisk">*</span>}
+            </label>
+            {description && <small>{description}</small>}
+          </div>
+        )}
         <RichTextToolbar
           viewRef={viewRef}
           state={state}

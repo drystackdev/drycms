@@ -28,7 +28,6 @@ function Carousel({
 
   return (
     <div className="carousel">
-      <style>{css}</style>
       <div className="carousel__content">
         <button
           type="button"
@@ -60,6 +59,6 @@ export default DryEditerComponent({
     "An inline image carousel with prev/next controls and an optional caption.",
   type: "inline",
   props: carouselProps,
-  shadow: true,
+  style: css,
   component: Carousel,
 });

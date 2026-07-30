@@ -30,6 +30,7 @@ export const groups: ShowcaseGroup[] = [
     label: "Field inputs",
     items: [
       { id: "text-field", label: "Text field" },
+      { id: "code-field", label: "Code field" },
       { id: "richtext-field", label: "Rich text field" },
       { id: "slug-field", label: "Slug field" },
       { id: "password-field", label: "Password field" },
@@ -549,19 +550,25 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   multiline
   placeholder="Write something…"
 />`,
+  codeField: `import CodeField from 'drycms/components/CodeField';
+
+<CodeField
+  label="Render function"
+  value={code}
+  onChange={setCode}
+  description="Highlighted live as JSX."
+  helperText="Runs on the server for each request."
+/>`,
   richTextField: `import RichTextField from 'drycms/components/RichTextField';
 
 <RichTextField
   label="Body"
   value={body}
   onChange={setBody}
-  json={json}
-  onJsonChange={setJson}
   description="Bold, italic, underline, alignment and text color."
   placeholder="Write something…"
 />
 
-<CodeBlock code={JSON.stringify(json, null, 2)} wrap copyable />
 <CodeBlock code={body} formatHtml wrap copyable />`,
   slugField: `import SlugField from 'drycms/components/SlugField';
 

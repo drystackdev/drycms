@@ -27,7 +27,7 @@ async function bootstrapRichtextComponents(): Promise<void> {
     const data = await res.json();
     const records: DryComponentRecord[] = Array.isArray(data.records) ? data.records : [];
     for (const record of records) {
-      defineDryComponent(record.name, loadBuiltComponent(path, record.name), record.shadow);
+      defineDryComponent(record.name, loadBuiltComponent(path, record.name), record.shadow, path);
     }
   } catch {
     // No richtext content on this page, or the admin API isn't reachable

@@ -15,6 +15,14 @@ export interface ComponentPreviewProps {
    * where the editor's real projected content would otherwise live, so the
    * native `<slot>` inside its shadow root has something to show here. */
   childrenHtml?: string;
+  /** Set only when `load` is a `loadBuiltComponent(basePath, name)` loader
+   * (the insert dialog's preview, always a confirmed record) - passed
+   * straight through to `defineDryComponent` so it mounts through the same
+   * Preact instance that component's own bundle got its hooks from, see
+   * `dry-component-runtime.ts`'s own `resolvePreact` doc comment. Left unset
+   * for the admin discovery grid's raw-source `load`, which needs no such
+   * matching. */
+  basePath?: string;
 }
 
 /**
@@ -31,7 +39,7 @@ export interface ComponentPreviewProps {
  * Loads in parallel with sibling previews, never blocking whatever list/grid
  * it's placed into - a skeleton placeholder fills in until `load()` resolves.
  */
-export default function ComponentPreview({ name, label, defaults, load, shadow, childrenHtml }: ComponentPreviewProps) {
+export default function ComponentPreview({ name, label, defaults, load, shadow, childrenHtml, basePath }: ComponentPreviewProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -39,7 +47,7 @@ export default function ComponentPreview({ name, label, defaults, load, shadow, 
     let cancelled = false;
     setReady(false);
     setFailed(false);
-    defineDryComponent(name, load, shadow);
+    defineDryComponent(name, load, shadow, basePath);
     load()
       .then((mod) => {
         if (cancelled) return;
@@ -55,8 +63,8 @@ export default function ComponentPreview({ name, label, defaults, load, shadow, 
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when name/loader/shadow change
-  }, [name, load, shadow]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when name/loader/shadow/basePath change
+  }, [name, load, shadow, basePath]);
 
   if (failed) {
     return (

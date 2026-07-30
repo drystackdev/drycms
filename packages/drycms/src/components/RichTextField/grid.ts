@@ -66,12 +66,12 @@ export function insertGrid(): Command {
       // doc). Finding the grid by object identity in the resulting doc
       // instead sidesteps that entirely - `Node`s are immutable, and
       // neither insertion path below needs to rebuild `gridNode` itself, so
-      // the exact same reference ends up in `tr.doc` either way.
-      const gridTr = insertBlockAfterFocusedGridItem(state, gridNode);
-      let tr = gridTr ?? state.tr.replaceSelectionWith(gridNode);
-      if (!gridTr && Selection.atEnd(state.doc).from === state.selection.to) {
-        tr = tr.insert(tr.doc.content.size, schema.nodes.paragraph!.createAndFill()!);
-      }
+      // the exact same reference ends up in `tr.doc` either way. A grid
+      // landing at the very end of the doc is left to
+      // `trailing-paragraph.ts`'s standing invariant plugin to give the
+      // cursor somewhere to go afterward, rather than this command
+      // re-deriving that case itself.
+      let tr = insertBlockAfterFocusedGridItem(state, gridNode) ?? state.tr.replaceSelectionWith(gridNode);
       let gridPos: number | null = null;
       tr.doc.descendants((node, pos) => {
         if (gridPos != null) return false;
@@ -240,18 +240,13 @@ export function splitGridItem(): Command {
 
 /** Shared by `exitGridDownward` below - same shape as `table.ts`'s own
  * `moveAfterTable`: moves the selection into whatever follows `grid` at
- * `pos`, inserting a fresh empty paragraph first if the grid is the very
- * last thing in the document (mirroring `insertGrid`'s own trailing-
- * paragraph fix-up above for the same "nothing left to land the cursor in"
- * case), rather than leaving the caret with nowhere to go. */
+ * `pos`. Relies on `trailing-paragraph.ts`'s standing invariant to
+ * guarantee there's always something there even when the grid is the very
+ * last thing in the document, rather than checking for that case itself. */
 function moveAfterGrid(state: EditorState, dispatch: (tr: Transaction) => void, grid: { pos: number; node: PMNode }) {
   const after = grid.pos + grid.node.nodeSize;
-  let tr = state.tr;
-  if (after >= state.doc.content.size) {
-    tr = tr.insert(after, schema.nodes.paragraph!.createAndFill()!);
-  }
-  const selection = Selection.near(tr.doc.resolve(after), 1);
-  dispatch(tr.setSelection(selection).scrollIntoView());
+  const selection = Selection.near(state.doc.resolve(after), 1);
+  dispatch(state.tr.setSelection(selection).scrollIntoView());
 }
 
 /** `ArrowDown` in a grid's own last item (in document order), once the

@@ -9,6 +9,38 @@ import { randomUUID } from "../../lib/uuid.js";
 const PREACT_EXTERNALS = ["preact", "preact/hooks", "preact/jsx-runtime"];
 
 /**
+ * Both `build()` calls below only ever run from inside the astro *dev*
+ * server (`import.meta.env.DEV` guard in `routes/richtext-components.ts`'s
+ * `buildAndStore`) - there's no separate production build step, so whatever
+ * these produce is what actually ships. Left alone, they'd inherit that dev
+ * server's own `NODE_ENV=development`: passing `mode: "production"` to
+ * `build()` is NOT enough to fix that on its own - Vite derives
+ * `config.isProduction` (which `@preact/preset-vite` reads to choose its
+ * dev-vs-prod JSX transform, among other things) straight from
+ * `process.env.NODE_ENV`, not from the resolved `mode`. Nested/concurrent
+ * calls (two confirms in flight at once) are handled with a simple in-flight
+ * counter - only the *first* caller's original value is restored once every
+ * caller sees production, not each individual call's own (already-
+ * overridden) snapshot.
+ */
+let productionBuildsInFlight = 0;
+let originalNodeEnv: string | undefined;
+async function withProductionNodeEnv<T>(fn: () => Promise<T>): Promise<T> {
+  if (productionBuildsInFlight === 0) originalNodeEnv = process.env.NODE_ENV;
+  productionBuildsInFlight++;
+  process.env.NODE_ENV = "production";
+  try {
+    return await fn();
+  } finally {
+    productionBuildsInFlight--;
+    if (productionBuildsInFlight === 0) {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
+  }
+}
+
+/**
  * Builds the one shared Preact + `preact/hooks` + `preact/jsx-runtime`
  * vendor bundle every confirmed component's own bundle (`buildComponentBundle`
  * below) imports as `./preact.js` rather than inlining its own copy -
@@ -39,18 +71,28 @@ export async function buildSharedPreactBundle(): Promise<string> {
       "utf8",
     );
 
-    const result = await build({
-      configFile: false,
-      logLevel: "silent",
-      build: {
-        write: false,
-        lib: {
-          entry: entryPath,
-          formats: ["es"],
-          fileName: () => "preact.js",
+    const result = await withProductionNodeEnv(() =>
+      build({
+        configFile: false,
+        logLevel: "silent",
+        mode: "production",
+        build: {
+          write: false,
+          // Explicit rather than relying on the default: Vite's own
+          // (unexported) resolution for this falls back to `false` when it
+          // detects it's bundling from *inside* a running dev server - which
+          // this always is (see `withProductionNodeEnv`'s own comment). Spelled
+          // out here so this stays minified even if that inference ever
+          // changes out from under this call.
+          minify: "oxc",
+          lib: {
+            entry: entryPath,
+            formats: ["es"],
+            fileName: () => "preact.js",
+          },
         },
-      },
-    });
+      }),
+    );
 
     // Same `RolldownWatcher`-has-no-`output` narrowing as `buildComponentBundle`
     // below - never reachable here since this call never sets `watch`.
@@ -85,25 +127,33 @@ export async function buildComponentBundle(entryAbsPath: string): Promise<string
   const { build } = await import("vite");
   const { preact } = await import("@preact/preset-vite");
 
-  const result = await build({
-    configFile: false,
-    logLevel: "silent",
-    plugins: [preact()],
-    build: {
-      write: false,
-      lib: {
-        entry: entryAbsPath,
-        formats: ["es"],
-        fileName: () => "bundle.js",
-      },
-      rollupOptions: {
-        external: PREACT_EXTERNALS,
-        output: {
-          paths: Object.fromEntries(PREACT_EXTERNALS.map((specifier) => [specifier, "./preact.js"])),
+  const result = await withProductionNodeEnv(() =>
+    build({
+      configFile: false,
+      logLevel: "silent",
+      mode: "production",
+      // Explicit even with `NODE_ENV`/`mode` both forced to production -
+      // belt and suspenders against a future `@preact/preset-vite` version
+      // changing how it derives these two defaults.
+      plugins: [preact({ devToolsEnabled: false, prefreshEnabled: false })],
+      build: {
+        write: false,
+        // See `buildSharedPreactBundle`'s own comment on this.
+        minify: "oxc",
+        lib: {
+          entry: entryAbsPath,
+          formats: ["es"],
+          fileName: () => "bundle.js",
+        },
+        rollupOptions: {
+          external: PREACT_EXTERNALS,
+          output: {
+            paths: Object.fromEntries(PREACT_EXTERNALS.map((specifier) => [specifier, "./preact.js"])),
+          },
         },
       },
-    },
-  });
+    }),
+  );
 
   // `build()`'s return type also covers the `watch: true` case (a
   // `RolldownWatcher`, which has no `output`) - never reachable here since

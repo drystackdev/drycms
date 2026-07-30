@@ -48,20 +48,10 @@ function buildTable(rows: number, cols: number): PMNode {
  * default (first row's cells are `table_header`, matching the "table mặc
  * định bật header" requirement) - `table-insert-button.tsx`'s 6x6 grid
  * picker passes the size the user hovered; resizing afterward happens via
- * `table-menu.tsx`'s insert row/column actions. Also appends an empty
- * paragraph after the table if the selection sat at the very end of the
- * document - `Selection.atEnd(state.doc)` is the innermost end position
- * (it descends into whatever the last leaf/textblock actually is), unlike
- * a raw `state.doc.content.size` comparison: a cursor resting at the end
- * of the last textblock's own text sits one position *before* that (every
- * enclosing node it's inside still needs its own closing token counted),
- * so comparing directly against `content.size` never matches and silently
- * skips the very case this is for. Without this fix-up, a table inserted
- * at the end of the document leaves nothing after it for the cursor to
- * move into, silently swallowing anything typed next. Any other insertion
- * position already gets a sibling for free, whether that's the existing
- * block that followed the cursor or the tail end of a split paragraph, so
- * this only ever fires for the trailing case.
+ * `table-menu.tsx`'s insert row/column actions. A table landing at the very
+ * end of the doc is left to `trailing-paragraph.ts`'s standing invariant
+ * plugin to give the cursor somewhere to go afterward, rather than this
+ * command re-deriving that case itself.
  *
  * Inside a grid cell, plain `replaceSelectionWith` doesn't land the table
  * inside that cell at all - `grid_item`'s content is exactly one block
@@ -74,11 +64,7 @@ export function insertTable(rows = DEFAULT_ROWS, cols = DEFAULT_COLS): Command {
   return (state, dispatch) => {
     if (dispatch) {
       const table = buildTable(rows, cols);
-      const gridTr = insertBlockAfterFocusedGridItem(state, table);
-      let tr = gridTr ?? state.tr.replaceSelectionWith(table);
-      if (!gridTr && Selection.atEnd(state.doc).from === state.selection.to) {
-        tr = tr.insert(tr.doc.content.size, schema.nodes.paragraph!.createAndFill()!);
-      }
+      const tr = insertBlockAfterFocusedGridItem(state, table) ?? state.tr.replaceSelectionWith(table);
       dispatch(tr.scrollIntoView());
     }
     return true;
@@ -86,9 +72,10 @@ export function insertTable(rows = DEFAULT_ROWS, cols = DEFAULT_COLS): Command {
 }
 
 /** Deletes the table at `pos`, plus any empty paragraph(s) immediately
- * following it - the trailing paragraph `insertTable` above adds so the
- * cursor has somewhere to land, cleaned back up if the table's removed
- * before that paragraph ever picks up real content (checked by
+ * following it - a trailing paragraph `trailing-paragraph.ts`'s invariant
+ * plugin may have added so the cursor has somewhere to land, cleaned back up
+ * if the table's removed before that paragraph ever picks up real content
+ * (checked by
  * `content.size === 0`, not just "is a paragraph" - a paragraph the user
  * actually typed into is content, not table debris). Keeps extending the
  * removed range as long as the next node is still an empty paragraph,
@@ -347,19 +334,14 @@ export function getCellAlignState(state: EditorState): { hAlign: CellHAlign; vAl
 }
 
 /** Shared by `exitTableForward`/`exitTableDownward` below - moves the
- * selection into whatever follows `table` at `pos`, inserting a fresh empty
- * paragraph first if the table is the very last thing in the document
- * (mirroring `insertTable`'s own trailing-paragraph fix-up above for the
- * same "table at the end of the doc" case), rather than leaving the caret
- * with nowhere to go. */
+ * selection into whatever follows `table` at `pos`. Relies on
+ * `trailing-paragraph.ts`'s standing invariant to guarantee there's always
+ * something there even when the table is the very last thing in the
+ * document, rather than checking for that case itself. */
 function moveAfterTable(state: EditorState, dispatch: (tr: Transaction) => void, table: { pos: number; node: PMNode }) {
   const after = table.pos + table.node.nodeSize;
-  let tr = state.tr;
-  if (after >= state.doc.content.size) {
-    tr = tr.insert(after, schema.nodes.paragraph!.createAndFill()!);
-  }
-  const selection = Selection.near(tr.doc.resolve(after), 1);
-  dispatch(tr.setSelection(selection).scrollIntoView());
+  const selection = Selection.near(state.doc.resolve(after), 1);
+  dispatch(state.tr.setSelection(selection).scrollIntoView());
 }
 
 /** `Tab` in the table's last cell - where `goToNextCell(1)` (prosemirror-

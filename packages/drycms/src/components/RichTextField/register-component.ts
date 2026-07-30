@@ -179,10 +179,25 @@ export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> 
    * insert dialog, mục 4) - a short blurb helping whoever's authoring
    * content tell components apart without opening each one. */
   description?: string;
+  /** Free-form version string shown as a badge on the component management
+   * admin page's card (`RichtextComponents.tsx`), below the label - purely
+   * informational, no semver parsing/enforcement. @default "0.0.0" */
+  version?: string;
+  /** Free-form auth/permission requirement shown as its own badge next to
+   * `version` above - purely informational, not enforced anywhere. Shown as
+   * an italic "None" when left unset. */
+  auth?: string;
   /** @default "inline" */
   type?: "inline" | "block";
-  /** Mount this component's render into its own shadow root. @default false */
+  /** Mount this component's render into its own shadow root. @default true */
   shadow?: boolean;
+  /** CSS text injected into this component's own shadow root as a `<style>`
+   * element (`dry-component-runtime.ts`, alongside its own Preact render) -
+   * sugar for what a component would otherwise have to embed itself via
+   * `<style>{css}</style>` somewhere in its own JSX tree. Requires
+   * `shadow: true` (there's no shadow root to scope it to otherwise) -
+   * ignored with a console warning otherwise, same as `children` below. */
+  style?: string;
   /** Accept nested rich-text content, projected wherever the component's own
    * render places a native `<slot />` element - ordinary browser slot
    * projection, not a prop: the editor's own real editable content lives as
@@ -213,8 +228,13 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   name: string;
   label: string;
   description: string;
+  version: string;
+  auth: string;
   type: "inline" | "block";
   shadow: boolean;
+  /** Only set when `config.style` survived the `shadow: true` requirement -
+   * see its own doc comment on `DryComponentConfig`. */
+  style?: string;
   children: boolean;
   /** Only set when `config.children` was a string - see its own doc comment
    * on `DryComponentConfig`. */
@@ -236,7 +256,12 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> =
 ): DryComponentDefinition<S> {
   const schema = (config.props?.(p) ?? {}) as S;
   const type = config.type ?? "inline";
-  const shadow = config.shadow ?? false;
+  const shadow = config.shadow ?? true;
+  let style = config.style;
+  if (style !== undefined && !shadow) {
+    console.warn(`[drycms] Richtext component "${config.name}": "style" requires "shadow: true" - ignoring.`);
+    style = undefined;
+  }
   let children = config.children !== undefined && config.children !== false;
   let childrenDefaultHtml = typeof config.children === "string" ? config.children : undefined;
   if (children && (!shadow || type !== "block")) {
@@ -251,8 +276,11 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> =
     name: config.name,
     label: config.label,
     description: config.description ?? "",
+    version: config.version ?? "0.0.0",
+    auth: config.auth ?? "",
     type,
     shadow,
+    style,
     children,
     childrenDefaultHtml,
     schema,

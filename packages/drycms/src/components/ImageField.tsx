@@ -3,10 +3,18 @@ import type { FieldProps } from "./field-common.js";
 import FileManager from "./FileManager.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import { parentFolderOf, thumbnailUrl } from "./file-manager-utils.js";
-import { CloseIcon, DragHandleIcon, MediaIcon, UploadIcon } from "./icons.js";
+import { AddIcon, CloseIcon, DragHandleIcon, MediaIcon, TrashIcon, UploadIcon } from "./icons.js";
 import { useDialogSync } from "./list-nav.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import { useSortableList } from "../lib/dnd/useSortableList.js";
+
+/** A picked id is either a `source` path (resolved through `FileManager`) or
+ * a raw URL typed into the picker's "Link" tab - the two live side by side in
+ * the same `value`/`pending` array and are told apart by shape alone, no
+ * separate flag. */
+function isLinkValue(id: string): boolean {
+  return /^https?:\/\//i.test(id);
+}
 
 export interface ImageFieldMultipleConfig {
   min?: number;
@@ -76,6 +84,12 @@ export default function ImageField({
 
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<string | string[]>(value);
+  /** Raw URLs typed into the picker's "Link" tab - kept separate from `pending`
+   * (which only ever holds `source` ids, same as before this tab existed) so
+   * a blank in-progress row doesn't get treated as a real selection. The two
+   * lists share one combined count/footer and both feed the same `onChange`
+   * on confirm, so picks made in either tab survive switching to the other. */
+  const [pendingLinks, setPendingLinks] = useState<string[]>([]);
   const [entriesById, setEntriesById] = useState<Record<string, FileEntry>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
   // Deps include `open`: the body only mounts once the dialog opens, so the
@@ -91,21 +105,24 @@ export default function ImageField({
 
   // Resolves `selectedIds` to the `FileEntry`s behind them, for thumbnails +
   // names - re-lists on every change since a rename/move elsewhere in
-  // `source` can leave a stale id. Only the first id's folder is used as the
+  // `source` can leave a stale id. Link ids (Link-tab entries) aren't
+  // `source` paths, so they're skipped here and rendered straight from the
+  // id itself below. Only the first *file* id's folder is used as the
   // fallback scope when `source` can't `listAll` - multi-folder selections
   // aren't expected from sources without it.
   useEffect(() => {
-    if (selectedIds.length === 0) {
+    const fileIds = selectedIds.filter((id) => !isLinkValue(id));
+    if (fileIds.length === 0) {
       setEntriesById({});
       return;
     }
     let cancelled = false;
     (async () => {
       const all = (await source.listAll?.()) ?? null;
-      const list = all ?? (await source.list(parentFolderOf(selectedIds[0]!)));
+      const list = all ?? (await source.list(parentFolderOf(fileIds[0]!)));
       if (cancelled) return;
       const map: Record<string, FileEntry> = {};
-      for (const imageId of selectedIds) {
+      for (const imageId of fileIds) {
         const found = list.find((item) => item.id === imageId);
         if (found) map[imageId] = found;
       }
@@ -117,16 +134,53 @@ export default function ImageField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIds.join(","), source]);
 
-  const entry = !isMultiple ? (entriesById[selectedIds[0]!] ?? null) : null;
+  const firstSelectedId = selectedIds[0];
+  const entry = !isMultiple && firstSelectedId ? (entriesById[firstSelectedId] ?? null) : null;
+  const isSingleLink = !isMultiple && !entry && !!firstSelectedId && isLinkValue(firstSelectedId);
+
+  const firstSelectedFileId = selectedIds.find((sid) => !isLinkValue(sid));
 
   const openPicker = () => {
     if (disabled) return;
-    setPending(isMultiple ? selectedIds : value);
+    const fileIds = selectedIds.filter((id) => !isLinkValue(id));
+    const linkIds = selectedIds.filter(isLinkValue);
+    setPending(isMultiple ? fileIds : (fileIds[0] ?? ""));
+    setPendingLinks(linkIds);
     setOpen(true);
   };
 
+  /** `FileManager`'s own onChange - only clears out any picked link in single
+   * mode, where at most one of (file, link) can be "the" selection at a
+   * time and picking a file supersedes whatever link was there. */
+  const handleFileChange = (next: string | string[]) => {
+    setPending(next);
+    if (!isMultiple && (Array.isArray(next) ? next.length > 0 : !!next)) {
+      setPendingLinks([]);
+    }
+  };
+
+  const updateLink = (index: number, url: string) => {
+    setPendingLinks((links) => links.map((link, i) => (i === index ? url : link)));
+    if (!isMultiple && url.trim()) setPending("");
+  };
+
+  const addLink = () => {
+    setPendingLinks((links) => [...links, ""]);
+    if (!isMultiple) setPending("");
+  };
+
+  const removeLink = (index: number) => {
+    setPendingLinks((links) => links.filter((_, i) => i !== index));
+  };
+
+  const cleanPendingLinks = pendingLinks.map((url) => url.trim()).filter(Boolean);
+
   const confirm = () => {
-    onChange(pending);
+    if (isMultiple) {
+      onChange([...(Array.isArray(pending) ? pending : []), ...cleanPendingLinks]);
+    } else {
+      onChange((pending as string) || cleanPendingLinks[0] || "");
+    }
     setOpen(false);
   };
 
@@ -134,22 +188,25 @@ export default function ImageField({
     onChange(selectedIds.filter((sid) => sid !== imageId));
   };
 
-  const pendingCount = Array.isArray(pending) ? pending.length : pending ? 1 : 0;
+  const pendingCount =
+    (Array.isArray(pending) ? pending.length : pending ? 1 : 0) + cleanPendingLinks.length;
   const min = multipleConfig?.min;
   const max = multipleConfig?.max;
   const withinBounds =
     (min === undefined || pendingCount >= min) && (max === undefined || pendingCount <= max);
+  const canConfirm = isMultiple ? withinBounds : !!pending || cleanPendingLinks.length > 0;
+  const canAddLink = isMultiple || (pendingLinks.length === 0 && !pending);
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
       <div class="image-field-box">
-        {!isMultiple && entry ? (
+        {!isMultiple && (entry || isSingleLink) ? (
           <>
             <img
               class="image-field-thumb"
-              src={entry.previewUrl ?? thumbnailUrl(entry)}
+              src={entry ? (entry.previewUrl ?? thumbnailUrl(entry)) : firstSelectedId}
               alt=""
             />
             <button
@@ -157,10 +214,10 @@ export default function ImageField({
               type="button"
               class="image-field-overlay"
               disabled={disabled}
-              aria-label={`Change ${entry.name}`}
+              aria-label={`Change ${entry ? entry.name : firstSelectedId}`}
               onClick={openPicker}
             >
-              <span class="image-field-name">{entry.name}</span>
+              <span class="image-field-name">{entry ? entry.name : firstSelectedId}</span>
             </button>
             <button
               type="button"
@@ -194,6 +251,7 @@ export default function ImageField({
         <ul class="image-field-list" {...sortableList.containerProps}>
           {selectedIds.map((imageId) => {
             const item = entriesById[imageId];
+            const src = item ? (item.previewUrl ?? thumbnailUrl(item)) : isLinkValue(imageId) ? imageId : undefined;
             return (
               <li key={imageId} data-sortable-id={imageId} class="image-field-list-item">
                 <button
@@ -204,11 +262,7 @@ export default function ImageField({
                 >
                   <DragHandleIcon />
                 </button>
-                <img
-                  class="image-field-list-thumb"
-                  src={item ? (item.previewUrl ?? thumbnailUrl(item)) : undefined}
-                  alt=""
-                />
+                <img class="image-field-list-thumb" src={src} alt="" />
                 <span class="image-field-list-name">{item?.name ?? imageId}</span>
                 <button
                   type="button"
@@ -245,15 +299,65 @@ export default function ImageField({
               <h3>{isMultiple ? "Choose images" : "Choose image"}</h3>
             </header>
             <div class="image-picker-body" ref={pickerBody}>
-              <FileManager
-                source={source}
-                value={pending}
-                onChange={setPending}
-                multiple={isMultiple}
-                accept={IMAGE_EXTENSIONS}
-                initialFolderId={selectedIds[0] ? parentFolderOf(selectedIds[0]) : undefined}
-                syncUrl={false}
-              />
+              <div role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  aria-controls={`${fieldId}-tab-file`}
+                >
+                  File
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls={`${fieldId}-tab-link`}
+                >
+                  Link
+                </button>
+              </div>
+              <div role="tabpanel" id={`${fieldId}-tab-file`}>
+                <FileManager
+                  source={source}
+                  value={pending}
+                  onChange={handleFileChange}
+                  multiple={isMultiple}
+                  accept={IMAGE_EXTENSIONS}
+                  initialFolderId={
+                    firstSelectedFileId ? parentFolderOf(firstSelectedFileId) : undefined
+                  }
+                  syncUrl={false}
+                />
+              </div>
+              <div role="tabpanel" id={`${fieldId}-tab-link`} hidden>
+                <ul class="image-field-link-list">
+                  {pendingLinks.length === 0 && <li class="hint">No links yet.</li>}
+                  {pendingLinks.map((url, index) => (
+                    <li key={index} class="row">
+                      <input
+                        type="url"
+                        placeholder="https://example.com/image.jpg"
+                        value={url}
+                        onInput={(event) =>
+                          updateLink(index, (event.currentTarget as HTMLInputElement).value)
+                        }
+                      />
+                      <button
+                        type="button"
+                        class="ghost icon sm"
+                        aria-label="Remove link"
+                        onClick={() => removeLink(index)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" class="outline" disabled={!canAddLink} onClick={addLink}>
+                  <AddIcon /> Add link
+                </button>
+              </div>
             </div>
             <footer class={isMultiple ? "row justify-between" : undefined}>
               {isMultiple && (
@@ -267,11 +371,7 @@ export default function ImageField({
                 <button type="button" class="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  disabled={isMultiple ? !withinBounds : !pending}
-                  onClick={confirm}
-                >
+                <button type="button" disabled={!canConfirm} onClick={confirm}>
                   Select
                 </button>
               </div>

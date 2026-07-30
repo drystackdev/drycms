@@ -12,8 +12,8 @@
 }
 
 .carousel__content img {
-  flex: 1;
-  border-radius: 0.5rem;
+  width: 100%;
+  aspect-ratio: 16 / 9;
 }
 
 .carousel__content button {

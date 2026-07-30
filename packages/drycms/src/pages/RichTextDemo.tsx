@@ -6,7 +6,6 @@ import CodeBlock from "../components/CodeBlock.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import { ArrowLeftIcon } from "../components/icons.js";
 import RichTextField from "../components/RichTextField.js";
-import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import TextField from "../components/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -120,11 +119,6 @@ export default function RichTextDemo() {
   };
 
   const [body, setBody] = useState("");
-  const [json, setJson] = useState<RichTextJSON>();
-  const jsonCode = useMemo(
-    () => (json ? JSON.stringify(json, null, 2) : ""),
-    [json],
-  );
 
   const [label, setLabel] = useState("Body");
   const [placeholder, setPlaceholder] = useState("Write something…");
@@ -155,94 +149,11 @@ export default function RichTextDemo() {
       </div>
 
       <div class="stack">
-        <div class="stack">
-          <div class="field">
-            <label>Presets</label>
-            <div class="row" style={{ flexWrap: "wrap" }}>
-              {PRESETS.map((preset) => (
-                <button
-                  type="button"
-                  key={preset.key}
-                  class="outline sm"
-                  onClick={() => loadPreset(preset.html)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div class="row" style={{ flexWrap: "wrap" }}>
-            <TextField
-              label="Label"
-              value={label}
-              onChange={setLabel}
-              placeholder="Body"
-            />
-            <TextField
-              label="Placeholder"
-              value={placeholder}
-              onChange={setPlaceholder}
-              placeholder="Write something…"
-            />
-            <TextField
-              label="Helper text"
-              value={helperText}
-              onChange={setHelperText}
-              placeholder="Shown under the field"
-            />
-          </div>
-          <div class="row" style={{ flexWrap: "wrap" }}>
-            <CheckField
-              label="Disabled"
-              value={disabled}
-              onChange={setDisabled}
-              role="switch"
-            />
-            <CheckField
-              label="Required"
-              value={required}
-              onChange={setRequired}
-              role="switch"
-            />
-            <CheckField
-              label="Error"
-              value={error}
-              onChange={setError}
-              role="switch"
-            />
-            <CheckField
-              label="Inline"
-              description="Inline-only toolbar (Bold/Italic/Underline + undo/redo), no block/align/color menus."
-              value={inline}
-              onChange={setInline}
-              role="switch"
-            />
-          </div>
-          <div class="field">
-            <label>Icon size</label>
-            <div class="row" style={{ flexWrap: "wrap" }}>
-              {(["sm", "md", "lg", "xl"] as const).map((size) => (
-                <button
-                  type="button"
-                  key={size}
-                  class={iconSize === size ? "sm" : "outline sm"}
-                  aria-pressed={iconSize === size}
-                  onClick={() => setIconSize(size)}
-                >
-                  {size}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
         <RichTextField
           key={seedKey}
           label={label}
           value={seedHtml}
           onChange={setBody}
-          json={undefined}
-          onJsonChange={setJson}
           placeholder={placeholder}
           helperText={helperText || undefined}
           error={error}
@@ -251,28 +162,93 @@ export default function RichTextDemo() {
           inline={inline}
           source={source}
           iconSize={iconSize}
+          description="Sandbox for building/testing RichTextField - load a preset, toggle
+            props, watch both outputs live."
         />
 
-        {body && <div class="grid cols-2" style={{ width: "100%" }}>
-          <div>
-            <div class="field">
-              <label>Output (HTML)</label>
-              <CodeBlock
-                maxHeight="24rem"
-                code={body}
-                formatHtml
-                wrap
-                copyable
-              />
-            </div>
+        {body && (
+          <CodeBlock maxHeight="24rem" code={body} formatHtml wrap copyable />
+        )}
+
+        <div class="field">
+          <label>Presets</label>
+          <div class="row" style={{ flexWrap: "wrap" }}>
+            {PRESETS.map((preset) => (
+              <button
+                type="button"
+                key={preset.key}
+                class="outline sm"
+                onClick={() => loadPreset(preset.html)}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
-          <div>
-            <div class="field">
-              <label>Output (JSON)</label>
-              <CodeBlock maxHeight="24rem" code={jsonCode} wrap copyable />
-            </div>
+        </div>
+
+        <div class="row" style={{ flexWrap: "wrap" }}>
+          <TextField
+            label="Label"
+            value={label}
+            onChange={setLabel}
+            placeholder="Body"
+          />
+          <TextField
+            label="Placeholder"
+            value={placeholder}
+            onChange={setPlaceholder}
+            placeholder="Write something…"
+          />
+          <TextField
+            label="Helper text"
+            value={helperText}
+            onChange={setHelperText}
+            placeholder="Shown under the field"
+          />
+        </div>
+        <div class="row" style={{ flexWrap: "wrap" }}>
+          <CheckField
+            label="Disabled"
+            value={disabled}
+            onChange={setDisabled}
+            role="switch"
+          />
+          <CheckField
+            label="Required"
+            value={required}
+            onChange={setRequired}
+            role="switch"
+          />
+          <CheckField
+            label="Error"
+            value={error}
+            onChange={setError}
+            role="switch"
+          />
+          <CheckField
+            label="Inline"
+            description="Inline-only toolbar (Bold/Italic/Underline + undo/redo), no block/align/color menus."
+            value={inline}
+            onChange={setInline}
+            role="switch"
+          />
+        </div>
+        <div class="field">
+          <label>Icon size</label>
+          <div class="row" style={{ flexWrap: "wrap" }}>
+            {(["sm", "md", "lg", "xl"] as const).map((size) => (
+              <button
+                type="button"
+                key={size}
+                class={iconSize === size ? "sm" : "outline sm"}
+                aria-pressed={iconSize === size}
+                onClick={() => setIconSize(size)}
+              >
+                {size}
+              </button>
+            ))}
           </div>
-        </div>}
+        </div>
       </div>
     </div>
   );

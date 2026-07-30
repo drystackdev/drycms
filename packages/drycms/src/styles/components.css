@@ -1029,6 +1029,26 @@
       white-space: nowrap;
     }
 
+    /* ImageField picker's "Link" tab - one row per typed-in URL, `.row` from
+     * `utilities.css` for the input + trash-button layout. */
+    .image-field-link-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      width: 100%;
+      margin: 0 0 0.75rem;
+      padding: 0;
+      list-style: none;
+
+      & .row {
+        width: 100%;
+      }
+
+      & input {
+        flex: 1;
+      }
+    }
+
     .under {
       padding: 1.5rem;
       border: 1px solid var(--dry-border);
@@ -2362,6 +2382,29 @@
       }
     }
 
+    /* `?_field=` deep link (`field-events.ts`'s own `scrollToField`) - a
+     * temporary outline on the target field's own wrapper, faded out by the
+     * animation itself rather than an abrupt class removal (the matching JS
+     * `setTimeout` in `scrollToField` still removes the class after the same
+     * 1.5s, so a field visited twice in a row - two dispatches of the same
+     * `_field` value - restarts the animation cleanly instead of doing
+     * nothing the second time). */
+    .entry-field-highlight {
+      outline: 2px solid var(--dry-primary);
+      outline-offset: 4px;
+      border-radius: var(--dry-radius-md);
+      animation: dry-entry-field-highlight 1.5s ease-out;
+    }
+
+    @keyframes dry-entry-field-highlight {
+      0%, 40% {
+        outline-color: var(--dry-primary);
+      }
+      100% {
+        outline-color: transparent;
+      }
+    }
+
     button.entry-relation-card {
       display: block;
       width: 100%;
@@ -2776,6 +2819,7 @@
     .editor {
       position: relative;
       margin: 0;
+      min-height: 5rem;
       padding: 0.875rem 1rem;
       overflow: hidden;
       background-color: var(--dry-muted);
@@ -2784,6 +2828,68 @@
       font-family: var(--dry-font-mono);
       font-size: var(--dry-text-xs);
       line-height: 1.6;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      /* Only `CodeField` sets `aria-invalid`/uses focus - CodeBlock's
+       * `editable` demo samples never validate or take real keyboard focus
+       * intent beyond typing, so these states are inert there. */
+      &:focus-within {
+        border-color: var(--dry-ring);
+      }
+
+      &[aria-invalid="true"] {
+        border-color: var(--dry-error);
+
+        &:focus-within {
+          border-color: var(--dry-error);
+          box-shadow: inset 0 0 0 1px var(--dry-error);
+        }
+      }
+
+      &:has(> textarea:disabled) {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      /* `CodeField`-only modifier: a fixed-height, internally-scrolling
+       * editor, instead of `.editor`'s default (used by CodeBlock's
+       * Showcase samples) of growing forever with its content. Bounding the
+       * height means `pre` can no longer be the in-flow element that sizes
+       * the container - both layers become absolutely-positioned overlays
+       * with their own independent scroll, so a keystroke or arrow key that
+       * scrolls the (real, focusable) textarea does NOT move the
+       * highlighted `pre` underneath unless something forces it to -
+       * `CodeField` does that by hand, mirroring the textarea's `scrollTop`
+       * onto `pre` on every `scroll` event. `scrollbar-gutter: stable` on
+       * both keeps their content width identical whether or not a scrollbar
+       * is actually showing - without it, `textarea`'s real scrollbar would
+       * narrow its usable width the moment it appears while `pre` (whose
+       * own scrollbar is hidden) stayed full-width, wrapping the two layers'
+       * text differently and throwing off the caret alignment. */
+      &.code-field {
+        height: 16rem;
+
+        & > pre,
+        & > textarea {
+          position: absolute;
+          inset: 0.875rem 1rem;
+          width: calc(100% - 2rem);
+          height: calc(100% - 1.75rem);
+          overflow-y: auto;
+          overflow-x: hidden;
+          scrollbar-gutter: stable;
+        }
+
+        & > pre {
+          scrollbar-width: none;
+
+          &::-webkit-scrollbar {
+            display: none;
+          }
+        }
+      }
 
       & > pre,
       & > textarea {

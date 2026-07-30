@@ -182,6 +182,10 @@ export default function RichtextComponents() {
               />
               <div class="dry-component-admin-card-body">
                 <strong>{item.def.label}</strong>
+                <span class="dry-component-admin-card-meta">
+                  <small class="badge outline">{item.def.version}</small>
+                  <small class="badge outline">{item.def.auth || <em>None</em>}</small>
+                </span>
                 <p class="dry-component-admin-card-description">{item.def.description}</p>
                 <span class="dry-component-admin-card-meta">
                   <small class="badge secondary">{`<dry-${item.def.name}>`}</small>

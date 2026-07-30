@@ -153,9 +153,16 @@ export class DryComponentNodeView implements NodeView {
 
     // Skipped for `hasContent` - it would hijack every click into content
     // (real, cursor-placeable document text) as a whole-node select instead
-    // (see this class's own doc comment).
+    // (see this class's own doc comment). Also skipped when the click lands
+    // on a genuinely interactive element the component itself rendered (a
+    // `<button>`, form control, link, etc, e.g. `Carousel`'s prev/next
+    // controls) - otherwise every such click forced a whole-node
+    // `NodeSelection` before the element ever got its own native
+    // focus/click, which both broke the control and looked like the node's
+    // content had just been "select all"-ed.
     if (!this.hasContent) {
       this.dom.addEventListener("mousedown", (event) => {
+        if (this.isInteractiveTarget(event)) return;
         const pos = this.getPos();
         if (pos === undefined) return;
         event.preventDefault();
@@ -164,6 +171,27 @@ export class DryComponentNodeView implements NodeView {
     }
 
     this.render();
+  }
+
+  /** Walks the event's real, pre-shadow-retargeting path
+   * (`composedPath()`, not `event.target`) up from wherever it actually
+   * fired to (but not past) `this.dom`. A `shadow: true` component (e.g.
+   * `Carousel`) renders its controls inside its own shadow root, which the
+   * DOM retargets `event.target` across for any listener outside that root
+   * (like this one, on the wrapper `span`) - `event.target` there is just
+   * the `<dry-{name}>` host element itself, never the button actually
+   * clicked. `composedPath()` isn't retargeted, so it's the only way this
+   * listener can see the real element. Bounded at `this.dom` so an ancestor
+   * outside this node (e.g. the editor's own `contenteditable` root) never
+   * accidentally matches. */
+  private isInteractiveTarget(event: Event): boolean {
+    for (const target of event.composedPath()) {
+      if (target === this.dom) return false;
+      if (target instanceof Element && target.matches('button, a[href], input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="button"]')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private onPointerMove = (event: PointerEvent) => {

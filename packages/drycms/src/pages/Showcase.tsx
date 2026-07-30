@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
 import { path } from "virtual:drycms/config";
 import CheckField from "../components/CheckField.js";
+import CodeField from "../components/CodeField.js";
 import Combobox from "../components/Combobox.js";
 import ComponentField from "../components/ComponentField.js";
 import ContextMenu from "../components/ContextMenu.js";
@@ -35,7 +36,6 @@ import SelectField from "../components/SelectField.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import RichTextField from "../components/RichTextField.js";
-import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { toast } from "../components/Toast.js";
 import {
@@ -115,7 +115,7 @@ export default function Showcase({ tab }: Props) {
         <div class="showcase-body">
           <h2 class="showcase-group">{groupLabelFor(activeId)}</h2>
 
-          <DemoContent id={activeId} />
+          <DemoContent key={activeId} id={activeId} />
 
           <nav class="pager" aria-label="Showcase pagination">
             {prevId ? (
@@ -264,15 +264,24 @@ function TextFieldPreview() {
   );
 }
 
+function CodeFieldPreview() {
+  const [renderFn, setRenderFn] = useState(
+    "function Render({ title }) {\n  return <h2>{title}</h2>;\n}",
+  );
+  return (
+    <CodeField
+      label="Render function"
+      value={renderFn}
+      onChange={setRenderFn}
+      description="Highlighted live as JSX."
+      helperText="Runs on the server for each request."
+    />
+  );
+}
+
 function RichTextFieldPreview() {
   const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const [body, setBody] = useState("");
-  const [json, setJson] = useState<RichTextJSON>();
-
-  const jsonCode = useMemo(
-    () => (json ? JSON.stringify(json, null, 2) : ""),
-    [json],
-  );
 
   return (
     <div class="stack" style={{ width: "100%" }}>
@@ -283,25 +292,13 @@ function RichTextFieldPreview() {
         label="Body"
         value={body}
         onChange={setBody}
-        json={json}
-        onJsonChange={setJson}
         description="Bold, italic, underline, alignment and text color."
         placeholder="Write something…"
         source={source}
       />
-      <div class="grid cols-2" style={{ width: "100%" }}>
-        <div>
-          <div class="field">
-            <label>Output (JSON)</label>
-            <CodeBlock maxHeight="32rem" code={jsonCode} wrap copyable />
-          </div>
-        </div>
-        <div>
-          <div class="field">
-            <label>Output (HTML)</label>
-            <CodeBlock maxHeight="32rem" code={body} formatHtml wrap copyable />
-          </div>
-        </div>
+      <div class="field" style={{ width: "100%" }}>
+        <label>Output (HTML)</label>
+        <CodeBlock maxHeight="32rem" code={body} formatHtml wrap copyable />
       </div>
     </div>
   );
@@ -1368,12 +1365,24 @@ function DemoContent({ id }: { id: string }) {
         </Demo>
       );
 
+    case "code-field":
+      return (
+        <Demo
+          id="code-field"
+          title="Code field"
+          description="Same label + control + helper text contract as TextField, but always a multi-line editor - JSX-highlighted live as you type, via the same stacked highlighted-pre/transparent-textarea technique as CodeBlock's editable mode."
+          code={code.codeField!}
+        >
+          <CodeFieldPreview />
+        </Demo>
+      );
+
     case "richtext-field":
       return (
         <Demo
           id="richtext-field"
           title="Rich text field"
-          description="A ProseMirror-backed contenteditable surface with a toolbar for undo/redo, bold/italic/underline, clear formatting, text color, block type (paragraph/headings/quote), alignment, and inserting a drag-to-resize image. Looks like the multiline TextField with a toolbar docked on top; value is clean HTML, with the ProseMirror doc available as JSON alongside it."
+          description="A ProseMirror-backed contenteditable surface with a toolbar for undo/redo, bold/italic/underline, clear formatting, text color, block type (paragraph/headings/quote), alignment, and inserting a drag-to-resize image. Looks like the multiline TextField with a toolbar docked on top; value is always clean HTML."
           code={code.richTextField!}
         >
           <RichTextFieldPreview />

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Selection } from "prosemirror-state";
+import { TextSelection } from "prosemirror-state";
 import { path as basePath } from "virtual:drycms/config";
 import { ComponentIcon, EyeIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
@@ -85,13 +85,28 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
     } else {
       // Block: same shape as `table.ts`'s `insertTable` - grid-cell special
       // case first (`replaceSelectionWith` doesn't land inside a
-      // `grid_item`, whose content is exactly one block), then the
-      // trailing-empty-paragraph case so a component landing at the very
-      // end of the doc still leaves the cursor somewhere to go.
-      const gridTr = insertBlockAfterFocusedGridItem(view.state, node);
-      let tr = gridTr ?? view.state.tr.replaceSelectionWith(node);
-      if (!gridTr && Selection.atEnd(view.state.doc).from === view.state.selection.to) {
-        tr = tr.insert(tr.doc.content.size, schema.nodes.paragraph!.createAndFill()!);
+      // `grid_item`, whose content is exactly one block). A component
+      // landing at the very end of the doc is left to
+      // `trailing-paragraph.ts`'s standing invariant plugin to give the
+      // cursor somewhere to go afterward.
+      let tr = insertBlockAfterFocusedGridItem(view.state, node) ?? view.state.tr.replaceSelectionWith(node);
+      if (record.children) {
+        // `children: true` components get their cursor placed inside the
+        // seeded paragraph right away, rather than left just after the whole
+        // node - same "find by object identity" approach `insertGrid`
+        // (grid.ts) uses, since mapping the pre-transaction selection
+        // through `replaceSelectionWith` doesn't reliably land on the
+        // inserted node itself.
+        let nodePos: number | null = null;
+        tr.doc.descendants((candidate, pos) => {
+          if (nodePos != null) return false;
+          if (candidate === node) {
+            nodePos = pos;
+            return false;
+          }
+          return true;
+        });
+        if (nodePos != null) tr = tr.setSelection(TextSelection.near(tr.doc.resolve(nodePos + 1), 1));
       }
       view.dispatch(tr.scrollIntoView());
     }
@@ -176,7 +191,6 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
                       type="button"
                       class="ghost dry-component-picker-row-select"
                       onClick={() => setPending(record.name)}
-                      {...record.description && {"data-tooltip": record.description}}
                     >
                       <span class="dry-component-picker-label">{record.label}</span>
                     </button>
@@ -223,6 +237,7 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
                 load={loadBuiltComponent(basePath, previewing.name)}
                 shadow={previewing.shadow}
                 childrenHtml={previewing.childrenDefaultHtml}
+                basePath={basePath}
               />
             </div>
             <footer>

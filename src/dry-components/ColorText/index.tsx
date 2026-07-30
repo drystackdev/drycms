@@ -14,12 +14,6 @@ function ColorText({
 }: InferShape<ReturnType<typeof colorTextProps>>) {
   return (
     <div className="color-text" style={{ color: color || "#e11d48" }}>
-      <style>{`
-        .color-text {
-          border-left: 3px solid currentColor;
-          padding-inline-start: 0.75rem;
-        }
-      `}</style>
       <slot />
     </div>
   );
@@ -31,7 +25,12 @@ export default DryEditerComponent({
   description:
     "Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.",
   type: "block",
-  shadow: true,
+  style: `
+    .color-text {
+      border-left: 3px solid currentColor;
+      padding-inline-start: 0.75rem;
+    }
+  `,
   children: `
   <h3>Wraps nested rich text and changes its color</h3>
   <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>

@@ -31,12 +31,13 @@ import { GridItemNodeView } from "./grid-item-view.js";
 import { gridResizing } from "./grid-resize.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
-import { isReorderActive, reorderMode } from "./reorder-mode.js";
+import { getReorderMode, getReorderSelection, isReorderActive, reorderMode } from "./reorder-mode.js";
 import { createEmptyDoc, schema, setRichtextComponents } from "./schema.js";
 import { exitTableDownward, exitTableForward, getSelectedTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
 import { TableNodeView } from "./table-node-view.js";
 import { tableRowResizing } from "./table-row-resize.js";
+import { trailingParagraph, withTrailingParagraph } from "./trailing-paragraph.js";
 import { NO_FORMAT, type ToolbarState } from "./types.js";
 
 /** Every `RichTextField` on a page shares one confirmed-component registry -
@@ -57,21 +58,11 @@ export function loadRichtextComponents(): Promise<DryComponentRecord[]> {
   return richtextComponentsPromise;
 }
 
-/** ProseMirror's own `EditorState.toJSON()` shape (`{ doc, selection,
- * storedMarks? }`) - this field's equivalent of Lexical's
- * `SerializedEditorState`. */
-export type RichTextJSON = ReturnType<EditorState["toJSON"]>;
-
 export interface UseRichTextEditorOptions {
-  /** HTML string - always the primary seed when non-empty (see `json`
-   * below for the fallback). Reported on every change via `onChange`. */
+  /** HTML string - the only seed/output format, reported on every change
+   * via `onChange`. */
   value: string;
   onChange: (value: string) => void;
-  /** ProseMirror's serialized doc, as an object rather than a JSON string -
-   * optional secondary seed/report pair alongside `value`/`onChange`. Only
-   * used to seed the document when `value` is empty. */
-  json?: RichTextJSON;
-  onJsonChange?: (json: RichTextJSON) => void;
   label: string;
   placeholder?: string;
   disabled: boolean;
@@ -107,6 +98,8 @@ function readToolbarState(state: EditorState): ToolbarState {
     selectedGrid: getSelectedGrid(state),
     link: getLinkState(state),
     reorderModeActive: isReorderActive(state),
+    reorderMode: getReorderMode(state),
+    reorderSelectedCount: getReorderSelection(state).length,
   };
 }
 
@@ -137,13 +130,22 @@ function isDocEmpty(state: EditorState): boolean {
 }
 
 function buildAttributes(state: EditorState, disabled: boolean, placeholder: string | undefined, label: string) {
+  const reorderActive = isReorderActive(state);
   return {
-    class: `dry-tx-content${isDocEmpty(state) ? " is-empty" : ""}${isReorderActive(state) ? " dry-tx-reorder-active" : ""}`,
+    class: `dry-tx-content${isDocEmpty(state) ? " is-empty" : ""}${reorderActive ? " dry-tx-reorder-active" : ""}`,
     role: "textbox",
     "aria-multiline": "true",
     "aria-label": label,
     ...(placeholder ? { "data-placeholder": placeholder } : {}),
     ...(disabled ? { "aria-disabled": "true" } : {}),
+    // `contentEditable` (driven by `editable` below) is what normally makes
+    // this div focusable by click - reorder mode turns that off, which
+    // would otherwise leave Delete/Backspace (reorder-mode.ts's own
+    // `handleKeyDown`) unreachable, since nothing ever moves DOM focus onto
+    // this element for a keydown to bubble through. `onBlockPointerDown`
+    // calls `view.dom.focus()` after selecting/dragging a block - this is
+    // what makes that focus call actually land somewhere.
+    ...(reorderActive ? { tabindex: "0" } : {}),
   };
 }
 
@@ -158,8 +160,6 @@ function buildAttributes(state: EditorState, disabled: boolean, placeholder: str
 export function useRichTextEditor({
   value,
   onChange,
-  json,
-  onJsonChange,
   label,
   placeholder,
   disabled,
@@ -168,8 +168,6 @@ export function useRichTextEditor({
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
-  const onJsonChangeRef = useRef(onJsonChange);
-  onJsonChangeRef.current = onJsonChange;
 
   const [state, setState] = useState<ToolbarState>({
     format: NO_FORMAT,
@@ -187,6 +185,8 @@ export function useRichTextEditor({
     selectedGrid: null,
     link: { href: "", target: null, active: false, disabled: true },
     reorderModeActive: false,
+    reorderMode: "block",
+    reorderSelectedCount: 0,
   });
   const [empty, setEmpty] = useState(true);
 
@@ -218,7 +218,7 @@ export function useRichTextEditor({
       const dryNodeViews: Record<string, (node: PMNode, editorView: EditorView, getPos: () => number | undefined) => DryComponentNodeView> = {};
       for (const component of components) {
         const loader = loadBuiltComponent(basePath, component.name);
-        defineDryComponent(component.name, loader, component.shadow);
+        defineDryComponent(component.name, loader, component.shadow, basePath);
         const tag = `dry-${component.name}`;
         dryNodeViews[`dry_${component.name}`] = (node, editorView, getPos) =>
           new DryComponentNodeView(node, tag, component.type, component.children, editorView, getPos);
@@ -254,13 +254,8 @@ export function useRichTextEditor({
       } catch (err) {
         console.error("[drycms] Failed to parse RichTextField value", err);
       }
-    } else if (json?.doc) {
-      try {
-        doc = schema.nodeFromJSON(json.doc);
-      } catch (err) {
-        console.error("[drycms] Failed to parse RichTextField json", err);
-      }
     }
+    doc = withTrailingParagraph(doc);
 
     const editorState = EditorState.create({
       schema,
@@ -310,6 +305,7 @@ export function useRichTextEditor({
         tableRowResizing(),
         tableEditing(),
         gridResizing(),
+        trailingParagraph(),
       ],
     });
 
@@ -336,7 +332,6 @@ export function useRichTextEditor({
         setEmpty(isDocEmpty(newState));
         if (tr.docChanged) {
           onChangeRef.current(exportCleanHtml(newState.doc));
-          onJsonChangeRef.current?.(newState.toJSON() as RichTextJSON);
         }
       },
     });
