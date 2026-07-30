@@ -3243,6 +3243,30 @@
       }
     }
 
+    /* RichTextField's floating per-`inline`-dry-component menu (dry-
+     * component-menu.tsx) - shown via FloatingPanel.tsx anchored to the
+     * selected component's node-view DOM, same shape as `.richtext-image-
+     * menu` above (and for the same reason: not nested inside `.richtext-
+     * toolbar`, so it needs its own copy of the button/pressed-state
+     * treatment that class supplies its descendants there). A `block`
+     * component instead stays docked in the toolbar - see
+     * `.richtext-dry-component-menu-controls` below, which inherits that
+     * treatment from `.richtext-toolbar` the normal way. */
+    .richtext-dry-component-floating-menu {
+      display: flex;
+      gap: 0.375rem;
+
+      & button {
+        border-radius: var(--dry-radius-sm);
+      }
+
+      & button[aria-pressed="true"] {
+        background-color: var(--dry-muted);
+        color: var(--dry-foreground);
+        border: 1px solid var(--dry-border);
+      }
+    }
+
     /* RichTextField's table tool-group (table-menu.tsx) - docked at the end
      * of `.richtext-toolbar` rather than floating over the table, so no
      * positioning of its own here (unlike `.richtext-image-menu` below).
@@ -3340,10 +3364,11 @@
       }
     }
 
-    /* `dry-component-menu.tsx`'s own expand/collapse card - same shape (and
-     * same "no permanent insert half" reasoning) as `.richtext-grid-menu-
-     * controls-wrap`/`-controls` just above; used to be a `FloatingPanel`
-     * anchored over the selected component instead of docked here. */
+    /* `dry-component-menu.tsx`'s own expand/collapse card, for a `block` dry
+     * component only - same shape (and same "no permanent insert half"
+     * reasoning) as `.richtext-grid-menu-controls-wrap`/`-controls` just
+     * above. An `inline` one instead floats via `.richtext-dry-component-
+     * floating-menu` above, same as `.richtext-image-menu`. */
     .richtext-dry-component-menu-controls-wrap {
       display: grid;
       grid-template-columns: 0fr;

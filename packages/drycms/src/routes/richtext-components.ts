@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import { join } from "node:path";
 import type { APIRoute } from "astro";
 import { richtextComponentsStorage } from "virtual:drycms/richtext-components-config";
-import { buildComponentBundle } from "../components/RichTextField/build-component-bundle.js";
+import { buildComponentBundle, buildSharedPreactBundle } from "../components/RichTextField/build-component-bundle.js";
 import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
 import { slugify } from "../lib/slugify.js";
 import { createStorageAdapter } from "../storage/index.js";
@@ -44,17 +44,31 @@ function fileNameFor(name: string): string {
   return `${slugFor(name)}.json`;
 }
 
+const SHARED_PREACT_BUNDLE_NAME = "preact.js";
+
+/** Every confirmed component's own bundle imports Preact from this one
+ * shared file (see `buildComponentBundle`'s own doc comment) rather than
+ * inlining its own copy - built once and left alone from then on, `stat`
+ * (not a full `read`) is enough to tell whether that's already happened. */
+async function ensureSharedPreactBundle(): Promise<void> {
+  if (await adapter.stat(SHARED_PREACT_BUNDLE_NAME)) return;
+  const code = await buildSharedPreactBundle();
+  await adapter.write(SHARED_PREACT_BUNDLE_NAME, Buffer.from(code, "utf8"));
+}
+
 /** Builds a component's real source (`sourcePath`, a leading-`/`
  * root-relative glob key like `/src/dry-components/Carousel/index.tsx`) into
- * a self-contained JS bundle and stores it as `{slug}.js` alongside the
- * `{slug}.json` record - `join`, not `path.resolve`: `resolve()` would treat
- * that leading slash as already-absolute and discard `process.cwd()`. Dev
- * only (mirrors `buildComponentBundle`'s own dev-only tooling) - a deployed
- * build may not have the raw `.tsx` source on disk at all. */
+ * a JS bundle (Preact itself left external, see `buildComponentBundle`) and
+ * stores it as `{slug}.js` alongside the `{slug}.json` record - `join`, not
+ * `path.resolve`: `resolve()` would treat that leading slash as
+ * already-absolute and discard `process.cwd()`. Dev only (mirrors
+ * `buildComponentBundle`'s own dev-only tooling) - a deployed build may not
+ * have the raw `.tsx` source on disk at all. */
 async function buildAndStore(sourcePath: string, slug: string): Promise<void> {
   if (!import.meta.env.DEV) {
     throw new StorageError("unsupported", "Building richtext components is only available in dev.");
   }
+  await ensureSharedPreactBundle();
   const entryAbsPath = join(process.cwd(), sourcePath);
   const code = await buildComponentBundle(entryAbsPath);
   await adapter.write(`${slug}.js`, Buffer.from(code, "utf8"));

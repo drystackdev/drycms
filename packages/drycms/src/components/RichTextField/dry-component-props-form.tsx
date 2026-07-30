@@ -91,6 +91,15 @@ function emptyFor(field: PlainFieldDef): unknown {
   return "";
 }
 
+/** A blank draft for a whole props schema - one `emptyFor` per field, no
+ * `defaultValue`s applied. Used wherever a caller wants the admin to
+ * actually type values rather than silently accept defaults (`dry-component-
+ * insert-button.tsx`'s "enter props, then insert" dialog seeds its draft
+ * with this instead of `record.defaults`). */
+export function emptyDryComponentProps(schema: Record<string, PlainFieldDef>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(schema).map(([key, field]) => [key, emptyFor(field)]));
+}
+
 /** One-line preview shown in an array item's row - the field's own value,
  * not a re-render of its inputs (those only appear once the row is clicked
  * open into the edit dialog). */

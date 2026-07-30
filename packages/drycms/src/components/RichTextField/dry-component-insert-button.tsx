@@ -7,7 +7,7 @@ import { useOverlayScrollbars } from "../overlayscrollbars.js";
 import Search from "../Search.js";
 import ComponentPreview from "./ComponentPreview.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
-import DryComponentPropsForm, { isDryComponentPropsValid } from "./dry-component-props-form.js";
+import DryComponentPropsForm, { emptyDryComponentProps, isDryComponentPropsValid } from "./dry-component-props-form.js";
 import { loadBuiltComponent } from "./dry-component-runtime.js";
 import { insertBlockAfterFocusedGridItem } from "./grid.js";
 import { schema } from "./schema.js";
@@ -101,8 +101,10 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
   /** Footer "Insert" button - a component with no props at all goes straight
    * in with its defaults, same as before. One with props opens a settings
    * dialog first (`DryComponentPropsForm`, the same widget `DryComponentMenu`
-   * uses to edit an already-placed instance) seeded with its defaults; the
-   * node is only actually created once that draft passes validation. */
+   * uses to edit an already-placed instance) seeded *blank* - not
+   * `record.defaults` - so inserting a component means actually entering its
+   * values, not silently accepting whatever the author defaulted them to;
+   * the node is only actually created once that draft passes validation. */
   const startInsert = () => {
     const record = records.find((r) => r.name === pending);
     if (!record) return;
@@ -112,7 +114,7 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       return;
     }
     setConfiguring(record);
-    setPropsDraft({ ...record.defaults });
+    setPropsDraft(emptyDryComponentProps(record.props));
     setOpen(false);
   };
 

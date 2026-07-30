@@ -469,6 +469,24 @@ function buildDryNodeSpecs(components: DryComponentRecord[]): Record<string, Nod
       inline: isInline,
       atom: !hasContent,
       content: hasContent ? "block+" : undefined,
+      // Without this, a `replaceSelectionWith`-based insert (`insertGrid`/
+      // `insertTable`, the only way to insert a grid/table other than a
+      // reorder-mode drag) landing inside this node's own content doesn't
+      // insert there at all: with no `defining`/`isolating` flag, PM's
+      // `Transform.replace` "Fitter" treats the node as just another step to
+      // freely widen/reopen while hunting for somewhere the new content
+      // fits - and since `content: "block+"` also happens to already be
+      // satisfied by zero remaining children right after the fitter would
+      // otherwise insert a 2nd block here, it instead widens straight past
+      // this node's own boundary and replaces the WHOLE node (confirmed
+      // empirically - the component vanished entirely, replaced by the
+      // grid). `defining: true` (same flag `list_item` below already uses,
+      // for the exact same "arbitrary block+ container" shape) stops that:
+      // it's the one flag that makes the Fitter preserve this node as a
+      // hard boundary instead of stepping past it, so the new block lands
+      // as a sibling inside its content, same as inserting into a
+      // `list_item`/`table_cell` already does.
+      ...(hasContent ? { defining: true } : {}),
       attrs: {
         props: { default: component.defaults },
         // Editor-level presentation attrs, layered on top of the
