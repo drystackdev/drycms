@@ -75,4 +75,38 @@ test.describe("Content entries list - IndexedDB cache + background sync (status/
     await page.waitForURL("**/content/role");
     await expect(page.getByText(uniqueName)).toBeVisible();
   });
+
+  test("background sync finding new data flashes the header sync-success indicator for a few seconds (no toast)", async ({
+    page,
+  }) => {
+    // First visit: no prior cache, so this is a cold load - must NOT flash
+    // (see `useFetch.ts`'s `notifyOnChange = hadCache`).
+    await page.goto("/dry/content/role");
+    await expect(page.locator("tbody tr", { hasText: "Super Admin" })).toBeVisible();
+    await expect(page.getByText("Đã cập nhật")).toHaveCount(0);
+
+    // Bump the resource's data version behind the scenes (same technique as
+    // `deleteContentType` elsewhere - an in-page `fetch()`, same-origin).
+    const uniqueName = `Sync Flash Role ${Date.now()}`;
+    await page.evaluate(
+      (name) =>
+        fetch("/dry/api/content/role", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, isSuperAdmin: false, permissions: [] }),
+        }),
+      uniqueName,
+    );
+
+    // Revisiting renders the (now stale) cache instantly, then the
+    // background sync detects the version bump - the header should flash
+    // success, and no toast should ever appear.
+    await page.reload();
+    await expect(page.getByText("Đã cập nhật")).toBeVisible();
+    await expect(page.locator(".toast")).toHaveCount(0);
+
+    // Auto-hides itself - gone well before the flash's own doc'd 3s duration
+    // would need to be pinned exactly (avoids a flaky race against that timer).
+    await expect(page.getByText("Đã cập nhật")).toBeHidden({ timeout: 6000 });
+  });
 });

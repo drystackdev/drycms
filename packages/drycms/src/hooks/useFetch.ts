@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { toast } from "../components/Toast.js";
 import { getCacheEntry, setCacheEntry } from "../lib/idb-cache.js";
-import { beginSync, endSync } from "../store/sync.js";
+import { beginSync, endSync, flashSyncSuccess } from "../store/sync.js";
 
 /** Same envelope shape `entries-http-api.ts`'s `listVersioned`/`getVersioned`/
  * `getSingletonVersioned` return - `useFetch()` is deliberately written
@@ -22,9 +21,10 @@ export interface UseFetchOptions {
    * pages) results in a real request; every one still renders instantly from
    * IndexedDB. `0` disables debouncing. Defaults to 150ms. */
   debounceMs?: number;
-  /** Toast title shown when a background sync or `reload()` finds changed
-   * data - `false` disables the toast for this `useFetch()` call. */
-  notify?: string | false;
+  /** Whether a background sync or `reload()` finding changed data flashes the
+   * header's sync-success indicator (see `store/sync.ts`'s `flashSyncSuccess`)
+   * - `false` disables it for this `useFetch()` call. @default true */
+  notify?: boolean;
 }
 
 export interface UseFetchResult<T> {
@@ -36,7 +36,6 @@ export interface UseFetchResult<T> {
 }
 
 const DEFAULT_DEBOUNCE_MS = 150;
-const DEFAULT_NOTIFY_TITLE = "Dữ liệu đã được cập nhật mới nhất";
 
 interface State<T> {
   data: T | undefined;
@@ -59,7 +58,7 @@ interface State<T> {
  * 3. `changed: false` → nothing to do (cache/UI already correct).
  *    `changed: true` → writes IndexedDB, updates the rendered `data`, and
  *    (only if there WAS a prior cache - a cold first load isn't "new data
- *    available") shows a toast.
+ *    available") flashes the header's sync-success indicator.
  *
  * A response only ever applies if it's still the most recent request for the
  * current `key` - guards against page-1's request resolving after page-3's
@@ -67,7 +66,7 @@ interface State<T> {
  */
 export function useFetch<T>(key: string, fetcher: Fetcher<T>, options: UseFetchOptions = {}): UseFetchResult<T> {
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
-  const notify = options.notify ?? DEFAULT_NOTIFY_TITLE;
+  const notify = options.notify ?? true;
 
   const [state, setState] = useState<State<T>>({ data: undefined, loading: true, refreshing: false, error: undefined });
 
@@ -95,7 +94,7 @@ export function useFetch<T>(key: string, fetcher: Fetcher<T>, options: UseFetchO
         if (result.changed) {
           await setCacheEntry(keyRef.current, result.data, result.version);
           setState({ data: result.data, loading: false, refreshing: false, error: undefined });
-          if (notifyOnChange && notify !== false) toast.add({ title: notify, type: "success" });
+          if (notifyOnChange && notify) flashSyncSuccess();
         } else {
           setState((current) => ({ ...current, loading: false, refreshing: false }));
         }

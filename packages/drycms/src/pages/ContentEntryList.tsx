@@ -494,10 +494,10 @@ function ContentEntryListCollection({
         rows={displayRows}
         rowKey={(row) => row.id}
         emptyLabel="No entries yet."
-        // `features.sortable` disables client search entirely (see
-        // `dragReorder` below) - a filtered view has no single well-defined
-        // drag order to save.
-        searchable={!isSortable}
+        // Search stays available even when `features.sortable` (see
+        // `dragReorder` below) - `DataTable` itself auto-disables dragging
+        // while the search box has text, since a filtered view has no
+        // single well-defined drag order to save.
         pageSize={isSortable ? 0 : undefined}
         onRowClick={(row) => route(`${path}/content/${type.name}/${row.id}`)}
         columnToggle={{

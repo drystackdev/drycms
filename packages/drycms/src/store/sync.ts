@@ -18,3 +18,21 @@ export function beginSync(): void {
 export function endSync(): void {
   refreshingCount.value = Math.max(0, refreshingCount.value - 1);
 }
+
+/** "A `useFetch()` background sync just found new data" flash, shown in the
+ * header next to the syncing spinner (see `SyncIndicator.tsx`) for a few
+ * seconds instead of a toast - `flashSyncSuccess()` re-arms the same timer on
+ * every call, so several syncs finishing close together just extend the one
+ * visible flash rather than stacking. */
+export const syncSuccess = signal(false);
+
+let successTimer: ReturnType<typeof setTimeout> | undefined;
+const SYNC_SUCCESS_DURATION_MS = 3000;
+
+export function flashSyncSuccess(): void {
+  syncSuccess.value = true;
+  clearTimeout(successTimer);
+  successTimer = setTimeout(() => {
+    syncSuccess.value = false;
+  }, SYNC_SUCCESS_DURATION_MS);
+}

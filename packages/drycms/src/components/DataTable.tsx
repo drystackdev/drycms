@@ -92,10 +92,13 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * offered as `serverQuery`'s search target. */
   columnToggle?: DataTableColumnToggle;
   /** Turns every row into a drag handle-reorderable item, in exactly the
-   * order `rows` is passed in - client-side search/sort/pagination are all
-   * disabled while this is set (a filtered/sorted/paginated view has no
-   * single well-defined "new order" to report back), so the caller should
-   * pass `searchable={false}` and `pageSize={0}` alongside it. */
+   * order `rows` is passed in - client-side sort/pagination are disabled
+   * while this is set (a sorted/paginated view has no single well-defined
+   * "new order" to report back), so the caller should still pass
+   * `pageSize={0}` alongside it. Search stays available, but for the same
+   * reason a filtered view has no well-defined "new order" either - so
+   * dragging auto-disables (on top of `disabled` below) whenever the search
+   * box has text, and re-enables once it's cleared. */
   dragReorder?: DataTableDragReorder<Row>;
 }
 
@@ -150,7 +153,11 @@ export default function DataTable<Row extends Record<string, unknown>>({
     items: rows,
     getId: dragReorder?.getId ?? (() => ""),
     onReorder: (next) => dragReorder?.onReorder(next),
-    disabled: !dragReorder || dragReorder.disabled,
+    // A non-empty search box means `filtered` (below) is showing a subset -
+    // reordering that subset has no well-defined "new order" to report back,
+    // so dragging auto-disables until the query is cleared, on top of
+    // whatever `dragReorder.disabled` the caller passes.
+    disabled: !dragReorder || dragReorder.disabled || query.trim().length > 0,
   });
 
   const allKeys = columns.map((c) => c.key);
@@ -199,7 +206,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   }
 
   const filtered = useMemo(() => {
-    if (serverQuery || dragReorder) return rows; // already filtered server-side, or reorder mode - always the full, as-given order.
+    if (serverQuery) return rows; // already filtered server-side.
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((row) =>
@@ -207,7 +214,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
         toText(row[column.key]).toLowerCase().includes(needle),
       ),
     );
-  }, [rows, visibleColumns, query, serverQuery, dragReorder]);
+  }, [rows, visibleColumns, query, serverQuery]);
 
   const sorted = useMemo(() => {
     if (serverQuery || dragReorder || !sort) return filtered; // server mode/reorder mode: already sorted, or never re-sorted.

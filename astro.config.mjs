@@ -3,10 +3,6 @@ import dry from "drycms";
 
 export default defineConfig({
   integrations: [
-    dry({
-      content: {
-        engine: "file",
-      },
-    }),
+    dry(),
   ],
 });

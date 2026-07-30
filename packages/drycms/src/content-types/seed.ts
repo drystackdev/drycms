@@ -228,6 +228,9 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "aiKey",
     label: "AI Key",
     description: "Credentials for third-party AI providers.",
+    features: {
+      sortable: true,
+    },
     fields: [
       {
         id: IDS.aiKeyName,
@@ -351,7 +354,10 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         name: "action",
         label: "Action",
         type: "select",
-        config: { options: ["create", "read", "edit", "delete"], multiple: false },
+        config: {
+          options: ["create", "read", "edit", "delete"],
+          multiple: false,
+        },
         validation: { required: true },
         order: 2,
       },
