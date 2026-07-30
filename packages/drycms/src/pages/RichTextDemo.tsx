@@ -6,6 +6,7 @@ import CodeBlock from "../components/CodeBlock.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import { ArrowLeftIcon } from "../components/icons.js";
 import RichTextField from "../components/RichTextField.js";
+import dryCarousel from "../components/RichTextField/demo-carousel.js";
 import type { RichTextJSON } from "../components/RichTextField/useRichTextEditor.js";
 import TextField from "../components/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -272,7 +273,32 @@ export default function RichTextDemo() {
               <CodeBlock maxHeight="24rem" code={jsonCode} wrap copyable />
             </div>
           </div>
-          
+        </div>
+
+        <div class="field">
+          <label>Custom component demo - "{dryCarousel.label}" ({dryCarousel.name})</label>
+          <p>
+            Validates <code>register-component.ts</code>'s builder API end to
+            end - not wired into the editor yet (see{" "}
+            <code>status/register-compoennt.md</code>).
+          </p>
+          <dryCarousel.component {...dryCarousel.defaults} />
+          <CodeBlock
+            maxHeight="16rem"
+            code={JSON.stringify(
+              {
+                name: dryCarousel.name,
+                label: dryCarousel.label,
+                type: dryCarousel.type,
+                shadow: dryCarousel.shadow,
+                defaults: dryCarousel.defaults,
+              },
+              null,
+              2,
+            )}
+            wrap
+            copyable
+          />
         </div>
       </div>
     </div>

@@ -90,6 +90,28 @@ export interface DryContentOption {
   root?: string;
 }
 
+export interface DryRichtextOption {
+  /**
+   * Directory scanned for user-registered richtext components (see
+   * `status/register-compoennt.md`) - each immediate subfolder's own
+   * `index.tsx`, whose default export is a `DryEditerComponent(...)` call,
+   * becomes insertable from `RichTextField`'s toolbar. Relative to the
+   * consuming project's cwd (or an absolute path).
+   *
+   * @default "src/dry-components"
+   */
+  componentsDir?: string;
+  /**
+   * Where "confirmed" component records (label/type/props/shadow, written
+   * once an admin picks "Use" on the component management page) are stored -
+   * a root of its own, same shape as `storage`/`icons`, so it never mixes
+   * with user-uploaded media.
+   *
+   * @default { root: "richtext-components" }
+   */
+  storage?: DryStorageOption;
+}
+
 export interface DryOption {
   /**
    * Base path the drycms admin UI is mounted on.
@@ -101,6 +123,7 @@ export interface DryOption {
   storage?: DryStorageOption;
   icons?: DryIconsOption;
   content?: DryContentOption;
+  richtext?: DryRichtextOption;
 }
 
 export interface ResolvedLocalStorageOption {
@@ -160,11 +183,18 @@ export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOpti
 
 export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
 
+export interface ResolvedRichtextOption {
+  /** Absolute path - resolved the same way `content.file`/`sqlite` is. */
+  componentsDir: string;
+  storage: ResolvedStorageOption;
+}
+
 export interface ResolvedDryOption {
   path: string;
   storage: ResolvedStorageOption;
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
+  richtext: ResolvedRichtextOption;
 }
 
 /**
@@ -211,11 +241,19 @@ export const ICONS_ROUTE_ENTRYPOINT = "drycms/routes/icons.ts";
  */
 export const ICONIFY_ROUTE_ENTRYPOINT = "drycms/routes/iconify.ts";
 
+/**
+ * The Astro API endpoint backing confirmed richtext-component records
+ * (list/confirm-use), serving `${path}/api/richtext-components/**`.
+ */
+export const RICHTEXT_COMPONENTS_ROUTE_ENTRYPOINT = "drycms/routes/richtext-components.ts";
+
 export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = "storage";
 export const DEFAULT_ICONS_ROOT = "icons";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";
 export const DEFAULT_CONTENT_ROOT = "content";
+export const DEFAULT_COMPONENTS_DIR = "src/dry-components";
+export const DEFAULT_RICHTEXT_STORAGE_ROOT = "richtext-components";
 
 let dotEnvCache: Record<string, string> | undefined;
 
@@ -384,6 +422,19 @@ function resolveIconsOption(icons?: DryIconsOption): ResolvedIconsOption {
   return resolveFileBackedOption(icons, DEFAULT_ICONS_ROOT, "icons");
 }
 
+function resolveRichtextOption(richtext: DryRichtextOption = {}): ResolvedRichtextOption {
+  const componentsDir = richtext.componentsDir ?? DEFAULT_COMPONENTS_DIR;
+  if (typeof componentsDir !== "string") {
+    throw new TypeError(
+      `[drycms] \`richtext.componentsDir\` must be a string, received ${typeof componentsDir}.`,
+    );
+  }
+  return {
+    componentsDir: resolvePath(process.cwd(), componentsDir),
+    storage: resolveFileBackedOption(richtext.storage, DEFAULT_RICHTEXT_STORAGE_ROOT, "richtext.storage"),
+  };
+}
+
 function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
   const engine = content.engine ?? "sqlite";
   if (typeof engine !== "string") {
@@ -469,5 +520,6 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     storage: resolveStorageOption(options.storage),
     icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
+    richtext: resolveRichtextOption(options.richtext),
   };
 }

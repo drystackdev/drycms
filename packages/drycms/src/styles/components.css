@@ -4278,6 +4278,45 @@
     }
   }
 
+  .dry-carousel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 32rem;
+  }
+
+  .dry-carousel-viewport {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dry-carousel-image {
+    flex: 1;
+    width: 100%;
+    aspect-ratio: 12 / 7;
+    object-fit: cover;
+    border-radius: var(--dry-radius-md);
+    border: 1px solid var(--dry-border);
+  }
+
+  .dry-carousel-nav {
+    flex: none;
+  }
+
+  .dry-carousel-caption {
+    margin: 0;
+    font-size: var(--dry-text-sm);
+    color: var(--dry-muted-foreground);
+    text-align: center;
+  }
+
+  .dry-carousel-empty {
+    padding: 1rem;
+    text-align: center;
+    color: var(--dry-muted-foreground);
+  }
+
   @keyframes dry-spin {
     to {
       rotate: 360deg;
