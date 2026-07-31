@@ -525,253 +525,259 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   fileManager: `import FileManager from 'drycms/components/FileManager';
 
 <FileManager source={source} />`,
-  textField: `import TextField from 'drycms/components/TextField';
-
-<TextField
-  label="Title"
-  value={title}
-  onChange={setTitle}
-  description="Shown as the page heading."
-  helperText="Shown in listings and search results."
-/>
-
-<TextField
-  label="Slug"
-  value={slug}
-  onChange={setSlug}
-  error
-  helperText="Slug is required."
-/>
-
-<TextField
-  label="Bio"
-  value={bio}
-  onChange={setBio}
-  multiline
-  placeholder="Write something…"
-/>`,
-  codeField: `import CodeField from 'drycms/components/CodeField';
-
-<CodeField
+  textField: `<div class="grid cols-2" style="width: 100%">
+  <TextField
+    label="Title"
+    value={title}
+    onChange={setTitle}
+    description="Shown as the page heading."
+    helperText="Shown in listings and search results."
+  />
+  <TextField
+    label="Slug"
+    value={slug}
+    onChange={setSlug}
+    error
+    helperText="Slug is required."
+  />
+  <TextField
+    label="Bio"
+    value={bio}
+    onChange={setBio}
+    multiline
+    placeholder="Write something…"
+  />
+</div>`,
+  codeField: `<CodeField
   label="Render function"
-  value={code}
-  onChange={setCode}
+  value={renderFn}
+  onChange={setRenderFn}
   description="Highlighted live as JSX."
   helperText="Runs on the server for each request."
+  style={{ width: "100%" }}
 />`,
-  richTextField: `import RichTextField from 'drycms/components/RichTextField';
-
-<RichTextField
-  label="Body"
-  value={body}
-  onChange={setBody}
-  description="Bold, italic, underline, alignment and text color."
-  placeholder="Write something…"
-/>
-
-<CodeBlock code={body} formatHtml wrap copyable />`,
-  slugField: `import SlugField from 'drycms/components/SlugField';
-
-<SlugField
-  value={title}
-  slug={slug}
-  onChange={(value, slug) => {
-    setTitle(value);
-    setSlug(slug);
-  }}
-  description="Used in the public URL."
-  helperText="Auto-derived from the title until you edit the slug directly."
-/>`,
-  passwordField: `import PasswordField from 'drycms/components/PasswordField';
-
-<PasswordField
-  label="Password"
-  value={password}
-  onChange={setPassword}
-  placeholder="Enter a password"
-  helperText="At least 8 characters."
-/>
-
-<PasswordField
-  label="Confirm password"
-  value={confirm}
-  onChange={setConfirm}
-  placeholder="Re-enter the password"
-  helperText="Shares the show/hide toggle with the field on the left."
-/>`,
-  secretField: `import SecretKeyField from 'drycms/components/SecretKeyField';
-
-<SecretKeyField
-  label="API key"
-  value={newKey}
-  onChange={setNewKey}
-  helperText="A brand-new entry: no stored value yet."
-/>
-
-<SecretKeyField
-  label="API key"
-  value={existingKey}
-  onChange={setExistingKey}
-  hasExistingValue
-  helperText="Editing an existing entry: leave blank to keep the current key."
-/>`,
-  numberField: `import NumberField from 'drycms/components/NumberField';
-
-<NumberField
-  label="Priority"
-  value={priority}
-  onChange={setPriority}
-  min={0}
-  max={10}
-  description="Controls display order across listings."
-  helperText="Higher numbers sort first."
-/>
-
-<NumberField
-  label="Word count"
-  value={wordCount}
-  onChange={setWordCount}
-  error
-  helperText="Must be greater than 0."
-/>
-
-<NumberField
-  label="Price"
-  value={price}
-  onChange={setPrice}
-  min={0}
-  step={0.5}
-  helperText="Steps by 0.5 per click."
-/>`,
-  checkField: `import CheckField from 'drycms/components/CheckField';
-
-<CheckField
-  label="Visible in listings"
-  value={visible}
-  onChange={setVisible}
-  helperText="Shown on the public site once enabled."
-/>
-
-<CheckField
-  label="Auto-publish"
-  value={autoPublish}
-  onChange={setAutoPublish}
-  description="Automatically publish new posts without review."
-  ui="switch"
-/>`,
-  selectField: `import SelectField from 'drycms/components/SelectField';
-
-<SelectField
-  label="Collection"
-  config={{ options: ['Blog', 'Docs', 'Changelog'], multiple: false }}
-  value={collection}
-  onChange={setCollection}
-  description="Where this entry is filed."
-  helperText="Fixed options, set once on the field itself."
-/>
-
-<SelectField
-  label="Tags"
-  config={{ options: ['Design', 'Engineering', 'Marketing', 'Product'], multiple: true }}
-  value={tags}
-  onChange={setTags}
-  error
-  helperText="Pick at least one tag."
-/>`,
-  datePickerField: `import DatePickerField from 'drycms/components/DatePickerField';
-
-<DatePickerField
-  label="Published at"
-  value={publishedAt}
-  onChange={setPublishedAt}
-  time
-  description="When this post goes live."
-  helperText="Pick a day, then adjust the time below."
-/>
-
-<DatePickerField
-  label="Birthday"
-  value={birthday}
-  onChange={setBirthday}
-  mode="select"
-  helperText="Day / month / year dropdowns, no time."
-/>
-
-<DatePickerField
-  label="Custom note date"
-  value={noteDate}
-  onChange={setNoteDate}
-  mode="input"
-  helperText="Native browser date input."
-/>`,
-  imageField: `import ImageField from 'drycms/components/ImageField';
-
-<ImageField
-  label="Cover image"
-  source={source}
-  value={cover}
-  onChange={(value) => setCover(value)}
-  description="Recommended size: 1200×630."
-  helperText="Shown at the top of the post."
-/>
-
-<ImageField
-  label="Gallery"
-  source={source}
-  value={gallery}
-  onChange={(value) => setGallery(value)}
-  multiple={{ min: 1, max: 5 }}
-  description="Drag a row's handle to reorder."
-  helperText="Up to 5 images, shown in this order."
-/>`,
-  relationField: `import RelationField from 'drycms/components/RelationField';
-
-<RelationField
-  label="Author"
-  value={author}
-  onChange={(value) => setAuthor(value)}
-  source={source}
-  pickerTitle="Choose Author"
-  helperText="Click to pick one author from the list."
-/>
-
-<RelationField
-  label="Contributors"
-  value={contributors}
-  onChange={(value) => setContributors(value)}
-  source={source}
-  multiple
-  sortable
-  pickerTitle="Choose Contributors"
-  helperText="Click to pick multiple contributors from the list."
-/>`,
-  componentField: `import ComponentField from 'drycms/components/ComponentField';
-import TextField from 'drycms/components/TextField';
-
-<ComponentField
-  label="Links"
-  value={links}
-  onChange={setLinks}
-  sortable
-  itemLabel="link"
-  summaryOf={(item) => item.label}
-  blankItem={() => ({ label: '', url: '' })}
-  renderItem={(item, onChange) => (
-    <>
-      <TextField
-        label="Label"
-        value={item.label}
-        onChange={(value) => onChange({ ...item, label: value })}
-        placeholder="e.g. Docs"
-      />
-      <TextField
-        label="URL"
-        value={item.url}
-        onChange={(value) => onChange({ ...item, url: value })}
-        placeholder="e.g. https://example.com"
-      />
-    </>
-  )}
-  helperText="Add, edit, or remove repeatable link items. Drag the handle to reorder."
-/>`,
+  richTextField: `<div class="stack" style={{ width: "100%" }}>
+  <a href="/dry/richtext-demo" class="hint">
+    Open the standalone demo →
+  </a>
+  <RichTextField
+    label="Body"
+    value={body}
+    onChange={setBody}
+    description="Bold, italic, underline, alignment and text color."
+    placeholder="Write something…"
+    source={source}
+  />
+  <div class="field" style={{ width: "100%" }}>
+    <label>Output (HTML)</label>
+    <CodeBlock maxHeight="32rem" code={body} formatHtml wrap copyable />
+  </div>
+</div>`,
+  slugField: `<div style="width: 100%; max-width: 24rem">
+  <SlugField
+    value={title}
+    slug={slug}
+    onChange={(value, slugValue) => {
+      setTitle(value);
+      setSlug(slugValue);
+    }}
+    description="Used in the public URL."
+    helperText="Auto-derived from the title until you edit the slug directly."
+  />
+</div>`,
+  passwordField: `<div class="grid cols-2" style="width: 100%">
+  <PasswordField
+    label="Password"
+    value={password}
+    onChange={setPassword}
+    placeholder="Enter a password"
+    helperText="At least 8 characters."
+  />
+  <PasswordField
+    label="Confirm password"
+    value={confirm}
+    onChange={setConfirm}
+    placeholder="Re-enter the password"
+    helperText="Shares the show/hide toggle with the field on the left."
+  />
+</div>`,
+  secretField: `<div class="grid cols-2" style="width: 100%">
+  <SecretKeyField
+    label="API key"
+    value={newKey}
+    onChange={setNewKey}
+    helperText="A brand-new entry: no stored value yet."
+  />
+  <SecretKeyField
+    label="API key"
+    value={existingKey}
+    onChange={setExistingKey}
+    hasExistingValue
+    helperText="Editing an existing entry: leave blank to keep the current key."
+  />
+</div>`,
+  numberField: `<div class="grid cols-2" style="width: 100%">
+  <NumberField
+    label="Priority"
+    value={priority}
+    onChange={setPriority}
+    min={0}
+    max={10}
+    description="Controls display order across listings."
+    helperText="Higher numbers sort first."
+  />
+  <NumberField
+    label="Word count"
+    value={wordCount}
+    onChange={setWordCount}
+    error
+    helperText="Must be greater than 0."
+  />
+  <NumberField
+    label="Price"
+    value={price}
+    onChange={setPrice}
+    min={0}
+    step={0.5}
+    helperText="Steps by 0.5 per click."
+  />
+</div>`,
+  checkField: `<div class="row" style="gap: 1.5rem">
+  <CheckField
+    outline
+    label="Visible in listings"
+    value={visible}
+    onChange={setVisible}
+    helperText="Shown on the public site once enabled."
+  />
+  <CheckField
+    label="Auto-publish"
+    value={autoPublish}
+    onChange={setAutoPublish}
+    description="Automatically publish new posts without review."
+    role="switch"
+  />
+</div>`,
+  selectField: `<div class="grid cols-2" style="width: 100%">
+  <SelectField
+    label="Collection"
+    config={{ options: ["Blog", "Docs", "Changelog"], multiple: false }}
+    value={collection}
+    onChange={(value) => setCollection(value)}
+    description="Where this entry is filed."
+    helperText="Fixed options, set once on the field itself."
+  />
+  <SelectField
+    label="Tags"
+    config={{
+      options: ["Design", "Engineering", "Marketing", "Product"],
+      multiple: true,
+    }}
+    value={tags}
+    onChange={(value) => setTags(value)}
+    error
+    helperText="Pick at least one tag."
+  />
+</div>`,
+  datePickerField: `<div class="grid cols-2" style="width: 100%">
+  <DatePickerField
+    label="Published at"
+    value={publishedAt}
+    onChange={setPublishedAt}
+    time
+    description="When this post goes live."
+    helperText="Pick a day, then adjust the time below."
+  />
+  <DatePickerField
+    label="Birthday"
+    value={birthday}
+    onChange={setBirthday}
+    mode="select"
+    helperText="Day / month / year dropdowns, no time."
+  />
+  <DatePickerField
+    label="Custom note date"
+    value={noteDate}
+    onChange={setNoteDate}
+    mode="input"
+    helperText="Native browser date input."
+  />
+</div>`,
+  imageField: `<div class="grid cols-2" style="width: 100%">
+  <div>
+    <ImageField
+      label="Cover image"
+      source={source}
+      value={cover}
+      onChange={(value) => setCover(value)}
+      description="Recommended size: 1200×630."
+      helperText="Shown at the top of the post."
+    />
+  </div>
+  <div>
+    <ImageField
+      label="Gallery"
+      source={source}
+      value={gallery}
+      onChange={(value) => setGallery(value)}
+      multiple={{ min: 1, max: 5 }}
+      description="Drag a row's handle to reorder."
+      helperText="Up to 5 images, shown in this order."
+    />
+  </div>
+</div>`,
+  relationField: `<div class="grid cols-2" style="width: 100%">
+  <div>
+    <RelationField
+      label="Author"
+      value={author}
+      onChange={(value) => setAuthor(value)}
+      source={source}
+      pickerTitle="Choose Author"
+      description="The main author of this post."
+      helperText="Click to pick one author from the list."
+    />
+  </div>
+  <div>
+    <RelationField
+      label="Contributors"
+      value={contributors}
+      onChange={(value) => setContributors(value)}
+      source={source}
+      multiple
+      sortable
+      description="Other contributors to this post."
+      pickerTitle="Choose Contributors"
+      helperText="Click to pick multiple contributors from the list."
+    />
+  </div>
+</div>`,
+  componentField: `<div style="width: 100%; max-width: 24rem">
+  <ComponentField
+    label="Links"
+    value={links}
+    onChange={setLinks}
+    sortable
+    itemLabel="link"
+    summaryOf={(item) => item.label}
+    blankItem={() => ({ label: "", url: "" })}
+    renderItem={(item, onChange) => (
+      <>
+        <TextField
+          label="Label"
+          value={item.label}
+          onChange={(value) => onChange({ ...item, label: value })}
+          placeholder="e.g. Docs"
+        />
+        <TextField
+          label="URL"
+          value={item.url}
+          onChange={(value) => onChange({ ...item, url: value })}
+          placeholder="e.g. https://example.com"
+        />
+      </>
+    )}
+    helperText="Add, edit, or remove repeatable link items. Drag the handle to reorder."
+  />
+</div>`,
 };

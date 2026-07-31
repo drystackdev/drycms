@@ -9,6 +9,7 @@ import ContextMenu from "../components/ContextMenu.js";
 import DataTable from "../components/DataTable.js";
 import DatePickerField from "../components/DatePickerField.js";
 import Demo from "../components/Demo.js";
+import EditableDemo from "../components/EditableDemo.js";
 import FloatingPanel from "../components/FloatingPanel.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import { fieldTypeIcons } from "../components/field-type-icons.js";
@@ -241,78 +242,6 @@ function FileManagerPreview() {
   return <FileManager source={source} />;
 }
 
-function TextFieldPreview() {
-  const [title, setTitle] = useState("Getting started");
-  const [slug, setSlug] = useState("");
-  const [bio, setBio] = useState("");
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <TextField
-        label="Title"
-        value={title}
-        onChange={setTitle}
-        description="Shown as the page heading."
-        helperText="Shown in listings and search results."
-      />
-      <TextField
-        label="Slug"
-        value={slug}
-        onChange={setSlug}
-        error
-        helperText="Slug is required."
-      />
-      <TextField
-        label="Bio"
-        value={bio}
-        onChange={setBio}
-        multiline
-        placeholder="Write something…"
-      />
-    </div>
-  );
-}
-
-function CodeFieldPreview() {
-  const [renderFn, setRenderFn] = useState(
-    "function Render({ title }) {\n  return <h2>{title}</h2>;\n}",
-  );
-  return (
-    <CodeField
-      label="Render function"
-      value={renderFn}
-      onChange={setRenderFn}
-      description="Highlighted live as JSX."
-      helperText="Runs on the server for each request."
-      style={{width: '100%'}}
-    />
-  );
-}
-
-function RichTextFieldPreview() {
-  const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
-  const [body, setBody] = useState("");
-
-  return (
-    <div class="stack" style={{ width: "100%" }}>
-      <a href={`${path}/richtext-demo`} class="hint">
-        Open the standalone demo →
-      </a>
-      <RichTextField
-        label="Body"
-        value={body}
-        onChange={setBody}
-        description="Bold, italic, underline, alignment and text color."
-        placeholder="Write something…"
-        source={source}
-      />
-      <div class="field" style={{ width: "100%" }}>
-        <label>Output (HTML)</label>
-        <CodeBlock maxHeight="32rem" code={body} formatHtml wrap copyable />
-      </div>
-    </div>
-  );
-}
-
 function SearchPreview() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -325,218 +254,6 @@ function SearchPreview() {
         placeholder="Search entries…"
       />
       <small class="hint">Debounced: "{debouncedQuery}"</small>
-    </div>
-  );
-}
-
-function SlugFieldPreview() {
-  const [title, setTitle] = useState("Getting started");
-  const [slug, setSlug] = useState("getting-started");
-  return (
-    <div style="width: 100%; max-width: 24rem">
-      <SlugField
-        value={title}
-        slug={slug}
-        onChange={(value, slug) => {
-          setTitle(value);
-          setSlug(slug);
-        }}
-        description="Used in the public URL."
-        helperText="Auto-derived from the title until you edit the slug directly."
-      />
-    </div>
-  );
-}
-
-function PasswordFieldPreview() {
-  const [password, setPassword] = useState("hunter2");
-  const [confirm, setConfirm] = useState("hunter2");
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <PasswordField
-        label="Password"
-        value={password}
-        onChange={setPassword}
-        placeholder="Enter a password"
-        helperText="At least 8 characters."
-      />
-      <PasswordField
-        label="Confirm password"
-        value={confirm}
-        onChange={setConfirm}
-        placeholder="Re-enter the password"
-        helperText="Shares the show/hide toggle with the field on the left."
-      />
-    </div>
-  );
-}
-
-function SecretKeyFieldPreview() {
-  const [newKey, setNewKey] = useState("");
-  const [existingKey, setExistingKey] = useState("");
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <SecretKeyField
-        label="API key"
-        value={newKey}
-        onChange={setNewKey}
-        helperText="A brand-new entry: no stored value yet."
-      />
-      <SecretKeyField
-        label="API key"
-        value={existingKey}
-        onChange={setExistingKey}
-        hasExistingValue
-        helperText="Editing an existing entry: leave blank to keep the current key."
-      />
-    </div>
-  );
-}
-
-function NumberFieldPreview() {
-  const [priority, setPriority] = useState(5);
-  const [wordCount, setWordCount] = useState(0);
-  const [price, setPrice] = useState(9.5);
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <NumberField
-        label="Priority"
-        value={priority}
-        onChange={setPriority}
-        min={0}
-        max={10}
-        description="Controls display order across listings."
-        helperText="Higher numbers sort first."
-      />
-      <NumberField
-        label="Word count"
-        value={wordCount}
-        onChange={setWordCount}
-        error
-        helperText="Must be greater than 0."
-      />
-      <NumberField
-        label="Price"
-        value={price}
-        onChange={setPrice}
-        min={0}
-        step={0.5}
-        helperText="Steps by 0.5 per click."
-      />
-    </div>
-  );
-}
-
-function CheckFieldPreview() {
-  const [visible, setVisible] = useState(true);
-  const [autoPublish, setAutoPublish] = useState(false);
-  return (
-    <div class="row" style="gap: 1.5rem">
-      <CheckField
-        outline
-        label="Visible in listings"
-        value={visible}
-        onChange={setVisible}
-        helperText="Shown on the public site once enabled."
-      />
-      <CheckField
-        label="Auto-publish"
-        value={autoPublish}
-        onChange={setAutoPublish}
-        description="Automatically publish new posts without review."
-        role="switch"
-      />
-    </div>
-  );
-}
-
-function SelectFieldPreview() {
-  const [collection, setCollection] = useState("Blog");
-  const [tags, setTags] = useState<string[]>([]);
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <SelectField
-        label="Collection"
-        config={{ options: ["Blog", "Docs", "Changelog"], multiple: false }}
-        value={collection}
-        onChange={(value) => setCollection(value as string)}
-        description="Where this entry is filed."
-        helperText="Fixed options, set once on the field itself."
-      />
-      <SelectField
-        label="Tags"
-        config={{
-          options: ["Design", "Engineering", "Marketing", "Product"],
-          multiple: true,
-        }}
-        value={tags}
-        onChange={(value) => setTags(value as string[])}
-        error
-        helperText="Pick at least one tag."
-      />
-    </div>
-  );
-}
-
-function DatePickerFieldPreview() {
-  const [publishedAt, setPublishedAt] = useState(new Date(2026, 6, 20, 9, 30));
-  const [birthday, setBirthday] = useState(new Date(1995, 3, 12));
-  const [noteDate, setNoteDate] = useState(new Date(2026, 6, 1));
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <DatePickerField
-        label="Published at"
-        value={publishedAt}
-        onChange={setPublishedAt}
-        time
-        description="When this post goes live."
-        helperText="Pick a day, then adjust the time below."
-      />
-      <DatePickerField
-        label="Birthday"
-        value={birthday}
-        onChange={setBirthday}
-        mode="select"
-        helperText="Day / month / year dropdowns, no time."
-      />
-      <DatePickerField
-        label="Custom note date"
-        value={noteDate}
-        onChange={setNoteDate}
-        mode="input"
-        helperText="Native browser date input."
-      />
-    </div>
-  );
-}
-
-function ImageFieldPreview() {
-  const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
-  const [cover, setCover] = useState("image.png");
-  const [gallery, setGallery] = useState<string[]>(["images.jpeg", "image.png"]);
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <div>
-        <ImageField
-          label="Cover image"
-          source={source}
-          value={cover}
-          onChange={(value) => setCover(value as string)}
-          description="Recommended size: 1200×630."
-          helperText="Shown at the top of the post."
-        />
-      </div>
-      <div>
-        <ImageField
-          label="Gallery"
-          source={source}
-          value={gallery}
-          onChange={(value) => setGallery(value as string[])}
-          multiple={{ min: 1, max: 5 }}
-          description="Drag a row's handle to reorder."
-          helperText="Up to 5 images, shown in this order."
-        />
-      </div>
     </div>
   );
 }
@@ -641,117 +358,6 @@ function FloatingPanelPreview() {
   );
 }
 
-interface MockAuthor {
-  id: string;
-  name: string;
-  email: string;
-}
-
-const MOCK_AUTHORS: MockAuthor[] = [
-  { id: "1", name: "Ada Lovelace", email: "ada@example.com" },
-  { id: "2", name: "Alan Turing", email: "alan@example.com" },
-  { id: "3", name: "Grace Hopper", email: "grace@example.com" },
-  { id: "4", name: "Margaret Hamilton", email: "margaret@example.com" },
-];
-
-function RelationFieldPreview() {
-  const [author, setAuthor] = useState("1");
-  const [contributors, setContributors] = useState<string[]>(["2", "3"]);
-  const source: RelationFieldSource<MockAuthor> = useMemo(
-    () => ({
-      columns: [
-        { key: "name", label: "Name" },
-        { key: "email", label: "Email" },
-      ],
-      fetchRows: async ({ search }) => {
-        const rows = search
-          ? MOCK_AUTHORS.filter((a) =>
-              a.name.toLowerCase().includes(search.toLowerCase()),
-            )
-          : MOCK_AUTHORS;
-        return { rows, total: rows.length };
-      },
-      resolveLabels: async (ids) =>
-        Object.fromEntries(
-          ids.map((id) => [
-            id,
-            MOCK_AUTHORS.find((a) => a.id === id)?.name ?? id,
-          ]),
-        ),
-    }),
-    [],
-  );
-  return (
-    <div class="grid cols-2" style="width: 100%">
-      <div>
-        <RelationField
-          label="Author"
-          value={author}
-          onChange={(value) => setAuthor(value as string)}
-          source={source}
-          pickerTitle="Choose Author"
-          description="The main author of this post."
-          helperText="Click to pick one author from the list."
-        />
-      </div>
-      <div>
-        <RelationField
-          label="Contributors"
-          value={contributors}
-          onChange={(value) => setContributors(value as string[])}
-          source={source}
-          multiple
-          sortable
-          description="Other contributors to this post."
-          pickerTitle="Choose Contributors"
-          helperText="Click to pick multiple contributors from the list."
-        />
-      </div>
-    </div>
-  );
-}
-
-interface MockLink {
-  label: string;
-  url: string;
-}
-
-function ComponentFieldPreview() {
-  const [links, setLinks] = useState<MockLink[]>([
-    { label: "Docs", url: "https://example.com/docs" },
-    { label: "GitHub", url: "https://example.com/github" },
-  ]);
-  return (
-    <div style="width: 100%; max-width: 24rem">
-      <ComponentField<MockLink>
-        label="Links"
-        value={links}
-        onChange={setLinks}
-        sortable
-        itemLabel="link"
-        summaryOf={(item) => item.label}
-        blankItem={() => ({ label: "", url: "" })}
-        renderItem={(item, onChange) => (
-          <>
-            <TextField
-              label="Label"
-              value={item.label}
-              onChange={(value) => onChange({ ...item, label: value })}
-              placeholder="e.g. Docs"
-            />
-            <TextField
-              label="URL"
-              value={item.url}
-              onChange={(value) => onChange({ ...item, url: value })}
-              placeholder="e.g. https://example.com"
-            />
-          </>
-        )}
-        helperText="Add, edit, or remove repeatable link items. Drag the handle to reorder."
-      />
-    </div>
-  );
-}
 
 function DemoContent({ id }: { id: string }) {
   switch (id) {
@@ -1361,161 +967,537 @@ function DemoContent({ id }: { id: string }) {
         </Demo>
       );
 
-    case "text-field":
+    case "text-field": {
+      const [title, setTitle] = useState("Getting started");
+      const [slug, setSlug] = useState("");
+      const [bio, setBio] = useState("");
       return (
-        <Demo
+        <EditableDemo
           id="text-field"
           title="Text field"
           description="Controlled label + control + helper text component; error switches the helper text to the destructive colour, multiline swaps the input for a textarea."
           code={code.textField!}
-        >
-          <TextFieldPreview />
-        </Demo>
+          context={{ title, setTitle, slug, setSlug, bio, setBio }}
+          renderPreview={({ title, setTitle, slug, setSlug, bio, setBio }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <TextField
+                label="Title"
+                value={title}
+                onChange={setTitle}
+                description="Shown as the page heading."
+                helperText="Shown in listings and search results."
+              />
+              <TextField
+                label="Slug"
+                value={slug}
+                onChange={setSlug}
+                error
+                helperText="Slug is required."
+              />
+              <TextField
+                label="Bio"
+                value={bio}
+                onChange={setBio}
+                multiline
+                placeholder="Write something…"
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "code-field":
+    case "code-field": {
+      const [renderFn, setRenderFn] = useState(
+        "function Render({ title }) {\n  return <h2>{title}</h2>;\n}",
+      );
       return (
-        <Demo
+        <EditableDemo
           id="code-field"
           title="Code field"
           description="Same label + control + helper text contract as TextField, but always a multi-line editor - JSX-highlighted live as you type, via the same stacked highlighted-pre/transparent-textarea technique as CodeBlock's editable mode."
           code={code.codeField!}
-        >
-          <CodeFieldPreview />
-        </Demo>
+          context={{ renderFn, setRenderFn }}
+          renderPreview={({ renderFn, setRenderFn }) => (
+            <CodeField
+              label="Render function"
+              value={renderFn}
+              onChange={setRenderFn}
+              description="Highlighted live as JSX."
+              helperText="Runs on the server for each request."
+              style={{ width: "100%" }}
+            />
+          )}
+        />
       );
+    }
 
-    case "richtext-field":
+    case "richtext-field": {
+      const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
+      const [body, setBody] = useState("");
       return (
-        <Demo
+        <EditableDemo
           id="richtext-field"
           title="Rich text field"
           description="A ProseMirror-backed contenteditable surface with a toolbar for undo/redo, bold/italic/underline, clear formatting, text color, block type (paragraph/headings/quote), alignment, and inserting a drag-to-resize image. Looks like the multiline TextField with a toolbar docked on top; value is always clean HTML."
           code={code.richTextField!}
-        >
-          <RichTextFieldPreview />
-        </Demo>
+          context={{ body, setBody, source }}
+          renderPreview={({ body, setBody, source }) => (
+            <div class="stack" style={{ width: "100%" }}>
+              <a href={`${path}/richtext-demo`} class="hint">
+                Open the standalone demo →
+              </a>
+              <RichTextField
+                label="Body"
+                value={body}
+                onChange={setBody}
+                description="Bold, italic, underline, alignment and text color."
+                placeholder="Write something…"
+                source={source}
+              />
+              <div class="field" style={{ width: "100%" }}>
+                <label>Output (HTML)</label>
+                <CodeBlock maxHeight="32rem" code={body} formatHtml wrap copyable />
+              </div>
+            </div>
+          )}
+        />
       );
+    }
 
-    case "slug-field":
+    case "slug-field": {
+      const [title, setTitle] = useState("Getting started");
+      const [slug, setSlug] = useState("getting-started");
       return (
-        <Demo
+        <EditableDemo
           id="slug-field"
           title="Slug field"
           description="Pairs a TextField for the title with a derived, editable slug input below it; auto-derives via slugify() until the slug is edited directly, and the trailing button re-syncs it from the title."
           code={code.slugField!}
-        >
-          <SlugFieldPreview />
-        </Demo>
+          context={{ title, setTitle, slug, setSlug }}
+          renderPreview={({ title, setTitle, slug, setSlug }) => (
+            <div style="width: 100%; max-width: 24rem">
+              <SlugField
+                value={title}
+                slug={slug}
+                onChange={(value, slug) => {
+                  setTitle(value);
+                  setSlug(slug);
+                }}
+                description="Used in the public URL."
+                helperText="Auto-derived from the title until you edit the slug directly."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "password-field":
+    case "password-field": {
+      const [password, setPassword] = useState("hunter2");
+      const [confirm, setConfirm] = useState("hunter2");
       return (
-        <Demo
+        <EditableDemo
           id="password-field"
           title="Password field"
           description="Same label + control + helper text contract as TextField; the trailing eye button toggles type='password' to type='text'. Its show/hide state is one signal shared by every PasswordField on the page - toggle one, they all reveal."
           code={code.passwordField!}
-        >
-          <PasswordFieldPreview />
-        </Demo>
+          context={{ password, setPassword, confirm, setConfirm }}
+          renderPreview={({ password, setPassword, confirm, setConfirm }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <PasswordField
+                label="Password"
+                value={password}
+                onChange={setPassword}
+                placeholder="Enter a password"
+                helperText="At least 8 characters."
+              />
+              <PasswordField
+                label="Confirm password"
+                value={confirm}
+                onChange={setConfirm}
+                placeholder="Re-enter the password"
+                helperText="Shares the show/hide toggle with the field on the left."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "secret-field":
+    case "secret-field": {
+      const [newKey, setNewKey] = useState("");
+      const [existingKey, setExistingKey] = useState("");
       return (
-        <Demo
+        <EditableDemo
           id="secret-field"
           title="Secret key field"
           description="Editor for the secretkey field type (e.g. a third-party API key) - write-only: it never receives the decrypted value back, only a hasExistingValue flag that swaps the placeholder to 'Leave blank to keep the current secret'. A staged value is encrypted server-side (AES-256-GCM) before it's ever written to the DB/file, and only decrypted again when the server itself needs it - it's never sent back to a client as plaintext."
           code={code.secretField!}
-        >
-          <SecretKeyFieldPreview />
-        </Demo>
+          context={{ newKey, setNewKey, existingKey, setExistingKey }}
+          renderPreview={({ newKey, setNewKey, existingKey, setExistingKey }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <SecretKeyField
+                label="API key"
+                value={newKey}
+                onChange={setNewKey}
+                helperText="A brand-new entry: no stored value yet."
+              />
+              <SecretKeyField
+                label="API key"
+                value={existingKey}
+                onChange={setExistingKey}
+                hasExistingValue
+                helperText="Editing an existing entry: leave blank to keep the current key."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "number-field":
+    case "number-field": {
+      const [priority, setPriority] = useState(5);
+      const [wordCount, setWordCount] = useState(0);
+      const [price, setPrice] = useState(9.5);
       return (
-        <Demo
+        <EditableDemo
           id="number-field"
           title="Number field"
           description="Same label + control + helper text contract as TextField, backed by a numeric input; empty/invalid input resolves to 0."
           code={code.numberField!}
-        >
-          <NumberFieldPreview />
-        </Demo>
+          context={{ priority, setPriority, wordCount, setWordCount, price, setPrice }}
+          renderPreview={({
+            priority,
+            setPriority,
+            wordCount,
+            setWordCount,
+            price,
+            setPrice,
+          }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <NumberField
+                label="Priority"
+                value={priority}
+                onChange={setPriority}
+                min={0}
+                max={10}
+                description="Controls display order across listings."
+                helperText="Higher numbers sort first."
+              />
+              <NumberField
+                label="Word count"
+                value={wordCount}
+                onChange={setWordCount}
+                error
+                helperText="Must be greater than 0."
+              />
+              <NumberField
+                label="Price"
+                value={price}
+                onChange={setPrice}
+                min={0}
+                step={0.5}
+                helperText="Steps by 0.5 per click."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "check-field":
+    case "check-field": {
+      const [visible, setVisible] = useState(true);
+      const [autoPublish, setAutoPublish] = useState(false);
       return (
-        <Demo
+        <EditableDemo
           id="check-field"
           title="Check field"
           description="Same label + control + helper text contract as TextField; ui='switch' swaps the checkbox for role='switch' (real ARIA semantics, not a class)."
           code={code.checkField!}
-        >
-          <CheckFieldPreview />
-        </Demo>
+          context={{ visible, setVisible, autoPublish, setAutoPublish }}
+          renderPreview={({ visible, setVisible, autoPublish, setAutoPublish }) => (
+            <div class="row" style="gap: 1.5rem">
+              <CheckField
+                outline
+                label="Visible in listings"
+                value={visible}
+                onChange={setVisible}
+                helperText="Shown on the public site once enabled."
+              />
+              <CheckField
+                label="Auto-publish"
+                value={autoPublish}
+                onChange={setAutoPublish}
+                description="Automatically publish new posts without review."
+                role="switch"
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "select-field":
+    case "select-field": {
+      const [collection, setCollection] = useState("Blog");
+      const [tags, setTags] = useState<string[]>([]);
       return (
-        <Demo
+        <EditableDemo
           id="select-field"
           title="Select field"
           description="Same label + control + helper text contract as TextField; config.multiple picks between the Select and MultiSelect controls against a fixed config.options list defined on the field itself."
           code={code.selectField!}
-        >
-          <SelectFieldPreview />
-        </Demo>
+          context={{ collection, setCollection, tags, setTags }}
+          renderPreview={({ collection, setCollection, tags, setTags }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <SelectField
+                label="Collection"
+                config={{ options: ["Blog", "Docs", "Changelog"], multiple: false }}
+                value={collection}
+                onChange={(value) => setCollection(value as string)}
+                description="Where this entry is filed."
+                helperText="Fixed options, set once on the field itself."
+              />
+              <SelectField
+                label="Tags"
+                config={{
+                  options: ["Design", "Engineering", "Marketing", "Product"],
+                  multiple: true,
+                }}
+                value={tags}
+                onChange={(value) => setTags(value as string[])}
+                error
+                helperText="Pick at least one tag."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "date-picker-field":
+    case "date-picker-field": {
+      const [publishedAt, setPublishedAt] = useState(
+        new Date(2026, 6, 20, 9, 30),
+      );
+      const [birthday, setBirthday] = useState(new Date(1995, 3, 12));
+      const [noteDate, setNoteDate] = useState(new Date(2026, 6, 1));
       return (
-        <Demo
+        <EditableDemo
           id="date-picker-field"
           title="Date picker field"
           description="Same label + control + helper text contract as TextField; mode='calendar' shows a month grid, mode='select' three dropdowns, mode='input' the browser's native <input type='date'>. time (off by default) adds a NumberField-driven hour/minute row and switches mode='input' to type='datetime-local'."
           code={code.datePickerField!}
-        >
-          <DatePickerFieldPreview />
-        </Demo>
+          context={{
+            publishedAt,
+            setPublishedAt,
+            birthday,
+            setBirthday,
+            noteDate,
+            setNoteDate,
+          }}
+          renderPreview={({
+            publishedAt,
+            setPublishedAt,
+            birthday,
+            setBirthday,
+            noteDate,
+            setNoteDate,
+          }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <DatePickerField
+                label="Published at"
+                value={publishedAt}
+                onChange={setPublishedAt}
+                time
+                description="When this post goes live."
+                helperText="Pick a day, then adjust the time below."
+              />
+              <DatePickerField
+                label="Birthday"
+                value={birthday}
+                onChange={setBirthday}
+                mode="select"
+                helperText="Day / month / year dropdowns, no time."
+              />
+              <DatePickerField
+                label="Custom note date"
+                value={noteDate}
+                onChange={setNoteDate}
+                mode="input"
+                helperText="Native browser date input."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
-    case "image-field":
+    case "image-field": {
+      const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
+      const [cover, setCover] = useState("image.png");
+      const [gallery, setGallery] = useState<string[]>(["images.jpeg", "image.png"]);
       return (
-        <Demo
+        <EditableDemo
           id="image-field"
           title="Image field"
           description="Same label + control + helper text contract as TextField; the control is a 4:3 frame that opens a FileManager-backed dialog restricted to images (accept), pre-scrolled to the current selection. multiple (true, or {min, max} to require/cap a count) switches to picking several images, rendered as a reorderable list you can drag to reorder below the picker."
           code={code.imageField!}
-        >
-          <ImageFieldPreview />
-        </Demo>
+          context={{ source, cover, setCover, gallery, setGallery }}
+          renderPreview={({ source, cover, setCover, gallery, setGallery }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <div>
+                <ImageField
+                  label="Cover image"
+                  source={source}
+                  value={cover}
+                  onChange={(value) => setCover(value as string)}
+                  description="Recommended size: 1200×630."
+                  helperText="Shown at the top of the post."
+                />
+              </div>
+              <div>
+                <ImageField
+                  label="Gallery"
+                  source={source}
+                  value={gallery}
+                  onChange={(value) => setGallery(value as string[])}
+                  multiple={{ min: 1, max: 5 }}
+                  description="Drag a row's handle to reorder."
+                  helperText="Up to 5 images, shown in this order."
+                />
+              </div>
+            </div>
+          )}
+        />
       );
+    }
 
-    case "relation-field":
+    case "relation-field": {
+      interface MockAuthor {
+        id: string;
+        name: string;
+        email: string;
+      }
+      const MOCK_AUTHORS: MockAuthor[] = [
+        { id: "1", name: "Ada Lovelace", email: "ada@example.com" },
+        { id: "2", name: "Alan Turing", email: "alan@example.com" },
+        { id: "3", name: "Grace Hopper", email: "grace@example.com" },
+        { id: "4", name: "Margaret Hamilton", email: "margaret@example.com" },
+      ];
+      const [author, setAuthor] = useState("1");
+      const [contributors, setContributors] = useState<string[]>(["2", "3"]);
+      const source: RelationFieldSource<MockAuthor> = useMemo(
+        () => ({
+          columns: [
+            { key: "name", label: "Name" },
+            { key: "email", label: "Email" },
+          ],
+          fetchRows: async ({ search }) => {
+            const rows = search
+              ? MOCK_AUTHORS.filter((a) =>
+                  a.name.toLowerCase().includes(search.toLowerCase()),
+                )
+              : MOCK_AUTHORS;
+            return { rows, total: rows.length };
+          },
+          resolveLabels: async (ids) =>
+            Object.fromEntries(
+              ids.map((id) => [
+                id,
+                MOCK_AUTHORS.find((a) => a.id === id)?.name ?? id,
+              ]),
+            ),
+        }),
+        [],
+      );
       return (
-        <Demo
+        <EditableDemo
           id="relation-field"
           title="Relation field"
           description="Same label + control + helper text contract as TextField; a separate Edit button opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend. multiple swaps the picker's radio column for checkboxes and stores an array of ids instead of one; sortable (multiple only) lets the chosen list be drag-reordered."
           code={code.relationField!}
-        >
-          <RelationFieldPreview />
-        </Demo>
+          context={{ author, setAuthor, contributors, setContributors, source }}
+          renderPreview={({ author, setAuthor, contributors, setContributors, source }) => (
+            <div class="grid cols-2" style="width: 100%">
+              <div>
+                <RelationField
+                  label="Author"
+                  value={author}
+                  onChange={(value) => setAuthor(value as string)}
+                  source={source}
+                  pickerTitle="Choose Author"
+                  description="The main author of this post."
+                  helperText="Click to pick one author from the list."
+                />
+              </div>
+              <div>
+                <RelationField
+                  label="Contributors"
+                  value={contributors}
+                  onChange={(value) => setContributors(value as string[])}
+                  source={source}
+                  multiple
+                  sortable
+                  description="Other contributors to this post."
+                  pickerTitle="Choose Contributors"
+                  helperText="Click to pick multiple contributors from the list."
+                />
+              </div>
+            </div>
+          )}
+        />
       );
+    }
 
-    case "component-field":
+    case "component-field": {
+      interface MockLink {
+        label: string;
+        url: string;
+      }
+      const [links, setLinks] = useState<MockLink[]>([
+        { label: "Docs", url: "https://example.com/docs" },
+        { label: "GitHub", url: "https://example.com/github" },
+      ]);
       return (
-        <Demo
+        <EditableDemo
           id="component-field"
           title="Component field"
           description="An editable list of summaries, each opening an add/edit dialog for one item; renderItem lets the caller plug in that item's own fields, so the item's shape is entirely up to the consumer."
           code={code.componentField!}
-        >
-          <ComponentFieldPreview />
-        </Demo>
+          context={{ links, setLinks }}
+          renderPreview={({ links, setLinks }) => (
+            <div style="width: 100%; max-width: 24rem">
+              <ComponentField
+                label="Links"
+                value={links}
+                onChange={setLinks}
+                sortable
+                itemLabel="link"
+                summaryOf={(item: MockLink) => item.label}
+                blankItem={() => ({ label: "", url: "" })}
+                renderItem={(item: MockLink, onChange: (item: MockLink) => void) => (
+                  <>
+                    <TextField
+                      label="Label"
+                      value={item.label}
+                      onChange={(value) => onChange({ ...item, label: value })}
+                      placeholder="e.g. Docs"
+                    />
+                    <TextField
+                      label="URL"
+                      value={item.url}
+                      onChange={(value) => onChange({ ...item, url: value })}
+                      placeholder="e.g. https://example.com"
+                    />
+                  </>
+                )}
+                helperText="Add, edit, or remove repeatable link items. Drag the handle to reorder."
+              />
+            </div>
+          )}
+        />
       );
+    }
 
     case "tabs":
       return (

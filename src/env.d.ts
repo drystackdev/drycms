@@ -16,3 +16,8 @@ declare module "virtual:drycms/config" {
 	const config: { path: string; contentEngine: "sqlite" | "D1" | "file" };
 	export default config;
 }
+
+declare module "@babel/standalone" {
+	const BabelStandalone: any;
+	export = BabelStandalone;
+}
