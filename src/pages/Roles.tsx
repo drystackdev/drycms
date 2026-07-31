@@ -11,7 +11,6 @@ interface Row extends Record<string, unknown> {
   id: string;
   name: string;
   description: string;
-  isSuperAdmin: boolean;
 }
 
 /** `role` is a plain content type on the backend (same API every other
@@ -31,12 +30,16 @@ export default function Roles() {
   const { data, loading, error } = useFetch<EntryListResult>("roles:list", (ifVersion, signal) =>
     entriesApi.listVersioned({ page: 0, pageSize: FETCH_ALL_SIZE }, ifVersion, signal),
   );
-  const rows: Row[] = (data?.rows ?? []).map((r) => ({
-    id: r.id,
-    name: String(r.value.name ?? ""),
-    description: String(r.value.description ?? ""),
-    isSuperAdmin: !!r.value.isSuperAdmin,
-  }));
+  // The seeded Super Admin role is an internal bypass role, not a role that
+  // administrators configure. Keep it in the underlying entries API because
+  // authentication needs it, but omit it from this management screen.
+  const rows: Row[] = (data?.rows ?? [])
+    .filter((r) => r.value.isSuperAdmin !== true)
+    .map((r) => ({
+      id: r.id,
+      name: String(r.value.name ?? ""),
+      description: String(r.value.description ?? ""),
+    }));
   const loadError = error ? (error instanceof Error ? error.message : "Failed to load roles.") : null;
 
   const columns: DataTableColumn<Row>[] = [
@@ -45,12 +48,6 @@ export default function Roles() {
       key: "description",
       label: "Description",
       render: (value) => <>{value ? String(value) : <i class="hint">No description</i>}</>,
-    },
-    {
-      key: "isSuperAdmin",
-      label: "Super Admin",
-      sortable: false,
-      render: (value) => (value ? <span class="badge warning">Super Admin</span> : <em class="badge secondary">Normal</em>),
     },
   ];
 

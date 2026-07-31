@@ -56,6 +56,9 @@
     "Paste": "solar:clipboard-check-linear",
     "Calendar": "solar:calendar-bold-duotone",
 
+    "User": "solar:user-circle-linear",
+    "LogOut": "solar:logout-3-linear",
+
     "Collection": "solar:widget-4-bold-duotone",
     "Singleton": "solar:document-bold-duotone",
     "Component": "lucide:puzzle",

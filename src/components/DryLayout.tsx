@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
+import { LogOutIcon, UserIcon } from "./icons.js";
+import Popover from "./Popover.js";
 import SidebarToggle from "./SidebarToggle.js";
 import SyncIndicator from "./SyncIndicator.js";
 import ThemeToggle from "./ThemeToggle.js";
@@ -146,8 +148,8 @@ function isContentHeaderActive(url: string, contentHref: string): boolean {
 }
 
 export default function DryLayout({ children }: Props) {
-  const { url } = useLocation();
-  const { ref: sidebar } = useOverlayScrollbars<HTMLElement>([], { overflow: { x: 'hidden' } });
+  const { url, route } = useLocation();
+  const { ref: sidebar } = useOverlayScrollbars<HTMLDivElement>([], { overflow: { x: 'hidden' } });
   const { ref: main, scrollToTop: scrollMainToTop } = useOverlayScrollbars<HTMLDivElement>();
   const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false);
 
@@ -206,7 +208,7 @@ export default function DryLayout({ children }: Props) {
 
   return (
     <div class={shellClass}>
-      <aside class="sidebar" ref={sidebar}>
+      <aside class="sidebar">
         <div class="sidebar-head">
           <a class="brand" href={`${path}/dashboard`}>
             <Icon name="Brand" />
@@ -225,78 +227,110 @@ export default function DryLayout({ children }: Props) {
           </button>
         </div>
 
-        <nav aria-label="Admin">
-          {!collapsed.value && <span class="nav-label">Manage</span>}
-          {NAV.map((item) =>
-            item.key === "content" ? (
-              <div key={item.key} class="nav-group">
-                <div class="nav-group-header">
-                  <a
-                    href={item.href}
-                    aria-current={isContentHeaderActive(url, item.href) ? "page" : undefined}
-                    data-tooltip={collapsed.value ? item.label : undefined}
-                    data-tooltip-placement="right"
-                  >
-                    <Icon name={item.icon} />
-                    <span>{item.label}</span>
-                  </a>
-                  {!collapsed.value && contentNavItems.length > 0 && (
-                    <button
-                      type="button"
-                      class="ghost icon sm"
-                      aria-expanded={contentMenuOpen}
-                      aria-label={contentMenuOpen ? "Collapse Content menu" : "Expand Content menu"}
-                      onClick={() => setContentMenuOpen(!contentMenuOpen)}
+        <div class="sidebar-scroll" ref={sidebar}>
+          <nav aria-label="Admin">
+            {!collapsed.value && <span class="nav-label">Manage</span>}
+            {NAV.map((item) =>
+              item.key === "content" ? (
+                <div key={item.key} class="nav-group">
+                  <div class="nav-group-header">
+                    <a
+                      href={item.href}
+                      aria-current={isContentHeaderActive(url, item.href) ? "page" : undefined}
+                      data-tooltip={collapsed.value ? item.label : undefined}
+                      data-tooltip-placement="right"
                     >
-                      <Icon name="ArrowDown" class={contentMenuOpen ? "nav-chevron" : "nav-chevron collapsed"} />
-                    </button>
+                      <Icon name={item.icon} />
+                      <span>{item.label}</span>
+                    </a>
+                    {!collapsed.value && contentNavItems.length > 0 && (
+                      <button
+                        type="button"
+                        class="ghost icon sm"
+                        aria-expanded={contentMenuOpen}
+                        aria-label={contentMenuOpen ? "Collapse Content menu" : "Expand Content menu"}
+                        onClick={() => setContentMenuOpen(!contentMenuOpen)}
+                      >
+                        <Icon name="ArrowDown" class={contentMenuOpen ? "nav-chevron" : "nav-chevron collapsed"} />
+                      </button>
+                    )}
+                  </div>
+                  {!collapsed.value && contentMenuOpen && (
+                    <div class="nav-subitems">
+                      {contentNavItems.map((type) => {
+                        const href = `${path}/content/${type.name}`;
+                        return (
+                          <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
+                            <span>{type.label}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-                {!collapsed.value && contentMenuOpen && (
-                  <div class="nav-subitems">
-                    {contentNavItems.map((type) => {
-                      const href = `${path}/content/${type.name}`;
-                      return (
-                        <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
-                          <span>{type.label}</span>
-                        </a>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : item.ready ? (
-              <a
-                key={item.key}
-                href={item.href}
-                aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
-                data-tooltip={collapsed.value ? item.label : undefined}
-                data-tooltip-placement="right"
-              >
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-              </a>
-            ) : (
-              <a
-                key={item.key}
-                aria-disabled="true"
-                style="pointer-events: none; opacity: 0.55"
-                data-tooltip={collapsed.value ? item.label : undefined}
-                data-tooltip-placement="right"
-              >
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-                <span class="spacer" />
-                <span class="badge outline">Soon</span>
-              </a>
-            ),
-          )}
-        </nav>
+              ) : item.ready ? (
+                <a
+                  key={item.key}
+                  href={item.href}
+                  aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
+                  data-tooltip={collapsed.value ? item.label : undefined}
+                  data-tooltip-placement="right"
+                >
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                </a>
+              ) : (
+                <a
+                  key={item.key}
+                  aria-disabled="true"
+                  style="pointer-events: none; opacity: 0.55"
+                  data-tooltip={collapsed.value ? item.label : undefined}
+                  data-tooltip-placement="right"
+                >
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                  <span class="spacer" />
+                  <span class="badge outline">Soon</span>
+                </a>
+              ),
+            )}
+          </nav>
+        </div>
 
-        <span class="spacer"></span>
-        <small>
-          Mounted at <code>{path}</code>
-        </small>
+        <div class="sidebar-footer">
+          {authState.value.user && (
+            <Popover
+              label="Account menu"
+              tooltip=""
+              trigger={(onClick, open) => (
+                <button
+                  type="button"
+                  class="sidebar-account"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onClick={onClick}
+                  data-tooltip={collapsed.value ? authState.value.user!.name : undefined}
+                  data-tooltip-placement="right"
+                >
+                  <span class="sidebar-account-avatar">
+                    <UserIcon />
+                  </span>
+                  {!collapsed.value && (
+                    <span class="sidebar-account-info">
+                      <strong>{authState.value.user!.name}</strong>
+                      <small>{authState.value.user!.email}</small>
+                    </span>
+                  )}
+                </button>
+              )}
+              items={[
+                { type: "item", label: "Profile", icon: <UserIcon />, onClick: () => route(`${path}/profile`) },
+                { type: "separator" },
+                { type: "item", label: "Logout", icon: <LogOutIcon />, danger: true, onClick: () => void logout() },
+              ]}
+            />
+          )}
+        </div>
       </aside>
 
       <div class="main" ref={main}>
@@ -305,14 +339,6 @@ export default function DryLayout({ children }: Props) {
           <span class="spacer"></span>
           <SyncIndicator />
           <ThemeToggle />
-          {authState.value.user && (
-            <>
-              <span class="hint">{authState.value.user.name}</span>
-              <button type="button" class="ghost sm" onClick={() => void logout()}>
-                Sign out
-              </button>
-            </>
-          )}
         </header>
 
         <main class="content">{children}</main>

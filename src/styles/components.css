@@ -12,7 +12,8 @@
    * `scrollbar.css`'s own doc comment for its `@property`/`@keyframes`
    * rules. Referenced by `.entry-field-highlight`'s `animation`. */
   @keyframes dry-entry-field-highlight {
-    0%, 40% {
+    0%,
+    40% {
       outline-color: var(--dry-primary);
     }
     100% {
@@ -1053,6 +1054,7 @@
       display: flex;
       flex-direction: column;
       padding: 1.5rem;
+      gap: 1.5rem;
       background-color: var(--dry-card);
       color: var(--dry-card-foreground);
       border-radius: var(--dry-radius-xl);
@@ -2079,7 +2081,6 @@
             color: var(--dry-muted-foreground);
           }
         }
-
       }
     }
 
@@ -2135,7 +2136,6 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
-      padding: 0 1rem 1rem;
       background-color: var(--dry-sidebar);
       border-inline-end: 1px dashed var(--dry-border);
       position: sticky;
@@ -2185,6 +2185,26 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding-inline: 1rem;
+    }
+
+    /* Only `nav` scrolls (OverlayScrollbars mounts on this element, see
+     * DryLayout.tsx) - `min-height: 0` is required for a flex child to
+     * actually shrink/scroll instead of stretching its column parent.
+     * `.sidebar-head`/`.sidebar-footer` sit outside it as fixed siblings, so
+     * the brand header and the account menu stay in view regardless of how
+     * long the nav list gets. */
+    .sidebar-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding-inline: 1rem;
+    }
+
+    .sidebar-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      flex: none;
     }
 
     .brand {
@@ -2249,6 +2269,68 @@
       padding-inline-start: 2.75rem;
       min-height: 2.25rem !important;
       font-weight: 500 !important;
+    }
+
+    /* Account menu trigger, pinned at the bottom of the sidebar (DryLayout.tsx)
+     * - opens a `Popover` with Profile/Logout. Shares nav `a`'s hover/height
+     * conventions so it reads as part of the same list, not a separate widget. */
+    .sidebar-account {
+      justify-content: flex-start !important;
+      border-radius: 0 !important;
+      gap: 0.75rem;
+      width: 100%;
+      min-height: 2.75rem;
+      padding: 0.375rem 0.625rem;
+      border-radius: var(--dry-radius-md);
+      background: none;
+      border: none;
+      color: inherit;
+      text-align: start;
+      height: auto;
+      box-shadow: none;
+
+      &:hover {
+        background-color: var(--dry-accent) !important;
+      }
+    }
+
+    .sidebar-account-avatar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background-color: color-mix(in srgb, var(--dry-primary) 16%, transparent);
+      color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+
+      & > svg {
+        width: 1.125rem;
+        height: 1.125rem;
+      }
+    }
+
+    .sidebar-account-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      gap: 0.0625rem;
+
+      & > strong {
+        font-size: var(--dry-text-sm);
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      & > small {
+        color: var(--dry-muted-foreground);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
     }
 
     .main {
@@ -2326,19 +2408,19 @@
         border-top: 1px solid var(--dry-border);
       }
 
-      & .content-type-list-item-icon{
+      & .content-type-list-item-icon {
         margin-block: auto;
         background-color: var(--field-type-color);
-        color: #FFF;
+        color: #fff;
         display: flex;
         justify-content: center;
         align-items: center;
         width: 2rem;
         height: 2rem;
-        margin-right: .5rem;
+        margin-right: 0.5rem;
         border-radius: var(--dry-radius-md);
         box-shadow: var(--dry-shadow-lg);
-        &>svg{
+        & > svg {
           width: 1rem;
           height: 1rem;
           filter: drop-shadow(0 0 5px #1115);
@@ -2508,19 +2590,19 @@
     .role-permission-dots {
       display: flex;
       gap: 0.25rem;
-      margin-inline: .5rem;
+      margin-inline: 0.5rem;
     }
 
     .permission-view-card {
-      padding: .5rem;
-      padding-top: .0rem;
-      &>*:first-child {
-        border-top-left-radius: .5rem;
-        border-top-right-radius: .5rem;
+      padding: 0.5rem;
+      padding-top: 0rem;
+      & > *:first-child {
+        border-top-left-radius: 0.5rem;
+        border-top-right-radius: 0.5rem;
       }
-      &>*:last-child {
-        border-bottom-left-radius: .5rem;
-        border-bottom-right-radius: .5rem;
+      & > *:last-child {
+        border-bottom-left-radius: 0.5rem;
+        border-bottom-right-radius: 0.5rem;
       }
     }
 
@@ -2855,8 +2937,13 @@
         display: none;
       }
 
-      .shell.collapsed .sidebar small {
-        display: none;
+      .shell.collapsed .sidebar-account {
+        justify-content: center;
+        padding-inline: 0;
+      }
+
+      .shell.collapsed .sidebar-footer button {
+        justify-content: center !important;
       }
     }
 
@@ -3014,13 +3101,29 @@
         & code {
           font: inherit;
         }
+        /* If the source ends with a trailing newline the highlighted HTML
+         * can miss rendering an empty final line; add a pseudo-element only
+         * in that case so the `<pre>` keeps the same height as the raw
+         * `<textarea>` overlay when the caret sits on the (new) final line.
+         */
+        &[data-has-trailing-newline="true"]::after {
+          content: "\A";
+          white-space: pre;
+          display: block;
+        }
       }
 
       & > textarea {
         position: absolute;
-        inset: 0.875rem 1rem;
-        width: calc(100% - 2rem);
-        height: calc(100% - 1.75rem);
+        /* The host already owns the editor padding. Keep the overlay at the
+         * same containing-box origin and apply that padding inside it;
+         * applying it through `inset` would shift the textarea one extra
+         * padding-width away from the in-flow `<pre>`, most noticeably after
+         * a trailing Enter creates the final empty line. */
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        padding: 0.875rem 1rem;
         overflow: hidden;
         resize: none;
         outline: none;
@@ -3028,6 +3131,8 @@
         background: transparent;
         color: transparent;
         caret-color: var(--dry-foreground);
+        line-height: inherit;
+        letter-spacing: inherit;
 
         /* Overrides forms.css's global heavier-border focus style, which
          * makes no sense on an invisible overlay textarea. */
@@ -4033,7 +4138,7 @@
      * Escape dismissal natively, above everything in normal document flow
      * including an open native `<dialog>`. */
     .popover-menu {
-      border-width: 0;
+      border-width: 1px;
       width: 11rem;
       margin: 0;
       padding: 0.25rem 0.5rem;
@@ -4060,8 +4165,8 @@
     }
 
     .popover-menu-separator {
-      margin: 0.5rem -0.25rem;
-      border-top: 1px dashed var(--dry-border);
+      margin: 0.5rem -0.5rem;
+      border-top: 1px solid var(--dry-border);
     }
 
     .popover-menu-danger {
@@ -4233,7 +4338,7 @@
         flex: none;
       }
       & header {
-        margin-bottom: .5rem;
+        margin-bottom: 0.5rem;
       }
     }
 
@@ -4617,7 +4722,12 @@
   }
 
   .dry-component-preview-skeleton {
-    background: linear-gradient(90deg, transparent, var(--dry-muted), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--dry-muted),
+      transparent
+    );
     background-size: 200% 100%;
     animation: dry-progress-indeterminate 1.4s infinite;
   }
@@ -4704,14 +4814,13 @@
     gap: 0.375rem;
     border: 1px solid var(--dry-border);
     border-radius: var(--dry-radius-md);
-    
   }
 
   .dry-component-picker-row.is-selected {
     outline-color: var(--dry-primary);
     outline-offset: -2px !important;
-    &>*:first-child{
-      border-top-right-radius: 0 ;
+    & > *:first-child {
+      border-top-right-radius: 0;
       border-bottom-right-radius: 0;
     }
   }

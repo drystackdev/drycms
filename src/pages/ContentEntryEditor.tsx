@@ -22,6 +22,7 @@ import {
 } from "../content-types/system-fields.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { useParam } from "../hooks/useParam.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import {
   dispatchFieldInput,
@@ -141,6 +142,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   const isSingleton = type?.kind === "singleton";
   const isNew = !isSingleton && !id;
+  const showLoading = useDelayedLoading(!type || value === null);
 
   useEffect(() => {
     (async () => {
@@ -344,7 +346,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (!type || value === null) return <span class="hint">Loading…</span>;
+  if (!type || value === null) return showLoading ? <span class="hint">Loading…</span> : null;
 
   const backTo = `${path}/content/${type.name}`;
   // `createdAt`/`updatedAt` are server-stamped on every save (see

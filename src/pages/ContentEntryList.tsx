@@ -20,6 +20,7 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { useFetch } from "../hooks/useFetch.js";
+import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import ContentEntryEditor from "./ContentEntryEditor.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -249,11 +250,12 @@ export default function ContentEntryList({ typeSlug }: Props) {
   }, [typesApi]);
 
   const type = allTypes?.find((t) => t.name === typeSlug && t.kind !== "component");
+  const showTypeLoading = useDelayedLoading(allTypes === null);
 
   useDocumentTitle(type ? `${type.label} entries` : "Content");
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (allTypes === null) return <span class="hint">Loading…</span>;
+  if (allTypes === null) return showTypeLoading ? <span class="hint">Loading…</span> : null;
   if (!type) return <span class="error">Content type "{typeSlug}" not found.</span>;
 
   // A singleton has at most one row - there's nothing to list, so this route
@@ -353,6 +355,7 @@ function ContentEntryListCollection({
     [entriesApi, page, sort, search, searchableFields, isSortable],
   );
   const { data: listData, loading, error: listError, reload } = useFetch<EntryListResult>(listCacheKey, listFetcher);
+  const showListLoading = useDelayedLoading(loading);
   const rows: Row[] = useMemo(() => (listData?.rows ?? []).map((r) => ({ id: r.id, ...flattenRowValue(r.value) })), [listData]);
   const total = listData?.total ?? 0;
   const loadError = listError ? (listError instanceof Error ? listError.message : "Failed to load entries.") : null;
@@ -517,7 +520,7 @@ function ContentEntryListCollection({
       {loadError && <span class="error">{loadError}</span>}
       {/* See `useClientSearch` above - `serverQuery` below carries its own
           `loading` readout, which this mode doesn't use. */}
-      {useClientSearch && loading && <span class="hint">Loading…</span>}
+      {useClientSearch && showListLoading && <span class="hint">Loading…</span>}
 
       <DataTable
         columns={columns}
@@ -551,7 +554,7 @@ function ContentEntryListCollection({
                 sort,
                 onSortChange: setSort,
                 onSearchChange: setSearch,
-                loading,
+                loading: showListLoading,
               }
         }
         dragReorder={

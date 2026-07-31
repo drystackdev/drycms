@@ -1,4 +1,4 @@
-import { useId, useMemo } from "preact/hooks";
+import { useEffect, useId, useMemo, useState } from "preact/hooks";
 import Prism from "prismjs";
 import "prismjs/components/prism-jsx";
 import type { FieldProps } from "./field-common.js";
@@ -48,28 +48,44 @@ export default function CodeField({
 }: CodeFieldProps) {
   const reactId = useId();
   const fieldId = id ?? `code-field-${reactId}`;
+  // Keep the overlay and the highlighted layer on the same value immediately
+  // after an input event. The parent-controlled `value` can otherwise commit
+  // one render later, which is especially visible when Enter adds a newline.
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
   const highlighted = useMemo(
-    () => Prism.highlight(value, JSX_GRAMMAR, "jsx"),
-    [value],
+    () => Prism.highlight(draft, JSX_GRAMMAR, "jsx"),
+    [draft],
   );
+  const hasTrailingNewline = draft?.endsWith("\n");
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
+      <label for={fieldId}>
+        {label}
+        {required && <span class="required-asterisk">*</span>}
+      </label>
       {description && <small>{description}</small>}
       <div class="editor" aria-invalid={error || undefined}>
-        <pre class="language-jsx">
+        <pre
+          class="language-jsx"
+          data-has-trailing-newline={hasTrailingNewline ? "true" : undefined}
+        >
           <code dangerouslySetInnerHTML={{ __html: highlighted }} />
         </pre>
         <textarea
           id={fieldId}
           name={name}
-          value={value}
+          value={draft}
           placeholder={placeholder}
           disabled={disabled}
           spellcheck={false}
           aria-invalid={error || undefined}
-          onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
+          onInput={(event) => {
+            const next = (event.target as HTMLTextAreaElement).value;
+            setDraft(next);
+            onChange(next);
+          }}
         />
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}

@@ -165,16 +165,20 @@ export const iconBodies = {
   Calendar: icon(
     '<path fill="currentColor" d="M6.94 2c.416 0 .753.324.753.724v1.46c.668-.012 1.417-.012 2.26-.012h4.015c.842 0 1.591 0 2.259.013v-1.46c0-.4.337-.725.753-.725s.753.324.753.724V4.25c1.445.111 2.394.384 3.09 1.055c.698.67.982 1.582 1.097 2.972L22 9H2v-.724c.116-1.39.4-2.302 1.097-2.972s1.645-.944 3.09-1.055V2.724c0-.4.337-.724.753-.724"/><path fill="currentColor" d="M22 14v-2c0-.839-.004-2.335-.017-3H2.01c-.013.665-.01 2.161-.01 3v2c0 3.771 0 5.657 1.172 6.828S6.228 22 10 22h4c3.77 0 5.656 0 6.828-1.172S22 17.772 22 14" opacity=".5"/><path fill="currentColor" d="M18 17a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0"/>',
   ),
+  User: icon(
+    '<g fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="9" r="3"/><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M17.97 20c-.16-2.892-1.045-5-5.97-5s-5.81 2.108-5.97 5"/></g>',
+  ),
+  LogOut: icon(
+    '<g fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" d="M8.002 7c.012-2.175.109-3.353.877-4.121C9.758 2 11.172 2 14 2h1c2.829 0 4.243 0 5.122.879C21 3.757 21 5.172 21 8v8c0 2.828 0 4.243-.878 5.121C19.242 22 17.829 22 15 22h-1c-2.828 0-4.242 0-5.121-.879c-.768-.768-.865-1.946-.877-4.121"/><path d="M8 19.5c-2.357 0-3.536 0-4.268-.732C3 18.035 3 16.857 3 14.5v-5c0-2.357 0-3.536.732-4.268S5.643 4.5 8 4.5"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12H6m0 0l2 2m-2-2l2-2"/></g>',
+  ),
   Collection: icon(
     '<path fill="currentColor" d="M2 6.21c0-1.984 0-2.977.659-3.593S4.379 2 6.5 2s3.182 0 3.841.617C11 3.233 11 4.226 11 6.21v11.58c0 1.984 0 2.977-.659 3.593S8.621 22 6.5 22s-3.182 0-3.841-.617C2 20.767 2 19.774 2 17.79z" opacity=".5"/><path fill="currentColor" d="M13 15.4c0-2.074 0-3.111.659-3.756S15.379 11 17.5 11s3.182 0 3.841.644C22 12.29 22 13.326 22 15.4v2.2c0 2.074 0 3.111-.659 3.756S19.621 22 17.5 22s-3.182 0-3.841-.644C13 20.71 13 19.674 13 17.6zm0-9.9c0-1.087 0-1.63.171-2.06a2.3 2.3 0 0 1 1.218-1.262C14.802 2 15.327 2 16.375 2h2.25c1.048 0 1.573 0 1.986.178c.551.236.99.69 1.218 1.262c.171.43.171.973.171 2.06s0 1.63-.171 2.06a2.3 2.3 0 0 1-1.218 1.262C20.198 9 19.673 9 18.625 9h-2.25c-1.048 0-1.573 0-1.986-.178a2.3 2.3 0 0 1-1.218-1.262C13 7.13 13 6.587 13 5.5"/>',
   ),
   Singleton: icon(
     '<path fill="currentColor" d="M3 10c0-3.771 0-5.657 1.172-6.828S7.229 2 11 2h2c3.771 0 5.657 0 6.828 1.172S21 6.229 21 10v4c0 3.771 0 5.657-1.172 6.828S16.771 22 13 22h-2c-3.771 0-5.657 0-6.828-1.172S3 17.771 3 14z" opacity=".5"/><path fill="currentColor" fill-rule="evenodd" d="M7.25 10A.75.75 0 0 1 8 9.25h8a.75.75 0 0 1 0 1.5H8a.75.75 0 0 1-.75-.75m0 4a.75.75 0 0 1 .75-.75h5a.75.75 0 0 1 0 1.5H8a.75.75 0 0 1-.75-.75" clip-rule="evenodd"/>',
   ),
-  // Custom SVG (not from solar/lucide - a build-icons.mjs regeneration would
-  // drop this override, see that script's own "do not edit" header).
   Component: icon(
-    '<path fill="currentColor" fill-rule="evenodd" d="M7.152.484a.5.5 0 0 0-.305 0c-2.132.681-3.732 1.478-5.605 2.702a1.5 1.5 0 0 0-.364.339q.074.015.144.049L7 6.456l5.976-2.879a.6.6 0 0 1 .148-.05a1.5 1.5 0 0 0-.366-.34C10.885 1.961 9.284 1.164 7.152.483M.579 9.902A27.3 27.3 0 0 1 .542 4.73l5.833 2.812v5.998c-1.903-.649-3.403-1.415-5.136-2.55a1.47 1.47 0 0 1-.66-1.088m7.046 3.637c1.903-.648 3.403-1.415 5.136-2.548c.374-.245.616-.645.66-1.09c.18-1.843.184-3.371.037-5.169l-5.833 2.81z" clip-rule="evenodd"/>',
+    '<path d="M0 0h14v14H0z" fill="none" /><path fill="currentColor" fill-rule="evenodd" d="M7.152.484a.5.5 0 0 0-.305 0c-2.132.681-3.732 1.478-5.605 2.702a1.5 1.5 0 0 0-.364.339q.074.015.144.049L7 6.456l5.976-2.879a.6.6 0 0 1 .148-.05a1.5 1.5 0 0 0-.366-.34C10.885 1.961 9.284 1.164 7.152.483M.579 9.902A27.3 27.3 0 0 1 .542 4.73l5.833 2.812v5.998c-1.903-.649-3.403-1.415-5.136-2.55a1.47 1.47 0 0 1-.66-1.088m7.046 3.637c1.903-.648 3.403-1.415 5.136-2.548c.374-.245.616-.645.66-1.09c.18-1.843.184-3.371.037-5.169l-5.833 2.81z" clip-rule="evenodd" />',
     "0 0 14 14",
   ),
   DragHandle: icon(
@@ -996,6 +1000,34 @@ export function CalendarIcon(props: IconProps) {
       aria-hidden="true"
       {...props}
       dangerouslySetInnerHTML={{ __html: iconBodies.Calendar.body }}
+    />
+  );
+}
+
+/** `solar:user-circle-linear` */
+export function UserIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.User.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.User.body }}
+    />
+  );
+}
+
+/** `solar:logout-3-linear` */
+export function LogOutIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.LogOut.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.LogOut.body }}
     />
   );
 }

@@ -20,6 +20,7 @@ const ContentTypes = lazy(() => import('../pages/ContentTypes.js'));
 const ContentTypeEditor = lazy(() => import('../pages/ContentTypeEditor.js'));
 const ContentEntryList = lazy(() => import('../pages/ContentEntryList.js'));
 const ContentEntryEditor = lazy(() => import('../pages/ContentEntryEditor.js'));
+const Profile = lazy(() => import('../pages/Profile.js'));
 const Roles = lazy(() => import('../pages/Roles.js'));
 const RoleEditor = lazy(() => import('../pages/RoleEditor.js'));
 const IconManagement = lazy(() => import('../pages/IconManagement.js'));
@@ -129,6 +130,7 @@ function AuthenticatedApp() {
 							<Route path={`${path}/content/:typeSlug/new`} component={ContentEntryEditor} />
 							<Route path={`${path}/content/:typeSlug/:id`} component={ContentEntryEditor} />
 							<Route path={`${path}/content/:typeSlug`} component={ContentEntryList} />
+							<Route path={`${path}/profile`} component={Profile} />
 							<Route path={`${path}/roles`} component={Roles} />
 							{/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}
 							<Route path={`${path}/roles/new`} component={() => <RoleEditor id="new" />} />

@@ -80,6 +80,11 @@ async function logout(cookie?: string) {
   return { status: response.status, response };
 }
 
+async function updateProfile(body: unknown, cookie?: string) {
+  const response = await POST(await context({ slug: "update-profile", method: "POST", body, cookie }));
+  return { status: response.status, json: (await response.json()) as any, response };
+}
+
 describe("auth route", () => {
   it("reports hasAnyUser: false and no session before any account exists", async () => {
     const { json } = await getSession();
@@ -94,7 +99,12 @@ describe("auth route", () => {
       password: "hunter2",
     });
     expect(status).toBe(201);
-    expect(json.user).toEqual({ id: expect.any(Number), name: "Ada Lovelace", email: "ada@example.com" });
+    expect(json.user).toEqual({
+      id: expect.any(Number),
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      roles: ["Super Admin"],
+    });
     const cookie = cookieFrom(response);
     expect(cookie).toMatch(/^drycms_session=/);
 
@@ -111,7 +121,12 @@ describe("auth route", () => {
 
     const session = await getSession(cookie);
     expect(session.json.hasAnyUser).toBe(true);
-    expect(session.json.user).toEqual({ id: json.user.id, name: "Ada Lovelace", email: "ada@example.com" });
+    expect(session.json.user).toEqual({
+      id: json.user.id,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      roles: ["Super Admin"],
+    });
   });
 
   it("rejects a second register-first-admin attempt once an account exists", async () => {
@@ -133,6 +148,59 @@ describe("auth route", () => {
     const unknownEmail = await login({ email: "nobody@example.com", password: "hunter2" });
     expect(unknownEmail.status).toBe(401);
     expect(unknownEmail.json.message).toBe(wrongPassword.json.message);
+  });
+
+  it("update-profile requires a session, and a password change requires + verifies the current password", async () => {
+    const { cookie } = await (async () => {
+      const res = await login({ email: "ada@example.com", password: "hunter2" });
+      return { cookie: cookieFrom(res.response)! };
+    })();
+
+    const noSession = await updateProfile({ name: "Ada", email: "ada@example.com" });
+    expect(noSession.status).toBe(401);
+
+    // Renaming/re-emailing alone (both password fields left blank) doesn't
+    // touch the password at all.
+    const renamed = await updateProfile({ name: "Ada L.", email: "ada@example.com" }, cookie);
+    expect(renamed.status).toBe(200);
+    expect(renamed.json.user).toEqual({
+      id: expect.any(Number),
+      name: "Ada L.",
+      email: "ada@example.com",
+      roles: ["Super Admin"],
+    });
+    const stillOldPassword = await login({ email: "ada@example.com", password: "hunter2" });
+    expect(stillOldPassword.status).toBe(200);
+
+    // A new password without the current one is a validation error, not a
+    // silently-ignored no-op - the field is highlighted for the form.
+    const missingCurrent = await updateProfile(
+      { name: "Ada L.", email: "ada@example.com", newPassword: "hunter3" },
+      cookie,
+    );
+    expect(missingCurrent.status).toBe(422);
+    expect(missingCurrent.json.fieldErrors).toEqual({ currentPassword: "Enter your current password." });
+
+    // The wrong current password is rejected without changing anything.
+    const wrongCurrent = await updateProfile(
+      { name: "Ada L.", email: "ada@example.com", currentPassword: "nope", newPassword: "hunter3" },
+      cookie,
+    );
+    expect(wrongCurrent.status).toBe(401);
+    expect(wrongCurrent.json.fieldErrors).toEqual({ currentPassword: "Incorrect current password." });
+    const oldPasswordStillWorks = await login({ email: "ada@example.com", password: "hunter2" });
+    expect(oldPasswordStillWorks.status).toBe(200);
+
+    // The correct current password lets the new one take effect.
+    const changed = await updateProfile(
+      { name: "Ada L.", email: "ada@example.com", currentPassword: "hunter2", newPassword: "hunter3" },
+      cookie,
+    );
+    expect(changed.status).toBe(200);
+    const oldPasswordRejected = await login({ email: "ada@example.com", password: "hunter2" });
+    expect(oldPasswordRejected.status).toBe(401);
+    const newPasswordWorks = await login({ email: "ada@example.com", password: "hunter3" });
+    expect(newPasswordWorks.status).toBe(200);
   });
 
   it("logout clears the session cookie", async () => {

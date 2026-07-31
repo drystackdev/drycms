@@ -5,6 +5,12 @@ export interface AuthUser {
   id: number;
   name: string;
   email: string;
+  /** Display names of the roles assigned to this user - resolved fresh by
+   * the server on every auth response (`routes/auth.ts`'s
+   * `resolveRoleLabels`), never cached in the session token itself. Read-only
+   * here; `pages/Profile.tsx` shows it, actual role assignment stays an
+   * admin-only action through `pages/RoleEditor.tsx`. */
+  roles: string[];
 }
 
 export type AuthStatus = "loading" | "needs-setup" | "anonymous" | "authenticated";
@@ -14,7 +20,17 @@ export interface AuthState {
   user: AuthUser | null;
 }
 
-export class AuthApiError extends Error {}
+export class AuthApiError extends Error {
+  /** Field name -> message, set only for a 422 validation failure (e.g.
+   * `update-profile`'s name/email/unique-email checks) - same shape
+   * `entries-http-api.ts`'s `ContentEntriesApiError` carries. */
+  fieldErrors?: Record<string, string>;
+
+  constructor(message: string, fieldErrors?: Record<string, string>) {
+    super(message);
+    this.fieldErrors = fieldErrors;
+  }
+}
 
 /**
  * Drives `routers/App.tsx`'s `AuthGate`: `loadSession()` is called once on
@@ -38,7 +54,7 @@ async function readJson(res: Response): Promise<any> {
 async function assertOk(res: Response, fallback: string): Promise<void> {
   if (res.ok) return;
   const body = await readJson(res);
-  throw new AuthApiError(typeof body.message === "string" ? body.message : fallback);
+  throw new AuthApiError(typeof body.message === "string" ? body.message : fallback, body.fieldErrors);
 }
 
 /** Reads `GET /api/auth/session` and sets `authState` accordingly - the one
@@ -83,6 +99,31 @@ export async function login(email: string, password: string): Promise<void> {
     body: JSON.stringify({ email, password }),
   });
   await assertOk(res, "Failed to sign in.");
+  const body = await res.json();
+  authState.value = { status: "authenticated", user: body.user };
+}
+
+/** Self-service edit of the signed-in user's own `name`/`email`/password -
+ * `currentPassword`/`newPassword` both empty means "keep the current
+ * password" (same "leave blank" contract as `PasswordChangeField`); the
+ * server requires BOTH together otherwise (`routes/auth.ts` rejects a
+ * `newPassword` submitted without `currentPassword`, and verifies
+ * `currentPassword` against the stored hash before accepting the change).
+ * Refreshes `authState.user` (and the session cookie server-side) with the
+ * saved values, so the sidebar/topbar reflect a rename immediately instead
+ * of only after the next login. */
+export async function updateProfile(
+  name: string,
+  email: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await fetch(`${path}/api/auth/update-profile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, currentPassword, newPassword }),
+  });
+  await assertOk(res, "Failed to update profile.");
   const body = await res.json();
   authState.value = { status: "authenticated", user: body.user };
 }
