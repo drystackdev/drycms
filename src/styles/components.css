@@ -2365,6 +2365,7 @@
 
       & > *:first-child {
         padding: 2rem;
+        background-color: var(--dry-card);
       }
     }
 
@@ -2641,6 +2642,7 @@
       padding: 2rem;
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-xl);
+      background-color: var(--dry-card);
       & h3 {
         margin-block-start: 0;
       }
