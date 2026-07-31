@@ -7,7 +7,10 @@ import { useOverlayScrollbars } from "../overlayscrollbars.js";
 import Search from "../Search.js";
 import ComponentPreview from "./ComponentPreview.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
-import DryComponentPropsForm, { emptyDryComponentProps, isDryComponentPropsValid } from "./dry-component-props-form.js";
+import DryComponentPropsForm, {
+  emptyDryComponentProps,
+  isDryComponentPropsValid,
+} from "./dry-component-props-form.js";
 import { loadBuiltComponent } from "./dry-component-runtime.js";
 import { insertBlockAfterFocusedGridItem } from "./grid.js";
 import { schema } from "./schema.js";
@@ -22,18 +25,28 @@ import { loadRichtextComponents } from "./useRichTextEditor.js";
  * has its own eye button opening the same `dry-component-preview-dialog`
  * pattern on demand, so the list stays cheap even with many components.
  */
-export default function DryComponentInsertButton({ viewRef, disabled = false, iconSize }: ToolbarCustomProps) {
+export default function DryComponentInsertButton({
+  viewRef,
+  disabled = false,
+  iconSize,
+}: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<DryComponentRecord | null>(null);
-  const [configuring, setConfiguring] = useState<DryComponentRecord | null>(null);
+  const [configuring, setConfiguring] = useState<DryComponentRecord | null>(
+    null,
+  );
   const [propsDraft, setPropsDraft] = useState<Record<string, unknown>>({});
   const [query, setQuery] = useState("");
   const anchorPosRef = useRef<number | null>(null);
   const dialogRef = useDialogSync(open, () => setOpen(false));
-  const previewDialogRef = useDialogSync(!!previewing, () => setPreviewing(null));
-  const configureDialogRef = useDialogSync(!!configuring, () => setConfiguring(null));
+  const previewDialogRef = useDialogSync(!!previewing, () =>
+    setPreviewing(null),
+  );
+  const configureDialogRef = useDialogSync(!!configuring, () =>
+    setConfiguring(null),
+  );
   const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([open]);
 
   useEffect(() => {
@@ -59,13 +72,19 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
   const filteredRecords = records.filter((record) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return record.label.toLowerCase().includes(q) || record.name.toLowerCase().includes(q);
+    return (
+      record.label.toLowerCase().includes(q) ||
+      record.name.toLowerCase().includes(q)
+    );
   });
 
   /** Actually creates + places the node, given a resolved `props` value -
    * shared by the no-props fast path (`record.defaults` as-is) and the
    * "configure first" path below (`propsDraft`, once confirmed valid). */
-  const performInsert = (record: DryComponentRecord, props: Record<string, unknown>) => {
+  const performInsert = (
+    record: DryComponentRecord,
+    props: Record<string, unknown>,
+  ) => {
     const view = viewRef.current;
     if (!view) return;
 
@@ -78,7 +97,10 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       ? nodeType.create({ props }, schema.nodes.paragraph!.createAndFill()!)
       : nodeType.create({ props });
     const docSize = view.state.doc.content.size;
-    const pos = anchorPosRef.current !== null && anchorPosRef.current <= docSize ? anchorPosRef.current : docSize;
+    const pos =
+      anchorPosRef.current !== null && anchorPosRef.current <= docSize
+        ? anchorPosRef.current
+        : docSize;
 
     if (record.type === "inline") {
       view.dispatch(view.state.tr.insert(pos, node));
@@ -89,7 +111,9 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       // landing at the very end of the doc is left to
       // `trailing-paragraph.ts`'s standing invariant plugin to give the
       // cursor somewhere to go afterward.
-      let tr = insertBlockAfterFocusedGridItem(view.state, node) ?? view.state.tr.replaceSelectionWith(node);
+      let tr =
+        insertBlockAfterFocusedGridItem(view.state, node) ??
+        view.state.tr.replaceSelectionWith(node);
       if (record.children) {
         // `children: true` components get their cursor placed inside the
         // seeded paragraph right away, rather than left just after the whole
@@ -106,7 +130,10 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
           }
           return true;
         });
-        if (nodePos != null) tr = tr.setSelection(TextSelection.near(tr.doc.resolve(nodePos + 1), 1));
+        if (nodePos != null)
+          tr = tr.setSelection(
+            TextSelection.near(tr.doc.resolve(nodePos + 1), 1),
+          );
       }
       view.dispatch(tr.scrollIntoView());
     }
@@ -134,12 +161,18 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
   };
 
   const confirmConfigure = () => {
-    if (!configuring || !isDryComponentPropsValid(configuring.props, propsDraft)) return;
+    if (
+      !configuring ||
+      !isDryComponentPropsValid(configuring.props, propsDraft)
+    )
+      return;
     performInsert(configuring, propsDraft);
     setConfiguring(null);
   };
 
-  const configuringValid = configuring ? isDryComponentPropsValid(configuring.props, propsDraft) : false;
+  const configuringValid = configuring
+    ? isDryComponentPropsValid(configuring.props, propsDraft)
+    : false;
 
   return (
     <>
@@ -155,13 +188,22 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       >
         <ComponentIcon />
       </button>
-      <dialog ref={dialogRef} class="file-dialog dry-component-picker-dialog md" aria-label="Insert component">
+      <dialog
+        ref={dialogRef}
+        class="file-dialog dry-component-picker-dialog md"
+        aria-label="Insert component"
+      >
         {open && (
           <>
             <header>
               <h3>Insert component</h3>
               {records.length > 0 && (
-                <Search value={query} onChange={setQuery} placeholder="Search components…" autoFocus />
+                <Search
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Search components…"
+                  autoFocus
+                />
               )}
             </header>
             <div class="dry-component-picker-list" ref={listRef}>
@@ -178,9 +220,15 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
                * instead of inside it (unstyled, shrunk, only fixed by a
                * full remount). */}
               <div class="dry-component-picker-rows">
-                {records.length === 0 && <p class="dry-component-picker-empty">No components confirmed yet.</p>}
+                {records.length === 0 && (
+                  <p class="dry-component-picker-empty">
+                    No components confirmed yet.
+                  </p>
+                )}
                 {records.length > 0 && filteredRecords.length === 0 && (
-                  <p class="dry-component-picker-empty">No components match "{query}".</p>
+                  <p class="dry-component-picker-empty">
+                    No components match "{query}".
+                  </p>
                 )}
                 {filteredRecords.map((record) => (
                   <div
@@ -191,8 +239,19 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
                       type="button"
                       class="ghost dry-component-picker-row-select"
                       onClick={() => setPending(record.name)}
+                      style={{ height: "auto", paddingBlock: '0.5rem' }}
                     >
-                      <span class="dry-component-picker-label">{record.label}</span>
+                      <div class="stack" style={{gap: '0.25rem'}}>
+                        <span class="dry-component-picker-label">
+                          {record.label}
+                        </span>
+                        <div class="row">
+                          {record.shadow && (
+                            <span class="badge sm secondary">Shadow</span>
+                          )}
+                          {record.children && <span class="badge sm secondary">Children</span>}
+                        </div>
+                      </div>
                     </button>
                     <button
                       type="button"
@@ -208,7 +267,11 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
               </div>
             </div>
             <footer>
-              <button type="button" class="outline" onClick={() => setOpen(false)}>
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setOpen(false)}
+              >
                 Cancel
               </button>
               <button type="button" disabled={!pending} onClick={startInsert}>
@@ -221,13 +284,17 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       <dialog
         ref={previewDialogRef}
         class="dry-component-preview-dialog lg"
-        aria-label={previewing ? `${previewing.label} preview` : "Component preview"}
+        aria-label={
+          previewing ? `${previewing.label} preview` : "Component preview"
+        }
       >
         {previewing && (
           <>
             <header>
               <h3>{previewing.label}</h3>
-              {previewing.description && <p class="hint">{previewing.description}</p>}
+              {previewing.description && (
+                <p class="hint">{previewing.description}</p>
+              )}
             </header>
             <div class="dry-component-preview-large">
               <ComponentPreview
@@ -251,7 +318,9 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       <dialog
         ref={configureDialogRef}
         class="md"
-        aria-label={configuring ? `${configuring.label} settings` : "Component settings"}
+        aria-label={
+          configuring ? `${configuring.label} settings` : "Component settings"
+        }
       >
         {configuring && (
           <>
@@ -259,13 +328,25 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
               <h3>{configuring.label}</h3>
             </header>
             <div class="stack">
-              <DryComponentPropsForm schema={configuring.props} value={propsDraft} onChange={setPropsDraft} />
+              <DryComponentPropsForm
+                schema={configuring.props}
+                value={propsDraft}
+                onChange={setPropsDraft}
+              />
             </div>
             <footer>
-              <button type="button" class="outline" onClick={() => setConfiguring(null)}>
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setConfiguring(null)}
+              >
                 Cancel
               </button>
-              <button type="button" disabled={!configuringValid} onClick={confirmConfigure}>
+              <button
+                type="button"
+                disabled={!configuringValid}
+                onClick={confirmConfigure}
+              >
                 Insert
               </button>
             </footer>

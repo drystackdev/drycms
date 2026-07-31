@@ -282,6 +282,45 @@ export const iconBodies = {
   FullscreenExit: icon(
     '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M14 22c0-3.771 0-5.657 1.172-6.828S18.229 14 22 14M2 14c3.771 0 5.657 0 6.828 1.172S10 18.229 10 22M2 10c3.771 0 5.657 0 6.828-1.172S10 5.771 10 2m12 8c-3.771 0-5.657 0-6.828-1.172S14 5.771 14 2"/>',
   ),
+  TextFieldType: icon(
+    '<path fill="currentColor" d="M3.172 5.172C2 6.343 2 8.229 2 12s0 5.657 1.172 6.828S6.229 20 10 20h4c3.771 0 5.657 0 6.828-1.172S22 15.771 22 12s0-5.657-1.172-6.828S17.771 4 14 4h-4C6.229 4 4.343 4 3.172 5.172" opacity=".5"/><path fill="currentColor" d="M6.818 7.787c.3-.037.666-.037 1.066-.037h2.232c.4 0 .766 0 1.066.037c.329.041.68.137.98.405q.078.068.146.146c.268.3.364.651.405.98c.037.3.037.666.037 1.066v.041a.75.75 0 0 1-1.5 0c0-.455-.001-.726-.026-.922c-.024-.195-.228-.227-.228-.227c-.195-.025-.466-.026-.921-.026H9.75v5.5H11a.75.75 0 0 1 0 1.5H7a.75.75 0 0 1 0-1.5h1.25v-5.5h-.325c-.455 0-.726.001-.922.026c0 0-.203.032-.227.227c-.025.196-.026.467-.026.922a.75.75 0 0 1-1.5 0v-.041c0-.4 0-.766.037-1.066c.041-.329.137-.68.405-.98q.069-.078.146-.146c.3-.268.651-.364.98-.405"/>',
+  ),
+  CodeFieldType: icon(
+    '<path fill="currentColor" d="M16.443 7.328a.75.75 0 0 1 1.059-.056l1.737 1.564c.737.663 1.347 1.212 1.767 1.71c.44.525.754 1.088.754 1.784c0 .695-.313 1.258-.754 1.782c-.42.499-1.03 1.049-1.767 1.711l-1.737 1.564a.75.75 0 1 1-1.004-1.115l1.697-1.527c.788-.709 1.319-1.19 1.663-1.598c.33-.393.402-.622.402-.817c0-.196-.072-.425-.402-.818c-.344-.409-.875-.889-1.663-1.598l-1.697-1.527a.75.75 0 0 1-.056-1.06m-8.94 1.06a.75.75 0 0 0-1.004-1.115L4.761 8.836c-.737.663-1.347 1.212-1.767 1.71c-.44.525-.754 1.088-.754 1.784c0 .695.313 1.258.754 1.782c.42.499 1.03 1.049 1.767 1.711l1.737 1.564a.75.75 0 1 0 1.004-1.115l-1.697-1.527c-.788-.709-1.319-1.19-1.663-1.598c-.33-.393-.402-.622-.402-.817c0-.196.072-.425.402-.818c.344-.409.875-.889 1.663-1.598z"/><path fill="currentColor" d="M14.182 4.276a.75.75 0 0 1 .53.918l-3.974 14.83a.75.75 0 1 1-1.449-.389l3.974-14.83a.75.75 0 0 1 .919-.53" opacity=".5"/>',
+  ),
+  RichTextFieldType: icon(
+    '<path fill="currentColor" fill-rule="evenodd" d="M8 2h-.066c-.886 0-1.65 0-2.262.082c-.655.088-1.284.287-1.793.797c-.51.51-.709 1.138-.797 1.793C3 5.284 3 6.048 3 6.934V7.95a1 1 0 1 0 2 0V7c0-.971.002-1.599.064-2.061c.059-.434.153-.57.229-.646s.212-.17.646-.229C6.4 4.002 7.029 4 8 4h8c.971 0 1.599.002 2.061.064c.434.059.57.153.646.229s.17.212.229.646C18.998 5.4 19 6.029 19 7v.95a1 1 0 1 0 2 0V6.934c0-.886 0-1.65-.082-2.262c-.088-.655-.287-1.284-.797-1.793c-.51-.51-1.138-.709-1.793-.797C17.716 2 16.952 2 16.066 2z" clip-rule="evenodd"/><path fill="currentColor" d="M13 4h-2v16h2z" opacity=".5"/><path fill="currentColor" fill-rule="evenodd" d="M6 21a1 1 0 0 1 1-1h10a1 1 0 1 1 0 2H7a1 1 0 0 1-1-1" clip-rule="evenodd"/>',
+  ),
+  SlugFieldType: icon(
+    '<path fill="currentColor" d="M15.728 3.884c1.434-1.44 3.532-1.47 4.694-.304c1.164 1.168 1.132 3.28-.303 4.72l-2.424 2.433a.75.75 0 0 0 1.063 1.059l2.424-2.433c1.91-1.919 2.15-4.982.303-6.838c-1.85-1.857-4.907-1.615-6.82.304L9.818 7.692c-1.912 1.919-2.152 4.982-.303 6.837a.75.75 0 1 0 1.062-1.058c-1.163-1.168-1.132-3.28.303-4.72z"/><path fill="currentColor" d="M14.485 9.47a.75.75 0 0 0-1.063 1.06c1.164 1.168 1.132 3.279-.303 4.72L8.27 20.116c-1.434 1.44-3.532 1.47-4.694.304c-1.163-1.168-1.132-3.28.303-4.72l2.424-2.433a.75.75 0 1 0-1.062-1.059l-2.424 2.433C.906 16.56.666 19.623 2.515 21.48c1.85 1.858 4.907 1.615 6.819-.304l4.848-4.867c1.91-1.918 2.15-4.982.303-6.837" opacity=".5"/>',
+  ),
+  PasswordFieldType: icon(
+    '<path fill="currentColor" d="M2 16c0-2.828 0-4.243.879-5.121C3.757 10 5.172 10 8 10h8c2.828 0 4.243 0 5.121.879C22 11.757 22 13.172 22 16s0 4.243-.879 5.121C20.243 22 18.828 22 16 22H8c-2.828 0-4.243 0-5.121-.879C2 20.243 2 18.828 2 16" opacity=".5"/><path fill="currentColor" d="M12 18a2 2 0 1 0 0-4a2 2 0 0 0 0 4M6.75 8a5.25 5.25 0 0 1 10.5 0v2.004c.567.005 1.064.018 1.5.05V8a6.75 6.75 0 0 0-13.5 0v2.055a24 24 0 0 1 1.5-.051z"/>',
+  ),
+  SecretFieldType: icon(
+    '<path fill="currentColor" fill-rule="evenodd" d="M2.919 6.605a1 1 0 0 0-1.838.79l.002.003l.003.007l.01.021l.032.072q.04.09.12.25c.105.21.262.506.47.857c.41.687 1.027 1.6 1.872 2.52l-.797.797a1 1 0 1 0 1.414 1.414l.84-.84c.565.455 1.197.885 1.897 1.256l-.782 1.202a1 1 0 0 0 1.676 1.091l.985-1.514c.677.208 1.402.355 2.177.425V16.5a1 1 0 0 0 1 1V13c-2.748 0-4.819-1.199-6.304-2.59l-.024-.022a12 12 0 0 1-.564-.569a13.4 13.4 0 0 1-1.67-2.237a12 12 0 0 1-.516-.968zm-1.838.79L2 7c-.92.394-.919.395-.919.395" clip-rule="evenodd"/><path fill="currentColor" d="M15.22 12.398A8.7 8.7 0 0 1 12 13v4.5a1 1 0 0 0 1-1v-1.544c.772-.07 1.497-.217 2.176-.425l.986 1.515a1 1 0 0 0 1.676-1.091l-.782-1.203c.701-.37 1.332-.8 1.897-1.256l.84.84a1 1 0 1 0 1.414-1.414l-.797-.798a15.4 15.4 0 0 0 2.302-3.296a10 10 0 0 0 .19-.395l.011-.026l.004-.008l.002-.005a1 1 0 1 0-1.838-.788l-.005.011a5 5 0 0 1-.146.302a13 13 0 0 1-2.614 3.48c-.841.79-1.87 1.517-3.095 2" opacity=".5"/>',
+  ),
+  NumberFieldType: icon(
+    '<path fill="currentColor" d="M2 12c0-4.714 0-7.071 1.464-8.536C4.93 2 7.286 2 12 2s7.071 0 8.535 1.464C22 4.93 22 7.286 22 12s0 7.071-1.465 8.535C19.072 22 16.714 22 12 22s-7.071 0-8.536-1.465C2 19.072 2 16.714 2 12" opacity=".5"/><path fill="currentColor" fill-rule="evenodd" d="M11.718 7.215a.75.75 0 0 0-1.436-.43l-.74 2.465H7a.75.75 0 0 0 0 1.5h2.092l-.75 2.5H6a.75.75 0 1 0 0 1.5h1.892l-.61 2.034a.75.75 0 0 0 1.436.431l.74-2.465h3.434l-.61 2.034a.75.75 0 0 0 1.436.431l.74-2.465H17a.75.75 0 0 0 0-1.5h-2.092l.75-2.5H18a.75.75 0 0 0 0-1.5h-1.892l.61-2.035a.75.75 0 0 0-1.436-.43l-.74 2.465h-3.434zm2.374 3.535l-.75 2.5H9.908l.75-2.5z" clip-rule="evenodd"/>',
+  ),
+  CheckFieldType: icon(
+    '<path fill="currentColor" d="M12 22c-4.714 0-7.071 0-8.536-1.465C2 19.072 2 16.714 2 12s0-7.071 1.464-8.536C4.93 2 7.286 2 12 2s7.071 0 8.535 1.464C22 4.93 22 7.286 22 12s0 7.071-1.465 8.535C19.072 22 16.714 22 12 22" opacity=".5"/><path fill="currentColor" d="M16.03 8.97a.75.75 0 0 1 0 1.06l-5 5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 1 1 1.06-1.06l1.47 1.47l4.47-4.47a.75.75 0 0 1 1.06 0"/>',
+  ),
+  SelectFieldType: icon(
+    '<path fill="currentColor" d="m8.303 12.404l3.327 3.431c.213.22.527.22.74 0l6.43-6.63C19.201 8.79 18.958 8 18.43 8h-5.723z"/><path fill="currentColor" d="M11.293 8H5.57c-.528 0-.771.79-.37 1.205l2.406 2.481z" opacity=".5"/>',
+  ),
+  DatePickerFieldType: icon(
+    '<path fill="currentColor" d="M6.94 2c.416 0 .753.324.753.724v1.46c.668-.012 1.417-.012 2.26-.012h4.015c.842 0 1.591 0 2.259.013v-1.46c0-.4.337-.725.753-.725s.753.324.753.724V4.25c1.445.111 2.394.384 3.09 1.055c.698.67.982 1.582 1.097 2.972L22 9H2v-.724c.116-1.39.4-2.302 1.097-2.972s1.645-.944 3.09-1.055V2.724c0-.4.337-.724.753-.724"/><path fill="currentColor" d="M22 14v-2c0-.839-.004-2.335-.017-3H2.01c-.013.665-.01 2.161-.01 3v2c0 3.771 0 5.657 1.172 6.828S6.228 22 10 22h4c3.77 0 5.656 0 6.828-1.172S22 17.772 22 14" opacity=".5"/><path fill="currentColor" d="M18 17a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m-5 4a1 1 0 1 1-2 0a1 1 0 0 1 2 0m0-4a1 1 0 1 1-2 0a1 1 0 0 1 2 0"/>',
+  ),
+  ImageFieldType: icon(
+    '<path fill="currentColor" d="M18 8a2 2 0 1 1-4 0a2 2 0 0 1 4 0"/><path fill="currentColor" fill-rule="evenodd" d="M11.943 1.25h.114c2.309 0 4.118 0 5.53.19c1.444.194 2.584.6 3.479 1.494c.895.895 1.3 2.035 1.494 3.48c.19 1.411.19 3.22.19 5.529v.088c0 1.909 0 3.471-.104 4.743c-.104 1.28-.317 2.347-.795 3.235q-.314.586-.785 1.057c-.895.895-2.035 1.3-3.48 1.494c-1.411.19-3.22.19-5.529.19h-.114c-2.309 0-4.118 0-5.53-.19c-1.444-.194-2.584-.6-3.479-1.494c-.793-.793-1.203-1.78-1.42-3.006c-.215-1.203-.254-2.7-.262-4.558Q1.25 12.792 1.25 12v-.058c0-2.309 0-4.118.19-5.53c.194-1.444.6-2.584 1.494-3.479c.895-.895 2.035-1.3 3.48-1.494c1.411-.19 3.22-.19 5.529-.19m-5.33 1.676c-1.278.172-2.049.5-2.618 1.069c-.57.57-.897 1.34-1.069 2.619c-.174 1.3-.176 3.008-.176 5.386q0 .793.002 1.495c.008 1.874.05 3.246.238 4.303c.184 1.035.498 1.7 1.005 2.207c.57.57 1.34.897 2.619 1.069c1.3.174 3.008.176 5.386.176s4.086-.002 5.386-.176c1.279-.172 2.05-.5 2.62-1.069c.21-.21.381-.442.524-.707c.332-.616.523-1.44.621-2.645s.099-2.707.099-4.653c0-2.378-.002-4.086-.176-5.386c-.172-1.279-.5-2.05-1.069-2.62c-.57-.569-1.34-.896-2.619-1.068c-1.3-.174-3.008-.176-5.386-.176s-4.086.002-5.386.176" clip-rule="evenodd"/><path fill="currentColor" d="m20.607 19.146l-2.83-2.547a3 3 0 0 0-3.732-.225l-.299.21a2 2 0 0 1-2.564-.222l-4.29-4.29a2.3 2.3 0 0 0-3.14-.104l-1.002.876l.002.65c.008 1.875.05 3.247.238 4.304c.185 1.035.498 1.7 1.005 2.207c.57.57 1.34.897 2.619 1.069c1.3.174 3.008.176 5.386.176s4.087-.002 5.387-.176c1.278-.172 2.049-.5 2.618-1.069a3 3 0 0 0 .602-.859" opacity=".4"/>',
+  ),
+  RelationFieldType: icon(
+    '<path fill="currentColor" fill-rule="evenodd" d="M8 2.25A6.75 6.75 0 0 0 2.969 13.5a.75.75 0 0 0 1.118-1A5.25 5.25 0 0 1 8 3.75h4a5.25 5.25 0 1 1 0 10.5h-2a.75.75 0 0 0 0 1.5h2a6.75 6.75 0 0 0 0-13.5z" clip-rule="evenodd"/><path fill="currentColor" d="M6.75 15c0-2.9 2.35-5.25 5.25-5.25h2a.75.75 0 0 0 0-1.5h-2a6.75 6.75 0 0 0 0 13.5h4a6.75 6.75 0 0 0 5.031-11.25a.75.75 0 0 0-1.118 1A5.25 5.25 0 0 1 16 20.25h-4A5.25 5.25 0 0 1 6.75 15" opacity=".5"/>',
+  ),
+  ComponentFieldType: icon(
+    '<path fill="currentColor" d="M2 6.5c0-2.121 0-3.182.659-3.841S4.379 2 6.5 2s3.182 0 3.841.659S11 4.379 11 6.5s0 3.182-.659 3.841S8.621 11 6.5 11s-3.182 0-3.841-.659S2 8.621 2 6.5m11 11c0-2.121 0-3.182.659-3.841S15.379 13 17.5 13s3.182 0 3.841.659S22 15.379 22 17.5s0 3.182-.659 3.841S19.621 22 17.5 22s-3.182 0-3.841-.659S13 19.621 13 17.5" opacity=".5"/><path fill="currentColor" d="M2 17.5c0-2.121 0-3.182.659-3.841S4.379 13 6.5 13s3.182 0 3.841.659S11 15.379 11 17.5s0 3.182-.659 3.841S8.621 22 6.5 22s-3.182 0-3.841-.659S2 19.621 2 17.5m11-11c0-2.121 0-3.182.659-3.841S15.379 2 17.5 2s3.182 0 3.841.659S22 4.379 22 6.5s0 3.182-.659 3.841S19.621 11 17.5 11s-3.182 0-3.841-.659S13 8.621 13 6.5"/>',
+  ),
 } as const;
 
 export type IconName = keyof typeof iconBodies;
@@ -1486,6 +1525,188 @@ export function FullscreenExitIcon(props: IconProps) {
       aria-hidden="true"
       {...props}
       dangerouslySetInnerHTML={{ __html: iconBodies.FullscreenExit.body }}
+    />
+  );
+}
+
+/** `solar:text-field-bold-duotone` */
+export function TextFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.TextFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.TextFieldType.body }}
+    />
+  );
+}
+
+/** `solar:code-bold-duotone` */
+export function CodeFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.CodeFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.CodeFieldType.body }}
+    />
+  );
+}
+
+/** `solar:text-bold-duotone` */
+export function RichTextFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.RichTextFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.RichTextFieldType.body }}
+    />
+  );
+}
+
+/** `solar:link-bold-duotone` */
+export function SlugFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.SlugFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.SlugFieldType.body }}
+    />
+  );
+}
+
+/** `solar:lock-keyhole-bold-duotone` */
+export function PasswordFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.PasswordFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.PasswordFieldType.body }}
+    />
+  );
+}
+
+/** `solar:eye-closed-bold-duotone` */
+export function SecretFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.SecretFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.SecretFieldType.body }}
+    />
+  );
+}
+
+/** `solar:hashtag-square-bold-duotone` */
+export function NumberFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.NumberFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.NumberFieldType.body }}
+    />
+  );
+}
+
+/** `solar:check-square-bold-duotone` */
+export function CheckFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.CheckFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.CheckFieldType.body }}
+    />
+  );
+}
+
+/** `solar:alt-arrow-down-bold-duotone` */
+export function SelectFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.SelectFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.SelectFieldType.body }}
+    />
+  );
+}
+
+/** `solar:calendar-bold-duotone` */
+export function DatePickerFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.DatePickerFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.DatePickerFieldType.body }}
+    />
+  );
+}
+
+/** `solar:gallery-bold-duotone` */
+export function ImageFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.ImageFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.ImageFieldType.body }}
+    />
+  );
+}
+
+/** `solar:link-round-bold-duotone` */
+export function RelationFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.RelationFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.RelationFieldType.body }}
+    />
+  );
+}
+
+/** `solar:widget-bold-duotone` */
+export function ComponentFieldTypeIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.ComponentFieldType.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.ComponentFieldType.body }}
     />
   );
 }

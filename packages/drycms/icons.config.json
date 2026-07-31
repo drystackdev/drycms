@@ -97,6 +97,20 @@
     "Caption": "lucide:captions",
     "Eraser": "solar:eraser-bold",
     "Fullscreen": "solar:full-screen-linear",
-    "FullscreenExit": "solar:quit-full-screen-linear"
+    "FullscreenExit": "solar:quit-full-screen-linear",
+
+    "TextFieldType": "solar:text-field-bold-duotone",
+    "CodeFieldType": "solar:code-bold-duotone",
+    "RichTextFieldType": "solar:text-bold-duotone",
+    "SlugFieldType": "solar:link-bold-duotone",
+    "PasswordFieldType": "solar:lock-keyhole-bold-duotone",
+    "SecretFieldType": "solar:eye-closed-bold-duotone",
+    "NumberFieldType": "solar:hashtag-square-bold-duotone",
+    "CheckFieldType": "solar:check-square-bold-duotone",
+    "SelectFieldType": "solar:alt-arrow-down-bold-duotone",
+    "DatePickerFieldType": "solar:calendar-bold-duotone",
+    "ImageFieldType": "solar:gallery-bold-duotone",
+    "RelationFieldType": "solar:link-round-bold-duotone",
+    "ComponentFieldType": "solar:widget-bold-duotone"
   }
 }

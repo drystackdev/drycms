@@ -36,13 +36,18 @@ export function withTrailingParagraph(doc: PMNode): PMNode {
  *
  * Also relocates the selection into the freshly appended paragraph - the
  * same place every one-off fixup it replaces used to put the cursor after
- * inserting a table/grid/component at the very end of the doc. Safe to do
- * unconditionally: this only ever fires right when the doc's last child
- * just became something other than a paragraph, which - thanks to
- * `withTrailingParagraph` closing the "loaded already in a bad state" gap -
- * only happens as the direct result of the transaction(s) just applied, so
- * relocating the cursor there is always relevant to what just happened, not
- * a surprise jump away from unrelated typing elsewhere.
+ * inserting a table/grid/component at the very end of the doc - but only
+ * when `newState.selection` is already sitting right at the doc's end
+ * (`head === newState.doc.content.size`, true for a `NodeSelection` wrapping
+ * the last node too, since its own `head` is the position just past it).
+ * That's the case every one-off fixup this plugin replaces actually left
+ * behind (`replaceSelectionWith`'s own default landing spot). A
+ * `children: true` component's `performInsert` (`dry-component-insert-
+ * button.tsx`) is the one exception - it explicitly places the selection
+ * *inside* the node's own seeded paragraph, not at the doc's end, so this
+ * append (inserting the trailing paragraph as a sibling *after* that node)
+ * must leave such a selection alone rather than stealing focus out of the
+ * node that was just inserted.
  *
  * Deliberately *not* gated on `transactions.some(tr => tr.docChanged)`: the
  * lastChild check itself is cheap enough to run on every transaction
@@ -56,8 +61,9 @@ export function trailingParagraph(): Plugin {
   return new Plugin({
     appendTransaction(_transactions, _oldState, newState) {
       if (!needsTrailingParagraph(newState.doc)) return null;
+      const atDocEnd = newState.selection.head === newState.doc.content.size;
       const tr = newState.tr.insert(newState.doc.content.size, schema.nodes.paragraph!.createAndFill()!);
-      return tr.setSelection(TextSelection.near(tr.doc.resolve(tr.doc.content.size)));
+      return atDocEnd ? tr.setSelection(TextSelection.near(tr.doc.resolve(tr.doc.content.size))) : tr;
     },
   });
 }

@@ -205,6 +205,13 @@ export class ImageNodeView implements NodeView {
     } else if (this.captionEl.isConnected) {
       this.captionEl.remove();
     }
+    // Switches `dom` to `display: table` (content-shadow-styles.ts's
+    // `.has-caption`) only once there's actually a caption to wrap - the
+    // same table/table-caption trick `html.ts`'s `imageChildHtml` exports,
+    // needed so a caption longer than the image wraps instead of stretching
+    // the wrapper wider than it (a plain `inline-block` wrapper sizes itself
+    // to the caption's unwrapped max-content width, not the image's).
+    this.dom.classList.toggle("has-caption", !!caption);
     this.renderAlign(this.node.attrs.align as ImageAlign | null);
   }
 

@@ -11,6 +11,7 @@ import DatePickerField from "../components/DatePickerField.js";
 import Demo from "../components/Demo.js";
 import FloatingPanel from "../components/FloatingPanel.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
+import { fieldTypeIcons } from "../components/field-type-icons.js";
 import FileManager from "../components/FileManager.js";
 import Icon from "../components/Icon.js";
 import ImageField from "../components/ImageField.js";
@@ -98,15 +99,22 @@ export default function Showcase({ tab }: Props) {
             {groups.map((group) => (
               <Fragment key={group.label}>
                 <span class="nav-label">{group.label}</span>
-                {group.items.map((item) => (
-                  <a
-                    key={item.id}
-                    href={`${path}/showcase/${item.id}`}
-                    aria-current={activeId === item.id ? "page" : undefined}
-                  >
-                    {item.label}
-                  </a>
-                ))}
+                {group.items.map((item) => {
+                  const ItemIcon =
+                    group.label === "Field inputs"
+                      ? fieldTypeIcons[item.id]
+                      : undefined;
+                  return (
+                    <a
+                      key={item.id}
+                      href={`${path}/showcase/${item.id}`}
+                      aria-current={activeId === item.id ? "page" : undefined}
+                    >
+                      {ItemIcon && <ItemIcon />}
+                      {item.label}
+                    </a>
+                  );
+                })}
               </Fragment>
             ))}
           </nav>

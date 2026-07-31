@@ -2920,12 +2920,20 @@
       }
 
       & a {
-        display: block;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
         padding: 0.3rem 0.625rem;
         border-radius: var(--dry-radius-sm);
         font-size: var(--dry-text-sm);
         font-weight: 500;
         color: var(--dry-muted-foreground);
+
+        & > svg {
+          width: 1.125rem;
+          height: 1.125rem;
+          flex: none;
+        }
 
         &:hover {
           background-color: var(--dry-accent);
@@ -4066,12 +4074,15 @@
       flex-direction: column;
       width: min(64rem, calc(100vw - 4rem));
       max-width: min(64rem, calc(100vw - 4rem));
-      height: min(40rem, calc(100vh - 4rem));
-      max-height: min(40rem, calc(100vh - 4rem));
+      height: min(50rem, calc(100vh - 4rem));
+      max-height: min(45rem, calc(100vh - 4rem));
 
       & header,
       & footer {
         flex: none;
+      }
+      & header {
+        margin-bottom: .5rem;
       }
     }
 
@@ -4079,6 +4090,7 @@
       flex: 1 1 auto;
       min-height: 0;
       padding: 1.5rem;
+      padding-top: 0;
       border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-lg);
       background-color: var(--dry-background);
@@ -4547,6 +4559,8 @@
     min-height: 2.25rem;
     padding: 0.5rem 0.75rem;
     text-align: left;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
   }
 
   .dry-component-picker-row.is-selected .dry-component-picker-row-select {

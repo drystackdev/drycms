@@ -117,7 +117,7 @@ h6 {
 }
 
 strong, b {
-  font-weight: 600;
+  font-weight: 900;
 }
 
 blockquote {
@@ -177,6 +177,35 @@ li {
   vertical-align: baseline;
 }
 
+/* Once there's a caption (\`image-view.ts\`'s \`render()\` toggles this class
+ * alongside appending/removing \`.dry-tx-image-caption\`), switch to the same
+ * \`display: table\` / \`table-caption\` trick \`html.ts\`'s \`imageChildHtml\`
+ * already exports: an \`inline-block\` wrapper sizes itself to the caption's
+ * unwrapped max-content width (its shrink-to-fit preferred width), so a
+ * caption longer than the image stretches the wrapper wider than the image
+ * instead of wrapping. \`display: table-caption\` is the one display value
+ * whose box is forced to exactly the table's own width, so the caption
+ * wraps at the image's edge instead. \`caption-side: bottom\` is required
+ * alongside it - a table-caption box renders at its specified side
+ * regardless of DOM order, and the default is \`top\`.
+ *
+ * \`vertical-align: top\` overrides the plain wrapper's own \`baseline\`
+ * above - confirmed empirically (Playwright) this is NOT the same case as
+ * the uncaptioned one: an \`inline-table\`'s baseline is defined as its
+ * first row's baseline, and \`table-caption\` boxes are excluded from row
+ * baseline calculation entirely (CSS Tables §"Table height algorithm"), so
+ * \`baseline\` here would align surrounding text to the *image's* baseline
+ * alone - as if the caption below it didn't exist. Surrounding text ends
+ * up sitting beside the image with the caption's whole height showing as
+ * dead space below that text instead of the two reading as one block.
+ * \`top\` aligns surrounding text to the *whole* figure's (image + caption)
+ * top edge instead, so text starts flush with the image regardless of how
+ * tall the caption underneath it is. */
+.dry-tx-image-wrapper.has-caption {
+  display: inline-table;
+  vertical-align: top;
+}
+
 /* Wraps just the \`<img>\` (+ resize handles) so their \`top\`/\`left\`
  * percentages (see image-view.ts) anchor to a box that hugs the image
  * exactly, regardless of whether \`.dry-tx-image-caption\` below adds
@@ -218,7 +247,8 @@ li {
  * \`contentEditable="false"\` (set in image-view.ts) - it isn't itself
  * editable text, only the edit dialog's Caption field is. */
 .dry-tx-image-caption {
-  display: block;
+  display: table-caption;
+  caption-side: bottom;
   margin-block-start: 0.375rem;
   font-size: var(--dry-text-xs);
   font-style: italic;
@@ -246,10 +276,14 @@ table {
 /* A table's own \`<caption>\` (schema.ts's \`table.toDOM\`, filled in via
  * table-menu.tsx's caption popover) - same subtle, muted treatment as
  * \`.dry-tx-image-caption\` above, this field's other caption-shaped element.
+ * \`caption-side: bottom\` matches the published styling (base.css's
+ * \`:where(caption)\`) - without it the UA default (\`top\`) would render the
+ * caption above \`thead\`/\`tbody\` while editing but below once published.
  * \`contenteditable="false"\` (set in schema.ts) - only the caption popover's
  * own \`TextField\` is directly editable. */
 table > caption {
-  margin-block-end: 0.375rem;
+  caption-side: bottom;
+  margin-block-start: 0.375rem;
   font-size: var(--dry-text-xs);
   font-style: italic;
   color: var(--dry-muted-foreground);

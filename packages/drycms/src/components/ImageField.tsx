@@ -90,6 +90,7 @@ export default function ImageField({
    * lists share one combined count/footer and both feed the same `onChange`
    * on confirm, so picks made in either tab survive switching to the other. */
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<"file" | "link">("file");
   const [entriesById, setEntriesById] = useState<Record<string, FileEntry>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
   // Deps include `open`: the body only mounts once the dialog opens, so the
@@ -103,15 +104,33 @@ export default function ImageField({
     disabled: !isMultiple || disabled,
   });
 
-  // Resolves `selectedIds` to the `FileEntry`s behind them, for thumbnails +
-  // names - re-lists on every change since a rename/move elsewhere in
-  // `source` can leave a stale id. Link ids (Link-tab entries) aren't
-  // `source` paths, so they're skipped here and rendered straight from the
-  // id itself below. Only the first *file* id's folder is used as the
-  // fallback scope when `source` can't `listAll` - multi-folder selections
-  // aren't expected from sources without it.
+  /** The file pick(s) currently staged in `pending`, while the dialog's still
+   * open and pending confirm - the Link tab mirrors each as its own read-only
+   * row (see `pendingFileUrls` below) so picking a file in the File tab shows
+   * its equivalent URL on the Link side, the two tabs staying in sync instead
+   * of the Link tab just going blank (single mode) or showing nothing for a
+   * multi pick the way leaving this to `pendingLinks` alone would otherwise
+   * look like. */
+  const pendingFileIds = isMultiple
+    ? Array.isArray(pending)
+      ? pending
+      : []
+    : typeof pending === "string" && pending
+      ? [pending]
+      : [];
+
+  // Resolves `selectedIds` (+ `pendingFileIds` above) to the `FileEntry`s
+  // behind them, for thumbnails + names - re-lists on every change since a
+  // rename/move elsewhere in `source` can leave a stale id. Link ids
+  // (Link-tab entries) aren't `source` paths, so they're skipped here and
+  // rendered straight from the id itself below. Only the first *file* id's
+  // folder is used as the fallback scope when `source` can't `listAll` -
+  // multi-folder selections aren't expected from sources without it.
   useEffect(() => {
     const fileIds = selectedIds.filter((id) => !isLinkValue(id));
+    for (const pendingId of pendingFileIds) {
+      if (!fileIds.includes(pendingId)) fileIds.push(pendingId);
+    }
     if (fileIds.length === 0) {
       setEntriesById({});
       return;
@@ -132,7 +151,9 @@ export default function ImageField({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds.join(","), source]);
+  }, [selectedIds.join(","), pendingFileIds.join(","), source]);
+
+  const pendingFileUrls = pendingFileIds.map((fid) => entriesById[fid]?.previewUrl ?? fid);
 
   const firstSelectedId = selectedIds[0];
   const entry = !isMultiple && firstSelectedId ? (entriesById[firstSelectedId] ?? null) : null;
@@ -146,6 +167,7 @@ export default function ImageField({
     const linkIds = selectedIds.filter(isLinkValue);
     setPending(isMultiple ? fileIds : (fileIds[0] ?? ""));
     setPendingLinks(linkIds);
+    setActiveTab(fileIds.length === 0 && linkIds.length > 0 ? "link" : "file");
     setOpen(true);
   };
 
@@ -157,6 +179,20 @@ export default function ImageField({
     if (!isMultiple && (Array.isArray(next) ? next.length > 0 : !!next)) {
       setPendingLinks([]);
     }
+  };
+
+  /** The Link tab's own delete button on a synced file row (see
+   * `pendingFileUrls` above) - deselects that file back on the File tab
+   * side, the two staying in sync in both directions rather than this row
+   * being pure readout. */
+  const removePendingFile = (fileId: string) => {
+    setPending((current) =>
+      isMultiple
+        ? (Array.isArray(current) ? current.filter((id) => id !== fileId) : current)
+        : current === fileId
+          ? ""
+          : current,
+    );
   };
 
   const updateLink = (index: number, url: string) => {
@@ -303,21 +339,23 @@ export default function ImageField({
                 <button
                   type="button"
                   role="tab"
-                  aria-selected="true"
+                  aria-selected={activeTab === "file"}
                   aria-controls={`${fieldId}-tab-file`}
+                  onClick={() => setActiveTab("file")}
                 >
                   File
                 </button>
                 <button
                   type="button"
                   role="tab"
-                  aria-selected="false"
+                  aria-selected={activeTab === "link"}
                   aria-controls={`${fieldId}-tab-link`}
+                  onClick={() => setActiveTab("link")}
                 >
                   Link
                 </button>
               </div>
-              <div role="tabpanel" id={`${fieldId}-tab-file`}>
+              <div role="tabpanel" id={`${fieldId}-tab-file`} hidden={activeTab !== "file"}>
                 <FileManager
                   source={source}
                   value={pending}
@@ -330,9 +368,24 @@ export default function ImageField({
                   syncUrl={false}
                 />
               </div>
-              <div role="tabpanel" id={`${fieldId}-tab-link`} hidden>
+              <div role="tabpanel" id={`${fieldId}-tab-link`} hidden={activeTab !== "link"}>
                 <ul class="image-field-link-list">
-                  {pendingLinks.length === 0 && <li class="hint">No links yet.</li>}
+                  {pendingFileIds.map((fileId, index) => (
+                    <li key={`file-${index}`} class="row">
+                      <input type="url" readOnly value={pendingFileUrls[index]} />
+                      <button
+                        type="button"
+                        class="ghost icon sm"
+                        aria-label="Remove link"
+                        onClick={() => removePendingFile(fileId)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </li>
+                  ))}
+                  {pendingFileUrls.length === 0 && pendingLinks.length === 0 && (
+                    <li class="hint">No links yet.</li>
+                  )}
                   {pendingLinks.map((url, index) => (
                     <li key={index} class="row">
                       <input
