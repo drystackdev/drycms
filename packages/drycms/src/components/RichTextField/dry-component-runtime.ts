@@ -124,9 +124,33 @@ export function defineDryComponent(name: string, load: DryComponentLoader, shado
       #ErrorBoundary: ComponentType<{ children: ComponentChildren }> | null = null;
       #root: Element | ShadowRoot = this;
       #styleInjected = false;
+      #selectionStyleInjected = false;
 
       connectedCallback() {
-        if (shadow) this.#root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+        if (shadow) {
+          this.#root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+          // A NodeSelection (or an ordinary text drag spanning across this
+          // node) is realized as a real DOM Range around the light-DOM
+          // element, and Range/Selection extends into open shadow trees -
+          // without this, the browser paints its own default ::selection
+          // highlight over this component's rendered internals, since
+          // content-shadow-styles.ts's editor-wide override doesn't reach
+          // past this nested shadow boundary. Same "transparent, let
+          // .dry-component-is-selected's outline be the only indicator"
+          // reasoning as that file's `.dry-tx-image::selection` - just
+          // re-declared here since ::selection rules don't inherit into a
+          // shadow root the way most other properties do. Injected
+          // unconditionally (not gated on `mod.default.style` like the
+          // author style below) so it's in place before anything is ever
+          // rendered, and guarded by its own flag since `connectedCallback`
+          // can re-run if this element is moved in the DOM.
+          if (!this.#selectionStyleInjected) {
+            this.#selectionStyleInjected = true;
+            const selectionStyleEl = document.createElement("style");
+            selectionStyleEl.textContent = "*::selection { background-color: transparent; }";
+            this.#root.appendChild(selectionStyleEl);
+          }
+        }
         Promise.all([load(), resolvePreact(basePath)])
           .then(([mod, preact]) => {
             // `mod.default` is the whole `DryEditerComponent(...)` result,

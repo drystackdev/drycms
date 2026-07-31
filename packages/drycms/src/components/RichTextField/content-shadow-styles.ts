@@ -29,9 +29,8 @@
  * to already be in a form every target browser's CSS engine accepts
  * unprocessed.
  */
-export const richtextContentShadowStyles =
-  //css
-  `
+
+export const richtextContentShadowStyles = /*css*/`
 :host {
   display: block;
 }
@@ -203,7 +202,7 @@ li {
  * tall the caption underneath it is. */
 .dry-tx-image-wrapper.has-caption {
   display: inline-table;
-  vertical-align: top;
+  vertical-align: bottom;
 }
 
 /* Wraps just the \`<img>\` (+ resize handles) so their \`top\`/\`left\`
@@ -580,6 +579,21 @@ th {
   &>*:first-child{
     overflow: hidden;
   }
+}
+
+/* Same reasoning as \`.dry-tx-image::selection\` above: a NodeSelection (or an
+ * ordinary text drag spanning across this inline node) is realized as a real
+ * DOM Range around it, so the browser paints its native selection style over
+ * the component's own rendered internals too - transparent here leaves
+ * \`.dry-component-is-selected\` below (an outline + shadow, no fill) as the
+ * only visible "selected" indicator. Only reaches a \`shadow: false\`
+ * component's own (light-DOM) internals - a \`shadow: true\` one (the
+ * default, see \`register-component.ts\`) needs the same override
+ * re-declared inside its own shadow root instead, since \`::selection\`
+ * doesn't inherit across a shadow boundary - see \`dry-component-runtime.ts\`. */
+.dry-component-box::selection,
+.dry-component-box *::selection {
+  background-color: transparent;
 }
 
 .dry-component-is-selected {

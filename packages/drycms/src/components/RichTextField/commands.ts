@@ -1,6 +1,6 @@
 import type { MarkType, Node as PMNode, ResolvedPos } from "prosemirror-model";
 import { NodeSelection } from "prosemirror-state";
-import type { Command, EditorState } from "prosemirror-state";
+import type { Command, EditorState, Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign, type ImageObjectFit } from "./schema.js";
 import type { BlockType, TextAlign } from "./types.js";
@@ -334,6 +334,85 @@ export function setImageAlign(pos: number, align: ImageAlign | null): Command {
   };
 }
 
+/** Pulls the image at `pos` out into a lone `paragraph` of its own, mirroring
+ * `html.ts`'s own `<figure>` (block-level, own line) vs. bare `<img>`
+ * (inline, shares its paragraph) split - called by `setImageAttrs` below the
+ * moment a caption goes from empty to non-empty, since a captioned image is
+ * HTML-standard only as a `<figure>` sibling, never inline text. No-ops (past
+ * re-anchoring the selection) if the image already has its paragraph to
+ * itself. Splits the surrounding textblock around the image when it has
+ * running text on *both* sides, so neither half of that text is lost -
+ * `paragraph, before-text, paragraph(image), after-text` (or just the one
+ * split half if the image was flush against an edge). Position tracking goes
+ * through `tr.mapping` throughout since inserts/splits shift everything
+ * after them. */
+function extractImageBlock(tr: Transaction, pos: number): Transaction {
+  const node = tr.doc.nodeAt(pos);
+  if (!node) return tr;
+  const $pos = tr.doc.resolve(pos);
+  if ($pos.parent.childCount === 1) return tr.setSelection(NodeSelection.create(tr.doc, pos));
+
+  const blockStart = $pos.before();
+  const blockEnd = $pos.after();
+  const imgEnd = pos + node.nodeSize;
+  const hadContentBefore = pos > $pos.start();
+  const hadContentAfter = imgEnd < $pos.end();
+  const wrapper = schema.nodes.paragraph!.create(null, node.type.create(node.attrs, null, node.marks));
+
+  tr = tr.delete(pos, imgEnd);
+  const boundary = tr.mapping.map(pos);
+
+  let insertPos: number;
+  if (!hadContentBefore) {
+    insertPos = tr.mapping.map(blockStart);
+  } else if (!hadContentAfter) {
+    insertPos = tr.mapping.map(blockEnd);
+  } else {
+    // `boundary` is already a post-delete position, not one from `tr`'s
+    // starting doc - mapping it through the split step alone (not the
+    // cumulative `tr.mapping`, which starts from before the delete) avoids
+    // applying the delete's own shift to it a second time. `assoc: -1` lands
+    // on the end of the first split-off block's own content (right before
+    // its closing tag) rather than the start of the second's - `+ 1` then
+    // steps past that closing tag onto the sibling gap between the two
+    // blocks, which is where the image's new paragraph belongs.
+    const stepsBeforeSplit = tr.mapping.maps.length;
+    tr = tr.split(boundary);
+    insertPos = tr.mapping.slice(stepsBeforeSplit).map(boundary, -1) + 1;
+  }
+  tr = tr.insert(insertPos, wrapper);
+  return tr.setSelection(NodeSelection.create(tr.doc, insertPos + 1));
+}
+
+/** The inverse of `extractImageBlock` above - folds the image at `pos` back
+ * into whichever adjacent textblock is closest ("nearest possible" per this
+ * feature's own spec), called the moment a caption goes from non-empty back
+ * to empty. Only fires when the image is still alone in its own block (an
+ * already-shared paragraph has nothing to collapse); prefers the previous
+ * sibling so the image reads as trailing content, falling back to the next
+ * sibling only when there's no textblock before it; leaves the image in its
+ * solo paragraph untouched if neither neighbor can take inline content (e.g.
+ * a table or grid) rather than forcing an invalid merge. */
+function collapseImageBlock(tr: Transaction, pos: number): Transaction {
+  const node = tr.doc.nodeAt(pos);
+  if (!node) return tr;
+  const $pos = tr.doc.resolve(pos);
+  if ($pos.parent.childCount !== 1) return tr.setSelection(NodeSelection.create(tr.doc, pos));
+
+  const blockStart = $pos.before();
+  const blockEnd = $pos.after();
+  const before = tr.doc.resolve(blockStart).nodeBefore;
+  const after = tr.doc.resolve(blockEnd).nodeAfter;
+  const target = before?.isTextblock ? "before" : after?.isTextblock ? "after" : null;
+  if (!target) return tr.setSelection(NodeSelection.create(tr.doc, pos));
+
+  const bareImage = node.type.create(node.attrs, null, node.marks);
+  tr = tr.delete(blockStart, blockEnd);
+  const insertPos = target === "before" ? tr.mapping.map(blockStart) - 1 : tr.mapping.map(blockStart) + 1;
+  tr = tr.insert(insertPos, bareImage);
+  return tr.setSelection(NodeSelection.create(tr.doc, insertPos));
+}
+
 /** Patches any combination of the image at `pos`'s own editable attrs in one
  * transaction - shared by `image-menu.tsx`'s standalone lock-aspect-ratio
  * toggle (just `lockAspectRatio`, plus a recomputed `height` when it turns
@@ -344,7 +423,11 @@ export function setImageAlign(pos: number, align: ImageAlign | null): Command {
  * leaf/atom node (this schema's `image`) replaces the node outright, which
  * drops the `NodeSelection` the floating menu itself depends on - so
  * toggling the lock or saving the edit dialog would immediately close the
- * very menu the button lives on. */
+ * very menu the button lives on.
+ *
+ * A `caption` key in `patch` also runs `extractImageBlock`/
+ * `collapseImageBlock` on an empty<->non-empty transition, in the same
+ * transaction/undo step as the attr patch itself - see those two for why. */
 export function setImageAttrs(
   pos: number,
   patch: Partial<{
@@ -362,7 +445,13 @@ export function setImageAttrs(
     if (dispatch) {
       let tr = state.tr;
       for (const [key, value] of Object.entries(patch)) tr = tr.setNodeAttribute(pos, key, value);
-      dispatch(tr);
+      if ("caption" in patch) {
+        const hadCaption = !!(node.attrs.caption as string);
+        const hasCaption = !!patch.caption;
+        if (!hadCaption && hasCaption) tr = extractImageBlock(tr, pos);
+        else if (hadCaption && !hasCaption) tr = collapseImageBlock(tr, pos);
+      }
+      dispatch(tr.scrollIntoView());
     }
     return true;
   };
