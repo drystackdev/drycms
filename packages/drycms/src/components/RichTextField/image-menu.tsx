@@ -82,7 +82,18 @@ export default function ImageMenu({ viewRef, state, disabled = false, source, ic
 
   const selected = state.selectedImage;
   const view = viewRef.current;
-  const anchor = selected && view ? (view.nodeDOM(selected.pos) as HTMLElement | null) : null;
+  // `view.nodeDOM` is the node view's own root (`.dry-tx-image-wrapper`,
+  // `image-view.ts`'s `dom`) - fine as the base for `imgEl()`'s own
+  // `querySelector`, but wrong as `FloatingPanel`'s anchor once the image is
+  // center-aligned: centering stretches that wrapper to the paragraph's full
+  // width (`min-width: 100%`) and text-aligns the actual `<img>` inside it,
+  // so the wrapper's own bounding rect no longer overlaps the image at all -
+  // the menu would float off at the paragraph's left edge instead of over
+  // the now-centered image. `.dry-tx-image-box` (`imageBox` in that same
+  // file) is the tightly-fit inner box the resize handles already anchor to
+  // for the same reason, so the floating menu follows it instead.
+  const wrapperEl = selected && view ? (view.nodeDOM(selected.pos) as HTMLElement | null) : null;
+  const anchor = (wrapperEl?.querySelector(".dry-tx-image-box") as HTMLElement | null) ?? wrapperEl;
 
   const run = (command: Command) => {
     if (!view) return;

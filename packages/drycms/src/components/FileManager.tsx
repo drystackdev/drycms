@@ -1751,12 +1751,26 @@ export default function FileManager({
   /** Selection is frozen while there's something waiting to be pasted - browsing
    * to the destination shouldn't also let you pile more onto the clipboard. */
   const selectionLocked = clipboard !== null;
+  /** `isAccepted` itself always passes folders through (they're containers,
+   * not a file type to accept/reject - a folder must stay dimmed-free and
+   * navigable even in a `accept`-restricted picker). But a *restricted*
+   * picker (`accept` set - always an `ImageField`/`image-menu.tsx`/
+   * `image-insert-button.tsx` single-type dialog, never the plain `/dry/media`
+   * or Showcase browser, neither of which ever passes `accept`) has nothing
+   * sensible to do with a folder as "the" selected value - checking one there
+   * would let a folder id end up picked as if it were an image. Selection
+   * (checkbox + drag) is disabled for folders in that case; opening one by
+   * clicking the row is untouched (`onOpen` below doesn't gate on this). */
   const isDisabled = (entry: FileEntry) =>
-    selectionLocked || !isAccepted(entry, accept);
+    selectionLocked ||
+    !isAccepted(entry, accept) ||
+    (entry.kind === "folder" && !!accept && accept.length > 0);
   /** Distinct from `isDisabled` above: only the "wrong file type" reason gets
    * dimmed, not a transient clipboard lock - that already reads as disabled
    * via the checkbox itself, and dimming every row for it would make the
-   * clipboard flow look like the whole browser went inert. */
+   * clipboard flow look like the whole browser went inert. Folders are never
+   * dimmed either way (see `isDisabled`'s own comment on why they still need
+   * their checkbox disabled in a restricted picker without looking dimmed). */
   const isNotAccepted = (entry: FileEntry) => !isAccepted(entry, accept);
   const selectableVisible = visible.filter((entry) => !isDisabled(entry));
   const allSelected =

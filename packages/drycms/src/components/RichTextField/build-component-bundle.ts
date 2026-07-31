@@ -90,6 +90,17 @@ export async function buildSharedPreactBundle(): Promise<string> {
             formats: ["es"],
             fileName: () => "preact.js",
           },
+          rollupOptions: {
+            output: {
+              // Vite's own "oxc" lib+es default leaves `codegen` off (keeps
+              // newlines/indentation) and `comments` on (keeps //#region
+              // markers) so consumers can still read a lib build's source -
+              // irrelevant here since nothing but the browser ever loads
+              // these, so both are overridden to shrink the output further.
+              comments: false,
+              minify: { compress: true, mangle: true, codegen: true },
+            },
+          },
         },
       }),
     );
@@ -149,6 +160,9 @@ export async function buildComponentBundle(entryAbsPath: string): Promise<string
           external: PREACT_EXTERNALS,
           output: {
             paths: Object.fromEntries(PREACT_EXTERNALS.map((specifier) => [specifier, "./preact.js"])),
+            // See `buildSharedPreactBundle`'s matching comment on this.
+            comments: false,
+            minify: { compress: true, mangle: true, codegen: true },
           },
         },
       },

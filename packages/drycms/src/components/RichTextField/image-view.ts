@@ -244,6 +244,19 @@ export class ImageNodeView implements NodeView {
     this.dom.style.marginInlineStart = align === "center" ? "auto" : align === "right" ? "1em" : "";
     this.dom.style.marginInlineEnd = align === "center" ? "auto" : align === "left" ? "1em" : "";
     this.dom.style.marginBlock = align === "left" || align === "right" ? "0.5em" : "";
+    // `image-menu.tsx`'s floating per-image toolbar anchors to `imageBox`,
+    // not `dom` - it needs the actual visible image's box, which the
+    // wrapper's own bounding rect stops matching the moment `center` above
+    // stretches it to the paragraph's full width. But every style write
+    // above lands on `dom`, an *ancestor* of `imageBox` - `imageBox`'s own
+    // size never changes (align only ever repositions it, via reflow from
+    // that ancestor), so neither the toolbar's `ResizeObserver` nor its
+    // `style`-attribute `MutationObserver` (both watching `imageBox`
+    // itself, per `useTrackRect`) ever fire, and the toolbar drifts stale.
+    // This custom property is a real `style` mutation on `imageBox` doing
+    // nothing visually - just enough for that observer to notice the align
+    // change and re-measure.
+    this.imageBox.style.setProperty("--dry-image-align-ping", align ?? "");
   }
 
   update(node: PMNode): boolean {

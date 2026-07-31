@@ -69,6 +69,9 @@ export interface ToolbarCustomItem {
   /** Needs `ToolbarCustomProps.source` to do anything (`ImageInsertButton`) -
    * hidden by `toolbar.tsx` when `RichTextField` gets no `source` prop. */
   requiresSource?: boolean;
+  /** Same meaning as `ToolbarButton.isDisabled` - `toolbar.tsx` ORs this into
+   * the `disabled` prop it already passes every custom item. */
+  isDisabled?: (state: ToolbarState) => boolean;
 }
 
 export type ToolbarItem = ToolbarButton | ToolbarCustomItem;
@@ -135,10 +138,16 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   // Block group: every item here acts on a whole top-level element
   // (paragraph/heading/quote node, or its alignment) rather than a run of
   // text - all flagged `blockOnly` so `inline` mode hides them together.
+  // Also all disabled while an image is selected: `state.doc.nodesBetween`
+  // still visits the image's *enclosing* paragraph even for a NodeSelection
+  // that spans only the image (it's `inline: true`, so it can only ever live
+  // inside a textblock) - without this, "Turn into"/"Align text"/"List"
+  // would silently retarget that paragraph (turn it into a heading, wrap it
+  // in a list...) while the toolbar looks like it's acting on the image.
   [
-    { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true },
-    { type: "custom", key: "align", Component: AlignMenu, blockOnly: true },
-    { type: "custom", key: "list", Component: ListMenu, blockOnly: true },
+    { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true, isDisabled: (state) => !!state.selectedImage },
+    { type: "custom", key: "align", Component: AlignMenu, blockOnly: true, isDisabled: (state) => !!state.selectedImage },
+    { type: "custom", key: "list", Component: ListMenu, blockOnly: true, isDisabled: (state) => !!state.selectedImage },
   ],
   // Feature group: both insert a whole standalone block (an image, or a dry
   // component) rather than formatting text - `insert-image` also carries

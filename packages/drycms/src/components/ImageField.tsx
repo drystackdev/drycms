@@ -9,11 +9,18 @@ import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import { useSortableList } from "../lib/dnd/useSortableList.js";
 
 /** A picked id is either a `source` path (resolved through `FileManager`) or
- * a raw URL typed into the picker's "Link" tab - the two live side by side in
- * the same `value`/`pending` array and are told apart by shape alone, no
- * separate flag. */
+ * a URL - either typed into the picker's "Link" tab, or a caller that has no
+ * `source` of its own to resolve an id back through later (a richtext
+ * component's `props`, see `dry-component-props-form.tsx`) pre-resolving a
+ * pick to `FileEntry.previewUrl` before it ever reaches this field's own
+ * `value` - the two live side by side in the same `value`/`pending` array
+ * and are told apart by shape alone, no separate flag. A leading `/` counts
+ * as a URL alongside `https?://` since a real `source` id (see
+ * `FileManagerSource`'s own doc comment) is always a bare relative path,
+ * never rooted - only a resolved `previewUrl` (root-relative, e.g. `/dry/api/
+ * storage/...`) or an `https://` link ever starts with one. */
 function isLinkValue(id: string): boolean {
-  return /^https?:\/\//i.test(id);
+  return /^(https?:\/\/|\/)/i.test(id);
 }
 
 export interface ImageFieldMultipleConfig {

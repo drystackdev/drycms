@@ -1,7 +1,8 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { path } from "virtual:drycms/config";
 import { components as componentModules } from "virtual:drycms/richtext-components";
 import CheckField from "../components/CheckField.js";
+import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import ComponentPreview from "../components/RichTextField/ComponentPreview.js";
 import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
 import DryComponentPropsForm from "../components/RichTextField/dry-component-props-form.js";
@@ -43,6 +44,7 @@ async function fetchRecords(): Promise<DryComponentRecord[]> {
  */
 export default function RichtextComponents() {
   useDocumentTitle("Custom components");
+  const source = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const [discovered, setDiscovered] = useState<Discovered[] | null>(null);
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -181,12 +183,14 @@ export default function RichtextComponents() {
                 childrenHtml={item.def.childrenDefaultHtml}
               />
               <div class="dry-component-admin-card-body">
-                <strong>{item.def.label}</strong>
+                <h4>{item.def.label}</h4>
                 <span class="dry-component-admin-card-meta">
                   <small class="badge outline">{item.def.version}</small>
                   <small class="badge outline">{item.def.auth || <em>None</em>}</small>
                 </span>
-                <p class="dry-component-admin-card-description">{item.def.description}</p>
+                <p class="dry-component-admin-card-description" style={{marginBlock: '0.5rem'}}>
+                  <em>{item.def.description}</em>
+                </p>
                 <span class="dry-component-admin-card-meta">
                   <small class="badge secondary">{`<dry-${item.def.name}>`}</small>
                   <small class="badge outline">{item.def.type}</small>
@@ -248,6 +252,7 @@ export default function RichtextComponents() {
                 schema={configuring.def.schema as Record<string, PlainFieldDef>}
                 value={propsDraft}
                 onChange={setPropsDraft}
+                source={source}
               />
             </div>
             <footer>

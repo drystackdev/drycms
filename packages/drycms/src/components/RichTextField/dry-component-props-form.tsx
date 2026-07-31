@@ -1,5 +1,8 @@
 import { useState } from "preact/hooks";
 import CheckField from "../CheckField.js";
+import type { FileManagerSource } from "../file-manager-types.js";
+import { resolveFileUrls } from "../file-manager-utils.js";
+import ImageField from "../ImageField.js";
 import { DragHandleIcon, PlusIcon, TrashIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import NumberField from "../NumberField.js";
@@ -12,6 +15,12 @@ export interface DryComponentPropsFormProps {
   schema: Record<string, PlainFieldDef>;
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  /** Where an `image`/`images` field's picker dialog reads its files from -
+   * same optionality as `ImageField`'s own `source` prop and `RichTextField`'s
+   * (`ToolbarCustomProps.source`, threaded down through `DryComponentInsertButton`/
+   * `DryComponentMenu`). Absent, an `image` field falls back to a plain URL
+   * `TextField` instead of a real picker. */
+  source?: FileManagerSource;
 }
 
 function labelize(key: string): string {
@@ -126,6 +135,7 @@ interface DryComponentPropsArrayFieldProps {
   label: string;
   field: PlainFieldDef;
   items: unknown[];
+  source?: FileManagerSource;
   onChange: (next: unknown[]) => void;
 }
 
@@ -135,11 +145,66 @@ interface DryComponentPropsArrayFieldProps {
  * directly: min/maxCount gating here has no equivalent there). A row shows
  * only `summarizeItem`'s preview; the field's own input(s) only exist inside
  * the "md"-sized dialog, opened on click.
+ *
+ * `p.images()`'s array-of-`image` shape is a special case: with a `source`
+ * available, it skips this whole row-list-plus-per-item-dialog UI in favor
+ * of `ImageField`'s own multi-select picker directly (same as `ScalarField.tsx`'s
+ * `image`+`multiple` content-type field) - a real "browse the media library,
+ * check several, Select" dialog instead of adding one item at a time through
+ * a bare URL `TextField`.
  */
 function DryComponentPropsArrayField({
   label,
   field,
   items,
+  source,
+  onChange,
+}: DryComponentPropsArrayFieldProps) {
+  if (field.inner!.kind === "image" && source) {
+    return (
+      <ImageField
+        label={label}
+        description={field.description}
+        value={items.filter((item): item is string => typeof item === "string")}
+        onChange={(next) => {
+          const picked = Array.isArray(next) ? next : [next];
+          // `ImageField` reports a picked file as its own `source` id, not a
+          // usable URL - unlike a content-type "image" column (resolved at
+          // display time by whatever renders the entry), a component's
+          // `props` gets persisted as self-contained JSON with no `source`
+          // around later to resolve it back, so it's resolved to the real
+          // URL (`FileEntry.previewUrl`) right here instead, same as
+          // `image-insert-button.tsx` does for a plain inline image.
+          resolveFileUrls(source, picked).then(onChange);
+        }}
+        source={source}
+        multiple={{ min: field.minCount, max: field.maxCount }}
+      />
+    );
+  }
+  return (
+    <DryComponentPropsGenericArrayField
+      label={label}
+      field={field}
+      items={items}
+      source={source}
+      onChange={onChange}
+    />
+  );
+}
+
+/** The row-list + add/edit dialog for every array shape besides the
+ * `image`-picker special case `DryComponentPropsArrayField` (above) branches
+ * off before this ever mounts - split out so that branch's own early
+ * `return` doesn't skip past this component's hooks (rules-of-hooks: a
+ * conditional `return` ahead of `useState` would make the hook calls below
+ * depend on `source`/`field.inner.kind`, neither of which is safe to treat
+ * as always-stable across a re-render). */
+function DryComponentPropsGenericArrayField({
+  label,
+  field,
+  items,
+  source,
   onChange,
 }: DryComponentPropsArrayFieldProps) {
   const inner = field.inner!;
@@ -269,6 +334,7 @@ function DryComponentPropsArrayField({
                 schema={{ item: inner }}
                 value={{ item: draft }}
                 onChange={(next) => setDraft(next.item)}
+                source={source}
               />
             </div>
             <footer>
@@ -305,6 +371,7 @@ export default function DryComponentPropsForm({
   schema,
   value,
   onChange,
+  source,
 }: DryComponentPropsFormProps) {
   const set = (key: string, next: unknown) =>
     onChange({ ...value, [key]: next });
@@ -317,6 +384,35 @@ export default function DryComponentPropsForm({
         const missing =
           field.req &&
           (current === undefined || current === null || current === "");
+
+        // A single `image` field with a `source` available gets the same
+        // real picker `p.images()`'s array case does (`DryComponentPropsArrayField`
+        // above) - without one (no `RichTextField.source` configured), it
+        // falls back to the plain URL `TextField` below, same as before this
+        // existed.
+        if (field.kind === "image" && source) {
+          return (
+            <ImageField
+              key={key}
+              label={label}
+              description={field.description}
+              required={field.req}
+              error={missing}
+              helperText={missing ? `${label} is required` : undefined}
+              value={typeof current === "string" ? current : ""}
+              onChange={(next) => {
+                // Resolved to a real URL before it's persisted - see the
+                // matching comment on the `images`/array case's own
+                // `onChange` above for why.
+                resolveFileUrls(source, next ? [next as string] : []).then(
+                  (resolved) => set(key, resolved[0] ?? ""),
+                );
+              }}
+              source={source}
+              multiple={false}
+            />
+          );
+        }
 
         if (field.kind === "string" || field.kind === "image") {
           const text = typeof current === "string" ? current : "";
@@ -404,6 +500,7 @@ export default function DryComponentPropsForm({
                     : {}
                 }
                 onChange={(next) => set(key, next)}
+                source={source}
               />
             </fieldset>
           );
@@ -417,6 +514,7 @@ export default function DryComponentPropsForm({
               label={label}
               field={field}
               items={items}
+              source={source}
               onChange={(next) => set(key, next)}
             />
           );

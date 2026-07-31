@@ -1,4 +1,4 @@
-import type { FileEntry } from './file-manager-types.js';
+import type { FileEntry, FileManagerSource } from './file-manager-types.js';
 import { fileThumbnails, type FileThumbnailName } from './file-manager-thumbnails.js';
 
 /** The 12 thumbnail categories with a bundled `ic-*.svg`. */
@@ -92,6 +92,36 @@ export function isHiddenEntry(entry: FileEntry): boolean {
 export function parentFolderOf(id: string): string | null {
 	const slash = id.lastIndexOf('/');
 	return slash === -1 ? null : id.slice(0, slash);
+}
+
+/** A picked id is either a `source` path (resolved through `resolveFileUrls`/
+ * `FileManager`) or an already-absolute URL (typed into a picker's own
+ * "Link" tab) - the two are told apart by shape alone, no separate flag
+ * (same convention `ImageField`'s own `isLinkValue` uses). */
+function isUrlId(id: string): boolean {
+	return /^https?:\/\//i.test(id);
+}
+
+/**
+ * Resolves a batch of `source` ids to their real, directly-usable URLs
+ * (`FileEntry.previewUrl`) - for callers that need to persist a *self-
+ * contained* value (no `source`/admin API available to resolve it back
+ * later), unlike a content-type "image" column's stored id (resolved at
+ * display time instead, e.g. `ContentEntryList.tsx`'s own `${path}/api/
+ * storage/${id}` build). Same "listAll, else list the first id's folder"
+ * lookup `ImageField`'s own thumbnail-resolving `useEffect` and `image-
+ * insert-button.tsx`'s `confirm` each already inline - shared here so a
+ * third copy doesn't join them. An id already shaped like an absolute URL
+ * (a picker's own "Link" tab) passes through unchanged; a real id `list()`/
+ * `listAll()` never turns up for (deleted out from under the picker, say)
+ * falls back to the bare id rather than dropping it. */
+export async function resolveFileUrls(source: FileManagerSource, ids: string[]): Promise<string[]> {
+	const fileIds = ids.filter((id) => !isUrlId(id));
+	if (fileIds.length === 0) return ids;
+	const all = (await source.listAll?.()) ?? null;
+	const list = all ?? (await source.list(parentFolderOf(fileIds[0]!)));
+	const byId = new Map(list.map((entry) => [entry.id, entry] as const));
+	return ids.map((id) => byId.get(id)?.previewUrl ?? id);
 }
 
 export function formatBytes(bytes: number | undefined): string {

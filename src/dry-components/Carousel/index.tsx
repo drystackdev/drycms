@@ -14,7 +14,7 @@ const SAMPLE_IMAGES = [
 ];
 const carouselProps = (p: PropsBuilder) =>
   p({
-    images: p.array(p.image()).default(SAMPLE_IMAGES),
+    images: p.images().default(SAMPLE_IMAGES),
     caption: p.string(),
   });
 

@@ -28,6 +28,7 @@ import { loadRichtextComponents } from "./useRichTextEditor.js";
 export default function DryComponentInsertButton({
   viewRef,
   disabled = false,
+  source,
   iconSize,
 }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
@@ -332,6 +333,7 @@ export default function DryComponentInsertButton({
                 schema={configuring.props}
                 value={propsDraft}
                 onChange={setPropsDraft}
+                source={source}
               />
             </div>
             <footer>

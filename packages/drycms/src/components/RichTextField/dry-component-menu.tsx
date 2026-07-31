@@ -4,6 +4,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import FloatingPanel from "../FloatingPanel.js";
+import type { FileManagerSource } from "../file-manager-types.js";
 import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
@@ -16,6 +17,11 @@ export interface DryComponentMenuProps {
   viewRef: RefObject<EditorView | null>;
   state: ToolbarState;
   disabled?: boolean;
+  /** Where the settings dialog's `image`/`images` props read their picker
+   * from - same optionality as `ToolbarCustomProps.source`, just not routed
+   * through that type since this isn't a `TOOLBAR_GROUPS` custom item
+   * (`toolbar.tsx` renders it directly, passing `source` the same way). */
+  source?: FileManagerSource;
   iconSize?: ToolbarIconSize;
 }
 
@@ -54,7 +60,7 @@ const COLLAPSE_DURATION = 200;
  * for a props-less block component, previously leaving it with no way to
  * remove one once inserted).
  */
-export default function DryComponentMenu({ viewRef, disabled = false, iconSize = "md" }: DryComponentMenuProps) {
+export default function DryComponentMenu({ viewRef, disabled = false, source, iconSize = "md" }: DryComponentMenuProps) {
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
@@ -312,7 +318,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, iconSize =
               <h3>{record.label}</h3>
             </header>
             <div class="stack">
-              <DryComponentPropsForm schema={record.props} value={draft} onChange={setDraft} />
+              <DryComponentPropsForm schema={record.props} value={draft} onChange={setDraft} source={source} />
             </div>
             <footer>
               <button type="button" class="outline" onClick={() => setOpen(false)}>

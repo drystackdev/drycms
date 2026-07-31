@@ -89,7 +89,7 @@ export default function RichTextToolbar({
                 viewRef={viewRef}
                 contentRef={contentRef}
                 state={state}
-                disabled={disabled || state.reorderModeActive}
+                disabled={disabled || state.reorderModeActive || !!item.isDisabled?.(state)}
                 source={source}
                 iconSize={iconSize}
                 fullscreen={fullscreen}
@@ -123,6 +123,7 @@ export default function RichTextToolbar({
         viewRef={viewRef}
         state={state}
         disabled={disabled || state.reorderModeActive}
+        source={source}
         iconSize={iconSize}
       />
     </div>
