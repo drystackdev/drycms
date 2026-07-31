@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { Node as PMNode } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { setImageAttrs } from "./commands.js";
+import { exportCleanHtml } from "./html.js";
 import { DEFAULT_GRID_COLUMNS, schema } from "./schema.js";
 
 /**
  * Covers `commands.ts`'s `setImageAttrs` caption transitions - the
  * `extractImageBlock`/`collapseImageBlock` split/merge it runs whenever a
- * `caption` patch crosses the empty<->non-empty boundary. DOM-free, same gap
- * `grid.test.ts` already notes for `image` (no existing unit tests) - this
- * fills that in for the one behavior that's pure doc-structure logic.
+ * `caption` patch crosses the empty<->non-empty boundary - and `html.ts`'s
+ * `exportBlockHtml` unwrap that relies on the shape those two guarantee (a
+ * captioned image alone in its own paragraph exports as a bare `<figure>`,
+ * not `<p><figure>...</figure></p>`). DOM-free, same gap `grid.test.ts`
+ * already notes for `image` (no existing unit tests) - this fills that in
+ * for the parts that are pure doc-structure/string-building logic.
  */
 
 function docOf(...blocks: PMNode[]) {
@@ -142,5 +146,26 @@ describe("setImageAttrs caption -> block collapse", () => {
 
     expect(next.doc.childCount).toBe(1);
     expect(next.doc.child(0).childCount).toBe(2);
+  });
+});
+
+describe("exportCleanHtml solo captioned image", () => {
+  it("exports a bare <figure>, not <p><figure>...</figure></p>", () => {
+    const doc = docOf(paragraph(image({ caption: "cap" })));
+    expect(exportCleanHtml(doc)).toBe(
+      '<figure style="margin:0;display:table"><img src="a.png" alt=""><figcaption style="display:table-caption;caption-side:bottom;text-align:center">cap</figcaption></figure>',
+    );
+  });
+
+  it("still wraps in <p> when the image has no caption", () => {
+    const doc = docOf(paragraph(image()));
+    expect(exportCleanHtml(doc)).toBe('<p><img src="a.png" alt=""></p>');
+  });
+
+  it("still wraps in <p> when a captioned image shares its paragraph with other content", () => {
+    const doc = docOf(paragraph(schema.text("x "), image({ caption: "cap" })));
+    expect(exportCleanHtml(doc)).toBe(
+      '<p>x <figure style="margin:0;display:table"><img src="a.png" alt=""><figcaption style="display:table-caption;caption-side:bottom;text-align:center">cap</figcaption></figure></p>',
+    );
   });
 });

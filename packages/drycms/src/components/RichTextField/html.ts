@@ -384,6 +384,29 @@ function exportBlockHtml(node: PMNode, extraStyle?: string): string {
   if (node.type.name.startsWith("dry_")) {
     return dryComponentHtml(node);
   }
+  // A captioned image left alone in its own paragraph (`commands.ts`'s
+  // `extractImageBlock` guarantees this shape whenever a caption is set)
+  // exports as a bare top-level `<figure>`, not `<p><figure>...</figure></p>`
+  // - `<figure>` is flow content, invalid inside `<p>` per the HTML spec,
+  // and this is the one case where nothing else shares the paragraph, so
+  // there's no inline content that actually needs the `<p>` wrapper. The
+  // import side already round-trips a bare top-level `<figure>` back into
+  // this same "paragraph holding one image" shape
+  // (`blockChildrenFromContainer`'s figure handling in this same file), so
+  // dropping the wrapper here doesn't lose anything on re-import. Left
+  // wrapped when `extraStyle` is set (a grid item's own span) - too narrow
+  // a case (a captioned image alone in a grid cell) to be worth teaching
+  // `imageChildHtml` to also merge an arbitrary extra style onto its figure.
+  if (
+    !extraStyle &&
+    node.type === schema.nodes.paragraph &&
+    node.childCount === 1 &&
+    node.firstChild!.type === schema.nodes.image &&
+    (node.firstChild!.attrs.caption as string) &&
+    ((node.attrs.textAlign as string | null) ?? "left") === "left"
+  ) {
+    return imageChildHtml(node.firstChild!);
+  }
   if (node.type === schema.nodes.bullet_list) {
     return `<ul${styleAttr(extraStyle)}>${listItemsHtml(node)}</ul>`;
   }
