@@ -59,7 +59,7 @@ export default function FieldListItem({
       >
         <DragHandleIcon />
       </button>
-      <div class="content-type-list-item-item" style={color ? { color } : undefined}>
+      <div class="content-type-list-item-icon" style={color ? { "--field-type-color": color } : undefined}>
         <TypeIcon />
       </div>
       <div class="stack spacer" style={{ gap: "0.125rem" }}>
