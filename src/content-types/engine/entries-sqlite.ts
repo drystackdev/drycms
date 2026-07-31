@@ -2,6 +2,7 @@ import type { ResolvedSqliteContentOption } from "../../server/options.js";
 import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
+import { blankEntryValue } from "./entry-defaults.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 import { resolveSqliteDriver, type SqliteHandle } from "./sqlite-driver.js";
@@ -334,24 +335,23 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     return { id, value };
   }
 
-  async function createEntry(
+  /** Shared by `createEntry` (validated) and `ensureSingletonEntry`
+   * (deliberately NOT validated - see that function's doc comment) - the
+   * insert, every child-table write, and the data-version bump all run
+   * inside one transaction (see `status/build-cache.md`'s "same
+   * transaction" requirement) - a crash/error partway rolls back the whole
+   * thing, so `_versions` can never claim a version whose data didn't
+   * actually land. */
+  async function insertRow(
+    handle: SqliteHandle,
     type: ContentTypeDefinition,
-    allTypes: ContentTypeDefinition[],
+    nodes: EntryFieldNode[],
+    queryable: QueryableColumn[],
     value: EntryValue,
-  ): Promise<EntryRow> {
-    const handle = await getHandle();
-    const nodes = buildEntryFieldTree(type, allTypes);
-    assertValid(nodes, value);
-    const queryable = flattenQueryableColumns(nodes);
-
+  ): Promise<number> {
     const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
     const columns = Object.keys(rowData);
     let id: number;
-    // The insert, every child-table write, and the data-version bump all run
-    // inside one transaction (see `status/build-cache.md`'s "same
-    // transaction" requirement) - a crash/error partway rolls back the whole
-    // thing, so `_versions` can never claim a version whose data didn't
-    // actually land.
     handle.exec("BEGIN IMMEDIATE;");
     try {
       if (columns.length === 0) {
@@ -370,7 +370,19 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
       handle.exec("ROLLBACK;");
       throw translateUniqueViolation(error, queryable) ?? error;
     }
+    return id;
+  }
 
+  async function createEntry(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    value: EntryValue,
+  ): Promise<EntryRow> {
+    const handle = await getHandle();
+    const nodes = buildEntryFieldTree(type, allTypes);
+    assertValid(nodes, value);
+    const queryable = flattenQueryableColumns(nodes);
+    const id = await insertRow(handle, type, nodes, queryable, value);
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -463,6 +475,24 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     return existingId === null ? createEntry(type, allTypes, value) : updateEntry(type, allTypes, existingId, value);
   }
 
+  /** Guarantees a singleton has SOME row the moment its content type exists,
+   * rather than only after the admin's first manual Save (see
+   * `status/role.md`) - called from `routes/content-types.ts` right after a
+   * singleton is saved. Idempotent: a no-op once a row already exists.
+   * Deliberately skips `assertValid` - `blankEntryValue` sets `required`
+   * fields to `null`/empty same as anything else, which real validation
+   * would reject; the point of this bootstrap row is to give the admin
+   * something to open and fill in, not to already satisfy the schema. */
+  async function ensureSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow> {
+    const existing = await getSingletonEntry(type, allTypes);
+    if (existing) return existing;
+    const handle = await getHandle();
+    const nodes = buildEntryFieldTree(type, allTypes);
+    const queryable = flattenQueryableColumns(nodes);
+    const id = await insertRow(handle, type, nodes, queryable, blankEntryValue(nodes));
+    return (await getEntry(type, allTypes, id))!;
+  }
+
   return {
     listEntries,
     getEntry,
@@ -472,6 +502,7 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     reorderEntries,
     getSingletonEntry,
     saveSingletonEntry,
+    ensureSingletonEntry,
     getResourceVersion: async (type) => {
       const handle = await getHandle();
       return getResourceVersion(handle, type.name);

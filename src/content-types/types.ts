@@ -109,11 +109,44 @@ export interface ContentTypeDefinition {
   deletedFeatureKeys?: (keyof ContentTypeFeatures)[];
   /** Optimistic-lock counter, incremented on every successful save. */
   version: number;
-  /** True for the built-in defaults seeded at first boot (`user`, `menu`,
-   * `menuItem`, `seo`, `aiKey`, `role`, `permission` - see `seed.ts`).
-   * Purely for identification in the admin UI (a "System" badge, and the
-   * ability to filter them out of the Content nav) - imposes no editing
-   * restrictions of its own; fields, features, name, and the type itself
-   * can all be freely changed or deleted, same as any other content type. */
-  system?: boolean;
+  /** True for a content type that must never appear anywhere a person picks
+   * or browses content types by hand: the Content Types list (`ContentTypes.
+   * tsx`), the sidebar's Content dropdown (`DryLayout.tsx`), and every
+   * relation/component target picker (`ContentTypeEditor.tsx`'s
+   * `dynamicOptions`). Still fully functional underneath (own table, own
+   * entries API) - just reached through a dedicated page instead of the
+   * generic content-type machinery (`role`/`permission` via `Roles.tsx`/
+   * `RoleEditor.tsx`, `aiKey` via its own pinned nav entry). Set on `role`,
+   * `permission`, `aiKey` (see `seed.ts`) and on the `seo` component (hidden
+   * from the component-target picker specifically, since it's only ever
+   * embedded via `features.seo`, never picked by hand). */
+  hidden?: boolean;
+  /** True for a content type whose TABLE itself can never be deleted - the
+   * schema editor's Danger Zone is hidden/rejected client-side, and
+   * `routes/content-types.ts`'s `DELETE` rejects it server-side too. Its
+   * fields/features stay otherwise freely addable/editable/removable,
+   * except whichever field ids are individually listed in
+   * `protectedFieldIds`. Set on `user` (needed for login) and `seo` (needed
+   * for `features.seo`); `role`/`permission`/`aiKey` are covered by `frozen`
+   * below instead, which already implies this. */
+  locked?: boolean;
+  /** True for a content type whose schema (fields, features, name - the
+   * whole `ContentTypeDefinition` besides its actual data rows) can never be
+   * changed via the generic content-types API at all, not just deleted -
+   * `routes/content-types.ts` rejects any `PUT`/`DELETE` outright. Only ever
+   * paired with `hidden: true`: these are fixed system infrastructure
+   * (`permissions.ts` hardcodes their table/column shape) with no legitimate
+   * reason for an admin to reshape them through the schema editor. Set on
+   * `role`, `permission`, `aiKey`. */
+  frozen?: boolean;
+  /** Field ids (from `fields[]`) that can never be edited or removed once
+   * seeded, even though the type itself isn't `frozen` - critical to
+   * another system's behavior (login, permissions) but otherwise an
+   * ordinary type an admin can keep customizing. Still shown normally in the
+   * Fields list and still openable in `FieldDialog` (so an admin can SEE
+   * their configuration), just read-only once opened and never removable.
+   * `routes/content-types.ts`'s `validateProtectedFields` (see `naming.ts`)
+   * rejects a save that changes or drops one. Only ever populated on `user`
+   * today (`email`/`password`/`roles` - see `seed.ts`). */
+  protectedFieldIds?: string[];
 }

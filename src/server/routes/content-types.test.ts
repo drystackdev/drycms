@@ -13,6 +13,7 @@ vi.mock("../config.js", async () => {
 });
 
 const { GET, POST, PUT, DELETE } = await import("./content-types.js");
+const { GET: entriesGET } = await import("./content-entries.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -247,6 +248,38 @@ describe("PUT /dry/api/content-types/[slug] (update)", () => {
     const { status, json } = await put(menu.id, { definition: { ...menu, system: true } });
     expect(status).toBe(200);
     expect(json.definition.system).toBe(true);
+  });
+});
+
+describe("POST/PUT /dry/api/content-types - singleton auto-first-row", () => {
+  it("creates the singleton's first row immediately, even with an unfilled required field", async () => {
+    const { status } = await post({
+      definition: type("custom-singleton-k", "sitesettingsk", {
+        kind: "singleton",
+        fields: [field("headline", { validation: { required: true } })],
+      }),
+    });
+    expect(status).toBe(200);
+
+    const entryResponse = await entriesGET(context({ slug: "sitesettingsk" }));
+    const entryJson = (await entryResponse.json()) as any;
+    expect(entryJson.entry).not.toBeNull();
+    expect(entryJson.entry.value.headline).toBeNull();
+  });
+
+  it("stays a no-op on a later PUT once the row already exists", async () => {
+    await post({
+      definition: type("custom-singleton-l", "sitesettingsl", { kind: "singleton", fields: [] }),
+    });
+    const first = await entriesGET(context({ slug: "sitesettingsl" }));
+    const firstId = ((await first.json()) as any).entry.id;
+
+    const current = (await get("custom-singleton-l")).json.definition as ContentTypeDefinition;
+    await put("custom-singleton-l", { definition: { ...current, label: "Site Settings L v2" } });
+
+    const second = await entriesGET(context({ slug: "sitesettingsl" }));
+    const secondId = ((await second.json()) as any).entry.id;
+    expect(secondId).toBe(firstId);
   });
 });
 

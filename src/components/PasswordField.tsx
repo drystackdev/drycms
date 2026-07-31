@@ -18,8 +18,7 @@ export interface PasswordFieldProps extends FieldProps<string> {
  * Like `TextField`, but for `type="password"` values - a trailing eye button
  * toggles it to plain text. The show/hide state is a single signal shared by
  * every `PasswordField` on the page (`store/field-visibility.ts`), so
- * revealing one reveals them all for the rest of the session; `SecretField`
- * keeps its own, independent toggle.
+ * revealing one reveals them all for the rest of the session.
  */
 export default function PasswordField({
   value,

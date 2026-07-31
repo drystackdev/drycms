@@ -72,11 +72,13 @@ describe("defaultContentTypeDefinitions", () => {
     });
   });
 
-  it("role: unique+required name, isSuperAdmin boolean, a manyToMany permissions relation", () => {
+  it("role: unique+required name, a description, isSuperAdmin boolean, a manyToMany permissions relation", () => {
     const role = byName("role");
     const permission = byName("permission");
     const name = role.fields.find((f) => f.name === "name")!;
     expect(name.validation).toMatchObject({ required: true, unique: true });
+    const description = role.fields.find((f) => f.name === "description")!;
+    expect(description.type).toBe("text");
     const isSuperAdmin = role.fields.find((f) => f.name === "isSuperAdmin")!;
     expect(isSuperAdmin.type).toBe("boolean");
     expect(isSuperAdmin.default).toBe(false);
@@ -100,7 +102,7 @@ describe("defaultContentTypeDefinitions", () => {
     const action = permission.fields.find((f) => f.name === "action")!;
     expect(action.type).toBe("select");
     expect(action.config).toMatchObject({
-      options: ["create", "read", "edit", "delete"],
+      options: ["view", "create", "update", "delete", "publish", "setting"],
       multiple: false,
     });
     expect(action.validation).toMatchObject({ required: true });

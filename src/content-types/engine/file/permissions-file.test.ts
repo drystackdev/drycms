@@ -45,10 +45,12 @@ const roleType: ContentTypeDefinition = {
   version: 0,
 };
 
-/** `syncFilePermissions` seeds 4 rows (`PERMISSION_ACTIONS`) for every
- * collection/singleton in `allTypes`, INCLUDING `permission`/`role`
- * themselves - `resourceCount` extra resource types on top of those two
- * always means `(resourceCount + 2) * 4` total rows. */
+/** `syncFilePermissions` seeds one row per `permissionActionsFor(target)`
+ * action for every collection/singleton in `allTypes`, INCLUDING
+ * `permission`/`role` themselves - a plain collection (no `features.draft`)
+ * gets 4 (view/create/update/delete), so `resourceCount` extra plain-collection
+ * resource types on top of those two always means `(resourceCount + 2) * 4`
+ * total rows. */
 function makeResourceTypes(count: number): ContentTypeDefinition[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `t-resource-${i}`,
@@ -90,6 +92,35 @@ describe("syncFilePermissions", () => {
 
     const { rows } = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 1000 });
     expect(rows).toHaveLength((2 + 2) * 4);
+  });
+
+  it("adds a 5th 'publish' row once a collection's Draft feature is on, and drops it again once it's off", async () => {
+    const { driver, entries } = freshSetup();
+    const [resource] = makeResourceTypes(1);
+    const draftResource = { ...resource!, features: { draft: true } };
+    const allTypes = [permissionType, roleType, draftResource];
+    await syncFilePermissions(driver, entries, allTypes);
+
+    const { rows } = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 1000 });
+    const forResource = rows.filter((r) => r.value.idTable === resource!.id);
+    expect(forResource.map((r) => r.value.action).sort()).toEqual(["create", "delete", "publish", "update", "view"]);
+
+    const noDraft = { ...draftResource, features: { draft: false } };
+    await syncFilePermissions(driver, entries, [permissionType, roleType, noDraft]);
+    const { rows: rowsAfter } = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 1000 });
+    const forResourceAfter = rowsAfter.filter((r) => r.value.idTable === resource!.id);
+    expect(forResourceAfter.map((r) => r.value.action).sort()).toEqual(["create", "delete", "update", "view"]);
+  });
+
+  it("seeds exactly one 'setting' row for a singleton, not the collection action set", async () => {
+    const { driver, entries } = freshSetup();
+    const singleton: ContentTypeDefinition = { id: "t-singleton", kind: "singleton", name: "site", label: "Site", fields: [], version: 0 };
+    const allTypes = [permissionType, roleType, singleton];
+    await syncFilePermissions(driver, entries, allTypes);
+
+    const { rows } = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 1000 });
+    const forSingleton = rows.filter((r) => r.value.idTable === singleton.id);
+    expect(forSingleton.map((r) => r.value.action)).toEqual(["setting"]);
   });
 
   it("renames a resource's rows on the next sync instead of duplicating them", async () => {

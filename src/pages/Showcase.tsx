@@ -31,7 +31,7 @@ import RelationField, {
   type RelationFieldSource,
 } from "../components/RelationField.js";
 import Search from "../components/Search.js";
-import SecretField from "../components/SecretField.js";
+import SecretKeyField from "../components/SecretKeyField.js";
 import Select from "../components/Select.js";
 import SelectField from "../components/SelectField.js";
 import SlugField from "../components/SlugField.js";
@@ -371,25 +371,23 @@ function PasswordFieldPreview() {
   );
 }
 
-function SecretFieldPreview() {
-  const [privateKey, setPrivateKey] = useState(
-    "-----BEGIN PRIVATE KEY-----\nMIIBVgIBADANBgkqhkiG9w0BAQEFAASCAT8w...\n-----END PRIVATE KEY-----",
-  );
-  const [notes, setNotes] = useState("Rotate every 90 days.");
+function SecretKeyFieldPreview() {
+  const [newKey, setNewKey] = useState("");
+  const [existingKey, setExistingKey] = useState("");
   return (
     <div class="grid cols-2" style="width: 100%">
-      <SecretField
-        label="Private key"
-        value={privateKey}
-        onChange={setPrivateKey}
-        placeholder="Paste a private key"
-        helperText="Its own show/hide toggle, independent of PasswordField's."
+      <SecretKeyField
+        label="API key"
+        value={newKey}
+        onChange={setNewKey}
+        helperText="A brand-new entry: no stored value yet."
       />
-      <SecretField
-        label="Rotation notes"
-        value={notes}
-        onChange={setNotes}
-        placeholder="Optional notes"
+      <SecretKeyField
+        label="API key"
+        value={existingKey}
+        onChange={setExistingKey}
+        hasExistingValue
+        helperText="Editing an existing entry: leave blank to keep the current key."
       />
     </div>
   );
@@ -1416,7 +1414,7 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="password-field"
           title="Password field"
-          description="Same label + control + helper text contract as TextField; the trailing eye button toggles type='password' to type='text'. Its show/hide state is one signal shared by every PasswordField on the page - toggle one, they all reveal - independent of SecretField's own toggle."
+          description="Same label + control + helper text contract as TextField; the trailing eye button toggles type='password' to type='text'. Its show/hide state is one signal shared by every PasswordField on the page - toggle one, they all reveal."
           code={code.passwordField!}
         >
           <PasswordFieldPreview />
@@ -1427,11 +1425,11 @@ function DemoContent({ id }: { id: string }) {
       return (
         <Demo
           id="secret-field"
-          title="Secret field"
-          description="Multiline counterpart to PasswordField, for values too long for one line. A textarea has no native masking, so hiding it toggles a .masked class (-webkit-text-security) instead - Firefox has no equivalent and always shows the value in the clear there."
+          title="Secret key field"
+          description="Editor for the secretkey field type (e.g. a third-party API key) - write-only: it never receives the decrypted value back, only a hasExistingValue flag that swaps the placeholder to 'Leave blank to keep the current secret'. A staged value is encrypted server-side (AES-256-GCM) before it's ever written to the DB/file, and only decrypted again when the server itself needs it - it's never sent back to a client as plaintext."
           code={code.secretField!}
         >
-          <SecretFieldPreview />
+          <SecretKeyFieldPreview />
         </Demo>
       );
 

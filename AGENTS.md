@@ -1,3 +1,11 @@
+## Before coding
+
+Read `docs/README.md` first - it indexes `docs/ARCHITECTURE.md` (how the
+app works), `docs/DESIGN.md` (visual system + CSS conventions), and
+`docs/CODING-PRINCIPLES.md` (standing rules for how changes get made here).
+They capture decisions and gotchas that aren't obvious from reading a single
+file in isolation.
+
 ## Layout
 
 drycms is a standalone Preact app - no Astro, no separate library package.

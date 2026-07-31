@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ContentTypeDefinition } from "../types.js";
+import { SUPER_ADMIN_DESCRIPTION } from "../permissions.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
 
 /** Exercises the real adapter against a throwaway sqlite file (not a mock) -
@@ -62,14 +63,14 @@ describe("createSqliteContentEngineAdapter", () => {
     dirs.push(dir);
     await adapter.listContentTypes(); // triggers boot
 
-    const roles = await queryAll<{ name: string; isSuperAdmin: number }>(
+    const roles = await queryAll<{ name: string; description: string; isSuperAdmin: number }>(
       dir,
-      'SELECT "name", "isSuperAdmin" FROM "role";',
+      'SELECT "name", "description", "isSuperAdmin" FROM "role";',
     );
-    expect(roles).toEqual([{ name: "Super Admin", isSuperAdmin: 1 }]);
+    expect(roles).toEqual([{ name: "Super Admin", description: SUPER_ADMIN_DESCRIPTION, isSuperAdmin: 1 }]);
   });
 
-  it("creates 4 permission rows (create/read/edit/delete) for every built-in collection/singleton at boot", async () => {
+  it("creates 4 permission rows (view/create/update/delete) for every built-in collection/singleton at boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
     await adapter.listContentTypes(); // triggers boot
@@ -81,24 +82,24 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(permissions).toEqual([
       { name: "aiKey", action: "create" },
       { name: "aiKey", action: "delete" },
-      { name: "aiKey", action: "edit" },
-      { name: "aiKey", action: "read" },
+      { name: "aiKey", action: "update" },
+      { name: "aiKey", action: "view" },
       { name: "menu", action: "create" },
       { name: "menu", action: "delete" },
-      { name: "menu", action: "edit" },
-      { name: "menu", action: "read" },
+      { name: "menu", action: "update" },
+      { name: "menu", action: "view" },
       { name: "permission", action: "create" },
       { name: "permission", action: "delete" },
-      { name: "permission", action: "edit" },
-      { name: "permission", action: "read" },
+      { name: "permission", action: "update" },
+      { name: "permission", action: "view" },
       { name: "role", action: "create" },
       { name: "role", action: "delete" },
-      { name: "role", action: "edit" },
-      { name: "role", action: "read" },
+      { name: "role", action: "update" },
+      { name: "role", action: "view" },
       { name: "user", action: "create" },
       { name: "user", action: "delete" },
-      { name: "user", action: "edit" },
-      { name: "user", action: "read" },
+      { name: "user", action: "update" },
+      { name: "user", action: "view" },
     ]);
   });
 
@@ -136,7 +137,7 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(await adapter.getContentType("custom-note")).toBeNull();
   });
 
-  it("creates 4 matching permission rows (create/read/edit/delete) when a new collection is saved", async () => {
+  it("creates 4 matching permission rows (view/create/update/delete) when a new collection is saved", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -158,8 +159,8 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(rows).toEqual([
       { name: "note", idTable: "custom-note", action: "create" },
       { name: "note", idTable: "custom-note", action: "delete" },
-      { name: "note", idTable: "custom-note", action: "edit" },
-      { name: "note", idTable: "custom-note", action: "read" },
+      { name: "note", idTable: "custom-note", action: "update" },
+      { name: "note", idTable: "custom-note", action: "view" },
     ]);
   });
 

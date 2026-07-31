@@ -1,4 +1,4 @@
-import { PERMISSION_ACTIONS } from "../../permissions.js";
+import { permissionActionsFor, SUPER_ADMIN_DESCRIPTION } from "../../permissions.js";
 import type { ContentTypeDefinition } from "../../types.js";
 import type { ContentEntryEngineAdapter } from "../entries-types.js";
 import { createFileEntry, deleteFileEntry, updateFileEntry } from "./entries-file.js";
@@ -51,7 +51,17 @@ export async function syncFilePermissions(driver: FileDriver, entryAdapter: Cont
     if (permissionType) {
       const byKey = new Map(existingPermissions.map((r) => [`${r.value.idTable}:${r.value.action}`, r]));
       for (const target of allTypes.filter((t) => t.kind !== "component")) {
-        for (const action of PERMISSION_ACTIONS) {
+        const expected = new Set<string>(permissionActionsFor(target));
+        // Stale rows first - an action this target no longer expects (e.g.
+        // an old "read"/"edit" row from before this scheme existed, or
+        // "publish" after Draft got turned off) - mirrors `permissions.ts`'s
+        // SQL `DELETE ... NOT IN (...)`.
+        for (const row of existingPermissions) {
+          if (row.value.idTable === target.id && !expected.has(row.value.action as string)) {
+            await deleteFileEntry(tx, permissionType, allTypes, row.id);
+          }
+        }
+        for (const action of expected) {
           const row = byKey.get(`${target.id}:${action}`);
           if (!row) {
             await createFileEntry(tx, permissionType, allTypes, { name: target.name, idTable: target.id, action });
@@ -63,15 +73,20 @@ export async function syncFilePermissions(driver: FileDriver, entryAdapter: Cont
     }
 
     if (roleType && !existingRoles.some((r) => r.value.name === "Super Admin")) {
-      await createFileEntry(tx, roleType, allTypes, { name: "Super Admin", isSuperAdmin: true, permissions: [] });
+      await createFileEntry(tx, roleType, allTypes, {
+        name: "Super Admin",
+        description: SUPER_ADMIN_DESCRIPTION,
+        isSuperAdmin: true,
+        permissions: [],
+      });
     }
   });
 }
 
 /** Called from `deleteContentType` - removes a deleted type's now-meaningless
- * `permission` rows (all 4 actions share `idTable`). `allTypes` is the list
- * BEFORE `removedTypeId` is removed from it - only needed to resolve the
- * `permission` type itself. */
+ * `permission` rows (every action row shares `idTable`). `allTypes` is the
+ * list BEFORE `removedTypeId` is removed from it - only needed to resolve
+ * the `permission` type itself. */
 export async function deleteFilePermissions(driver: FileDriver, entryAdapter: ContentEntryEngineAdapter, allTypes: ContentTypeDefinition[], removedTypeId: string): Promise<void> {
   const permissionType = findByName(allTypes, "permission");
   if (!permissionType) return;

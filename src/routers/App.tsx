@@ -17,6 +17,8 @@ const ContentTypes = lazy(() => import('../pages/ContentTypes.js'));
 const ContentTypeEditor = lazy(() => import('../pages/ContentTypeEditor.js'));
 const ContentEntryList = lazy(() => import('../pages/ContentEntryList.js'));
 const ContentEntryEditor = lazy(() => import('../pages/ContentEntryEditor.js'));
+const Roles = lazy(() => import('../pages/Roles.js'));
+const RoleEditor = lazy(() => import('../pages/RoleEditor.js'));
 const IconManagement = lazy(() => import('../pages/IconManagement.js'));
 const IconSearchAdd = lazy(() => import('../pages/IconSearchAdd.js'));
 const IconManualForm = lazy(() => import('../pages/IconManualForm.js'));
@@ -118,6 +120,10 @@ export default function App() {
 							<Route path={`${path}/content/:typeSlug/new`} component={ContentEntryEditor} />
 							<Route path={`${path}/content/:typeSlug/:id`} component={ContentEntryEditor} />
 							<Route path={`${path}/content/:typeSlug`} component={ContentEntryList} />
+							<Route path={`${path}/roles`} component={Roles} />
+							{/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}
+							<Route path={`${path}/roles/new`} component={() => <RoleEditor id="new" />} />
+							<Route path={`${path}/roles/:id`} component={RoleEditor} />
 							<Route default component={() => <Redirect to={`${path}/dashboard`} />} />
 						</Router>
 					</Boundary>

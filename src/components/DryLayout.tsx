@@ -91,6 +91,20 @@ const NAV: {
     ready: true,
   },
   {
+    key: "roles",
+    label: "Roles",
+    href: `${path}/roles`,
+    icon: "Settings",
+    ready: true,
+  },
+  {
+    key: "ai-keys",
+    label: "AI Keys",
+    href: `${path}/content/aiKey`,
+    icon: "Settings",
+    ready: true,
+  },
+  {
     key: "settings",
     label: "Settings",
     href: `${path}/settings`,
@@ -168,11 +182,10 @@ export default function DryLayout({ children }: Props) {
     }
     void reloadContentTypes();
   }, [contentTypesVersion.value, reloadContentTypes]);
-  // `system` is no longer set on any built-in default (user/menu/aiKey/role/
-  // permission) - purely a cosmetic label a type could still carry, so this
-  // filter is inert today, kept only in case something opts back into it.
+  // `hidden` types (role/permission/aiKey) are reached through their own
+  // dedicated page instead - see `types.ts`'s doc comment.
   const contentNavItems = useMemo(
-    () => (contentTypes ?? []).filter((t) => t.kind !== "component" && !t.system),
+    () => (contentTypes ?? []).filter((t) => t.kind !== "component" && !t.hidden),
     [contentTypes],
   );
 

@@ -19,6 +19,7 @@
 .carousel__content button {
   position: absolute;
   z-index: 2;
+  background-color: red;
 }
 
 .carousel__caption {

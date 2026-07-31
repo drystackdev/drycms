@@ -3,6 +3,7 @@ import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
+import { blankEntryValue } from "./entry-defaults.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 
@@ -331,15 +332,9 @@ export function createD1ContentEntryEngineAdapter(
     return { id, value };
   }
 
-  async function createEntry(
-    type: ContentTypeDefinition,
-    allTypes: ContentTypeDefinition[],
-    value: EntryValue,
-  ): Promise<EntryRow> {
-    const nodes = buildEntryFieldTree(type, allTypes);
-    assertValid(nodes, value);
-    const queryable = flattenQueryableColumns(nodes);
-
+  /** Shared by `createEntry` (validated) and `ensureSingletonEntry`
+   * (deliberately NOT validated - see that function's doc comment). */
+  async function insertRow(type: ContentTypeDefinition, nodes: EntryFieldNode[], queryable: QueryableColumn[], value: EntryValue): Promise<number> {
     const rowData = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
     const columns = Object.keys(rowData);
     let id: number;
@@ -359,6 +354,18 @@ export function createD1ContentEntryEngineAdapter(
 
     await writeChildFields(db, nodes, id, value);
     await bumpResourceVersion(type.name);
+    return id;
+  }
+
+  async function createEntry(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    value: EntryValue,
+  ): Promise<EntryRow> {
+    const nodes = buildEntryFieldTree(type, allTypes);
+    assertValid(nodes, value);
+    const queryable = flattenQueryableColumns(nodes);
+    const id = await insertRow(type, nodes, queryable, value);
     return (await getEntry(type, allTypes, id))!;
   }
 
@@ -438,6 +445,17 @@ export function createD1ContentEntryEngineAdapter(
     return existingId === null ? createEntry(type, allTypes, value) : updateEntry(type, allTypes, existingId, value);
   }
 
+  /** D1 counterpart to `entries-sqlite.ts`'s `ensureSingletonEntry` - same
+   * bootstrap-row/no-validation rationale. */
+  async function ensureSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow> {
+    const existing = await getSingletonEntry(type, allTypes);
+    if (existing) return existing;
+    const nodes = buildEntryFieldTree(type, allTypes);
+    const queryable = flattenQueryableColumns(nodes);
+    const id = await insertRow(type, nodes, queryable, blankEntryValue(nodes));
+    return (await getEntry(type, allTypes, id))!;
+  }
+
   return {
     listEntries,
     getEntry,
@@ -447,6 +465,7 @@ export function createD1ContentEntryEngineAdapter(
     reorderEntries,
     getSingletonEntry,
     saveSingletonEntry,
+    ensureSingletonEntry,
     getResourceVersion: (type) => getResourceVersionValue(type.name),
   };
 }

@@ -9,6 +9,6 @@ export default {
   // path: "/dry",
   // storage: { kind: "local", root: "storage" },
   // icons: { kind: "local", root: "icons" },
-  // content: { engine: "sqlite", file: "content.sqlite" },
+  content: { engine: "file" },
   // richtext: { componentsDir: "src/dry-components" },
 } satisfies DryOption;

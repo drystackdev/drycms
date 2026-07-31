@@ -62,6 +62,15 @@ export interface ContentEntryEngineAdapter {
   getSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow | null>;
   saveSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow>;
   /**
+   * Guarantees a singleton has a row - a no-op if one already exists,
+   * otherwise inserts a `blankEntryValue` row WITHOUT running field
+   * validation (see `status/role.md`: a singleton should have something to
+   * open and edit immediately, not only after the admin's first manual Save
+   * satisfies its `required` fields). Called once, right after a singleton
+   * content type is saved (`routes/content-types.ts`).
+   */
+  ensureSingletonEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<EntryRow>;
+  /**
    * Bulk-writes every listed row's `sortIndex` column in one call - the
    * List page's drag-reorder Save action (see `features.sortable`,
    * `system-fields.ts`) renumbers the WHOLE currently-visible order at once

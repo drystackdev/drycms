@@ -367,14 +367,13 @@
       }
 
       /*
-       * The trigger button (Select), text input (Combobox/MultiSelect) or
-       * textarea (SecretField). `:hover`/`:focus-visible` are reset too -
-       * both tie the generic `button`/`textarea` rule on specificity, and
-       * only lose the cascade because this block comes later.
+       * The trigger button (Select) or text input (Combobox/MultiSelect).
+       * `:hover`/`:focus-visible` are reset too - both tie the generic
+       * `button`/`input` rule on specificity, and only lose the cascade
+       * because this block comes later.
        */
       & > button,
-      & > input,
-      & > textarea {
+      & > input {
         flex: 1 1 3rem;
         min-width: 3rem;
         margin: 0;
@@ -385,34 +384,13 @@
         font: inherit;
         color: inherit;
         text-align: start;
+        height: 1.75rem;
 
         &:hover,
         &:focus-visible {
           background-color: transparent;
           color: inherit;
           box-shadow: none;
-        }
-      }
-
-      & > button,
-      & > input {
-        height: 1.75rem;
-      }
-
-      /* SecretField's control - grows with content instead of the fixed
-       * single-line height above. `.masked` (toggled with its show/hide
-       * signal, see PasswordField/SecretField) stands in for the native
-       * `type="password"` masking a plain `<textarea>` has no equivalent
-       * of; WebKit/Blink only - Firefox has no equivalent property, so the
-       * value just renders in the clear there. */
-      & > textarea {
-        height: auto;
-        min-height: 3.5rem;
-        resize: none;
-        field-sizing: content;
-
-        &.masked {
-          -webkit-text-security: disc;
         }
       }
 
@@ -1074,7 +1052,6 @@
     .card {
       display: flex;
       flex-direction: column;
-      gap: 1.25rem;
       padding: 1.5rem;
       background-color: var(--dry-card);
       color: var(--dry-card-foreground);
@@ -2399,7 +2376,7 @@
     .content-entry-editor-grid {
       display: grid;
       grid-template-columns:
-        minmax(0, 3fr)
+        minmax(0, 1.5fr)
         minmax(0, 1.75fr);
       gap: var(--dry-gap) 0;
       align-items: start;
@@ -2414,6 +2391,48 @@
           padding: 0;
         }
       }
+    }
+
+    /* --- Role editor (pages/RoleEditor.tsx) - one resource per row, using
+     * the same bare `<details>`/`<summary>` accordion already styled above
+     * (hover, chevron, animated reveal) rather than a parallel class - only
+     * what that base style doesn't already cover: the dot strip previewing
+     * granted actions inside the (already flex/space-between) `<summary>`,
+     * and the switches' layout once expanded. */
+    .role-permission-dots {
+      display: flex;
+      gap: 0.25rem;
+      margin-inline: .5rem;
+    }
+
+    .permission-view-card {
+      padding: .5rem;
+      padding-top: .0rem;
+      &>*:first-child {
+        border-top-left-radius: .5rem;
+        border-top-right-radius: .5rem;
+      }
+      &>*:last-child {
+        border-bottom-left-radius: .5rem;
+        border-bottom-right-radius: .5rem;
+      }
+    }
+
+    .role-permission-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background-color: var(--dry-border);
+
+      &.on {
+        background-color: var(--dry-success);
+      }
+    }
+
+    .role-permission-switches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.5rem;
     }
 
     /* `?_field=` deep link (`field-events.ts`'s own `scrollToField`) - a

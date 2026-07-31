@@ -1,6 +1,7 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { content } from "../config.js";
-import { createContentEngineAdapter } from "../../content-types/engine/index.js";
+import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
+import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError, type AnySavePlan, type ContentEngineAdapter } from "../../content-types/engine/types.js";
 import {
   NamingError,
@@ -48,10 +49,17 @@ function errorResponse(error: unknown): Response {
  * on every call instead - see `ResolvedD1ContentOption`'s docs.
  */
 const moduleAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
+const moduleEntryAdapter: ContentEntryEngineAdapter | undefined =
+  content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
 
 function getAdapter(context: DryRouteContext): ContentEngineAdapter {
   if (moduleAdapter) return moduleAdapter;
   return createContentEngineAdapter(content, context.env);
+}
+
+function getEntryAdapter(context: DryRouteContext): ContentEntryEngineAdapter {
+  if (moduleEntryAdapter) return moduleEntryAdapter;
+  return createContentEntryEngineAdapter(content, context.env);
 }
 
 /** The data-version protocol (see `status/build-cache.md`) - `undefined` if
@@ -86,6 +94,7 @@ interface SaveRequestBody {
  * hasn't confirmed yet) or applies it. */
 async function handleSave(
   adapter: ContentEngineAdapter,
+  entryAdapter: ContentEntryEngineAdapter,
   definition: ContentTypeDefinition,
   confirm: boolean,
 ): Promise<Response> {
@@ -122,6 +131,15 @@ async function handleSave(
   }
 
   const saved = await adapter.applySave(definition, plan);
+
+  // A singleton should have something to open and edit the moment it
+  // exists, not only after the admin's first manual Save (see
+  // `status/role.md`) - a no-op once a row already exists, so safe to run
+  // unconditionally on both create and every later schema edit.
+  if (saved.kind === "singleton") {
+    await entryAdapter.ensureSingletonEntry(saved, await adapter.listContentTypes());
+  }
+
   return jsonResponse({ definition: saved }, 200);
 }
 
@@ -163,7 +181,7 @@ export const POST: DryRouteHandler = async (context) => {
       id: raw.definition.id || randomUUID(),
       version: 0,
     };
-    return await handleSave(adapter, definition, raw.confirm === true);
+    return await handleSave(adapter, getEntryAdapter(context), definition, raw.confirm === true);
   } catch (error) {
     return errorResponse(error);
   }
@@ -182,7 +200,7 @@ export const PUT: DryRouteHandler = async (context) => {
     }
 
     const definition: ContentTypeDefinition = { ...raw.definition, id };
-    return await handleSave(adapter, definition, raw.confirm === true);
+    return await handleSave(adapter, getEntryAdapter(context), definition, raw.confirm === true);
   } catch (error) {
     return errorResponse(error);
   }

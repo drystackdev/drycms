@@ -34,7 +34,7 @@ export const groups: ShowcaseGroup[] = [
       { id: "richtext-field", label: "Rich text field" },
       { id: "slug-field", label: "Slug field" },
       { id: "password-field", label: "Password field" },
-      { id: "secret-field", label: "Secret field" },
+      { id: "secret-field", label: "Secret key field" },
       { id: "number-field", label: "Number field" },
       { id: "check-field", label: "Check field" },
       { id: "select-field", label: "Select field" },
@@ -599,21 +599,21 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   placeholder="Re-enter the password"
   helperText="Shares the show/hide toggle with the field on the left."
 />`,
-  secretField: `import SecretField from 'drycms/components/SecretField';
+  secretField: `import SecretKeyField from 'drycms/components/SecretKeyField';
 
-<SecretField
-  label="Private key"
-  value={privateKey}
-  onChange={setPrivateKey}
-  placeholder="Paste a private key"
-  helperText="Its own show/hide toggle, independent of PasswordField's."
+<SecretKeyField
+  label="API key"
+  value={newKey}
+  onChange={setNewKey}
+  helperText="A brand-new entry: no stored value yet."
 />
 
-<SecretField
-  label="Rotation notes"
-  value={notes}
-  onChange={setNotes}
-  placeholder="Optional notes"
+<SecretKeyField
+  label="API key"
+  value={existingKey}
+  onChange={setExistingKey}
+  hasExistingValue
+  helperText="Editing an existing entry: leave blank to keep the current key."
 />`,
   numberField: `import NumberField from 'drycms/components/NumberField';
 

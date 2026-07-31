@@ -32,6 +32,7 @@ const IDS = {
   userRoles: "system-user-roles",
   role: "system-role",
   roleName: "system-role-name",
+  roleDescription: "system-role-description",
   roleIsSuperAdmin: "system-role-is-super-admin",
   rolePermissions: "system-role-permissions",
   permission: "system-permission",
@@ -301,6 +302,15 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         order: 0,
       },
       {
+        id: IDS.roleDescription,
+        name: "description",
+        label: "Description",
+        type: "text",
+        config: { multiline: true, placeholder: "e.g. Can edit blog posts but not publish them" },
+        validation: {},
+        order: 1,
+      },
+      {
         id: IDS.roleIsSuperAdmin,
         name: "isSuperAdmin",
         label: "Super Admin",
@@ -308,7 +318,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         config: {},
         validation: {},
         default: false,
-        order: 1,
+        order: 2,
       },
       {
         id: IDS.rolePermissions,
@@ -317,7 +327,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "relation",
         config: { target: IDS.permission, cardinality: "manyToMany" },
         validation: {},
-        order: 2,
+        order: 3,
       },
     ],
     version: 0,
@@ -329,7 +339,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "permission",
     label: "Permission",
     description:
-      "Auto-synced, 4 rows (one per action) per collection/singleton - governs which role can do what on it.",
+      "Auto-synced - one row per action per collection/singleton (view/create/update/delete/publish for a collection, a single \"setting\" for a singleton) - governs which role can do what on it.",
     fields: [
       {
         id: IDS.permissionName,
@@ -355,7 +365,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         label: "Action",
         type: "select",
         config: {
-          options: ["create", "read", "edit", "delete"],
+          options: ["view", "create", "update", "delete", "publish", "setting"],
           multiple: false,
         },
         validation: { required: true },

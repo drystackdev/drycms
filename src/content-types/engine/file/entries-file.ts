@@ -2,6 +2,7 @@ import type { ResolvedFileContentOption } from "../../../server/options.js";
 import type { RelationCardinality } from "../../field-registry.js";
 import type { ContentTypeDefinition } from "../../types.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "../entry-codec.js";
+import { blankEntryValue } from "../entry-defaults.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "../entries-types.js";
 import { mapWithConcurrency } from "../../../storage/util.js";
@@ -431,7 +432,13 @@ export async function getFileEntry(driver: FileDriver, type: ContentTypeDefiniti
 export async function createFileEntryWithId(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow> {
   const nodes = buildEntryFieldTree(type, allTypes);
   assertValid(nodes, value);
+  return createFileEntryWithIdUnvalidated(driver, type, allTypes, nodes, id, value);
+}
 
+/** The write logic behind `createFileEntryWithId`, minus its `assertValid`
+ * call - shared with `ensureSingletonEntry`'s bootstrap row, which
+ * deliberately skips validation (see that adapter method's doc comment). */
+async function createFileEntryWithIdUnvalidated(driver: FileDriver, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], nodes: EntryFieldNode[], id: number, value: EntryValue): Promise<EntryRow> {
   const rowData: Row = applyTimestamps(nodes, await valueToRow(nodes, value), "create");
   rowData.id = id;
   await assembleWritableFields(nodes, value, rowData);
@@ -592,6 +599,18 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
         const row = existing
           ? await updateFileEntry(tx, type, allTypes, SINGLETON_ID, value)
           : await createFileEntryWithId(tx, type, allTypes, SINGLETON_ID, value);
+        await bumpDataVersion(tx, type.name);
+        return row;
+      }),
+    // See `ContentEntryEngineAdapter.ensureSingletonEntry`'s doc comment -
+    // idempotent, and the bootstrap row deliberately skips `assertValid`
+    // (`createFileEntryWithIdUnvalidated`, not `createFileEntryWithId`).
+    ensureSingletonEntry: (type, allTypes) =>
+      driver.transaction(async (tx) => {
+        const existing = await readRecord(tx, type.name, SINGLETON_ID);
+        if (existing) return (await getFileEntry(tx, type, allTypes, SINGLETON_ID))!;
+        const nodes = buildEntryFieldTree(type, allTypes);
+        const row = await createFileEntryWithIdUnvalidated(tx, type, allTypes, nodes, SINGLETON_ID, blankEntryValue(nodes));
         await bumpDataVersion(tx, type.name);
         return row;
       }),

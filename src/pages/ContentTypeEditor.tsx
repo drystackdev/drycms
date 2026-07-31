@@ -8,7 +8,7 @@ import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { bumpContentTypesVersion } from "../store/content-types.js";
 import { randomUUID } from "../lib/uuid.js";
-import type { RelationMirrorFieldConfig } from "../content-types/field-registry.js";
+import type { RelationFieldConfig, RelationMirrorFieldConfig } from "../content-types/field-registry.js";
 import type { DestructiveChange } from "../content-types/migration.js";
 import {
   activeFields,
@@ -256,9 +256,14 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     else route(to);
   }
 
-  // System components (e.g. the built-in `seo` component) are excluded here -
-  // they're implementation details of other system types, not meant to be
-  // picked as a re-usable field group on user-authored content types.
+  // `hidden` types (the built-in `seo` component, plus role/permission/aiKey
+  // among collections) are excluded here - they're implementation details of
+  // other system types or managed through their own dedicated page, not
+  // meant to be picked as a relation target/re-usable field group on
+  // user-authored content types. The field CURRENTLY being edited is the one
+  // exception: if it already targets a hidden collection (e.g. `user`'s
+  // built-in `roles` field, targeting `role`), that target still needs to
+  // resolve to a real option or the Select would render blank.
   //
   // `collections` deliberately does NOT exclude the type being edited from
   // its own relation-`target` picker (unlike `components`, where excluding
@@ -267,18 +272,25 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   // no such recursion risk - excluding it here previously made a
   // self-relation (e.g. `Employee.manager -> Employee`) impossible to even
   // configure through this editor.
+  const editingRelationTarget =
+    editingField?.type === "relation"
+      ? (editingField.config as RelationFieldConfig).target
+      : undefined;
   const dynamicOptions = useMemo(
     () => ({
       collections: allTypes
-        .filter((t) => t.kind === "collection")
+        .filter(
+          (t) =>
+            t.kind === "collection" && (!t.hidden || t.id === editingRelationTarget),
+        )
         .map((t) => ({ value: t.id, label: t.label })),
       components: allTypes
         .filter(
-          (t) => t.kind === "component" && t.id !== definition?.id && !t.system,
+          (t) => t.kind === "component" && t.id !== definition?.id && !t.hidden,
         )
         .map((t) => ({ value: t.id, label: t.label })),
     }),
-    [allTypes, definition?.id],
+    [allTypes, definition?.id, editingRelationTarget],
   );
 
   // Keeps `order` an explicit mirror of each field's position in `fields[]` -
