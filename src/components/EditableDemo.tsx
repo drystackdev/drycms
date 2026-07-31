@@ -14,6 +14,8 @@ interface Props {
   context: Record<string, any>;
   /** Render function that takes context and returns the preview JSX */
   renderPreview: (context: Record<string, any>) => ComponentChildren;
+  /** Components to make available in eval scope (e.g., TextField, Button, etc.) */
+  components?: Record<string, any>;
 }
 
 /** Editable showcase for field inputs: code can be edited live, preview updates via Babel JSX transform + eval */
@@ -24,6 +26,7 @@ export default function EditableDemo({
   code: initialCode,
   context,
   renderPreview,
+  components = {},
 }: Props) {
   const [editedCode, setEditedCode] = useState(initialCode);
   const [error, setError] = useState<string | null>(null);
@@ -47,19 +50,28 @@ export default function EditableDemo({
         filename: 'x.jsx',
       }).code;
 
-      // Create function that returns the result
-      // Pass context variables + React/Fragment (for JSX support) as parameters
-      const contextVars = Object.keys(context);
-      const contextValues = Object.values(context);
+      // Remove trailing semicolons and "use strict" from Babel output
+      let cleanCode = transformed
+        .replace(/^"use strict";\n/, '')
+        .replace(/;$/, '');
 
+      // Create function that returns the transformed code result
+      // Pass context variables + components as parameters
+      const contextVars = Object.keys(context);
+      const componentNames = Object.keys(components);
+      const allParams = ['React', ...componentNames, ...contextVars];
+      const contextValues = Object.values(context);
+      const componentValues = Object.values(components);
+
+      // Babel transforms to React.createElement, we inject React=Preact
       // eslint-disable-next-line no-new-func
       const renderFn = new Function(
-        'React',
-        ...contextVars,
-        `return (${transformed})`
+        ...allParams,
+        `return (${cleanCode})`
       );
-      // Pass Preact as React so JSX transform works (React.createElement → h)
-      return renderFn({ createElement: h, Fragment }, ...contextValues);
+
+      // Pass Preact as React, plus all components and context
+      return renderFn({ createElement: h, Fragment }, ...componentValues, ...contextValues);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);

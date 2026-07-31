@@ -978,6 +978,7 @@ function DemoContent({ id }: { id: string }) {
           description="Controlled label + control + helper text component; error switches the helper text to the destructive colour, multiline swaps the input for a textarea."
           code={code.textField!}
           context={{ title, setTitle, slug, setSlug, bio, setBio }}
+          components={{ TextField }}
           renderPreview={({ title, setTitle, slug, setSlug, bio, setBio }) => (
             <div class="grid cols-2" style="width: 100%">
               <TextField
@@ -1018,6 +1019,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField, but always a multi-line editor - JSX-highlighted live as you type, via the same stacked highlighted-pre/transparent-textarea technique as CodeBlock's editable mode."
           code={code.codeField!}
           context={{ renderFn, setRenderFn }}
+          components={{ CodeField }}
           renderPreview={({ renderFn, setRenderFn }) => (
             <CodeField
               label="Render function"
@@ -1042,6 +1044,7 @@ function DemoContent({ id }: { id: string }) {
           description="A ProseMirror-backed contenteditable surface with a toolbar for undo/redo, bold/italic/underline, clear formatting, text color, block type (paragraph/headings/quote), alignment, and inserting a drag-to-resize image. Looks like the multiline TextField with a toolbar docked on top; value is always clean HTML."
           code={code.richTextField!}
           context={{ body, setBody, source }}
+          components={{ RichTextField, CodeBlock }}
           renderPreview={({ body, setBody, source }) => (
             <div class="stack" style={{ width: "100%" }}>
               <a href={`${path}/richtext-demo`} class="hint">
@@ -1075,6 +1078,7 @@ function DemoContent({ id }: { id: string }) {
           description="Pairs a TextField for the title with a derived, editable slug input below it; auto-derives via slugify() until the slug is edited directly, and the trailing button re-syncs it from the title."
           code={code.slugField!}
           context={{ title, setTitle, slug, setSlug }}
+          components={{ SlugField }}
           renderPreview={({ title, setTitle, slug, setSlug }) => (
             <div style="width: 100%; max-width: 24rem">
               <SlugField
@@ -1103,6 +1107,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField; the trailing eye button toggles type='password' to type='text'. Its show/hide state is one signal shared by every PasswordField on the page - toggle one, they all reveal."
           code={code.passwordField!}
           context={{ password, setPassword, confirm, setConfirm }}
+          components={{ PasswordField }}
           renderPreview={({ password, setPassword, confirm, setConfirm }) => (
             <div class="grid cols-2" style="width: 100%">
               <PasswordField
@@ -1135,6 +1140,7 @@ function DemoContent({ id }: { id: string }) {
           description="Editor for the secretkey field type (e.g. a third-party API key) - write-only: it never receives the decrypted value back, only a hasExistingValue flag that swaps the placeholder to 'Leave blank to keep the current secret'. A staged value is encrypted server-side (AES-256-GCM) before it's ever written to the DB/file, and only decrypted again when the server itself needs it - it's never sent back to a client as plaintext."
           code={code.secretField!}
           context={{ newKey, setNewKey, existingKey, setExistingKey }}
+          components={{ SecretKeyField }}
           renderPreview={({ newKey, setNewKey, existingKey, setExistingKey }) => (
             <div class="grid cols-2" style="width: 100%">
               <SecretKeyField
@@ -1167,6 +1173,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField, backed by a numeric input; empty/invalid input resolves to 0."
           code={code.numberField!}
           context={{ priority, setPriority, wordCount, setWordCount, price, setPrice }}
+          components={{ NumberField }}
           renderPreview={({
             priority,
             setPriority,
@@ -1216,6 +1223,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField; ui='switch' swaps the checkbox for role='switch' (real ARIA semantics, not a class)."
           code={code.checkField!}
           context={{ visible, setVisible, autoPublish, setAutoPublish }}
+          components={{ CheckField }}
           renderPreview={({ visible, setVisible, autoPublish, setAutoPublish }) => (
             <div class="row" style="gap: 1.5rem">
               <CheckField
@@ -1248,6 +1256,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField; config.multiple picks between the Select and MultiSelect controls against a fixed config.options list defined on the field itself."
           code={code.selectField!}
           context={{ collection, setCollection, tags, setTags }}
+          components={{ SelectField }}
           renderPreview={({ collection, setCollection, tags, setTags }) => (
             <div class="grid cols-2" style="width: 100%">
               <SelectField
@@ -1295,6 +1304,7 @@ function DemoContent({ id }: { id: string }) {
             noteDate,
             setNoteDate,
           }}
+          components={{ DatePickerField }}
           renderPreview={({
             publishedAt,
             setPublishedAt,
@@ -1343,6 +1353,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField; the control is a 4:3 frame that opens a FileManager-backed dialog restricted to images (accept), pre-scrolled to the current selection. multiple (true, or {min, max} to require/cap a count) switches to picking several images, rendered as a reorderable list you can drag to reorder below the picker."
           code={code.imageField!}
           context={{ source, cover, setCover, gallery, setGallery }}
+          components={{ ImageField }}
           renderPreview={({ source, cover, setCover, gallery, setGallery }) => (
             <div class="grid cols-2" style="width: 100%">
               <div>
@@ -1417,6 +1428,7 @@ function DemoContent({ id }: { id: string }) {
           description="Same label + control + helper text contract as TextField; a separate Edit button opens a searchable/paginated DataTable dialog, backed by a RelationFieldSource (columns + fetchRows + resolveLabels) so it isn't tied to any particular backend. multiple swaps the picker's radio column for checkboxes and stores an array of ids instead of one; sortable (multiple only) lets the chosen list be drag-reordered."
           code={code.relationField!}
           context={{ author, setAuthor, contributors, setContributors, source }}
+          components={{ RelationField }}
           renderPreview={({ author, setAuthor, contributors, setContributors, source }) => (
             <div class="grid cols-2" style="width: 100%">
               <div>
@@ -1465,6 +1477,7 @@ function DemoContent({ id }: { id: string }) {
           description="An editable list of summaries, each opening an add/edit dialog for one item; renderItem lets the caller plug in that item's own fields, so the item's shape is entirely up to the consumer."
           code={code.componentField!}
           context={{ links, setLinks }}
+          components={{ ComponentField, TextField }}
           renderPreview={({ links, setLinks }) => (
             <div style="width: 100%; max-width: 24rem">
               <ComponentField
