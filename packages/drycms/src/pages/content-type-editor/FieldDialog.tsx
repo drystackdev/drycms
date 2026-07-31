@@ -82,6 +82,15 @@ export interface FieldDialogProps {
    * below when editing an existing field; ignored when adding one (no id
    * yet - the default is derived purely from the picked type instead). */
   fieldSides?: Record<string, FieldSide>;
+  /** Currently-archived fields (see `types.ts`'s `deletedFieldIds`) - only
+   * consulted while ADDING a field (`editingField === null`): naming a new
+   * one after an archived field is never a genuine new column, so `handleSave`
+   * reuses that archived field's `id` instead of minting a fresh one when the
+   * type also matches (`ContentTypeEditor.tsx`'s `handleFieldSave` then
+   * restores it in place rather than appending a real duplicate), or blocks
+   * the save entirely when the type differs (a name can't mean two different
+   * shapes at once). */
+  archivedFields?: FieldDefinition[];
   /** `false` for `component`-kind types - see `FieldsList.tsx`'s identical
    * prop for why (their fields never render in a split left/right form). */
   showSideToggle: boolean;
@@ -396,6 +405,7 @@ export default function FieldDialog({
   editingField,
   dynamicOptions,
   fieldSides,
+  archivedFields = [],
   showSideToggle,
   onCancel,
   onSave,
@@ -524,9 +534,14 @@ export default function FieldDialog({
     if (!draftType) return;
     if (!draftName.trim()) return;
     if (draftType === "select" && selectOptionsInvalid(draftConfig)) return;
+    if (archivedTypeConflict) return;
     onSave(
       {
-        id: editingField?.id ?? randomUUID(),
+        // Reusing the archived field's own id (rather than minting a fresh
+        // one) is what makes `ContentTypeEditor.tsx`'s `handleFieldSave`
+        // restore it in place instead of appending a genuine duplicate -
+        // see `archivedFields`' doc comment above.
+        id: editingField?.id ?? archivedMatch?.id ?? randomUUID(),
         name: draftName.trim(),
         label: draftLabel.trim() || draftName.trim(),
         description: draftDescription.trim() || undefined,
@@ -542,6 +557,17 @@ export default function FieldDialog({
       draftSide,
     );
   }
+
+  // Case-insensitive name match against the archive, same rule
+  // `naming.ts`'s `validateContentTypeDefinition` already enforces for real
+  // (a field name is unique across `fields[]`, archived or not) - only
+  // meaningful while ADDING (`editingField === null`); renaming an existing
+  // field is a separate, unrelated edit this doesn't touch.
+  const archivedMatch =
+    !editingField && draftName.trim()
+      ? archivedFields.find((f) => f.name.toLowerCase() === draftName.trim().toLowerCase())
+      : undefined;
+  const archivedTypeConflict = !!archivedMatch && !!draftType && archivedMatch.type !== draftType;
 
   const activeFieldType = fieldTypes[draftType];
   // A `relationmirror` row isn't a real field (see `system-fields.ts`'s
@@ -565,6 +591,7 @@ export default function FieldDialog({
     saveAttempted &&
     (!draftType ||
       !draftName.trim() ||
+      archivedTypeConflict ||
       (draftType === "select" && selectOptionsInvalid(draftConfig)));
 
   return (
@@ -603,9 +630,15 @@ export default function FieldDialog({
                     setDraftName(name);
                   }}
                   disabled={isMirror}
-                  error={saveAttempted && !draftName.trim()}
+                  error={saveAttempted && (!draftName.trim() || archivedTypeConflict)}
                   helperText={
-                    saveAttempted && !draftName.trim() ? "Field name is required." : undefined
+                    saveAttempted && !draftName.trim()
+                      ? "Field name is required."
+                      : saveAttempted && archivedTypeConflict
+                        ? `An archived field named "${archivedMatch!.name}" already uses a different type (${fieldTypes[archivedMatch!.type]?.label ?? archivedMatch!.type}) - restore or delete it from the Archive first, or choose a different name.`
+                        : archivedMatch
+                          ? `Restores the archived "${archivedMatch.label}" field instead of creating a new one.`
+                          : undefined
                   }
                 />
                 <TextField

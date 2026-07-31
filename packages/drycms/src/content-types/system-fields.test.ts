@@ -1,15 +1,32 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeFields,
+  activeSystemFieldsFor,
   defaultFieldSide,
+  effectiveFeatures,
+  relationMirrorFieldsFor,
   resolveFieldSide,
   SYSTEM_COMPONENT_IDS,
   SYSTEM_FIELD_IDS,
   systemFieldsFor,
 } from "./system-fields.js";
-import type { ContentTypeDefinition } from "./types.js";
+import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
 function contentType(overrides: Partial<ContentTypeDefinition> = {}): ContentTypeDefinition {
   return { id: "t1", kind: "collection", name: "blog", label: "Blog", fields: [], version: 0, ...overrides };
+}
+
+function field(overrides: Partial<FieldDefinition> = {}): FieldDefinition {
+  return {
+    id: "f1",
+    name: "price",
+    label: "Price",
+    type: "number",
+    config: {},
+    validation: {},
+    order: 0,
+    ...overrides,
+  };
 }
 
 describe("systemFieldsFor", () => {
@@ -83,6 +100,64 @@ describe("systemFieldsFor", () => {
   it("never adds sortIndex on a singleton, even when the flag is set", () => {
     const fields = systemFieldsFor(contentType({ kind: "singleton", features: { sortable: true } as never }));
     expect(fields.map((f) => f.id)).not.toContain(SYSTEM_FIELD_IDS.sortIndex);
+  });
+});
+
+describe("activeFields", () => {
+  it("returns every field unchanged when nothing is trashed", () => {
+    const f1 = field({ id: "f1" });
+    const f2 = field({ id: "f2" });
+    expect(activeFields(contentType({ fields: [f1, f2] }))).toEqual([f1, f2]);
+  });
+
+  it("hides a field whose id is in deletedFieldIds, without mutating fields[]", () => {
+    const f1 = field({ id: "f1" });
+    const f2 = field({ id: "f2" });
+    const type = contentType({ fields: [f1, f2], deletedFieldIds: ["f1"] });
+    expect(activeFields(type)).toEqual([f2]);
+    expect(type.fields).toEqual([f1, f2]);
+  });
+});
+
+describe("effectiveFeatures", () => {
+  it("returns features unchanged when nothing is trashed", () => {
+    expect(effectiveFeatures(contentType({ features: { draft: true, seo: true } }))).toEqual({
+      draft: true,
+      seo: true,
+    });
+  });
+
+  it("forces a trashed key to false without touching the real features object", () => {
+    const type = contentType({ features: { draft: true, seo: true }, deletedFeatureKeys: ["draft"] });
+    expect(effectiveFeatures(type)).toEqual({ draft: false, seo: true });
+    expect(type.features).toEqual({ draft: true, seo: true });
+  });
+});
+
+describe("activeSystemFieldsFor", () => {
+  it("omits the system field(s) for a trashed feature, even though features[key] is still true", () => {
+    const type = contentType({ features: { draft: true }, deletedFeatureKeys: ["draft"] });
+    expect(activeSystemFieldsFor(type).map((f) => f.id)).not.toContain(SYSTEM_FIELD_IDS.draft);
+    // The real systemFieldsFor (used for DDL generation) still sees it as on.
+    expect(systemFieldsFor(type).map((f) => f.id)).toContain(SYSTEM_FIELD_IDS.draft);
+  });
+});
+
+describe("relationMirrorFieldsFor", () => {
+  it("skips a relation field that's been trashed on the source type", () => {
+    const target = contentType({ id: "target", name: "author" });
+    const relationField = field({
+      id: "rel1",
+      type: "relation",
+      config: { target: "target", cardinality: "manyToOne" },
+    });
+    const source = contentType({
+      id: "source",
+      name: "post",
+      fields: [relationField],
+      deletedFieldIds: ["rel1"],
+    });
+    expect(relationMirrorFieldsFor(target, [target, source])).toEqual([]);
   });
 });
 

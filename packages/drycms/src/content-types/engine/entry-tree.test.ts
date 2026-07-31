@@ -38,6 +38,18 @@ describe("buildEntryFieldTree", () => {
     expect(password.fieldType).toBe("password");
   });
 
+  it("hides a trashed field and a trashed feature's system field(s) from the entry tree", () => {
+    const user = allTypes.find((t) => t.name === "user")!;
+    const password = user.fields.find((f) => f.name === "password")!;
+    const trashed: ContentTypeDefinition = {
+      ...user,
+      deletedFieldIds: [password.id],
+      deletedFeatureKeys: ["timestamps"],
+    };
+    const nodes = buildEntryFieldTree(trashed, allTypes);
+    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "email", "roles"]);
+  });
+
   it("maps a manyToMany relation field to a child table, not a column", () => {
     const user = allTypes.find((t) => t.name === "user")!;
     const nodes = buildEntryFieldTree(user, allTypes);

@@ -126,6 +126,9 @@ export const iconBodies = {
   Trash: icon(
     '<g fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" d="M20.5 6h-17m15.333 2.5l-.46 6.9c-.177 2.654-.265 3.981-1.13 4.79s-2.196.81-4.856.81h-.774c-2.66 0-3.991 0-4.856-.81c-.865-.809-.954-2.136-1.13-4.79l-.46-6.9M9.5 11l.5 5m4.5-5l-.5 5"/><path d="M6.5 6h.11a2 2 0 0 0 1.83-1.32l.034-.103l.097-.291c.083-.249.125-.373.18-.479a1.5 1.5 0 0 1 1.094-.788C9.962 3 10.093 3 10.355 3h3.29c.262 0 .393 0 .51.019a1.5 1.5 0 0 1 1.094.788c.055.106.097.23.18.479l.097.291A2 2 0 0 0 17.5 6"/></g>',
   ),
+  Archive: icon(
+    '<g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12c0-.466 0-.699.076-.883a1 1 0 0 1 .541-.54c.184-.077.417-.077.883-.077h3c.466 0 .699 0 .883.076a1 1 0 0 1 .54.541c.077.184.077.417.077.883s0 .699-.076.883a1 1 0 0 1-.541.54c-.184.077-.417.077-.883.077h-3c-.466 0-.699 0-.883-.076a1 1 0 0 1-.54-.541C9 12.699 9 12.466 9 12Z"/><path stroke-linecap="round" d="M20.5 7v6c0 3.771 0 5.657-1.172 6.828S16.271 21 12.5 21h-1c-3.771 0-5.657 0-6.828-1.172S3.5 16.771 3.5 13V7"/><path d="M2 5c0-.943 0-1.414.293-1.707S3.057 3 4 3h16c.943 0 1.414 0 1.707.293S22 4.057 22 5s0 1.414-.293 1.707S20.943 7 20 7H4c-.943 0-1.414 0-1.707-.293S2 5.943 2 5Z"/></g>',
+  ),
   Upload: icon(
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M17 9.002c2.175.012 3.353.109 4.121.877C22 10.758 22 12.172 22 15v1c0 2.829 0 4.243-.879 5.122C20.243 22 18.828 22 16 22H8c-2.828 0-4.243 0-5.121-.878C2 20.242 2 18.829 2 16v-1c0-2.828 0-4.242.879-5.121c.768-.768 1.946-.865 4.121-.877"/><path stroke-linejoin="round" d="M12 15V2m0 0l3 3.5M12 2L9 5.5"/></g>',
   ),
@@ -811,6 +814,20 @@ export function TrashIcon(props: IconProps) {
       aria-hidden="true"
       {...props}
       dangerouslySetInnerHTML={{ __html: iconBodies.Trash.body }}
+    />
+  );
+}
+
+/** `solar:archive-linear` */
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox={iconBodies.Archive.viewBox ?? DEFAULT_VIEW_BOX}
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      {...props}
+      dangerouslySetInnerHTML={{ __html: iconBodies.Archive.body }}
     />
   );
 }

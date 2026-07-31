@@ -5,6 +5,7 @@ import DataTable from "../components/DataTable.js";
 import Icon from "../components/Icon.js";
 import { PlusIcon, type IconName } from "../components/icons.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
+import { activeFields } from "../content-types/system-fields.js";
 import type {
   ContentTypeDefinition,
   ContentTypeKind,
@@ -56,7 +57,7 @@ export default function ContentTypes() {
       id: d.id,
       label: d.label,
       description: d.description ?? "",
-      fieldCount: d.fields.length,
+      fieldCount: activeFields(d).length,
     }));
 
   const selectedGroup = GROUPS.find((g) => g.kind === selectedKind)!;

@@ -10,21 +10,27 @@ import { randomUUID } from "../lib/uuid.js";
 import type { RelationMirrorFieldConfig } from "../content-types/field-registry.js";
 import type { DestructiveChange } from "../content-types/migration.js";
 import {
+  activeFields,
+  effectiveFeatures,
   relationMirrorFieldsFor,
   SYSTEM_FIELD_IDS,
   type FieldSide,
 } from "../content-types/system-fields.js";
 import type {
   ContentTypeDefinition,
+  ContentTypeFeatures,
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
 import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
-import FeaturesFieldset from "./content-type-editor/FeaturesFieldset.js";
+import FeaturesFieldset, {
+  FEATURES_BY_KIND,
+} from "./content-type-editor/FeaturesFieldset.js";
 import FieldDialog from "./content-type-editor/FieldDialog.js";
 import FieldsList, {
   type SystemFieldEntry,
 } from "./content-type-editor/FieldsList.js";
+import FieldTrashDialog from "./content-type-editor/FieldTrashDialog.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface Props {
@@ -63,47 +69,53 @@ function systemFieldsForUi(
   allTypes: ContentTypeDefinition[],
 ): SystemFieldEntry[] {
   if (definition.kind === "component") return [];
+  const features = effectiveFeatures(definition);
   const items: SystemFieldEntry[] = [];
-  if (definition.features?.slug) {
+  if (features.slug) {
     items.push({
       id: SYSTEM_FIELD_IDS.slug,
       label: "Title & Slug",
       name: "title, slug",
       typeLabel: "Slug",
+      type: "slug",
       groupedIds: [SYSTEM_FIELD_IDS.title, SYSTEM_FIELD_IDS.slug],
     });
   }
-  if (definition.features?.seo) {
+  if (features.seo) {
     items.push({
       id: SYSTEM_FIELD_IDS.seo,
       label: "SEO",
       name: "seo",
       typeLabel: "Component",
+      type: "component",
     });
   }
   if (definition.kind === "collection") {
-    if (definition.features?.draft) {
+    if (features.draft) {
       items.push({
         id: SYSTEM_FIELD_IDS.draft,
         label: "Draft",
         name: "draft",
         typeLabel: "Boolean",
+        type: "boolean",
       });
     }
-    if (definition.features?.schedule) {
+    if (features.schedule) {
       items.push({
         id: SYSTEM_FIELD_IDS.schedule,
         label: "Schedule",
         name: "schedule",
         typeLabel: "Date",
+        type: "date",
       });
     }
-    if (definition.features?.timestamps) {
+    if (features.timestamps) {
       items.push({
         id: SYSTEM_FIELD_IDS.createdAt,
         label: "Timestamps",
         name: "createdAt, updatedAt",
         typeLabel: "Date",
+        type: "date",
         groupedIds: [SYSTEM_FIELD_IDS.createdAt, SYSTEM_FIELD_IDS.updatedAt],
       });
     }
@@ -111,12 +123,13 @@ function systemFieldsForUi(
   for (const mirror of relationMirrorFieldsFor(definition, allTypes)) {
     const config = mirror.config as RelationMirrorFieldConfig;
     const sourceType = allTypes.find((t) => t.id === config.sourceTypeId);
-    const sourceField = sourceType?.fields.find((f) => f.id === config.sourceFieldId);
+    const sourceField = sourceType && activeFields(sourceType).find((f) => f.id === config.sourceFieldId);
     items.push({
       id: mirror.id,
       label: mirror.label,
       name: mirror.name,
       typeLabel: "Relation Mirror",
+      type: "relationmirror",
       description: definition.fieldDescriptions?.[mirror.id],
       mirror:
         sourceType && sourceField
@@ -170,6 +183,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   // Snapshot of `definition` right after load/creation, before any edits -
   // compared against the live value to detect unsaved changes so leaving
@@ -274,18 +288,104 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     return fields.map((field, index) => ({ ...field, order: index }));
   }
 
+  // `fields` here is only ever the ACTIVE (non-trashed) ones - `FieldsList`
+  // never renders/reorders a trashed field, so it never appears in what it
+  // reports back. Trashed fields are appended back on unchanged, or this
+  // would silently drop them from `d.fields` (and, with them, the real
+  // column `tree.ts` needs to keep generating - see `deletedFieldIds`).
   function updateFields(fields: FieldDefinition[]) {
+    setDefinition((d) => {
+      if (!d) return d;
+      const deletedIds = new Set(d.deletedFieldIds ?? []);
+      const trashed = d.fields.filter((f) => deletedIds.has(f.id));
+      return { ...d, fields: withNormalizedOrder([...fields, ...trashed]) };
+    });
+  }
+
+  /** Clicking Remove on a NEW (never-saved) content type deletes for real -
+   * there's no live column yet to protect. On an EXISTING one it's a soft
+   * delete: the field stays in `fields[]` (so its column survives) and is
+   * just hidden from the active list via `deletedFieldIds`, restorable from
+   * the trash - see `types.ts`'s doc comment. */
+  function removeField(fieldId: string) {
+    setDefinition((d) => {
+      if (!d) return d;
+      if (isNew) {
+        return {
+          ...d,
+          fields: withNormalizedOrder(d.fields.filter((f) => f.id !== fieldId)),
+        };
+      }
+      if (d.deletedFieldIds?.includes(fieldId)) return d;
+      return { ...d, deletedFieldIds: [...(d.deletedFieldIds ?? []), fieldId] };
+    });
+  }
+
+  function restoreField(fieldId: string) {
     setDefinition((d) =>
-      d ? { ...d, fields: withNormalizedOrder(fields) } : d,
+      d
+        ? { ...d, deletedFieldIds: (d.deletedFieldIds ?? []).filter((id) => id !== fieldId) }
+        : d,
     );
   }
 
-  function removeField(fieldId: string) {
+  /** Deletes a trashed field for real - the only path that actually splices
+   * it out of `fields[]`, which is what makes `tree.ts` stop generating its
+   * column (a real `DROP COLUMN` on the next save). */
+  function purgeField(fieldId: string) {
     setDefinition((d) => {
       if (!d) return d;
       return {
         ...d,
         fields: withNormalizedOrder(d.fields.filter((f) => f.id !== fieldId)),
+        deletedFieldIds: (d.deletedFieldIds ?? []).filter((id) => id !== fieldId),
+      };
+    });
+  }
+
+  /** Mirrors `removeField`'s new-vs-existing split for `features` - turning a
+   * feature off on a NEW content type just flips it, same as always; on an
+   * EXISTING one it goes to the trash instead (`features[key]` deliberately
+   * stays `true` so its column(s) survive - see `deletedFeatureKeys`'s doc
+   * comment), restorable the same way a field is. Turning a trashed feature
+   * back on through the checkbox is just a restore. */
+  function setFeature(key: keyof ContentTypeFeatures, value: boolean) {
+    setDefinition((d) => {
+      if (!d) return d;
+      if (isNew) {
+        return { ...d, features: { ...d.features, [key]: value } };
+      }
+      const trashed = d.deletedFeatureKeys ?? [];
+      if (value) {
+        if (trashed.includes(key)) {
+          return { ...d, deletedFeatureKeys: trashed.filter((k) => k !== key) };
+        }
+        return { ...d, features: { ...d.features, [key]: true } };
+      }
+      if (trashed.includes(key)) return d;
+      return { ...d, deletedFeatureKeys: [...trashed, key] };
+    });
+  }
+
+  function restoreFeature(key: keyof ContentTypeFeatures) {
+    setDefinition((d) =>
+      d
+        ? { ...d, deletedFeatureKeys: (d.deletedFeatureKeys ?? []).filter((k) => k !== key) }
+        : d,
+    );
+  }
+
+  /** Turns a trashed feature off for real - the only path that actually
+   * flips `features[key]` to `false`, which is what makes `tree.ts` stop
+   * generating its column(s) (a real `DROP COLUMN`/table drop on the next
+   * save). */
+  function purgeFeature(key: keyof ContentTypeFeatures) {
+    setDefinition((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        features: { ...d.features, [key]: false },
+        deletedFeatureKeys: (d.deletedFeatureKeys ?? []).filter((k) => k !== key),
       };
     });
   }
@@ -305,13 +405,22 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           fieldDescriptions: { ...d.fieldDescriptions, [field.id]: field.description ?? "" },
         };
       }
-      const fields = editingField
-        ? d.fields.map((f) => (f.id === editingField.id ? field : f))
-        : [...d.fields, field];
+      // Keyed by id (not `editingField`, which is only ever set while
+      // EDITING) so this also covers `FieldDialog.tsx`'s archived-name-match
+      // case: adding a field named/typed like an archived one reuses that
+      // archived field's id (see its `archivedFields` doc comment), which
+      // already exists in `d.fields` - so it's replaced in place, restored
+      // from the archive below, rather than appended as a real duplicate.
+      const existingIndex = d.fields.findIndex((f) => f.id === field.id);
+      const fields =
+        existingIndex >= 0
+          ? d.fields.map((f, i) => (i === existingIndex ? field : f))
+          : [...d.fields, field];
       return {
         ...d,
         fields: withNormalizedOrder(fields),
         fieldSides: { ...d.fieldSides, [field.id]: side },
+        deletedFieldIds: (d.deletedFieldIds ?? []).filter((id) => id !== field.id),
       };
     });
     setFieldDialogOpen(false);
@@ -515,8 +624,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         <legend class="stack">
           <FieldsList
             systemEntries={systemFieldsForUi(definition, allTypes)}
-            fields={definition.fields}
-            features={definition.features}
+            fields={activeFields(definition)}
+            features={effectiveFeatures(definition)}
             fieldOrder={definition.fieldOrder}
             type={KIND_LABELS[definition.kind]}
             onEdit={(field) => {
@@ -537,6 +646,12 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               setEditingField(null);
               setFieldDialogOpen(true);
             }}
+            showTrash={!isNew}
+            trashCount={
+              (definition.deletedFieldIds?.length ?? 0) +
+              (definition.deletedFeatureKeys?.length ?? 0)
+            }
+            onOpenTrash={() => setTrashOpen(true)}
           />
         </legend>
         <div class="stack">
@@ -584,12 +699,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
 
           <FeaturesFieldset
             kind={definition.kind}
-            features={definition.features}
-            onChange={(key, value) =>
-              setDefinition((d) =>
-                d ? { ...d, features: { ...d.features, [key]: value } } : d,
-              )
-            }
+            features={effectiveFeatures(definition)}
+            onChange={setFeature}
           />
 
           {!isNew && (
@@ -618,9 +729,30 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         editingField={editingField}
         dynamicOptions={dynamicOptions}
         fieldSides={definition.fieldSides}
+        archivedFields={definition.fields.filter((f) =>
+          definition.deletedFieldIds?.includes(f.id),
+        )}
         showSideToggle={definition.kind !== "component"}
         onCancel={() => setFieldDialogOpen(false)}
         onSave={handleFieldSave}
+      />
+
+      <FieldTrashDialog
+        open={trashOpen}
+        fields={definition.fields.filter((f) =>
+          definition.deletedFieldIds?.includes(f.id),
+        )}
+        features={(definition.deletedFeatureKeys ?? []).map((key) => ({
+          key,
+          label:
+            FEATURES_BY_KIND[definition.kind].find((f) => f.key === key)?.label ??
+            key,
+        }))}
+        onClose={() => setTrashOpen(false)}
+        onRestoreField={restoreField}
+        onPurgeField={purgeField}
+        onRestoreFeature={restoreFeature}
+        onPurgeFeature={purgeFeature}
       />
 
       <ConfirmDialog

@@ -87,6 +87,26 @@ export interface ContentTypeDefinition {
    * a stale id (the relation it described no longer exists) is simply never
    * looked up again. */
   fieldDescriptions?: Record<string, string>;
+  /** Ids (from `fields[]`) sent to the trash by the schema editor's Remove
+   * button - the `FieldDefinition` itself deliberately stays in `fields[]`,
+   * untouched, so `tree.ts`/`migration.ts` keep generating its column exactly
+   * as before and `naming.ts`'s uniqueness check still catches a new field
+   * reusing its name. Only hidden from the active Fields list and the entry
+   * editor/API (see `system-fields.ts`'s `activeFields`) - the real
+   * `DROP COLUMN` only happens once an id is actually spliced out of
+   * `fields[]` for good (deleted forever from the trash). Only ever
+   * populated when editing an EXISTING content type - `ContentTypeEditor.tsx`
+   * deletes for real immediately on a brand-new one, since there's no live
+   * column yet to protect. */
+  deletedFieldIds?: string[];
+  /** `features` keys turned off through the trash the same way
+   * `deletedFieldIds` stages a field - `features[key]` itself deliberately
+   * stays `true` (so `tree.ts`'s `resolveTableTree`, which reads `features`
+   * directly, keeps generating its column/s) until the feature is deleted
+   * forever from the trash, which is what actually flips it to `false`. Only
+   * hidden from the active Features checkboxes and the Fields/entry editor
+   * display (`system-fields.ts`'s `activeSystemFieldsFor`) in the meantime. */
+  deletedFeatureKeys?: (keyof ContentTypeFeatures)[];
   /** Optimistic-lock counter, incremented on every successful save. */
   version: number;
   /** True for the built-in defaults seeded at first boot (`user`, `menu`,

@@ -1,5 +1,43 @@
 import type { RelationFieldConfig, RelationMirrorFieldConfig } from "./field-registry.js";
-import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
+import type { ContentTypeDefinition, ContentTypeFeatures, FieldDefinition } from "./types.js";
+
+/** `type.fields`, minus whatever's currently sitting in the trash (see
+ * `types.ts`'s `deletedFieldIds`) - the DISPLAY-only view every consumer
+ * that isn't generating DDL should read: the schema editor's Fields list,
+ * the entry editor/API (`entry-tree.ts`'s `buildEntryFieldTree`), and
+ * `relationMirrorFieldsFor` below (a trashed `relation` field's reverse
+ * mirror on the other type disappears right along with it). `tree.ts`'s
+ * `resolveTableTree` deliberately does NOT use this - it needs the RAW
+ * `type.fields` (trashed field included) so the column keeps existing until
+ * the field is deleted forever from the trash. */
+export function activeFields(type: ContentTypeDefinition): FieldDefinition[] {
+  const deleted = type.deletedFieldIds;
+  if (!deleted || deleted.length === 0) return type.fields;
+  const deletedSet = new Set(deleted);
+  return type.fields.filter((field) => !deletedSet.has(field.id));
+}
+
+/** `type.features`, as if every trashed key (see `types.ts`'s
+ * `deletedFeatureKeys`) were really off - the DISPLAY-only view every
+ * consumer that isn't generating DDL should read: the Features checkboxes
+ * and `activeSystemFieldsFor` below. `type.features[key]` itself
+ * deliberately stays untouched (`tree.ts`'s `resolveTableTree` calls the real
+ * `type.features` directly, never this) so the column(s) it implies keep
+ * existing until the feature is deleted forever from the trash. */
+export function effectiveFeatures(type: ContentTypeDefinition): ContentTypeFeatures {
+  const deleted = type.deletedFeatureKeys;
+  if (!deleted || deleted.length === 0) return type.features ?? {};
+  const result: ContentTypeFeatures = { ...type.features };
+  for (const key of deleted) result[key] = false;
+  return result;
+}
+
+/** `systemFieldsFor`, as if every trashed feature were really off - the
+ * DISPLAY-only counterpart to `activeFields` above, built on top of
+ * `effectiveFeatures`. */
+export function activeSystemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] {
+  return systemFieldsFor({ ...type, features: effectiveFeatures(type) });
+}
 
 /** Fixed, stable synthetic ids for the fields a `features` toggle implies -
  * turning a feature on/off is then exactly "a field with this id
@@ -183,7 +221,7 @@ export function relationMirrorFieldsFor(
 
   const matches: { source: ContentTypeDefinition; field: FieldDefinition }[] = [];
   for (const source of allTypes) {
-    for (const field of source.fields) {
+    for (const field of activeFields(source)) {
       if (field.type !== "relation") continue;
       if ((field.config as RelationFieldConfig).target !== type.id) continue;
       matches.push({ source, field });

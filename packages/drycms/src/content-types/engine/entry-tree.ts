@@ -1,6 +1,6 @@
 import type { ComponentFieldConfig, RelationCardinality, RelationFieldConfig, RelationMirrorFieldConfig } from "../field-registry.js";
 import { fieldTypes } from "../field-registry.js";
-import { applyFieldOrder, relationMirrorFieldsFor, systemFieldsFor } from "../system-fields.js";
+import { activeFields, activeSystemFieldsFor, applyFieldOrder, relationMirrorFieldsFor } from "../system-fields.js";
 import { resolveTableTree, type TableNode } from "../tree.js";
 import type { ContentTypeDefinition, FieldDefinition, FieldValidation } from "../types.js";
 
@@ -387,7 +387,7 @@ export function buildEntryFieldTree(type: ContentTypeDefinition, allTypes: Conte
   const componentsById = new Map(allTypes.filter((t) => t.kind === "component").map((t) => [t.id, t]));
   const rootTree = resolveTableTree(type, allTypes);
   const rootFields = applyFieldOrder(
-    [...type.fields, ...systemFieldsFor(type), ...relationMirrorFieldsFor(type, allTypes)],
+    [...activeFields(type), ...activeSystemFieldsFor(type), ...relationMirrorFieldsFor(type, allTypes)],
     type.fieldOrder,
   );
   return buildNodes(rootFields, rootTree, componentsById, allTypes);

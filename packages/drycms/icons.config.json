@@ -42,6 +42,7 @@
     "Rename": "solar:pen-2-linear",
     "Replace": "solar:refresh-linear",
     "Trash": "solar:trash-bin-trash-linear",
+    "Archive": "solar:archive-linear",
     "Upload": "solar:upload-linear",
     "Grid": "solar:widget-2-linear",
     "ListView": "solar:list-linear",

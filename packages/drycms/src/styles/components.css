@@ -2229,6 +2229,22 @@
         border-top: 1px solid var(--dry-border);
       }
 
+      & .content-type-list-item-item{
+        margin-block: auto;
+        background-color: var(--dry-card);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: var(--dry-radius-md);
+        box-shadow: var(--dry-shadow-lg);
+        &>svg{
+          width: 1.5rem;
+          height: 1.5rem;
+        }
+      }
+
       /* System fields aren't clickable - don't look it either. */
       &.system:hover {
         cursor: default;
@@ -4438,6 +4454,7 @@
   }
 
   .dry-component-preview {
+    container-type: inline-size;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4447,6 +4464,21 @@
     border-radius: var(--dry-radius-md);
     overflow: hidden;
     background-color: var(--dry-background);
+  }
+
+  /* Always laid out at a 768px desktop width, then scaled down (never up) to
+   * fit whatever the actual container width is - keeps every discovered
+   * component's preview consistent instead of squished by a narrow grid
+   * column. `100cqw` reads the container's own content width (post-padding),
+   * so the scale ratio matches the space really available. */
+  .dry-component-preview-scale {
+    flex-shrink: 0;
+    width: 768px;
+    aspect-ratio: 16 / 9;
+    scale: min(1, calc(100cqw / 768px));
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .dry-component-preview-skeleton {
@@ -4467,7 +4499,7 @@
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
 
-    @media (width < 48rem) {
+    @media (width < 64rem) {
       grid-template-columns: 1fr;
     }
   }

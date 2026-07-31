@@ -1,5 +1,6 @@
 import type { SortableHandleProps } from "../../lib/dnd/useSortableList.js";
-import { DragHandleIcon, TrashIcon } from "../../components/icons.js";
+import { DragHandleIcon, TextFieldTypeIcon, TrashIcon } from "../../components/icons.js";
+import { fieldTypeColors, fieldTypeIcons } from "../../components/field-type-icons.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 
 export interface FieldListItemProps {
@@ -8,6 +9,11 @@ export interface FieldListItemProps {
   /** Row 1: "Label [Type]". */
   label: string;
   typeLabel: string;
+  /** `FieldTypeDefinition.key` (e.g. "text", "relation") - looked up in
+   * `field-type-icons.ts`'s `fieldTypeIcons`/`fieldTypeColors` for this row's
+   * icon, same mapping the showcase nav uses. Falls back to the plain text
+   * icon in its default color when absent/unrecognized. */
+  type?: string;
   required?: boolean;
   /** Row 2: technical column name • description. */
   name: string;
@@ -27,6 +33,7 @@ export default function FieldListItem({
   id,
   label,
   typeLabel,
+  type,
   required = false,
   name,
   description,
@@ -36,6 +43,8 @@ export default function FieldListItem({
   dragHandleProps,
   dragging = false,
 }: FieldListItemProps) {
+  const TypeIcon = (type && fieldTypeIcons[type]) || TextFieldTypeIcon;
+  const color = type ? fieldTypeColors[type] : undefined;
   return (
     <li
       data-sortable-id={dragHandleProps ? id : undefined}
@@ -50,12 +59,15 @@ export default function FieldListItem({
       >
         <DragHandleIcon />
       </button>
+      <div class="content-type-list-item-item" style={color ? { color } : undefined}>
+        <TypeIcon />
+      </div>
       <div class="stack spacer" style={{ gap: "0.125rem" }}>
         <span class="row align-center" style={{ gap: "0.25rem" }}>
           {label}
-          <span class="badge sm secondary">
+          {/* <span class="badge sm secondary">
             {typeLabel}
-          </span>
+          </span> */}
           {system ? (
             <span class="badge sm outline">
               System
@@ -86,6 +98,7 @@ export function fieldListItemProps(field: FieldDefinition, typeLabel: string) {
   return {
     label: field.label,
     typeLabel,
+    type: field.type,
     required: !!field.validation?.required,
     name: field.name,
     description: field.description,

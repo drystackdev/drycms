@@ -1,5 +1,4 @@
-import { useMemo, useState } from "preact/hooks";
-import ConfirmDialog from "../../components/ConfirmDialog.js";
+import { useMemo } from "preact/hooks";
 import { fieldTypes } from "../../content-types/field-registry.js";
 import { applyFieldOrder } from "../../content-types/system-fields.js";
 import type {
@@ -8,7 +7,7 @@ import type {
 } from "../../content-types/types.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import FieldListItem, { fieldListItemProps } from "./FieldListItem.js";
-import { PlusIcon } from "../../components/icons.js";
+import { ArchiveIcon, PlusIcon } from "../../components/icons.js";
 
 export interface SystemFieldEntry {
   /** Combined-list id. */
@@ -17,6 +16,10 @@ export interface SystemFieldEntry {
   /** Real technical column name, as actually stored/migrated. */
   name: string;
   typeLabel: string;
+  /** `FieldTypeDefinition.key` this row stands for (e.g. "slug", "boolean") -
+   * threaded straight through to `FieldListItem`'s icon/color lookup, same as
+   * a real `FieldDefinition.type`. */
+  type?: string;
   /** When this one row actually stands for more than one real system field id
    * (e.g. the `features.slug` Title+Slug pair, shown/dragged as a single
    * "Title & Slug" row) - the full list of real ids, in their fixed relative
@@ -74,6 +77,13 @@ export interface FieldsListProps {
    * order. */
   onReorderAll: (order: string[]) => void;
   onAdd: () => void;
+  /** Only an EXISTING content type has an archive to show/open - see
+   * `types.ts`'s `deletedFieldIds` doc comment for why a brand-new one skips
+   * it entirely. The button itself only renders once `trashCount` is above
+   * 0 - nothing to open, nothing to show. */
+  showTrash: boolean;
+  trashCount: number;
+  onOpenTrash: () => void;
 }
 
 /**
@@ -95,11 +105,10 @@ export default function FieldsList({
   onReorderAll,
   onAdd,
   type,
+  showTrash,
+  trashCount,
+  onOpenTrash,
 }: FieldsListProps) {
-  const [pendingRemove, setPendingRemove] = useState<FieldDefinition | null>(
-    null,
-  );
-
   const combined: CombinedEntry[] = [
     ...fields.map((field) => ({ id: field.id, system: false as const, field })),
     ...systemEntries.map((entry) => ({
@@ -171,6 +180,7 @@ export default function FieldsList({
               id={item.id}
               label={item.entry.label}
               typeLabel={item.entry.typeLabel}
+              type={item.entry.type}
               name={item.entry.name}
               description={item.entry.description}
               system={!item.entry.mirror}
@@ -188,34 +198,24 @@ export default function FieldsList({
                 fieldTypes[item.field.type]?.label ?? item.field.type,
               )}
               onEdit={() => onEdit(item.field)}
-              onRemove={() => setPendingRemove(item.field)}
+              onRemove={() => onRemove(item.field.id)}
               dragHandleProps={sortable.getHandleProps(item.id)}
               dragging={sortable.draggingId === item.id}
             />
           ),
         )}
       </ul>
-      <div class="hint" style={{ marginTop: "2rem" }}>
-        Total: {fieldCount} field{fieldCount > 1 ? "s" : ""} - {featureCount}{" "}
-        feature{featureCount > 1 ? "s" : ""} - {fieldRequired} required
+      <div class="row justify-between" style={{ marginTop: "2rem" }}>
+        <div class="hint">
+          Total: {fieldCount} field{fieldCount > 1 ? "s" : ""} - {featureCount}{" "}
+          feature{featureCount > 1 ? "s" : ""} - {fieldRequired} required
+        </div>
+        {showTrash && trashCount > 0 && (
+          <button type="button" class="ghost sm" onClick={onOpenTrash}>
+            <ArchiveIcon /> Archive <span class="badge sm outline">{trashCount}</span>
+          </button>
+        )}
       </div>
-      <ConfirmDialog
-        open={pendingRemove !== null}
-        title={`Remove "${pendingRemove?.label ?? ""}"?`}
-        message={
-          <p>
-            This removes the field from the schema - saving afterwards will drop
-            its column, and any data in it.
-          </p>
-        }
-        confirmLabel="Remove"
-        destructive
-        onConfirm={() => {
-          if (pendingRemove) onRemove(pendingRemove.id);
-          setPendingRemove(null);
-        }}
-        onCancel={() => setPendingRemove(null)}
-      />
     </div>
   );
 }

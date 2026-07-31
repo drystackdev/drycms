@@ -80,10 +80,15 @@ export default function ComponentPreview({ name, label, defaults, load, shadow, 
 
   return (
     <div class="dry-component-preview" data-component={name}>
-      {h(`dry-${name}`, {
-        props: JSON.stringify(defaults),
-        ...(childrenHtml ? { dangerouslySetInnerHTML: { __html: childrenHtml } } : {}),
-      })}
+      {/* Fixed at a 768px desktop width so the component always lays out the
+       * same regardless of how narrow the actual card/grid cell is - CSS
+       * scales this box down (never up) to fit, see .dry-component-preview-scale. */}
+      <div class="dry-component-preview-scale">
+        {h(`dry-${name}`, {
+          props: JSON.stringify(defaults),
+          ...(childrenHtml ? { dangerouslySetInnerHTML: { __html: childrenHtml } } : {}),
+        })}
+      </div>
     </div>
   );
 }

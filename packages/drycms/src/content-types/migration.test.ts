@@ -61,6 +61,40 @@ describe("planMigration", () => {
     expect(sql(plan).some((s) => s.includes('DROP COLUMN "body"'))).toBe(true);
   });
 
+  it("keeps a trashed field's column - deletedFieldIds alone changes nothing", () => {
+    const old = collection({ fields: [field({ id: "f1", name: "body" })] });
+    const next = collection({ fields: [field({ id: "f1", name: "body" })], deletedFieldIds: ["f1"] });
+    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
+
+    expect(plan.tables).toEqual([]);
+  });
+
+  it("only drops the column once the trashed field is actually spliced out of fields[] (purged)", () => {
+    const old = collection({ fields: [field({ id: "f1", name: "body" })], deletedFieldIds: ["f1"] });
+    const next = collection({ fields: [] });
+    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
+
+    expect(plan.tables[0]!.action).toBe("alter");
+    expect(plan.tables[0]!.destructive).toEqual([{ kind: "drop-column", tableName: "posts", columnName: "body" }]);
+  });
+
+  it("keeps a trashed feature's column - deletedFeatureKeys alone changes nothing, since features[key] stays true", () => {
+    const old = collection({ features: { draft: true } });
+    const next = collection({ features: { draft: true }, deletedFeatureKeys: ["draft"] });
+    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
+
+    expect(plan.tables).toEqual([]);
+  });
+
+  it("only drops a feature's column once it's purged (features[key] actually flipped false)", () => {
+    const old = collection({ features: { draft: true }, deletedFeatureKeys: ["draft"] });
+    const next = collection({ features: { draft: false } });
+    const plan = planMigration({ target: next, oldAllTypes: [old], newAllTypes: [next] });
+
+    expect(plan.tables[0]!.action).toBe("alter");
+    expect(plan.tables[0]!.destructive).toEqual([{ kind: "drop-column", tableName: "posts", columnName: "draft" }]);
+  });
+
   it("recreates the table when a field's type changes, reporting a lossy-retype", () => {
     const old = collection({ fields: [field({ id: "f1", name: "views", type: "text" })] });
     const next = collection({ fields: [field({ id: "f1", name: "views", type: "number" })] });
