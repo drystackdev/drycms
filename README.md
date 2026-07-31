@@ -1,43 +1,25 @@
-# Astro Starter Kit: Minimal
+# DryCMS
+
+A self-hosted, attribute-styled Preact CMS admin UI - no Astro, served by a
+pluggable server adapter (Node by default; Cloudflare Workers and Bun are on
+the roadmap, see `src/server/adapters/`).
 
 ```sh
-bun create astro@latest -- --template minimal
+bun install
+bun run dev      # http://localhost:5173, base path /dry by default
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+See `AGENTS.md` for the full layout and development workflow, and
+`dry.config.ts` for configuration (storage/icons/content backends, base
+path).
 
-## 🚀 Project Structure
+## Commands
 
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
-```
-
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
-
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
-
-Any static assets, like images, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `bun install`             | Installs dependencies                            |
-| `bun dev`             | Starts local dev server at `localhost:4321`      |
-| `bun build`           | Build your production site to `./dist/`          |
-| `bun preview`         | Preview your build locally, before deploying     |
-| `bun astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `bun astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+| Command              | Action                                                |
+| :-------------------- | :---------------------------------------------------- |
+| `bun run dev`          | Start the dev server (Vite + Node, HMR incl. server code) |
+| `bun run build`        | Build the client bundle and the Node server bundle     |
+| `bun run start`        | Run the production build (`dist/server/entry-node.js`) |
+| `bun run test`         | Unit tests (vitest)                                    |
+| `bun run test:e2e`     | End-to-end tests (Playwright, needs a running dev server) |
+| `bun run typecheck`    | `tsc --noEmit`                                          |

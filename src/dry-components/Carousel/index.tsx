@@ -3,7 +3,7 @@ import {
   DryEditerComponent,
   type InferShape,
   type PropsBuilder,
-} from "drycms/components/RichTextField/register-component";
+} from "../../components/RichTextField/register-component.js";
 import css from "./style.css?raw";
 
 

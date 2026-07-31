@@ -1,7 +1,5 @@
 # build output
 dist/
-# generated types
-.astro/
 
 # dependencies
 node_modules/
@@ -25,20 +23,20 @@ pnpm-debug.log*
 
 status/
 
-# drycms local file storage (see `storage.root` in astro.config.mjs)
+# drycms local file storage (see `storage.root` in dry.config.ts)
 /storage/
 
-# drycms Icon Management's own local file storage (see `icons.root` in astro.config.mjs)
+# drycms Icon Management's own local file storage (see `icons.root` in dry.config.ts)
 /icons/
 /content/
 /richtext-components/
 
-# Playwright artifacts (a command run from the wrong cwd can create these
-# under packages/drycms/ instead of the repo root - unanchored so both are caught)
+# Playwright artifacts (unanchored - a command run from the wrong cwd can
+# create these under a subdirectory instead of the repo root)
 test-results/
 playwright-report/
 
-# drycms/src/db.ts local dev SQLite fallback (see status/db.md)
+# default `content.engine: "sqlite"` database file (see `dry.config.ts`)
 *.sqlite
 
 Sortable-master

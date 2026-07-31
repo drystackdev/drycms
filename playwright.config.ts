@@ -1,11 +1,11 @@
 import { defineConfig } from "@playwright/test";
 
-// Relies on `astro dev --background` already running (see CLAUDE.md's
-// workflow: `astro dev status`/`logs`/`stop`) rather than a Playwright-owned
-// `webServer` - the dev server's lifecycle is managed independently.
+// Relies on `bun run dev` (see `scripts/dev-server.mjs`) already running
+// rather than a Playwright-owned `webServer` - the dev server's lifecycle is
+// managed independently.
 export default defineConfig({
   testDir: "./e2e",
   use: {
-    baseURL: "http://localhost:4321",
+    baseURL: "http://localhost:5173",
   },
 });

@@ -1,0 +1,4712 @@
+/*
+ * Components. Bare elements carry the base look; native/ARIA attributes drive
+ * state (`disabled`, `aria-selected`, `open`, …); classes are used only where
+ * there is no real HTML attribute for the concept (`.card`, `.destructive`, …).
+ * Visual language follows Minimals: soft tinted fills, 8px radii, grey-tinted
+ * elevation.
+ */
+@layer dry.components {
+  /* `@keyframes` can't nest inside a style rule via CSS nesting (only
+   * conditional group rules like `@media`/`@supports` can) - hoisted out of
+   * `.dry` below and left at the layer's top level, same precedent as
+   * `scrollbar.css`'s own doc comment for its `@property`/`@keyframes`
+   * rules. Referenced by `.entry-field-highlight`'s `animation`. */
+  @keyframes dry-entry-field-highlight {
+    0%, 40% {
+      outline-color: var(--dry-primary);
+    }
+    100% {
+      outline-color: transparent;
+    }
+  }
+
+  .dry {
+    /* ---------------------------------------------------------------- Button */
+    button,
+    [role="button"],
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"] {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: auto;
+      /* One tier below the same-named input height (forms.css) - a bare
+			 * button is the "md" tier, matching input's "sm". */
+      height: 2.25rem;
+      padding: 0 0.75rem;
+      font: inherit;
+      font-weight: var(--dry-weight-button);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      border: 1px solid transparent;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-primary);
+      color: var(--dry-primary-foreground);
+      box-shadow: var(--dry-shadow-primary);
+      transition:
+        background-color 160ms ease,
+        border-color 160ms ease,
+        color 160ms ease,
+        box-shadow 160ms ease,
+        opacity 160ms ease;
+
+      & > svg {
+        width: 1.25em;
+        height: 1.25em;
+        flex: none;
+      }
+
+      &:hover {
+        background-color: var(--dry-primary-dark);
+      }
+
+      &[disabled],
+      &[aria-disabled="true"] {
+        pointer-events: none;
+        opacity: 0.6;
+        color: var(--dry-disabled-foreground);
+        background-color: var(--dry-disabled-background);
+        box-shadow: none;
+      }
+
+      &[aria-busy="true"] {
+        pointer-events: none;
+
+        & > svg:first-child {
+          display: none;
+        }
+
+        &::before {
+          content: "";
+          width: 0.875rem;
+          height: 0.875rem;
+          border: 2px solid currentcolor;
+          border-top-color: transparent;
+          border-radius: 50%;
+          animation: dry-spin 700ms linear infinite;
+        }
+      }
+
+      /* Neutral surface - Minimals' "inherit soft". */
+      &.secondary {
+        background-color: var(--dry-secondary);
+        color: var(--dry-secondary-foreground);
+        box-shadow: none;
+
+        &:hover {
+          background-color: var(--dry-focus);
+        }
+      }
+
+      &.outline {
+        background-color: transparent;
+        color: var(--dry-foreground);
+        border-color: var(--dry-border);
+        box-shadow: none;
+
+        &:hover {
+          background-color: var(--dry-accent);
+          border-color: var(--dry-foreground);
+        }
+      }
+
+      &.ghost {
+        background-color: transparent;
+        color: var(--dry-foreground);
+        box-shadow: none;
+
+        &:hover {
+          background-color: var(--dry-accent);
+        }
+      }
+
+      &.link {
+        background-color: transparent;
+        color: var(--dry-foreground);
+        box-shadow: none;
+        padding: 0;
+        height: auto;
+        text-underline-offset: 4px;
+
+        &:hover {
+          background-color: transparent;
+          opacity: 0.6;
+        }
+      }
+
+      &.destructive {
+        background-color: var(--dry-error);
+        color: var(--dry-error-foreground);
+        box-shadow: var(--dry-shadow-error);
+
+        &:hover {
+          background-color: var(--dry-error-dark);
+        }
+      }
+
+      &.info {
+        background-color: var(--dry-info);
+        color: var(--dry-info-foreground);
+        box-shadow: none;
+
+        &:hover {
+          background-color: var(--dry-info-dark);
+        }
+      }
+
+      &.success {
+        background-color: var(--dry-success);
+        color: var(--dry-success-foreground);
+        box-shadow: none;
+
+        &:hover {
+          background-color: var(--dry-success-dark);
+        }
+      }
+
+      &.warning {
+        background-color: var(--dry-warning);
+        color: var(--dry-warning-foreground);
+        box-shadow: none;
+
+        &:hover {
+          background-color: var(--dry-warning-dark);
+        }
+      }
+
+      /* Soft fill of the current intent - pair with a colour class above. */
+      &.soft {
+        box-shadow: none;
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 16%,
+          transparent
+        );
+        color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+
+        &:hover {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-primary) 32%,
+            transparent
+          );
+        }
+
+        &.destructive {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-error) 16%,
+            transparent
+          );
+          color: light-dark(var(--dry-error-dark), var(--dry-error-light));
+
+          &:hover {
+            background-color: color-mix(
+              in srgb,
+              var(--dry-error) 32%,
+              transparent
+            );
+          }
+        }
+
+        &.info {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-info) 16%,
+            transparent
+          );
+          color: light-dark(var(--dry-info-dark), var(--dry-info-light));
+
+          &:hover {
+            background-color: color-mix(
+              in srgb,
+              var(--dry-info) 32%,
+              transparent
+            );
+          }
+        }
+
+        &.success {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-success) 16%,
+            transparent
+          );
+          color: light-dark(var(--dry-success-dark), var(--dry-success-light));
+
+          &:hover {
+            background-color: color-mix(
+              in srgb,
+              var(--dry-success) 32%,
+              transparent
+            );
+          }
+        }
+
+        &.warning {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-warning) 16%,
+            transparent
+          );
+          color: light-dark(var(--dry-warning-dark), var(--dry-warning-light));
+
+          &:hover {
+            background-color: color-mix(
+              in srgb,
+              var(--dry-warning) 32%,
+              transparent
+            );
+          }
+        }
+      }
+
+      &.sm {
+        height: 1.75rem;
+        padding-inline: 0.375rem;
+        font-size: var(--dry-text-xs);
+      }
+
+      &.md {
+        height: 2.25rem;
+        padding-inline: 0.75rem;
+        font-size: var(--dry-text-xs);
+      }
+
+      &.lg {
+        height: 2.75rem;
+        padding-inline: 1rem;
+        font-size: var(--dry-text-sm);
+      }
+
+      &.xl {
+        height: 3.25rem;
+        padding-inline: 1.375rem;
+        font-size: var(--dry-text-base);
+      }
+
+      /* Square icon-only button; combine with a size class for other sizes. */
+      &.icon {
+        width: 2.25rem;
+        padding: 0;
+
+        &.sm {
+          width: 1.75rem;
+        }
+        &.md {
+          width: 2.25rem;
+        }
+        &.lg {
+          width: 2.75rem;
+        }
+        &.xl {
+          width: 3.25rem;
+        }
+      }
+
+      &.block {
+        display: flex;
+        width: 100%;
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------ Select
+     * Shared shell for Select/Combobox/MultiSelect (see components/Select.tsx,
+     * Combobox.tsx, MultiSelect.tsx). `.select` carries the bordered "field"
+     * look that `:where(input)` normally provides; its trigger/input/chips
+     * are reset to blend into it, so the same wrapper can hold a plain
+     * button (Select), a text input (Combobox), or chips + input (MultiSelect).
+     */
+    .select {
+      position: relative;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+      width: 100%;
+      min-height: 2.75rem;
+      padding: 0.375rem 0.5rem;
+
+      /* Room for the absolutely-positioned trailing icon button, below. */
+      &:has(.select-trailing) {
+        padding-inline-end: 2rem;
+      }
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      box-shadow: var(--dry-shadow-xs);
+      background-color: transparent;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      &:focus-within,
+      &:has(> button[aria-expanded="true"]) {
+        border-color: var(--dry-ring);
+        box-shadow: inset 0 0 0 1px var(--dry-ring);
+      }
+
+      &:has(> [aria-invalid="true"]) {
+        border-color: var(--dry-error);
+
+        &:focus-within {
+          border-color: var(--dry-error);
+          box-shadow: inset 0 0 0 1px var(--dry-error);
+        }
+      }
+
+      &:has(> button[disabled]),
+      &:has(> input[disabled]),
+      &:has(> textarea[disabled]) {
+        cursor: not-allowed;
+        background-color: var(--dry-muted);
+        opacity: 0.7;
+      }
+
+      /*
+       * The trigger button (Select), text input (Combobox/MultiSelect) or
+       * textarea (SecretField). `:hover`/`:focus-visible` are reset too -
+       * both tie the generic `button`/`textarea` rule on specificity, and
+       * only lose the cascade because this block comes later.
+       */
+      & > button,
+      & > input,
+      & > textarea {
+        flex: 1 1 3rem;
+        min-width: 3rem;
+        margin: 0;
+        padding: 0;
+        border: none;
+        box-shadow: none;
+        background-color: transparent;
+        font: inherit;
+        color: inherit;
+        text-align: start;
+
+        &:hover,
+        &:focus-visible {
+          background-color: transparent;
+          color: inherit;
+          box-shadow: none;
+        }
+      }
+
+      & > button,
+      & > input {
+        height: 1.75rem;
+      }
+
+      /* SecretField's control - grows with content instead of the fixed
+       * single-line height above. `.masked` (toggled with its show/hide
+       * signal, see PasswordField/SecretField) stands in for the native
+       * `type="password"` masking a plain `<textarea>` has no equivalent
+       * of; WebKit/Blink only - Firefox has no equivalent property, so the
+       * value just renders in the clear there. */
+      & > textarea {
+        height: auto;
+        min-height: 3.5rem;
+        resize: none;
+        field-sizing: content;
+
+        &.masked {
+          -webkit-text-security: disc;
+        }
+      }
+
+      & > button {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        min-width: 0;
+        cursor: pointer;
+
+        & > span {
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+      }
+
+      /*
+       * Clear/toggle icon button, next to the input in Combobox/MultiSelect.
+       * Pinned to the top-right corner (not a flex child) so it stays put
+       * when MultiSelect's chips wrap onto more than one line.
+       */
+      .select-trailing {
+        position: absolute;
+        top: 0.5rem;
+        inset-inline-end: 0.5rem;
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        min-width: 0;
+        height: 1.5rem;
+        padding: 0;
+        border: none;
+        border-radius: var(--dry-radius-sm);
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--dry-muted-foreground);
+        cursor: pointer;
+
+        &:hover {
+          color: var(--dry-foreground);
+        }
+
+        &[disabled] {
+          pointer-events: none;
+          background-color: transparent;
+          color: var(--dry-disabled-foreground);
+        }
+      }
+
+      .select-caret {
+        flex: none;
+        transition: rotate 150ms ease;
+      }
+
+      & > button[aria-expanded="true"] .select-caret,
+      &:has(> input[aria-expanded="true"]) .select-caret {
+        rotate: 180deg;
+      }
+
+      /* Static trailing icon (DatePickerField's calendar glyph) - no rotate-on-open. */
+      .select-icon {
+        flex: none;
+      }
+
+      & > button:disabled,
+      & > input:disabled {
+        background-color: transparent;
+      }
+    }
+
+    /* DatePickerField's calendar/select trigger: no ring on focus/open. */
+    .select.datepicker-trigger:focus-within,
+    .select.datepicker-trigger:has(> button[aria-expanded="true"]) {
+      border-color: var(--dry-input);
+      box-shadow: var(--dry-shadow-xs);
+    }
+
+    .select.datepicker-trigger {
+      padding-left: 0.875rem;
+    }
+
+    /* Numeric input flanked by decrement/increment buttons. */
+    .stepper {
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+      height: 2.75rem;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      box-shadow: var(--dry-shadow-xs);
+      background-color: transparent;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      &:focus-within {
+        border-color: none;
+      }
+
+      &:has(> input[aria-invalid="true"]) {
+        border-color: var(--dry-error);
+      }
+
+      &:has(> input[disabled]) {
+        cursor: not-allowed;
+        background-color: var(--dry-muted);
+      }
+
+      & > input {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 100%;
+        border: none;
+        box-shadow: none;
+        background-color: transparent;
+        border-radius: 0;
+        text-align: center;
+        appearance: textfield;
+
+        &:focus-visible {
+          outline: none;
+          box-shadow: none;
+        }
+
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+          appearance: none;
+          margin: 0;
+        }
+      }
+
+      & > button {
+        flex: none;
+        width: 2.75rem;
+        height: 100%;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--dry-muted-foreground);
+
+        &:hover:not(:disabled) {
+          color: var(--dry-foreground);
+          background-color: rgb(var(--dry-grey-channel) / 8%);
+        }
+
+        &:first-child {
+          border-top-left-radius: var(--dry-radius-md);
+          border-bottom-left-radius: var(--dry-radius-md);
+        }
+
+        &:last-child {
+          border-top-right-radius: var(--dry-radius-md);
+          border-bottom-right-radius: var(--dry-radius-md);
+        }
+
+        &:disabled {
+          color: var(--dry-disabled-foreground);
+          background-color: unset;
+          cursor: not-allowed;
+        }
+      }
+    }
+
+    /* Checkbox/switch + its label, outlined to match TextField's input. */
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      width: 100%;
+      min-height: 2.75rem;
+      background-color: transparent;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+      &:has(> input[aria-invalid="true"]) {
+        border-color: var(--dry-error);
+      }
+
+      &.outline {
+        border: 1px solid var(--dry-input);
+        border-radius: var(--dry-radius-md);
+        padding: 0.5rem;
+      }
+
+      &:has(> input[disabled]) {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      &.hover:hover:not(:has(> input[disabled])) {
+        background-color: rgb(var(--dry-grey-channel) / 8%);
+      }
+
+      & > label {
+        margin: 0;
+        cursor: pointer;
+        display: inline-flex;
+        flex-direction: column;
+        width: 100%;
+        & > small {
+          font-weight: 400;
+          font-size: var(--dry-text-xs);
+          color: var(--dry-muted-foreground);
+        }
+      }
+    }
+
+    /* Selected value in a MultiSelect. */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      height: 1.5rem;
+      padding-left: 0.5rem;
+      padding-right: 0.25rem;
+      border-radius: 0.25rem;
+      background-color: var(--dry-secondary);
+      color: var(--dry-secondary-foreground);
+      font-size: var(--dry-text-xs);
+      font-weight: 500;
+      white-space: nowrap;
+
+      & > button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1rem;
+        height: 1rem;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background-color: transparent;
+        box-shadow: none;
+        color: inherit;
+        opacity: 0.7;
+        cursor: pointer;
+
+        &:hover {
+          opacity: 1;
+          background-color: rgb(var(--dry-grey-channel) / 16%);
+        }
+
+        & > svg {
+          width: 0.875em;
+          height: 0.875em;
+        }
+      }
+    }
+
+    /* Floating listbox popup, anchored to a `.select` wrapper. Rendered via
+     * the Popover API (`popover="manual"`, see Select.tsx/Combobox.tsx/
+     * MultiSelect.tsx) rather than a portal: puts it in the browser's top
+     * layer so it escapes any scroll/overflow-clipped ancestor. `position`/
+     * `top`/`left`/`width` are set inline from JS (`useFloatingPosition`),
+     * computed from the anchor's own rect - only visual styling lives here.
+     * Border/margin/padding reset the Popover API's UA default styling
+     * (centered dialog-like box). */
+    .select-popup {
+      z-index: 30;
+      max-height: 16rem;
+      margin: 0;
+      padding-inline: 0.25rem;
+      padding-block: 0;
+      border-width: 0;
+      list-style: none;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      /* The OverlayScrollbars wrapper (see comment on `listRef` in
+       * Select.tsx) puts the `<ul>` one level below this div instead of on
+       * it, so the UA's default list padding/markers never get reset by the
+       * rest of this rule - reset them here explicitly. */
+      & ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      /* `top` (from `useFloatingPosition`) already points at the anchor's
+       * top edge when flipped up - shift the box up by its own height so it
+       * grows upward from that point instead of downward. */
+      &.up {
+        transform: translateY(-100%);
+      }
+
+      &:focus-visible {
+        outline: none;
+      }
+
+      & .muted {
+        display: block;
+        padding: 0.75rem;
+        text-align: center;
+      }
+
+      [role="option"] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.5rem 0.625rem;
+        border-radius: var(--dry-radius-sm);
+        cursor: pointer;
+        outline: none;
+
+        /* Flex items refuse to shrink below their content's intrinsic width
+         * by default (`min-width: auto`) - a long, unbroken option label
+         * (e.g. Cardinality's "One-to-many (1→n) – each target belongs to
+         * only one entry here") would otherwise push past the popup's fixed
+         * `inset-inline: 0` width and spill off-screen instead of wrapping. */
+        & > span {
+          min-width: 0;
+          overflow-wrap: anywhere;
+        }
+
+        & > svg {
+          flex: none;
+          color: var(--dry-primary);
+        }
+
+        &:hover,
+        &:focus,
+        &.active {
+          background-color: var(--dry-accent);
+        }
+
+        &[aria-selected="true"] {
+          font-weight: 500;
+        }
+
+        &[aria-disabled="true"] {
+          cursor: not-allowed;
+          color: var(--dry-disabled-foreground);
+          pointer-events: none;
+        }
+      }
+    }
+
+    /* Calendar/select-triple popup for DatePickerField, anchored below
+     * `.select`. Same `popover="manual"` top-layer treatment as
+     * `.select-popup` above (see DatePickerField.tsx) - `top`/`left` come
+     * from `useFloatingPosition`, `width` stays content-sized. */
+    .datepicker-popup {
+      z-index: 30;
+      width: max-content;
+      margin: 0;
+      padding: 0.75rem;
+      border-width: 0;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      &.up {
+        transform: translateY(-100%);
+      }
+    }
+
+    .datepicker-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-block-end: 0.5rem;
+      font-size: var(--dry-text-sm);
+      font-weight: 500;
+
+      & > button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        padding: 0;
+        border: none;
+        border-radius: var(--dry-radius-sm);
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--dry-muted-foreground);
+
+        &:hover {
+          color: var(--dry-foreground);
+          background-color: rgb(var(--dry-grey-channel) / 8%);
+        }
+      }
+    }
+
+    .datepicker-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 2.25rem);
+      gap: 0.125rem;
+
+      & > .datepicker-weekday {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 1.75rem;
+        font-size: var(--dry-text-xs);
+        color: var(--dry-muted-foreground);
+        font-weight: 500;
+      }
+
+      & > button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 2.25rem;
+        padding: 0;
+        border: none;
+        border-radius: 16px;
+        background-color: transparent;
+        box-shadow: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+
+        &:hover:not(:disabled):not([aria-selected="true"]) {
+          background-color: var(--dry-accent);
+        }
+
+        &.outside {
+          color: var(--dry-disabled-foreground);
+        }
+
+        &[aria-current="date"] {
+          font-weight: 700;
+          color: var(--dry-primary);
+        }
+
+        &[aria-selected="true"] {
+          background-color: var(--dry-primary);
+          color: var(--dry-primary-foreground);
+        }
+
+        &:disabled {
+          color: var(--dry-disabled-foreground);
+          cursor: not-allowed;
+          pointer-events: none;
+        }
+      }
+    }
+
+    .datepicker-time {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.5rem;
+      margin-block-start: 0.75rem;
+      padding-block-start: 0.75rem;
+      border-block-start: 1px solid var(--dry-border);
+
+      & > * {
+        flex: 1;
+      }
+    }
+
+    .datepicker-select-row {
+      display: flex;
+      gap: 0.5rem;
+
+      & > select {
+        flex: 1;
+        min-width: 5.5rem;
+        width: auto;
+      }
+    }
+
+    /* 4:3 frame for ImageField - a plain "choose" button when empty, the
+     * picked file's thumbnail under a permanent name/remove overlay once
+     * something's selected (unlike the file manager's own hover-reveal
+     * media card, this is the field's only content so it stays visible). */
+    .image-field-box {
+      position: relative;
+      width: 100%;
+      max-width: 16rem;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-muted);
+    }
+
+    .image-field-thumb {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    button.image-field-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: inherit;
+      background: none;
+      box-shadow: none;
+      color: var(--dry-muted-foreground);
+      font-size: var(--dry-text-sm);
+
+      &:hover:not(:disabled) {
+        background-color: rgb(var(--dry-grey-channel) / 8%);
+        color: var(--dry-foreground);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        color: var(--dry-disabled-foreground);
+      }
+
+      & > svg {
+        width: 1.75rem;
+        height: 1.75rem;
+      }
+    }
+
+    .image-field-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      height: 100%;
+      align-items: flex-end;
+      padding: 0.625rem 2.25rem 0.625rem 0.625rem;
+      border: none;
+      border-radius: inherit;
+      background: linear-gradient(
+        to top,
+        rgb(0 0 0 / 70%),
+        rgb(0 0 0 / 0%) 60%
+      );
+      box-shadow: none;
+      color: white;
+      text-align: start;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
+
+      &:hover:not(:disabled) {
+        opacity: 1;
+        background: linear-gradient(
+          to top,
+          rgb(0 0 0 / 80%),
+          rgb(0 0 0 / 10%) 60%
+        );
+      }
+
+      &:hover:not(:disabled) ~ button.image-field-remove {
+        opacity: 1;
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+      }
+    }
+
+    .image-field-name {
+      overflow: hidden;
+      font-size: var(--dry-text-sm);
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .image-field-remove {
+      position: absolute;
+      inset-block-start: 0.25rem;
+      inset-inline-end: 0.25rem;
+      background-color: rgb(0 0 0 / 55%);
+      color: white;
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
+
+      &:hover:not(:disabled) {
+        opacity: 1;
+      }
+    }
+
+    /* ImageField `multiple` mode's reorderable row list, under the "Add
+     * images" trigger - drag-reorder driven by the same `useSortableList`
+     * hook as the Fields list/DataTable rows (see `.dnd-dragging`/
+     * `.dnd-drag-placeholder` above), just `<li>` rows instead of `<tr>`s. */
+    .image-field-list {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 16rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .image-field-list-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+    }
+
+    .image-field-list-thumb {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: var(--dry-radius-sm);
+      object-fit: cover;
+      background-color: var(--dry-muted);
+    }
+
+    .image-field-list-name {
+      overflow: hidden;
+      flex: 1;
+      font-size: var(--dry-text-sm);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ImageField picker's "Link" tab - one row per typed-in URL, `.row` from
+     * `utilities.css` for the input + trash-button layout. */
+    .image-field-link-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      width: 100%;
+      margin: 0 0 0.75rem;
+      padding: 0;
+      list-style: none;
+
+      & .row {
+        width: 100%;
+      }
+
+      & input {
+        flex: 1;
+      }
+    }
+
+    .under {
+      padding: 1.5rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-background);
+    }
+
+    /* ------------------------------------------------------------------ Card */
+    .card {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      padding: 1.5rem;
+      background-color: var(--dry-card);
+      color: var(--dry-card-foreground);
+      border-radius: var(--dry-radius-xl);
+      box-shadow: var(--dry-shadow-md);
+
+      & > header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.25rem;
+
+        & > :is(h1, h2, h3, h4, h5, h6) {
+          font-size: var(--dry-text-base);
+          font-weight: 600;
+        }
+
+        & > p {
+          color: var(--dry-muted-foreground);
+          font-size: var(--dry-text-sm);
+        }
+      }
+
+      & > footer {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      &.flush {
+        padding: 0;
+
+        & > header,
+        & > footer {
+          padding: 1.5rem;
+        }
+
+        & > footer {
+          border-top: 1px dashed var(--dry-border);
+        }
+      }
+    }
+
+    /* ----------------------------------------------------------------- Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      height: 1.5rem;
+      padding-inline: 0.5rem;
+      font-size: var(--dry-text-xs);
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      border-radius: var(--dry-radius-sm);
+      background-color: color-mix(in srgb, var(--dry-primary) 16%, transparent);
+      color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+
+      &.secondary {
+        background-color: var(--dry-secondary);
+        color: var(--dry-foreground);
+      }
+
+      &.outline {
+        background-color: transparent;
+        color: var(--dry-muted-foreground);
+        border-color: var(--dry-border);
+      }
+
+      &.destructive {
+        background-color: color-mix(in srgb, var(--dry-error) 16%, transparent);
+        color: light-dark(var(--dry-error-dark), var(--dry-error-light));
+      }
+
+      &.info {
+        background-color: color-mix(in srgb, var(--dry-info) 16%, transparent);
+        color: light-dark(var(--dry-info-dark), var(--dry-info-light));
+      }
+
+      &.success {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-success) 16%,
+          transparent
+        );
+        color: light-dark(var(--dry-success-dark), var(--dry-success-light));
+      }
+
+      &.warning {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-warning) 16%,
+          transparent
+        );
+        color: light-dark(var(--dry-warning-dark), var(--dry-warning-light));
+      }
+
+      /* Solid fill instead of the default soft fill. */
+      &.filled {
+        background-color: var(--dry-primary);
+        color: var(--dry-primary-foreground);
+
+        &.destructive {
+          background-color: var(--dry-error);
+          color: var(--dry-error-foreground);
+        }
+        &.info {
+          background-color: var(--dry-info);
+          color: var(--dry-info-foreground);
+        }
+        &.success {
+          background-color: var(--dry-success);
+          color: var(--dry-success-foreground);
+        }
+        &.warning {
+          background-color: var(--dry-warning);
+          color: var(--dry-warning-foreground);
+        }
+      }
+
+      /* Sizes - unclassed badge is md. */
+      &.sm {
+        height: 1.25rem;
+        padding-inline: 0.375rem;
+        gap: 0.1875rem;
+      }
+
+      &.lg {
+        height: 1.75rem;
+        padding-inline: 0.625rem;
+        font-size: var(--dry-text-sm);
+      }
+
+      /* Trailing icon button (eg. a remove chip) fills the badge's end
+       * edge instead of floating inside the badge's own padding. */
+      &:has(> button.icon:last-child) {
+        padding-inline-end: 0.25rem;
+        & > button.icon:last-child {
+          border-radius: 1rem;
+          width: 1.25rem;
+          height: 1.25rem;
+        }
+      }
+    }
+
+    /* ------------------------------------------------------- List cell kinds */
+    /* `image` field cells (see `ContentEntryList.tsx`) - a small crop, never
+     * the full `ImageField` picker frame. `config.isAvatar` picks the shape. */
+    .cell-image {
+      display: block;
+      width: calc(4rem * 16 / 9);
+      height: 4rem;
+      object-fit: cover;
+      border-radius: var(--dry-radius-sm);
+      background-color: var(--dry-muted);
+    }
+
+    .cell-avatar {
+      display: block;
+      width: 2.25rem;
+      height: 2.25rem;
+      object-fit: cover;
+      border-radius: 50%;
+      background-color: var(--dry-muted);
+    }
+
+    /* ----------------------------------------------------------------- Alert */
+    .alert {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.25rem 0.75rem;
+      padding: 1rem;
+      border-radius: var(--dry-radius-lg);
+      background-color: color-mix(in srgb, var(--dry-info) 16%, transparent);
+      color: light-dark(var(--dry-info-darker), var(--dry-info-lighter));
+
+      & > svg {
+        width: 1.5rem;
+        height: 1.5rem;
+        color: var(--dry-info);
+      }
+
+      & > :is(h1, h2, h3, h4, h5, h6) {
+        grid-column-start: 2;
+        font-size: var(--dry-text-sm);
+        font-weight: 700;
+      }
+
+      & > p {
+        grid-column-start: 2;
+        color: inherit;
+        opacity: 0.85;
+      }
+
+      &:not(:has(> svg)) > * {
+        grid-column: 1 / -1;
+      }
+
+      &.destructive {
+        background-color: color-mix(in srgb, var(--dry-error) 16%, transparent);
+        color: light-dark(var(--dry-error-darker), var(--dry-error-lighter));
+
+        & > svg {
+          color: var(--dry-error);
+        }
+      }
+
+      &.success {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-success) 16%,
+          transparent
+        );
+        color: light-dark(
+          var(--dry-success-darker),
+          var(--dry-success-lighter)
+        );
+
+        & > svg {
+          color: var(--dry-success);
+        }
+      }
+
+      &.warning {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-warning) 16%,
+          transparent
+        );
+        color: light-dark(
+          var(--dry-warning-darker),
+          var(--dry-warning-lighter)
+        );
+
+        & > svg {
+          color: var(--dry-warning);
+        }
+      }
+    }
+
+    /* ------------------------------------------------------------- Separator */
+    .separator {
+      border: none;
+      border-top: 1px solid var(--dry-border);
+      background: none;
+      margin: 0;
+      height: 0;
+      width: 100%;
+
+      &[aria-orientation="vertical"] {
+        border-top: none;
+        border-left: 1px solid var(--dry-border);
+        width: 0;
+        height: auto;
+        align-self: stretch;
+      }
+    }
+
+    /* ------------------------------------------------------------------ Tabs */
+    [role="tablist"] {
+      border-bottom: 1px solid var(--dry-border);
+      /* Plain native fallback for a `role="tablist"` outside a drycms
+       * component (nothing calls `useOverlayScrollbars` on it); the
+       * Showcase demo's own tablist layers OverlayScrollbars on top via
+       * that hook, which takes over regardless of what's declared here. */
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+
+      & [data-overlayscrollbars-viewport] {
+        overscroll-behavior-x: contain;
+      }
+
+      /* Descendant, not direct-child - the Showcase demo's own tablist (see
+       * the OverlayScrollbars note above) re-parents these buttons a couple
+       * levels deeper once that hook runs, and `>` would stop matching them. */
+      & [role="tab"] {
+        flex: none;
+        height: 3rem;
+        padding: 0;
+        font-size: var(--dry-text-sm);
+        font-weight: 600;
+        white-space: nowrap;
+        background-color: transparent;
+        color: var(--dry-muted-foreground);
+        box-shadow: none;
+        border-radius: 0;
+        border-bottom: 2px solid transparent;
+
+        &:hover {
+          background-color: transparent;
+          color: var(--dry-foreground);
+        }
+
+        &[aria-selected="true"] {
+          color: var(--dry-foreground);
+          border-bottom-color: var(--dry-foreground);
+        }
+        & + [role="tab"] {
+          margin-inline-start: 0.5rem;
+        }
+      }
+    }
+
+    [role="tabpanel"] {
+      padding-block-start: 1.25rem;
+
+      &[hidden] {
+        display: none;
+      }
+    }
+
+    /* ------------------------------------------------------- Accordion (native) */
+    details {
+      & + & {
+        border-top: 1px dashed var(--dry-border);
+      }
+      interpolate-size: allow-keywords;
+      padding-inline: 1rem;
+      transition: background-color 0.05s ease-in-out;
+      &:hover {
+        background-color: var(--dry-accent);
+      }
+      & > summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding-block: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+
+        &::-webkit-details-marker {
+          display: none;
+        }
+
+        &::after {
+          content: "";
+          width: 0.5rem;
+          height: 0.5rem;
+          border-inline-end: 1.5px solid currentcolor;
+          border-block-end: 1.5px solid currentcolor;
+          rotate: 45deg;
+          transition: rotate 150ms ease;
+          color: var(--dry-muted-foreground);
+        }
+      }
+
+      &[open] > summary::after {
+        rotate: 225deg;
+      }
+
+      /* Animates the native disclosure panel; falls back to an instant
+			 * snap (no worse than before) in browsers without `::details-content`. */
+      &::details-content {
+        overflow: hidden;
+        opacity: 0;
+        block-size: 0;
+        transition:
+          content-visibility 200ms allow-discrete,
+          opacity 200ms ease,
+          block-size 200ms ease;
+      }
+
+      &[open]::details-content {
+        opacity: 1;
+        block-size: auto;
+      }
+
+      & > :not(summary) {
+        padding-block-end: 0.875rem;
+        color: var(--dry-muted-foreground);
+      }
+    }
+
+    /* ---------------------------------------------------------------- Dialog */
+    dialog {
+      padding: 1.5rem;
+      /* Defaults to "xs" - otherwise a short-content dialog hugs its content. */
+      width: 20rem;
+      max-width: min(32rem, calc(100vw - 2rem));
+      border: none;
+      border-radius: var(--dry-radius-xl);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+      animation: dry-dialog-in 120ms ease;
+
+      /* Wider on desktop - 20rem/32rem reads cramped once there's room to spare. */
+      @media (width >= 48rem) {
+        width: 26rem;
+        max-width: min(38rem, calc(100vw - 4rem));
+      }
+      /* Sizes */
+      &.sm {
+        width: 20rem;
+        max-width: min(28rem, calc(100vw - 2rem));
+      }
+
+      &.md {
+        width: 32rem;
+        max-width: min(40rem, calc(100vw - 2rem));
+      }
+
+      &.lg {
+        width: 48rem;
+        max-width: min(56rem, calc(100vw - 2rem));
+      }
+
+      &.xl {
+        width: 64rem;
+        max-width: min(64rem, calc(100vw - 4rem));
+      }
+
+      &::backdrop {
+        background-color: light-dark(
+          rgb(var(--dry-grey-channel) / 80%),
+          rgb(0 0 0 / 35%)
+        );
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        animation: dry-dialog-backdrop-in 120ms ease;
+      }
+
+      /* A direct-child selector would miss a form-wrapped header/footer
+       * (RenameDialog, NewFolderDialog, ...) since the form sits between
+       * them and the dialog, not just a fragment - descendant reaches through it. */
+      & header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.25rem;
+        margin-block-end: 1rem;
+
+        & > :is(h1, h2, h3, h4, h5, h6) {
+          font-size: 1.125rem;
+          font-weight: 700;
+        }
+
+        & > p {
+          color: var(--dry-muted-foreground);
+        }
+      }
+
+      & footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-block-start: 1.5rem;
+      }
+    }
+
+    /*
+		 * ----------------------------------------------------------------- Toast
+		 * `popover="manual"` (set on mount in Toast.tsx) puts the viewport in the
+		 * top layer, same as `<dialog>` - it floats above one without a z-index
+		 * scale, and needs no portal to escape a clipped/transformed ancestor.
+		 *
+		 * Cards are absolutely positioned and placed by `--toast-offset-y` (a
+		 * real measured height from Toast.tsx, not a CSS guess) rather than laid
+		 * out by the flow, so collapsed ones can overlap into a shallow deck:
+		 * `.toast` carries the shadow/radius/background and the position
+		 * transform, while `.toast-body` - a separate element, so its own
+		 * `overflow: hidden` clips content height without also clipping the
+		 * card's box-shadow - clamps to the frontmost card's height and fades
+		 * out while collapsed.
+		 */
+    /* The UA stylesheet gives `[popover]` its own `inset: 0; margin: auto`
+		 * (centers it) - every side below is set explicitly (`auto` included) so
+		 * none of that leaks through. */
+    .toast-viewport {
+      --toast-direction: -1;
+      position: fixed;
+      inset-block-start: auto;
+      inset-block-end: 1.5rem;
+      inset-inline-start: auto;
+      inset-inline-end: 1.5rem;
+      display: block;
+      width: 22rem;
+      max-width: calc(100vw - 2rem);
+      height: 0;
+      margin: 0;
+      padding: 0;
+      border: none;
+      background: none;
+      overflow: visible;
+
+      &.top {
+        --toast-direction: 1;
+        inset-block-start: 1.5rem;
+        inset-block-end: auto;
+      }
+
+      &.start {
+        inset-inline-start: 1.5rem;
+        inset-inline-end: auto;
+      }
+    }
+
+    .toast {
+      --toast-index: 0;
+      --toast-offset-y: 0px;
+      position: absolute;
+      inset-inline: 0;
+      inset-block-end: 0;
+      z-index: calc(10 - var(--toast-index));
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow:
+        0 2px 4px rgb(var(--dry-shadow-channel) / 8%),
+        0 16px 32px -8px rgb(var(--dry-shadow-channel) / 32%);
+      touch-action: pan-y;
+      cursor: grab;
+      opacity: 1;
+      scale: 1;
+      translate: var(--toast-swipe-movement-x, 0px)
+        calc(var(--toast-offset-y) * var(--toast-direction));
+      transition:
+        translate 480ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        scale 480ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity 320ms ease;
+
+      .toast-viewport.top & {
+        inset-block-end: auto;
+        inset-block-start: 0;
+      }
+
+      &.behind {
+        scale: calc(1 - var(--toast-index) * 0.05);
+        opacity: calc(1 - var(--toast-index) * 0.15);
+      }
+
+      &.expanded {
+        scale: 1;
+        opacity: 1;
+      }
+
+      &.starting {
+        translate: 0px calc(1.75rem * var(--toast-direction) * -1);
+        transition: none;
+      }
+
+      &.closing {
+        opacity: 0;
+        translate: 100% calc(var(--toast-offset-y) * var(--toast-direction));
+      }
+
+      &.swipe-down {
+        translate: var(--toast-swipe-movement-x, 0px) 100%;
+      }
+
+      &.swiping {
+        transition: none;
+        cursor: grabbing;
+      }
+
+      &.success .toast-body > svg {
+        color: var(--dry-success);
+      }
+
+      &.error .toast-body > svg {
+        color: var(--dry-error);
+      }
+
+      &.warning .toast-body > svg {
+        color: var(--dry-warning);
+      }
+
+      &.info .toast-body > svg {
+        color: var(--dry-info);
+      }
+    }
+
+    .toast-body {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.875rem 1rem;
+      overflow: hidden;
+      max-height: var(--toast-frontmost-height, none);
+      transition:
+        max-height 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity 320ms ease;
+
+      & > svg {
+        width: 1.25rem;
+        height: 1.25rem;
+        flex: none;
+        color: var(--dry-muted-foreground);
+      }
+
+      .toast.expanded &,
+      .toast:not(.behind) & {
+        max-height: none;
+        opacity: 1;
+      }
+
+      .toast.behind:not(.expanded) & {
+        opacity: 0;
+      }
+    }
+
+    .toast-spinner {
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: none;
+      border: 2px solid var(--dry-border);
+      border-top-color: var(--dry-foreground);
+      border-radius: 50%;
+      animation: dry-spin 700ms linear infinite;
+    }
+
+    .toast-content {
+      flex: 1;
+      display: grid;
+      gap: 0.125rem;
+      min-width: 0;
+
+      & > strong {
+        font-size: var(--dry-text-sm);
+        font-weight: 600;
+      }
+
+      & > p {
+        font-size: var(--dry-text-sm);
+        color: var(--dry-muted-foreground);
+      }
+    }
+
+    .toast-actions {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .toast-close {
+      width: 1.5rem;
+      height: 1.5rem;
+      color: var(--dry-muted-foreground);
+
+      &:hover {
+        background-color: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
+    }
+
+    /* -------------------------------------------------------------- Skeleton */
+    .skeleton {
+      display: block;
+      min-height: 1rem;
+      border-radius: var(--dry-radius-md);
+      background-color: rgb(var(--dry-grey-channel) / 12%);
+      animation: dry-pulse 1.6s ease-in-out infinite;
+    }
+
+    /* Small inline "something's loading" indicator - e.g. next to the file
+     * manager's view toggle. Not a button, so `aria-busy` (see `button`
+     * above) doesn't apply; this is the bare-element equivalent. */
+    .spinner {
+      display: inline-block;
+      width: 1rem;
+      height: 1rem;
+      flex: none;
+      border: 2px solid var(--dry-border);
+      border-top-color: var(--dry-muted-foreground);
+      border-radius: 50%;
+      animation: dry-spin 700ms linear infinite;
+    }
+
+    /* ---------------------------------------------------------------- Avatar */
+    .avatar {
+      display: inline-grid;
+      place-items: center;
+      width: 2.5rem;
+      height: 2.5rem;
+      flex: none;
+      overflow: hidden;
+      border-radius: 50%;
+      background-color: rgb(var(--dry-grey-channel) / 24%);
+      color: var(--dry-foreground);
+      font-size: var(--dry-text-sm);
+      font-weight: 600;
+      text-transform: uppercase;
+
+      & > img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      &.sm {
+        width: 2rem;
+        height: 2rem;
+        font-size: var(--dry-text-xs);
+      }
+
+      &.lg {
+        width: 3rem;
+        height: 3rem;
+        font-size: var(--dry-text-base);
+      }
+    }
+
+    /* -------------------------------------------------------------- Progress */
+    progress {
+      appearance: none;
+      width: 100%;
+      height: 0.5rem;
+      border: none;
+      border-radius: 999px;
+      background-color: rgb(var(--dry-grey-channel) / 16%);
+      overflow: hidden;
+
+      &::-webkit-progress-bar {
+        background-color: rgb(var(--dry-grey-channel) / 16%);
+      }
+
+      &::-webkit-progress-value {
+        background-color: var(--dry-primary);
+        border-radius: 999px;
+      }
+
+      &::-moz-progress-bar {
+        background-color: var(--dry-primary);
+        border-radius: 999px;
+      }
+
+      &:indeterminate {
+        background-image: linear-gradient(
+          90deg,
+          transparent,
+          var(--dry-primary),
+          transparent
+        );
+        background-size: 50% 100%;
+        background-repeat: no-repeat;
+        animation: dry-progress-indeterminate 1.4s ease-in-out infinite;
+
+        &::-webkit-progress-bar {
+          background-color: transparent;
+        }
+
+        &::-webkit-progress-value {
+          display: none;
+        }
+
+        &::-moz-progress-bar {
+          background-color: transparent;
+        }
+      }
+    }
+
+    /*
+		 * `.circle` - `value`/`max` stay the real driver of the bar (semantics,
+		 * a11y), but `conic-gradient()` needs an angle, not a percentage of a
+		 * box's width, and CSS can't read an attribute's number into one - so
+		 * `--value` (0-100) mirrors `value` for CSS to read: keep the
+		 * `style="--value: …"` in sync with the `value` attribute in markup.
+		 * The native fill pseudo-elements are turned off; the ring itself is
+		 * the element's own background, punched into a ring with `mask`.
+		 */
+    progress.circle {
+      --value: 0;
+      --size: 3rem;
+      --thickness: 0px;
+      width: var(--size);
+      height: var(--size);
+      border-radius: 50%;
+      background: conic-gradient(
+        var(--dry-primary) calc(var(--value) * 3.6deg),
+        rgb(var(--dry-grey-channel) / 16%) 0
+      );
+      mask-image: radial-gradient(
+        circle at 50% 50%,
+        transparent calc(50% - var(--thickness)),
+        #000 calc(50% - var(--thickness))
+      );
+      -webkit-mask-image: radial-gradient(
+        circle at 50% 50%,
+        transparent calc(50% - var(--thickness)),
+        #000 calc(50% - var(--thickness))
+      );
+
+      &::-webkit-progress-bar,
+      &::-webkit-progress-value {
+        background: none;
+      }
+
+      &::-moz-progress-bar {
+        background: none;
+      }
+
+      &:indeterminate {
+        background: conic-gradient(
+          var(--dry-primary) 0 90deg,
+          rgb(var(--dry-grey-channel) / 16%) 0
+        );
+        animation: dry-progress-circle-spin 1s linear infinite;
+      }
+    }
+
+    /* Route-transition indicator (routers/App.tsx) - pinned to the top of
+     * the viewport while `<Router>` is waiting on a lazy chunk. z-index sits
+     * above the mobile sheet layer (49 above) since a route change can be
+     * triggered from inside one. */
+    progress.route-progress {
+      position: fixed;
+      inset-block-start: 0;
+      inset-inline: 0;
+      z-index: 60;
+      width: 100%;
+      height: 0.1875rem;
+      border-radius: 0;
+    }
+
+    /*
+     * Tooltip. `data-tooltip` is kept as an attribute (not a class) because,
+     * like `title`, its value IS the content it renders - not a variant name.
+     * The tooltip itself is a single JS-managed element portaled to `<body>`
+     * (see `useTooltip` in routers/App.tsx), not a CSS pseudo-element on the
+     * trigger - a pseudo-element positioned `absolute` would get clipped by
+     * any `overflow: hidden`/`auto` ancestor (a table's `.scroll` wrapper,
+     * ...) instead of floating free above it.
+     */
+    .dry-tooltip {
+      position: fixed;
+      /* Reset against the `[popover]` UA stylesheet (inset/margin/border/
+       * overflow) - the explicit `top`/`left` set in tooltip.ts otherwise
+       * fight the UA's own `inset: 0`, and the arrow (`::before`, positioned
+       * outside the box via `inset-block-start: 100%` etc.) would get
+       * clipped by the UA's own `overflow: auto`. */
+      inset: auto;
+      margin: 0;
+      border: none;
+      overflow: visible;
+      z-index: 30;
+      padding: 0.25rem 0.5rem;
+      font-size: var(--dry-text-xs);
+      font-weight: 400;
+      white-space: nowrap;
+      border-radius: var(--dry-radius-sm);
+      background-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
+      color: #ffffff;
+      box-shadow: var(--dry-shadow-lg);
+      opacity: 0;
+      scale: 0.4;
+      pointer-events: none;
+      transition:
+        opacity 120ms ease,
+        scale 120ms ease;
+
+      &::before {
+        content: "";
+        position: absolute;
+        inset-inline-start: 50%;
+        translate: -50% 0;
+        border: 5px solid transparent;
+      }
+
+      /* Zooms in from the arrow tip, i.e. from the point touching the
+       * trigger, rather than from the tooltip's own center - the origin
+       * has to match the arrow's position on each placement variant. */
+      &.dry-tooltip-above {
+        transform-origin: 50% 100%;
+
+        &::before {
+          inset-block-start: 100%;
+          border-block-end-width: 0;
+          border-block-start-width: 6px;
+          border-block-start-color: light-dark(
+            var(--dry-grey-800),
+            var(--dry-grey-700)
+          );
+        }
+      }
+
+      &.dry-tooltip-below {
+        transform-origin: 50% 0%;
+
+        &::before {
+          inset-block-end: 100%;
+          border-block-start-width: 0;
+          border-block-end-width: 6px;
+          border-block-end-color: light-dark(
+            var(--dry-grey-800),
+            var(--dry-grey-700)
+          );
+        }
+      }
+
+      &.dry-tooltip-right {
+        transform-origin: 0% 50%;
+
+        &::before {
+          inset-inline-start: 0;
+          inset-block-start: 50%;
+          translate: -100% -50%;
+          border-inline-end-width: 6px;
+          border-inline-start-width: 0;
+          border-inline-end-color: light-dark(
+            var(--dry-grey-800),
+            var(--dry-grey-700)
+          );
+        }
+      }
+
+      &.dry-tooltip-visible {
+        opacity: 1;
+        scale: 1;
+      }
+    }
+
+    /* ------------------------------------------------------------ Breadcrumb */
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-size: var(--dry-text-sm);
+      color: var(--dry-muted-foreground);
+      list-style: none;
+      padding: 0;
+      margin: 0;
+
+      & > li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+
+        /* solar:alt-arrow-right-linear, inlined so the separator needs no markup. */
+        &:not(:last-child)::after {
+          content: "";
+          width: 0.75rem;
+          height: 0.75rem;
+          background-color: var(--dry-grey-500);
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m9 5l6 7l-6 7'/%3E%3C/svg%3E");
+          mask-repeat: no-repeat;
+          mask-position: center;
+          mask-size: contain;
+        }
+      }
+
+      & [aria-current="page"] {
+        color: var(--dry-muted-foreground);
+      }
+    }
+
+    /* ----------------------------------------------------------- Empty state */
+    .empty {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-xl);
+      color: var(--dry-muted-foreground);
+      & button {
+        margin-top: 1rem;
+      }
+    }
+
+    /* ----------------------------------------------------------- Admin shell */
+    .shell {
+      display: grid;
+      grid-template-columns: var(--dry-sidebar-width) minmax(0, 1fr);
+      height: 100dvh;
+      transition: grid-template-columns 180ms ease;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding: 0 1rem 1rem;
+      background-color: var(--dry-sidebar);
+      border-inline-end: 1px dashed var(--dry-border);
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+
+      & nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.25rem;
+      }
+
+      & nav a {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 2.75rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: var(--dry-radius-md);
+        font-size: var(--dry-text-sm);
+        font-weight: 600;
+        color: var(--dry-muted-foreground);
+
+        & > svg {
+          width: 1.5rem;
+          height: 1.5rem;
+          flex: none;
+        }
+
+        &:hover {
+          background-color: var(--dry-accent);
+          color: var(--dry-foreground);
+        }
+
+        &[aria-current="page"] {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-primary) 8%,
+            transparent
+          );
+          color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+        }
+      }
+    }
+
+    .sidebar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      height: var(--dry-topbar-height);
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--dry-foreground);
+
+      & > svg {
+        width: 1.75rem;
+        height: 1.75rem;
+        color: var(--dry-primary);
+      }
+
+      &:hover {
+        color: var(--dry-foreground);
+      }
+    }
+
+    .nav-label {
+      grid-column: 1 / -1;
+      padding-block: 0.5rem;
+      font-size: var(--dry-text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--dry-muted-foreground);
+      opacity: 0.6;
+    }
+
+    /* --- The "Content" nav item's collapsible submenu (DryLayout.tsx),
+     * listing every non-system collection/singleton. */
+    .nav-group-header {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+
+      & > a {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+
+    .nav-chevron {
+      transition: transform 150ms ease;
+
+      &.collapsed {
+        transform: rotate(-90deg);
+      }
+    }
+
+    .nav-subitems {
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .nav-subitem {
+      padding-inline-start: 2.75rem;
+      min-height: 2.25rem !important;
+      font-weight: 500 !important;
+    }
+
+    .main {
+      height: 100dvh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      height: var(--dry-topbar-height);
+      padding-inline: 1.5rem;
+      background-color: color-mix(
+        in srgb,
+        var(--dry-background) 80%,
+        transparent
+      );
+      backdrop-filter: blur(8px);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .content {
+      padding: 1rem 1.5rem 4rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--dry-gap);
+      align-content: start;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+
+      & h1 {
+        font-size: 1.5rem;
+      }
+
+      & p {
+        color: var(--dry-muted-foreground);
+        margin-block-start: 0.25rem;
+      }
+      @media (width < 48rem) {
+        & .row {
+          justify-content: end;
+          width: 100%;
+        }
+      }
+    }
+
+    /* ---------------------------------------------------- Content types list */
+    .content-type-list {
+      list-style: none;
+      margin-inline: -2rem;
+      padding-inline: 0;
+    }
+
+    .content-type-list-item {
+      padding-block: 0.625rem;
+      padding-left: 2rem;
+      padding-right: 1rem;
+      border-block-end: 1px solid var(--dry-border);
+      margin: 0;
+      &:hover {
+        cursor: pointer;
+        background-color: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
+      &:first-child {
+        margin-top: 2rem;
+        border-top: 1px solid var(--dry-border);
+      }
+
+      & .content-type-list-item-icon{
+        margin-block: auto;
+        background-color: var(--field-type-color);
+        color: #FFF;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 2rem;
+        height: 2rem;
+        margin-right: .5rem;
+        border-radius: var(--dry-radius-md);
+        box-shadow: var(--dry-shadow-lg);
+        &>svg{
+          width: 1rem;
+          height: 1rem;
+          filter: drop-shadow(0 0 2px #000);
+        }
+      }
+
+      /* System fields aren't clickable - don't look it either. */
+      &.system:hover {
+        cursor: default;
+        background-color: transparent;
+        color: inherit;
+      }
+    }
+
+    /* The floating clone that tracks the pointer while a Fields list row is
+     * being dragged (see lib/dnd/useSortableList) - `position`/`top`/`left`/
+     * `width` are set inline by the hook itself. A solid card background
+     * (not just an opacity/shadow tweak) so it reads as lifted off the list
+     * entirely, rather than a real row that would need the rest of the list
+     * to visually merge with. The transition here only covers the pickup
+     * (class just got added) - the hook manages its own inline transition
+     * for the drop settle. */
+    .dnd-dragging {
+      z-index: 5;
+      background-color: var(--dry-background);
+      box-shadow: var(--dry-shadow-lg);
+      pointer-events: none;
+      transition:
+        background-color 120ms ease,
+        box-shadow 120ms ease;
+    }
+
+    /* The dragged row's own slot, left behind in the list while `.dnd-dragging`
+     * floats a clone above it - keeps the list's height stable instead of the
+     * gap collapsing shut and hiding whatever row would otherwise slide
+     * underneath, and doubles as a "drop here" indicator since it moves with
+     * every reorder. */
+    .dnd-drag-placeholder {
+      pointer-events: none;
+      & > * {
+        visibility: hidden;
+      }
+    }
+
+    /* Compact bordered block for Select's option list (see
+     * components/OptionListEditor.tsx) - deliberately its own class rather
+     * than reusing `.content-type-list`, which bleeds to the parent panel's
+     * edges (`margin-inline: -2rem`) - only right for the page-level Fields
+     * list, not a small block nested inside a field-dialog fieldset. */
+    .option-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      overflow: hidden;
+    }
+
+    .option-list-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.25rem 0.375rem;
+      margin: 0;
+      border-block-end: 1px solid var(--dry-border);
+
+      &:last-child {
+        border-block-end: none;
+      }
+
+      & > .row {
+        gap: 0.375rem !important;
+        flex-wrap: nowrap !important;
+      }
+
+      & > .row > input {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      & > .row > button {
+        flex: none;
+      }
+
+      & > .error {
+        margin-inline-start: 1.75rem;
+      }
+    }
+
+    .required-asterisk {
+      color: var(--dry-error);
+      font-weight: 900;
+      margin-inline-start: 0.125rem;
+    }
+
+    .content-type-editor-grid {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 3fr)
+        minmax(0, 1.3fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 64rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      & > *:first-child {
+        padding: 2rem;
+      }
+    }
+
+    /* Edit-only (hidden for `isNew`) - deleting a not-yet-created content
+     * type doesn't make sense. */
+    .content-type-editor-danger {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      padding: 1.25rem 1.5rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+
+      & h2 {
+        font-size: 1rem;
+        font-weight: 700;
+      }
+
+      & p {
+        margin-block-start: 0.25rem;
+        color: var(--dry-muted-foreground);
+        font-size: var(--dry-text-sm);
+      }
+    }
+
+    /* --- Content entry editor (pages/ContentEntryEditor.tsx) - same 3:1
+     * two-column shape as `.content-type-editor-grid` (left: scalar fields
+     * in metadata order; right: a bordered panel of relation/component
+     * fields), just under its own name since the right column here isn't a
+     * danger zone. */
+    .content-entry-editor-grid {
+      display: grid;
+      grid-template-columns:
+        minmax(0, 3fr)
+        minmax(0, 1.75fr);
+      gap: var(--dry-gap) 0;
+      align-items: start;
+
+      & > *:first-child {
+        padding-inline: 2rem;
+      }
+
+      @media (width < 64rem) {
+        grid-template-columns: minmax(0, 1fr);
+        & > *:first-child {
+          padding: 0;
+        }
+      }
+    }
+
+    /* `?_field=` deep link (`field-events.ts`'s own `scrollToField`) - a
+     * temporary outline on the target field's own wrapper, faded out by the
+     * animation itself rather than an abrupt class removal (the matching JS
+     * `setTimeout` in `scrollToField` still removes the class after the same
+     * 1.5s, so a field visited twice in a row - two dispatches of the same
+     * `_field` value - restarts the animation cleanly instead of doing
+     * nothing the second time). */
+    .entry-field-highlight {
+      outline: 2px solid var(--dry-primary);
+      outline-offset: 4px;
+      border-radius: var(--dry-radius-md);
+      animation: dry-entry-field-highlight 1.5s ease-out;
+    }
+
+    .entry-relation-card {
+      width: 100%;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+    }
+
+    .entry-relation-card-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0;
+      font-size: var(--dry-text-sm);
+      & > li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0.75rem 1rem;
+        & + li {
+          border-top: 1px solid var(--dry-border);
+        }
+      }
+    }
+
+    .entry-component-repeat-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      /* Without an explicit track, the implicit single `auto` column sizes
+       * to its content's max-content width (same degenerate case flexbox's
+       * `min-width: auto` is famous for, just the Grid version of it) - an
+       * unbreakable long summary value then grows the column, the list, and
+       * the whole page rightward instead of getting clipped in place. */
+      grid-template-columns: minmax(0, 1fr);
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+
+      /* `.row`'s own `flex-wrap: wrap` (utilities.css) sits in a
+       * higher-priority layer than this one - `!important` is the same
+       * escape hatch `.option-list-item > .row` already uses above. Without
+       * it, a long summary value wraps the drag handle/remove buttons onto
+       * their own line instead of staying put while the summary truncates. */
+      & > li.row {
+        flex-wrap: nowrap !important;
+        min-width: 0;
+      }
+
+      & .link {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        justify-content: flex-start;
+      }
+
+      & li {
+        margin: 0;
+        padding: 0.375rem 0.625rem;
+        & + li {
+          border-top: 1px solid var(--dry-border);
+        }
+      }
+    }
+
+    /* Add/Edit Field dialog - header/footer stay put while the grid (the
+     * only part with unbounded content) scrolls, same reasoning as
+     * `.image-picker-dialog` above: without a max-height the dialog just
+     * keeps growing past the viewport and the window scrolls instead. */
+    .field-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    /* Scroll frame around `.field-dialog-grid` - a separate element from the
+     * grid itself so the grid can keep `display: grid` while this element
+     * owns the scrolling. */
+    .field-dialog-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      /* Avoid clipping focus rings/shadows on inputs flush against the edge. */
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
+    }
+
+    /* Even 1fr/1fr split (vs. the editor grid's 3:1), right column empty
+     * until a type is chosen. */
+    .field-dialog-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 64rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    /* Right column of the Add/Edit Field dialog before a type is chosen. */
+    .field-dialog-empty-type {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 8rem;
+      padding: 1.5rem;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      color: var(--dry-muted-foreground);
+      font-size: var(--dry-text-sm);
+      text-align: center;
+      margin-block-start: 1.25rem;
+    }
+
+    /* Ref-picker dialog (components/RelationField.tsx) and the
+     * repeatable-component item dialog (components/ComponentField.tsx) -
+     * same fixed-header/scrolling-body shape as `.field-dialog[open]` above. */
+    .ref-picker-dialog[open],
+    .component-item-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    .ref-picker-body,
+    .component-item-dialog-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
+    }
+
+    /* Content Types list page: 1/4 icon-menu + 3/4 table. */
+    /* Small, fixed-width nav (13rem) matching .showcase-nav's sizing, not a
+     * proportional column - a 1/4-width nav looked oversized for 3 items. */
+    .content-types-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 16rem;
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 64rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .content-types-nav {
+      position: sticky;
+      top: calc(var(--dry-topbar-height) + 1rem);
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+
+      @media (width < 48rem) {
+        position: static;
+      }
+
+      & button {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.625rem;
+        border: none;
+        border-radius: var(--dry-radius-sm);
+        background-color: transparent;
+        box-shadow: none;
+        font-size: var(--dry-text-sm);
+        font-weight: 500;
+        color: var(--dry-muted-foreground);
+        cursor: pointer;
+
+        & > svg {
+          width: 1.125rem;
+          height: 1.125rem;
+          flex: none;
+        }
+
+        &:hover {
+          background-color: var(--dry-accent);
+          color: var(--dry-foreground);
+        }
+
+        &[aria-current="page"] {
+          background-color: color-mix(
+            in srgb,
+            var(--dry-primary) 8%,
+            transparent
+          );
+          color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+        }
+      }
+    }
+
+    .content-types-panel {
+      padding: 2rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-xl);
+      & h3 {
+        margin-block-start: 0;
+      }
+    }
+
+    /* Mobile: sidebar becomes an off-canvas drawer toggled by `.open`. */
+    @media (width < 48rem) {
+      .shell {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .sidebar {
+        position: fixed;
+        inset-block: 0;
+        inset-inline-start: 0;
+        z-index: 40;
+        width: var(--dry-sidebar-width);
+        translate: -100% 0;
+        transition: translate 180ms ease;
+        box-shadow: var(--dry-shadow-lg);
+      }
+
+      .shell.open .sidebar {
+        translate: 0 0;
+      }
+
+      .shell.open::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        background-color: light-dark(
+          rgb(var(--dry-grey-channel) / 80%),
+          rgb(0 0 0 / 35%)
+        );
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+      }
+
+      /* Fixed-height + centered content is fine for a single-line title, but
+       * Showcase's topbar also carries a description that wraps to a second
+       * line at this width - clamping the height then centers the overflow,
+       * pushing half of it (icons included) outside the sticky bar. */
+      .topbar {
+        height: auto;
+        min-height: var(--dry-topbar-height);
+        padding-block: 0.5rem;
+      }
+    }
+
+    @media (width >= 48rem) {
+      .mobile-only {
+        display: none;
+      }
+
+      /*
+       * Icon-only sidebar. Scoped to this breakpoint so `.collapsed` never
+       * fights the off-canvas drawer below `48rem` - the mobile menu is
+       * always full-width-or-hidden regardless of the desktop collapse
+       * preference.
+       */
+      .shell.collapsed {
+        grid-template-columns: var(--dry-sidebar-width-collapsed) minmax(0, 1fr);
+      }
+
+      .shell.collapsed .sidebar-head {
+        flex-direction: column;
+        gap: 0.5rem;
+        padding-block: 0.75rem 0.25rem;
+      }
+
+      .shell.collapsed .brand {
+        justify-content: center;
+        height: auto;
+      }
+
+      .shell.collapsed .sidebar nav a {
+        justify-content: center;
+        padding: 0;
+        min-width: 2.75rem;
+      }
+
+      .shell.collapsed .sidebar nav a > *:not(svg),
+      .shell.collapsed .brand > *:not(svg) {
+        display: none;
+      }
+
+      .shell.collapsed .sidebar small {
+        display: none;
+      }
+    }
+
+    @media (width < 48rem) {
+      .desktop-only {
+        display: none;
+      }
+    }
+
+    /* ------------------------------------------------------------------ Demo */
+    .demo {
+      scroll-margin-top: 5rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1rem;
+      padding: 1.5rem;
+      background-color: var(--dry-card);
+      border-radius: var(--dry-radius-xl);
+      box-shadow: var(--dry-shadow-md);
+
+      & > header {
+        & > h3 {
+          font-size: 1rem;
+        }
+
+        & > p {
+          color: var(--dry-muted-foreground);
+          margin-top: 0.25rem;
+        }
+      }
+    }
+
+    .demo-preview {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.5rem;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-background);
+
+      & > * {
+        min-width: 0;
+      }
+    }
+
+    .demo-code {
+      display: grid;
+      gap: 0.5rem;
+
+      & > span,
+      & > .row > span {
+        font-size: var(--dry-text-xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--dry-muted-foreground);
+      }
+
+      & > pre {
+        font-size: var(--dry-text-xs);
+        line-height: 1.6;
+      }
+    }
+
+    /* Opt-in `CodeBlock` modifier: wraps long lines instead of scrolling
+     * horizontally. */
+    pre.wrap {
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      font-size: var(--dry-text-xs);
+      line-height: 1.6;
+    }
+
+    /* Hosts OverlayScrollbars for `CodeBlock`'s `wrap` mode - caps height
+     * (inline `maxHeight` style, see the component's `wrap` prop) and scrolls
+     * vertically past that. Overflow must live on this wrapper rather than
+     * the `pre.wrap` it contains, since OverlayScrollbars only manages the
+     * element it's initialized on, not a descendant's overflow. */
+    .code-scroll {
+      overflow-y: auto;
+    }
+
+    /* Positions `CodeBlock`'s optional copy button (its `copyable` prop) in
+     * the block's own corner - hover/press feedback comes from the button's
+     * own `ghost icon sm` classes, same as every other icon-only button. */
+    .code-block {
+      position: relative;
+
+      & .code-block-copy {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+      }
+    }
+
+    /* Editable demo: a highlighted <pre> and a transparent <textarea> stacked
+     * exactly on top of each other. Typing is invisible except for the caret;
+     * the visible text always comes from the <pre> underneath. */
+    .editor {
+      position: relative;
+      margin: 0;
+      min-height: 5rem;
+      padding: 0.875rem 1rem;
+      overflow: hidden;
+      background-color: var(--dry-muted);
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      font-family: var(--dry-font-mono);
+      font-size: var(--dry-text-xs);
+      line-height: 1.6;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      /* Only `CodeField` sets `aria-invalid` - CodeBlock's `editable` demo
+       * samples never validate, so this state is inert there. Unlike every
+       * other field, focus itself draws no border-color change here - the
+       * caret is the only focus indicator needed. */
+      &[aria-invalid="true"] {
+        border-color: var(--dry-error);
+
+        &:focus-within {
+          border-color: var(--dry-error);
+          box-shadow: inset 0 0 0 1px var(--dry-error);
+        }
+      }
+
+      &:has(> textarea:disabled) {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      & > pre,
+      & > textarea {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        font: inherit;
+        white-space: pre-wrap;
+        word-break: break-word;
+        tab-size: 2;
+      }
+
+      & > pre {
+        background: none;
+
+        /* Neutralizes base.css's global `:where(code, kbd, samp)` rule,
+         * which shrinks `<code>` to 0.85em in its own font stack - a size
+         * the sibling `<textarea>` below never picks up (it isn't a
+         * `<code>`), so the two overlaid text layers drifted apart line by
+         * line. Both must render at the exact same font for the caret to
+         * land where the highlighted text says it should. */
+        & code {
+          font: inherit;
+        }
+      }
+
+      & > textarea {
+        position: absolute;
+        inset: 0.875rem 1rem;
+        width: calc(100% - 2rem);
+        height: calc(100% - 1.75rem);
+        overflow: hidden;
+        resize: none;
+        outline: none;
+        box-shadow: none;
+        background: transparent;
+        color: transparent;
+        caret-color: var(--dry-foreground);
+
+        /* Overrides forms.css's global heavier-border focus style, which
+         * makes no sense on an invisible overlay textarea. */
+        &:focus-visible {
+          outline: none;
+          box-shadow: none;
+        }
+      }
+    }
+
+    /* --------------------------------------------------------------- Showcase */
+    .showcase {
+      display: grid;
+      /* Nav (aside) is first in the DOM, body second - track order must match. */
+      grid-template-columns: 13rem minmax(0, 1fr);
+      gap: 2rem;
+      align-items: start;
+    }
+
+    .showcase-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1.5rem;
+    }
+
+    .showcase-group {
+      font-size: 1.125rem;
+      padding-top: 1rem;
+      scroll-margin-top: 5rem;
+    }
+
+    .showcase-nav {
+      position: sticky;
+      top: calc(var(--dry-topbar-height) + 1rem);
+      max-height: calc(100dvh - var(--dry-topbar-height) - 2rem);
+
+      & nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.125rem;
+      }
+
+      & a {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.625rem;
+        border-radius: var(--dry-radius-sm);
+        font-size: var(--dry-text-sm);
+        font-weight: 500;
+        color: var(--dry-muted-foreground);
+
+        & > svg {
+          width: 1.125rem;
+          height: 1.125rem;
+          flex: none;
+        }
+
+        &:hover {
+          background-color: var(--dry-accent);
+          color: var(--dry-foreground);
+        }
+
+        &[aria-current="page"] {
+          color: light-dark(var(--dry-primary-dark), var(--dry-primary-light));
+          background-color: color-mix(
+            in srgb,
+            var(--dry-primary) 8%,
+            transparent
+          );
+        }
+      }
+    }
+
+    .swatch {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.375rem;
+      justify-items: center;
+
+      & > span {
+        display: block;
+        width: 3.5rem;
+        height: 3.5rem;
+        border-radius: var(--dry-radius-md);
+        box-shadow: inset 0 0 0 1px var(--dry-border);
+      }
+    }
+
+    .icon-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+      gap: 0.75rem;
+      width: 100%;
+
+      & > .empty {
+        grid-column: 1 / -1;
+      }
+    }
+
+    .icon-tool-search {
+      & > * {
+        flex: 1;
+      }
+    }
+
+    .icon-preview-body {
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      padding: 1.5rem;
+      width: fit-content;
+      margin-bottom: 1rem;
+
+      /* Compact variant for `IconCopyDialog`'s per-row preview, where the
+       * full-size padding/margin (sized for a single centered icon) would
+       * blow out list-row height. */
+      &.sm {
+        padding: 0.625rem;
+        margin-bottom: 0;
+      }
+    }
+
+    /* IconCopyDialog: header/switch/footer stay put while the icon list (the
+     * only part with unbounded content) scrolls - same fixed-header/
+     * scrolling-body shape as `.field-dialog[open]` above, otherwise the
+     * dialog just keeps growing past the viewport and the window scrolls
+     * instead. */
+    .icon-copy-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    /* One row per selected icon, its preview beside a copy-pasteable `<i>`
+     * snippet. */
+    .icon-copy-list {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.75rem;
+    }
+
+    .icon-copy-row {
+      align-items: center;
+
+      & .code-block {
+        flex: 1;
+        min-width: 0;
+      }
+    }
+
+    .icon-copy-code {
+      flex: 1;
+      min-width: 0;
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .icon-cell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: center;
+      gap: 0.375rem;
+      padding: 0.75rem 0.25rem;
+      border-radius: var(--dry-radius-md);
+      text-align: center;
+      overflow: hidden;
+      transition: background-color 180ms ease;
+
+      &:hover {
+        background-color: var(--dry-accent);
+      }
+
+      /* Toggled-selected state for the Icon Management "Add icon" search
+       * grid - distinct from `:hover` so a selection stays visible once the
+       * pointer moves off. */
+      &.selected {
+        background-color: var(--dry-accent) !important;
+        outline: 1px solid var(--dry-border);
+      }
+
+      & small {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.6875rem;
+      }
+    }
+
+    .pager {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+      padding-top: 1.5rem;
+      border-top: 1px dashed var(--dry-border);
+    }
+
+    .pager-btn {
+      height: auto;
+      padding: 0.625rem 1rem;
+      white-space: normal;
+    }
+
+    .pager-btn-next {
+      margin-inline-start: auto;
+
+      & .pager-text {
+        text-align: right;
+
+        & small {
+          color: inherit;
+        }
+      }
+    }
+
+    .pager-text {
+      display: grid;
+      gap: 0.125rem;
+      line-height: 1.3;
+
+      & small {
+        font-weight: 500;
+        color: var(--dry-muted-foreground);
+      }
+
+      & strong {
+        font-size: var(--dry-text-sm);
+      }
+    }
+
+    @media (width < 64rem) {
+      .showcase {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .showcase-nav {
+        /* Cancels the wider breakpoint's `sticky` for this stacked-layout
+         * order. */
+        position: relative;
+        max-height: none;
+        order: -1;
+        padding: 1rem;
+        background-color: var(--dry-card);
+        border-radius: var(--dry-radius-xl);
+        box-shadow: var(--dry-shadow-sm);
+
+        & nav {
+          grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+        }
+      }
+    }
+
+    /*
+     * ------------------------------------------------------------------------
+     * File manager (components/FileManager.tsx). Mock, self-contained: list/
+     * grid browsing, a persistent "Snackbar" selection bar, per-row "more"
+     * menus, a cut/copy-then-paste clipboard, rename/upload dialogs, and a
+     * full-screen preview.
+     */
+    .file-manager {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    /* Sticky within whatever scrolls it - the page itself on a full
+     * `FileManager` page, or `.image-picker-body` inside ImageField's
+     * dialog - so the current folder (and its drop target for drag-to-move)
+     * stays reachable while the list scrolls underneath. `--dry-card`
+     * matches both hosts: a plain page's `.card` wrapper and the picker
+     * dialog's own background (`--dry-popover` is the same value). */
+    .file-breadcrumb {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.15rem;
+      padding-block: 0.375rem;
+      font-size: var(--dry-text-sm);
+      background-color: var(--dry-background);
+
+      & button {
+        padding: 0.125rem 0.375rem !important;
+        margin-inline: -0.375rem;
+        border-radius: var(--dry-radius-sm);
+      }
+
+      /* Drag-to-move: hovering dragged item(s) over a crumb (incl. "Root") -
+       * same treatment as the list/grid's folder drop target. */
+      & button.drag-over {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 20%,
+          transparent
+        );
+        outline: 2px dashed var(--dry-primary);
+        outline-offset: 2px;
+      }
+    }
+
+    .file-breadcrumb-sep {
+      margin-inline: 0.25rem;
+      color: var(--dry-muted-foreground);
+    }
+
+    /* On a real page, `.main`'s own sticky `.topbar` already claims `top: 0`
+     * in the same scroll container - stick just below it instead of
+     * underneath it (same idea as `.showcase-nav`'s topbar-aware offset). */
+    .main .file-breadcrumb {
+      top: var(--dry-topbar-height);
+    }
+
+    .image-picker-dialog .file-breadcrumb {
+      top: -1.5rem;
+    }
+
+    .file-toolbar {
+      flex-wrap: wrap;
+    }
+
+    .file-view-toggle {
+      display: inline-flex;
+      gap: 0.125rem;
+      padding: 0.125rem;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-muted);
+
+      & button[aria-pressed="true"] {
+        background-color: var(--dry-card);
+        box-shadow: var(--dry-shadow-xs);
+      }
+    }
+
+    /* RichTextField's toolbar (components/RichTextField/toolbar.tsx) - same
+		 * pressed-state pattern as `.file-view-toggle` above, in this layer
+		 * (not `dry.forms`, where the rest of RichTextField's styling lives)
+		 * because it needs to beat this layer's own `.separator` (`margin: 0`)
+		 * and base `button` rules; `dry.forms` is declared earlier in
+		 * index.css's `@layer` order and always loses a same-property fight
+		 * against `dry.components`, regardless of selector specificity. */
+    .richtext-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+      padding: 0.375rem;
+      background-color: var(--dry-muted);
+
+      & button {
+        border-radius: var(--dry-radius-sm);
+      }
+
+      & button[aria-pressed="true"],
+      & button[style*="color"] {
+        background-color: var(--dry-muted);
+        color: var(--dry-foreground);
+        border: 1px solid var(--dry-border);
+      }
+    }
+
+    /* Shared "boxed group of related controls" look, used by every
+     * `.richtext-toolbar` group (toolbar.tsx wraps each `TOOLBAR_GROUPS`
+     * entry in one - undo/redo; inline formatting + image; block-level
+     * menus) plus `TableInsertButton`'s own card (table-menu.tsx), instead
+     * of the flat row of buttons divided by `<hr>` separators this used to
+     * be: a background/border/shadow reads as "these buttons belong
+     * together" without needing a line drawn between every unrelated pair.
+     * No button/pressed-state styling of its own - `.richtext-toolbar`'s own
+     * `& button` rules below already reach every button nested inside one of
+     * these via the ordinary descendant combinator (unlike
+     * `.richtext-image-menu` below, which still floats separately from the
+     * toolbar, so still carries its own copy). `.richtext-table-menu-
+     * controls-wrap` (below) is a close cousin - same look, but `display:
+     * grid` instead of `flex` for its own width-collapse transition, so it
+     * can't share this class outright. */
+    .richtext-toolbar-block {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.375rem;
+      flex-shrink: 0;
+      max-width: 100%;
+      min-width: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+      /* Wraps onto a second row inside its own card rather than scrolling
+       * horizontally - a mobile-width toolbar block that scrolled instead
+       * left later icons sitting past the edge with no visual hint they
+       * were there. `min-width: 0` (the flexbox default is `auto`, i.e. the
+       * content's own width) is what lets `max-width: 100%` above actually
+       * shrink this below its content width so wrapping ever kicks in; a
+       * block wider than the toolbar itself wraps rather than overflowing
+       * and getting clipped by `.richtext`'s own `overflow: hidden`. */
+      & .popover-menu {
+        width: fit-content;
+      }
+    }
+
+    /* RichTextField's floating per-image menu (image-menu.tsx) - shown via
+     * FloatingPanel.tsx anchored to the selected image node. Same button/
+     * separator/pressed-state treatment as `.richtext-toolbar` above, minus
+     * its muted background (`.floating-panel` in this same layer already
+     * supplies one). */
+    .richtext-image-menu {
+      display: flex;
+      gap: 0.375rem;
+
+      & button {
+        border-radius: var(--dry-radius-sm);
+      }
+
+      & button[aria-pressed="true"] {
+        background-color: var(--dry-muted);
+        color: var(--dry-foreground);
+        border: 1px solid var(--dry-border);
+      }
+    }
+
+    /* RichTextField's floating per-`inline`-dry-component menu (dry-
+     * component-menu.tsx) - shown via FloatingPanel.tsx anchored to the
+     * selected component's node-view DOM, same shape as `.richtext-image-
+     * menu` above (and for the same reason: not nested inside `.richtext-
+     * toolbar`, so it needs its own copy of the button/pressed-state
+     * treatment that class supplies its descendants there). A `block`
+     * component instead stays docked in the toolbar - see
+     * `.richtext-dry-component-menu-controls` below, which inherits that
+     * treatment from `.richtext-toolbar` the normal way. */
+    .richtext-dry-component-floating-menu {
+      display: flex;
+      gap: 0.375rem;
+
+      & button {
+        border-radius: var(--dry-radius-sm);
+      }
+
+      & button[aria-pressed="true"] {
+        background-color: var(--dry-muted);
+        color: var(--dry-foreground);
+        border: 1px solid var(--dry-border);
+      }
+    }
+
+    /* RichTextField's table tool-group (table-menu.tsx) - docked at the end
+     * of `.richtext-toolbar` rather than floating over the table, so no
+     * positioning of its own here (unlike `.richtext-image-menu` below).
+     * `TableInsertButton` (always visible, so there's always a way to insert
+     * a table) sits in its own plain `.richtext-toolbar-block` card, no
+     * override needed - the row/column/etc controls below are a *second*,
+     * independent card that comes and goes with the table selection, rather
+     * than a zone nested inside the first: `.richtext-toolbar`'s own flex
+     * `gap` already spaces the two apart whenever both are rendered, and
+     * collapses to nothing on its own once the second one unmounts, so
+     * unlike the old single-card layout this needed no margin/gap-zeroing
+     * trick of its own.
+     *
+     * `-controls-wrap` carries its own card chrome (border/background/
+     * shadow, same look as `.richtext-toolbar-block`) plus the
+     * `grid-template-columns` collapse transition `.shell`'s sidebar
+     * collapse uses, to animate its width open/shut around the intrinsic
+     * (`auto`, otherwise untransitionable) width of the buttons inside -
+     * `table-menu.tsx`'s `controlsMounted`/`controlsShown` state is what
+     * actually unmounts this element ~200ms after the collapse finishes, so
+     * the card's own border/padding disappear entirely instead of lingering
+     * as a thin bordered nub - `min-width: 0` is what lets a card this wide
+     * ever shrink toward the collapsed 0fr column instead of a flex item's
+     * default `auto` min-width (its content size) overriding it. */
+    .richtext-table-menu-controls-wrap {
+      display: grid;
+      grid-template-columns: 0fr;
+      min-width: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+      padding: 0.25rem 0.375rem;
+      transition: grid-template-columns 180ms ease;
+
+      &.expanded {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* The actual row/column/header/merge/caption/delete buttons, nested one
+     * level inside `-controls-wrap` above rather than carrying its collapse
+     * transition directly - `flex-shrink: 0` on every direct child keeps
+     * them all at full size as the wrap shrinks, and `overflow: hidden`
+     * here clips them progressively instead of squishing, so the group
+     * visibly "springs open" within the card rather than fading in.
+     * Deliberately kept `nowrap` (unlike the plain `.richtext-toolbar-block`
+     * groups, which do wrap on narrow viewports) - wrapping here would size
+     * this row's own height off whatever width the collapse animation
+     * happens to be transiting through, including the near-zero extreme,
+     * where every button would wrap onto its own line and balloon the
+     * whole card's height for the ~180ms the animation is mid-flight. */
+    .richtext-table-menu-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      overflow: hidden;
+      min-width: 0;
+
+      & > * {
+        flex-shrink: 0;
+      }
+    }
+
+    /* `grid-menu.tsx`'s own expand/collapse card - same shape as
+     * `.richtext-table-menu-controls-wrap`/`-controls` above (this pair
+     * exists only because a grid card, unlike table's, has no permanent
+     * "insert" half to share a single card with - `toolbar-buttons.ts`'s
+     * plain "Insert grid" button already covers that on its own). */
+    .richtext-grid-menu-controls-wrap {
+      display: grid;
+      grid-template-columns: 0fr;
+      min-width: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+      padding: 0.25rem 0.375rem;
+      transition: grid-template-columns 180ms ease;
+
+      &.expanded {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .richtext-grid-menu-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      overflow: hidden;
+      min-width: 0;
+
+      & > * {
+        flex-shrink: 0;
+      }
+    }
+
+    /* `dry-component-menu.tsx`'s own expand/collapse card, for a `block` dry
+     * component only - same shape (and same "no permanent insert half"
+     * reasoning) as `.richtext-grid-menu-controls-wrap`/`-controls` just
+     * above. An `inline` one instead floats via `.richtext-dry-component-
+     * floating-menu` above, same as `.richtext-image-menu`. */
+    .richtext-dry-component-menu-controls-wrap {
+      display: grid;
+      grid-template-columns: 0fr;
+      min-width: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+      padding: 0.25rem 0.375rem;
+      transition: grid-template-columns 180ms ease;
+
+      &.expanded {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .richtext-dry-component-menu-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      overflow: hidden;
+      min-width: 0;
+
+      & > * {
+        flex-shrink: 0;
+      }
+    }
+
+    .richtext-table-grid {
+      display: flex;
+      flex-direction: column;
+      /* Shrink to the cells' own total width and center that block inside
+       * the picker - `display: flex` alone stretches to the popover's full
+       * (fixed 11rem) content width, leaving the actually-filled cells
+       * hugging the left edge while `.richtext-table-grid-label` below
+       * centers over the full width, so the two visibly didn't line up. */
+      width: fit-content;
+      margin-inline: auto;
+
+      & .richtext-table-grid-row:not(:first-child) {
+        margin-top: -1px;
+      }
+    }
+
+    .richtext-table-grid-row {
+      display: flex;
+    }
+
+    .richtext-table-grid .richtext-table-grid-cell {
+      width: 1.4rem;
+      height: 1.4rem;
+      padding: 0;
+      /* Square corners: these sit flush against their neighbors (see the
+       * overlap trick below), so a rounded corner - inherited from the base
+       * `button` rule otherwise - shows as a stray white notch at every
+       * seam, worst on the hovered/active block where it cuts diamond-
+       * shaped gaps out of an otherwise solid fill. */
+      border-radius: 0;
+      border: 1px solid var(--dry-border);
+      background-color: var(--dry-muted);
+      box-shadow: none;
+
+      &:not(:first-child) {
+        margin-inline-start: -1px;
+      }
+
+      &.active {
+        position: relative;
+        z-index: 1;
+        background-color: var(--dry-accent);
+        border-color: var(--dry-primary);
+      }
+    }
+
+    .richtext-table-grid-label {
+      margin-top: 0.375rem;
+      font-size: var(--dry-text-xs);
+      color: var(--dry-muted-foreground);
+      text-align: center;
+    }
+
+    /* --- Cell alignment picker (table-cell-align-button.tsx) - a 3x3 grid
+     * of separate rounded/bordered cells (`.color-swatch`'s own look) rather
+     * than `.richtext-table-grid*`'s flush, seamless-bordered cells above:
+     * that grid deliberately reads as a miniature table for "insert a
+     * table"; this one picks an alignment, so it shouldn't look like one. */
+    .richtext-align-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      width: fit-content;
+      margin-inline: auto;
+    }
+
+    .richtext-align-grid-row {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    .richtext-align-grid .richtext-align-grid-cell {
+      width: 1.4rem;
+      height: 1.4rem;
+      padding: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-sm);
+      background-color: var(--dry-muted);
+      box-shadow: none;
+
+      &.active {
+        background-color: var(--dry-accent);
+        border-color: var(--dry-primary);
+        box-shadow:
+          0 0 0 2px var(--dry-popover),
+          0 0 0 3.5px var(--dry-primary);
+      }
+    }
+
+    /* --- List view: rows are separated, rounded, solid-bordered "pills"
+     * rather than base.css's collapsed/dashed dividers - border-spacing
+     * opens the vertical gap, and radius/border live on the first & last
+     * `td` of each row so the row reads as one continuous outline. */
+    .file-table {
+      border-collapse: separate;
+      border-spacing: 0 0.5rem;
+
+      & .file-table-check,
+      & .file-table-more {
+        width: 1%;
+        white-space: nowrap;
+      }
+      & .file-table-selection {
+        padding: 0 0.75rem;
+        height: 56px;
+        border-bottom: none;
+        border-radius: var(--dry-radius-lg);
+        background-color: var(--dry-card);
+        box-shadow: var(--dry-shadow-md);
+        color: var(--dry-foreground);
+        white-space: normal;
+      }
+
+      & thead > tr > th:nth-child(2) {
+        padding-left: 0.5rem;
+      }
+
+      & tbody td {
+        padding-block: 0.625rem;
+        border-block: 1px solid var(--dry-border);
+      }
+
+      & tbody td:first-child {
+        border-inline-start: 1px solid var(--dry-border);
+        border-start-start-radius: var(--dry-radius-md);
+        border-end-start-radius: var(--dry-radius-md);
+      }
+
+      & tbody td:last-child {
+        border-inline-end: 1px solid var(--dry-border);
+        border-start-end-radius: var(--dry-radius-md);
+        border-end-end-radius: var(--dry-radius-md);
+      }
+
+      & tbody tr {
+        cursor: pointer;
+      }
+
+      & tbody tr:hover td {
+        background-color: var(--dry-accent);
+      }
+
+      & tbody tr.selected td {
+        background-color: var(--dry-selected);
+      }
+
+      /* Cut/copied, waiting on a paste elsewhere - dimmed instead of tinted so
+       * it doesn't read as still checkbox-selected. */
+      & tbody tr.pending {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
+      /* Wrong file type for `accept` - browsable still (so a folder full of
+       * mixed files doesn't turn half-invisible), just visibly not choosable. */
+      & tbody tr.not-accepted {
+        opacity: 0.45;
+      }
+
+      /* Drag-to-move: hovering dragged item(s) over a folder row - solid
+       * (unlike the translucent hover/selected tints) so the drop target
+       * reads unambiguously. One background change on the row, not an
+       * outline per `<td>` (which never merges into a single rectangle
+       * around the row). */
+      & tbody tr.drag-over td {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 20%,
+          var(--dry-card)
+        );
+      }
+    }
+
+    button.file-name-cell {
+      gap: 0.625rem;
+      height: auto;
+      padding: 0;
+      background: none;
+      box-shadow: none;
+      color: inherit;
+      font: inherit;
+      text-align: start;
+
+      &:hover {
+        background: none;
+        color: inherit;
+      }
+    }
+
+    .file-thumb-icon {
+      flex: none;
+    }
+
+    /* `preview` mode - a real 16:9 thumbnail instead of the generic file-type icon. */
+    .file-thumb-preview {
+      flex: none;
+      margin-left: -1rem;
+      width: 3.5rem;
+      aspect-ratio: 4 / 3;
+      object-fit: contain;
+      border-radius: 4px;
+      background-color: var(--dry-muted);
+    }
+
+    /* --- Grid view: fixed 4 columns, explicit tracks so long names can't force an overflow. */
+    .file-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+      width: 100%;
+    }
+
+    @media (width < 48rem) {
+      .file-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    /* Selection shows two ways: the checkbox itself (see `.file-card-select`
+     * below) and a light background tint on the whole card, once checked. */
+    .file-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-width: 0;
+      padding: 1rem;
+      cursor: pointer;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-card);
+
+      &:has(.file-card-checkbox:checked) {
+        background-color: var(--dry-selected);
+      }
+
+      /* Cut/copied, waiting on a paste elsewhere. */
+      &.pending {
+        opacity: 0.6;
+      }
+
+      /* Wrong file type for `accept` - see the list view's `tr.not-accepted`. */
+      &.not-accepted {
+        opacity: 0.45;
+      }
+
+      /* Drag-to-move: hovering dragged item(s) over a folder card - solid,
+       * see the list view's `tr.drag-over` for why. */
+      &.drag-over {
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 20%,
+          var(--dry-card)
+        );
+        outline: 2px dashed var(--dry-primary);
+        outline-offset: 2px;
+      }
+
+      /* `preview` mode: the thumbnail fills the whole card instead of
+       * sitting in a small `.file-card-head` corner. */
+      &.file-card-media {
+        position: relative;
+        padding: 0;
+        height: 139px;
+        overflow: hidden;
+      }
+    }
+
+    .file-card-media-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: inherit;
+      background-color: var(--dry-muted);
+    }
+
+    /* Checkbox/more-menu/name/size all live here - hidden until hover/focus
+     * (or already checked, so a selection stays visible without hovering),
+     * same "reveal on interaction" idea as `.file-card-select` above but for
+     * the whole card's info instead of just the checkbox. */
+    .file-card-media-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 1rem;
+      border-radius: inherit;
+      background-color: light-dark(rgb(255 255 255 / 80%), rgb(28 37 46 / 80%));
+      backdrop-filter: blur(1px);
+      -webkit-backdrop-filter: blur(6px);
+      color: var(--dry-card-foreground);
+      opacity: 0;
+      transition: opacity 160ms ease;
+    }
+
+    .file-card-media:hover .file-card-media-overlay,
+    .file-card-media:focus-within .file-card-media-overlay,
+    .file-card-media:has(input:checked) .file-card-media-overlay {
+      opacity: 1;
+    }
+
+    .file-card-media-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .file-card-media-bottom {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
+      min-width: 0;
+    }
+
+    .file-card-head {
+      display: flex;
+      align-items: flex-start;
+      & > label {
+        flex: 1;
+      }
+    }
+
+    /* Thumbnail hides only once actually checked (green/circular, via
+     * `.file-card-checkbox`) - tied to `:checked`, not `:hover`, so
+     * unchecking brings the icon back immediately even if the pointer never
+     * left the card, instead of waiting on a hover state that hasn't changed. */
+    .file-card-select {
+      position: relative;
+      width: 2.5rem;
+      height: 2.5rem;
+
+      &:has(.file-card-checkbox:checked) .file-card-thumb {
+        opacity: 0;
+      }
+
+      & > img {
+        width: auto;
+        position: relative;
+        z-index: 2;
+        transition:
+          transform 0.13s ease-in-out,
+          opacity 0.13s ease-in-out;
+      }
+
+      &:hover > img {
+        opacity: 0;
+        transform: scale(0.3);
+      }
+
+      &:hover .file-card-checkbox,
+      &:focus-within .file-card-checkbox,
+      & .file-card-checkbox:checked {
+        opacity: 1;
+      }
+    }
+
+    .file-card-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: opacity 120ms ease;
+    }
+
+    .file-card-checkbox {
+      position: absolute;
+      inset-block-start: 50%;
+      inset-inline-start: 1rem;
+      translate: -50% -50%;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+      transition: opacity 120ms ease;
+    }
+
+    button.file-card-name {
+      display: block;
+      height: auto;
+      padding: 0;
+      background: none;
+      box-shadow: none;
+      color: inherit;
+      font: inherit;
+      font-weight: 500;
+      text-align: start;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      &:hover {
+        background-color: unset;
+      }
+    }
+
+    /* --- Selection / clipboard bar: sits above the table, under the toolbar -
+     * shared by both `SelectionBar` and `ClipboardBar` so only one kind of
+     * "here's what's active" bar ever competes for that spot. */
+    .file-selection-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.625rem 0.625rem 0.625rem 1rem;
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-card);
+      color: var(--dry-card-foreground);
+      box-shadow: var(--dry-shadow-lg);
+    }
+
+    /* --- Popover: a trigger button opening a floating menu (see
+     * `Popover.tsx`). Portaled to `<body>` so `position`/`top`/`left` are set
+     * inline from JS, computed from the trigger button's own rect - only
+     * visual styling lives here. */
+    .popover {
+      display: inline-flex;
+    }
+
+    /* No manual backdrop/z-index scale needed - `popover="auto"` (see
+     * Popover.tsx) puts this in the top layer and handles outside-click/
+     * Escape dismissal natively, above everything in normal document flow
+     * including an open native `<dialog>`. */
+    .popover-menu {
+      border-width: 0;
+      width: 11rem;
+      margin: 0;
+      padding: 0.25rem 0.5rem;
+      list-style: none;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      & button {
+        justify-content: flex-start;
+        width: 100%;
+        height: 2rem;
+        padding-inline: 0.625rem;
+        background: none;
+        box-shadow: none;
+        color: inherit;
+        font-weight: 400;
+
+        &:hover {
+          background-color: var(--dry-accent);
+        }
+      }
+    }
+
+    .popover-menu-separator {
+      margin: 0.5rem -0.25rem;
+      border-top: 1px dashed var(--dry-border);
+    }
+
+    .popover-menu-danger {
+      color: light-dark(var(--dry-error-dark), var(--dry-error-light));
+    }
+
+    /* Trailing checkmark on the active choice in a one-of-many menu (align,
+     * block type, ...) - `margin-left: auto` pushes it to the button's end
+     * regardless of label length, same trick used for badges elsewhere. */
+    .popover-menu-check {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    /* --- FloatingPanel: follows an arbitrary/moving anchor element instead
+     * of a fixed trigger (see `FloatingPanel.tsx`) - `popover="manual"` for
+     * the same top-layer reasons as `.popover-menu` above, but shown/hidden
+     * imperatively by the component rather than native light-dismiss.
+     *
+     * `display`/`overlay` are transitioned (with `allow-discrete`) so the
+     * fade/scale below animates the close as well as the open, not just the
+     * open - same technique as `.field-dialog`'s open animation, extended to
+     * cover the native popover's discrete display swap.
+     *
+     * `left`/`top` are deliberately NOT in the base transition list - only
+     * `.floating-panel-tracking` (added by FloatingPanel.tsx once the panel
+     * has already appeared at least once for its current anchor) adds them,
+     * so the panel glides on a discrete anchor swap or while continuously
+     * re-tracking the same anchor as the page scrolls (`useTrackRect`) - but
+     * its first-ever appearance snaps straight to the correct spot instead of
+     * visibly flying in from wherever `left`/`top` last resolved to (0 - the
+     * element had no box to measure while `display: none`). */
+    .floating-panel {
+      border-width: 0;
+      margin: 0;
+      padding: 0.375rem 0.5rem;
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+      border: 1px solid var(--dry-border);
+      opacity: 1;
+      scale: 1;
+      transition:
+        opacity 120ms ease,
+        scale 120ms ease,
+        display 120ms ease allow-discrete,
+        overlay 120ms ease allow-discrete;
+
+      &.floating-panel-tracking {
+        transition-property: left, top, opacity, scale, display, overlay;
+        transition-duration: 120ms, 120ms, 120ms, 120ms, 120ms, 120ms;
+        transition-timing-function: ease-out, ease-out, ease, ease, ease, ease;
+      }
+
+      &:not(:popover-open) {
+        opacity: 0;
+        scale: 0.92;
+      }
+
+      @starting-style {
+        &:popover-open {
+          opacity: 0;
+          scale: 0.92;
+        }
+      }
+    }
+
+    /* --- RichTextField's color picker (color-menu.tsx) - swatch buttons
+     * need to beat `.popover-menu button`'s `width: 100%; height: 2rem`
+     * (menu-item sizing), so every selector here chains two classes to
+     * out-specificity that single-class-plus-element rule. Sizes below are
+     * tuned so 6 swatches + 5 gaps span the full `.popover-menu` content
+     * width (11rem menu - 1rem of its own inline padding = 10rem). */
+    .color-swatch-grid {
+      display: flex;
+      justify-content: center;
+      gap: 0.3rem;
+      padding: 0.375rem 0;
+    }
+
+    .color-swatch-column {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .color-swatch-grid .color-swatch {
+      width: 1.4rem;
+      height: 1.4rem;
+      padding: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-sm);
+      box-shadow: none;
+
+      &[aria-pressed="true"] {
+        box-shadow:
+          0 0 0 2px var(--dry-popover),
+          0 0 0 3.5px var(--dry-foreground);
+      }
+    }
+
+    .color-opacity-row {
+      display: flex;
+      justify-content: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0 0.375rem;
+    }
+
+    .color-opacity-row .color-opacity-swatch {
+      position: relative;
+      width: 1.4rem;
+      height: 1.4rem;
+      padding: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-sm);
+      box-shadow: none;
+      /* Checkerboard behind the semi-transparent overlay span, so the
+       * chosen opacity is actually visible rather than just fading into
+       * the popover's own background. */
+      background-image: conic-gradient(
+        var(--dry-grey-300) 90deg,
+        transparent 90deg 180deg,
+        var(--dry-grey-300) 180deg 270deg,
+        transparent 270deg
+      );
+      background-size: 0.5rem 0.5rem;
+
+      &[aria-pressed="true"] {
+        box-shadow:
+          0 0 0 2px var(--dry-popover),
+          0 0 0 3.5px var(--dry-foreground);
+      }
+
+      & > span {
+        position: absolute;
+        inset: 0;
+        border-radius: calc(var(--dry-radius-sm) - 1px);
+      }
+    }
+
+    /* --- Rename / upload dialogs. */
+    .file-dialog {
+      width: 24rem;
+    }
+
+    .file-upload-dialog {
+      width: 38rem;
+    }
+
+    /* ImageField's picker - much roomier than the rename/upload dialogs
+     * above since it hosts a full `FileManager`; header/footer stay put
+     * while `.image-picker-body` (the only part with unbounded content)
+     * scrolls, rather than the whole dialog growing past the viewport.
+     * `[open]`-scoped for the same reason as `.file-preview[open]` above -
+     * an unscoped `display` would override the UA `dialog:not([open])
+     * { display: none }` rule and leave the closed dialog sitting in normal
+     * flow, swallowing clicks meant for the page underneath. */
+    .image-picker-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      width: min(64rem, calc(100vw - 4rem));
+      max-width: min(64rem, calc(100vw - 4rem));
+      height: min(50rem, calc(100vh - 4rem));
+      max-height: min(45rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+      & header {
+        margin-bottom: .5rem;
+      }
+    }
+
+    .image-picker-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 1.5rem;
+      padding-top: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-background);
+      & .file-selection-bar,
+      & .file-table-selection {
+        box-shadow: none;
+        background-color: var(--dry-muted);
+      }
+    }
+
+    .upload-dropzone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 1.5rem 1rem;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      text-align: center;
+      transition:
+        border-color 120ms ease,
+        background-color 120ms ease;
+
+      &.dragging {
+        border-color: var(--dry-primary);
+        background-color: color-mix(
+          in srgb,
+          var(--dry-primary) 8%,
+          transparent
+        );
+      }
+
+      & svg {
+        width: 7.5rem;
+        height: auto;
+      }
+
+      & p {
+        margin: 0;
+        color: var(--dry-muted-foreground);
+        font-size: var(--dry-text-sm);
+      }
+    }
+
+    .upload-file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin: 0;
+      margin-top: 0.5rem;
+      padding: 0;
+      list-style: none;
+
+      & li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.625rem;
+        border-radius: var(--dry-radius-sm);
+        background-color: var(--dry-muted);
+        font-size: var(--dry-text-sm);
+
+        & small {
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        & span {
+          flex: 1 1 auto;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+      }
+    }
+
+    /* --- Full-screen preview. */
+    /* `[open]` matters: an unscoped `display` here would override the UA
+     * `dialog:not([open]) { display: none }` rule and leave the closed
+     * dialog sitting in normal flow - full viewport size and (depending on
+     * where it lands in the DOM) swallowing clicks meant for the page. */
+    .file-preview[open] {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto 1fr auto auto;
+      grid-template-areas:
+        "header"
+        "stage"
+        "zoom"
+        "film";
+      gap: 1rem;
+      width: 100vw;
+      height: 100vh;
+      max-width: 100vw;
+      max-height: 100vh;
+      padding: 1rem;
+      border-radius: 0;
+      /* Glass, not a solid card - the point of a full-screen preview is to
+       * stay grounded in the page it floats over. */
+      background-color: light-dark(rgb(255 255 255 / 70%), rgb(28 37 46 / 70%));
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+
+    .file-preview-header {
+      grid-area: header;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .file-preview-name {
+      min-width: 0;
+      overflow: hidden;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-preview-body {
+      grid-area: stage;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 0;
+    }
+
+    /* Plain, square hit-targets - no fill/border of their own, only the
+     * `.ghost` hover tint gives them presence. */
+    .file-preview-nav {
+      flex: none;
+      border-radius: 0;
+    }
+
+    .file-preview-stage {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 100%;
+      /* Zoomed images are scaled visually (not laid out larger), so this
+       * only ever clips paint at the stage edge - it never needs to scroll. */
+      overflow: hidden;
+
+      /* More than one file in scope - horizontal drag/swipe moves to prev/next. */
+      &.swipeable {
+        touch-action: pan-y;
+        cursor: grab;
+      }
+    }
+
+    .file-preview-slide {
+      display: flex;
+      max-width: 100%;
+      max-height: 100%;
+      animation: file-preview-from-right 220ms ease;
+
+      &.from-left {
+        animation-name: file-preview-from-left;
+      }
+    }
+
+    .file-preview-image {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: var(--dry-radius-md);
+      object-fit: contain;
+    }
+
+    /* Non-image files get a floating info card instead of the image stage. */
+    .file-preview-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 2rem 2.5rem;
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      box-shadow: var(--dry-shadow-lg);
+
+      & > img {
+        width: 4rem;
+        height: 4rem;
+      }
+    }
+
+    .file-preview-rows {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-width: 16rem;
+      margin: 0;
+    }
+
+    .file-preview-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding-block: 0.625rem;
+      border-bottom: 1px dashed var(--dry-border);
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      & dt {
+        color: var(--dry-muted-foreground);
+        font-size: var(--dry-text-sm);
+      }
+
+      & dd {
+        margin: 0;
+        font-size: var(--dry-text-sm);
+        font-weight: 500;
+      }
+    }
+
+    /* Zoom bar: only rendered for image files. */
+    .file-preview-zoom {
+      grid-area: zoom;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .file-preview-zoom-input {
+      width: 4rem;
+      height: 1.875rem;
+      padding: 0;
+      text-align: center;
+      font-size: var(--dry-text-xs);
+    }
+
+    .file-preview-filmstrip {
+      grid-area: film;
+      display: flex;
+      gap: 0.5rem;
+      padding-block: 0.25rem;
+      & img {
+        object-fit: contain;
+      }
+    }
+
+    .file-preview-filmstrip-item {
+      flex: none;
+      width: 3rem;
+      height: 3rem;
+      padding: 0.25rem;
+      border: 1px solid transparent;
+      border-radius: var(--dry-radius-sm);
+      background-color: var(--dry-muted);
+      box-shadow: none;
+
+      &.active {
+        border-color: var(--dry-primary);
+      }
+    }
+
+    /*
+     * Mobile: any anchored popover-style panel - select/combobox/multi-select
+     * listbox, date picker calendar/select-row - becomes a full-width bottom
+     * drawer instead of a small anchored dropdown, same treatment as the
+     * sidebar's off-canvas drawer above. Their position/left/top/width are
+     * computed inline by JS for desktop anchoring (`useFloatingPosition`), so
+     * `!important` is needed here to win over the inline style - scoped to
+     * this one selector list, this one breakpoint. Popover.tsx's own menu is
+     * deliberately excluded - it stays a small anchored dropdown at every
+     * width instead of becoming a drawer.
+     */
+    @media (width < 48rem) {
+      .select-popup,
+      .select-popup.up,
+      .datepicker-popup,
+      .datepicker-popup.up {
+        position: fixed !important;
+        z-index: 49;
+        inset-inline: 0 !important;
+        top: auto !important;
+        bottom: 0 !important;
+        width: auto !important;
+        max-width: none;
+        max-height: 70vh;
+        transform: none !important;
+        border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
+        box-shadow: var(--dry-shadow-lg);
+        animation: dry-sheet-up 200ms ease;
+      }
+
+      .datepicker-grid {
+        justify-content: center;
+      }
+
+      .select:has(> .select-popup)::before,
+      .select:has(> .datepicker-popup)::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 48;
+        background-color: light-dark(
+          rgb(var(--dry-grey-channel) / 80%),
+          rgb(0 0 0 / 35%)
+        );
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+      }
+    }
+  }
+
+  @keyframes dry-sheet-up {
+    from {
+      translate: 0 100%;
+    }
+  }
+
+  @keyframes dry-dialog-in {
+    from {
+      opacity: 0;
+      scale: 0.95;
+    }
+  }
+
+  @keyframes dry-dialog-backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes file-preview-from-right {
+    from {
+      translate: 1.5rem 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes file-preview-from-left {
+    from {
+      translate: -1.5rem 0;
+      opacity: 0;
+    }
+  }
+
+  .dry-component-preview {
+    container-type: inline-size;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 9;
+    padding: 1rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    overflow: hidden;
+    background-color: var(--dry-background);
+  }
+
+  /* Always laid out at a 768px desktop width, then scaled down (never up) to
+   * fit whatever the actual container width is - keeps every discovered
+   * component's preview consistent instead of squished by a narrow grid
+   * column. `100cqw` reads the container's own content width (post-padding),
+   * so the scale ratio matches the space really available. */
+  .dry-component-preview-scale {
+    flex-shrink: 0;
+    width: 768px;
+    aspect-ratio: 16 / 9;
+    scale: min(1, calc(100cqw / 768px));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dry-component-preview-skeleton {
+    background: linear-gradient(90deg, transparent, var(--dry-muted), transparent);
+    background-size: 200% 100%;
+    animation: dry-progress-indeterminate 1.4s infinite;
+  }
+
+  .dry-component-preview-error,
+  .dry-component-error {
+    color: var(--dry-error);
+    font-size: var(--dry-text-sm);
+    text-align: center;
+  }
+
+  .dry-component-admin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+
+    @media (width < 64rem) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .dry-component-admin-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-lg);
+    padding: 0.75rem;
+  }
+
+  .dry-component-admin-card-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .dry-component-admin-card-description {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    font-size: var(--dry-text-sm);
+    line-height: var(--dry-leading);
+    color: var(--dry-muted-foreground);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
+
+  .dry-component-admin-card-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    font-size: var(--dry-text-xs);
+    color: var(--dry-muted-foreground);
+  }
+
+  .dry-component-preview-large .dry-component-preview {
+    padding: 1.5rem;
+  }
+
+  .dry-component-picker-list {
+    max-height: 24rem;
+  }
+
+  /* Styled separately from `.dry-component-picker-list` (the OverlayScrollbars
+   * host) on purpose - see the comment on this div in
+   * `dry-component-insert-button.tsx`. OverlayScrollbars relocates it into
+   * its own generated viewport, so the flex/gap layout for the rows lives
+   * here rather than on the host itself. */
+  .dry-component-picker-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .dry-component-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    
+  }
+
+  .dry-component-picker-row.is-selected {
+    outline-color: var(--dry-primary);
+    outline-offset: -2px !important;
+    &>*:first-child{
+      border-top-right-radius: 0 ;
+      border-bottom-right-radius: 0;
+    }
+  }
+
+  .dry-component-picker-row-select {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.125rem;
+    height: auto;
+    min-height: 2.25rem;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+
+  .dry-component-picker-row.is-selected .dry-component-picker-row-select {
+    background-color: var(--dry-accent);
+  }
+
+  .dry-component-picker-label {
+    font-size: var(--dry-text-sm);
+  }
+
+  .dry-component-picker-row-select .hint {
+    margin: 0;
+  }
+
+  .dry-component-picker-row > .icon {
+    margin-inline-end: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .dry-component-picker-empty {
+    color: var(--dry-muted-foreground);
+    text-align: center;
+  }
+
+  .dry-component-props-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    padding: 0.75rem;
+    margin: 0;
+  }
+
+  /* Selected `<dry-*>` custom element inside the editor - `DryComponentNodeView`
+     toggles this class, same `.is-selected` convention as the image node
+     view's own resize box. */
+  [class^="dry-"].is-selected,
+  [class*=" dry-"].is-selected {
+    outline: 2px solid var(--dry-primary, var(--dry-border));
+    outline-offset: 2px;
+  }
+
+  .dry-carousel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 32rem;
+  }
+
+  .dry-carousel-viewport {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dry-carousel-image {
+    flex: 1;
+    width: 100%;
+    aspect-ratio: 12 / 7;
+    object-fit: cover;
+    border-radius: var(--dry-radius-md);
+    border: 1px solid var(--dry-border);
+  }
+
+  .dry-carousel-nav {
+    flex: none;
+  }
+
+  .dry-carousel-caption {
+    margin: 0;
+    font-size: var(--dry-text-sm);
+    color: var(--dry-muted-foreground);
+    text-align: center;
+  }
+
+  .dry-carousel-empty {
+    padding: 1rem;
+    text-align: center;
+    color: var(--dry-muted-foreground);
+  }
+
+  @keyframes dry-spin {
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  @keyframes dry-pulse {
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes dry-progress-indeterminate {
+    0% {
+      background-position: -150% 0;
+    }
+    100% {
+      background-position: 250% 0;
+    }
+  }
+
+  @keyframes dry-progress-circle-spin {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+}

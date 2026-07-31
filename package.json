@@ -1,31 +1,53 @@
 {
-  "name": "drycms-workspace",
+  "name": "drycms",
   "type": "module",
   "private": true,
   "version": "0.0.1",
   "workspaces": ["packages/*"],
+  "description": "A self-hosted Preact CMS admin UI, served via a pluggable server adapter (Node by default, Workers/Bun planned).",
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "bun run build:lib && astro dev",
-    "build": "bun run build:lib && astro build",
-    "build:lib": "bun run --cwd packages/drycms build",
-    "dev:lib": "bun run --cwd packages/drycms dev",
-    "preview": "astro preview",
-    "test": "bun run --cwd packages/drycms test",
-    "test:e2e": "playwright test",
-    "astro": "astro"
+    "dev": "node scripts/dev-server.mjs",
+    "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server",
+    "start": "node dist/server/entry-node.js",
+    "build:icons": "node scripts/build-icons.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
-    "astro": "^7.1.3",
-    "drycms": "workspace:*",
-    "preact": "^10.24.0"
+    "@preact/signals": "^2.10.0",
+    "dayjs": "^1.11.21",
+    "overlayscrollbars": "^2.16.0",
+    "preact": "^10.29.7",
+    "preact-iso": "^2.12.1",
+    "prismjs": "^1.30.0",
+    "prosemirror-commands": "^1.5.1",
+    "prosemirror-history": "^1.3.0",
+    "prosemirror-keymap": "^1.2.1",
+    "prosemirror-model": "^1.19.0",
+    "prosemirror-schema-list": "^1.5.1",
+    "prosemirror-state": "^1.4.2",
+    "prosemirror-tables": "^1.8.5",
+    "prosemirror-transform": "^1.10.5",
+    "prosemirror-view": "^1.30.2"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.119",
+    "@iconify-json/solar": "^1.2.5",
+    "@iconify/utils": "^3.1.4",
     "@playwright/test": "^1.49.0",
+    "@preact/preset-vite": "^2.10.6",
     "@types/bun": "^1.3.14",
+    "@types/node": "^26.1.1",
+    "@types/prismjs": "^1.26.6",
     "typescript": "^5.9.0",
+    "vite": "^8.0.13",
     "vitest": "^3.2.0"
   }
 }
