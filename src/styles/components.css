@@ -4694,6 +4694,7 @@
   }
 
   .dry-component-preview {
+    position: relative;
     container-type: inline-size;
     display: flex;
     align-items: center;
@@ -4706,6 +4707,40 @@
     background-color: var(--dry-background);
   }
 
+  .dry-component-preview-controls {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-md);
+    background-color: color-mix(
+      in srgb,
+      var(--dry-background) 84%,
+      transparent
+    );
+    backdrop-filter: blur(6px);
+    z-index: 1;
+  }
+
+  .dry-component-preview-controls button {
+    min-width: 1.75rem;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .dry-component-preview-controls button svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .dry-component-preview-zoom-range {
+    width: 7rem;
+    accent-color: var(--dry-primary);
+  }
+
   /* Always laid out at a 768px desktop width, then scaled down (never up) to
    * fit whatever the actual container width is - keeps every discovered
    * component's preview consistent instead of squished by a narrow grid
@@ -4715,7 +4750,8 @@
     flex-shrink: 0;
     width: 768px;
     aspect-ratio: 16 / 9;
-    scale: min(1, calc(100cqw / 768px));
+    transform: scale(var(--dry-component-preview-scale, 1));
+    transform-origin: center center;
     display: flex;
     align-items: center;
     justify-content: center;

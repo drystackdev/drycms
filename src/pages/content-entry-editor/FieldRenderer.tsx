@@ -15,6 +15,7 @@ import {
   type EntryRelationMirrorNode,
   type EntryRelationNode,
 } from "../../content-types/engine/entry-tree.js";
+import { SUPER_ADMIN_FIELD_NAME } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { blankEntryValue } from "./blank-value.js";
 import ScalarField from "./ScalarField.js";
@@ -130,7 +131,12 @@ function useRelationFieldSource(
     [type],
   );
   const queryableColumns = useMemo(
-    () => (type ? flattenQueryableColumns(buildEntryFieldTree(type, allTypes)).slice(0, 3) : []),
+    () => {
+      const columns = type ? flattenQueryableColumns(buildEntryFieldTree(type, allTypes)).slice(0, 3) : [];
+      return type?.name === "role"
+        ? columns.filter((column) => column.fieldName !== SUPER_ADMIN_FIELD_NAME)
+        : columns;
+    },
     [type, allTypes],
   );
 

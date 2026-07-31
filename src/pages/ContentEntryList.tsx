@@ -17,6 +17,7 @@ import {
 import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";
 import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
+import { SUPER_ADMIN_FIELD_NAME } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { useFetch } from "../hooks/useFetch.js";
@@ -308,9 +309,12 @@ function ContentEntryListCollection({
     for (const column of relationColumns) {
       const targetType = allTypes.find((t) => t.id === column.targetTypeId);
       if (!targetType) continue;
+      const visibleTargetColumns = flattenQueryableColumns(buildEntryFieldTree(targetType, allTypes)).filter(
+        (c) => !(targetType.name === "role" && c.fieldName === SUPER_ADMIN_FIELD_NAME),
+      );
       map.set(column.fieldName, {
         entriesApi: createContentEntriesApi(`${path}/api/content`, targetType.name),
-        labelField: flattenQueryableColumns(buildEntryFieldTree(targetType, allTypes))[0]?.fieldName,
+        labelField: visibleTargetColumns[0]?.fieldName,
       });
     }
     return map;

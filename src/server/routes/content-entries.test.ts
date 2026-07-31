@@ -106,6 +106,38 @@ describe("content-entries route - data-version protocol", () => {
     expect(fresh.json.rows).toBeUndefined();
   });
 
+  it("hides the seeded Super Admin role from role/user lists", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const userType = allTypes.find((t) => t.name === "user")!;
+    await entries.createEntry(userType, allTypes, {
+      name: "Plain User",
+      email: "plain-user@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [],
+    });
+
+    const roles = await get("role");
+    expect(roles.json.rows.some((r: any) => r.value.name === "Super Admin")).toBe(false);
+
+    const users = await get("user");
+    expect(users.json.rows.some((r: any) => r.value.email === "test-admin@example.com")).toBe(false);
+    expect(users.json.rows.some((r: any) => r.value.email === "plain-user@example.com")).toBe(true);
+  });
+
+  it("returns not_found for a direct GET of the seeded Super Admin role", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const roleType = allTypes.find((t) => t.name === "role")!;
+    const rolePage = await entries.listEntries(roleType, allTypes, { page: 0, pageSize: 10 });
+    const superAdmin = rolePage.rows.find((row) => row.value.isSuperAdmin === true)!;
+
+    const response = await get(`role/${superAdmin.id}`);
+    expect(response.status).toBe(404);
+  });
+
   it("GET single entry by id honors the same version protocol", async () => {
     const created = await post("role", { name: "Viewer", isSuperAdmin: false, permissions: [] });
     const id = created.json.entry.id as string;

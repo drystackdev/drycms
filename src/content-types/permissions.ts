@@ -17,6 +17,10 @@ import type { ContentTypeDefinition } from "./types.js";
 export const PERMISSION_ACTIONS = ["view", "create", "update", "delete", "publish", "setting"] as const;
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
+/** The seeded Super Admin role's bypass flag - server-only behavior, never a
+ * browser-facing editable/display column. */
+export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
+
 /** The exact set of actions `permissionSyncStatements` (and the Role editor
  * UI, which imports this directly to stay in lockstep) should generate for
  * `target`. Pure - safe to import from client code too. */

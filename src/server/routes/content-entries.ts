@@ -80,6 +80,27 @@ function decodeIdOrThrow(hashedId: string): number {
   return id;
 }
 
+async function superAdminRoleIds(
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+): Promise<Set<number>> {
+  const roleType = allTypes.find((type) => type.name === "role" && type.kind !== "component");
+  if (!roleType) return new Set();
+  const page = await entryAdapter.listEntries(roleType, allTypes, { page: 0, pageSize: Number.MAX_SAFE_INTEGER });
+  return new Set(
+    page.rows
+      .filter((row) => row.value.isSuperAdmin === true)
+      .map((row) => row.id),
+  );
+}
+
+function isHiddenEntry(type: ContentTypeDefinition, row: EntryValue, superAdminIds: Set<number>): boolean {
+  if (type.name === "role") return row.isSuperAdmin === true;
+  if (type.name !== "user" || superAdminIds.size === 0) return false;
+  const roleIds = Array.isArray(row.roles) ? row.roles : [];
+  return roleIds.some((id) => typeof id === "number" && superAdminIds.has(id));
+}
+
 /** Resource-level authorization for one entry-CRUD request - `null` means
  * "proceed", otherwise the 401/403 to return immediately. A singleton
  * collapses every action to `"setting"` (see `permissions.ts`'s
@@ -210,6 +231,9 @@ export const GET: DryRouteHandler = async (context) => {
     if (hashedId) {
       const row = await entryAdapter.getEntry(type, allTypes, decodeIdOrThrow(hashedId));
       if (!row) throw new ContentEntryError("not_found", `Entry "${hashedId}" not found.`);
+      if (type.name === "role" && row.value.isSuperAdmin === true) {
+        throw new ContentEntryError("not_found", `Entry "${hashedId}" not found.`);
+      }
       return jsonResponse({ changed: true, version, entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
     }
 
@@ -223,19 +247,36 @@ export const GET: DryRouteHandler = async (context) => {
     const searchableFieldsParam = url.searchParams.get("searchableFields");
     const searchableFields = searchableFieldsParam ? searchableFieldsParam.split(",").filter(Boolean) : undefined;
 
+    const superAdminIds = type.name === "user" ? await superAdminRoleIds(entryAdapter, allTypes) : new Set<number>();
+    const hideSpecialEntries = type.name === "role" || type.name === "user";
     const page1 = await entryAdapter.listEntries(type, allTypes, {
-      page,
-      pageSize,
+      page: hideSpecialEntries ? 0 : page,
+      pageSize: hideSpecialEntries ? Number.MAX_SAFE_INTEGER : pageSize,
       sortField,
       sortDir,
       search,
       searchableFields,
     });
+    let rows = page1.rows;
+    if (type.name === "role") {
+      rows = page1.rows.filter((row) => !isHiddenEntry(type, row.value, superAdminIds));
+    } else if (type.name === "user" && superAdminIds.size > 0) {
+      const filtered = await Promise.all(
+        page1.rows.map(async (row) => {
+          const full = await entryAdapter.getEntry(type, allTypes, row.id);
+          return full && !isHiddenEntry(type, full.value, superAdminIds) ? row : null;
+        }),
+      );
+      rows = filtered.filter((row): row is (typeof page1.rows)[number] => row !== null);
+    }
+    const pagedRows = hideSpecialEntries
+      ? rows.slice(page * pageSize, page * pageSize + pageSize)
+      : rows;
     return jsonResponse({
       changed: true,
       version,
-      rows: page1.rows.map((row) => ({ id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) })),
-      total: page1.total,
+      rows: pagedRows.map((row) => ({ id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) })),
+      total: hideSpecialEntries ? rows.length : page1.total,
     });
   } catch (error) {
     return errorResponse(error);

@@ -81,6 +81,20 @@ export default function CodeField({
           disabled={disabled}
           spellcheck={false}
           aria-invalid={error || undefined}
+          onKeyDown={(event) => {
+            if (event.key === "Tab") {
+              event.preventDefault();
+              const textarea = event.target as HTMLTextAreaElement;
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              const newValue = draft.slice(0, start) + "\t" + draft.slice(end);
+              setDraft(newValue);
+              onChange(newValue);
+              setTimeout(() => {
+                textarea.selectionStart = textarea.selectionEnd = start + 1;
+              });
+            }
+          }}
           onInput={(event) => {
             const next = (event.target as HTMLTextAreaElement).value;
             setDraft(next);

@@ -108,16 +108,14 @@ export default function RoleEditor({ id }: Props) {
     (async () => {
       try {
         const entry = await roleEntriesApi.get(id);
-        if (entry.value.isSuperAdmin === true) {
-          // Super Admin is seeded infrastructure used by auth/access checks,
-          // so direct URLs must not open its role configuration either.
-          route(`${path}/roles`, true);
-          return;
-        }
         setValue(entry.value);
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
       } catch (error) {
+        if (error instanceof ContentEntriesApiError && /not found/i.test(error.message)) {
+          route(`${path}/roles`, true);
+          return;
+        }
         setLoadError(error instanceof Error ? error.message : "Failed to load role.");
       }
     })();

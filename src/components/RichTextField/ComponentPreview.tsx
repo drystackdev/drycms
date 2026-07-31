@@ -1,6 +1,9 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { h } from "preact";
-import { defineDryComponent, type DryComponentLoader } from "./dry-component-runtime.js";
+import {
+  defineDryComponent,
+  type DryComponentLoader,
+} from "./dry-component-runtime.js";
 import { isDryComponentDefinition } from "./register-component.js";
 
 export interface ComponentPreviewProps {
@@ -39,14 +42,27 @@ export interface ComponentPreviewProps {
  * Loads in parallel with sibling previews, never blocking whatever list/grid
  * it's placed into - a skeleton placeholder fills in until `load()` resolves.
  */
-export default function ComponentPreview({ name, label, defaults, load, shadow, childrenHtml, basePath }: ComponentPreviewProps) {
+export default function ComponentPreview({
+  name,
+  label,
+  defaults,
+  load,
+  shadow,
+  childrenHtml,
+  basePath,
+}: ComponentPreviewProps) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
+  const previewRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setReady(false);
     setFailed(false);
+    setZoom(1);
+    setFitScale(1);
     defineDryComponent(name, load, shadow, basePath);
     load()
       .then((mod) => {
@@ -66,28 +82,106 @@ export default function ComponentPreview({ name, label, defaults, load, shadow, 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when name/loader/shadow/basePath change
   }, [name, load, shadow, basePath]);
 
+  useEffect(() => {
+    const element = previewRef.current;
+    if (!element || !ready) return;
+
+    const updateFitScale = () => {
+      const styles = getComputedStyle(element);
+      const paddingInline =
+        parseFloat(styles.paddingLeft || "0") +
+        parseFloat(styles.paddingRight || "0");
+      const contentWidth = Math.max(1, element.clientWidth - paddingInline);
+      setFitScale(Math.min(1, contentWidth / 768));
+    };
+
+    updateFitScale();
+    const observer = new ResizeObserver(updateFitScale);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ready, name]);
+
+  const currentScale = fitScale * zoom;
+  const previewScaleStyle = {
+    "--dry-component-preview-scale": `${currentScale.toFixed(2)}`,
+  } as Record<string, string>;
+
   if (failed) {
     return (
-      <div class="dry-component-preview dry-component-preview-error" aria-label={label}>
+      <div
+        class="dry-component-preview dry-component-preview-error"
+        aria-label={label}
+      >
         Failed to load "{label}"
       </div>
     );
   }
 
   if (!ready) {
-    return <div class="dry-component-preview dry-component-preview-skeleton" aria-label={`Loading ${label}`} aria-busy="true" />;
+    return (
+      <div
+        class="dry-component-preview dry-component-preview-skeleton"
+        aria-label={`Loading ${label}`}
+        aria-busy="true"
+      />
+    );
   }
 
   return (
-    <div class="dry-component-preview" data-component={name}>
+    <div ref={previewRef} class="dry-component-preview" data-component={name}>
       {/* Fixed at a 768px desktop width so the component always lays out the
        * same regardless of how narrow the actual card/grid cell is - CSS
        * scales this box down (never up) to fit, see .dry-component-preview-scale. */}
-      <div class="dry-component-preview-scale">
+      <div class="dry-component-preview-scale" style={previewScaleStyle}>
         {h(`dry-${name}`, {
           props: JSON.stringify(defaults),
-          ...(childrenHtml ? { dangerouslySetInnerHTML: { __html: childrenHtml } } : {}),
+          ...(childrenHtml
+            ? { dangerouslySetInnerHTML: { __html: childrenHtml } }
+            : {}),
         })}
+      </div>
+
+      <div
+        class="dry-component-preview-controls"
+        aria-label="Preview zoom controls"
+      >
+        <button
+          type="button"
+          class="ghost icon sm"
+          aria-label="Reset preview size"
+          data-tooltip="Reset size"
+          onClick={() => setZoom(1)}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 21 21"
+            aria-hidden="true"
+          >
+            <g
+              fill="none"
+              fill-rule="evenodd"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3.578 6.487A8 8 0 1 1 2.5 10.5" />
+              <path d="M7.5 6.5h-4v-4" />
+            </g>
+          </svg>
+        </button>
+        <input
+          type="range"
+          class="dry-component-preview-zoom-range"
+          min="0.5"
+          max="2"
+          step="0.1"
+          value={zoom}
+          aria-label="Preview zoom"
+          onInput={(event) => {
+            const target = event.currentTarget as HTMLInputElement;
+            setZoom(Number(target.value));
+          }}
+        />
       </div>
     </div>
   );
