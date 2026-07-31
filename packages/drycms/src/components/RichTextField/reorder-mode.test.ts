@@ -5,8 +5,8 @@ import {
   buildDeleteTransaction,
   buildReorderTransaction,
   deleteSelectedBlocks,
-  getReorderMode,
   getReorderSelection,
+  initialDropTarget,
   isContainerNode,
   isDraggableNode,
   isReorderActive,
@@ -14,8 +14,6 @@ import {
   reorderMode,
   reorderModeKey,
   scopeAnchor,
-  setReorderMode,
-  sharedScope,
   toggleReorderMode,
   type DropTarget,
 } from "./reorder-mode.js";
@@ -121,44 +119,6 @@ describe("toggleReorderMode", () => {
     expect(isReorderActive(next)).toBe(false);
     expect(getReorderSelection(next)).toEqual([]);
   });
-
-  it("resets mode back to \"block\" when turned back on after being switched away", () => {
-    const doc = schema.nodes.doc!.create(null, [paragraph("a")]);
-    let state = stateFor(doc);
-    state = runMeta(state, { toggle: true });
-    state = runMeta(state, { setMode: "container" });
-    expect(getReorderMode(state)).toBe("container");
-    state = runMeta(state, { toggle: false });
-    state = runMeta(state, { toggle: true });
-    expect(getReorderMode(state)).toBe("block");
-  });
-});
-
-describe("setReorderMode", () => {
-  it("is a no-op while reorder mode is inactive", () => {
-    const doc = schema.nodes.doc!.create(null, [paragraph("a")]);
-    const state = stateFor(doc);
-    let dispatched = false;
-    const result = setReorderMode("container")(state, () => {
-      dispatched = true;
-    });
-    expect(result).toBe(false);
-    expect(dispatched).toBe(false);
-  });
-
-  it("switches the active mode and clears any selection/in-flight drag", () => {
-    const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b")]);
-    let state = stateFor(doc);
-    state = runMeta(state, { toggle: true });
-    state = runMeta(state, { setSelected: [0] });
-    expect(getReorderMode(state)).toBe("block");
-
-    let tr: Transaction | null = null;
-    setReorderMode("nested-container")(state, (t) => (tr = t));
-    const next = state.apply(tr!);
-    expect(getReorderMode(next)).toBe("nested-container");
-    expect(getReorderSelection(next)).toEqual([]);
-  });
 });
 
 describe("isContainerNode", () => {
@@ -212,14 +172,13 @@ describe("isTrailingEmptyParagraph", () => {
   });
 });
 
-describe("scopeAnchor / sharedScope", () => {
+describe("scopeAnchor", () => {
   it("scopes every top-level block to the same anchor", () => {
     const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b")]);
     const posA = posOf(doc, (n) => n.isTextblock && n.textContent === "a");
     const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
     expect(scopeAnchor(doc, posA)).toBe(-1);
     expect(scopeAnchor(doc, posB)).toBe(-1);
-    expect(sharedScope(doc, [posA, posB])).toBe(-1);
   });
 
   it("scopes a block inside a grid_item to the grid itself, not the grid_item", () => {
@@ -230,7 +189,6 @@ describe("scopeAnchor / sharedScope", () => {
     const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
     expect(scopeAnchor(doc, posA)).toBe(gridPos);
     expect(scopeAnchor(doc, posB)).toBe(gridPos);
-    expect(sharedScope(doc, [posA, posB])).toBe(gridPos);
   });
 
   it("scopes a grid_item target position (a replaceGridItem/afterGridItem target) to the same grid anchor as a block already inside it", () => {
@@ -248,43 +206,29 @@ describe("scopeAnchor / sharedScope", () => {
     const posA = posOf(doc, (n) => n.isTextblock && n.textContent === "a");
     expect(scopeAnchor(doc, posA)).toBe(cellPos);
   });
-
-  it("returns null from sharedScope when the dragged positions don't share a scope", () => {
-    const grid = schema.nodes.grid!.create(null, gridItem("b"));
-    const doc = schema.nodes.doc!.create(null, [paragraph("a"), grid]);
-    const posA = posOf(doc, (n) => n.isTextblock && n.textContent === "a");
-    const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
-    expect(sharedScope(doc, [posA, posB])).toBeNull();
-  });
 });
 
 describe("isDraggableNode", () => {
-  it("is false for the trailing empty paragraph, in every mode", () => {
+  it("is false for the trailing empty paragraph", () => {
     const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("")]);
     const pos = posOf(doc, (n) => n.isTextblock && n.textContent === "");
     const node = doc.nodeAt(pos)!;
-    expect(isDraggableNode(doc, pos, node, "block")).toBe(false);
-    expect(isDraggableNode(doc, pos, node, "container")).toBe(false);
-    expect(isDraggableNode(doc, pos, node, "nested-container")).toBe(false);
+    expect(isDraggableNode(doc, pos, node)).toBe(false);
   });
 
-  it('lets a plain block move under "block"/"container" mode but not "nested-container"', () => {
+  it("lets a plain block move", () => {
     const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b")]);
     const pos = posOf(doc, (n) => n.isTextblock && n.textContent === "a");
     const node = doc.nodeAt(pos)!;
-    expect(isDraggableNode(doc, pos, node, "block")).toBe(true);
-    expect(isDraggableNode(doc, pos, node, "container")).toBe(true);
-    expect(isDraggableNode(doc, pos, node, "nested-container")).toBe(false);
+    expect(isDraggableNode(doc, pos, node)).toBe(true);
   });
 
-  it("lets a container move under every mode", () => {
+  it("lets a container move", () => {
     const grid = schema.nodes.grid!.create(null, gridItem("a"));
     const doc = schema.nodes.doc!.create(null, [paragraph("target"), grid]);
     const pos = posOf(doc, (n) => n.type === schema.nodes.grid);
     const node = doc.nodeAt(pos)!;
-    expect(isDraggableNode(doc, pos, node, "block")).toBe(true);
-    expect(isDraggableNode(doc, pos, node, "container")).toBe(true);
-    expect(isDraggableNode(doc, pos, node, "nested-container")).toBe(true);
+    expect(isDraggableNode(doc, pos, node)).toBe(true);
   });
 });
 
@@ -574,5 +518,56 @@ describe("deleteSelectedBlocks", () => {
     const next = state.apply(tr!);
     expect(textOrder(next.doc)).toEqual(["b"]);
     expect(getReorderSelection(next)).toEqual([]);
+  });
+});
+
+describe("initialDropTarget", () => {
+  it("anchors before the sibling right after the dragged range - its own resting slot", () => {
+    const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b"), paragraph("c")]);
+    const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
+    const posC = posOf(doc, (n) => n.isTextblock && n.textContent === "c");
+    expect(initialDropTarget(doc, [posB])).toEqual({ kind: "before", pos: posC });
+  });
+
+  it("falls back to after the preceding sibling when the dragged range is the parent's last child", () => {
+    const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b")]);
+    const posA = posOf(doc, (n) => n.isTextblock && n.textContent === "a");
+    const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
+    expect(initialDropTarget(doc, [posB])).toEqual({ kind: "after", pos: posA });
+  });
+
+  it("returns null when the dragged range has no siblings at all", () => {
+    const doc = schema.nodes.doc!.create(null, [paragraph("only")]);
+    const pos = posOf(doc, (n) => n.isTextblock && n.textContent === "only");
+    expect(initialDropTarget(doc, [pos])).toBeNull();
+  });
+
+  it("skips the hidden trailing landing-spot paragraph as a candidate, falling back to the preceding sibling", () => {
+    const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b"), paragraph("")]);
+    const posA = posOf(doc, (n) => n.isTextblock && n.textContent === "a");
+    const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
+    expect(initialDropTarget(doc, [posB])).toEqual({ kind: "after", pos: posA });
+  });
+
+  it("spans a multi-position selection from its first to its last position", () => {
+    const doc = schema.nodes.doc!.create(null, [paragraph("a"), paragraph("b"), paragraph("c"), paragraph("d")]);
+    const posB = posOf(doc, (n) => n.isTextblock && n.textContent === "b");
+    const posC = posOf(doc, (n) => n.isTextblock && n.textContent === "c");
+    const posD = posOf(doc, (n) => n.isTextblock && n.textContent === "d");
+    expect(initialDropTarget(doc, [posC, posB])).toEqual({ kind: "before", pos: posD });
+  });
+
+  it("anchors to a sibling within a table cell, not the whole table", () => {
+    const table = schema.nodes.table!.create(
+      { caption: "", colWidths: null },
+      schema.nodes.table_row!.create(
+        null,
+        schema.nodes.table_cell!.create(null, [paragraph("first"), paragraph("second")]),
+      ),
+    );
+    const doc = schema.nodes.doc!.create(null, [paragraph("target"), table]);
+    const posFirst = posOf(doc, (n) => n.isTextblock && n.textContent === "first");
+    const posSecond = posOf(doc, (n) => n.isTextblock && n.textContent === "second");
+    expect(initialDropTarget(doc, [posFirst])).toEqual({ kind: "before", pos: posSecond });
   });
 });

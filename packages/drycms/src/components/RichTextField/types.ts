@@ -3,7 +3,6 @@ import type { EditorView } from "prosemirror-view";
 import type { RefObject } from "preact";
 import type { FileManagerSource } from "../file-manager-types.js";
 import type { ListType } from "./lists.js";
-import type { ReorderModeValue } from "./reorder-mode.js";
 
 export type InlineFormat = "bold" | "italic" | "underline";
 
@@ -86,14 +85,6 @@ export interface ToolbarState {
    * own toolbar toggle's pressed state and, in `toolbar.tsx`, disables every
    * other control while it's active. */
   reorderModeActive: boolean;
-  /** Which of the 3 reorder-mode variants is active - drives
-   * `reorder-mode-menu.tsx`'s pressed state. Meaningless while
-   * `reorderModeActive` is `false` (that menu isn't rendered then). */
-  reorderMode: ReorderModeValue;
-  /** How many blocks/containers are currently Cmd/Ctrl+click-selected in
-   * reorder mode - drives `reorder-mode-menu.tsx`'s "Delete selected"
-   * button's disabled state (0 = nothing to delete). */
-  reorderSelectedCount: number;
 }
 
 /** Props every non-toggle toolbar item (`AlignMenu`, `ColorMenu`, `BlockTypeMenu`, ...)

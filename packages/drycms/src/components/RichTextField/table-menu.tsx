@@ -189,7 +189,7 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
                 { type: "item", label: "Insert row above", icon: <ArrowUpIcon />, onClick: () => run(addRowBefore) },
                 { type: "item", label: "Insert row below", icon: <ArrowDownIcon />, onClick: () => run(addRowAfter) },
                 { type: "separator" },
-                { type: "item", label: "Clear row height", icon: <EraserIcon />, onClick: () => run(clearRowHeights()) },
+                { type: "item", label: "Clear size height", icon: <EraserIcon />, onClick: () => run(clearRowHeights()) },
                 { type: "separator" },
                 { type: "item", label: "Delete row", icon: <TrashIcon />, onClick: () => run(deleteRow), danger: true },
               ]}
@@ -215,7 +215,7 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
                 { type: "item", label: "Insert column left", icon: <ArrowLeftIcon />, onClick: () => run(insertColumnBefore()) },
                 { type: "item", label: "Insert column right", icon: <ArrowRightIcon />, onClick: () => run(insertColumnAfter()) },
                 { type: "separator" },
-                { type: "item", label: "Clear column widths", icon: <EraserIcon />, onClick: () => run(clearColumnWidths()) },
+                { type: "item", label: "Clear size width", icon: <EraserIcon />, onClick: () => run(clearColumnWidths()) },
                 { type: "separator" },
                 { type: "item", label: "Delete column", icon: <TrashIcon />, onClick: () => run(removeSelectedColumns()), danger: true },
               ]}

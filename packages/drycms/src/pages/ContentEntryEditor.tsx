@@ -29,6 +29,7 @@ import {
   listenForFieldSet,
   scrollToField,
 } from "./content-entry-editor/field-events.js";
+import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -234,11 +235,32 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   // The other direction - an outside listener drives this form by
   // dispatching `dry:field-set`, applied exactly like the user typing into
-  // that field would. Re-subscribes on `typeSlug`/`entryId` change (not just
-  // `[]`) so the closure `updateFieldValue` dispatches through never reports
-  // a stale `entryId` (e.g. right after a new entry's first save).
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `updateFieldValue` isn't memoized; typeSlug/entryId are its only free variables that matter here
-  useEffect(() => listenForFieldSet(updateFieldValue), [typeSlug, entryId]);
+  // that field would. `name` may be a plain top-level field name OR a
+  // dotted/indexed path reaching into a `component-repeat` array item (see
+  // `field-path.ts`'s own doc comment, e.g. `"data.0.name.label"`) -
+  // `setValueAtPath` handles both the same way a plain name degenerates to
+  // the exact top-level spread `updateFieldValue` itself still uses for
+  // every real field's own `onChange` (which only ever passes a plain name,
+  // never a path, so it's left as its own simpler function rather than
+  // routed through path-parsing on every keystroke). The `dry:field-input`
+  // echo reports the top-level field name either way, since that's the only
+  // granularity `FieldInputEventDetail` (and `?_field=`/`scrollToField`)
+  // understand - a nested write still surfaces as "this top-level field
+  // changed" to an outside listener, just like a real user editing a nested
+  // field through the UI would. Known limitation, same spirit as this
+  // event system's original top-level-only scoping: if the targeted
+  // `component-repeat` item is currently open in its own edit dialog
+  // (`ComponentField.tsx`), the write lands in `value` correctly but the
+  // dialog's own local draft won't pick it up live until closed/reopened.
+  function applyFieldSet(path: string, fieldValue: unknown) {
+    setValue((current) => (current ? setValueAtPath(current, path, fieldValue) : current));
+    dispatchFieldInput(path.split(".", 1)[0]!, fieldValue, { typeSlug, entryId });
+  }
+  // Re-subscribes on `typeSlug`/`entryId` change (not just `[]`) so the
+  // closure `applyFieldSet` dispatches through never reports a stale
+  // `entryId` (e.g. right after a new entry's first save).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `applyFieldSet` isn't memoized; typeSlug/entryId are its only free variables that matter here
+  useEffect(() => listenForFieldSet(applyFieldSet), [typeSlug, entryId]);
 
   // `?_field=` deep link - once the fields have actually rendered
   // (`value !== null`), scroll straight to the one named in the URL and

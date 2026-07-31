@@ -1,4 +1,4 @@
-import { Fragment, type Node as PMNode, type NodeType } from "prosemirror-model";
+import type { Node as PMNode, NodeType } from "prosemirror-model";
 import { Plugin, PluginKey, type Command, type EditorState, type Transaction } from "prosemirror-state";
 import { Decoration, DecorationSet, type EditorView } from "prosemirror-view";
 import { DEFAULT_GRID_COLUMNS, schema } from "./schema.js";
@@ -28,20 +28,8 @@ import { DEFAULT_GRID_COLUMNS, schema } from "./schema.js";
  * still valid drop *targets* though, same as any other container's interior
  * (see `wrapForTarget`/`insertDraggedNodes`).
  *
- * A secondary toolbar (`reorder-mode-menu.tsx`) lets the user pick one of
- * three modes while reorder mode is active (`ReorderModeValue`, default
- * `"block"`):
- * - `"block"`: today's fully permissive behavior - any block can be dragged
- *   and dropped anywhere, including into a container.
- * - `"container"`: still any block can be dragged, but a drop is only
- *   accepted at the SAME structural level the dragged block started at (no
- *   dropping into a container it wasn't already inside) - see `scopeAnchor`/
- *   `sharedScope` and `computeDropTarget`'s `mode === "container"` filter.
- * - `"nested-container"`: the mirror image - only container nodes can be
- *   dragged at all (a pointerdown on a non-container block is a no-op, see
- *   `onBlockPointerDown`; those blocks also get a `dry-tx-reorder-frozen`
- *   decoration), but with no level restriction, so a container can be
- *   dropped inside another container to nest it.
+ * Any block can be dragged and dropped anywhere, including into a container -
+ * there's no restriction on which level a block can move between.
  *
  * State lives in this plugin (not Preact state, unlike `fullscreen` in
  * `RichTextField.tsx`) since `editable` and `decorations` both need to read
@@ -81,40 +69,49 @@ interface ReorderDragging {
    * hover-highlight preview only ever touches this plugin's own meta
    * state, never `doc.content`. */
   positions: number[];
-  target: DropTarget | null;
+  /** Fixed the instant the drag starts (`initialDropTarget`) and never
+   * touched again until the drag ends - the dragged block(s)' own resting
+   * spot, kept alive as its own ghost slot for the WHOLE drag regardless of
+   * where `hoverTarget` wanders off to. Dragging from one container to a
+   * completely different one shows BOTH ghosts side by side the entire
+   * time (this one marking "still available to go back to", the other
+   * marking "about to land here instead") rather than the first one
+   * vanishing the moment the pointer leaves its container - only actually
+   * cleared once the drag ends (`commitReorderMove` clears `dragging`
+   * entirely, taking both ghosts with it in the same instant the real
+   * content lands at `hoverTarget`). */
+  originTarget: DropTarget | null;
+  /** The live target under the pointer right now - starts out equal to
+   * `originTarget` (see `startReorderDrag`, so the very first frame already
+   * has a ghost right where the block just vanished from, instead of
+   * nothing showing until the first pointermove resolves one), then tracks
+   * `computeDropTarget` as the pointer moves; may end up back at the same
+   * spot as `originTarget` (only one ghost renders then, see
+   * `buildDecorations`) or somewhere else entirely. */
+  hoverTarget: DropTarget | null;
   /** Combined `getBoundingClientRect().height` of every dragged block,
    * measured once at drag start (before `dry-tx-reorder-dragging` hides
-   * them) - sizes the "ghost slot" widget `buildDecorations` inserts at
-   * whatever `before`/`after` target is currently hovered (see
-   * `buildGhostWidget`). The ProseMirror-native equivalent of
-   * `lib/dnd/useSortableList.ts` moving its own placeholder row live to the
-   * target index: that hook can just reorder its backing array and let
-   * Preact's keyed reconciliation relocate the real row, but this plugin
-   * never touches `doc.content` until the drop actually commits (see this
-   * file's own top doc comment) - a widget decoration standing in for
-   * "where the real thing will land" is the equivalent move here. */
+   * them) - sizes the "ghost slot" widget(s) `buildDecorations` inserts at
+   * `originTarget`/`hoverTarget` (see `buildGhostWidget`). The
+   * ProseMirror-native equivalent of `lib/dnd/useSortableList.ts` moving
+   * its own placeholder row live to the target index: that hook can just
+   * reorder its backing array and let Preact's keyed reconciliation
+   * relocate the real row, but this plugin never touches `doc.content`
+   * until the drop actually commits (see this file's own top doc comment) -
+   * a widget decoration standing in for "where the real thing will land" is
+   * the equivalent move here. */
   height: number;
 }
 
-/** `"block"` (default): any block can be dragged and dropped anywhere,
- * including into a container. `"container"`: any block can still be
- * dragged, but a drop is only accepted at the same structural level it
- * started at (see `scopeAnchor`/`sharedScope`). `"nested-container"`: only
- * container nodes (`isContainerNode`) can be dragged at all, with no level
- * restriction - lets one container be nested inside another. See this
- * file's own top doc comment for the full picture. */
-export type ReorderModeValue = "block" | "container" | "nested-container";
-
 interface ReorderState {
   active: boolean;
-  mode: ReorderModeValue;
   /** Doc positions of every block currently multi-selected via
    * Cmd/Ctrl+click - sorted ascending. */
   selected: number[];
   dragging: ReorderDragging | null;
 }
 
-const EMPTY_STATE: ReorderState = { active: false, mode: "block", selected: [], dragging: null };
+const EMPTY_STATE: ReorderState = { active: false, selected: [], dragging: null };
 
 export const reorderModeKey = new PluginKey<ReorderState>("reorderMode");
 
@@ -122,31 +119,16 @@ export function isReorderActive(state: EditorState): boolean {
   return reorderModeKey.getState(state)?.active ?? false;
 }
 
-export function getReorderMode(state: EditorState): ReorderModeValue {
-  return reorderModeKey.getState(state)?.mode ?? "block";
-}
-
 export function getReorderSelection(state: EditorState): number[] {
   return reorderModeKey.getState(state)?.selected ?? [];
 }
 
-/** Toggles reorder mode on/off - clears any multi-selection and resets the
- * mode back to its `"block"` default when turning off, same "leaving the
- * mode resets its own transient state" idiom `grid-resize.ts`'s
- * `highlightLine` uses. */
+/** Toggles reorder mode on/off - clears any multi-selection when turning
+ * off, same "leaving the mode resets its own transient state" idiom
+ * `grid-resize.ts`'s `highlightLine` uses. */
 export function toggleReorderMode(): Command {
   return (state, dispatch) => {
     if (dispatch) dispatch(state.tr.setMeta(reorderModeKey, { toggle: !isReorderActive(state) }));
-    return true;
-  };
-}
-
-/** Switches the active mode - a no-op (returns `false`) while reorder mode
- * itself is off, since the mode selector only renders while it's active. */
-export function setReorderMode(mode: ReorderModeValue): Command {
-  return (state, dispatch) => {
-    if (!isReorderActive(state)) return false;
-    if (dispatch) dispatch(state.tr.setMeta(reorderModeKey, { setMode: mode }));
     return true;
   };
 }
@@ -184,23 +166,20 @@ export function isTrailingEmptyParagraph(doc: PMNode, pos: number, node: PMNode)
   return doc.resolve(pos).depth === 0;
 }
 
-/** Whether `node` at `pos` can be picked up and dragged at all, under
- * `mode` - enforced by `onBlockPointerDown`. The trailing landing-spot
- * paragraph (hidden, so never reachable by a pointerdown anyway - see
- * `isTrailingEmptyParagraph`) is excluded defensively too; a non-container
- * is additionally undraggable under `"nested-container"`, which only lets
- * containers move (see `buildDecorations`'s `dry-tx-reorder-frozen` class,
- * its visible counterpart). */
-export function isDraggableNode(doc: PMNode, pos: number, node: PMNode, mode: ReorderModeValue): boolean {
-  if (isTrailingEmptyParagraph(doc, pos, node)) return false;
-  if (mode === "nested-container") return isContainerNode(node);
-  return true;
+/** Whether `node` at `pos` can be picked up and dragged at all - enforced by
+ * `onBlockPointerDown`. Only the trailing landing-spot paragraph (hidden, so
+ * never reachable by a pointerdown anyway - see `isTrailingEmptyParagraph`)
+ * is excluded, defensively. */
+export function isDraggableNode(doc: PMNode, pos: number, node: PMNode): boolean {
+  return !isTrailingEmptyParagraph(doc, pos, node);
 }
 
 /** A comparable "which level of nesting" key for `pos`, used by
- * `"container"` mode's flat-reorder restriction: `-1` for a position whose
- * node lives at the doc's top level, otherwise the doc position of whichever
- * ancestor most directly groups it with its reorder-siblings. A `grid_item`
+ * `buildDecorations`'s origin/hover dual-ghost check (see `showOriginGhost`)
+ * to tell whether a drag has crossed from one container into a different
+ * one: `-1` for a position whose node lives at the doc's top level,
+ * otherwise the doc position of whichever ancestor most directly groups it
+ * with its reorder-siblings. A `grid_item`
  * child is scoped to the *grid* itself - `grid_item` is structural plumbing
  * a user never directly sees or targets (see `wrapForTarget`), so a block's
  * real siblings are the grid's OTHER items, not "the rest of this specific
@@ -217,16 +196,6 @@ export function scopeAnchor(doc: PMNode, pos: number): number {
   return $pos.before(depth);
 }
 
-/** The single scope every one of `positions` shares, or `null` if they don't
- * all agree (e.g. a multi-selection spanning two different containers) -
- * `"container"` mode then has no valid target for the drag at all, rather
- * than picking one dragged block's scope arbitrarily and silently ignoring
- * the mismatch for the others. */
-export function sharedScope(doc: PMNode, positions: number[]): number | null {
-  const scopes = positions.map((pos) => scopeAnchor(doc, pos));
-  return scopes.every((scope) => scope === scopes[0]) ? (scopes[0] ?? null) : null;
-}
-
 /** Whether `pos` falls inside (or exactly at) any of the currently-dragged
  * nodes' own ranges - guards against a nonsensical/corrupting drop (e.g.
  * dropping a grid onto one of its own descendant cells), by rejecting that
@@ -239,14 +208,44 @@ function isInsideDraggedRange(doc: PMNode, pos: number, draggedPositions: number
   });
 }
 
-/** The "ghost slot" widget dropped at whatever `before`/`after` target is
- * currently hovered (see `ReorderDragging.height`'s own doc comment for why
- * this exists) - a plain div sized to the dragged content's own combined
- * height, so the preview reads as "the real thing lands right here" rather
- * than just a thin edge highlight. `aria-hidden` and (content-shadow-
- * styles.ts) `pointer-events: none` - it isn't real content, doesn't
- * correspond to any doc position, and disappears the instant the drag
- * ends. */
+/** The dragged block(s)' own resting position, expressed as a `DropTarget` -
+ * used as BOTH the starting `hoverTarget` and the fixed `originTarget` (see
+ * `ReorderDragging`'s own doc comments) - a plain, `before`/`after` kind
+ * anchored to whichever real sibling sits right after the dragged range
+ * (landing "before" it puts everything back exactly where it was), falling
+ * back to the sibling right before the range only when it was the parent's
+ * last child. Skips the hidden trailing landing-spot paragraph
+ * (`isTrailingEmptyParagraph`) as a candidate "after" sibling - anchoring a
+ * ghost to a position that's itself invisible would just make the ghost
+ * silently fail to render (see `buildDecorations`'s own early return for
+ * that node) - and falls back the same way a single-child container with
+ * no siblings at all does: no origin ghost, rather than one anchored
+ * somewhere nonsensical. */
+export function initialDropTarget(doc: PMNode, positions: number[]): DropTarget | null {
+  const sorted = [...positions].sort((a, b) => a - b);
+  const firstPos = sorted[0]!;
+  const lastPos = sorted[sorted.length - 1]!;
+  const lastNode = doc.nodeAt(lastPos);
+  if (lastNode) {
+    const afterPos = lastPos + lastNode.nodeSize;
+    const nodeAfter = doc.resolve(afterPos).nodeAfter;
+    if (nodeAfter && isBlockGroupNode(nodeAfter) && !isTrailingEmptyParagraph(doc, afterPos, nodeAfter)) {
+      return { kind: "before", pos: afterPos };
+    }
+  }
+  const nodeBefore = doc.resolve(firstPos).nodeBefore;
+  if (nodeBefore && isBlockGroupNode(nodeBefore)) {
+    return { kind: "after", pos: firstPos - nodeBefore.nodeSize };
+  }
+  return null;
+}
+
+/** The "ghost slot" widget dropped at `originTarget`/`hoverTarget` (see
+ * `ReorderDragging`'s own doc comments) - a plain div sized to the dragged
+ * content's own combined height, so the preview reads as "the real thing
+ * lands right here" rather than just a thin edge highlight. `aria-hidden`
+ * and (content-shadow-styles.ts) `pointer-events: none` - it isn't real
+ * content and doesn't correspond to any doc position. */
 function buildGhostWidget(height: number): (view: EditorView) => HTMLElement {
   return () => {
     const el = document.createElement("div");
@@ -261,8 +260,35 @@ function buildDecorations(state: EditorState, pluginState: ReorderState): Decora
   if (!pluginState.active) return DecorationSet.empty;
   const selectedSet = new Set(pluginState.selected);
   const draggedSet = new Set(pluginState.dragging?.positions ?? []);
-  const target = pluginState.dragging?.target ?? null;
+  const originTarget = pluginState.dragging?.originTarget ?? null;
+  const hoverTarget = pluginState.dragging?.hoverTarget ?? null;
+  const height = pluginState.dragging?.height ?? 0;
   const decorations: Decoration[] = [];
+
+  // The origin ghost only shows while the live hover target is either gone
+  // (nothing found right now) or in a genuinely DIFFERENT container
+  // (`scopeAnchor`, the "which level of nesting" check) than where the drag
+  // started - moving between two spots in the SAME container just relocates
+  // a single ghost
+  // (showing both there would be two markers for what's really one ongoing
+  // "where does this land" answer); only crossing into another container
+  // keeps the original spot visibly held open too, since going back to it
+  // is still a live option the hover target can't represent by itself
+  // anymore. See `ReorderDragging.originTarget`'s own doc comment.
+  const showOriginGhost =
+    originTarget != null &&
+    (hoverTarget == null || scopeAnchor(state.doc, originTarget.pos) !== scopeAnchor(state.doc, hoverTarget.pos));
+
+  // Renders a ghost slot for `target` at `pos`/`node` when they match - used
+  // for both `originTarget` (gated by `showOriginGhost` above) and
+  // `hoverTarget` below.
+  const pushGhostIfMatch = (target: DropTarget | null, pos: number, node: PMNode) => {
+    if (!target || target.pos !== pos || (target.kind !== "before" && target.kind !== "after")) return;
+    const widgetPos = target.kind === "before" ? pos : pos + node.nodeSize;
+    decorations.push(
+      Decoration.widget(widgetPos, buildGhostWidget(height), { side: target.kind === "before" ? -1 : 1 }),
+    );
+  };
 
   state.doc.descendants((node, pos) => {
     if (isBlockGroupNode(node)) {
@@ -274,31 +300,27 @@ function buildDecorations(state: EditorState, pluginState: ReorderState): Decora
       const isDragged = draggedSet.has(pos);
       let className = "dry-tx-reorder-block";
       if (isContainer) className += " dry-tx-reorder-container";
-      if (pluginState.mode === "nested-container" && !isContainer) className += " dry-tx-reorder-frozen";
       if (selectedSet.has(pos)) className += " dry-tx-reorder-selected";
       if (isDragged) className += " dry-tx-reorder-dragging";
-      if (target && target.pos === pos && (target.kind === "before" || target.kind === "after")) {
-        // The ghost slot widget below is the only "landing here" indicator
-        // now - no extra edge-highlight class on the sibling itself (used
-        // to also add `dry-tx-reorder-drop-before`/`-after`, a thin inset
-        // box-shadow line; redundant once the ghost box already marks the
-        // exact spot, and dropped for a visible stutter it contributed
-        // during a live drag - see `content-shadow-styles.ts`).
-        const widgetPos = target.kind === "before" ? pos : pos + node.nodeSize;
-        decorations.push(
-          Decoration.widget(widgetPos, buildGhostWidget(pluginState.dragging?.height ?? 0), {
-            side: target.kind === "before" ? -1 : 1,
-          }),
-        );
-      } else if (target && target.pos === pos && target.kind === "replaceCellContent") {
+
+      // The ghost slot widget(s) are the only "landing here" indicator now -
+      // no extra edge-highlight class on the sibling itself (used to also
+      // add `dry-tx-reorder-drop-before`/`-after`, a thin inset box-shadow
+      // line; redundant once the ghost box already marks the exact spot,
+      // and dropped for a visible stutter it contributed during a live
+      // drag - see `content-shadow-styles.ts`).
+      if (showOriginGhost) pushGhostIfMatch(originTarget, pos, node);
+      pushGhostIfMatch(hoverTarget, pos, node);
+
+      if (hoverTarget && hoverTarget.pos === pos && hoverTarget.kind === "replaceCellContent") {
         className += " dry-tx-reorder-drop-target";
       }
       decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: className, style: "position:relative" }));
     } else if (
       node.type === schema.nodes.grid_item &&
-      target &&
-      (target.kind === "afterGridItem" || target.kind === "replaceGridItem") &&
-      target.pos === pos
+      hoverTarget &&
+      (hoverTarget.kind === "afterGridItem" || hoverTarget.kind === "replaceGridItem") &&
+      hoverTarget.pos === pos
     ) {
       decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: "dry-tx-reorder-drop-target" }));
     }
@@ -351,7 +373,7 @@ function elementAtPoint(clientX: number, clientY: number): Element | null {
   return el;
 }
 
-function computeRawDropTarget(view: EditorView, draggedPositions: number[], event: PointerEvent): DropTarget | null {
+function computeDropTarget(view: EditorView, draggedPositions: number[], event: PointerEvent): DropTarget | null {
   const el = elementAtPoint(event.clientX, event.clientY);
   if (!el) return null;
   const doc = view.state.doc;
@@ -404,30 +426,6 @@ function computeRawDropTarget(view: EditorView, draggedPositions: number[], even
   const rect = blockEl.getBoundingClientRect();
   const before = event.clientY < rect.top + rect.height / 2;
   return { kind: before ? "before" : "after", pos: blockPos };
-}
-
-/** `computeRawDropTarget`, additionally filtered through `mode`: under
- * `"container"`, a candidate target is only accepted when it sits at the
- * SAME `scopeAnchor` every dragged position shares (`sharedScope`) - i.e.
- * the drop would leave the dragged block(s) at the level they started at,
- * never newly nested into (or out of) a container. `"block"` and
- * `"nested-container"` both accept whatever `computeRawDropTarget` finds,
- * unfiltered - the difference between those two modes is entirely about
- * which nodes are eligible to be dragged in the first place
- * (`isDraggableNode`, enforced by `onBlockPointerDown`), not about where a
- * given drag can land. */
-function computeDropTarget(
-  view: EditorView,
-  draggedPositions: number[],
-  event: PointerEvent,
-  mode: ReorderModeValue,
-): DropTarget | null {
-  const target = computeRawDropTarget(view, draggedPositions, event);
-  if (!target || mode !== "container") return target;
-  const doc = view.state.doc;
-  const requiredScope = sharedScope(doc, draggedPositions);
-  if (requiredScope == null || scopeAnchor(doc, target.pos) !== requiredScope) return null;
-  return target;
 }
 
 function dropTargetsEqual(a: DropTarget | null, b: DropTarget | null): boolean {
@@ -585,8 +583,7 @@ export function buildDeleteTransaction(state: EditorState, positions: number[]):
 }
 
 /** Deletes every block/container currently selected (Cmd/Ctrl+click) in
- * reorder mode - a no-op while nothing's selected. Bound to both the
- * "Delete selected" toolbar button (`reorder-mode-menu.tsx`) and the
+ * reorder mode - a no-op while nothing's selected. Bound to the
  * Delete/Backspace key (`reorderMode`'s own `handleKeyDown` below). */
 export function deleteSelectedBlocks(): Command {
   return (state, dispatch) => {
@@ -742,11 +739,21 @@ function playDropSettle(view: EditorView, nodes: PMNode[], overlayRect: DOMRect)
   }
 }
 
-function startReorderDrag(view: EditorView, positions: number[], mode: ReorderModeValue, event: PointerEvent): void {
+function startReorderDrag(view: EditorView, positions: number[], event: PointerEvent): void {
   const win = view.dom.ownerDocument.defaultView ?? window;
   const height = draggedHeight(view, positions);
   const overlay = buildDragOverlay(view, positions, event);
-  view.dispatch(view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: null, height } }));
+  // Starts equal to `originTarget` (see that field's own doc comment) - a
+  // ghost slot opens exactly where the dragged block(s) just vanished from,
+  // in the SAME render that hides them, rather than nothing showing until
+  // the first pointermove resolves somewhere (a visible jump otherwise:
+  // gone, then a beat later a ghost catches up).
+  const originTarget = initialDropTarget(view.state.doc, positions);
+  view.dispatch(
+    view.state.tr.setMeta(reorderModeKey, {
+      setDragging: { positions, originTarget, hoverTarget: originTarget, height },
+    }),
+  );
 
   // Raw pointermove can fire far more often than the screen repaints (high
   // polling-rate mice/trackpads easily exceed 60Hz) - `computeDropTarget`
@@ -761,6 +768,19 @@ function startReorderDrag(view: EditorView, positions: number[], mode: ReorderMo
   // expensive hit-test/redraw is coalesced to at most once per frame.
   let pendingMoveEvent: PointerEvent | null = null;
   let rafId: number | null = null;
+
+  // Only ever touches `hoverTarget` - `originTarget` is fixed for the whole
+  // drag (see its own doc comment), so every dispatch here has to carry
+  // the CURRENT one forward rather than recomputing it.
+  const applyHoverTarget = (nextTarget: DropTarget | null) => {
+    const pluginState = reorderModeKey.getState(view.state);
+    if (!pluginState?.dragging) return;
+    const tr = view.state.tr.setMeta(reorderModeKey, {
+      setDragging: { positions, originTarget: pluginState.dragging.originTarget, hoverTarget: nextTarget, height },
+    });
+    view.updateState(view.state.apply(tr));
+  };
+
   // Losing the hit-test for a moment doesn't necessarily mean the pointer
   // left every valid drop area - the ghost slot widget itself is
   // `pointer-events: none` (content-shadow-styles.ts), so the instant the
@@ -774,13 +794,39 @@ function startReorderDrag(view: EditorView, positions: number[], mode: ReorderMo
   // moved away" event at all. So a `null` result only *schedules* a clear a
   // beat later instead of applying it inline - a genuinely different real
   // target (found before that timer fires) cancels it, same as the drag
-  // simply ending (`finish`, below) does.
+  // simply ending (`finish`, below) does. 5s, not a hair-trigger: this is
+  // purely "the pointer's sitting somewhere with nothing to show" tidiness,
+  // not a correctness issue, so there's no reason to rush it - the ghost
+  // staying put a little longer than strictly necessary reads better than
+  // it popping away the moment the pointer wanders over a gap. Note this
+  // only ever clears `hoverTarget` - `originTarget`'s own ghost is never
+  // touched by this timer, staying put for the whole drag regardless.
   let clearTargetTimer: number | null = null;
   const cancelClearTarget = () => {
     if (clearTargetTimer == null) return;
     win.clearTimeout(clearTargetTimer);
     clearTargetTimer = null;
   };
+
+  // Switching to a newly-found VALID target is itself debounced 250ms,
+  // separately from the 5s null-clear above (a different concern - this one
+  // isn't about "did the hit-test fail", it's about not relocating the
+  // ghost for every single candidate the pointer sweeps across on its way
+  // to where it's actually headed. Restarts on every *new* candidate (even
+  // a different one from a moment ago, not just back to the currently-shown
+  // target) - only once the SAME answer has held for the full 250ms does it
+  // actually apply, so a quick pass through several valid spots settles on
+  // wherever the pointer stopped, not wherever it happened to be each frame
+  // along the way.
+  let hoverDebounceTimer: number | null = null;
+  let pendingHoverTarget: DropTarget | null = null;
+  const cancelHoverDebounce = () => {
+    if (hoverDebounceTimer == null) return;
+    win.clearTimeout(hoverDebounceTimer);
+    hoverDebounceTimer = null;
+    pendingHoverTarget = null;
+  };
+
   const flushTargetUpdate = () => {
     rafId = null;
     const moveEvent = pendingMoveEvent;
@@ -788,21 +834,31 @@ function startReorderDrag(view: EditorView, positions: number[], mode: ReorderMo
     if (!moveEvent) return;
     const pluginState = reorderModeKey.getState(view.state);
     if (!pluginState?.dragging) return;
-    const nextTarget = computeDropTarget(view, positions, moveEvent, mode);
+    const nextTarget = computeDropTarget(view, positions, moveEvent);
     if (nextTarget) {
       cancelClearTarget();
-      if (!dropTargetsEqual(nextTarget, pluginState.dragging.target)) {
-        const tr = view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: nextTarget, height } });
-        view.updateState(view.state.apply(tr));
+      if (dropTargetsEqual(nextTarget, pluginState.dragging.hoverTarget)) {
+        cancelHoverDebounce();
+      } else if (!dropTargetsEqual(nextTarget, pendingHoverTarget)) {
+        cancelHoverDebounce();
+        pendingHoverTarget = nextTarget;
+        hoverDebounceTimer = win.setTimeout(() => {
+          hoverDebounceTimer = null;
+          const candidate = pendingHoverTarget;
+          pendingHoverTarget = null;
+          if (candidate) applyHoverTarget(candidate);
+        }, 250);
       }
-    } else if (pluginState.dragging.target != null && clearTargetTimer == null) {
-      clearTargetTimer = win.setTimeout(() => {
-        clearTargetTimer = null;
-        const latest = reorderModeKey.getState(view.state);
-        if (!latest?.dragging || latest.dragging.target == null) return;
-        const tr = view.state.tr.setMeta(reorderModeKey, { setDragging: { positions, target: null, height } });
-        view.updateState(view.state.apply(tr));
-      }, 300);
+    } else {
+      cancelHoverDebounce();
+      if (pluginState.dragging.hoverTarget != null && clearTargetTimer == null) {
+        clearTargetTimer = win.setTimeout(() => {
+          clearTargetTimer = null;
+          const latest = reorderModeKey.getState(view.state);
+          if (!latest?.dragging || latest.dragging.hoverTarget == null) return;
+          applyHoverTarget(null);
+        }, 5000);
+      }
     }
   };
 
@@ -816,11 +872,22 @@ function startReorderDrag(view: EditorView, positions: number[], mode: ReorderMo
     win.removeEventListener("pointerup", finish);
     if (rafId != null) win.cancelAnimationFrame(rafId);
     cancelClearTarget();
+    cancelHoverDebounce();
     moveDragOverlay(overlay, upEvent);
-    // Recomputed fresh from `upEvent` rather than reusing whatever the last
-    // *flushed* target happened to be - a move and the up landing in the
-    // same frame would otherwise commit a target that's stale by one frame.
-    const target = computeDropTarget(view, positions, upEvent, mode);
+    // Prefers `hoverTarget`, then `originTarget`, over a fresh hit-test from
+    // `upEvent`: releasing the pointer while it happens to sit over a
+    // ghost's own (pointer-events:none) area hit-tests to nothing, and a
+    // fresh computation right here would silently cancel the whole move
+    // (or, without `originTarget` as a fallback, do it even when a
+    // perfectly good "put it back" answer was sitting right there in
+    // state). Only falls back to a fresh computation when NEITHER has ever
+    // resolved to anything (e.g. a lone top-level block with no siblings
+    // at all, so `initialDropTarget` itself came back `null`).
+    const pluginState = reorderModeKey.getState(view.state);
+    const target =
+      pluginState?.dragging?.hoverTarget ??
+      pluginState?.dragging?.originTarget ??
+      computeDropTarget(view, positions, upEvent);
     const overlayRect = removeDragOverlay(overlay);
     if (target) commitReorderMove(view, positions, target, overlayRect);
     else view.dispatch(view.state.tr.setMeta(reorderModeKey, { setDragging: null }));
@@ -837,10 +904,7 @@ function startReorderDrag(view: EditorView, positions: number[], mode: ReorderMo
  * drag, or - on Cmd/Ctrl+click - toggles it into/out of the multi-selection
  * instead. `isDraggableNode` gates both: the trailing landing-spot paragraph
  * is hidden entirely (`isTrailingEmptyParagraph`, in `buildDecorations`) so
- * it's never actually reachable here, and under `"nested-container"` mode a
- * non-container block is left alone (no `preventDefault`, no selection/drag
- * start) so normal browser behavior - i.e. nothing, `editable` is already
- * `false` - applies to it instead. */
+ * it's never actually reachable here. */
 function onBlockPointerDown(view: EditorView, event: PointerEvent): boolean {
   const pluginState = reorderModeKey.getState(view.state);
   if (!pluginState?.active) return false;
@@ -849,7 +913,7 @@ function onBlockPointerDown(view: EditorView, event: PointerEvent): boolean {
   const pos = posBeforeElement(view, blockEl);
   if (pos == null) return false;
   const node = view.state.doc.nodeAt(pos);
-  if (!node || !isDraggableNode(view.state.doc, pos, node, pluginState.mode)) return false;
+  if (!node || !isDraggableNode(view.state.doc, pos, node)) return false;
   event.preventDefault();
   // `editable` is false in reorder mode, so nothing about a click natively
   // focuses `view.dom` the way it would in a normal contenteditable - and
@@ -877,7 +941,7 @@ function onBlockPointerDown(view: EditorView, event: PointerEvent): boolean {
   if (positions.length === 1 && (pluginState.selected.length !== 1 || pluginState.selected[0] !== pos)) {
     view.dispatch(view.state.tr.setMeta(reorderModeKey, { setSelected: positions }));
   }
-  startReorderDrag(view, positions, pluginState.mode, event);
+  startReorderDrag(view, positions, event);
   return true;
 }
 
@@ -889,8 +953,7 @@ export function reorderMode(): Plugin<ReorderState> {
       apply(tr, prev) {
         const meta = tr.getMeta(reorderModeKey);
         if (meta) {
-          if ("toggle" in meta)
-            return meta.toggle ? { active: true, mode: "block", selected: [], dragging: null } : EMPTY_STATE;
+          if ("toggle" in meta) return meta.toggle ? { active: true, selected: [], dragging: null } : EMPTY_STATE;
           // Not `if`/`else if` - `commitReorderMove` sets BOTH `setSelected`
           // and `setDragging` on the same meta object (clearing the
           // selection and the just-finished drag together), and both need
@@ -899,12 +962,6 @@ export function reorderMode(): Plugin<ReorderState> {
           let next = prev;
           if ("setSelected" in meta) next = { ...next, selected: meta.setSelected as number[] };
           if ("setDragging" in meta) next = { ...next, dragging: meta.setDragging as ReorderDragging | null };
-          // Switching modes drops any selection/in-flight drag - a block
-          // valid to drag/target under the old mode may not be under the
-          // new one (e.g. a plain paragraph selected in "block" mode is
-          // frozen the instant "nested-container" is picked).
-          if ("setMode" in meta)
-            next = { ...next, mode: meta.setMode as ReorderModeValue, selected: [], dragging: null };
           return next;
         }
         if (tr.docChanged && (prev.selected.length > 0 || prev.dragging)) {

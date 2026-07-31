@@ -90,7 +90,20 @@ test("reorder mode toggle: chrome, suspended editing, and a real drag actually r
   const targetBox = await h4.boundingBox();
   if (!targetBox) throw new Error("missing bounding box for drop target");
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height * 0.85, { steps: 1 });
-  // A "ghost slot" widget marks the live drop target while the drag is live.
+  // Switching the live hover target to a genuinely new spot is itself
+  // debounced 250ms (`startReorderDrag`'s own `hoverDebounceTimer`) - waited
+  // out explicitly here, since the assertion right below would otherwise
+  // pass trivially even before it fires (h2's own origin ghost already
+  // satisfies "exactly one ghost" on its own, so it doesn't prove anything
+  // about h4 actually having been resolved as the new target) and
+  // `mouse.up()` right after would commit the OLD target instead.
+  await page.waitForTimeout(300);
+  // Still just ONE ghost slot - h2's own resting spot and the hover target
+  // near h4 are different POSITIONS, but the same top-level container, so
+  // the origin ghost gets replaced rather than shown alongside the hover
+  // one (see `ReorderDragging.originTarget`'s own doc comment in
+  // reorder-mode.ts - only crossing into a genuinely different container
+  // keeps both up at once).
   await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(1);
   await page.mouse.up();
 
@@ -195,118 +208,16 @@ test("reorder mode: grid/table containers get the extra outline, and dropping on
   expect(realErrors).toEqual([]);
 });
 
-/** Covers the 3-way mode selector (`reorder-mode-menu.tsx`) added alongside
- * the handle removal above: it only exists while reorder mode is active and
- * defaults to "Block"; "Container" mode still lets a top-level block reorder
- * among its top-level siblings but rejects a drop INTO the grid's cell
- * (`computeDropTarget`'s `mode === "container"` scope filter in
- * reorder-mode.ts); "Nested container" mode leaves a plain block alone
- * entirely (no drag starts) while a real container (the grid) still drags
- * normally. Also covers the trailing landing-spot paragraph `insertGrid`
- * leaves after itself when it lands last in the doc - reorder mode hides it
- * rather than showing it as just another empty card. */
-test("reorder mode: the block/container/nested-container mode selector", async ({ page }) => {
-  const consoleErrors: string[] = [];
-  page.on("console", (msg) => {
-    if (msg.type() === "error") consoleErrors.push(msg.text());
-  });
-  page.on("pageerror", (err) => consoleErrors.push(String(err)));
-
-  await page.setViewportSize({ width: 1280, height: 1400 });
-  await page.goto("/dry/richtext-demo");
-  const content = page.locator(".richtext-content-mount").first();
-  await expect(content).toBeVisible();
-  const body = content.locator(".dry-tx-content");
-
-  await page.getByRole("button", { name: "Plain paragraph" }).click();
-  const paragraph = body.locator("p").first();
-  await paragraph.click();
-  await page.keyboard.type("top level paragraph");
-  await page.keyboard.press("Enter");
-
-  // Inserted with the cursor sitting in the trailing empty paragraph the
-  // "Enter" above created - `insertGrid` consumes it and, since the grid
-  // lands last in the doc either way, adds a fresh one after itself so
-  // there's still somewhere to land the cursor (see its own doc comment).
-  await page.getByRole("button", { name: "Insert grid" }).click();
-  const grid = body.locator("div.dry-tx-grid");
-  await expect(grid).toHaveCount(1);
-  const gridItem = grid.locator(":scope > div.dry-tx-grid-item").first();
-  await gridItem.locator("p").click();
-  await page.keyboard.type("cell content");
-
-  const toggle = page.getByRole("button", { name: "Reorder blocks" });
-  await toggle.click();
-
-  // The trailing landing-spot paragraph is hidden, not shown as a card.
-  await expect(body.locator(".dry-tx-reorder-hidden")).toHaveCount(1);
-
-  const blockModeBtn = page.getByRole("radio", { name: "Block" });
-  const containerModeBtn = page.getByRole("radio", { name: "Container", exact: true });
-  const nestedModeBtn = page.getByRole("radio", { name: "Nested container" });
-  await expect(blockModeBtn).toHaveAttribute("aria-checked", "true");
-
-  // --- "container" mode: the top-level paragraph can no longer be dropped
-  // INTO the grid's cell (a different scope) - the drag just finds no valid
-  // target and cancels, doc unchanged.
-  await containerModeBtn.click();
-  await expect(containerModeBtn).toHaveAttribute("aria-checked", "true");
-
-  const draggedParagraph = body.locator("p", { hasText: "top level paragraph" });
-  const paragraphBox = await draggedParagraph.boundingBox();
-  if (!paragraphBox) throw new Error("missing bounding box for dragged paragraph");
-
-  await page.mouse.move(paragraphBox.x + paragraphBox.width / 2, paragraphBox.y + paragraphBox.height / 2);
-  await page.mouse.down();
-  // Measured AFTER mouse.down(), same staleness reasoning as elsewhere in
-  // this file.
-  const cellBox = await gridItem.boundingBox();
-  if (!cellBox) throw new Error("missing bounding box for grid cell");
-  await page.mouse.move(cellBox.x + cellBox.width / 2, cellBox.y + cellBox.height / 2, { steps: 1 });
-  // The target computation is now rAF-throttled (reorder-mode.ts's
-  // `startReorderDrag`) - a fixed wait, not just polling, since a
-  // not-yet-run rAF would otherwise make these negative assertions pass
-  // trivially before they mean anything.
-  await page.waitForTimeout(50);
-  await expect(gridItem).not.toHaveClass(/dry-tx-reorder-drop-target/);
-  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(0);
-  await page.mouse.up();
-  await expect(grid.locator(":scope > div.dry-tx-grid-item")).toHaveCount(1);
-
-  // --- "nested-container" mode: a plain block is frozen - a pointerdown on
-  // it never starts a drag at all - but the grid, a real container, still
-  // drags normally.
-  await nestedModeBtn.click();
-  await expect(nestedModeBtn).toHaveAttribute("aria-checked", "true");
-  await expect(draggedParagraph).toHaveClass(/dry-tx-reorder-frozen/);
-
-  await page.mouse.move(paragraphBox.x + paragraphBox.width / 2, paragraphBox.y + paragraphBox.height / 2);
-  await page.mouse.down();
-  await expect(draggedParagraph).not.toHaveClass(/dry-tx-reorder-dragging/);
-  await page.mouse.up();
-
-  await expect(grid).not.toHaveClass(/dry-tx-reorder-frozen/);
-  const gridBox = await grid.boundingBox();
-  if (!gridBox) throw new Error("missing grid bounding box");
-  // A couple px into the grid's own border/padding, clear of its one cell's
-  // content - lands on the grid element itself, not a descendant.
-  await page.mouse.move(gridBox.x + 3, gridBox.y + 3);
-  await page.mouse.down();
-  await expect(grid).toHaveClass(/dry-tx-reorder-dragging/);
-  await page.mouse.up();
-
-  const realErrors = consoleErrors.filter((msg) => !msg.includes("Outdated Optimize Dep"));
-  expect(realErrors).toEqual([]);
-});
-
 /** Covers deleting the current reorder-mode selection
- * (`deleteSelectedBlocks` in reorder-mode.ts) both ways it's reachable: the
- * "Delete selected" toolbar button (`reorder-mode-menu.tsx`, disabled with
- * nothing selected) and the Delete/Backspace key itself - the latter needs
- * `useRichTextEditor.ts`'s conditional `tabindex` (reorder mode turns off
- * `contenteditable`, which normally makes this div focusable by click) and
- * `onBlockPointerDown`'s own `view.dom.focus()` call to even be reachable. */
-test("reorder mode: deleting the current selection via the toolbar button and the Delete key", async ({ page }) => {
+ * (`deleteSelectedBlocks` in reorder-mode.ts) via the Delete/Backspace key -
+ * the keyboard path needs `useRichTextEditor.ts`'s conditional `tabindex`
+ * (reorder mode turns off `contenteditable`, which normally makes this div
+ * focusable by click) and `onBlockPointerDown`'s own `view.dom.focus()` call
+ * to even be reachable - and exiting reorder mode is done via the main
+ * toggle button itself (clicking it again while active). */
+test("reorder mode: deleting the current selection via the Delete key, and exiting via the toggle button", async ({
+  page,
+}) => {
   const consoleErrors: string[] = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());
@@ -322,28 +233,33 @@ test("reorder mode: deleting the current selection via the toolbar button and th
   const toggle = page.getByRole("button", { name: "Reorder blocks" });
   await toggle.click();
 
-  const deleteBtn = page.getByRole("button", { name: "Delete selected" });
-  await expect(deleteBtn).toBeDisabled();
-
   const h3 = body.locator("h3", { hasText: "Heading three" });
   await h3.click({ modifiers: ["Meta"] });
   await expect(h3).toHaveClass(/dry-tx-reorder-selected/);
-  await expect(deleteBtn).toBeEnabled();
-  await deleteBtn.click();
+  // `onBlockPointerDown`'s own focus call is deferred a tick
+  // (`win.setTimeout(..., 0)`, see its own doc comment in reorder-mode.ts) -
+  // pressing Delete/Backspace before that macrotask actually runs would
+  // land on whatever was focused beforehand instead (a toolbar button),
+  // never reaching this field's own `handleDOMEvents.keydown` at all.
+  await page.waitForTimeout(50);
+  await page.keyboard.press("Delete");
   await expect(body.locator("h3")).toHaveCount(0);
-  await expect(deleteBtn).toBeDisabled();
 
   const h4 = body.locator("h4", { hasText: "Heading four" });
   await h4.click({ modifiers: ["Meta"] });
-  await page.keyboard.press("Delete");
+  await page.waitForTimeout(50);
+  await page.keyboard.press("Backspace");
   await expect(body.locator("h4")).toHaveCount(0);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(body.locator(".dry-tx-reorder-block")).toHaveCount(0);
 
   const realErrors = consoleErrors.filter((msg) => !msg.includes("Outdated Optimize Dep"));
   expect(realErrors).toEqual([]);
 });
 
-/** Covers the other two changes from the same pass as the mode selector
- * above: a floating clone of the dragged block tracks the pointer
+/** Covers a floating clone of the dragged block tracking the pointer
  * (`.dry-tx-reorder-overlay`, `buildDragOverlay` in reorder-mode.ts) while
  * its original spot is hidden outright (`.dry-tx-reorder-dragging`,
  * `display: none`); and dropping onto a table cell whose only content is
@@ -436,6 +352,86 @@ test("reorder mode: dragging hides the dragged block behind a floating clone; dr
 
   await expect(cell.locator("p")).toHaveCount(1);
   await expect(cell.locator("p")).toHaveText("dragged paragraph");
+
+  const realErrors = consoleErrors.filter((msg) => !msg.includes("Outdated Optimize Dep"));
+  expect(realErrors).toEqual([]);
+});
+
+/** Covers the two-ghost case specifically: dragging from a top-level
+ * position INTO a genuinely different container (here, hovering directly
+ * over an EXISTING, non-empty paragraph inside a table cell - a plain
+ * `"before"`/`"after"` target same as any other, just scoped to that cell
+ * rather than the top level; landing on the cell's own padding, or an
+ * empty placeholder paragraph, would resolve to a `"replaceCellContent"`/
+ * outline-highlight target instead, which isn't a ghost-widget case at
+ * all) keeps the origin ghost open at its own top-level resting spot while
+ * a second ghost shows at the live hover target inside the cell - unlike
+ * moving between two positions in the SAME container (the test above),
+ * which only ever shows one. Dropping resolves both down to nothing at
+ * once, since the whole drag ends in the same instant. */
+test("reorder mode: dragging into a different container keeps both the origin and hover ghost slots up at once", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+  page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+  await page.setViewportSize({ width: 1280, height: 1400 });
+  await page.goto("/dry/richtext-demo");
+  const content = page.locator(".richtext-content-mount").first();
+  await expect(content).toBeVisible();
+  const body = content.locator(".dry-tx-content");
+
+  await page.getByRole("button", { name: "Plain paragraph" }).click();
+  const paragraph = body.locator("p").first();
+  // Triple-click to select the preset's own default text first - a plain
+  // click only places the cursor, leaving that text in place for
+  // "dragged paragraph" to land in the MIDDLE of instead of replacing it.
+  await paragraph.click({ clickCount: 3 });
+  await page.keyboard.type("dragged paragraph");
+  await page.keyboard.press("Enter");
+
+  await page.getByRole("button", { name: "Insert table" }).click();
+  await page.locator(".richtext-table-grid-cell").nth(0).click();
+  const table = body.locator("table");
+  const cell = table.locator("td, th").first();
+  await cell.locator("p").click();
+  await page.keyboard.type("existing cell content");
+
+  const toggle = page.getByRole("button", { name: "Reorder blocks" });
+  await toggle.click();
+
+  const draggedParagraph = body.locator("p", { hasText: "dragged paragraph" });
+  const paragraphBox = await draggedParagraph.boundingBox();
+  if (!paragraphBox) throw new Error("missing bounding box for dragged paragraph");
+
+  await page.mouse.move(paragraphBox.x + paragraphBox.width / 2, paragraphBox.y + paragraphBox.height / 2);
+  await page.mouse.down();
+  // Just one ghost so far - the origin, right where the paragraph itself
+  // used to be (nothing else has been hovered yet).
+  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(1);
+
+  // Measured AFTER mouse.down() - hiding the dragged paragraph shifts the
+  // table upward. Hovering the cell's own EXISTING paragraph directly
+  // (not its padding, and not an empty placeholder) resolves to a plain
+  // before/after target scoped to that cell.
+  const cellParagraphBox = await cell.locator("p").boundingBox();
+  if (!cellParagraphBox) throw new Error("missing bounding box for cell paragraph");
+  await page.mouse.move(cellParagraphBox.x + cellParagraphBox.width / 2, cellParagraphBox.y + 2, { steps: 1 });
+  // Now TWO - the table cell is a different container than the top level,
+  // so the origin ghost stays up alongside the new hover one instead of
+  // being replaced by it.
+  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(2);
+  await page.mouse.up();
+
+  // Both resolve away together once the drop actually commits - the cell
+  // now holds both paragraphs (the pre-existing one and the dropped one),
+  // not just the dragged one alone.
+  await expect(body.locator(".dry-tx-reorder-ghost")).toHaveCount(0);
+  await expect(cell.locator("p")).toHaveCount(2);
+  await expect(cell.locator("p", { hasText: "dragged paragraph" })).toHaveCount(1);
 
   const realErrors = consoleErrors.filter((msg) => !msg.includes("Outdated Optimize Dep"));
   expect(realErrors).toEqual([]);

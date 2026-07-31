@@ -355,7 +355,17 @@ function exportBlockHtml(node: PMNode, extraStyle?: string): string {
   return `<${tag}${styleAttr(style)}>${inlineChildrenHtml(node)}</${tag}>`;
 }
 
-export function exportCleanHtml(doc: PMNode): string {
+/** `options.inline` (`RichTextField`'s own `inline` prop, threaded through
+ * `useRichTextEditor.ts`) reuses `containerContentHtml`'s existing "exactly
+ * one plain paragraph -> just its inline content, no wrapper" unwrap - the
+ * same rule a `<li>`/table cell's own content already round-trips through -
+ * applied to the whole `doc` instead of a container node. A genuinely
+ * multi-block doc (paste, or a block-level `dry-*` component - neither is
+ * actually blocked by `inline`, only the toolbar buttons that usually reach
+ * them are hidden) falls back to the normal fully-tagged export instead of
+ * silently dropping content. */
+export function exportCleanHtml(doc: PMNode, options?: { inline?: boolean }): string {
+  if (options?.inline) return containerContentHtml(doc);
   let out = "";
   doc.forEach((node) => {
     out += exportBlockHtml(node);

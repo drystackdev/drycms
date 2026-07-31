@@ -428,18 +428,6 @@ th {
   outline-offset: 2px;
 }
 
-/* Undraggable in the current mode - the trailing landing-spot paragraph
- * (below, hidden outright rather than just dimmed) and, under
- * \`"nested-container"\` mode, any non-container block (\`isDraggableNode\` in
- * reorder-mode.ts). Dimmed and reverted to the ordinary text cursor rather
- * than \`grab\`, so it reads as inert without disappearing - it's still real
- * content the user can look at, just not something this mode lets them pick
- * up. */
-.dry-tx-reorder-frozen {
-  cursor: default;
-  opacity: 0.5;
-}
-
 /* The empty paragraph \`insertTable\`/\`insertGrid\`/\`trailing-paragraph.ts\`
  * leave (or maintain) after the last block so there's always somewhere to
  * click - not real content, so reorder mode hides it outright rather than

@@ -198,6 +198,12 @@ export function useSortableList<T>(options: UseSortableListOptions<T>): UseSorta
         overlay.style.width = `${state.startRect.width}px`;
         overlay.style.margin = "0";
         overlay.style.zIndex = "50";
+        // A cloned `<li>` row loses its `<ul>` parent's `list-style: none`
+        // the moment it's appended to `body` instead - `list-style` is
+        // inherited, and the clone's new parent doesn't carry it, so the
+        // browser's default disc/decimal marker reappears just outside the
+        // row's left edge. Harmless (and a no-op) for any other tag.
+        overlay.style.listStyle = "none";
         // Appended to the nearest open `<dialog>` (if the list being
         // reordered lives inside one), not always `document.body` - a
         // `<dialog>` is promoted to the top layer, which paints above

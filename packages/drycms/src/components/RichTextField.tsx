@@ -50,6 +50,7 @@ export default function RichTextField({
     onChange,
     label,
     disabled,
+    inline,
   });
 
   const richtextRef = useRef<HTMLDivElement>(null);

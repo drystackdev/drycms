@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
-import { baseKeymap, chainCommands } from "prosemirror-commands";
+import { baseKeymap, chainCommands, toggleMark } from "prosemirror-commands";
 import { history, redo, redoDepth, undo, undoDepth } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import type { Node as PMNode } from "prosemirror-model";
@@ -31,7 +31,7 @@ import { GridItemNodeView } from "./grid-item-view.js";
 import { gridResizing } from "./grid-resize.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
-import { getReorderMode, getReorderSelection, isReorderActive, reorderMode } from "./reorder-mode.js";
+import { isReorderActive, reorderMode } from "./reorder-mode.js";
 import { createEmptyDoc, schema, setRichtextComponents } from "./schema.js";
 import { exitTableDownward, exitTableForward, getSelectedTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
@@ -65,6 +65,11 @@ export interface UseRichTextEditorOptions {
   onChange: (value: string) => void;
   label: string;
   disabled: boolean;
+  /** Mirrors `RichTextField`'s own `inline` prop - strips the exported
+   * HTML's block wrapper (`html.ts`'s `exportCleanHtml` `options.inline`)
+   * instead of the usual `<p>...</p>` around a single paragraph's worth of
+   * content. @default false */
+  inline?: boolean;
 }
 
 export interface UseRichTextEditorResult {
@@ -102,8 +107,6 @@ function readToolbarState(state: EditorState): ToolbarState {
     selectedGrid: getSelectedGrid(state),
     link: getLinkState(state),
     reorderModeActive: isReorderActive(state),
-    reorderMode: getReorderMode(state),
-    reorderSelectedCount: getReorderSelection(state).length,
   };
 }
 
@@ -165,11 +168,19 @@ export function useRichTextEditor({
   onChange,
   label,
   disabled,
+  inline = false,
 }: UseRichTextEditorOptions): UseRichTextEditorResult {
   const contentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  // Read inside `dispatchTransaction` below via `.current`, same reason
+  // `onChangeRef` is - that closure is built once, inside the mount effect
+  // that only ever runs on `[]` (see its own doc comment), so a later
+  // `inline` prop change needs a ref to actually reach it instead of a
+  // stale value baked in at mount.
+  const inlineRef = useRef(inline);
+  inlineRef.current = inline;
 
   const [state, setState] = useState<ToolbarState>({
     format: NO_FORMAT,
@@ -187,8 +198,6 @@ export function useRichTextEditor({
     selectedGrid: null,
     link: { href: "", target: null, active: false, disabled: true },
     reorderModeActive: false,
-    reorderMode: "block",
-    reorderSelectedCount: 0,
   });
   const [empty, setEmpty] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -279,6 +288,15 @@ export function useRichTextEditor({
           "Mod-z": undo,
           "Mod-y": redo,
           "Shift-Mod-z": redo,
+          // Same commands `toolbar-buttons.ts`'s own bold/italic/underline
+          // buttons run - without these, the browser's Ctrl/Cmd+B/I/U never
+          // reaches ProseMirror's own doc model at all (nothing else in this
+          // keymap or `baseKeymap` below claims them), so the keystroke is a
+          // silent no-op: no visible change, and nothing for a later
+          // transaction (e.g. applying a color) to have ever touched.
+          "Mod-b": toggleMark(schema.marks.bold!),
+          "Mod-i": toggleMark(schema.marks.italic!),
+          "Mod-u": toggleMark(schema.marks.underline!),
           // `splitListItem` first (innermost - a list nested inside a grid
           // cell should split its own item, not break out to a new grid
           // cell), falling through to `splitGridItem` when the selection
@@ -339,7 +357,7 @@ export function useRichTextEditor({
         setState(readToolbarState(newState));
         setEmpty(isDocEmpty(newState));
         if (tr.docChanged) {
-          onChangeRef.current(exportCleanHtml(newState.doc));
+          onChangeRef.current(exportCleanHtml(newState.doc, { inline: inlineRef.current }));
         }
       },
     });

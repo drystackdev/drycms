@@ -4,7 +4,6 @@ import { runCommand } from "./commands.js";
 import type { FileManagerSource } from "../file-manager-types.js";
 import DryComponentMenu from "./dry-component-menu.js";
 import GridMenu from "./grid-menu.js";
-import ReorderModeMenu from "./reorder-mode-menu.js";
 import TableMenu from "./table-menu.js";
 import { REORDER_MODE_TOGGLE_KEY, TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
@@ -126,10 +125,6 @@ export default function RichTextToolbar({
         disabled={disabled || state.reorderModeActive}
         iconSize={iconSize}
       />
-      {/* Not gated by `state.reorderModeActive` like every item above - this
-          one only renders WHILE reorder mode is active (it returns nothing
-          otherwise), so its own `disabled` is just the field-level one. */}
-      <ReorderModeMenu viewRef={viewRef} contentRef={contentRef} state={state} disabled={disabled} iconSize={iconSize} />
     </div>
   );
 }

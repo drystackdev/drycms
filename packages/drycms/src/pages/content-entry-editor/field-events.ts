@@ -21,6 +21,11 @@ export interface FieldInputEventDetail {
 }
 
 export interface FieldSetEventDetail {
+  /** A plain top-level field name, OR a dotted/indexed path reaching into a
+   * `component-repeat` array item's own fields (e.g. `"data.0.name.label"`)
+   * - see `field-path.ts`'s `setValueAtPath` for exactly how a path resolves
+   * against the entry's `EntryValue`, and its own doc comment for the
+   * degrade-safely behavior on an invalid one. */
   name: string;
   value: unknown;
 }
