@@ -6,6 +6,7 @@ import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
+import { bumpContentTypesVersion } from "../store/content-types.js";
 import { randomUUID } from "../lib/uuid.js";
 import type { RelationMirrorFieldConfig } from "../content-types/field-registry.js";
 import type { DestructiveChange } from "../content-types/migration.js";
@@ -523,6 +524,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       }
       setPendingConfirm(null);
       toast.add({ type: "success", title: `Saved "${definition.label}".` });
+      bumpContentTypesVersion();
       route(`${path}/content-types?selectedKind=${definition.kind}`);
     } catch (error) {
       toast.add({
@@ -553,6 +555,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         type: "success",
         title: `Deleted "${definition.label || definition.name}".`,
       });
+      bumpContentTypesVersion();
       route(`${path}/content-types?selectedKind=${definition.kind}`);
     } catch (error) {
       toast.add({

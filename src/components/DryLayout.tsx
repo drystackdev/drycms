@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -9,8 +9,10 @@ import Toaster from "./Toast.js";
 import type { IconName } from "./icons.js";
 import { path } from "virtual:drycms/config";
 import { collapsed } from "../store/dashboard.js";
+import { contentTypesVersion } from "../store/content-types.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
 import { useStore } from "../hooks/useStore.js";
+import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 
@@ -143,16 +145,34 @@ export default function DryLayout({ children }: Props) {
   // The "Content" submenu's own collapse/expand state, independent of the
   // whole-sidebar `collapsed` signal above.
   const [contentMenuOpen, setContentMenuOpen] = useStore("contentSubmenuOpen", true);
-  const [contentTypes, setContentTypes] = useState<ContentTypeDefinition[]>([]);
   const contentTypesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const listFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) => contentTypesApi.listVersioned(ifVersion, signal),
+    [contentTypesApi],
+  );
+  // Same cache key `ContentTypes.tsx` uses - a warm IndexedDB entry from
+  // either page shows up instantly in the other. Unlike a route component,
+  // this sidebar lives outside `<Router>` and never remounts (see
+  // `App.tsx`), so `key` alone can't pick up a change made through
+  // `ContentTypeEditor` - the `contentTypesVersion.value` effect below does
+  // that instead, by calling this same hook's `reload()`.
+  const { data: contentTypes, reload: reloadContentTypes } = useFetch<ContentTypeDefinition[]>(
+    "content-types:list",
+    listFetcher,
+  );
+  const skipFirstVersionEffect = useRef(true);
   useEffect(() => {
-    contentTypesApi.list().then(setContentTypes).catch(() => setContentTypes([]));
-  }, [contentTypesApi]);
+    if (skipFirstVersionEffect.current) {
+      skipFirstVersionEffect.current = false;
+      return;
+    }
+    void reloadContentTypes();
+  }, [contentTypesVersion.value, reloadContentTypes]);
   // `system` is no longer set on any built-in default (user/menu/aiKey/role/
   // permission) - purely a cosmetic label a type could still carry, so this
   // filter is inert today, kept only in case something opts back into it.
   const contentNavItems = useMemo(
-    () => contentTypes.filter((t) => t.kind !== "component" && !t.system),
+    () => (contentTypes ?? []).filter((t) => t.kind !== "component" && !t.system),
     [contentTypes],
   );
 
