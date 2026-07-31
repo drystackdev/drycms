@@ -49,17 +49,22 @@ const IDS = {
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
  * (credentials for third-party AI providers), and `role`/`permission`
  * collections (role-based access control - see `status/role-permission.md`).
- * None of the seven are marked `system` - they're plain, ordinary content
- * types the admin can freely rename, edit, or delete, indistinguishable from
- * anything created by hand. Note that `pendingSeedStatements` re-seeds a
- * missing default by NAME on the next boot (it has no other way to tell
- * "missing" apart from "renamed") - so deleting one of these just gets it
- * silently re-created fresh next boot, while renaming one makes that boot
- * add a brand-new second copy under the original name instead. Deleting
- * `role`/`permission`/`aiKey`/`menuItem`/`seo` (even though it'll come back)
- * or renaming any of them will also break the functionality that depends on
- * their fixed shape/name in the meantime (raw SQL in `permissions.ts`, the
- * `seo`/`user.roles` features) - that's on the admin.
+ * `menuItem`/`user`/`menu` are plain, ordinary content types the admin can
+ * freely rename, edit, or delete, indistinguishable from anything created by
+ * hand - EXCEPT `user` itself, which carries `locked: true` (its table can't
+ * be deleted - see `types.ts`) and `protectedFieldIds` over its
+ * `email`/`password`/`roles` fields (needed for login/permissions, so they
+ * can't be edited or removed either, even though the rest of `user`'s fields
+ * are as free as any other type's). `seo`, `aiKey`, `role`, and `permission`
+ * carry real restrictions too (`hidden`/`locked`/`frozen` - see `types.ts`'s
+ * doc comments), because `permissions.ts` hardcodes `role`/`permission`'s
+ * table/column shape and `system-fields.ts` hardcodes `seo`'s id - reshaping
+ * any of them through the generic schema editor would silently break that.
+ * Note that `pendingSeedStatements` re-seeds a missing default by NAME on the
+ * next boot (it has no other way to tell "missing" apart from "renamed") -
+ * so deleting one of these just gets it silently re-created fresh next boot,
+ * while renaming one makes that boot add a brand-new second copy under the
+ * original name instead.
  * `createdAt`/`updatedAt` ride on `features.timestamps` instead of being
  * declared fields.
  */
@@ -108,6 +113,13 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "seo",
     label: "SEO",
     description: "Search-engine/social preview metadata.",
+    // Hidden from the component-target picker (only ever embedded via
+    // `features.seo`, never picked by hand) and locked (its id is hardcoded
+    // in `system-fields.ts`'s `SYSTEM_COMPONENT_IDS.seo`) - but its own
+    // fields stay freely addable/editable, unlike `role`/`permission`/
+    // `aiKey`'s `frozen` schema (see `types.ts`'s doc comments).
+    hidden: true,
+    locked: true,
     fields: [
       // Named `metaTitle`, not `title` - naming.ts's RESERVED_NAMES blocks a
       // bare "title" on any field (it's the synthetic column `features.slug`
@@ -151,6 +163,12 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "User",
     description: "Accounts able to sign in.",
     features: { timestamps: true },
+    // The table itself can't be deleted (login depends on it existing), and
+    // email/password/roles individually can't be edited or removed either
+    // (login/permissions depend on their fixed shape) - every other field
+    // stays as freely addable/editable/removable as any other type's.
+    locked: true,
+    protectedFieldIds: [IDS.userEmail, IDS.userPassword, IDS.userRoles],
     fields: [
       {
         id: IDS.userName,
@@ -229,6 +247,13 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "aiKey",
     label: "AI Key",
     description: "Credentials for third-party AI providers.",
+    // Completely out of the generic content-type machinery - reached via its
+    // own pinned "AI Keys" nav entry (`DryLayout.tsx`) instead, same as
+    // `role`/`permission` via `Roles.tsx`/`RoleEditor.tsx` - see `types.ts`'s
+    // doc comments for what `hidden`/`locked`/`frozen` each mean.
+    hidden: true,
+    locked: true,
+    frozen: true,
     features: {
       sortable: true,
     },
@@ -291,6 +316,11 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "role",
     label: "Role",
     description: "A named set of permissions users can be assigned.",
+    // Managed via `Roles.tsx`/`RoleEditor.tsx` instead - see `aiKey`'s
+    // comment above for what these three flags mean.
+    hidden: true,
+    locked: true,
+    frozen: true,
     fields: [
       {
         id: IDS.roleName,
@@ -340,6 +370,11 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "Permission",
     description:
       "Auto-synced - one row per action per collection/singleton (view/create/update/delete/publish for a collection, a single \"setting\" for a singleton) - governs which role can do what on it.",
+    // Managed via `Roles.tsx`/`RoleEditor.tsx` instead - see `aiKey`'s
+    // comment above for what these three flags mean.
+    hidden: true,
+    locked: true,
+    frozen: true,
     fields: [
       {
         id: IDS.permissionName,

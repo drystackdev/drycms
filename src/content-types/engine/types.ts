@@ -16,7 +16,8 @@ export type ContentEngineErrorCode =
   | "version_conflict"
   | "invalid_definition"
   | "in_use"
-  | "unsupported";
+  | "unsupported"
+  | "protected";
 
 export class ContentEngineError extends Error {
   code: ContentEngineErrorCode;

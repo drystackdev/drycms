@@ -11,7 +11,7 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role, and permission (collections), none marked system", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, and permission (collections)", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
       "menu",
@@ -21,9 +21,6 @@ describe("defaultContentTypeDefinitions", () => {
       "seo",
       "user",
     ]);
-    for (const def of defs) {
-      expect(def.system).toBeFalsy();
-    }
     expect(byName("menuItem").kind).toBe("component");
     expect(byName("seo").kind).toBe("component");
     expect(byName("user").kind).toBe("collection");
@@ -31,6 +28,46 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
     expect(byName("permission").kind).toBe("collection");
+  });
+
+  it("hides role/permission/aiKey/seo from the generic content-type UI, but leaves user/menu/menuItem visible", () => {
+    expect(byName("role").hidden).toBe(true);
+    expect(byName("permission").hidden).toBe(true);
+    expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("seo").hidden).toBe(true);
+    expect(byName("user").hidden).toBeFalsy();
+    expect(byName("menu").hidden).toBeFalsy();
+    expect(byName("menuItem").hidden).toBeFalsy();
+  });
+
+  it("freezes role/permission/aiKey's schema entirely, but leaves seo's and user's editable", () => {
+    expect(byName("role").frozen).toBe(true);
+    expect(byName("permission").frozen).toBe(true);
+    expect(byName("aiKey").frozen).toBe(true);
+    expect(byName("seo").frozen).toBeFalsy();
+    expect(byName("user").frozen).toBeFalsy();
+  });
+
+  it("locks user/seo/role/permission/aiKey's tables against deletion, but leaves menu/menuItem deletable", () => {
+    expect(byName("user").locked).toBe(true);
+    expect(byName("seo").locked).toBe(true);
+    expect(byName("role").locked).toBe(true);
+    expect(byName("permission").locked).toBe(true);
+    expect(byName("aiKey").locked).toBe(true);
+    expect(byName("menu").locked).toBeFalsy();
+    expect(byName("menuItem").locked).toBeFalsy();
+  });
+
+  it("protects user's email/password/roles fields specifically, and nothing else", () => {
+    const user = byName("user");
+    const protectedNames = (user.protectedFieldIds ?? [])
+      .map((id) => user.fields.find((f) => f.id === id)?.name)
+      .sort();
+    expect(protectedNames).toEqual(["email", "password", "roles"]);
+    expect(user.fields.find((f) => f.name === "name")).toBeDefined();
+    expect(user.protectedFieldIds).not.toContain(
+      user.fields.find((f) => f.name === "name")!.id,
+    );
   });
 
   it("gives every type and field a stable, unique id", () => {
@@ -224,7 +261,7 @@ describe("pendingSeedStatements", () => {
         "menu",
         "menuitem",
         "seo",
-        "aiKey",
+        "aikey",
         "role",
         "permission",
       ]),

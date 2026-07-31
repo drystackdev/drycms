@@ -37,7 +37,11 @@ describe("createFileContentEngineAdapter", () => {
 
     const types = await adapter.listContentTypes();
     expect(types.map((t) => t.name).sort()).toEqual(["aiKey", "menu", "menuItem", "permission", "role", "seo", "user"]);
-    expect(types.every((t) => !t.system)).toBe(true);
+    const byName = (name: string) => types.find((t) => t.name === name)!;
+    expect(byName("role").hidden).toBe(true);
+    expect(byName("permission").hidden).toBe(true);
+    expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("user").hidden).toBeFalsy();
   });
 
   it("seeds the permanent Super Admin role at boot", async () => {
@@ -83,7 +87,7 @@ describe("createFileContentEngineAdapter", () => {
     ]);
   });
 
-  it("still allows deleting an ordinary, non-system content type", async () => {
+  it("still allows deleting an ordinary content type", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 

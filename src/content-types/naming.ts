@@ -120,6 +120,53 @@ export function validateContentTypeDefinition(
   }
 }
 
+/** Rejects any save of a `frozen` content type outright - see `types.ts`'s
+ * doc comment on `ContentTypeDefinition.frozen` for why (`role`/`permission`/
+ * `aiKey` are fixed system infrastructure with hardcoded table/column shape
+ * elsewhere, e.g. `permissions.ts`). `existing` is the type's current
+ * stored definition (`undefined` for a brand-new save, which can never be
+ * frozen - nothing's seeded it yet). */
+export function assertNotFrozen(existing: ContentTypeDefinition | undefined): void {
+  if (!existing?.frozen) return;
+  throw new NamingError(
+    `"${existing.label || existing.name}" is managed automatically and can't be edited here.`,
+  );
+}
+
+/** Rejects a save that changes or removes any of `existing`'s
+ * `protectedFieldIds` (see `types.ts`) - `next` is the incoming definition,
+ * about to be saved over `existing`. A no-op when `existing` is `undefined`
+ * (brand-new save) or has no protected fields. Compares each protected
+ * field's full `FieldDefinition` by value (not just presence) so a rename,
+ * retype, or config/validation change is caught exactly like an outright
+ * removal - `protectedFieldIds` means the field is frozen in place, not just
+ * un-deletable. */
+export function validateProtectedFields(
+  existing: ContentTypeDefinition | undefined,
+  next: ContentTypeDefinition,
+): void {
+  if (!existing?.protectedFieldIds?.length) return;
+  for (const id of existing.protectedFieldIds) {
+    if (next.deletedFieldIds?.includes(id)) {
+      throw new NamingError(
+        `Field "${id}" on "${existing.name}" is required and can't be removed.`,
+      );
+    }
+    const before = existing.fields.find((f) => f.id === id);
+    const after = next.fields.find((f) => f.id === id);
+    if (!after) {
+      throw new NamingError(
+        `Field "${before?.label ?? id}" on "${existing.name}" is required and can't be removed.`,
+      );
+    }
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      throw new NamingError(
+        `Field "${before?.label ?? id}" on "${existing.name}" is required and can't be edited.`,
+      );
+    }
+  }
+}
+
 /** Overwrites every field's `order` to match its current position in
  * `fields[]` - the array is always the real source of truth for order; this
  * makes that position an explicit, durable property instead of only ever

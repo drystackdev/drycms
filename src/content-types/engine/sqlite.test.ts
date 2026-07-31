@@ -6,9 +6,13 @@ import type { ContentTypeDefinition } from "../types.js";
 import { SUPER_ADMIN_DESCRIPTION } from "../permissions.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
 
-/** Exercises the real adapter against a throwaway sqlite file (not a mock) -
- * the only way to actually prove deletion of a built-in content type is
- * refused server-side, not just hidden by the editor UI. */
+/** Exercises the real adapter against a throwaway sqlite file (not a mock).
+ * `locked`/`frozen`/`protectedFieldIds` (see `types.ts`) are enforced by the
+ * HTTP route layer (`routes/content-types.ts`'s `DELETE` handler and
+ * `handleSave`'s `assertNotFrozen`/`validateProtectedFields` calls - see
+ * `routes/content-types.test.ts`), not by the adapter itself - the adapter
+ * stays a thin, unopinionated schema-CRUD layer regardless of which type
+ * it's asked to touch. */
 function freshAdapter() {
   const dir = mkdtempSync(join(tmpdir(), "drycms-sqlite-test-"));
   const adapter = createSqliteContentEngineAdapter({
@@ -55,7 +59,11 @@ describe("createSqliteContentEngineAdapter", () => {
       "seo",
       "user",
     ]);
-    expect(types.every((t) => !t.system)).toBe(true);
+    const byName = (name: string) => types.find((t) => t.name === name)!;
+    expect(byName("role").hidden).toBe(true);
+    expect(byName("permission").hidden).toBe(true);
+    expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("user").hidden).toBeFalsy();
   });
 
   it("seeds the permanent Super Admin role at boot", async () => {
@@ -103,7 +111,7 @@ describe("createSqliteContentEngineAdapter", () => {
     ]);
   });
 
-  it("allows deleting a built-in content type, same as any other (system is purely a UI label)", async () => {
+  it("the adapter itself has no locked/frozen enforcement - that's the HTTP route's job (see routes/content-types.test.ts)", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -116,7 +124,7 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(stillThere).toBeNull();
   });
 
-  it("still allows deleting an ordinary, non-system content type", async () => {
+  it("still allows deleting an ordinary content type", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 

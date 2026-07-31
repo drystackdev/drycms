@@ -4,9 +4,11 @@ import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError, type AnySavePlan, type ContentEngineAdapter } from "../../content-types/engine/types.js";
 import {
+  assertNotFrozen,
   NamingError,
   normalizeFieldOrder,
   validateContentTypeDefinition,
+  validateProtectedFields,
 } from "../../content-types/naming.js";
 import { collectTableNames, resolveTableTree } from "../../content-types/tree.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
@@ -19,6 +21,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   invalid_definition: 400,
   in_use: 409,
   unsupported: 501,
+  protected: 403,
 };
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -100,7 +103,10 @@ async function handleSave(
 ): Promise<Response> {
   definition = normalizeFieldOrder(definition);
   const allTypes = await adapter.listContentTypes();
+  const existing = allTypes.find((t) => t.id === definition.id);
+  assertNotFrozen(existing);
   validateContentTypeDefinition(definition, allTypes);
+  validateProtectedFields(existing, definition);
 
   // `validateContentTypeDefinition` only rules out two types sharing a
   // top-level *name* - it can't see that a repeatable field's generated
@@ -211,6 +217,13 @@ export const DELETE: DryRouteHandler = async (context) => {
     const adapter = getAdapter(context);
     const id = readId(context);
     if (!id) throw new ContentEngineError("invalid_definition", "An id is required to delete a content type.");
+    const existing = await adapter.getContentType(id);
+    if (existing?.locked || existing?.frozen) {
+      throw new ContentEngineError(
+        "protected",
+        `"${existing.label || existing.name}" can't be deleted.`,
+      );
+    }
     await adapter.deleteContentType(id);
     return new Response(null, { status: 204 });
   } catch (error) {

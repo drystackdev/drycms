@@ -91,7 +91,13 @@ describe("GET /dry/api/content-types", () => {
       "seo",
       "user",
     ]);
-    expect((json.definitions as ContentTypeDefinition[]).every((t) => !t.system)).toBe(true);
+    const byName = (name: string) =>
+      (json.definitions as ContentTypeDefinition[]).find((t) => t.name === name)!;
+    expect(byName("role").hidden).toBe(true);
+    expect(byName("permission").hidden).toBe(true);
+    expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("seo").hidden).toBe(true);
+    expect(byName("user").hidden).toBeFalsy();
   });
 });
 
@@ -242,12 +248,69 @@ describe("PUT /dry/api/content-types/[slug] (update)", () => {
     expect(applied.json.definition.version).toBe(2);
   });
 
-  it("allows freely setting `system` on any content type (purely a UI label, not enforced)", async () => {
+  it("allows freely setting `hidden` on an ordinary, non-frozen content type", async () => {
     const menu = await findByName("menu");
-    expect(menu.system).toBeFalsy();
-    const { status, json } = await put(menu.id, { definition: { ...menu, system: true } });
+    expect(menu.hidden).toBeFalsy();
+    const { status, json } = await put(menu.id, { definition: { ...menu, hidden: true } });
     expect(status).toBe(200);
-    expect(json.definition.system).toBe(true);
+    expect(json.definition.hidden).toBe(true);
+  });
+
+  it("rejects any edit to a frozen content type (role/permission/aiKey)", async () => {
+    const role = await findByName("role");
+    const { status, json } = await put(role.id, { definition: { ...role, label: "Renamed" } });
+    expect(status).toBe(400);
+    expect(json.error).toBe("invalid_definition");
+  });
+
+  it("rejects deleting a frozen content type", async () => {
+    const permission = await findByName("permission");
+    const response = await del(permission.id);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("protected");
+  });
+
+  it("rejects deleting a locked-but-not-frozen content type (user)", async () => {
+    const user = await findByName("user");
+    const response = await del(user.id);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("protected");
+  });
+
+  it("rejects editing a protected field on `user` (email/password/roles)", async () => {
+    const user = await findByName("user");
+    const email = user.fields.find((f) => f.name === "email")!;
+    const { status, json } = await put(user.id, {
+      definition: {
+        ...user,
+        fields: user.fields.map((f) => (f.id === email.id ? { ...f, label: "New Label" } : f)),
+      },
+    });
+    expect(status).toBe(400);
+    expect(json.error).toBe("invalid_definition");
+  });
+
+  it("rejects removing a protected field on `user` via `deletedFieldIds`", async () => {
+    const user = await findByName("user");
+    const password = user.fields.find((f) => f.name === "password")!;
+    const { status, json } = await put(user.id, {
+      definition: { ...user, deletedFieldIds: [password.id] },
+    });
+    expect(status).toBe(400);
+    expect(json.error).toBe("invalid_definition");
+  });
+
+  it("still allows editing user's other (non-protected) fields", async () => {
+    const user = await findByName("user");
+    const name = user.fields.find((f) => f.name === "name")!;
+    const { status, json } = await put(user.id, {
+      definition: {
+        ...user,
+        fields: user.fields.map((f) => (f.id === name.id ? { ...f, label: "Full Name" } : f)),
+      },
+    });
+    expect(status).toBe(200);
+    expect(json.definition.fields.find((f: FieldDefinition) => f.id === name.id).label).toBe("Full Name");
   });
 });
 
@@ -303,11 +366,12 @@ describe("DELETE /dry/api/content-types/[slug]", () => {
     expect((await response.json()).error).toBe("invalid_definition");
   });
 
-  it("allows deleting a built-in content type, same as any other", async () => {
+  it("rejects deleting a locked/frozen built-in content type (role)", async () => {
     const role = await findByName("role");
     const response = await del(role.id);
-    expect(response.status).toBe(204);
-    expect((await get(role.id)).status).toBe(404);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("protected");
+    expect((await get(role.id)).status).toBe(200);
   });
 
   it("409s deleting a component that's still embedded by another content type", async () => {

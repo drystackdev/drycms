@@ -21,8 +21,6 @@ pnpm-debug.log*
 # jetbrains setting folder
 .idea/
 
-status/
-
 # drycms local file storage (see `storage.root` in dry.config.ts)
 /storage/
 

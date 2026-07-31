@@ -22,6 +22,13 @@ export interface FieldListItemProps {
    * without a click-to-edit or Remove action - they aren't real fields, just
    * synthetic columns a feature toggle adds. */
   system?: boolean;
+  /** A real field (e.g. `user`'s `email`/`password`/`roles`) that's still
+   * clickable - opens the same `FieldDialog` as any other field, just
+   * read-only once inside (see `types.ts`'s `protectedFieldIds`) - but has no
+   * Remove action, and carries a "Protected" badge instead of the plain
+   * label. Independent of `system`: a protected field is a real, ordinary
+   * column, not a synthetic one. */
+  protected?: boolean;
   onEdit?: () => void;
   onRemove?: () => void;
   dragHandleProps?: SortableHandleProps;
@@ -38,6 +45,7 @@ export default function FieldListItem({
   name,
   description,
   system = false,
+  protected: isProtected = false,
   onEdit,
   onRemove,
   dragHandleProps,
@@ -72,6 +80,10 @@ export default function FieldListItem({
             <span class="badge sm outline">
               System
             </span>
+          ) : isProtected ? (
+            <span class="badge sm outline">
+              Protected
+            </span>
           ) : (
             ""
           )}
@@ -82,7 +94,7 @@ export default function FieldListItem({
           {description ? ` • ${description}` : ""}
         </small>
       </div>
-      {!system && (
+      {!system && !isProtected && (
         <div class="row" onClick={(event) => event.stopPropagation()}>
           <button type="button" class="ghost sm" aria-label="Remove" onClick={onRemove}>
             <TrashIcon />

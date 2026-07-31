@@ -76,6 +76,12 @@ export interface FieldDialogProps {
   open: boolean;
   /** `null` means "Add field"; otherwise the field being edited. */
   editingField: FieldDefinition | null;
+  /** True when `editingField`'s id is in `ContentTypeDefinition.
+   * protectedFieldIds` (see `types.ts`) - every control renders read-only
+   * (so an admin can still SEE the field's configuration) and the footer
+   * drops Save down to a plain "Close", since there's nothing this dialog
+   * could actually persist. */
+  readOnly?: boolean;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   /** Persisted per-field display side (see `types.ts`'s
    * `ContentTypeDefinition.fieldSides`) - seeds the Display side control
@@ -290,11 +296,13 @@ function DefaultValueInput({
   config,
   value,
   onChange,
+  disabled = false,
 }: {
   activeType: FieldTypeDefinition | undefined;
   config: unknown;
   value: unknown;
   onChange: (value: unknown) => void;
+  disabled?: boolean;
 }) {
   if (!activeType || resolveFieldShape(activeType, config) !== "column")
     return null;
@@ -305,6 +313,7 @@ function DefaultValueInput({
           label="Default value"
           placeholder="e.g. Untitled"
           value={typeof value === "string" ? value : ""}
+          disabled={disabled}
           onChange={onChange}
         />
       );
@@ -313,18 +322,20 @@ function DefaultValueInput({
         <NumberField
           label="Default value"
           value={typeof value === "number" ? value : 0}
+          disabled={disabled}
           onChange={onChange}
         />
       );
     case "boolean":
       return (
-        <CheckField label="Default value" value={!!value} onChange={onChange} />
+        <CheckField label="Default value" value={!!value} disabled={disabled} onChange={onChange} />
       );
     case "date":
       return (
         <DatePickerField
           label="Default value"
           value={value instanceof Date ? value : new Date()}
+          disabled={disabled}
           onChange={onChange}
         />
       );
@@ -334,12 +345,12 @@ function DefaultValueInput({
       return selectConfig.multiple ? (
         <div class="field">
           <label>Default value</label>
-          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} onChange={onChange} />
+          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} disabled={disabled} onChange={onChange} />
         </div>
       ) : (
         <div class="field">
           <label>Default value</label>
-          <Select options={options} value={typeof value === "string" ? value : undefined} onChange={onChange} />
+          <Select options={options} value={typeof value === "string" ? value : undefined} disabled={disabled} onChange={onChange} />
         </div>
       );
     }
@@ -403,6 +414,7 @@ function selectOptionsInvalid(config: Record<string, unknown>): boolean {
 export default function FieldDialog({
   open,
   editingField,
+  readOnly = false,
   dynamicOptions,
   fieldSides,
   archivedFields = [],
@@ -530,6 +542,7 @@ export default function FieldDialog({
     // same "attempted" gate `ComponentField.tsx`'s item dialog uses for its
     // own per-field errors, plus the shared "Fix the highlighted fields."
     // summary line below.
+    if (readOnly) return;
     setSaveAttempted(true);
     if (!draftType) return;
     if (!draftName.trim()) return;
@@ -576,17 +589,25 @@ export default function FieldDialog({
   // Description and Display side genuinely belong to THIS type and stay
   // editable (see `ContentTypeEditor.tsx`'s `handleFieldSave`).
   const isMirror = editingField?.type === "relationmirror";
-  const textDisabledKeys =
-    draftType === "text" ? textValidationDisabledKeys(draftValidation) : [];
-  const configDisabledKeys =
-    draftType === "component"
+  const activeValidationFields = activeFieldType
+    ? resolveValidationFields(activeFieldType, draftConfig)
+    : [];
+  // `readOnly` (a protected field - see `types.ts`'s `protectedFieldIds`)
+  // disables every Display/Validation control by disabling every descriptor
+  // key at once, reusing the same per-key `disabledKeys` mechanism a normal
+  // field's own config already uses for its narrower, situational disables.
+  const textDisabledKeys = readOnly
+    ? activeValidationFields.map((d) => d.key)
+    : draftType === "text"
+      ? textValidationDisabledKeys(draftValidation)
+      : [];
+  const configDisabledKeys = readOnly
+    ? (activeFieldType?.configFields ?? []).map((d) => d.key)
+    : draftType === "component"
       ? componentConfigDisabledKeys(draftConfig)
       : draftType === "relation"
         ? relationConfigDisabledKeys(draftConfig)
         : [];
-  const activeValidationFields = activeFieldType
-    ? resolveValidationFields(activeFieldType, draftConfig)
-    : [];
   const hasSaveErrors =
     saveAttempted &&
     (!draftType ||
@@ -613,6 +634,12 @@ export default function FieldDialog({
               relation field instead.
             </p>
           )}
+          {readOnly && (
+            <p class="hint" style={{ marginTop: 0 }}>
+              This field is required for login/permissions and can't be
+              changed or removed - shown here for reference only.
+            </p>
+          )}
           <div class="field-dialog-scroll" ref={gridScroll}>
             <div class="field-dialog-grid">
               <div class="stack">
@@ -629,7 +656,7 @@ export default function FieldDialog({
                     setDraftLabel(label);
                     setDraftName(name);
                   }}
-                  disabled={isMirror}
+                  disabled={isMirror || readOnly}
                   error={saveAttempted && (!draftName.trim() || archivedTypeConflict)}
                   helperText={
                     saveAttempted && !draftName.trim()
@@ -646,6 +673,7 @@ export default function FieldDialog({
                   multiline
                   placeholder="e.g. Shown as a hint in the entry editor"
                   value={draftDescription}
+                  disabled={readOnly}
                   onChange={setDraftDescription}
                 />
                 <div class="field">
@@ -681,7 +709,7 @@ export default function FieldDialog({
                         );
                       }
                     }}
-                    disabled={editingField !== null}
+                    disabled={editingField !== null || readOnly}
                   />
                   {saveAttempted && !draftType && (
                     <span class="error">Pick a field type first.</span>
@@ -702,6 +730,7 @@ export default function FieldDialog({
                     config={draftConfig}
                     value={draftDefault}
                     onChange={setDraftDefault}
+                    disabled={readOnly}
                   />
                 )}
 
@@ -717,6 +746,7 @@ export default function FieldDialog({
                               type="button"
                               class="outline lg"
                               style={{ justifyContent: "flex-start" }}
+                              disabled={readOnly}
                               aria-label={
                                 draftSide === "left"
                                   ? "Shown on the left - click to move to the right"
@@ -767,12 +797,20 @@ export default function FieldDialog({
                 Fix the highlighted fields.
               </span>
             )}
-            <button type="button" class="outline" onClick={onCancel}>
-              Cancel
-            </button>
-            <button type="button" onClick={handleSave}>
-              Save field
-            </button>
+            {readOnly ? (
+              <button type="button" class="outline" onClick={onCancel}>
+                Close
+              </button>
+            ) : (
+              <>
+                <button type="button" class="outline" onClick={onCancel}>
+                  Cancel
+                </button>
+                <button type="button" onClick={handleSave}>
+                  Save field
+                </button>
+              </>
+            )}
           </footer>
         </>
       )}

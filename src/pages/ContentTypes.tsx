@@ -48,10 +48,15 @@ export default function ContentTypes() {
   const { data: definitions, error } = useFetch<ContentTypeDefinition[]>("content-types:list", listFetcher);
   const loadError = error ? (error instanceof Error ? error.message : "Failed to load content types.") : null;
 
-  const countByKind = (kind: ContentTypeKind) =>
-    (definitions ?? []).filter((d) => d.kind === kind).length;
+  // `hidden` types (role/permission/aiKey, plus the `seo` component) are
+  // reached through their own dedicated page instead - see `types.ts`'s doc
+  // comment on `ContentTypeDefinition.hidden`.
+  const visibleDefinitions = (definitions ?? []).filter((d) => !d.hidden);
 
-  const rows: Row[] = (definitions ?? [])
+  const countByKind = (kind: ContentTypeKind) =>
+    visibleDefinitions.filter((d) => d.kind === kind).length;
+
+  const rows: Row[] = visibleDefinitions
     .filter((d) => d.kind === selectedKind)
     .map((d) => ({
       id: d.id,

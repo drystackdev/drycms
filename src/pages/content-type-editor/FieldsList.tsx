@@ -55,6 +55,12 @@ export interface FieldsListProps {
   fields: FieldDefinition[];
   type: string;
   features?: ContentTypeFeatures;
+  /** Ids (from `fields`) that can be viewed/opened but never edited or
+   * removed - see `types.ts`'s `ContentTypeDefinition.protectedFieldIds`.
+   * Rendered with a "Protected" badge and no Remove action, same visual
+   * treatment as a system row minus the click-to-edit lock (opening one
+   * still works, just read-only - see `FieldDialog`'s `readOnly` prop). */
+  protectedFieldIds?: string[];
   /** Persisted display order (see `types.ts`'s `ContentTypeDefinition.fieldOrder`) -
    * a permutation of `systemEntries`'/`fields`' ids. Applied via
    * `system-fields.ts`'s `applyFieldOrder`; missing/stale ids just fall back
@@ -96,6 +102,7 @@ export default function FieldsList({
   systemEntries,
   fields,
   features,
+  protectedFieldIds,
   fieldOrder,
   onEdit,
   onRemove,
@@ -109,6 +116,7 @@ export default function FieldsList({
   trashCount,
   onOpenTrash,
 }: FieldsListProps) {
+  const protectedSet = new Set(protectedFieldIds ?? []);
   const combined: CombinedEntry[] = [
     ...fields.map((field) => ({ id: field.id, system: false as const, field })),
     ...systemEntries.map((entry) => ({
@@ -197,6 +205,7 @@ export default function FieldsList({
                 item.field,
                 fieldTypes[item.field.type]?.label ?? item.field.type,
               )}
+              protected={protectedSet.has(item.field.id)}
               onEdit={() => onEdit(item.field)}
               onRemove={() => onRemove(item.field.id)}
               dragHandleProps={sortable.getHandleProps(item.id)}

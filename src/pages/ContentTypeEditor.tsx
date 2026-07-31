@@ -204,6 +204,19 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         let loaded: ContentTypeDefinition;
         if (id) {
           loaded = types.find((t) => t.id === id) ?? (await api.get(id));
+          // `hidden` types (role/permission/aiKey) have no schema editor of
+          // their own - only reachable here via a direct/stale URL, since
+          // `ContentTypes.tsx`/`DryLayout.tsx` never link to one. Bounce back
+          // rather than rendering a form whose Save the server will reject
+          // anyway (see `routes/content-types.ts`'s `frozen` check).
+          if (loaded.hidden) {
+            toast.add({
+              type: "error",
+              title: `"${loaded.label || loaded.name}" is managed on its own page, not here.`,
+            });
+            route(`${path}/content-types?selectedKind=${loaded.kind}`);
+            return;
+          }
         } else {
           const initialKind: ContentTypeKind =
             kind === "singleton" || kind === "component" ? kind : "collection";
@@ -323,6 +336,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   function removeField(fieldId: string) {
     setDefinition((d) => {
       if (!d) return d;
+      // Safety net matching the server's `validateProtectedFields` (see
+      // `naming.ts`) - `FieldsList` already hides Remove for these ids, so
+      // this only matters if something else calls through directly.
+      if (d.protectedFieldIds?.includes(fieldId)) return d;
       if (isNew) {
         return {
           ...d,
@@ -641,6 +658,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             systemEntries={systemFieldsForUi(definition, allTypes)}
             fields={activeFields(definition)}
             features={effectiveFeatures(definition)}
+            protectedFieldIds={definition.protectedFieldIds}
             fieldOrder={definition.fieldOrder}
             type={KIND_LABELS[definition.kind]}
             onEdit={(field) => {
@@ -718,7 +736,19 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             onChange={setFeature}
           />
 
-          {!isNew && (
+          {!isNew && definition.locked && (
+            <div class="content-type-editor-danger">
+              <div>
+                <h2>Danger zone</h2>
+                <p>
+                  This {definition.kind} can't be deleted - other built-in
+                  functionality (login, permissions) depends on it existing.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!isNew && !definition.locked && (
             <div class="content-type-editor-danger">
               <div>
                 <h2>Danger zone</h2>
@@ -742,6 +772,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       <FieldDialog
         open={fieldDialogOpen}
         editingField={editingField}
+        readOnly={
+          !!editingField &&
+          !!definition.protectedFieldIds?.includes(editingField.id)
+        }
         dynamicOptions={dynamicOptions}
         fieldSides={definition.fieldSides}
         archivedFields={definition.fields.filter((f) =>
