@@ -113,12 +113,20 @@ export default function RichTextDemo() {
 
   const [seedHtml, setSeedHtml] = useState("");
   const [seedKey, setSeedKey] = useState(0);
+  const [body, setBody] = useState("");
+  // Loading a preset remounts the editor (`key={seedKey}`, since
+  // `useRichTextEditor` only ever reads `value` once, at mount - see that
+  // hook's own doc comment) with the new seed, but a remount alone never
+  // fires `onChange`, which otherwise only runs from `dispatchTransaction`
+  // on `tr.docChanged`. Left out, `body` (the "Output (HTML)" panel below)
+  // kept showing whatever the *previous* preset/typing had left it at until
+  // the next keystroke - i.e. the exact "value changed, output didn't sync"
+  // gap this line closes.
   const loadPreset = (html: string) => {
     setSeedHtml(html);
     setSeedKey((key) => key + 1);
+    setBody(html);
   };
-
-  const [body, setBody] = useState("");
 
   const [label, setLabel] = useState("Body");
   const [placeholder, setPlaceholder] = useState("Write something…");
