@@ -35,12 +35,12 @@ function MailIcon() {
 }
 
 /**
- * Rendered by `routers/App.tsx`'s `AuthGate` in place of the whole admin
- * shell whenever `store/auth.ts`'s `authState` is `"anonymous"` - standalone,
- * no `DryLayout` sidebar/topbar (there's no one signed in to show them to
+ * Rendered by `routers/App.tsx`'s `AuthGate` at `/login` whenever
+ * `store/auth.ts`'s `authState` is `"anonymous"` - standalone, no
+ * `DryLayout` sidebar/topbar (there's no one signed in to show them to
  * yet). Split-panel layout (form left, decorative panel right) - see
- * `.auth-split*` in `components.css`; `RegisterSuperAdmin` keeps the
- * separate single-card `.auth-page`/`.auth-card` layout.
+ * `.auth-split*` in `components.css`; `RegisterSuperAdmin` mirrors this
+ * same layout, minus the OAuth row.
  */
 export default function SignIn() {
   useDocumentTitle("Sign in");

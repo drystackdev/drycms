@@ -260,13 +260,27 @@ exposed over the generic entries HTTP route.
 
 `GET /api/auth/session` always reports `hasAnyUser` (is the `user` table
 empty?) alongside whatever session cookie is present - this one call drives
-`routers/App.tsx`'s `AuthGate`, which sits *above* `DryLayout`/`<Router>` and
-picks between 4 states: a loading indicator, `RegisterSuperAdmin` (no user
-exists yet - the only way to create the first account, assigns the
-permanently-seeded "Super Admin" role from `permissions.ts`), `SignIn` (a
-user exists but this browser has no valid session), or the real app
-(`DryLayout` + every existing route, unchanged). Sign in/Register render
-standalone, no sidebar/topbar chrome.
+`routers/App.tsx`'s `AuthGate`, which sits *above* `DryLayout`/`<Router>`.
+`/login` (`SignIn`) and `/register` (`RegisterSuperAdmin`) are real,
+always-routable paths, not just gate states - visiting either directly works.
+Every OTHER path under `path` (the actual dashboard: `/dashboard`,
+`/content/*`, `/content-types`, ...) requires a session and redirects to
+`/login` (or `/register`, first-run - `RegisterSuperAdmin` is the only way to
+create the first account, assigning the permanently-seeded "Super Admin"
+role from `permissions.ts`) instead of swapping in place. Already-
+authenticated visits to `/login`/`/register` bounce to `/dashboard`; an
+already-anonymous visit to `/register` once a user exists bounces to
+`/login` (registration is first-run only). Sign in/Register render
+standalone, no sidebar/topbar chrome; both share the same `.auth-split*`
+layout (`components.css`).
+
+`AuthGate` also gates itself on `path` - only URLs at or under `path` are
+this app's concern. The dev server/adapters serve the same `index.html` for
+*any* unmatched path (`scripts/dev-server.mjs`), so a visit to the bare site
+root `/` (or anything else outside `path`) would otherwise still mount this
+SPA and fall into its router's dashboard-redirect fallback; `AuthGate`
+checks `url.startsWith(path)` first and renders nothing (a blank page,
+skipping the session fetch too) when it doesn't match.
 
 ### Enforcement (added 2026-07-31): a session for everything, permissions for content
 

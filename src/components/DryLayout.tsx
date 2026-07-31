@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -149,13 +149,12 @@ export default function DryLayout({ children }: Props) {
   const { url } = useLocation();
   const { ref: sidebar } = useOverlayScrollbars<HTMLElement>([], { overflow: { x: 'hidden' } });
   const { ref: main, scrollToTop: scrollMainToTop } = useOverlayScrollbars<HTMLDivElement>();
+  const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false);
 
-  const toggleCollapsed = () => (collapsed.value = !collapsed.value);
-
-  useEffect(() => {
-    const shell = document.querySelector<HTMLElement>(".shell");
-    shell?.classList.toggle("collapsed", collapsed.value);
-  }, [collapsed.value]);
+  const toggleCollapsed = () => {
+    setSidebarTransitionEnabled(true);
+    collapsed.value = !collapsed.value;
+  };
 
   // The "Content" submenu's own collapse/expand state, independent of the
   // whole-sidebar `collapsed` signal above.
@@ -199,8 +198,14 @@ export default function DryLayout({ children }: Props) {
     scrollMainToTop();
   }, [url]);
 
+  const shellClass = [
+    "shell",
+    collapsed.value && "collapsed",
+    sidebarTransitionEnabled && "sidebar-transition-enabled",
+  ].filter(Boolean).join(" ");
+
   return (
-    <div class="shell">
+    <div class={shellClass}>
       <aside class="sidebar" ref={sidebar}>
         <div class="sidebar-head">
           <a class="brand" href={`${path}/dashboard`}>

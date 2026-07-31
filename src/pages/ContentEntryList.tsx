@@ -205,13 +205,31 @@ function collectListCells(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix 
  * (already used for the schema editor's Component field type) doubles as a
  * generic "structured/linked data" marker here too.
  */
-function renderRelationCell(ids: string[] | undefined, lookupLabel: (id: string) => string | undefined): JSX.Element {
+function renderRelationCell(
+  ids: string[] | undefined,
+  lookupLabel: (id: string) => string | undefined,
+  multiple: boolean,
+): JSX.Element {
   if (ids === undefined) return <>…</>;
   if (ids.length === 0) return <>—</>;
+  if (!multiple) {
+    return (
+      <span class="badge lg info">
+        <ComponentIcon />
+        {ids.map((id) => lookupLabel(id) ?? "…").join(", ")}
+      </span>
+    );
+  }
+  const shown = ids.slice(0, 2);
+  const remaining = ids.length - shown.length;
   return (
-    <span class="badge lg info">
-      <ComponentIcon />
-      {ids.map((id) => lookupLabel(id) ?? "…").join(", ")}
+    <span style={{ display: "inline-flex", gap: "0.25rem", flexWrap: "wrap" }}>
+      {shown.map((id) => (
+        <span key={id} class="badge sm info">
+          {lookupLabel(id) ?? "…"}
+        </span>
+      ))}
+      {remaining > 0 && <span class="badge sm outline">+{remaining}</span>}
     </span>
   );
 }
@@ -477,7 +495,7 @@ function ContentEntryListCollection({
               ? [value]
               : []
             : rowRelationValues[row.id]?.[column.fieldName];
-        return renderRelationCell(ids, (id) => relationLabels[column.fieldName]?.[id]);
+        return renderRelationCell(ids, (id) => relationLabels[column.fieldName]?.[id], column.cardinality !== "manyToOne");
       },
     };
   });

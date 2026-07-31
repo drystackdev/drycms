@@ -1,6 +1,17 @@
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveOptions } from './options.js';
+import { config, resolveOptions } from './options.js';
+
+describe('config', () => {
+	it('returns the raw options for startup resolution', () => {
+		const options = { path: '/admin', content: { engine: 'file' as const } };
+		expect(config(options)).toBe(options);
+	});
+
+	it('accepts an omitted options object', () => {
+		expect(config()).toEqual({});
+	});
+});
 
 describe('resolveOptions', () => {
 	it('defaults to /dry and local storage under ./storage and ./icons', () => {

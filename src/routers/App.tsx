@@ -142,24 +142,52 @@ function AuthenticatedApp() {
 	);
 }
 
+const LOGIN_PATH = `${path}/login`;
+const REGISTER_PATH = `${path}/register`;
+
 /**
- * Sits above `DryLayout`/`<Router>`, deciding between 4 states
- * (`store/auth.ts`'s `authState`): a bare loading indicator while the very
- * first `GET /api/auth/session` is in flight, the first-run Register Super
- * Admin page (`user` table still empty), Sign in (a `user` exists but this
- * browser has no valid session), or the real app. Sign in/Register render
- * standalone - no sidebar/topbar, nothing there to show yet.
+ * Sits above `DryLayout`/`<Router>`. `/login`/`/register` are real, always-
+ * routable paths (not just gate states) - only every OTHER path (the actual
+ * dashboard: `/dashboard`, `/content/*`, `/content-types`, ...) requires a
+ * session, redirecting to `/login` (or `/register`, first-run) instead of
+ * replacing the whole app's content in place. `store/auth.ts`'s `authState`
+ * drives which of the 4 states below applies.
+ *
+ * Outside `path` (e.g. the bare site root `/`) is not this app's concern at
+ * all - the dev server/adapters serve the same `index.html` for any
+ * unmatched path (see `scripts/dev-server.mjs`), so without this check every
+ * such visit would still mount this SPA and fall through to the `default`
+ * route's dashboard redirect below. Renders nothing (a blank page) instead,
+ * and skips even fetching the session - there's nothing here to gate.
  */
 function AuthGate() {
+	const { url } = useLocation();
+	const inScope = url === path || url.startsWith(`${path}/`);
+
 	useEffect(() => {
-		void loadSession();
-	}, []);
+		if (inScope) void loadSession();
+	}, [inScope]);
+
+	if (!inScope) return null;
 
 	const { status } = authState.value;
 
 	if (status === 'loading') return <progress class="route-progress" />;
-	if (status === 'needs-setup') return <RegisterSuperAdmin />;
-	if (status === 'anonymous') return <SignIn />;
+
+	const onLoginPath = url === LOGIN_PATH;
+	const onRegisterPath = url === REGISTER_PATH;
+
+	if (status === 'needs-setup') {
+		return onRegisterPath ? <RegisterSuperAdmin /> : <Redirect to={REGISTER_PATH} />;
+	}
+	if (status === 'anonymous') {
+		// `/register` only makes sense before any account exists - once one
+		// does, send a visitor still on that URL to `/login` instead.
+		if (onRegisterPath) return <Redirect to={LOGIN_PATH} />;
+		return onLoginPath ? <SignIn /> : <Redirect to={LOGIN_PATH} />;
+	}
+	// authenticated
+	if (onLoginPath || onRegisterPath) return <Redirect to={`${path}/dashboard`} />;
 	return <AuthenticatedApp />;
 }
 

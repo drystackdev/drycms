@@ -6,12 +6,14 @@ import { AuthApiError, registerFirstAdmin } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
 /**
- * Rendered by `routers/App.tsx`'s `AuthGate` in place of the whole admin
- * shell whenever `store/auth.ts`'s `authState` is `"needs-setup"` - i.e. the
- * `user` table is still empty (`GET /api/auth/session`'s `hasAnyUser:
- * false`). This is the only way to create the very first account; the
- * created user is assigned the seeded "Super Admin" role server-side (see
- * `routes/auth.ts`).
+ * Rendered by `routers/App.tsx`'s `AuthGate` at `/register` whenever
+ * `store/auth.ts`'s `authState` is `"needs-setup"` - i.e. the `user` table
+ * is still empty (`GET /api/auth/session`'s `hasAnyUser: false`). This is
+ * the only way to create the very first account; the created user is
+ * assigned the seeded "Super Admin" role server-side (see `routes/auth.ts`).
+ * Same split-panel layout as `SignIn` (`.auth-split*` in `components.css`),
+ * deliberately kept visually consistent with it - just without the OAuth
+ * row, which doesn't apply to a one-time account bootstrap.
  */
 export default function RegisterSuperAdmin() {
   useDocumentTitle("Set up your admin account");
@@ -47,20 +49,20 @@ export default function RegisterSuperAdmin() {
   }
 
   return (
-    <div class="auth-page">
-      <div class="auth-card">
-        <div class="auth-brand">
+    <div class="auth-split">
+      <div class="auth-split-form">
+        <div class="auth-split-brand">
           <Icon name="Brand" />
           <span>DRYCMS</span>
         </div>
 
-        <article class="card">
-          <header>
-            <h2>Set up your admin account</h2>
-            <p>No account exists yet - create the first one to get started. It's granted the Super Admin role.</p>
-          </header>
-
+        <div class="auth-split-center">
           <form onSubmit={handleSubmit}>
+            <header>
+              <h1>Set up your admin account</h1>
+              <p>No account exists yet - create the first one to get started. It's granted the Super Admin role.</p>
+            </header>
+
             <TextField
               label="Name"
               name="name"
@@ -112,7 +114,11 @@ export default function RegisterSuperAdmin() {
               Create Super Admin account
             </button>
           </form>
-        </article>
+        </div>
+      </div>
+
+      <div class="auth-split-panel">
+        <Icon name="Brand" />
       </div>
     </div>
   );

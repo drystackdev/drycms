@@ -126,6 +126,17 @@ export interface DryOption {
   richtext?: DryRichtextOption;
 }
 
+/**
+ * Type-safe entry point for `dry.config.ts`.
+ *
+ * This deliberately returns the raw options unchanged: `resolveOptions()` is
+ * the single place that applies defaults, resolves paths, and validates
+ * deployment-specific values such as GitHub/GitLab credentials.
+ */
+export function config(options: DryOption = {}): DryOption {
+  return options;
+}
+
 export interface ResolvedLocalStorageOption {
   kind: "local";
   root: string;

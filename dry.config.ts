@@ -1,14 +1,14 @@
-import type { DryOption } from "./src/server/options.js";
+import { config } from "./src/server/options.js";
 
 /**
  * drycms's own configuration - see `src/server/options.ts`'s `DryOption` for
- * every field and its default. Values here mirror what used to be the
- * `dry({ ... })` call in `astro.config.mjs`.
+ * every field and its default. `config({ ... })` provides type checking and
+ * editor completion while resolution and validation still happen at startup.
  */
-export default {
+export default config({
   // path: "/dry",
   // storage: { kind: "local", root: "storage" },
   // icons: { kind: "local", root: "icons" },
   content: { engine: "file" },
   // richtext: { componentsDir: "src/dry-components" },
-} satisfies DryOption;
+});
