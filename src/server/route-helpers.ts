@@ -47,6 +47,18 @@ export function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+/** Shared by every route that does its own resource-level authorization
+ * check (`content-entries.ts`/`content-types.ts` - see `content-types/
+ * access.ts`) on top of `handler.ts`'s central "must have a session at all"
+ * gate, which their own direct-call unit tests bypass. */
+export function unauthenticatedResponse(): Response {
+  return jsonResponse({ error: "unauthenticated", message: "Sign in required." }, 401);
+}
+
+export function forbiddenResponse(message = "You don't have permission to do this."): Response {
+  return jsonResponse({ error: "forbidden", message }, 403);
+}
+
 export function errorResponse(error: unknown): Response {
   if (error instanceof StorageError) {
     return jsonResponse(

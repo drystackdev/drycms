@@ -1,5 +1,6 @@
 import type { DryRouteContext } from "../context.js";
-import { afterAll, describe, expect, it } from "vitest";
+import type { SessionPayload } from "../../lib/session-token.js";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
@@ -13,7 +14,7 @@ vi.mock("../config.js", async () => {
 });
 
 const { GET, POST, PATCH } = await import("./content-entries.js");
-const { createContentEngineAdapter } = await import("../../content-types/engine/index.js");
+const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
 const { content } = await import("../config.js");
 
 afterAll(async () => {
@@ -21,22 +22,58 @@ afterAll(async () => {
   await rm(tempDirBox.path, { recursive: true, force: true });
 });
 
-function context(opts: { slug?: string; method?: string; body?: string; ifVersion?: number }): DryRouteContext {
+/** Every existing test in this file assumes "this succeeds" - now that
+ * content CRUD is permission-checked (see `content-types/access.ts`), that
+ * assumption only holds for a Super Admin. Seeded once, reused as
+ * `context()`'s default `session` so none of those tests had to change; the
+ * "authorization" describe block below covers the denial paths explicitly. */
+let superAdminSession: SessionPayload;
+
+beforeAll(async () => {
+  const schema = createContentEngineAdapter(content);
+  const entries = createContentEntryEngineAdapter(content);
+  const allTypes = await schema.listContentTypes();
+  const userType = allTypes.find((t) => t.name === "user")!;
+  const roleType = allTypes.find((t) => t.name === "role")!;
+
+  const role = await entries.createEntry(roleType, allTypes, {
+    name: "Test Super Admin",
+    description: "",
+    isSuperAdmin: true,
+    permissions: [],
+  });
+  const user = await entries.createEntry(userType, allTypes, {
+    name: "Test Admin",
+    email: "test-admin@example.com",
+    password: { hasExisting: false, new: "hunter2" },
+    roles: [role.id],
+  });
+  superAdminSession = { id: user.id, name: "Test Admin", email: "test-admin@example.com" };
+});
+
+function context(opts: {
+  slug?: string;
+  method?: string;
+  body?: string;
+  ifVersion?: number;
+  session?: SessionPayload | null;
+}): DryRouteContext {
   const url = new URL(`http://localhost/dry/api/content/${opts.slug ?? ""}`);
   const headers: Record<string, string> = {};
   if (opts.body) headers["content-type"] = "application/json";
   if (opts.ifVersion !== undefined) headers["X-Data-Version"] = String(opts.ifVersion);
   const request = new Request(url, { method: opts.method ?? "GET", body: opts.body, headers });
-  return { params: { slug: opts.slug }, request, url, env: {} };
+  const session = opts.session !== undefined ? opts.session : superAdminSession;
+  return { params: { slug: opts.slug }, request, url, env: {}, session };
 }
 
-async function get(slug: string, ifVersion?: number) {
-  const response = await GET(context({ slug, ifVersion }));
+async function get(slug: string, ifVersion?: number, session?: SessionPayload | null) {
+  const response = await GET(context({ slug, ifVersion, session }));
   return { status: response.status, json: (await response.json()) as any };
 }
 
-async function post(slug: string, body: unknown) {
-  const response = await POST(context({ slug, method: "POST", body: JSON.stringify(body) }));
+async function post(slug: string, body: unknown, session?: SessionPayload | null) {
+  const response = await POST(context({ slug, method: "POST", body: JSON.stringify(body), session }));
   return { status: response.status, json: (await response.json()) as any };
 }
 
@@ -117,5 +154,51 @@ describe("content-entries route - PATCH (reorder)", () => {
 
     const rejected = await patch("role", { updates: [] });
     expect(rejected.status).toBe(501);
+  });
+});
+
+describe("content-entries route - authorization", () => {
+  it("401s every verb with no session", async () => {
+    expect((await get("role", undefined, null)).status).toBe(401);
+    expect((await post("role", { name: "X", isSuperAdmin: false, permissions: [] }, null)).status).toBe(401);
+  });
+
+  it("403s a session with no grant on the resource, and allows only the specifically-granted action", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const userType = allTypes.find((t) => t.name === "user")!;
+    const roleType = allTypes.find((t) => t.name === "role")!;
+    const permissionType = allTypes.find((t) => t.name === "permission")!;
+
+    // No role at all - denied outright.
+    const noRoleUser = await entries.createEntry(userType, allTypes, {
+      name: "No Role",
+      email: "no-role@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [],
+    });
+    const noRoleSession: SessionPayload = { id: noRoleUser.id, name: "No Role", email: "no-role@example.com" };
+    expect((await get("role", undefined, noRoleSession)).status).toBe(403);
+
+    // A role granting only "view" on "role" - view passes, create still 403s.
+    const permissions = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 100 });
+    const viewRolePermission = permissions.rows.find((p) => p.value.idTable === roleType.id && p.value.action === "view")!;
+    const viewerRole = await entries.createEntry(roleType, allTypes, {
+      name: "Role Viewer",
+      description: "",
+      isSuperAdmin: false,
+      permissions: [viewRolePermission.id],
+    });
+    const viewerUser = await entries.createEntry(userType, allTypes, {
+      name: "Viewer",
+      email: "viewer@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [viewerRole.id],
+    });
+    const viewerSession: SessionPayload = { id: viewerUser.id, name: "Viewer", email: "viewer@example.com" };
+
+    expect((await get("role", undefined, viewerSession)).status).toBe(200);
+    expect((await post("role", { name: "Should fail", isSuperAdmin: false, permissions: [] }, viewerSession)).status).toBe(403);
   });
 });

@@ -12,7 +12,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function context(endpoint: string, query: Record<string, string> = {}): DryRouteContext {
   const url = new URL(`http://localhost/dry/api/iconify/${endpoint}`);
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
-  return { params: { slug: endpoint }, request: new Request(url), url, env: {} };
+  return { params: { slug: endpoint }, request: new Request(url), url, env: {}, session: null };
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;

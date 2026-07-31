@@ -1,12 +1,15 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { content } from "../config.js";
+import { resolveAccess } from "../../content-types/access.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
+import type { PermissionAction } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { decodeEntryId, encodeEntryId } from "../../lib/id-hash.js";
+import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   not_found: 404,
@@ -75,6 +78,26 @@ function decodeIdOrThrow(hashedId: string): number {
   const id = decodeEntryId(hashedId);
   if (id === null) throw new ContentEntryError("not_found", `Entry "${hashedId}" not found.`);
   return id;
+}
+
+/** Resource-level authorization for one entry-CRUD request - `null` means
+ * "proceed", otherwise the 401/403 to return immediately. A singleton
+ * collapses every action to `"setting"` (see `permissions.ts`'s
+ * `permissionActionsFor`); belt-and-suspenders with `handler.ts`'s central
+ * "must have a session at all" gate, which this route's own direct-call
+ * unit tests bypass entirely - see `context.ts`'s doc comment on `session`. */
+async function checkAccess(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  type: ContentTypeDefinition,
+  action: PermissionAction,
+): Promise<Response | null> {
+  if (!context.session) return unauthenticatedResponse();
+  const access = await resolveAccess(entryAdapter, allTypes, context.session);
+  if (!access) return unauthenticatedResponse();
+  if (!access.can(type.id, action)) return forbiddenResponse();
+  return null;
 }
 
 /** The data-version protocol (see `status/build-cache.md`) - `undefined` if
@@ -159,6 +182,8 @@ export const GET: DryRouteHandler = async (context) => {
     const { typeSlug, hashedId } = parseSlug(context);
     const { type, allTypes } = await resolveType(context, typeSlug);
     const entryAdapter = getEntryAdapter(context);
+    const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "view");
+    if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
 
     // Data-version protocol (see `status/build-cache.md`, mục 9-11): a
@@ -223,6 +248,8 @@ export const POST: DryRouteHandler = async (context) => {
     if (hashedId) throw new ContentEntryError("not_found", "POST doesn't take an id - use PUT to update an existing entry.");
     const { type, allTypes } = await resolveType(context, typeSlug);
     const entryAdapter = getEntryAdapter(context);
+    const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "create");
+    if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
     const value = decodeRelationIds(nodes, (await context.request.json()) as EntryValue);
 
@@ -241,6 +268,8 @@ export const PUT: DryRouteHandler = async (context) => {
     const { typeSlug, hashedId } = parseSlug(context);
     const { type, allTypes } = await resolveType(context, typeSlug);
     const entryAdapter = getEntryAdapter(context);
+    const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "update");
+    if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
     const value = decodeRelationIds(nodes, (await context.request.json()) as EntryValue);
 
@@ -272,6 +301,8 @@ export const PATCH: DryRouteHandler = async (context) => {
       throw new ContentEntryError("unsupported", `"${typeSlug}" isn't a sortable collection.`);
     }
     const entryAdapter = getEntryAdapter(context);
+    const denied = await checkAccess(context, entryAdapter, allTypes, type, "update");
+    if (denied) return denied;
     const body = (await context.request.json()) as { updates?: { id: string; sortIndex: number }[] };
     const updates = (body.updates ?? []).map((u) => ({ id: decodeIdOrThrow(u.id), sortIndex: u.sortIndex }));
     await entryAdapter.reorderEntries(type, allTypes, updates);
@@ -288,6 +319,8 @@ export const DELETE: DryRouteHandler = async (context) => {
     if (type.kind === "singleton") throw new ContentEntryError("unsupported", "A singleton's entry can't be deleted.");
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to delete.");
     const entryAdapter = getEntryAdapter(context);
+    const denied = await checkAccess(context, entryAdapter, allTypes, type, "delete");
+    if (denied) return denied;
     await entryAdapter.deleteEntry(type, allTypes, decodeIdOrThrow(hashedId));
     return new Response(null, { status: 204 });
   } catch (error) {

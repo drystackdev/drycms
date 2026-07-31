@@ -15,6 +15,7 @@ import { useStore } from "../hooks/useStore.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { authState, logout } from "../store/auth.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -299,6 +300,14 @@ export default function DryLayout({ children }: Props) {
           <span class="spacer"></span>
           <SyncIndicator />
           <ThemeToggle />
+          {authState.value.user && (
+            <>
+              <span class="hint">{authState.value.user.name}</span>
+              <button type="button" class="ghost sm" onClick={() => void logout()}>
+                Sign out
+              </button>
+            </>
+          )}
         </header>
 
         <main class="content">{children}</main>

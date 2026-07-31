@@ -55,3 +55,13 @@ server.
 
 `bun run typecheck` runs `tsc --noEmit` over `src/` (excluding `*.test.ts` -
 tests are type-checked implicitly by vitest's own transform, not by `tsc`).
+
+## Status tracking
+
+For substantial or multi-step work (not one-off edits), track progress in a
+`status/<task-name>.md` file with three sections: `Plan`, `Status`, `Speed`
+(progress/pace, blockers). Update that file as work proceeds instead of
+re-narrating full details in chat - keep chat replies to brief, high-signal
+updates only. This keeps long-running task context out of the conversation
+history without hiding what's happening: the user can always open the file
+for the full picture.

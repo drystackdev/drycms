@@ -40,8 +40,8 @@ import { normalizeTextAlign, type BlockType } from "./types.js";
  * this field's toolbar can produce need to survive the trip: `<strong>`,
  * `<em>`, `<u>`, a `<span style="color: ...">` (see color-menu.tsx), `<br>`,
  * an inline `<img>` (see schema.ts), plain text, and a block element per
- * top-level element - either a flat textblock (`<p>`, `<h2>`-`<h6>`,
- * `<blockquote>`) or one that itself nests further blocks (`<ul>`/`<ol>`
+ * top-level element - either a flat textblock (`<p>`, `<h2>`-`<h6>`) or
+ * one that itself nests further blocks (`<blockquote>`, `<ul>`/`<ol>`
  * of `<li>`s, `<table>` of `<tr>`s of `<td>`/`<th>`s - see `blockTag`'s
  * siblings below for the recursive walk both directions).
  */
@@ -422,6 +422,12 @@ function exportBlockHtml(node: PMNode, extraStyle?: string): string {
   if (node.type === schema.nodes.grid) {
     return exportGridHtml(node, extraStyle);
   }
+  if (node.type === schema.nodes.blockquote) {
+    const align = (node.attrs.textAlign as string | null) ?? "left";
+    const alignStyle = align === "left" ? "" : `text-align: ${align}`;
+    const style = [alignStyle, extraStyle].filter(Boolean).join(";");
+    return `<blockquote${styleAttr(style)}>${blockChildrenHtml(node)}</blockquote>`;
+  }
   const tag = blockTag(blockTypeOfNode(node));
   const align = (node.attrs.textAlign as string | null) ?? "left";
   const alignStyle = align === "left" ? "" : `text-align: ${align}`;
@@ -577,7 +583,7 @@ function cellSpanFromElement(el: Element, attr: "colspan" | "rowspan"): number {
   return Number.isInteger(value) && value > 0 ? value : 1;
 }
 
-/** A flat textblock element (`<p>`/`<h2>`-`<h6>`/`<blockquote>`) - the
+/** A flat textblock element (`<p>`/`<h2>`-`<h6>`) - the
  * import-side counterpart of `exportBlockHtml`'s own fallback case. */
 function importTextblockElement(el: Element): PMNode {
   const { type, attrs } = blockNodeTypeAndAttrs(blockTypeFromTagName(el.tagName));
@@ -670,6 +676,11 @@ function importBlockElement(el: Element): PMNode {
   if (el.tagName === "OL") return importListElement(el, true);
   if (el.tagName === "TABLE") return importTableElement(el);
   if (isGridElement(el)) return importGridElement(el);
+  if (el.tagName === "BLOCKQUOTE") {
+    const align = normalizeTextAlign(el instanceof HTMLElement ? el.style.textAlign : undefined);
+    const attrs = align === "left" ? null : { textAlign: align };
+    return schema.nodes.blockquote!.create(attrs, blockChildrenFromContainer(el));
+  }
   return importTextblockElement(el);
 }
 

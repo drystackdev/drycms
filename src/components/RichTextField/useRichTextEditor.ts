@@ -29,9 +29,10 @@ import { exportCleanHtml, importCleanHtml } from "./html.js";
 import { exitGridDownward, getSelectedGrid, splitGridItem } from "./grid.js";
 import { GridItemNodeView } from "./grid-item-view.js";
 import { gridResizing } from "./grid-resize.js";
+import { HtmlReorderSurface } from "./html-reorder-surface.js";
 import { ImageNodeView } from "./image-view.js";
 import { getListType } from "./lists.js";
-import { isReorderActive, reorderMode } from "./reorder-mode.js";
+import { isReorderActive, reorderMode, reorderModeKey } from "./reorder-mode.js";
 import { createEmptyDoc, schema, setRichtextComponents } from "./schema.js";
 import { exitTableDownward, exitTableForward, getSelectedTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
@@ -144,14 +145,6 @@ function buildAttributes(state: EditorState, disabled: boolean, label: string) {
     "aria-multiline": "true",
     "aria-label": label,
     ...(disabled ? { "aria-disabled": "true" } : {}),
-    // `contentEditable` (driven by `editable` below) is what normally makes
-    // this div focusable by click - reorder mode turns that off, which
-    // would otherwise leave Delete/Backspace (reorder-mode.ts's own
-    // `handleKeyDown`) unreachable, since nothing ever moves DOM focus onto
-    // this element for a keydown to bubble through. `onBlockPointerDown`
-    // calls `view.dom.focus()` after selecting/dragging a block - this is
-    // what makes that focus call actually land somewhere.
-    ...(reorderActive ? { tabindex: "0" } : {}),
   };
 }
 
@@ -221,6 +214,7 @@ export function useRichTextEditor({
     // that DID make it up before unmount.
     let cancelled = false;
     let view: EditorView | null = null;
+    let htmlReorderSurface: HtmlReorderSurface | null = null;
 
     void (async () => {
       const components = await loadRichtextComponents();
@@ -352,6 +346,7 @@ export function useRichTextEditor({
         // effect's own doc comment above) means TS can't narrow that across
         // this closure the way it could have for the old synchronous body's
         // `const view`.
+        const wasReorderActive = isReorderActive(view!.state);
         const newState = view!.state.apply(tr);
         view!.updateState(newState);
         setState(readToolbarState(newState));
@@ -359,9 +354,27 @@ export function useRichTextEditor({
         if (tr.docChanged) {
           onChangeRef.current(exportCleanHtml(newState.doc, { inline: inlineRef.current }));
         }
+        const reorderActive = isReorderActive(newState);
+        htmlReorderSurface?.setActive(
+          reorderActive,
+          reorderActive && !wasReorderActive ? exportCleanHtml(newState.doc, { inline: inlineRef.current }) : undefined,
+        );
       },
     });
     viewRef.current = view;
+    htmlReorderSurface = new HtmlReorderSurface(editorHost, (html) => {
+      const current = viewRef.current;
+      if (!current) return;
+      try {
+        const nextDoc = withTrailingParagraph(importCleanHtml(html));
+        const tr = current.state.tr
+          .replaceWith(0, current.state.doc.content.size, nextDoc.content)
+          .setMeta(reorderModeKey, { active: false });
+        current.dispatch(tr.scrollIntoView());
+      } catch (error) {
+        console.error("[drycms] Failed to commit RichText reorder", error);
+      }
+    });
     setState(readToolbarState(editorState));
     setEmpty(isDocEmpty(editorState));
     setLoading(false);
@@ -375,6 +388,7 @@ export function useRichTextEditor({
       // `cancelled` (checked right after that `await`) stops it from
       // starting to build one at all.
       if (view) {
+        htmlReorderSurface?.destroy();
         view.destroy();
         viewRef.current = null;
       }

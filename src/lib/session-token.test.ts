@@ -1,0 +1,62 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const ORIGINAL_ENV = process.env.DRYCMS_SECRET_KEY;
+const PAYLOAD = { id: 1, name: "Ada Lovelace", email: "ada@example.com" };
+
+describe("signSession / verifySession", () => {
+  beforeEach(() => {
+    process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    if (ORIGINAL_ENV === undefined) delete process.env.DRYCMS_SECRET_KEY;
+    else process.env.DRYCMS_SECRET_KEY = ORIGINAL_ENV;
+  });
+
+  it("verifies a freshly-signed token", async () => {
+    const { signSession, verifySession } = await import("./session-token.js");
+    const token = await signSession(PAYLOAD);
+    expect(await verifySession(token)).toEqual(PAYLOAD);
+  });
+
+  it("never stores the payload in plaintext", async () => {
+    const { signSession } = await import("./session-token.js");
+    const token = await signSession(PAYLOAD);
+    expect(token).not.toContain(PAYLOAD.email);
+  });
+
+  it("rejects a tampered token", async () => {
+    const { signSession, verifySession } = await import("./session-token.js");
+    const token = await signSession(PAYLOAD);
+    const index = Math.floor(token.length / 2);
+    const flipped = token[index] === "A" ? "B" : "A";
+    const tampered = token.slice(0, index) + flipped + token.slice(index + 1);
+    expect(await verifySession(tampered)).toBeNull();
+  });
+
+  it("rejects a value that isn't its own format, without throwing", async () => {
+    const { verifySession } = await import("./session-token.js");
+    expect(await verifySession("not-a-token")).toBeNull();
+    expect(await verifySession("")).toBeNull();
+  });
+
+  it("rejects an expired token", async () => {
+    vi.useFakeTimers();
+    const { signSession, verifySession } = await import("./session-token.js");
+    const token = await signSession(PAYLOAD);
+    vi.advanceTimersByTime(31 * 24 * 60 * 60 * 1000); // 31 days > 30 day max age
+    expect(await verifySession(token)).toBeNull();
+  });
+
+  it("throws a clear error when DRYCMS_SECRET_KEY is missing", async () => {
+    vi.resetModules();
+    // Mocked rather than just `delete`d - this repo's own `.env` (loaded by
+    // `server/options.ts`'s `readEnvVar` as a process.env fallback) sets a
+    // real `DRYCMS_SECRET_KEY`, which would otherwise mask this case.
+    vi.doMock("../server/options.js", () => ({ readEnvVar: () => undefined }));
+    const { signSession } = await import("./session-token.js");
+    await expect(signSession(PAYLOAD)).rejects.toThrow(/DRYCMS_SECRET_KEY/);
+    vi.doUnmock("../server/options.js");
+  });
+});

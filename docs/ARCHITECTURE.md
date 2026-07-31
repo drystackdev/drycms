@@ -91,6 +91,21 @@ or feature that no longer exists) is silently ignored. This is a deliberate,
 recurring idiom in this codebase - follow it for any similar per-id override
 you add, rather than requiring the map to be exhaustive or erroring on drift.
 
+`deletedFieldIds?: string[]` / `deletedFeatureKeys?: (keyof
+ContentTypeFeatures)[]` are a **two-stage trash**, not cosmetic: the schema
+editor's Remove button only adds an id here - the underlying
+`FieldDefinition` stays in `fields[]` (and `features[key]` stays `true`) so
+`tree.ts`/`migration.ts` keep generating its real column exactly as before,
+and `naming.ts`'s uniqueness check still blocks a new field from reusing the
+same name. The id/key is just hidden from the active Fields/Features list and
+the entry editor (`system-fields.ts`'s `activeFields`/
+`activeSystemFieldsFor`). The real `DROP COLUMN` only fires once something is
+deleted a *second* time, forever, from the trash itself - splicing the id out
+of `fields[]`/flipping `features[key]` to `false` for real. Only meaningful
+when editing an EXISTING content type; `ContentTypeEditor.tsx` deletes
+for real immediately on a brand-new, unsaved one, since there's no live
+column yet to protect.
+
 **System fields** (`system-fields.ts`) are synthesized on demand from
 `ContentTypeFeatures` (title/slug, draft, schedule, timestamps, seo,
 sortable) - never stored as real `FieldDefinition`s. **`relationmirror`**
@@ -106,6 +121,49 @@ field on the source type.
 `ContentTypeDefinition.version` is an optimistic-lock counter, incremented on
 every successful save - check it when adding any new save path.
 
+### System-type protections (`naming.ts`)
+
+Four independent flags on `ContentTypeDefinition` (`types.ts`) let a handful
+of seeded types (`role`, `permission`, `aiKey`, `seo`, `user`) opt into
+protection against being reshaped through the generic schema editor, enforced
+both client- and server-side - not merely cosmetic:
+
+- **`hidden`** - absent from `ContentTypes.tsx`'s list, `DryLayout.tsx`'s
+  Content dropdown, and every relation/component target picker in
+  `ContentTypeEditor.tsx`. Still fully functional underneath (own table, own
+  entries API) - reached through a dedicated page instead (`role`/`permission`
+  via `Roles.tsx`/`RoleEditor.tsx`, `aiKey` via its own pinned nav entry).
+  Set on `role`/`permission`/`aiKey`/`seo`.
+- **`locked`** - the type's TABLE can never be deleted: the schema editor's
+  Danger Zone hides the delete button client-side, and `routes/
+  content-types.ts`'s `DELETE` handler rejects it server-side
+  (`ContentEngineError("protected")`, 403). Fields/features otherwise stay
+  freely editable except any id in `protectedFieldIds`. Set on `user` (needed
+  for login) and `seo` (needed for `features.seo`).
+- **`frozen`** - the WHOLE schema (fields, features, name) can never change
+  via the content-types API at all, not just deletion - `naming.ts`'s
+  `assertNotFrozen` rejects any save outright as a `NamingError` (400). Only
+  ever paired with `hidden: true`. Set on `role`/`permission`/`aiKey`, whose
+  table/column shape `permissions.ts` hardcodes (see below) - `frozen` is
+  specifically what stops an admin from reshaping them into something that
+  would silently break that raw SQL.
+- **`protectedFieldIds`** (`string[]`) - individual fields on an otherwise-
+  editable type that can never be edited or removed once seeded.
+  `naming.ts`'s `validateProtectedFields` compares each field by full value
+  (JSON-equal), so a rename/retype/config change is rejected exactly like an
+  outright removal, not just deletion. Still shown normally in the Fields
+  list and still openable in `FieldDialog` (view-only: every control
+  disabled, footer swaps to a single "Close" button) - never hidden from
+  view, only from saving. Set on `user`'s `email`/`password`/`roles`.
+
+`naming.ts` also owns name validation (`validateContentTypeName`/
+`validateFieldName` - alphabet + a `RESERVED_NAMES` set covering every
+synthetic system column) and `normalizeFieldOrder` (overwrites each field's
+`order` to match its position in `fields[]` right before every save, so array
+position - not a client-submitted value - is always the real source of
+truth). Route these through `naming.ts` rather than re-implementing a check
+inline when adding a new save-path guard.
+
 ## Permissions / roles
 
 `role` and `permission` are ordinary seeded content types (`seed.ts`), but
@@ -120,13 +178,16 @@ components get none. `role.isSuperAdmin` is a bypass switch seeded once onto
 the permanent "Super Admin" role - not something an admin toggles through
 `RoleEditor.tsx`, which deliberately excludes the field.
 
-**As of this writing there is no enforcement** - the schema and the
-Roles/RoleEditor UI exist, but no request is actually checked against a
-role's permissions yet. Don't assume permission rows gate anything until
-that enforcement pass lands. Also note: since content-type system
-protections were removed (any type, including `role`/`permission`, can now
-be freely renamed or deleted), renaming/deleting either will silently break
-`permissions.ts`'s hardcoded table-name SQL - nothing guards against this.
+`role`/`permission` (and `aiKey`) are seeded with `hidden: true` and
+`frozen: true` (see "System-type protections" above) precisely because this
+hardcoded SQL exists - an admin reshaping either type's fields/name through
+the generic schema editor would silently desync `permissions.ts` from the
+real table, and `frozen` is what makes that impossible again as of this
+writing (it was briefly *not* enforced - see `status/role.md` history).
+
+**Enforced as of 2026-07-31** - see "Auth" below for the session/permission
+enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
+`role`'s `isSuperAdmin` flag bypasses every check unconditionally.
 
 ## Storage: one adapter interface, three backends, three independent roots
 
@@ -177,7 +238,79 @@ architectural choices, each the result of a specific bug or decision (see
   an existing rich-text ecosystem - see `status/grid.md` and the RichText-
   prefixed memory entries if extending any of them.
 
+## Auth: session cookie + first-run Super Admin registration
+
+Sign-in (`src/server/routes/auth.ts`, `store/auth.ts`, `pages/SignIn.tsx`/
+`RegisterSuperAdmin.tsx`) issues a **stateless, signed session cookie** - no
+session table, so it works identically across all 3 content engines. `src/
+lib/session-token.ts` follows the exact "version tag + base64 payload" idiom
+`password-hash.ts`/`secret-crypto.ts` already use: an HMAC-SHA256 (Web
+Crypto) over `{id, name, email, iat, exp}`, keyed off the same
+`DRYCMS_SECRET_KEY` env var `secret-crypto.ts` already requires (one app
+secret, not a second one to configure). The `Set-Cookie` is `HttpOnly`/
+`SameSite=Lax`/`Path=${basePath}`, `Secure` only over https.
+
+`entries-types.ts`'s `ContentEntryEngineAdapter.getRawEntry(type, id)` (added
+alongside `getEntry`) is what makes login possible at all: every engine's
+normal `getEntry`/`listEntries` masks `password`/`secretkey` columns via
+`entry-codec.ts`'s `rowToValue` (by design, so the generic entries API never
+leaks a hash) - `getRawEntry` returns the row exactly as stored instead, and
+is used ONLY by `routes/auth.ts` to `verifyPassword` a login attempt, never
+exposed over the generic entries HTTP route.
+
+`GET /api/auth/session` always reports `hasAnyUser` (is the `user` table
+empty?) alongside whatever session cookie is present - this one call drives
+`routers/App.tsx`'s `AuthGate`, which sits *above* `DryLayout`/`<Router>` and
+picks between 4 states: a loading indicator, `RegisterSuperAdmin` (no user
+exists yet - the only way to create the first account, assigns the
+permanently-seeded "Super Admin" role from `permissions.ts`), `SignIn` (a
+user exists but this browser has no valid session), or the real app
+(`DryLayout` + every existing route, unchanged). Sign in/Register render
+standalone, no sidebar/topbar chrome.
+
+### Enforcement (added 2026-07-31): a session for everything, permissions for content
+
+`src/server/session.ts`'s `resolveSession()` runs once in `handler.ts`
+before dispatch, for **every** `/api/**` segment - rejects with 401
+`{error:"unauthenticated"}` for any segment except `auth` itself (register/
+login/logout/session have to be reachable with no session). `storage`/
+`icons`/`iconify`/`richtext-components` need nothing beyond this - any
+authenticated user may use them, no per-resource model exists for them.
+
+`content-types/access.ts`'s `resolveAccess(entryAdapter, allTypes, session)`
+resolves what that session's user can do - **fresh on every call, no
+caching** (a revoked role/permission takes effect on the very next request,
+not just at the user's next login - a stricter contract than the session
+token's own `name`/`email`, which happily go stale until then). Walks
+`user.roles` → each `role` row (fetched via `getEntry`, not `listEntries` -
+`listEntries` never populates `manyToMany` fields like `role.permissions`,
+see `entries-sqlite.ts`'s doc comments) → `role.isSuperAdmin` short-circuits
+to "can do anything" the moment one matches, otherwise unions every matched
+role's granted `permission` ids and checks `(idTable, action)` against them.
+
+Two routes call this on top of `handler.ts`'s central gate (belt-and-
+suspenders - their own unit tests call the exported handler directly,
+bypassing `handler.ts` entirely):
+- **`routes/content-entries.ts`** - every verb maps to a `PermissionAction`
+  (singleton collapses everything to `"setting"`; collection: `GET→view`,
+  `POST→create`, `PUT`/`PATCH→update`, `DELETE→delete`) and 403s unless
+  `access.can(type.id, action)`. `publish` is NOT enforced separately yet - a
+  `PUT` toggling a draft to published only needs `update`, a documented gap
+  like `RichText`'s `publish` action row itself.
+- **`routes/content-types.ts`** (the Content-Type Builder - schema/field/
+  feature edits, not entry data) - `GET` only needs the central "has a
+  session" gate (the sidebar and every entry editor need the type list
+  regardless of role); `POST`/`PUT`/`DELETE` additionally require
+  `access.isSuperAdmin` - there's no granular "can edit schema" permission
+  action in the model, so schema writes are Super-Admin-only outright.
+
+Server-side only this pass - no client UI hides/disables an action a role
+can't perform; a denied action still round-trips and surfaces as a thrown
+`*ApiError`/toast.
+
 ## Routing
 
 Full Preact SPA via `preact-iso` (`src/routers/App.tsx`); no server-side
 routing beyond the one API handler above and serving the client bundle.
+`AuthGate` (see Auth above) sits above the router itself, deciding whether
+`DryLayout`/`<Router>` render at all.

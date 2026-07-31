@@ -56,6 +56,16 @@ export interface EntryPage {
 export interface ContentEntryEngineAdapter {
   listEntries(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], query: EntryQuery): Promise<EntryPage>;
   getEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null>;
+  /**
+   * Like `getEntry`, but returns the row exactly as stored - no
+   * `entry-codec.ts` `rowToValue` masking (`password`/`secretkey` columns
+   * come through with their real hash/ciphertext) and no relation/child-table
+   * population. Only ever meant for a caller that genuinely needs the raw
+   * column value server-side (e.g. verifying a login password against the
+   * real stored hash) - never expose this over the generic entries HTTP
+   * route, which exists specifically to keep those columns masked.
+   */
+  getRawEntry(type: ContentTypeDefinition, id: number): Promise<Record<string, unknown> | null>;
   createEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], value: EntryValue): Promise<EntryRow>;
   updateEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number, value: EntryValue): Promise<EntryRow>;
   deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void>;

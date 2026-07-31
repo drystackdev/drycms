@@ -335,6 +335,12 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     return { id, value };
   }
 
+  async function getRawEntry(type: ContentTypeDefinition, id: number): Promise<Record<string, unknown> | null> {
+    const handle = await getHandle();
+    const rows = handle.all<Record<string, unknown>>(`SELECT * FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    return rows[0] ?? null;
+  }
+
   /** Shared by `createEntry` (validated) and `ensureSingletonEntry`
    * (deliberately NOT validated - see that function's doc comment) - the
    * insert, every child-table write, and the data-version bump all run
@@ -496,6 +502,7 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
   return {
     listEntries,
     getEntry,
+    getRawEntry,
     createEntry,
     updateEntry,
     deleteEntry,

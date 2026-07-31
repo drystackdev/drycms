@@ -41,7 +41,7 @@ function context(opts: {
     body: opts.body,
     headers: opts.headers,
   });
-  return { params: { slug: opts.slug }, request, url, env: {} };
+  return { params: { slug: opts.slug }, request, url, env: {}, session: null };
 }
 
 function jsonBody(body: unknown): { body: string; headers: Record<string, string> } {

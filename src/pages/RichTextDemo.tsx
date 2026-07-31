@@ -61,8 +61,9 @@ const PRESETS: Preset[] = [
     key: "image-caption",
     label: "Captioned image",
     html:
-      "<p><figure style=\"margin:0\"><img src=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232563eb'/%3E%3C/svg%3E\" alt=\"Placeholder rectangle\" style=\"object-fit:cover\">" +
-      "<figcaption>A placeholder rectangle, for testing the figure/figcaption round trip.</figcaption></figure></p>",
+      "<figure style=\"margin:0\"><img src=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='80'%3E%3Crect width='120' height='80' fill='%232563eb'/%3E%3C/svg%3E\" alt=\"Placeholder rectangle\" style=\"object-fit:cover\">" +
+      "<figcaption>A placeholder rectangle, for testing the figure/figcaption round trip.</figcaption></figure>" +
+      "<p>Paragraph after the captioned image.</p>",
   },
   {
     key: "lists",
@@ -81,6 +82,22 @@ const PRESETS: Preset[] = [
       '<tr style="height:60px"><td data-colwidth="200">Alice</td><td>Engineer</td></tr>' +
       "<tr><td>Bob</td><td>Designer</td></tr>" +
       "</tbody></table>",
+  },
+  {
+    key: "nested-structures",
+    label: "Nested structures",
+    html:
+      "<p>Loose block</p>" +
+      "<ul><li><p>List item</p><table><tbody><tr><td>Table in list item</td></tr></tbody></table></li></ul>" +
+      "<table><tbody><tr><td><p>Outer cell</p><table><tbody><tr><td>Nested cell table</td></tr></tbody></table></td></tr></tbody></table>",
+  },
+  {
+    key: "grid",
+    label: "Grid",
+    html:
+      "<p>Outside grid block</p>" +
+      '<div class="dry-tx-grid" style="display:grid;grid-template-columns:repeat(4,1fr);grid-auto-flow:row;grid-auto-rows:minmax(1.3125rem,auto)">' +
+      '<p style="grid-column:span 4;grid-row:span 1">Existing grid cell</p></div>',
   },
   {
     key: "link",

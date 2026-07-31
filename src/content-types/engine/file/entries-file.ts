@@ -565,6 +565,7 @@ export function createFileContentEntryEngineAdapter(option: ResolvedFileContentO
   return {
     listEntries: (type, allTypes, query) => listEntries(driver, type, allTypes, query),
     getEntry: (type, allTypes, id) => getFileEntry(driver, type, allTypes, id),
+    getRawEntry: (type, id) => readRecord(driver, type.name, id),
     // Everything a create/update/delete touches - the record itself, its
     // unique-index/reverse-index entries, any relation-mirror writes it
     // makes on OTHER records, and the data-version bump - lands as one

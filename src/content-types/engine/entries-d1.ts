@@ -332,6 +332,11 @@ export function createD1ContentEntryEngineAdapter(
     return { id, value };
   }
 
+  async function getRawEntry(type: ContentTypeDefinition, id: number): Promise<Record<string, unknown> | null> {
+    const rows = await dbAll<Record<string, unknown>>(db, `SELECT * FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
+    return rows[0] ?? null;
+  }
+
   /** Shared by `createEntry` (validated) and `ensureSingletonEntry`
    * (deliberately NOT validated - see that function's doc comment). */
   async function insertRow(type: ContentTypeDefinition, nodes: EntryFieldNode[], queryable: QueryableColumn[], value: EntryValue): Promise<number> {
@@ -459,6 +464,7 @@ export function createD1ContentEntryEngineAdapter(
   return {
     listEntries,
     getEntry,
+    getRawEntry,
     createEntry,
     updateEntry,
     deleteEntry,

@@ -2,6 +2,8 @@ import type { MarkType, Node as PMNode, ResolvedPos } from "prosemirror-model";
 import { NodeSelection } from "prosemirror-state";
 import type { Command, EditorState, Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
+import { wrapIn } from "prosemirror-commands";
+import { liftTarget } from "prosemirror-transform";
 import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign, type ImageObjectFit } from "./schema.js";
 import type { BlockType, TextAlign } from "./types.js";
 
@@ -279,16 +281,30 @@ export function getBlockType(state: EditorState): BlockType {
   return blockTypeOfNode(state.selection.$from.parent);
 }
 
-/** paragraph/heading/blockquote are all flat textblocks in this schema
- * (content `"inline*"`, same shape as the old Lexical `ElementNode`
- * subclasses), so converting between them is just swapping each touched
- * top-level block's type/attrs via `setNodeMarkup` - no wrap/lift needed.
- * Not `prosemirror-commands`' own `setBlockType`: that applies one static
- * `attrs` object to every match, which would drop each block's existing
- * `textAlign` instead of carrying it over. */
+/** Paragraphs/headings are textblocks; blockquotes are HTML flow containers.
+ * Quote conversion therefore uses ProseMirror's wrap/lift commands, while
+ * textblock-to-textblock conversion keeps the existing alignment attrs. */
 export function setBlockTypeCommand(target: BlockType): Command {
   const { type, attrs } = blockNodeTypeAndAttrs(target);
   return (state, dispatch) => {
+    if (target === "quote") return wrapIn(type)(state, dispatch);
+    if (state.selection.$from.depth > 0 && state.selection.$from.node(-1)?.type === schema.nodes.blockquote) {
+      const range = state.selection.$from.blockRange(state.selection.$to);
+      const targetDepth = range && liftTarget(range);
+      if (!range || targetDepth == null) return false;
+      let tr = state.tr.lift(range, targetDepth);
+      const from = tr.mapping.map(state.selection.from);
+      const to = tr.mapping.map(state.selection.to);
+      let applied = false;
+      tr.doc.nodesBetween(from, to, (node, pos) => {
+        if (!node.isTextblock) return;
+        applied = true;
+        tr = tr.setNodeMarkup(pos, type, { ...attrs, textAlign: node.attrs.textAlign ?? null }, node.marks);
+      });
+      if (!applied) return false;
+      if (dispatch) dispatch(tr.scrollIntoView());
+      return true;
+    }
     const { from, to } = state.selection;
     let tr = state.tr;
     let applied = false;

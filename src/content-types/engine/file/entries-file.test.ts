@@ -61,6 +61,27 @@ describe("createFileContentEntryEngineAdapter", () => {
     expect(await entries.getEntry(user, allTypes, created.id)).toBeNull();
   });
 
+  it("getRawEntry returns the real password hash, unmasked - unlike getEntry", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const user = allTypes.find((t) => t.name === "user")!;
+
+    const created = await entries.createEntry(user, allTypes, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+      roles: [],
+    });
+
+    const raw = await entries.getRawEntry(user, created.id);
+    expect(typeof raw?.password).toBe("string");
+    expect(raw?.password).not.toBe("hunter2"); // hashed, not plaintext
+    expect(raw?.email).toBe("ada@example.com");
+
+    expect(await entries.getRawEntry(user, -1)).toBeNull();
+  });
+
   it("changes a password on update without requiring the current one (admin reset)", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);

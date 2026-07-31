@@ -1,4 +1,5 @@
 import { useId } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
 import { passwordVisible } from "../store/field-visibility.js";
 import type { FieldProps } from "./field-common.js";
@@ -12,6 +13,11 @@ export interface PasswordFieldProps extends FieldProps<string> {
   description?: string;
   /** @default "new-password" */
   autoComplete?: string;
+  /** Rendered inline with the label, pushed to the row's trailing edge (e.g.
+   * a "Forgot your password?" link) - lets a consumer add a label-row action
+   * without reaching into this component's own label markup/CSS. Omit for
+   * the plain label every other usage already gets. */
+  labelAction?: ComponentChildren;
 }
 
 /**
@@ -33,6 +39,7 @@ export default function PasswordField({
   required = false,
   description,
   autoComplete = "new-password",
+  labelAction,
   class: className,
   style,
 }: PasswordFieldProps) {
@@ -42,7 +49,10 @@ export default function PasswordField({
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
+      <div class="field-label-row">
+        <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
+        {labelAction}
+      </div>
       {description && <small>{description}</small>}
       <div class="select" style={{ paddingLeft: "1rem" }}>
         <input

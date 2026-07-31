@@ -581,7 +581,10 @@ function buildSchema(components: DryComponentRecord[]): Schema {
     },
     blockquote: {
       group: "block",
-      content: "inline*",
+      // HTML blockquotes are flow containers, not paragraphs with a special
+      // tag. This lets reorder mode move blocks into a quote without relying
+      // on the browser to repair invalid nested HTML.
+      content: "block+",
       attrs: { textAlign: { default: null } },
       parseDOM: [{ tag: "blockquote", getAttrs: getTextAlignAttrs }],
       toDOM(node): DOMOutputSpec {

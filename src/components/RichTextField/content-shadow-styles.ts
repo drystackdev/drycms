@@ -425,115 +425,115 @@ th {
   display: none !important;
 }
 
-/* Every \`group:"block"\` node (schema.ts) while reorder mode is active - a
- * light tint, a real border/padding/margin (not just the tint) so adjacent
- * AND nested blocks read as clearly separate cards rather than blurring
- * together, and \`border-radius\` since these now read as chrome/controls for
- * the duration, not plain content. Strengthened slightly on hover so a block
- * reads as interactive before the pointer is even pressed down; \`grab\`/
- * \`grabbing\` cursor since a pointerdown anywhere on a block starts dragging
- * it - there's no separate drag handle (\`onBlockPointerDown\` in
- * reorder-mode.ts). */
-.dry-tx-reorder-block {
-  padding: 0.5rem;
-  margin: 0.25rem 0;
-  border: 1px solid var(--dry-border);
-  border-radius: var(--dry-radius-sm);
-  background-color: color-mix(in srgb, var(--dry-foreground) 6%, transparent);
-  cursor: grab;
-}
-
-.dry-tx-reorder-block:hover {
-  background-color: color-mix(in srgb, var(--dry-foreground) 12%, transparent);
-}
-
-.dry-tx-reorder-block:active {
-  cursor: grabbing;
-}
-
-/* \`grid\`, plus any \`children:true\` dry component (\`isContainerNode\` in
- * reorder-mode.ts) - this schema's "container" block types - get an outline
- * in the same color as body text on top of the border/tint above, so a
- * container reads as visually distinct from a plain paragraph/heading at a
- * glance. \`table\` is deliberately NOT included - see reorder-mode.ts's own
- * top doc comment for why. */
-.dry-tx-reorder-container {
-  outline: 1px solid var(--dry-foreground);
-  outline-offset: 2px;
-}
-
-/* The empty paragraph \`insertTable\`/\`insertGrid\`/\`trailing-paragraph.ts\`
- * leave (or maintain) after the last block so there's always somewhere to
- * click - not real content, so reorder mode hides it outright rather than
- * showing it as just another empty card (\`isTrailingEmptyParagraph\` in
- * reorder-mode.ts). */
-.dry-tx-reorder-hidden {
+/* The HTML reorder surface temporarily becomes the visible editing surface
+ * while ProseMirror remains mounted as the source-of-truth editor. Keeping
+ * both in the same shadow tree lets the existing content styles and custom
+ * component runtime continue to apply without exposing a second light-DOM
+ * editor to the page. */
+.dry-tx-html-reorder-host > .dry-tx-content:not(.dry-html-reorder-surface) {
   display: none !important;
 }
 
-/* Cmd/Ctrl+click multi-selection - a stronger, offset outline in the same
- * accent color selection/focus chrome uses elsewhere in this field (e.g.
- * \`.dry-tx-image-box.is-selected\`), layered on top of \`.dry-tx-reorder-container\`'s
- * own outline rather than replacing it (a selected container still reads as
- * a container). */
-.dry-tx-reorder-selected {
-  outline: 2px solid var(--dry-primary);
-  outline-offset: 3px;
+.dry-html-reorder-surface {
+  position: relative;
+  min-height: 100%;
+  padding: 0.25rem 0.25rem 1rem 1.75rem;
 }
 
-/* The node(s) currently being dragged, at their ORIGINAL position - hidden
- * outright; a real floating clone tracks the pointer instead
- * (\`.dry-tx-reorder-overlay\` below, \`buildDragOverlay\` in
- * reorder-mode.ts). */
-.dry-tx-reorder-dragging {
+.dry-html-reorder-surface.dry-tx-content {
+  display: block;
+  caret-color: transparent;
+  user-select: none;
+}
+
+.dry-html-reorder-surface .dry-html-reorder-dragging {
+  display: none !important;
+}
+
+.dry-html-reorder-item {
+  position: relative;
+  cursor: default;
+  border-radius: var(--dry-radius-sm);
+  transition: background-color 120ms ease, outline-color 120ms ease;
+}
+
+.dry-html-reorder-item[data-reorder-item] {
+  margin-block: 0.25rem;
+}
+
+.dry-html-reorder-trailing {
   display: none;
 }
 
-/* The floating clone stack itself (\`buildDragOverlay\` in reorder-mode.ts) -
- * \`position\`/\`top\`/\`left\`/\`width\`/\`transform\` are all set inline by that
- * function; a solid card background plus a real shadow (not just the plain
- * tint every \`.dry-tx-reorder-block\` gets) so it reads as lifted off the
- * page entirely, matching \`.dnd-dragging\` in components.css. */
-.dry-tx-reorder-overlay {
-  pointer-events: none;
-  z-index: 50;
+.dry-html-reorder-item:hover {
+  background: color-mix(in srgb, var(--dry-foreground) 5%, transparent);
 }
 
-.dry-tx-reorder-overlay .dry-tx-reorder-block {
-  margin: 0;
-  background-color: var(--dry-background);
-  box-shadow: var(--dry-shadow-lg);
-}
-
-/* Drop feedback for an *occupied* \`grid_item\`/table-cell-placeholder
- * target as a whole (\`"replaceGridItem"\`/\`"replaceCellContent"\`, which
- * always accept a drop as an outright replace rather than needing before/
- * after disambiguation - see \`computeDropTarget\`'s own doc comment in
- * reorder-mode.ts). A plain \`before\`/\`after\` target gets no highlight of
- * its own anymore - just the ghost slot widget below, which used to sit
- * alongside a thin edge-highlight box-shadow here too, dropped for the
- * visible stutter it added (the sibling's own decoration tearing down and
- * rebuilding on every target change, on top of the ghost widget doing the
- * same). */
-.dry-tx-reorder-drop-target {
-  outline: 2px dashed var(--dry-primary);
+.dry-html-reorder-item[data-reorder-container="true"] {
+  outline: 1px solid color-mix(in srgb, var(--dry-foreground) 18%, transparent);
   outline-offset: 2px;
 }
 
-/* The "ghost slot" widget (\`buildGhostWidget\` in reorder-mode.ts) inserted
- * right at a live \`before\`/\`after\` target - own \`height\` set inline by
- * that function, matching the dragged content's combined height, so this
- * reads as "the real thing lands in exactly this much space". Same
- * dashed-outline language \`.dry-tx-reorder-drop-target\` above uses for its
- * own "this exact spot" signal, just filled in with the accent tint since
- * this one has no real
- * content of its own to show through. */
-.dry-tx-reorder-ghost {
-  margin: 0.25rem 0;
-  border: 2px dashed var(--dry-primary);
+.dry-html-reorder-handle {
+  position: absolute;
+  left: -1.5rem;
+  top: 0.35rem;
+  z-index: 10;
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  border: 0;
   border-radius: var(--dry-radius-sm);
-  background-color: color-mix(in srgb, var(--dry-primary) 8%, transparent);
-  pointer-events: none;
+  color: var(--dry-muted-foreground);
+  background: var(--dry-card);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.dry-html-reorder-handle::before {
+  content: "⠿";
+}
+
+.dry-html-reorder-item:hover > .dry-html-reorder-handle,
+.dry-html-reorder-item:hover > li:first-child > .dry-html-reorder-handle,
+.dry-html-reorder-item:hover > tbody:first-of-type > tr:first-child > :is(td, th):first-child > .dry-html-reorder-handle,
+.dry-html-reorder-item:hover > :is(td, th):first-child > .dry-html-reorder-handle,
+.dry-html-reorder-handle:hover,
+.dry-html-reorder-handle:focus-visible {
+  opacity: 1;
+}
+
+.dry-html-reorder-handle:hover,
+.dry-html-reorder-handle:focus-visible {
+  color: var(--dry-foreground);
+  background: var(--dry-muted);
+}
+
+.dry-html-reorder-handle-container {
+  left: -2.8rem;
+}
+
+.dry-html-reorder-placeholder {
+  margin-block: 0.25rem;
+  border: 2px dashed color-mix(in srgb, var(--dry-foreground) 35%, transparent);
+  border-radius: var(--dry-radius-sm);
+  background: color-mix(in srgb, var(--dry-foreground) 5%, transparent);
+}
+
+.dry-html-reorder-overlay {
+  z-index: 100;
+  margin: 0 !important;
+  padding: 0.5rem !important;
+  border: 1px solid var(--dry-border) !important;
+  border-radius: var(--dry-radius-sm);
+  background: var(--dry-card) !important;
+  box-shadow: var(--dry-shadow-lg);
+}
+
+.dry-html-reorder-drop-target {
+  outline: 2px dashed color-mix(in srgb, var(--dry-foreground) 45%, transparent);
+  outline-offset: 2px;
 }
 
 /* dry-component-view.ts's own wrapper/box/handle set, same shape as

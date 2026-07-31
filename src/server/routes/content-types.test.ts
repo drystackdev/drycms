@@ -1,5 +1,6 @@
 import type { DryRouteContext } from "../context.js";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import type { SessionPayload } from "../../lib/session-token.js";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ContentTypeDefinition, FieldDefinition } from "../../content-types/types.js";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
@@ -14,38 +15,76 @@ vi.mock("../config.js", async () => {
 
 const { GET, POST, PUT, DELETE } = await import("./content-types.js");
 const { GET: entriesGET } = await import("./content-entries.js");
+const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
+const { content } = await import("../config.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
   await rm(tempDirBox.path, { recursive: true, force: true });
 });
 
-function context(opts: { slug?: string; method?: string; body?: string; ifVersion?: number }): DryRouteContext {
+/** Every existing test in this file assumes "this succeeds" - now that
+ * schema writes require Super Admin (see `content-types/access.ts`), that
+ * assumption only holds for one. Seeded once, reused as `context()`'s
+ * default `session` so none of those tests had to change; the
+ * "authorization" describe block near the end covers the denial paths. */
+let superAdminSession: SessionPayload;
+
+beforeAll(async () => {
+  const schema = createContentEngineAdapter(content);
+  const entries = createContentEntryEngineAdapter(content);
+  const allTypes = await schema.listContentTypes();
+  const userType = allTypes.find((t) => t.name === "user")!;
+  const roleType = allTypes.find((t) => t.name === "role")!;
+
+  const role = await entries.createEntry(roleType, allTypes, {
+    name: "Test Super Admin",
+    description: "",
+    isSuperAdmin: true,
+    permissions: [],
+  });
+  const user = await entries.createEntry(userType, allTypes, {
+    name: "Test Admin",
+    email: "test-admin@example.com",
+    password: { hasExisting: false, new: "hunter2" },
+    roles: [role.id],
+  });
+  superAdminSession = { id: user.id, name: "Test Admin", email: "test-admin@example.com" };
+});
+
+function context(opts: {
+  slug?: string;
+  method?: string;
+  body?: string;
+  ifVersion?: number;
+  session?: SessionPayload | null;
+}): DryRouteContext {
   const url = new URL(`http://localhost/dry/api/content-types/${opts.slug ?? ""}`);
   const headers: Record<string, string> = {};
   if (opts.body) headers["content-type"] = "application/json";
   if (opts.ifVersion !== undefined) headers["X-Data-Version"] = String(opts.ifVersion);
   const request = new Request(url, { method: opts.method ?? "GET", body: opts.body, headers });
-  return { params: { slug: opts.slug }, request, url, env: {} };
+  const session = opts.session !== undefined ? opts.session : superAdminSession;
+  return { params: { slug: opts.slug }, request, url, env: {}, session };
 }
 
-async function get(id?: string, ifVersion?: number) {
-  const response = await GET(context({ slug: id, ifVersion }));
+async function get(id?: string, ifVersion?: number, session?: SessionPayload | null) {
+  const response = await GET(context({ slug: id, ifVersion, session }));
   return { status: response.status, json: (await response.json()) as any };
 }
 
-async function post(body: unknown) {
-  const response = await POST(context({ method: "POST", body: JSON.stringify(body) }));
+async function post(body: unknown, session?: SessionPayload | null) {
+  const response = await POST(context({ method: "POST", body: JSON.stringify(body), session }));
   return { status: response.status, json: (await response.json()) as any };
 }
 
-async function put(id: string | undefined, body: unknown) {
-  const response = await PUT(context({ slug: id, method: "PUT", body: JSON.stringify(body) }));
+async function put(id: string | undefined, body: unknown, session?: SessionPayload | null) {
+  const response = await PUT(context({ slug: id, method: "PUT", body: JSON.stringify(body), session }));
   return { status: response.status, json: (await response.json()) as any };
 }
 
-async function del(id?: string) {
-  return DELETE(context({ slug: id, method: "DELETE" }));
+async function del(id?: string, session?: SessionPayload | null) {
+  return DELETE(context({ slug: id, method: "DELETE", session }));
 }
 
 function field(name: string, overrides: Partial<FieldDefinition> = {}): FieldDefinition {
@@ -385,5 +424,37 @@ describe("DELETE /dry/api/content-types/[slug]", () => {
     const response = await del("comp-card");
     expect(response.status).toBe(409);
     expect((await response.json()).error).toBe("in_use");
+  });
+});
+
+describe("content-types route - authorization", () => {
+  it("401s every verb with no session", async () => {
+    expect((await get(undefined, undefined, null)).status).toBe(401);
+    expect((await post({ definition: type("no-session", "nosession") }, null)).status).toBe(401);
+  });
+
+  it("GET stays open to any authenticated user, but POST/PUT/DELETE require Super Admin", async () => {
+    const entries = createContentEntryEngineAdapter(content);
+    const schema = createContentEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const userType = allTypes.find((t) => t.name === "user")!;
+
+    const plainUser = await entries.createEntry(userType, allTypes, {
+      name: "Plain User",
+      email: "plain-user@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [],
+    });
+    const plainSession: SessionPayload = { id: plainUser.id, name: "Plain User", email: "plain-user@example.com" };
+
+    expect((await get(undefined, undefined, plainSession)).status).toBe(200);
+
+    const createResponse = await post({ definition: type("custom-k", "notallowed") }, plainSession);
+    expect(createResponse.status).toBe(403);
+    expect(createResponse.json.error).toBe("forbidden");
+
+    const existing = await findByName("role");
+    expect((await put(existing.id, { definition: existing }, plainSession)).status).toBe(403);
+    expect((await del("custom-i", plainSession)).status).toBe(403);
   });
 });

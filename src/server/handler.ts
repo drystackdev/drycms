@@ -1,11 +1,13 @@
 import { path as basePath } from "./config.js";
 import type { DryRouteContext, DryRouteHandler } from "./context.js";
+import { resolveSession } from "./session.js";
 import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
+import * as authRoute from "./routes/auth.js";
 
 type RouteModule = Record<string, DryRouteHandler | undefined>;
 
@@ -23,6 +25,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "content-types": contentTypesRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
+  auth: authRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {
@@ -56,6 +59,21 @@ export async function handleApiRequest(
   const handler = route[request.method];
   if (!handler) return new Response("Method not allowed", { status: 405 });
 
-  const context: DryRouteContext = { request, url, params: { slug }, env };
+  // Resolved for every segment (including `auth`, so `GET /api/auth/session`
+  // can read it straight off `context.session` instead of re-parsing the
+  // cookie itself) but only ENFORCED for every segment except `auth` -
+  // register/login/logout have to be reachable with no session to begin
+  // with. Individual routes (`content-entries.ts`/`content-types.ts`) do
+  // finer-grained resource/action authorization on top of this - see
+  // `content-types/access.ts`.
+  const session = await resolveSession(request);
+  if (segment !== "auth" && !session) {
+    return new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const context: DryRouteContext = { request, url, params: { slug }, env, session };
   return handler(context);
 }

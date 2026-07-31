@@ -1,5 +1,6 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { content } from "../config.js";
+import { resolveAccess } from "../../content-types/access.js";
 import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError, type AnySavePlan, type ContentEngineAdapter } from "../../content-types/engine/types.js";
@@ -13,6 +14,7 @@ import {
 import { collectTableNames, resolveTableTree } from "../../content-types/tree.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { randomUUID } from "../../lib/uuid.js";
+import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   not_found: 404,
@@ -87,6 +89,23 @@ function readId(context: DryRouteContext): string | undefined {
   }
 }
 
+/** Schema WRITES (POST/PUT/DELETE here) have no per-resource permission
+ * action of their own in the existing model (only entries do - see
+ * `content-types/access.ts`/`permissions.ts`) - restricted to Super Admin
+ * outright instead. Schema READS (`GET`) stay open to any authenticated user
+ * (`if (!context.session) return unauthenticatedResponse()` alone) since the
+ * sidebar and every entry editor need the type list regardless of role. */
+async function requireSuperAdmin(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+): Promise<Response | null> {
+  if (!context.session) return unauthenticatedResponse();
+  const access = await resolveAccess(entryAdapter, allTypes, context.session);
+  if (!access?.isSuperAdmin) return forbiddenResponse("Only Super Admin can edit content type schemas.");
+  return null;
+}
+
 interface SaveRequestBody {
   definition: ContentTypeDefinition;
   confirm?: boolean;
@@ -151,6 +170,7 @@ async function handleSave(
 
 export const GET: DryRouteHandler = async (context) => {
   try {
+    if (!context.session) return unauthenticatedResponse();
     const adapter = getAdapter(context);
 
     // Data-version protocol (see `status/build-cache.md`) - the whole
@@ -179,6 +199,10 @@ export const GET: DryRouteHandler = async (context) => {
 export const POST: DryRouteHandler = async (context) => {
   try {
     const adapter = getAdapter(context);
+    const entryAdapter = getEntryAdapter(context);
+    const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
+    if (denied) return denied;
+
     const raw = (await context.request.json()) as Partial<SaveRequestBody>;
     if (!raw.definition) throw new ContentEngineError("invalid_definition", "Request body must include `definition`.");
 
@@ -187,7 +211,7 @@ export const POST: DryRouteHandler = async (context) => {
       id: raw.definition.id || randomUUID(),
       version: 0,
     };
-    return await handleSave(adapter, getEntryAdapter(context), definition, raw.confirm === true);
+    return await handleSave(adapter, entryAdapter, definition, raw.confirm === true);
   } catch (error) {
     return errorResponse(error);
   }
@@ -196,6 +220,10 @@ export const POST: DryRouteHandler = async (context) => {
 export const PUT: DryRouteHandler = async (context) => {
   try {
     const adapter = getAdapter(context);
+    const entryAdapter = getEntryAdapter(context);
+    const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
+    if (denied) return denied;
+
     const id = readId(context);
     if (!id) throw new ContentEngineError("invalid_definition", "An id is required to update a content type.");
 
@@ -206,7 +234,7 @@ export const PUT: DryRouteHandler = async (context) => {
     }
 
     const definition: ContentTypeDefinition = { ...raw.definition, id };
-    return await handleSave(adapter, getEntryAdapter(context), definition, raw.confirm === true);
+    return await handleSave(adapter, entryAdapter, definition, raw.confirm === true);
   } catch (error) {
     return errorResponse(error);
   }
@@ -215,6 +243,10 @@ export const PUT: DryRouteHandler = async (context) => {
 export const DELETE: DryRouteHandler = async (context) => {
   try {
     const adapter = getAdapter(context);
+    const entryAdapter = getEntryAdapter(context);
+    const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
+    if (denied) return denied;
+
     const id = readId(context);
     if (!id) throw new ContentEngineError("invalid_definition", "An id is required to delete a content type.");
     const existing = await adapter.getContentType(id);
