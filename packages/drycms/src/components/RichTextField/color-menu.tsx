@@ -52,6 +52,15 @@ function alphaHex(pct: number): string {
 
 const HEX8_RE = /^#([0-9a-f]{6})([0-9a-f]{2})$/i;
 
+/** The one base form `alphaHex` can legally be concatenated onto. Anything
+ * else - `currentColor`, a named color, or an `rgb()`/`rgba()` string left
+ * in a document saved before `html.ts` stopped letting CSSOM normalize the
+ * imported `color` away (see `rawInlineColor` there) - would build a
+ * nonsense value like `rgb(200, 30, 30)cc` that the browser drops outright,
+ * silently losing the color instead of dimming it, so the opacity row stays
+ * disabled for those and only the swatch grid applies. */
+const HEX6_RE = /^#[0-9a-f]{6}$/i;
+
 /** The inverse of the `#rrggbb`/`#rrggbbaa` strings `applyColor` below
  * writes - reconstructs "which hue + which opacity" from whatever
  * `ToolbarState.color` currently reports, so reopening the popover (or
@@ -85,7 +94,7 @@ export default function ColorMenu({ viewRef, state, disabled = false, iconSize }
     const view = viewRef.current;
     if (!view) return;
     const value =
-      nextBase === "currentColor" || nextAlphaPct >= 100 ? nextBase : `${nextBase}${alphaHex(nextAlphaPct)}`;
+      nextAlphaPct >= 100 || !HEX6_RE.test(nextBase) ? nextBase : `${nextBase}${alphaHex(nextAlphaPct)}`;
     runCommand(view, setTextColor(value));
   };
 
@@ -145,13 +154,13 @@ export default function ColorMenu({ viewRef, state, disabled = false, iconSize }
               key={pct}
               class="color-opacity-swatch"
               aria-label={`${pct}% opacity`}
-              data-tooltip={base === "currentColor" ? "Pick a color first" : `${pct}% opacity`}
+              data-tooltip={HEX6_RE.test(base) ? `${pct}% opacity` : "Pick a color first"}
               aria-pressed={alphaPct === pct}
-              disabled={base === "currentColor"}
+              disabled={!HEX6_RE.test(base)}
               onMouseDown={preserveSelection}
               onClick={() => applyColor(base, pct)}
             >
-              <span style={`background: ${pct >= 100 || base === "currentColor" ? base : `${base}${alphaHex(pct)}`}`} />
+              <span style={`background: ${pct >= 100 || !HEX6_RE.test(base) ? base : `${base}${alphaHex(pct)}`}`} />
             </button>
           ))}
         </div>

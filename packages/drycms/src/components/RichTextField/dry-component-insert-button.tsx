@@ -155,7 +155,7 @@ export default function DryComponentInsertButton({ viewRef, disabled = false, ic
       >
         <ComponentIcon />
       </button>
-      <dialog ref={dialogRef} class="file-dialog dry-component-picker-dialog" aria-label="Insert component">
+      <dialog ref={dialogRef} class="file-dialog dry-component-picker-dialog md" aria-label="Insert component">
         {open && (
           <>
             <header>

@@ -328,6 +328,20 @@ function clampSpan(value: number, max: number): number {
   return Number.isFinite(value) && value > 0 ? Math.min(Math.round(value), max) : 1;
 }
 
+/** An element's inline style as *written*, not as CSSOM re-serializes it.
+ * `el.style.cssText` rewrites what it parsed - it collapses a
+ * `grid-column`/`grid-row` pair into the `grid-area: span 2 / span 6`
+ * shorthand (so `GRID_SPAN`/`GRID_ROW_SPAN` above never matched, and every
+ * grid item silently reverted to the default full-width single-row span on
+ * reload) and normalizes colors to `rgb()` (`html.ts`'s `rawInlineColor`
+ * documents that half). Reading the attribute text keeps whatever
+ * `gridItemStyleString` (or a hand-written document) actually wrote; the
+ * `cssText` fallback only covers an element whose style was set through the
+ * CSSOM rather than the attribute. */
+export function inlineStyleText(el: HTMLElement): string {
+  return el.getAttribute("style") ?? el.style.cssText;
+}
+
 /** Reads a grid container's own `columns` attr back off its inline
  * `grid-template-columns: repeat(N, 1fr)` - shared by this schema's own
  * `parseDOM` and `html.ts`'s import walk. Falls back to
@@ -371,12 +385,13 @@ export function gridItemStyleString(colSpan: number, rowSpan: number): string {
 
 function getGridItemAttrs(dom: HTMLElement | string): { colSpan: number; rowSpan: number } {
   if (typeof dom === "string") return { colSpan: DEFAULT_GRID_COLUMNS, rowSpan: 1 };
-  return { colSpan: colSpanFromStyle(dom.style.cssText), rowSpan: rowSpanFromStyle(dom.style.cssText) };
+  const style = inlineStyleText(dom);
+  return { colSpan: colSpanFromStyle(style), rowSpan: rowSpanFromStyle(style) };
 }
 
 function getGridAttrs(dom: HTMLElement | string): { columns: number } {
   if (typeof dom === "string") return { columns: DEFAULT_GRID_COLUMNS };
-  return { columns: gridColumnsFromStyle(dom.style.cssText) };
+  return { columns: gridColumnsFromStyle(inlineStyleText(dom)) };
 }
 
 /** `table`/`table_row`/`table_cell`/`table_header` node specs from

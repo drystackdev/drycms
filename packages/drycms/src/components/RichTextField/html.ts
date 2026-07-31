@@ -1,4 +1,4 @@
-import type { Node as PMNode, NodeType } from "prosemirror-model";
+import type { Mark, Node as PMNode, NodeType } from "prosemirror-model";
 import {
   blockNodeTypeAndAttrs,
   blockTypeFromTagName,
@@ -22,6 +22,7 @@ import {
   imageSizeAndFitStyleString,
   imageSizeFromElement,
   imageStyleString,
+  inlineStyleText,
   parseImageAlign,
   rowHeightStyleString,
   rowSpanFromStyle,
@@ -59,20 +60,47 @@ function blockTag(type: BlockType): string {
   return type;
 }
 
-function textNodeToHtml(node: PMNode): string {
-  let text = escapeHtml(node.text ?? "");
-  if (schema.marks.bold!.isInSet(node.marks)) text = `<strong>${text}</strong>`;
-  if (schema.marks.italic!.isInSet(node.marks)) text = `<em>${text}</em>`;
-  if (schema.marks.underline!.isInSet(node.marks)) text = `<u>${text}</u>`;
-  const colorMark = schema.marks.textColor!.isInSet(node.marks);
-  if (colorMark) text = `<span style="color: ${escapeAttr(colorMark.attrs.value as string)}">${text}</span>`;
-  const linkMark = schema.marks.link!.isInSet(node.marks);
-  if (linkMark) {
-    const target = linkMark.attrs.target as string | null;
-    const href = escapeAttr(linkMark.attrs.href as string);
-    text = `<a href="${href}"${target ? ` target="${escapeAttr(target)}" rel="noopener noreferrer"` : ""}>${text}</a>`;
+/** Outermost-to-innermost nesting order for the mark tags below. Marks a
+ * ProseMirror node carries are always in *schema* declaration order
+ * (`Mark.addToSet` keeps them sorted by type rank), which is the opposite
+ * of what this export wants: the semantic wrappers - `<a>`, then the color
+ * `<span>` - belong outside the purely presentational `<u>`/`<em>`/
+ * `<strong>`, so that a link whose text is only partly bold still exports
+ * as ONE anchor (see `inlineChildrenHtml`'s prefix matching, which can only
+ * keep a mark open across children when it sorts before whatever changed).
+ * Any mark not listed here exports no tag at all. */
+const MARK_EXPORT_ORDER = ["link", "textColor", "underline", "italic", "bold"];
+
+/** The open/close tag pair one mark exports as, or `null` for a mark this
+ * format has no representation for (see `MARK_EXPORT_ORDER` above). */
+function markTags(mark: Mark): [string, string] | null {
+  switch (mark.type.name) {
+    case "bold":
+      return ["<strong>", "</strong>"];
+    case "italic":
+      return ["<em>", "</em>"];
+    case "underline":
+      return ["<u>", "</u>"];
+    case "textColor":
+      return [`<span style="color: ${escapeAttr(mark.attrs.value as string)}">`, "</span>"];
+    case "link": {
+      const target = mark.attrs.target as string | null;
+      const href = escapeAttr(mark.attrs.href as string);
+      return [`<a href="${href}"${target ? ` target="${escapeAttr(target)}" rel="noopener noreferrer"` : ""}>`, "</a>"];
+    }
+    default:
+      return null;
   }
-  return text;
+}
+
+/** One inline child's own tag-less HTML - whatever it is *inside* the mark
+ * tags `inlineChildrenHtml` opens around it. */
+function inlineChildHtml(child: PMNode): string {
+  if (child.type === schema.nodes.image) return imageChildHtml(child);
+  if (child.type === schema.nodes.hard_break) return "<br>";
+  if (child.type.name.startsWith("dry_")) return dryComponentHtml(child);
+  if (child.isText) return escapeHtml(child.text ?? "");
+  return "";
 }
 
 /** An image child's own HTML - a bare `<img>` (size/fit + align both on the
@@ -184,20 +212,43 @@ function dryComponentNodeFromElement(el: Element, type: NodeType): PMNode {
 
 /** A flat textblock's (paragraph/heading/blockquote) own inline content -
  * shared by `exportBlockHtml` for however many places one can occur
- * (top level, a list item, a table cell). */
+ * (top level, a list item, a table cell).
+ *
+ * Marks are written as *runs* spanning however many consecutive children
+ * share them, not re-opened per child: ProseMirror stores "Hello world,
+ * linked, with only Hello bold" as two adjacent text nodes (`["Hello",
+ * bold+link]`, `[" world", link]`), and wrapping each one on its own
+ * emitted two separate `<a>` elements for what the editor shows - and what
+ * the user made - as a single link. Same for a color `<span>` broken up by
+ * an inner `<strong>`, or a `<strong>` broken up by a `<br>`. This is
+ * ProseMirror's own `DOMSerializer.serializeFragment` algorithm ported to
+ * string building: keep the longest common prefix of currently-open marks,
+ * close the rest innermost-first, then open whatever the child adds. The
+ * serializer itself isn't reusable here - it builds real DOM nodes from
+ * `toDOM` (editor-only `class`es, node views for `dry-*`/image, no
+ * `<figure>`/grid `<style>`/`colgroup` handling), which is exactly what
+ * this file's own clean-HTML contract exists to override - but its
+ * mark-run logic is the part that was missing. */
 function inlineChildrenHtml(node: PMNode): string {
   let inner = "";
+  const open: Mark[] = [];
+  const closeTo = (depth: number) => {
+    while (open.length > depth) inner += markTags(open.pop()!)![1];
+  };
   node.forEach((child) => {
-    if (child.type === schema.nodes.image) {
-      inner += imageChildHtml(child);
-    } else if (child.type === schema.nodes.hard_break) {
-      inner += "<br>";
-    } else if (child.type.name.startsWith("dry_")) {
-      inner += dryComponentHtml(child);
-    } else if (child.isText) {
-      inner += textNodeToHtml(child);
+    const marks = child.marks
+      .filter((mark) => MARK_EXPORT_ORDER.includes(mark.type.name))
+      .sort((a, b) => MARK_EXPORT_ORDER.indexOf(a.type.name) - MARK_EXPORT_ORDER.indexOf(b.type.name));
+    let keep = 0;
+    while (keep < open.length && keep < marks.length && marks[keep]!.eq(open[keep]!)) keep++;
+    closeTo(keep);
+    for (const mark of marks.slice(keep)) {
+      inner += markTags(mark)![0];
+      open.push(mark);
     }
+    inner += inlineChildHtml(child);
   });
+  closeTo(0);
   return inner;
 }
 
@@ -417,28 +468,68 @@ function imageNodeFromFigure(figure: Element): PMNode | null {
   return schema.nodes.image!.create({ ...imageAttrsFromElement(img), caption });
 }
 
+/** The marks an inline node inherits from the elements wrapping it - shared
+ * by every node kind `walkInlineHtml` produces, not just text: a `<br>` or
+ * an `<img>` inside a `<strong>`/`<a>` has to carry those marks too, or the
+ * export's own mark runs (`inlineChildrenHtml`) would be forced to close
+ * and reopen around it, splitting one `<strong>`/`<a>` into two. */
+function ancestryMarks(ancestry: InlineAncestry): Mark[] {
+  const marks: Mark[] = [];
+  if (ancestry.bold) marks.push(schema.marks.bold!.create());
+  if (ancestry.italic) marks.push(schema.marks.italic!.create());
+  if (ancestry.underline) marks.push(schema.marks.underline!.create());
+  if (ancestry.color) marks.push(schema.marks.textColor!.create({ value: ancestry.color }));
+  if (ancestry.href) marks.push(schema.marks.link!.create({ href: ancestry.href, target: ancestry.target }));
+  return marks;
+}
+
+/** Matches the LAST `color:` declaration in a raw `style` attribute (CSS's
+ * own last-one-wins), and only a standalone one - the `(?:^|;)` prefix is
+ * what keeps `background-color:` from matching. */
+const STYLE_COLOR_RE = /(?:^|;)\s*color\s*:\s*([^;]+)/gi;
+
+/** The author's own `color` string, read straight off the raw `style`
+ * attribute text rather than through `el.style.color`.
+ *
+ * CSSOM *normalizes* every color it parses to the legacy `rgb()`/`rgba()`
+ * form, so the property accessor turns this field's own exported
+ * `#c81e1e` into `rgb(200, 30, 30)` and `#c81e1e80` into
+ * `rgba(200, 30, 30, 0.5)` - meaning every save/reload cycle silently
+ * rewrote the stored HTML, and `color-menu.tsx`'s `parseColorValue` (which
+ * reads `#rrggbb`/`#rrggbbaa` back into "which swatch + which opacity")
+ * stopped recognizing its own values, so a reloaded document showed no
+ * active swatch and then built invalid `rgb(200, 30, 30)cc` strings out of
+ * the opacity row. Reading the attribute text keeps whatever the author
+ * (or this field's own export) actually wrote. */
+function rawInlineColor(el: HTMLElement): string {
+  const style = inlineStyleText(el);
+  if (!style) return "";
+  let match: RegExpExecArray | null;
+  let value = "";
+  STYLE_COLOR_RE.lastIndex = 0;
+  while ((match = STYLE_COLOR_RE.exec(style))) value = match[1]!.trim();
+  // Fall back to the (normalized) property only when the raw text had no
+  // usable `color` of its own - e.g. a shorthand this regex can't see into.
+  return value || el.style.color;
+}
+
 function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] {
   if (domNode.nodeType === Node.TEXT_NODE) {
     const text = domNode.textContent ?? "";
     if (!text) return [];
-    const marks = [];
-    if (ancestry.bold) marks.push(schema.marks.bold!.create());
-    if (ancestry.italic) marks.push(schema.marks.italic!.create());
-    if (ancestry.underline) marks.push(schema.marks.underline!.create());
-    if (ancestry.color) marks.push(schema.marks.textColor!.create({ value: ancestry.color }));
-    if (ancestry.href) marks.push(schema.marks.link!.create({ href: ancestry.href, target: ancestry.target }));
-    return [schema.text(text, marks)];
+    return [schema.text(text, ancestryMarks(ancestry))];
   }
-  if (domNode.nodeName === "BR") return [schema.nodes.hard_break!.create()];
+  const marks = ancestryMarks(ancestry);
+  if (domNode.nodeName === "BR") return [schema.nodes.hard_break!.create(null, null, marks)];
   if (domNode.nodeName === "IMG") {
-    return [schema.nodes.image!.create(imageAttrsFromElement(domNode as HTMLImageElement))];
+    return [schema.nodes.image!.create(imageAttrsFromElement(domNode as HTMLImageElement), null, marks)];
   }
   if (domNode.nodeName === "FIGURE") {
     const node = imageNodeFromFigure(domNode as Element);
-    if (node) return [node];
+    if (node) return [node.mark(marks)];
   }
   const inlineDryType = dryComponentNodeType(domNode.nodeName);
-  if (inlineDryType?.isInline) return [dryComponentNodeFromElement(domNode as Element, inlineDryType)];
+  if (inlineDryType?.isInline) return [dryComponentNodeFromElement(domNode as Element, inlineDryType).mark(marks)];
   if (domNode.nodeType !== Node.ELEMENT_NODE) return [];
 
   const tag = domNode.nodeName;
@@ -447,7 +538,7 @@ function walkInlineHtml(domNode: ChildNode, ancestry: InlineAncestry): PMNode[] 
     bold: ancestry.bold || tag === "STRONG" || tag === "B",
     italic: ancestry.italic || tag === "EM" || tag === "I",
     underline: ancestry.underline || tag === "U",
-    color: (domNode instanceof HTMLElement && domNode.style.color) || ancestry.color,
+    color: (domNode instanceof HTMLElement && rawInlineColor(domNode)) || ancestry.color,
     href: isAnchor ? ((domNode as HTMLElement).getAttribute("href") ?? "") : ancestry.href,
     target: isAnchor ? (domNode as HTMLElement).getAttribute("target") : ancestry.target,
   };
@@ -500,7 +591,7 @@ function importTableElement(el: Element): PMNode {
         return cellType.create(attrs, blockChildrenFromContainer(cellEl));
       });
     if (cells.length === 0) continue;
-    const heightPx = rowEl instanceof HTMLElement ? heightPxFromStyle(rowEl.style.cssText) : null;
+    const heightPx = rowEl instanceof HTMLElement ? heightPxFromStyle(inlineStyleText(rowEl)) : null;
     rows.push(schema.nodes.table_row!.create({ heightPx }, cells));
   }
   if (rows.length === 0) rows.push(schema.nodes.table_row!.create(null, [schema.nodes.table_cell!.createAndFill()!]));
@@ -534,11 +625,11 @@ function isGridElement(el: Element): boolean {
  * `grid-row` in it at all, matching `exportGridHtml`'s own "no inline style
  * for the default case" convention. */
 function importGridElement(el: Element): PMNode {
-  const columns = gridColumnsFromStyle(el instanceof HTMLElement ? el.style.cssText : "");
+  const columns = gridColumnsFromStyle(el instanceof HTMLElement ? inlineStyleText(el) : "");
   const items = Array.from(el.children)
     .filter((child) => child.tagName !== "STYLE")
     .map((childEl) => {
-      const style = childEl instanceof HTMLElement ? childEl.style.cssText : "";
+      const style = childEl instanceof HTMLElement ? inlineStyleText(childEl) : "";
       const attrs = { colSpan: colSpanFromStyle(style, columns), rowSpan: rowSpanFromStyle(style) };
       return schema.nodes.grid_item!.create(attrs, importBlockElement(childEl));
     });
@@ -574,7 +665,19 @@ function blockChildrenFromContainer(container: Element): PMNode[] {
   const blocks: PMNode[] = [];
   let inlineBuffer: ChildNode[] = [];
   const flushInline = () => {
-    if (inlineBuffer.length === 0) return;
+    // A run of nothing but whitespace text is the indentation/newlines
+    // *between* two block elements in any pretty-printed HTML, not content:
+    // synthesizing a paragraph for it turned every such gap into a stray
+    // empty paragraph on import (`<p>a</p>\n<p>b</p>` gained a third,
+    // whitespace-only one in between). Real inline content - any element,
+    // or any text with a non-space character in it - still flushes.
+    const isBlank = inlineBuffer.every(
+      (child) => child.nodeType === Node.TEXT_NODE && !(child.textContent ?? "").trim(),
+    );
+    if (isBlank) {
+      inlineBuffer = [];
+      return;
+    }
     const inlineNodes = inlineBuffer.flatMap((child) => walkInlineHtml(child, NO_MARKS));
     blocks.push(schema.nodes.paragraph!.create(null, inlineNodes));
     inlineBuffer = [];

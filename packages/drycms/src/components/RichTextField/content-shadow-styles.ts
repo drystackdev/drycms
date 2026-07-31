@@ -44,6 +44,7 @@ export const richtextContentShadowStyles =
  * below relies on in turn. */
 .dry-tx-content-host {
   height: 100%;
+  font-weight: 400;
 }
 
 *,
