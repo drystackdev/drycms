@@ -44,10 +44,11 @@
 - Hoàn thành phần khảo sát và lập kế hoạch trong một lượt.
 - `bun run typecheck` pass.
 - `src/storage/github.test.ts` và `src/storage/gitlab.test.ts`: 68/68 pass.
-- `src/kv/kv.test.ts`: 5/5 pass. `bun run build` pass cho client và SSR.
-- Các test branch của `options.test.ts`: pass. Ba test cũ kiểm tra env bị thiếu
-  vẫn bị ảnh hưởng bởi credential GitHub có sẵn trong `.env` local, vì resolver
-  hiện chủ động đọc `.env` khi process env không có giá trị.
+- `src/kv/kv.test.ts`: 6/6 pass. `bun run build` pass cho client và SSR.
+- Đã sửa test env GitHub để biểu diễn đúng biến môi trường rỗng; test secret
+  thiếu cũng cô lập khỏi `.env` local.
+- Toàn bộ test suite pass: 53 files, 681 tests; `bun run typecheck`, build
+  client/SSR và `git diff --check` đều pass.
 
 ## Auth scope decision
 
