@@ -37,8 +37,6 @@
   về `/login` khi session/JWT không còn hợp lệ.
 - Đã thêm HTTP page guard cho dev và production Node server; truy cập trực tiếp
   `/key-value` không có JWT hợp lệ nhận `302` về `/login` trước khi nhận SPA shell.
-- Đã nhận diện và tự xóa cookie legacy dạng `v1:...` khi truy cập trang được
-  bảo vệ; redirect kèm `Set-Cookie: drycms_session=; Max-Age=0`.
 - Các thay đổi đang có trước task trong `src/pages/ContentTypeEditor.tsx` và `src/pages/content-type-editor/FieldsList.tsx` được giữ nguyên.
 
 ## Speed
@@ -50,3 +48,9 @@
 - Các test branch của `options.test.ts`: pass. Ba test cũ kiểm tra env bị thiếu
   vẫn bị ảnh hưởng bởi credential GitHub có sẵn trong `.env` local, vì resolver
   hiện chủ động đọc `.env` khi process env không có giá trị.
+
+## Auth scope decision
+
+- Tạm thời chưa triển khai Audit log, MFA và Reset mật khẩu.
+- Phạm vi auth ưu tiên còn lại: CSRF, rate limit/chống brute-force, thu hồi
+  toàn bộ session khi đổi mật khẩu, secret rotation và access/refresh token.
