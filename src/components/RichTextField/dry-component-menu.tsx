@@ -5,7 +5,7 @@ import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import FloatingPanel from "../FloatingPanel.js";
 import type { FileManagerSource } from "../file-manager-types.js";
-import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ComponentIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
+import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ArrowRightIcon, ComponentIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import { flattenDryComponentRecords, type DryComponentRecord } from "./component-registry-types.js";
 import DryComponentPropsForm, {
@@ -56,51 +56,74 @@ function ComponentTreeNode({ record, records, trail, selectable, onSelect }: Com
     sourcePath: "",
     enabled: true as const,
   });
+  const hasChildren = children.length > 0 && !trail.has(record.name);
+  const [expanded, setExpanded] = useState(true);
+
+  const label = (
+    <>
+      <ComponentIcon />
+      <span class="spacer">{record.label}</span>
+      
+      {selectable && (
+        <button
+          type="button"
+          class="ghost sm dry-component-tree-select"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(record);
+          }}
+        >
+          Import
+        </button>
+      )}
+    </>
+  );
+
+  const childTree = hasChildren && (
+    <ul role="group" class="dry-component-tree-children">
+      {expanded && children.map((child) =>
+        nextTrail.has(child.name) ? (
+          <li role="treeitem" class="dry-component-tree-node" key={child.name}>
+            <span class="dry-component-tree-label">
+              <ComponentIcon />
+              <span>{child.label}</span>
+              <small>(circular ref)</small>
+            </span>
+          </li>
+        ) : (
+          <ComponentTreeNode
+            key={child.name}
+            record={child}
+            records={records}
+            trail={nextTrail}
+            selectable
+            onSelect={onSelect}
+          />
+        ),
+      )}
+    </ul>
+  );
 
   return (
     <li role="treeitem" class="dry-component-tree-node">
-      <span class={`dry-component-tree-label${selectable ? " selectable" : ""}`}>
-        <ComponentIcon />
-        <span>{record.label}</span>
-        <code>{`<dry-${record.name}>`}</code>
-        {selectable && (
+      <div class="dry-component-tree-row">
+        {hasChildren ? (
           <button
             type="button"
-            class="ghost sm dry-component-tree-select"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelect(record);
-            }}
+            class="ghost icon sm dry-component-tree-toggle"
+            aria-label={expanded ? `Collapse ${record.label}` : `Expand ${record.label}`}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
           >
-            Select
+            <ArrowRightIcon class={expanded ? "expanded" : undefined} />
           </button>
+        ) : (
+          <span class="dry-component-tree-toggle-placeholder" aria-hidden="true" />
         )}
-      </span>
-      {children.length > 0 && !trail.has(record.name) && (
-        <ul role="group" class="dry-component-tree-children">
-          {children.map((child) =>
-            nextTrail.has(child.name) ? (
-              <li role="treeitem" class="dry-component-tree-node" key={child.name}>
-                <span class="dry-component-tree-label">
-                  <ComponentIcon />
-                  <span>{child.label}</span>
-                  <small>(circular ref)</small>
-                </span>
-              </li>
-            ) : (
-                  <ComponentTreeNode
-                    key={child.name}
-                    record={child}
-                    records={records}
-                    trail={nextTrail}
-                    selectable
-                    onSelect={onSelect}
-                  />
-            ),
-          )}
-        </ul>
-      )}
+        <span class={`dry-component-tree-label${selectable ? " selectable" : ""}`}>{label}</span>
+      </div>
+      {childTree}
     </li>
   );
 }

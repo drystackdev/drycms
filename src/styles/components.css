@@ -4985,15 +4985,39 @@
   }
 
   .dry-component-tree-children {
-    margin-inline-start: 1.25rem;
-    padding-inline-start: 0.75rem;
-    border-inline-start: 1px solid var(--dry-border);
+    margin-inline-start: 1.75rem;
+  }
+
+  .dry-component-tree-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .dry-component-tree-toggle,
+  .dry-component-tree-toggle-placeholder {
+    flex: 0 0 1.75rem;
+    flex-shrink: 1;
+  }
+
+  .dry-component-tree-toggle svg {
+    transition: rotate 150ms ease;
+  }
+
+  .dry-component-tree-toggle svg.expanded {
+    rotate: 90deg;
   }
 
   .dry-component-tree-label {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
     min-height: 2.25rem;
     padding: 0.5rem 0.625rem;
     border: 1px solid var(--dry-border);
@@ -5006,12 +5030,6 @@
     height: 1rem;
     flex: 0 0 auto;
     color: var(--dry-muted-foreground);
-  }
-
-  .dry-component-tree-label code {
-    margin-inline-start: auto;
-    color: var(--dry-muted-foreground);
-    font-size: var(--dry-text-xs);
   }
 
   .dry-component-tree-label small {
