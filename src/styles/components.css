@@ -5049,7 +5049,6 @@
     border: 1px solid var(--dry-border);
     border-radius: var(--dry-radius-md);
     background: var(--dry-card);
-    box-shadow: var(--dry-shadow-lg);
   }
 
   .dry-component-mention-list {

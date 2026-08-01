@@ -22,10 +22,11 @@
 # Status
 
 - Added the initial `@` mention popup, fuzzy filtering, keyboard navigation, nested/top-level scopes, and component insertion wiring.
-- Typecheck and 47 RichText tests pass.
-- Remaining: browser QA, focused parsing tests, production build, and final cleanup.
+- Extracted pure token/scope/fuzzy helpers and added focused tests.
+- Typecheck, 50 RichText tests, and production build pass.
+- Browser E2E is blocked in this environment because `E2E_SESSION_TOKEN` is not set.
 
 # Speed
 
-- Progress: implementation 2/5; verification pending.
+- Progress: implementation and automated verification complete; authenticated browser QA pending.
 - Blockers: none.
