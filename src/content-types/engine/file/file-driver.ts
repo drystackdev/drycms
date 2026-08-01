@@ -29,14 +29,11 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
 
 /**
  * Thin JSON-object read/write/list layer over `StorageAdapter` (the same
- * local/github/gitlab backend Media/Icon storage already uses), plus what
+ * local backend Media/Icon storage already uses), plus what
  * `StorageAdapter` itself doesn't provide: an atomic single-file write for
  * `local` (write-temp-then-rename, so a crash mid-write can never leave a
  * half-written record on disk) and an in-process async mutex so concurrent
- * requests never interleave a read-modify-write on the same file. For
- * `github`/`gitlab`, "atomic" just means "one `write()` call is one commit" -
- * already true of `StorageAdapter.write()`, no temp-file trick applies over
- * HTTP.
+ * requests never interleave a read-modify-write on the same file.
  */
 export interface FileDriver {
   /** `null` if the path doesn't exist. */
@@ -59,8 +56,8 @@ export interface FileDriver {
   withLock<T>(key: string, fn: () => Promise<T>): Promise<T>;
   /** Runs `fn` against a driver that stages every `writeJson`/`removeJson`/
    * `removeDir` in memory instead of touching the backend immediately, then
-   * flushes them as ONE `StorageAdapter.writeBatch()` call (one commit, on
-   * `github`/`gitlab`) once `fn` resolves - nothing lands if `fn` throws.
+   * flushes them as ONE `StorageAdapter.writeBatch()` call once `fn` resolves
+   * - nothing lands if `fn` throws.
    * `readJson`/`listJsonFiles` on the staged driver see the staged writes
    * ("read your own writes") before falling back to the real backend for
    * paths this transaction hasn't touched. Calling `.transaction()` again on

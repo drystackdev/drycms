@@ -170,8 +170,8 @@ export function createMemoryFileSource(seed: FileEntry[] = defaultSeed): FileMan
       .map((entry) => ({ ...entry }));
   }
 
-  /** Exercises the same `FileManager` tree-prefetch path the real `local`/
-   * `github` backends use - trivial here since everything already lives in
+  /** Exercises the same `FileManager` tree-prefetch path the real local
+   * backend uses - trivial here since everything already lives in
    * memory. */
   async function listAll(): Promise<FileEntry[]> {
     return entries.filter((entry) => !isHiddenEntry(entry)).map((entry) => ({ ...entry }));

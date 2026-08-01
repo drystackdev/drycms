@@ -49,8 +49,8 @@ export async function getDataVersion(driver: FileDriver, typeName: string): Prom
  * same `withLock` pattern as `nextId`, so concurrent bumps from this same
  * process never race and lose an increment. Callers (`entries-file.ts`) run
  * this LAST inside the same `driver.transaction()` as the mutation it's
- * versioning, so on `github`/`gitlab` the bump lands in the same commit as
- * the data change - never one without the other. */
+ * versioning, so the bump lands in the same transaction as the data change -
+ * never one without the other. */
 export async function bumpDataVersion(driver: FileDriver, typeName: string): Promise<number> {
   return driver.withLock(`version:${typeName}`, async () => {
     const current = await driver.readJson<{ version: number }>(versionPath(typeName));

@@ -2,8 +2,7 @@ import type { Statement } from "../migration.js";
 
 /**
  * A minimal, hand-rolled subset of Cloudflare's `D1Database` API - the same
- * precedent `storage/github.ts` sets for a small Cloudflare-specific shape
- * (there, `CloudflareRequestInit`) rather than depending on
+ * small Cloudflare-specific shapes rather than depending on
  * `@cloudflare/workers-types` just for one interface. Structurally
  * compatible with the real binding; consumers pass the genuine object at
  * runtime, this is only a type. Shared by both the schema engine

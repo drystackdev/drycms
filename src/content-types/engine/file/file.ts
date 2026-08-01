@@ -146,8 +146,8 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
     }
 
     // Everything below - the primary type, every cascaded dependent, and
-    // every rewritten record - lands as ONE commit on `github`/`gitlab` (see
-    // `FileDriver.transaction()`): a save touching several files should
+    // every rewritten record - stays inside one `FileDriver.transaction()`:
+    // a save touching several files should
     // never be observable as a half-migrated schema if a commit partway
     // through failed. Permission sync runs in its own transaction right
     // after (see that call site's comment) rather than joining this one.

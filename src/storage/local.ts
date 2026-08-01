@@ -128,8 +128,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
   }
 
   /** Every file/folder under `root`, flattened - one recursive walk on the
-   * same disk `list()`/`stat()` already hit, so unlike `github`'s equivalent
-   * there's no network round trip to amortize; still one `readdir`+`stat`
+   * same disk `list()`/`stat()` already hit; still one `readdir`+`stat`
    * per entry, same total work `list()` would do if called once per folder. */
   async function listAll(): Promise<StorageStatEntry[]> {
     await ensureRoot();

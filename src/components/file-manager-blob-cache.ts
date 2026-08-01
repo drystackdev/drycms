@@ -4,8 +4,8 @@ const DB_VERSION = 1;
 
 /** Sliding TTL: refreshed on every cache hit (see `getCachedBlob`), so a
  * file in active use never expires - only one nobody's opened in 7 days
- * does. Only ever relevant for content-addressed backends (github/future
- * R2-S3, keyed by their real content hash/ETag) - `local` has no natural
+ * does. Only ever relevant for future content-addressed object storage,
+ * keyed by its real content hash/ETag - `local` has no natural
  * content hash and isn't worth caching (same-origin disk reads have no
  * network latency to save), so it never calls into this module at all. */
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -112,8 +112,8 @@ export function sweepExpiredCacheInBackground(now: number = Date.now()): void {
 
 /** Fetches `url`'s bytes as a `Blob`, through the sha-keyed cache when `sha`
  * is known. `sha` is only ever populated for content-addressed backends
- * (see `StorageStatEntry.contentHash` - github's git blob sha today, an
- * R2/S3 ETag once those exist); callers pass `undefined` for anything else
+ * (see `StorageStatEntry.contentHash` - an R2/S3 ETag once those exist);
+ * callers pass `undefined` for anything else
  * (`local`) and this degrades to a plain `fetch`, no cache involved. */
 export async function readCachedFile(url: string, sha: string | undefined): Promise<Blob> {
   if (sha) {

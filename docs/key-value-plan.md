@@ -1,5 +1,10 @@
 # Kế hoạch phát triển hệ thống Key Value tốc độ cao
 
+> Quyết định hiện tại: GitHub/GitLab đã bị loại khỏi sản phẩm và không còn là
+> backend được hỗ trợ. Các phần mô tả Git backend bên dưới là lịch sử thiết kế
+> và không được triển khai lại; backend hiện tại là `local`, `sqlite`, `D1` và
+> Cloudflare `KV`.
+
 ## 1. Mục tiêu và phạm vi
 
 Xây dựng một hệ thống Key Value (KV) dùng được ở server-side với các mục tiêu:
@@ -10,8 +15,6 @@ Xây dựng một hệ thống Key Value (KV) dùng được ở server-side v�
   - `local`
   - `sqlite`
   - `D1`
-  - `github`
-  - `gitlab`
   - `KV` (Cloudflare KV)
 - Dữ liệu có thể đồng bộ xuống storage bền vững để không mất sau khi process/server khởi động lại.
 - Có thể chịu được lỗi mạng hoặc lỗi backend mà không làm hỏng dữ liệu đang có trong memory.
@@ -34,7 +37,7 @@ Persistence coordinator (dirty queue, debounce, retry, conflict policy)
         |
         v
 KeyValueAdapter
-  local | sqlite | D1 | github | gitlab | KV
+  local | sqlite | D1 | KV
 ```
 
 ### 2.1. `KeyValueAdapter`

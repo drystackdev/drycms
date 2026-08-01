@@ -1,5 +1,4 @@
 import type { ResolvedKvOption } from "../server/options.js";
-import { createGitKeyValueAdapter } from "./git.js";
 import { createLocalKeyValueAdapter } from "./local.js";
 import { createSqliteKeyValueAdapter } from "./sqlite.js";
 import type { KeyValueAdapter } from "./types.js";
@@ -12,9 +11,6 @@ export function createKeyValueAdapter(option: ResolvedKvOption): KeyValueAdapter
       return createLocalKeyValueAdapter(option.root);
     case "sqlite":
       return createSqliteKeyValueAdapter(option.file);
-    case "github":
-    case "gitlab":
-      return createGitKeyValueAdapter(option);
     case "D1":
     case "KV":
       throw new Error(`[drycms] KV adapter "${option.kind}" requires a request-bound runtime and is not available in the Node module adapter.`);

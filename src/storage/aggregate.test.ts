@@ -60,7 +60,7 @@ describe("applyRecursiveFolderTotals", () => {
     expect(applyRecursiveFolderTotals(entries)).toBe(entries);
   });
 
-  it("a file with no known size (GitLab's list()/listAll(), which never resolve it) contributes 0, not NaN", () => {
+  it("a file with no known size contributes 0, not NaN", () => {
     const noSize: StorageStatEntry = { path: "docs/a.txt", name: "a.txt", kind: "file" };
     const entries = [folder("docs"), noSize, file("docs/b.txt", 5)];
 

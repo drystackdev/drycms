@@ -79,7 +79,7 @@ describe("formatDate", () => {
     expect(result.time).not.toBe("");
   });
 
-  it("renders blank, not 'Invalid Date', when the backend didn't resolve a modifiedAt (github/gitlab's list()/listAll())", () => {
+  it("renders blank, not 'Invalid Date', when a backend doesn't resolve modifiedAt", () => {
     expect(formatDate(undefined)).toEqual({ date: "", time: "" });
   });
 });

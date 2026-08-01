@@ -40,8 +40,7 @@ export function base64Decode(text: string): Uint8Array {
 
 /** Derives a 256-bit AES key from `DRYCMS_SECRET_KEY` (any human-provided
  * passphrase string, hashed with SHA-256 - friendlier to configure than
- * requiring raw key bytes, matching the plain-string env vars already used
- * for `GITHUB_PAT_KEY`/`GITLAB_PAT_KEY`). Cached for the life of the process
+ * requiring raw key bytes). Cached for the life of the process
  * - re-derived, not re-read from disk, on every call. */
 async function getKey(): Promise<CryptoKey> {
   if (!cachedKeyPromise) {

@@ -1248,7 +1248,7 @@ const WHEEL_ZOOM_STEP = 5;
 const SWIPE_THRESHOLD = 60;
 
 /** Resolves what to actually put in the preview `<img src>`. Files with a
- * `contentHash` (github/future R2-S3 - see `StorageStatEntry.contentHash`)
+ * `contentHash` (future R2/S3 - see `StorageStatEntry.contentHash`)
  * go through the sha-keyed IndexedDB cache (`readCachedFile`), so re-opening
  * the same bytes later - even at a different path, after a rename/move -
  * doesn't refetch them; anything without one (`local`, or a same-session
@@ -1715,8 +1715,8 @@ export default function FileManager({
    * *before* `source`'s write settles - the recovery path on failure is
    * always "invalidate and re-fetch the truth" for every folder the write
    * touched, never a blind revert to the pre-optimistic snapshot. That's
-   * deliberate: `move`/`copy`/`remove` aren't atomic on every backend
-   * (`github`'s each blob is its own commit; future R2/S3 is copy-then-delete
+   * deliberate: `move`/`copy`/`remove` aren't atomic on every future backend
+   * (R2/S3 is copy-then-delete
    * per key), so a failure can still have partially applied server-side - a
    * naive "undo my local guess" would then show something that doesn't match
    * the real server state. Re-fetching is correct either way: on a backend

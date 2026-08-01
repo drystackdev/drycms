@@ -50,9 +50,8 @@ function errorResponse(error: unknown): Response {
 
 /**
  * `sqlite` and `file` are both cheap and safe to share across requests (a
- * single open connection / a `StorageAdapter` that resolves its own
- * credentials from static config, module-cached exactly like
- * `routes/storage.ts`'s adapter - no local/github/gitlab backend needs a
+ * single open connection / a local `StorageAdapter` module-cached exactly
+ * like `routes/storage.ts`'s adapter - no local backend needs a
  * per-request Cloudflare binding). `D1` cannot be: its live binding only
  * exists per-request (`context.env`, the adapter-supplied runtime
  * environment - see `DryRouteContext`), so that branch is constructed fresh

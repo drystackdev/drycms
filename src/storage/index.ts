@@ -1,6 +1,4 @@
 import type { ResolvedStorageOption } from "../server/options.js";
-import { createGithubStorageAdapter } from "./github.js";
-import { createGitlabStorageAdapter } from "./gitlab.js";
 import { createLocalStorageAdapter } from "./local.js";
 import { StorageError, type StorageAdapter } from "./types.js";
 
@@ -8,10 +6,6 @@ export function createStorageAdapter(option: ResolvedStorageOption): StorageAdap
   switch (option.kind) {
     case "local":
       return createLocalStorageAdapter(option.root);
-    case "github":
-      return createGithubStorageAdapter(option);
-    case "gitlab":
-      return createGitlabStorageAdapter(option);
     default:
       throw new StorageError(
         "unsupported",

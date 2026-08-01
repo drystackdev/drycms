@@ -22,9 +22,8 @@ import type { FileDriver } from "./file-driver.js";
  * `createFileEntry`/`updateFileEntry`/`deleteFileEntry` from `entries-file.ts`
  * inside ONE shared `driver.transaction()` per sync pass - a fresh repo/
  * branch can mean dozens of permission rows at boot, and going through
- * `entryAdapter.createEntry` for each (its own transaction, its own
- * blob/tree/commit/ref round trip on `github`/`gitlab`) turned first-boot
- * into dozens of sequential commits instead of one.
+ * `entryAdapter.createEntry` for each would turn first boot into dozens of
+ * sequential writes instead of one.
  */
 
 const LIST_ALL_QUERY = { page: 0, pageSize: 1_000_000 } as const;

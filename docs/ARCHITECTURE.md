@@ -51,9 +51,9 @@ Three engines implement both, selected by `content.engine` in `dry.config.ts`
 | `D1` | `engine/d1.ts` | `engine/entries-d1.ts` | Cloudflare D1, real DDL |
 | `file` | `engine/file/file.ts` | `engine/file/entries-file.ts` | one JSON file per record, no DDL, git-diffable |
 
-The `file` engine reuses the same `local`/`github`/`gitlab` storage adapters
-as `storage`/`icons` (see below) - it's a third root within the same
-disk/repo, not a separate storage mechanism. When adding a feature to the
+The `file` engine reuses the same local storage adapter as `storage`/`icons`
+(see below) - it's a third root within the same disk, not a separate storage
+mechanism. When adding a feature to the
 content engine, check whether it needs implementing symmetrically across all
 three, or is legitimately sqlite/D1-only (row-level SQL utilities like
 `permissions.ts` are a deliberate, narrow exception - see below).
@@ -189,22 +189,18 @@ writing (it was briefly *not* enforced - see `status/role.md` history).
 enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
 `role`'s `isSuperAdmin` flag bypasses every check unconditionally.
 
-## Storage: one adapter interface, three backends, three independent roots
+## Storage: one adapter interface, one backend, four independent roots
 
-`src/storage/` implements one adapter interface (`types.ts`) three ways -
-`local.ts` (filesystem), `github.ts`, `gitlab.ts` (repo contents API) - all
-constructed via `createStorageAdapter()` from a `ResolvedStorageOption`.
+`src/storage/` implements one adapter interface (`types.ts`) through the local
+filesystem adapter, constructed via `createStorageAdapter()` from a
+`ResolvedStorageOption`.
 `storage` (user-uploaded media), `icons` (Icon Management's own assets),
 `content` (the `file` content engine's JSON store), and `richtext.storage`
 (confirmed RichText component bundles) are **four independent roots**
-sharing this same mechanism - never sharing a directory even when they share
-a backend `kind`. `github`/`gitlab` credentials come from env vars
-(`GITHUB_REPO`/`GITHUB_PAT_KEY`,
-`GITLAB_PROJECT`/`GITLAB_PAT_KEY`/`GITLAB_HOST`), never from
-`dry.config.ts` itself, so no secret ends up committed. `github`/`gitlab`
-`list()`/`listAll()` deliberately drop `modifiedAt` (+ GitLab file size) for
-list-call speed - a user-approved perf tradeoff, don't add them back without
-asking.
+sharing this same mechanism - never sharing a directory. Remote Git hosting
+is intentionally not a storage or KV backend: it would add network round
+trips, rate limits, retry/concurrency behavior and failure modes to ordinary
+runtime requests.
 
 ## RichText
 

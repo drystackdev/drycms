@@ -7,19 +7,14 @@ const PLANNED_STORAGE_KINDS = ["r2", "s3"];
 
 export interface DryStorageOption {
   /**
-   * Which backend serves `/dry/api/storage/**`. Repository/token credentials
-   * come from env vars; `branch` may be set here and otherwise defaults to
-   * the subsystem name (`storage`).
+   * Which backend serves `/dry/api/storage/**`.
    *
    * @default "local"
    */
-  kind?: "local" | "github" | "gitlab";
-  /** Git branch for GitHub/GitLab. Defaults to `storage`. */
-  branch?: string;
+  kind?: "local";
   /**
    * `local`: directory files are read from/written to, relative to the
-   * consuming project's cwd (or an absolute path). `github`: subpath within
-   * the repo files live under (repo root if omitted).
+   * consuming project's cwd (or an absolute path).
    *
    * @default "storage"
    */
@@ -28,15 +23,11 @@ export interface DryStorageOption {
 
 export interface DryIconsOption {
   /**
-   * Which backend serves `/dry/api/icons/**`. Same repository/token
-   * credentials and per-subsystem branch behavior as `storage.kind` - `icons` and
-   * `storage` are two roots within the same repo/disk.
+   * Which backend serves `/dry/api/icons/**`.
    *
    * @default "local"
    */
-  kind?: "local" | "github" | "gitlab";
-  /** Git branch for GitHub/GitLab. Defaults to `icons`. */
-  branch?: string;
+  kind?: "local";
   /**
    * Same semantics as `DryStorageOption.root`, but for the Icon Management
    * feature's own storage root - kept separate from `storage.root` so
@@ -73,16 +64,11 @@ export interface DryContentOption {
   binding?: string;
   /**
    * `engine: "file"` only: which backend serves the JSON content store -
-   * same `local`/`github`/`gitlab` choice as `storage.kind`/`icons.kind`,
-   * sharing the same env-var credentials for `github`/`gitlab` (see those
-   * options' docs) - `content` is a third root within the same repo/disk,
-   * not a separate credential.
+   * local directory used for the JSON content store.
    *
    * @default "local"
    */
-  kind?: "local" | "github" | "gitlab";
-  /** Git branch for GitHub/GitLab. Defaults to `content`. */
-  branch?: string;
+  kind?: "local";
   /**
    * `engine: "file"` only: same semantics as `DryStorageOption.root`, but
    * for the JSON content store's own root.
@@ -116,15 +102,13 @@ export interface DryRichtextOption {
 
 export interface DryKvOption {
   /** Persistence backend for the server-side Key Value store. */
-  kind?: "local" | "sqlite" | "D1" | "github" | "gitlab" | "KV";
-  /** File/repository root for local/GitHub/GitLab persistence. */
+  kind?: "local" | "sqlite" | "D1" | "KV";
+  /** Directory root for local persistence. */
   root?: string;
   /** SQLite file path when `kind` is `sqlite`. */
   file?: string;
   /** D1/KV binding name when using a Workers runtime. */
   binding?: string;
-  /** GitHub/GitLab branch. Defaults to `kv`. */
-  branch?: string;
   maxEntries?: number;
   maxBytes?: number;
   defaultTtlMs?: number;
@@ -154,8 +138,7 @@ export interface DryOption {
  * Type-safe entry point for `dry.config.ts`.
  *
  * This deliberately returns the raw options unchanged: `resolveOptions()` is
- * the single place that applies defaults, resolves paths, and validates
- * deployment-specific values such as GitHub/GitLab credentials.
+ * the single place that applies defaults and resolves paths.
  */
 export function config(options: DryOption = {}): DryOption {
   return options;
@@ -166,36 +149,7 @@ export interface ResolvedLocalStorageOption {
   root: string;
 }
 
-export interface ResolvedGithubStorageOption {
-  kind: "github";
-  owner: string;
-  repo: string;
-  branch: string;
-  token: string;
-  /** Subpath within the repo files live under. `""` = repo root. */
-  root: string;
-}
-
-export interface ResolvedGitlabStorageOption {
-  kind: "gitlab";
-  /** API/instance base, e.g. `"https://gitlab.com"` - configurable (unlike
-   * the GitHub adapter's hardcoded `api.github.com`) since self-managed
-   * GitLab is common. No trailing slash. */
-  host: string;
-  /** Numeric project ID or URL-encoded-at-request-time `"namespace/project"`
-   * path - GitLab accepts either as the `:id` in `/projects/:id/...`. */
-  project: string;
-  branch: string;
-  token: string;
-  /** Subpath within the repo files live under. `""` = repo root. */
-  root: string;
-}
-
-/** A union so future kinds can be added without widening every existing branch. */
-export type ResolvedStorageOption =
-  | ResolvedLocalStorageOption
-  | ResolvedGithubStorageOption
-  | ResolvedGitlabStorageOption;
+export type ResolvedStorageOption = ResolvedLocalStorageOption;
 
 /** Same shape as `ResolvedStorageOption` - the Icon Management feature reuses
  * `createStorageAdapter()` unchanged, it just points at a different root. */
@@ -211,9 +165,7 @@ export interface ResolvedD1ContentOption {
   binding: string;
 }
 
-/** Same `local`/`github`/`gitlab` shape as `ResolvedStorageOption` - the file
- * content engine reuses `createStorageAdapter()` unchanged, same as
- * `ResolvedIconsOption` does, just pointed at a third root. */
+/** The file content engine reuses `createStorageAdapter()` unchanged. */
 export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOption;
 
 export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
@@ -240,8 +192,6 @@ export type ResolvedKvOption = ResolvedKvTuning & (
   | ({ kind: "sqlite"; file: string })
   | ({ kind: "D1"; binding: string })
   | ({ kind: "KV"; binding: string })
-  | ResolvedGithubStorageOption
-  | ResolvedGitlabStorageOption
 );
 
 export interface ResolvedDryOption {
@@ -318,75 +268,7 @@ export function readEnvVar(name: string): string | undefined {
 }
 
 /**
- * GitHub's repository/token come from env vars so secrets stay out of
- * `dry.config.ts`; branch is configured per root and is resolved by the
- * subsystem-level file-backed option.
- */
-function resolveGithubStorageOption(root: string, configuredBranch?: string): ResolvedGithubStorageOption {
-  const repoEnv = readEnvVar("GITHUB_REPO");
-  if (!repoEnv) {
-    throw new Error(
-      '[drycms] `storage.kind: "github"` requires a `GITHUB_REPO` env var shaped "owner/repo".',
-    );
-  }
-  const slash = repoEnv.indexOf("/");
-  if (slash <= 0 || slash === repoEnv.length - 1) {
-    throw new Error(
-      `[drycms] \`GITHUB_REPO\` must be shaped "owner/repo", received "${repoEnv}".`,
-    );
-  }
-
-  const token = readEnvVar("GITHUB_PAT_KEY");
-  if (!token) {
-    throw new Error(
-      '[drycms] `storage.kind: "github"` requires a `GITHUB_PAT_KEY` env var (a GitHub personal access token).',
-    );
-  }
-
-  return {
-    kind: "github",
-    owner: repoEnv.slice(0, slash),
-    repo: repoEnv.slice(slash + 1),
-    branch: configuredBranch || "main",
-    token,
-    root,
-  };
-}
-
-/**
- * GitLab's project/token remain environment-backed; branch is configured per
- * root and is resolved by the subsystem-level file-backed option.
- */
-function resolveGitlabStorageOption(root: string, configuredBranch?: string): ResolvedGitlabStorageOption {
-  const project = readEnvVar("GITLAB_PROJECT");
-  if (!project) {
-    throw new Error(
-      '[drycms] `storage.kind: "gitlab"` requires a `GITLAB_PROJECT` env var (a numeric project ID or a "namespace/project" path).',
-    );
-  }
-
-  const token = readEnvVar("GITLAB_PAT_KEY");
-  if (!token) {
-    throw new Error(
-      '[drycms] `storage.kind: "gitlab"` requires a `GITLAB_PAT_KEY` env var (a GitLab personal access token).',
-    );
-  }
-
-  const host = (readEnvVar("GITLAB_HOST") || "https://gitlab.com").replace(/\/+$/, "");
-
-  return {
-    kind: "gitlab",
-    host,
-    project,
-    branch: configuredBranch || "main",
-    token,
-    root,
-  };
-}
-
-/**
  * Shared by `resolveStorageOption` and `resolveIconsOption` - both are just a
- * `{kind?, root?}` bag resolving to a `local`/`github`/`gitlab` root, differing
  * only in which config key/default root they read. `optionName` is used
  * purely for error messages (`"storage"` or `"icons"`).
  */
@@ -402,12 +284,12 @@ function resolveFileBackedOption(
       `[drycms] \`${optionName}.kind\` must be a string, received ${typeof kind}.`,
     );
   }
-  if (kind !== "local" && kind !== "github" && kind !== "gitlab") {
+  if (kind !== "local") {
     const roadmap = PLANNED_STORAGE_KINDS.includes(kind)
       ? ` \`${optionName}.kind: "${kind}"\` is on the roadmap but not implemented yet.`
       : ` "${kind}" is not a recognized storage kind.`;
     throw new Error(
-      `[drycms]${roadmap} Only "local", "github" and "gitlab" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
+      `[drycms]${roadmap} Only "local" is available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
     );
   }
 
@@ -422,21 +304,10 @@ function resolveFileBackedOption(
       `[drycms] \`${optionName}.branch\` must be a string, received ${typeof rawBranch}.`,
     );
   }
-  if (kind === "local" && rawBranch !== undefined) {
-    throw new Error(
-      `[drycms] \`${optionName}.branch\` is only used with \`${optionName}.kind: "github"\` or \`"gitlab"\`.`,
-    );
+  if (rawBranch !== undefined) {
+    throw new Error(`[drycms] \`${optionName}.branch\` is no longer supported; use local storage without a branch.`);
   }
-  // `local` normalizes trailing slashes away via `resolvePath` - github/gitlab
-  // don't go through that, so a config'd trailing slash would otherwise make
-  // their `stripRoot`'s `${root}/` prefix check never match a real path.
   const normalizedRoot = root.replace(/\/+$/, "");
-
-  const defaultBranch = optionName.split(".")[0];
-  const branch = (rawBranch as string | undefined) || defaultBranch;
-  if (kind === "github") return resolveGithubStorageOption(normalizedRoot, branch);
-  if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot, branch);
-
   return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };
 }
 
@@ -462,6 +333,7 @@ function resolveRichtextOption(richtext: DryRichtextOption = {}): ResolvedRichte
 }
 
 function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
+  const legacyBranch = (content as DryContentOption & { branch?: unknown }).branch;
   const engine = content.engine ?? "sqlite";
   if (typeof engine !== "string") {
     throw new TypeError(`[drycms] \`content.engine\` must be a string, received ${typeof engine}.`);
@@ -480,7 +352,7 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
       '[drycms] `content.binding` is only used with `content.engine: "D1"` - add `engine: "D1"` or remove `binding`.',
     );
   }
-  if (engine !== "file" && (content.kind !== undefined || content.root !== undefined || content.branch !== undefined)) {
+  if (engine !== "file" && (content.kind !== undefined || content.root !== undefined || legacyBranch !== undefined)) {
     throw new Error(
       '[drycms] `content.kind`/`content.root`/`content.branch` are only used with `content.engine: "file"` - add `engine: "file"` or remove them.',
     );
@@ -498,7 +370,7 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
 
   if (engine === "file") {
     const storageOption = resolveFileBackedOption(
-      { kind: content.kind, root: content.root, branch: content.branch },
+      { kind: content.kind, root: content.root, branch: legacyBranch },
       DEFAULT_CONTENT_ROOT,
       "content",
     );
@@ -521,19 +393,23 @@ function resolvePositiveNumber(value: unknown, key: string, fallback: number): n
 }
 
 function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
+  const legacyBranch = (option as DryKvOption & { branch?: unknown }).branch;
+  if (legacyBranch !== undefined) {
+    throw new Error('[drycms] `kv.branch` is no longer supported; use local, SQLite, D1 or Cloudflare KV.');
+  }
   const kind = option.kind ?? "local";
-  if (typeof kind !== "string" || !["local", "sqlite", "D1", "github", "gitlab", "KV"].includes(kind)) {
-    throw new Error(`[drycms] \`kv.kind\` must be one of local, sqlite, D1, github, gitlab or KV.`);
+  if (typeof kind !== "string" || !["local", "sqlite", "D1", "KV"].includes(kind)) {
+    throw new Error(`[drycms] \`kv.kind\` must be one of local, sqlite, D1 or KV.`);
   }
   if (kind === "sqlite") {
-    if (option.root !== undefined || option.branch !== undefined || option.binding !== undefined) {
-      throw new Error('[drycms] `kv.root`/`kv.branch`/`kv.binding` are not used with `kv.kind: "sqlite"`.');
+    if (option.root !== undefined || option.binding !== undefined) {
+      throw new Error('[drycms] `kv.root`/`kv.binding` are not used with `kv.kind: "sqlite"`.');
     }
   }
-  if ((kind === "D1" || kind === "KV") && (option.root !== undefined || option.file !== undefined || option.branch !== undefined)) {
-    throw new Error(`[drycms] \`kv.root\`/\`kv.file\`/\`kv.branch\` are not used with \`kv.kind: "${kind}"\`.`);
+  if ((kind === "D1" || kind === "KV") && (option.root !== undefined || option.file !== undefined)) {
+    throw new Error(`[drycms] \`kv.root\`/\`kv.file\` are not used with \`kv.kind: "${kind}"\`.`);
   }
-  if ((kind === "local" || kind === "github" || kind === "gitlab") && (option.file !== undefined || option.binding !== undefined)) {
+  if (kind === "local" && (option.file !== undefined || option.binding !== undefined)) {
     throw new Error(`[drycms] \`kv.file\`/\`kv.binding\` are not used with \`kv.kind: "${kind}"\`.`);
   }
 
@@ -558,7 +434,7 @@ function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
     return { ...tuning, kind, binding };
   }
   const storageOption = resolveFileBackedOption(
-    { kind, root: option.root ?? DEFAULT_KV_ROOT, branch: option.branch },
+    { kind, root: option.root ?? DEFAULT_KV_ROOT },
     DEFAULT_KV_ROOT,
     "kv",
   );
