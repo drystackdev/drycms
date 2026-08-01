@@ -325,7 +325,6 @@ export default function DryLayout({ children }: Props) {
               )}
               items={[
                 { type: "item", label: "Profile", icon: <UserIcon />, onClick: () => route(`${path}/profile`) },
-                { type: "separator" },
                 { type: "item", label: "Logout", icon: <LogOutIcon />, danger: true, onClick: () => void logout() },
               ]}
             />

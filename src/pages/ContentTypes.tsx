@@ -1,11 +1,12 @@
-import { useCallback, useMemo } from "preact/hooks";
+import { useCallback, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import DataTable from "../components/DataTable.js";
 import Icon from "../components/Icon.js";
-import { PlusIcon, type IconName } from "../components/icons.js";
+import { PlusIcon, UploadIcon, type IconName } from "../components/icons.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
-import { activeFields } from "../content-types/system-fields.js";
+import { diffContentType } from "../content-types/draft-diff.js";
+import { drafts as draftsSignal } from "../content-types/draft-store.js";
 import type {
   ContentTypeDefinition,
   ContentTypeKind,
@@ -13,6 +14,7 @@ import type {
 import { useFetch } from "../hooks/useFetch.js";
 import { useDocumentTitle } from "./page-common.js";
 import { useParam } from "../hooks/useParam.js";
+import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
 
 const GROUPS: { kind: ContentTypeKind; label: string; icon: IconName }[] = [
   { kind: "collection", label: "Collection", icon: "Collection" },
@@ -24,7 +26,8 @@ interface Row extends Record<string, unknown> {
   id: string;
   label: string;
   description: string;
-  fieldCount: number;
+  editedCount: number;
+  isDraftOnly: boolean;
 }
 
 export default function ContentTypes() {
@@ -40,12 +43,13 @@ export default function ContentTypes() {
     "selectedKind",
     "collection",
   );
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
 
   const listFetcher = useCallback(
     (ifVersion: number | undefined, signal: AbortSignal) => api.listVersioned(ifVersion, signal),
     [api],
   );
-  const { data: definitions, error } = useFetch<ContentTypeDefinition[]>("content-types:list", listFetcher);
+  const { data: definitions, error, reload } = useFetch<ContentTypeDefinition[]>("content-types:list", listFetcher);
   const loadError = error ? (error instanceof Error ? error.message : "Failed to load content types.") : null;
 
   // `hidden` types (role/permission/aiKey, plus the `seo` component) are
@@ -53,19 +57,51 @@ export default function ContentTypes() {
   // comment on `ContentTypeDefinition.hidden`.
   const visibleDefinitions = (definitions ?? []).filter((d) => !d.hidden);
 
+  // Every pending, unapplied edit (see `draft-store.ts`) - `@preact/signals`
+  // re-renders this page whenever a draft is saved/discarded, including from
+  // `ContentTypeEditor.tsx` on a DIFFERENT page visit, without any extra
+  // wiring.
+  const pendingDrafts = draftsSignal.value;
+  const pendingList = Object.values(pendingDrafts);
+
   const countByKind = (kind: ContentTypeKind) =>
     visibleDefinitions.filter((d) => d.kind === kind).length;
 
-  const rows: Row[] = visibleDefinitions
-    .filter((d) => d.kind === selectedKind)
-    .map((d) => ({
-      id: d.id,
-      label: d.label,
-      description: d.description ?? "",
-      fieldCount: activeFields(d).length,
+  // A not-yet-created draft (`isNew`) has no row of its own in `definitions`
+  // yet, so it's synthesized here; an existing type's pending draft instead
+  // overlays that type's own row below (its "Edited" badge), same row.
+  const newDraftRows: Row[] = pendingList
+    .filter((entry) => entry.isNew && entry.definition.kind === selectedKind)
+    .map((entry) => ({
+      id: entry.definition.id,
+      label: entry.definition.label || entry.definition.name || "(untitled)",
+      description: entry.definition.description ?? "",
+      editedCount: diffContentType(undefined, entry.definition).editedCount,
+      isDraftOnly: true,
     }));
 
+  const rows: Row[] = [
+    ...visibleDefinitions
+      .filter((d) => d.kind === selectedKind)
+      .map((d): Row => {
+        const draft = pendingDrafts[d.id];
+        return {
+          id: d.id,
+          label: d.label,
+          description: d.description ?? "",
+          editedCount: draft ? diffContentType(d, draft.definition).editedCount : 0,
+          isDraftOnly: false,
+        };
+      }),
+    ...newDraftRows,
+  ];
+
   const selectedGroup = GROUPS.find((g) => g.kind === selectedKind)!;
+
+  // Across ALL kinds at once, not just the selected tab - "Apply and build"
+  // reviews and applies everything pending in one dialog/request (see
+  // `status/content-type-staged-apply.md`).
+  const pendingCount = pendingList.length;
 
   return (
     <>
@@ -92,7 +128,10 @@ export default function ContentTypes() {
                   sortable: true,
                   render: (_value, row) => (
                     <div class="stack" style={{ gap: "0.125rem" }}>
-                      <span>{row.label}</span>
+                      <span class="row" style={{ gap: "0.375rem" }}>
+                        {row.label}
+                        {row.isDraftOnly && <span class="badge sm info">Draft</span>}
+                      </span>
                       <span class="hint">
                         {row.description || <i>No description</i>}
                       </span>
@@ -100,12 +139,14 @@ export default function ContentTypes() {
                   ),
                 },
                 {
-                  key: "fieldCount",
-                  label: "Fields",
+                  key: "editedCount",
+                  label: "Edited",
                   numeric: true,
                   sortable: true,
                   render: (_v, row) => (
-                    <span class="badge outline">{row.fieldCount}</span>
+                    <span class={`badge ${row.editedCount > 0 ? "warning" : "outline"}`}>
+                      {row.editedCount}
+                    </span>
                   ),
                 },
               ]}
@@ -129,24 +170,47 @@ export default function ContentTypes() {
               }
             />
           </div>
-          <ul class="content-types-nav">
-            {GROUPS.map(({ kind, label, icon }) => (
-              <li key={kind}>
-                <button
-                  type="button"
-                  aria-current={kind === selectedKind ? "page" : undefined}
-                  onClick={() => setSelectedKind(kind)}
-                >
-                  <Icon name={icon} />
-                  <span>{label}</span>
-                  <span class="spacer" />
-                  <span class="badge outline">{countByKind(kind)}</span>
+          <div class="stack">
+            <ul class="content-types-nav">
+              {GROUPS.map(({ kind, label, icon }) => (
+                <li key={kind}>
+                  <button
+                    type="button"
+                    aria-current={kind === selectedKind ? "page" : undefined}
+                    onClick={() => setSelectedKind(kind)}
+                  >
+                    <Icon name={icon} />
+                    <span>{label}</span>
+                    <span class="spacer" />
+                    <span class="badge outline">{countByKind(kind)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {pendingCount > 0 && (
+              <div class="content-types-apply-block">
+                <h3>Unapplied changes</h3>
+                <p>
+                  {pendingCount} content type{pendingCount === 1 ? "" : "s"}{" "}
+                  {pendingCount === 1 ? "has" : "have"} draft changes waiting
+                  to be applied.
+                </p>
+                <button type="button" onClick={() => setApplyDialogOpen(true)}>
+                  <UploadIcon /> Apply and build
                 </button>
-              </li>
-            ))}
-          </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      <ApplyBuildDialog
+        open={applyDialogOpen}
+        liveDefinitions={visibleDefinitions}
+        onClose={() => setApplyDialogOpen(false)}
+        onApplied={() => void reload()}
+      />
     </>
   );
 }

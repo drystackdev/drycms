@@ -427,6 +427,99 @@ describe("DELETE /dry/api/content-types/[slug]", () => {
   });
 });
 
+describe("POST /dry/api/content-types - batch apply/plan (Apply and build)", () => {
+  it("plan mode dry-runs every draft without writing anything", async () => {
+    await post({ definition: type("custom-batch-a", "batcha", { fields: [field("note")] }) });
+    const current = (await get("custom-batch-a")).json.definition as ContentTypeDefinition;
+    const draft = { ...current, fields: [] }; // drops "note" - destructive
+
+    const { status, json } = await post({ mode: "plan", drafts: [{ definition: draft }] });
+    expect(status).toBe(200);
+    expect(json.mode).toBe("plan");
+    expect(json.results).toHaveLength(1);
+    expect(json.results[0]).toMatchObject({ id: "custom-batch-a", ok: true });
+    expect(json.results[0].destructiveSummary.some((d: any) => d.kind === "drop-column")).toBe(true);
+
+    // Never applied - the live field is still there.
+    expect((await get("custom-batch-a")).json.definition.fields).toHaveLength(1);
+  });
+
+  it("plan mode reports a per-item error without aborting the other items", async () => {
+    const badDraft = type("custom-batch-bad", "1bad"); // invalid name
+    const goodDraft = type("custom-batch-good", "batchgood");
+
+    const { status, json } = await post({
+      mode: "plan",
+      drafts: [{ definition: badDraft }, { definition: goodDraft }],
+    });
+    expect(status).toBe(200);
+    expect(json.results).toHaveLength(2);
+    expect(json.results[0]).toMatchObject({ id: "custom-batch-bad", ok: false });
+    expect(typeof json.results[0].error).toBe("string");
+    expect(json.results[1]).toMatchObject({ id: "custom-batch-good", ok: true });
+  });
+
+  it("apply mode actually creates/updates each draft, sequentially", async () => {
+    const draft = type("custom-batch-apply-a", "batchapplya", { fields: [field("headline")] });
+    const { status, json } = await post({ mode: "apply", drafts: [{ definition: draft }] });
+    expect(status).toBe(200);
+    expect(json.mode).toBe("apply");
+    expect(json.results).toEqual([
+      expect.objectContaining({ id: "custom-batch-apply-a", ok: true }),
+    ]);
+
+    const saved = (await get("custom-batch-apply-a")).json.definition as ContentTypeDefinition;
+    expect(saved.version).toBe(1);
+    expect(saved.fields).toHaveLength(1);
+  });
+
+  it("apply mode applies destructive changes without a separate confirm step (already reviewed via plan)", async () => {
+    await post({ definition: type("custom-batch-apply-b", "batchapplyb", { fields: [field("note")] }) });
+    const current = (await get("custom-batch-apply-b")).json.definition as ContentTypeDefinition;
+    const draft = { ...current, fields: [] };
+
+    const { json } = await post({ mode: "apply", drafts: [{ definition: draft }] });
+    expect(json.results[0]).toMatchObject({ ok: true });
+    expect((await get("custom-batch-apply-b")).json.definition.fields).toEqual([]);
+  });
+
+  it("apply mode stops at the first failure, leaving later drafts un-applied", async () => {
+    const badDraft = type("custom-batch-stop-bad", "1bad"); // invalid name - fails validation
+    const laterDraft = type("custom-batch-stop-later", "batchstoplater");
+
+    const { json } = await post({
+      mode: "apply",
+      drafts: [{ definition: badDraft }, { definition: laterDraft }],
+    });
+    expect(json.results).toHaveLength(1);
+    expect(json.results[0]).toMatchObject({ id: "custom-batch-stop-bad", ok: false });
+
+    // Never reached - stopped before it.
+    expect((await get("custom-batch-stop-later")).status).toBe(404);
+  });
+
+  it("apply mode processes drafts sequentially, so a later draft's plan sees an earlier one already committed in the same batch", async () => {
+    // A rename that would collide with another type's CURRENT name is only
+    // safe if that other type's own rename (earlier in the same batch) has
+    // already landed - proves `performSave` re-reads live state between
+    // items instead of planning every item against the pre-batch snapshot.
+    await post({ definition: type("custom-batch-seq-a", "seqa") });
+    await post({ definition: type("custom-batch-seq-b", "seqb") });
+    const a = (await get("custom-batch-seq-a")).json.definition as ContentTypeDefinition;
+    const b = (await get("custom-batch-seq-b")).json.definition as ContentTypeDefinition;
+
+    const draftA = { ...a, name: "seqa-renamed", label: "seqa-renamed" };
+    const draftB = { ...b, name: "seqa", label: "seqa" }; // takes A's old name
+
+    const { json } = await post({ mode: "apply", drafts: [{ definition: draftA }, { definition: draftB }] });
+    expect(json.results).toEqual([
+      expect.objectContaining({ id: "custom-batch-seq-a", ok: true }),
+      expect.objectContaining({ id: "custom-batch-seq-b", ok: true }),
+    ]);
+    expect((await get("custom-batch-seq-b")).json.definition.name).toBe("seqa");
+  });
+});
+
 describe("content-types route - authorization", () => {
   it("401s every verb with no session", async () => {
     expect((await get(undefined, undefined, null)).status).toBe(401);

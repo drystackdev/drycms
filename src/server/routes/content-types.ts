@@ -3,7 +3,12 @@ import { content } from "../config.js";
 import { resolveAccess } from "../../content-types/access.js";
 import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
-import { ContentEngineError, type AnySavePlan, type ContentEngineAdapter } from "../../content-types/engine/types.js";
+import {
+  ContentEngineError,
+  type AnyDestructiveChange,
+  type AnySavePlan,
+  type ContentEngineAdapter,
+} from "../../content-types/engine/types.js";
 import {
   assertNotFrozen,
   NamingError,
@@ -12,7 +17,7 @@ import {
   validateProtectedFields,
 } from "../../content-types/naming.js";
 import { collectTableNames, resolveTableTree } from "../../content-types/tree.js";
-import type { ContentTypeDefinition } from "../../content-types/types.js";
+import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
 import { randomUUID } from "../../lib/uuid.js";
 import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
 
@@ -111,15 +116,23 @@ interface SaveRequestBody {
   confirm?: boolean;
 }
 
-/** Shared by POST (create) and PUT (update): validates, plans, and either
- * returns the plan for confirmation (destructive changes pending, caller
- * hasn't confirmed yet) or applies it. */
-async function handleSave(
+interface SaveResultData {
+  requiresConfirm?: true;
+  destructiveSummary?: AnyDestructiveChange[];
+  definition?: ContentTypeDefinition;
+}
+
+/** Core of POST/PUT and of each item in a batch (see `handleBatch` below):
+ * validates, plans, and either returns the plan for confirmation (destructive
+ * changes pending, caller hasn't confirmed yet), returns the plan for
+ * preview only (`dryRun`, never writes), or applies it. */
+async function performSave(
   adapter: ContentEngineAdapter,
   entryAdapter: ContentEntryEngineAdapter,
   definition: ContentTypeDefinition,
   confirm: boolean,
-): Promise<Response> {
+  dryRun = false,
+): Promise<SaveResultData> {
   definition = normalizeFieldOrder(definition);
   const allTypes = await adapter.listContentTypes();
   const existing = allTypes.find((t) => t.id === definition.id);
@@ -151,8 +164,11 @@ async function handleSave(
   }
 
   const plan: AnySavePlan = await adapter.planSave(definition);
+  if (dryRun) {
+    return { destructiveSummary: plan.destructiveSummary };
+  }
   if (plan.destructiveSummary.length > 0 && !confirm) {
-    return jsonResponse({ requiresConfirm: true, destructiveSummary: plan.destructiveSummary });
+    return { requiresConfirm: true, destructiveSummary: plan.destructiveSummary };
   }
 
   const saved = await adapter.applySave(definition, plan);
@@ -165,7 +181,84 @@ async function handleSave(
     await entryAdapter.ensureSingletonEntry(saved, await adapter.listContentTypes());
   }
 
-  return jsonResponse({ definition: saved }, 200);
+  return { definition: saved };
+}
+
+/** Shared by POST (create) and PUT (update). */
+async function handleSave(
+  adapter: ContentEngineAdapter,
+  entryAdapter: ContentEntryEngineAdapter,
+  definition: ContentTypeDefinition,
+  confirm: boolean,
+): Promise<Response> {
+  return jsonResponse(await performSave(adapter, entryAdapter, definition, confirm), 200);
+}
+
+interface BatchDraftInput {
+  definition: ContentTypeDefinition;
+}
+
+interface BatchItemResult {
+  id: string;
+  label: string;
+  kind: ContentTypeKind;
+  ok: boolean;
+  destructiveSummary?: AnyDestructiveChange[];
+  error?: string;
+}
+
+/**
+ * The "Apply and build" flow (see `status/content-type-staged-apply.md`) -
+ * every draft the client has pending (across all 3 kinds) in one request.
+ * `mode: "plan"` is a pure dry-run (`performSave(..., dryRun: true)` for
+ * every item, never writes) used for the review/build-check screen.
+ * `mode: "apply"` actually runs each item's migration, sequentially and in
+ * the order the client sent them, always with `confirm: true` (the
+ * destructive-change review already happened client-side during `"plan"`).
+ * Sequential (not parallel) matters here: `performSave` re-reads live state
+ * from `adapter.listContentTypes()` on every call, so applying item N sees
+ * items 1..N-1 of THIS SAME batch already committed - the only way a
+ * component's own draft and one of its dependents' drafts, edited together,
+ * both land consistently in one "Apply and build". Stops at the first
+ * failure in apply mode (whatever already committed stays committed - each
+ * item is its own transaction, see `engine/sqlite.ts`'s `applySave`) so the
+ * client knows exactly which drafts are now safe to discard and which are
+ * still pending. Plan mode never stops early - every item's result is
+ * useful to show at once. */
+async function handleBatch(
+  adapter: ContentEngineAdapter,
+  entryAdapter: ContentEntryEngineAdapter,
+  mode: "plan" | "apply",
+  draftInputs: BatchDraftInput[],
+): Promise<Response> {
+  const results: BatchItemResult[] = [];
+  for (const { definition } of draftInputs) {
+    try {
+      const outcome = await performSave(adapter, entryAdapter, definition, mode === "apply", mode === "plan");
+      results.push({
+        id: definition.id,
+        label: definition.label || definition.name,
+        kind: definition.kind,
+        ok: true,
+        destructiveSummary: outcome.destructiveSummary,
+      });
+    } catch (error) {
+      results.push({
+        id: definition.id,
+        label: definition.label || definition.name,
+        kind: definition.kind,
+        ok: false,
+        error:
+          error instanceof ContentEngineError || error instanceof NamingError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : "Unknown error.",
+      });
+      if (mode === "apply") break;
+    }
+  }
+  return jsonResponse({ mode, results });
 }
 
 export const GET: DryRouteHandler = async (context) => {
@@ -203,7 +296,20 @@ export const POST: DryRouteHandler = async (context) => {
     const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
     if (denied) return denied;
 
-    const raw = (await context.request.json()) as Partial<SaveRequestBody>;
+    const raw = (await context.request.json()) as Partial<SaveRequestBody> & {
+      mode?: "plan" | "apply";
+      drafts?: BatchDraftInput[];
+    };
+
+    // "Apply and build" (see `status/content-type-staged-apply.md`) - a
+    // distinct request shape (`drafts[]` instead of a single `definition`)
+    // on the same route/method rather than a new URL segment, since routing
+    // here only dispatches on the first path segment + HTTP method (see
+    // `server/handler.ts`).
+    if (Array.isArray(raw.drafts)) {
+      return await handleBatch(adapter, entryAdapter, raw.mode === "apply" ? "apply" : "plan", raw.drafts);
+    }
+
     if (!raw.definition) throw new ContentEngineError("invalid_definition", "Request body must include `definition`.");
 
     const definition: ContentTypeDefinition = {

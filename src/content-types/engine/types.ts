@@ -1,6 +1,6 @@
-import type { SavePlan } from "../migration.js";
+import type { DestructiveChange, SavePlan } from "../migration.js";
 import type { ContentTypeDefinition } from "../types.js";
-import type { FileSavePlan } from "./file/migration-file.js";
+import type { FileDestructiveChange, FileSavePlan } from "./file/migration-file.js";
 
 /** `sqlite`/`D1` produce a `SavePlan` (DDL `Statement`s); `file` produces a
  * `FileSavePlan` (a bulk-rewrite description) - see `engine/index.ts`'s
@@ -9,6 +9,12 @@ import type { FileSavePlan } from "./file/migration-file.js";
  * adapter contract just widens to the union rather than needing a generic
  * parameter threaded through every engine module. */
 export type AnySavePlan = SavePlan | FileSavePlan;
+
+/** `AnySavePlan["destructiveSummary"]`'s element type - every caller that
+ * surfaces a destructive-change summary to a person (the batch "Apply and
+ * build" review, `draft-diff.ts`'s `describeDestructiveChange`) needs to
+ * accept either engine's shape, not just SQL's `DestructiveChange`. */
+export type AnyDestructiveChange = DestructiveChange | FileDestructiveChange;
 
 export type ContentEngineErrorCode =
   | "not_found"

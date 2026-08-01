@@ -1,10 +1,24 @@
-import type { DestructiveChange } from "./migration.js";
-import type { ContentTypeDefinition } from "./types.js";
+import type { AnyDestructiveChange } from "./engine/types.js";
+import type { ContentTypeDefinition, ContentTypeKind } from "./types.js";
 
 export interface SaveResponse {
   requiresConfirm?: true;
-  destructiveSummary?: DestructiveChange[];
+  destructiveSummary?: AnyDestructiveChange[];
   definition?: ContentTypeDefinition;
+}
+
+export interface BatchItemResult {
+  id: string;
+  label: string;
+  kind: ContentTypeKind;
+  ok: boolean;
+  destructiveSummary?: AnyDestructiveChange[];
+  error?: string;
+}
+
+export interface BatchResponse {
+  mode: "plan" | "apply";
+  results: BatchItemResult[];
 }
 
 export class ContentTypesApiError extends Error {}
@@ -66,6 +80,31 @@ export function createContentTypesApi(baseUrl: string) {
     return res.json();
   }
 
+  /** "Apply and build" (see `status/content-type-staged-apply.md`) - shares
+   * the collection endpoint (POST) with `create()`, distinguished server-side
+   * by sending `drafts[]` instead of a single `definition`. `mode: "plan"` is
+   * a pure dry-run (no writes); `mode: "apply"` actually runs the migrations,
+   * sequentially, stopping at the first failure. */
+  async function planBatch(drafts: ContentTypeDefinition[]): Promise<BatchResponse> {
+    const res = await fetch(baseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "plan", drafts: drafts.map((definition) => ({ definition })) }),
+    });
+    await assertOk(res, "Failed to check pending changes.");
+    return res.json();
+  }
+
+  async function applyBatch(drafts: ContentTypeDefinition[]): Promise<BatchResponse> {
+    const res = await fetch(baseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "apply", drafts: drafts.map((definition) => ({ definition })) }),
+    });
+    await assertOk(res, "Failed to apply pending changes.");
+    return res.json();
+  }
+
   async function remove(id: string): Promise<void> {
     const res = await fetch(`${baseUrl}/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (res.status === 204) return;
@@ -85,7 +124,7 @@ export function createContentTypesApi(baseUrl: string) {
     return body.changed ? { changed: true, version: body.version, data: body.definitions } : { changed: false, version: body.version };
   }
 
-  return { list, get, create, update, remove, listVersioned };
+  return { list, get, create, update, remove, listVersioned, planBatch, applyBatch };
 }
 
 export type ContentTypesApi = ReturnType<typeof createContentTypesApi>;

@@ -7,9 +7,9 @@ import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { bumpContentTypesVersion } from "../store/content-types.js";
+import { discardDraft, drafts, getDraft, saveDraft } from "../content-types/draft-store.js";
 import { randomUUID } from "../lib/uuid.js";
 import type { RelationFieldConfig, RelationMirrorFieldConfig } from "../content-types/field-registry.js";
-import type { DestructiveChange } from "../content-types/migration.js";
 import {
   activeFields,
   effectiveFeatures,
@@ -23,7 +23,7 @@ import type {
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
-import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
+import { ArrowLeftIcon, InfoCircleIcon, TrashIcon } from "../components/icons.js";
 import FeaturesFieldset, {
   FEATURES_BY_KIND,
 } from "./content-type-editor/FeaturesFieldset.js";
@@ -152,15 +152,26 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     () => createContentTypesApi(`${path}/api/content-types`),
     [],
   );
-  const isNew = !id;
+  // Whether this id exists on the server (a real, applied content type) -
+  // `false` both for the `/new/:kind` route AND for a not-yet-applied draft
+  // reopened through its own `/:id/edit` url (see the load effect below).
+  // Starts from the simple `!id` guess so first render has something
+  // reasonable, then gets corrected once `allTypes` is fetched.
+  const [isNew, setIsNew] = useState(!id);
 
   const [definition, setDefinition] = useState<ContentTypeDefinition | null>(
     null,
   );
+  // Draft-overlaid (relation/component pickers, mirror rows) - see the load
+  // effect below. `liveTypes` is the raw, un-overlaid server list, kept
+  // separately only so `handleDiscardDraft` can fall back to the true live
+  // definition rather than re-reading its own now-discarded draft back out
+  // of `allTypes`.
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
+  const [liveTypes, setLiveTypes] = useState<ContentTypeDefinition[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [tableNameError, setTableNameError] = useState<string | null>(null);
+  const [hasDraft, setHasDraft] = useState(false);
 
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
   const [editingField, setEditingField] = useState<FieldDefinition | null>(
@@ -173,17 +184,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   // `mirrorEntryToFieldDefinition`.
   const [pendingMirrorRemove, setPendingMirrorRemove] =
     useState<SystemFieldEntry | null>(null);
-  const [mirrorDestructiveSummary, setMirrorDestructiveSummary] = useState<
-    DestructiveChange[] | null
-  >(null);
-  const [mirrorRemoving, setMirrorRemoving] = useState(false);
 
-  const [pendingConfirm, setPendingConfirm] = useState<
-    DestructiveChange[] | null
-  >(null);
-  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showDiscardDraftConfirm, setShowDiscardDraftConfirm] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
 
   // Snapshot of `definition` right after load/creation, before any edits -
@@ -200,23 +204,40 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     (async () => {
       try {
         const types = await api.list();
-        setAllTypes(types);
+        let liveType: ContentTypeDefinition | undefined;
         let loaded: ContentTypeDefinition;
+
         if (id) {
-          loaded = types.find((t) => t.id === id) ?? (await api.get(id));
+          liveType = types.find((t) => t.id === id);
+          const draftEntry = getDraft(id);
+          if (draftEntry) {
+            // Reopening a pending draft (whether it already exists on the
+            // server or not) - the draft always wins over the live/server
+            // copy, since it's the admin's most recent unapplied edit.
+            loaded = draftEntry.definition;
+          } else if (liveType) {
+            loaded = liveType;
+          } else {
+            // No cached copy, no draft - either a stale/direct url, or the
+            // list cache just hasn't caught up yet. `api.get` throws a real
+            // 404 if it genuinely doesn't exist anywhere.
+            loaded = await api.get(id);
+            liveType = loaded;
+          }
           // `hidden` types (role/permission/aiKey) have no schema editor of
           // their own - only reachable here via a direct/stale URL, since
           // `ContentTypes.tsx`/`DryLayout.tsx` never link to one. Bounce back
           // rather than rendering a form whose Save the server will reject
           // anyway (see `routes/content-types.ts`'s `frozen` check).
-          if (loaded.hidden) {
+          if (liveType?.hidden) {
             toast.add({
               type: "error",
-              title: `"${loaded.label || loaded.name}" is managed on its own page, not here.`,
+              title: `"${liveType.label || liveType.name}" is managed on its own page, not here.`,
             });
-            route(`${path}/content-types?selectedKind=${loaded.kind}`);
+            route(`${path}/content-types?selectedKind=${liveType.kind}`);
             return;
           }
+          setHasDraft(!!draftEntry);
         } else {
           const initialKind: ContentTypeKind =
             kind === "singleton" || kind === "component" ? kind : "collection";
@@ -230,7 +251,21 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             fields: [],
             version: 0,
           };
+          setHasDraft(false);
         }
+
+        // Every OTHER type's own pending draft (if any) is what the admin is
+        // actually looking at right now in this same browser - overlay it so
+        // relation/component pickers and mirror rows reflect the in-progress
+        // schema, not whatever's still live on the server.
+        setLiveTypes(types);
+        const merged = types.map((t) => getDraft(t.id)?.definition ?? t);
+        for (const entry of Object.values(drafts.value)) {
+          if (!merged.some((t) => t.id === entry.definition.id)) merged.push(entry.definition);
+        }
+        setAllTypes(merged);
+
+        setIsNew(!liveType);
         setDefinition(loaded);
         setInitialSnapshot(JSON.stringify(loaded));
       } catch (error) {
@@ -482,11 +517,13 @@ export default function ContentTypeEditor({ id, kind }: Props) {
    * a `relation` field declared on ANOTHER content type (`entry.mirror.
    * sourceTypeId`/`sourceFieldId`). The only way to make the relationship
    * itself go away is to remove that real field, on that OTHER type - so
-   * this saves a SEPARATE `ContentTypeDefinition` through the same API,
-   * independent of this page's own `definition`/`submit`. Reuses the
-   * server's normal destructive-change confirmation (`requiresConfirm`) -
-   * dropping a `relation` field can drop a real column/child-table. */
-  async function deleteMirrorSource(entry: SystemFieldEntry, confirm: boolean) {
+   * this stages a draft for that SEPARATE `ContentTypeDefinition`,
+   * independent of this page's own `definition`/Save button. Like every
+   * other edit now, it only takes real effect once "Apply and build" runs
+   * on the Content Types page (see `status/content-type-staged-apply.md`) -
+   * no server call, no destructive-change confirmation here anymore, that
+   * moved to the batch apply dialog. */
+  function deleteMirrorSource(entry: SystemFieldEntry) {
     const mirror = entry.mirror;
     if (!mirror) return;
     const sourceType = allTypes.find((t) => t.id === mirror.sourceTypeId);
@@ -501,77 +538,61 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         sourceType.fields.filter((f) => f.id !== mirror.sourceFieldId),
       ),
     };
-    setMirrorRemoving(true);
-    try {
-      const response = await api.update(updatedSource, confirm);
-      if (response.requiresConfirm) {
-        setMirrorDestructiveSummary(response.destructiveSummary ?? []);
-        return;
-      }
-      const saved = response.definition ?? updatedSource;
-      setAllTypes((types) => types.map((t) => (t.id === saved.id ? saved : t)));
-      // A self-relation mirrors back onto the SAME type currently open in
-      // this editor - keep its own draft in sync with what the server just
-      // saved, same as `allTypes` above, rather than leaving stale fields
-      // sitting in local state until the next reload.
-      if (definition && definition.id === saved.id) {
-        setDefinition(saved);
-        setInitialSnapshot(JSON.stringify(saved));
-      }
-      setMirrorDestructiveSummary(null);
-      setPendingMirrorRemove(null);
-      toast.add({
-        type: "success",
-        title: `Removed "${mirror.sourceFieldLabel}" from "${mirror.sourceTypeLabel}".`,
-      });
-    } catch (error) {
-      toast.add({
-        type: "error",
-        title: "Remove failed",
-        description: error instanceof Error ? error.message : undefined,
-      });
-    } finally {
-      setMirrorRemoving(false);
+    saveDraft(updatedSource, getDraft(sourceType.id)?.isNew ?? false);
+    setAllTypes((types) => types.map((t) => (t.id === updatedSource.id ? updatedSource : t)));
+    // A self-relation mirrors back onto the SAME type currently open in this
+    // editor - keep the on-screen draft in sync with what was just staged,
+    // same as `allTypes` above, rather than leaving stale fields sitting in
+    // local state until the next reload.
+    if (definition && definition.id === updatedSource.id) {
+      setDefinition(updatedSource);
+      setInitialSnapshot(JSON.stringify(updatedSource));
     }
+    setPendingMirrorRemove(null);
+    toast.add({
+      type: "success",
+      title: `Staged removal of "${mirror.sourceFieldLabel}" from "${mirror.sourceTypeLabel}".`,
+      description: "Use Apply and build on Content Types to make it live.",
+    });
   }
 
-  async function submit(confirm: boolean) {
+  /** Writes `definition` to the local draft store (see `draft-store.ts`) -
+   * no server call, no migration runs yet. Applying it for real is a
+   * separate, explicit step on the Content Types list page ("Apply and
+   * build"), which reviews every pending draft together and dry-runs the
+   * combined migration before writing anything. */
+  function handleSaveClick() {
     if (!definition) return;
     if (!definition.label.trim() || !definition.name.trim()) {
       setTableNameError("Table Name is required.");
       return;
     }
     setTableNameError(null);
-    setSaving(true);
-    try {
-      const response = isNew
-        ? await api.create(definition, confirm)
-        : await api.update(definition, confirm);
-      if (response.requiresConfirm) {
-        setPendingConfirm(response.destructiveSummary ?? []);
-        return;
-      }
-      setPendingConfirm(null);
-      toast.add({ type: "success", title: `Saved "${definition.label}".` });
-      bumpContentTypesVersion();
-      route(`${path}/content-types?selectedKind=${definition.kind}`);
-    } catch (error) {
-      toast.add({
-        type: "error",
-        title: "Save failed",
-        description: error instanceof Error ? error.message : undefined,
-      });
-    } finally {
-      setSaving(false);
-    }
+    saveDraft(definition, isNew);
+    setHasDraft(true);
+    setInitialSnapshot(JSON.stringify(definition));
+    toast.add({
+      type: "success",
+      title: `Saved draft for "${definition.label}".`,
+      description: "Go to Content Types and use Apply and build to make it live.",
+    });
+    route(`${path}/content-types?selectedKind=${definition.kind}`);
   }
 
-  function handleSaveClick() {
+  function handleDiscardDraft() {
+    if (!definition) return;
+    discardDraft(definition.id);
+    setShowDiscardDraftConfirm(false);
     if (isNew) {
-      submit(false);
-    } else {
-      setShowApplyConfirm(true);
+      // Never existed on the server - nothing to fall back to, just leave.
+      route(`${path}/content-types?selectedKind=${definition.kind}`);
+      return;
     }
+    const live = liveTypes.find((t) => t.id === definition.id) ?? definition;
+    setDefinition(live);
+    setInitialSnapshot(JSON.stringify(live));
+    setHasDraft(false);
+    toast.add({ type: "success", title: "Draft discarded." });
   }
 
   async function handleDelete() {
@@ -579,6 +600,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     setDeleting(true);
     try {
       await api.remove(definition.id);
+      discardDraft(definition.id);
       setShowDeleteConfirm(false);
       toast.add({
         type: "success",
@@ -641,16 +663,31 @@ export default function ContentTypeEditor({ id, kind }: Props) {
           >
             Cancel
           </button>
-          <button
-            type="button"
-            disabled={saving || !isDirty}
-            aria-busy={saving}
-            onClick={handleSaveClick}
-          >
-            Save & apply schema
+          {hasDraft && (
+            <button
+              type="button"
+              class="outline"
+              onClick={() => setShowDiscardDraftConfirm(true)}
+            >
+              Discard draft
+            </button>
+          )}
+          <button type="button" disabled={!isDirty} onClick={handleSaveClick}>
+            Save draft
           </button>
         </div>
       </div>
+
+      {hasDraft && (
+        <div class="alert">
+          <InfoCircleIcon />
+          <h4>Unapplied draft</h4>
+          <p>
+            Changes are saved as a draft only - go to Content Types and use
+            "Apply and build" to run the migration and make them live.
+          </p>
+        </div>
+      )}
 
       <div class="content-type-editor-grid">
         <legend class="stack">
@@ -809,69 +846,33 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         title={`Remove "${pendingMirrorRemove?.mirror?.sourceFieldLabel ?? ""}"?`}
         message={
           <p>
-            This deletes "{pendingMirrorRemove?.mirror?.sourceFieldLabel}" from
-            "{pendingMirrorRemove?.mirror?.sourceTypeLabel}" - saving that
-            content type will drop its column/table, and any data in it.
+            This stages removal of "{pendingMirrorRemove?.mirror?.sourceFieldLabel}"
+            from "{pendingMirrorRemove?.mirror?.sourceTypeLabel}" as a draft -
+            applying it later will drop its column/table, and any data in it.
           </p>
         }
         confirmLabel="Remove"
         destructive
-        busy={mirrorRemoving}
         onConfirm={() => {
-          if (pendingMirrorRemove) deleteMirrorSource(pendingMirrorRemove, false);
+          if (pendingMirrorRemove) deleteMirrorSource(pendingMirrorRemove);
         }}
         onCancel={() => setPendingMirrorRemove(null)}
       />
 
       <ConfirmDialog
-        open={mirrorDestructiveSummary !== null}
-        title="This will lose data"
+        open={showDiscardDraftConfirm}
+        title="Discard this draft?"
         message={
-          <ul>
-            {(mirrorDestructiveSummary ?? []).map((change, index) => (
-              <li key={index}>{describeDestructiveChange(change)}</li>
-            ))}
-          </ul>
+          <p>
+            This discards the unapplied draft for "{definition.label || definition.name}"
+            {isNew ? "" : " and reverts back to the live version"}. This cannot
+            be undone.
+          </p>
         }
-        confirmLabel="Remove anyway"
+        confirmLabel="Discard draft"
         destructive
-        busy={mirrorRemoving}
-        onConfirm={() => {
-          if (pendingMirrorRemove) deleteMirrorSource(pendingMirrorRemove, true);
-        }}
-        onCancel={() => setMirrorDestructiveSummary(null)}
-      />
-
-      <ConfirmDialog
-        open={showApplyConfirm}
-        title="Apply schema changes?"
-        message={
-          <p>Saving will apply these schema changes to the live table.</p>
-        }
-        confirmLabel="Save & apply"
-        busy={saving}
-        onConfirm={() => {
-          setShowApplyConfirm(false);
-          submit(false);
-        }}
-        onCancel={() => setShowApplyConfirm(false)}
-      />
-
-      <ConfirmDialog
-        open={pendingConfirm !== null}
-        title="This save will lose data"
-        message={
-          <ul>
-            {(pendingConfirm ?? []).map((change, index) => (
-              <li key={index}>{describeDestructiveChange(change)}</li>
-            ))}
-          </ul>
-        }
-        confirmLabel="Save anyway"
-        destructive
-        busy={saving}
-        onConfirm={() => submit(true)}
-        onCancel={() => setPendingConfirm(null)}
+        onConfirm={handleDiscardDraft}
+        onCancel={() => setShowDiscardDraftConfirm(false)}
       />
 
       <ConfirmDialog
@@ -910,19 +911,4 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       />
     </>
   );
-}
-
-function describeDestructiveChange(change: DestructiveChange): string {
-  switch (change.kind) {
-    case "drop-column":
-      return `Column "${change.columnName}" on "${change.tableName}" will be dropped - its data will be lost.`;
-    case "drop-table":
-      return `Table "${change.tableName}" will be dropped - every row in it will be lost.`;
-    case "shape-changed":
-      return `"${change.columnOrField}" on "${change.tableName}" changes from ${change.from} to ${change.to} - its existing data will be lost.`;
-    case "lossy-retype":
-      return `Column "${change.columnName}" on "${change.tableName}" changes type from ${change.from} to ${change.to} - values that don't convert cleanly will become 0/empty.`;
-    default:
-      return "This field will change.";
-  }
 }
