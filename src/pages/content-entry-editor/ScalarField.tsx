@@ -11,6 +11,8 @@ import TextField from "../../components/TextField.js";
 import type { MaskedValue } from "../../content-types/engine/entry-codec.js";
 import type { EntryColumnNode } from "../../content-types/engine/entry-tree.js";
 import type { ImageFieldConfig, SelectFieldConfig } from "../../content-types/field-registry.js";
+import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
+import RichTextField from "../../components/RichTextField.js";
 import PasswordChangeField from "./PasswordChangeField.js";
 
 interface Props {
@@ -78,6 +80,23 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         onChange={onChange}
         multiline={!!config.multiline}
         placeholder={config.placeholder as string | undefined}
+        required={!!validation.required}
+        error={!!error}
+        helperText={error}
+      />
+    );
+  }
+
+  if (fieldType === "richtext") {
+    const richTextConfig = config as RichTextFieldConfig;
+    return (
+      <RichTextField
+        label={label}
+        description={description}
+        value={typeof value === "string" ? value : ""}
+        onChange={onChange}
+        inline={richTextConfig.inline !== false}
+        features={richTextConfig}
         required={!!validation.required}
         error={!!error}
         helperText={error}

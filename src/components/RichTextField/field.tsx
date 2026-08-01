@@ -9,6 +9,7 @@ import DryRichTextSlash from "./dry-richtext-slash.js";
 import RichTextToolbar from "./toolbar.js";
 import type { EditorView } from "prosemirror-view";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
+import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
 
 interface EditorSurfaceProps {
   value: string;
@@ -54,6 +55,7 @@ export interface RichTextFieldProps extends FieldProps<string> {
   source?: FileManagerSource;
   inline?: boolean;
   iconSize?: ToolbarIconSize;
+  features?: RichTextFieldConfig;
 }
 
 export default function RichTextField({
@@ -69,6 +71,7 @@ export default function RichTextField({
   inline = false,
   source,
   iconSize = "sm",
+  features,
   class: className,
   style,
 }: RichTextFieldProps) {
@@ -133,6 +136,7 @@ export default function RichTextField({
           disabled={disabled || loading}
           contentRef={contentRef}
           inline={inline}
+          features={features}
           source={source}
           iconSize={iconSize}
           fullscreen={fullscreen}
@@ -145,6 +149,7 @@ export default function RichTextField({
             label={label}
             disabled={disabled}
             inline={inline}
+            features={features}
             placeholder={placeholder}
             onReady={({ contentRef: nextContentRef, viewRef: nextViewRef, state: nextState, empty: nextEmpty, loading: nextLoading }) => {
               contentRef.current = nextContentRef.current;

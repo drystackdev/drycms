@@ -6,6 +6,7 @@ import NumberField from "../components/NumberField.js";
 import SecretKeyField from "../components/SecretKeyField.js";
 import SelectField from "../components/SelectField.js";
 import TextField from "../components/TextField.js";
+import RichTextField from "../components/RichTextField.js";
 
 export type FieldShape = "column" | "flatten" | "child-table" | "virtual";
 export type SqlColumnType = "TEXT" | "INTEGER" | "REAL";
@@ -132,6 +133,69 @@ export const textFieldType: FieldTypeDefinition<string> = {
       ],
     },
   ],
+};
+
+export interface RichTextFieldConfig {
+  /** Inline content uses the compact, text-like editor and HTML output. */
+  inline?: boolean;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: boolean;
+  link?: boolean;
+  heading?: boolean;
+  alignment?: boolean;
+  lists?: boolean;
+  image?: boolean;
+  component?: boolean;
+  table?: boolean;
+  grid?: boolean;
+  fullscreen?: boolean;
+}
+
+const RICH_TEXT_FEATURE_CONFIG: SettingDescriptor[] = [
+  { key: "bold", label: "Bold", widget: "boolean" },
+  { key: "italic", label: "Italic", widget: "boolean" },
+  { key: "underline", label: "Underline", widget: "boolean" },
+  { key: "color", label: "Text color", widget: "boolean" },
+  { key: "link", label: "Link", widget: "boolean" },
+  { key: "heading", label: "Headings", widget: "boolean" },
+  { key: "alignment", label: "Alignment", widget: "boolean" },
+  { key: "lists", label: "Lists", widget: "boolean" },
+  { key: "image", label: "Images", widget: "boolean" },
+  { key: "component", label: "Components", widget: "boolean" },
+  { key: "table", label: "Tables", widget: "boolean" },
+  { key: "grid", label: "Grids", widget: "boolean" },
+  { key: "fullscreen", label: "Fullscreen", widget: "boolean" },
+];
+
+export const richTextFieldType: FieldTypeDefinition<string> = {
+  key: "richtext",
+  label: "RichText",
+  shape: "column",
+  Editor: RichTextField,
+  sqlType: () => "TEXT",
+  configFields: [
+    { key: "inline", label: "Inline field", widget: "boolean" },
+    ...RICH_TEXT_FEATURE_CONFIG,
+  ],
+  defaultConfig: {
+    inline: true,
+    bold: true,
+    italic: true,
+    underline: true,
+    color: true,
+    link: true,
+    heading: true,
+    alignment: true,
+    lists: true,
+    image: true,
+    component: true,
+    table: true,
+    grid: true,
+    fullscreen: true,
+  },
+  validationFields: REQUIRED_UNIQUE_VALIDATION,
 };
 
 export const numberFieldType: FieldTypeDefinition<number> = {
@@ -446,6 +510,7 @@ export const relationMirrorFieldType: FieldTypeDefinition = {
 
 export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [textFieldType.key]: textFieldType,
+  [richTextFieldType.key]: richTextFieldType,
   [numberFieldType.key]: numberFieldType,
   [booleanFieldType.key]: booleanFieldType,
   [dateFieldType.key]: dateFieldType,

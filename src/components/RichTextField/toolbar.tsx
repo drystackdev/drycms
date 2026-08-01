@@ -9,6 +9,7 @@ import TableMenu from "./table-menu.js";
 import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 import { displayShortcut } from "./shortcuts.js";
+import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
 
 interface ToolbarScrollSnapshot {
   anchor: HTMLElement;
@@ -70,6 +71,7 @@ export interface RichTextToolbarProps {
    * `fullscreen-button.tsx` reads either. */
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  features?: RichTextFieldConfig;
 }
 
 /** Purely presentational - rendering whatever `./toolbar-buttons.ts` lists.
@@ -93,6 +95,7 @@ export default function RichTextToolbar({
   iconSize = "md",
   fullscreen,
   onToggleFullscreen,
+  features,
 }: RichTextToolbarProps) {
   const scrollSnapshotRef = useRef<ToolbarScrollSnapshot | null>(null);
 
@@ -130,9 +133,11 @@ export default function RichTextToolbar({
   // Groups can end up empty once `blockOnly` items are filtered out (e.g. the
   // align-only group under `inline`) - drop those so an empty block never
   // renders as a bare, content-less bordered box.
+  const enabled = (key: string) => features?.[key as keyof RichTextFieldConfig] !== false;
   const visibleGroups = TOOLBAR_GROUPS.map((group) =>
     group.filter(
       (item) =>
+        enabled(item.key === "block-type" ? "heading" : item.key === "align" ? "alignment" : item.key === "list" ? "lists" : item.key === "insert-image" ? "image" : item.key === "insert-component" ? "component" : item.key) &&
         !(inline && item.blockOnly) &&
         !(item.type === "custom" && item.requiresSource && !source),
     ),
@@ -184,15 +189,17 @@ export default function RichTextToolbar({
           )}
         </div>
       ))}
-      {!inline && <TableMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
-      {!inline && <GridMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
-      <DryComponentMenu
-        viewRef={viewRef}
-        state={state}
-        disabled={disabled || state.reorderModeActive}
-        source={source}
-        iconSize={iconSize}
-      />
+      {!inline && enabled("table") && <TableMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
+      {!inline && enabled("grid") && <GridMenu viewRef={viewRef} state={state} disabled={disabled || state.reorderModeActive} iconSize={iconSize} />}
+      {enabled("component") && (
+        <DryComponentMenu
+          viewRef={viewRef}
+          state={state}
+          disabled={disabled || state.reorderModeActive}
+          source={source}
+          iconSize={iconSize}
+        />
+      )}
     </div>
   );
 }

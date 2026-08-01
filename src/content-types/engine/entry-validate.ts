@@ -30,6 +30,12 @@ function isEmptyValue(value: unknown): boolean {
   return false;
 }
 
+function isEmptyRichText(value: unknown, inline: boolean): boolean {
+  if (typeof value !== "string") return isEmptyValue(value);
+  if (value.trim() === "") return true;
+  return !inline && /^<p>(?:\s|&nbsp;|<br\s*\/?>(?:\s|&nbsp;)*)*<\/p>$/i.test(value.trim());
+}
+
 /** `confirm` never reaches the server (see `MaskedValue.confirm`'s doc comment) - a
  * mismatch can only ever be caught here, client-side. */
 export function passwordConfirmError(value: MaskedValue): string | undefined {
@@ -82,11 +88,14 @@ function checkFormat(validation: FieldValidation, value: string): string | undef
 
 function validateColumn(node: EntryColumnNode, value: unknown, path: string, errors: FieldErrors): void {
   const { validation } = node;
-  if (validation.required && isEmptyValue(value)) {
+  const empty = node.fieldType === "richtext"
+    ? isEmptyRichText(value, !!(node.fieldConfig as { inline?: boolean } | undefined)?.inline)
+    : isEmptyValue(value);
+  if (validation.required && empty) {
     errors[path] = `${node.label} is required.`;
     return;
   }
-  if (isEmptyValue(value)) return;
+  if (empty) return;
 
   if (typeof value === "string") {
     if (validation.minLength !== undefined && value.length < validation.minLength) {

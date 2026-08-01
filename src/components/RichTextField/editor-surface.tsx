@@ -3,6 +3,7 @@ import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import { useRichTextEditor } from "./useRichTextEditor.js";
 import type { ToolbarState } from "./types.js";
+import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
 
 interface EditorSurfaceProps {
   value: string;
@@ -12,6 +13,7 @@ interface EditorSurfaceProps {
   inline: boolean;
   placeholder?: string;
   onReady: (result: EditorSurfaceResult) => void;
+  features?: RichTextFieldConfig;
 }
 
 interface EditorSurfaceResult {

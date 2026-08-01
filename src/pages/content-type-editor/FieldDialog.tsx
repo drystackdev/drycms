@@ -317,6 +317,8 @@ function DefaultValueInput({
           onChange={onChange}
         />
       );
+    case "richtext":
+      return null;
     case "number":
       return (
         <NumberField
@@ -607,7 +609,8 @@ export default function FieldDialog({
       ? componentConfigDisabledKeys(draftConfig)
       : draftType === "relation"
         ? relationConfigDisabledKeys(draftConfig)
-        : [];
+          : [];
+  const richTextInline = draftType === "richtext" && draftConfig.inline !== false;
   const hasSaveErrors =
     saveAttempted &&
     (!draftType ||
@@ -762,7 +765,9 @@ export default function FieldDialog({
                           </div>
                         )}
                         <SettingsForm
-                          descriptors={activeFieldType.configFields ?? []}
+                          descriptors={activeFieldType.configFields?.filter((d) =>
+                            draftType !== "richtext" || d.key === "inline"
+                          ) ?? []}
                           values={draftConfig}
                           onChange={handleConfigChange}
                           dynamicOptions={dynamicOptions}
@@ -772,6 +777,19 @@ export default function FieldDialog({
                       </div>
                     </fieldset>
                   )}
+
+                {activeFieldType && draftType === "richtext" && !richTextInline && (
+                  <fieldset>
+                    <legend>Config</legend>
+                    <SettingsForm
+                      descriptors={activeFieldType.configFields?.filter((d) => d.key !== "inline") ?? []}
+                      values={draftConfig}
+                      onChange={handleConfigChange}
+                      dynamicOptions={dynamicOptions}
+                      disabledKeys={configDisabledKeys}
+                    />
+                  </fieldset>
+                )}
 
                 {activeFieldType &&
                   activeValidationFields.length > 0 && (
