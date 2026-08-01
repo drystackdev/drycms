@@ -34,6 +34,7 @@ interface FakeCommitAction {
  */
 class FakeGitlab {
   files = new Map<string, FakeFile>();
+  branches = new Set([BRANCH]);
   /** Simulates GitLab's `per_page` cap - small values exercise the
    * `x-next-page` pagination loop `fetchTree` relies on. */
   treePageSize = 1000;
@@ -93,6 +94,16 @@ class FakeGitlab {
     const method = init?.method ?? "GET";
     const base = `/api/v4/projects/${encodeURIComponent(PROJECT)}`;
 
+    if (parsed.pathname === base && method === "GET") {
+      return this.json({ default_branch: BRANCH });
+    }
+
+    const branchesPrefix = `${base}/repository/branches/`;
+    if (parsed.pathname.startsWith(branchesPrefix) && method === "GET") {
+      const branch = decodeURIComponent(parsed.pathname.slice(branchesPrefix.length));
+      return this.branches.has(branch) ? this.json({ name: branch }) : this.json({ message: "404 Branch Not Found" }, 404);
+    }
+
     if (parsed.pathname === `${base}/repository/tree`) {
       const path = parsed.searchParams.get("path") ?? "";
       const recursive = parsed.searchParams.get("recursive") === "true";
@@ -140,7 +151,8 @@ class FakeGitlab {
     }
 
     if (parsed.pathname === `${base}/repository/commits` && method === "POST") {
-      const body = JSON.parse(init!.body as string) as { commit_message: string; actions: FakeCommitAction[] };
+      const body = JSON.parse(init!.body as string) as { branch: string; commit_message: string; actions: FakeCommitAction[] };
+      this.branches.add(body.branch);
       this.lastCommitActions = body.actions;
       this.lastCommitMessage = body.commit_message;
       for (const action of body.actions) {

@@ -135,27 +135,26 @@ describe('resolveOptions', () => {
 			vi.unstubAllEnvs();
 		});
 
-		it('resolves owner/repo/token from env, defaulting branch to main', () => {
+		it('resolves owner/repo/token from env, defaulting branch to storage', () => {
 			vi.stubEnv('GITHUB_REPO', 'acme/media');
 			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
-			vi.stubEnv('GITHUB_BRANCH', undefined);
 
 			expect(resolveOptions({ storage: { kind: 'github' } }).storage).toEqual({
 				kind: 'github',
 				owner: 'acme',
 				repo: 'media',
-				branch: 'main',
+				branch: 'storage',
 				token: 'ghp_test_token',
 				root: 'storage',
 			});
 		});
 
-		it('honors GITHUB_BRANCH and storage.root when set', () => {
+		it('honors storage.branch and storage.root when set', () => {
 			vi.stubEnv('GITHUB_REPO', 'acme/media');
 			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
-			vi.stubEnv('GITHUB_BRANCH', 'develop');
+			vi.stubEnv('GITHUB_BRANCH', 'ignored-env-branch');
 
-			expect(resolveOptions({ storage: { kind: 'github', root: '' } }).storage).toEqual({
+			expect(resolveOptions({ storage: { kind: 'github', branch: 'develop', root: '' } }).storage).toEqual({
 				kind: 'github',
 				owner: 'acme',
 				repo: 'media',
@@ -165,13 +164,13 @@ describe('resolveOptions', () => {
 			});
 		});
 
-		it('prefers the configured branch over GITHUB_BRANCH', () => {
+		it('does not use GITHUB_BRANCH when branch is omitted', () => {
 			vi.stubEnv('GITHUB_REPO', 'acme/media');
 			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
 			vi.stubEnv('GITHUB_BRANCH', 'from-env');
 
-			expect(resolveOptions({ storage: { kind: 'github', branch: 'from-config' } }).storage).toMatchObject({
-				branch: 'from-config',
+			expect(resolveOptions({ storage: { kind: 'github' } }).storage).toMatchObject({
+				branch: 'storage',
 			});
 		});
 
@@ -199,29 +198,28 @@ describe('resolveOptions', () => {
 			vi.unstubAllEnvs();
 		});
 
-		it('resolves project/token from env, defaulting branch to main and host to gitlab.com', () => {
+		it('resolves project/token from env, defaulting branch to storage and host to gitlab.com', () => {
 			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
 			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
-			vi.stubEnv('GITLAB_BRANCH', undefined);
 			vi.stubEnv('GITLAB_HOST', undefined);
 
 			expect(resolveOptions({ storage: { kind: 'gitlab' } }).storage).toEqual({
 				kind: 'gitlab',
 				host: 'https://gitlab.com',
 				project: 'acme/media',
-				branch: 'main',
+				branch: 'storage',
 				token: 'glpat_test_token',
 				root: 'storage',
 			});
 		});
 
-		it('honors GITLAB_BRANCH, GITLAB_HOST and storage.root when set', () => {
+		it('honors storage.branch, GITLAB_HOST and storage.root when set', () => {
 			vi.stubEnv('GITLAB_PROJECT', '42');
 			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
 			vi.stubEnv('GITLAB_BRANCH', 'develop');
 			vi.stubEnv('GITLAB_HOST', 'https://gitlab.example.com/');
 
-			expect(resolveOptions({ storage: { kind: 'gitlab', root: '' } }).storage).toEqual({
+			expect(resolveOptions({ storage: { kind: 'gitlab', branch: 'develop', root: '' } }).storage).toEqual({
 				kind: 'gitlab',
 				host: 'https://gitlab.example.com',
 				project: '42',
@@ -231,13 +229,13 @@ describe('resolveOptions', () => {
 			});
 		});
 
-		it('prefers the configured branch over GITLAB_BRANCH', () => {
+		it('does not use GITLAB_BRANCH when branch is omitted', () => {
 			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
 			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
 			vi.stubEnv('GITLAB_BRANCH', 'from-env');
 
-			expect(resolveOptions({ storage: { kind: 'gitlab', branch: 'from-config' } }).storage).toMatchObject({
-				branch: 'from-config',
+			expect(resolveOptions({ storage: { kind: 'gitlab' } }).storage).toMatchObject({
+				branch: 'storage',
 			});
 		});
 
@@ -268,7 +266,7 @@ describe('resolveOptions', () => {
 				kind: 'github',
 				owner: 'acme',
 				repo: 'media',
-				branch: 'main',
+				branch: 'icons',
 				token: 'ghp_test_token',
 				root: 'icons',
 			});
@@ -283,7 +281,7 @@ describe('resolveOptions', () => {
 				kind: 'gitlab',
 				host: 'https://gitlab.com',
 				project: 'acme/media',
-				branch: 'main',
+				branch: 'icons',
 				token: 'glpat_test_token',
 				root: 'icons',
 			});

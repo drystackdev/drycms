@@ -199,8 +199,8 @@ constructed via `createStorageAdapter()` from a `ResolvedStorageOption`.
 (confirmed RichText component bundles) are **four independent roots**
 sharing this same mechanism - never sharing a directory even when they share
 a backend `kind`. `github`/`gitlab` credentials come from env vars
-(`GITHUB_REPO`/`GITHUB_PAT_KEY`/`GITHUB_BRANCH`,
-`GITLAB_PROJECT`/`GITLAB_PAT_KEY`/`GITLAB_BRANCH`/`GITLAB_HOST`), never from
+(`GITHUB_REPO`/`GITHUB_PAT_KEY`,
+`GITLAB_PROJECT`/`GITLAB_PAT_KEY`/`GITLAB_HOST`), never from
 `dry.config.ts` itself, so no secret ends up committed. `github`/`gitlab`
 `list()`/`listAll()` deliberately drop `modifiedAt` (+ GitLab file size) for
 list-call speed - a user-approved perf tradeoff, don't add them back without

@@ -8,13 +8,13 @@ const PLANNED_STORAGE_KINDS = ["r2", "s3"];
 export interface DryStorageOption {
   /**
    * Which backend serves `/dry/api/storage/**`. Repository/token credentials
-   * come from env vars; `branch` may be set here and falls back to
-   * `GITHUB_BRANCH`/`GITLAB_BRANCH`, then `main`.
+   * come from env vars; `branch` may be set here and otherwise defaults to
+   * the subsystem name (`storage`).
    *
    * @default "local"
    */
   kind?: "local" | "github" | "gitlab";
-  /** Git branch for GitHub/GitLab. Falls back to the matching env var, then `main`. */
+  /** Git branch for GitHub/GitLab. Defaults to `storage`. */
   branch?: string;
   /**
    * `local`: directory files are read from/written to, relative to the
@@ -29,13 +29,13 @@ export interface DryStorageOption {
 export interface DryIconsOption {
   /**
    * Which backend serves `/dry/api/icons/**`. Same repository/token
-   * credentials and branch fallback as `storage.kind` - `icons` and
+   * credentials and per-subsystem branch behavior as `storage.kind` - `icons` and
    * `storage` are two roots within the same repo/disk.
    *
    * @default "local"
    */
   kind?: "local" | "github" | "gitlab";
-  /** Git branch for GitHub/GitLab. Falls back to the matching env var, then `main`. */
+  /** Git branch for GitHub/GitLab. Defaults to `icons`. */
   branch?: string;
   /**
    * Same semantics as `DryStorageOption.root`, but for the Icon Management
@@ -81,7 +81,7 @@ export interface DryContentOption {
    * @default "local"
    */
   kind?: "local" | "github" | "gitlab";
-  /** Git branch for GitHub/GitLab. Falls back to the matching env var, then `main`. */
+  /** Git branch for GitHub/GitLab. Defaults to `content`. */
   branch?: string;
   /**
    * `engine: "file"` only: same semantics as `DryStorageOption.root`, but
@@ -268,8 +268,8 @@ export function readEnvVar(name: string): string | undefined {
 
 /**
  * GitHub's repository/token come from env vars so secrets stay out of
- * `dry.config.ts`; branch can be configured per root and otherwise falls back
- * to `GITHUB_BRANCH` and then `main`.
+ * `dry.config.ts`; branch is configured per root and is resolved by the
+ * subsystem-level file-backed option.
  */
 function resolveGithubStorageOption(root: string, configuredBranch?: string): ResolvedGithubStorageOption {
   const repoEnv = readEnvVar("GITHUB_REPO");
@@ -296,15 +296,15 @@ function resolveGithubStorageOption(root: string, configuredBranch?: string): Re
     kind: "github",
     owner: repoEnv.slice(0, slash),
     repo: repoEnv.slice(slash + 1),
-    branch: configuredBranch || readEnvVar("GITHUB_BRANCH") || "main",
+    branch: configuredBranch || "main",
     token,
     root,
   };
 }
 
 /**
- * GitLab's project/token remain environment-backed; branch can be configured
- * per root and otherwise falls back to `GITLAB_BRANCH` and then `main`.
+ * GitLab's project/token remain environment-backed; branch is configured per
+ * root and is resolved by the subsystem-level file-backed option.
  */
 function resolveGitlabStorageOption(root: string, configuredBranch?: string): ResolvedGitlabStorageOption {
   const project = readEnvVar("GITLAB_PROJECT");
@@ -327,7 +327,7 @@ function resolveGitlabStorageOption(root: string, configuredBranch?: string): Re
     kind: "gitlab",
     host,
     project,
-    branch: configuredBranch || readEnvVar("GITLAB_BRANCH") || "main",
+    branch: configuredBranch || "main",
     token,
     root,
   };
@@ -381,8 +381,10 @@ function resolveFileBackedOption(
   // their `stripRoot`'s `${root}/` prefix check never match a real path.
   const normalizedRoot = root.replace(/\/+$/, "");
 
-  if (kind === "github") return resolveGithubStorageOption(normalizedRoot, rawBranch as string | undefined);
-  if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot, rawBranch as string | undefined);
+  const defaultBranch = optionName.split(".")[0];
+  const branch = (rawBranch as string | undefined) || defaultBranch;
+  if (kind === "github") return resolveGithubStorageOption(normalizedRoot, branch);
+  if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot, branch);
 
   return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };
 }

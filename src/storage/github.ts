@@ -98,28 +98,9 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     return encoded ? `${apiBase}/contents/${encoded}` : `${apiBase}/contents`;
   }
 
-  /** The sha a freshly-created branch should point at: the repo's default
-   * branch HEAD, or - for a repo with no commits at all yet - a brand new
-   * commit over an empty tree (a branch always has to point SOMEWHERE, and
-   * git has no concept of a ref onto nothing). */
-  async function resolveBaseSha(): Promise<string> {
-    const repoResponse = await fetch(apiBase, { headers: authHeaders({ Accept: "application/vnd.github+json" }) });
-    if (!repoResponse.ok) {
-      throw new Error(`[drycms] GitHub API error: ${await readGithubError(repoResponse)}`);
-    }
-    const { default_branch: defaultBranch } = (await repoResponse.json()) as { default_branch: string };
-
-    const defaultRefResponse = await fetch(`${apiBase}/git/refs/heads/${encodeURIComponent(defaultBranch)}`, {
-      headers: authHeaders({ Accept: "application/vnd.github+json" }),
-    });
-    if (defaultRefResponse.ok) {
-      const defaultRef = (await defaultRefResponse.json()) as { object: { sha: string } };
-      return defaultRef.object.sha;
-    }
-    if (defaultRefResponse.status !== 404) {
-      throw new Error(`[drycms] GitHub API error: ${await readGithubError(defaultRefResponse)}`);
-    }
-
+  /** Creates a commit whose tree is empty. A newly-created subsystem branch
+   * must not inherit files from the repository's default branch. */
+  async function createEmptyCommit(): Promise<string> {
     const treeResponse = await fetch(`${apiBase}/git/trees`, {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),
@@ -142,12 +123,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
     return commit.sha;
   }
 
-  /** Lazily creates `branch` the first time this adapter touches it, if it
-   * doesn't already exist - pointed at the repo's default branch (or a fresh
-   * initial commit, for a totally empty repo). Memoized for this adapter's
-   * lifetime, same pattern as `local.ts`'s `ensureRoot()`: a `GITHUB_BRANCH`
-   * naming a branch that simply hasn't been created yet shouldn't be a hard
-   * config error the user has to go fix by hand in the GitHub UI first. */
+  /** Lazily creates `branch` with an empty tree on first use. */
   let branchReady: Promise<void> | null = null;
   function ensureBranch(): Promise<void> {
     branchReady ??= (async () => {
@@ -159,7 +135,7 @@ export function createGithubStorageAdapter(option: ResolvedGithubStorageOption):
         throw new Error(`[drycms] GitHub API error: ${await readGithubError(refResponse)}`);
       }
 
-      const baseSha = await resolveBaseSha();
+      const baseSha = await createEmptyCommit();
       const createResponse = await fetch(`${apiBase}/git/refs`, {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json", Accept: "application/vnd.github+json" }),

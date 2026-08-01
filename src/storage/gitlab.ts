@@ -41,6 +41,10 @@ interface GitlabFileHead {
   blobId: string;
 }
 
+interface GitlabProjectInfo {
+  default_branch?: string;
+}
+
 function cleanPath(path: string): string {
   return path.split("/").filter(Boolean).join("/");
 }
@@ -88,12 +92,15 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
    * matching `local`/`github`'s existence semantics. Paginated (`per_page`
    * maxes at 100, unlike GitHub's single recursive-tree response), so this
    * pages through via the `x-next-page` response header until exhausted. */
-  async function fetchTree(path: string, recursive: boolean): Promise<GitlabTreeItem[] | null> {
+  let branchReady: Promise<void> | null = null;
+
+  async function fetchTree(path: string, recursive: boolean, ref = branch): Promise<GitlabTreeItem[] | null> {
+    if (ref === branch) await ensureBranch();
     const items: GitlabTreeItem[] = [];
     let page = 1;
     for (;;) {
       const query = new URLSearchParams({
-        ref: branch,
+        ref,
         recursive: String(recursive),
         per_page: "100",
         page: String(page),
@@ -117,6 +124,7 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
    * call once per file when only size/blob-id are needed (folder listings,
    * existence checks) rather than the full base64 content. */
   async function headFile(path: string): Promise<GitlabFileHead | null> {
+    await ensureBranch();
     const response = await fetch(`${filesUrl(path)}?${new URLSearchParams({ ref: branch })}`, {
       method: "HEAD",
       headers: authHeaders(),
@@ -135,6 +143,7 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
    * modification time, so this is the only accurate source for
    * `modifiedAt`, same rationale as `github.ts`'s `lastModified`. */
   async function lastModified(path: string): Promise<string> {
+    await ensureBranch();
     const query = new URLSearchParams({ ref_name: branch, per_page: "1" });
     if (path) query.set("path", path);
     const response = await fetch(`${apiBase}/repository/commits?${query}`, {
@@ -145,6 +154,61 @@ export function createGitlabStorageAdapter(option: ResolvedGitlabStorageOption):
     }
     const commits = (await response.json()) as Array<{ committed_date: string }>;
     return commits[0]?.committed_date ?? new Date(0).toISOString();
+  }
+
+  /** Lazily creates a missing branch with an empty tree. GitLab's commit API
+   * creates the branch from `start_branch`; deleting every source blob in the
+   * first commit makes the new branch contain no repository data. */
+  async function ensureBranch(): Promise<void> {
+    branchReady ??= (async () => {
+      const branchResponse = await fetch(
+        `${apiBase}/repository/branches/${encodeURIComponent(branch)}`,
+        { headers: authHeaders() },
+      );
+      if (branchResponse.ok) return;
+      if (branchResponse.status !== 404) {
+        throw new Error(`[drycms] GitLab API error: ${await readGitlabError(branchResponse)}`);
+      }
+
+      const projectResponse = await fetch(apiBase, { headers: authHeaders() });
+      if (!projectResponse.ok) {
+        throw new Error(`[drycms] GitLab API error: ${await readGitlabError(projectResponse)}`);
+      }
+      const project = (await projectResponse.json()) as GitlabProjectInfo;
+      const defaultBranch = project.default_branch;
+      if (!defaultBranch) {
+        throw new Error(`[drycms] GitLab project does not expose a default branch for creating "${branch}".`);
+      }
+
+      const sourceTree = (await fetchTree("", true, defaultBranch)) ?? [];
+      const actions: GitlabCommitAction[] = sourceTree
+        .filter((item) => item.type === "blob")
+        .map((item) => ({ action: "delete" as const, file_path: item.path }));
+      const response = await fetch(`${apiBase}/repository/commits`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          branch,
+          start_branch: defaultBranch,
+          commit_message: `Initialize empty branch: ${branch}`,
+          actions,
+          allow_empty: true,
+        }),
+      });
+      if (!response.ok) {
+        // A concurrent request may have created the branch while the initial
+        // branch lookup was in flight. Accept a failed create only when the
+        // follow-up lookup confirms that race; surface every other failure.
+        const raceCheck = await fetch(
+          `${apiBase}/repository/branches/${encodeURIComponent(branch)}`,
+          { headers: authHeaders() },
+        );
+        if (!raceCheck.ok) {
+          throw new Error(`[drycms] GitLab API error: ${await readGitlabError(response)}`);
+        }
+      }
+    })();
+    return branchReady;
   }
 
   interface PathInfo {

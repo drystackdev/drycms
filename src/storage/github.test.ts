@@ -28,7 +28,7 @@ interface FakeChild {
  */
 class FakeGithub {
   files = new Map<string, FakeFile>();
-  /** Simulates a `GITHUB_BRANCH` that doesn't exist in the repo. */
+  /** Simulates a configured branch that doesn't exist in the repo. */
   missingBranch = false;
   /** Simulates GitHub cutting off a recursive tree response past its size limit. */
   treeTruncated = false;
@@ -247,6 +247,10 @@ class FakeGithub {
       const body = JSON.parse(init!.body as string) as { ref: string; sha: string };
       const name = body.ref.replace(/^refs\/heads\//, "");
       if (this.refs.has(name)) return this.json({ message: "Reference already exists" }, 422);
+      // A newly-created subsystem branch is intentionally rooted at the
+      // empty tree, so it must not inherit the fake's shared default-branch
+      // file map.
+      this.files.clear();
       this.landCommit(body.sha);
       this.refs.set(name, body.sha);
       return this.json({ ref: body.ref, object: { sha: body.sha } }, 201);
@@ -590,12 +594,12 @@ describe("createGithubStorageAdapter", () => {
       return createGithubStorageAdapter({ kind: "github", owner: OWNER, repo: REPO, branch, token: "test-token", root: "" });
     }
 
-    it("is created off the repo's default branch before the first operation, instead of throwing", async () => {
+    it("is created with an empty tree before the first operation, instead of inheriting the default branch", async () => {
       // The default branch ("main") already has a commit/file on it; "feature-x" doesn't exist yet.
       await adapter.write("existing.txt", new TextEncoder().encode("hi"));
       const onFeature = adapterOnBranch("feature-x");
 
-      await expect(onFeature.list("")).resolves.toEqual([expect.objectContaining({ path: "existing.txt" })]);
+      await expect(onFeature.list("")).resolves.toEqual([]);
 
       const entry = await onFeature.write("new.txt", new TextEncoder().encode("hello"));
       expect(entry.kind).toBe("file");

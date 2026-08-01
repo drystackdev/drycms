@@ -276,7 +276,7 @@ kv: {
   adapter: "local" | "sqlite" | "D1" | "github" | "gitlab" | "KV",
   namespace?: string,
   root?: string,
-  branch?: string,              // GitHub/GitLab; fallback về env nếu bỏ trống
+  branch?: string,              // GitHub/GitLab; mặc định theo subsystem
   file?: string,
   binding?: string,
   maxEntries?: number,
@@ -290,24 +290,31 @@ kv: {
 }
 ```
 
-Với các config dùng GitHub, `branch` được phép nhập trực tiếp trong
-`dry.config.ts`. Thứ tự ưu tiên là:
+Với các config dùng GitHub/GitLab, `branch` được phép nhập trực tiếp trong
+`dry.config.ts`. Không còn branch dùng chung trong environment. Nếu bỏ trống,
+branch được đặt theo subsystem đang sử dụng:
 
 ```text
-config.branch -> GITHUB_BRANCH -> "main"
+storage         -> "storage"
+icons           -> "icons"
+content         -> "content"
+richtext.storage -> "richtext"
 ```
 
-Quy tắc này áp dụng cho mọi section có thể dùng GitHub (`storage`, `icons`,
-`content` khi dùng `engine: "file"`, `richtext.storage`, và `kv`). Token/repo
-vẫn lấy từ environment để không đưa credential vào source code. Nên áp dụng
-cùng semantics cho GitLab (`branch` -> `GITLAB_BRANCH` -> `main`) để các
-adapter Git giữ hành vi nhất quán.
+Quy tắc này áp dụng cho mọi section có thể dùng GitHub/GitLab (`storage`,
+`icons`, `content` khi dùng `engine: "file"`, và `richtext.storage`).
+Token/repo/project vẫn lấy từ environment để không đưa credential vào source
+code. Branch được cấu hình độc lập cho từng subsystem.
 
 Khi triển khai, cập nhật các type config hiện tại (`DryStorageOption`,
 `DryIconsOption`, `DryContentOption`, `DryRichtextOption`) và helper
 `resolveFileBackedOption()` để nhận `branch` tùy chọn; các hàm resolve GitHub/
-GitLab nhận branch đã resolve thay vì đọc environment trực tiếp. Cần giữ
+GitLab nhận branch đã resolve thay vì đọc branch environment trực tiếp. Cần giữ
 backward compatibility: config không có `branch` vẫn hoạt động như hiện tại.
+
+Khi adapter GitHub/GitLab phát hiện branch chưa tồn tại, phải tạo branch với
+tree rỗng. Branch mới không được kế thừa dữ liệu từ branch chính; dữ liệu chỉ
+được thêm khi subsystem tương ứng thực hiện operation đầu tiên.
 
 `resolveOptions()` phải:
 
