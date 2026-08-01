@@ -332,7 +332,59 @@ API route phase sau, nếu cần quản trị/debug:
 
 Trước khi thêm route cần quyết định KV là internal service hay là tính năng public. Mặc định kế hoạch này chọn internal service; route quản trị chỉ là phase sau.
 
-## 8. Cấu trúc file dự kiến
+## 8. UI quản trị Key Value và quyết định realtime
+
+Màn hình Key Value chỉ mở cho Super Admin. Vì vậy không cần thiết kế kênh
+realtime hai chiều hoặc tối ưu cho nhiều client đồng thời.
+
+### 8.1. Danh sách
+
+Danh sách hiển thị metadata trước, không tải toàn bộ value cho mọi dòng:
+
+- namespace;
+- key;
+- preview value;
+- kích thước;
+- created/updated time;
+- expiresAt hoặc TTL còn lại;
+- trạng thái `dirty`, `expired`, `flush-error` nếu có.
+
+Value đầy đủ chỉ tải khi mở trang chi tiết key. Key nhạy cảm phải được mask
+mặc định và không ghi value vào log.
+
+### 8.2. Cơ chế tự cập nhật — quyết định MVP
+
+Chọn **REST + polling định kỳ**, không dùng WebSocket, long response hoặc SSE
+trong MVP. Khi server cập nhật hoặc xóa key, UI sẽ nhận biết ở lần polling
+tiếp theo.
+
+API danh sách cần trả một `revision` của namespace/store:
+
+```json
+{
+  "revision": 42,
+  "items": [],
+  "nextCursor": null
+}
+```
+
+UI gửi revision/ETag trước đó qua `If-None-Match`. Nếu chưa thay đổi, server
+trả `304 Not Modified` hoặc `{ "changed": false }` để không tải lại dữ liệu.
+Nếu revision thay đổi, UI tải lại trang hiện tại; phase sau có thể bổ sung
+`updatedSince` để chỉ lấy delta.
+
+Chính sách UI:
+
+- polling mỗi 5–10 giây khi màn hình đang mở;
+- dừng polling khi tab không active;
+- có nút Refresh thủ công;
+- dùng cursor pagination, không tải toàn bộ value;
+- nếu polling lỗi, giữ danh sách hiện tại và hiển thị trạng thái stale/error.
+
+WebSocket hoặc SSE chỉ được xem xét lại khi có nhu cầu cập nhật dưới một giây,
+nhiều admin cùng thao tác, hoặc cần theo dõi trạng thái flush/backend realtime.
+
+## 9. Cấu trúc file dự kiến
 
 ```text
 src/kv/
@@ -354,7 +406,7 @@ src/kv/
 
 Có thể đổi `cloudflare-kv.ts` thành `kv.ts`, nhưng nên dùng tên đầy đủ để tránh nhầm với module service `src/kv/index.ts`.
 
-## 9. Lộ trình triển khai
+## 10. Lộ trình triển khai
 
 ### Phase 0 — Chốt contract và benchmark baseline
 
@@ -408,7 +460,7 @@ Có thể đổi `cloudflare-kv.ts` thành `kv.ts`, nhưng nên dùng tên đầ
 - Feature flag bật KV theo namespace.
 - Canary một namespace không nhạy cảm, sau đó mới mở rộng.
 
-## 10. Kiểm thử và tiêu chí nghiệm thu
+## 11. Kiểm thử và tiêu chí nghiệm thu
 
 ### Unit test
 
@@ -446,7 +498,7 @@ Cùng một test suite chạy cho mọi adapter khi backend fake/fixture sẵn s
 - 1.000 mutation cùng namespace được coalesced thành batch phù hợp.
 - p95 flush local/SQLite được đo riêng với GitHub/GitLab; không dùng một ngưỡng chung cho mọi backend.
 
-## 11. Rủi ro và quyết định cần chốt
+## 12. Rủi ro và quyết định cần chốt
 
 - **Git backend không phải database:** nếu cần độ trễ ghi thấp hoặc nhiều writer, chọn SQLite/D1/KV làm primary; GitHub/GitLab chỉ làm persistence/sync.
 - **Cloudflare KV eventual consistency:** không dùng KV thuần cho dữ liệu cần read-after-write nghiêm ngặt nếu không có lớp version/revalidation.
@@ -455,6 +507,6 @@ Cùng một test suite chạy cho mọi adapter khi backend fake/fixture sẵn s
 - **Secret:** không expose KV debug route và không log value; cân nhắc namespace đánh dấu `sensitive` để redaction.
 - **Sync hai chiều:** MVP nên chọn một primary writer. Nếu cần pull remote changes hai chiều, bổ sung change log/cursor và conflict UI sau khi core ổn định.
 
-## 12. Kết quả mong đợi sau MVP
+## 13. Kết quả mong đợi sau MVP
 
 MVP hoàn tất khi drycms có một `KeyValueStore` độc lập, memory-first, tự dọn dẹp an toàn, flush nền có retry, khôi phục sau restart, và chạy qua adapter `local`, `sqlite`, `D1`, `github`, `gitlab`, `KV` theo cùng contract. Mỗi adapter phải có test contract tương ứng và config lỗi phải fail ngay khi resolve options, trước khi nhận request.

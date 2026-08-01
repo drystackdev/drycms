@@ -20,6 +20,8 @@
 - Đã thêm test cho branch cấu hình thắng branch từ environment.
 - Đã cập nhật `.env.example` và tài liệu kiến trúc, bỏ branch dùng chung khỏi
   danh sách environment.
+- Đã chốt UI Key Value chỉ dành cho Super Admin: REST pagination + polling
+  5–10 giây với `revision/ETag`; chưa dùng WebSocket, SSE hoặc long response.
 - Các thay đổi đang có trước task trong `src/pages/ContentTypeEditor.tsx` và `src/pages/content-type-editor/FieldsList.tsx` được giữ nguyên.
 
 ## Speed
