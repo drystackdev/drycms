@@ -184,6 +184,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [liveTypes, setLiveTypes] = useState<ContentTypeDefinition[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showLoading, setShowLoading] = useState(false);
   const [tableNameError, setTableNameError] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
 
@@ -214,6 +215,15 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     initialSnapshot !== null &&
     definition !== null &&
     JSON.stringify(definition) !== initialSnapshot;
+
+  useEffect(() => {
+    if (definition || loadError) {
+      setShowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoading(true), 150);
+    return () => clearTimeout(timer);
+  }, [definition, loadError]);
 
   useEffect(() => {
     (async () => {
@@ -666,6 +676,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
+  if (!definition && !showLoading) return null;
   if (!definition)
     return (
       <div class="empty">

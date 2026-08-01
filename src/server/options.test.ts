@@ -165,6 +165,16 @@ describe('resolveOptions', () => {
 			});
 		});
 
+		it('prefers the configured branch over GITHUB_BRANCH', () => {
+			vi.stubEnv('GITHUB_REPO', 'acme/media');
+			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
+			vi.stubEnv('GITHUB_BRANCH', 'from-env');
+
+			expect(resolveOptions({ storage: { kind: 'github', branch: 'from-config' } }).storage).toMatchObject({
+				branch: 'from-config',
+			});
+		});
+
 		it('rejects a missing GITHUB_REPO', () => {
 			vi.stubEnv('GITHUB_REPO', undefined);
 			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
@@ -218,6 +228,16 @@ describe('resolveOptions', () => {
 				branch: 'develop',
 				token: 'glpat_test_token',
 				root: '',
+			});
+		});
+
+		it('prefers the configured branch over GITLAB_BRANCH', () => {
+			vi.stubEnv('GITLAB_PROJECT', 'acme/media');
+			vi.stubEnv('GITLAB_PAT_KEY', 'glpat_test_token');
+			vi.stubEnv('GITLAB_BRANCH', 'from-env');
+
+			expect(resolveOptions({ storage: { kind: 'gitlab', branch: 'from-config' } }).storage).toMatchObject({
+				branch: 'from-config',
 			});
 		});
 

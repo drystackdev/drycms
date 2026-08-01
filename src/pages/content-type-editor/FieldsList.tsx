@@ -175,7 +175,7 @@ export default function FieldsList({
             </div>
           </h4>
           <span class="hint">
-            {name && `${name} - `}{description || "Define the columns used for data entry and storage"}
+            {name && <span class="badge sm outline">{name}</span>}{description || "Define the columns used for data entry and storage"}
           </span>
         </div>
         <button type="button" class="outline" onClick={onAdd}>

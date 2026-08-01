@@ -7,15 +7,15 @@ const PLANNED_STORAGE_KINDS = ["r2", "s3"];
 
 export interface DryStorageOption {
   /**
-   * Which backend serves `/dry/api/storage/**`. `'github'`/`'gitlab'` read
-   * their repo/branch/token from env vars (`GITHUB_REPO`/`GITHUB_PAT_KEY`/
-   * `GITHUB_BRANCH` or `GITLAB_PROJECT`/`GITLAB_PAT_KEY`/`GITLAB_BRANCH`/
-   * `GITLAB_HOST`) rather than this object, so no secret ends up in a
-   * committed `dry.config.ts`.
+   * Which backend serves `/dry/api/storage/**`. Repository/token credentials
+   * come from env vars; `branch` may be set here and falls back to
+   * `GITHUB_BRANCH`/`GITLAB_BRANCH`, then `main`.
    *
    * @default "local"
    */
   kind?: "local" | "github" | "gitlab";
+  /** Git branch for GitHub/GitLab. Falls back to the matching env var, then `main`. */
+  branch?: string;
   /**
    * `local`: directory files are read from/written to, relative to the
    * consuming project's cwd (or an absolute path). `github`: subpath within
@@ -28,15 +28,15 @@ export interface DryStorageOption {
 
 export interface DryIconsOption {
   /**
-   * Which backend serves `/dry/api/icons/**`. Same env-var-backed
-   * `github`/`gitlab` credentials as `storage.kind` (`GITHUB_REPO`/
-   * `GITHUB_PAT_KEY`/`GITHUB_BRANCH` or `GITLAB_PROJECT`/`GITLAB_PAT_KEY`/
-   * `GITLAB_BRANCH`/`GITLAB_HOST`) - `icons` and `storage` are two roots
-   * within the same repo/disk, not two separate credentials.
+   * Which backend serves `/dry/api/icons/**`. Same repository/token
+   * credentials and branch fallback as `storage.kind` - `icons` and
+   * `storage` are two roots within the same repo/disk.
    *
    * @default "local"
    */
   kind?: "local" | "github" | "gitlab";
+  /** Git branch for GitHub/GitLab. Falls back to the matching env var, then `main`. */
+  branch?: string;
   /**
    * Same semantics as `DryStorageOption.root`, but for the Icon Management
    * feature's own storage root - kept separate from `storage.root` so
@@ -81,12 +81,14 @@ export interface DryContentOption {
    * @default "local"
    */
   kind?: "local" | "github" | "gitlab";
+  /** Git branch for GitHub/GitLab. Falls back to the matching env var, then `main`. */
+  branch?: string;
   /**
    * `engine: "file"` only: same semantics as `DryStorageOption.root`, but
    * for the JSON content store's own root.
    *
    * @default "content"
-   */
+  */
   root?: string;
 }
 
@@ -265,11 +267,11 @@ export function readEnvVar(name: string): string | undefined {
 }
 
 /**
- * `github`'s owner/repo/branch/token come from env vars, not this object -
- * they're deployment secrets/specifics, not something that belongs in a
- * committed `dry.config.ts`.
+ * GitHub's repository/token come from env vars so secrets stay out of
+ * `dry.config.ts`; branch can be configured per root and otherwise falls back
+ * to `GITHUB_BRANCH` and then `main`.
  */
-function resolveGithubStorageOption(root: string): ResolvedGithubStorageOption {
+function resolveGithubStorageOption(root: string, configuredBranch?: string): ResolvedGithubStorageOption {
   const repoEnv = readEnvVar("GITHUB_REPO");
   if (!repoEnv) {
     throw new Error(
@@ -294,17 +296,17 @@ function resolveGithubStorageOption(root: string): ResolvedGithubStorageOption {
     kind: "github",
     owner: repoEnv.slice(0, slash),
     repo: repoEnv.slice(slash + 1),
-    branch: readEnvVar("GITHUB_BRANCH") || "main",
+    branch: configuredBranch || readEnvVar("GITHUB_BRANCH") || "main",
     token,
     root,
   };
 }
 
 /**
- * `gitlab`'s host/project/branch/token come from env vars, not this object -
- * same rationale as `resolveGithubStorageOption`.
+ * GitLab's project/token remain environment-backed; branch can be configured
+ * per root and otherwise falls back to `GITLAB_BRANCH` and then `main`.
  */
-function resolveGitlabStorageOption(root: string): ResolvedGitlabStorageOption {
+function resolveGitlabStorageOption(root: string, configuredBranch?: string): ResolvedGitlabStorageOption {
   const project = readEnvVar("GITLAB_PROJECT");
   if (!project) {
     throw new Error(
@@ -325,7 +327,7 @@ function resolveGitlabStorageOption(root: string): ResolvedGitlabStorageOption {
     kind: "gitlab",
     host,
     project,
-    branch: readEnvVar("GITLAB_BRANCH") || "main",
+    branch: configuredBranch || readEnvVar("GITLAB_BRANCH") || "main",
     token,
     root,
   };
@@ -338,11 +340,11 @@ function resolveGitlabStorageOption(root: string): ResolvedGitlabStorageOption {
  * purely for error messages (`"storage"` or `"icons"`).
  */
 function resolveFileBackedOption(
-  option: { kind?: unknown; root?: unknown } | undefined,
+  option: { kind?: unknown; root?: unknown; branch?: unknown } | undefined,
   defaultRoot: string,
   optionName: string,
 ): ResolvedStorageOption {
-  const { kind: rawKind, root: rawRoot } = option ?? {};
+  const { kind: rawKind, root: rawRoot, branch: rawBranch } = option ?? {};
   const kind = rawKind ?? "local";
   if (typeof kind !== "string") {
     throw new TypeError(
@@ -364,13 +366,23 @@ function resolveFileBackedOption(
       `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
     );
   }
+  if (rawBranch !== undefined && typeof rawBranch !== "string") {
+    throw new TypeError(
+      `[drycms] \`${optionName}.branch\` must be a string, received ${typeof rawBranch}.`,
+    );
+  }
+  if (kind === "local" && rawBranch !== undefined) {
+    throw new Error(
+      `[drycms] \`${optionName}.branch\` is only used with \`${optionName}.kind: "github"\` or \`"gitlab"\`.`,
+    );
+  }
   // `local` normalizes trailing slashes away via `resolvePath` - github/gitlab
   // don't go through that, so a config'd trailing slash would otherwise make
   // their `stripRoot`'s `${root}/` prefix check never match a real path.
   const normalizedRoot = root.replace(/\/+$/, "");
 
-  if (kind === "github") return resolveGithubStorageOption(normalizedRoot);
-  if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot);
+  if (kind === "github") return resolveGithubStorageOption(normalizedRoot, rawBranch as string | undefined);
+  if (kind === "gitlab") return resolveGitlabStorageOption(normalizedRoot, rawBranch as string | undefined);
 
   return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };
 }
@@ -415,9 +427,9 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
       '[drycms] `content.binding` is only used with `content.engine: "D1"` - add `engine: "D1"` or remove `binding`.',
     );
   }
-  if (engine !== "file" && (content.kind !== undefined || content.root !== undefined)) {
+  if (engine !== "file" && (content.kind !== undefined || content.root !== undefined || content.branch !== undefined)) {
     throw new Error(
-      '[drycms] `content.kind`/`content.root` are only used with `content.engine: "file"` - add `engine: "file"` or remove them.',
+      '[drycms] `content.kind`/`content.root`/`content.branch` are only used with `content.engine: "file"` - add `engine: "file"` or remove them.',
     );
   }
 
@@ -432,7 +444,11 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
   }
 
   if (engine === "file") {
-    const storageOption = resolveFileBackedOption({ kind: content.kind, root: content.root }, DEFAULT_CONTENT_ROOT, "content");
+    const storageOption = resolveFileBackedOption(
+      { kind: content.kind, root: content.root, branch: content.branch },
+      DEFAULT_CONTENT_ROOT,
+      "content",
+    );
     return { engine: "file", ...storageOption };
   }
 
