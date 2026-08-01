@@ -13,6 +13,10 @@ export const STATUS_BY_CODE: Record<string, number> = {
 };
 
 export const MIME_TYPES: Record<string, string> = {
+  css: "text/css",
+  js: "text/javascript",
+  mjs: "text/javascript",
+  map: "application/json",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
