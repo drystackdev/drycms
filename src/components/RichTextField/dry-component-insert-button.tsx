@@ -15,7 +15,7 @@ import { loadBuiltComponent } from "./dry-component-runtime.js";
 import { insertBlockAfterFocusedGridItem } from "./grid.js";
 import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
-import { loadRichtextComponents } from "./useRichTextEditor.js";
+import { loadRichtextComponents } from "./component-registry.js";
 
 /**
  * Toolbar button opening a name-only list picker (same 2-step "select, then

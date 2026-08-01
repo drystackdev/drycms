@@ -11,7 +11,7 @@ import type { DryComponentRecord } from "./component-registry-types.js";
 import DryComponentPropsForm from "./dry-component-props-form.js";
 import type { ImageAlign } from "./schema.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
-import { loadRichtextComponents } from "./useRichTextEditor.js";
+import { loadRichtextComponents } from "./component-registry.js";
 
 export interface DryComponentMenuProps {
   viewRef: RefObject<EditorView | null>;

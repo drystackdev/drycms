@@ -9,7 +9,6 @@ import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { goToNextCell, tableEditing } from "prosemirror-tables";
 import { path as basePath } from "virtual:drycms/config";
-import type { DryComponentRecord } from "./component-registry-types.js";
 import { richtextContentShadowStyles } from "./content-shadow-styles.js";
 import {
   insertHardBreak,
@@ -40,24 +39,7 @@ import { TableNodeView } from "./table-node-view.js";
 import { tableRowResizing } from "./table-row-resize.js";
 import { trailingParagraph, withTrailingParagraph } from "./trailing-paragraph.js";
 import { NO_FORMAT, type ToolbarState } from "./types.js";
-
-/** Every `RichTextField` on a page shares one confirmed-component registry -
- * fetched once (not per instance) and memoized here, module-scope. Resolves
- * to `[]` on any failure (offline, integration not mounted, ...) rather than
- * rejecting - a richtext field with no custom components available is a
- * perfectly normal state, not an error the field itself should surface. */
-let richtextComponentsPromise: Promise<DryComponentRecord[]> | null = null;
-
-/** Exported for `dry-component-insert-button.tsx` to reuse - opening the
- * insert dialog shouldn't pay a second round trip for a registry this same
- * field instance already fetched on mount. */
-export function loadRichtextComponents(): Promise<DryComponentRecord[]> {
-  richtextComponentsPromise ??= fetch(`${basePath}/api/richtext-components`)
-    .then((res) => (res.ok ? res.json() : { records: [] }))
-    .then((data) => (Array.isArray(data.records) ? (data.records as DryComponentRecord[]) : []))
-    .catch(() => []);
-  return richtextComponentsPromise;
-}
+import { loadRichtextComponents } from "./component-registry.js";
 
 export interface UseRichTextEditorOptions {
   /** HTML string - the only seed/output format, reported on every change
