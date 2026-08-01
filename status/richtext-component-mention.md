@@ -24,6 +24,9 @@
 - Added the initial `@` mention popup, fuzzy filtering, keyboard navigation, nested/top-level scopes, and component insertion wiring.
 - Extracted pure token/scope/fuzzy helpers and added focused tests.
 - Kept the `@` mention popup free of box shadow as requested.
+- Added toolbar scroll compensation: toolbar actions preserve the editor anchor position after contextual controls mount, including top-layer popover actions, without smooth scrolling.
+- Fixed mention search rendering with OverlayScrollbars by keeping a stable items wrapper inside the managed viewport.
+- Mention token cleanup is now excluded from undo history; undoing an imported component no longer restores the temporary `@query` text.
 - Typecheck, 50 RichText tests, and production build pass.
 - Browser E2E is blocked in this environment because `E2E_SESSION_TOKEN` is not set.
 

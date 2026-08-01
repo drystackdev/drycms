@@ -5052,13 +5052,16 @@
   }
 
   .dry-component-mention-list {
-    display: flex;
-    flex-direction: column;
     max-height: 18rem;
     overflow-y: auto;
   }
 
-  .dry-component-mention-list button {
+  .dry-component-mention-items {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dry-component-mention-items button {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -5073,12 +5076,12 @@
     box-shadow: none;
   }
 
-  .dry-component-mention-list button:hover,
-  .dry-component-mention-list button.selected {
+  .dry-component-mention-items button:hover,
+  .dry-component-mention-items button.selected {
     background: var(--dry-accent) !important;
   }
 
-  .dry-component-mention-list button svg {
+  .dry-component-mention-items button svg {
     width: 1rem;
     height: 1rem;
     flex: 0 0 auto;

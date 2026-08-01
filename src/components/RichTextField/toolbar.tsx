@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import { runCommand } from "./commands.js";
@@ -7,6 +8,41 @@ import GridMenu from "./grid-menu.js";
 import TableMenu from "./table-menu.js";
 import { REORDER_MODE_TOGGLE_KEY, TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
+
+interface ToolbarScrollSnapshot {
+  anchor: HTMLElement;
+  container: HTMLElement | Window;
+  anchorTop: number;
+}
+
+function isScrollable(element: HTMLElement): boolean {
+  const style = getComputedStyle(element);
+  return /(auto|scroll|overlay)/.test(`${style.overflow}${style.overflowY}`);
+}
+
+function scrollContainerFor(element: HTMLElement): HTMLElement | Window {
+  let parent = element.parentElement;
+  while (parent) {
+    if (isScrollable(parent)) return parent;
+    parent = parent.parentElement;
+  }
+  return window;
+}
+
+function captureToolbarScroll(anchor: HTMLElement | null): ToolbarScrollSnapshot | null {
+  if (!anchor) return null;
+  return { anchor, container: scrollContainerFor(anchor), anchorTop: anchor.getBoundingClientRect().top };
+}
+
+function restoreToolbarScroll(snapshot: ToolbarScrollSnapshot) {
+  const delta = snapshot.anchor.getBoundingClientRect().top - snapshot.anchorTop;
+  if (Math.abs(delta) < 0.5) return;
+  if (snapshot.container === window) {
+    window.scrollTo({ top: window.scrollY + delta, behavior: "auto" });
+  } else {
+    (snapshot.container as HTMLElement).scrollTop += delta;
+  }
+}
 
 export interface RichTextToolbarProps {
   /** The ref itself, not `viewRef.current` - the view is only assigned
@@ -57,6 +93,8 @@ export default function RichTextToolbar({
   fullscreen,
   onToggleFullscreen,
 }: RichTextToolbarProps) {
+  const scrollSnapshotRef = useRef<ToolbarScrollSnapshot | null>(null);
+
   // A plain click on a toolbar button would blur the contenteditable and
   // collapse its selection before the click handler ever runs.
   const preserveSelection = (event: MouseEvent) => event.preventDefault();
@@ -66,6 +104,27 @@ export default function RichTextToolbar({
     if (!view) return;
     runCommand(view, button.run);
   };
+
+  const captureScrollBeforeAction = () => {
+    scrollSnapshotRef.current = captureToolbarScroll(contentRef.current);
+  };
+
+  const restoreScrollAfterAction = () => {
+    const snapshot = scrollSnapshotRef.current;
+    scrollSnapshotRef.current = null;
+    if (!snapshot) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => restoreToolbarScroll(snapshot));
+    });
+  };
+
+  useEffect(() => {
+    // Popover actions can render in the browser top layer and stop the click
+    // before it bubbles back to this toolbar. Document bubble phase runs
+    // after the action itself, so it is the reliable final measurement point.
+    document.addEventListener("click", restoreScrollAfterAction);
+    return () => document.removeEventListener("click", restoreScrollAfterAction);
+  });
 
   // Groups can end up empty once `blockOnly` items are filtered out (e.g. the
   // align-only group under `inline`) - drop those so an empty block never
@@ -79,7 +138,13 @@ export default function RichTextToolbar({
   ).filter((group) => group.length > 0);
 
   return (
-    <div class="richtext-toolbar" role="group" aria-label="Formatting">
+    <div
+      class="richtext-toolbar"
+      role="group"
+      aria-label="Formatting"
+      onMouseDownCapture={captureScrollBeforeAction}
+      onClick={restoreScrollAfterAction}
+    >
       {visibleGroups.map((group, index) => (
         <div class="richtext-toolbar-block" key={index}>
           {group.map((item) =>

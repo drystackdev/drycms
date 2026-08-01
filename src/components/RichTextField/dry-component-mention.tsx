@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { Node as PMNode } from "prosemirror-model";
+import { closeHistory } from "prosemirror-history";
 import { NodeSelection, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { ComponentIcon } from "../icons.js";
@@ -60,12 +61,22 @@ function createComponentNode(view: EditorView, record: DryComponentRecord): PMNo
 function insertMention(view: EditorView, match: MentionMatch, record: DryComponentRecord, context: ComponentContext | null): boolean {
   const child = createComponentNode(view, record);
   if (!child) return false;
-  let tr = view.state.tr.delete(match.from, match.to);
 
   if (context) {
-    const parentPos = tr.mapping.map(context.pos);
-    const parentNode = tr.doc.nodeAt(parentPos);
+    const parentNode = view.state.doc.nodeAt(context.pos);
     if (!parentNode || parentNode.type.name !== `dry_${context.record.name}` || !parentNode.type.spec.content) return false;
+  }
+
+  // The mention token is temporary input, not a user-editable history step.
+  // Remove it separately so undoing the component insertion cannot restore
+  // the `@query` text that was only used to open this picker.
+  view.dispatch(view.state.tr.delete(match.from, match.to).setMeta("addToHistory", false));
+  let tr = view.state.tr;
+
+  if (context) {
+    const parentPos = context.pos;
+    const parentNode = tr.doc.nodeAt(parentPos);
+    if (!parentNode) return false;
     let insertPos = parentPos + parentNode.nodeSize - 1;
     if (child.type.isInline) {
       let textblockStart: number | null = null;
@@ -85,7 +96,7 @@ function insertMention(view: EditorView, match: MentionMatch, record: DryCompone
         const childPos = insertPos + 1;
         if (!tr.doc.nodeAt(childPos)) return false;
         tr = tr.setSelection(NodeSelection.create(tr.doc, childPos)).scrollIntoView();
-        view.dispatch(tr);
+        view.dispatch(closeHistory(tr));
         view.focus();
         return true;
       }
@@ -107,7 +118,7 @@ function insertMention(view: EditorView, match: MentionMatch, record: DryCompone
     }
     tr = tr.scrollIntoView();
   }
-  view.dispatch(tr);
+  view.dispatch(closeHistory(tr));
   view.focus();
   return true;
 }
@@ -228,29 +239,31 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
       style={{ position: "fixed", top: `${mention.top}px`, left: `${mention.left}px` }}
     >
       <div class="dry-component-mention-list" ref={listRef}>
-        {mention.candidates.map((candidate, index) => (
-          <button
-            type="button"
-            role="option"
-            aria-selected={index === mention.selectedIndex}
-            class={index === mention.selectedIndex ? "selected" : undefined}
-            key={`${candidate.path}:${candidate.record.name}`}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              const view = viewRef.current;
-              if (!view) return;
-              const context = componentContext(view, records);
-              if (insertMention(view, mention, candidate.record, context)) {
-                mentionRef.current = null;
-                setMention(null);
-              }
-            }}
-          >
-            <ComponentIcon />
-            <span class="dry-component-mention-path">{candidate.path}</span>
-            <small>{candidate.label}</small>
-          </button>
-        ))}
+        <div class="dry-component-mention-items">
+          {mention.candidates.map((candidate, index) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={index === mention.selectedIndex}
+              class={index === mention.selectedIndex ? "selected" : undefined}
+              key={`${candidate.path}:${candidate.record.name}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                const view = viewRef.current;
+                if (!view) return;
+                const context = componentContext(view, records);
+                if (insertMention(view, mention, candidate.record, context)) {
+                  mentionRef.current = null;
+                  setMention(null);
+                }
+              }}
+            >
+              <ComponentIcon />
+              <span class="dry-component-mention-path">{candidate.path}</span>
+              <small>{candidate.label}</small>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
