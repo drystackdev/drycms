@@ -22,7 +22,11 @@ export interface ComponentFieldProps<
    * to `FileManager` while still owning its own dialog chrome. `errors` is
    * only populated once the user has tried (and failed) to Save this item -
    * see `validateItem`. */
-  renderItem: (value: T, onChange: (value: T) => void, errors: Record<string, string>) => ComponentChildren;
+  renderItem: (
+    value: T,
+    onChange: (value: T) => void,
+    errors: Record<string, string>,
+  ) => ComponentChildren;
   /** Runs against the draft on Save; a non-empty result (keyed the same way
    * `renderItem` expects to read `errors`) blocks the save and is threaded
    * back into `renderItem` instead, e.g. `FieldRenderer.tsx`'s
@@ -71,7 +75,8 @@ export default function ComponentField<T = Record<string, unknown>>({
   // live after that (recomputed on every keystroke below) so the error
   // clears the moment the offending field is fixed, without a second click.
   const [attempted, setAttempted] = useState(false);
-  const draftErrors = attempted && draft !== null && validateItem ? validateItem(draft) : {};
+  const draftErrors =
+    attempted && draft !== null && validateItem ? validateItem(draft) : {};
   const dialogRef = useDialogSync(open, () => setOpen(false));
   // Deps include `open`: the body only mounts once the dialog opens, so the
   // ref is still null on this component's own first render.
@@ -81,7 +86,9 @@ export default function ComponentField<T = Record<string, unknown>>({
   // entities) - `useSortableList` needs one to track a row across reorders,
   // so this mints one per item and keeps it in lockstep with `value` across
   // every mutation this component itself makes (add/remove/reorder).
-  const [itemIds, setItemIds] = useState<string[]>(() => value.map(() => randomUUID()));
+  const [itemIds, setItemIds] = useState<string[]>(() =>
+    value.map(() => randomUUID()),
+  );
 
   function openAdd() {
     setEditingIndex(null);
@@ -112,7 +119,9 @@ export default function ComponentField<T = Record<string, unknown>>({
       onChange([...value, draft]);
       setItemIds((ids) => [...ids, randomUUID()]);
     } else {
-      onChange(value.map((existing, i) => (i === editingIndex ? draft : existing)));
+      onChange(
+        value.map((existing, i) => (i === editingIndex ? draft : existing)),
+      );
     }
     setOpen(false);
     setDraft(null);
@@ -132,7 +141,7 @@ export default function ComponentField<T = Record<string, unknown>>({
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}</label>
       {description && <small>{description}</small>}
-      <div style={{marginTop: "0.5rem"}}>
+      <div style={{ marginTop: "0.5rem" }}>
         <button
           id={fieldId}
           type="button"
@@ -144,7 +153,11 @@ export default function ComponentField<T = Record<string, unknown>>({
         </button>
       </div>
       <ul class="entry-component-repeat-list" {...dnd.containerProps}>
-        {value.length === 0 && <li class="hint">No items yet.</li>}
+        {value.length === 0 && (
+          <li class="hint center" style={{ paddingBlock: "1rem" }}>
+            No items yet.
+          </li>
+        )}
         {value.map((item, index) => {
           const id = itemIds[index] ?? String(index);
           return (
@@ -204,7 +217,9 @@ export default function ComponentField<T = Record<string, unknown>>({
               </h3>
             </header>
             <div class="component-item-dialog-body" ref={bodyScroll}>
-              <div class="stack">{renderItem(draft, setDraft, draftErrors)}</div>
+              <div class="stack">
+                {renderItem(draft, setDraft, draftErrors)}
+              </div>
             </div>
             <footer class="row justify-end">
               {attempted && Object.keys(draftErrors).length > 0 && (

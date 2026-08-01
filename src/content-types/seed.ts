@@ -47,7 +47,8 @@ const IDS = {
  * collection (a named group of links), the `menuItem` component `menu.refs`
  * repeats, an `seo` component any collection/singleton can flatten in via
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
- * (credentials for third-party AI providers), and `role`/`permission`
+ * (credentials for third-party AI providers), and
+ * `role`/`permission`
  * collections (role-based access control - see `status/role-permission.md`).
  * `menuItem`/`user`/`menu` are plain, ordinary content types the admin can
  * freely rename, edit, or delete, indistinguishable from anything created by
@@ -254,9 +255,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     hidden: true,
     locked: true,
     frozen: true,
-    features: {
-      sortable: true,
-    },
+    features: { sortable: true },
     fields: [
       {
         id: IDS.aiKeyName,
@@ -281,10 +280,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         name: "provider",
         label: "Provider",
         type: "select",
-        config: {
-          options: ["Google", "Anthropic", "ChatGPT", "Custom"],
-          multiple: false,
-        },
+        config: { options: ["Google", "Anthropic", "ChatGPT", "Custom"], multiple: false },
         validation: { required: true },
         order: 2,
       },
