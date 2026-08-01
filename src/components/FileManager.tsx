@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { readCachedFile } from "./file-manager-blob-cache.js";
+import {
+  canOptimizeUploadImage,
+  optimizedUploadName,
+  optimizeUploadImage,
+} from "./file-manager-image-optimize.js";
 import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
 import { useDialogSync } from "./list-nav.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";
@@ -464,7 +469,9 @@ function ListView({
           {entries.length === 0 ? (
             <tr style={{ cursor: "default" }}>
               <td colSpan={6}>
-                <div class="center" style={{height: 200}} >No files.</div>
+                <div class="center" style={{ height: 200 }}>
+                  No files.
+                </div>
               </td>
             </tr>
           ) : (
@@ -918,7 +925,8 @@ function RenameDialog({
 
   const trimmed = name.trim();
   const duplicate =
-    trimmed !== "" && existingNames.some((existing) => namesEqual(existing, trimmed));
+    trimmed !== "" &&
+    existingNames.some((existing) => namesEqual(existing, trimmed));
 
   return (
     <dialog ref={ref} aria-label="Rename">
@@ -1016,6 +1024,48 @@ function NewFolderDialog({
 
 // -------------------------------------------------------------- Upload dialog
 
+interface UploadFileItem {
+  id: string;
+  file: File;
+  canOptimize: boolean;
+  optimize: boolean;
+}
+
+let uploadFileItemCounter = 0;
+
+function createUploadFileItem(file: File): UploadFileItem {
+  const canOptimize = canOptimizeUploadImage(file);
+  uploadFileItemCounter += 1;
+  return {
+    id: `upload-file-${uploadFileItemCounter}`,
+    file,
+    canOptimize,
+    optimize: canOptimize,
+  };
+}
+
+async function prepareUploadFiles(
+  items: UploadFileItem[],
+): Promise<{ files: File[]; skippedOptimization: boolean }> {
+  const files: File[] = [];
+  let skippedOptimization = false;
+
+  for (const item of items) {
+    if (!item.canOptimize || !item.optimize) {
+      files.push(item.file);
+      continue;
+    }
+    try {
+      files.push(await optimizeUploadImage(item.file));
+    } catch {
+      skippedOptimization = true;
+      files.push(item.file);
+    }
+  }
+
+  return { files, skippedOptimization };
+}
+
 function UploadDialog({
   open,
   folderPathLabel,
@@ -1026,11 +1076,11 @@ function UploadDialog({
   open: boolean;
   folderPathLabel: string;
   onClose: () => void;
-  onSubmit: (files: File[]) => void;
+  onSubmit: (files: UploadFileItem[]) => void;
   busy: boolean;
 }) {
   const ref = useDialogSync(open, onClose);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<UploadFileItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1040,7 +1090,18 @@ function UploadDialog({
 
   const addFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
-    setFiles((current) => [...current, ...Array.from(list)]);
+    setFiles((current) => [
+      ...current,
+      ...Array.from(list).map(createUploadFileItem),
+    ]);
+  };
+
+  const toggleOptimize = (id: string) => {
+    setFiles((current) =>
+      current.map((item) =>
+        item.id === id ? { ...item, optimize: !item.optimize } : item,
+      ),
+    );
   };
 
   return (
@@ -1100,15 +1161,35 @@ function UploadDialog({
 
           {files.length > 0 && (
             <ul class="upload-file-list">
-              {files.map((file, index) => (
-                <li key={`${file.name}-${index}`}>
-                  <span>{file.name}</span>
-                  <small class="muted">{formatBytes(file.size)}</small>
+              {files.map((item, index) => (
+                <li key={item.id}>
+                  <div class="upload-file-info">
+                    <span>{item.file.name}</span>
+                    <small class="muted">
+                      {formatBytes(item.file.size)}
+                      {item.canOptimize && item.optimize
+                        ? ` → ${optimizedUploadName(item.file.name)}`
+                        : ""}
+                    </small>
+                  </div>
+                  {item.canOptimize && (
+                    <div class="toggle upload-file-optimize">
+                      <input
+                        id={`${item.id}-optimize`}
+                        type="checkbox"
+                        role="switch"
+                        checked={item.optimize}
+                        disabled={busy}
+                        onChange={() => toggleOptimize(item.id)}
+                      />
+                      <label for={`${item.id}-optimize`}>Optimize</label>
+                    </div>
+                  )}
                   <button
                     type="button"
                     class="ghost icon sm"
                     data-tooltip="Remove"
-                    aria-label={`Remove ${file.name}`}
+                    aria-label={`Remove ${item.file.name}`}
                     onClick={() =>
                       setFiles((current) =>
                         current.filter((_, i) => i !== index),
@@ -1132,7 +1213,7 @@ function UploadDialog({
               aria-busy={busy}
               onClick={() => onSubmit(files)}
             >
-              Upload{files.length > 0 ? ` (${files.length})` : ""}
+              Upload
             </button>
           </footer>
         </>
@@ -1507,7 +1588,11 @@ export default function FileManager({
 }: FileManagerProps) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(() =>
-    initialFolderId !== undefined ? initialFolderId : syncUrl ? readFolderFromUrl() : null,
+    initialFolderId !== undefined
+      ? initialFolderId
+      : syncUrl
+        ? readFolderFromUrl()
+        : null,
   );
   // Establishes a baseline history entry for whatever folder we opened on
   // (root or one restored from the URL), so the very first back-button press
@@ -1521,7 +1606,9 @@ export default function FileManager({
   useEffect(() => {
     if (!syncUrl) return;
     const onPopState = (event: PopStateEvent) => {
-      const state = event.state as { [FOLDER_QUERY_KEY]?: string | null } | null;
+      const state = event.state as {
+        [FOLDER_QUERY_KEY]?: string | null;
+      } | null;
       const id =
         state && FOLDER_QUERY_KEY in state
           ? (state[FOLDER_QUERY_KEY] ?? null)
@@ -1652,9 +1739,9 @@ export default function FileManager({
    * `"unavailable"` covers both "no `listAll` on this source" and "this
    * backend doesn't support it" (a resolved `null`, or a rejected promise) -
    * either way, callers fall back to `list()` exactly as before. */
-  const [treePrefetch, setTreePrefetch] = useState<"pending" | "unavailable" | "done">(
-    () => (source.listAll ? "pending" : "unavailable"),
-  );
+  const [treePrefetch, setTreePrefetch] = useState<
+    "pending" | "unavailable" | "done"
+  >(() => (source.listAll ? "pending" : "unavailable"));
 
   // Prefetches the whole tree once per `source`, when it supports one -
   // replaces the lazy per-folder loading entirely on success (every folder is
@@ -1678,7 +1765,8 @@ export default function FileManager({
         setLoadedFolders((current) => {
           const next = new Set(current);
           next.add(null);
-          for (const entry of all) if (entry.kind === "folder") next.add(entry.id);
+          for (const entry of all)
+            if (entry.kind === "folder") next.add(entry.id);
           return next;
         });
         setTreePrefetch("done");
@@ -1853,14 +1941,17 @@ export default function FileManager({
     setDragOverId(null);
     if (ids && canDropOn(entry, ids)) moveEntriesInto(ids, entry.id);
   };
-  const onDragOverBreadcrumb = (targetId: string | null) => (event: DragEvent) => {
-    if (!dragIds || !canDropOnFolder(targetId, dragIds)) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    setBreadcrumbDragOverId(targetId);
-  };
+  const onDragOverBreadcrumb =
+    (targetId: string | null) => (event: DragEvent) => {
+      if (!dragIds || !canDropOnFolder(targetId, dragIds)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      setBreadcrumbDragOverId(targetId);
+    };
   const onDragLeaveBreadcrumb = (targetId: string | null) => () => {
-    setBreadcrumbDragOverId((current) => (current === targetId ? undefined : current));
+    setBreadcrumbDragOverId((current) =>
+      current === targetId ? undefined : current,
+    );
   };
   const onDropBreadcrumb = (targetId: string | null) => (event: DragEvent) => {
     event.preventDefault();
@@ -1876,9 +1967,14 @@ export default function FileManager({
    * re-fetches every folder the move could have touched on failure - shared
    * by drag-and-drop (`moveEntriesInto`) and the clipboard's Move/Paste flow
    * (`pasteClipboard`). Returns whether it succeeded. */
-  const performMove = async (ids: string[], targetId: string | null): Promise<boolean> => {
+  const performMove = async (
+    ids: string[],
+    targetId: string | null,
+  ): Promise<boolean> => {
     if (!source.move) return false;
-    const sourceFolderIds = ids.map((id) => entries.find((entry) => entry.id === id)?.parentId ?? null);
+    const sourceFolderIds = ids.map(
+      (id) => entries.find((entry) => entry.id === id)?.parentId ?? null,
+    );
     const affectedFolderIds = [...sourceFolderIds, targetId, currentFolderId];
 
     setEntries((current) => {
@@ -1897,7 +1993,9 @@ export default function FileManager({
       // deterministic, so correct) path rewrite - only the top-level moved
       // ids get server-confirmed data back from a batch move.
       const byId = new Map(moved.map((entry) => [entry.id, entry]));
-      setEntries((current) => current.map((entry) => byId.get(entry.id) ?? entry));
+      setEntries((current) =>
+        current.map((entry) => byId.get(entry.id) ?? entry),
+      );
       return true;
     } catch {
       toast.add({ title: "Couldn't move - try again", type: "error" });
@@ -2065,13 +2163,17 @@ export default function FileManager({
     setBusy(true);
     try {
       const updated = await source.rename(oldId, name);
-      setEntries((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      setEntries((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
     } catch {
       toast.add({ title: "Couldn't rename - try again", type: "error" });
       // Same rationale as `moveEntriesInto`: read the live selection/preview
       // via ref, not the values closed over before the `await`.
       if (selectedIdsRef.current.includes(guessedId)) {
-        setSelection(selectedIdsRef.current.map((id) => (id === guessedId ? oldId : id)));
+        setSelection(
+          selectedIdsRef.current.map((id) => (id === guessedId ? oldId : id)),
+        );
       }
       if (previewIdRef.current === guessedId) setPreviewId(oldId);
       await revertAfterFailure([currentFolderId, parentId]);
@@ -2122,7 +2224,12 @@ export default function FileManager({
     setEntries((current) =>
       current.map((entry) =>
         entry.id === id
-          ? { ...entry, size: file.size, modifiedAt: new Date().toISOString(), previewUrl: optimisticPreview }
+          ? {
+              ...entry,
+              size: file.size,
+              modifiedAt: new Date().toISOString(),
+              previewUrl: optimisticPreview,
+            }
           : entry,
       ),
     );
@@ -2132,55 +2239,76 @@ export default function FileManager({
       const updated = await source.replace(id, file);
       // Use the server's own `previewUrl`, not the local blob URL - the
       // optimistic one is only a stand-in until the real upload lands.
-      setEntries((current) => current.map((entry) => (entry.id === id ? updated : entry)));
+      setEntries((current) =>
+        current.map((entry) => (entry.id === id ? updated : entry)),
+      );
     } catch {
       toast.add({ title: "Couldn't replace - try again", type: "error" });
       await revertAfterFailure([currentFolderId]);
     } finally {
       setBusy(false);
-      if (optimisticPreview?.startsWith("blob:")) URL.revokeObjectURL(optimisticPreview);
+      if (optimisticPreview?.startsWith("blob:"))
+        URL.revokeObjectURL(optimisticPreview);
     }
   };
 
-  const submitUpload = async (files: File[]) => {
+  const submitUpload = async (items: UploadFileItem[]) => {
     if (!source.upload) return;
-    // Two files sharing a name would collide on the same optimistic
-    // placeholder id below (and on the server's target path) - reject
-    // up front with a clear message instead of a confusing partial upload.
-    const names = new Set<string>();
-    for (const file of files) {
-      if (names.has(file.name)) {
-        toast.add({ title: `Duplicate filename "${file.name}" in this upload`, type: "error" });
-        return;
-      }
-      names.add(file.name);
-    }
     const folderId = currentFolderId;
-    // Optimistic placeholders, one per file, using client-known
-    // name/size/(object-URL preview) - upload rejects on a name collision
-    // rather than silently renaming (see `routes/storage.ts`), so unlike
-    // `copy` the destination path here *is* predictable.
-    const placeholders: FileEntry[] = files.map((file) => {
-      const dot = file.name.lastIndexOf(".");
-      return {
-        id: folderId ? `${folderId}/${file.name}` : file.name,
-        name: file.name,
-        parentId: folderId,
-        kind: "file",
-        ext: dot > 0 ? file.name.slice(dot + 1).toLowerCase() : undefined,
-        size: file.size,
-        modifiedAt: new Date().toISOString(),
-        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
-      };
-    });
-    setEntries((current) => [...current, ...placeholders]);
-    setUploadOpen(false);
-
     setBusy(true);
+    let placeholders: FileEntry[] = [];
     try {
+      const { files, skippedOptimization } = await prepareUploadFiles(items);
+      // Two files sharing a final name would collide on the same optimistic
+      // placeholder id below (and on the server's target path) - reject
+      // up front with a clear message instead of a confusing partial upload.
+      const names = new Set<string>();
+      for (const file of files) {
+        if (names.has(file.name)) {
+          toast.add({
+            title: `Duplicate filename "${file.name}" in this upload`,
+            type: "error",
+          });
+          return;
+        }
+        names.add(file.name);
+      }
+      if (skippedOptimization) {
+        toast.add({
+          title: "Some images couldn't be optimized",
+          description: "They will be uploaded as originals.",
+          type: "warning",
+        });
+      }
+
+      // Optimistic placeholders, one per final file, using client-known
+      // name/size/(object-URL preview) - upload rejects on a name collision
+      // rather than silently renaming (see `routes/storage.ts`), so unlike
+      // `copy` the destination path here *is* predictable.
+      placeholders = files.map((file) => {
+        const dot = file.name.lastIndexOf(".");
+        return {
+          id: folderId ? `${folderId}/${file.name}` : file.name,
+          name: file.name,
+          parentId: folderId,
+          kind: "file",
+          ext: dot > 0 ? file.name.slice(dot + 1).toLowerCase() : undefined,
+          size: file.size,
+          modifiedAt: new Date().toISOString(),
+          previewUrl: file.type.startsWith("image/")
+            ? URL.createObjectURL(file)
+            : undefined,
+        };
+      });
+      setEntries((current) => [...current, ...placeholders]);
+      setUploadOpen(false);
+
       const uploaded = await source.upload(folderId, files);
       const placeholderIds = new Set(placeholders.map((entry) => entry.id));
-      setEntries((current) => [...current.filter((entry) => !placeholderIds.has(entry.id)), ...uploaded]);
+      setEntries((current) => [
+        ...current.filter((entry) => !placeholderIds.has(entry.id)),
+        ...uploaded,
+      ]);
     } catch {
       toast.add({ title: "Couldn't upload - try again", type: "error" });
       // A batch upload isn't all-or-nothing (the route writes files one at a
@@ -2191,7 +2319,8 @@ export default function FileManager({
     } finally {
       setBusy(false);
       for (const placeholder of placeholders) {
-        if (placeholder.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(placeholder.previewUrl);
+        if (placeholder.previewUrl?.startsWith("blob:"))
+          URL.revokeObjectURL(placeholder.previewUrl);
       }
     }
   };
@@ -2214,7 +2343,9 @@ export default function FileManager({
     setBusy(true);
     try {
       const created = await source.createFolder(folderId, name);
-      setEntries((current) => current.map((entry) => (entry.id === placeholder.id ? created : entry)));
+      setEntries((current) =>
+        current.map((entry) => (entry.id === placeholder.id ? created : entry)),
+      );
     } catch {
       toast.add({ title: "Couldn't create folder - try again", type: "error" });
       await revertAfterFailure([folderId]);
@@ -2256,7 +2387,8 @@ export default function FileManager({
    * first visit to a folder *and* the refetch every mutation triggers, so
    * the toolbar signals "working" without ever swapping `entries` out for
    * skeleton placeholders (the list/grid just keep showing what they had). */
-  const folderLoading = treePrefetch === "pending" || loadingFolders.has(currentFolderId);
+  const folderLoading =
+    treePrefetch === "pending" || loadingFolders.has(currentFolderId);
 
   return (
     <div class="file-manager">
@@ -2311,9 +2443,7 @@ export default function FileManager({
             onMove={source.move ? () => requestMove(selectedIds) : undefined}
             onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
             onDelete={
-              source.remove
-                ? () => setPendingDeleteIds(selectedIds)
-                : undefined
+              source.remove ? () => setPendingDeleteIds(selectedIds) : undefined
             }
           />
         ))}
@@ -2348,9 +2478,7 @@ export default function FileManager({
           onMove={source.move ? () => requestMove(selectedIds) : undefined}
           onCopy={source.copy ? () => requestCopy(selectedIds) : undefined}
           onDelete={
-            source.remove
-              ? () => setPendingDeleteIds(selectedIds)
-              : undefined
+            source.remove ? () => setPendingDeleteIds(selectedIds) : undefined
           }
           canPaste={canPaste && !busy}
           onPasteClipboard={pasteClipboard}
@@ -2420,9 +2548,7 @@ export default function FileManager({
               }
             : undefined
         }
-        onDelete={
-          source.remove ? (id) => setPendingDeleteIds([id]) : undefined
-        }
+        onDelete={source.remove ? (id) => setPendingDeleteIds([id]) : undefined}
       />
 
       <ConfirmDialog

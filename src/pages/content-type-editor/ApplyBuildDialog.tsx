@@ -121,6 +121,7 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
       }
       if (allOk) {
         toast.add({ type: "success", title: "Applied and built successfully." });
+        onClose();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to apply pending changes.");
@@ -221,7 +222,7 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
             {error && <p class="error">{error}</p>}
 
             {stage === "checked" && !hasPlanErrors && (
-              <div class={`alert ${hasDestructive ? "warning" : "success"}`}>
+              <div class={`alert ${hasDestructive ? "warning" : "success"}`} style={{ marginBlock: "1rem" }}>
                 {hasDestructive ? <AlertTriangleIcon /> : <CheckCircleIcon />}
                 <h4>{hasDestructive ? "This will lose data" : "No conflicts found"}</h4>
                 <p>
@@ -233,7 +234,7 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
             )}
 
             {stage === "checked" && hasPlanErrors && (
-              <div class="alert destructive">
+              <div class="alert destructive" style={{ marginBlock: "1rem" }}>
                 <XCircleIcon />
                 <h4>Some changes can't be applied</h4>
                 <p>Fix the errors above (edit that content type again), then re-check.</p>
@@ -241,7 +242,7 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
             )}
 
             {stage === "applied" && (
-              <div class={`alert ${applyAllOk ? "success" : "destructive"}`}>
+              <div class={`alert ${applyAllOk ? "success" : "destructive"}`} style={{ marginBlock: "1rem" }}>
                 {applyAllOk ? <CheckCircleIcon /> : <XCircleIcon />}
                 <h4>{applyAllOk ? "Applied successfully" : "Some changes failed"}</h4>
                 <p>

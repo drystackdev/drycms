@@ -8,6 +8,9 @@ export interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   busy?: boolean;
+  size?: "sm" | "md" | "lg" | "xl";
+  /** Disables the confirm action until a dialog-specific condition is met. */
+  confirmDisabled?: boolean;
   /** Styles the confirm button as destructive (red) - for actions like delete. */
   destructive?: boolean;
   onConfirm: () => void;
@@ -27,14 +30,16 @@ export default function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   busy = false,
+  confirmDisabled = false,
   destructive = false,
   onConfirm,
   onCancel,
+  size = "md",
 }: ConfirmDialogProps) {
   const ref = useDialogSync(open, onCancel);
 
   return (
-    <dialog ref={ref} aria-label={title}>
+    <dialog ref={ref} class={`${size}`} aria-label={title}>
       {open && (
         <>
           <header>
@@ -48,7 +53,7 @@ export default function ConfirmDialog({
             <button
               type="button"
               class={destructive ? "destructive" : undefined}
-              disabled={busy}
+              disabled={busy || confirmDisabled}
               aria-busy={busy}
               onClick={onConfirm}
             >

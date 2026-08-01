@@ -7,9 +7,17 @@ import TextField from "../components/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { bumpContentTypesVersion } from "../store/content-types.js";
-import { discardDraft, drafts, getDraft, saveDraft } from "../content-types/draft-store.js";
+import {
+  discardDraft,
+  drafts,
+  getDraft,
+  saveDraft,
+} from "../content-types/draft-store.js";
 import { randomUUID } from "../lib/uuid.js";
-import type { RelationFieldConfig, RelationMirrorFieldConfig } from "../content-types/field-registry.js";
+import type {
+  RelationFieldConfig,
+  RelationMirrorFieldConfig,
+} from "../content-types/field-registry.js";
 import {
   activeFields,
   effectiveFeatures,
@@ -23,7 +31,11 @@ import type {
   ContentTypeKind,
   FieldDefinition,
 } from "../content-types/types.js";
-import { ArrowLeftIcon, InfoCircleIcon, TrashIcon } from "../components/icons.js";
+import {
+  ArrowLeftIcon,
+  InfoCircleIcon,
+  TrashIcon,
+} from "../components/icons.js";
 import FeaturesFieldset, {
   FEATURES_BY_KIND,
 } from "./content-type-editor/FeaturesFieldset.js";
@@ -124,7 +136,9 @@ function systemFieldsForUi(
   for (const mirror of relationMirrorFieldsFor(definition, allTypes)) {
     const config = mirror.config as RelationMirrorFieldConfig;
     const sourceType = allTypes.find((t) => t.id === config.sourceTypeId);
-    const sourceField = sourceType && activeFields(sourceType).find((f) => f.id === config.sourceFieldId);
+    const sourceField =
+      sourceType &&
+      activeFields(sourceType).find((f) => f.id === config.sourceFieldId);
     items.push({
       id: mirror.id,
       label: mirror.label,
@@ -186,6 +200,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     useState<SystemFieldEntry | null>(null);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTableName, setDeleteTableName] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [showDiscardDraftConfirm, setShowDiscardDraftConfirm] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -261,7 +276,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         setLiveTypes(types);
         const merged = types.map((t) => getDraft(t.id)?.definition ?? t);
         for (const entry of Object.values(drafts.value)) {
-          if (!merged.some((t) => t.id === entry.definition.id)) merged.push(entry.definition);
+          if (!merged.some((t) => t.id === entry.definition.id))
+            merged.push(entry.definition);
         }
         setAllTypes(merged);
 
@@ -329,7 +345,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       collections: allTypes
         .filter(
           (t) =>
-            t.kind === "collection" && (!t.hidden || t.id === editingRelationTarget),
+            t.kind === "collection" &&
+            (!t.hidden || t.id === editingRelationTarget),
         )
         .map((t) => ({ value: t.id, label: t.label })),
       components: allTypes
@@ -389,7 +406,12 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   function restoreField(fieldId: string) {
     setDefinition((d) =>
       d
-        ? { ...d, deletedFieldIds: (d.deletedFieldIds ?? []).filter((id) => id !== fieldId) }
+        ? {
+            ...d,
+            deletedFieldIds: (d.deletedFieldIds ?? []).filter(
+              (id) => id !== fieldId,
+            ),
+          }
         : d,
     );
   }
@@ -403,7 +425,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       return {
         ...d,
         fields: withNormalizedOrder(d.fields.filter((f) => f.id !== fieldId)),
-        deletedFieldIds: (d.deletedFieldIds ?? []).filter((id) => id !== fieldId),
+        deletedFieldIds: (d.deletedFieldIds ?? []).filter(
+          (id) => id !== fieldId,
+        ),
       };
     });
   }
@@ -435,7 +459,12 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   function restoreFeature(key: keyof ContentTypeFeatures) {
     setDefinition((d) =>
       d
-        ? { ...d, deletedFeatureKeys: (d.deletedFeatureKeys ?? []).filter((k) => k !== key) }
+        ? {
+            ...d,
+            deletedFeatureKeys: (d.deletedFeatureKeys ?? []).filter(
+              (k) => k !== key,
+            ),
+          }
         : d,
     );
   }
@@ -450,7 +479,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       return {
         ...d,
         features: { ...d.features, [key]: false },
-        deletedFeatureKeys: (d.deletedFeatureKeys ?? []).filter((k) => k !== key),
+        deletedFeatureKeys: (d.deletedFeatureKeys ?? []).filter(
+          (k) => k !== key,
+        ),
       };
     });
   }
@@ -467,7 +498,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         return {
           ...d,
           fieldSides: { ...d.fieldSides, [field.id]: side },
-          fieldDescriptions: { ...d.fieldDescriptions, [field.id]: field.description ?? "" },
+          fieldDescriptions: {
+            ...d.fieldDescriptions,
+            [field.id]: field.description ?? "",
+          },
         };
       }
       // Keyed by id (not `editingField`, which is only ever set while
@@ -485,7 +519,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         ...d,
         fields: withNormalizedOrder(fields),
         fieldSides: { ...d.fieldSides, [field.id]: side },
-        deletedFieldIds: (d.deletedFieldIds ?? []).filter((id) => id !== field.id),
+        deletedFieldIds: (d.deletedFieldIds ?? []).filter(
+          (id) => id !== field.id,
+        ),
       };
     });
     setFieldDialogOpen(false);
@@ -496,7 +532,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
    * bespoke UI) - `FieldDialog` locks Label/Name/Type for it (`isMirror`)
    * since none of those are real/editable, but Description and Display side
    * both round-trip through `handleFieldSave` above like any other field. */
-  function mirrorEntryToFieldDefinition(entry: SystemFieldEntry): FieldDefinition {
+  function mirrorEntryToFieldDefinition(
+    entry: SystemFieldEntry,
+  ): FieldDefinition {
     const mirror = entry.mirror!;
     return {
       id: entry.id,
@@ -528,7 +566,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     if (!mirror) return;
     const sourceType = allTypes.find((t) => t.id === mirror.sourceTypeId);
     if (!sourceType) {
-      toast.add({ type: "error", title: `"${mirror.sourceTypeLabel}" no longer exists.` });
+      toast.add({
+        type: "error",
+        title: `"${mirror.sourceTypeLabel}" no longer exists.`,
+      });
       setPendingMirrorRemove(null);
       return;
     }
@@ -539,7 +580,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       ),
     };
     saveDraft(updatedSource, getDraft(sourceType.id)?.isNew ?? false);
-    setAllTypes((types) => types.map((t) => (t.id === updatedSource.id ? updatedSource : t)));
+    setAllTypes((types) =>
+      types.map((t) => (t.id === updatedSource.id ? updatedSource : t)),
+    );
     // A self-relation mirrors back onto the SAME type currently open in this
     // editor - keep the on-screen draft in sync with what was just staged,
     // same as `allTypes` above, rather than leaving stale fields sitting in
@@ -574,7 +617,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     toast.add({
       type: "success",
       title: `Saved draft for "${definition.label}".`,
-      description: "Go to Content Types and use Apply and build to make it live.",
+      description:
+        "Go to Content Types and use Apply and build to make it live.",
     });
     route(`${path}/content-types?selectedKind=${definition.kind}`);
   }
@@ -597,6 +641,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
 
   async function handleDelete() {
     if (!definition) return;
+    if (definition.kind === "collection" && deleteTableName !== definition.name)
+      return;
     setDeleting(true);
     try {
       await api.remove(definition.id);
@@ -797,7 +843,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               <button
                 type="button"
                 class="destructive"
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => {
+                  setDeleteTableName("");
+                  setShowDeleteConfirm(true);
+                }}
               >
                 <TrashIcon /> Delete {definition.kind}
               </button>
@@ -831,8 +880,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         features={(definition.deletedFeatureKeys ?? []).map((key) => ({
           key,
           label:
-            FEATURES_BY_KIND[definition.kind].find((f) => f.key === key)?.label ??
-            key,
+            FEATURES_BY_KIND[definition.kind].find((f) => f.key === key)
+              ?.label ?? key,
         }))}
         onClose={() => setTrashOpen(false)}
         onRestoreField={restoreField}
@@ -846,8 +895,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         title={`Remove "${pendingMirrorRemove?.mirror?.sourceFieldLabel ?? ""}"?`}
         message={
           <p>
-            This stages removal of "{pendingMirrorRemove?.mirror?.sourceFieldLabel}"
-            from "{pendingMirrorRemove?.mirror?.sourceTypeLabel}" as a draft -
+            This stages removal of "
+            {pendingMirrorRemove?.mirror?.sourceFieldLabel}" from "
+            {pendingMirrorRemove?.mirror?.sourceTypeLabel}" as a draft -
             applying it later will drop its column/table, and any data in it.
           </p>
         }
@@ -864,7 +914,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         title="Discard this draft?"
         message={
           <p>
-            This discards the unapplied draft for "{definition.label || definition.name}"
+            This discards the unapplied draft for "
+            {definition.label || definition.name}"
             {isNew ? "" : " and reverts back to the live version"}. This cannot
             be undone.
           </p>
@@ -879,16 +930,36 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         open={showDeleteConfirm}
         title={`Delete "${definition.label || definition.name}"?`}
         message={
-          <p>
-            This permanently deletes the {definition.kind} and all of its data.
-            This cannot be undone.
-          </p>
+          <>
+            <p>
+              This permanently deletes the {definition.kind} and all of its
+              data. This cannot be undone.
+            </p>
+            {definition.kind === "collection" && (
+              <p style={{ marginTop: "1em" }}>
+                <TextField
+                  label="Confirm table name"
+                  value={deleteTableName}
+                  onChange={setDeleteTableName}
+                  placeholder={definition.name}
+                  helperText={`Type "${definition.name}" to confirm deletion.`}
+                />
+              </p>
+            )}
+          </>
         }
         confirmLabel="Delete"
         destructive
         busy={deleting}
+        confirmDisabled={
+          definition.kind === "collection" &&
+          deleteTableName !== definition.name
+        }
         onConfirm={handleDelete}
-        onCancel={() => setShowDeleteConfirm(false)}
+        onCancel={() => {
+          setDeleteTableName("");
+          setShowDeleteConfirm(false);
+        }}
       />
 
       <ConfirmDialog
