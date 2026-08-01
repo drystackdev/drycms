@@ -57,6 +57,19 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
   throw new AuthApiError(typeof body.message === "string" ? body.message : fallback, body.fieldErrors);
 }
 
+async function refreshExpiredSession(): Promise<AuthUser | null> {
+  // The refresh token is HttpOnly. The CSRF cookie is only readable by the
+  // browser when a session was previously issued, so anonymous app loads do
+  // not make a pointless refresh request.
+  if (typeof document === "undefined" || !document.cookie.split(";").some((part) => part.trim().startsWith("drycms_csrf="))) {
+    return null;
+  }
+  const res = await fetch(`${path}/api/auth/refresh`, { method: "POST" });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body.user ?? null;
+}
+
 /** Reads `GET /api/auth/session` and sets `authState` accordingly - the one
  * call that decides which of the 3 gate states to show. Called once on app
  * mount (`AuthGate`) and again after `logout()`. */
@@ -71,7 +84,10 @@ export async function loadSession(): Promise<void> {
     } else if (body.user) {
       authState.value = { status: "authenticated", user: body.user };
     } else {
-      authState.value = { status: "anonymous", user: null };
+      const refreshedUser = await refreshExpiredSession();
+      authState.value = refreshedUser
+        ? { status: "authenticated", user: refreshedUser }
+        : { status: "anonymous", user: null };
     }
   } catch {
     // A failed session check degrades to "anonymous" (show Sign in) rather

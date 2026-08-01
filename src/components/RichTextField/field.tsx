@@ -4,6 +4,7 @@ import type { FieldProps } from "../field-common.js";
 import type { FileManagerSource } from "../file-manager-types.js";
 import { useScrollLock } from "../list-nav.js";
 import ImageMenu from "./image-menu.js";
+import DryComponentMention from "./dry-component-mention.js";
 import RichTextToolbar from "./toolbar.js";
 import type { EditorView } from "prosemirror-view";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
@@ -158,6 +159,7 @@ export default function RichTextField({
           </div>
         )}
         <ImageMenu viewRef={viewRef} state={state} disabled={disabled || loading} source={source} iconSize={iconSize} />
+        <DryComponentMention viewRef={viewRef} ready={!loading} disabled={disabled} />
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>
