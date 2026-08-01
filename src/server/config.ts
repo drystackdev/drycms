@@ -9,6 +9,6 @@ import { resolveOptions } from "./options.js";
  */
 export const resolved = resolveOptions(userOptions);
 
-export const { path, storage, icons, content } = resolved;
+export const { path, storage, icons, content, kv } = resolved;
 export const richtextComponentsStorage = resolved.richtext.storage;
 export const richtextComponentsDir = resolved.richtext.componentsDir;

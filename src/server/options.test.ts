@@ -24,6 +24,18 @@ describe('resolveOptions', () => {
 				componentsDir: resolve(process.cwd(), 'src/dry-components'),
 				storage: { kind: 'local', root: resolve(process.cwd(), 'richtext-components') },
 			},
+			kv: {
+				kind: 'local',
+				root: resolve(process.cwd(), 'kv'),
+				maxEntries: 10_000,
+				maxBytes: 32 * 1024 * 1024,
+				cleanupIntervalMs: 30_000,
+				flushDebounceMs: 100,
+				flushBatchSize: 100,
+				durability: 'async',
+				defaultTtlMs: undefined,
+				idleTtlMs: undefined,
+			},
 		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);

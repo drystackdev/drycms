@@ -114,6 +114,27 @@ export interface DryRichtextOption {
   storage?: DryStorageOption;
 }
 
+export interface DryKvOption {
+  /** Persistence backend for the server-side Key Value store. */
+  kind?: "local" | "sqlite" | "D1" | "github" | "gitlab" | "KV";
+  /** File/repository root for local/GitHub/GitLab persistence. */
+  root?: string;
+  /** SQLite file path when `kind` is `sqlite`. */
+  file?: string;
+  /** D1/KV binding name when using a Workers runtime. */
+  binding?: string;
+  /** GitHub/GitLab branch. Defaults to `kv`. */
+  branch?: string;
+  maxEntries?: number;
+  maxBytes?: number;
+  defaultTtlMs?: number;
+  idleTtlMs?: number;
+  cleanupIntervalMs?: number;
+  flushDebounceMs?: number;
+  flushBatchSize?: number;
+  durability?: "memory" | "async" | "sync";
+}
+
 export interface DryOption {
   /**
    * Base path the drycms admin UI is mounted on.
@@ -126,6 +147,7 @@ export interface DryOption {
   icons?: DryIconsOption;
   content?: DryContentOption;
   richtext?: DryRichtextOption;
+  kv?: DryKvOption;
 }
 
 /**
@@ -202,12 +224,33 @@ export interface ResolvedRichtextOption {
   storage: ResolvedStorageOption;
 }
 
+export interface ResolvedKvTuning {
+  maxEntries: number;
+  maxBytes: number;
+  defaultTtlMs?: number;
+  idleTtlMs?: number;
+  cleanupIntervalMs: number;
+  flushDebounceMs: number;
+  flushBatchSize: number;
+  durability: "memory" | "async" | "sync";
+}
+
+export type ResolvedKvOption = ResolvedKvTuning & (
+  | ({ kind: "local"; root: string })
+  | ({ kind: "sqlite"; file: string })
+  | ({ kind: "D1"; binding: string })
+  | ({ kind: "KV"; binding: string })
+  | ResolvedGithubStorageOption
+  | ResolvedGitlabStorageOption
+);
+
 export interface ResolvedDryOption {
   path: string;
   storage: ResolvedStorageOption;
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
   richtext: ResolvedRichtextOption;
+  kv: ResolvedKvOption;
 }
 
 export const DEFAULT_PATH = "/dry";
@@ -217,6 +260,9 @@ export const DEFAULT_CONTENT_FILE = "content.sqlite";
 export const DEFAULT_CONTENT_ROOT = "content";
 export const DEFAULT_COMPONENTS_DIR = "src/dry-components";
 export const DEFAULT_RICHTEXT_STORAGE_ROOT = "richtext-components";
+export const DEFAULT_KV_ROOT = "kv";
+export const DEFAULT_KV_FILE = "kv.sqlite";
+export const DEFAULT_KV_BINDING = "KV";
 
 let dotEnvCache: Record<string, string> | undefined;
 
@@ -461,6 +507,59 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
   return { engine: "sqlite", file: resolvePath(process.cwd(), file) };
 }
 
+function resolvePositiveNumber(value: unknown, key: string, fallback: number): number {
+  const result = value ?? fallback;
+  if (typeof result !== "number" || !Number.isFinite(result) || result <= 0) {
+    throw new TypeError(`[drycms] \`${key}\` must be a positive finite number.`);
+  }
+  return result;
+}
+
+function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
+  const kind = option.kind ?? "local";
+  if (typeof kind !== "string" || !["local", "sqlite", "D1", "github", "gitlab", "KV"].includes(kind)) {
+    throw new Error(`[drycms] \`kv.kind\` must be one of local, sqlite, D1, github, gitlab or KV.`);
+  }
+  if (kind === "sqlite") {
+    if (option.root !== undefined || option.branch !== undefined || option.binding !== undefined) {
+      throw new Error('[drycms] `kv.root`/`kv.branch`/`kv.binding` are not used with `kv.kind: "sqlite"`.');
+    }
+  }
+  if ((kind === "D1" || kind === "KV") && (option.root !== undefined || option.file !== undefined || option.branch !== undefined)) {
+    throw new Error(`[drycms] \`kv.root\`/\`kv.file\`/\`kv.branch\` are not used with \`kv.kind: "${kind}"\`.`);
+  }
+  if ((kind === "local" || kind === "github" || kind === "gitlab") && (option.file !== undefined || option.binding !== undefined)) {
+    throw new Error(`[drycms] \`kv.file\`/\`kv.binding\` are not used with \`kv.kind: "${kind}"\`.`);
+  }
+
+  const tuning: ResolvedKvTuning = {
+    maxEntries: resolvePositiveNumber(option.maxEntries, "kv.maxEntries", 10_000),
+    maxBytes: resolvePositiveNumber(option.maxBytes, "kv.maxBytes", 32 * 1024 * 1024),
+    defaultTtlMs: option.defaultTtlMs,
+    idleTtlMs: option.idleTtlMs,
+    cleanupIntervalMs: resolvePositiveNumber(option.cleanupIntervalMs, "kv.cleanupIntervalMs", 30_000),
+    flushDebounceMs: resolvePositiveNumber(option.flushDebounceMs, "kv.flushDebounceMs", 100),
+    flushBatchSize: resolvePositiveNumber(option.flushBatchSize, "kv.flushBatchSize", 100),
+    durability: option.durability ?? "async",
+  };
+  for (const [key, value] of [["defaultTtlMs", option.defaultTtlMs], ["idleTtlMs", option.idleTtlMs]] as const) {
+    if (value !== undefined) resolvePositiveNumber(value, `kv.${key}`, value);
+  }
+
+  if (kind === "sqlite") return { ...tuning, kind, file: resolvePath(process.cwd(), option.file ?? DEFAULT_KV_FILE) };
+  if (kind === "D1" || kind === "KV") {
+    const binding = option.binding ?? (kind === "KV" ? DEFAULT_KV_BINDING : "KV_DB");
+    if (typeof binding !== "string" || !binding.trim()) throw new TypeError(`[drycms] \`kv.binding\` must be a non-empty string.`);
+    return { ...tuning, kind, binding };
+  }
+  const storageOption = resolveFileBackedOption(
+    { kind, root: option.root ?? DEFAULT_KV_ROOT, branch: option.branch },
+    DEFAULT_KV_ROOT,
+    "kv",
+  );
+  return { ...tuning, ...storageOption } as ResolvedKvOption;
+}
+
 /**
  * Normalizes and validates user options. Throws on values that would produce a
  * broken route so the failure surfaces at config time rather than at request time.
@@ -500,5 +599,6 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
     richtext: resolveRichtextOption(options.richtext),
+    kv: resolveKvOption(options.kv),
   };
 }

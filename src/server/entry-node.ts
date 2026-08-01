@@ -1,8 +1,9 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
-import { createApiMiddleware } from "./adapters/node.js";
+import { createApiMiddleware, sendFetchResponse, toFetchRequest } from "./adapters/node.js";
 import { mimeType } from "./route-helpers.js";
+import { guardPageRequest } from "./page-guard.js";
 
 /**
  * Production entry - bundled by `vite build --ssr src/server/entry-node.ts`
@@ -27,7 +28,14 @@ function serveShellOrAsset(req: IncomingMessage, res: ServerResponse): void {
 }
 
 const server = createHttpServer((req, res) => {
-  apiMiddleware(req, res, () => serveShellOrAsset(req, res));
+  apiMiddleware(req, res, async () => {
+    const redirect = await guardPageRequest(toFetchRequest(req), {});
+    if (redirect) {
+      await sendFetchResponse(redirect, res);
+      return;
+    }
+    serveShellOrAsset(req, res);
+  });
 });
 
 const port = Number(process.env.PORT) || 3000;

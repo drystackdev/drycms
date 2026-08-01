@@ -46,6 +46,7 @@ export function createLocalKeyValueAdapter(root: string): KeyValueAdapter {
     async list(namespace, options: KvListOptions = {}): Promise<KvListResult> {
       const names = (await readdir(namespaceDir(namespace)).catch((error: any) => error?.code === "ENOENT" ? [] : Promise.reject(error)))
         .filter((name) => name.endsWith(".json"))
+        .filter((name) => !options.search || decodePart(name.slice(0, -5)).toLowerCase().includes(options.search.toLowerCase()))
         .sort();
       const start = decodeCursor(options.cursor);
       const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);

@@ -8,6 +8,7 @@ import { verifyPassword } from "../../lib/password-hash.js";
 import { signSession } from "../../lib/session-token.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { SESSION_COOKIE_NAME } from "../session.js";
+import { revokeSession } from "../session-blacklist.js";
 
 /**
  * The `auth` API route: session issuance for the built-in `user` collection
@@ -302,6 +303,10 @@ export const POST: DryRouteHandler = async (context) => {
             currentPassword: "Incorrect current password.",
           });
         }
+        // Revoke before changing the credential. If the durable blacklist is
+        // unavailable, fail the whole operation rather than changing the
+        // password while leaving the current token usable.
+        if (context.sessionToken) await revokeSession(context.sessionToken, context.env);
       }
 
       const updated = await entryAdapter.updateEntry(userType, allTypes, context.session.id, {
@@ -322,6 +327,7 @@ export const POST: DryRouteHandler = async (context) => {
     }
 
     if (endpoint === "logout") {
+      if (context.sessionToken) await revokeSession(context.sessionToken, context.env);
       return withClearedSessionCookie(new Response(null, { status: 204 }), context);
     }
 

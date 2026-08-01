@@ -1,6 +1,6 @@
 import { path as basePath } from "./config.js";
 import type { DryRouteContext, DryRouteHandler } from "./context.js";
-import { resolveSession } from "./session.js";
+import { readSessionCookie, resolveSession } from "./session.js";
 import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
@@ -8,6 +8,7 @@ import * as contentTypesRoute from "./routes/content-types.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as authRoute from "./routes/auth.js";
+import * as keyValueRoute from "./routes/key-value.js";
 
 type RouteModule = Record<string, DryRouteHandler | undefined>;
 
@@ -26,6 +27,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
   auth: authRoute,
+  "key-value": keyValueRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {
@@ -66,7 +68,8 @@ export async function handleApiRequest(
   // with. Individual routes (`content-entries.ts`/`content-types.ts`) do
   // finer-grained resource/action authorization on top of this - see
   // `content-types/access.ts`.
-  const session = await resolveSession(request);
+  const sessionToken = readSessionCookie(request);
+  const session = await resolveSession(request, env);
   if (segment !== "auth" && !session) {
     return new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
@@ -74,6 +77,6 @@ export async function handleApiRequest(
     });
   }
 
-  const context: DryRouteContext = { request, url, params: { slug }, env, session };
+  const context: DryRouteContext = { request, url, params: { slug }, env, session, sessionToken };
   return handler(context);
 }

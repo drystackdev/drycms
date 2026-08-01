@@ -1,19 +1,12 @@
 import { readEnvVar } from "../server/options.js";
-import { base64Decode, base64Encode } from "./secret-crypto.js";
 
-/**
- * Stateless, signed session token for the built-in `user` collection's login
- * (see `content-types/seed.ts`) - no session table, so this works
- * identically across all 3 content engines (including the D1/Workers one,
- * where only Web Crypto is available, same reasoning as `secret-crypto.ts`/
- * `password-hash.ts`). The signed payload carries the fields the UI needs to
- * display (name/email) so a session check never has to re-query the `user`
- * row - the tradeoff is a renamed/re-emailed user shows the stale value here
- * until their next login.
- */
+/** Stateless JWT session token for the built-in `user` collection's login.
+ * Uses HS256 with the application secret and standard `header.payload.signature`
+ * encoding. The token remains self-contained so session checks do not need to
+ * re-query the user row; the KV-backed session blacklist handles revocation. */
 
-const VERSION_PREFIX = "v1:";
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const ISSUER = "drycms";
 
 export interface SessionPayload {
   id: number;
@@ -21,9 +14,14 @@ export interface SessionPayload {
   email: string;
 }
 
-interface SignedPayload extends SessionPayload {
+interface JwtPayload {
+  sub: string;
+  name: string;
+  email: string;
   iat: number;
   exp: number;
+  jti: string;
+  iss: string;
 }
 
 let cachedKeyPromise: Promise<CryptoKey> | undefined;
@@ -55,50 +53,58 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
-/** Signs `payload` into a self-contained, storable string: a version tag
- * followed by base64 of the JSON payload and base64 of its HMAC, dot-joined -
- * matches the "version tag + base64 payload" shape `password-hash.ts`/
- * `secret-crypto.ts` already use. */
-export async function signSession(payload: SessionPayload): Promise<string> {
-  const key = await getKey();
-  const now = Date.now();
-  const signed: SignedPayload = { ...payload, iat: now, exp: now + SESSION_MAX_AGE_MS };
-  const payloadBytes = new TextEncoder().encode(JSON.stringify(signed));
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes));
-  return `${VERSION_PREFIX}${base64Encode(payloadBytes)}.${base64Encode(signature)}`;
+function base64UrlEncode(value: string): string {
+  return btoa(value).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-/** Verifies `token` against `signSession`'s output. Returns `null` (never
- * throws) for anything that isn't shaped like this module's own output,
- * including a tampered, malformed, or expired token - same "no silent
- * fallback" contract as `password-hash.ts`'s `verifyPassword`. */
+function base64UrlDecode(value: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("Invalid base64url value.");
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - value.length % 4) % 4);
+  return atob(padded);
+}
+
+function encodeJson(value: unknown): string {
+  return base64UrlEncode(JSON.stringify(value));
+}
+
+async function signBytes(input: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.sign("HMAC", await getKey(), new TextEncoder().encode(input)));
+}
+
+/** Signs a standard HS256 JWT. */
+export async function signSession(payload: SessionPayload): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = encodeJson({ alg: "HS256", typ: "JWT" });
+  const body = encodeJson({
+    sub: String(payload.id),
+    name: payload.name,
+    email: payload.email,
+    iat: now,
+    exp: now + SESSION_MAX_AGE_MS / 1000,
+    jti: crypto.randomUUID(),
+    iss: ISSUER,
+  } satisfies JwtPayload);
+  const signingInput = `${header}.${body}`;
+  return `${signingInput}.${base64UrlEncode(String.fromCharCode(...await signBytes(signingInput)))}`;
+}
+
+/** Verifies a JWT signature and required claims. Returns null for malformed,
+ * tampered, expired, wrong-algorithm, or wrong-issuer tokens. */
 export async function verifySession(token: string): Promise<SessionPayload | null> {
-  if (!token.startsWith(VERSION_PREFIX)) return null;
-  const [payloadPart, signaturePart] = token.slice(VERSION_PREFIX.length).split(".");
-  if (!payloadPart || !signaturePart) return null;
-
-  let payloadBytes: Uint8Array;
-  let signature: Uint8Array;
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
   try {
-    payloadBytes = base64Decode(payloadPart);
-    signature = base64Decode(signaturePart);
+    const header = JSON.parse(base64UrlDecode(parts[0])) as { alg?: unknown; typ?: unknown };
+    const signed = JSON.parse(base64UrlDecode(parts[1])) as Partial<JwtPayload>;
+    if (header.alg !== "HS256" || header.typ !== "JWT" || signed.iss !== ISSUER) return null;
+    const expectedSignature = await signBytes(`${parts[0]}.${parts[1]}`);
+    const signatureBytes = Uint8Array.from(base64UrlDecode(parts[2]), (char) => char.charCodeAt(0));
+    if (!timingSafeEqual(signatureBytes, expectedSignature)) return null;
+    if (typeof signed.sub !== "string" || !/^\d+$/.test(signed.sub)) return null;
+    if (typeof signed.name !== "string" || typeof signed.email !== "string" || typeof signed.jti !== "string") return null;
+    if (typeof signed.iat !== "number" || typeof signed.exp !== "number" || signed.exp <= Math.floor(Date.now() / 1000)) return null;
+    return { id: Number(signed.sub), name: signed.name, email: signed.email };
   } catch {
     return null;
   }
-
-  const key = await getKey();
-  const expectedSignature = new Uint8Array(await crypto.subtle.sign("HMAC", key, payloadBytes as BufferSource));
-  if (!timingSafeEqual(signature, expectedSignature)) return null;
-
-  let signed: SignedPayload;
-  try {
-    signed = JSON.parse(new TextDecoder().decode(payloadBytes)) as SignedPayload;
-  } catch {
-    return null;
-  }
-  if (typeof signed.exp !== "number" || Date.now() > signed.exp) return null;
-  if (typeof signed.id !== "number" || typeof signed.name !== "string" || typeof signed.email !== "string") {
-    return null;
-  }
-  return { id: signed.id, name: signed.name, email: signed.email };
 }

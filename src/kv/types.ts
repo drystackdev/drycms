@@ -15,6 +15,7 @@ export interface KvRecordMeta extends Omit<KvRecord, "value"> {
 export interface KvListOptions {
   cursor?: string;
   limit?: number;
+  search?: string;
 }
 
 export interface KvListResult {

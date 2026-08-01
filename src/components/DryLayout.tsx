@@ -35,6 +35,7 @@ const NAV: {
   href: string;
   icon: IconName;
   ready: boolean;
+  superAdminOnly?: boolean;
 }[] = [
   {
     key: "dashboard",
@@ -107,6 +108,14 @@ const NAV: {
     key: "roles",
     label: "Roles",
     href: `${path}/roles`,
+    icon: "Settings",
+    ready: true,
+    superAdminOnly: true,
+  },
+  {
+    key: "key-value",
+    label: "Key Value",
+    href: `${path}/key-value`,
     icon: "Settings",
     ready: true,
   },
@@ -259,7 +268,7 @@ export default function DryLayout({ children }: Props) {
         <div class="sidebar-scroll" ref={sidebar}>
           <nav aria-label="Admin">
             {!collapsed.value && <span class="nav-label">Manage</span>}
-            {NAV.map((item) =>
+            {NAV.filter((item) => !item.superAdminOnly || authState.value.user?.roles.includes("Super Admin")).map((item) =>
               item.key === "content" ? (
                 <div key={item.key} class="nav-group">
                   <div class="nav-group-header">

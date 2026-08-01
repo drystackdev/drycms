@@ -122,19 +122,21 @@ export class KeyValueStore {
     this.evict(kvId(namespace, key), false);
     this.queue({ type: "delete", namespace, key });
     if (this.options.durability === "sync") await this.flush();
-    else this.scheduleFlush();
+    else if (this.options.durability === "async") this.scheduleFlush();
   }
 
   async has(namespace: string, key: string): Promise<boolean> {
     return (await this.get(namespace, key)) !== null;
   }
 
-  async list(namespace: string, options: { cursor?: string; limit?: number } = {}): Promise<KvListResult> {
+  async list(namespace: string, options: { cursor?: string; limit?: number; search?: string } = {}): Promise<KvListResult> {
     assertKvPart(namespace, "namespace");
     const result = await this.adapter.list(namespace, options);
     const merged = new Map(result.items.map((item) => [kvId(item.namespace, item.key), item]));
+    const search = options.search?.trim().toLowerCase() ?? "";
     for (const pending of this.pending.values()) {
       if (pending.namespace !== namespace) continue;
+      if (search && !pending.key.toLowerCase().includes(search)) continue;
       const id = kvId(namespace, pending.key);
       if (pending.type === "delete") merged.delete(id);
       else if (pending.record) merged.set(id, this.meta(pending.record, this.cache.get(id)?.sizeBytes));

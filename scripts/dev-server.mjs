@@ -15,23 +15,27 @@ const vite = await createViteServer({
   appType: "custom",
 });
 
-const { createApiMiddleware } = await vite.ssrLoadModule("/src/server/adapters/node.js");
+const { createApiMiddleware, toFetchRequest, sendFetchResponse } = await vite.ssrLoadModule("/src/server/adapters/node.js");
+const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts");
 const apiMiddleware = createApiMiddleware();
 
 const server = createHttpServer((req, res) => {
   apiMiddleware(req, res, () => {
-    vite.middlewares(req, res, async () => {
-      try {
-        const url = req.url ?? "/";
-        let html = readFileSync("index.html", "utf8");
-        html = await vite.transformIndexHtml(url, html);
-        res.setHeader("Content-Type", "text/html");
-        res.end(html);
-      } catch (error) {
-        vite.ssrFixStacktrace(error);
-        res.statusCode = 500;
-        res.end(error instanceof Error ? error.stack : String(error));
-      }
+    guardPageRequest(toFetchRequest(req), {}).then((redirect) => {
+      if (redirect) return sendFetchResponse(redirect, res);
+      vite.middlewares(req, res, async () => {
+        try {
+          const url = req.url ?? "/";
+          let html = readFileSync("index.html", "utf8");
+          html = await vite.transformIndexHtml(url, html);
+          res.setHeader("Content-Type", "text/html");
+          res.end(html);
+        } catch (error) {
+          vite.ssrFixStacktrace(error);
+          res.statusCode = 500;
+          res.end(error instanceof Error ? error.stack : String(error));
+        }
+      });
     });
   });
 });

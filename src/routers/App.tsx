@@ -34,6 +34,7 @@ const IconManagement = lazy(() => import("../pages/IconManagement.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
 const IconManualForm = lazy(() => import("../pages/IconManualForm.js"));
 const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
+const KeyValue = lazy(() => import("../pages/KeyValue.js"));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
  * base path and any unmatched path have to be sent to `/dashboard` here. */
@@ -179,6 +180,7 @@ function AuthenticatedApp() {
               />
               <Route path={`${path}/profile`} component={Profile} />
               <Route path={`${path}/roles`} component={Roles} />
+              <Route path={`${path}/key-value`} component={KeyValue} />
               {/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}
               <Route
                 path={`${path}/roles/new`}

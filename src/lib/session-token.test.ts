@@ -20,6 +20,17 @@ describe("signSession / verifySession", () => {
     expect(await verifySession(token)).toEqual(PAYLOAD);
   });
 
+  it("emits a standard HS256 JWT with an issuer and unique id", async () => {
+    const { signSession } = await import("./session-token.js");
+    const token = await signSession(PAYLOAD);
+    const [headerPart, bodyPart, signaturePart] = token.split(".");
+    expect([headerPart, bodyPart, signaturePart]).toHaveLength(3);
+    expect(JSON.parse(atob(headerPart!))).toEqual({ alg: "HS256", typ: "JWT" });
+    const body = JSON.parse(atob(bodyPart!));
+    expect(body).toMatchObject({ sub: "1", name: PAYLOAD.name, email: PAYLOAD.email, iss: "drycms" });
+    expect(typeof body.jti).toBe("string");
+  });
+
   it("never stores the payload in plaintext", async () => {
     const { signSession } = await import("./session-token.js");
     const token = await signSession(PAYLOAD);

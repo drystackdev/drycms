@@ -24,6 +24,8 @@ export interface DryRouteContext {
    * so every `DryRouteContext` literal - real or test-built - has to name it
    * explicitly rather than silently defaulting to "no session". */
   session: SessionPayload | null;
+  /** Raw cookie token, retained for revocation on logout/password change. */
+  sessionToken?: string;
 }
 
 export type DryRouteHandler = (context: DryRouteContext) => Promise<Response>;

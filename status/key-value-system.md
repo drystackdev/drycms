@@ -4,7 +4,7 @@
 
 - Rà soát kiến trúc hiện tại và các adapter liên quan.
 - Viết kế hoạch chi tiết cho core memory store, persistence coordinator, sáu adapter, lifecycle và kiểm thử.
-- Chưa triển khai mã nguồn; file này là status tracking cho giai đoạn lập kế hoạch.
+- Đã bắt đầu triển khai MVP; file này tiếp tục là status tracking cho các phase còn lại.
 
 ## Status
 
@@ -22,6 +22,23 @@
   danh sách environment.
 - Đã chốt UI Key Value chỉ dành cho Super Admin: REST pagination + polling
   5–10 giây với `revision/ETag`; chưa dùng WebSocket, SSE hoặc long response.
+- Đã triển khai `src/kv/`: core memory store, TTL/idle cleanup, giới hạn
+  memory, dirty queue, async/sync flush, local/SQLite/GitHub/GitLab/D1/KV
+  adapter và test round-trip/restart.
+- Đã thêm config `kv`, route `/api/key-value`, trang `/key-value`, Super Admin
+  authorization, ETag và polling UI.
+- Đã thêm blacklist session bền vững trên KV: logout thu hồi token hiện tại;
+  đổi mật khẩu thu hồi token cũ trước khi ghi mật khẩu mới; mọi request đều
+  kiểm tra blacklist trong bước resolve session.
+- Đã chuyển session token tự định dạng sang JWT chuẩn HS256 (`alg`, `typ`,
+  `iss`, `sub`, `iat`, `exp`, `jti`), ký bằng `DRYCMS_SECRET_KEY`; token cũ
+  không còn được chấp nhận.
+- Đã thêm guard trực tiếp tại trang Key Value và xử lý `401` để SPA tự chuyển
+  về `/login` khi session/JWT không còn hợp lệ.
+- Đã thêm HTTP page guard cho dev và production Node server; truy cập trực tiếp
+  `/key-value` không có JWT hợp lệ nhận `302` về `/login` trước khi nhận SPA shell.
+- Đã nhận diện và tự xóa cookie legacy dạng `v1:...` khi truy cập trang được
+  bảo vệ; redirect kèm `Set-Cookie: drycms_session=; Max-Age=0`.
 - Các thay đổi đang có trước task trong `src/pages/ContentTypeEditor.tsx` và `src/pages/content-type-editor/FieldsList.tsx` được giữ nguyên.
 
 ## Speed
@@ -29,6 +46,7 @@
 - Hoàn thành phần khảo sát và lập kế hoạch trong một lượt.
 - `bun run typecheck` pass.
 - `src/storage/github.test.ts` và `src/storage/gitlab.test.ts`: 68/68 pass.
+- `src/kv/kv.test.ts`: 5/5 pass. `bun run build` pass cho client và SSR.
 - Các test branch của `options.test.ts`: pass. Ba test cũ kiểm tra env bị thiếu
   vẫn bị ảnh hưởng bởi credential GitHub có sẵn trong `.env` local, vì resolver
   hiện chủ động đọc `.env` khi process env không có giá trị.
