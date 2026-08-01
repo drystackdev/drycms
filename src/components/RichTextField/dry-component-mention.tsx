@@ -194,6 +194,7 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
         setMention(next);
       } else if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
+        event.stopPropagation();
         const candidate = current.candidates[current.selectedIndex];
         if (candidate) {
           const context = componentContext(view, records);
@@ -207,11 +208,13 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
     };
 
     view.dom.addEventListener("input", onInput);
-    view.dom.addEventListener("keydown", onKeyDown);
+    // Capture the commit key before ProseMirror's content DOM handlers can
+    // turn Enter into a hard break/new paragraph.
+    view.dom.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("selectionchange", onSelectionChange);
     return () => {
       view.dom.removeEventListener("input", onInput);
-      view.dom.removeEventListener("keydown", onKeyDown);
+      view.dom.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("selectionchange", onSelectionChange);
     };
   }, [viewRef, ready, disabled, records]);

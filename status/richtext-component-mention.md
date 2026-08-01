@@ -23,6 +23,7 @@
 
 - Added the initial `@` mention popup, fuzzy filtering, keyboard navigation, nested/top-level scopes, and component insertion wiring.
 - Extracted pure token/scope/fuzzy helpers and added focused tests.
+- Kept the `@` mention popup free of box shadow as requested.
 - Typecheck, 50 RichText tests, and production build pass.
 - Browser E2E is blocked in this environment because `E2E_SESSION_TOKEN` is not set.
 

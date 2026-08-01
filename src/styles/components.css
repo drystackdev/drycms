@@ -5070,11 +5070,12 @@
     background: transparent;
     color: var(--dry-foreground);
     text-align: left;
+    box-shadow: none;
   }
 
   .dry-component-mention-list button:hover,
   .dry-component-mention-list button.selected {
-    background: var(--dry-accent);
+    background: var(--dry-accent) !important;
   }
 
   .dry-component-mention-list button svg {
