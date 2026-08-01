@@ -6,6 +6,15 @@ import type { DryComponentRecord } from "./component-registry-types.js";
  * pull the editor engine into its initial chunk. */
 let richtextComponentsPromise: Promise<DryComponentRecord[]> | null = null;
 
+/**
+ * The admin page can change the registry while the SPA stays alive. Clear the
+ * shared request so the next editor/picker mount observes that change instead
+ * of reusing the list that was loaded before the toggle.
+ */
+export function invalidateRichtextComponents(): void {
+  richtextComponentsPromise = null;
+}
+
 export function loadRichtextComponents(): Promise<DryComponentRecord[]> {
   if (richtextComponentsPromise) return richtextComponentsPromise;
 

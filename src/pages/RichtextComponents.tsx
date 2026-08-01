@@ -7,6 +7,7 @@ import { createHttpFileSource } from "../components/file-manager-http-source.js"
 import ComponentPreview from "../components/RichTextField/ComponentPreview.js";
 import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
 import DryComponentPropsForm from "../components/RichTextField/dry-component-props-form.js";
+import { invalidateRichtextComponents } from "../components/RichTextField/component-registry.js";
 import {
   dryComponentNameFromSourcePath,
   isDryComponentDefinition,
@@ -137,9 +138,12 @@ export default function RichtextComponents() {
         if (!res.ok) {
           const message = await readErrorMessage(res);
           setBuildErrors((prev) => ({ ...prev, [busyKey]: message }));
+        } else {
+          invalidateRichtextComponents();
         }
       } else {
-        await fetch(`${path}/api/richtext-components/${encodeURIComponent(item.def.name)}`, { method: "DELETE" });
+        const res = await fetch(`${path}/api/richtext-components/${encodeURIComponent(item.def.name)}`, { method: "DELETE" });
+        if (res.ok) invalidateRichtextComponents();
       }
       reloadRecords();
     } finally {
