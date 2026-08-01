@@ -48,7 +48,7 @@ const moduleStore = !kv || (kv.kind !== "D1" && kv.kind !== "KV")
       cleanupIntervalMs: kv?.cleanupIntervalMs ?? 30_000,
       flushDebounceMs: kv?.flushDebounceMs ?? 100,
       flushBatchSize: kv?.flushBatchSize ?? 100,
-      durability: kv?.durability ?? "memory",
+      durability: kv?.durability ?? "sync",
     })
   : undefined;
 const requestStores = new WeakMap<object, KeyValueStore>();

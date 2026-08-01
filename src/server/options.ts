@@ -309,7 +309,12 @@ function readDotEnv(): Record<string, string> {
  * reads `DRYCMS_SECRET_KEY` through this same `.env`-then-`process.env`
  * fallback rather than duplicating the parsing logic. */
 export function readEnvVar(name: string): string | undefined {
-  return process.env[name] || readDotEnv()[name];
+  // An explicitly-present process variable (including an empty/undefined
+  // test stub) wins over `.env`. This keeps tests and deployments able to
+  // intentionally clear a value without the local `.env` resurrecting it,
+  // while an entirely absent process variable still falls back to `.env`.
+  if (Object.prototype.hasOwnProperty.call(process.env, name)) return process.env[name] || undefined;
+  return readDotEnv()[name];
 }
 
 /**

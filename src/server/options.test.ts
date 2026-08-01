@@ -187,7 +187,7 @@ describe('resolveOptions', () => {
 		});
 
 		it('rejects a missing GITHUB_REPO', () => {
-			vi.stubEnv('GITHUB_REPO', undefined);
+		vi.stubEnv('GITHUB_REPO', '');
 			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
 			expect(() => resolveOptions({ storage: { kind: 'github' } })).toThrow(/GITHUB_REPO/);
 		});
@@ -200,7 +200,7 @@ describe('resolveOptions', () => {
 
 		it('rejects a missing GITHUB_PAT_KEY', () => {
 			vi.stubEnv('GITHUB_REPO', 'acme/media');
-			vi.stubEnv('GITHUB_PAT_KEY', undefined);
+		vi.stubEnv('GITHUB_PAT_KEY', '');
 			expect(() => resolveOptions({ storage: { kind: 'github' } })).toThrow(/GITHUB_PAT_KEY/);
 		});
 	});
@@ -300,7 +300,7 @@ describe('resolveOptions', () => {
 		});
 
 		it('rejects a missing GITHUB_REPO for icons.kind: "github"', () => {
-			vi.stubEnv('GITHUB_REPO', undefined);
+		vi.stubEnv('GITHUB_REPO', '');
 			vi.stubEnv('GITHUB_PAT_KEY', 'ghp_test_token');
 			expect(() => resolveOptions({ icons: { kind: 'github' } })).toThrow(/GITHUB_REPO/);
 		});

@@ -74,3 +74,5 @@
 - Đã thêm test SQLite atomic counter và test JWT key-ring rotation.
 - Đã nối client tự refresh access token một lần khi nhận `401`, có coalescing
   khi nhiều request hết hạn đồng thời; refresh thất bại mới chuyển về login.
+- Đã bổ sung test cases cho auth security session/reuse, rate limit, CSRF,
+  JWT key rotation và SQLite atomic counter. Nhóm test mới đạt 25/25.

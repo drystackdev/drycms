@@ -33,8 +33,9 @@ describe("secret-crypto", () => {
 
   it("throws a clear error when DRYCMS_SECRET_KEY is missing", async () => {
     vi.resetModules();
-    delete process.env.DRYCMS_SECRET_KEY;
+    vi.doMock("../server/options.js", () => ({ readEnvVar: () => undefined }));
     const { encryptSecret } = await import("./secret-crypto.js");
     await expect(encryptSecret("x")).rejects.toThrow(/DRYCMS_SECRET_KEY/);
+    vi.doUnmock("../server/options.js");
   });
 });
