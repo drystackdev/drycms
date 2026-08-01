@@ -54,3 +54,4 @@
 - Tạm thời chưa triển khai Audit log, MFA và Reset mật khẩu.
 - Phạm vi auth ưu tiên còn lại: CSRF, rate limit/chống brute-force, thu hồi
   toàn bộ session khi đổi mật khẩu, secret rotation và access/refresh token.
+- Kế hoạch chi tiết đã ghi tại `docs/auth-security-plan.md`.
