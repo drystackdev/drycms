@@ -7,11 +7,6 @@
     <title>DryCMS</title>
   </head>
   <body class="dry">
-    <!-- Applies the stored theme before first paint to avoid a flash. Reads
-         the same `drycms:store` entry's `theme` key that `useStore("theme", ...)`
-         (see ThemeToggle) and `components/theme.ts` read/write - "drycms:store"
-         is duplicated as a literal here (this inline script can't import the
-         shared STORAGE_KEY constant) so it must be kept in sync by hand. -->
     <script>
       try {
         var store = JSON.parse(localStorage.getItem("drycms:store") || "{}");

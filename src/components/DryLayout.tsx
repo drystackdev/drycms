@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
@@ -37,13 +43,17 @@ const NAV: {
     icon: "Dashboard",
     ready: true,
   },
-  {
-    key: "showcase",
-    label: "Showcase",
-    href: `${path}/showcase`,
-    icon: "Showcase",
-    ready: true,
-  },
+  ...(import.meta.env.DEV
+    ? [
+        {
+          key: "showcase",
+          label: "Showcase",
+          href: `${path}/showcase`,
+          icon: "Showcase" as IconName,
+          ready: true,
+        },
+      ]
+    : []),
   {
     key: "richtext-demo",
     label: "Rich Text Demo",
@@ -124,7 +134,9 @@ const CONTENT_PREFIX = `${path}/content/`;
  * they're primary destinations reached from the sidebar, not a drill-down
  * from the generic "Content" list, so there's nothing to go "back" to. */
 export const pinnedContentTypeSlugs = new Set(
-  NAV.filter((item) => item.href.startsWith(CONTENT_PREFIX)).map((item) => item.href.slice(CONTENT_PREFIX.length)),
+  NAV.filter((item) => item.href.startsWith(CONTENT_PREFIX)).map((item) =>
+    item.href.slice(CONTENT_PREFIX.length),
+  ),
 );
 
 /** Whether `href` is the active nav item for `url` - an exact match, or a
@@ -143,15 +155,23 @@ function isActiveNavItem(url: string, href: string): boolean {
 function isContentHeaderActive(url: string, contentHref: string): boolean {
   if (!isActiveNavItem(url, contentHref)) return false;
   return !NAV.some(
-    (other) => other.key !== "content" && other.ready && other.href !== contentHref && isActiveNavItem(url, other.href),
+    (other) =>
+      other.key !== "content" &&
+      other.ready &&
+      other.href !== contentHref &&
+      isActiveNavItem(url, other.href),
   );
 }
 
 export default function DryLayout({ children }: Props) {
   const { url, route } = useLocation();
-  const { ref: sidebar } = useOverlayScrollbars<HTMLDivElement>([], { overflow: { x: 'hidden' } });
-  const { ref: main, scrollToTop: scrollMainToTop } = useOverlayScrollbars<HTMLDivElement>();
-  const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false);
+  const { ref: sidebar } = useOverlayScrollbars<HTMLDivElement>([], {
+    overflow: { x: "hidden" },
+  });
+  const { ref: main, scrollToTop: scrollMainToTop } =
+    useOverlayScrollbars<HTMLDivElement>();
+  const [sidebarTransitionEnabled, setSidebarTransitionEnabled] =
+    useState(false);
 
   const toggleCollapsed = () => {
     setSidebarTransitionEnabled(true);
@@ -160,10 +180,17 @@ export default function DryLayout({ children }: Props) {
 
   // The "Content" submenu's own collapse/expand state, independent of the
   // whole-sidebar `collapsed` signal above.
-  const [contentMenuOpen, setContentMenuOpen] = useStore("contentSubmenuOpen", true);
-  const contentTypesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const [contentMenuOpen, setContentMenuOpen] = useStore(
+    "contentSubmenuOpen",
+    true,
+  );
+  const contentTypesApi = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
   const listFetcher = useCallback(
-    (ifVersion: number | undefined, signal: AbortSignal) => contentTypesApi.listVersioned(ifVersion, signal),
+    (ifVersion: number | undefined, signal: AbortSignal) =>
+      contentTypesApi.listVersioned(ifVersion, signal),
     [contentTypesApi],
   );
   // Same cache key `ContentTypes.tsx` uses - a warm IndexedDB entry from
@@ -172,10 +199,9 @@ export default function DryLayout({ children }: Props) {
   // `App.tsx`), so `key` alone can't pick up a change made through
   // `ContentTypeEditor` - the `contentTypesVersion.value` effect below does
   // that instead, by calling this same hook's `reload()`.
-  const { data: contentTypes, reload: reloadContentTypes } = useFetch<ContentTypeDefinition[]>(
-    "content-types:list",
-    listFetcher,
-  );
+  const { data: contentTypes, reload: reloadContentTypes } = useFetch<
+    ContentTypeDefinition[]
+  >("content-types:list", listFetcher);
   const skipFirstVersionEffect = useRef(true);
   useEffect(() => {
     if (skipFirstVersionEffect.current) {
@@ -187,7 +213,8 @@ export default function DryLayout({ children }: Props) {
   // `hidden` types (role/permission/aiKey) are reached through their own
   // dedicated page instead - see `types.ts`'s doc comment.
   const contentNavItems = useMemo(
-    () => (contentTypes ?? []).filter((t) => t.kind !== "component" && !t.hidden),
+    () =>
+      (contentTypes ?? []).filter((t) => t.kind !== "component" && !t.hidden),
     [contentTypes],
   );
 
@@ -204,7 +231,9 @@ export default function DryLayout({ children }: Props) {
     "shell",
     collapsed.value && "collapsed",
     sidebarTransitionEnabled && "sidebar-transition-enabled",
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div class={shellClass}>
@@ -236,7 +265,11 @@ export default function DryLayout({ children }: Props) {
                   <div class="nav-group-header">
                     <a
                       href={item.href}
-                      aria-current={isContentHeaderActive(url, item.href) ? "page" : undefined}
+                      aria-current={
+                        isContentHeaderActive(url, item.href)
+                          ? "page"
+                          : undefined
+                      }
                       data-tooltip={collapsed.value ? item.label : undefined}
                       data-tooltip-placement="right"
                     >
@@ -248,10 +281,21 @@ export default function DryLayout({ children }: Props) {
                         type="button"
                         class="ghost icon sm"
                         aria-expanded={contentMenuOpen}
-                        aria-label={contentMenuOpen ? "Collapse Content menu" : "Expand Content menu"}
+                        aria-label={
+                          contentMenuOpen
+                            ? "Collapse Content menu"
+                            : "Expand Content menu"
+                        }
                         onClick={() => setContentMenuOpen(!contentMenuOpen)}
                       >
-                        <Icon name="ArrowDown" class={contentMenuOpen ? "nav-chevron" : "nav-chevron collapsed"} />
+                        <Icon
+                          name="ArrowDown"
+                          class={
+                            contentMenuOpen
+                              ? "nav-chevron"
+                              : "nav-chevron collapsed"
+                          }
+                        />
                       </button>
                     )}
                   </div>
@@ -260,7 +304,14 @@ export default function DryLayout({ children }: Props) {
                       {contentNavItems.map((type) => {
                         const href = `${path}/content/${type.name}`;
                         return (
-                          <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
+                          <a
+                            key={type.id}
+                            href={href}
+                            class="nav-subitem"
+                            aria-current={
+                              isActiveNavItem(url, href) ? "page" : undefined
+                            }
+                          >
                             <span>{type.label}</span>
                           </a>
                         );
@@ -272,7 +323,9 @@ export default function DryLayout({ children }: Props) {
                 <a
                   key={item.key}
                   href={item.href}
-                  aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
+                  aria-current={
+                    isActiveNavItem(url, item.href) ? "page" : undefined
+                  }
                   data-tooltip={collapsed.value ? item.label : undefined}
                   data-tooltip-placement="right"
                 >
@@ -309,7 +362,9 @@ export default function DryLayout({ children }: Props) {
                   aria-haspopup="menu"
                   aria-expanded={open}
                   onClick={onClick}
-                  data-tooltip={collapsed.value ? authState.value.user!.name : undefined}
+                  data-tooltip={
+                    collapsed.value ? authState.value.user!.name : undefined
+                  }
                   data-tooltip-placement="right"
                 >
                   <span class="sidebar-account-avatar">
@@ -324,8 +379,19 @@ export default function DryLayout({ children }: Props) {
                 </button>
               )}
               items={[
-                { type: "item", label: "Profile", icon: <UserIcon />, onClick: () => route(`${path}/profile`) },
-                { type: "item", label: "Logout", icon: <LogOutIcon />, danger: true, onClick: () => void logout() },
+                {
+                  type: "item",
+                  label: "Profile",
+                  icon: <UserIcon />,
+                  onClick: () => route(`${path}/profile`),
+                },
+                {
+                  type: "item",
+                  label: "Logout",
+                  icon: <LogOutIcon />,
+                  danger: true,
+                  onClick: () => void logout(),
+                },
               ]}
             />
           )}
