@@ -45,7 +45,7 @@ export type DryComponentLoader = () => Promise<{ default?: unknown }>;
  * (`routes/richtext-components.ts`'s `GET .../{name}.js`) - a genuinely
  * self-contained ES module (Preact + the component's own code inlined, see
  * `build-component-bundle.ts`), so the editor and the published site never
- * need `componentsDir`'s raw source (or their own `preact` dependency) in
+ * need the raw `dry.<name>.<ext>` source (or their own `preact` dependency) in
  * their own build graph. Used everywhere a *confirmed* component is loaded
  * (`useRichTextEditor.ts`, `dry-component-insert-button.tsx`,
  * `richtext-runtime.ts`); the admin page's own discovery/preview grid is the
@@ -90,7 +90,7 @@ function loadVendorPreact(basePath: string): Promise<PreactRuntime> {
  * component) - resolve the matching vendor Preact instance (`loadVendorPreact`
  * above) so its hooks work. Unset means raw/unconfirmed source
  * (`RichtextComponents.tsx`'s own discovery grid, still `import()`-ing a
- * `.tsx` straight from `componentsDir`) - that already shares this page's
+ * source straight from a `dry.<name>.<ext>` file) - that already shares this page's
  * own module graph (and so this package's own `preact` import) via the dev
  * server, no special-casing needed.
  */
@@ -111,7 +111,14 @@ function resolvePreact(basePath: string | undefined): Promise<PreactRuntime> {
  * whenever `load` is a `loadBuiltComponent(basePath, name)` loader - see
  * `resolvePreact` above for why.
  */
-export function defineDryComponent(name: string, load: DryComponentLoader, shadow: boolean, basePath?: string): void {
+export function defineDryComponent(
+  name: string,
+  load: DryComponentLoader,
+  shadow: boolean,
+  basePath?: string,
+  inheritedStyle?: string,
+  definitionOverride?: Record<string, unknown>,
+): void {
   const tag = `dry-${name}`;
   if (customElements.get(tag)) return;
 
@@ -153,10 +160,26 @@ export function defineDryComponent(name: string, load: DryComponentLoader, shado
         }
         Promise.all([load(), resolvePreact(basePath)])
           .then(([mod, preact]) => {
-            // `mod.default` is the whole `DryEditerComponent(...)` result,
+            // `mod.default` is the whole `DryComponent(...)` result,
             // not the Preact component itself - see `isDryComponentDefinition`.
-            if (!isDryComponentDefinition(mod.default)) return;
-            this.#Comp = mod.default.component as ComponentType<Record<string, unknown>>;
+            const definition = definitionOverride ?? mod.default;
+            if (!isDryComponentDefinition(definition)) return;
+
+            // A parent bundle contains its referenced definitions. Register
+            // those tags first, recursively, so both preview HTML and a
+            // parent's rendered JSX can safely contain nested `<dry-*>`.
+            for (const ref of definition.refs ?? []) {
+              defineDryComponent(
+                ref.name,
+                () => Promise.resolve({ default: ref }),
+                ref.shadow,
+                basePath,
+                [inheritedStyle, definition.style].filter(Boolean).join("\n"),
+                ref as unknown as Record<string, unknown>,
+              );
+            }
+
+            this.#Comp = definition.component as ComponentType<Record<string, unknown>>;
             this.#preact = preact;
             this.#ErrorBoundary = makeErrorBoundary(preact);
             // Appended as a plain sibling node rather than through Preact -
@@ -166,10 +189,11 @@ export function defineDryComponent(name: string, load: DryComponentLoader, shado
             // can re-run if the element is moved in the DOM, while the
             // shadow root itself - and anything already appended to it -
             // survives that move.
-            if (shadow && mod.default.style && !this.#styleInjected) {
+            const style = [inheritedStyle, definition.style].filter(Boolean).join("\n");
+            if (shadow && style && !this.#styleInjected) {
               this.#styleInjected = true;
               const styleEl = document.createElement("style");
-              styleEl.textContent = mod.default.style;
+              styleEl.textContent = style;
               this.#root.appendChild(styleEl);
             }
             this.#render();

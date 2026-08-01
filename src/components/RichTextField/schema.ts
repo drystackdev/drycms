@@ -1,6 +1,6 @@
 import { Schema, type Attrs, type DOMOutputSpec, type Node as PMNode, type NodeSpec, type NodeType } from "prosemirror-model";
 import { tableNodes } from "prosemirror-tables";
-import type { DryComponentRecord } from "./component-registry-types.js";
+import { flattenDryComponentRecords, type DryComponentRecord } from "./component-registry-types.js";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -473,7 +473,7 @@ function buildDryNodeSpecs(components: DryComponentRecord[]): Record<string, Nod
     const tag = `dry-${component.name}`;
     const isInline = component.type !== "block";
     // `children: true` components (always `block`, enforced by
-    // `DryEditerComponent`/the confirm route) get real ProseMirror content -
+    // `DryComponent`/the confirm route) get real ProseMirror content -
     // same shape `grid`'s own `content: "block+"` uses - instead of being a
     // leaf/atom like every other dry component; `dry-component-view.ts`
     // projects it into wherever the component's own render puts a native
@@ -828,7 +828,7 @@ function buildSchema(components: DryComponentRecord[]): Schema {
 export let schema = buildSchema([]);
 
 export function setRichtextComponents(components: DryComponentRecord[]): void {
-  schema = buildSchema(components);
+  schema = buildSchema(flattenDryComponentRecords(components));
 }
 
 export function createEmptyDoc(): PMNode {

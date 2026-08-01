@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { path } from "virtual:drycms/config";
-// `componentsDir` is fixed to `src/dry-components` now that drycms is the
-// app itself rather than a library another project configures - see
-// `status/remove-astro.md`. Vite's glob-import transform runs on this
-// literal the same as it did on the old `virtual:drycms/richtext-components`
-// plugin's generated source.
-const componentModules = import.meta.glob<{ default?: unknown }>("/src/dry-components/*/index.tsx");
+// A component is a default export from a file named `dry.<name>.<ext>`.
+const componentModules = import.meta.glob<{ default?: unknown }>("/src/**/dry.*.{ts,tsx,js,jsx}");
 import CheckField from "../components/CheckField.js";
 import { createHttpFileSource } from "../components/file-manager-http-source.js";
 import ComponentPreview from "../components/RichTextField/ComponentPreview.js";
 import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
 import DryComponentPropsForm from "../components/RichTextField/dry-component-props-form.js";
-import { isDryComponentDefinition, type DryComponentDefinition } from "../components/RichTextField/register-component.js";
+import {
+  dryComponentNameFromSourcePath,
+  isDryComponentDefinition,
+  type DryComponentDefinition,
+} from "../components/RichTextField/register-component.js";
 import { useDialogSync } from "../components/list-nav.js";
 import { ReplaceIcon, SettingsIcon } from "../components/icons.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -30,6 +30,25 @@ interface Discovered {
   def: DryComponentDefinition;
 }
 
+function definitionToRefRecord(def: DryComponentDefinition, trail = new Set<string>()): DryComponentRecord {
+  const nextTrail = new Set(trail).add(def.name);
+  const refs = def.refs.filter((ref) => !nextTrail.has(ref.name));
+  return {
+    name: def.name,
+    label: def.label,
+    description: def.description,
+    type: def.type,
+    shadow: def.shadow,
+    children: def.children,
+    ...(def.childrenDefaultHtml !== undefined ? { childrenDefaultHtml: def.childrenDefaultHtml } : {}),
+    ...(refs.length > 0 ? { refs: refs.map((ref) => ref.name), refRecords: refs.map((ref) => definitionToRefRecord(ref, nextTrail)) } : {}),
+    props: def.schema as unknown as Record<string, PlainFieldDef>,
+    defaults: def.defaults as Record<string, unknown>,
+    sourcePath: "",
+    enabled: true,
+  };
+}
+
 async function fetchRecords(): Promise<DryComponentRecord[]> {
   const res = await fetch(`${path}/api/richtext-components`);
   if (!res.ok) return [];
@@ -39,9 +58,9 @@ async function fetchRecords(): Promise<DryComponentRecord[]> {
 
 /**
  * "Trang quản trị component" (mục 3, `status/register-compoennt.md`) -
- * scans every file discovered under `components.componentsDir`
+ * scans every `dry.<name>.<ext>` file under `src/`
  * (this file's own `import.meta.glob` map) for a valid
- * `DryEditerComponent(...)` marker, previews it with its own `defaults`,
+ * `DryComponent(...)` marker, previews it with its own `defaults`,
  * and lets an admin "confirm" it for use in `RichTextField`'s insert
  * dialog - which just persists the already-resolved `{schema, defaults}`
  * (mục 3), it never re-runs any bundler/build step (mục 2's whole point:
@@ -73,7 +92,9 @@ export default function RichtextComponents() {
         try {
           const mod = await componentModules[sourcePath]!();
           if (!isDryComponentDefinition(mod.default)) return null;
-          return { sourcePath, def: mod.default };
+          const name = dryComponentNameFromSourcePath(sourcePath);
+          if (!name) return null;
+          return { sourcePath, def: { ...mod.default, name } };
         } catch {
           return null;
         }
@@ -102,6 +123,8 @@ export default function RichtextComponents() {
             shadow: item.def.shadow,
             children: item.def.children,
             childrenDefaultHtml: item.def.childrenDefaultHtml,
+            refs: item.def.refs.map((ref) => ref.name),
+            refRecords: item.def.refs.map((ref) => definitionToRefRecord(ref)),
             props: item.def.schema,
             defaults: item.def.defaults,
             sourcePath: item.sourcePath,
@@ -158,7 +181,7 @@ export default function RichtextComponents() {
         <div>
           <h1>Custom components</h1>
           <p>
-            Components discovered under <code>components.componentsDir</code> - "Use in editor" makes one available in every{" "}
+            Components discovered from <code>dry.&lt;name&gt;.&lt;ext&gt;</code> files - "Use in editor" makes one available in every{" "}
             <code>RichTextField</code>'s insert dialog.
           </p>
         </div>
@@ -166,7 +189,7 @@ export default function RichtextComponents() {
 
       {discovered === null && <p>Scanning components…</p>}
       {discovered !== null && discovered.length === 0 && (
-        <p>No components found. Add a <code>DryEditerComponent(...)</code>-exporting <code>index.tsx</code> under your configured directory.</p>
+        <p>No components found. Add a <code>DryComponent(...)</code>-exporting <code>dry.&lt;name&gt;.&lt;ext&gt;</code> file under <code>src/</code>.</p>
       )}
 
       <div class="dry-component-admin-grid under">

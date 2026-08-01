@@ -5,10 +5,13 @@ import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import FloatingPanel from "../FloatingPanel.js";
 import type { FileManagerSource } from "../file-manager-types.js";
-import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
+import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ComponentIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
-import type { DryComponentRecord } from "./component-registry-types.js";
-import DryComponentPropsForm from "./dry-component-props-form.js";
+import { flattenDryComponentRecords, type DryComponentRecord } from "./component-registry-types.js";
+import DryComponentPropsForm, {
+  emptyDryComponentProps,
+  isDryComponentPropsValid,
+} from "./dry-component-props-form.js";
 import type { ImageAlign } from "./schema.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
@@ -30,6 +33,77 @@ export interface DryComponentMenuProps {
  * card never gets unmounted mid-animation - same idiom `table-menu.tsx`'s/
  * `grid-menu.tsx`'s own `COLLAPSE_DURATION` already use. */
 const COLLAPSE_DURATION = 200;
+
+interface ComponentTreeNodeProps {
+  record: DryComponentRecord;
+  records: DryComponentRecord[];
+  trail: Set<string>;
+  selectable: boolean;
+  onSelect: (record: DryComponentRecord) => void;
+}
+
+function ComponentTreeNode({ record, records, trail, selectable, onSelect }: ComponentTreeNodeProps) {
+  const nextTrail = new Set(trail).add(record.name);
+  const children = (record.refs ?? []).map((name) => records.find((item) => item.name === name) ?? {
+    name,
+    label: `<dry-${name}>`,
+    description: "",
+    type: "block" as const,
+    shadow: false,
+    children: false,
+    props: {},
+    defaults: {},
+    sourcePath: "",
+    enabled: true as const,
+  });
+
+  return (
+    <li role="treeitem" class="dry-component-tree-node">
+      <span class={`dry-component-tree-label${selectable ? " selectable" : ""}`}>
+        <ComponentIcon />
+        <span>{record.label}</span>
+        <code>{`<dry-${record.name}>`}</code>
+        {selectable && (
+          <button
+            type="button"
+            class="ghost sm dry-component-tree-select"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(record);
+            }}
+          >
+            Select
+          </button>
+        )}
+      </span>
+      {children.length > 0 && !trail.has(record.name) && (
+        <ul role="group" class="dry-component-tree-children">
+          {children.map((child) =>
+            nextTrail.has(child.name) ? (
+              <li role="treeitem" class="dry-component-tree-node" key={child.name}>
+                <span class="dry-component-tree-label">
+                  <ComponentIcon />
+                  <span>{child.label}</span>
+                  <small>(circular ref)</small>
+                </span>
+              </li>
+            ) : (
+                  <ComponentTreeNode
+                    key={child.name}
+                    record={child}
+                    records={records}
+                    trail={nextTrail}
+                    selectable
+                    onSelect={onSelect}
+                  />
+            ),
+          )}
+        </ul>
+      )}
+    </li>
+  );
+}
 
 /**
  * An `inline` dry component (the only kind with `image`-style `width`/
@@ -63,12 +137,24 @@ const COLLAPSE_DURATION = 200;
 export default function DryComponentMenu({ viewRef, disabled = false, source, iconSize = "md" }: DryComponentMenuProps) {
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [open, setOpen] = useState(false);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const [configuringRef, setConfiguringRef] = useState<DryComponentRecord | null>(null);
+  const [refDraft, setRefDraft] = useState<Record<string, unknown>>({});
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
+  const treeDialogRef = useDialogSync(treeOpen, () => setTreeOpen(false));
+  const refDialogRef = useDialogSync(!!configuringRef, () => setConfiguringRef(null));
 
   useEffect(() => {
     loadRichtextComponents().then(setRecords);
   }, []);
+
+  // The toolbar picker contains only confirmed top-level components, while
+  // refs may be stored recursively under `refRecords`. The refs tree needs
+  // the flattened metadata too, otherwise a nested Carousel is rendered as
+  // an empty fallback record and its props dialog can never open.
+  const allRecords = flattenDryComponentRecords(records);
 
   const view = viewRef.current;
   const selection = view?.state.selection;
@@ -98,9 +184,96 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
   }
   const isInline = !!node?.type.isInline;
   const name = node ? node.type.name.slice("dry_".length) : null;
-  const record = name ? (records.find((r) => r.name === name) ?? null) : null;
+  const record = name ? (allRecords.find((r) => r.name === name) ?? null) : null;
   const anchor = pos !== null && view ? (view.nodeDOM(pos) as HTMLElement | null) : null;
   const hasProps = record ? Object.keys(record.props).length > 0 : false;
+  const hasRefs = !!record?.refs?.length;
+
+  // Retry after a component becomes selected. This matters when the editor
+  // mounted before authentication finished: the initial registry request may
+  // have returned 401, leaving the toolbar with no records until selection
+  // changes and gives it another opportunity to load.
+  useEffect(() => {
+    if (name) loadRichtextComponents().then(setRecords);
+  }, [name]);
+
+  const insertRef = (ref: DryComponentRecord, props: Record<string, unknown>): boolean => {
+    const currentView = viewRef.current ?? view;
+    if (!currentView || pos === null || !record || !node) {
+      setTreeError("Select the parent component again, then try inserting the ref.");
+      return false;
+    }
+    // Use the schema owned by the live EditorView. The module-level schema is
+    // replaced when the async component registry resolves; reading it here
+    // can otherwise leave a toolbar callback holding the pre-registry schema
+    // while the editor itself already has the ref node type.
+    const editorSchema = currentView.state.schema;
+    const nodeType = editorSchema.nodes[`dry_${ref.name}`];
+    if (!nodeType) {
+      setTreeError(`Component <dry-${ref.name}> is not registered in the editor schema.`);
+      return false;
+    }
+    try {
+      const child = ref.children
+        ? nodeType.create({ props }, editorSchema.nodes.paragraph!.createAndFill()!)
+        : nodeType.create({ props });
+      // Inline refs belong inside the first textblock of the parent's block
+      // children; block refs belong immediately before the parent's closing
+      // token. Inserting an inline node directly into `block+` content makes
+      // ProseMirror reject the transaction.
+      let insertPos = pos + node.nodeSize - 1;
+      if (nodeType.isInline) {
+        let textblockStart: number | null = null;
+        node.descendants((descendant, offset) => {
+          if (textblockStart === null && descendant.isTextblock) {
+            textblockStart = pos + 1 + offset;
+            return false;
+          }
+          return textblockStart === null;
+        });
+        if (textblockStart !== null) {
+          const textblock = currentView.state.doc.nodeAt(textblockStart);
+          insertPos = textblockStart + 1 + (textblock?.content.size ?? 0);
+        } else {
+          // A children component can legally contain only block nodes. If it
+          // currently has no paragraph/heading, create one so an inline ref
+          // still has a valid place to live.
+          const paragraph = editorSchema.nodes.paragraph!.create(null, child);
+          currentView.dispatch(currentView.state.tr.insert(insertPos, paragraph).scrollIntoView());
+          currentView.focus();
+          setTreeOpen(false);
+          return true;
+        }
+      }
+      currentView.dispatch(currentView.state.tr.insert(insertPos, child).scrollIntoView());
+      currentView.focus();
+      setTreeOpen(false);
+      return true;
+    } catch (error) {
+      console.error("[drycms] Unable to insert referenced component", error);
+      setTreeError(`Unable to insert <dry-${ref.name}> into this component.`);
+      return false;
+    }
+  };
+
+  const selectRef = (ref: DryComponentRecord) => {
+    if (Object.keys(ref.props).length > 0) {
+      setRefDraft(emptyDryComponentProps(ref.props));
+      setConfiguringRef(ref);
+      setTreeOpen(false);
+      return;
+    }
+    insertRef(ref, ref.defaults);
+  };
+
+  const confirmRef = () => {
+    if (!configuringRef || !isDryComponentPropsValid(configuringRef.props, refDraft)) return;
+    if (insertRef(configuringRef, refDraft)) setConfiguringRef(null);
+  };
+
+  const refDraftValid = configuringRef
+    ? isDryComponentPropsValid(configuringRef.props, refDraft)
+    : false;
   // Only actually read by the docked `block` card below - always expanded
   // once one is focused/selected (delete alone is enough reason to show it,
   // even with no props of its own), regardless of `hasProps`.
@@ -244,6 +417,23 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
             >
               <LockIcon />
             </button>
+            {hasRefs && (
+              <button
+                type="button"
+                class={`ghost icon ${iconSize}`}
+                aria-label="Select referenced component"
+                data-tooltip="Select ref"
+                aria-haspopup="dialog"
+                disabled={disabled}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setTreeError(null);
+                  setTreeOpen(true);
+                }}
+              >
+                <ComponentIcon />
+              </button>
+            )}
             {hasProps && (
               <button
                 type="button"
@@ -279,6 +469,26 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
             aria-hidden={!expanded}
           >
             <div class="richtext-dry-component-menu-controls">
+              {hasRefs && (
+                <>
+                  <button
+                    type="button"
+                    class={`ghost icon ${iconSize}`}
+                    aria-label="Select referenced component"
+                    data-tooltip="Select ref"
+                    aria-haspopup="dialog"
+                    disabled={controlsDisabled}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setTreeError(null);
+                      setTreeOpen(true);
+                    }}
+                  >
+                    <ComponentIcon />
+                  </button>
+                  <hr class="separator" role="separator" aria-orientation="vertical" />
+                </>
+              )}
               {hasProps && (
                 <>
                   <button
@@ -326,6 +536,57 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
               </button>
               <button type="button" onClick={save}>
                 Save
+              </button>
+            </footer>
+          </>
+        )}
+      </dialog>
+      <dialog ref={treeDialogRef} class="md" aria-label={record ? `${record.label} refs` : "Component refs"}>
+        {treeOpen && record && (
+          <>
+            <header>
+              <h3>{record.label} refs</h3>
+              <p class="hint">Select a component to insert it inside this component.</p>
+            </header>
+            <div class="dry-component-tree-dialog-body">
+              {treeError && <p class="error">{treeError}</p>}
+              <ul role="tree" class="dry-component-tree">
+                <ComponentTreeNode
+                  record={record}
+                  records={allRecords}
+                  trail={new Set()}
+                  selectable={false}
+                  onSelect={selectRef}
+                />
+              </ul>
+            </div>
+            <footer>
+              <button type="button" onClick={() => setTreeOpen(false)}>Close</button>
+            </footer>
+          </>
+        )}
+      </dialog>
+      <dialog ref={refDialogRef} class="md" aria-label={configuringRef ? `${configuringRef.label} settings` : "Referenced component settings"}>
+        {configuringRef && (
+          <>
+            <header>
+              <h3>{configuringRef.label}</h3>
+            </header>
+            <div class="stack">
+              {treeError && <p class="error">{treeError}</p>}
+              <DryComponentPropsForm
+                schema={configuringRef.props}
+                value={refDraft}
+                onChange={setRefDraft}
+                source={source}
+              />
+            </div>
+            <footer>
+              <button type="button" class="outline" onClick={() => setConfiguringRef(null)}>
+                Cancel
+              </button>
+              <button type="button" disabled={!refDraftValid} onClick={confirmRef}>
+                Insert
               </button>
             </footer>
           </>

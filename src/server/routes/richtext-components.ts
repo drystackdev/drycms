@@ -55,7 +55,7 @@ async function ensureSharedPreactBundle(): Promise<void> {
 }
 
 /** Builds a component's real source (`sourcePath`, a leading-`/`
- * root-relative glob key like `/src/dry-components/Carousel/index.tsx`) into
+ * root-relative glob key like `/src/widgets/dry.color-text.tsx`) into
  * a JS bundle (Preact itself left external, see `buildComponentBundle`) and
  * stores it as `{slug}.js` alongside the `{slug}.json` record - `join`, not
  * `path.resolve`: `resolve()` would treat that leading slash as
@@ -112,6 +112,8 @@ interface ConfirmBody {
   shadow: unknown;
   children: unknown;
   childrenDefaultHtml: unknown;
+  refs: unknown;
+  refRecords: unknown;
   props: unknown;
   defaults: unknown;
   sourcePath: unknown;
@@ -129,7 +131,7 @@ const BUILD_ACTION_SUFFIX = "/build";
 /** POST `/api/richtext-components` - "Xác nhận dùng" (mục 3): builds the
  * component's real source into a JS bundle, then persists a plain,
  * already-resolved `{schema, defaults}` record (never the builder function -
- * the admin page/editor resolve `DryEditerComponent(...)`'s output before
+ * the admin page/editor resolve `DryComponent(...)`'s output before
  * ever calling this). A failed build throws before either the `.js` or the
  * `.json` record is written - confirming never leaves a broken/half-set-up
  * component behind. Create-or-overwrite, keyed by `name`.
@@ -155,12 +157,18 @@ export const POST: DryRouteHandler = async (context) => {
     const description = typeof body.description === "string" ? body.description.trim() : "";
     const type = body.type === "block" ? "block" : "inline";
     const shadow = body.shadow === true;
-    // Mirrors `DryEditerComponent`'s own runtime validation - a
+    // Mirrors `DryComponent`'s own runtime validation - a
     // hand-crafted/stale POST body can't smuggle `children: true` past what
     // the schema/NodeView actually support (native `<slot>` projection only
     // happens inside a shadow tree of a top-level block element).
     const children = body.children === true && shadow && type === "block";
     const childrenDefaultHtml = children && typeof body.childrenDefaultHtml === "string" ? body.childrenDefaultHtml : undefined;
+    const refs = children && Array.isArray(body.refs)
+      ? body.refs.filter((ref): ref is string => typeof ref === "string")
+      : [];
+    const refRecords = children && Array.isArray(body.refRecords)
+      ? body.refRecords
+      : [];
     const sourcePath = typeof body.sourcePath === "string" ? body.sourcePath : "";
     if (!name) throw new StorageError("invalid_path", "`name` is required.");
     if (!label) throw new StorageError("invalid_path", "`label` is required.");
@@ -175,6 +183,8 @@ export const POST: DryRouteHandler = async (context) => {
       shadow,
       children,
       ...(childrenDefaultHtml !== undefined ? { childrenDefaultHtml } : {}),
+      ...(refs.length > 0 ? { refs } : {}),
+      ...(refRecords.length > 0 ? { refRecords: refRecords as DryComponentRecord[] } : {}),
       props: asPlainFieldShape(body.props),
       defaults: (body.defaults && typeof body.defaults === "object" ? body.defaults : {}) as Record<string, unknown>,
       sourcePath,

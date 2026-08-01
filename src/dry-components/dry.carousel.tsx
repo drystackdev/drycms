@@ -1,10 +1,10 @@
 import { useState } from "preact/hooks";
 import {
-  DryEditerComponent,
+  DryComponent,
   type InferShape,
   type PropsBuilder,
-} from "../../components/RichTextField/register-component.js";
-import css from "./style.css?raw";
+} from "../components/RichTextField/register-component.js";
+import css from "./Carousel/style.css?raw";
 
 
 const SAMPLE_IMAGES = [
@@ -52,8 +52,7 @@ function Carousel({
   );
 }
 
-export default DryEditerComponent({
-  name: "carousel",
+export default DryComponent({
   label: "Carousel",
   description:
     "An inline image carousel with prev/next controls and an optional caption.",

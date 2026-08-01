@@ -7,9 +7,20 @@ import type { DryComponentRecord } from "./component-registry-types.js";
 let richtextComponentsPromise: Promise<DryComponentRecord[]> | null = null;
 
 export function loadRichtextComponents(): Promise<DryComponentRecord[]> {
-  richtextComponentsPromise ??= fetch(`${basePath}/api/richtext-components`)
-    .then((res) => (res.ok ? res.json() : { records: [] }))
+  if (richtextComponentsPromise) return richtextComponentsPromise;
+
+  richtextComponentsPromise = fetch(`${basePath}/api/richtext-components`)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Unable to load richtext components (${res.status})`);
+      return res.json();
+    })
     .then((data) => (Array.isArray(data.records) ? (data.records as DryComponentRecord[]) : []))
-    .catch(() => []);
+    .catch(() => {
+      // Do not permanently cache an unauthenticated/temporary failure. The
+      // editor can mount before the session cookie is ready, and a later
+      // toolbar open should be allowed to retry the registry request.
+      richtextComponentsPromise = null;
+      return [];
+    });
   return richtextComponentsPromise;
 }

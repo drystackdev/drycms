@@ -11,4 +11,3 @@ export const resolved = resolveOptions(userOptions);
 
 export const { path, storage, icons, content, kv } = resolved;
 export const componentsStorage = resolved.components.storage;
-export const componentsDir = resolved.components.componentsDir;

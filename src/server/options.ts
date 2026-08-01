@@ -80,16 +80,6 @@ export interface DryContentOption {
 
 export interface DryComponentsOption {
   /**
-   * Directory scanned for user-registered richtext components (see
-   * `status/register-compoennt.md`) - each immediate subfolder's own
-   * `index.tsx`, whose default export is a `DryEditerComponent(...)` call,
-   * becomes insertable from `RichTextField`'s toolbar. Relative to the
-   * consuming project's cwd (or an absolute path).
-   *
-   * @default "src/dry-components"
-   */
-  componentsDir?: string;
-  /**
    * Where "confirmed" component records (label/type/props/shadow, written
    * once an admin picks "Use" on the component management page) are stored -
    * a root of its own, same shape as `storage`/`icons`, so it never mixes
@@ -171,8 +161,6 @@ export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOpti
 export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
 
 export interface ResolvedComponentsOption {
-  /** Absolute path - resolved the same way `content.file`/`sqlite` is. */
-  componentsDir: string;
   storage: ResolvedStorageOption;
 }
 
@@ -208,7 +196,6 @@ export const DEFAULT_STORAGE_ROOT = "storage";
 export const DEFAULT_ICONS_ROOT = "icons";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";
 export const DEFAULT_CONTENT_ROOT = "content";
-export const DEFAULT_COMPONENTS_DIR = "src/dry-components";
 export const DEFAULT_COMPONENTS_STORAGE_ROOT = "components";
 export const DEFAULT_KV_ROOT = "kv";
 export const DEFAULT_KV_FILE = "kv.sqlite";
@@ -320,14 +307,7 @@ function resolveIconsOption(icons?: DryIconsOption): ResolvedIconsOption {
 }
 
 function resolveComponentsOption(components: DryComponentsOption = {}): ResolvedComponentsOption {
-  const componentsDir = components.componentsDir ?? DEFAULT_COMPONENTS_DIR;
-  if (typeof componentsDir !== "string") {
-    throw new TypeError(
-      `[drycms] \`components.componentsDir\` must be a string, received ${typeof componentsDir}.`,
-    );
-  }
   return {
-    componentsDir: resolvePath(process.cwd(), componentsDir),
     storage: resolveFileBackedOption(components.storage, DEFAULT_COMPONENTS_STORAGE_ROOT, "components.storage"),
   };
 }

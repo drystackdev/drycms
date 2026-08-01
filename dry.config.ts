@@ -10,5 +10,4 @@ export default config({
   // storage: { kind: "local", root: "storage" },
   // icons: { kind: "local", root: "icons" },
   content: { engine: "file" },
-  // components: { componentsDir: "src/dry-components" },
 });

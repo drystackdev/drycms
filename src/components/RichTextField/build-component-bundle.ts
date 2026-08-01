@@ -125,7 +125,7 @@ export async function buildSharedPreactBundle(): Promise<string> {
  * (see `PREACT_EXTERNALS`), which are left as external imports rewritten to
  * `./preact.js` (`buildSharedPreactBundle` above) instead of inlined again
  * per component - so the editor and the published site can still `import()`
- * this directly without needing `componentsDir`'s raw source (or a `preact`
+ * this directly without needing the raw `dry.<name>.<ext>` source (or a `preact`
  * dependency of their own) in their own build graph, just without paying for
  * a fresh copy of Preact on every single confirmed component.
  *

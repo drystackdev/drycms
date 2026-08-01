@@ -213,9 +213,8 @@ architectural choices, each the result of a specific bug or decision (see
   **shadow DOM root** - toolbar/menus/dialogs stay in the light DOM. CSS for
   the shadow content lives in `content-shadow-styles.ts` (hand-edited
   TS/string, not a `.css` file - there is no build step for it).
-- User-registered components (`dry.config.ts`'s `components.componentsDir`,
-  default `src/dry-components`) are scanned for a `DryEditerComponent(...)`
-  default export per subfolder. Once an admin "confirms" one, it's built into
+- User-registered components are discovered from `src/**/dry.<name>.<ext>`
+  files exporting `DryComponent(...)`. Once an admin "confirms" one, it's built into
   a **standalone JS bundle** (Preact inlined) via a nested `vite.build()` +
   `@preact/preset-vite` call (`build-component-bundle.ts`) - this only runs
   inside the dev server (no separate production build step for it), so it

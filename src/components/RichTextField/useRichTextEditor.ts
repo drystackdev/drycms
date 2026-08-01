@@ -40,6 +40,7 @@ import { tableRowResizing } from "./table-row-resize.js";
 import { trailingParagraph, withTrailingParagraph } from "./trailing-paragraph.js";
 import { NO_FORMAT, type ToolbarState } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
+import { flattenDryComponentRecords } from "./component-registry-types.js";
 
 export interface UseRichTextEditorOptions {
   /** HTML string - the only seed/output format, reported on every change
@@ -207,6 +208,8 @@ export function useRichTextEditor({
       for (const component of components) {
         const loader = loadBuiltComponent(basePath, component.name);
         defineDryComponent(component.name, loader, component.shadow, basePath);
+      }
+      for (const component of flattenDryComponentRecords(components)) {
         const tag = `dry-${component.name}`;
         dryNodeViews[`dry_${component.name}`] = (node, editorView, getPos) =>
           new DryComponentNodeView(node, tag, component.type, component.children, editorView, getPos);

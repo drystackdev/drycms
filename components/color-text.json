@@ -1,0 +1,63 @@
+{
+  "name": "color-text",
+  "label": "Colored text",
+  "description": "Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.",
+  "type": "block",
+  "shadow": true,
+  "children": true,
+  "childrenDefaultHtml": "\n    <h3>Wraps nested rich text and changes its color</h3>\n    <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>\n    <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>\n    <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>\n  ",
+  "refs": [
+    "carousel"
+  ],
+  "refRecords": [
+    {
+      "name": "carousel",
+      "label": "Carousel",
+      "description": "An inline image carousel with prev/next controls and an optional caption.",
+      "type": "inline",
+      "shadow": true,
+      "children": false,
+      "props": {
+        "images": {
+          "kind": "array",
+          "req": false,
+          "defaultValue": [
+            "https://picsum.photos/seed/site-carousel-1/480/280",
+            "https://picsum.photos/seed/site-carousel-2/480/280",
+            "https://picsum.photos/seed/site-carousel-3/480/280"
+          ],
+          "inner": {
+            "kind": "image",
+            "req": false
+          }
+        },
+        "caption": {
+          "kind": "string",
+          "req": false
+        }
+      },
+      "defaults": {
+        "images": [
+          "https://picsum.photos/seed/site-carousel-1/480/280",
+          "https://picsum.photos/seed/site-carousel-2/480/280",
+          "https://picsum.photos/seed/site-carousel-3/480/280"
+        ],
+        "caption": ""
+      },
+      "sourcePath": "",
+      "enabled": true
+    }
+  ],
+  "props": {
+    "color": {
+      "kind": "string",
+      "req": false,
+      "defaultValue": "#e11d48"
+    }
+  },
+  "defaults": {
+    "color": "#e11d48"
+  },
+  "sourcePath": "/src/dry-components/dry.color-text.tsx",
+  "enabled": true
+}

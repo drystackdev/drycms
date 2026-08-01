@@ -1,8 +1,9 @@
 import {
-  DryEditerComponent,
+  DryComponent,
   type InferShape,
   type PropsBuilder,
-} from "../../components/RichTextField/register-component.js";
+} from "../components/RichTextField/register-component.js";
+import dryCarousel from "./dry.carousel.js";
 
 const colorTextProps = (p: PropsBuilder) =>
   p({
@@ -19,8 +20,7 @@ function ColorText({
   );
 }
 
-export default DryEditerComponent({
-  name: "color-text",
+export default DryComponent({
   label: "Colored text",
   description:
     "Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.",
@@ -32,11 +32,12 @@ export default DryEditerComponent({
     }
   `,
   children: `
-  <h3>Wraps nested rich text and changes its color</h3>
-  <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
-  <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
-  <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
+    <h3>Wraps nested rich text and changes its color</h3>
+    <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
+    <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
+    <p>Wraps nested rich text and changes its color - drop any paragraph/heading/list inside.</p>
   `,
   props: colorTextProps,
   component: ColorText,
+  refs: [dryCarousel]
 });

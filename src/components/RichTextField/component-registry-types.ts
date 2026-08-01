@@ -24,7 +24,7 @@ export interface PlainFieldDef {
 /**
  * A confirmed component, as persisted to the `components` storage
  * root (mục 3) - `${name}.json`. `props`/`defaults` are already-resolved
- * plain data (see `DryEditerComponent`), never the builder function.
+ * plain data (see `DryComponent`), never the builder function.
  */
 export interface DryComponentRecord {
   name: string;
@@ -36,10 +36,33 @@ export interface DryComponentRecord {
   /** Default light-DOM HTML for `children: true` components - preview-only,
    * see `DryComponentConfig.children`'s own doc comment. */
   childrenDefaultHtml?: string;
+  /** Names of nested components referenced by this component. The actual
+   * component functions stay in the built module; this is the JSON-safe index
+   * used by the registry and tooling. */
+  refs?: string[];
+  /** JSON-safe records for referenced components that are not confirmed as
+   * top-level toolbar components. Used to extend the editor schema without
+   * exposing those children in the global insert picker. */
+  refRecords?: DryComponentRecord[];
   props: Record<string, PlainFieldDef>;
   defaults: Record<string, unknown>;
   /** The glob key (`import.meta.glob`'s map key) this record was confirmed
    * from - shown in the admin UI, not otherwise load-bearing. */
   sourcePath: string;
   enabled: true;
+}
+
+/** Flattens nested refs for ProseMirror's schema and node-view maps while
+ * keeping the original top-level list intact for the toolbar picker. */
+export function flattenDryComponentRecords(records: DryComponentRecord[]): DryComponentRecord[] {
+  const result: DryComponentRecord[] = [];
+  const seen = new Set<string>();
+  const visit = (record: DryComponentRecord) => {
+    if (seen.has(record.name)) return;
+    seen.add(record.name);
+    result.push(record);
+    for (const child of record.refRecords ?? []) visit(child);
+  };
+  for (const record of records) visit(record);
+  return result;
 }

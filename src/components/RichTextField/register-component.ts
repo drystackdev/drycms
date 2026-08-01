@@ -171,8 +171,6 @@ function resolveDefaults(shape: Record<string, FieldDef<unknown>>): Record<strin
 }
 
 export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> = Record<string, never>> {
-  /** Slug - becomes the custom element tag, `<dry-{name}>`. */
-  name: string;
   label: string;
   /** Shown alongside the label wherever this component is listed (the
    * component management admin page, mục 3, and the richtext editor's own
@@ -216,6 +214,10 @@ export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> 
    * there. Not parsed into ProseMirror content - a freshly-inserted instance
    * still starts from a single empty paragraph (`dry-component-insert-button.tsx`). */
   children?: boolean | string;
+  /** Other DryComponents used by this component's markup. References are
+   * registered before this component, so `<dry-child>` also works in a
+   * preview string and in nested light-DOM content. */
+  refs?: readonly DryComponentDefinition<any>[];
   /** Optional - a component with nothing to configure (a static block, say)
    * doesn't need a schema at all; omitting this is the same as
    * `props: (p) => p({})`. */
@@ -239,9 +241,14 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   /** Only set when `config.children` was a string - see its own doc comment
    * on `DryComponentConfig`. */
   childrenDefaultHtml?: string;
+  refs: readonly DryComponentDefinition<any>[];
   schema: S;
   defaults: InferShape<S>;
   component: ComponentType<InferShape<S>>;
+  /** Updates the definition in place and returns the same definition. This is
+   * useful when a component is declared first and its refs/metadata are added
+   * after declaration. */
+  update(patch: Partial<DryComponentConfig<S>>): DryComponentDefinition<S>;
 }
 
 /**
@@ -251,29 +258,36 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
  * eagerly here, so what gets persisted to storage later is always a plain,
  * already-resolved object - never the builder function itself.
  */
-export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> = Record<string, never>>(
+export function DryComponent<S extends Record<string, FieldDef<unknown>> = Record<string, never>>(
   config: DryComponentConfig<S>,
 ): DryComponentDefinition<S> {
+  const inferredName = kebabCase(config.component.name);
   const schema = (config.props?.(p) ?? {}) as S;
   const type = config.type ?? "inline";
   const shadow = config.shadow ?? true;
   let style = config.style;
   if (style !== undefined && !shadow) {
-    console.warn(`[drycms] Richtext component "${config.name}": "style" requires "shadow: true" - ignoring.`);
+    console.warn(`[drycms] Richtext component "${inferredName || "(unnamed)"}": "style" requires "shadow: true" - ignoring.`);
     style = undefined;
   }
   let children = config.children !== undefined && config.children !== false;
   let childrenDefaultHtml = typeof config.children === "string" ? config.children : undefined;
+  let refs = config.refs ?? [];
+  if (refs.length > 0 && !children) {
+    console.warn(`[drycms] Richtext component "${inferredName || "(unnamed)"}": "refs" requires "children" - ignoring.`);
+    refs = [];
+  }
   if (children && (!shadow || type !== "block")) {
     console.warn(
-      `[drycms] Richtext component "${config.name}": "children" requires "shadow: true" and "type: \\"block\\"" - ignoring.`,
+      `[drycms] Richtext component "${inferredName || "(unnamed)"}": "children" requires "shadow: true" and "type: \\"block\\"" - ignoring.`,
     );
     children = false;
     childrenDefaultHtml = undefined;
   }
-  return {
+  if (!children) refs = [];
+  const definition = {
     __dryComponent: true,
-    name: config.name,
+    name: inferredName,
     label: config.label,
     description: config.description ?? "",
     version: config.version ?? "0.0.0",
@@ -283,14 +297,70 @@ export function DryEditerComponent<S extends Record<string, FieldDef<unknown>> =
     style,
     children,
     childrenDefaultHtml,
+    refs,
     schema,
     defaults: resolveDefaults(schema) as InferShape<S>,
     component: config.component,
+  } as DryComponentDefinition<S>;
+
+  definition.update = (patch) => {
+    if (patch.label !== undefined) definition.label = patch.label;
+    if (patch.description !== undefined) definition.description = patch.description;
+    if (patch.version !== undefined) definition.version = patch.version;
+    if (patch.auth !== undefined) definition.auth = patch.auth;
+    if (patch.component !== undefined) definition.component = patch.component;
+    if (patch.props !== undefined) {
+      definition.schema = patch.props(p) as S;
+      definition.defaults = resolveDefaults(definition.schema) as InferShape<S>;
+    }
+
+    const nextType = patch.type ?? definition.type;
+    const nextShadow = patch.shadow ?? definition.shadow;
+    let nextChildren = patch.children === undefined ? definition.children : patch.children !== false;
+    let nextChildrenDefaultHtml =
+      typeof patch.children === "string" ? patch.children : definition.childrenDefaultHtml;
+    let nextStyle = patch.style === undefined ? definition.style : patch.style;
+    let nextRefs = patch.refs === undefined ? definition.refs : patch.refs;
+
+    if (nextStyle !== undefined && !nextShadow) nextStyle = undefined;
+    if (nextChildren && (!nextShadow || nextType !== "block")) {
+      nextChildren = false;
+      nextChildrenDefaultHtml = undefined;
+    }
+    if (!nextChildren) {
+      nextRefs = [];
+      nextChildrenDefaultHtml = undefined;
+    }
+
+    definition.type = nextType;
+    definition.shadow = nextShadow;
+    definition.style = nextStyle;
+    definition.children = nextChildren;
+    definition.childrenDefaultHtml = nextChildrenDefaultHtml;
+    definition.refs = nextRefs;
+    return definition;
   };
+
+  return definition;
+}
+
+function kebabCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+/** Derives `color-text` from `/src/widgets/dry.color-text.tsx`. */
+export function dryComponentNameFromSourcePath(sourcePath: string): string | undefined {
+  const file = sourcePath.split("/").pop() ?? "";
+  const match = file.match(/^dry[.-](.+)\.(?:tsx?|jsx?)$/i);
+  return match?.[1] ? kebabCase(match[1]) : undefined;
 }
 
 /** Discriminates a file's default export (whatever `import.meta.glob`'s
- * lazy loader resolves to) as a genuine `DryEditerComponent(...)` result -
+ * lazy loader resolves to) as a genuine `DryComponent(...)` result -
  * shared by `RichtextComponents.tsx` (mục 3, filtering scanned files down
  * to valid ones) and `ComponentPreview.tsx` (unwrapping `mod.default` to
  * find the real Preact component at `.component`, since the module's
