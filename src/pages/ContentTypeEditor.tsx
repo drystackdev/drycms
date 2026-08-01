@@ -744,6 +744,9 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             protectedFieldIds={definition.protectedFieldIds}
             fieldOrder={definition.fieldOrder}
             type={KIND_LABELS[definition.kind]}
+            label={definition.label || definition.name || <em>Untitled</em>}
+            name={definition.name}
+            description={definition.description}
             onEdit={(field) => {
               setEditingField(field);
               setFieldDialogOpen(true);

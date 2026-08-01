@@ -8,6 +8,7 @@ import type {
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import FieldListItem, { fieldListItemProps } from "./FieldListItem.js";
 import { ArchiveIcon, PlusIcon } from "../../components/icons.js";
+import type { JSX } from "preact/jsx-runtime";
 
 export interface SystemFieldEntry {
   /** Combined-list id. */
@@ -54,6 +55,9 @@ export interface FieldsListProps {
   systemEntries: SystemFieldEntry[];
   fields: FieldDefinition[];
   type: string;
+  label: JSX.Element | string;
+  name: string;
+  description?: string;
   features?: ContentTypeFeatures;
   /** Ids (from `fields`) that can be viewed/opened but never edited or
    * removed - see `types.ts`'s `ContentTypeDefinition.protectedFieldIds`.
@@ -112,6 +116,9 @@ export default function FieldsList({
   onReorderAll,
   onAdd,
   type,
+  label,
+  name,
+  description,
   showTrash,
   trashCount,
   onOpenTrash,
@@ -161,14 +168,14 @@ export default function FieldsList({
     <div>
       <div class="row justify-between">
         <div>
-          <h3>
-            Fields
+          <h4>
+            {label}
             <div class="badge sm info" style={{ position: "relative", top: "-0.125rem", marginLeft: "0.5rem" }}>
               {type}
             </div>
-          </h3>
+          </h4>
           <span class="hint">
-            Define the columns used for data entry and storage
+            {name && `${name} - `}{description || "Define the columns used for data entry and storage"}
           </span>
         </div>
         <button type="button" class="outline" onClick={onAdd}>

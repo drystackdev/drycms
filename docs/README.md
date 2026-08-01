@@ -13,6 +13,9 @@ to reproduce the same mistakes.
 - [DESIGN.md](DESIGN.md) - the visual system and its CSS conventions
   (design tokens, the class-vs-attribute rule, control size scale,
   scrollbars). Read before touching any `.css` file or any component markup.
+- [SPACING.md](SPACING.md) - the de facto spacing scale, layout primitives
+  (`.stack`/`.row`/`.grid`/`.container`), page structure, and per-component
+  padding/gap reference. Read before laying out a new page, dialog, or card.
 - [CODING-PRINCIPLES.md](CODING-PRINCIPLES.md) - standing rules about how
   changes get made in this codebase (dependencies, comments, validation UX,
   testing/QA method, config-resolution timing, concurrent-editing hazards).
