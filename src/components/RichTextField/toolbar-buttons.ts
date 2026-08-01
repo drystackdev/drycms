@@ -6,7 +6,6 @@ import {
   BoldIcon,
   ClearFormatIcon,
   ItalicIcon,
-  MoveIcon,
   RedoIcon,
   UnderlineIcon,
   UndoIcon,
@@ -21,14 +20,8 @@ import ImageInsertButton from "./image-insert-button.js";
 import LinkMenu from "./link-menu.js";
 import ListMenu from "./list-menu.js";
 import { removeAllMarks } from "./commands.js";
-import { toggleReorderMode } from "./reorder-mode.js";
 import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
-
-/** The one `ToolbarButton.key` `toolbar.tsx` never additionally disables
- * while reorder mode is active - every other control is suspended while
- * it's on, since the doc stops accepting any other edit for the duration. */
-export const REORDER_MODE_TOGGLE_KEY = "reorder-mode";
 
 /**
  * The toolbar's item registry - `toolbar.tsx` only knows how to render
@@ -50,6 +43,7 @@ export interface ToolbarButton {
   run: Command;
   isActive?: (state: ToolbarState) => boolean;
   isDisabled?: (state: ToolbarState) => boolean;
+  shortcut?: string;
   /** Same meaning as `ToolbarCustomItem.blockOnly` below - only "insert
    * grid" needs this on a plain button so far, every other `ToolbarButton`
    * (undo/redo, bold/italic/underline, clear format) is equally valid in a
@@ -72,6 +66,7 @@ export interface ToolbarCustomItem {
   /** Same meaning as `ToolbarButton.isDisabled` - `toolbar.tsx` ORs this into
    * the `disabled` prop it already passes every custom item. */
   isDisabled?: (state: ToolbarState) => boolean;
+  shortcut?: string;
 }
 
 export type ToolbarItem = ToolbarButton | ToolbarCustomItem;
@@ -95,6 +90,7 @@ const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
     label,
     Icon,
     run: toggleMark(schema.marks[key]!),
+    shortcut: key === "bold" ? "Ctrl/Cmd+B" : key === "italic" ? "Ctrl/Cmd+I" : "Ctrl/Cmd+U",
     isActive: (state: ToolbarState) => state.format[key],
     isDisabled: (state: ToolbarState) => !state.inlineEditable,
   })),
@@ -104,6 +100,7 @@ const INLINE_FORMAT_BUTTONS: ToolbarButton[] = [
     label: "Clear format",
     Icon: ClearFormatIcon,
     run: removeAllMarks(),
+    shortcut: "Ctrl+Space",
     isDisabled: (state: ToolbarState) => !state.clearable,
   },
 ];
@@ -132,8 +129,8 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   // the block/feature groups below.
   [
     ...INLINE_FORMAT_BUTTONS,
-    { type: "custom", key: "color", Component: ColorMenu },
-    { type: "custom", key: "link", Component: LinkMenu },
+    { type: "custom", key: "color", Component: ColorMenu, shortcut: "Ctrl/Cmd+Alt+C" },
+    { type: "custom", key: "link", Component: LinkMenu, shortcut: "Ctrl/Cmd+K" },
   ],
   // Block group: every item here acts on a whole top-level element
   // (paragraph/heading/quote node, or its alignment) rather than a run of
@@ -145,35 +142,23 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
   // would silently retarget that paragraph (turn it into a heading, wrap it
   // in a list...) while the toolbar looks like it's acting on the image.
   [
-    { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true, isDisabled: (state) => !!state.selectedImage },
-    { type: "custom", key: "align", Component: AlignMenu, blockOnly: true, isDisabled: (state) => !!state.selectedImage },
-    { type: "custom", key: "list", Component: ListMenu, blockOnly: true, isDisabled: (state) => !!state.selectedImage },
+    { type: "custom", key: "block-type", Component: BlockTypeMenu, blockOnly: true, shortcut: "Ctrl/Cmd+Shift+N", isDisabled: (state) => !!state.selectedImage },
+    { type: "custom", key: "align", Component: AlignMenu, blockOnly: true, shortcut: "Ctrl/Cmd+L/E/R/J", isDisabled: (state) => !!state.selectedImage },
+    { type: "custom", key: "list", Component: ListMenu, blockOnly: true, shortcut: "Ctrl/Cmd+Shift+L / Ctrl/Cmd+.", isDisabled: (state) => !!state.selectedImage },
   ],
   // Feature group: both insert a whole standalone block (an image, or a dry
   // component) rather than formatting text - `insert-image` also carries
   // `requiresSource` (hidden with no `source` prop), both carry `blockOnly`
   // (neither belongs in a single-inline-run field).
   [
-    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true },
+    { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true, shortcut: "Ctrl/Cmd+Alt+M" },
     { type: "custom", key: "insert-component", Component: DryComponentInsertButton, blockOnly: true },
   ],
-  // View group: fullscreen and reorder mode both change how the whole field
-  // is presented rather than formatting its content, so they share one card.
-  // Fullscreen keeps `blockOnly` (no more useful in a single-inline-run field
-  // than the block-type/align/list menus above); reorder mode suspends every
-  // other control in this toolbar while active (see `REORDER_MODE_TOGGLE_KEY`
-  // above and `toolbar.tsx`'s per-button `disabled` expression), but the
-  // toggle itself stays clickable.
+  // View group: fullscreen changes how the whole field is presented rather
+  // than formatting its content. Reorder remains implemented in the editor,
+  // but its toolbar control is temporarily hidden.
   [
-    { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true },
-    {
-      type: "button",
-      key: REORDER_MODE_TOGGLE_KEY,
-      label: "Reorder blocks",
-      Icon: MoveIcon,
-      run: toggleReorderMode(),
-      isActive: (state) => state.reorderModeActive,
-    },
+    { type: "custom", key: "fullscreen", Component: FullscreenButton, blockOnly: true, shortcut: "Ctrl/Cmd+Shift+F" },
   ],
   // "Insert grid" itself isn't here - it sits next to "Insert table" in
   // `TableMenu`'s own always-present card instead (`table-menu.tsx`), not

@@ -5044,7 +5044,8 @@
 
   .dry-component-mention-popup {
     z-index: 1000;
-    width: min(24rem, calc(100vw - 2rem));
+    width: max-content;
+    max-width: calc(100vw - 1rem);
     padding: 0.375rem;
     border: 1px solid var(--dry-border);
     border-radius: var(--dry-radius-md);
@@ -5072,8 +5073,26 @@
     border-radius: var(--dry-radius-sm);
     background: transparent;
     color: var(--dry-foreground);
+    font-size: var(--dry-text-sm);
+    justify-content: flex-start;
     text-align: left;
     box-shadow: none;
+  }
+
+  .dry-component-mention-items button span {
+    min-width: 0;
+  }
+
+  .dry-component-mention-items button code {
+    margin-inline-start: auto;
+    padding: 0.125rem 0.25rem;
+    border: 1px solid var(--dry-border);
+    border-radius: var(--dry-radius-sm);
+    color: var(--dry-muted-foreground);
+    font-family: var(--dry-font-mono);
+    font-size: var(--dry-text-xs);
+    line-height: 1.2;
+    white-space: nowrap;
   }
 
   .dry-component-mention-items button:hover,

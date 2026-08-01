@@ -19,7 +19,7 @@ const LIST_TYPE_OPTIONS: { value: Exclude<ListType, "none">; label: string; Icon
  * `toggleList` in `lists.ts`, which both this and the click-through-to-the-
  * -other-type case rely on).
  */
-export default function ListMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
+export default function ListMenu({ viewRef, state, disabled = false, iconSize, shortcut }: ToolbarCustomProps) {
   const current = LIST_TYPE_OPTIONS.find((option) => option.value === state.listType) ?? LIST_TYPE_OPTIONS[0]!;
 
   const applyListType = (value: Exclude<ListType, "none">) => {
@@ -31,7 +31,7 @@ export default function ListMenu({ viewRef, state, disabled = false, iconSize }:
 
   return (
     <Popover
-      label="List"
+      label={shortcut ? `List (${shortcut})` : "List"}
       items={LIST_TYPE_OPTIONS.map((option) => ({
         type: "item" as const,
         label: option.label,
@@ -43,7 +43,7 @@ export default function ListMenu({ viewRef, state, disabled = false, iconSize }:
           type="button"
           class={`ghost icon ${iconSize}`}
           aria-label="List"
-          data-tooltip={state.listType === "none" ? "List" : `List: ${current.label}`}
+          data-tooltip={`${state.listType === "none" ? "List" : `List: ${current.label}`}${shortcut ? ` (${shortcut})` : ""}`}
           aria-pressed={state.listType !== "none"}
           disabled={disabled}
           onMouseDown={(event) => event.preventDefault()}

@@ -29,7 +29,7 @@ const BLOCK_TYPE_OPTIONS: { value: BlockType; label: string; Icon: (props: IconP
  * currently active (see `current` below) rather than a fixed icon. Mirrors
  * `AlignMenu`.
  */
-export default function BlockTypeMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
+export default function BlockTypeMenu({ viewRef, state, disabled = false, iconSize, shortcut }: ToolbarCustomProps) {
   const current = BLOCK_TYPE_OPTIONS.find((option) => option.value === state.blockType) ?? BLOCK_TYPE_OPTIONS[0]!;
 
   const applyBlockType = (value: BlockType) => {
@@ -40,7 +40,7 @@ export default function BlockTypeMenu({ viewRef, state, disabled = false, iconSi
 
   return (
     <Popover
-      label="Turn into"
+      label={shortcut ? `Turn into (${shortcut})` : "Turn into"}
       items={BLOCK_TYPE_OPTIONS.map((option) => ({
         type: "item" as const,
         label: option.label,
@@ -53,7 +53,7 @@ export default function BlockTypeMenu({ viewRef, state, disabled = false, iconSi
           type="button"
           class={`ghost icon ${iconSize}`}
           aria-label="Turn into"
-          data-tooltip={`Turn into: ${current.label}`}
+          data-tooltip={`Turn into: ${current.label}${shortcut ? ` (${shortcut})` : ""}`}
           disabled={disabled}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onClick}

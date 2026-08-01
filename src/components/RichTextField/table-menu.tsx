@@ -38,6 +38,7 @@ import {
   unmergeCell,
 } from "./table.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
+import { displayShortcut } from "./shortcuts.js";
 
 export interface TableMenuProps {
   viewRef: RefObject<EditorView | null>;
@@ -171,7 +172,7 @@ export default function TableMenu({ viewRef, state, disabled = false, iconSize =
           type="button"
           class={`ghost icon ${iconSize}`}
           aria-label="Insert grid"
-          data-tooltip="Insert grid"
+          data-tooltip={`Insert grid (${displayShortcut("Ctrl/Cmd+Alt+G")})`}
           disabled={disabled}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => view && runCommand(view, insertGrid())}

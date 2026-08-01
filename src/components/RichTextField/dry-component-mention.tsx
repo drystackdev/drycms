@@ -129,7 +129,12 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
   const mentionRef = useRef<MentionState | null>(null);
   const dismissedKeyRef = useRef<string | null>(null);
   const dismissedUntilInputRef = useRef(false);
+  const selectedCandidateRef = useRef<HTMLButtonElement | null>(null);
   const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([!!mention]);
+
+  useEffect(() => {
+    selectedCandidateRef.current?.scrollIntoView({ block: "nearest" });
+  }, [mention?.selectedIndex]);
 
   useEffect(() => {
     if (!ready || disabled) return;
@@ -246,6 +251,7 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
               role="option"
               aria-selected={index === mention.selectedIndex}
               class={index === mention.selectedIndex ? "selected" : undefined}
+              ref={index === mention.selectedIndex ? selectedCandidateRef : undefined}
               key={`${candidate.path}:${candidate.record.name}`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {

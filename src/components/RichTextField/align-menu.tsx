@@ -16,7 +16,7 @@ const ALIGN_OPTIONS: { value: TextAlign; label: string; Icon: (props: IconProps)
  * a bit that flips on/off, and the trigger shows whichever option is
  * currently active (see `current` below) rather than a fixed icon.
  */
-export default function AlignMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
+export default function AlignMenu({ viewRef, state, disabled = false, iconSize, shortcut }: ToolbarCustomProps) {
   const current = ALIGN_OPTIONS.find((option) => option.value === state.align) ?? ALIGN_OPTIONS[0]!;
 
   const applyAlign = (value: TextAlign) => {
@@ -27,7 +27,7 @@ export default function AlignMenu({ viewRef, state, disabled = false, iconSize }
 
   return (
     <Popover
-      label="Align text"
+      label={shortcut ? `Align text (${shortcut})` : "Align text"}
       items={ALIGN_OPTIONS.map((option) => ({
         type: "item" as const,
         label: option.label,
@@ -40,7 +40,7 @@ export default function AlignMenu({ viewRef, state, disabled = false, iconSize }
           type="button"
           class={`ghost icon ${iconSize}`}
           aria-label="Align text"
-          data-tooltip={`Align: ${current.label}`}
+          data-tooltip={`Align: ${current.label}${shortcut ? ` (${shortcut})` : ""}`}
           disabled={disabled}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onClick}

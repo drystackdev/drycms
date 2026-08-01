@@ -1,11 +1,13 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { Command } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 import Select, { type SelectOption } from "../Select.js";
 import TextField from "../TextField.js";
 import { useDialogSync } from "../list-nav.js";
 import { LinkIcon, TrashIcon } from "../icons.js";
 import { removeLink, runCommand, setLink } from "./commands.js";
 import type { ToolbarCustomProps } from "./types.js";
+import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
 
 /** `target` only ever stores `"_blank"` or `null` (see schema.ts) - this
  * dialog's own friendlier label for `null` is "Same tab". */
@@ -23,7 +25,7 @@ const TARGET_OPTIONS: SelectOption[] = [
  * existing link enable this button without re-selecting it). "Remove link"
  * only shows up once there's an actual link to remove.
  */
-export default function LinkMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
+export default function LinkMenu({ viewRef, state, disabled = false, iconSize, shortcut }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
   const [href, setHref] = useState("");
   const [target, setTarget] = useState<string>("_self");
@@ -42,6 +44,16 @@ export default function LinkMenu({ viewRef, state, disabled = false, iconSize }:
     setTarget(state.link.target === "_blank" ? "_blank" : "_self");
     setOpen(true);
   };
+
+  useEffect(() => {
+    const onShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ name?: string; view?: EditorView }>).detail;
+      if (detail?.name !== "link" || detail.view !== viewRef.current || disabled || state.link.disabled) return;
+      openDialog();
+    };
+    document.addEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+    return () => document.removeEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+  });
 
   const confirm = () => {
     setOpen(false);
@@ -64,7 +76,7 @@ export default function LinkMenu({ viewRef, state, disabled = false, iconSize }:
         type="button"
         class={`ghost icon ${iconSize}`}
         aria-label={state.link.active ? "Edit link" : "Link"}
-        data-tooltip={state.link.active ? "Edit link" : "Link"}
+        data-tooltip={`${state.link.active ? "Edit link" : "Link"}${shortcut ? ` (${shortcut})` : ""}`}
         aria-pressed={state.link.active}
         aria-haspopup="dialog"
         disabled={disabled || state.link.disabled}

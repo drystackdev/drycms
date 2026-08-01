@@ -111,6 +111,8 @@ export interface ToolbarCustomProps {
    * always resolves and passes this down, so custom items never need their
    * own default. */
   iconSize: ToolbarIconSize;
+  /** Human-readable keyboard shortcut shown in the item's tooltip. */
+  shortcut?: string;
   /** Whether `RichTextField` is currently expanded fullscreen, and the
    * toggle for it - only `fullscreen-button.tsx` reads either, same
    * optionality as `source`/`ImageInsertButton` above. */

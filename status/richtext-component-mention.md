@@ -27,6 +27,11 @@
 - Added toolbar scroll compensation: toolbar actions preserve the editor anchor position after contextual controls mount, including top-layer popover actions, without smooth scrolling.
 - Fixed mention search rendering with OverlayScrollbars by keeping a stable items wrapper inside the managed viewport.
 - Mention token cleanup is now excluded from undo history; undoing an imported component no longer restores the temporary `@query` text.
+- Temporarily hid reorder from the toolbar and added keyboard shortcuts for formatting, block/list actions, color/link/image/fullscreen, grid, and table; shortcut hints are shown in tooltips.
+- Remapped text shortcuts to Word conventions, including platform-aware Cmd/Ctrl labels and direct paragraph/list/alignment shortcuts.
+- Added `/` command palette with fuzzy search, icons, keyboard navigation, and grouped actions; grid/table are grouped under Block with paragraph/list, and fullscreen is excluded.
+- Removed visible slash groups, reduced command text size, left-aligned rows, and added automatic selected-item scrolling for both `/` and `@` menus.
+- Slash palette now excludes Undo/Redo, includes Insert component, shows shortcuts in right-aligned `<code>` badges, uses content-sized width, hides selection-only actions without a selection, and opens with `Ctrl/Cmd+/`.
 - Typecheck, 50 RichText tests, and production build pass.
 - Browser E2E is blocked in this environment because `E2E_SESSION_TOKEN` is not set.
 

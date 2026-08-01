@@ -21,19 +21,22 @@ import {
   getSelectedImage,
   getTextAlignState,
   getTextColorState,
+  removeAllMarks,
+  setBlockTypeCommand,
+  setTextAlign,
 } from "./commands.js";
 import { DryComponentNodeView } from "./dry-component-view.js";
 import { defineBuiltComponents } from "./dry-component-runtime.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
-import { exitGridDownward, getSelectedGrid, splitGridItem } from "./grid.js";
+import { exitGridDownward, getSelectedGrid, insertGrid, splitGridItem } from "./grid.js";
 import { GridItemNodeView } from "./grid-item-view.js";
 import { gridResizing } from "./grid-resize.js";
 import { HtmlReorderSurface } from "./html-reorder-surface.js";
 import { ImageNodeView } from "./image-view.js";
-import { getListType } from "./lists.js";
+import { getListType, toggleList } from "./lists.js";
 import { isReorderActive, reorderMode, reorderModeKey } from "./reorder-mode.js";
 import { createEmptyDoc, schema, setRichtextComponents } from "./schema.js";
-import { exitTableDownward, exitTableForward, getSelectedTable } from "./table.js";
+import { exitTableDownward, exitTableForward, getSelectedTable, insertTable } from "./table.js";
 import { tableColumnResizing } from "./table-column-resize.js";
 import { TableNodeView } from "./table-node-view.js";
 import { tableRowResizing } from "./table-row-resize.js";
@@ -41,6 +44,7 @@ import { trailingParagraph, withTrailingParagraph } from "./trailing-paragraph.j
 import { NO_FORMAT, type ToolbarState } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
 import { flattenDryComponentRecords } from "./component-registry-types.js";
+import { openRichTextShortcut } from "./shortcuts.js";
 
 export interface UseRichTextEditorOptions {
   /** HTML string - the only seed/output format, reported on every change
@@ -278,6 +282,20 @@ export function useRichTextEditor({
           "Mod-b": toggleMark(schema.marks.bold!),
           "Mod-i": toggleMark(schema.marks.italic!),
           "Mod-u": toggleMark(schema.marks.underline!),
+          "Ctrl-Space": removeAllMarks(),
+          "Shift-Mod-n": setBlockTypeCommand("paragraph"),
+          "Shift-Mod-l": toggleList(schema.nodes.bullet_list!),
+          "Mod-.": toggleList(schema.nodes.ordered_list!),
+          "Mod-l": setTextAlign("left"),
+          "Mod-e": setTextAlign("center"),
+          "Mod-r": setTextAlign("right"),
+          "Mod-j": setTextAlign("justify"),
+          "Mod-Alt-c": openRichTextShortcut("color"),
+          "Mod-k": openRichTextShortcut("link"),
+          "Mod-Alt-m": openRichTextShortcut("image"),
+          "Shift-Mod-f": openRichTextShortcut("fullscreen"),
+          "Mod-Alt-g": insertGrid(),
+          "Mod-Alt-t": insertTable(),
           // `splitListItem` first (innermost - a list nested inside a grid
           // cell should split its own item, not break out to a new grid
           // cell), falling through to `splitGridItem` when the selection

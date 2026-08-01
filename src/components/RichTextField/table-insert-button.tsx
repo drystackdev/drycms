@@ -6,6 +6,7 @@ import { TableIcon } from "../icons.js";
 import { runCommand } from "./commands.js";
 import { insertTable } from "./table.js";
 import type { ToolbarIconSize } from "./types.js";
+import { displayShortcut } from "./shortcuts.js";
 
 const GRID_SIZE = 6;
 const GRID_INDICES = Array.from({ length: GRID_SIZE }, (_, i) => i);
@@ -69,7 +70,7 @@ export default function TableInsertButton({ viewRef, disabled = false, iconSize 
             type="button"
             class={`ghost icon ${iconSize}`}
             aria-label="Insert table"
-            data-tooltip="Insert table"
+            data-tooltip={`Insert table (${displayShortcut("Ctrl/Cmd+Alt+T")})`}
             aria-haspopup="dialog"
             disabled={disabled}
             onMouseDown={(event) => event.preventDefault()}

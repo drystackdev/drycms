@@ -16,6 +16,7 @@ import { insertBlockAfterFocusedGridItem } from "./grid.js";
 import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
+import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
 
 /**
  * Toolbar button opening a name-only list picker (same 2-step "select, then
@@ -69,6 +70,16 @@ export default function DryComponentInsertButton({
     setQuery("");
     setOpen(true);
   };
+
+  useEffect(() => {
+    const onShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ name?: string; view?: unknown }>).detail;
+      if (detail?.name !== "component" || detail.view !== viewRef.current || disabled) return;
+      openPicker();
+    };
+    document.addEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+    return () => document.removeEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+  });
 
   const filteredRecords = records.filter((record) => {
     const q = query.trim().toLowerCase();

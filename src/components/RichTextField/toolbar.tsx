@@ -6,8 +6,9 @@ import type { FileManagerSource } from "../file-manager-types.js";
 import DryComponentMenu from "./dry-component-menu.js";
 import GridMenu from "./grid-menu.js";
 import TableMenu from "./table-menu.js";
-import { REORDER_MODE_TOGGLE_KEY, TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
+import { TOOLBAR_GROUPS, type ToolbarButton } from "./toolbar-buttons.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
+import { displayShortcut } from "./shortcuts.js";
 
 interface ToolbarScrollSnapshot {
   anchor: HTMLElement;
@@ -157,6 +158,7 @@ export default function RichTextToolbar({
                 disabled={disabled || state.reorderModeActive || !!item.isDisabled?.(state)}
                 source={source}
                 iconSize={iconSize}
+                shortcut={item.shortcut ? displayShortcut(item.shortcut) : undefined}
                 fullscreen={fullscreen}
                 onToggleFullscreen={onToggleFullscreen}
               />
@@ -166,11 +168,11 @@ export default function RichTextToolbar({
                 type="button"
                 class={`ghost icon ${iconSize}`}
                 aria-label={item.label}
-                data-tooltip={item.label}
+                data-tooltip={item.shortcut ? `${item.label} (${displayShortcut(item.shortcut)})` : item.label}
                 aria-pressed={item.isActive?.(state)}
                 disabled={
                   disabled ||
-                  (item.key !== REORDER_MODE_TOGGLE_KEY && state.reorderModeActive) ||
+                  state.reorderModeActive ||
                   item.isDisabled?.(state)
                 }
                 onMouseDown={preserveSelection}

@@ -1,7 +1,10 @@
 import { runCommand, setTextColor } from "./commands.js";
+import { useEffect, useRef } from "preact/hooks";
+import type { EditorView } from "prosemirror-view";
 import Popover from "../Popover.js";
 import { BaselineIcon } from "../icons.js";
 import type { ToolbarCustomProps } from "./types.js";
+import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
 
 /** 6 base hues, picked around the wheel so adjacent columns stay visually
  * distinct at every lightness level below. */
@@ -85,7 +88,8 @@ function parseColorValue(value: string): { base: string; alphaPct: number } {
  * it back with `getTextColorState` and `html.ts` round-trips it through an
  * exported `<span style="color: ...">`.
  */
-export default function ColorMenu({ viewRef, state, disabled = false, iconSize }: ToolbarCustomProps) {
+export default function ColorMenu({ viewRef, state, disabled = false, iconSize, shortcut }: ToolbarCustomProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const { base, alphaPct } = parseColorValue(state.color);
 
   const preserveSelection = (event: MouseEvent) => event.preventDefault();
@@ -104,16 +108,27 @@ export default function ColorMenu({ viewRef, state, disabled = false, iconSize }
     runCommand(view, setTextColor(null));
   };
 
+  useEffect(() => {
+    const onShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ name?: string; view?: EditorView }>).detail;
+      if (detail?.name !== "color" || detail.view !== viewRef.current || disabled || !state.inlineEditable || !state.hasSelection) return;
+      triggerRef.current?.click();
+    };
+    document.addEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+    return () => document.removeEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+  });
+
   return (
     <Popover
       label="Text color"
-      tooltip="Text color"
+        tooltip={shortcut ? `Text color (${shortcut})` : "Text color"}
       trigger={(onClick) => (
         <button
+          ref={triggerRef}
           type="button"
           class={`ghost icon ${iconSize}`}
           aria-label="Text color"
-          data-tooltip="Text color"
+          data-tooltip={shortcut ? `Text color (${shortcut})` : "Text color"}
           disabled={disabled || !state.inlineEditable || !state.hasSelection}
           onMouseDown={preserveSelection}
           onClick={onClick}

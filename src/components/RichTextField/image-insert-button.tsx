@@ -1,4 +1,6 @@
 import { useRef, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
+import type { EditorView } from "prosemirror-view";
 import FileManager from "../FileManager.js";
 import type { FileEntry } from "../file-manager-types.js";
 import { parentFolderOf } from "../file-manager-utils.js";
@@ -7,6 +9,7 @@ import { useDialogSync } from "../list-nav.js";
 import { useOverlayScrollbars } from "../overlayscrollbars.js";
 import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
+import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
 
@@ -20,7 +23,7 @@ const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
  * before "Insert" is clicked; if it's out of range (or was never available),
  * the image is inserted at the end of the document instead.
  */
-export default function ImageInsertButton({ viewRef, disabled = false, source, iconSize }: ToolbarCustomProps) {
+export default function ImageInsertButton({ viewRef, disabled = false, source, iconSize, shortcut }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState("");
   const anchorPosRef = useRef<number | null>(null);
@@ -35,6 +38,16 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, i
     setPending("");
     setOpen(true);
   };
+
+  useEffect(() => {
+    const onShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ name?: string; view?: EditorView }>).detail;
+      if (detail?.name !== "image" || detail.view !== viewRef.current || disabled || !source) return;
+      openPicker();
+    };
+    document.addEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+    return () => document.removeEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
+  });
 
   const insertImage = (entry: FileEntry) => {
     const view = viewRef.current;
@@ -61,7 +74,7 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, i
         type="button"
         class={`ghost icon ${iconSize}`}
         aria-label="Insert image"
-        data-tooltip="Insert image"
+        data-tooltip={shortcut ? `Insert image (${shortcut})` : "Insert image"}
         aria-haspopup="dialog"
         disabled={disabled}
         onMouseDown={(event) => event.preventDefault()}
