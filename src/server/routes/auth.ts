@@ -6,9 +6,11 @@ import { ContentEngineError, type ContentEngineAdapter } from "../../content-typ
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { verifyPassword } from "../../lib/password-hash.js";
 import { signSession } from "../../lib/session-token.js";
+import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
-import { SESSION_COOKIE_NAME } from "../session.js";
-import { revokeSession } from "../session-blacklist.js";
+import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
+import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
+import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../rate-limit.js";
 
 /**
  * The `auth` API route: session issuance for the built-in `user` collection
@@ -127,9 +129,9 @@ async function findUserByEmail(
   return { id: match.id, name: String(match.value.name ?? ""), email: String(match.value.email ?? "") };
 }
 
-function sessionCookieHeader(context: DryRouteContext, value: string, maxAgeSeconds: number): string {
+function sessionCookieHeader(context: DryRouteContext, value: string, maxAgeSeconds: number, name = SESSION_COOKIE_NAME): string {
   const attrs = [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(value)}`,
+    `${name}=${encodeURIComponent(value)}`,
     `Path=${basePath}`,
     "HttpOnly",
     "SameSite=Lax",
@@ -139,15 +141,19 @@ function sessionCookieHeader(context: DryRouteContext, value: string, maxAgeSeco
   return attrs.join("; ");
 }
 
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days, matches session-token.ts's own token expiry
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // refresh session lifetime
 
-function withSessionCookie(response: Response, context: DryRouteContext, token: string): Response {
-  response.headers.set("Set-Cookie", sessionCookieHeader(context, token, SESSION_MAX_AGE_SECONDS));
+function withSessionCookies(response: Response, context: DryRouteContext, token: string, refreshToken: string): Response {
+  response.headers.append("Set-Cookie", sessionCookieHeader(context, token, 15 * 60));
+  response.headers.append("Set-Cookie", sessionCookieHeader(context, refreshToken, SESSION_MAX_AGE_SECONDS, REFRESH_COOKIE_NAME));
+  response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
   return response;
 }
 
 function withClearedSessionCookie(response: Response, context: DryRouteContext): Response {
-  response.headers.set("Set-Cookie", sessionCookieHeader(context, "", 0));
+  response.headers.append("Set-Cookie", sessionCookieHeader(context, "", 0));
+  response.headers.append("Set-Cookie", sessionCookieHeader(context, "", 0, REFRESH_COOKIE_NAME));
+  response.headers.append("Set-Cookie", clearCsrfCookieHeader(context));
   return response;
 }
 
@@ -176,7 +182,9 @@ export const GET: DryRouteHandler = async (context) => {
       user = { ...context.session, roles };
     }
 
-    return jsonResponse({ hasAnyUser: anyUser, user });
+    const response = jsonResponse({ hasAnyUser: anyUser, user });
+    if (context.session) response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
+    return response;
   } catch (error) {
     return errorResponse(error);
   }
@@ -221,9 +229,10 @@ export const POST: DryRouteHandler = async (context) => {
       });
 
       const sessionUser: SessionUser = { id: created.id, name, email };
-      const token = await signSession(sessionUser);
+      const authSession = await createAuthSession(created.id, context.env);
+      const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
       const roles = [String(superAdminRole.value.name ?? "Super Admin")];
-      return withSessionCookie(jsonResponse({ user: { ...sessionUser, roles } }, 201), context, token);
+      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }, 201), context, token, authSession.refreshToken);
     }
 
     if (endpoint === "login") {
@@ -237,20 +246,50 @@ export const POST: DryRouteHandler = async (context) => {
 
       const invalid = () => new AuthError("invalid_credentials", "Invalid email or password.");
 
+      if (await isLoginRateLimited(context.request, email, context.env)) {
+        return jsonResponse({ error: "rate_limited", message: "Too many sign-in attempts. Try again later." }, 429);
+      }
+
       const found = email ? await findUserByEmail(entryAdapter, userType, allTypes, email) : null;
-      if (!found) throw invalid();
+      if (!found) {
+        await recordLoginFailure(context.request, email, context.env);
+        throw invalid();
+      }
 
       const raw = await entryAdapter.getRawEntry(userType, found.id);
       const storedHash = raw?.password;
       if (typeof storedHash !== "string" || !(await verifyPassword(password, storedHash))) {
+        await recordLoginFailure(context.request, email, context.env);
         throw invalid();
       }
 
+      await clearLoginFailures(context.request, email, context.env);
+
       const sessionUser: SessionUser = found;
-      const token = await signSession(sessionUser);
+      const authSession = await createAuthSession(found.id, context.env);
+      const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
       const entry = await entryAdapter.getEntry(userType, allTypes, found.id);
       const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, entry?.value.roles);
-      return withSessionCookie(jsonResponse({ user: { ...sessionUser, roles } }), context, token);
+      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }), context, token, authSession.refreshToken);
+    }
+
+    if (endpoint === "refresh") {
+      if (!context.refreshToken) return withClearedSessionCookie(unauthenticatedResponse(), context);
+      const rotated = await rotateAuthSession(context.refreshToken, context.env);
+      if (!rotated) return withClearedSessionCookie(unauthenticatedResponse(), context);
+      const allTypes = await schemaAdapter.listContentTypes();
+      const userType = findType(allTypes, "user");
+      const roleType = findType(allTypes, "role");
+      const entry = await entryAdapter.getEntry(userType, allTypes, rotated.session.userId);
+      if (!entry) return withClearedSessionCookie(unauthenticatedResponse(), context);
+      const sessionUser: SessionUser = {
+        id: entry.id,
+        name: String(entry.value.name ?? ""),
+        email: String(entry.value.email ?? ""),
+      };
+      const token = await signSession(sessionUser, { sessionId: rotated.session.sessionId });
+      const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, entry.value.roles);
+      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }), context, token, rotated.refreshToken);
     }
 
     if (endpoint === "update-profile") {
@@ -303,10 +342,10 @@ export const POST: DryRouteHandler = async (context) => {
             currentPassword: "Incorrect current password.",
           });
         }
-        // Revoke before changing the credential. If the durable blacklist is
-        // unavailable, fail the whole operation rather than changing the
-        // password while leaving the current token usable.
-        if (context.sessionToken) await revokeSession(context.sessionToken, context.env);
+        // Revoke every session before changing the credential. If the durable
+        // security store is unavailable, fail the whole operation rather than
+        // changing the password while leaving old sessions usable.
+        await revokeAllAuthSessions(context.session.id, "password-change", context.env);
       }
 
       const updated = await entryAdapter.updateEntry(userType, allTypes, context.session.id, {
@@ -321,13 +360,22 @@ export const POST: DryRouteHandler = async (context) => {
         name: String(updated.value.name ?? name),
         email: String(updated.value.email ?? email),
       };
-      const token = await signSession(sessionUser);
+      let authSessionId = context.sessionId;
+      let refreshToken: string | undefined;
+      if (newPassword || !authSessionId) {
+        if (context.sessionId && !newPassword) await revokeAuthSession(context.sessionId, "rotation", context.env);
+        const authSession = await createAuthSession(updated.id, context.env);
+        authSessionId = authSession.sessionId;
+        refreshToken = authSession.refreshToken;
+      }
+      const token = await signSession(sessionUser, { sessionId: authSessionId });
       const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, updated.value.roles);
-      return withSessionCookie(jsonResponse({ user: { ...sessionUser, roles } }), context, token);
+      if (!refreshToken) refreshToken = context.refreshToken ?? "";
+      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }), context, token, refreshToken);
     }
 
     if (endpoint === "logout") {
-      if (context.sessionToken) await revokeSession(context.sessionToken, context.env);
+      if (context.sessionId) await revokeAuthSession(context.sessionId, "logout", context.env);
       return withClearedSessionCookie(new Response(null, { status: 204 }), context);
     }
 

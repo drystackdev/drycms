@@ -55,3 +55,22 @@
 - Phạm vi auth ưu tiên còn lại: CSRF, rate limit/chống brute-force, thu hồi
   toàn bộ session khi đổi mật khẩu, secret rotation và access/refresh token.
 - Kế hoạch chi tiết đã ghi tại `docs/auth-security-plan.md`.
+- Đã bắt đầu Milestone A: access JWT giảm còn 15 phút, thêm `sid`/`aud`,
+  security store cho refresh sessions, refresh token rotation cơ bản và
+  thu hồi toàn bộ session theo user khi đổi mật khẩu.
+- Đã triển khai CSRF double-submit cookie/header cho API mutation, wrapper
+  fetch same-origin tự gắn `X-CSRF-Token`, và sửa Node bridge gửi nhiều
+  `Set-Cookie` độc lập.
+- Đã thêm rate limit login theo email/IP với cửa sổ, thời gian block, TTL
+  trong security store và lock chống race trong cùng process.
+- Đã thêm JWT key ring cơ bản qua `DRYCMS_JWT_KEYS_JSON` và
+  `DRYCMS_JWT_ACTIVE_KID`; token mới dùng active key, token cũ trong key ring
+  vẫn được verify.
+- Đã thêm phát hiện refresh token reuse: token đã rotate nhưng bị dùng lại sẽ
+  revoke toàn bộ session chain của user; refresh rotation có lock theo token
+  trong cùng process.
+- Đã thêm counter atomic cho SQLite/D1 bằng bảng counter và UPSERT; các backend
+  không có primitive atomic tiếp tục dùng process lock an toàn cho single-node.
+- Đã thêm test SQLite atomic counter và test JWT key-ring rotation.
+- Đã nối client tự refresh access token một lần khi nhận `401`, có coalescing
+  khi nhiều request hết hạn đồng thời; refresh thất bại mới chuyển về login.

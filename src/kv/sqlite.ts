@@ -13,6 +13,11 @@ interface Row {
   expires_at: string | null;
 }
 
+interface CounterRow {
+  count: number;
+  window_started_at: number;
+}
+
 export function createSqliteKeyValueAdapter(file: string): KeyValueAdapter {
   let dbPromise: Promise<SqliteHandle> | undefined;
   async function db(): Promise<SqliteHandle> {
@@ -29,6 +34,14 @@ export function createSqliteKeyValueAdapter(file: string): KeyValueAdapter {
         PRIMARY KEY (namespace, key)
       );
       CREATE INDEX IF NOT EXISTS dry_kv_records_expiry ON dry_kv_records (expires_at);
+      CREATE TABLE IF NOT EXISTS dry_kv_counters (
+        namespace TEXT NOT NULL,
+        key TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        window_started_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (namespace, key)
+      );
     `);
     return handle;
   }
@@ -64,6 +77,25 @@ export function createSqliteKeyValueAdapter(file: string): KeyValueAdapter {
     },
     async delete(namespace, key) {
       (await db()).run("DELETE FROM dry_kv_records WHERE namespace = ? AND key = ?", [namespace, key]);
+    },
+    async increment(namespace, key, windowMs, ttlMs) {
+      const handle = await db();
+      const now = Date.now();
+      const row = handle.all<CounterRow>(
+        `INSERT INTO dry_kv_counters (namespace, key, count, window_started_at, expires_at)
+         VALUES (?, ?, 1, ?, ?)
+         ON CONFLICT(namespace, key) DO UPDATE SET
+           count = CASE WHEN dry_kv_counters.window_started_at + ? <= excluded.window_started_at THEN 1 ELSE dry_kv_counters.count + 1 END,
+           window_started_at = CASE WHEN dry_kv_counters.window_started_at + ? <= excluded.window_started_at THEN excluded.window_started_at ELSE dry_kv_counters.window_started_at END,
+           expires_at = excluded.expires_at
+         RETURNING count, window_started_at`,
+        [namespace, key, now, now + ttlMs, windowMs, windowMs],
+      )[0];
+      if (!row) throw new Error("[drycms] SQLite counter update returned no row.");
+      return { count: Number(row.count), windowStartedAt: Number(row.window_started_at) };
+    },
+    async deleteCounter(namespace, key) {
+      (await db()).run("DELETE FROM dry_kv_counters WHERE namespace = ? AND key = ?", [namespace, key]);
     },
     async list(namespace, options: KvListOptions = {}): Promise<KvListResult> {
       const start = decodeCursor(options.cursor);

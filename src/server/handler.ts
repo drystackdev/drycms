@@ -1,6 +1,8 @@
 import { path as basePath } from "./config.js";
 import type { DryRouteContext, DryRouteHandler } from "./context.js";
-import { readSessionCookie, resolveSession } from "./session.js";
+import { readRefreshCookie, readSessionCookie, resolveSession } from "./session.js";
+import { verifySessionClaims } from "../lib/session-token.js";
+import { hasValidCsrf, requiresCsrf } from "./csrf.js";
 import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
@@ -61,6 +63,15 @@ export async function handleApiRequest(
   const handler = route[request.method];
   if (!handler) return new Response("Method not allowed", { status: 405 });
 
+  if (requiresCsrf(request, segment, slug)) {
+    if (!hasValidCsrf(request)) {
+      return new Response(JSON.stringify({ error: "csrf_failed", message: "CSRF token is missing or invalid." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
   // Resolved for every segment (including `auth`, so `GET /api/auth/session`
   // can read it straight off `context.session` instead of re-parsing the
   // cookie itself) but only ENFORCED for every segment except `auth` -
@@ -69,6 +80,8 @@ export async function handleApiRequest(
   // finer-grained resource/action authorization on top of this - see
   // `content-types/access.ts`.
   const sessionToken = readSessionCookie(request);
+  const refreshToken = readRefreshCookie(request);
+  const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
   const session = await resolveSession(request, env);
   if (segment !== "auth" && !session) {
     return new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
@@ -77,6 +90,6 @@ export async function handleApiRequest(
     });
   }
 
-  const context: DryRouteContext = { request, url, params: { slug }, env, session, sessionToken };
+  const context: DryRouteContext = { request, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
   return handler(context);
 }

@@ -13,3 +13,6 @@ import './tooltip.js';
 import './range.js';
 import './tabs.js';
 import './theme.js';
+import { installCsrfFetch } from "../client/csrf-fetch.js";
+
+installCsrfFetch();

@@ -37,6 +37,9 @@ export interface KeyValueAdapter {
   delete(namespace: string, key: string): Promise<void>;
   list(namespace: string, options?: KvListOptions): Promise<KvListResult>;
   batch?(operations: KvBatchOperation[]): Promise<void>;
+  /** Atomically increments a counter when the backend supports it. */
+  increment?(namespace: string, key: string, windowMs: number, ttlMs: number): Promise<{ count: number; windowStartedAt: number }>;
+  deleteCounter?(namespace: string, key: string): Promise<void>;
   close?(): Promise<void>;
 }
 

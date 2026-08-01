@@ -40,7 +40,12 @@ export function toFetchRequest(req: IncomingMessage): Request {
 /** A Fetch `Response` -> real bytes on the wire via `ServerResponse`. */
 export async function sendFetchResponse(response: Response, res: ServerResponse): Promise<void> {
   res.statusCode = response.status;
-  response.headers.forEach((value, key) => res.setHeader(key, value));
+  const headersWithCookies = response.headers as Headers & { getSetCookie?: () => string[] };
+  const setCookies = headersWithCookies.getSetCookie?.();
+  response.headers.forEach((value, key) => {
+    if (key !== "set-cookie") res.setHeader(key, value);
+  });
+  if (setCookies?.length) res.setHeader("Set-Cookie", setCookies);
 
   if (!response.body) {
     res.end();

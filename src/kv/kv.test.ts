@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createLocalKeyValueAdapter } from "./local.js";
+import { createSqliteKeyValueAdapter } from "./sqlite.js";
 import { KeyValueStore } from "./memory.js";
 import type { KeyValueAdapter, KvRecord } from "./types.js";
 
@@ -100,5 +101,18 @@ describe("local KeyValueAdapter", () => {
       expect.objectContaining({ namespace: "content", key: "hello/world", sizeBytes: 11 }),
     ]);
     expect(await readFile(join(root, "Y29udGVudA", "aGVsbG8vd29ybGQ.json"), "utf8")).toContain("hello/world");
+  });
+});
+
+describe("SQLite atomic counters", () => {
+  it("increments within a window and resets after it expires", async () => {
+    const root = await mkdtemp(join(tmpdir(), "drycms-kv-sqlite-"));
+    boxes.push(root);
+    const adapter = createSqliteKeyValueAdapter(join(root, "security.sqlite"));
+    expect(adapter.increment).toBeDefined();
+    expect(await adapter.increment!("auth-rate-limit", "email-test", 1_000, 5_000)).toMatchObject({ count: 1 });
+    expect(await adapter.increment!("auth-rate-limit", "email-test", 1_000, 5_000)).toMatchObject({ count: 2 });
+    await adapter.deleteCounter!("auth-rate-limit", "email-test");
+    expect(await adapter.increment!("auth-rate-limit", "email-test", 1_000, 5_000)).toMatchObject({ count: 1 });
   });
 });

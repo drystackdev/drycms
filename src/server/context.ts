@@ -26,6 +26,8 @@ export interface DryRouteContext {
   session: SessionPayload | null;
   /** Raw cookie token, retained for revocation on logout/password change. */
   sessionToken?: string;
+  refreshToken?: string;
+  sessionId?: string;
 }
 
 export type DryRouteHandler = (context: DryRouteContext) => Promise<Response>;

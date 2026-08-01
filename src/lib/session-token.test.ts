@@ -16,16 +16,16 @@ describe("signSession / verifySession", () => {
 
   it("verifies a freshly-signed token", async () => {
     const { signSession, verifySession } = await import("./session-token.js");
-    const token = await signSession(PAYLOAD);
+    const token = await signSession(PAYLOAD, { sessionId: "test-session" });
     expect(await verifySession(token)).toEqual(PAYLOAD);
   });
 
   it("emits a standard HS256 JWT with an issuer and unique id", async () => {
     const { signSession } = await import("./session-token.js");
-    const token = await signSession(PAYLOAD);
+    const token = await signSession(PAYLOAD, { sessionId: "test-session" });
     const [headerPart, bodyPart, signaturePart] = token.split(".");
     expect([headerPart, bodyPart, signaturePart]).toHaveLength(3);
-    expect(JSON.parse(atob(headerPart!))).toEqual({ alg: "HS256", typ: "JWT" });
+    expect(JSON.parse(atob(headerPart!))).toEqual({ alg: "HS256", typ: "JWT", kid: "default" });
     const body = JSON.parse(atob(bodyPart!));
     expect(body).toMatchObject({ sub: "1", name: PAYLOAD.name, email: PAYLOAD.email, iss: "drycms" });
     expect(typeof body.jti).toBe("string");
@@ -33,13 +33,13 @@ describe("signSession / verifySession", () => {
 
   it("never stores the payload in plaintext", async () => {
     const { signSession } = await import("./session-token.js");
-    const token = await signSession(PAYLOAD);
+    const token = await signSession(PAYLOAD, { sessionId: "test-session" });
     expect(token).not.toContain(PAYLOAD.email);
   });
 
   it("rejects a tampered token", async () => {
     const { signSession, verifySession } = await import("./session-token.js");
-    const token = await signSession(PAYLOAD);
+    const token = await signSession(PAYLOAD, { sessionId: "test-session" });
     const index = Math.floor(token.length / 2);
     const flipped = token[index] === "A" ? "B" : "A";
     const tampered = token.slice(0, index) + flipped + token.slice(index + 1);
@@ -55,7 +55,7 @@ describe("signSession / verifySession", () => {
   it("rejects an expired token", async () => {
     vi.useFakeTimers();
     const { signSession, verifySession } = await import("./session-token.js");
-    const token = await signSession(PAYLOAD);
+    const token = await signSession(PAYLOAD, { sessionId: "test-session" });
     vi.advanceTimersByTime(31 * 24 * 60 * 60 * 1000); // 31 days > 30 day max age
     expect(await verifySession(token)).toBeNull();
   });
@@ -67,7 +67,22 @@ describe("signSession / verifySession", () => {
     // real `DRYCMS_SECRET_KEY`, which would otherwise mask this case.
     vi.doMock("../server/options.js", () => ({ readEnvVar: () => undefined }));
     const { signSession } = await import("./session-token.js");
-    await expect(signSession(PAYLOAD)).rejects.toThrow(/DRYCMS_SECRET_KEY/);
+    await expect(signSession(PAYLOAD, { sessionId: "test-session" })).rejects.toThrow(/DRYCMS_SECRET_KEY/);
     vi.doUnmock("../server/options.js");
+  });
+
+  it("signs with the active key and verifies keys retained in the ring", async () => {
+    vi.resetModules();
+    process.env.DRYCMS_JWT_KEYS_JSON = JSON.stringify({ old: "old-secret-that-is-at-least-32-bytes-long", next: "next-secret-that-is-at-least-32-bytes-long" });
+    process.env.DRYCMS_JWT_ACTIVE_KID = "old";
+    const { signSession, verifySession } = await import("./session-token.js");
+    const oldToken = await signSession(PAYLOAD, { sessionId: "old-session" });
+    process.env.DRYCMS_JWT_ACTIVE_KID = "next";
+    const nextToken = await signSession(PAYLOAD, { sessionId: "next-session" });
+    expect(JSON.parse(atob(nextToken.split(".")[0]!))).toMatchObject({ kid: "next", alg: "HS256" });
+    expect(await verifySession(oldToken)).toEqual(PAYLOAD);
+    expect(await verifySession(nextToken)).toEqual(PAYLOAD);
+    delete process.env.DRYCMS_JWT_KEYS_JSON;
+    delete process.env.DRYCMS_JWT_ACTIVE_KID;
   });
 });

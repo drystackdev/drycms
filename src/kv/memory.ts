@@ -129,6 +129,17 @@ export class KeyValueStore {
     return (await this.get(namespace, key)) !== null;
   }
 
+  async incrementCounter(namespace: string, key: string, windowMs: number, ttlMs: number): Promise<{ count: number; windowStartedAt: number } | null> {
+    if (!this.adapter.increment) return null;
+    return this.adapter.increment(namespace, key, windowMs, ttlMs);
+  }
+
+  async deleteCounter(namespace: string, key: string): Promise<boolean> {
+    if (!this.adapter.deleteCounter) return false;
+    await this.adapter.deleteCounter(namespace, key);
+    return true;
+  }
+
   async list(namespace: string, options: { cursor?: string; limit?: number; search?: string } = {}): Promise<KvListResult> {
     assertKvPart(namespace, "namespace");
     const result = await this.adapter.list(namespace, options);

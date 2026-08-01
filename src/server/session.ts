@@ -1,5 +1,5 @@
-import { verifySession, type SessionPayload } from "../lib/session-token.js";
-import { isSessionRevoked } from "./session-blacklist.js";
+import { verifySessionClaims, type SessionPayload } from "../lib/session-token.js";
+import { isAuthSessionValid } from "./auth-security.js";
 
 /**
  * Cookie parsing shared by `handler.ts` (resolves the session once per
@@ -8,6 +8,7 @@ import { isSessionRevoked } from "./session-blacklist.js";
  * knows how to sign/verify the token string itself, not where it's carried.
  */
 export const SESSION_COOKIE_NAME = "drycms_session";
+export const REFRESH_COOKIE_NAME = "drycms_refresh";
 
 export function readSessionCookie(request: Request): string | undefined {
   const header = request.headers.get("Cookie");
@@ -21,10 +22,22 @@ export function readSessionCookie(request: Request): string | undefined {
   return undefined;
 }
 
+export function readRefreshCookie(request: Request): string | undefined {
+  const header = request.headers.get("Cookie");
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    const key = part.slice(0, eq).trim();
+    if (key === REFRESH_COOKIE_NAME) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return undefined;
+}
+
 export async function resolveSession(request: Request, env: Record<string, unknown> = {}): Promise<SessionPayload | null> {
   const token = readSessionCookie(request);
   if (!token) return null;
-  const session = await verifySession(token);
-  if (!session || await isSessionRevoked(token, env)) return null;
-  return session;
+  const claims = await verifySessionClaims(token);
+  if (!claims || !(await isAuthSessionValid(claims.sessionId, claims.id, claims.issuedAt, env))) return null;
+  return { id: claims.id, name: claims.name, email: claims.email };
 }
