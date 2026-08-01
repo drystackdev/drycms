@@ -34,7 +34,12 @@ import type {
  * exported for `MirrorFieldDialog.tsx`'s identical toggle. */
 export function SideRightIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+    >
       <path d="M0 0h24v24H0z" fill="none" />
       <path
         fill="currentColor"
@@ -55,7 +60,12 @@ export function SideRightIcon() {
  * exported for `MirrorFieldDialog.tsx`'s identical toggle. */
 export function SideLeftIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="1em"
+      height="1em"
+      viewBox="0 0 24 24"
+    >
       <path d="M0 0h24v24H0z" fill="none" />
       <path
         fill="currentColor"
@@ -109,6 +119,7 @@ export interface FieldDialogProps {
  * (true for every field type's `validationFields` today). */
 const PAIRED_ROWS: [string, string][] = [
   ["required", "unique"],
+  ["inline", "layoutContent"],
   ["min", "max"],
   ["minLength", "maxLength"],
 ];
@@ -148,6 +159,7 @@ function renderControl({
   dynamicOptions,
   disabled,
   showErrors,
+  outline = true,
 }: {
   d: SettingDescriptor;
   values: Record<string, unknown>;
@@ -155,6 +167,7 @@ function renderControl({
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   disabled: boolean;
   showErrors: boolean;
+  outline?: boolean;
 }) {
   if (d.widget === "boolean") {
     return (
@@ -164,7 +177,7 @@ function renderControl({
         value={!!values[d.key]}
         disabled={disabled}
         onChange={(v) => onChange(d.key, v)}
-        outline
+        outline={outline}
       />
     );
   }
@@ -240,6 +253,7 @@ function SettingsForm({
   dynamicOptions,
   disabledKeys = [],
   showErrors = false,
+  outline = true,
 }: {
   descriptors: SettingDescriptor[];
   values: Record<string, unknown>;
@@ -247,41 +261,88 @@ function SettingsForm({
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
   disabledKeys?: string[];
   showErrors?: boolean;
+  outline?: boolean;
 }) {
   if (descriptors.length === 0) return null;
+  const grouped = descriptors.some((descriptor) => descriptor.group);
+  const groups = grouped
+    ? [...new Set(descriptors.map((descriptor) => descriptor.group ?? ""))].map(
+        (group) => ({
+          group,
+          descriptors: descriptors.filter(
+            (descriptor) => (descriptor.group ?? "") === group,
+          ),
+        }),
+      )
+    : [{ group: "", descriptors }];
+
+  const renderRows = (items: SettingDescriptor[]) =>
+    groupIntoRows(items).map((row) =>
+      row.length === 2 ? (
+        <div
+          class="row"
+          style={{ alignItems: "flex-start" }}
+          key={row.map((d) => d.key).join("-")}
+        >
+          {row.map((d) => (
+            <div style={{ flex: 1, minWidth: 0 }} key={d.key}>
+              {renderControl({
+                d,
+                values,
+                onChange,
+                dynamicOptions,
+                disabled: disabledKeys.includes(d.key),
+                showErrors,
+                outline,
+              })}
+            </div>
+          ))}
+        </div>
+      ) : (
+        renderControl({
+          d: row[0]!,
+          values,
+          onChange,
+          dynamicOptions,
+          disabled: disabledKeys.includes(row[0]!.key),
+          showErrors,
+          outline,
+        })
+      ),
+    );
+
   return (
     <>
-      {groupIntoRows(descriptors).map((row) =>
-        row.length === 2 ? (
-          <div
-            class="row"
-            style={{ alignItems: "flex-start" }}
-            key={row.map((d) => d.key).join("-")}
-          >
-            {row.map((d) => (
-              <div style={{ flex: 1, minWidth: 0 }} key={d.key}>
-                {renderControl({
-                  d,
-                  values,
-                  onChange,
-                  dynamicOptions,
-                  disabled: disabledKeys.includes(d.key),
-                  showErrors,
-                })}
-              </div>
-            ))}
-          </div>
-        ) : (
-          renderControl({
-            d: row[0]!,
-            values,
-            onChange,
-            dynamicOptions,
-            disabled: disabledKeys.includes(row[0]!.key),
-            showErrors,
-          })
-        ),
-      )}
+      {groups.map(({ group, descriptors: groupDescriptors }) => (
+        <div class="stack" style={{ gap: 0 }} key={group || "ungrouped"}>
+          {group && <strong>{group}</strong>}
+          {group ? (
+            <div
+              class="grid"
+              style={{
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 0,
+              }}
+            >
+              {groupDescriptors.map((descriptor) => (
+                <div key={descriptor.key}>
+                  {renderControl({
+                    d: descriptor,
+                    values,
+                    onChange,
+                    dynamicOptions,
+                    disabled: disabledKeys.includes(descriptor.key),
+                    showErrors,
+                    outline,
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : (
+            renderRows(groupDescriptors)
+          )}
+        </div>
+      ))}
     </>
   );
 }
@@ -330,7 +391,12 @@ function DefaultValueInput({
       );
     case "boolean":
       return (
-        <CheckField label="Default value" value={!!value} disabled={disabled} onChange={onChange} />
+        <CheckField
+          label="Default value"
+          value={!!value}
+          disabled={disabled}
+          onChange={onChange}
+        />
       );
     case "date":
       return (
@@ -343,16 +409,29 @@ function DefaultValueInput({
       );
     case "select": {
       const selectConfig = config as SelectFieldConfig;
-      const options = selectConfig.options.map((text) => ({ value: text, label: text }));
+      const options = selectConfig.options.map((text) => ({
+        value: text,
+        label: text,
+      }));
       return selectConfig.multiple ? (
         <div class="field">
           <label>Default value</label>
-          <MultiSelect options={options} value={Array.isArray(value) ? (value as string[]) : []} disabled={disabled} onChange={onChange} />
+          <MultiSelect
+            options={options}
+            value={Array.isArray(value) ? (value as string[]) : []}
+            disabled={disabled}
+            onChange={onChange}
+          />
         </div>
       ) : (
         <div class="field">
           <label>Default value</label>
-          <Select options={options} value={typeof value === "string" ? value : undefined} disabled={disabled} onChange={onChange} />
+          <Select
+            options={options}
+            value={typeof value === "string" ? value : undefined}
+            disabled={disabled}
+            onChange={onChange}
+          />
         </div>
       );
     }
@@ -394,9 +473,7 @@ function componentConfigDisabledKeys(
 
 /** `relation`'s `sortable` only means anything once `cardinality` is
  * `manyToMany` (see `field-registry.ts`'s `RelationFieldConfig`). */
-function relationConfigDisabledKeys(
-  config: Record<string, unknown>,
-): string[] {
+function relationConfigDisabledKeys(config: Record<string, unknown>): string[] {
   return config.cardinality === "manyToMany" ? [] : ["sortable"];
 }
 
@@ -406,10 +483,11 @@ function relationConfigDisabledKeys(
  * `OptionListEditor` itself already renders per-row/empty-list errors for
  * (via its own `showErrors` prop - see its doc comment). */
 function selectOptionsInvalid(config: Record<string, unknown>): boolean {
-  const trimmedOptions = (Array.isArray(config.options) ? (config.options as string[]) : []).map((o) =>
-    o.trim(),
-  );
-  if (trimmedOptions.length === 0 || trimmedOptions.some((o) => o === "")) return true;
+  const trimmedOptions = (
+    Array.isArray(config.options) ? (config.options as string[]) : []
+  ).map((o) => o.trim());
+  if (trimmedOptions.length === 0 || trimmedOptions.some((o) => o === ""))
+    return true;
   return new Set(trimmedOptions).size !== trimmedOptions.length;
 }
 
@@ -485,7 +563,10 @@ export default function FieldDialog({
   }, [open, editingField]);
 
   function handleConfigChange(key: string, value: unknown) {
-    const nextConfig: Record<string, unknown> = { ...draftConfig, [key]: value };
+    const nextConfig: Record<string, unknown> = {
+      ...draftConfig,
+      [key]: value,
+    };
     // Turning `repeatable` off makes `sortable` meaningless - clear it
     // rather than leaving a stale `true` sitting invisibly disabled.
     if (draftType === "component" && key === "repeatable" && !value) {
@@ -493,7 +574,11 @@ export default function FieldDialog({
     }
     // Same for `relation`'s `sortable`, which only means anything at
     // `manyToMany` cardinality.
-    if (draftType === "relation" && key === "cardinality" && value !== "manyToMany") {
+    if (
+      draftType === "relation" &&
+      key === "cardinality" &&
+      value !== "manyToMany"
+    ) {
       nextConfig.sortable = false;
     }
     setDraftConfig(nextConfig);
@@ -506,7 +591,9 @@ export default function FieldDialog({
     // constraint the user can no longer see or edit.
     const type = fieldTypes[draftType];
     if (type) {
-      const allowedKeys = new Set(resolveValidationFields(type, nextConfig).map((d) => d.key));
+      const allowedKeys = new Set(
+        resolveValidationFields(type, nextConfig).map((d) => d.key),
+      );
       setDraftValidation((prev) => {
         const next: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(prev)) {
@@ -536,6 +623,14 @@ export default function FieldDialog({
       }
       return next;
     });
+  }
+
+  function setRichTextMode(mode: "content" | "layout" | "inline") {
+    setDraftConfig((current) => ({
+      ...current,
+      inline: mode === "inline",
+      layoutContent: mode === "layout",
+    }));
   }
 
   function handleSave() {
@@ -580,9 +675,12 @@ export default function FieldDialog({
   // field is a separate, unrelated edit this doesn't touch.
   const archivedMatch =
     !editingField && draftName.trim()
-      ? archivedFields.find((f) => f.name.toLowerCase() === draftName.trim().toLowerCase())
+      ? archivedFields.find(
+          (f) => f.name.toLowerCase() === draftName.trim().toLowerCase(),
+        )
       : undefined;
-  const archivedTypeConflict = !!archivedMatch && !!draftType && archivedMatch.type !== draftType;
+  const archivedTypeConflict =
+    !!archivedMatch && !!draftType && archivedMatch.type !== draftType;
 
   const activeFieldType = fieldTypes[draftType];
   // A `relationmirror` row isn't a real field (see `system-fields.ts`'s
@@ -609,8 +707,9 @@ export default function FieldDialog({
       ? componentConfigDisabledKeys(draftConfig)
       : draftType === "relation"
         ? relationConfigDisabledKeys(draftConfig)
-          : [];
-  const richTextInline = draftType === "richtext" && draftConfig.inline !== false;
+        : [];
+  const richTextInline =
+    draftType === "richtext" && draftConfig.inline === true;
   const hasSaveErrors =
     saveAttempted &&
     (!draftType ||
@@ -632,15 +731,15 @@ export default function FieldDialog({
           {isMirror && (
             <p class="hint" style={{ marginTop: 0 }}>
               This field mirrors a relation field declared on another content
-              type - its Label, Name, and Type can't be changed here.
-              Removing it (from the Fields list, not here) deletes that
-              relation field instead.
+              type - its Label, Name, and Type can't be changed here. Removing
+              it (from the Fields list, not here) deletes that relation field
+              instead.
             </p>
           )}
           {readOnly && (
             <p class="hint" style={{ marginTop: 0 }}>
-              This field is required for login/permissions and can't be
-              changed or removed - shown here for reference only.
+              This field is required for login/permissions and can't be changed
+              or removed - shown here for reference only.
             </p>
           )}
           <div class="field-dialog-scroll" ref={gridScroll}>
@@ -660,7 +759,9 @@ export default function FieldDialog({
                     setDraftName(name);
                   }}
                   disabled={isMirror || readOnly}
-                  error={saveAttempted && (!draftName.trim() || archivedTypeConflict)}
+                  error={
+                    saveAttempted && (!draftName.trim() || archivedTypeConflict)
+                  }
                   helperText={
                     saveAttempted && !draftName.trim()
                       ? "Field name is required."
@@ -708,7 +809,10 @@ export default function FieldDialog({
                       // above, and the Type select is disabled then anyway.
                       if (!editingField) {
                         setDraftSide(
-                          defaultFieldSide("", value === "relation" || value === "component"),
+                          defaultFieldSide(
+                            "",
+                            value === "relation" || value === "component",
+                          ),
                         );
                       }
                     }}
@@ -738,7 +842,8 @@ export default function FieldDialog({
                 )}
 
                 {activeFieldType &&
-                  (showSideToggle || (activeFieldType.configFields?.length ?? 0) > 0) && (
+                  (showSideToggle ||
+                    (activeFieldType.configFields?.length ?? 0) > 0) && (
                     <fieldset>
                       <legend>Display</legend>
                       <div class="stack">
@@ -749,63 +854,117 @@ export default function FieldDialog({
                               type="button"
                               class="outline lg"
                               style={{ justifyContent: "flex-start" }}
-                              disabled={readOnly}
+                              disabled={
+                                readOnly ||
+                                (draftType === "richtext" &&
+                                  draftConfig.layoutContent === true)
+                              }
                               aria-label={
                                 draftSide === "left"
                                   ? "Shown on the left - click to move to the right"
                                   : "Shown on the right - click to move to the left"
                               }
                               onClick={() =>
-                                setDraftSide((s) => (s === "left" ? "right" : "left"))
+                                setDraftSide((s) =>
+                                  s === "left" ? "right" : "left",
+                                )
                               }
                             >
-                              {draftSide === "left" ? <SideLeftIcon /> : <SideRightIcon />}
-                              {draftSide === "left" ? "Set layout to left" : "Set layout to right"}
+                              {draftSide === "left" ? (
+                                <SideLeftIcon />
+                              ) : (
+                                <SideRightIcon />
+                              )}
+                              {draftSide === "left"
+                                ? "Set layout to left"
+                                : "Set layout to right"}
                             </button>
                           </div>
                         )}
-                        <SettingsForm
-                          descriptors={activeFieldType.configFields?.filter((d) =>
-                            draftType !== "richtext" || d.key === "inline"
-                          ) ?? []}
-                          values={draftConfig}
-                          onChange={handleConfigChange}
-                          dynamicOptions={dynamicOptions}
-                          disabledKeys={configDisabledKeys}
-                          showErrors={saveAttempted}
-                        />
+                        {draftType === "richtext" ? (
+                          <div>
+                            <div
+                              class="file-view-toggle"
+                              role="group"
+                              aria-label="RichText layout mode"
+                            >
+                              {(
+                                [
+                                  ["content", "Content"],
+                                  ["layout", "Layout content"],
+                                  ["inline", "Inline Field"],
+                                ] as const
+                              ).map(([mode, label]) => (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  class="ghost sm"
+                                  aria-pressed={
+                                    mode === "inline"
+                                      ? draftConfig.inline === true
+                                      : mode === "layout"
+                                        ? draftConfig.layoutContent === true
+                                        : draftConfig.inline !== true &&
+                                          draftConfig.layoutContent !== true
+                                  }
+                                  disabled={readOnly}
+                                  onClick={() => setRichTextMode(mode)}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <SettingsForm
+                            descriptors={activeFieldType.configFields ?? []}
+                            values={draftConfig}
+                            onChange={handleConfigChange}
+                            dynamicOptions={dynamicOptions}
+                            disabledKeys={configDisabledKeys}
+                            showErrors={saveAttempted}
+                            outline
+                          />
+                        )}
                       </div>
                     </fieldset>
                   )}
-
-                {activeFieldType && draftType === "richtext" && !richTextInline && (
-                  <fieldset>
-                    <legend>Config</legend>
-                    <SettingsForm
-                      descriptors={activeFieldType.configFields?.filter((d) => d.key !== "inline") ?? []}
-                      values={draftConfig}
-                      onChange={handleConfigChange}
-                      dynamicOptions={dynamicOptions}
-                      disabledKeys={configDisabledKeys}
-                    />
-                  </fieldset>
-                )}
 
                 {activeFieldType &&
-                  activeValidationFields.length > 0 && (
+                  draftType === "richtext" &&
+                  !richTextInline && (
                     <fieldset>
-                      <legend>Validation</legend>
-                      <div class="stack">
-                        <SettingsForm
-                          descriptors={activeValidationFields}
-                          values={draftValidation}
-                          onChange={handleValidationChange}
-                          dynamicOptions={dynamicOptions}
-                          disabledKeys={textDisabledKeys}
-                        />
-                      </div>
+                      <legend>Config</legend>
+                      <SettingsForm
+                        descriptors={
+                          activeFieldType.configFields?.filter(
+                            (d) =>
+                              d.key !== "inline" && d.key !== "layoutContent",
+                          ) ?? []
+                        }
+                        values={draftConfig}
+                        onChange={handleConfigChange}
+                        dynamicOptions={dynamicOptions}
+                        disabledKeys={configDisabledKeys}
+                        outline={false}
+                      />
                     </fieldset>
                   )}
+
+                {activeFieldType && activeValidationFields.length > 0 && (
+                  <fieldset>
+                    <legend>Validation</legend>
+                    <div class="stack">
+                      <SettingsForm
+                        descriptors={activeValidationFields}
+                        values={draftValidation}
+                        onChange={handleValidationChange}
+                        dynamicOptions={dynamicOptions}
+                        disabledKeys={textDisabledKeys}
+                      />
+                    </div>
+                  </fieldset>
+                )}
               </div>
             </div>
           </div>

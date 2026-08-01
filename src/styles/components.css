@@ -3514,13 +3514,13 @@
 
     .file-view-toggle {
       display: inline-flex;
-      gap: 0.125rem;
-      padding: 0.125rem;
+      gap: 0.25rem;
+      padding: 0.25rem;
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-muted);
 
       & button[aria-pressed="true"] {
-        background-color: var(--dry-card);
+        background-color: var(--dry-card) !important;
         box-shadow: var(--dry-shadow-xs);
       }
     }

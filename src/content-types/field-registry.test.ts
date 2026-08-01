@@ -10,6 +10,7 @@ import {
   resolveValidationFields,
   secretKeyFieldType,
   textFieldType,
+  richTextFieldType,
   type RelationFieldConfig,
 } from "./field-registry.js";
 
@@ -35,6 +36,22 @@ describe("textFieldType validationFields", () => {
     const format = byKey("format");
     expect(format?.widget).toBe("select");
     expect(format?.options?.map((o) => o.value)).toEqual(["none", "email", "url", "slug"]);
+  });
+});
+
+describe("richTextFieldType", () => {
+  it("is a TEXT column with no default-value editor and required validation", () => {
+    expect(fieldTypes.richtext).toBe(richTextFieldType);
+    expect(richTextFieldType.shape).toBe("column");
+    expect(richTextFieldType.sqlType?.({})).toBe("TEXT");
+    expect(richTextFieldType.defaultConfig?.inline).toBe(false);
+    expect(richTextFieldType.validationFields?.map((d) => d.key)).toEqual(["required"]);
+  });
+
+  it("defaults every non-inline feature to enabled", () => {
+    const config = richTextFieldType.defaultConfig ?? {};
+    expect(Object.entries(config).filter(([key]) => key !== "inline" && key !== "layoutContent").every(([, value]) => value === true)).toBe(true);
+    expect(config.layoutContent).toBe(false);
   });
 });
 

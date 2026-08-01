@@ -6,7 +6,7 @@ import NumberField from "../components/NumberField.js";
 import SecretKeyField from "../components/SecretKeyField.js";
 import SelectField from "../components/SelectField.js";
 import TextField from "../components/TextField.js";
-import RichTextField from "../components/RichTextField.js";
+import RichTextField from "./richtext-editor.js";
 
 export type FieldShape = "column" | "flatten" | "child-table" | "virtual";
 export type SqlColumnType = "TEXT" | "INTEGER" | "REAL";
@@ -26,6 +26,8 @@ export interface SettingDescriptor {
    * `componentId`) - not knowable statically by the registry itself. */
   options?: SettingOption[];
   optionsSource?: "collections" | "components";
+  /** Optional visual group used by compound settings such as RichText. */
+  group?: string;
 }
 
 export interface FieldTypeDefinition<V = unknown> {
@@ -138,6 +140,8 @@ export const textFieldType: FieldTypeDefinition<string> = {
 export interface RichTextFieldConfig {
   /** Inline content uses the compact, text-like editor and HTML output. */
   inline?: boolean;
+  /** Reserved for the separate Display toggle; layout behavior is wired later. */
+  layoutContent?: boolean;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -154,19 +158,19 @@ export interface RichTextFieldConfig {
 }
 
 const RICH_TEXT_FEATURE_CONFIG: SettingDescriptor[] = [
-  { key: "bold", label: "Bold", widget: "boolean" },
-  { key: "italic", label: "Italic", widget: "boolean" },
-  { key: "underline", label: "Underline", widget: "boolean" },
-  { key: "color", label: "Text color", widget: "boolean" },
-  { key: "link", label: "Link", widget: "boolean" },
-  { key: "heading", label: "Headings", widget: "boolean" },
-  { key: "alignment", label: "Alignment", widget: "boolean" },
-  { key: "lists", label: "Lists", widget: "boolean" },
-  { key: "image", label: "Images", widget: "boolean" },
-  { key: "component", label: "Components", widget: "boolean" },
-  { key: "table", label: "Tables", widget: "boolean" },
-  { key: "grid", label: "Grids", widget: "boolean" },
-  { key: "fullscreen", label: "Fullscreen", widget: "boolean" },
+  { key: "bold", label: "Bold", widget: "boolean", group: "Text formatting" },
+  { key: "italic", label: "Italic", widget: "boolean", group: "Text formatting" },
+  { key: "underline", label: "Underline", widget: "boolean", group: "Text formatting" },
+  { key: "color", label: "Text color", widget: "boolean", group: "Text formatting" },
+  { key: "link", label: "Link", widget: "boolean", group: "Text formatting" },
+  { key: "heading", label: "Headings", widget: "boolean", group: "Block formatting" },
+  { key: "alignment", label: "Alignment", widget: "boolean", group: "Block formatting" },
+  { key: "lists", label: "Lists", widget: "boolean", group: "Block formatting" },
+  { key: "image", label: "Images", widget: "boolean", group: "Insert" },
+  { key: "component", label: "Components", widget: "boolean", group: "Insert" },
+  { key: "table", label: "Tables", widget: "boolean", group: "Insert" },
+  { key: "grid", label: "Grids", widget: "boolean", group: "Insert" },
+  { key: "fullscreen", label: "Fullscreen", widget: "boolean", group: "View" },
 ];
 
 export const richTextFieldType: FieldTypeDefinition<string> = {
@@ -177,10 +181,12 @@ export const richTextFieldType: FieldTypeDefinition<string> = {
   sqlType: () => "TEXT",
   configFields: [
     { key: "inline", label: "Inline field", widget: "boolean" },
+    { key: "layoutContent", label: "Layout content", widget: "boolean" },
     ...RICH_TEXT_FEATURE_CONFIG,
   ],
   defaultConfig: {
-    inline: true,
+    inline: false,
+    layoutContent: false,
     bold: true,
     italic: true,
     underline: true,
@@ -195,7 +201,7 @@ export const richTextFieldType: FieldTypeDefinition<string> = {
     grid: true,
     fullscreen: true,
   },
-  validationFields: REQUIRED_UNIQUE_VALIDATION,
+  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };
 
 export const numberFieldType: FieldTypeDefinition<number> = {

@@ -19,6 +19,7 @@ interface EditorSurfaceProps {
   inline: boolean;
   placeholder?: string;
   onReady: (result: EditorSurfaceResult) => void;
+  features?: RichTextFieldConfig;
 }
 
 interface EditorSurfaceResult {

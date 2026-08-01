@@ -6,8 +6,9 @@
 
 # Status
 
-- In progress: locating the existing RichText editor and generic field plumbing.
+- Implemented registry, dialog, entry editor wiring, feature visibility, and block-mode required validation.
+- Verification: `bun run typecheck` and `bun run test` pass (596 tests).
 
 # Speed
 
-- Good progress; no blockers.
+- Completed without blockers.

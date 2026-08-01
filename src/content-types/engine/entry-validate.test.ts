@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { defaultContentTypeDefinitions } from "../seed.js";
 import { buildEntryFieldTree } from "./entry-tree.js";
 import { findPasswordChangeErrors, passwordConfirmError, type MaskedValue } from "./entry-validate.js";
+import { validateEntryValue } from "./entry-validate.js";
+import type { EntryFieldNode } from "./entry-tree.js";
 
 const allTypes = defaultContentTypeDefinitions();
 const user = allTypes.find((t) => t.name === "user")!;
@@ -60,5 +62,27 @@ describe("findPasswordChangeErrors", () => {
       password: { hasExisting: true, new: "hunter2", confirm: "wrong" } satisfies MaskedValue,
     });
     expect(errors.password).toBe("Passwords do not match.");
+  });
+});
+
+describe("RichText required validation", () => {
+  const node = (inline: boolean): EntryFieldNode => ({
+    kind: "column",
+    fieldId: "body",
+    fieldName: "body",
+    label: "Body",
+    columnName: "body",
+    fieldType: "richtext",
+    fieldConfig: { inline },
+    validation: { required: true },
+  });
+
+  it("treats an empty paragraph as empty in block mode", () => {
+    expect(validateEntryValue([node(false)], { body: "<p></p>" })).toEqual({ body: "Body is required." });
+    expect(validateEntryValue([node(false)], { body: "<p>\n&nbsp;<br></p>" })).toEqual({ body: "Body is required." });
+  });
+
+  it("keeps inline RichText text-like", () => {
+    expect(validateEntryValue([node(true)], { body: "<p></p>" })).toEqual({});
   });
 });

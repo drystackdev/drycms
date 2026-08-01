@@ -95,8 +95,8 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         description={description}
         value={typeof value === "string" ? value : ""}
         onChange={onChange}
-        inline={richTextConfig.inline !== false}
-        features={richTextConfig}
+        inline={richTextConfig.inline === true}
+        features={richTextConfig.inline === false ? richTextConfig : undefined}
         required={!!validation.required}
         error={!!error}
         helperText={error}
