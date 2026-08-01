@@ -301,16 +301,16 @@ branch được đặt theo subsystem đang sử dụng:
 storage         -> "storage"
 icons           -> "icons"
 content         -> "content"
-richtext.storage -> "richtext"
+components.storage -> "components"
 ```
 
 Quy tắc này áp dụng cho mọi section có thể dùng GitHub/GitLab (`storage`,
-`icons`, `content` khi dùng `engine: "file"`, và `richtext.storage`).
+`icons`, `content` khi dùng `engine: "file"`, và `components.storage`).
 Token/repo/project vẫn lấy từ environment để không đưa credential vào source
 code. Branch được cấu hình độc lập cho từng subsystem.
 
 Khi triển khai, cập nhật các type config hiện tại (`DryStorageOption`,
-`DryIconsOption`, `DryContentOption`, `DryRichtextOption`) và helper
+`DryIconsOption`, `DryContentOption`, `DryComponentsOption`) và helper
 `resolveFileBackedOption()` để nhận `branch` tùy chọn; các hàm resolve GitHub/
 GitLab nhận branch đã resolve thay vì đọc branch environment trực tiếp. Cần giữ
 backward compatibility: config không có `branch` vẫn hoạt động như hiện tại.

@@ -20,9 +20,9 @@ describe('resolveOptions', () => {
 			storage: { kind: 'local', root: resolve(process.cwd(), 'storage') },
 			icons: { kind: 'local', root: resolve(process.cwd(), 'icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), 'content.sqlite') },
-			richtext: {
+			components: {
 				componentsDir: resolve(process.cwd(), 'src/dry-components'),
-				storage: { kind: 'local', root: resolve(process.cwd(), 'richtext-components') },
+				storage: { kind: 'local', root: resolve(process.cwd(), 'components') },
 			},
 			kv: {
 				kind: 'local', root: resolve(process.cwd(), 'kv'), maxEntries: 10_000,

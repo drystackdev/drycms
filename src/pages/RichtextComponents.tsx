@@ -39,7 +39,7 @@ async function fetchRecords(): Promise<DryComponentRecord[]> {
 
 /**
  * "Trang quản trị component" (mục 3, `status/register-compoennt.md`) -
- * scans every file discovered under `richtext.componentsDir`
+ * scans every file discovered under `components.componentsDir`
  * (this file's own `import.meta.glob` map) for a valid
  * `DryEditerComponent(...)` marker, previews it with its own `defaults`,
  * and lets an admin "confirm" it for use in `RichTextField`'s insert
@@ -158,7 +158,7 @@ export default function RichtextComponents() {
         <div>
           <h1>Custom components</h1>
           <p>
-            Components discovered under <code>richtext.componentsDir</code> - "Use in editor" makes one available in every{" "}
+            Components discovered under <code>components.componentsDir</code> - "Use in editor" makes one available in every{" "}
             <code>RichTextField</code>'s insert dialog.
           </p>
         </div>

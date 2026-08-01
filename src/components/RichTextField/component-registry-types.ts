@@ -22,7 +22,7 @@ export interface PlainFieldDef {
 }
 
 /**
- * A confirmed richtext component, as persisted to the `richtext` storage
+ * A confirmed component, as persisted to the `components` storage
  * root (mục 3) - `${name}.json`. `props`/`defaults` are already-resolved
  * plain data (see `DryEditerComponent`), never the builder function.
  */

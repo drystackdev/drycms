@@ -78,7 +78,7 @@ export interface DryContentOption {
   root?: string;
 }
 
-export interface DryRichtextOption {
+export interface DryComponentsOption {
   /**
    * Directory scanned for user-registered richtext components (see
    * `status/register-compoennt.md`) - each immediate subfolder's own
@@ -130,7 +130,7 @@ export interface DryOption {
   storage?: DryStorageOption;
   icons?: DryIconsOption;
   content?: DryContentOption;
-  richtext?: DryRichtextOption;
+  components?: DryComponentsOption;
   kv?: DryKvOption;
 }
 
@@ -170,7 +170,7 @@ export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOpti
 
 export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
 
-export interface ResolvedRichtextOption {
+export interface ResolvedComponentsOption {
   /** Absolute path - resolved the same way `content.file`/`sqlite` is. */
   componentsDir: string;
   storage: ResolvedStorageOption;
@@ -199,7 +199,7 @@ export interface ResolvedDryOption {
   storage: ResolvedStorageOption;
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
-  richtext: ResolvedRichtextOption;
+  components: ResolvedComponentsOption;
   kv: ResolvedKvOption;
 }
 
@@ -209,7 +209,7 @@ export const DEFAULT_ICONS_ROOT = "icons";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";
 export const DEFAULT_CONTENT_ROOT = "content";
 export const DEFAULT_COMPONENTS_DIR = "src/dry-components";
-export const DEFAULT_RICHTEXT_STORAGE_ROOT = "richtext-components";
+export const DEFAULT_COMPONENTS_STORAGE_ROOT = "components";
 export const DEFAULT_KV_ROOT = "kv";
 export const DEFAULT_KV_FILE = "kv.sqlite";
 export const DEFAULT_KV_BINDING = "KV";
@@ -319,16 +319,16 @@ function resolveIconsOption(icons?: DryIconsOption): ResolvedIconsOption {
   return resolveFileBackedOption(icons, DEFAULT_ICONS_ROOT, "icons");
 }
 
-function resolveRichtextOption(richtext: DryRichtextOption = {}): ResolvedRichtextOption {
-  const componentsDir = richtext.componentsDir ?? DEFAULT_COMPONENTS_DIR;
+function resolveComponentsOption(components: DryComponentsOption = {}): ResolvedComponentsOption {
+  const componentsDir = components.componentsDir ?? DEFAULT_COMPONENTS_DIR;
   if (typeof componentsDir !== "string") {
     throw new TypeError(
-      `[drycms] \`richtext.componentsDir\` must be a string, received ${typeof componentsDir}.`,
+      `[drycms] \`components.componentsDir\` must be a string, received ${typeof componentsDir}.`,
     );
   }
   return {
     componentsDir: resolvePath(process.cwd(), componentsDir),
-    storage: resolveFileBackedOption(richtext.storage, DEFAULT_RICHTEXT_STORAGE_ROOT, "richtext.storage"),
+    storage: resolveFileBackedOption(components.storage, DEFAULT_COMPONENTS_STORAGE_ROOT, "components.storage"),
   };
 }
 
@@ -479,7 +479,7 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     storage: resolveStorageOption(options.storage),
     icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
-    richtext: resolveRichtextOption(options.richtext),
+    components: resolveComponentsOption(options.components),
     kv: resolveKvOption(options.kv),
   };
 }

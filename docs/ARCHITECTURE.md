@@ -195,7 +195,7 @@ enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
 filesystem adapter, constructed via `createStorageAdapter()` from a
 `ResolvedStorageOption`.
 `storage` (user-uploaded media), `icons` (Icon Management's own assets),
-`content` (the `file` content engine's JSON store), and `richtext.storage`
+`content` (the `file` content engine's JSON store), and `components.storage`
 (confirmed RichText component bundles) are **four independent roots**
 sharing this same mechanism - never sharing a directory. Remote Git hosting
 is intentionally not a storage or KV backend: it would add network round
@@ -213,7 +213,7 @@ architectural choices, each the result of a specific bug or decision (see
   **shadow DOM root** - toolbar/menus/dialogs stay in the light DOM. CSS for
   the shadow content lives in `content-shadow-styles.ts` (hand-edited
   TS/string, not a `.css` file - there is no build step for it).
-- User-registered components (`dry.config.ts`'s `richtext.componentsDir`,
+- User-registered components (`dry.config.ts`'s `components.componentsDir`,
   default `src/dry-components`) are scanned for a `DryEditerComponent(...)`
   default export per subfolder. Once an admin "confirms" one, it's built into
   a **standalone JS bundle** (Preact inlined) via a nested `vite.build()` +

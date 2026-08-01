@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { join } from "node:path";
 import type { DryRouteHandler } from "../context.js";
-import { richtextComponentsStorage } from "../config.js";
+import { componentsStorage } from "../config.js";
 import { buildComponentBundle, buildSharedPreactBundle } from "../../components/RichTextField/build-component-bundle.js";
 import type { DryComponentRecord, PlainFieldDef } from "../../components/RichTextField/component-registry-types.js";
 import { slugify } from "../../lib/slugify.js";
@@ -9,7 +9,7 @@ import { createStorageAdapter } from "../../storage/index.js";
 import { StorageError } from "../../storage/types.js";
 import { errorResponse, jsonResponse, readSlug } from "../route-helpers.js";
 
-const adapter = createStorageAdapter(richtextComponentsStorage);
+const adapter = createStorageAdapter(componentsStorage);
 
 async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
