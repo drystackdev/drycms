@@ -153,10 +153,8 @@ export default function RichtextComponents() {
     }
   };
 
-  /** Rebuilds an already-confirmed component's bundle from its stored
-   * `sourcePath` - lets an admin pick up a source edit without toggling
-   * "Use in editor" off/on. Doesn't touch the `.json` record either way; a
-   * failed rebuild leaves the previous, still-working bundle in place. */
+  /** Rebuilds an already-confirmed component's bundle and refreshes its
+   * stored JSON metadata from the rebuilt definition. */
   const rebuild = async (item: Discovered) => {
     const busyKey = item.def.name;
     setBusy(busyKey);
@@ -168,6 +166,9 @@ export default function RichtextComponents() {
       if (!res.ok) {
         const message = await readErrorMessage(res);
         setBuildErrors((prev) => ({ ...prev, [busyKey]: message }));
+      } else {
+        invalidateRichtextComponents();
+        reloadRecords();
       }
     } finally {
       setBusy(null);

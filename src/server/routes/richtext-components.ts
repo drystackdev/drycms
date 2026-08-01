@@ -1,9 +1,11 @@
 import { Readable } from "node:stream";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { DryRouteHandler } from "../context.js";
 import { componentsStorage } from "../config.js";
 import { buildComponentBundle, buildSharedPreactBundle } from "../../components/RichTextField/build-component-bundle.js";
 import type { DryComponentRecord, PlainFieldDef } from "../../components/RichTextField/component-registry-types.js";
+import { isDryComponentDefinition, type DryComponentDefinition } from "../../components/RichTextField/register-component.js";
 import { slugify } from "../../lib/slugify.js";
 import { createStorageAdapter } from "../../storage/index.js";
 import { StorageError } from "../../storage/types.js";
@@ -72,6 +74,47 @@ async function buildAndStore(sourcePath: string, slug: string): Promise<void> {
   await adapter.write(`${slug}.js`, Buffer.from(code, "utf8"));
 }
 
+function recordFromDefinition(
+  definition: DryComponentDefinition,
+  sourcePath: string,
+  trail = new Set<string>(),
+): DryComponentRecord {
+  const nextTrail = new Set(trail).add(definition.name);
+  const refs = definition.refs.filter((ref) => !nextTrail.has(ref.name));
+  return {
+    name: definition.name,
+    label: definition.label,
+    description: definition.description,
+    // Top-level components default to requiring input; nested refs default to
+    // using their resolved defaults when the option is omitted.
+    requiredInput: definition.requiredInput ?? (trail.size === 0),
+    type: definition.type,
+    shadow: definition.shadow,
+    children: definition.children,
+    ...(definition.childrenDefaultHtml !== undefined ? { childrenDefaultHtml: definition.childrenDefaultHtml } : {}),
+    ...(refs.length > 0
+      ? {
+          refs: refs.map((ref) => ref.name),
+          refRecords: refs.map((ref) => recordFromDefinition(ref, "", nextTrail)),
+        }
+      : {}),
+    props: definition.schema as unknown as Record<string, PlainFieldDef>,
+    defaults: definition.defaults as Record<string, unknown>,
+    sourcePath,
+    enabled: true,
+  };
+}
+
+async function rebuildRecord(record: DryComponentRecord, slug: string): Promise<DryComponentRecord> {
+  await buildAndStore(record.sourcePath, slug);
+  const bundlePath = pathToFileURL(join(componentsStorage.root, `${slug}.js`)).href;
+  const module = (await import(`${bundlePath}?rebuild=${Date.now()}`)) as { default?: unknown };
+  if (!isDryComponentDefinition(module.default)) {
+    throw new StorageError("invalid_path", `Built component "${record.name}" has invalid metadata.`);
+  }
+  return recordFromDefinition(module.default, record.sourcePath);
+}
+
 /** GET `/api/richtext-components` (list every confirmed record),
  * `/api/richtext-components/{name}` (one record), or
  * `/api/richtext-components/{name}.js` (its compiled bundle, streamed with a
@@ -138,9 +181,8 @@ const BUILD_ACTION_SUFFIX = "/build";
  * component behind. Create-or-overwrite, keyed by `name`.
  *
  * POST `/api/richtext-components/{name}/build` - rebuilds an already-
- * confirmed component's bundle from its stored `sourcePath` (mục "nút Build"
- * on the admin page) without touching the `.json` record at all; a failed
- * rebuild leaves the previous, still-working `.js` in place. */
+ * confirmed component's bundle and refreshes its `.json` metadata from the
+ * rebuilt definition (mục "nút Build" on the admin page). */
 export const POST: DryRouteHandler = async (context) => {
   try {
     const slug = readSlug(context);
@@ -148,8 +190,9 @@ export const POST: DryRouteHandler = async (context) => {
       const name = slug.slice(0, -BUILD_ACTION_SUFFIX.length);
       const record = await readRecord(fileNameFor(name));
       if (!record) throw new StorageError("not_found", `No confirmed component named "${name}".`);
-      await buildAndStore(record.sourcePath, slugFor(name));
-      return jsonResponse({ ok: true });
+      const rebuilt = await rebuildRecord(record, slugFor(name));
+      await adapter.write(fileNameFor(name), Buffer.from(JSON.stringify(rebuilt, null, 2), "utf8"));
+      return jsonResponse({ ok: true, record: rebuilt });
     }
 
     const body = (await context.request.json()) as ConfirmBody;

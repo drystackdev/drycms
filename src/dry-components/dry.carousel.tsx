@@ -6,7 +6,6 @@ import {
 } from "../components/RichTextField/register-component.js";
 import css from "./Carousel/style.css?raw";
 
-
 const SAMPLE_IMAGES = [
   "https://picsum.photos/seed/site-carousel-1/480/280",
   "https://picsum.photos/seed/site-carousel-2/480/280",
@@ -60,4 +59,5 @@ export default DryComponent({
   props: carouselProps,
   style: css,
   component: Carousel,
+  requiredInput: false,
 });

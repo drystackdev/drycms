@@ -2,6 +2,7 @@
   "name": "carousel",
   "label": "Carousel",
   "description": "An inline image carousel with prev/next controls and an optional caption.",
+  "requiredInput": false,
   "type": "inline",
   "shadow": true,
   "children": false,
