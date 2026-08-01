@@ -1,6 +1,6 @@
 import { path } from "virtual:drycms/config";
 import type { DryComponentRecord } from "./components/RichTextField/component-registry-types.js";
-import { defineDryComponent, loadBuiltComponent } from "./components/RichTextField/dry-component-runtime.js";
+import { defineBuiltComponents } from "./components/RichTextField/dry-component-runtime.js";
 
 /**
  * Published-site counterpart to `useRichTextEditor.ts`'s own component
@@ -26,9 +26,7 @@ async function bootstrapRichtextComponents(): Promise<void> {
     if (!res.ok) return;
     const data = await res.json();
     const records: DryComponentRecord[] = Array.isArray(data.records) ? data.records : [];
-    for (const record of records) {
-      defineDryComponent(record.name, loadBuiltComponent(path, record.name), record.shadow, path);
-    }
+    defineBuiltComponents(path, records);
   } catch {
     // No richtext content on this page, or the admin API isn't reachable
     // from it (different deploy target, offline, ...) - either way, fail

@@ -1,4 +1,5 @@
 import { Component, h, render, type ComponentChildren, type ComponentType } from "preact";
+import type { DryComponentRecord } from "./component-registry-types.js";
 import { isDryComponentDefinition } from "./register-component.js";
 
 /** The subset of Preact's own exports a `<dry-{name}>` instance needs to
@@ -54,6 +55,70 @@ export type DryComponentLoader = () => Promise<{ default?: unknown }>;
  */
 export function loadBuiltComponent(basePath: string, name: string): DryComponentLoader {
   return () => import(/* @vite-ignore */ `${basePath}/api/richtext-components/${name}.js`);
+}
+
+/** Loads a component definition from its owner's generated bundle. Static
+ * imports are already inlined by `buildComponentBundle`; this resolver makes
+ * that ownership explicit at runtime so a ref such as `carousel` imported by
+ * `color-text` is read from `color-text.js`, never `carousel.js`. */
+export function loadBundledComponent(
+  basePath: string,
+  bundleName: string,
+  componentName: string,
+  refPath: readonly number[] = [],
+): DryComponentLoader {
+  const loadBundle = loadBuiltComponent(basePath, bundleName);
+  return async () => {
+    const mod = await loadBundle();
+    let definition = mod.default;
+    const inheritedStyles: string[] = [];
+    for (const index of refPath) {
+      if (!isDryComponentDefinition(definition)) break;
+      if (definition.style) inheritedStyles.push(definition.style);
+      definition = definition.refs[index];
+    }
+    if (!isDryComponentDefinition(definition)) {
+      throw new Error(`Component <dry-${componentName}> is missing from ${bundleName}.js.`);
+    }
+    if (inheritedStyles.length === 0) return { default: definition };
+    return {
+      default: {
+        ...definition,
+        style: [...inheritedStyles, definition.style].filter(Boolean).join("\n"),
+      },
+    };
+  };
+}
+
+function defineBuiltComponentTree(
+  basePath: string,
+  record: DryComponentRecord,
+  bundleName: string,
+  refPath: readonly number[] = [],
+): void {
+  defineDryComponent(
+    record.name,
+    loadBundledComponent(basePath, bundleName, record.name, refPath),
+    record.shadow,
+    basePath,
+    undefined,
+    undefined,
+    false,
+  );
+  for (const [index, ref] of (record.refRecords ?? []).entries()) {
+    defineBuiltComponentTree(basePath, ref, bundleName, [...refPath, index]);
+  }
+}
+
+/** Registers every confirmed root and its refs. Roots owning refs go first so
+ * a component that is both confirmed independently and imported by a parent
+ * is claimed by the parent's bundle loader. */
+export function defineBuiltComponents(basePath: string, records: DryComponentRecord[]): void {
+  const ordered = [
+    ...records.filter((record) => (record.refRecords?.length ?? 0) > 0),
+    ...records.filter((record) => (record.refRecords?.length ?? 0) === 0),
+  ];
+  for (const record of ordered) defineBuiltComponentTree(basePath, record, record.name);
 }
 
 /**
@@ -118,6 +183,7 @@ export function defineDryComponent(
   basePath?: string,
   inheritedStyle?: string,
   definitionOverride?: Record<string, unknown>,
+  registerDefinitionRefs = true,
 ): void {
   const tag = `dry-${name}`;
   if (customElements.get(tag)) return;
@@ -168,15 +234,17 @@ export function defineDryComponent(
             // A parent bundle contains its referenced definitions. Register
             // those tags first, recursively, so both preview HTML and a
             // parent's rendered JSX can safely contain nested `<dry-*>`.
-            for (const ref of definition.refs ?? []) {
-              defineDryComponent(
-                ref.name,
-                () => Promise.resolve({ default: ref }),
-                ref.shadow,
-                basePath,
-                [inheritedStyle, definition.style].filter(Boolean).join("\n"),
-                ref as unknown as Record<string, unknown>,
-              );
+            if (registerDefinitionRefs) {
+              for (const ref of definition.refs ?? []) {
+                defineDryComponent(
+                  ref.name,
+                  () => Promise.resolve({ default: ref }),
+                  ref.shadow,
+                  basePath,
+                  [inheritedStyle, definition.style].filter(Boolean).join("\n"),
+                  ref as unknown as Record<string, unknown>,
+                );
+              }
             }
 
             this.#Comp = definition.component as ComponentType<Record<string, unknown>>;

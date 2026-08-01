@@ -1,5 +1,5 @@
 import { rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomUUID } from "../../lib/uuid.js";
 
 /** Left external by `buildComponentBundle` below (rewritten to `./preact.js`
@@ -7,6 +7,24 @@ import { randomUUID } from "../../lib/uuid.js";
  * re-exports everything from, so between the two, nothing a component's own
  * source imports from Preact ever goes unresolved. */
 const PREACT_EXTERNALS = ["preact", "preact/hooks", "preact/jsx-runtime"];
+
+function dryComponentFilenamePlugin() {
+  return {
+    name: "dry-component-filename",
+    enforce: "pre" as const,
+    transform(code: string, id: string) {
+      const file = basename(id.split("?", 1)[0] ?? "");
+      const match = /^dry[.-](.+)\.(?:tsx?|jsx?)$/i.exec(file);
+      if (!match?.[1]) return null;
+      const call = /\bDryComponent\s*\(/;
+      if (!call.test(code)) return null;
+      return {
+        code: code.replace(call, `DryComponent.__fromFile(${JSON.stringify(match[1])}, `),
+        map: null,
+      };
+    },
+  };
+}
 
 /**
  * Both `build()` calls below only ever run from inside the *dev* server
@@ -146,7 +164,7 @@ export async function buildComponentBundle(entryAbsPath: string): Promise<string
       // Explicit even with `NODE_ENV`/`mode` both forced to production -
       // belt and suspenders against a future `@preact/preset-vite` version
       // changing how it derives these two defaults.
-      plugins: [preact({ devToolsEnabled: false, prefreshEnabled: false })],
+      plugins: [dryComponentFilenamePlugin(), preact({ devToolsEnabled: false, prefreshEnabled: false })],
       build: {
         write: false,
         // See `buildSharedPreactBundle`'s own comment on this.
@@ -162,6 +180,8 @@ export async function buildComponentBundle(entryAbsPath: string): Promise<string
             paths: Object.fromEntries(PREACT_EXTERNALS.map((specifier) => [specifier, "./preact.js"])),
             // See `buildSharedPreactBundle`'s matching comment on this.
             comments: false,
+            // Filename names have already been encoded by the transform above,
+            // so ordinary identifier mangling is safe again.
             minify: { compress: true, mangle: true, codegen: true },
           },
         },

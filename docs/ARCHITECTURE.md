@@ -214,8 +214,10 @@ architectural choices, each the result of a specific bug or decision (see
   the shadow content lives in `content-shadow-styles.ts` (hand-edited
   TS/string, not a `.css` file - there is no build step for it).
 - User-registered components are discovered from `src/**/dry.<name>.<ext>`
-  files exporting `DryComponent(...)`. Once an admin "confirms" one, it's built into
-  a **standalone JS bundle** (Preact inlined) via a nested `vite.build()` +
+  files exporting `DryComponent(...)`. An explicit `DryComponent({ name })`
+  wins; otherwise the filename supplies the element name. Once an admin
+  "confirms" one, it's built into a **standalone JS bundle** (with static
+  dry-component imports inlined and Preact shared as `preact.js`) via a nested `vite.build()` +
   `@preact/preset-vite` call (`build-component-bundle.ts`) - this only runs
   inside the dev server (no separate production build step for it), so it
   must explicitly force `NODE_ENV=production`/disable Preact DevTools/set

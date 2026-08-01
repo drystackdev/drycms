@@ -23,7 +23,7 @@ import {
   getTextColorState,
 } from "./commands.js";
 import { DryComponentNodeView } from "./dry-component-view.js";
-import { defineDryComponent, loadBuiltComponent } from "./dry-component-runtime.js";
+import { defineBuiltComponents } from "./dry-component-runtime.js";
 import { exportCleanHtml, importCleanHtml } from "./html.js";
 import { exitGridDownward, getSelectedGrid, splitGridItem } from "./grid.js";
 import { GridItemNodeView } from "./grid-item-view.js";
@@ -205,10 +205,7 @@ export function useRichTextEditor({
 
       setRichtextComponents(components);
       const dryNodeViews: Record<string, (node: PMNode, editorView: EditorView, getPos: () => number | undefined) => DryComponentNodeView> = {};
-      for (const component of components) {
-        const loader = loadBuiltComponent(basePath, component.name);
-        defineDryComponent(component.name, loader, component.shadow, basePath);
-      }
+      defineBuiltComponents(basePath, components);
       for (const component of flattenDryComponentRecords(components)) {
         const tag = `dry-${component.name}`;
         dryNodeViews[`dry_${component.name}`] = (node, editorView, getPos) =>
@@ -228,7 +225,12 @@ export function useRichTextEditor({
     // mount` - a plain light-DOM node is easy to select/assert on (devtools,
     // Playwright, ...), unlike the old shadow-only `::before` pseudo-element
     // this replaced.
-    const shadowRoot = mountEl.attachShadow({ mode: "open" });
+    // HMR can remount this hook on the same host element. A shadow root is
+    // permanent for that element, so calling attachShadow() again throws and
+    // aborts the whole editor (leaving dry components at 0x0). Reuse the
+    // existing root and clear the previous editor/style nodes before mounting.
+    const shadowRoot = mountEl.shadowRoot ?? mountEl.attachShadow({ mode: "open" });
+    shadowRoot.replaceChildren();
     const styleEl = document.createElement("style");
     styleEl.textContent = richtextContentShadowStyles;
     shadowRoot.appendChild(styleEl);

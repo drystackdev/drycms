@@ -92,9 +92,13 @@ export default function RichtextComponents() {
         try {
           const mod = await componentModules[sourcePath]!();
           if (!isDryComponentDefinition(mod.default)) return null;
-          const name = dryComponentNameFromSourcePath(sourcePath);
-          if (!name) return null;
-          return { sourcePath, def: { ...mod.default, name } };
+          const filenameName = dryComponentNameFromSourcePath(sourcePath);
+          if (!filenameName) return null;
+          // Mutate the shared module definition so a parent module's `refs`
+          // pointer observes the same filename fallback assigned when the
+          // child module is discovered. An explicit config `name` wins.
+          if (!mod.default.name) mod.default.name = filenameName;
+          return { sourcePath, def: { ...mod.default } };
         } catch {
           return null;
         }

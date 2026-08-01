@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { Node as PMNode } from "prosemirror-model";
 import { NodeSelection, type Transaction } from "prosemirror-state";
@@ -142,6 +142,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
   const [configuringRef, setConfiguringRef] = useState<DryComponentRecord | null>(null);
   const [refDraft, setRefDraft] = useState<Record<string, unknown>>({});
   const [draft, setDraft] = useState<Record<string, unknown>>({});
+  const refParentRef = useRef<{ pos: number; node: PMNode; record: DryComponentRecord } | null>(null);
   const dialogRef = useDialogSync(open, () => setOpen(false));
   const treeDialogRef = useDialogSync(treeOpen, () => setTreeOpen(false));
   const refDialogRef = useDialogSync(!!configuringRef, () => setConfiguringRef(null));
@@ -199,8 +200,16 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
 
   const insertRef = (ref: DryComponentRecord, props: Record<string, unknown>): boolean => {
     const currentView = viewRef.current ?? view;
-    if (!currentView || pos === null || !record || !node) {
+    const parent = refParentRef.current;
+    const parentPos = parent?.pos ?? pos;
+    const parentRecord = parent?.record ?? record;
+    if (!currentView || parentPos === null || !parentRecord) {
       setTreeError("Select the parent component again, then try inserting the ref.");
+      return false;
+    }
+    const parentNode = currentView.state.doc.nodeAt(parentPos);
+    if (!parentNode || parentNode.type.name !== `dry_${parentRecord.name}` || !parentNode.type.spec.content) {
+      setTreeError("The parent component changed. Select it again before inserting a ref.");
       return false;
     }
     // Use the schema owned by the live EditorView. The module-level schema is
@@ -221,12 +230,12 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
       // children; block refs belong immediately before the parent's closing
       // token. Inserting an inline node directly into `block+` content makes
       // ProseMirror reject the transaction.
-      let insertPos = pos + node.nodeSize - 1;
+      let insertPos = parentPos + parentNode.nodeSize - 1;
       if (nodeType.isInline) {
         let textblockStart: number | null = null;
-        node.descendants((descendant, offset) => {
+        parentNode.descendants((descendant, offset) => {
           if (textblockStart === null && descendant.isTextblock) {
-            textblockStart = pos + 1 + offset;
+            textblockStart = parentPos + 1 + offset;
             return false;
           }
           return textblockStart === null;
@@ -239,13 +248,26 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
           // currently has no paragraph/heading, create one so an inline ref
           // still has a valid place to live.
           const paragraph = editorSchema.nodes.paragraph!.create(null, child);
-          currentView.dispatch(currentView.state.tr.insert(insertPos, paragraph).scrollIntoView());
+          let tr = currentView.state.tr.insert(insertPos, paragraph);
+          const childPos = insertPos + 1;
+          if (!tr.docChanged || !tr.doc.nodeAt(childPos)) {
+            setTreeError(`Unable to place <dry-${ref.name}> inside this component.`);
+            return false;
+          }
+          tr = tr.setSelection(NodeSelection.create(tr.doc, childPos)).scrollIntoView();
+          currentView.dispatch(tr);
           currentView.focus();
           setTreeOpen(false);
           return true;
         }
       }
-      currentView.dispatch(currentView.state.tr.insert(insertPos, child).scrollIntoView());
+      let tr = currentView.state.tr.insert(insertPos, child);
+      if (!tr.docChanged || tr.doc.nodeAt(insertPos)?.type !== nodeType) {
+        setTreeError(`Unable to place <dry-${ref.name}> inside this component.`);
+        return false;
+      }
+      tr = tr.setSelection(NodeSelection.create(tr.doc, insertPos)).scrollIntoView();
+      currentView.dispatch(tr);
       currentView.focus();
       setTreeOpen(false);
       return true;
@@ -426,7 +448,8 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
                 aria-haspopup="dialog"
                 disabled={disabled}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
+                  onClick={() => {
+                  if (pos !== null && node && record) refParentRef.current = { pos, node, record };
                   setTreeError(null);
                   setTreeOpen(true);
                 }}
@@ -438,8 +461,8 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
               <button
                 type="button"
                 class={`ghost icon ${iconSize}`}
-                aria-label="Component settings"
-                data-tooltip="Settings"
+                aria-label={`${record?.label ?? "Component"} settings`}
+                data-tooltip={`${record?.label ?? "Component"} settings`}
                 aria-haspopup="dialog"
                 disabled={disabled}
                 onMouseDown={(event) => event.preventDefault()}
@@ -480,6 +503,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
                     disabled={controlsDisabled}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => {
+                      if (pos !== null && node && record) refParentRef.current = { pos, node, record };
                       setTreeError(null);
                       setTreeOpen(true);
                     }}
@@ -494,8 +518,8 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
                   <button
                     type="button"
                     class={`ghost icon ${iconSize}`}
-                    aria-label="Component settings"
-                    data-tooltip="Settings"
+                    aria-label={`${record?.label ?? "Component"} settings`}
+                    data-tooltip={`${record?.label ?? "Component"} settings`}
                     aria-haspopup="dialog"
                     disabled={controlsDisabled}
                     onMouseDown={(event) => event.preventDefault()}
@@ -585,7 +609,16 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
               <button type="button" class="outline" onClick={() => setConfiguringRef(null)}>
                 Cancel
               </button>
-              <button type="button" disabled={!refDraftValid} onClick={confirmRef}>
+              <button
+                type="button"
+                disabled={!refDraftValid}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  confirmRef();
+                }}
+              >
                 Insert
               </button>
             </footer>

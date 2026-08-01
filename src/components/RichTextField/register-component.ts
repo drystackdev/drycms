@@ -171,6 +171,9 @@ function resolveDefaults(shape: Record<string, FieldDef<unknown>>): Record<strin
 }
 
 export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> = Record<string, never>> {
+  /** Optional custom-element name (with or without the `dry-` prefix). When
+   * omitted, discovery/build derives it from `dry.<name>.*`. */
+  name?: string;
   label: string;
   /** Shown alongside the label wherever this component is listed (the
    * component management admin page, mục 3, and the richtext editor's own
@@ -261,25 +264,25 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
 export function DryComponent<S extends Record<string, FieldDef<unknown>> = Record<string, never>>(
   config: DryComponentConfig<S>,
 ): DryComponentDefinition<S> {
-  const inferredName = kebabCase(config.component.name);
+  const configuredName = config.name ? kebabCase(config.name.replace(/^dry-/i, "")) : "";
   const schema = (config.props?.(p) ?? {}) as S;
   const type = config.type ?? "inline";
   const shadow = config.shadow ?? true;
   let style = config.style;
   if (style !== undefined && !shadow) {
-    console.warn(`[drycms] Richtext component "${inferredName || "(unnamed)"}": "style" requires "shadow: true" - ignoring.`);
+    console.warn(`[drycms] Richtext component "${configuredName || "(filename pending)"}": "style" requires "shadow: true" - ignoring.`);
     style = undefined;
   }
   let children = config.children !== undefined && config.children !== false;
   let childrenDefaultHtml = typeof config.children === "string" ? config.children : undefined;
   let refs = config.refs ?? [];
   if (refs.length > 0 && !children) {
-    console.warn(`[drycms] Richtext component "${inferredName || "(unnamed)"}": "refs" requires "children" - ignoring.`);
+    console.warn(`[drycms] Richtext component "${configuredName || "(filename pending)"}": "refs" requires "children" - ignoring.`);
     refs = [];
   }
   if (children && (!shadow || type !== "block")) {
     console.warn(
-      `[drycms] Richtext component "${inferredName || "(unnamed)"}": "children" requires "shadow: true" and "type: \\"block\\"" - ignoring.`,
+      `[drycms] Richtext component "${configuredName || "(filename pending)"}": "children" requires "shadow: true" and "type: \\"block\\"" - ignoring.`,
     );
     children = false;
     childrenDefaultHtml = undefined;
@@ -287,7 +290,7 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
   if (!children) refs = [];
   const definition = {
     __dryComponent: true,
-    name: inferredName,
+    name: configuredName,
     label: config.label,
     description: config.description ?? "",
     version: config.version ?? "0.0.0",
@@ -304,6 +307,7 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
   } as DryComponentDefinition<S>;
 
   definition.update = (patch) => {
+    if (patch.name !== undefined) definition.name = kebabCase(patch.name.replace(/^dry-/i, ""));
     if (patch.label !== undefined) definition.label = patch.label;
     if (patch.description !== undefined) definition.description = patch.description;
     if (patch.version !== undefined) definition.version = patch.version;
@@ -342,6 +346,20 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
   };
 
   return definition;
+}
+
+/** Build-generated entry point. Source authors still call
+ * `DryComponent({...})`; the bundle transform supplies the filename fallback
+ * for every imported `dry.<name>.*` module. */
+export namespace DryComponent {
+  export function __fromFile<S extends Record<string, FieldDef<unknown>> = Record<string, never>>(
+    filenameName: string,
+    config: DryComponentConfig<S>,
+  ): DryComponentDefinition<S> {
+    const definition = DryComponent(config);
+    if (!definition.name) definition.name = kebabCase(filenameName);
+    return definition;
+  }
 }
 
 function kebabCase(value: string): string {
