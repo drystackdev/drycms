@@ -112,6 +112,7 @@ interface ConfirmBody {
   shadow: unknown;
   children: unknown;
   childrenDefaultHtml: unknown;
+  requiredInput: unknown;
   refs: unknown;
   refRecords: unknown;
   props: unknown;
@@ -163,6 +164,7 @@ export const POST: DryRouteHandler = async (context) => {
     // happens inside a shadow tree of a top-level block element).
     const children = body.children === true && shadow && type === "block";
     const childrenDefaultHtml = children && typeof body.childrenDefaultHtml === "string" ? body.childrenDefaultHtml : undefined;
+    const requiredInput = body.requiredInput !== false;
     const refs = children && Array.isArray(body.refs)
       ? body.refs.filter((ref): ref is string => typeof ref === "string")
       : [];
@@ -183,6 +185,7 @@ export const POST: DryRouteHandler = async (context) => {
       shadow,
       children,
       ...(childrenDefaultHtml !== undefined ? { childrenDefaultHtml } : {}),
+      requiredInput,
       ...(refs.length > 0 ? { refs } : {}),
       ...(refRecords.length > 0 ? { refRecords: refRecords as DryComponentRecord[] } : {}),
       props: asPlainFieldShape(body.props),

@@ -48,6 +48,7 @@ function ComponentTreeNode({ record, records, trail, selectable, onSelect }: Com
     name,
     label: `<dry-${name}>`,
     description: "",
+    requiredInput: false,
     type: "block" as const,
     shadow: false,
     children: false,
@@ -302,7 +303,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
   };
 
   const selectRef = (ref: DryComponentRecord) => {
-    if (Object.keys(ref.props).length > 0) {
+    if (ref.requiredInput !== false && Object.keys(ref.props).length > 0) {
       setRefDraft(emptyDryComponentProps(ref.props));
       setConfiguringRef(ref);
       setTreeOpen(false);

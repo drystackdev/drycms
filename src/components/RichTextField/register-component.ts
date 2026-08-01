@@ -188,6 +188,10 @@ export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> 
    * `version` above - purely informational, not enforced anywhere. Shown as
    * an italic "None" when left unset. */
   auth?: string;
+  /** Whether inserting this component should ask for props first. Defaults
+   * to `true` for top-level components; an unset value on a child ref is
+   * treated as `false` when the ref record is built. */
+  requiredInput?: boolean;
   /** @default "inline" */
   type?: "inline" | "block";
   /** Mount this component's render into its own shadow root. @default true */
@@ -235,6 +239,7 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   description: string;
   version: string;
   auth: string;
+  requiredInput?: boolean;
   type: "inline" | "block";
   shadow: boolean;
   /** Only set when `config.style` survived the `shadow: true` requirement -
@@ -295,6 +300,7 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
     description: config.description ?? "",
     version: config.version ?? "0.0.0",
     auth: config.auth ?? "",
+    requiredInput: config.requiredInput,
     type,
     shadow,
     style,
@@ -312,6 +318,7 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
     if (patch.description !== undefined) definition.description = patch.description;
     if (patch.version !== undefined) definition.version = patch.version;
     if (patch.auth !== undefined) definition.auth = patch.auth;
+    if (patch.requiredInput !== undefined) definition.requiredInput = patch.requiredInput;
     if (patch.component !== undefined) definition.component = patch.component;
     if (patch.props !== undefined) {
       definition.schema = patch.props(p) as S;

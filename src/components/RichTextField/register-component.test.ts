@@ -13,4 +13,9 @@ describe("DryComponent naming", () => {
     const definition = DryComponent.__fromFile("feature-card", { label: "Feature", component });
     expect(definition.name).toBe("feature-card");
   });
+
+  it("preserves requiredInput when explicitly configured", () => {
+    expect(DryComponent({ label: "Defaults", requiredInput: false, component }).requiredInput).toBe(false);
+    expect(DryComponent({ label: "Prompt", requiredInput: true, component }).requiredInput).toBe(true);
+  });
 });

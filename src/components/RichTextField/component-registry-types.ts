@@ -30,6 +30,8 @@ export interface DryComponentRecord {
   name: string;
   label: string;
   description: string;
+  /** Whether importing this record should open the props dialog. */
+  requiredInput: boolean;
   type: "inline" | "block";
   shadow: boolean;
   children: boolean;
@@ -57,12 +59,18 @@ export interface DryComponentRecord {
 export function flattenDryComponentRecords(records: DryComponentRecord[]): DryComponentRecord[] {
   const result: DryComponentRecord[] = [];
   const seen = new Set<string>();
-  const visit = (record: DryComponentRecord) => {
+  const visit = (record: DryComponentRecord, nested: boolean) => {
     if (seen.has(record.name)) return;
     seen.add(record.name);
-    result.push(record);
-    for (const child of record.refRecords ?? []) visit(child);
+    // Records written before `requiredInput` existed have no value. Preserve
+    // the top-level default (`true`) while applying the child-ref default
+    // (`false`) when flattening the nested metadata used by the ref picker.
+    const normalized = nested && record.requiredInput === undefined
+      ? { ...record, requiredInput: false }
+      : record;
+    result.push(normalized);
+    for (const child of normalized.refRecords ?? []) visit(child, true);
   };
-  for (const record of records) visit(record);
+  for (const record of records) visit(record, false);
   return result;
 }

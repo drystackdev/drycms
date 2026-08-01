@@ -151,7 +151,7 @@ export default function DryComponentInsertButton({
   const startInsert = () => {
     const record = records.find((r) => r.name === pending);
     if (!record) return;
-    if (Object.keys(record.props).length === 0) {
+    if (record.requiredInput === false || Object.keys(record.props).length === 0) {
       performInsert(record, record.defaults);
       setOpen(false);
       return;

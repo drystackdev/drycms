@@ -115,6 +115,11 @@ export class DryComponentNodeView implements NodeView {
       this.element = document.createElement(tag);
       this.dom = this.element;
       this.box = this.element;
+      // Custom elements are inline by default. Block rich-text components
+      // need a block-level host so shadow-root content and slotted children
+      // contribute their rendered width and height instead of collapsing to
+      // an effectively 0x0 inline box.
+      this.element.style.display = "block";
       if (this.hasContent) this.contentDOM = this.element;
     } else {
       this.dom = document.createElement("span");
