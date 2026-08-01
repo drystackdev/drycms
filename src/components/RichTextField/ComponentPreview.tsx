@@ -5,6 +5,7 @@ import {
   type DryComponentLoader,
 } from "./dry-component-runtime.js";
 import { isDryComponentDefinition } from "./register-component.js";
+import { MinusIcon, PlusIcon } from "../icons.js";
 
 export interface ComponentPreviewProps {
   name: string;
@@ -102,6 +103,9 @@ export default function ComponentPreview({
   }, [ready, name]);
 
   const currentScale = fitScale * zoom;
+  const adjustZoom = (delta: number) => {
+    setZoom((current) => Math.min(2, Math.max(0.5, Number((current + delta).toFixed(1)))));
+  };
   const previewScaleStyle = {
     "--dry-component-preview-scale": `${currentScale.toFixed(2)}`,
   } as Record<string, string>;
@@ -169,19 +173,24 @@ export default function ComponentPreview({
             </g>
           </svg>
         </button>
-        <input
-          type="range"
-          class="dry-component-preview-zoom-range"
-          min="0.5"
-          max="2"
-          step="0.1"
-          value={zoom}
-          aria-label="Preview zoom"
-          onInput={(event) => {
-            const target = event.currentTarget as HTMLInputElement;
-            setZoom(Number(target.value));
-          }}
-        />
+        <button
+          type="button"
+          class="ghost icon sm"
+          aria-label="Zoom out preview"
+          data-tooltip="Zoom out"
+          onClick={() => adjustZoom(-0.1)}
+        >
+          <MinusIcon />
+        </button>
+        <button
+          type="button"
+          class="ghost icon sm"
+          aria-label="Zoom in preview"
+          data-tooltip="Zoom in"
+          onClick={() => adjustZoom(0.1)}
+        >
+          <PlusIcon />
+        </button>
       </div>
     </div>
   );

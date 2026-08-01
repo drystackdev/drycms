@@ -2991,7 +2991,7 @@
         padding-inline: 0;
       }
 
-      .shell.collapsed .sidebar-footer button {
+      .shell.collapsed .sidebar-footer button.sidebar-account {
         justify-content: center !important;
       }
     }
@@ -3949,6 +3949,14 @@
       font: inherit;
       text-align: start;
 
+      & span {
+        display: block;
+        text-wrap: wrap;
+        word-break: break-all;
+        line-clamp: 2;
+        text-overflow: ellipsis;
+      }
+
       &:hover {
         background: none;
         color: inherit;
@@ -4803,11 +4811,6 @@
   .dry-component-preview-controls button svg {
     width: 1rem;
     height: 1rem;
-  }
-
-  .dry-component-preview-zoom-range {
-    width: 7rem;
-    accent-color: var(--dry-primary);
   }
 
   /* Always laid out at a 768px desktop width, then scaled down (never up) to
