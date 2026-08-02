@@ -1,10 +1,73 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { path } from "virtual:drycms/config";
 
 import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
+import { useDialogSync } from "../components/list-nav.js";
+import { createContentTypesApi } from "../content-types/http-api.js";
+import { drafts as draftsSignal } from "../content-types/draft-store.js";
+import { fieldTypes } from "../content-types/field-registry.js";
+import type { ContentTypeDefinition } from "../content-types/types.js";
+import { fieldTypeColors, fieldTypeIcons } from "../components/field-type-icons.js";
+import { useFetch } from "../hooks/useFetch.js";
+import ContentTypeEditor from "./ContentTypeEditor.js";
 import { useDocumentTitle } from "./page-common.js";
+
+function CollectionCard({ definition, onOpen }: { definition: ContentTypeDefinition; onOpen: (id: string) => void }) {
+  const fields = definition.fields.filter((field) => !(definition.deletedFieldIds ?? []).includes(field.id));
+  const featureCount = Object.values(definition.features ?? {}).filter(Boolean).length;
+
+  return (
+    <button type="button" class="builder-collection-card" onClick={() => onOpen(definition.id)}>
+      <span class="builder-collection-card-header">
+        <span class="builder-collection-card-title">
+          <strong>{definition.label || definition.name || "Untitled collection"}</strong>
+          <span class="hint"><span class="badge outline sm">{definition.name || "no-table-name"}</span> - {definition.description || "No description"}</span>
+        </span>
+        <span class="badge outline">{featureCount} features</span>
+      </span>
+      <span class="builder-collection-card-fields" aria-label="Collection fields">
+        {fields.length === 0 ? (
+          <span class="hint">No custom fields yet</span>
+        ) : fields.map((field) => {
+          const TypeIcon = fieldTypeIcons[field.type] ?? fieldTypeIcons.text!;
+          const color = fieldTypeColors[field.type];
+          return <span class="builder-field-icon" style={color ? { "--field-type-color": color } : undefined} title={`${field.label || field.name} · ${fieldTypes[field.type]?.label ?? field.type}`} key={field.id}><TypeIcon /></span>;
+        })}
+      </span>
+    </button>
+  );
+}
+
+function BuilderCollectionList({ onOpen }: { onOpen: (id: string) => void }) {
+  const api = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const listFetcher = useCallback((ifVersion: number | undefined, signal: AbortSignal) => api.listVersioned(ifVersion, signal), [api]);
+  const { data: definitions, error } = useFetch<ContentTypeDefinition[]>("builder:content-types", listFetcher);
+  const pendingDrafts = draftsSignal.value;
+  const collections = (definitions ?? [])
+    .filter((definition) => definition.kind === "collection" && !definition.hidden)
+    .map((definition) => pendingDrafts[definition.id]?.definition ?? definition);
+
+  if (error) return <span class="error">{error instanceof Error ? error.message : "Failed to load collections."}</span>;
+  if (!definitions) return <div class="builder-collection-list-loading" aria-busy="true">Loading collections…</div>;
+  if (collections.length === 0) return <div class="builder-collection-list-empty"><strong>No collections yet</strong><span class="hint">Create a collection from Content Types to start building.</span></div>;
+
+  return <div class="builder-collection-list">{collections.map((definition) => <CollectionCard key={definition.id} definition={definition} onOpen={onOpen} />)}</div>;
+}
+
+function CollectionEditorDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const open = id !== null;
+  const dialogRef = useDialogSync(open, onClose);
+
+  return (
+    <dialog ref={dialogRef} class="xl builder-editor-dialog" aria-label="Edit collection">
+      {open && (
+        <ContentTypeEditor id={id!} embedded onClose={onClose} />
+      )}
+    </dialog>
+  );
+}
 
 interface ChatMessage {
   id: number;
@@ -18,6 +81,7 @@ function renderAssistantMessage(text: string): string {
 
 export default function BuilderContentType() {
   useDocumentTitle("Builder Content type");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const { ref: messages, scrollToBottom } = useOverlayScrollbars<HTMLDivElement>();
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const [activeTab, setActiveTab] = useState<"builder" | "chat">("builder");
@@ -133,11 +197,11 @@ export default function BuilderContentType() {
       <div class="builder-content-type-layout">
         <section class={`card builder-panel${activeTab === "builder" ? " mobile-active" : ""}`}>
           <header>
-            <h2>Builder</h2>
-            <p>The content type builder will be available here.</p>
+            <h2>Collections</h2>
+            <p>Choose a collection to edit its fields and features.</p>
           </header>
-          <div class="builder-panel-body">
-            <span class="badge outline">Coming soon</span>
+          <div class="builder-panel-body builder-collections-body">
+            <BuilderCollectionList onOpen={setEditingId} />
           </div>
         </section>
 
@@ -207,6 +271,7 @@ export default function BuilderContentType() {
           </form>
         </section>
       </div>
+      <CollectionEditorDialog id={editingId} onClose={() => setEditingId(null)} />
     </>
   );
 }

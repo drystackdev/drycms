@@ -45,10 +45,15 @@ import FieldsList, {
 } from "./content-type-editor/FieldsList.js";
 import FieldTrashDialog from "./content-type-editor/FieldTrashDialog.js";
 import { useDocumentTitle } from "./page-common.js";
+import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
 
 interface Props {
   id?: string;
   kind?: string;
+  /** Renders the same editor inside Builder's native dialog without changing
+   * the parent route when Save/Cancel is pressed. */
+  embedded?: boolean;
+  onClose?: () => void;
 }
 
 /** Matches `ContentTypes.tsx`'s nav wording ("Single", not "Singleton") -
@@ -160,7 +165,12 @@ function systemFieldsForUi(
   return items;
 }
 
-export default function ContentTypeEditor({ id, kind }: Props) {
+export default function ContentTypeEditor({
+  id,
+  kind,
+  embedded = false,
+  onClose,
+}: Props) {
   const { route } = useLocation();
   const api = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
@@ -176,6 +186,10 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   const [definition, setDefinition] = useState<ContentTypeDefinition | null>(
     null,
   );
+  const { ref: embeddedBody } = useOverlayScrollbars<HTMLDivElement>([
+    embedded,
+    !!definition,
+  ]);
   // Draft-overlaid (relation/component pickers, mirror rows) - see the load
   // effect below. `liveTypes` is the raw, un-overlaid server list, kept
   // separately only so `handleDiscardDraft` can fall back to the true live
@@ -259,7 +273,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               type: "error",
               title: `"${liveType.label || liveType.name}" is managed on its own page, not here.`,
             });
-            route(`${path}/content-types?selectedKind=${liveType.kind}`);
+            if (embedded) onClose?.();
+            else route(`${path}/content-types?selectedKind=${liveType.kind}`);
             return;
           }
           setHasDraft(!!draftEntry);
@@ -327,6 +342,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
    * destructive action on this page. */
   function requestLeave(to: string) {
     if (isDirty) setLeaveTo(to);
+    else if (embedded) onClose?.();
     else route(to);
   }
 
@@ -630,7 +646,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
       description:
         "Go to Content Types and use Apply and build to make it live.",
     });
-    route(`${path}/content-types?selectedKind=${definition.kind}`);
+    if (embedded) onClose?.();
+    else route(`${path}/content-types?selectedKind=${definition.kind}`);
   }
 
   function handleDiscardDraft() {
@@ -639,7 +656,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     setShowDiscardDraftConfirm(false);
     if (isNew) {
       // Never existed on the server - nothing to fall back to, just leave.
-      route(`${path}/content-types?selectedKind=${definition.kind}`);
+      if (embedded) onClose?.();
+      else route(`${path}/content-types?selectedKind=${definition.kind}`);
       return;
     }
     const live = liveTypes.find((t) => t.id === definition.id) ?? definition;
@@ -663,7 +681,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         title: `Deleted "${definition.label || definition.name}".`,
       });
       bumpContentTypesVersion();
-      route(`${path}/content-types?selectedKind=${definition.kind}`);
+      if (embedded) onClose?.();
+      else route(`${path}/content-types?selectedKind=${definition.kind}`);
     } catch (error) {
       toast.add({
         type: "error",
@@ -689,10 +708,33 @@ export default function ContentTypeEditor({ id, kind }: Props) {
   // kind, rather than resetting to whichever tab `selectedKind` defaults to.
 
   const backTo = `${path}/content-types?selectedKind=${definition.kind}`;
+  const renderActions = () => (
+    <>
+      <button
+        type="button"
+        class="outline"
+        onClick={() => requestLeave(backTo)}
+      >
+        Cancel
+      </button>
+      {hasDraft && (
+        <button
+          type="button"
+          class="outline"
+          onClick={() => setShowDiscardDraftConfirm(true)}
+        >
+          Discard draft
+        </button>
+      )}
+      <button type="button" disabled={!isDirty} onClick={handleSaveClick}>
+        Save draft
+      </button>
+    </>
+  );
 
   return (
     <>
-      <div class="page-header">
+      <header class={`page-header${embedded ? " builder-editor-header" : ""}`}>
         <button
           type="button"
           class="icon ghost"
@@ -712,162 +754,152 @@ export default function ContentTypeEditor({ id, kind }: Props) {
               : "Define the fields, data types, and structure used to store content for this content type."}
           </p>
         </div>
-        <div class="row">
-          <button
-            type="button"
-            class="outline"
-            onClick={() => requestLeave(backTo)}
-          >
-            Cancel
-          </button>
-          {hasDraft && (
-            <button
-              type="button"
-              class="outline"
-              onClick={() => setShowDiscardDraftConfirm(true)}
-            >
-              Discard draft
-            </button>
-          )}
-          <button type="button" disabled={!isDirty} onClick={handleSaveClick}>
-            Save draft
-          </button>
-        </div>
-      </div>
+        <div class="row">{!embedded && renderActions()}</div>
+      </header>
 
-      {hasDraft && (
-        <div class="alert">
-          <InfoCircleIcon />
-          <h4>Unapplied draft</h4>
-          <p>
-            Changes are saved as a draft only - go to Content Types and use
-            "Apply and build" to run the migration and make them live.
-          </p>
-        </div>
-      )}
+      <div
+        class={embedded ? "under builder-editor-body" : undefined}
+        ref={embedded ? embeddedBody : undefined}
+      >
+        {hasDraft && (
+          <div class="alert">
+            <InfoCircleIcon />
+            <h4>Unapplied draft</h4>
+            <p>
+              Changes are saved as a draft only - go to Content Types and use
+              "Apply and build" to run the migration and make them live.
+            </p>
+          </div>
+        )}
 
-      <div class="content-type-editor-grid">
-        <legend class="stack">
-          <FieldsList
-            systemEntries={systemFieldsForUi(definition, allTypes)}
-            fields={activeFields(definition)}
-            features={effectiveFeatures(definition)}
-            protectedFieldIds={definition.protectedFieldIds}
-            fieldOrder={definition.fieldOrder}
-            type={KIND_LABELS[definition.kind]}
-            label={definition.label || definition.name || <em>Untitled</em>}
-            name={definition.name}
-            description={definition.description}
-            onEdit={(field) => {
-              setEditingField(field);
-              setFieldDialogOpen(true);
-            }}
-            onRemove={removeField}
-            onEditMirror={(entry) => {
-              setEditingField(mirrorEntryToFieldDefinition(entry));
-              setFieldDialogOpen(true);
-            }}
-            onRemoveMirror={setPendingMirrorRemove}
-            onReorderFields={updateFields}
-            onReorderAll={(order) =>
-              setDefinition((d) => (d ? { ...d, fieldOrder: order } : d))
-            }
-            onAdd={() => {
-              setEditingField(null);
-              setFieldDialogOpen(true);
-            }}
-            showTrash={!isNew}
-            trashCount={
-              (definition.deletedFieldIds?.length ?? 0) +
-              (definition.deletedFeatureKeys?.length ?? 0)
-            }
-            onOpenTrash={() => setTrashOpen(true)}
-          />
-        </legend>
-        <div class="stack">
-          <SlugField
-            label="Table Name"
-            slugLabel="Table"
-            placeholder="e.g. Blog Posts"
-            slugPlaceholder="e.g. blog_posts"
-            value={definition.label}
-            slug={definition.name}
-            onChange={(label, name) => {
-              setTableNameError(null);
-              setDefinition((d) => (d ? { ...d, label, name } : d));
-            }}
-            required
-            error={!!tableNameError}
-            helperText={tableNameError ?? undefined}
-          />
-          <TextField
-            label="Description"
-            multiline
-            placeholder="e.g. Articles published on the company blog"
-            value={definition.description ?? ""}
-            onChange={(v) =>
-              setDefinition((d) => (d ? { ...d, description: v } : d))
-            }
-            helperText="Optional description for this content type, shown in the admin UI."
-          />
-
-          {definition.kind !== "component" && (
-            <TextField
-              label="Live Preview"
-              placeholder={
-                definition.kind === "singleton"
-                  ? "e.g. https://example.com/about"
-                  : "e.g. https://example.com/posts/{slug}"
+        <div class="content-type-editor-grid">
+          <legend class="stack">
+            <FieldsList
+              systemEntries={systemFieldsForUi(definition, allTypes)}
+              fields={activeFields(definition)}
+              features={effectiveFeatures(definition)}
+              protectedFieldIds={definition.protectedFieldIds}
+              fieldOrder={definition.fieldOrder}
+              type={KIND_LABELS[definition.kind]}
+              name={definition.name}
+              description={definition.description}
+              onEdit={(field) => {
+                setEditingField(field);
+                setFieldDialogOpen(true);
+              }}
+              onRemove={removeField}
+              onEditMirror={(entry) => {
+                setEditingField(mirrorEntryToFieldDefinition(entry));
+                setFieldDialogOpen(true);
+              }}
+              onRemoveMirror={setPendingMirrorRemove}
+              onReorderFields={updateFields}
+              onReorderAll={(order) =>
+                setDefinition((d) => (d ? { ...d, fieldOrder: order } : d))
               }
-              value={definition.livePreviewUrl ?? ""}
-              onChange={(v) =>
-                setDefinition((d) => (d ? { ...d, livePreviewUrl: v } : d))
+              onAdd={() => {
+                setEditingField(null);
+                setFieldDialogOpen(true);
+              }}
+              showTrash={!isNew}
+              trashCount={
+                (definition.deletedFieldIds?.length ?? 0) +
+                (definition.deletedFeatureKeys?.length ?? 0)
               }
-              helperText="URL the entry editor will open for a live preview."
+              onOpenTrash={() => setTrashOpen(true)}
             />
-          )}
+          </legend>
+          <div class="stack">
+            <SlugField
+              label="Table Name"
+              slugLabel="Table"
+              placeholder="e.g. Blog Posts"
+              slugPlaceholder="e.g. blog_posts"
+              value={definition.label}
+              slug={definition.name}
+              onChange={(label, name) => {
+                setTableNameError(null);
+                setDefinition((d) => (d ? { ...d, label, name } : d));
+              }}
+              required
+              error={!!tableNameError}
+              helperText={tableNameError ?? undefined}
+            />
+            <TextField
+              label="Description"
+              multiline
+              placeholder="e.g. Articles published on the company blog"
+              value={definition.description ?? ""}
+              onChange={(v) =>
+                setDefinition((d) => (d ? { ...d, description: v } : d))
+              }
+              helperText="Optional description for this content type, shown in the admin UI."
+            />
 
-          <FeaturesFieldset
-            kind={definition.kind}
-            features={effectiveFeatures(definition)}
-            onChange={setFeature}
-          />
+            {definition.kind !== "component" && (
+              <TextField
+                label="Live Preview"
+                placeholder={
+                  definition.kind === "singleton"
+                    ? "e.g. https://example.com/about"
+                    : "e.g. https://example.com/posts/{slug}"
+                }
+                value={definition.livePreviewUrl ?? ""}
+                onChange={(v) =>
+                  setDefinition((d) => (d ? { ...d, livePreviewUrl: v } : d))
+                }
+                helperText="URL the entry editor will open for a live preview."
+              />
+            )}
 
-          {!isNew && definition.locked && (
-            <div class="content-type-editor-danger">
-              <div>
-                <h2>Danger zone</h2>
-                <p>
-                  This {definition.kind} can't be deleted - other built-in
-                  functionality (login, permissions) depends on it existing.
-                </p>
+            <FeaturesFieldset
+              kind={definition.kind}
+              features={effectiveFeatures(definition)}
+              onChange={setFeature}
+            />
+
+            {!isNew && definition.locked && (
+              <div class="content-type-editor-danger">
+                <div>
+                  <h2>Danger zone</h2>
+                  <p>
+                    This {definition.kind} can't be deleted - other built-in
+                    functionality (login, permissions) depends on it existing.
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {!isNew && !definition.locked && (
-            <div class="content-type-editor-danger">
-              <div>
-                <h2>Danger zone</h2>
-                <p>
-                  Delete this {definition.kind} and all of its data. This cannot
-                  be undone.
-                </p>
+            {!isNew && !definition.locked && (
+              <div class="content-type-editor-danger">
+                <div>
+                  <h2>Danger zone</h2>
+                  <p>
+                    Delete this {definition.kind} and all of its data. This
+                    cannot be undone.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="destructive"
+                  onClick={() => {
+                    setDeleteTableName("");
+                    setShowDeleteConfirm(true);
+                  }}
+                >
+                  <TrashIcon /> Delete {definition.kind}
+                </button>
               </div>
-              <button
-                type="button"
-                class="destructive"
-                onClick={() => {
-                  setDeleteTableName("");
-                  setShowDeleteConfirm(true);
-                }}
-              >
-                <TrashIcon /> Delete {definition.kind}
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
+
+      {embedded && (
+        <footer class="builder-editor-footer row justify-end">
+          {renderActions()}
+        </footer>
+      )}
 
       <FieldDialog
         open={fieldDialogOpen}
@@ -990,7 +1022,8 @@ export default function ContentTypeEditor({ id, kind }: Props) {
         onConfirm={() => {
           const to = leaveTo!;
           setLeaveTo(null);
-          route(to);
+          if (embedded) onClose?.();
+          else route(to);
         }}
         onCancel={() => setLeaveTo(null)}
       />

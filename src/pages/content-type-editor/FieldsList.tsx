@@ -55,7 +55,6 @@ export interface FieldsListProps {
   systemEntries: SystemFieldEntry[];
   fields: FieldDefinition[];
   type: string;
-  label: JSX.Element | string;
   name: string;
   description?: string;
   features?: ContentTypeFeatures;
@@ -116,7 +115,6 @@ export default function FieldsList({
   onReorderAll,
   onAdd,
   type,
-  label,
   name,
   description,
   showTrash,
@@ -169,13 +167,10 @@ export default function FieldsList({
       <div class="row justify-between">
         <div>
           <h4>
-            {label}
-            <div class="badge sm info" style={{ position: "relative", top: "-0.125rem", marginLeft: "0.5rem" }}>
-              {type}
-            </div>
+            {type}
           </h4>
           <span class="hint">
-            {name && <span class="badge sm outline">{name}</span>}{description || "Define the columns used for data entry and storage"}
+            {name && <span class="badge sm outline">{name}</span>} {description || "Define the columns used for data entry and storage"}
           </span>
         </div>
         <button type="button" class="outline" onClick={onAdd}>
