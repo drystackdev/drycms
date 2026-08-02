@@ -754,7 +754,7 @@ export default function ContentTypeEditor({
               : "Define the fields, data types, and structure used to store content for this content type."}
           </p>
         </div>
-        <div class="row">{renderActions()}</div>
+        <div class="row">{!embedded && renderActions()}</div>
       </header>
 
       <div

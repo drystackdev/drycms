@@ -11,7 +11,7 @@
       display: grid;
       gap: var(--dry-gap);
       grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 0.8fr);
-      min-height: min(42rem, calc(100dvh - 12rem));
+      min-height: min(42rem, calc(100dvh - 15rem));
     }
 
     .builder-mobile-tabs {
@@ -69,7 +69,7 @@
       &:focus-visible {
         background-color: var(--dry-accent) !important;
       }
-      
+
       &.new {
         border-color: var(--dry-warning);
       }
