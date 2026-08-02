@@ -14,6 +14,13 @@ const resolved = resolveOptions(dryUserOptions);
 
 export default defineConfig({
   plugins: [preact()],
+  build: {
+    // Showcase intentionally bundles every component demo into one route
+    // chunk; it is lazy-loaded from the app shell, so this size is not part of
+    // the initial path. Keep Vite's warning threshold above that deliberate
+    // demo bundle while retaining the default warning for normal chunks.
+    chunkSizeWarningLimit: 3500,
+  },
   resolve: {
     alias: {
       // Every client file still imports the old virtual-module specifier

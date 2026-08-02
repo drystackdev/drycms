@@ -124,7 +124,7 @@ async function hydrateRecordIcon(record: DryComponentRecord): Promise<DryCompone
   if (record.icon !== undefined || !record.sourcePath) return record;
   try {
     const bundlePath = pathToFileURL(join(componentsStorage.root, `${slugFor(record.name)}.js`)).href;
-    const module = (await import(`${bundlePath}?metadata=${Date.now()}`)) as { default?: unknown };
+    const module = (await import(/* @vite-ignore */ `${bundlePath}?metadata=${Date.now()}`)) as { default?: unknown };
     if (!isDryComponentDefinition(module.default)) return record;
     const refreshed = recordFromDefinition(module.default, record.sourcePath);
     const hasIcon = !!refreshed.icon || refreshed.refRecords?.some((child) => !!child.icon);
@@ -139,7 +139,7 @@ async function hydrateRecordIcon(record: DryComponentRecord): Promise<DryCompone
 async function rebuildRecord(record: DryComponentRecord, slug: string): Promise<DryComponentRecord> {
   await buildAndStore(record.sourcePath, slug);
   const bundlePath = pathToFileURL(join(componentsStorage.root, `${slug}.js`)).href;
-  const module = (await import(`${bundlePath}?rebuild=${Date.now()}`)) as { default?: unknown };
+  const module = (await import(/* @vite-ignore */ `${bundlePath}?rebuild=${Date.now()}`)) as { default?: unknown };
   if (!isDryComponentDefinition(module.default)) {
     throw new StorageError("invalid_path", `Built component "${record.name}" has invalid metadata.`);
   }
@@ -252,7 +252,7 @@ export const POST: DryRouteHandler = async (context) => {
     await buildAndStore(sourcePath, slugFor(name));
 
     const bundlePath = pathToFileURL(join(componentsStorage.root, `${slugFor(name)}.js`)).href;
-    const module = (await import(`${bundlePath}?confirm=${Date.now()}`)) as { default?: unknown };
+    const module = (await import(/* @vite-ignore */ `${bundlePath}?confirm=${Date.now()}`)) as { default?: unknown };
     if (!isDryComponentDefinition(module.default)) {
       throw new StorageError("invalid_path", `Built component "${name}" has invalid metadata.`);
     }
