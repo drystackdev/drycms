@@ -28,6 +28,7 @@ const BuilderContentType = lazy(() => import("../pages/BuilderContentType.js"));
 const ContentTypeEditor = lazy(() => import("../pages/ContentTypeEditor.js"));
 const ContentEntryList = lazy(() => import("../pages/ContentEntryList.js"));
 const ContentEntryEditor = lazy(() => import("../pages/ContentEntryEditor.js"));
+const AiKeyEditor = lazy(() => import("../pages/AiKeyEditor.js"));
 const Profile = lazy(() => import("../pages/Profile.js"));
 const Roles = lazy(() => import("../pages/Roles.js"));
 const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
@@ -169,6 +170,14 @@ function AuthenticatedApp() {
               <Route
                 path={`${path}/content-types/:id/edit`}
                 component={ContentTypeEditor}
+              />
+              <Route
+                path={`${path}/content/aiKey/new`}
+                component={() => <AiKeyEditor id="new" />}
+              />
+              <Route
+                path={`${path}/content/aiKey/:id`}
+                component={AiKeyEditor}
               />
               {/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}
               <Route

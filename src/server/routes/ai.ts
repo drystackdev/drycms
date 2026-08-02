@@ -24,6 +24,12 @@ interface CheckKeyRequest {
   url?: string;
 }
 
+interface ModelsRequest {
+  provider?: string;
+  key?: string;
+  url?: string;
+}
+
 interface ServerCredential {
   provider: "openai" | "anthropic";
   apiKey: string;
@@ -201,6 +207,159 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
   }
 }
 
+const streamEncoder = new TextEncoder();
+
+function streamEvent(payload: { delta?: string; done?: boolean; error?: string }): Uint8Array {
+  return streamEncoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+async function readSseStream(
+  response: Response,
+  onData: (data: string) => void,
+): Promise<void> {
+  if (!response.body) throw new Error("AI provider returned an empty stream.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("data:")) onData(line.slice(5).trim());
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer.startsWith("data:")) onData(buffer.slice(5).trim());
+}
+
+function streamLocalCli(messages: ChatMessage[]): ReadableStream<Uint8Array> {
+  const localAi = ai;
+  if (localAi.mode !== "local") throw new Error("Local AI mode is not configured.");
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      void (async () => {
+        const { spawn } = await import("node:child_process");
+        const prompt = promptForCli(messages);
+        const hasPromptSlot = localAi.args.some((arg) => arg.includes("{prompt}"));
+        const args = hasPromptSlot
+          ? localAi.args.map((arg) => arg.replaceAll("{prompt}", prompt))
+          : [...localAi.args, prompt];
+        const child = spawn(localAi.command, args, {
+          cwd: localAi.cwd,
+          env: process.env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let stderr = "";
+        let settled = false;
+        const timer = setTimeout(() => {
+          child.kill("SIGTERM");
+          if (!settled) {
+            settled = true;
+            controller.enqueue(streamEvent({ error: `The ${ai.provider} CLI timed out.` }));
+            controller.close();
+          }
+        }, localAi.timeoutMs);
+        child.stdout.on("data", (chunk: Buffer) => {
+          if (!settled) controller.enqueue(streamEvent({ delta: chunk.toString() }));
+        });
+        child.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString();
+        });
+        child.on("error", (error) => {
+          clearTimeout(timer);
+          if (settled) return;
+          settled = true;
+          controller.enqueue(streamEvent({ error: `Unable to start ${localAi.command}: ${error.message}` }));
+          controller.close();
+        });
+        child.on("close", (code) => {
+          clearTimeout(timer);
+          if (settled) return;
+          settled = true;
+          if (code !== 0) controller.enqueue(streamEvent({ error: stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.` }));
+          controller.enqueue(streamEvent({ done: true }));
+          controller.close();
+        });
+      })().catch((error) => {
+        controller.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI request failed." }));
+        controller.close();
+      });
+    },
+  });
+}
+
+async function streamServerAiWithCredential(messages: ChatMessage[], credential: ServerCredential): Promise<ReadableStream<Uint8Array>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
+  const response = await fetch(
+    credential.provider === "openai" ? `${credential.baseUrl}/v1/responses` : `${credential.baseUrl}/v1/messages`,
+    {
+      method: "POST",
+      headers: credential.provider === "openai"
+        ? { Authorization: `Bearer ${credential.apiKey}`, "Content-Type": "application/json" }
+        : { "x-api-key": credential.apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+      body: JSON.stringify(credential.provider === "openai"
+        ? {
+            model: credential.model,
+            stream: true,
+            input: messages.map((message) => ({ role: message.role, content: message.text })),
+          }
+        : {
+            model: credential.model,
+            stream: true,
+            max_tokens: 2048,
+            messages: messages.map((message) => ({ role: message.role, content: message.text })),
+          }),
+      signal: controller.signal,
+    },
+  );
+  if (!response.ok) {
+    clearTimeout(timer);
+    const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(body.error?.message || `AI provider returned HTTP ${response.status}.`);
+  }
+
+  return new ReadableStream<Uint8Array>({
+    start(streamController) {
+      void readSseStream(response, (data) => {
+        if (data === "[DONE]") return;
+        const event = JSON.parse(data) as {
+          type?: string;
+          delta?: string | { type?: string; text?: string };
+          error?: { message?: string };
+        };
+        const delta = typeof event.delta === "string"
+          ? event.delta
+          : event.delta?.type === "text_delta" ? event.delta.text : undefined;
+        if (delta) streamController.enqueue(streamEvent({ delta }));
+        if (event.type === "response.failed" || event.type === "error") {
+          streamController.enqueue(streamEvent({ error: event.error?.message || "AI provider failed." }));
+        }
+      }).then(() => {
+        clearTimeout(timer);
+        streamController.enqueue(streamEvent({ done: true }));
+        streamController.close();
+      }).catch((error) => {
+        clearTimeout(timer);
+        streamController.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI stream failed." }));
+        streamController.close();
+      });
+    },
+    cancel() {
+      clearTimeout(timer);
+      controller.abort();
+    },
+  });
+}
+
+async function createChatStream(context: DryRouteContext, messages: ChatMessage[]): Promise<ReadableStream<Uint8Array>> {
+  if (ai.mode === "local") return streamLocalCli(messages);
+  return streamServerAiWithCredential(messages, await readServerCredential(context));
+}
+
 async function checkAiKey(body: CheckKeyRequest): Promise<void> {
   const rawProvider = String(body.provider ?? "").trim();
   const apiKey = String(body.key ?? "").trim();
@@ -259,6 +418,34 @@ async function checkAiKey(body: CheckKeyRequest): Promise<void> {
   }
 }
 
+const DEFAULT_MODELS: Record<string, string[]> = {
+  google: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
+  anthropic: ["claude-sonnet-4-20250514", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
+  openai: ["gpt-5", "gpt-5-mini", "gpt-4.1", "o4-mini"],
+};
+
+async function listAiModels(body: ModelsRequest): Promise<string[]> {
+  const providerValue = String(body.provider ?? "").trim().toLowerCase();
+  if (providerValue === "custom") {
+    const url = String(body.url ?? "").trim();
+    if (!url) throw new Error("URL is required for Custom provider.");
+    const response = await fetch(url, {
+      headers: body.key ? { Authorization: `Bearer ${body.key}` } : undefined,
+      signal: AbortSignal.timeout(ai.timeoutMs),
+    });
+    const responseBody = await response.json().catch(() => ({})) as {
+      data?: Array<{ id?: unknown; name?: unknown }>;
+      models?: Array<{ id?: unknown; name?: unknown } | string>;
+    };
+    if (!response.ok) throw new Error(`Custom provider returned HTTP ${response.status}.`);
+    const items = [...(responseBody.data ?? []), ...(responseBody.models ?? [])];
+    return [...new Set(items.map((item) => typeof item === "string" ? item : item.id ?? item.name).filter((item): item is string => typeof item === "string" && item.length > 0))];
+  }
+  const provider = providerValue === "chatgpt" ? "openai" : providerValue === "claude" ? "anthropic" : providerValue;
+  if (!DEFAULT_MODELS[provider]) throw new Error(`Unsupported AI Key provider "${String(body.provider)}".`);
+  return DEFAULT_MODELS[provider];
+}
+
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
   try {
     const denied = await requireSuperAdmin(context);
@@ -267,12 +454,20 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
       await checkAiKey(await context.request.json() as CheckKeyRequest);
       return jsonResponse({ ok: true, message: "AI key is valid for this model." });
     }
+    if (context.params.slug === "models") {
+      const models = await listAiModels(await context.request.json() as ModelsRequest);
+      return jsonResponse({ models });
+    }
     const body = await context.request.json() as ChatRequest;
     const messages = validateMessages(body.messages);
-    const text = ai.mode === "local"
-      ? await runLocalCli(messages)
-      : await requestServerAiWithCredential(messages, await readServerCredential(context));
-    return jsonResponse({ message: { role: "assistant", text }, provider: ai.mode === "local" ? ai.provider : "server" });
+    const stream = await createChatStream(context, messages);
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (error) {
     return errorResponse(error, error instanceof SyntaxError ? 400 : 502);
   }

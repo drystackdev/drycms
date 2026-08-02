@@ -17,6 +17,12 @@ export default function BuilderContentType() {
   const [activeTab, setActiveTab] = useState<"builder" | "chat">("builder");
   const [prompt, setPrompt] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [sendShortcut, setSendShortcut] = useState("Ctrl + Enter");
+
+  useEffect(() => {
+    const platform = navigator.platform || navigator.userAgent;
+    if (/Mac|iPhone|iPad|iPod/i.test(platform)) setSendShortcut("⌘ + Enter");
+  }, []);
 
   useEffect(() => {
     const frame = requestAnimationFrame(scrollToBottom);
@@ -40,11 +46,33 @@ export default function BuilderContentType() {
         credentials: "same-origin",
         body: JSON.stringify({ messages: history.map(({ role, text }) => ({ role, text })) }),
       });
-      const body = await response.json() as { message?: { text?: string } | string };
-      if (!response.ok) throw new Error(typeof body.message === "string" ? body.message : "AI request failed.");
-      const text = typeof body.message === "object" ? body.message?.text?.trim() : undefined;
-      if (!text) throw new Error("AI returned an empty response.");
-      setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text } : message));
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? "AI request failed.");
+      }
+      if (!response.body) throw new Error("AI returned an empty stream.");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let receivedText = false;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() ?? "";
+        for (const event of events) {
+          const line = event.split(/\r?\n/).find((part) => part.startsWith("data:"));
+          if (!line) continue;
+          const payload = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; error?: string };
+          if (payload.error) throw new Error(payload.error);
+          if (payload.delta) {
+            receivedText = true;
+            setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: message.text === "AI is thinking…" ? payload.delta! : message.text + payload.delta } : message));
+          }
+        }
+      }
+      if (!receivedText) throw new Error("AI returned an empty response.");
     } catch (error) {
       const text = error instanceof Error ? error.message : "AI request failed.";
       setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: `Error: ${text}` } : message));
@@ -105,7 +133,7 @@ export default function BuilderContentType() {
               <div class="ai-chat-message-list">
                 {chatMessages.map((message) => (
                   <div class={`ai-chat-message ${message.role}`} key={message.id}>
-                    {message.text}
+                    {message.text || (message.role === "assistant" ? "AI is thinking…" : "")}
                   </div>
                 ))}
               </div>
@@ -135,12 +163,19 @@ export default function BuilderContentType() {
                 ref={promptInput}
                 rows={1}
                 value={prompt}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    (event.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
+                  }
+                }}
                 onInput={(event) => {
                   resizePrompt(event.currentTarget);
                   setPrompt(event.currentTarget.value);
                 }}
                 placeholder="e.g. Create a product content type with a name and price"
               />
+              <span class="ai-chat-input-shortcut" aria-hidden="true">{sendShortcut}</span>
               <button type="submit" disabled={!prompt.trim()}>
                 Send
               </button>

@@ -104,9 +104,19 @@
       width: 100%;
       min-height: 2.75rem;
       height: 2.75rem;
-      padding-inline-end: 4.5rem;
+      padding-inline-end: 9rem;
       resize: none;
       overflow-y: hidden;
+    }
+
+    .ai-chat-input-shortcut {
+      position: absolute;
+      right: 4.5rem;
+      bottom: 0.5rem;
+      color: var(--dry-muted-foreground);
+      font-size: var(--dry-text-xs);
+      line-height: 1.75rem;
+      white-space: nowrap;
     }
 
     .ai-chat-input-wrap button {
