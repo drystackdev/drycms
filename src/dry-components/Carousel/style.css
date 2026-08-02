@@ -19,7 +19,7 @@
 .carousel__content button {
   position: absolute;
   z-index: 2;
-  background-color: red;
+  background-color: var(--dry-error);
 }
 
 .carousel__caption {

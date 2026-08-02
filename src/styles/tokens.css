@@ -90,6 +90,18 @@
     --dry-selected: rgb(var(--dry-grey-channel) / 16%);
     --dry-focus: rgb(var(--dry-grey-channel) / 24%);
     --dry-disabled-background: rgb(var(--dry-grey-channel) / 24%);
+    --dry-skeleton: rgb(var(--dry-grey-channel) / 12%);
+    --dry-icon-shadow: 0 0 5px rgb(0 0 0 / 33%);
+    --dry-overlay-dark: rgb(0 0 0 / 70%);
+    --dry-overlay-dark-strong: rgb(0 0 0 / 80%);
+    --dry-overlay-dark-soft: rgb(0 0 0 / 10%);
+    --dry-overlay-dark-control: rgb(0 0 0 / 55%);
+    --dry-backdrop: light-dark(
+      rgb(var(--dry-grey-channel) / 80%),
+      rgb(0 0 0 / 35%)
+    );
+    --dry-glass: light-dark(rgb(255 255 255 / 80%), rgb(28 37 46 / 80%));
+    --dry-glass-strong: light-dark(rgb(255 255 255 / 70%), rgb(28 37 46 / 70%));
 
     /* Neutral surface used by the `secondary` variant (Minimals soft/inherit). */
     --dry-secondary: rgb(var(--dry-grey-channel) / 16%);

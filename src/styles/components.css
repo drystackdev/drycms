@@ -114,13 +114,13 @@
       height: 1.5rem;
       border-radius: var(--dry-radius-sm);
       background-color: var(--field-type-color, var(--dry-muted));
-      color: #fff;
+      color: var(--dry-primary-foreground);
       box-shadow: var(--dry-shadow-lg);
 
       & > svg {
         width: 0.8rem;
         height: 0.8rem;
-        filter: drop-shadow(0 0 5px #1115);
+        filter: drop-shadow(var(--dry-icon-shadow));
       }
     }
 
@@ -905,7 +905,7 @@
 
         &:hover:not(:disabled) {
           color: var(--dry-foreground);
-          background-color: rgb(var(--dry-grey-channel) / 8%);
+          background-color: var(--dry-accent);
         }
 
         &:first-child {
@@ -953,7 +953,7 @@
       }
 
       &.hover:hover:not(:has(> input[disabled])) {
-        background-color: rgb(var(--dry-grey-channel) / 8%);
+        background-color: var(--dry-accent);
       }
 
       & > label {
@@ -1002,7 +1002,7 @@
 
         &:hover {
           opacity: 1;
-          background-color: rgb(var(--dry-grey-channel) / 16%);
+          background-color: var(--dry-selected);
         }
 
         & > svg {
@@ -1147,7 +1147,7 @@
 
         &:hover {
           color: var(--dry-foreground);
-          background-color: rgb(var(--dry-grey-channel) / 8%);
+          background-color: var(--dry-accent);
         }
       }
     }
@@ -1270,7 +1270,7 @@
       font-size: var(--dry-text-sm);
 
       &:hover:not(:disabled) {
-        background-color: rgb(var(--dry-grey-channel) / 8%);
+        background-color: var(--dry-accent);
         color: var(--dry-foreground);
       }
 
@@ -1296,11 +1296,11 @@
       border-radius: inherit;
       background: linear-gradient(
         to top,
-        rgb(0 0 0 / 70%),
-        rgb(0 0 0 / 0%) 60%
+        var(--dry-overlay-dark),
+        transparent 60%
       );
       box-shadow: none;
-      color: white;
+      color: var(--dry-primary-foreground);
       text-align: start;
       cursor: pointer;
       opacity: 0;
@@ -1310,8 +1310,8 @@
         opacity: 1;
         background: linear-gradient(
           to top,
-          rgb(0 0 0 / 80%),
-          rgb(0 0 0 / 10%) 60%
+          var(--dry-overlay-dark-strong),
+          var(--dry-overlay-dark-soft) 60%
         );
       }
 
@@ -1336,8 +1336,8 @@
       position: absolute;
       inset-block-start: 0.25rem;
       inset-inline-end: 0.25rem;
-      background-color: rgb(0 0 0 / 55%);
-      color: white;
+      background-color: var(--dry-overlay-dark-control);
+      color: var(--dry-primary-foreground);
       opacity: 0;
       transition: opacity 0.2s ease-in;
 
@@ -1833,10 +1833,7 @@
       }
 
       &::backdrop {
-        background-color: light-dark(
-          rgb(var(--dry-grey-channel) / 80%),
-          rgb(0 0 0 / 35%)
-        );
+        background-color: var(--dry-backdrop);
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
         animation: dry-dialog-backdrop-in 120ms ease;
@@ -2070,7 +2067,7 @@
       display: block;
       min-height: 1rem;
       border-radius: var(--dry-radius-md);
-      background-color: rgb(var(--dry-grey-channel) / 12%);
+      background-color: var(--dry-skeleton);
       animation: dry-pulse 1.6s ease-in-out infinite;
     }
 
@@ -2097,7 +2094,7 @@
       flex: none;
       overflow: hidden;
       border-radius: 50%;
-      background-color: rgb(var(--dry-grey-channel) / 24%);
+      background-color: var(--dry-disabled-background);
       color: var(--dry-foreground);
       font-size: var(--dry-text-sm);
       font-weight: 600;
@@ -2129,11 +2126,11 @@
       height: 0.5rem;
       border: none;
       border-radius: 999px;
-      background-color: rgb(var(--dry-grey-channel) / 16%);
+      background-color: var(--dry-selected);
       overflow: hidden;
 
       &::-webkit-progress-bar {
-        background-color: rgb(var(--dry-grey-channel) / 16%);
+        background-color: var(--dry-selected);
       }
 
       &::-webkit-progress-value {
@@ -2189,17 +2186,17 @@
       border-radius: 50%;
       background: conic-gradient(
         var(--dry-primary) calc(var(--value) * 3.6deg),
-        rgb(var(--dry-grey-channel) / 16%) 0
+        var(--dry-selected) 0
       );
       mask-image: radial-gradient(
         circle at 50% 50%,
         transparent calc(50% - var(--thickness)),
-        #000 calc(50% - var(--thickness))
+        currentColor calc(50% - var(--thickness))
       );
       -webkit-mask-image: radial-gradient(
         circle at 50% 50%,
         transparent calc(50% - var(--thickness)),
-        #000 calc(50% - var(--thickness))
+        currentColor calc(50% - var(--thickness))
       );
 
       &::-webkit-progress-bar,
@@ -2214,7 +2211,7 @@
       &:indeterminate {
         background: conic-gradient(
           var(--dry-primary) 0 90deg,
-          rgb(var(--dry-grey-channel) / 16%) 0
+          var(--dry-selected) 0
         );
         animation: dry-progress-circle-spin 1s linear infinite;
       }
@@ -2261,7 +2258,7 @@
       white-space: nowrap;
       border-radius: var(--dry-radius-sm);
       background-color: light-dark(var(--dry-grey-800), var(--dry-grey-700));
-      color: #ffffff;
+      color: var(--dry-primary-foreground);
       box-shadow: var(--dry-shadow-lg);
       opacity: 0;
       scale: 0.4;
@@ -2826,7 +2823,7 @@
       & .content-type-list-item-icon {
         margin-block: auto;
         background-color: var(--field-type-color);
-        color: #fff;
+        color: var(--dry-primary-foreground);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -2838,7 +2835,7 @@
         & > svg {
           width: 1rem;
           height: 1rem;
-          filter: drop-shadow(0 0 5px #1115);
+          filter: drop-shadow(var(--dry-icon-shadow));
         }
       }
 
@@ -3448,10 +3445,7 @@
         position: fixed;
         inset: 0;
         z-index: 30;
-        background-color: light-dark(
-          rgb(var(--dry-grey-channel) / 80%),
-          rgb(0 0 0 / 35%)
-        );
+        background-color: var(--dry-backdrop);
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
       }
@@ -4584,7 +4578,7 @@
       gap: 0.5rem;
       padding: 1rem;
       border-radius: inherit;
-      background-color: light-dark(rgb(255 255 255 / 80%), rgb(28 37 46 / 80%));
+      background-color: var(--dry-glass);
       backdrop-filter: blur(1px);
       -webkit-backdrop-filter: blur(6px);
       color: var(--dry-card-foreground);
@@ -5067,7 +5061,7 @@
       border-radius: 0;
       /* Glass, not a solid card - the point of a full-screen preview is to
        * stay grounded in the page it floats over. */
-      background-color: light-dark(rgb(255 255 255 / 70%), rgb(28 37 46 / 70%));
+      background-color: var(--dry-glass-strong);
       backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
     }
@@ -5271,10 +5265,7 @@
         position: fixed;
         inset: 0;
         z-index: 48;
-        background-color: light-dark(
-          rgb(var(--dry-grey-channel) / 80%),
-          rgb(0 0 0 / 35%)
-        );
+        background-color: var(--dry-backdrop);
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
       }
@@ -5684,45 +5675,6 @@
   [class*=" dry-"].is-selected {
     outline: 2px solid var(--dry-primary, var(--dry-border));
     outline-offset: 2px;
-  }
-
-  .dry-carousel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    max-width: 32rem;
-  }
-
-  .dry-carousel-viewport {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .dry-carousel-image {
-    flex: 1;
-    width: 100%;
-    aspect-ratio: 12 / 7;
-    object-fit: cover;
-    border-radius: var(--dry-radius-md);
-    border: 1px solid var(--dry-border);
-  }
-
-  .dry-carousel-nav {
-    flex: none;
-  }
-
-  .dry-carousel-caption {
-    margin: 0;
-    font-size: var(--dry-text-sm);
-    color: var(--dry-muted-foreground);
-    text-align: center;
-  }
-
-  .dry-carousel-empty {
-    padding: 1rem;
-    text-align: center;
-    color: var(--dry-muted-foreground);
   }
 
   @keyframes dry-spin {

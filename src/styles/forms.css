@@ -202,7 +202,7 @@
       height: var(--dry-switch-h);
       border: 1px solid var(--dry-input);
       border-radius: var(--dry-switch-h);
-      background-color: rgb(var(--dry-grey-channel) / 24%);
+      background-color: var(--dry-disabled-background);
       line-height: var(--dry-switch-h);
 
       &::before {
@@ -266,7 +266,7 @@
         background: linear-gradient(
           to right,
           var(--dry-primary) calc(var(--value) * 1%),
-          rgb(var(--dry-grey-channel) / 24%) calc(var(--value) * 1%)
+          var(--dry-disabled-background) calc(var(--value) * 1%)
         );
         transition: background-color 120ms ease;
       }
@@ -275,7 +275,7 @@
         width: 100%;
         height: var(--dry-range-track-h);
         border-radius: var(--dry-radius-md);
-        background-color: rgb(var(--dry-grey-channel) / 24%);
+        background-color: var(--dry-disabled-background);
         transition: background-color 120ms ease;
       }
 
