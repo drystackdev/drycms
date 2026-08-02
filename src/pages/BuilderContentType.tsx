@@ -17,6 +17,11 @@ export default function BuilderContentType() {
   const [activeTab, setActiveTab] = useState<"builder" | "chat">("builder");
   const [prompt, setPrompt] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [conversationId] = useState(() =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `conversation-${Date.now()}`,
+  );
   const [sendShortcut, setSendShortcut] = useState("Ctrl + Enter");
 
   useEffect(() => {
@@ -34,7 +39,7 @@ export default function BuilderContentType() {
     input.style.height = `${input.scrollHeight}px`;
   }
 
-  async function sendToAi(history: ChatMessage[], assistantId: number) {
+  async function sendToAi(history: ChatMessage[], assistantId: number, latestMessage: string) {
     setChatMessages((current) => [
       ...current,
       { id: assistantId, role: "assistant", text: "AI is thinking…" },
@@ -44,34 +49,46 @@ export default function BuilderContentType() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ messages: history.map(({ role, text }) => ({ role, text })) }),
+        body: JSON.stringify({ conversationId, message: latestMessage }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { message?: string };
         throw new Error(body.message ?? "AI request failed.");
+      }
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("text/event-stream")) {
+        // Backward-compatible fallback while a dev server is HMR-reloading:
+        // older handlers returned one JSON response instead of SSE.
+        const body = await response.json().catch(() => ({})) as { message?: { text?: string } | string };
+        const text = typeof body.message === "string" ? body.message : body.message?.text;
+        if (!text?.trim()) throw new Error("AI returned an empty response.");
+        setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: text.trim() } : message));
+        return;
       }
       if (!response.body) throw new Error("AI returned an empty stream.");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let receivedText = false;
+      const applyEvent = (event: string) => {
+        const line = event.split(/\r?\n/).find((part) => part.startsWith("data:"));
+        if (!line) return;
+        const payload = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; error?: string };
+        if (payload.error) throw new Error(payload.error);
+        if (payload.delta) {
+          receivedText = true;
+          setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: message.text === "AI is thinking…" ? payload.delta! : message.text + payload.delta } : message));
+        }
+      };
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split(/\r?\n\r?\n/);
         buffer = events.pop() ?? "";
-        for (const event of events) {
-          const line = event.split(/\r?\n/).find((part) => part.startsWith("data:"));
-          if (!line) continue;
-          const payload = JSON.parse(line.slice(5).trim()) as { delta?: string; done?: boolean; error?: string };
-          if (payload.error) throw new Error(payload.error);
-          if (payload.delta) {
-            receivedText = true;
-            setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: message.text === "AI is thinking…" ? payload.delta! : message.text + payload.delta } : message));
-          }
-        }
+        for (const event of events) applyEvent(event);
       }
+      if (buffer.trim()) applyEvent(buffer);
       if (!receivedText) throw new Error("AI returned an empty response.");
     } catch (error) {
       const text = error instanceof Error ? error.message : "AI request failed.";
@@ -154,7 +171,7 @@ export default function BuilderContentType() {
               setPrompt("");
               if (promptInput.current) promptInput.current.style.height = "2.75rem";
               // Yield one frame so the optimistic user message paints first.
-              window.setTimeout(() => void sendToAi(history, messageId + 1), 0);
+              window.setTimeout(() => void sendToAi(history, messageId + 1, text), 0);
             }}
           >
             <div class="ai-chat-input-wrap">

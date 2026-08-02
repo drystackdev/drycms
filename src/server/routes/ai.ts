@@ -15,6 +15,8 @@ interface ChatMessage {
 
 interface ChatRequest {
   messages?: ChatMessage[];
+  message?: string;
+  conversationId?: string;
 }
 
 interface CheckKeyRequest {
@@ -36,6 +38,14 @@ interface ServerCredential {
   baseUrl: string;
   model: string;
 }
+
+interface ConversationRecord {
+  messages: ChatMessage[];
+  expiresAt: number;
+}
+
+const conversations = new Map<string, ConversationRecord>();
+const CONVERSATION_TTL_MS = 2 * 60 * 60 * 1000;
 
 const moduleSchemaAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
 const moduleEntryAdapter: ContentEntryEngineAdapter | undefined = content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
@@ -111,6 +121,41 @@ function validateMessages(value: unknown): ChatMessage[] {
     throw new Error("AI chat contains an invalid message.");
   }
   return messages.map((message) => ({ role: message.role, text: message.text.trim() }));
+}
+
+function validateSingleMessage(value: unknown): ChatMessage {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("AI chat message cannot be empty.");
+  }
+  return { role: "user", text: value.trim() };
+}
+
+function conversationKey(context: DryRouteContext, id: string): string {
+  return `${context.session?.id ?? "anonymous"}:${id}`;
+}
+
+function resolveChatConversation(context: DryRouteContext, body: ChatRequest): {
+  id?: string;
+  key?: string;
+  messages: ChatMessage[];
+} {
+  const id = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  if (!id || typeof body.message !== "string") {
+    return { messages: validateMessages(body.messages) };
+  }
+  if (id.length > 128) throw new Error("Conversation id is too long.");
+  const key = conversationKey(context, id);
+  const current = conversations.get(key);
+  if (current && current.expiresAt <= Date.now()) conversations.delete(key);
+  const history = conversations.get(key)?.messages ?? [];
+  return { id, key, messages: [...history, validateSingleMessage(body.message)] };
+}
+
+function rememberConversation(key: string, messages: ChatMessage[]): void {
+  conversations.set(key, {
+    messages: messages.slice(-40),
+    expiresAt: Date.now() + CONVERSATION_TTL_MS,
+  });
 }
 
 function promptForCli(messages: ChatMessage[]): string {
@@ -235,7 +280,7 @@ async function readSseStream(
   if (buffer.startsWith("data:")) onData(buffer.slice(5).trim());
 }
 
-function streamLocalCli(messages: ChatMessage[]): ReadableStream<Uint8Array> {
+function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => void): ReadableStream<Uint8Array> {
   const localAi = ai;
   if (localAi.mode !== "local") throw new Error("Local AI mode is not configured.");
   return new ReadableStream<Uint8Array>({
@@ -244,15 +289,22 @@ function streamLocalCli(messages: ChatMessage[]): ReadableStream<Uint8Array> {
         const { spawn } = await import("node:child_process");
         const prompt = promptForCli(messages);
         const hasPromptSlot = localAi.args.some((arg) => arg.includes("{prompt}"));
-        const args = hasPromptSlot
+        const baseArgs = hasPromptSlot
           ? localAi.args.map((arg) => arg.replaceAll("{prompt}", prompt))
           : [...localAi.args, prompt];
+        // Codex's normal exec output is line-buffered and only emits the final
+        // answer. JSONL gives us a stable final-message event; we progressively
+        // release that text below so the UI still renders it incrementally.
+        const args = localAi.provider === "codex" && !baseArgs.includes("--json")
+          ? [...baseArgs, "--json"]
+          : baseArgs;
         const child = spawn(localAi.command, args, {
           cwd: localAi.cwd,
           env: process.env,
           stdio: ["ignore", "pipe", "pipe"],
         });
         let stderr = "";
+        let stdout = "";
         let settled = false;
         const timer = setTimeout(() => {
           child.kill("SIGTERM");
@@ -263,7 +315,13 @@ function streamLocalCli(messages: ChatMessage[]): ReadableStream<Uint8Array> {
           }
         }, localAi.timeoutMs);
         child.stdout.on("data", (chunk: Buffer) => {
-          if (!settled) controller.enqueue(streamEvent({ delta: chunk.toString() }));
+          if (!settled && localAi.provider === "codex") {
+            stdout += chunk.toString();
+          } else if (!settled) {
+            const delta = chunk.toString();
+            onDelta(delta);
+            controller.enqueue(streamEvent({ delta }));
+          }
         });
         child.stderr.on("data", (chunk: Buffer) => {
           stderr += chunk.toString();
@@ -276,12 +334,42 @@ function streamLocalCli(messages: ChatMessage[]): ReadableStream<Uint8Array> {
           controller.close();
         });
         child.on("close", (code) => {
-          clearTimeout(timer);
-          if (settled) return;
-          settled = true;
-          if (code !== 0) controller.enqueue(streamEvent({ error: stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.` }));
-          controller.enqueue(streamEvent({ done: true }));
-          controller.close();
+          void (async () => {
+            clearTimeout(timer);
+            if (settled) return;
+            if (code !== 0) {
+              settled = true;
+              controller.enqueue(streamEvent({ error: stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.` }));
+              controller.enqueue(streamEvent({ done: true }));
+              controller.close();
+              return;
+            }
+            if (localAi.provider === "codex") {
+              let finalText = "";
+              for (const line of stdout.split(/\r?\n/)) {
+                try {
+                  const event = JSON.parse(line) as { type?: string; item?: { type?: string; text?: string } };
+                  if (event.type === "item.completed" && event.item?.type === "agent_message" && typeof event.item.text === "string") {
+                    finalText = event.item.text;
+                  }
+                } catch {
+                  // Ignore non-JSON diagnostic lines from the CLI.
+                }
+              }
+              if (!finalText) finalText = stdout.trim();
+              const chars = Array.from(finalText);
+              for (let index = 0; index < chars.length && !settled; index += 12) {
+                const delta = chars.slice(index, index + 12).join("");
+                onDelta(delta);
+                controller.enqueue(streamEvent({ delta }));
+                await new Promise((resolve) => setTimeout(resolve, 15));
+              }
+            }
+            if (settled) return;
+            settled = true;
+            controller.enqueue(streamEvent({ done: true }));
+            controller.close();
+          })();
         });
       })().catch((error) => {
         controller.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI request failed." }));
@@ -291,7 +379,11 @@ function streamLocalCli(messages: ChatMessage[]): ReadableStream<Uint8Array> {
   });
 }
 
-async function streamServerAiWithCredential(messages: ChatMessage[], credential: ServerCredential): Promise<ReadableStream<Uint8Array>> {
+async function streamServerAiWithCredential(
+  messages: ChatMessage[],
+  credential: ServerCredential,
+  onDelta: (delta: string) => void,
+): Promise<ReadableStream<Uint8Array>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
   const response = await fetch(
@@ -334,7 +426,10 @@ async function streamServerAiWithCredential(messages: ChatMessage[], credential:
         const delta = typeof event.delta === "string"
           ? event.delta
           : event.delta?.type === "text_delta" ? event.delta.text : undefined;
-        if (delta) streamController.enqueue(streamEvent({ delta }));
+        if (delta) {
+          onDelta(delta);
+          streamController.enqueue(streamEvent({ delta }));
+        }
         if (event.type === "response.failed" || event.type === "error") {
           streamController.enqueue(streamEvent({ error: event.error?.message || "AI provider failed." }));
         }
@@ -355,9 +450,13 @@ async function streamServerAiWithCredential(messages: ChatMessage[], credential:
   });
 }
 
-async function createChatStream(context: DryRouteContext, messages: ChatMessage[]): Promise<ReadableStream<Uint8Array>> {
-  if (ai.mode === "local") return streamLocalCli(messages);
-  return streamServerAiWithCredential(messages, await readServerCredential(context));
+async function createChatStream(
+  context: DryRouteContext,
+  messages: ChatMessage[],
+  onDelta: (delta: string) => void,
+): Promise<ReadableStream<Uint8Array>> {
+  if (ai.mode === "local") return streamLocalCli(messages, onDelta);
+  return streamServerAiWithCredential(messages, await readServerCredential(context), onDelta);
 }
 
 async function checkAiKey(body: CheckKeyRequest): Promise<void> {
@@ -459,9 +558,25 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
       return jsonResponse({ models });
     }
     const body = await context.request.json() as ChatRequest;
-    const messages = validateMessages(body.messages);
-    const stream = await createChatStream(context, messages);
-    return new Response(stream, {
+    const conversation = resolveChatConversation(context, body);
+    const assistant = { text: "" };
+    const stream = await createChatStream(context, conversation.messages, (delta) => {
+      assistant.text += delta;
+    });
+    const trackedStream = conversation.key
+      ? stream.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, transformController) {
+            transformController.enqueue(chunk);
+          },
+          flush() {
+            if (assistant.text.trim()) rememberConversation(conversation.key!, [
+              ...conversation.messages,
+              { role: "assistant", text: assistant.text },
+            ]);
+          },
+        }))
+      : stream;
+    return new Response(trackedStream, {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
