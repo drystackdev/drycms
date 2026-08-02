@@ -459,7 +459,7 @@ export default function BuilderContentType() {
                   </button>
                 ))}
               </div>
-              <button type="button" onClick={() => setAddingKind(selectedKind)}>
+              <button type="button" class="outline" onClick={() => setAddingKind(selectedKind)}>
                 <PlusIcon /> Add
               </button>
             </div>
