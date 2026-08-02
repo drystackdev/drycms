@@ -249,7 +249,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
             loaded = await api.get(id);
             liveType = loaded;
           }
-          // `hidden` types (role/permission/aiKey) have no schema editor of
+          // `hidden` types (role/aiKey) have no schema editor of
           // their own - only reachable here via a direct/stale URL, since
           // `ContentTypes.tsx`/`DryLayout.tsx` never link to one. Bounce back
           // rather than rendering a form whose Save the server will reject
@@ -330,7 +330,7 @@ export default function ContentTypeEditor({ id, kind }: Props) {
     else route(to);
   }
 
-  // `hidden` types (the built-in `seo` component, plus role/permission/aiKey
+  // `hidden` types (the built-in `seo` component, plus role/aiKey
   // among collections) are excluded here - they're implementation details of
   // other system types or managed through their own dedicated page, not
   // meant to be picked as a relation target/re-usable field group on

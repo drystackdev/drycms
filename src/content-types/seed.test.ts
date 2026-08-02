@@ -11,12 +11,11 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role, and permission (collections)", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, and role", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
       "menu",
       "menuItem",
-      "permission",
       "role",
       "seo",
       "user",
@@ -27,12 +26,10 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("menu").kind).toBe("collection");
     expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
-    expect(byName("permission").kind).toBe("collection");
   });
 
-  it("hides role/permission/aiKey/seo from the generic content-type UI, but leaves user/menu/menuItem visible", () => {
+  it("hides role/aiKey/seo from the generic content-type UI, but leaves user/menu/menuItem visible", () => {
     expect(byName("role").hidden).toBe(true);
-    expect(byName("permission").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
     expect(byName("user").hidden).toBeFalsy();
@@ -40,19 +37,17 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("menuItem").hidden).toBeFalsy();
   });
 
-  it("freezes role/permission/aiKey's schema entirely, but leaves seo's and user's editable", () => {
+  it("freezes role/aiKey's schema entirely, but leaves seo's and user's editable", () => {
     expect(byName("role").frozen).toBe(true);
-    expect(byName("permission").frozen).toBe(true);
     expect(byName("aiKey").frozen).toBe(true);
     expect(byName("seo").frozen).toBeFalsy();
     expect(byName("user").frozen).toBeFalsy();
   });
 
-  it("locks user/seo/role/permission/aiKey's tables against deletion, but leaves menu/menuItem deletable", () => {
+  it("locks user/seo/role/aiKey's tables against deletion, but leaves menu/menuItem deletable", () => {
     expect(byName("user").locked).toBe(true);
     expect(byName("seo").locked).toBe(true);
     expect(byName("role").locked).toBe(true);
-    expect(byName("permission").locked).toBe(true);
     expect(byName("aiKey").locked).toBe(true);
     expect(byName("menu").locked).toBeFalsy();
     expect(byName("menuItem").locked).toBeFalsy();
@@ -109,9 +104,8 @@ describe("defaultContentTypeDefinitions", () => {
     });
   });
 
-  it("role: unique+required name, a description, isSuperAdmin boolean, a manyToMany permissions relation", () => {
+  it("role: unique+required name, a description, isSuperAdmin boolean, and metadata permission keys", () => {
     const role = byName("role");
-    const permission = byName("permission");
     const name = role.fields.find((f) => f.name === "name")!;
     expect(name.validation).toMatchObject({ required: true, unique: true });
     const description = role.fields.find((f) => f.name === "description")!;
@@ -120,38 +114,18 @@ describe("defaultContentTypeDefinitions", () => {
     expect(isSuperAdmin.type).toBe("boolean");
     expect(isSuperAdmin.default).toBe(false);
     const permissions = role.fields.find((f) => f.name === "permissions")!;
-    expect(permissions.type).toBe("relation");
+    expect(permissions.type).toBe("select");
     expect(permissions.config).toMatchObject({
-      target: permission.id,
-      cardinality: "manyToMany",
+      options: [],
+      multiple: true,
     });
   });
 
-  it("permission: required (non-unique) name and idTable, a required action select", () => {
-    const permission = byName("permission");
-    const name = permission.fields.find((f) => f.name === "name")!;
-    expect(name.validation).toMatchObject({ required: true });
-    expect(name.validation.unique).toBeFalsy();
-    const idTable = permission.fields.find((f) => f.name === "idTable")!;
-    expect(idTable.type).toBe("text");
-    expect(idTable.validation).toMatchObject({ required: true });
-    expect(idTable.validation.unique).toBeFalsy();
-    const action = permission.fields.find((f) => f.name === "action")!;
-    expect(action.type).toBe("select");
-    expect(action.config).toMatchObject({
-      options: ["view", "create", "update", "delete", "publish", "setting"],
-      multiple: false,
-    });
-    expect(action.validation).toMatchObject({ required: true });
-  });
-
-  it("resolves role's permissions relation to a 'role_permissions' child table, and user's roles relation to a 'user_roles' child table", () => {
+  it("resolves only user's roles relation to a child table", () => {
     const role = byName("role");
     const user = byName("user");
     const roleTree = resolveTableTree(role, defs);
-    expect(
-      roleTree.children.find((c) => c.tableName === "role_permissions"),
-    ).toBeDefined();
+    expect(roleTree.children).toHaveLength(0);
     const userTree = resolveTableTree(user, defs);
     expect(
       userTree.children.find((c) => c.tableName === "user_roles"),
@@ -234,7 +208,7 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKey/role/permission/role_permissions/user_roles tables plus 7 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/user_roles tables plus 6 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
@@ -242,8 +216,6 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
-    expect(sql).toContain('CREATE TABLE "permission"');
-    expect(sql).toContain('CREATE TABLE "role_permissions"');
     expect(sql).toContain('CREATE TABLE "user_roles"');
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
@@ -251,7 +223,7 @@ describe("pendingSeedStatements", () => {
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(7);
+    expect(metadataInserts).toHaveLength(6);
   });
 
   it("seeds nothing once every default name is already present", () => {
@@ -263,7 +235,6 @@ describe("pendingSeedStatements", () => {
         "seo",
         "aikey",
         "role",
-        "permission",
       ]),
     );
     expect(statements).toEqual([]);
@@ -277,11 +248,10 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
-    expect(sql).toContain('CREATE TABLE "permission"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(6);
+    expect(metadataInserts).toHaveLength(5);
   });
 });

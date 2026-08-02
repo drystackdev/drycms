@@ -97,7 +97,6 @@ any new save path needs to participate in this, not bypass it.
 
 ## Permission model is schema-only right now
 
-`role`/`permission` rows exist and sync correctly (see ARCHITECTURE.md), but
-nothing enforces them against requests yet. Don't build a feature that
-assumes permission checks already gate access - if asked to add enforcement,
-treat it as new work, not a bug fix to something that silently regressed.
+Role permission keys are metadata-derived and enforced by the access layer
+(see ARCHITECTURE.md). Keep permission choices derived from current
+content-type metadata rather than reintroducing a second permission table.

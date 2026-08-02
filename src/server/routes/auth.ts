@@ -18,7 +18,7 @@ import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../r
  * registration, and sign-out. Deliberately does NOT gate any OTHER route on
  * having a valid session - see `docs/ARCHITECTURE.md`'s Permissions section,
  * which already documents that as a separate, not-yet-done pass, same as
- * `role`/`permission` having a schema today with no enforcement.
+ * `role` having a schema today with no enforcement.
  */
 
 type AuthErrorCode = "already_setup" | "invalid_credentials" | "validation_failed";

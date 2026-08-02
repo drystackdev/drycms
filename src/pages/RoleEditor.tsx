@@ -8,12 +8,11 @@ import { toast } from "../components/Toast.js";
 import {
   ContentEntriesApiError,
   createContentEntriesApi,
-  type EntrySummary,
 } from "../content-types/entries-http-api.js";
 import type { EntryValue } from "../content-types/engine/entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
-import { permissionActionsFor, type PermissionAction } from "../content-types/permissions.js";
+import { permissionActionsFor, permissionKeyFor, type PermissionAction } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
@@ -34,10 +33,14 @@ const ACTION_LABELS: Record<PermissionAction, string> = {
   setting: "Setting",
 };
 
-/** Fetches everything at once (both `permission` and the resource list are
- * expected to be small) rather than paginating - same "fetch all" rationale
- * as `Roles.tsx`'s own list fetch. */
-const FETCH_ALL_SIZE = 10_000;
+const ACTION_DESCRIPTIONS: Record<PermissionAction, string> = {
+  view: "Can view entries in this collection.",
+  create: "Can create new entries in this collection.",
+  update: "Can edit existing entries in this collection.",
+  delete: "Can delete entries from this collection.",
+  publish: "Can publish draft entries in this collection.",
+  setting: "Can view and edit this singleton's settings.",
+};
 
 /**
  * Bespoke Role editor (not the generic `ContentEntryEditor`/`FieldRenderer`
@@ -46,18 +49,16 @@ const FETCH_ALL_SIZE = 10_000;
  * through `FieldRenderer` (reusing its `ScalarField`/`RelationField` adapters
  * node-by-node), but the `permissions` relation is deliberately pulled out of
  * that loop and rendered as a per-resource collapsible list of switches
- * instead of a flat picker of individual `permission` rows - that's the part
- * a generic field loop can't express.
+ * instead of a flat picker of individual permission keys - that's the part a
+ * generic field loop can't express.
  */
 export default function RoleEditor({ id }: Props) {
   const { route } = useLocation();
   const isNew = id === "new";
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const roleEntriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "role"), []);
-  const permissionEntriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "permission"), []);
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
-  const [permissions, setPermissions] = useState<EntrySummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [value, setValue] = useState<EntryValue | null>(null);
@@ -74,8 +75,7 @@ export default function RoleEditor({ id }: Props) {
     [roleType, allTypes],
   );
   // `isSuperAdmin` is a bypass switch, not an ordinary editable attribute -
-  // only the permanently-seeded "Super Admin" role ever has it (see
-  // `permissions.ts`'s `SUPER_ADMIN_DESCRIPTION`/`superAdminSeedStatement`) -
+  // only the permanently-seeded "Super Admin" role ever has it -
   // excluded from the form entirely, same treatment as `permissions` below.
   const otherNodes = nodes.filter(
     (n) => n.fieldName !== "permissions" && n.fieldName !== "isSuperAdmin",
@@ -88,8 +88,6 @@ export default function RoleEditor({ id }: Props) {
       try {
         const types = await typesApi.list();
         setAllTypes(types);
-        const permissionResult = await permissionEntriesApi.list({ page: 0, pageSize: FETCH_ALL_SIZE });
-        setPermissions(permissionResult.rows);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Failed to load.");
       }
@@ -128,13 +126,12 @@ export default function RoleEditor({ id }: Props) {
     setValue((current) => (current ? { ...current, [fieldName]: fieldValue } : current));
   }
 
-  function permissionIdFor(resource: ContentTypeDefinition, action: PermissionAction): string | undefined {
-    return permissions?.find((p) => p.value.idTable === resource.id && p.value.action === action)?.id;
+  function permissionIdFor(resource: ContentTypeDefinition, action: PermissionAction): string {
+    return permissionKeyFor(resource.id, action);
   }
 
   function togglePermission(resource: ContentTypeDefinition, action: PermissionAction, checked: boolean) {
     const permId = permissionIdFor(resource, action);
-    if (!permId) return;
     setValue((current) => {
       if (!current) return current;
       const ids = Array.isArray(current.permissions) ? ([...current.permissions] as string[]) : [];
@@ -204,14 +201,14 @@ export default function RoleEditor({ id }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (!allTypes || !roleType || !permissions || value === null) return <span class="hint">Loading…</span>;
+  if (!allTypes || !roleType || value === null) return <span class="hint">Loading…</span>;
 
   const resources = allTypes
-    .filter(
-      (t) =>
-        t.kind !== "component" &&
-        t.name !== "permission",
-    )
+    .filter((t) => t.kind === "collection")
+    .slice()
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const singletons = allTypes
+    .filter((t) => t.kind === "singleton")
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const grantedIds = new Set(Array.isArray(value.permissions) ? (value.permissions as string[]) : []);
@@ -280,6 +277,7 @@ export default function RoleEditor({ id }: Props) {
                           key={action}
                           role="switch"
                           label={ACTION_LABELS[action]}
+                          description={ACTION_DESCRIPTIONS[action]}
                           value={isGranted(action)}
                           disabled={action !== "view" && !viewGranted}
                           onChange={(checked) => togglePermission(resource, action, checked)}
@@ -291,6 +289,28 @@ export default function RoleEditor({ id }: Props) {
               })}
             </div>
           </fieldset>
+
+          {singletons.length > 0 && (
+            <fieldset>
+              <legend>Singletons</legend>
+              <div class="stack" style={{ marginBottom: "0.5rem", gap: "1rem" }}>
+                {singletons.map((singleton) => {
+                  const permissionId = permissionIdFor(singleton, "setting");
+                  return (
+                    <div key={singleton.id}>
+                      <CheckField
+                        role="switch"
+                        label={singleton.label}
+                        description={singleton.description ?? "Manage this singleton's settings."}
+                        value={!!permissionId && grantedIds.has(permissionId)}
+                        onChange={(checked) => togglePermission(singleton, "setting", checked)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
 
           {!isNew && !value.isSuperAdmin && (
             <div class="content-type-editor-danger">

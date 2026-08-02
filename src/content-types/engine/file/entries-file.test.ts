@@ -359,16 +359,16 @@ describe("createFileContentEntryEngineAdapter", () => {
     const allTypes = await schema.listContentTypes();
     const role = allTypes.find((t) => t.name === "role")!;
 
-    expect(await entries.getResourceVersion(role)).toBe(0);
-
-    const created = await entries.createEntry(role, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
     expect(await entries.getResourceVersion(role)).toBe(1);
 
-    await entries.updateEntry(role, allTypes, created.id, { name: "Editor 2", isSuperAdmin: false, permissions: [] });
+    const created = await entries.createEntry(role, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
     expect(await entries.getResourceVersion(role)).toBe(2);
 
-    await entries.deleteEntry(role, allTypes, created.id);
+    await entries.updateEntry(role, allTypes, created.id, { name: "Editor 2", isSuperAdmin: false, permissions: [] });
     expect(await entries.getResourceVersion(role)).toBe(3);
+
+    await entries.deleteEntry(role, allTypes, created.id);
+    expect(await entries.getResourceVersion(role)).toBe(4);
   });
 
   it("does not bump the data version when create fails validation (rolled back in the same transaction)", async () => {
@@ -429,7 +429,7 @@ describe("createFileContentEntryEngineAdapter", () => {
     const user = allTypes.find((t) => t.name === "user")!;
 
     await entries.createEntry(role, allTypes, { name: "Editor", isSuperAdmin: false, permissions: [] });
-    expect(await entries.getResourceVersion(role)).toBe(1);
+    expect(await entries.getResourceVersion(role)).toBe(2);
     expect(await entries.getResourceVersion(user)).toBe(0);
   });
 });

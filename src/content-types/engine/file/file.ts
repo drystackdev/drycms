@@ -1,14 +1,13 @@
 import type { ResolvedFileContentOption } from "../../../server/options.js";
 import { defaultContentTypeDefinitions } from "../../seed.js";
+import { SUPER_ADMIN_DESCRIPTION } from "../../permissions.js";
 import { findDependents } from "../../tree.js";
 import type { ContentTypeDefinition } from "../../types.js";
-import type { ContentEntryEngineAdapter } from "../entries-types.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../types.js";
 import { createFileContentEntryEngineAdapter } from "./entries-file.js";
 import { createFileDriver, safePathSegment, type FileDriver } from "./file-driver.js";
 import { bumpDataVersion, getDataVersion } from "./index-store.js";
 import { applyFileRewrite, planFileSave, type FileSavePlan } from "./migration-file.js";
-import { deleteFilePermissions, syncFilePermissions } from "./permissions-file.js";
 
 /** The whole content-types collection is one resource for versioning
  * purposes (see `status/build-cache.md`) - `"__content-types__"` can never
@@ -51,12 +50,7 @@ async function rebuildAllRaw(driver: FileDriver): Promise<ContentTypeDefinition[
 
 export function createFileContentEngineAdapter(option: ResolvedFileContentOption): ContentEngineAdapter {
   const driver: FileDriver = createFileDriver(option);
-  let entryAdapter: ContentEntryEngineAdapter | undefined;
-  function getEntryAdapter(): ContentEntryEngineAdapter {
-    entryAdapter ??= createFileContentEntryEngineAdapter(option);
-    return entryAdapter;
-  }
-
+  const entryAdapter = createFileContentEntryEngineAdapter(option);
   async function readAllRaw(): Promise<ContentTypeDefinition[]> {
     const cached = await driver.readJson<ContentTypeDefinition[]>(CONTENT_TYPES_INDEX_PATH);
     if (cached) return cached;
@@ -68,31 +62,37 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
   }
 
   /** Seeds whichever default content types (`seed.ts`) aren't already
-   * present (by name, case-insensitively) - the file-engine analog of
-   * `sqlite.ts`'s boot sequence (`pendingSeedStatements`), just writing
-   * plain JSON definitions instead of running DDL - and syncs `permission`/
-   * seeds Super Admin unconditionally on every boot, same as there. Run
-   * once, lazily, memoized for this adapter's lifetime. */
+   * present (by name, case-insensitively), then memoizes the boot work. */
   let bootPromise: Promise<void> | undefined;
   function ensureBooted(): Promise<void> {
     bootPromise ??= (async () => {
       const existing = await readAllRaw();
       const existingNames = new Set(existing.map((t) => t.name.toLowerCase()));
       const missing = defaultContentTypeDefinitions().filter((t) => !existingNames.has(t.name.toLowerCase()));
-      let allTypes = existing;
       if (missing.length > 0) {
         // Every missing default type, plus the refreshed cache, land in one commit.
-        allTypes = await driver.transaction(async (tx) => {
+        await driver.transaction(async (tx) => {
           for (const target of missing) {
             await tx.writeJson(typePath(target.id), target);
           }
           const rebuilt = await rebuildAllRaw(tx);
           await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
           await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
-          return rebuilt;
         });
       }
-      await syncFilePermissions(driver, getEntryAdapter(), allTypes);
+      const allTypes = await readAllRaw();
+      const roleType = allTypes.find((type) => type.name === "role");
+      if (roleType) {
+        const roles = await entryAdapter.listEntries(roleType, allTypes, { page: 0, pageSize: 10_000 });
+        if (!roles.rows.some((row) => row.value.name === "Super Admin")) {
+          await entryAdapter.createEntry(roleType, allTypes, {
+            name: "Super Admin",
+            description: SUPER_ADMIN_DESCRIPTION,
+            isSuperAdmin: true,
+            permissions: [],
+          });
+        }
+      }
     })();
     return bootPromise;
   }
@@ -149,8 +149,7 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
     // every rewritten record - stays inside one `FileDriver.transaction()`:
     // a save touching several files should
     // never be observable as a half-migrated schema if a commit partway
-    // through failed. Permission sync runs in its own transaction right
-    // after (see that call site's comment) rather than joining this one.
+    // through failed.
     await driver.transaction(async (tx) => {
       await tx.writeJson(typePath(next.id), { ...next, version: plan.primary.nextVersion });
       for (const p of plan.cascaded) {
@@ -167,9 +166,6 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
       await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
       await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
     });
-
-    await syncFilePermissions(driver, getEntryAdapter(), await readAllRaw());
-
     const saved = await getContentType(next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
     return saved;
@@ -189,9 +185,6 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
         );
       }
     }
-
-    await deleteFilePermissions(driver, getEntryAdapter(), allTypes, id);
-
     // The type definition itself, its whole data folder, and every stray
     // index file - one commit, same rationale as `applySave`.
     await driver.transaction(async (tx) => {

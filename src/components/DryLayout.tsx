@@ -290,7 +290,7 @@ export default function DryLayout({ children }: Props) {
     }
     void reloadContentTypes();
   }, [contentTypesVersion.value, reloadContentTypes]);
-  // `hidden` types (role/permission/aiKey) are reached through their own
+  // `hidden` types (role/aiKey) are reached through their own
   // dedicated page instead - see `types.ts`'s doc comment.
   const collectionNavItems = useMemo(
     () => (contentTypes ?? []).filter((t) => t.kind === "collection" && !t.hidden),

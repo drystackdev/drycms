@@ -55,8 +55,7 @@ The `file` engine reuses the same local storage adapter as `storage`/`icons`
 (see below) - it's a third root within the same disk, not a separate storage
 mechanism. When adding a feature to the
 content engine, check whether it needs implementing symmetrically across all
-three, or is legitimately sqlite/D1-only (row-level SQL utilities like
-`permissions.ts` are a deliberate, narrow exception - see below).
+three, or is legitimately sqlite/D1-only.
 
 ## Content-type / field model
 
@@ -124,16 +123,16 @@ every successful save - check it when adding any new save path.
 ### System-type protections (`naming.ts`)
 
 Four independent flags on `ContentTypeDefinition` (`types.ts`) let a handful
-of seeded types (`role`, `permission`, `aiKey`, `seo`, `user`) opt into
+of seeded types (`role`, `aiKey`, `seo`, `user`) opt into
 protection against being reshaped through the generic schema editor, enforced
 both client- and server-side - not merely cosmetic:
 
 - **`hidden`** - absent from `ContentTypes.tsx`'s list, `DryLayout.tsx`'s
   Content dropdown, and every relation/component target picker in
   `ContentTypeEditor.tsx`. Still fully functional underneath (own table, own
-  entries API) - reached through a dedicated page instead (`role`/`permission`
-  via `Roles.tsx`/`RoleEditor.tsx`, `aiKey` via its own pinned nav entry).
-  Set on `role`/`permission`/`aiKey`/`seo`.
+  entries API) - reached through a dedicated page instead (`role` via
+  `Roles.tsx`/`RoleEditor.tsx`, `aiKey` via its own pinned nav entry).
+  Set on `role`/`aiKey`/`seo`.
 - **`locked`** - the type's TABLE can never be deleted: the schema editor's
   Danger Zone hides the delete button client-side, and `routes/
   content-types.ts`'s `DELETE` handler rejects it server-side
@@ -143,10 +142,9 @@ both client- and server-side - not merely cosmetic:
 - **`frozen`** - the WHOLE schema (fields, features, name) can never change
   via the content-types API at all, not just deletion - `naming.ts`'s
   `assertNotFrozen` rejects any save outright as a `NamingError` (400). Only
-  ever paired with `hidden: true`. Set on `role`/`permission`/`aiKey`, whose
-  table/column shape `permissions.ts` hardcodes (see below) - `frozen` is
-  specifically what stops an admin from reshaping them into something that
-  would silently break that raw SQL.
+  ever paired with `hidden: true`. Set on `role`/`aiKey`; `frozen` is
+  specifically what stops an admin from reshaping system schemas relied on by
+  auth and other built-in features.
 - **`protectedFieldIds`** (`string[]`) - individual fields on an otherwise-
   editable type that can never be edited or removed once seeded.
   `naming.ts`'s `validateProtectedFields` compares each field by full value
@@ -166,24 +164,17 @@ inline when adding a new save-path guard.
 
 ## Permissions / roles
 
-`role` and `permission` are ordinary seeded content types (`seed.ts`), but
-`permissions.ts` additionally hand-writes raw SQL for exactly those two
-tables (`permissionSyncStatements`, `permissionActionsFor`,
-`superAdminSeedStatement`) - a deliberate, narrow exception to the
-schema-definition-only boundary the rest of the engine maintains, not a
-general row-CRUD feature. One `permission` row exists per (resource, action)
-pair; a collection gets view/create/update/delete (+publish if
-`features.draft` is on), a singleton gets a single `"setting"` action,
-components get none. `role.isSuperAdmin` is a bypass switch seeded once onto
-the permanent "Super Admin" role - not something an admin toggles through
-`RoleEditor.tsx`, which deliberately excludes the field.
+`role` is the only seeded RBAC content type. `role.permissions` stores stable
+`<contentTypeId>:<action>` keys directly; the Role editor derives available
+keys from current content-type metadata, so there is no second permission
+table or row-sync process. A collection gets view/create/update/delete
+(+publish if `features.draft` is on), a singleton gets a single `"setting"`
+action, and components get none. `role.isSuperAdmin` is a bypass switch
+seeded once onto the permanent "Super Admin" role - not something an admin
+toggles through `RoleEditor.tsx`, which deliberately excludes the field.
 
-`role`/`permission` (and `aiKey`) are seeded with `hidden: true` and
-`frozen: true` (see "System-type protections" above) precisely because this
-hardcoded SQL exists - an admin reshaping either type's fields/name through
-the generic schema editor would silently desync `permissions.ts` from the
-real table, and `frozen` is what makes that impossible again as of this
-writing (it was briefly *not* enforced - see `status/role.md` history).
+`role` and `aiKey` are seeded with `hidden: true` and `frozen: true` (see
+"System-type protections" above); the role schema is part of the auth model.
 
 **Enforced as of 2026-07-31** - see "Auth" below for the session/permission
 enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
@@ -264,7 +255,7 @@ Every OTHER path under `path` (the actual dashboard: `/dashboard`,
 `/content/*`, `/content-types`, ...) requires a session and redirects to
 `/login` (or `/register`, first-run - `RegisterSuperAdmin` is the only way to
 create the first account, assigning the permanently-seeded "Super Admin"
-role from `permissions.ts`) instead of swapping in place. Already-
+role from the seed definition) instead of swapping in place. Already-
 authenticated visits to `/login`/`/register` bounce to `/dashboard`; an
 already-anonymous visit to `/register` once a user exists bounces to
 `/login` (registration is first-run only). Sign in/Register render
@@ -290,14 +281,13 @@ authenticated user may use them, no per-resource model exists for them.
 
 `content-types/access.ts`'s `resolveAccess(entryAdapter, allTypes, session)`
 resolves what that session's user can do - **fresh on every call, no
-caching** (a revoked role/permission takes effect on the very next request,
+caching** (a revoked role grant takes effect on the very next request,
 not just at the user's next login - a stricter contract than the session
 token's own `name`/`email`, which happily go stale until then). Walks
-`user.roles` → each `role` row (fetched via `getEntry`, not `listEntries` -
-`listEntries` never populates `manyToMany` fields like `role.permissions`,
-see `entries-sqlite.ts`'s doc comments) → `role.isSuperAdmin` short-circuits
-to "can do anything" the moment one matches, otherwise unions every matched
-role's granted `permission` ids and checks `(idTable, action)` against them.
+`user.roles` → each `role` row (fetched via `getEntry`) →
+`role.isSuperAdmin` short-circuits to "can do anything" the moment one
+matches, otherwise unions every matched role's permission keys and checks the
+requested `(contentTypeId, action)` key directly.
 
 Two routes call this on top of `handler.ts`'s central gate (belt-and-
 suspenders - their own unit tests call the exported handler directly,

@@ -121,7 +121,7 @@ export function validateContentTypeDefinition(
 }
 
 /** Rejects any save of a `frozen` content type outright - see `types.ts`'s
- * doc comment on `ContentTypeDefinition.frozen` for why (`role`/`permission`/
+ * doc comment on `ContentTypeDefinition.frozen` for why (`role`/
  * `aiKey` are fixed system infrastructure with hardcoded table/column shape
  * elsewhere, e.g. `permissions.ts`). `existing` is the type's current
  * stored definition (`undefined` for a brand-new save, which can never be

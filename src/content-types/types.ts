@@ -115,9 +115,9 @@ export interface ContentTypeDefinition {
    * relation/component target picker (`ContentTypeEditor.tsx`'s
    * `dynamicOptions`). Still fully functional underneath (own table, own
    * entries API) - just reached through a dedicated page instead of the
-   * generic content-type machinery (`role`/`permission` via `Roles.tsx`/
-   * `RoleEditor.tsx`, `aiKey` via its own pinned nav entry). Set on `role`,
-   * `permission`, `aiKey` (see `seed.ts`) and on the `seo` component (hidden
+   * generic content-type machinery (`role` via `Roles.tsx`/`RoleEditor.tsx`,
+   * `aiKey` via its own pinned nav entry). Set on `role`, `aiKey` (see
+   * `seed.ts`) and on the `seo` component (hidden
    * from the component-target picker specifically, since it's only ever
    * embedded via `features.seo`, never picked by hand). */
   hidden?: boolean;
@@ -127,7 +127,7 @@ export interface ContentTypeDefinition {
    * fields/features stay otherwise freely addable/editable/removable,
    * except whichever field ids are individually listed in
    * `protectedFieldIds`. Set on `user` (needed for login) and `seo` (needed
-   * for `features.seo`); `role`/`permission`/`aiKey` are covered by `frozen`
+   * for `features.seo`); `role`/`aiKey` are covered by `frozen`
    * below instead, which already implies this. */
   locked?: boolean;
   /** True for a content type whose schema (fields, features, name - the
@@ -137,7 +137,7 @@ export interface ContentTypeDefinition {
    * paired with `hidden: true`: these are fixed system infrastructure
    * (`permissions.ts` hardcodes their table/column shape) with no legitimate
    * reason for an admin to reshape them through the schema editor. Set on
-   * `role`, `permission`, `aiKey`. */
+   * `role`, `aiKey`. */
   frozen?: boolean;
   /** Field ids (from `fields[]`) that can never be edited or removed once
    * seeded, even though the type itself isn't `frozen` - critical to

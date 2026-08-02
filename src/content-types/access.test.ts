@@ -6,6 +6,7 @@ import type { MaskedValue } from "./engine/entry-codec.js";
 import { createSqliteContentEntryEngineAdapter } from "./engine/entries-sqlite.js";
 import { createSqliteContentEngineAdapter } from "./engine/sqlite.js";
 import { resolveAccess } from "./access.js";
+import { permissionKeyFor } from "./permissions.js";
 
 function freshAdapters() {
   const dir = mkdtempSync(join(tmpdir(), "drycms-access-test-"));
@@ -49,19 +50,12 @@ describe("resolveAccess", () => {
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;
     const roleType = allTypes.find((t) => t.name === "role")!;
-    const permissionType = allTypes.find((t) => t.name === "permission")!;
-
-    // permission rows for "user" are auto-synced at boot by permissions.ts
-    // (view/create/update/delete) - find the "view" one and grant only it.
-    const permissions = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 100 });
-    const viewUserPermission = permissions.rows.find((p) => p.value.idTable === userType.id && p.value.action === "view")!;
-    expect(viewUserPermission).toBeTruthy();
 
     const role = await entries.createEntry(roleType, allTypes, {
       name: "Viewer",
       description: "",
       isSuperAdmin: false,
-      permissions: [viewUserPermission.id],
+      permissions: [permissionKeyFor(userType.id, "view")],
     });
     const user = await createUser(entries, userType, allTypes, [role.id]);
     const access = await resolveAccess(entries, allTypes, { id: user.id, name: "Test User", email: "test@example.com" });

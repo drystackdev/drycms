@@ -201,7 +201,7 @@ describe("content-entries route - authorization", () => {
     const allTypes = await schema.listContentTypes();
     const userType = allTypes.find((t) => t.name === "user")!;
     const roleType = allTypes.find((t) => t.name === "role")!;
-    const permissionType = allTypes.find((t) => t.name === "permission")!;
+    const permissionKey = `${roleType.id}:view`;
 
     // No role at all - denied outright.
     const noRoleUser = await entries.createEntry(userType, allTypes, {
@@ -214,13 +214,11 @@ describe("content-entries route - authorization", () => {
     expect((await get("role", undefined, noRoleSession)).status).toBe(403);
 
     // A role granting only "view" on "role" - view passes, create still 403s.
-    const permissions = await entries.listEntries(permissionType, allTypes, { page: 0, pageSize: 100 });
-    const viewRolePermission = permissions.rows.find((p) => p.value.idTable === roleType.id && p.value.action === "view")!;
     const viewerRole = await entries.createEntry(roleType, allTypes, {
       name: "Role Viewer",
       description: "",
       isSuperAdmin: false,
-      permissions: [viewRolePermission.id],
+      permissions: [permissionKey],
     });
     const viewerUser = await entries.createEntry(userType, allTypes, {
       name: "Viewer",

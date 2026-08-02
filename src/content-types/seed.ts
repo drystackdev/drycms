@@ -34,11 +34,6 @@ const IDS = {
   roleName: "system-role-name",
   roleDescription: "system-role-description",
   roleIsSuperAdmin: "system-role-is-super-admin",
-  rolePermissions: "system-role-permissions",
-  permission: "system-permission",
-  permissionName: "system-permission-name",
-  permissionIdTable: "system-permission-id-table",
-  permissionAction: "system-permission-action",
 } as const;
 
 /**
@@ -48,18 +43,17 @@ const IDS = {
  * repeats, an `seo` component any collection/singleton can flatten in via
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
  * (credentials for third-party AI providers), and
- * `role`/`permission`
- * collections (role-based access control - see `status/role-permission.md`).
+ * collection (role-based access control).
  * `menuItem`/`user`/`menu` are plain, ordinary content types the admin can
  * freely rename, edit, or delete, indistinguishable from anything created by
  * hand - EXCEPT `user` itself, which carries `locked: true` (its table can't
  * be deleted - see `types.ts`) and `protectedFieldIds` over its
  * `email`/`password`/`roles` fields (needed for login/permissions, so they
  * can't be edited or removed either, even though the rest of `user`'s fields
- * are as free as any other type's). `seo`, `aiKey`, `role`, and `permission`
+ * are as free as any other type's). `seo`, `aiKey`, and `role`
  * carry real restrictions too (`hidden`/`locked`/`frozen` - see `types.ts`'s
- * doc comments), because `permissions.ts` hardcodes `role`/`permission`'s
- * table/column shape and `system-fields.ts` hardcodes `seo`'s id - reshaping
+ * doc comments), because the role schema is consumed by the auth layer and
+ * `system-fields.ts` hardcodes `seo`'s id - reshaping
  * any of them through the generic schema editor would silently break that.
  * Note that `pendingSeedStatements` re-seeds a missing default by NAME on the
  * next boot (it has no other way to tell "missing" apart from "renamed") -
@@ -117,7 +111,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     // Hidden from the component-target picker (only ever embedded via
     // `features.seo`, never picked by hand) and locked (its id is hardcoded
     // in `system-fields.ts`'s `SYSTEM_COMPONENT_IDS.seo`) - but its own
-    // fields stay freely addable/editable, unlike `role`/`permission`/
+    // fields stay freely addable/editable, unlike `role`/
     // `aiKey`'s `frozen` schema (see `types.ts`'s doc comments).
     hidden: true,
     locked: true,
@@ -250,7 +244,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     description: "Credentials for third-party AI providers.",
     // Completely out of the generic content-type machinery - reached via its
     // own pinned "AI Keys" nav entry (`DryLayout.tsx`) instead, same as
-    // `role`/`permission` via `Roles.tsx`/`RoleEditor.tsx` - see `types.ts`'s
+    // `role` via `Roles.tsx`/`RoleEditor.tsx` - see `types.ts`'s
     // doc comments for what `hidden`/`locked`/`frozen` each mean.
     hidden: true,
     locked: true,
@@ -347,11 +341,11 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         order: 2,
       },
       {
-        id: IDS.rolePermissions,
+        id: "system-role-permissions",
         name: "permissions",
         label: "Permissions",
-        type: "relation",
-        config: { target: IDS.permission, cardinality: "manyToMany" },
+        type: "select",
+        config: { options: [], multiple: true },
         validation: {},
         order: 3,
       },
@@ -359,54 +353,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  const permission: ContentTypeDefinition = {
-    id: IDS.permission,
-    kind: "collection",
-    name: "permission",
-    label: "Permission",
-    description:
-      "Auto-synced - one row per action per collection/singleton (view/create/update/delete/publish for a collection, a single \"setting\" for a singleton) - governs which role can do what on it.",
-    // Managed via `Roles.tsx`/`RoleEditor.tsx` instead - see `aiKey`'s
-    // comment above for what these three flags mean.
-    hidden: true,
-    locked: true,
-    frozen: true,
-    fields: [
-      {
-        id: IDS.permissionName,
-        name: "name",
-        label: "Name",
-        type: "text",
-        config: {},
-        validation: { required: true },
-        order: 0,
-      },
-      {
-        id: IDS.permissionIdTable,
-        name: "idTable",
-        label: "Table",
-        type: "text",
-        config: {},
-        validation: { required: true },
-        order: 1,
-      },
-      {
-        id: IDS.permissionAction,
-        name: "action",
-        label: "Action",
-        type: "select",
-        config: {
-          options: ["view", "create", "update", "delete", "publish", "setting"],
-          multiple: false,
-        },
-        validation: { required: true },
-        order: 2,
-      },
-    ],
-    version: 0,
-  };
-
-  return [menuItem, seo, user, menu, aiKey, role, permission];
+  return [menuItem, seo, user, menu, aiKey, role];
 }
 
 /**

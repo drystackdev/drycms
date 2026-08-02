@@ -125,7 +125,6 @@ describe("GET /dry/api/content-types", () => {
       "aiKey",
       "menu",
       "menuItem",
-      "permission",
       "role",
       "seo",
       "user",
@@ -133,7 +132,6 @@ describe("GET /dry/api/content-types", () => {
     const byName = (name: string) =>
       (json.definitions as ContentTypeDefinition[]).find((t) => t.name === name)!;
     expect(byName("role").hidden).toBe(true);
-    expect(byName("permission").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
     expect(byName("user").hidden).toBeFalsy();
@@ -295,18 +293,11 @@ describe("PUT /dry/api/content-types/[slug] (update)", () => {
     expect(json.definition.hidden).toBe(true);
   });
 
-  it("rejects any edit to a frozen content type (role/permission/aiKey)", async () => {
+  it("rejects any edit to a frozen content type (role/aiKey)", async () => {
     const role = await findByName("role");
     const { status, json } = await put(role.id, { definition: { ...role, label: "Renamed" } });
     expect(status).toBe(400);
     expect(json.error).toBe("invalid_definition");
-  });
-
-  it("rejects deleting a frozen content type", async () => {
-    const permission = await findByName("permission");
-    const response = await del(permission.id);
-    expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe("protected");
   });
 
   it("rejects deleting a locked-but-not-frozen content type (user)", async () => {
