@@ -391,18 +391,6 @@ export default function DryLayout({ children }: Props) {
                 >
                   <Icon name={item.icon} />
                   <span>{item.label}</span>
-                  {item.superAdminOnly && (
-                    <>
-                      <span class="spacer" />
-                      <span
-                        class="badge sm warning filled admin-badge"
-                        aria-label="Admin"
-                        data-tooltip="Admin"
-                      >
-                        <Icon name="Users" />
-                      </span>
-                    </>
-                  )}
                 </a>
               ) : (
                 <a

@@ -207,7 +207,11 @@ export default function RoleEditor({ id }: Props) {
   if (!allTypes || !roleType || !permissions || value === null) return <span class="hint">Loading…</span>;
 
   const resources = allTypes
-    .filter((t) => t.kind !== "component")
+    .filter(
+      (t) =>
+        t.kind !== "component" &&
+        t.name !== "permission",
+    )
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const grantedIds = new Set(Array.isArray(value.permissions) ? (value.permissions as string[]) : []);
