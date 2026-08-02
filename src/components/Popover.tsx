@@ -40,6 +40,11 @@ export interface PopoverProps {
   /** Set to `""` to omit the trigger's tooltip - e.g. when `trigger` already
    * carries a visible label. @default "More actions" */
   tooltip?: string;
+  /** Opens the menu immediately to the right of the trigger. Used by the
+   * collapsed sidebar, where the trigger sits inside the icon-only rail. */
+  placement?: "right";
+  /** Closes custom `<ul>` content when a link/menu item is clicked. */
+  closeOnItemClick?: boolean;
 }
 
 /**
@@ -63,6 +68,8 @@ export default function Popover({
   label,
   trigger,
   tooltip = "More actions",
+  placement,
+  closeOnItemClick = false,
 }: PopoverProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -86,9 +93,9 @@ export default function Popover({
     // width (not yet knowable here - the `popover="auto"` element is still
     // closed at this point in the commit, so measuring it would read 0),
     // same role as `usePopupFlip`'s `estimatedHeight` above.
-    const alignRight = rect.right - MENU_WIDTH >= EDGE_MARGIN;
+    const alignRight = placement !== "right" && rect.right - MENU_WIDTH >= EDGE_MARGIN;
     setPosition({
-      left: alignRight ? rect.right : rect.left,
+      left: placement === "right" ? rect.right : alignRight ? rect.right : rect.left,
       top: openUp ? rect.top - 4 : rect.bottom + 4,
       alignRight,
     });
@@ -120,7 +127,19 @@ export default function Popover({
 
   const handleTriggerClick = (event: MouseEvent) => {
     event.stopPropagation();
-    setOpen((current) => !current);
+    setOpen((current) => {
+      const next = !current;
+      if (!next) menuRef.current?.hidePopover?.();
+      return next;
+    });
+  };
+
+  const handleMenuClick = (event: MouseEvent) => {
+    if (!closeOnItemClick) return;
+    const target = event.target as Element | null;
+    if (!target?.closest("a, [role='menuitem'], [role='menuitemradio']")) return;
+    setOpen(false);
+    menuRef.current?.hidePopover?.();
   };
 
   return (
@@ -148,6 +167,7 @@ export default function Popover({
           openUp && "up"
         ].filter(Boolean).join(" ")}
         role={children ? undefined : "menu"}
+        onClick={handleMenuClick}
         style={
           position
             ? {

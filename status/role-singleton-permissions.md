@@ -12,6 +12,7 @@
 - Complete: removed the seeded `permission` content type/table and row-sync adapters; roles now store metadata-derived `<contentTypeId>:<action>` keys.
 - Complete: the Role editor keeps a virtual `Permission` system resource grantable without recreating its table.
 - Complete: authenticated session data now exposes current access keys for UI hints; navigation, entry lists, editors, and Role editor honor view/create/update/delete/setting access while server CRUD checks remain authoritative.
+- Complete: collapsed Collection/Singleton navigation now opens a right-side popup so accessible content types remain selectable.
 - Verified: `bun run typecheck`, `bun run test -- --run`, and `git diff --check` pass.
 - Blocked for this session: browser visual/computed-style QA could not run because no browser backend is available.
 

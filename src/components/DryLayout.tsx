@@ -91,7 +91,7 @@ const NAV: {
     icon: "IconManagement",
     ready: true,
     section: "System",
-    permissionName: "user",
+    superAdminOnly: true,
   },
   {
     key: "richtext-components",
@@ -103,22 +103,13 @@ const NAV: {
     superAdminOnly: true,
   },
   {
-    key: "users",
-    label: "Users",
-    href: `${path}/content/user`,
-    icon: "Users",
-    ready: true,
-    section: "System",
-    permissionName: "role",
-  },
-  {
     key: "roles",
     label: "Roles",
     href: `${path}/roles`,
     icon: "Settings",
     ready: true,
     section: "System",
-    superAdminOnly: true,
+    permissionName: "role",
   },
   {
     key: "key-value",
@@ -193,25 +184,62 @@ function ContentNavGroup({
   collapsed,
   onToggle,
 }: ContentNavGroupProps) {
+  const popupItems = (
+    <>
+      {items.map((type) => {
+        const href = `${path}/content/${type.name}`;
+        return (
+          <li key={type.id} class="sidebar-nav-popup-item">
+            <a role="menuitem" href={href} aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
+              {type.label}
+            </a>
+          </li>
+        );
+      })}
+    </>
+  );
+
   return (
     <div class="nav-group">
       <div class="nav-group-header">
-        <button
-          type="button"
-          class="nav-group-toggle"
-          aria-expanded={open}
-          aria-controls={id}
-          data-tooltip={collapsed ? label : undefined}
-          data-tooltip-placement="right"
-          onClick={onToggle}
-        >
-          <Icon name={icon} />
-          <span>{label}</span>
-          <Icon
-            name="ArrowDown"
-            class={`nav-chevron${open ? "" : " collapsed"}`}
-          />
-        </button>
+        {collapsed ? (
+          <Popover
+            label={`${label} menu`}
+            tooltip={label}
+            placement="right"
+            closeOnItemClick
+            trigger={(onClick, popupOpen) => (
+              <button
+                type="button"
+                class="nav-group-toggle"
+                aria-expanded={popupOpen}
+                aria-haspopup="menu"
+                data-tooltip={label}
+                data-tooltip-placement="right"
+                onClick={onClick}
+              >
+                <Icon name={icon} />
+              </button>
+            )}
+          >
+            {popupItems}
+          </Popover>
+        ) : (
+          <button
+            type="button"
+            class="nav-group-toggle"
+            aria-expanded={open}
+            aria-controls={id}
+            onClick={onToggle}
+          >
+            <Icon name={icon} />
+            <span>{label}</span>
+            <Icon
+              name="ArrowDown"
+              class={`nav-chevron${open ? "" : " collapsed"}`}
+            />
+          </button>
+        )}
       </div>
       {!collapsed && (
         <div
@@ -222,16 +250,7 @@ function ContentNavGroup({
           <div class="nav-subitems">
             {items.map((type) => {
               const href = `${path}/content/${type.name}`;
-              return (
-                <a
-                  key={type.id}
-                  href={href}
-                  class="nav-subitem"
-                  aria-current={isActiveNavItem(url, href) ? "page" : undefined}
-                >
-                  <span>{type.label}</span>
-                </a>
-              );
+              return <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}><span>{type.label}</span></a>;
             })}
           </div>
         </div>

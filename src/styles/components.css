@@ -2256,6 +2256,11 @@
         flex: 1;
         min-width: 0;
       }
+
+      & > .popover {
+        flex: 1;
+        min-width: 0;
+      }
     }
 
     .nav-group-toggle {
@@ -4023,7 +4028,7 @@
         padding: 0 0.75rem;
         height: 56px;
         border-bottom: none;
-        border-radius: var(--dry-radius-lg);
+        border-radius: var(--dry-radius-md);
         background-color: var(--dry-card);
         box-shadow: var(--dry-shadow-md);
         color: var(--dry-foreground);
@@ -4387,6 +4392,28 @@
     .popover-menu-check {
       margin-left: auto;
       flex-shrink: 0;
+    }
+
+    .sidebar-nav-popup-item {
+      list-style: none;
+
+      & > a {
+        min-height: unset !important;
+        justify-content: flex-start !important;
+        display: block;
+        padding: 0.5rem 0.625rem !important;
+        border-radius: var(--dry-radius-sm);
+        color: inherit;
+        font-size: var(--dry-text-sm);
+        font-weight: 500;
+        white-space: nowrap;
+
+        &:hover,
+        &[aria-current="page"] {
+          background-color: var(--dry-accent);
+          color: var(--dry-foreground);
+        }
+      }
     }
 
     /* --- FloatingPanel: follows an arbitrary/moving anchor element instead
