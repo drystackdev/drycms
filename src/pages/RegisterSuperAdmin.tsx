@@ -22,13 +22,14 @@ export default function RegisterSuperAdmin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [bootstrapToken, setBootstrapToken] = useState("");
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const nameError = submitAttempted && !name.trim() ? "Name is required." : undefined;
   const emailError = submitAttempted && !email.trim() ? "Email is required." : undefined;
-  const passwordError = submitAttempted && !password ? "Password is required." : undefined;
+  const passwordError = submitAttempted && !password ? "Password is required." : submitAttempted && password.length < 12 ? "Use at least 12 characters." : undefined;
   const confirmError =
     submitAttempted && password && confirmPassword !== password ? "Passwords do not match." : undefined;
 
@@ -36,11 +37,11 @@ export default function RegisterSuperAdmin() {
     event.preventDefault();
     setSubmitAttempted(true);
     setSubmitError(null);
-    if (!name.trim() || !email.trim() || !password || confirmPassword !== password) return;
+    if (!name.trim() || !email.trim() || password.length < 12 || confirmPassword !== password || !bootstrapToken) return;
 
     setSubmitting(true);
     try {
-      await registerFirstAdmin(name.trim(), email.trim(), password);
+      await registerFirstAdmin(name.trim(), email.trim(), password, bootstrapToken);
     } catch (error) {
       setSubmitError(error instanceof AuthApiError ? error.message : "Failed to create the account.");
     } finally {
@@ -101,6 +102,14 @@ export default function RegisterSuperAdmin() {
               onChange={setConfirmPassword}
               error={!!confirmError}
               helperText={confirmError}
+              required
+            />
+            <PasswordField
+              label="Bootstrap token"
+              name="bootstrapToken"
+              placeholder="DRYCMS_BOOTSTRAP_TOKEN"
+              value={bootstrapToken}
+              onChange={setBootstrapToken}
               required
             />
 

@@ -255,7 +255,10 @@ Every OTHER path under `path` (the actual dashboard: `/dashboard`,
 `/content/*`, `/content-types`, ...) requires a session and redirects to
 `/login` (or `/register`, first-run - `RegisterSuperAdmin` is the only way to
 create the first account, assigning the permanently-seeded "Super Admin"
-role from the seed definition) instead of swapping in place. Already-
+role from the seed definition). The bootstrap POST additionally requires a
+deployment-provided `DRYCMS_BOOTSTRAP_TOKEN` of at least 32 characters and a
+CSRF token, so an uninitialized public instance cannot be claimed by an
+arbitrary cross-site or unauthenticated request. Already-
 authenticated visits to `/login`/`/register` bounce to `/dashboard`; an
 already-anonymous visit to `/register` once a user exists bounces to
 `/login` (registration is first-run only). Sign in/Register render
@@ -295,9 +298,9 @@ bypassing `handler.ts` entirely):
 - **`routes/content-entries.ts`** - every verb maps to a `PermissionAction`
   (singleton collapses everything to `"setting"`; collection: `GET→view`,
   `POST→create`, `PUT`/`PATCH→update`, `DELETE→delete`) and 403s unless
-  `access.can(type.id, action)`. `publish` is NOT enforced separately yet - a
-  `PUT` toggling a draft to published only needs `update`, a documented gap
-  like `RichText`'s `publish` action row itself.
+  `access.can(type.id, action)`. On draft-enabled collections, creating or
+  updating a row with `draft: false` additionally requires the distinct
+  `publish` permission.
 - **`routes/content-types.ts`** (the Content-Type Builder - schema/field/
   feature edits, not entry data) - `GET` only needs the central "has a
   session" gate (the sidebar and every entry editor need the type list

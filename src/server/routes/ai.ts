@@ -8,7 +8,7 @@ import type { ContentEntryEngineAdapter } from "../../content-types/engine/entri
 import type { ContentEngineAdapter } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
-import { validateOutboundUrl } from "../outbound-url.js";
+import { validateOutboundUrlForRequest } from "../outbound-url.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 interface ChatMessage {
@@ -61,6 +61,9 @@ interface ConversationRecord {
 
 const conversations = new Map<string, ConversationRecord>();
 const CONVERSATION_TTL_MS = 2 * 60 * 60 * 1000;
+const MAX_CONVERSATIONS = 1_000;
+const MAX_ACTIVE_AI_STREAMS = 4;
+let activeAiStreams = 0;
 
 const moduleSchemaAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
 const moduleEntryAdapter: ContentEntryEngineAdapter | undefined = content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
@@ -123,7 +126,7 @@ async function readServerCredentials(context: DryRouteContext): Promise<ServerCr
     try {
       const providerEntry = providerFromEntry(row.value.provider);
       const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
-      const baseUrl = validateOutboundUrl(typeof row.value.url === "string" && row.value.url.trim()
+      const baseUrl = await validateOutboundUrlForRequest(typeof row.value.url === "string" && row.value.url.trim()
         ? row.value.url.trim()
         : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl, "AI provider URL");
       const entryModel = typeof row.value.model === "string" ? row.value.model.trim() : "";
@@ -206,6 +209,9 @@ function resolveChatConversation(context: DryRouteContext, body: ChatRequest): {
   messages: ChatMessage[];
 } {
   const id = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  for (const [key, record] of conversations) {
+    if (record.expiresAt <= Date.now()) conversations.delete(key);
+  }
   if (typeof body.message === "string") {
     const message = validateSingleMessage(body.message);
     if (!id) return { messages: [message] };
@@ -223,9 +229,49 @@ function resolveChatConversation(context: DryRouteContext, body: ChatRequest): {
 }
 
 function rememberConversation(key: string, messages: ChatMessage[]): void {
+  if (!conversations.has(key) && conversations.size >= MAX_CONVERSATIONS) {
+    const oldest = [...conversations.entries()].sort((left, right) => left[1].expiresAt - right[1].expiresAt)[0];
+    if (oldest) conversations.delete(oldest[0]);
+  }
   conversations.set(key, {
     messages: messages.slice(-40),
     expiresAt: Date.now() + CONVERSATION_TTL_MS,
+  });
+}
+
+function trackAiStream(stream: ReadableStream<Uint8Array>, release: () => void): ReadableStream<Uint8Array> {
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let released = false;
+  const timeout = setTimeout(releaseOnce, ai.timeoutMs + 5_000);
+  function releaseOnce(): void {
+    if (released) return;
+    released = true;
+    clearTimeout(timeout);
+    release();
+  }
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        reader ??= stream.getReader();
+        const result = await reader.read();
+        if (result.done) {
+          controller.close();
+          releaseOnce();
+        } else {
+          controller.enqueue(result.value);
+        }
+      } catch (error) {
+        controller.error(error);
+        releaseOnce();
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader?.cancel(reason);
+      } finally {
+        releaseOnce();
+      }
+    },
   });
 }
 
@@ -658,7 +704,7 @@ async function readStoredAiKey(context: DryRouteContext, entryIdValue?: string, 
     if (entryId !== null) raw = await entries.getRawEntry(type, entryId);
   }
   if (!raw && entryName?.trim()) {
-    const page = await entries.listEntries(type, allTypes, { page: 0, pageSize: 10_000 });
+  const page = await entries.listEntries(type, allTypes, { page: 0, pageSize: 100 });
     const selected = page.rows.find((row) => String(row.value.name ?? "") === entryName.trim());
     if (selected) raw = await entries.getRawEntry(type, selected.id);
   }
@@ -678,7 +724,7 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
   if (!apiKey) throw new Error("No API key is available. Enter an API key and save this entry first.");
   if (!model) throw new Error("A model is required before checking the API key.");
   if (rawProvider.toLowerCase() === "google") {
-    const baseUrl = validateOutboundUrl(String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com", "AI provider URL");
+    const baseUrl = await validateOutboundUrlForRequest(String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com", "AI provider URL");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
     try {
@@ -703,7 +749,7 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
     : provider === "anthropic"
       ? "https://api.anthropic.com"
       : "https://api.openai.com";
-  const baseUrl = validateOutboundUrl(String(body.url ?? "").trim() || configuredBaseUrl, "AI provider URL");
+  const baseUrl = await validateOutboundUrlForRequest(String(body.url ?? "").trim() || configuredBaseUrl, "AI provider URL");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
   try {
@@ -739,7 +785,7 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
   let apiKey = String(body.key ?? "").trim();
   if (!apiKey && (body.entryId || body.entryName)) apiKey = await readStoredAiKey(context, body.entryId, body.entryName);
   if (providerValue === "custom") {
-    const url = validateOutboundUrl(String(body.url ?? "").trim(), "AI provider URL");
+    const url = await validateOutboundUrlForRequest(String(body.url ?? "").trim(), "AI provider URL");
     if (!url) throw new Error("URL is required for Custom provider.");
     if (!apiKey) throw new Error("API key is required to load models.");
     const response = await fetch(url, {
@@ -758,7 +804,7 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
   const provider = providerValue === "chatgpt" ? "openai" : providerValue === "claude" ? "anthropic" : providerValue;
   const key = apiKey;
   if (!key) throw new Error("API key is required to load models.");
-  const url = validateOutboundUrl(String(body.url ?? "").trim() || (
+  const url = await validateOutboundUrlForRequest(String(body.url ?? "").trim() || (
     provider === "google"
       ? "https://generativelanguage.googleapis.com"
       : provider === "anthropic"
@@ -815,12 +861,22 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
       const models = await listAiModels(context, await context.request.json() as ModelsRequest);
       return jsonResponse({ models });
     }
+    if (activeAiStreams >= MAX_ACTIVE_AI_STREAMS) {
+      return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
+    }
     const body = await context.request.json() as ChatRequest;
     const conversation = resolveChatConversation(context, body);
     const assistant = { text: "" };
-    const stream = await createChatStream(context, conversation.messages, (delta) => {
-      assistant.text += delta;
-    });
+    activeAiStreams += 1;
+    let stream: ReadableStream<Uint8Array>;
+    try {
+      stream = await createChatStream(context, conversation.messages, (delta) => {
+        assistant.text += delta;
+      });
+    } catch (error) {
+      activeAiStreams -= 1;
+      throw error;
+    }
     const trackedStream = conversation.key
       ? stream.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
           transform(chunk, transformController) {
@@ -834,7 +890,9 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
           },
         }))
       : stream;
-    return new Response(trackedStream, {
+    return new Response(trackAiStream(trackedStream, () => {
+      activeAiStreams = Math.max(0, activeAiStreams - 1);
+    }), {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",

@@ -17,6 +17,17 @@ import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
 type RouteModule = Record<string, DryRouteHandler | undefined>;
 
+function secureResponse(response: Response, request?: Request): Response {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (request && new URL(request.url).protocol === "https:") {
+    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  return response;
+}
+
 /**
  * Direct replacement for the 6 `injectRoute` calls the old Astro integration
  * made - one router keyed by the path segment right after `${path}/api/`,
@@ -53,7 +64,7 @@ export async function handleApiRequest(
   const url = new URL(request.url);
   const prefix = `${basePath}/api/`;
   if (!url.pathname.startsWith(prefix)) {
-    return new Response("Not found", { status: 404 });
+    return secureResponse(new Response("Not found", { status: 404 }), request);
   }
 
   const rest = url.pathname.slice(prefix.length);
@@ -62,20 +73,20 @@ export async function handleApiRequest(
   const slug = slash === -1 ? undefined : rest.slice(slash + 1);
 
   const route = API_ROUTES[segment];
-  if (!route) return new Response("Not found", { status: 404 });
+  if (!route) return secureResponse(new Response("Not found", { status: 404 }), request);
 
   const handler = route[request.method];
-  if (!handler) return new Response("Method not allowed", { status: 405 });
+  if (!handler) return secureResponse(new Response("Method not allowed", { status: 405 }), request);
 
   const bodyTooLarge = bodyLimitResponse(request, segment, request.method);
-  if (bodyTooLarge) return bodyTooLarge;
+  if (bodyTooLarge) return secureResponse(bodyTooLarge, request);
 
   if (requiresCsrf(request, segment, slug)) {
     if (!hasValidCsrf(request)) {
-      return new Response(JSON.stringify({ error: "csrf_failed", message: "CSRF token is missing or invalid." }), {
+      return secureResponse(new Response(JSON.stringify({ error: "csrf_failed", message: "CSRF token is missing or invalid." }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
-      });
+      }), request);
     }
   }
 
@@ -91,17 +102,17 @@ export async function handleApiRequest(
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
   const session = await resolveSession(request, env);
   if (segment !== "auth" && !session) {
-    return new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
+    return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
-    });
+    }), request);
   }
 
   const boundedRequest = limitRequestBody(request, segment, request.method);
   const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
   if ((segment === "icons" || segment === "richtext-components") && request.method !== "GET") {
     const denied = await requireSuperAdmin(context);
-    if (denied) return denied;
+    if (denied) return secureResponse(denied, request);
   }
-  return handler(context);
+  return secureResponse(await handler(context), request);
 }

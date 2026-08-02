@@ -89,8 +89,8 @@ export const GET: DryRouteHandler = async (context) => {
       const namespace = parts[0]!;
       const result = await store.list(namespace, {
         cursor: context.url.searchParams.get("cursor") ?? undefined,
-        limit: Number(context.url.searchParams.get("limit") ?? 50),
-        search: context.url.searchParams.get("search") ?? undefined,
+        limit: Math.min(100, Math.max(1, Number(context.url.searchParams.get("limit") ?? 50) || 50)),
+        search: context.url.searchParams.get("search")?.slice(0, 200) || undefined,
       });
       const tag = etag(store.currentRevision);
       if (context.request.headers.get("If-None-Match") === tag) return new Response(null, { status: 304, headers: { ETag: tag } });

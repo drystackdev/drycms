@@ -142,6 +142,11 @@ describe("POST /dry/api/storage/[...slug] (multipart upload)", () => {
     const response = await upload("missing-folder", new File(["x"], "a.txt", { type: "text/plain" }));
     expect(response.status).toBe(404);
   });
+
+  it("rejects SVG uploads in generic storage", async () => {
+    const response = await upload("", new File(["<svg></svg>"], "unsafe.svg", { type: "image/svg+xml" }));
+    expect(response.status).toBe(501);
+  });
 });
 
 describe("POST /dry/api/storage/[...slug] (mkdir)", () => {
@@ -183,6 +188,11 @@ describe("PUT /dry/api/storage/[...slug]", () => {
   it("400s an empty path", async () => {
     const response = await PUT(context({ slug: "", method: "PUT", body: "x" }));
     expect(response.status).toBe(400);
+  });
+
+  it("rejects SVG replacement targets", async () => {
+    const response = await PUT(context({ slug: "unsafe.svg", method: "PUT", body: "<svg></svg>" }));
+    expect(response.status).toBe(501);
   });
 
   it("includes previewUrl when overwriting an image, matching what GET/list() would report", async () => {

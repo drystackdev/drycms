@@ -65,9 +65,11 @@ function slugToFilename(label: string, prefixPart?: string): string {
 }
 
 async function handleList(url: URL, apiBase: string): Promise<Response> {
-  const page = Math.max(0, Number(url.searchParams.get("page") ?? "0") || 0);
-  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize") ?? String(DEFAULT_PAGE_SIZE)) || DEFAULT_PAGE_SIZE);
-  const search = (url.searchParams.get("search") ?? "").trim().toLowerCase();
+  const rawPage = Number(url.searchParams.get("page"));
+  const rawPageSize = Number(url.searchParams.get("pageSize"));
+  const page = Number.isSafeInteger(rawPage) && rawPage >= 0 ? Math.min(rawPage, 1_000_000) : 0;
+  const pageSize = Number.isSafeInteger(rawPageSize) && rawPageSize > 0 ? Math.min(rawPageSize, 100) : DEFAULT_PAGE_SIZE;
+  const search = (url.searchParams.get("search") ?? "").trim().slice(0, 200).toLowerCase();
 
   const all = (await adapter.list("")).filter((entry) => entry.kind === "file");
   const filtered = search ? all.filter((entry) => entry.name.toLowerCase().includes(search)) : all;

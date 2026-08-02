@@ -13,7 +13,7 @@ vi.mock("../config.js", async () => {
   return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
 });
 
-const { GET, POST, PATCH } = await import("./content-entries.js");
+const { GET, POST, PUT, PATCH } = await import("./content-entries.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
 const { content } = await import("../config.js");
 
@@ -80,6 +80,11 @@ async function post(slug: string, body: unknown, session?: SessionPayload | null
 async function patch(slug: string, body: unknown) {
   const response = await PATCH(context({ slug, method: "PATCH", body: JSON.stringify(body) }));
   return { status: response.status, json: response.status === 204 ? null : ((await response.json()) as any) };
+}
+
+async function put(slug: string, body: unknown, session?: SessionPayload | null) {
+  const response = await PUT(context({ slug, method: "PUT", body: JSON.stringify(body), session }));
+  return { status: response.status, json: (await response.json()) as any };
 }
 
 describe("content-entries route - data-version protocol", () => {
@@ -245,5 +250,44 @@ describe("content-entries route - authorization", () => {
     });
     const roleManagerSession: SessionPayload = { id: roleManagerUser.id, name: "Role Manager User", email: "role-manager@example.com" };
     expect((await post("role", { name: "Forged Super Admin", isSuperAdmin: true, permissions: [] }, roleManagerSession)).status).toBe(403);
+  });
+
+  it("requires publish permission when a draft-enabled entry is published", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const userType = allTypes.find((t) => t.name === "user")!;
+    const roleType = allTypes.find((t) => t.name === "role")!;
+    const article = {
+      id: "publishable-article",
+      kind: "collection" as const,
+      name: "publishableArticle",
+      label: "Publishable Article",
+      features: { draft: true },
+      fields: [{ id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 }],
+      version: 0,
+    };
+    await schema.applySave(article, await schema.planSave(article));
+    const editorRole = await entries.createEntry(roleType, allTypes, {
+      name: "Draft Editor",
+      description: "",
+      isSuperAdmin: false,
+      permissions: [`${article.id}:create`, `${article.id}:update`],
+    });
+    const editor = await entries.createEntry(userType, allTypes, {
+      name: "Draft Editor User",
+      email: "draft-editor@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [editorRole.id],
+    });
+    const editorSession: SessionPayload = { id: editor.id, name: "Draft Editor User", email: "draft-editor@example.com" };
+
+    const draft = await post(article.name, { title: "Draft", draft: true }, editorSession);
+    expect(draft.status).toBe(201);
+    const published = await post(article.name, { title: "Published", draft: false }, editorSession);
+    expect(published.status).toBe(403);
+    const draftId = draft.json.entry.id as string;
+    expect((await put(`${article.name}/${draftId}`, { title: "Still draft", draft: true }, editorSession)).status).toBe(200);
+    expect((await put(`${article.name}/${draftId}`, { title: "Now published", draft: false }, editorSession)).status).toBe(403);
   });
 });

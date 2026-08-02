@@ -19,6 +19,10 @@ import { StorageError } from "../../storage/types.js";
 
 const adapter = createStorageAdapter(storage);
 
+function isSvgName(name: string): boolean {
+  return /\.svg$/i.test(name);
+}
+
 function withPreview(entry: FileEntry, apiBase: string): FileEntry {
   if (entry.kind === "file" && entry.ext && extensionToCategory(entry.ext) === "image") {
     return { ...entry, previewUrl: `${apiBase}/${toUrlPath(entry.id)}` };
@@ -60,12 +64,20 @@ export const GET: DryRouteHandler = async (context) => {
     }
 
     const file = await adapter.read(path);
+    const isSvg = isSvgName(stat.name);
     return new Response(Readable.toWeb(file.stream) as unknown as ReadableStream, {
       status: 200,
       headers: {
-        "Content-Type": mimeType(stat.name),
+        // SVG is not accepted for new generic uploads. Legacy files are
+        // still served as downloads so an old stored payload cannot execute
+        // as an active document in an image preview or a new browser tab.
+        "Content-Type": isSvg ? "application/octet-stream" : mimeType(stat.name),
         "Content-Length": String(file.size),
         "Last-Modified": new Date(file.modifiedAt).toUTCString(),
+        ...(isSvg ? {
+          "Content-Disposition": "attachment; filename=download.svg",
+          "Content-Security-Policy": "sandbox; default-src 'none'",
+        } : {}),
       },
     });
   } catch (error) {
@@ -84,6 +96,9 @@ async function handleUpload(request: Request, folder: string, apiBase: string): 
   if (files.length === 0) {
     throw new StorageError("invalid_path", "No files in the upload.");
   }
+  if (files.length > 100) {
+    throw new StorageError("unsupported", "At most 100 files can be uploaded per request.");
+  }
   // Reject an in-batch name collision up front: writing sequentially and
   // only discovering the collision on the second file would otherwise leave
   // the first file actually written while reporting the whole batch failed.
@@ -99,6 +114,7 @@ async function handleUpload(request: Request, folder: string, apiBase: string): 
   for (const file of files) {
     const name = readLeafName(file.name);
     const targetPath = normalizeStoragePath(joinStoragePath(folder, name));
+    if (isSvgName(name)) throw new StorageError("unsupported", "SVG uploads are disabled in generic storage; use the managed Icons area.");
     if (await adapter.stat(targetPath)) {
       throw new StorageError("already_exists", `"${targetPath}" already exists.`);
     }
@@ -148,6 +164,7 @@ export const PUT: DryRouteHandler = async (context) => {
   try {
     const path = readSlug(context);
     if (!path) throw new StorageError("invalid_path", "A file path is required.");
+    if (isSvgName(path)) throw new StorageError("unsupported", "SVG uploads are disabled in generic storage; use the managed Icons area.");
 
     const existing = await adapter.stat(path);
     if (existing?.kind === "folder") {
@@ -180,6 +197,7 @@ export const PATCH: DryRouteHandler = async (context) => {
     }
     const to = normalizeStoragePath(typeof body.to === "string" ? body.to : undefined);
     if (!to) throw new StorageError("invalid_path", "A destination path is required.");
+    if (isSvgName(to)) throw new StorageError("unsupported", "SVG files cannot be created in generic storage; use the managed Icons area.");
 
     const apiBase = apiBaseFrom(context.url, "storage");
     // Same-path is a legitimate no-op for `move` (dropping a file back where
@@ -198,6 +216,10 @@ export const PATCH: DryRouteHandler = async (context) => {
       );
     }
 
+    const source = await adapter.stat(from);
+    if (source?.kind === "file" && isSvgName(source.name)) {
+      throw new StorageError("unsupported", "SVG files cannot be moved or copied from generic storage.");
+    }
     const stat =
       body.action === "move" ? await adapter.move(from, to) : await adapter.copy(from, to);
     return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBase) }, 200);

@@ -122,6 +122,22 @@ async function checkAccess(
   return null;
 }
 
+/** Publishing is a distinct capability from editing. A delegated editor may
+ * save drafts, but cannot flip a draft-enabled collection to published unless
+ * their role explicitly grants `publish`. */
+async function checkPublishAccess(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  type: ContentTypeDefinition,
+  value: EntryValue,
+  previousValue?: EntryValue,
+): Promise<Response | null> {
+  if (type.kind !== "collection" || !type.features?.draft) return null;
+  if (value.draft !== false || previousValue?.draft === false) return null;
+  return checkAccess(context, entryAdapter, allTypes, type, "publish");
+}
+
 async function protectSystemMutation(
   context: DryRouteContext,
   entryAdapter: ContentEntryEngineAdapter,
@@ -351,12 +367,14 @@ export const GET: DryRouteHandler = async (context) => {
     }
 
     const url = new URL(context.request.url);
-    const page = Math.max(0, Number(url.searchParams.get("page")) || 0);
-    const pageSize = Math.max(1, Number(url.searchParams.get("pageSize")) || 10);
+    const rawPage = Number(url.searchParams.get("page"));
+    const rawPageSize = Number(url.searchParams.get("pageSize"));
+    const page = Number.isSafeInteger(rawPage) && rawPage >= 0 ? Math.min(rawPage, 1_000_000) : 0;
+    const pageSize = Number.isSafeInteger(rawPageSize) && rawPageSize > 0 ? Math.min(rawPageSize, 100) : 10;
     const sortField = url.searchParams.get("sortField") ?? undefined;
     const sortDirParam = url.searchParams.get("sortDir");
     const sortDir = sortDirParam === "asc" || sortDirParam === "desc" ? sortDirParam : undefined;
-    const search = url.searchParams.get("search") ?? undefined;
+    const search = url.searchParams.get("search")?.slice(0, 200) || undefined;
     const searchableFieldsParam = url.searchParams.get("searchableFields");
     const searchableFields = searchableFieldsParam ? searchableFieldsParam.split(",").filter(Boolean) : undefined;
 
@@ -406,6 +424,8 @@ export const POST: DryRouteHandler = async (context) => {
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
     const value = decodeRelationIds(nodes, (await context.request.json()) as EntryValue);
+    const publishDenied = await checkPublishAccess(context, entryAdapter, allTypes, type, value);
+    if (publishDenied) return publishDenied;
     const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "create", undefined, value);
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
@@ -439,6 +459,9 @@ export const PUT: DryRouteHandler = async (context) => {
     }
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to update.");
     const entryId = decodeIdOrThrow(hashedId);
+    const existing = await entryAdapter.getEntry(type, allTypes, entryId);
+    const publishDenied = await checkPublishAccess(context, entryAdapter, allTypes, type, value, existing?.value);
+    if (publishDenied) return publishDenied;
     const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "update", entryId, value);
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
@@ -468,7 +491,15 @@ export const PATCH: DryRouteHandler = async (context) => {
     const denied = await checkAccess(context, entryAdapter, allTypes, type, "update");
     if (denied) return denied;
     const body = (await context.request.json()) as { updates?: { id: string; sortIndex: number }[] };
-    const updates = (body.updates ?? []).map((u) => ({ id: decodeIdOrThrow(u.id), sortIndex: u.sortIndex }));
+    if (!Array.isArray(body.updates) || body.updates.length > 500) {
+      throw new ContentEntryError("validation_failed", "At most 500 reorder updates are allowed per request.");
+    }
+    const updates = body.updates.map((u) => {
+      if (!u || typeof u.id !== "string" || !Number.isSafeInteger(u.sortIndex)) {
+        throw new ContentEntryError("validation_failed", "Each reorder update must contain a valid id and integer sortIndex.");
+      }
+      return { id: decodeIdOrThrow(u.id), sortIndex: u.sortIndex };
+    });
     await entryAdapter.reorderEntries(type, allTypes, updates);
     return new Response(null, { status: 204 });
   } catch (error) {

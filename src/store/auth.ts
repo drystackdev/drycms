@@ -106,10 +106,10 @@ export async function loadSession(): Promise<void> {
   }
 }
 
-export async function registerFirstAdmin(name: string, email: string, password: string): Promise<void> {
+export async function registerFirstAdmin(name: string, email: string, password: string, bootstrapToken: string): Promise<void> {
   const res = await fetch(`${path}/api/auth/register-first-admin`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-DryCMS-Bootstrap-Token": bootstrapToken },
     body: JSON.stringify({ name, email, password }),
   });
   await assertOk(res, "Failed to create the Super Admin account.");

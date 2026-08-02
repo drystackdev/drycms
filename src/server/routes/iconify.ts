@@ -9,13 +9,14 @@ const ICONIFY_API_BASE = "https://api.iconify.design";
  * scoped to one icon set (`prefixes` set) and, when "Search all icon sets"
  * is on, unscoped (`prefixes` simply omitted). */
 async function proxySearch(url: URL): Promise<Response> {
-  const query = (url.searchParams.get("query") ?? "").trim();
+  const query = (url.searchParams.get("query") ?? "").trim().slice(0, 200);
   if (!query) return jsonResponse({ icons: [], total: 0 });
 
   const params = new URLSearchParams({ query });
-  const limit = url.searchParams.get("limit");
-  if (limit) params.set("limit", limit);
-  const prefixes = url.searchParams.get("prefixes");
+  const rawLimit = Number(url.searchParams.get("limit"));
+  const limit = Number.isSafeInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 64) : 32;
+  params.set("limit", String(limit));
+  const prefixes = url.searchParams.get("prefixes")?.slice(0, 500);
   if (prefixes) params.set("prefixes", prefixes);
 
   const res = await fetch(`${ICONIFY_API_BASE}/search?${params.toString()}`);
@@ -83,13 +84,14 @@ async function proxyIconsPreview(url: URL): Promise<Response> {
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
+  if (ids.length > 100) throw new Error("At most 100 icons can be previewed at once.");
 
   const namesByPrefix = new Map<string, string[]>();
   for (const id of ids) {
     const colon = id.indexOf(":");
     if (colon <= 0) continue;
     const prefix = id.slice(0, colon);
-    const name = id.slice(colon + 1);
+    const name = id.slice(colon + 1).slice(0, 200);
     const names = namesByPrefix.get(prefix);
     if (names) names.push(name);
     else namesByPrefix.set(prefix, [name]);

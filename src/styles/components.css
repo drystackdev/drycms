@@ -30,7 +30,7 @@
       display: grid;
       flex: 1;
       place-items: center;
-      border: 1px dashed var(--dry-border);
+      border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-md);
       background: var(--dry-accent);
     }
@@ -3039,8 +3039,7 @@
     }
 
     .role-permission-switches {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
       gap: 0.5rem 1.5rem;
     }
 

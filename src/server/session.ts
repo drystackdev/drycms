@@ -17,7 +17,13 @@ export function readSessionCookie(request: Request): string | undefined {
     const eq = part.indexOf("=");
     if (eq === -1) continue;
     const key = part.slice(0, eq).trim();
-    if (key === SESSION_COOKIE_NAME) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (key === SESSION_COOKIE_NAME) {
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        return undefined;
+      }
+    }
   }
   return undefined;
 }
@@ -29,7 +35,13 @@ export function readRefreshCookie(request: Request): string | undefined {
     const eq = part.indexOf("=");
     if (eq === -1) continue;
     const key = part.slice(0, eq).trim();
-    if (key === REFRESH_COOKIE_NAME) return decodeURIComponent(part.slice(eq + 1).trim());
+    if (key === REFRESH_COOKIE_NAME) {
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        return undefined;
+      }
+    }
   }
   return undefined;
 }

@@ -9,7 +9,11 @@ function readCookie(request: Request): string | undefined {
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
     if (eq !== -1 && part.slice(0, eq).trim() === CSRF_COOKIE_NAME) {
-      return decodeURIComponent(part.slice(eq + 1).trim());
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        return undefined;
+      }
     }
   }
   return undefined;
@@ -37,7 +41,7 @@ export function clearCsrfCookieHeader(context: { url: URL }): string {
 export function requiresCsrf(request: Request, segment: string, slug?: string): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return false;
   if (segment !== "auth") return true;
-  return slug !== "login" && slug !== "register-first-admin";
+  return slug !== "login";
 }
 
 export function hasValidCsrf(request: Request): boolean {

@@ -37,12 +37,13 @@ function normalizeEmail(email: string): string {
 }
 
 function ipFrom(request: Request): string {
-  // X-Forwarded-For is client-controlled unless the deployment has an
-  // explicitly trusted proxy layer. Never let a login attacker rotate this
-  // value to bypass the IP bucket. Cloudflare overwrites CF-Connecting-IP at
-  // its edge; direct Node deployments deliberately fall back to one bucket
-  // until they configure a trusted-proxy source.
-  return request.headers.get("CF-Connecting-IP")?.trim() || "unknown";
+  // The Node adapter overwrites this internal header from the socket address,
+  // so a direct client cannot rotate the IP bucket with a forged request
+  // header. Fetch-native adapters may provide the same value from their
+  // trusted runtime (Cloudflare's edge header is the fallback there).
+  return request.headers.get("X-DryCMS-Client-IP")?.trim()
+    || request.headers.get("CF-Connecting-IP")?.trim()
+    || "unknown";
 }
 
 async function readCounter(counterKey: string, env: Record<string, unknown>): Promise<Counter | null> {

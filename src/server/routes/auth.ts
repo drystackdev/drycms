@@ -13,6 +13,7 @@ import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
 import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../rate-limit.js";
 import { RequestBodyLimitError } from "../request-limits.js";
+import { readEnvVar } from "../options.js";
 
 /**
  * The `auth` API route: session issuance for the built-in `user` collection
@@ -21,7 +22,7 @@ import { RequestBodyLimitError } from "../request-limits.js";
  * having a valid session - see `docs/ARCHITECTURE.md`'s Permissions section.
  */
 
-type AuthErrorCode = "already_setup" | "invalid_credentials" | "validation_failed";
+type AuthErrorCode = "already_setup" | "invalid_credentials" | "validation_failed" | "bootstrap_required" | "bootstrap_invalid";
 
 class AuthError extends Error {
   code: AuthErrorCode;
@@ -38,8 +39,37 @@ const STATUS_BY_CODE: Record<string, number> = {
   already_setup: 409,
   invalid_credentials: 401,
   validation_failed: 422,
+  bootstrap_required: 503,
+  bootstrap_invalid: 403,
   not_found: 404,
 };
+
+let firstAdminRegistration: Promise<void> | undefined;
+
+function constantTimeEqual(left: string, right: string): boolean {
+  let difference = left.length ^ right.length;
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+  }
+  return difference === 0;
+}
+
+async function withFirstAdminRegistrationLock<T>(work: () => Promise<T>): Promise<T> {
+  const previous = firstAdminRegistration ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  firstAdminRegistration = current;
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    if (firstAdminRegistration === current) firstAdminRegistration = undefined;
+  }
+}
 
 function errorResponse(error: unknown): Response {
   if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
@@ -205,7 +235,7 @@ export const GET: DryRouteHandler = async (context) => {
     }
 
     const response = jsonResponse({ hasAnyUser: anyUser, user });
-    if (context.session) response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
+    response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
     return response;
   } catch (error) {
     return errorResponse(error);
@@ -219,42 +249,56 @@ export const POST: DryRouteHandler = async (context) => {
     const entryAdapter = getEntryAdapter(context);
 
     if (endpoint === "register-first-admin") {
-      const allTypes = await schemaAdapter.listContentTypes();
-      const userType = findType(allTypes, "user");
-      const roleType = findType(allTypes, "role");
-
-      if (await hasAnyUser(entryAdapter, userType, allTypes)) {
-        throw new AuthError("already_setup", "An account already exists - sign in instead.");
+      const bootstrapToken = readEnvVar("DRYCMS_BOOTSTRAP_TOKEN");
+      if (!bootstrapToken || bootstrapToken.length < 32) {
+        throw new AuthError("bootstrap_required", "Set DRYCMS_BOOTSTRAP_TOKEN (at least 32 characters) before creating the first administrator.");
+      }
+      const suppliedToken = context.request.headers.get("X-DryCMS-Bootstrap-Token") ?? "";
+      if (!constantTimeEqual(suppliedToken, bootstrapToken)) {
+        throw new AuthError("bootstrap_invalid", "The bootstrap token is invalid.");
       }
 
-      const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      const email = typeof body.email === "string" ? body.email.trim() : "";
-      const password = typeof body.password === "string" ? body.password : "";
+      return await withFirstAdminRegistrationLock(async () => {
+        const allTypes = await schemaAdapter.listContentTypes();
+        const userType = findType(allTypes, "user");
+        const roleType = findType(allTypes, "role");
 
-      const rolePage = await entryAdapter.listEntries(roleType, allTypes, {
-        page: 0,
-        pageSize: 25,
-        search: "Super Admin",
-        searchableFields: ["name"],
+        if (await hasAnyUser(entryAdapter, userType, allTypes)) {
+          throw new AuthError("already_setup", "An account already exists - sign in instead.");
+        }
+
+        const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        const email = typeof body.email === "string" ? body.email.trim() : "";
+        const password = typeof body.password === "string" ? body.password : "";
+        if (!name || !email || password.length < 12) {
+          throw new AuthError("validation_failed", "Name, email, and a password of at least 12 characters are required.");
+        }
+
+        const rolePage = await entryAdapter.listEntries(roleType, allTypes, {
+          page: 0,
+          pageSize: 25,
+          search: "Super Admin",
+          searchableFields: ["name"],
+        });
+        const superAdminRole = rolePage.rows.find((row) => row.value.name === "Super Admin");
+        if (!superAdminRole) {
+          throw new Error('[drycms] The seeded "Super Admin" role is missing - check permissions.ts\'s boot seeding.');
+        }
+
+        const created = await entryAdapter.createEntry(userType, allTypes, {
+          name,
+          email,
+          password: { hasExisting: false, new: password },
+          roles: [superAdminRole.id],
+        });
+
+        const sessionUser: SessionUser = { id: created.id, name, email };
+        const authSession = await createAuthSession(created.id, context.env);
+        const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
+        const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
+        return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken);
       });
-      const superAdminRole = rolePage.rows.find((row) => row.value.name === "Super Admin");
-      if (!superAdminRole) {
-        throw new Error('[drycms] The seeded "Super Admin" role is missing - check permissions.ts\'s boot seeding.');
-      }
-
-      const created = await entryAdapter.createEntry(userType, allTypes, {
-        name,
-        email,
-        password: { hasExisting: false, new: password },
-        roles: [superAdminRole.id],
-      });
-
-      const sessionUser: SessionUser = { id: created.id, name, email };
-      const authSession = await createAuthSession(created.id, context.env);
-      const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
-      const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
-      return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken);
     }
 
     if (endpoint === "login") {

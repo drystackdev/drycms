@@ -4,6 +4,7 @@ import { vi } from "vitest";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 const ORIGINAL_SECRET = process.env.DRYCMS_SECRET_KEY;
+const ORIGINAL_BOOTSTRAP = process.env.DRYCMS_BOOTSTRAP_TOKEN;
 
 vi.mock("../config.js", async () => {
   const { mkdtempSync } = await import("node:fs");
@@ -20,11 +21,14 @@ const { resolveSession } = await import("../session.js");
 
 beforeEach(() => {
   process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
+  process.env.DRYCMS_BOOTSTRAP_TOKEN = "test-bootstrap-token-do-not-use-in-prod-1234567890";
 });
 
 afterEach(() => {
   if (ORIGINAL_SECRET === undefined) delete process.env.DRYCMS_SECRET_KEY;
   else process.env.DRYCMS_SECRET_KEY = ORIGINAL_SECRET;
+  if (ORIGINAL_BOOTSTRAP === undefined) delete process.env.DRYCMS_BOOTSTRAP_TOKEN;
+  else process.env.DRYCMS_BOOTSTRAP_TOKEN = ORIGINAL_BOOTSTRAP;
 });
 
 afterAll(async () => {
@@ -47,7 +51,14 @@ async function context(opts: { slug?: string; method?: string; body?: unknown; c
     headers,
   });
   const session = await resolveSession(request);
-  return { params: { slug: opts.slug }, request, url, env: {}, session };
+  const requestWithBootstrap = opts.slug === "register-first-admin"
+    ? new Request(url, {
+        method: opts.method ?? "GET",
+        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        headers: { ...headers, "X-DryCMS-Bootstrap-Token": process.env.DRYCMS_BOOTSTRAP_TOKEN ?? "" },
+      })
+    : request;
+  return { params: { slug: opts.slug }, request: requestWithBootstrap, url, env: {}, session };
 }
 
 /** Extracts just the `drycms_session=...` pair (no attributes) from a
@@ -96,7 +107,7 @@ describe("auth route", () => {
     const { status, json, response } = await registerFirstAdmin({
       name: "Ada Lovelace",
       email: "ada@example.com",
-      password: "hunter2",
+      password: "hunter2-long-password",
     });
     expect(status).toBe(201);
     expect(json.user).toEqual({
@@ -134,13 +145,13 @@ describe("auth route", () => {
   });
 
   it("rejects a second register-first-admin attempt once an account exists", async () => {
-    const { status, json } = await registerFirstAdmin({ name: "Grace", email: "grace@example.com", password: "hunter2" });
+    const { status, json } = await registerFirstAdmin({ name: "Grace", email: "grace@example.com", password: "hunter2-long-password" });
     expect(status).toBe(409);
     expect(json.error).toBe("already_setup");
   });
 
   it("logs in with correct credentials and rejects wrong password / unknown email with the same generic message", async () => {
-    const ok = await login({ email: "ada@example.com", password: "hunter2" });
+    const ok = await login({ email: "ada@example.com", password: "hunter2-long-password" });
     expect(ok.status).toBe(200);
     expect(ok.json.user.email).toBe("ada@example.com");
     expect(cookieFrom(ok.response)).toMatch(/^drycms_session=/);
@@ -149,14 +160,14 @@ describe("auth route", () => {
     expect(wrongPassword.status).toBe(401);
     expect(wrongPassword.json.message).toBe("Invalid email or password.");
 
-    const unknownEmail = await login({ email: "nobody@example.com", password: "hunter2" });
+    const unknownEmail = await login({ email: "nobody@example.com", password: "hunter2-long-password" });
     expect(unknownEmail.status).toBe(401);
     expect(unknownEmail.json.message).toBe(wrongPassword.json.message);
   });
 
   it("update-profile requires a session, and a password change requires + verifies the current password", async () => {
     const { cookie } = await (async () => {
-      const res = await login({ email: "ada@example.com", password: "hunter2" });
+      const res = await login({ email: "ada@example.com", password: "hunter2-long-password" });
       return { cookie: cookieFrom(res.response)! };
     })();
 
@@ -175,7 +186,7 @@ describe("auth route", () => {
       isSuperAdmin: true,
       permissions: [],
     });
-    const stillOldPassword = await login({ email: "ada@example.com", password: "hunter2" });
+    const stillOldPassword = await login({ email: "ada@example.com", password: "hunter2-long-password" });
     expect(stillOldPassword.status).toBe(200);
 
     // A new password without the current one is a validation error, not a
@@ -194,18 +205,18 @@ describe("auth route", () => {
     );
     expect(wrongCurrent.status).toBe(401);
     expect(wrongCurrent.json.fieldErrors).toEqual({ currentPassword: "Incorrect current password." });
-    const oldPasswordStillWorks = await login({ email: "ada@example.com", password: "hunter2" });
+    const oldPasswordStillWorks = await login({ email: "ada@example.com", password: "hunter2-long-password" });
     expect(oldPasswordStillWorks.status).toBe(200);
 
     // The correct current password lets the new one take effect.
     const changed = await updateProfile(
-      { name: "Ada L.", email: "ada@example.com", currentPassword: "hunter2", newPassword: "hunter3" },
+      { name: "Ada L.", email: "ada@example.com", currentPassword: "hunter2-long-password", newPassword: "hunter3-long-password" },
       cookie,
     );
     expect(changed.status).toBe(200);
-    const oldPasswordRejected = await login({ email: "ada@example.com", password: "hunter2" });
+    const oldPasswordRejected = await login({ email: "ada@example.com", password: "hunter2-long-password" });
     expect(oldPasswordRejected.status).toBe(401);
-    const newPasswordWorks = await login({ email: "ada@example.com", password: "hunter3" });
+    const newPasswordWorks = await login({ email: "ada@example.com", password: "hunter3-long-password" });
     expect(newPasswordWorks.status).toBe(200);
   });
 

@@ -5,7 +5,7 @@ describe("CSRF protection", () => {
   it("requires a token for mutations but exempts initial login/setup", () => {
     expect(requiresCsrf(new Request("http://localhost/dry/api/content", { method: "POST" }), "content")).toBe(true);
     expect(requiresCsrf(new Request("http://localhost/dry/api/auth/login", { method: "POST" }), "auth", "login")).toBe(false);
-    expect(requiresCsrf(new Request("http://localhost/dry/api/auth/register-first-admin", { method: "POST" }), "auth", "register-first-admin")).toBe(false);
+    expect(requiresCsrf(new Request("http://localhost/dry/api/auth/register-first-admin", { method: "POST" }), "auth", "register-first-admin")).toBe(true);
   });
 
   it("requires matching cookie and header values", () => {

@@ -21,6 +21,30 @@ export function validateOutboundUrl(raw: string, label = "URL"): string {
   return parsed.toString().replace(/\/$/, "");
 }
 
+/** Validate again against DNS answers immediately before a server-side fetch.
+ * Literal checks alone are vulnerable when an attacker controls a hostname
+ * that resolves to a private address (including a DNS-rebinding target).
+ * Workers deployments should enforce the same rule at their egress layer;
+ * Node performs the additional lookup here. */
+export async function validateOutboundUrlForRequest(raw: string, label = "URL"): Promise<string> {
+  const value = validateOutboundUrl(raw, label);
+  if (typeof process === "undefined" || !process.versions?.node) return value;
+
+  const hostname = new URL(value).hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (isPrivateIpv4(hostname) || isPrivateIpv6(hostname)) return value;
+  try {
+    const { lookup } = await import("node:dns/promises");
+    const addresses = await lookup(hostname, { all: true, verbatim: true });
+    if (!addresses.length || addresses.some(({ address }) => isPrivateIpv4(address) || isPrivateIpv6(address))) {
+      throw new Error(`${label} points to a private or local destination.`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("private or local")) throw error;
+    throw new Error(`${label} hostname could not be resolved safely.`);
+  }
+  return value;
+}
+
 function isPrivateIpv4(hostname: string): boolean {
   if (/^\d+$/.test(hostname)) return true;
   const parts = hostname.split(".");

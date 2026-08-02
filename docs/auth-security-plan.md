@@ -222,7 +222,8 @@ Dùng double-submit cookie:
 Ngoại lệ có chủ đích:
 
 - `POST /api/auth/login` khi chưa có session.
-- `POST /api/auth/register-first-admin` khi chưa setup.
+- `POST /api/auth/register-first-admin` khi chưa setup (vẫn phải gửi CSRF và
+  `X-DryCMS-Bootstrap-Token`; token được cấu hình qua `DRYCMS_BOOTSTRAP_TOKEN`).
 
 Các request auth khác vẫn phải có CSRF nếu đang dùng cookie session.
 
@@ -336,7 +337,8 @@ Không đưa password, refresh token, raw IP hoặc secret vào log response/err
 - Mutation thiếu header bị `403`.
 - Cookie/header khác nhau bị `403`.
 - Token đúng được chấp nhận.
-- Login/register không bị khóa bởi CSRF khi chưa có session.
+- Login không bị khóa bởi CSRF khi chưa có session; first-admin registration
+  phải có CSRF vì endpoint đã phát hành tài khoản đặc quyền.
 
 ### Rate limit
 

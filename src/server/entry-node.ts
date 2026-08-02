@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join } from "node:path";
-import { createApiMiddleware, sendFetchResponse, toFetchRequest } from "./adapters/node.js";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { applySecurityHeaders, createApiMiddleware, sendFetchResponse, toFetchRequest } from "./adapters/node.js";
 import { mimeType } from "./route-helpers.js";
 import { guardPageRequest } from "./page-guard.js";
 
@@ -17,12 +17,24 @@ const apiMiddleware = createApiMiddleware();
 
 function serveShellOrAsset(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url ?? "/", "http://localhost");
-  const filePath = join(clientDir, url.pathname);
-  if (url.pathname !== "/" && filePath.startsWith(clientDir) && existsSync(filePath) && statSync(filePath).isFile()) {
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    res.statusCode = 400;
+    applySecurityHeaders(res);
+    res.end("Bad request");
+    return;
+  }
+  const filePath = resolve(clientDir, `.${pathname}`);
+  const fileRelative = relative(clientDir, filePath);
+  if (pathname !== "/" && fileRelative && !fileRelative.startsWith("..") && !isAbsolute(fileRelative) && existsSync(filePath) && statSync(filePath).isFile()) {
+    applySecurityHeaders(res);
     res.setHeader("Content-Type", mimeType(filePath));
     createReadStream(filePath).pipe(res);
     return;
   }
+  applySecurityHeaders(res);
   res.setHeader("Content-Type", "text/html");
   res.end(indexHtml);
 }
