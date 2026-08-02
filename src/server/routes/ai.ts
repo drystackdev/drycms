@@ -39,7 +39,7 @@ interface ModelsRequest {
 
 interface ServerCredential {
   name: string;
-  provider: "openai" | "anthropic";
+  provider: "openai" | "anthropic" | "google";
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -80,10 +80,11 @@ async function requireSuperAdmin(context: DryRouteContext): Promise<Response | n
   return access?.isSuperAdmin ? null : forbiddenResponse("Only Super Admin can use AI chat.");
 }
 
-function providerFromEntry(value: unknown): "openai" | "anthropic" | "custom" {
+function providerFromEntry(value: unknown): "openai" | "anthropic" | "google" | "custom" {
   const provider = String(value ?? "").trim().toLowerCase();
   if (provider === "chatgpt" || provider === "openai") return "openai";
   if (provider === "anthropic" || provider === "claude") return "anthropic";
+  if (provider === "google" || provider === "gemini") return "google";
   if (provider === "custom") return "custom";
   throw new Error(`Unsupported AI Key provider "${String(value)}".`);
 }
@@ -109,25 +110,34 @@ async function readServerCredentials(context: DryRouteContext): Promise<ServerCr
   }
 
   const credentials: ServerCredential[] = [];
+  const skippedKeys: string[] = [];
   for (const row of orderedRows) {
     const name = String(row.value.name ?? "Unnamed AI Key");
     const raw = await entries.getRawEntry(type, row.id);
-    if (!raw || typeof raw.key !== "string") continue;
+    if (!raw || typeof raw.key !== "string") {
+      skippedKeys.push(`${name}: no stored secret`);
+      continue;
+    }
     try {
       const providerEntry = providerFromEntry(row.value.provider);
       const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
-      const baseUrl = typeof row.value.url === "string" && row.value.url.trim() ? row.value.url.trim().replace(/\/+$/, "") : serverAi.baseUrl;
+      const baseUrl = typeof row.value.url === "string" && row.value.url.trim()
+        ? row.value.url.trim().replace(/\/+$/, "")
+        : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl;
       const entryModel = typeof row.value.model === "string" ? row.value.model.trim() : "";
       credentials.push({ name, provider, apiKey: await decryptSecret(raw.key), baseUrl, model: entryModel || serverAi.model });
-    } catch {
+    } catch (error) {
       // A malformed or undecryptable key must not prevent later configured keys from being tried.
+      skippedKeys.push(`${name}: ${error instanceof Error ? error.message : "invalid configuration"}`);
     }
   }
-  if (credentials.length === 0) throw new Error("No usable AI API keys are configured.");
+  if (credentials.length === 0) {
+    throw new Error(`No usable AI API keys are configured.${skippedKeys.length ? ` ${skippedKeys.join("; ")}` : ""}`);
+  }
   return credentials;
 }
 
-export function isAiKeyFallbackError(error: unknown): boolean {
+function isAiKeyFallbackError(error: unknown): boolean {
   if (!(error instanceof AiProviderError)) return false;
   if (error.status === 401 || error.status === 403 || error.status === 408 || error.status === 429) return true;
   return /quota|rate\s*limit|too many requests|insufficient[_ -]?quota|billing|credit|balance|exceeded/i.test(error.message);
@@ -435,30 +445,43 @@ async function streamServerAiWithCredential(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
   const response = await fetch(
-    credential.provider === "openai" ? `${credential.baseUrl}/v1/responses` : `${credential.baseUrl}/v1/messages`,
+    credential.provider === "openai"
+      ? `${credential.baseUrl}/v1/responses`
+      : credential.provider === "anthropic"
+        ? `${credential.baseUrl}/v1/messages`
+        : `${credential.baseUrl}/v1beta/models/${encodeURIComponent(credential.model.replace(/^models\//, ""))}:streamGenerateContent?alt=sse`,
     {
       method: "POST",
       headers: credential.provider === "openai"
         ? { Authorization: `Bearer ${credential.apiKey}`, "Content-Type": "application/json" }
-        : { "x-api-key": credential.apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+        : credential.provider === "anthropic"
+          ? { "x-api-key": credential.apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" }
+          : { "x-goog-api-key": credential.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(credential.provider === "openai"
         ? {
             model: credential.model,
             stream: true,
             input: messages.map((message) => ({ role: message.role, content: message.text })),
           }
-        : {
+        : credential.provider === "anthropic"
+          ? {
             model: credential.model,
             stream: true,
             max_tokens: 2048,
             messages: messages.map((message) => ({ role: message.role, content: message.text })),
-          }),
+            }
+          : {
+            contents: messages.map((message) => ({
+              role: message.role === "assistant" ? "model" : "user",
+              parts: [{ text: message.text }],
+            })),
+            }),
       signal: controller.signal,
     },
   );
-    if (!response.ok) {
-      clearTimeout(timer);
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
+  if (!response.ok) {
+    clearTimeout(timer);
+    const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
     throw new AiProviderError(body.error?.message || `AI provider returned HTTP ${response.status}.`, response.status);
   }
 
@@ -469,9 +492,12 @@ async function streamServerAiWithCredential(
         const event = JSON.parse(data) as {
           type?: string;
           delta?: string | { type?: string; text?: string };
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
           error?: { message?: string };
         };
-        const delta = typeof event.delta === "string"
+        const delta = credential.provider === "google"
+          ? event.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).map((part) => part.text ?? "").join("")
+          : typeof event.delta === "string"
           ? event.delta
           : event.delta?.type === "text_delta" ? event.delta.text : undefined;
         if (delta) {

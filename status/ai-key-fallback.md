@@ -7,7 +7,11 @@
 
 # Status
 
-- In progress: current route selects only one `aiKey` entry.
+- Complete: server chat tries configured `aiKey` entries in order and falls
+  back on quota/rate-limit/credential failures.
+- Complete: Google/Gemini keys use the Gemini streaming API format.
+- Complete: route-module export contract is type-safe; focused typecheck and
+  full unit suite pass.
 
 # Speed
 
