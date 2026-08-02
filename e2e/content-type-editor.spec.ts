@@ -18,10 +18,16 @@ async function createTestCollection(page: Page, options?: { slug?: boolean }): P
     // here: "g"/"A" are both word characters, so a boundary never appears.
     await page.getByLabel(/^Slug/).check();
   }
-  await page.getByRole("button", { name: "Save & apply schema" }).click();
+  await page.getByRole("button", { name: "Save draft" }).click();
   // The list page now persists the selected kind in a query string
   // (`?selectedKind=collection`), so the pattern needs a trailing wildcard.
   await page.waitForURL("**/dry/content-types**");
+  await page.getByRole("button", { name: "Apply and build" }).click();
+  const applyDialog = page.getByRole("dialog", { name: "Apply and build" });
+  await applyDialog.getByRole("button", { name: "Confirm" }).click();
+  await expect(applyDialog).toContainText("No conflicts found");
+  await applyDialog.getByRole("button", { name: "Save" }).click();
+  await expect(applyDialog).toBeHidden();
   // Filter down to the one row - repeated runs leave earlier collections
   // around, which would otherwise push this one onto a later table page.
   await page.getByPlaceholder("Filter…").fill(uniqueTitle);
@@ -196,20 +202,22 @@ test.describe("Content Type editor", () => {
     }
   });
 
-  test("Editing an existing content type shows the apply-schema confirm before saving", async ({ page }) => {
+  test("Editing an existing content type stages a draft before applying it", async ({ page }) => {
     const { id } = await createTestCollection(page);
     try {
-      // "Save & apply schema" is disabled until the form is actually dirty
-      // (`disabled={saving || !isDirty}` in ContentTypeEditor.tsx) - add a
-      // field first so there's a real schema change to confirm.
+      // Save draft is disabled until the form is actually dirty - add a field
+      // first so there is a real schema change to stage.
       await addTextField(page, "Some Field");
-      await page.getByRole("button", { name: "Save & apply schema" }).click();
-      const confirm = page.getByRole("dialog", { name: "Apply schema changes?" });
-      await expect(confirm).toBeVisible();
-      await confirm.getByRole("button", { name: "Save & apply" }).click();
-      // The list page now persists the selected kind in a query string
-  // (`?selectedKind=collection`), so the pattern needs a trailing wildcard.
-  await page.waitForURL("**/dry/content-types**");
+      await page.getByRole("button", { name: "Save draft" }).click();
+      await page.waitForURL("**/dry/content-types**");
+      await expect(page.getByText("Unapplied changes")).toBeVisible();
+
+      const applyDialog = page.getByRole("dialog", { name: "Apply and build" });
+      await page.getByRole("button", { name: "Apply and build" }).click();
+      await applyDialog.getByRole("button", { name: "Confirm" }).click();
+      await expect(applyDialog).toContainText("No conflicts found");
+      await applyDialog.getByRole("button", { name: "Save" }).click();
+      await expect(applyDialog).toBeHidden();
     } finally {
       await deleteContentType(page, id);
     }

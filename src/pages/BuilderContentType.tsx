@@ -23,7 +23,7 @@ import {
   fieldTypeColors,
   fieldTypeIcons,
 } from "../components/field-type-icons.js";
-import { PlusIcon } from "../components/icons.js";
+import { EditIcon, PlusIcon } from "../components/icons.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
@@ -48,7 +48,7 @@ function CollectionCard({
   return (
     <button
       type="button"
-      class="builder-collection-card"
+      class={`builder-collection-card${status?.isNew ? " new" : ""}${status?.editedCount ? " edited" : ""}`}
       onClick={() => onOpen(definition.id)}
     >
       <span class="builder-collection-card-header">
@@ -56,10 +56,6 @@ function CollectionCard({
           <strong>
             {definition.label || definition.name || "Untitled collection"}
           </strong>
-          {status?.isNew && <span class="badge sm info">New</span>}
-          {!!status && !status.isNew && status.editedCount > 0 && (
-            <span class="badge sm warning">Modified</span>
-          )}
           <span class="hint">
             <span class="badge outline sm">
               {definition.name || "no-table-name"}
@@ -67,7 +63,30 @@ function CollectionCard({
             - {definition.description || "No description"}
           </span>
         </span>
-        <span class="badge outline">{featureCount} features</span>
+        <span
+            data-tooltip={`${featureCount} features`}
+            class="badge secondary"
+          >
+            {featureCount}
+          </span>
+        {/* <div class="row" style={{ flexWrap: "nowrap", gap: "0.5rem" }}>
+          {status?.isNew && (
+            <span class="badge warning" style={{ width: 20 }}>
+              <PlusIcon />
+            </span>
+          )}
+          {!!status && !status.isNew && status.editedCount > 0 && (
+            <span class="badge info">
+              <EditIcon />
+            </span>
+          )}
+          <span
+            data-tooltip={`${featureCount} features`}
+            class="badge secondary"
+          >
+            {featureCount}
+          </span>
+        </div> */}
       </span>
       <span
         class="builder-collection-card-fields"
@@ -208,7 +227,9 @@ function CollectionEditorDialog({
       ref={dialogRef}
       class="xl builder-editor-dialog"
       aria-label={
-        addingKind ? `Add ${KIND_LABELS[addingKind].toLowerCase()}` : "Edit collection"
+        addingKind
+          ? `Add ${KIND_LABELS[addingKind].toLowerCase()}`
+          : "Edit collection"
       }
     >
       {open && (
@@ -425,10 +446,7 @@ export default function BuilderContentType() {
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => setAddingKind(selectedKind)}
-              >
+              <button type="button" onClick={() => setAddingKind(selectedKind)}>
                 <PlusIcon /> Add
               </button>
             </div>

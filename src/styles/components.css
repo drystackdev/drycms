@@ -69,6 +69,14 @@
       &:focus-visible {
         background-color: var(--dry-accent) !important;
       }
+      
+      &.new {
+        border-color: var(--dry-warning);
+      }
+
+      &.edited {
+        border-color: var(--dry-info);
+      }
     }
 
     .builder-collection-card-header {
