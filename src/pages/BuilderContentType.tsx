@@ -26,6 +26,7 @@ import {
 import { EditIcon, PlusIcon } from "../components/icons.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
+import { contentTypesVersion } from "../store/content-types.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -142,10 +143,22 @@ function BuilderCollectionList({
       api.listVersioned(ifVersion, signal),
     [api],
   );
-  const { data: definitions, error } = useFetch<ContentTypeDefinition[]>(
+  const {
+    data: definitions,
+    error,
+    reload,
+  } = useFetch<ContentTypeDefinition[]>(
     "builder:content-types",
     listFetcher,
   );
+  const skipFirstVersionEffect = useRef(true);
+  useEffect(() => {
+    if (skipFirstVersionEffect.current) {
+      skipFirstVersionEffect.current = false;
+      return;
+    }
+    void reload();
+  }, [contentTypesVersion.value, reload]);
   const pendingDrafts = draftsSignal.value;
   const liveDefinitions = (definitions ?? []).filter(
     (definition) => definition.kind === kind && !definition.hidden,
@@ -423,7 +436,7 @@ export default function BuilderContentType() {
         <section
           class={`card builder-panel${activeTab === "builder" ? " mobile-active" : ""}`}
         >
-          <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
+          <header class="row justify-between">
             <div class="spacer">
               <h2>{KIND_PLURAL_LABELS[selectedKind]}</h2>
               <p>Choose a {KIND_LABELS[selectedKind].toLowerCase()} to edit.</p>
