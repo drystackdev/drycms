@@ -99,7 +99,7 @@ export interface DryAiOption {
   command?: string;
   /** Extra CLI arguments. Use `{prompt}` to control where the prompt is inserted. */
   args?: string[];
-  /** Optional `aiKey.name` to use. If omitted, the first configured key is used. */
+  /** Optional preferred `aiKey.name`; remaining configured keys are fallbacks. */
   keyName?: string;
   /** Server provider model. */
   model?: string;

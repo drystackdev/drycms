@@ -92,7 +92,7 @@ export default function BuilderContentType() {
       if (!receivedText) throw new Error("AI returned an empty response.");
     } catch (error) {
       const text = error instanceof Error ? error.message : "AI request failed.";
-      setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: `Error: ${text}` } : message));
+        setChatMessages((current) => current.map((message) => message.id === assistantId ? { ...message, text: `Error: ${text}` } : message));
     }
   }
 

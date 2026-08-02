@@ -38,10 +38,18 @@ interface ModelsRequest {
 }
 
 interface ServerCredential {
+  name: string;
   provider: "openai" | "anthropic";
   apiKey: string;
   baseUrl: string;
   model: string;
+}
+
+class AiProviderError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "AiProviderError";
+  }
 }
 
 interface ConversationRecord {
@@ -80,7 +88,7 @@ function providerFromEntry(value: unknown): "openai" | "anthropic" | "custom" {
   throw new Error(`Unsupported AI Key provider "${String(value)}".`);
 }
 
-async function readServerCredential(context: DryRouteContext): Promise<ServerCredential> {
+async function readServerCredentials(context: DryRouteContext): Promise<ServerCredential[]> {
   const serverAi = ai;
   if (serverAi.mode !== "server") throw new Error("Server AI mode is not configured.");
   const schema = getSchemaAdapter(context);
@@ -89,17 +97,47 @@ async function readServerCredential(context: DryRouteContext): Promise<ServerCre
   const type = allTypes.find((candidate) => candidate.name === "aiKey");
   if (!type) throw new Error('The system collection "aiKey" is not available.');
   const page = await entries.listEntries(type, allTypes, { page: 0, pageSize: 10_000 });
-  const selected = serverAi.keyName
-    ? page.rows.find((row) => String(row.value.name ?? "") === serverAi.keyName)
-    : page.rows[0];
-  if (!selected) throw new Error(serverAi.keyName ? `AI Key "${serverAi.keyName}" was not found.` : "No AI Key is configured.");
-  const raw = await entries.getRawEntry(type, selected.id);
-  if (!raw || typeof raw.key !== "string") throw new Error(`AI Key "${String(selected.value.name ?? "")}" has no secret key.`);
-  const providerEntry = providerFromEntry(selected.value.provider);
-  const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
-  const baseUrl = typeof selected.value.url === "string" && selected.value.url.trim() ? selected.value.url.trim().replace(/\/+$/, "") : serverAi.baseUrl;
-  const entryModel = typeof selected.value.model === "string" ? selected.value.model.trim() : "";
-  return { provider, apiKey: await decryptSecret(raw.key), baseUrl, model: entryModel || serverAi.model };
+  const orderedRows = serverAi.keyName
+    ? [...page.rows].sort((left, right) => {
+        const leftPreferred = String(left.value.name ?? "") === serverAi.keyName;
+        const rightPreferred = String(right.value.name ?? "") === serverAi.keyName;
+        return Number(rightPreferred) - Number(leftPreferred);
+      })
+    : page.rows;
+  if (serverAi.keyName && !orderedRows.some((row) => String(row.value.name ?? "") === serverAi.keyName)) {
+    throw new Error(`AI Key "${serverAi.keyName}" was not found.`);
+  }
+
+  const credentials: ServerCredential[] = [];
+  for (const row of orderedRows) {
+    const name = String(row.value.name ?? "Unnamed AI Key");
+    const raw = await entries.getRawEntry(type, row.id);
+    if (!raw || typeof raw.key !== "string") continue;
+    try {
+      const providerEntry = providerFromEntry(row.value.provider);
+      const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
+      const baseUrl = typeof row.value.url === "string" && row.value.url.trim() ? row.value.url.trim().replace(/\/+$/, "") : serverAi.baseUrl;
+      const entryModel = typeof row.value.model === "string" ? row.value.model.trim() : "";
+      credentials.push({ name, provider, apiKey: await decryptSecret(raw.key), baseUrl, model: entryModel || serverAi.model });
+    } catch {
+      // A malformed or undecryptable key must not prevent later configured keys from being tried.
+    }
+  }
+  if (credentials.length === 0) throw new Error("No usable AI API keys are configured.");
+  return credentials;
+}
+
+export function isAiKeyFallbackError(error: unknown): boolean {
+  if (!(error instanceof AiProviderError)) return false;
+  if (error.status === 401 || error.status === 403 || error.status === 408 || error.status === 429) return true;
+  return /quota|rate\s*limit|too many requests|insufficient[_ -]?quota|billing|credit|balance|exceeded/i.test(error.message);
+}
+
+function allAiKeysFailed(errors: Error[]): Error {
+  const last = errors.at(-1);
+  return new Error(
+    `All configured AI API keys are exhausted or unavailable.${last ? ` Last provider error: ${last.message}` : ""}`,
+  );
 }
 
 function errorResponse(error: unknown, status = 500): Response {
@@ -418,10 +456,10 @@ async function streamServerAiWithCredential(
       signal: controller.signal,
     },
   );
-  if (!response.ok) {
-    clearTimeout(timer);
-    const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(body.error?.message || `AI provider returned HTTP ${response.status}.`);
+    if (!response.ok) {
+      clearTimeout(timer);
+      const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new AiProviderError(body.error?.message || `AI provider returned HTTP ${response.status}.`, response.status);
   }
 
   return new ReadableStream<Uint8Array>({
@@ -466,7 +504,17 @@ async function createChatStream(
   onDelta: (delta: string) => void,
 ): Promise<ReadableStream<Uint8Array>> {
   if (ai.mode === "local") return streamLocalCli(messages, onDelta);
-  return streamServerAiWithCredential(messages, await readServerCredential(context), onDelta);
+  const credentials = await readServerCredentials(context);
+  const errors: Error[] = [];
+  for (const credential of credentials) {
+    try {
+      return await streamServerAiWithCredential(messages, credential, onDelta);
+    } catch (error) {
+      if (!isAiKeyFallbackError(error)) throw error;
+      errors.push(error instanceof Error ? error : new Error("AI provider request failed."));
+    }
+  }
+  throw allAiKeysFailed(errors);
 }
 
 async function readStoredAiKey(context: DryRouteContext, entryIdValue?: string, entryName?: string): Promise<string> {
