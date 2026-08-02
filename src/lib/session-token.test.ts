@@ -20,6 +20,13 @@ describe("signSession / verifySession", () => {
     expect(await verifySession(token)).toEqual(PAYLOAD);
   });
 
+  it("supports UTF-8 names in JWT claims", async () => {
+    const { signSession, verifySession } = await import("./session-token.js");
+    const payload = { ...PAYLOAD, name: "Khan Trần" };
+    const token = await signSession(payload, { sessionId: "test-session" });
+    expect(await verifySession(token)).toEqual(payload);
+  });
+
   it("emits a standard HS256 JWT with an issuer and unique id", async () => {
     const { signSession } = await import("./session-token.js");
     const token = await signSession(PAYLOAD, { sessionId: "test-session" });

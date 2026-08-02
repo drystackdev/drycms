@@ -101,13 +101,20 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 function base64UrlEncode(value: string): string {
-  return btoa(value).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  // `btoa` only accepts Latin-1. JWT claims are JSON/UTF-8, so encode the
+  // string to bytes first; names such as "Trần" must remain valid claims.
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 function base64UrlDecode(value: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("Invalid base64url value.");
   const padded = value.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - value.length % 4) % 4);
-  return atob(padded);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 function encodeJson(value: unknown): string {
