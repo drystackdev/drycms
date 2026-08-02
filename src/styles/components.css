@@ -2145,7 +2145,7 @@
       & nav {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
-        gap: 0.25rem;
+        gap: 0.75rem;
       }
 
       & nav a {
@@ -2228,8 +2228,13 @@
       }
     }
 
-    .nav-label {
-      grid-column: 1 / -1;
+    .nav-section {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.25rem;
+    }
+
+    .nav-section-label {
       padding-block: 0.5rem;
       font-size: var(--dry-text-xs);
       font-weight: 700;
@@ -2253,6 +2258,7 @@
     }
 
     .nav-chevron {
+      margin-inline-start: auto;
       transition: transform 150ms ease;
 
       &.collapsed {
@@ -2260,13 +2266,42 @@
       }
     }
 
+    .nav-group-header > a > .nav-chevron {
+      width: 0.75rem;
+      height: 0.75rem;
+    }
+
     .nav-subitems {
       display: grid;
       gap: 0.25rem;
     }
 
-    .nav-subitem {
-      padding-inline-start: 2.75rem;
+    .nav-subitems-wrap {
+      display: grid;
+      grid-template-rows: 0fr;
+      padding-inline-start: 1.5rem;
+      transition: grid-template-rows 180ms ease;
+
+      &.expanded {
+        grid-template-rows: 1fr;
+      }
+
+      & > .nav-subitems {
+        min-height: 0;
+        overflow: hidden;
+        opacity: 0;
+        transform: translateY(-0.25rem);
+        transition: opacity 150ms ease, transform 180ms ease;
+      }
+
+      &.expanded > .nav-subitems {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .sidebar nav a.nav-subitem {
+      padding-inline-start: 0.75rem;
       min-height: 2.25rem !important;
       font-weight: 500 !important;
     }
@@ -3081,6 +3116,10 @@
 
       .shell.collapsed .sidebar nav a > *:not(svg),
       .shell.collapsed .brand > *:not(svg) {
+        display: none;
+      }
+
+      .shell.collapsed .sidebar .nav-group-header > a > .nav-chevron {
         display: none;
       }
 

@@ -35,6 +35,7 @@ const NAV: {
   href: string;
   icon: IconName;
   ready: boolean;
+  section: "Overview" | "Content" | "System" | "Development";
   superAdminOnly?: boolean;
 }[] = [
   {
@@ -43,6 +44,7 @@ const NAV: {
     href: `${path}/dashboard`,
     icon: "Dashboard",
     ready: true,
+    section: "Overview",
   },
   ...(import.meta.env.DEV
     ? [
@@ -52,6 +54,7 @@ const NAV: {
           href: `${path}/showcase`,
           icon: "Showcase" as IconName,
           ready: true,
+          section: "Development" as const,
         },
       ]
     : []),
@@ -61,6 +64,7 @@ const NAV: {
     href: `${path}/richtext-demo`,
     icon: "Content",
     ready: true,
+    section: "Development",
   },
   {
     key: "content-types",
@@ -68,6 +72,7 @@ const NAV: {
     href: `${path}/content-types`,
     icon: "Content",
     ready: true,
+    section: "Content",
   },
   {
     key: "content",
@@ -75,6 +80,7 @@ const NAV: {
     href: `${path}/content`,
     icon: "Content",
     ready: true,
+    section: "Content",
   },
   {
     key: "media",
@@ -82,6 +88,7 @@ const NAV: {
     href: `${path}/media`,
     icon: "Media",
     ready: true,
+    section: "Content",
   },
   {
     key: "icon-management",
@@ -89,6 +96,7 @@ const NAV: {
     href: `${path}/icon-management`,
     icon: "IconManagement",
     ready: true,
+    section: "System",
   },
   {
     key: "richtext-components",
@@ -96,6 +104,7 @@ const NAV: {
     href: `${path}/richtext-components`,
     icon: "Content",
     ready: true,
+    section: "Content",
   },
   {
     key: "users",
@@ -103,6 +112,7 @@ const NAV: {
     href: `${path}/content/user`,
     icon: "Users",
     ready: true,
+    section: "System",
   },
   {
     key: "roles",
@@ -110,6 +120,7 @@ const NAV: {
     href: `${path}/roles`,
     icon: "Settings",
     ready: true,
+    section: "System",
     superAdminOnly: true,
   },
   {
@@ -118,6 +129,7 @@ const NAV: {
     href: `${path}/key-value`,
     icon: "Settings",
     ready: true,
+    section: "System",
   },
   {
     key: "ai-keys",
@@ -125,6 +137,7 @@ const NAV: {
     href: `${path}/content/aiKey`,
     icon: "Settings",
     ready: true,
+    section: "System",
   },
   {
     key: "settings",
@@ -132,8 +145,11 @@ const NAV: {
     href: `${path}/settings`,
     icon: "Settings",
     ready: false,
+    section: "System",
   },
 ];
+
+const NAV_SECTIONS = ["Overview", "Content", "System", "Development"] as const;
 
 const CONTENT_PREFIX = `${path}/content/`;
 
@@ -267,8 +283,17 @@ export default function DryLayout({ children }: Props) {
 
         <div class="sidebar-scroll" ref={sidebar}>
           <nav aria-label="Admin">
-            {!collapsed.value && <span class="nav-label">Manage</span>}
-            {NAV.filter((item) => !item.superAdminOnly || authState.value.user?.roles.includes("Super Admin")).map((item) =>
+            {NAV_SECTIONS.map((section) => {
+              const sectionItems = NAV.filter(
+                (item) =>
+                  item.section === section &&
+                  (!item.superAdminOnly || authState.value.user?.roles.includes("Super Admin")),
+              );
+              if (sectionItems.length === 0) return null;
+              return (
+                <div key={section} class="nav-section">
+                  {!collapsed.value && <span class="nav-section-label">{section}</span>}
+                  {sectionItems.map((item) =>
               item.key === "content" ? (
                 <div key={item.key} class="nav-group">
                   <div class="nav-group-header">
@@ -279,37 +304,35 @@ export default function DryLayout({ children }: Props) {
                           ? "page"
                           : undefined
                       }
+                      aria-expanded={
+                        contentNavItems.length > 0 ? contentMenuOpen : undefined
+                      }
+                      aria-controls="content-nav-subitems"
                       data-tooltip={collapsed.value ? item.label : undefined}
                       data-tooltip-placement="right"
+                      onClick={() => {
+                        if (contentNavItems.length > 0) {
+                          setContentMenuOpen(!contentMenuOpen);
+                        }
+                      }}
                     >
                       <Icon name={item.icon} />
                       <span>{item.label}</span>
-                    </a>
-                    {!collapsed.value && contentNavItems.length > 0 && (
-                      <button
-                        type="button"
-                        class="ghost icon sm"
-                        aria-expanded={contentMenuOpen}
-                        aria-label={
-                          contentMenuOpen
-                            ? "Collapse Content menu"
-                            : "Expand Content menu"
-                        }
-                        onClick={() => setContentMenuOpen(!contentMenuOpen)}
-                      >
+                      {contentNavItems.length > 0 && (
                         <Icon
                           name="ArrowDown"
-                          class={
-                            contentMenuOpen
-                              ? "nav-chevron"
-                              : "nav-chevron collapsed"
-                          }
+                          class={`nav-chevron${contentMenuOpen ? "" : " collapsed"}`}
                         />
-                      </button>
-                    )}
+                      )}
+                    </a>
                   </div>
-                  {!collapsed.value && contentMenuOpen && (
-                    <div class="nav-subitems">
+                  {!collapsed.value && contentNavItems.length > 0 && (
+                    <div
+                      id="content-nav-subitems"
+                      class={`nav-subitems-wrap${contentMenuOpen ? " expanded" : ""}`}
+                      aria-hidden={!contentMenuOpen}
+                    >
+                      <div class="nav-subitems">
                       {contentNavItems.map((type) => {
                         const href = `${path}/content/${type.name}`;
                         return (
@@ -325,6 +348,7 @@ export default function DryLayout({ children }: Props) {
                           </a>
                         );
                       })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -355,7 +379,10 @@ export default function DryLayout({ children }: Props) {
                   <span class="badge outline">Soon</span>
                 </a>
               ),
-            )}
+                  )}
+                </div>
+              );
+            })}
           </nav>
         </div>
 
