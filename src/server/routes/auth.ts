@@ -2,6 +2,7 @@ import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { content, path as basePath } from "../config.js";
 import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
+import { resolveAccess } from "../../content-types/access.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { verifyPassword } from "../../lib/password-hash.js";
@@ -16,9 +17,7 @@ import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../r
  * The `auth` API route: session issuance for the built-in `user` collection
  * (see `content-types/seed.ts`) - sign-in, first-run Super Admin
  * registration, and sign-out. Deliberately does NOT gate any OTHER route on
- * having a valid session - see `docs/ARCHITECTURE.md`'s Permissions section,
- * which already documents that as a separate, not-yet-done pass, same as
- * `role` having a schema today with no enforcement.
+ * having a valid session - see `docs/ARCHITECTURE.md`'s Permissions section.
  */
 
 type AuthErrorCode = "already_setup" | "invalid_credentials" | "validation_failed";
@@ -84,6 +83,29 @@ interface SessionUser {
   id: number;
   name: string;
   email: string;
+}
+
+interface ClientSessionUser extends SessionUser {
+  roles: string[];
+  isSuperAdmin: boolean;
+  permissions: string[];
+}
+
+async function resolveClientUser(
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  roleType: ContentTypeDefinition,
+  entry: { id: number; value: Record<string, unknown> },
+  base: SessionUser,
+): Promise<ClientSessionUser> {
+  const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, entry.value.roles);
+  const access = await resolveAccess(entryAdapter, allTypes, base);
+  return {
+    ...base,
+    roles,
+    isSuperAdmin: access?.isSuperAdmin === true,
+    permissions: [...(access?.permissions ?? [])],
+  };
 }
 
 /** Resolves `roleIds` (a `user` row's `roles` value - `manyToMany`, an array
@@ -175,11 +197,10 @@ export const GET: DryRouteHandler = async (context) => {
 
     const anyUser = await hasAnyUser(entryAdapter, userType, allTypes);
 
-    let user: (SessionUser & { roles: string[] }) | null = null;
+    let user: ClientSessionUser | null = null;
     if (context.session) {
       const entry = await entryAdapter.getEntry(userType, allTypes, context.session.id);
-      const roles = entry ? await resolveRoleLabels(entryAdapter, allTypes, roleType, entry.value.roles) : [];
-      user = { ...context.session, roles };
+      if (entry) user = await resolveClientUser(entryAdapter, allTypes, roleType, entry, context.session);
     }
 
     const response = jsonResponse({ hasAnyUser: anyUser, user });
@@ -231,8 +252,8 @@ export const POST: DryRouteHandler = async (context) => {
       const sessionUser: SessionUser = { id: created.id, name, email };
       const authSession = await createAuthSession(created.id, context.env);
       const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
-      const roles = [String(superAdminRole.value.name ?? "Super Admin")];
-      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }, 201), context, token, authSession.refreshToken);
+      const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
+      return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken);
     }
 
     if (endpoint === "login") {
@@ -269,8 +290,9 @@ export const POST: DryRouteHandler = async (context) => {
       const authSession = await createAuthSession(found.id, context.env);
       const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
       const entry = await entryAdapter.getEntry(userType, allTypes, found.id);
-      const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, entry?.value.roles);
-      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }), context, token, authSession.refreshToken);
+      const user = entry ? await resolveClientUser(entryAdapter, allTypes, roleType, entry, sessionUser) : null;
+      if (!user) throw invalid();
+      return withSessionCookies(jsonResponse({ user }), context, token, authSession.refreshToken);
     }
 
     if (endpoint === "refresh") {
@@ -288,8 +310,8 @@ export const POST: DryRouteHandler = async (context) => {
         email: String(entry.value.email ?? ""),
       };
       const token = await signSession(sessionUser, { sessionId: rotated.session.sessionId });
-      const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, entry.value.roles);
-      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }), context, token, rotated.refreshToken);
+      const user = await resolveClientUser(entryAdapter, allTypes, roleType, entry, sessionUser);
+      return withSessionCookies(jsonResponse({ user }), context, token, rotated.refreshToken);
     }
 
     if (endpoint === "update-profile") {
@@ -369,9 +391,9 @@ export const POST: DryRouteHandler = async (context) => {
         refreshToken = authSession.refreshToken;
       }
       const token = await signSession(sessionUser, { sessionId: authSessionId });
-      const roles = await resolveRoleLabels(entryAdapter, allTypes, roleType, updated.value.roles);
       if (!refreshToken) refreshToken = context.refreshToken ?? "";
-      return withSessionCookies(jsonResponse({ user: { ...sessionUser, roles } }), context, token, refreshToken);
+      const user = await resolveClientUser(entryAdapter, allTypes, roleType, updated, sessionUser);
+      return withSessionCookies(jsonResponse({ user }), context, token, refreshToken);
     }
 
     if (endpoint === "logout") {

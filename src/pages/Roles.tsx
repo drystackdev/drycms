@@ -1,4 +1,4 @@
-import { useMemo } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
@@ -6,6 +6,8 @@ import { PlusIcon } from "../components/icons.js";
 import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useDocumentTitle } from "./page-common.js";
+import { canAccess } from "../store/auth.js";
+import { createContentTypesApi } from "../content-types/http-api.js";
 
 interface Row extends Record<string, unknown> {
   id: string;
@@ -26,6 +28,10 @@ export default function Roles() {
   const { route } = useLocation();
   useDocumentTitle("Roles");
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "role"), []);
+  const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const [roleTypeId, setRoleTypeId] = useState<string | null>(null);
+  useEffect(() => { void typesApi.list().then((types) => setRoleTypeId(types.find((type) => type.name === "role")?.id ?? null)); }, [typesApi]);
+  const canCreate = !!roleTypeId && canAccess(roleTypeId, "create");
 
   const { data, loading, error } = useFetch<EntryListResult>("roles:list", (ifVersion, signal) =>
     entriesApi.listVersioned({ page: 0, pageSize: FETCH_ALL_SIZE }, ifVersion, signal),
@@ -69,11 +75,11 @@ export default function Roles() {
         rowKey={(row) => row.id}
         emptyLabel="No roles yet."
         onRowClick={(row) => route(`${path}/roles/${row.id}`)}
-        actions={
+        actions={canCreate ? (
           <button type="button" onClick={() => route(`${path}/roles/new`)}>
             <PlusIcon /> Add
           </button>
-        }
+        ) : undefined}
       />
     </>
   );

@@ -23,7 +23,7 @@ import { useStore } from "../hooks/useStore.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { authState, logout } from "../store/auth.js";
+import { authState, canAccess, logout } from "../store/auth.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -37,6 +37,7 @@ const NAV: {
   ready: boolean;
   section: "Overview" | "Content" | "System" | "Development";
   superAdminOnly?: boolean;
+  permissionName?: string;
 }[] = [
   {
     key: "dashboard",
@@ -90,7 +91,7 @@ const NAV: {
     icon: "IconManagement",
     ready: true,
     section: "System",
-    superAdminOnly: true,
+    permissionName: "user",
   },
   {
     key: "richtext-components",
@@ -108,7 +109,7 @@ const NAV: {
     icon: "Users",
     ready: true,
     section: "System",
-    superAdminOnly: true,
+    permissionName: "role",
   },
   {
     key: "roles",
@@ -293,11 +294,11 @@ export default function DryLayout({ children }: Props) {
   // `hidden` types (role/aiKey) are reached through their own
   // dedicated page instead - see `types.ts`'s doc comment.
   const collectionNavItems = useMemo(
-    () => (contentTypes ?? []).filter((t) => t.kind === "collection" && !t.hidden),
+    () => (contentTypes ?? []).filter((t) => t.kind === "collection" && !t.hidden && canAccess(t.id, "view")),
     [contentTypes],
   );
   const singletonNavItems = useMemo(
-    () => (contentTypes ?? []).filter((t) => t.kind === "singleton" && !t.hidden),
+    () => (contentTypes ?? []).filter((t) => t.kind === "singleton" && !t.hidden && canAccess(t.id, "setting")),
     [contentTypes],
   );
 
@@ -345,7 +346,11 @@ export default function DryLayout({ children }: Props) {
               const sectionItems = NAV.filter(
                 (item) =>
                   item.section === section &&
-                  (!item.superAdminOnly || authState.value.user?.roles.includes("Super Admin")),
+                  (!item.superAdminOnly || authState.value.user?.isSuperAdmin) &&
+                  (!item.permissionName || (() => {
+                    const type = contentTypes?.find((candidate) => candidate.name === item.permissionName);
+                    return !!type && canAccess(type.id, "view");
+                  })()),
               );
               if (sectionItems.length === 0) return null;
               return (

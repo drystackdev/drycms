@@ -104,6 +104,8 @@ describe("auth route", () => {
       name: "Ada Lovelace",
       email: "ada@example.com",
       roles: ["Super Admin"],
+      isSuperAdmin: true,
+      permissions: [],
     });
     const cookie = cookieFrom(response);
     expect(cookie).toMatch(/^drycms_session=/);
@@ -126,6 +128,8 @@ describe("auth route", () => {
       name: "Ada Lovelace",
       email: "ada@example.com",
       roles: ["Super Admin"],
+      isSuperAdmin: true,
+      permissions: [],
     });
   });
 
@@ -168,6 +172,8 @@ describe("auth route", () => {
       name: "Ada L.",
       email: "ada@example.com",
       roles: ["Super Admin"],
+      isSuperAdmin: true,
+      permissions: [],
     });
     const stillOldPassword = await login({ email: "ada@example.com", password: "hunter2" });
     expect(stillOldPassword.status).toBe(200);

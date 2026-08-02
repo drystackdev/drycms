@@ -1,5 +1,6 @@
 import { signal } from "@preact/signals";
 import { path } from "virtual:drycms/config";
+import { permissionKeyFor, type PermissionAction } from "../content-types/permissions.js";
 
 export interface AuthUser {
   id: number;
@@ -11,6 +12,8 @@ export interface AuthUser {
    * here; `pages/Profile.tsx` shows it, actual role assignment stays an
    * admin-only action through `pages/RoleEditor.tsx`. */
   roles: string[];
+  isSuperAdmin: boolean;
+  permissions: string[];
 }
 
 export type AuthStatus = "loading" | "needs-setup" | "anonymous" | "authenticated";
@@ -42,6 +45,12 @@ export class AuthApiError extends Error {
  * `DryLayout`'s own "Sign out" action needs to flip it back too.
  */
 export const authState = signal<AuthState>({ status: "loading", user: null });
+
+/** UI hint only. Every mutation is still authorized again by the server. */
+export function canAccess(resourceId: string, action: PermissionAction): boolean {
+  const user = authState.value.user;
+  return !!user && (user.isSuperAdmin || user.permissions.includes(permissionKeyFor(resourceId, action)));
+}
 
 async function readJson(res: Response): Promise<any> {
   try {

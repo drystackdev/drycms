@@ -18,6 +18,7 @@ import { createContentEntriesApi, type EntryListResult } from "../content-types/
 import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { SUPER_ADMIN_FIELD_NAME } from "../content-types/permissions.js";
+import { canAccess } from "../store/auth.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { useFetch } from "../hooks/useFetch.js";
@@ -259,6 +260,9 @@ export default function ContentEntryList({ typeSlug }: Props) {
   if (allTypes === null) return showTypeLoading ? <span class="hint">Loading…</span> : null;
   if (!type) return <span class="error">Content type "{typeSlug}" not found.</span>;
 
+  const readAction = type.kind === "singleton" ? "setting" : "view";
+  if (!canAccess(type.id, readAction)) return <span class="error">You don't have permission to view this content.</span>;
+
   // A singleton has at most one row - there's nothing to list, so this route
   // renders the entry editor directly instead of a DataTable.
   if (type.kind === "singleton") {
@@ -279,6 +283,8 @@ function ContentEntryListCollection({
 }) {
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, type.name), [type.name]);
   const isSortable = !!type.features?.sortable;
+  const canCreate = canAccess(type.id, "create");
+  const canUpdate = canAccess(type.id, "update");
   // `engine: "file"`'s `listEntries` re-scans every record on each call (see
   // `entries-file.ts`) rather than running a SQL query, so round-tripping
   // search/sort/pagination per keystroke would re-scan the whole collection
@@ -563,19 +569,21 @@ function ContentEntryListCollection({
         }
         dragReorder={
           isSortable
-            ? { getId: (row) => row.id, onReorder: setDragOrder, disabled: savingOrder }
+            ? { getId: (row) => row.id, onReorder: setDragOrder, disabled: savingOrder || !canUpdate }
             : undefined
         }
         actions={
           <>
-            {isSortable && dragOrder && (
+            {isSortable && dragOrder && canUpdate && (
               <button type="button" class="outline" disabled={savingOrder} aria-busy={savingOrder} onClick={handleSaveOrder}>
                 Save order
               </button>
             )}
-            <button type="button" onClick={() => route(`${path}/content/${type.name}/new`)}>
-              <PlusIcon /> Add
-            </button>
+            {canCreate && (
+              <button type="button" onClick={() => route(`${path}/content/${type.name}/new`)}>
+                <PlusIcon /> Add
+              </button>
+            )}
           </>
         }
       />

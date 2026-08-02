@@ -21,6 +21,7 @@ import {
   type PermissionAction,
 } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { canAccess } from "../store/auth.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -97,6 +98,9 @@ export default function RoleEditor({ id }: Props) {
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
 
   const roleType = allTypes?.find((t) => t.name === "role");
+  const canViewRole = !!roleType && canAccess(roleType.id, "view");
+  const canEditRole = !!roleType && canAccess(roleType.id, isNew ? "create" : "update");
+  const canDeleteRole = !!roleType && !isNew && canAccess(roleType.id, "delete");
   const nodes: EntryFieldNode[] = useMemo(
     () => (roleType && allTypes ? buildEntryFieldTree(roleType, allTypes) : []),
     [roleType, allTypes],
@@ -124,7 +128,7 @@ export default function RoleEditor({ id }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!roleType || nodes.length === 0) return;
+    if (!roleType || nodes.length === 0 || !canViewRole) return;
     if (isNew) {
       const blank = blankEntryValue(nodes);
       setValue(blank);
@@ -152,7 +156,7 @@ export default function RoleEditor({ id }: Props) {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on id/roleType change, not every time `nodes` gets a new array identity
-  }, [roleType, id, isNew]);
+  }, [roleType, id, isNew, canViewRole]);
 
   const isDirty =
     initialSnapshot !== null &&
@@ -256,8 +260,10 @@ export default function RoleEditor({ id }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (!allTypes || !roleType || value === null)
+  if (!allTypes || !roleType)
     return <span class="hint">Loading…</span>;
+  if (!canViewRole) return <span class="error">You don't have permission to view roles.</span>;
+  if (value === null) return <span class="hint">Loading…</span>;
 
   const resources = allTypes
     .filter((t) => t.kind === "collection")
@@ -291,7 +297,7 @@ export default function RoleEditor({ id }: Props) {
         {isDirty && (
           <button
             type="button"
-            disabled={saving}
+            disabled={!canEditRole || saving}
             aria-busy={saving}
             onClick={handleSave}
           >
@@ -300,6 +306,7 @@ export default function RoleEditor({ id }: Props) {
         )}
       </div>
 
+      <fieldset disabled={!canEditRole} class="role-editor-form">
       <div class="content-entry-editor-grid">
         <div class="stack">
           {otherNodes.map((node) => (
@@ -399,7 +406,7 @@ export default function RoleEditor({ id }: Props) {
             </fieldset>
           )}
 
-          {!isNew && !value.isSuperAdmin && (
+          {canDeleteRole && !value.isSuperAdmin && (
             <div class="content-type-editor-danger">
               <div>
                 <h2>Danger zone</h2>
@@ -418,6 +425,7 @@ export default function RoleEditor({ id }: Props) {
           )}
         </div>
       </div>
+      </fieldset>
 
       <ConfirmDialog
         open={showDeleteConfirm}

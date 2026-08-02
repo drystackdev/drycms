@@ -33,6 +33,7 @@ import {
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
+import { canAccess } from "../store/auth.js";
 
 interface Props {
   typeSlug: string;
@@ -142,6 +143,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   const isSingleton = type?.kind === "singleton";
   const isNew = !isSingleton && !id;
+  const requiredAction = type ? (isSingleton ? "setting" : isNew ? "create" : "view") : null;
+  const canEdit = !!type && canAccess(type.id, isSingleton ? "setting" : isNew ? "create" : "update");
+  const canDelete = !!type && !isSingleton && !isNew && canAccess(type.id, "delete");
   const showLoading = useDelayedLoading(!type || value === null);
 
   useEffect(() => {
@@ -168,7 +172,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }, [typeSlug]);
 
   useEffect(() => {
-    if (!type || !entriesApi) return;
+    if (!type || !entriesApi || !requiredAction || !canAccess(type.id, requiredAction)) return;
     (async () => {
       try {
         const builtNodes = buildEntryFieldTree(type, allTypes);
@@ -199,7 +203,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // `type` itself, re-fetching the ENTRY every time the (much larger)
     // schema list happens to get a new array identity would be wasteful.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, id]);
+  }, [type, id, requiredAction]);
 
   useDocumentTitle(
     type ? (isNew ? `New ${type.label}` : type.label) : "Content",
@@ -346,7 +350,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (!type || value === null) return showLoading ? <span class="hint">Loading…</span> : null;
+  if (!type) return showLoading ? <span class="hint">Loading…</span> : null;
+  if (!requiredAction || !canAccess(type.id, requiredAction)) return <span class="error">You don't have permission to view this content.</span>;
+  if (value === null) return showLoading ? <span class="hint">Loading…</span> : null;
 
   const backTo = `${path}/content/${type.name}`;
   // `createdAt`/`updatedAt` are server-stamped on every save (see
@@ -395,12 +401,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               Cancel
             </button>
           )}
-          <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>
-            Save
-          </button>
+          {canEdit && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
         </div>
       </div>
 
+      <fieldset disabled={!canEdit} class="content-entry-editor-form">
       <div class="content-entry-editor-grid">
         <div class="stack">
           {renderFieldNodes(
@@ -421,7 +426,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             allTypes,
           )}
 
-          {!isNew && !isSingleton && (
+          {canDelete && (
             <div class="content-type-editor-danger">
               <div>
                 <h2>Danger zone</h2>
@@ -440,6 +445,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           )}
         </div>
       </div>
+      </fieldset>
 
       <ConfirmDialog
         open={showDeleteConfirm}

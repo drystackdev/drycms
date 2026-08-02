@@ -6,6 +6,10 @@ import type { ContentTypeDefinition } from "./types.js";
 export interface AccessInfo {
   userId: number;
   isSuperAdmin: boolean;
+  /** The resolved keys are sent to the authenticated client for UI hints.
+   * Server routes must still call `can()` because this list is user input
+   * from the browser once it crosses the API boundary. */
+  permissions: readonly string[];
   /** Whether this session's user can perform `action` on the content type
    * whose id is `resourceId`. Always `true` once
    * `isSuperAdmin` is set - callers never need to special-case that
@@ -36,7 +40,7 @@ export async function resolveAccess(
   if (!user) return null;
 
   const roleIds = Array.isArray(user.value.roles) ? (user.value.roles as number[]) : [];
-  const deny: AccessInfo = { userId: session.id, isSuperAdmin: false, can: () => false };
+  const deny: AccessInfo = { userId: session.id, isSuperAdmin: false, permissions: [], can: () => false };
   if (roleIds.length === 0) return deny;
 
   // `listEntries` deliberately never populates relation-many fields (see
@@ -50,7 +54,7 @@ export async function resolveAccess(
   ).filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (myRoles.some((r) => r.value.isSuperAdmin === true)) {
-    return { userId: session.id, isSuperAdmin: true, can: () => true };
+    return { userId: session.id, isSuperAdmin: true, permissions: [], can: () => true };
   }
 
   const grantedPermissionKeys = new Set<string>();
@@ -63,6 +67,7 @@ export async function resolveAccess(
   return {
     userId: session.id,
     isSuperAdmin: false,
+    permissions: [...grantedPermissionKeys],
     can: (resourceId, action) => grantedPermissionKeys.has(permissionKeyFor(resourceId, action)),
   };
 }
