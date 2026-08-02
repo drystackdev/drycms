@@ -1199,6 +1199,19 @@
       }
     }
 
+    .admin-badge > svg {
+      width: 1rem;
+      height: 1rem;
+    }
+
+    .admin-badge {
+      width: 1.25rem;
+      min-width: 1.25rem;
+      padding: .25rem !important;
+      justify-content: center;
+      flex: 0 0 1.25rem;
+    }
+
     /* ------------------------------------------------------- List cell kinds */
     /* `image` field cells (see `ContentEntryList.tsx`) - a small crop, never
      * the full `ImageField` picker frame. `config.isAvatar` picks the shape. */
@@ -2148,7 +2161,7 @@
         gap: 0.75rem;
       }
 
-      & nav a {
+      & nav :is(a, .nav-group-toggle) {
         display: flex;
         align-items: center;
         gap: 0.75rem;
@@ -2251,10 +2264,21 @@
       align-items: center;
       gap: 0.25rem;
 
-      & > a {
+      & > :is(a, .nav-group-toggle) {
         flex: 1;
         min-width: 0;
       }
+    }
+
+    .nav-group-toggle {
+      width: 100%;
+      border: 0;
+      background: none;
+      color: inherit;
+      text-align: start;
+      cursor: pointer;
+      font: inherit;
+      box-shadow: none;
     }
 
     .nav-chevron {
@@ -2266,7 +2290,7 @@
       }
     }
 
-    .nav-group-header > a > .nav-chevron {
+    .nav-group-header > :is(a, .nav-group-toggle) > .nav-chevron {
       width: 0.75rem;
       height: 0.75rem;
     }
@@ -3108,18 +3132,18 @@
         height: auto;
       }
 
-      .shell.collapsed .sidebar nav a {
+      .shell.collapsed .sidebar nav :is(a, .nav-group-toggle) {
         justify-content: center;
         padding: 0;
         min-width: 2.75rem;
       }
 
-      .shell.collapsed .sidebar nav a > *:not(svg),
+      .shell.collapsed .sidebar nav :is(a, .nav-group-toggle) > *:not(svg),
       .shell.collapsed .brand > *:not(svg) {
         display: none;
       }
 
-      .shell.collapsed .sidebar .nav-group-header > a > .nav-chevron {
+      .shell.collapsed .sidebar .nav-group-header > :is(a, .nav-group-toggle) > .nav-chevron {
         display: none;
       }
 

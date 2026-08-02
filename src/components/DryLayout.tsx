@@ -73,14 +73,7 @@ const NAV: {
     icon: "Content",
     ready: true,
     section: "Content",
-  },
-  {
-    key: "content",
-    label: "Content",
-    href: `${path}/content`,
-    icon: "Content",
-    ready: true,
-    section: "Content",
+    superAdminOnly: true,
   },
   {
     key: "media",
@@ -97,6 +90,7 @@ const NAV: {
     icon: "IconManagement",
     ready: true,
     section: "System",
+    superAdminOnly: true,
   },
   {
     key: "richtext-components",
@@ -105,6 +99,7 @@ const NAV: {
     icon: "Content",
     ready: true,
     section: "Content",
+    superAdminOnly: true,
   },
   {
     key: "users",
@@ -113,6 +108,7 @@ const NAV: {
     icon: "Users",
     ready: true,
     section: "System",
+    superAdminOnly: true,
   },
   {
     key: "roles",
@@ -130,6 +126,7 @@ const NAV: {
     icon: "Settings",
     ready: true,
     section: "System",
+    superAdminOnly: true,
   },
   {
     key: "ai-keys",
@@ -138,6 +135,7 @@ const NAV: {
     icon: "Settings",
     ready: true,
     section: "System",
+    superAdminOnly: true,
   },
   {
     key: "settings",
@@ -173,18 +171,71 @@ function isActiveNavItem(url: string, href: string): boolean {
   return url === href || url.startsWith(`${href}/`);
 }
 
-/** The "Content" header link is active for any `/content/*` page EXCEPT one
- * that's also another NAV item's own dedicated href (e.g. "Users" pointing
- * at `/content/user`) - otherwise both would light up at once whenever that
- * shortcut's target happens to live under `/content`. */
-function isContentHeaderActive(url: string, contentHref: string): boolean {
-  if (!isActiveNavItem(url, contentHref)) return false;
-  return !NAV.some(
-    (other) =>
-      other.key !== "content" &&
-      other.ready &&
-      other.href !== contentHref &&
-      isActiveNavItem(url, other.href),
+interface ContentNavGroupProps {
+  id: string;
+  label: string;
+  icon: IconName;
+  items: ContentTypeDefinition[];
+  open: boolean;
+  url: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+function ContentNavGroup({
+  id,
+  label,
+  icon,
+  items,
+  open,
+  url,
+  collapsed,
+  onToggle,
+}: ContentNavGroupProps) {
+  return (
+    <div class="nav-group">
+      <div class="nav-group-header">
+        <button
+          type="button"
+          class="nav-group-toggle"
+          aria-expanded={open}
+          aria-controls={id}
+          data-tooltip={collapsed ? label : undefined}
+          data-tooltip-placement="right"
+          onClick={onToggle}
+        >
+          <Icon name={icon} />
+          <span>{label}</span>
+          <Icon
+            name="ArrowDown"
+            class={`nav-chevron${open ? "" : " collapsed"}`}
+          />
+        </button>
+      </div>
+      {!collapsed && (
+        <div
+          id={id}
+          class={`nav-subitems-wrap${open ? " expanded" : ""}`}
+          aria-hidden={!open}
+        >
+          <div class="nav-subitems">
+            {items.map((type) => {
+              const href = `${path}/content/${type.name}`;
+              return (
+                <a
+                  key={type.id}
+                  href={href}
+                  class="nav-subitem"
+                  aria-current={isActiveNavItem(url, href) ? "page" : undefined}
+                >
+                  <span>{type.label}</span>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -203,10 +254,14 @@ export default function DryLayout({ children }: Props) {
     collapsed.value = !collapsed.value;
   };
 
-  // The "Content" submenu's own collapse/expand state, independent of the
-  // whole-sidebar `collapsed` signal above.
-  const [contentMenuOpen, setContentMenuOpen] = useStore(
-    "contentSubmenuOpen",
+  // Collection and Singleton submenu state is independent of the whole-sidebar
+  // `collapsed` signal above and persists between visits.
+  const [collectionMenuOpen, setCollectionMenuOpen] = useStore(
+    "collectionSubmenuOpen",
+    true,
+  );
+  const [singletonMenuOpen, setSingletonMenuOpen] = useStore(
+    "singletonSubmenuOpen",
     true,
   );
   const contentTypesApi = useMemo(
@@ -237,9 +292,12 @@ export default function DryLayout({ children }: Props) {
   }, [contentTypesVersion.value, reloadContentTypes]);
   // `hidden` types (role/permission/aiKey) are reached through their own
   // dedicated page instead - see `types.ts`'s doc comment.
-  const contentNavItems = useMemo(
-    () =>
-      (contentTypes ?? []).filter((t) => t.kind !== "component" && !t.hidden),
+  const collectionNavItems = useMemo(
+    () => (contentTypes ?? []).filter((t) => t.kind === "collection" && !t.hidden),
+    [contentTypes],
+  );
+  const singletonNavItems = useMemo(
+    () => (contentTypes ?? []).filter((t) => t.kind === "singleton" && !t.hidden),
     [contentTypes],
   );
 
@@ -293,66 +351,35 @@ export default function DryLayout({ children }: Props) {
               return (
                 <div key={section} class="nav-section">
                   {!collapsed.value && <span class="nav-section-label">{section}</span>}
-                  {sectionItems.map((item) =>
-              item.key === "content" ? (
-                <div key={item.key} class="nav-group">
-                  <div class="nav-group-header">
-                    <a
-                      href={item.href}
-                      aria-current={
-                        isContentHeaderActive(url, item.href)
-                          ? "page"
-                          : undefined
-                      }
-                      aria-expanded={
-                        contentNavItems.length > 0 ? contentMenuOpen : undefined
-                      }
-                      aria-controls="content-nav-subitems"
-                      data-tooltip={collapsed.value ? item.label : undefined}
-                      data-tooltip-placement="right"
-                      onClick={() => {
-                        if (contentNavItems.length > 0) {
-                          setContentMenuOpen(!contentMenuOpen);
-                        }
-                      }}
-                    >
-                      <Icon name={item.icon} />
-                      <span>{item.label}</span>
-                      {contentNavItems.length > 0 && (
-                        <Icon
-                          name="ArrowDown"
-                          class={`nav-chevron${contentMenuOpen ? "" : " collapsed"}`}
+                  {section === "Content" && (
+                    <>
+                      {collectionNavItems.length > 0 && (
+                        <ContentNavGroup
+                          id="collection-nav-subitems"
+                          label="Collection"
+                          icon="Collection"
+                          items={collectionNavItems}
+                          open={collectionMenuOpen}
+                          url={url}
+                          collapsed={collapsed.value}
+                          onToggle={() => setCollectionMenuOpen(!collectionMenuOpen)}
                         />
                       )}
-                    </a>
-                  </div>
-                  {!collapsed.value && contentNavItems.length > 0 && (
-                    <div
-                      id="content-nav-subitems"
-                      class={`nav-subitems-wrap${contentMenuOpen ? " expanded" : ""}`}
-                      aria-hidden={!contentMenuOpen}
-                    >
-                      <div class="nav-subitems">
-                      {contentNavItems.map((type) => {
-                        const href = `${path}/content/${type.name}`;
-                        return (
-                          <a
-                            key={type.id}
-                            href={href}
-                            class="nav-subitem"
-                            aria-current={
-                              isActiveNavItem(url, href) ? "page" : undefined
-                            }
-                          >
-                            <span>{type.label}</span>
-                          </a>
-                        );
-                      })}
-                      </div>
-                    </div>
+                      {singletonNavItems.length > 0 && (
+                        <ContentNavGroup
+                          id="singleton-nav-subitems"
+                          label="Singleton"
+                          icon="Singleton"
+                          items={singletonNavItems}
+                          open={singletonMenuOpen}
+                          url={url}
+                          collapsed={collapsed.value}
+                          onToggle={() => setSingletonMenuOpen(!singletonMenuOpen)}
+                        />
+                      )}
+                    </>
                   )}
-                </div>
-              ) : item.ready ? (
+                  {sectionItems.map((item) => item.ready ? (
                 <a
                   key={item.key}
                   href={item.href}
@@ -364,6 +391,18 @@ export default function DryLayout({ children }: Props) {
                 >
                   <Icon name={item.icon} />
                   <span>{item.label}</span>
+                  {item.superAdminOnly && (
+                    <>
+                      <span class="spacer" />
+                      <span
+                        class="badge sm warning filled admin-badge"
+                        aria-label="Admin"
+                        data-tooltip="Admin"
+                      >
+                        <Icon name="Users" />
+                      </span>
+                    </>
+                  )}
                 </a>
               ) : (
                 <a
@@ -378,8 +417,7 @@ export default function DryLayout({ children }: Props) {
                   <span class="spacer" />
                   <span class="badge outline">Soon</span>
                 </a>
-              ),
-                  )}
+              ))}
                 </div>
               );
             })}
