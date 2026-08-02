@@ -442,14 +442,16 @@ async function streamServerAiWithCredential(
   credential: ServerCredential,
   onDelta: (delta: string) => void,
 ): Promise<ReadableStream<Uint8Array>> {
+  if (credential.provider === "google") {
+    return streamGoogleAiWithCredential(messages, credential, onDelta);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
   const response = await fetch(
     credential.provider === "openai"
       ? `${credential.baseUrl}/v1/responses`
-      : credential.provider === "anthropic"
-        ? `${credential.baseUrl}/v1/messages`
-        : `${credential.baseUrl}/v1beta/models/${encodeURIComponent(credential.model.replace(/^models\//, ""))}:streamGenerateContent?alt=sse`,
+      : `${credential.baseUrl}/v1/messages`,
     {
       method: "POST",
       headers: credential.provider === "openai"
@@ -463,19 +465,12 @@ async function streamServerAiWithCredential(
             stream: true,
             input: messages.map((message) => ({ role: message.role, content: message.text })),
           }
-        : credential.provider === "anthropic"
-          ? {
+        : {
             model: credential.model,
             stream: true,
             max_tokens: 2048,
             messages: messages.map((message) => ({ role: message.role, content: message.text })),
-            }
-          : {
-            contents: messages.map((message) => ({
-              role: message.role === "assistant" ? "model" : "user",
-              parts: [{ text: message.text }],
-            })),
-            }),
+          }),
       signal: controller.signal,
     },
   );
@@ -492,12 +487,9 @@ async function streamServerAiWithCredential(
         const event = JSON.parse(data) as {
           type?: string;
           delta?: string | { type?: string; text?: string };
-          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
           error?: { message?: string };
         };
-        const delta = credential.provider === "google"
-          ? event.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).map((part) => part.text ?? "").join("")
-          : typeof event.delta === "string"
+        const delta = typeof event.delta === "string"
           ? event.delta
           : event.delta?.type === "text_delta" ? event.delta.text : undefined;
         if (delta) {
@@ -522,6 +514,113 @@ async function streamServerAiWithCredential(
       controller.abort();
     },
   });
+}
+
+async function streamGoogleAiWithCredential(
+  messages: ChatMessage[],
+  credential: ServerCredential,
+  onDelta: (delta: string) => void,
+): Promise<ReadableStream<Uint8Array>> {
+  const model = credential.model.replace(/^models\//, "");
+  const modelUrl = `${credential.baseUrl}/v1beta/models/${encodeURIComponent(model)}`;
+  let modelResponse: Response;
+  try {
+    modelResponse = await fetch(`${modelUrl}?key=${encodeURIComponent(credential.apiKey)}`, {
+      signal: AbortSignal.timeout(Math.min(ai.timeoutMs, 15_000)),
+    });
+  } catch (error) {
+    throw new AiProviderError(error instanceof Error ? error.message : "Google model lookup timed out.", 408);
+  }
+  const modelBody = await modelResponse.json().catch(() => ({})) as {
+    supportedGenerationMethods?: unknown;
+    error?: { message?: string };
+  };
+  if (!modelResponse.ok) {
+    throw new AiProviderError(modelBody.error?.message || `Google returned HTTP ${modelResponse.status}.`, modelResponse.status);
+  }
+
+  const supportsStreaming = Array.isArray(modelBody.supportedGenerationMethods)
+    && modelBody.supportedGenerationMethods.includes("streamGenerateContent");
+  const controller = new AbortController();
+  // Non-streaming Gemini models can otherwise hold the request until the
+  // global 120s timeout. Keep the Builder responsive and let the key
+  // fallback loop try another credential on a provider timeout.
+  const timer = setTimeout(() => controller.abort(), Math.min(ai.timeoutMs, 30_000));
+  const contents = messages.map((message) => ({
+    role: message.role === "assistant" ? "model" : "user",
+    parts: [{ text: message.text }],
+  }));
+  try {
+    const response = await fetch(
+      `${modelUrl}:${supportsStreaming
+        ? `streamGenerateContent?alt=sse&key=${encodeURIComponent(credential.apiKey)}`
+        : `generateContent?key=${encodeURIComponent(credential.apiKey)}`}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents }),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      throw new AiProviderError(body.error?.message || `Google returned HTTP ${response.status}.`, response.status);
+    }
+
+    if (!supportsStreaming) {
+      const body = await response.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      const text = body.candidates?.flatMap((candidate) => candidate.content?.parts ?? [])
+        .map((part) => part.text ?? "").join("");
+      if (!text) throw new Error("Google returned an empty response.");
+      clearTimeout(timer);
+      return new ReadableStream<Uint8Array>({
+        start(streamController) {
+          onDelta(text);
+          streamController.enqueue(streamEvent({ delta: text }));
+          streamController.enqueue(streamEvent({ done: true }));
+          streamController.close();
+        },
+        cancel() {
+          controller.abort();
+        },
+      });
+    }
+
+    return new ReadableStream<Uint8Array>({
+      start(streamController) {
+        void readSseStream(response, (data) => {
+          if (data === "[DONE]") return;
+          const event = JSON.parse(data) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          };
+          const delta = event.candidates?.flatMap((candidate) => candidate.content?.parts ?? [])
+            .map((part) => part.text ?? "").join("");
+          if (delta) {
+            onDelta(delta);
+            streamController.enqueue(streamEvent({ delta }));
+          }
+        }).then(() => {
+          clearTimeout(timer);
+          streamController.enqueue(streamEvent({ done: true }));
+          streamController.close();
+        }).catch((error) => {
+          clearTimeout(timer);
+          streamController.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI stream failed." }));
+          streamController.close();
+        });
+      },
+      cancel() {
+        clearTimeout(timer);
+        controller.abort();
+      },
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof AiProviderError) throw error;
+    throw new AiProviderError(error instanceof Error ? error.message : "Google generation timed out.", 408);
+  }
 }
 
 async function createChatStream(

@@ -217,7 +217,13 @@ export default function AiKeyEditor({ id }: Props) {
     if (Object.keys(errors).length > 0) return;
     setSaving(true);
     try {
-      const entry = isNew ? await entriesApi.create(value) : await entriesApi.update(entryId!, value);
+      // Secret fields are write-only. An empty input on an existing entry is
+      // an explicit "keep the stored secret" marker, not a missing required
+      // value; the engine will omit it from the UPDATE and preserve ciphertext.
+      const payload = isNew || value.key.trim()
+        ? value
+        : { ...value, key: { hasExisting: hasExistingKey } };
+      const entry = isNew ? await entriesApi.create(payload) : await entriesApi.update(entryId!, payload);
       setValue({ ...value, key: "" });
       setInitialSnapshot(JSON.stringify({ ...value, key: "" }));
       setHasExistingKey(true);
