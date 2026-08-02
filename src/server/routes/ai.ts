@@ -498,7 +498,8 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
   let apiKey = String(body.key ?? "").trim();
   const model = String(body.model ?? "").trim();
   if (!apiKey && (body.entryId || body.entryName)) apiKey = await readStoredAiKey(context, body.entryId, body.entryName);
-  if (!apiKey || !model) throw new Error("A key and model are required.");
+  if (!apiKey) throw new Error("No API key is available. Enter an API key and save this entry first.");
+  if (!model) throw new Error("A model is required before checking the API key.");
   if (rawProvider.toLowerCase() === "google") {
     const baseUrl = (String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
     const controller = new AbortController();

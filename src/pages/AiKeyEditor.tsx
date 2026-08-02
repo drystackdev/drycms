@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
 import Combobox from "../components/Combobox.js";
@@ -55,6 +55,7 @@ export default function AiKeyEditor({ id }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const previousModel = useRef<string | undefined>();
 
   const provider = value?.provider ?? "";
   const isCustom = provider === "Custom";
@@ -189,7 +190,14 @@ export default function AiKeyEditor({ id }: Props) {
 
   useEffect(() => {
     const storedEntryId = entryId ?? (!isNew ? id : undefined);
-    if (!provider || !value?.model.trim() || (!value.key.trim() && !storedEntryId) || (isCustom && !value.url.trim())) {
+    const model = value?.model.trim() ?? "";
+    if (previousModel.current === undefined) {
+      previousModel.current = model;
+      return;
+    }
+    if (previousModel.current === model) return;
+    previousModel.current = model;
+    if (!model || !provider || (!value?.key.trim() && !storedEntryId) || (isCustom && !value?.url.trim())) {
       setCheckResult(undefined);
       return;
     }
