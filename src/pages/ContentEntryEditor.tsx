@@ -31,7 +31,7 @@ import {
   scrollToField,
 } from "./content-entry-editor/field-events.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
-import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
+import FieldRenderer, { type FieldRendererProps } from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
 import { canAccess } from "../store/auth.js";
 
@@ -53,6 +53,7 @@ function renderFieldNodes(
   fieldErrors: Record<string, string>,
   onFieldChange: (fieldName: string, fieldValue: unknown) => void,
   allTypes: ContentTypeDefinition[],
+  checkSecretKey?: FieldRendererProps["checkSecretKey"],
 ) {
   const elements = [];
   for (let i = 0; i < nodes.length; i++) {
@@ -97,6 +98,7 @@ function renderFieldNodes(
           onChange={(fieldValue) => onFieldChange(node.fieldName, fieldValue)}
           error={fieldErrors[node.fieldName]}
           allTypes={allTypes}
+          checkSecretKey={node.kind === "column" && node.fieldName === "key" ? checkSecretKey : undefined}
         />
       </div>,
     );
@@ -121,6 +123,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [checkingAiKey, setCheckingAiKey] = useState(false);
+  const [aiKeyCheck, setAiKeyCheck] = useState<{ ok: boolean; message: string } | undefined>();
 
   // Snapshot of `value` right after load, before any edits - see
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
@@ -227,6 +231,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }
 
   function updateFieldValue(fieldName: string, fieldValue: unknown) {
+    if (typeSlug === "aiKey" && fieldName === "key") setAiKeyCheck(undefined);
     setValue((current) =>
       current ? { ...current, [fieldName]: fieldValue } : current,
     );
@@ -237,6 +242,36 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // `dry:field-set` listener below) - a listener can't tell those apart,
     // same as it can't for a real user's own edit.
     dispatchFieldInput(fieldName, fieldValue, { typeSlug, entryId });
+  }
+
+  async function handleCheckAiKey() {
+    if (typeSlug !== "aiKey" || !value) return;
+    const key = typeof value.key === "string" ? value.key.trim() : "";
+    const provider = typeof value.provider === "string" ? value.provider : "";
+    const model = typeof value.model === "string" ? value.model.trim() : "";
+    const url = typeof value.url === "string" ? value.url.trim() : "";
+    if (!key || !provider || !model) {
+      setAiKeyCheck({ ok: false, message: "Enter provider, model, and key first." });
+      return;
+    }
+    setCheckingAiKey(true);
+    setAiKeyCheck(undefined);
+    try {
+      const response = await fetch(`${path}/api/ai/check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, key, model, url }),
+      });
+      const body = await response.json() as { ok?: boolean; message?: string };
+      setAiKeyCheck({
+        ok: response.ok && body.ok === true,
+        message: body.message ?? (response.ok ? "AI key is valid." : "AI key check failed."),
+      });
+    } catch (error) {
+      setAiKeyCheck({ ok: false, message: error instanceof Error ? error.message : "AI key check failed." });
+    } finally {
+      setCheckingAiKey(false);
+    }
   }
 
   // The other direction - an outside listener drives this form by
@@ -414,6 +449,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             fieldErrors,
             updateFieldValue,
             allTypes,
+            typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
           )}
         </div>
 
@@ -424,6 +460,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             fieldErrors,
             updateFieldValue,
             allTypes,
+            typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
           )}
 
           {canDelete && (

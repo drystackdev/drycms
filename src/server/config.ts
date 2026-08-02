@@ -9,5 +9,5 @@ import { resolveOptions } from "./options.js";
  */
 export const resolved = resolveOptions(userOptions);
 
-export const { path, storage, icons, content, kv } = resolved;
+export const { path, storage, icons, content, ai, kv } = resolved;
 export const componentsStorage = resolved.components.storage;

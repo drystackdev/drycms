@@ -11,6 +11,7 @@ import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as keyValueRoute from "./routes/key-value.js";
+import * as aiRoute from "./routes/ai.js";
 
 type RouteModule = Record<string, DryRouteHandler | undefined>;
 
@@ -30,6 +31,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "richtext-components": richtextComponentsRoute,
   auth: authRoute,
   "key-value": keyValueRoute,
+  ai: aiRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {

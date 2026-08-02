@@ -10,6 +10,11 @@ export interface SecretKeyFieldProps extends FieldProps<string> {
   id?: string;
   required?: boolean;
   description?: string;
+  checkAction?: {
+    onCheck: () => void;
+    loading?: boolean;
+    result?: { ok: boolean; message: string };
+  };
 }
 
 /**
@@ -35,6 +40,7 @@ export default function SecretKeyField({
   id,
   required = false,
   description,
+  checkAction,
   class: className,
   style,
 }: SecretKeyFieldProps) {
@@ -45,16 +51,32 @@ export default function SecretKeyField({
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
       <label for={fieldId}>{label}{required && <span class="required-asterisk">*</span>}</label>
       {description && <small>{description}</small>}
-      <textarea
-        id={fieldId}
-        name={name}
-        value={value}
-        autoComplete="off"
-        placeholder={hasExistingValue ? "Leave blank to keep the current secret" : "Enter a value"}
-        disabled={disabled}
-        aria-invalid={error || undefined}
-        onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
-      />
+      <div class="secret-key-field-control">
+        <textarea
+          id={fieldId}
+          name={name}
+          value={value}
+          autoComplete="off"
+          placeholder={hasExistingValue ? "Leave blank to keep the current secret" : "Enter a value"}
+          disabled={disabled}
+          aria-invalid={error || undefined}
+          onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
+        />
+        {checkAction && (
+          <button
+            type="button"
+            class="outline sm"
+            disabled={disabled || checkAction.loading || !value.trim()}
+            aria-busy={checkAction.loading || undefined}
+            onClick={checkAction.onCheck}
+          >
+            {checkAction.loading ? "Checking…" : "Check key"}
+          </button>
+        )}
+      </div>
+      {checkAction?.result && (
+        <span class={checkAction.result.ok ? "hint" : "error"}>{checkAction.result.message}</span>
+      )}
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>
   );

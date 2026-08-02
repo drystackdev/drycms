@@ -77,6 +77,15 @@ const NAV: {
     superAdminOnly: true,
   },
   {
+    key: "builder-content-type",
+    label: "Builder Content type",
+    href: `${path}/content-types/builder-content-type`,
+    icon: "Content",
+    ready: true,
+    section: "Content",
+    superAdminOnly: true,
+  },
+  {
     key: "media",
     label: "Media",
     href: `${path}/media`,

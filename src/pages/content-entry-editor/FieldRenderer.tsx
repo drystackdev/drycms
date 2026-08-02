@@ -26,6 +26,11 @@ export interface FieldRendererProps {
   onChange: (value: unknown) => void;
   error?: string;
   allTypes: ContentTypeDefinition[];
+  checkSecretKey?: {
+    onCheck: () => void;
+    loading?: boolean;
+    result?: { ok: boolean; message: string };
+  };
 }
 
 /**
@@ -45,6 +50,7 @@ export default function FieldRenderer({
   onChange,
   error,
   allTypes,
+  checkSecretKey,
 }: FieldRendererProps) {
   if (node.kind === "column") {
     return (
@@ -53,6 +59,7 @@ export default function FieldRenderer({
         value={value}
         onChange={onChange}
         error={error}
+        checkSecretKey={checkSecretKey}
       />
     );
   }

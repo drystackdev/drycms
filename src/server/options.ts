@@ -90,6 +90,27 @@ export interface DryComponentsOption {
   storage?: DryStorageOption;
 }
 
+export interface DryAiOption {
+  /** `local` runs a CLI on the same machine; `server` calls an AI HTTP API. */
+  mode?: "local" | "server";
+  /** `codex`/`claude` for local mode, `openai`/`anthropic` for server mode. */
+  provider?: "codex" | "claude" | "openai" | "anthropic";
+  /** Local executable name/path. Defaults to the selected provider CLI. */
+  command?: string;
+  /** Extra CLI arguments. Use `{prompt}` to control where the prompt is inserted. */
+  args?: string[];
+  /** Optional `aiKey.name` to use. If omitted, the first configured key is used. */
+  keyName?: string;
+  /** Server provider model. */
+  model?: string;
+  /** Server provider base URL override. */
+  baseUrl?: string;
+  /** Local working directory. Defaults to the app's current working directory. */
+  cwd?: string;
+  /** Request/process timeout in milliseconds. */
+  timeoutMs?: number;
+}
+
 export interface DryKvOption {
   /** Persistence backend for the server-side Key Value store. */
   kind?: "local" | "sqlite" | "D1" | "KV";
@@ -121,6 +142,7 @@ export interface DryOption {
   icons?: DryIconsOption;
   content?: DryContentOption;
   components?: DryComponentsOption;
+  ai?: DryAiOption;
   kv?: DryKvOption;
 }
 
@@ -164,6 +186,26 @@ export interface ResolvedComponentsOption {
   storage: ResolvedStorageOption;
 }
 
+export interface ResolvedLocalAiOption {
+  mode: "local";
+  provider: "codex" | "claude";
+  command: string;
+  args: string[];
+  cwd?: string;
+  timeoutMs: number;
+}
+
+export interface ResolvedServerAiOption {
+  mode: "server";
+  provider: "openai" | "anthropic";
+  keyName?: string;
+  model: string;
+  baseUrl: string;
+  timeoutMs: number;
+}
+
+export type ResolvedAiOption = ResolvedLocalAiOption | ResolvedServerAiOption;
+
 export interface ResolvedKvTuning {
   maxEntries: number;
   maxBytes: number;
@@ -188,6 +230,7 @@ export interface ResolvedDryOption {
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
   components: ResolvedComponentsOption;
+  ai: ResolvedAiOption;
   kv: ResolvedKvOption;
 }
 
@@ -421,6 +464,44 @@ function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
   return { ...tuning, ...storageOption } as ResolvedKvOption;
 }
 
+function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
+  const mode = option.mode ?? "local";
+  const timeoutMs = resolvePositiveNumber(option.timeoutMs, "ai.timeoutMs", 120_000);
+
+  if (mode === "local") {
+    const provider = option.provider ?? "codex";
+    if (provider !== "codex" && provider !== "claude") {
+      throw new Error('[drycms] `ai.provider` must be `codex` or `claude` when `ai.mode` is `local`.');
+    }
+    const command = option.command ?? provider;
+    if (typeof command !== "string" || !command.trim()) {
+      throw new TypeError('[drycms] `ai.command` must be a non-empty string.');
+    }
+    const args = option.args ?? (provider === "codex" ? ["exec", "--ephemeral", "--skip-git-repo-check"] : ["-p"]);
+    if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
+      throw new TypeError('[drycms] `ai.args` must be an array of strings.');
+    }
+    const cwd = option.cwd === undefined ? undefined : resolvePath(process.cwd(), option.cwd);
+    return { mode, provider, command: command.trim(), args: [...args], cwd, timeoutMs };
+  }
+
+  if (mode !== "server") {
+    throw new Error('[drycms] `ai.mode` must be `local` or `server`.');
+  }
+  const provider = option.provider ?? "openai";
+  if (provider !== "openai" && provider !== "anthropic") {
+    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic` when `ai.mode` is `server`.');
+  }
+  const model = option.model ?? (provider === "openai" ? "gpt-5" : "claude-sonnet-4-20250514");
+  const baseUrl = option.baseUrl ?? (provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com");
+  if (typeof model !== "string" || !model.trim()) throw new TypeError('[drycms] `ai.model` must be a non-empty string.');
+  if (typeof baseUrl !== "string" || !/^https?:\/\//.test(baseUrl)) throw new TypeError('[drycms] `ai.baseUrl` must be an http(s) URL.');
+  if (option.keyName !== undefined && (typeof option.keyName !== "string" || !option.keyName.trim())) {
+    throw new TypeError('[drycms] `ai.keyName` must be a non-empty string when provided.');
+  }
+  return { mode, provider, keyName: option.keyName?.trim(), model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs };
+}
+
 /**
  * Normalizes and validates user options. Throws on values that would produce a
  * broken route so the failure surfaces at config time rather than at request time.
@@ -460,6 +541,7 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
     components: resolveComponentsOption(options.components),
+    ai: resolveAiOption(options.ai),
     kv: resolveKvOption(options.kv),
   };
 }

@@ -6,6 +6,162 @@
  * elevation.
  */
 @layer dry.components {
+  .dry {
+    .builder-content-type-layout {
+      display: grid;
+      gap: var(--dry-gap);
+      grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 0.8fr);
+      min-height: min(42rem, calc(100dvh - 12rem));
+    }
+
+    .builder-mobile-tabs {
+      display: none;
+    }
+
+    .builder-panel,
+    .ai-chat-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 32rem;
+    }
+
+    .builder-panel-body {
+      display: grid;
+      flex: 1;
+      place-items: center;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      background: var(--dry-accent);
+    }
+
+    .secret-key-field-control {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.5rem;
+      align-items: start;
+    }
+
+    .secret-key-field-control textarea {
+      min-width: 0;
+    }
+
+    .ai-chat-messages {
+      position: relative;
+      flex: 1;
+      min-height: 12rem;
+      padding: 1rem;
+      margin-block-start: 1rem;
+    }
+
+    .ai-chat-empty {
+      display: grid;
+      gap: 0.375rem;
+      place-content: center;
+      min-height: 100%;
+      text-align: center;
+      color: var(--dry-muted-foreground);
+    }
+
+    .ai-chat-empty strong {
+      color: var(--dry-foreground);
+    }
+
+    .ai-chat-message-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .ai-chat-message {
+      width: fit-content;
+      max-width: 85%;
+      padding: 0.625rem 0.75rem;
+      border-radius: var(--dry-radius-md);
+      white-space: pre-wrap;
+    }
+
+    .ai-chat-message.user {
+      margin-inline-start: auto;
+      background: var(--dry-primary);
+      color: var(--dry-primary-foreground);
+    }
+
+    .ai-chat-message.assistant {
+      background: var(--dry-accent);
+      color: var(--dry-foreground);
+    }
+
+    .ai-chat-composer {
+      margin-block-start: 1rem;
+    }
+
+    .ai-chat-input-wrap {
+      position: relative;
+    }
+
+    .ai-chat-input-wrap textarea {
+      display: block;
+      width: 100%;
+      min-height: 2.75rem;
+      height: 2.75rem;
+      padding-inline-end: 4.5rem;
+      resize: none;
+      overflow-y: hidden;
+    }
+
+    .ai-chat-input-wrap button {
+      position: absolute;
+      right: 0.5rem;
+      bottom: 0.5rem;
+      height: 1.75rem;
+      padding-inline: 0.625rem;
+    }
+  }
+
+  @media (max-width: 60rem) {
+    .dry .builder-content-type-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .dry {
+      .builder-mobile-tabs {
+        display: flex;
+        gap: 0.25rem;
+        padding: 0.25rem;
+        border-radius: var(--dry-radius-md);
+        background: var(--dry-accent);
+
+        & > button {
+          flex: 1;
+
+          &[aria-selected="true"] {
+            background: var(--dry-background);
+            color: var(--dry-foreground);
+            box-shadow: var(--dry-shadow-sm);
+          }
+        }
+      }
+
+      .builder-content-type-layout {
+        display: block;
+        min-height: 0;
+      }
+
+      .builder-panel,
+      .ai-chat-panel {
+        display: none;
+        min-height: 30rem;
+      }
+
+      .builder-panel.mobile-active,
+      .ai-chat-panel.mobile-active {
+        display: flex;
+      }
+    }
+  }
+
   /* `@keyframes` can't nest inside a style rule via CSS nesting (only
    * conditional group rules like `@media`/`@supports` can) - hoisted out of
    * `.dry` below and left at the layer's top level, same precedent as

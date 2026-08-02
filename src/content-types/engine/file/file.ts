@@ -80,7 +80,23 @@ export function createFileContentEngineAdapter(option: ResolvedFileContentOption
           await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
         });
       }
-      const allTypes = await readAllRaw();
+      let allTypes = await readAllRaw();
+      // System collections are frozen and cannot be upgraded through the
+      // public editor. Apply additive seed changes during file-engine boot.
+      const seededAiKey = defaultContentTypeDefinitions().find((candidate) => candidate.name === "aiKey");
+      const currentAiKey = allTypes.find((candidate) => candidate.name === "aiKey");
+      if (seededAiKey && currentAiKey && !currentAiKey.fields.some((field) => field.name === "model")) {
+        const nextAiKey = { ...seededAiKey, version: currentAiKey.version };
+        const nextAllTypes = allTypes.map((candidate) => candidate.id === currentAiKey.id ? nextAiKey : candidate);
+        const plan = planFileSave({ savedType: nextAiKey, oldAllTypes: allTypes, newAllTypes: nextAllTypes });
+        await driver.transaction(async (tx) => {
+          await tx.writeJson(typePath(nextAiKey.id), { ...nextAiKey, version: plan.primary.nextVersion });
+          const rebuilt = await rebuildAllRaw(tx);
+          await tx.writeJson(CONTENT_TYPES_INDEX_PATH, rebuilt);
+          await bumpDataVersion(tx, CONTENT_TYPES_RESOURCE);
+        });
+        allTypes = await readAllRaw();
+      }
       const roleType = allTypes.find((type) => type.name === "role");
       if (roleType) {
         const roles = await entryAdapter.listEntries(roleType, allTypes, { page: 0, pageSize: 10_000 });

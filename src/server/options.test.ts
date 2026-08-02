@@ -23,6 +23,11 @@ describe('resolveOptions', () => {
 			components: {
 				storage: { kind: 'local', root: resolve(process.cwd(), 'components') },
 			},
+			ai: {
+				mode: 'local', provider: 'codex', command: 'codex',
+				args: ['exec', '--ephemeral', '--skip-git-repo-check'],
+				cwd: undefined, timeoutMs: 120_000,
+			},
 			kv: {
 				kind: 'local', root: resolve(process.cwd(), 'kv'), maxEntries: 10_000,
 				maxBytes: 32 * 1024 * 1024, cleanupIntervalMs: 30_000,

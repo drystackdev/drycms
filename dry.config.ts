@@ -9,5 +9,8 @@ export default config({
   // path: "/dry",
   // storage: { kind: "local", root: "storage" },
   // icons: { kind: "local", root: "icons" },
-  content: { engine: "file" },
+  content: { engine: "sqlite" },
+  // Local development uses the installed Codex CLI. For a deployed server,
+  // switch to e.g. `{ mode: "server", keyName: "OpenAI" }`; the key is read from the Ai Key collection.
+  ai: { mode: "local", provider: "codex" },
 });

@@ -7,6 +7,8 @@ export interface OverlayScrollbarsHandle<T extends HTMLElement> {
 	ref: RefObject<T>;
 	/** Scrolls the OverlayScrollbars-managed viewport back to the top. */
 	scrollToTop: () => void;
+	/** Scrolls the OverlayScrollbars-managed viewport to its newest content. */
+	scrollToBottom: () => void;
 }
 
 const defaultOptions: PartialOptions = {
@@ -59,5 +61,9 @@ export function useOverlayScrollbars<T extends HTMLElement>(
 	return {
 		ref,
 		scrollToTop: () => instance.current?.elements().viewport.scrollTo({ top: 0 }),
+		scrollToBottom: () => {
+			const viewport = instance.current?.elements().viewport;
+			if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+		},
 	};
 }
