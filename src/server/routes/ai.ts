@@ -523,51 +523,39 @@ async function streamGoogleAiWithCredential(
 ): Promise<ReadableStream<Uint8Array>> {
   const model = credential.model.replace(/^models\//, "");
   const modelUrl = `${credential.baseUrl}/v1beta/models/${encodeURIComponent(model)}`;
-  let modelResponse: Response;
-  try {
-    modelResponse = await fetch(`${modelUrl}?key=${encodeURIComponent(credential.apiKey)}`, {
-      signal: AbortSignal.timeout(Math.min(ai.timeoutMs, 15_000)),
-    });
-  } catch (error) {
-    throw new AiProviderError(error instanceof Error ? error.message : "Google model lookup timed out.", 408);
-  }
-  const modelBody = await modelResponse.json().catch(() => ({})) as {
-    supportedGenerationMethods?: unknown;
-    error?: { message?: string };
-  };
-  if (!modelResponse.ok) {
-    throw new AiProviderError(modelBody.error?.message || `Google returned HTTP ${modelResponse.status}.`, modelResponse.status);
-  }
-
-  const supportsStreaming = Array.isArray(modelBody.supportedGenerationMethods)
-    && modelBody.supportedGenerationMethods.includes("streamGenerateContent");
   const controller = new AbortController();
-  // Non-streaming Gemini models can otherwise hold the request until the
-  // global 120s timeout. Keep the Builder responsive and let the key
-  // fallback loop try another credential on a provider timeout.
   const timer = setTimeout(() => controller.abort(), Math.min(ai.timeoutMs, 30_000));
   const contents = messages.map((message) => ({
     role: message.role === "assistant" ? "model" : "user",
     parts: [{ text: message.text }],
   }));
   try {
-    const response = await fetch(
-      `${modelUrl}:${supportsStreaming
-        ? `streamGenerateContent?alt=sse&key=${encodeURIComponent(credential.apiKey)}`
-        : `generateContent?key=${encodeURIComponent(credential.apiKey)}`}`,
-      {
+    const request = (endpoint: string) => {
+      const separator = endpoint.includes("?") ? "&" : "?";
+      return fetch(`${modelUrl}:${endpoint}${separator}key=${encodeURIComponent(credential.apiKey)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "x-goog-api-key": credential.apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({ contents }),
         signal: controller.signal,
-      },
-    );
+      });
+    };
+
+    let response = await request("streamGenerateContent?alt=sse");
+    let streaming = true;
     if (!response.ok) {
       const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-      throw new AiProviderError(body.error?.message || `Google returned HTTP ${response.status}.`, response.status);
+      const message = body.error?.message || `Google returned HTTP ${response.status}.`;
+      const streamUnsupported = response.status === 404 || /stream(?:ing)?|not supported|not found/i.test(message);
+      if (!streamUnsupported) throw new AiProviderError(message, response.status);
+      response = await request("generateContent");
+      streaming = false;
+      if (!response.ok) {
+        const fallbackBody = await response.json().catch(() => ({})) as { error?: { message?: string } };
+        throw new AiProviderError(fallbackBody.error?.message || `Google returned HTTP ${response.status}.`, response.status);
+      }
     }
 
-    if (!supportsStreaming) {
+    if (!streaming) {
       const body = await response.json() as {
         candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
       };

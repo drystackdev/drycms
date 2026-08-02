@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
 import { path } from "virtual:drycms/config";
 
 import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
@@ -8,6 +10,10 @@ interface ChatMessage {
   id: number;
   role: "user" | "assistant";
   text: string;
+}
+
+function renderAssistantMessage(text: string): string {
+  return DOMPurify.sanitize(marked.parse(text, { async: false }));
 }
 
 export default function BuilderContentType() {
@@ -150,7 +156,9 @@ export default function BuilderContentType() {
               <div class="ai-chat-message-list">
                 {chatMessages.map((message) => (
                   <div class={`ai-chat-message ${message.role}`} key={message.id}>
-                    {message.text || (message.role === "assistant" ? "AI is thinking…" : "")}
+                    {message.role === "assistant" && message.text && message.text !== "AI is thinking…"
+                      ? <div dangerouslySetInnerHTML={{ __html: renderAssistantMessage(message.text) }} />
+                      : message.text || (message.role === "assistant" ? "AI is thinking…" : "")}
                   </div>
                 ))}
               </div>
@@ -190,7 +198,6 @@ export default function BuilderContentType() {
                   resizePrompt(event.currentTarget);
                   setPrompt(event.currentTarget.value);
                 }}
-                placeholder="e.g. Create a product content type with a name and price"
               />
               <span class="ai-chat-input-shortcut" aria-hidden="true">{sendShortcut}</span>
               <button type="submit" disabled={!prompt.trim()}>

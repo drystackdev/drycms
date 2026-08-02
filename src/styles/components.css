@@ -93,6 +93,7 @@
       min-height: 12rem;
       padding: 1rem;
       margin-block-start: 1rem;
+      max-height: calc(100dvh - 20rem);
     }
 
     .ai-chat-empty {
@@ -130,6 +131,24 @@
     .ai-chat-message.assistant {
       background: var(--dry-accent);
       color: var(--dry-foreground);
+    }
+
+    .ai-chat-message.assistant > div > :first-child {
+      margin-block-start: 0;
+    }
+
+    .ai-chat-message.assistant > div > :last-child {
+      margin-block-end: 0;
+    }
+
+    .ai-chat-message.assistant pre {
+      max-width: 100%;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .ai-chat-message.assistant code {
+      overflow-wrap: anywhere;
     }
 
     .ai-chat-composer {
