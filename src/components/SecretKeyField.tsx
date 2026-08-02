@@ -10,11 +10,6 @@ export interface SecretKeyFieldProps extends FieldProps<string> {
   id?: string;
   required?: boolean;
   description?: string;
-  checkAction?: {
-    onCheck: () => void;
-    loading?: boolean;
-    result?: { ok: boolean; message: string };
-  };
 }
 
 /**
@@ -40,7 +35,6 @@ export default function SecretKeyField({
   id,
   required = false,
   description,
-  checkAction,
   class: className,
   style,
 }: SecretKeyFieldProps) {
@@ -61,22 +55,8 @@ export default function SecretKeyField({
           disabled={disabled}
           aria-invalid={error || undefined}
           onInput={(event) => onChange((event.target as HTMLTextAreaElement).value)}
-        />
-        {checkAction && (
-          <button
-            type="button"
-            class="outline sm"
-            disabled={disabled || checkAction.loading || !value.trim()}
-            aria-busy={checkAction.loading || undefined}
-            onClick={checkAction.onCheck}
-          >
-            {checkAction.loading ? "Checking…" : "Check key"}
-          </button>
-        )}
+      />
       </div>
-      {checkAction?.result && (
-        <span class={checkAction.result.ok ? "hint" : "error"}>{checkAction.result.message}</span>
-      )}
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>
   );

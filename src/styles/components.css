@@ -35,15 +35,56 @@
       background: var(--dry-accent);
     }
 
+    .ai-key-editor-form .content-entry-editor-grid {
+      grid-template-columns: minmax(0, 1fr);
+
+      & > .stack,
+      & .field {
+        width: 100%;
+        min-width: 0;
+      }
+
+      & > .stack {
+        padding-inline: 0;
+      }
+    }
+
+    .ai-key-editor-card {
+      gap: 1rem;
+    }
+
+    .ai-key-editor-card > .under {
+      width: 100%;
+
+      & .ai-key-editor-form {
+        min-inline-size: 0;
+        padding: 0;
+        margin: 0;
+        border: 0;
+      }
+    }
+
     .secret-key-field-control {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 0.5rem;
-      align-items: start;
+      display: block;
     }
 
     .secret-key-field-control textarea {
       min-width: 0;
+    }
+
+    .ai-key-model-row {
+      width: 100%;
+      flex-wrap: nowrap !important;
+
+      & > .select {
+        flex: 1 1 0;
+        min-width: 0;
+        width: auto;
+      }
+
+      & > button {
+        flex: 0 0 auto;
+      }
     }
 
     .ai-chat-messages {

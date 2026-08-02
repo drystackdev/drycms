@@ -1,6 +1,7 @@
 import { ai, content } from "../config.js";
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { decryptSecret } from "../../lib/secret-crypto.js";
+import { decodeEntryId } from "../../lib/id-hash.js";
 import { resolveAccess } from "../../content-types/access.js";
 import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
@@ -24,12 +25,16 @@ interface CheckKeyRequest {
   key?: string;
   model?: string;
   url?: string;
+  entryId?: string;
+  entryName?: string;
 }
 
 interface ModelsRequest {
   provider?: string;
   key?: string;
   url?: string;
+  entryId?: string;
+  entryName?: string;
 }
 
 interface ServerCredential {
@@ -140,15 +145,20 @@ function resolveChatConversation(context: DryRouteContext, body: ChatRequest): {
   messages: ChatMessage[];
 } {
   const id = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
-  if (!id || typeof body.message !== "string") {
+  if (typeof body.message === "string") {
+    const message = validateSingleMessage(body.message);
+    if (!id) return { messages: [message] };
+    if (id.length > 128) throw new Error("Conversation id is too long.");
+    const key = conversationKey(context, id);
+    const current = conversations.get(key);
+    if (current && current.expiresAt <= Date.now()) conversations.delete(key);
+    const history = conversations.get(key)?.messages ?? [];
+    return { id, key, messages: [...history, message] };
+  }
+  if (!id) {
     return { messages: validateMessages(body.messages) };
   }
-  if (id.length > 128) throw new Error("Conversation id is too long.");
-  const key = conversationKey(context, id);
-  const current = conversations.get(key);
-  if (current && current.expiresAt <= Date.now()) conversations.delete(key);
-  const history = conversations.get(key)?.messages ?? [];
-  return { id, key, messages: [...history, validateSingleMessage(body.message)] };
+  return { messages: validateMessages(body.messages) };
 }
 
 function rememberConversation(key: string, messages: ChatMessage[]): void {
@@ -459,10 +469,35 @@ async function createChatStream(
   return streamServerAiWithCredential(messages, await readServerCredential(context), onDelta);
 }
 
-async function checkAiKey(body: CheckKeyRequest): Promise<void> {
+async function readStoredAiKey(context: DryRouteContext, entryIdValue?: string, entryName?: string): Promise<string> {
+  const schema = getSchemaAdapter(context);
+  const entries = getEntryAdapter(context);
+  const allTypes = await schema.listContentTypes();
+  const type = allTypes.find((candidate) => candidate.name === "aiKey");
+  if (!type) throw new Error('The system collection "aiKey" is not available.');
+  let raw: Record<string, unknown> | null = null;
+  if (entryIdValue) {
+    const entryId = decodeEntryId(entryIdValue);
+    if (entryId !== null) raw = await entries.getRawEntry(type, entryId);
+  }
+  if (!raw && entryName?.trim()) {
+    const page = await entries.listEntries(type, allTypes, { page: 0, pageSize: 10_000 });
+    const selected = page.rows.find((row) => String(row.value.name ?? "") === entryName.trim());
+    if (selected) raw = await entries.getRawEntry(type, selected.id);
+  }
+  if (!raw || typeof raw.key !== "string") throw new Error("The stored AI Key has no secret key.");
+  try {
+    return await decryptSecret(raw.key);
+  } catch {
+    throw new Error("The stored AI Key cannot be decrypted with the current DRYCMS_SECRET_KEY. Enter the key again and save this entry.");
+  }
+}
+
+async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Promise<void> {
   const rawProvider = String(body.provider ?? "").trim();
-  const apiKey = String(body.key ?? "").trim();
+  let apiKey = String(body.key ?? "").trim();
   const model = String(body.model ?? "").trim();
+  if (!apiKey && (body.entryId || body.entryName)) apiKey = await readStoredAiKey(context, body.entryId, body.entryName);
   if (!apiKey || !model) throw new Error("A key and model are required.");
   if (rawProvider.toLowerCase() === "google") {
     const baseUrl = (String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
@@ -517,19 +552,16 @@ async function checkAiKey(body: CheckKeyRequest): Promise<void> {
   }
 }
 
-const DEFAULT_MODELS: Record<string, string[]> = {
-  google: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
-  anthropic: ["claude-sonnet-4-20250514", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
-  openai: ["gpt-5", "gpt-5-mini", "gpt-4.1", "o4-mini"],
-};
-
-async function listAiModels(body: ModelsRequest): Promise<string[]> {
+async function listAiModels(context: DryRouteContext, body: ModelsRequest): Promise<string[]> {
   const providerValue = String(body.provider ?? "").trim().toLowerCase();
+  let apiKey = String(body.key ?? "").trim();
+  if (!apiKey && (body.entryId || body.entryName)) apiKey = await readStoredAiKey(context, body.entryId, body.entryName);
   if (providerValue === "custom") {
     const url = String(body.url ?? "").trim();
     if (!url) throw new Error("URL is required for Custom provider.");
+    if (!apiKey) throw new Error("API key is required to load models.");
     const response = await fetch(url, {
-      headers: body.key ? { Authorization: `Bearer ${body.key}` } : undefined,
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(ai.timeoutMs),
     });
     const responseBody = await response.json().catch(() => ({})) as {
@@ -541,8 +573,48 @@ async function listAiModels(body: ModelsRequest): Promise<string[]> {
     return [...new Set(items.map((item) => typeof item === "string" ? item : item.id ?? item.name).filter((item): item is string => typeof item === "string" && item.length > 0))];
   }
   const provider = providerValue === "chatgpt" ? "openai" : providerValue === "claude" ? "anthropic" : providerValue;
-  if (!DEFAULT_MODELS[provider]) throw new Error(`Unsupported AI Key provider "${String(body.provider)}".`);
-  return DEFAULT_MODELS[provider];
+  const key = apiKey;
+  if (!key) throw new Error("API key is required to load models.");
+  const url = (String(body.url ?? "").trim() || (
+    provider === "google"
+      ? "https://generativelanguage.googleapis.com"
+      : provider === "anthropic"
+        ? "https://api.anthropic.com"
+        : provider === "openai"
+          ? "https://api.openai.com"
+          : ""
+  )).replace(/\/+$/, "");
+  if (!url) throw new Error(`Unsupported AI Key provider "${String(body.provider)}".`);
+
+  if (provider === "google") {
+    const response = await fetch(`${url}/v1beta/models?key=${encodeURIComponent(key)}`, {
+      signal: AbortSignal.timeout(ai.timeoutMs),
+    });
+    const responseBody = await response.json().catch(() => ({})) as {
+      models?: Array<{ name?: unknown; supportedGenerationMethods?: unknown }>;
+      error?: { message?: string };
+    };
+    if (!response.ok) throw new Error(responseBody.error?.message || `Google returned HTTP ${response.status}.`);
+    return [...new Set((responseBody.models ?? [])
+      .filter((model) => !Array.isArray(model.supportedGenerationMethods) || model.supportedGenerationMethods.includes("generateContent"))
+      .map((model) => typeof model.name === "string" ? model.name.replace(/^models\//, "") : "")
+      .filter(Boolean))];
+  }
+
+  const response = await fetch(`${url}/v1/models`, {
+    headers: provider === "anthropic"
+      ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
+      : { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(ai.timeoutMs),
+  });
+  const responseBody = await response.json().catch(() => ({})) as {
+    data?: Array<{ id?: unknown; name?: unknown }>;
+    error?: { message?: string };
+  };
+  if (!response.ok) throw new Error(responseBody.error?.message || `${provider === "anthropic" ? "Anthropic" : "OpenAI"} returned HTTP ${response.status}.`);
+  return [...new Set((responseBody.data ?? [])
+    .map((model) => typeof model.id === "string" ? model.id : typeof model.name === "string" ? model.name : "")
+    .filter(Boolean))];
 }
 
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
@@ -550,11 +622,11 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
     const denied = await requireSuperAdmin(context);
     if (denied) return denied;
     if (context.params.slug === "check") {
-      await checkAiKey(await context.request.json() as CheckKeyRequest);
+      await checkAiKey(context, await context.request.json() as CheckKeyRequest);
       return jsonResponse({ ok: true, message: "AI key is valid for this model." });
     }
     if (context.params.slug === "models") {
-      const models = await listAiModels(await context.request.json() as ModelsRequest);
+      const models = await listAiModels(context, await context.request.json() as ModelsRequest);
       return jsonResponse({ models });
     }
     const body = await context.request.json() as ChatRequest;

@@ -72,7 +72,6 @@ export default function ScalarField({ node, value, onChange, error, checkSecretK
         required={!!validation.required}
         error={!!error}
         helperText={error}
-        checkAction={checkSecretKey}
       />
     );
   }

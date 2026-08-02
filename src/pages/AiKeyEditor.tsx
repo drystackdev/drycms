@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { path } from "virtual:drycms/config";
+import Combobox from "../components/Combobox.js";
+import ConfirmDialog from "../components/ConfirmDialog.js";
 import SecretKeyField from "../components/SecretKeyField.js";
 import SelectField from "../components/SelectField.js";
 import TextField from "../components/TextField.js";
-import { ArrowLeftIcon } from "../components/icons.js";
+import { ArrowLeftIcon, ReplaceIcon, TrashIcon } from "../components/icons.js";
 import { toast } from "../components/Toast.js";
 import { ContentEntriesApiError, createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
@@ -31,11 +33,6 @@ interface CheckResult {
 }
 
 const PROVIDERS = ["Google", "Anthropic", "ChatGPT", "Custom"];
-const PROVIDER_MODELS: Record<string, string[]> = {
-  Google: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
-  Anthropic: ["claude-sonnet-4-20250514", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
-  ChatGPT: ["gpt-5", "gpt-5-mini", "gpt-4.1", "o4-mini"],
-};
 
 export default function AiKeyEditor({ id }: Props) {
   const { route } = useLocation();
@@ -55,11 +52,14 @@ export default function AiKeyEditor({ id }: Props) {
   const [checkResult, setCheckResult] = useState<CheckResult | undefined>();
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const provider = value?.provider ?? "";
   const isCustom = provider === "Custom";
   const canEdit = !!type && canAccess(type.id, isNew ? "create" : "update");
+  const canDelete = !!type && !isNew && canAccess(type.id, "delete");
   const isDirty = initialSnapshot !== null && value !== null && JSON.stringify(value) !== initialSnapshot;
 
   useDocumentTitle(isNew ? "New AI Key" : "AI Key");
@@ -112,13 +112,17 @@ export default function AiKeyEditor({ id }: Props) {
     })();
   }, [type, allTypes, id, isNew, canEdit, entriesApi, route]);
 
-  useEffect(() => {
-    if (provider && !isCustom) setModels(PROVIDER_MODELS[provider] ?? []);
-  }, [provider, isCustom]);
-
-  async function loadModels() {
+  const loadModels = useCallback(async () => {
     if (!value?.provider) return;
+    const storedEntryId = entryId ?? (!isNew ? id : undefined);
+    if (!value.key.trim() && !storedEntryId) {
+      setModels([]);
+      setModelError("Enter an API key to load models.");
+      return;
+    }
     if (isCustom && !value.url.trim()) {
+      setModels([]);
+      setModelError("URL is required for Custom provider.");
       setFieldErrors((current) => ({ ...current, url: "URL is required for Custom provider." }));
       return;
     }
@@ -128,7 +132,8 @@ export default function AiKeyEditor({ id }: Props) {
       const response = await fetch(`${path}/api/ai/models`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: value.provider, url: value.url, key: value.key }),
+        credentials: "same-origin",
+        body: JSON.stringify({ provider: value.provider, url: value.url, key: value.key, entryId: storedEntryId, entryName: value.name }),
       });
       const body = await response.json() as { models?: unknown; message?: string };
       if (!response.ok) throw new Error(body.message ?? "Failed to load models.");
@@ -142,14 +147,21 @@ export default function AiKeyEditor({ id }: Props) {
     } finally {
       setLoadingModels(false);
     }
-  }
+  }, [entryId, id, isCustom, isNew, value?.key, value?.provider, value?.url]);
+
+  useEffect(() => {
+    const storedEntryId = entryId ?? (!isNew ? id : undefined);
+    if (!provider || (!value?.key.trim() && !storedEntryId) || (isCustom && !value?.url.trim())) return;
+    const timer = window.setTimeout(() => void loadModels(), 500);
+    return () => window.clearTimeout(timer);
+  }, [entryId, id, isCustom, isNew, loadModels, provider, value?.key, value?.url]);
 
   function update(field: keyof AiKeyValue, next: string) {
     setValue((current) => current ? { ...current, [field]: next } : current);
     setFieldErrors((current) => ({ ...current, [field]: "" }));
     if (field === "key") setCheckResult(undefined);
     if (field === "provider") {
-      setModels(PROVIDER_MODELS[next] ?? []);
+      setModels([]);
       setModelError(undefined);
       setValue((current) => current ? { ...current, model: "", [field]: next } : current);
     }
@@ -163,7 +175,8 @@ export default function AiKeyEditor({ id }: Props) {
       const response = await fetch(`${path}/api/ai/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(value),
+        credentials: "same-origin",
+        body: JSON.stringify({ ...value, entryId, entryName: value.name }),
       });
       const body = await response.json() as { ok?: boolean; message?: string };
       setCheckResult({ ok: response.ok && body.ok === true, message: body.message ?? "AI key check failed." });
@@ -173,6 +186,16 @@ export default function AiKeyEditor({ id }: Props) {
       setChecking(false);
     }
   }
+
+  useEffect(() => {
+    const storedEntryId = entryId ?? (!isNew ? id : undefined);
+    if (!provider || !value?.model.trim() || (!value.key.trim() && !storedEntryId) || (isCustom && !value.url.trim())) {
+      setCheckResult(undefined);
+      return;
+    }
+    const timer = window.setTimeout(() => void checkKey(), 400);
+    return () => window.clearTimeout(timer);
+  }, [entryId, id, isCustom, isNew, provider, value?.key, value?.model, value?.url]);
 
   async function save() {
     if (!value || !type) return;
@@ -200,6 +223,22 @@ export default function AiKeyEditor({ id }: Props) {
     }
   }
 
+  async function handleDelete() {
+    const targetId = entryId ?? id;
+    if (!targetId) return;
+    setDeleting(true);
+    try {
+      await entriesApi.remove(targetId);
+      toast.add({ type: "success", title: "Deleted AI Key." });
+      route(`${path}/content/aiKey`, true);
+    } catch (error) {
+      toast.add({ type: "error", title: "Delete failed", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
   if (loadError) return <span class="error">{loadError}</span>;
   if (!type || !allTypes || !value) return <span class="hint">Loading…</span>;
   if (!canEdit && !canAccess(type.id, "view")) return <span class="error">You don't have permission to manage AI Keys.</span>;
@@ -213,34 +252,73 @@ export default function AiKeyEditor({ id }: Props) {
           <h1>{isNew ? "New AI Key" : value.name || "AI Key"}</h1>
           <p>Manage provider credentials and the model used by AI features.</p>
         </div>
-        {isDirty && <button type="button" disabled={!canEdit || saving} aria-busy={saving || undefined} onClick={save}>Save</button>}
+        <div class="row">
+          {canDelete && <button type="button" class="destructive" disabled={deleting} onClick={() => setShowDeleteConfirm(true)}><TrashIcon /> Delete</button>}
+          {isDirty && <button type="button" disabled={!canEdit || saving} aria-busy={saving || undefined} onClick={save}>Save</button>}
+        </div>
       </div>
 
-      <fieldset disabled={!canEdit} class="ai-key-editor-form">
-        <div class="content-entry-editor-grid">
+      <section class="card ai-key-editor-card">
+        <header>
+          <h2>AI provider credentials</h2>
+          <p>Configure the provider, API key, and model used by AI features.</p>
+        </header>
+        <div class="under stack">
+          <fieldset disabled={!canEdit} class="ai-key-editor-form">
+            <div class="content-entry-editor-grid">
           <div class="stack">
             <TextField label="Name" value={value.name} onChange={(next) => update("name", next)} required error={!!fieldErrors.name} helperText={fieldErrors.name} />
             <TextField label="Description" value={value.description} onChange={(next) => update("description", next)} multiline />
             <SelectField label="Provider" value={value.provider} onChange={(next) => update("provider", String(next))} config={{ options: PROVIDERS, multiple: false }} required error={!!fieldErrors.provider} helperText={fieldErrors.provider} />
             {isCustom && <TextField label="URL" value={value.url} onChange={(next) => update("url", next)} placeholder="https://api.example.com/v1/models" required error={!!fieldErrors.url} helperText={fieldErrors.url} />}
+            <SecretKeyField label="Key" value={value.key} onChange={(next) => update("key", next)} hasExistingValue={hasExistingKey} required={!hasExistingKey} error={!!fieldErrors.key} helperText={fieldErrors.key} />
           </div>
           <div class="stack">
             <div class="field">
               <label for="ai-key-model">Model<span class="required-asterisk">*</span></label>
-              <div class="row">
-                <select id="ai-key-model" value={value.model} disabled={loadingModels || modelOptions.length === 0} onChange={(event) => update("model", (event.target as HTMLSelectElement).value)}>
-                  <option value="">{loadingModels ? "Loading models…" : "Select a model"}</option>
-                  {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
-                </select>
-                <button type="button" class="outline" disabled={!value.provider || loadingModels} onClick={loadModels}>{loadingModels ? "Loading…" : "Load models"}</button>
+              <div class="row ai-key-model-row">
+                <Combobox
+                  id="ai-key-model"
+                  value={value.model}
+                  options={modelOptions.map((model) => ({ value: model, label: model }))}
+                  placeholder={loadingModels ? "Loading models…" : "Search models…"}
+                  noResultsLabel={modelError || "No models found."}
+                  disabled={loadingModels || modelOptions.length === 0}
+                  invalid={!!fieldErrors.model}
+                  onChange={(next) => update("model", next)}
+                />
+                <button
+                  type="button"
+                  class="outline icon lg"
+                  aria-label="Refresh models"
+                  data-tooltip="Refresh models"
+                  disabled={!value.provider || loadingModels}
+                  aria-busy={loadingModels || undefined}
+                  onClick={() => void loadModels()}
+                >
+                  <ReplaceIcon />
+                </button>
               </div>
               {fieldErrors.model && <span class="error">{fieldErrors.model}</span>}
-              {modelError && <span class="error">{modelError}</span>}
+              {!fieldErrors.model && (loadingModels ? <span class="hint">Loading models from provider…</span> : modelError && <span class="error">{modelError}</span>)}
+              {checking && <span class="hint">Checking API key…</span>}
+              {!checking && checkResult && <span class={checkResult.ok ? "hint" : "error"}>{checkResult.message}</span>}
             </div>
-            <SecretKeyField label="Key" value={value.key} onChange={(next) => update("key", next)} hasExistingValue={hasExistingKey} required={!hasExistingKey} error={!!fieldErrors.key} helperText={fieldErrors.key} checkAction={isNew ? { onCheck: checkKey, loading: checking, result: checkResult } : undefined} />
           </div>
+            </div>
+          </fieldset>
         </div>
-      </fieldset>
+      </section>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete this AI Key?"
+        message={<p>This permanently deletes the AI Key. This cannot be undone.</p>}
+        confirmLabel="Delete"
+        destructive
+        busy={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 }
