@@ -110,8 +110,8 @@ export const textFieldType: FieldTypeDefinition<string> = {
   Editor: TextField,
   sqlType: () => "TEXT",
   configFields: [
-    { key: "multiline", label: "Multiline (textarea)", widget: "boolean" },
     { key: "placeholder", label: "Placeholder", widget: "text" },
+    { key: "multiline", label: "Multiline (textarea)", widget: "boolean" },
   ],
   // minLength/maxLength/regex are server-side only (TextField has no
   // matching UI prop yet) - still real validation rules, just not reflected

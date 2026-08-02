@@ -17,6 +17,7 @@ import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
 import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
+import DryComponentIcon from "./dry-component-icon.js";
 
 /**
  * Toolbar button opening a name-only list picker (same 2-step "select, then
@@ -255,6 +256,7 @@ export default function DryComponentInsertButton({
                     >
                       <div class="stack" style={{gap: '0.25rem'}}>
                         <span class="dry-component-picker-label">
+                          <DryComponentIcon icon={record.icon} />
                           {record.label}
                         </span>
                         <div class="row">

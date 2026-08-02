@@ -4,11 +4,11 @@ import type { Node as PMNode } from "prosemirror-model";
 import { closeHistory } from "prosemirror-history";
 import { NodeSelection, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { ComponentIcon } from "../icons.js";
 import { useOverlayScrollbars } from "../overlayscrollbars.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
 import { flattenDryComponentRecords } from "./component-registry-types.js";
 import { loadRichtextComponents } from "./component-registry.js";
+import DryComponentIcon from "./dry-component-icon.js";
 import {
   type Candidate,
   type ComponentContext,
@@ -264,7 +264,7 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
                 }
               }}
             >
-              <ComponentIcon />
+              <DryComponentIcon icon={candidate.record.icon} />
               <span class="dry-component-mention-path">{candidate.path}</span>
               <small>{candidate.label}</small>
             </button>

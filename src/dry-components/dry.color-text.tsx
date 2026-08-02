@@ -1,3 +1,4 @@
+import Icon from "../components/Icon.js";
 import {
   DryComponent,
   type InferShape,
@@ -39,5 +40,6 @@ export default DryComponent({
   `,
   props: colorTextProps,
   component: ColorText,
-  refs: [dryCarousel]
+  refs: [dryCarousel],
+  icon: () => <Icon name="TextFieldType" />
 });

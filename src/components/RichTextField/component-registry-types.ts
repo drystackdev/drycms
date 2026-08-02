@@ -29,6 +29,8 @@ export interface PlainFieldDef {
 export interface DryComponentRecord {
   name: string;
   label: string;
+  /** Pre-rendered SVG markup from `DryComponent({ icon })`. */
+  icon?: string;
   description: string;
   /** Whether importing this record should open the props dialog. */
   requiredInput: boolean;

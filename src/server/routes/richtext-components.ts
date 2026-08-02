@@ -1,6 +1,8 @@
 import { Readable } from "node:stream";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { h } from "preact";
+import renderToString from "preact-render-to-string";
 import type { DryRouteHandler } from "../context.js";
 import { componentsStorage } from "../config.js";
 import { buildComponentBundle, buildSharedPreactBundle } from "../../components/RichTextField/build-component-bundle.js";
@@ -84,6 +86,15 @@ function recordFromDefinition(
   return {
     name: definition.name,
     label: definition.label,
+    ...(definition.icon
+      ? {
+          icon: renderToString(
+            typeof definition.icon === "function"
+              ? h(definition.icon, { "aria-hidden": "true" })
+              : definition.icon,
+          ),
+        }
+      : {}),
     description: definition.description,
     // Top-level components default to requiring input; nested refs default to
     // using their resolved defaults when the option is omitted.
@@ -103,6 +114,26 @@ function recordFromDefinition(
     sourcePath,
     enabled: true,
   };
+}
+
+/** Backfills icon metadata for records created before `DryComponent.icon` was
+ * introduced. The bundle is the source of truth; once an icon is found, save
+ * the refreshed JSON so the insert dialog and `@` popup receive it normally on
+ * later requests. */
+async function hydrateRecordIcon(record: DryComponentRecord): Promise<DryComponentRecord> {
+  if (record.icon !== undefined || !record.sourcePath) return record;
+  try {
+    const bundlePath = pathToFileURL(join(componentsStorage.root, `${slugFor(record.name)}.js`)).href;
+    const module = (await import(`${bundlePath}?metadata=${Date.now()}`)) as { default?: unknown };
+    if (!isDryComponentDefinition(module.default)) return record;
+    const refreshed = recordFromDefinition(module.default, record.sourcePath);
+    const hasIcon = !!refreshed.icon || refreshed.refRecords?.some((child) => !!child.icon);
+    if (!hasIcon) return record;
+    await adapter.write(fileNameFor(record.name), Buffer.from(JSON.stringify(refreshed, null, 2), "utf8"));
+    return refreshed;
+  } catch {
+    return record;
+  }
 }
 
 async function rebuildRecord(record: DryComponentRecord, slug: string): Promise<DryComponentRecord> {
@@ -129,7 +160,7 @@ export const GET: DryRouteHandler = async (context) => {
       const records = (
         await Promise.all(entries.map((entry) => readRecord(entry.path)))
       ).filter((record): record is DryComponentRecord => record !== null);
-      return jsonResponse({ records });
+      return jsonResponse({ records: await Promise.all(records.map(hydrateRecordIcon)) });
     }
     if (name.endsWith(".js")) {
       const slug = slugFor(name.slice(0, -".js".length));
@@ -141,7 +172,7 @@ export const GET: DryRouteHandler = async (context) => {
     }
     const record = await readRecord(fileNameFor(name));
     if (!record) throw new StorageError("not_found", `No confirmed component named "${name}".`);
-    return jsonResponse({ record });
+    return jsonResponse({ record: await hydrateRecordIcon(record) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -220,22 +251,12 @@ export const POST: DryRouteHandler = async (context) => {
 
     await buildAndStore(sourcePath, slugFor(name));
 
-    const record: DryComponentRecord = {
-      name,
-      label,
-      description,
-      type,
-      shadow,
-      children,
-      ...(childrenDefaultHtml !== undefined ? { childrenDefaultHtml } : {}),
-      requiredInput,
-      ...(refs.length > 0 ? { refs } : {}),
-      ...(refRecords.length > 0 ? { refRecords: refRecords as DryComponentRecord[] } : {}),
-      props: asPlainFieldShape(body.props),
-      defaults: (body.defaults && typeof body.defaults === "object" ? body.defaults : {}) as Record<string, unknown>,
-      sourcePath,
-      enabled: true,
-    };
+    const bundlePath = pathToFileURL(join(componentsStorage.root, `${slugFor(name)}.js`)).href;
+    const module = (await import(`${bundlePath}?confirm=${Date.now()}`)) as { default?: unknown };
+    if (!isDryComponentDefinition(module.default)) {
+      throw new StorageError("invalid_path", `Built component "${name}" has invalid metadata.`);
+    }
+    const record = recordFromDefinition(module.default, sourcePath);
 
     await adapter.write(fileNameFor(name), Buffer.from(JSON.stringify(record, null, 2), "utf8"));
     return jsonResponse({ record }, 201);

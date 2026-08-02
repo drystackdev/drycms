@@ -175,6 +175,9 @@ export interface DryComponentConfig<S extends Record<string, FieldDef<unknown>> 
    * omitted, discovery/build derives it from `dry.<name>.*`. */
   name?: string;
   label: string;
+  /** Optional Preact SVG component used by richtext pickers and controls.
+   * It remains in the built bundle and is not serialized into JSON records. */
+  icon?: JSX.Element | ComponentType<JSX.SVGAttributes<SVGSVGElement>>;
   /** Shown alongside the label wherever this component is listed (the
    * component management admin page, mục 3, and the richtext editor's own
    * insert dialog, mục 4) - a short blurb helping whoever's authoring
@@ -236,6 +239,7 @@ export interface DryComponentDefinition<S extends Record<string, FieldDef<unknow
   readonly __dryComponent: true;
   name: string;
   label: string;
+  icon?: JSX.Element | ComponentType<JSX.SVGAttributes<SVGSVGElement>>;
   description: string;
   version: string;
   auth: string;
@@ -297,6 +301,7 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
     __dryComponent: true,
     name: configuredName,
     label: config.label,
+    icon: config.icon,
     description: config.description ?? "",
     version: config.version ?? "0.0.0",
     auth: config.auth ?? "",
@@ -315,6 +320,7 @@ export function DryComponent<S extends Record<string, FieldDef<unknown>> = Recor
   definition.update = (patch) => {
     if (patch.name !== undefined) definition.name = kebabCase(patch.name.replace(/^dry-/i, ""));
     if (patch.label !== undefined) definition.label = patch.label;
+    if (patch.icon !== undefined) definition.icon = patch.icon;
     if (patch.description !== undefined) definition.description = patch.description;
     if (patch.version !== undefined) definition.version = patch.version;
     if (patch.auth !== undefined) definition.auth = patch.auth;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { path } from "virtual:drycms/config";
 import { useDialogSync } from "../../components/list-nav.js";
+import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
 import { toast } from "../../components/Toast.js";
 import {
   AlertTriangleIcon,
@@ -60,6 +61,16 @@ const api = createContentTypesApi(`${path}/api/content-types`);
  */
 export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApplied }: ApplyBuildDialogProps) {
   const ref = useDialogSync(open, onClose);
+  const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   const [stage, setStage] = useState<Stage>("review");
   const [items, setItems] = useState<DraftEntry[]>([]);
@@ -98,6 +109,9 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
     try {
       const response = await api.planBatch(items.map((entry) => entry.definition));
       setPlanResults(response.results);
+      const plannedDestructive = response.results.some(
+        (result) => result.ok && (result.destructiveSummary?.length ?? 0) > 0,
+      );
       setStage("checked");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to check pending changes.");
@@ -144,18 +158,45 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
     <dialog ref={ref} class="lg apply-build-dialog" aria-label="Apply and build">
       {open && (
         <>
-          <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
-            <div class="spacer" style={{ minWidth: 0 }}>
-              <h3>Apply and build</h3>
-              <p>Review every pending change, then apply it to the live schema.</p>
+          <header class="row justify-between apply-build-header" style={{ flexWrap: "nowrap" }}>
+            <div class="spacer apply-build-intro" style={{ minWidth: 0 }}>
+              <p><strong>Apply and build</strong></p>
+              <p>Review the pending changes before publishing them to the live schema.</p>
             </div>
             <button type="button" class="icon ghost" onClick={handleClose} disabled={busy}>
               <XIcon />
             </button>
           </header>
 
-          <div class="apply-build-body">
-            {items.length === 0 && <p class="hint">No pending changes.</p>}
+          {stage === "checked" && !hasPlanErrors && (
+            <div
+              class={`alert ${hasDestructive ? "warning" : "success"}`}
+              style={{ marginBlock: "0 1rem" }}
+            >
+              {hasDestructive ? <AlertTriangleIcon /> : <CheckCircleIcon />}
+              <h4>{hasDestructive ? "This will lose data" : "No conflicts found"}</h4>
+              <p>
+                {hasDestructive
+                  ? "Some changes drop columns or tables - review the warnings above before applying."
+                  : "Ready to apply - this will run the migration on the live schema."}
+              </p>
+            </div>
+          )}
+
+          <div class="under apply-build-body" ref={bodyScroll}>
+            <div class="apply-build-scroll-content">
+            {items.length === 0 ? (
+              <div class="apply-build-empty">
+                <CheckCircleIcon />
+                <strong>No pending changes</strong>
+                <span class="hint">Everything is already up to date.</span>
+              </div>
+            ) : (
+              <div class="apply-build-summary">
+                <strong>{items.length} pending change{items.length === 1 ? "" : "s"}</strong>
+                <span class="hint">Review each content type below.</span>
+              </div>
+            )}
 
             <ul class="content-type-list">
               {diffs.map(({ entry, diff }) => {
@@ -163,7 +204,7 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
                 return (
                   <li
                     key={entry.definition.id}
-                    class="content-type-list-item stack"
+                    class="content-type-list-item apply-build-change stack"
                     style={{ gap: "0.375rem", alignItems: "stretch" }}
                   >
                     <span class="row" style={{ gap: "0.375rem" }}>
@@ -221,18 +262,6 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
 
             {error && <p class="error">{error}</p>}
 
-            {stage === "checked" && !hasPlanErrors && (
-              <div class={`alert ${hasDestructive ? "warning" : "success"}`} style={{ marginBlock: "1rem" }}>
-                {hasDestructive ? <AlertTriangleIcon /> : <CheckCircleIcon />}
-                <h4>{hasDestructive ? "This will lose data" : "No conflicts found"}</h4>
-                <p>
-                  {hasDestructive
-                    ? "Some of these changes drop columns or tables - review the warnings above before applying."
-                    : "Ready to apply - this will run the migration on the live schema."}
-                </p>
-              </div>
-            )}
-
             {stage === "checked" && hasPlanErrors && (
               <div class="alert destructive" style={{ marginBlock: "1rem" }}>
                 <XCircleIcon />
@@ -252,6 +281,7 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
                 </p>
               </div>
             )}
+            </div>
           </div>
 
           <footer>

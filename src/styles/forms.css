@@ -425,11 +425,6 @@
         }
       }
 
-      & .error {
-        font-size: var(--dry-text-xs);
-        color: var(--dry-destructive);
-      }
-
       &.inline {
         grid-template-columns: auto 1fr;
         align-items: center;

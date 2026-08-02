@@ -223,9 +223,9 @@ export default function ComponentField<T = Record<string, unknown>>({
             </div>
             <footer class="row justify-end">
               {attempted && Object.keys(draftErrors).length > 0 && (
-                <span class="error" style={{ marginRight: "auto" }}>
+                <em class="error" style={{ marginRight: "auto" }}>
                   Fix the highlighted fields.
-                </span>
+                </em>
               )}
               <button
                 type="button"

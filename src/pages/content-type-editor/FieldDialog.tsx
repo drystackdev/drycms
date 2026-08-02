@@ -254,6 +254,7 @@ function SettingsForm({
   disabledKeys = [],
   showErrors = false,
   outline = true,
+  compactGroups = false,
 }: {
   descriptors: SettingDescriptor[];
   values: Record<string, unknown>;
@@ -262,6 +263,7 @@ function SettingsForm({
   disabledKeys?: string[];
   showErrors?: boolean;
   outline?: boolean;
+  compactGroups?: boolean;
 }) {
   if (descriptors.length === 0) return null;
   const grouped = descriptors.some((descriptor) => descriptor.group);
@@ -314,14 +316,18 @@ function SettingsForm({
   return (
     <>
       {groups.map(({ group, descriptors: groupDescriptors }) => (
-        <div class="stack" style={{ gap: 0 }} key={group || "ungrouped"}>
+        <div
+          class="stack"
+          style={compactGroups ? { gap: 0 } : undefined}
+          key={group || "ungrouped"}
+        >
           {group && <strong>{group}</strong>}
           {group ? (
             <div
               class="grid"
               style={{
                 gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 0,
+                ...(compactGroups ? { gap: 0 } : {}),
               }}
             >
               {groupDescriptors.map((descriptor) => (
@@ -945,9 +951,10 @@ export default function FieldDialog({
                         values={draftConfig}
                         onChange={handleConfigChange}
                         dynamicOptions={dynamicOptions}
-                        disabledKeys={configDisabledKeys}
-                        outline={false}
-                      />
+                      disabledKeys={configDisabledKeys}
+                      outline={false}
+                      compactGroups
+                    />
                     </fieldset>
                   )}
 
@@ -970,9 +977,9 @@ export default function FieldDialog({
           </div>
           <footer>
             {hasSaveErrors && (
-              <span class="error" style={{ marginRight: "auto" }}>
+              <em class="error" style={{ marginRight: "auto" }}>
                 Fix the highlighted fields.
-              </span>
+              </em>
             )}
             {readOnly ? (
               <button type="button" class="outline" onClick={onCancel}>

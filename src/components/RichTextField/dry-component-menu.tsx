@@ -5,7 +5,7 @@ import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import FloatingPanel from "../FloatingPanel.js";
 import type { FileManagerSource } from "../file-manager-types.js";
-import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ArrowRightIcon, ComponentIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
+import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ArrowRightIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import { flattenDryComponentRecords, type DryComponentRecord } from "./component-registry-types.js";
 import DryComponentPropsForm, {
@@ -15,6 +15,7 @@ import DryComponentPropsForm, {
 import type { ImageAlign } from "./schema.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
+import DryComponentIcon from "./dry-component-icon.js";
 
 export interface DryComponentMenuProps {
   viewRef: RefObject<EditorView | null>;
@@ -62,7 +63,7 @@ function ComponentTreeNode({ record, records, trail, selectable, onSelect }: Com
 
   const label = (
     <>
-      <ComponentIcon />
+      <DryComponentIcon icon={record.icon} />
       <span class="spacer">{record.label}</span>
       
       {selectable && (
@@ -87,7 +88,7 @@ function ComponentTreeNode({ record, records, trail, selectable, onSelect }: Com
         nextTrail.has(child.name) ? (
           <li role="treeitem" class="dry-component-tree-node" key={child.name}>
             <span class="dry-component-tree-label">
-              <ComponentIcon />
+              <DryComponentIcon icon={child.icon} />
               <span>{child.label}</span>
               <small>(circular ref)</small>
             </span>
@@ -478,7 +479,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
                   setTreeOpen(true);
                 }}
               >
-                <ComponentIcon />
+                <DryComponentIcon icon={record?.icon} />
               </button>
             )}
             {hasProps && (
@@ -532,7 +533,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
                       setTreeOpen(true);
                     }}
                   >
-                    <ComponentIcon />
+                    <DryComponentIcon icon={record?.icon} />
                   </button>
                   <hr class="separator" role="separator" aria-orientation="vertical" />
                 </>

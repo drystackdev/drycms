@@ -15,6 +15,7 @@ import {
 } from "../components/RichTextField/register-component.js";
 import { useDialogSync } from "../components/list-nav.js";
 import { ReplaceIcon, SettingsIcon } from "../components/icons.js";
+import DryComponentIcon from "../components/RichTextField/dry-component-icon.js";
 import { useDocumentTitle } from "./page-common.js";
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -222,7 +223,7 @@ export default function RichtextComponents() {
                 childrenHtml={item.def.childrenDefaultHtml}
               />
               <div class="dry-component-admin-card-body">
-                <h4>{item.def.label}</h4>
+                <h4><DryComponentIcon icon={item.def.icon} /> {item.def.label}</h4>
                 <span class="dry-component-admin-card-meta">
                   <small class="badge outline">{item.def.version}</small>
                   <small class="badge outline">{item.def.auth || <em>None</em>}</small>
