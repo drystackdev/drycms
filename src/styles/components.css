@@ -1392,8 +1392,9 @@
 
         &::after {
           content: "";
-          width: 0.5rem;
-          height: 0.5rem;
+          inline-size: 0.5rem;
+          block-size: 0.5rem;
+          flex: 0 0 0.5rem;
           border-inline-end: 1.5px solid currentcolor;
           border-block-end: 1.5px solid currentcolor;
           rotate: 45deg;
@@ -2635,6 +2636,7 @@
      * and the switches' layout once expanded. */
     .role-permission-dots {
       display: flex;
+      flex: 0 0 auto;
       gap: 0.25rem;
       margin-inline: 0.5rem;
     }
@@ -2653,8 +2655,9 @@
     }
 
     .role-permission-dot {
-      width: 0.5rem;
-      height: 0.5rem;
+      inline-size: 0.5rem;
+      block-size: 0.5rem;
+      flex: 0 0 0.5rem;
       border-radius: 50%;
       background-color: var(--dry-border);
 

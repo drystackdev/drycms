@@ -10,9 +10,16 @@ import {
   createContentEntriesApi,
 } from "../content-types/entries-http-api.js";
 import type { EntryValue } from "../content-types/engine/entry-codec.js";
-import { buildEntryFieldTree, type EntryFieldNode } from "../content-types/engine/entry-tree.js";
+import {
+  buildEntryFieldTree,
+  type EntryFieldNode,
+} from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
-import { permissionActionsFor, permissionKeyFor, type PermissionAction } from "../content-types/permissions.js";
+import {
+  permissionActionsFor,
+  permissionKeyFor,
+  type PermissionAction,
+} from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import FieldRenderer from "./content-entry-editor/FieldRenderer.js";
@@ -42,6 +49,18 @@ const ACTION_DESCRIPTIONS: Record<PermissionAction, string> = {
   setting: "Can view and edit this singleton's settings.",
 };
 
+/** Permission management no longer has a content table, but remains a
+ * grantable system resource in the role editor. */
+const PERMISSION_RESOURCE: ContentTypeDefinition = {
+  id: "system-permission",
+  kind: "collection",
+  name: "permission",
+  label: "Permission",
+  description: "Manage permission assignments for roles.",
+  fields: [],
+  version: 0,
+};
+
 /**
  * Bespoke Role editor (not the generic `ContentEntryEditor`/`FieldRenderer`
  * loop) - `status/role.md` wants a bigger picture than a plain field form:
@@ -55,10 +74,18 @@ const ACTION_DESCRIPTIONS: Record<PermissionAction, string> = {
 export default function RoleEditor({ id }: Props) {
   const { route } = useLocation();
   const isNew = id === "new";
-  const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
-  const roleEntriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "role"), []);
+  const typesApi = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
+  const roleEntriesApi = useMemo(
+    () => createContentEntriesApi(`${path}/api/content`, "role"),
+    [],
+  );
 
-  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
+  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(
+    null,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [value, setValue] = useState<EntryValue | null>(null);
@@ -89,7 +116,9 @@ export default function RoleEditor({ id }: Props) {
         const types = await typesApi.list();
         setAllTypes(types);
       } catch (error) {
-        setLoadError(error instanceof Error ? error.message : "Failed to load.");
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load.",
+        );
       }
     })();
   }, []);
@@ -110,31 +139,50 @@ export default function RoleEditor({ id }: Props) {
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
       } catch (error) {
-        if (error instanceof ContentEntriesApiError && /not found/i.test(error.message)) {
+        if (
+          error instanceof ContentEntriesApiError &&
+          /not found/i.test(error.message)
+        ) {
           route(`${path}/roles`, true);
           return;
         }
-        setLoadError(error instanceof Error ? error.message : "Failed to load role.");
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load role.",
+        );
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only on id/roleType change, not every time `nodes` gets a new array identity
   }, [roleType, id, isNew]);
 
-  const isDirty = initialSnapshot !== null && value !== null && JSON.stringify(value) !== initialSnapshot;
+  const isDirty =
+    initialSnapshot !== null &&
+    value !== null &&
+    JSON.stringify(value) !== initialSnapshot;
 
   function updateField(fieldName: string, fieldValue: unknown) {
-    setValue((current) => (current ? { ...current, [fieldName]: fieldValue } : current));
+    setValue((current) =>
+      current ? { ...current, [fieldName]: fieldValue } : current,
+    );
   }
 
-  function permissionIdFor(resource: ContentTypeDefinition, action: PermissionAction): string {
+  function permissionIdFor(
+    resource: ContentTypeDefinition,
+    action: PermissionAction,
+  ): string {
     return permissionKeyFor(resource.id, action);
   }
 
-  function togglePermission(resource: ContentTypeDefinition, action: PermissionAction, checked: boolean) {
+  function togglePermission(
+    resource: ContentTypeDefinition,
+    action: PermissionAction,
+    checked: boolean,
+  ) {
     const permId = permissionIdFor(resource, action);
     setValue((current) => {
       if (!current) return current;
-      const ids = Array.isArray(current.permissions) ? ([...current.permissions] as string[]) : [];
+      const ids = Array.isArray(current.permissions)
+        ? ([...current.permissions] as string[])
+        : [];
       const remove = (id: string) => {
         const idx = ids.indexOf(id);
         if (idx !== -1) ids.splice(idx, 1);
@@ -161,7 +209,10 @@ export default function RoleEditor({ id }: Props) {
     try {
       if (isNew) {
         const entry = await roleEntriesApi.create(value);
-        toast.add({ type: "success", title: `Created role "${String(value.name ?? "")}".` });
+        toast.add({
+          type: "success",
+          title: `Created role "${String(value.name ?? "")}".`,
+        });
         route(`${path}/roles/${entry.id}`);
       } else if (entryId) {
         const entry = await roleEntriesApi.update(entryId, value);
@@ -174,7 +225,11 @@ export default function RoleEditor({ id }: Props) {
         setFieldErrors(error.fieldErrors);
         toast.add({ type: "error", title: "Fix the highlighted fields." });
       } else {
-        toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
+        toast.add({
+          type: "error",
+          title: "Save failed",
+          description: error instanceof Error ? error.message : undefined,
+        });
       }
     } finally {
       setSaving(false);
@@ -201,30 +256,45 @@ export default function RoleEditor({ id }: Props) {
   }
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (!allTypes || !roleType || value === null) return <span class="hint">Loading…</span>;
+  if (!allTypes || !roleType || value === null)
+    return <span class="hint">Loading…</span>;
 
   const resources = allTypes
     .filter((t) => t.kind === "collection")
+    .concat(PERMISSION_RESOURCE)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const singletons = allTypes
     .filter((t) => t.kind === "singleton")
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
-  const grantedIds = new Set(Array.isArray(value.permissions) ? (value.permissions as string[]) : []);
+  const grantedIds = new Set(
+    Array.isArray(value.permissions) ? (value.permissions as string[]) : [],
+  );
 
   return (
     <>
       <div class="page-header">
-        <button type="button" class="icon ghost" onClick={() => route(`${path}/roles`)}>
+        <button
+          type="button"
+          class="icon ghost"
+          onClick={() => route(`${path}/roles`)}
+        >
           <ArrowLeftIcon />
         </button>
         <div style={{ flex: 1 }}>
           <h1>{isNew ? "New Role" : String(value.name ?? "Role")}</h1>
-          <p>Name, description, assigned users, and per-resource permissions.</p>
+          <p>
+            Name, description, assigned users, and per-resource permissions.
+          </p>
         </div>
         {isDirty && (
-          <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>
+          <button
+            type="button"
+            disabled={saving}
+            aria-busy={saving}
+            onClick={handleSave}
+          >
             Save
           </button>
         )}
@@ -237,7 +307,9 @@ export default function RoleEditor({ id }: Props) {
               <FieldRenderer
                 node={node}
                 value={value[node.fieldName]}
-                onChange={(fieldValue) => updateField(node.fieldName, fieldValue)}
+                onChange={(fieldValue) =>
+                  updateField(node.fieldName, fieldValue)
+                }
                 error={fieldErrors[node.fieldName]}
                 allTypes={allTypes}
               />
@@ -255,11 +327,16 @@ export default function RoleEditor({ id }: Props) {
                   const permId = permissionIdFor(resource, action);
                   return !!permId && grantedIds.has(permId);
                 };
-                const viewGranted = expected.includes("view") ? isGranted("view") : true;
+                const viewGranted = expected.includes("view")
+                  ? isGranted("view")
+                  : true;
                 return (
                   <details key={resource.id}>
                     <summary>
-                      <span>{resource.label}</span>
+                      <span class="stack" style={{ gap: "0.25rem" }}>
+                        <strong>{resource.label}</strong>
+                        <span class="hint">{resource.description}</span>
+                      </span>
                       <div class="spacer" />
                       <span class="role-permission-dots">
                         {expected.map((action) => (
@@ -280,7 +357,9 @@ export default function RoleEditor({ id }: Props) {
                           description={ACTION_DESCRIPTIONS[action]}
                           value={isGranted(action)}
                           disabled={action !== "view" && !viewGranted}
-                          onChange={(checked) => togglePermission(resource, action, checked)}
+                          onChange={(checked) =>
+                            togglePermission(resource, action, checked)
+                          }
                         />
                       ))}
                     </div>
@@ -293,7 +372,10 @@ export default function RoleEditor({ id }: Props) {
           {singletons.length > 0 && (
             <fieldset>
               <legend>Singletons</legend>
-              <div class="stack" style={{ marginBottom: "0.5rem", gap: "1rem" }}>
+              <div
+                class="stack"
+                style={{ marginBottom: "0.5rem", gap: "1rem" }}
+              >
                 {singletons.map((singleton) => {
                   const permissionId = permissionIdFor(singleton, "setting");
                   return (
@@ -301,9 +383,14 @@ export default function RoleEditor({ id }: Props) {
                       <CheckField
                         role="switch"
                         label={singleton.label}
-                        description={singleton.description ?? "Manage this singleton's settings."}
+                        description={
+                          singleton.description ??
+                          "Manage this singleton's settings."
+                        }
                         value={!!permissionId && grantedIds.has(permissionId)}
-                        onChange={(checked) => togglePermission(singleton, "setting", checked)}
+                        onChange={(checked) =>
+                          togglePermission(singleton, "setting", checked)
+                        }
                       />
                     </div>
                   );
@@ -319,7 +406,11 @@ export default function RoleEditor({ id }: Props) {
                 <p>Delete this role. This cannot be undone.</p>
               </div>
               <div>
-                <button type="button" class="destructive" onClick={() => setShowDeleteConfirm(true)}>
+                <button
+                  type="button"
+                  class="destructive"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
                   <TrashIcon /> Delete role
                 </button>
               </div>
@@ -331,7 +422,9 @@ export default function RoleEditor({ id }: Props) {
       <ConfirmDialog
         open={showDeleteConfirm}
         title="Delete this role?"
-        message={<p>This permanently deletes the role. This cannot be undone.</p>}
+        message={
+          <p>This permanently deletes the role. This cannot be undone.</p>
+        }
         confirmLabel="Delete"
         destructive
         busy={deleting}
