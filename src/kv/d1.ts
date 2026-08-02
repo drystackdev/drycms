@@ -73,6 +73,11 @@ export function createD1KeyValueAdapter(database: D1Database): KeyValueAdapter {
       const result = await database.prepare("SELECT * FROM dry_kv_records WHERE namespace = ? AND key = ?").bind(namespace, key).all<Row>();
       return result.results?.[0] ? fromRow(result.results[0]) : null;
     },
+    async take(namespace, key) {
+      await init();
+      const result = await database.prepare("DELETE FROM dry_kv_records WHERE namespace = ? AND key = ? RETURNING *").bind(namespace, key).all<Row>();
+      return result.results?.[0] ? fromRow(result.results[0]) : null;
+    },
     async set(record) {
       await init();
       await statement(record).run();

@@ -65,6 +65,10 @@ export function createSqliteKeyValueAdapter(file: string): KeyValueAdapter {
       const row = (await db()).all<Row>("SELECT * FROM dry_kv_records WHERE namespace = ? AND key = ?", [namespace, key])[0];
       return row ? fromRow(row) : null;
     },
+    async take(namespace, key) {
+      const row = (await db()).all<Row>("DELETE FROM dry_kv_records WHERE namespace = ? AND key = ? RETURNING *", [namespace, key])[0];
+      return row ? fromRow(row) : null;
+    },
     async set(record) {
       const encoded = encodeValue(record.value);
       (await db()).run(

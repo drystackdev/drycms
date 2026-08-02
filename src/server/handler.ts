@@ -12,6 +12,8 @@ import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as keyValueRoute from "./routes/key-value.js";
 import * as aiRoute from "./routes/ai.js";
+import { requireSuperAdmin } from "./admin-access.js";
+import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
 type RouteModule = Record<string, DryRouteHandler | undefined>;
 
@@ -65,6 +67,9 @@ export async function handleApiRequest(
   const handler = route[request.method];
   if (!handler) return new Response("Method not allowed", { status: 405 });
 
+  const bodyTooLarge = bodyLimitResponse(request, segment, request.method);
+  if (bodyTooLarge) return bodyTooLarge;
+
   if (requiresCsrf(request, segment, slug)) {
     if (!hasValidCsrf(request)) {
       return new Response(JSON.stringify({ error: "csrf_failed", message: "CSRF token is missing or invalid." }), {
@@ -92,6 +97,11 @@ export async function handleApiRequest(
     });
   }
 
-  const context: DryRouteContext = { request, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
+  const boundedRequest = limitRequestBody(request, segment, request.method);
+  const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
+  if ((segment === "icons" || segment === "richtext-components") && request.method !== "GET") {
+    const denied = await requireSuperAdmin(context);
+    if (denied) return denied;
+  }
   return handler(context);
 }

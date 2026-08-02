@@ -230,5 +230,20 @@ describe("content-entries route - authorization", () => {
 
     expect((await get("role", undefined, viewerSession)).status).toBe(200);
     expect((await post("role", { name: "Should fail", isSuperAdmin: false, permissions: [] }, viewerSession)).status).toBe(403);
+
+    const roleManager = await entries.createEntry(roleType, allTypes, {
+      name: "Role Manager",
+      description: "",
+      isSuperAdmin: false,
+      permissions: [`${roleType.id}:create`, `${roleType.id}:update`],
+    });
+    const roleManagerUser = await entries.createEntry(userType, allTypes, {
+      name: "Role Manager User",
+      email: "role-manager@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [roleManager.id],
+    });
+    const roleManagerSession: SessionPayload = { id: roleManagerUser.id, name: "Role Manager User", email: "role-manager@example.com" };
+    expect((await post("role", { name: "Forged Super Admin", isSuperAdmin: true, permissions: [] }, roleManagerSession)).status).toBe(403);
   });
 });

@@ -12,6 +12,7 @@ import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
 import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../rate-limit.js";
+import { RequestBodyLimitError } from "../request-limits.js";
 
 /**
  * The `auth` API route: session issuance for the built-in `user` collection
@@ -41,6 +42,7 @@ const STATUS_BY_CODE: Record<string, number> = {
 };
 
 function errorResponse(error: unknown): Response {
+  if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
   if (error instanceof AuthError) {
     return jsonResponse({ error: error.code, message: error.message, fieldErrors: error.fieldErrors }, STATUS_BY_CODE[error.code] ?? 500);
   }
@@ -51,12 +53,11 @@ function errorResponse(error: unknown): Response {
     );
   }
   if (error instanceof ContentEngineError) {
-    return jsonResponse({ error: error.code, message: error.message }, 500);
+    console.error("[drycms] auth content engine error", error);
+    return jsonResponse({ error: error.code, message: "Internal server error." }, 500);
   }
-  return jsonResponse(
-    { error: "internal", message: error instanceof Error ? error.message : "Internal error." },
-    500,
-  );
+  console.error("[drycms] auth route error", error);
+  return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
 }
 
 /** Same module-cache/fresh-per-request adapter split as `content-entries.ts`. */

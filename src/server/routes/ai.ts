@@ -8,6 +8,8 @@ import type { ContentEntryEngineAdapter } from "../../content-types/engine/entri
 import type { ContentEngineAdapter } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { validateOutboundUrl } from "../outbound-url.js";
+import { RequestBodyLimitError } from "../request-limits.js";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -121,9 +123,9 @@ async function readServerCredentials(context: DryRouteContext): Promise<ServerCr
     try {
       const providerEntry = providerFromEntry(row.value.provider);
       const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
-      const baseUrl = typeof row.value.url === "string" && row.value.url.trim()
-        ? row.value.url.trim().replace(/\/+$/, "")
-        : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl;
+      const baseUrl = validateOutboundUrl(typeof row.value.url === "string" && row.value.url.trim()
+        ? row.value.url.trim()
+        : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl, "AI provider URL");
       const entryModel = typeof row.value.model === "string" ? row.value.model.trim() : "";
       credentials.push({ name, provider, apiKey: await decryptSecret(raw.key), baseUrl, model: entryModel || serverAi.model });
     } catch (error) {
@@ -151,10 +153,21 @@ function allAiKeysFailed(errors: Error[]): Error {
 }
 
 function errorResponse(error: unknown, status = 500): Response {
+  if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
+  const message = error instanceof AiProviderError
+    ? "AI provider request failed."
+    : safeAiMessage(error);
   return jsonResponse(
-    { error: "ai_error", message: error instanceof Error ? error.message : "AI request failed." },
+    { error: "ai_error", message },
     status,
   );
+}
+
+function safeAiMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "AI request failed.";
+  return message
+    .replace(/(?:Bearer\s+|x-api-key[=: ]+|key=)[^\s&]+/gi, "$1[redacted]")
+    .replace(/(?:sk-[A-Za-z0-9_-]{16,}|AIza[A-Za-z0-9_-]{20,})/g, "[redacted]");
 }
 
 function validateMessages(value: unknown): ChatMessage[] {
@@ -282,6 +295,7 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
           input: messages.map((message) => ({ role: message.role, content: message.text })),
         }),
         signal: controller.signal,
+        redirect: "error",
       });
       const body = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message || `OpenAI returned HTTP ${response.status}.`);
@@ -299,6 +313,7 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
         messages: messages.map((message) => ({ role: message.role, content: message.text })),
       }),
       signal: controller.signal,
+      redirect: "error",
     });
     const body = await response.json() as { content?: Array<{ type?: string; text?: string }>; error?: { message?: string } };
     if (!response.ok) throw new Error(body.error?.message || `Anthropic returned HTTP ${response.status}.`);
@@ -388,7 +403,7 @@ function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => voi
           clearTimeout(timer);
           if (settled) return;
           settled = true;
-          controller.enqueue(streamEvent({ error: `Unable to start ${localAi.command}: ${error.message}` }));
+          controller.enqueue(streamEvent({ error: safeAiMessage(new Error(`Unable to start ${localAi.command}: ${error.message}`)) }));
           controller.close();
         });
         child.on("close", (code) => {
@@ -397,7 +412,7 @@ function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => voi
             if (settled) return;
             if (code !== 0) {
               settled = true;
-              controller.enqueue(streamEvent({ error: stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.` }));
+              controller.enqueue(streamEvent({ error: safeAiMessage(new Error(stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.`)) }));
               controller.enqueue(streamEvent({ done: true }));
               controller.close();
               return;
@@ -430,7 +445,7 @@ function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => voi
           })();
         });
       })().catch((error) => {
-        controller.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI request failed." }));
+        controller.enqueue(streamEvent({ error: safeAiMessage(error) }));
         controller.close();
       });
     },
@@ -472,6 +487,7 @@ async function streamServerAiWithCredential(
             messages: messages.map((message) => ({ role: message.role, content: message.text })),
           }),
       signal: controller.signal,
+      redirect: "error",
     },
   );
   if (!response.ok) {
@@ -497,7 +513,7 @@ async function streamServerAiWithCredential(
           streamController.enqueue(streamEvent({ delta }));
         }
         if (event.type === "response.failed" || event.type === "error") {
-          streamController.enqueue(streamEvent({ error: event.error?.message || "AI provider failed." }));
+        streamController.enqueue(streamEvent({ error: safeAiMessage(new Error(event.error?.message || "AI provider failed.")) }));
         }
       }).then(() => {
         clearTimeout(timer);
@@ -505,7 +521,7 @@ async function streamServerAiWithCredential(
         streamController.close();
       }).catch((error) => {
         clearTimeout(timer);
-        streamController.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI stream failed." }));
+        streamController.enqueue(streamEvent({ error: safeAiMessage(error) }));
         streamController.close();
       });
     },
@@ -531,12 +547,12 @@ async function streamGoogleAiWithCredential(
   }));
   try {
     const request = (endpoint: string) => {
-      const separator = endpoint.includes("?") ? "&" : "?";
-      return fetch(`${modelUrl}:${endpoint}${separator}key=${encodeURIComponent(credential.apiKey)}`, {
+      return fetch(`${modelUrl}:${endpoint}`, {
         method: "POST",
         headers: { "x-goog-api-key": credential.apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({ contents }),
         signal: controller.signal,
+        redirect: "error",
       });
     };
 
@@ -595,7 +611,7 @@ async function streamGoogleAiWithCredential(
           streamController.close();
         }).catch((error) => {
           clearTimeout(timer);
-          streamController.enqueue(streamEvent({ error: error instanceof Error ? error.message : "AI stream failed." }));
+          streamController.enqueue(streamEvent({ error: safeAiMessage(error) }));
           streamController.close();
         });
       },
@@ -662,12 +678,14 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
   if (!apiKey) throw new Error("No API key is available. Enter an API key and save this entry first.");
   if (!model) throw new Error("A model is required before checking the API key.");
   if (rawProvider.toLowerCase() === "google") {
-    const baseUrl = (String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
+    const baseUrl = validateOutboundUrl(String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com", "AI provider URL");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
     try {
-      const response = await fetch(`${baseUrl}/v1beta/models/${encodeURIComponent(model)}?key=${encodeURIComponent(apiKey)}`, {
+      const response = await fetch(`${baseUrl}/v1beta/models/${encodeURIComponent(model)}`, {
+        headers: { "x-goog-api-key": apiKey },
         signal: controller.signal,
+        redirect: "error",
       });
       if (!response.ok) throw new Error(`Google returned HTTP ${response.status}.`);
       return;
@@ -685,7 +703,7 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
     : provider === "anthropic"
       ? "https://api.anthropic.com"
       : "https://api.openai.com";
-  const baseUrl = (String(body.url ?? "").trim() || configuredBaseUrl).replace(/\/+$/, "");
+  const baseUrl = validateOutboundUrl(String(body.url ?? "").trim() || configuredBaseUrl, "AI provider URL");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
   try {
@@ -693,6 +711,7 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
       const response = await fetch(`${baseUrl}/v1/models/${encodeURIComponent(model)}`, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: controller.signal,
+        redirect: "error",
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
@@ -706,6 +725,7 @@ async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Prom
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
       body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }),
       signal: controller.signal,
+      redirect: "error",
     });
     const responseBody = await response.json().catch(() => ({})) as { error?: { message?: string } };
     if (!response.ok) throw new Error(responseBody.error?.message || `Anthropic returned HTTP ${response.status}.`);
@@ -719,12 +739,13 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
   let apiKey = String(body.key ?? "").trim();
   if (!apiKey && (body.entryId || body.entryName)) apiKey = await readStoredAiKey(context, body.entryId, body.entryName);
   if (providerValue === "custom") {
-    const url = String(body.url ?? "").trim();
+    const url = validateOutboundUrl(String(body.url ?? "").trim(), "AI provider URL");
     if (!url) throw new Error("URL is required for Custom provider.");
     if (!apiKey) throw new Error("API key is required to load models.");
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(ai.timeoutMs),
+      redirect: "error",
     });
     const responseBody = await response.json().catch(() => ({})) as {
       data?: Array<{ id?: unknown; name?: unknown }>;
@@ -737,7 +758,7 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
   const provider = providerValue === "chatgpt" ? "openai" : providerValue === "claude" ? "anthropic" : providerValue;
   const key = apiKey;
   if (!key) throw new Error("API key is required to load models.");
-  const url = (String(body.url ?? "").trim() || (
+  const url = validateOutboundUrl(String(body.url ?? "").trim() || (
     provider === "google"
       ? "https://generativelanguage.googleapis.com"
       : provider === "anthropic"
@@ -745,12 +766,14 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
         : provider === "openai"
           ? "https://api.openai.com"
           : ""
-  )).replace(/\/+$/, "");
+  ), "AI provider URL");
   if (!url) throw new Error(`Unsupported AI Key provider "${String(body.provider)}".`);
 
   if (provider === "google") {
-    const response = await fetch(`${url}/v1beta/models?key=${encodeURIComponent(key)}`, {
+    const response = await fetch(`${url}/v1beta/models`, {
+      headers: { "x-goog-api-key": key },
       signal: AbortSignal.timeout(ai.timeoutMs),
+      redirect: "error",
     });
     const responseBody = await response.json().catch(() => ({})) as {
       models?: Array<{ name?: unknown; supportedGenerationMethods?: unknown }>;
@@ -768,6 +791,7 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
       ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
       : { Authorization: `Bearer ${key}` },
     signal: AbortSignal.timeout(ai.timeoutMs),
+    redirect: "error",
   });
   const responseBody = await response.json().catch(() => ({})) as {
     data?: Array<{ id?: unknown; name?: unknown }>;

@@ -20,6 +20,7 @@ interface CacheEntry {
 }
 
 interface RuntimeOptions {
+  cache: boolean;
   defaultTtlMs?: number;
   idleTtlMs?: number;
   cleanupIntervalMs: number;
@@ -33,6 +34,7 @@ interface RuntimeOptions {
 type Pending = KvBatchOperation;
 
 const DEFAULTS = {
+  cache: true,
   defaultTtlMs: undefined,
   idleTtlMs: undefined,
   cleanupIntervalMs: 30_000,
@@ -67,7 +69,7 @@ export class KeyValueStore {
   async get<T = unknown>(namespace: string, key: string, options: KvGetOptions = {}): Promise<T | null> {
     this.assertKey(namespace, key);
     const id = kvId(namespace, key);
-    const cached = this.cache.get(id);
+    const cached = this.options.cache ? this.cache.get(id) : undefined;
     if (cached) {
       if (this.isExpired(cached.record) || this.isIdle(cached)) {
         this.evict(id, true);
@@ -83,11 +85,11 @@ export class KeyValueStore {
         if (record) this.queue({ type: "delete", namespace, key });
         return null;
       }
-      this.cacheRecord(record);
+      if (this.options.cache) this.cacheRecord(record);
       return record.value as T;
     } catch (error) {
       if (options.allowStaleOnError) {
-        const stale = this.cache.get(id);
+        const stale = this.options.cache ? this.cache.get(id) : undefined;
         if (stale) return stale.record.value as T;
       }
       throw new KeyValueError("backend_unavailable", error instanceof Error ? error.message : "KV backend unavailable.");
@@ -98,7 +100,7 @@ export class KeyValueStore {
     this.assertKey(namespace, key);
     const encoded = encodeValue(value);
     const id = kvId(namespace, key);
-    const existing = this.cache.get(id)?.record ?? (await this.adapter.get(namespace, key));
+    const existing = (this.options.cache ? this.cache.get(id)?.record : undefined) ?? (await this.adapter.get(namespace, key));
     const now = this.now();
     const ttlMs = options.ttlMs ?? this.options.defaultTtlMs;
     const record: KvRecord = {
@@ -110,7 +112,7 @@ export class KeyValueStore {
       updatedAt: new Date(now).toISOString(),
       ...(ttlMs === undefined ? {} : { expiresAt: new Date(now + Math.max(0, ttlMs)).toISOString() }),
     };
-    this.cacheRecord(record, encoded.sizeBytes);
+    if (this.options.cache) this.cacheRecord(record, encoded.sizeBytes);
     this.queue({ type: "set", namespace, key, record });
     const durability = options.durability ?? this.options.durability;
     if (durability === "sync") await this.flush();
@@ -123,6 +125,18 @@ export class KeyValueStore {
     this.queue({ type: "delete", namespace, key });
     if (this.options.durability === "sync") await this.flush();
     else if (this.options.durability === "async") this.scheduleFlush();
+  }
+
+  async take<T = unknown>(namespace: string, key: string): Promise<T | null> {
+    this.assertKey(namespace, key);
+    const id = kvId(namespace, key);
+    if (this.pending.has(id)) await this.flush();
+    const record = this.adapter.take
+      ? await this.adapter.take(namespace, key)
+      : await this.adapter.get(namespace, key);
+    if (!this.adapter.take && record) await this.adapter.delete(namespace, key);
+    this.evict(id, false);
+    return record?.value as T | null;
   }
 
   async has(namespace: string, key: string): Promise<boolean> {

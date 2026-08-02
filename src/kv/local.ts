@@ -26,6 +26,23 @@ export function createLocalKeyValueAdapter(root: string): KeyValueAdapter {
       throw error;
     }
   }
+  async function takeRecord(namespace: string, key: string): Promise<KvRecord | null> {
+    const path = recordPath(namespace, key);
+    const claimed = `${path}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.take`;
+    try {
+      // rename is atomic on the same filesystem: concurrent processes can
+      // claim a refresh-token index only once.
+      await rename(path, claimed);
+    } catch (error: any) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+    try {
+      return JSON.parse(await readFile(claimed, "utf8")) as KvRecord;
+    } finally {
+      await rm(claimed, { force: true });
+    }
+  }
   async function writeRecord(record: KvRecord): Promise<void> {
     await mkdir(namespaceDir(record.namespace), { recursive: true });
     const path = recordPath(record.namespace, record.key);
@@ -35,6 +52,7 @@ export function createLocalKeyValueAdapter(root: string): KeyValueAdapter {
   }
   return {
     get: readRecord,
+    take: takeRecord,
     set: writeRecord,
     async delete(namespace, key) {
       try {

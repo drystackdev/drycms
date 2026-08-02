@@ -1,6 +1,7 @@
 import type { DryRouteContext } from "./context.js";
 import { normalizeStoragePath } from "../storage/path.js";
 import { StorageError } from "../storage/types.js";
+import { RequestBodyLimitError } from "./request-limits.js";
 
 /** Shared by every route backed by a `StorageAdapter` (`storage.ts`,
  * `icons.ts`) - the `StorageError`→HTTP-status mapping and file-serving MIME
@@ -64,16 +65,15 @@ export function forbiddenResponse(message = "You don't have permission to do thi
 }
 
 export function errorResponse(error: unknown): Response {
+  if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
   if (error instanceof StorageError) {
     return jsonResponse(
       { error: error.code, message: error.message },
       STATUS_BY_CODE[error.code] ?? 500,
     );
   }
-  return jsonResponse(
-    { error: "internal", message: error instanceof Error ? error.message : "Internal error." },
-    500,
-  );
+  console.error("[drycms] internal route error", error);
+  return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
 }
 
 /** `context.params.slug` is the raw, still percent-encoded path segment

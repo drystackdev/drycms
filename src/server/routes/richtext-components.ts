@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { h } from "preact";
 import renderToString from "preact-render-to-string";
@@ -71,7 +71,14 @@ async function buildAndStore(sourcePath: string, slug: string): Promise<void> {
     throw new StorageError("unsupported", "Building richtext components is only available in dev.");
   }
   await ensureSharedPreactBundle();
-  const entryAbsPath = join(process.cwd(), sourcePath);
+  if (!/^\/src\/(?:[^/]+\/)*dry\.[^/]+\.(?:tsx?|jsx?)$/.test(sourcePath)) {
+    throw new StorageError("invalid_path", "Component sourcePath must point to a dry.* source file under /src.");
+  }
+  const sourceRoot = resolve(process.cwd(), "src");
+  const entryAbsPath = resolve(process.cwd(), sourcePath.slice(1));
+  if (entryAbsPath !== sourceRoot && !entryAbsPath.startsWith(`${sourceRoot}/`)) {
+    throw new StorageError("invalid_path", "Component sourcePath must stay under /src.");
+  }
   const code = await buildComponentBundle(entryAbsPath);
   await adapter.write(`${slug}.js`, Buffer.from(code, "utf8"));
 }

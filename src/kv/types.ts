@@ -33,6 +33,8 @@ export interface KvBatchOperation {
 
 export interface KeyValueAdapter {
   get(namespace: string, key: string): Promise<KvRecord | null>;
+  /** Remove and return a record as one backend operation when possible. */
+  take?(namespace: string, key: string): Promise<KvRecord | null>;
   set(record: KvRecord): Promise<void>;
   delete(namespace: string, key: string): Promise<void>;
   list(namespace: string, options?: KvListOptions): Promise<KvListResult>;
@@ -46,6 +48,8 @@ export interface KeyValueAdapter {
 export type KvDurability = "memory" | "async" | "sync";
 
 export interface KeyValueStoreOptions {
+  /** Disable the in-process cache for security-sensitive state. */
+  cache?: boolean;
   defaultTtlMs?: number;
   idleTtlMs?: number;
   cleanupIntervalMs?: number;

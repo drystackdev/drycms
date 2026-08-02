@@ -37,8 +37,12 @@ function normalizeEmail(email: string): string {
 }
 
 function ipFrom(request: Request): string {
-  const forwarded = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim();
-  return forwarded || request.headers.get("CF-Connecting-IP")?.trim() || "unknown";
+  // X-Forwarded-For is client-controlled unless the deployment has an
+  // explicitly trusted proxy layer. Never let a login attacker rotate this
+  // value to bypass the IP bucket. Cloudflare overwrites CF-Connecting-IP at
+  // its edge; direct Node deployments deliberately fall back to one bucket
+  // until they configure a trusted-proxy source.
+  return request.headers.get("CF-Connecting-IP")?.trim() || "unknown";
 }
 
 async function readCounter(counterKey: string, env: Record<string, unknown>): Promise<Counter | null> {

@@ -32,6 +32,12 @@ const kv = "kv" in config ? config.kv : undefined;
 const fallbackRecords = new Map<string, KvRecord>();
 const fallbackAdapter: KeyValueAdapter = {
   async get(namespace, key) { return fallbackRecords.get(`${namespace}\u0000${key}`) ?? null; },
+  async take(namespace, key) {
+    const id = `${namespace}\u0000${key}`;
+    const record = fallbackRecords.get(id) ?? null;
+    if (record) fallbackRecords.delete(id);
+    return record;
+  },
   async set(record) { fallbackRecords.set(`${record.namespace}\u0000${record.key}`, record); },
   async delete(namespace, key) { fallbackRecords.delete(`${namespace}\u0000${key}`); },
   async list(namespace, options: KvListOptions = {}): Promise<KvListResult> {
@@ -44,6 +50,7 @@ const fallbackAdapter: KeyValueAdapter = {
 const moduleStore = !kv || (kv.kind !== "D1" && kv.kind !== "KV")
   ? new KeyValueStore(kv ? createKeyValueAdapter(kv) : fallbackAdapter, {
       maxEntries: Math.max(kv?.maxEntries ?? 2_000, 2_000),
+      cache: false,
       maxBytes: kv?.maxBytes ?? 16 * 1024 * 1024,
       cleanupIntervalMs: kv?.cleanupIntervalMs ?? 30_000,
       flushDebounceMs: kv?.flushDebounceMs ?? 100,
@@ -61,6 +68,7 @@ function storeFor(env: Record<string, unknown>): KeyValueStore {
   if (existing) return existing;
   const store = new KeyValueStore(createRequestKeyValueAdapter(kv, env), {
     maxEntries: Math.max(kv.maxEntries, 2_000),
+    cache: false,
     maxBytes: kv.maxBytes,
     cleanupIntervalMs: kv.cleanupIntervalMs,
     flushDebounceMs: kv.flushDebounceMs,
@@ -166,7 +174,10 @@ export async function rotateAuthSession(refreshToken: string, env: Record<string
   await previous;
   try {
     const store = storeFor(env);
-    const index = await store.get<{ sessionId: string }>(REFRESH_NAMESPACE, `token-${tokenHash}`);
+    // Consuming the refresh index makes rotation single-use across processes
+    // for local/SQLite/D1 backends. Cloudflare KV cannot provide a compare-and-
+    // delete primitive, so its adapter remains best-effort.
+    const index = await store.take<{ sessionId: string }>(REFRESH_NAMESPACE, `token-${tokenHash}`);
     if (!index) return null;
     const session = await getAuthSession(index.sessionId, env);
     if (!session || Date.parse(session.expiresAt) <= Date.now() || session.refreshTokenHash !== tokenHash) return null;
@@ -182,6 +193,14 @@ export async function rotateAuthSession(refreshToken: string, env: Record<string
       revokeReason: "rotation",
       replacedBy: next.sessionId,
     }, { ttlMs: Math.max(1, Date.parse(session.expiresAt) - Date.now()), durability: "sync" });
+    // Keep a one-shot reuse marker for the old token. A later presentation of
+    // the consumed token can then detect the revoked/replaced session and
+    // revoke the whole family instead of being indistinguishable from an
+    // unknown token.
+    await store.set(REFRESH_NAMESPACE, `token-${tokenHash}`, { sessionId: session.sessionId }, {
+      ttlMs: Math.max(1, Date.parse(session.expiresAt) - Date.now()),
+      durability: "sync",
+    });
     const replacement = await getAuthSession(next.sessionId, env);
     if (!replacement) return null;
     return { session: replacement, refreshToken: next.refreshToken };

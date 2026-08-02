@@ -20,6 +20,7 @@ import { collectTableNames, resolveTableTree } from "../../content-types/tree.js
 import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
 import { randomUUID } from "../../lib/uuid.js";
 import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { RequestBodyLimitError } from "../request-limits.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   not_found: 404,
@@ -36,16 +37,15 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 function errorResponse(error: unknown): Response {
+  if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
   if (error instanceof ContentEngineError) {
     return jsonResponse({ error: error.code, message: error.message }, STATUS_BY_CODE[error.code] ?? 500);
   }
   if (error instanceof NamingError) {
     return jsonResponse({ error: "invalid_definition", message: error.message }, 400);
   }
-  return jsonResponse(
-    { error: "internal", message: error instanceof Error ? error.message : "Internal error." },
-    500,
-  );
+  console.error("[drycms] content type route error", error);
+  return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
 }
 
 /**

@@ -6,6 +6,7 @@ import { KeyValueStore } from "../../kv/memory.js";
 import { createKeyValueAdapter, createRequestKeyValueAdapter } from "../../kv/factory.js";
 import { KeyValueError } from "../../kv/types.js";
 import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { RequestBodyLimitError } from "../request-limits.js";
 
 const moduleStore = kv.kind !== "D1" && kv.kind !== "KV"
   ? new KeyValueStore(createKeyValueAdapter(kv), {
@@ -65,11 +66,13 @@ function pathParts(context: DryRouteContext): string[] {
 }
 
 function errorResponse(error: unknown): Response {
+  if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
   if (error instanceof KeyValueError) {
     const status = error.code === "invalid_key" || error.code === "invalid_value" ? 400 : 503;
-    return jsonResponse({ error: error.code, message: error.message }, status);
+    return jsonResponse({ error: error.code, message: error.code === "backend_unavailable" ? "Key Value backend unavailable." : error.message }, status);
   }
-  return jsonResponse({ error: "internal", message: error instanceof Error ? error.message : "Internal error." }, 500);
+  console.error("[drycms] key-value route error", error);
+  return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
 }
 
 function etag(revision: number): string {

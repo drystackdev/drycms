@@ -10,6 +10,7 @@ import type { PermissionAction } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { decodeEntryId, encodeEntryId } from "../../lib/id-hash.js";
 import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { RequestBodyLimitError } from "../request-limits.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
   not_found: 404,
@@ -22,6 +23,7 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 function errorResponse(error: unknown): Response {
+  if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
   if (error instanceof ContentEntryError) {
     return jsonResponse(
       { error: error.code, message: error.message, fieldErrors: error.fieldErrors },
@@ -29,12 +31,11 @@ function errorResponse(error: unknown): Response {
     );
   }
   if (error instanceof ContentEngineError) {
-    return jsonResponse({ error: error.code, message: error.message }, 500);
+    console.error("[drycms] content engine error", error);
+    return jsonResponse({ error: error.code, message: "Internal server error." }, 500);
   }
-  return jsonResponse(
-    { error: "internal", message: error instanceof Error ? error.message : "Internal error." },
-    500,
-  );
+  console.error("[drycms] content entry error", error);
+  return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
 }
 
 /** Same module-cache/fresh-per-request split as `routes/content-types.ts` -
@@ -119,6 +120,118 @@ async function checkAccess(
   if (!access) return unauthenticatedResponse();
   if (!access.can(type.id, action)) return forbiddenResponse();
   return null;
+}
+
+async function protectSystemMutation(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  type: ContentTypeDefinition,
+  action: "create" | "update" | "delete",
+  id?: number,
+  value?: EntryValue,
+): Promise<Response | null> {
+  if (!context.session) return unauthenticatedResponse();
+  const access = await resolveAccess(entryAdapter, allTypes, context.session);
+  if (!access) return unauthenticatedResponse();
+  if (access.isSuperAdmin) return null;
+
+  if (type.name === "aiKey") {
+    return forbiddenResponse("AI credential management is restricted to super administrators.");
+  }
+
+  const existing = id === undefined ? null : await entryAdapter.getEntry(type, allTypes, id);
+  if (type.name === "role") {
+    if (existing?.value.isSuperAdmin === true || value?.isSuperAdmin === true) {
+      return forbiddenResponse("The Super Admin role cannot be changed through this API.");
+    }
+    const protectedTypeIds = new Set(
+      allTypes.filter((candidate) => candidate.name === "role" || candidate.name === "user" || candidate.name === "aiKey").map((candidate) => candidate.id),
+    );
+    const permissions = Array.isArray(value?.permissions) ? value.permissions : [];
+    const grantsSensitivePermission = permissions.some((permission) =>
+      typeof permission === "string" && (permission.startsWith("system-permission:") || [...protectedTypeIds].some((id) => permission.startsWith(`${id}:`))),
+    );
+    if (grantsSensitivePermission) {
+      return forbiddenResponse("Only a super administrator can grant system-management permissions.");
+    }
+  }
+
+  if (type.name === "user") {
+    const existingRoles = Array.isArray(existing?.value.roles) ? existing.value.roles : [];
+    const incomingRoles = Array.isArray(value?.roles) ? value.roles : [];
+    if (action === "create" && incomingRoles.length > 0) {
+      const roleType = allTypes.find((candidate) => candidate.name === "role");
+      if (roleType) {
+        const roles = await Promise.all(incomingRoles.filter((roleId): roleId is number => typeof roleId === "number").map((roleId) => entryAdapter.getEntry(roleType, allTypes, roleId)));
+        if (roles.some((role) => role?.value.isSuperAdmin === true)) return forbiddenResponse("Only a super administrator can assign the Super Admin role.");
+      }
+    }
+    if (action === "delete") {
+      // Use the stored roles, never a client-supplied role shape, before
+      // allowing a delegated administrator to delete a user.
+      const roleType = allTypes.find((candidate) => candidate.name === "role");
+      if (roleType) {
+        const roles = await Promise.all(existingRoles.filter((roleId): roleId is number => typeof roleId === "number").map((roleId) => entryAdapter.getEntry(roleType, allTypes, roleId)));
+        if (roles.some((role) => role?.value.isSuperAdmin === true)) return forbiddenResponse("A Super Admin user cannot be deleted by a delegated administrator.");
+      }
+    }
+    if (action === "update" && JSON.stringify(existingRoles) !== JSON.stringify(incomingRoles)) {
+      return forbiddenResponse("Only a super administrator can change user roles.");
+    }
+    if (action === "update" && (typeof value?.password === "string" || typeof value?.secretkey === "string" || (value?.password && typeof value.password === "object" && "new" in value.password))) {
+      return forbiddenResponse("Only a super administrator can change credentials through this API.");
+    }
+  }
+  return null;
+}
+
+async function assertRelationTargetsExist(
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  nodes: EntryFieldNode[],
+  value: EntryValue,
+  path = "",
+): Promise<void> {
+  const missing: Record<string, string> = {};
+  const checks = new Map<string, { pending: Promise<boolean>; paths: Set<string> }>();
+  const check = (fieldPath: string, targetTypeId: string, id: unknown) => {
+    if (id === null || id === undefined) return;
+    if (typeof id !== "number" || !Number.isInteger(id) || id < 1) {
+      missing[fieldPath] = "Relation target id is invalid.";
+      return;
+    }
+    const targetType = allTypes.find((candidate) => candidate.id === targetTypeId && candidate.kind !== "component");
+    if (!targetType) {
+      missing[fieldPath] = "Relation target type no longer exists.";
+      return;
+    }
+    const key = `${targetType.id}:${id}`;
+    const current = checks.get(key);
+    if (current) current.paths.add(fieldPath);
+    else checks.set(key, { pending: entryAdapter.getEntry(targetType, allTypes, id).then((row) => row !== null), paths: new Set([fieldPath]) });
+  };
+  for (const node of nodes) {
+    const fieldPath = path ? `${path}.${node.fieldName}` : node.fieldName;
+    const nested = value[node.fieldName];
+    if (node.kind === "flatten") {
+      await assertRelationTargetsExist(entryAdapter, allTypes, node.children, (nested as EntryValue) ?? {}, fieldPath);
+    } else if (node.kind === "component-repeat") {
+      const items = Array.isArray(nested) ? nested : [];
+      for (let index = 0; index < items.length; index++) {
+        await assertRelationTargetsExist(entryAdapter, allTypes, node.itemFields, (items[index] as EntryValue) ?? {}, `${fieldPath}[${index}]`);
+      }
+    } else if (node.kind === "relation") {
+      if (node.columnName) check(fieldPath, node.targetTypeId, nested);
+      else if (Array.isArray(nested)) for (const id of nested) check(fieldPath, node.targetTypeId, id);
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      if (node.reverseCardinality === "manyToOne") check(fieldPath, node.sourceTypeId, nested);
+      else if (Array.isArray(nested)) for (const id of nested) check(fieldPath, node.sourceTypeId, id);
+    }
+  }
+  const results = await Promise.all([...checks.values()].map(async ({ pending, paths }) => ({ exists: await pending, paths })));
+  for (const { exists, paths } of results) if (!exists) for (const fieldPath of paths) missing[fieldPath] = "Relation target does not exist.";
+  if (Object.keys(missing).length > 0) throw new ContentEntryError("validation_failed", "One or more relation targets are invalid.", missing);
 }
 
 /** The data-version protocol (see `status/build-cache.md`) - `undefined` if
@@ -293,6 +406,9 @@ export const POST: DryRouteHandler = async (context) => {
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
     const value = decodeRelationIds(nodes, (await context.request.json()) as EntryValue);
+    const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "create", undefined, value);
+    if (systemDenied) return systemDenied;
+    await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
 
     const row =
       type.kind === "singleton"
@@ -315,11 +431,18 @@ export const PUT: DryRouteHandler = async (context) => {
     const value = decodeRelationIds(nodes, (await context.request.json()) as EntryValue);
 
     if (type.kind === "singleton") {
+      const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "update", undefined, value);
+      if (systemDenied) return systemDenied;
+      await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
       const row = await entryAdapter.saveSingletonEntry(type, allTypes, value);
       return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
     }
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to update.");
-    const row = await entryAdapter.updateEntry(type, allTypes, decodeIdOrThrow(hashedId), value);
+    const entryId = decodeIdOrThrow(hashedId);
+    const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "update", entryId, value);
+    if (systemDenied) return systemDenied;
+    await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
+    const row = await entryAdapter.updateEntry(type, allTypes, entryId, value);
     return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
   } catch (error) {
     return errorResponse(error);
@@ -362,7 +485,10 @@ export const DELETE: DryRouteHandler = async (context) => {
     const entryAdapter = getEntryAdapter(context);
     const denied = await checkAccess(context, entryAdapter, allTypes, type, "delete");
     if (denied) return denied;
-    await entryAdapter.deleteEntry(type, allTypes, decodeIdOrThrow(hashedId));
+    const entryId = decodeIdOrThrow(hashedId);
+    const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "delete", entryId);
+    if (systemDenied) return systemDenied;
+    await entryAdapter.deleteEntry(type, allTypes, entryId);
     return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);
