@@ -20,6 +20,7 @@ import { readEnvVar } from "../server/options.js";
 const VERSION_PREFIX = "v1:";
 const IV_BYTES = 12;
 
+let cachedPassphrase: string | undefined;
 let cachedKeyPromise: Promise<CryptoKey> | undefined;
 
 /** Exported so `lib/password-hash.ts` doesn't need its own copy - both modules
@@ -40,17 +41,20 @@ export function base64Decode(text: string): Uint8Array {
 
 /** Derives a 256-bit AES key from `DRYCMS_SECRET_KEY` (any human-provided
  * passphrase string, hashed with SHA-256 - friendlier to configure than
- * requiring raw key bytes). Cached for the life of the process
- * - re-derived, not re-read from disk, on every call. */
+ * requiring raw key bytes). The cache is tied to the effective passphrase,
+ * rather than only to the process lifetime: Vite SSR/HMR and tests can reload
+ * environment configuration without restarting the Node process. */
 async function getKey(): Promise<CryptoKey> {
-  if (!cachedKeyPromise) {
+  const passphrase = readEnvVar("DRYCMS_SECRET_KEY");
+  if (!passphrase) {
+    throw new Error(
+      '[drycms] A "secretkey" field requires a `DRYCMS_SECRET_KEY` env var (any secret string - used to derive the encryption key).',
+    );
+  }
+
+  if (!cachedKeyPromise || cachedPassphrase !== passphrase) {
+    cachedPassphrase = passphrase;
     cachedKeyPromise = (async () => {
-      const passphrase = readEnvVar("DRYCMS_SECRET_KEY");
-      if (!passphrase) {
-        throw new Error(
-          '[drycms] A "secretkey" field requires a `DRYCMS_SECRET_KEY` env var (any secret string - used to derive the encryption key).',
-        );
-      }
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(passphrase));
       return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
     })();

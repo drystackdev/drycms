@@ -26,6 +26,27 @@ describe("secret-crypto", () => {
     expect(a).not.toBe(b);
   });
 
+  it("round-trips when the configured passphrase contains shell metacharacters", async () => {
+    process.env.DRYCMS_SECRET_KEY = "+nkbv&t^4zl^v_s8_$literal-value";
+    const { encryptSecret, decryptSecret } = await import("./secret-crypto.js");
+    const encrypted = await encryptSecret("AIza-test-value");
+    expect(await decryptSecret(encrypted)).toBe("AIza-test-value");
+  });
+
+  it("re-derives the cached key when the effective passphrase changes", async () => {
+    const { encryptSecret, decryptSecret } = await import("./secret-crypto.js");
+
+    process.env.DRYCMS_SECRET_KEY = "first-passphrase";
+    const first = await encryptSecret("first-value");
+
+    process.env.DRYCMS_SECRET_KEY = "second-passphrase";
+    const second = await encryptSecret("second-value");
+    expect(await decryptSecret(second)).toBe("second-value");
+
+    process.env.DRYCMS_SECRET_KEY = "first-passphrase";
+    expect(await decryptSecret(first)).toBe("first-value");
+  });
+
   it("rejects a payload that isn't its own format", async () => {
     const { decryptSecret } = await import("./secret-crypto.js");
     await expect(decryptSecret("not-encrypted")).rejects.toThrow();

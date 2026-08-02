@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ContentTypeDefinition } from "../types.js";
 import type { MaskedValue } from "./entry-codec.js";
+import { decryptSecret } from "../../lib/secret-crypto.js";
 import { createSqliteContentEntryEngineAdapter } from "./entries-sqlite.js";
 import { createSqliteContentEngineAdapter } from "./sqlite.js";
 
@@ -76,6 +77,37 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     expect(raw?.email).toBe("ada@example.com");
 
     expect(await entries.getRawEntry(user, -1)).toBeNull();
+  });
+
+  it("encrypts an AI key in SQLite and preserves it when an edit leaves the key blank", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes = await schema.listContentTypes();
+    const aiKey = allTypes.find((type) => type.name === "aiKey")!;
+
+    const created = await entries.createEntry(aiKey, allTypes, {
+      name: "Google",
+      description: "",
+      provider: "Google",
+      key: "AIza-test-value",
+      model: "gemini-test",
+      url: "",
+    });
+    const rawBefore = await entries.getRawEntry(aiKey, created.id);
+    expect(rawBefore?.key).toMatch(/^v1:/);
+    expect(await decryptSecret(String(rawBefore?.key))).toBe("AIza-test-value");
+
+    await entries.updateEntry(aiKey, allTypes, created.id, {
+      name: "Google updated",
+      description: "",
+      provider: "Google",
+      key: { hasExisting: true } satisfies MaskedValue,
+      model: "gemini-test-2",
+      url: "",
+    });
+    const rawAfter = await entries.getRawEntry(aiKey, created.id);
+    expect(rawAfter?.key).toBe(rawBefore?.key);
+    expect(await decryptSecret(String(rawAfter?.key))).toBe("AIza-test-value");
   });
 
   it("changes a password on update without requiring the current one (admin reset)", async () => {
