@@ -1416,23 +1416,22 @@
       border-radius: var(--dry-radius-xl);
       box-shadow: var(--dry-shadow-md);
 
-      & > header {
+      & header {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
-        gap: 0.25rem;
 
-        & > :is(h1, h2, h3, h4, h5, h6) {
+        & *:is(h1, h2, h3, h4, h5, h6) {
           font-size: var(--dry-text-base);
           font-weight: 600;
         }
 
-        & > p {
+        & p {
           color: var(--dry-muted-foreground);
           font-size: var(--dry-text-sm);
         }
       }
 
-      & > footer {
+      & footer {
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -1441,12 +1440,12 @@
       &.flush {
         padding: 0;
 
-        & > header,
-        & > footer {
+        & header,
+        & footer {
           padding: 1.5rem;
         }
 
-        & > footer {
+        & footer {
           border-top: 1px dashed var(--dry-border);
         }
       }
@@ -2922,6 +2921,10 @@
       color: var(--dry-error);
       font-weight: 900;
       margin-inline-start: 0.125rem;
+    }
+
+    .alert + .content-type-editor-grid {
+      margin-block-start: 1rem;
     }
 
     .content-type-editor-grid {
