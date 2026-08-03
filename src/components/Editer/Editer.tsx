@@ -14,7 +14,7 @@ import "prism-code-editor/prism/languages/tsx";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { tailwindCompletionSource } from "./tailwind-completions.js";
-import type { EditerResult } from "./types.js";
+import type { EditerDiagnostic, EditerResult } from "./types.js";
 import { EditerWorkerClient } from "./worker-client.js";
 import type { EditerCompletionItem } from "./worker-protocol.js";
 
@@ -43,7 +43,13 @@ interface InstanceState {
 const instances = new WeakMap<PrismEditor, InstanceState>();
 
 function toCompletion(item: EditerCompletionItem): Completion {
-  return { label: item.label, insert: item.insert, detail: item.detail, icon: item.kind };
+  return {
+    label: item.label,
+    insert: item.insert,
+    detail: item.detail,
+    icon: item.kind,
+    boost: item.boost,
+  };
 }
 
 function wordStart(before: string): number {
@@ -93,6 +99,41 @@ function ensureCompletionsRegistered() {
   registerCompletions(["tsx"], { sources: [tailwindCompletionSource, tsCompletionSource] });
 }
 
+const ERROR_LINE_CLASS = "editer-line-error";
+const WARNING_LINE_CLASS = "editer-line-warning";
+
+/**
+ * Marks each line with a diagnostic (background tint + left bar, see the
+ * injected CSS below) instead of precise squiggly underlines under the
+ * exact `column`/`length` range - `editor.lines[n]` already holds
+ * syntax-highlighted HTML for that line (nested spans from tokenizing), and
+ * slicing a plain character range out of that without corrupting it needs
+ * hooking `onTokenize` to split tokens at the right boundaries. Line-level
+ * marking gets "errors visible in the editor" without that - precise
+ * per-range underlines are a possible follow-up, not implemented here.
+ */
+function applyLineDiagnostics(editor: PrismEditor, errors: EditerDiagnostic[]): void {
+  const lines = editor.lines;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    line?.classList.remove(ERROR_LINE_CLASS, WARNING_LINE_CLASS);
+    line?.removeAttribute("title");
+  }
+  const byLine = new Map<number, { source: EditerDiagnostic["source"]; messages: string[] }>();
+  for (const error of errors) {
+    const entry = byLine.get(error.line) ?? { source: error.source, messages: [] };
+    if (error.source === "syntax") entry.source = "syntax"; // syntax outranks type when a line has both
+    entry.messages.push(error.message);
+    byLine.set(error.line, entry);
+  }
+  for (const [lineNumber, { source, messages }] of byLine) {
+    const line = lines[lineNumber];
+    if (!line) continue;
+    line.classList.add(source === "syntax" ? ERROR_LINE_CLASS : WARNING_LINE_CLASS);
+    line.title = messages.join("\n");
+  }
+}
+
 /**
  * TSX/Preact code editor: `prism-code-editor` (mounted in its own Shadow DOM
  * by `basicEditor` - see `plans/code-editer.md` mục 6) for the surface, a
@@ -130,6 +171,7 @@ export default function Editer({
 
     const client = new EditerWorkerClient((result) => {
       lastReportedCodeRef.current = result.code;
+      if (editorRef.current) applyLineDiagnostics(editorRef.current, result.errors);
       onChangeRef.current(result);
     });
     // Every cached position is only valid against the code it was computed
@@ -161,7 +203,11 @@ export default function Editer({
       // - the autocomplete tooltip's max-height (computed off the editor's
       // own `clientHeight`) then gets squeezed to a couple px too, since
       // there's barely any container height to work with.
-      style.textContent = `.prism-code-editor{height:100%}\n${autocompleteCss}\n${autocompleteIconsCss}`;
+      style.textContent = `.prism-code-editor{height:100%}
+.${ERROR_LINE_CLASS}{background:color-mix(in srgb, red 15%, transparent);box-shadow:inset 2px 0 0 0 red;}
+.${WARNING_LINE_CLASS}{background:color-mix(in srgb, orange 12%, transparent);box-shadow:inset 2px 0 0 0 orange;}
+${autocompleteCss}
+${autocompleteIconsCss}`;
       shadowRoot.append(style);
     }
 

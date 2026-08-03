@@ -4,6 +4,8 @@ export interface EditerCompletionItem {
   label: string;
   detail?: string;
   insert?: string;
+  /** Passed straight through to `Completion.boost` - see `ts-worker.ts`'s `KIND_BOOST`. */
+  boost?: number;
   /** Matches `prism-code-editor`'s `Completion.icon` names directly (see `autocomplete-icons.css`). */
   kind:
     | "keyword"

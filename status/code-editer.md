@@ -55,6 +55,31 @@ typecheck/unit tests):
   same near-zero size. Fixed with one CSS override injected into the shadow
   root.
 
+Follow-ups added after initial completion, same session:
+- Sidebar nav entry ("Code Editer Demo", `Development` section, next to
+  "Rich Text Demo") in `DryLayout.tsx`'s `NAV` - not DEV-gated, matching the
+  Rich Text Demo entry's precedent.
+- `KIND_BOOST` in `ts-worker.ts`: completions now sort function/const/class
+  above interface/type/alias before truncating to 50. Without it, a module
+  with as many type-only exports as preact (every HTML/ARIA attribute
+  interface) buried the handful of actual functions (`h`, `render`,
+  `Fragment`...) alphabetically under hundreds of interfaces whenever the
+  query was empty (`prism-code-editor` gives every entry the same score with
+  nothing typed yet to filter against). Verified via real import-specifier
+  completion (`import { h| } from "preact"` correctly suggests `h`/`hydrate`).
+- Inline error display: `Editer.tsx`'s `applyLineDiagnostics` tints each
+  line with a diagnostic (red background + left bar for syntax, amber for
+  type-only) directly on `editor.lines[n]`, driven by the same debounced
+  `onChange` pass - not just left to the demo page's raw JSON dump. Verified
+  against a real multi-line syntax error; line-level rather than precise
+  squiggly-underline ranges (would need `onTokenize` token-splitting to do
+  losslessly - noted as a possible follow-up in the function's own comment).
+
+Testing note: explicit-trigger keybindings (`Ctrl+Space`, `Mod+I`) don't
+reach the page in this Playwright/macOS harness (same class of issue as the
+prior `Meta+`-vs-`Control+` finding) - verified completions via normal
+implicit-trigger typing instead, which is also the realistic usage path.
+
 # Speed
 
 Completed 2026-08-04, same session as the plan discussion.

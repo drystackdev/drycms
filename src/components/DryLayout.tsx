@@ -68,6 +68,14 @@ const NAV: {
     section: "Development",
   },
   {
+    key: "code-editer-demo",
+    label: "Code Editer Demo",
+    href: `${path}/code-editer-demo`,
+    icon: "CodeFieldType",
+    ready: true,
+    section: "Development",
+  },
+  {
     key: "content-types",
     label: "Content Types",
     href: `${path}/content-types`,

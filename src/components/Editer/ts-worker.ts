@@ -162,15 +162,42 @@ const KIND_MAP: Record<string, EditerCompletionItem["kind"]> = {
   alias: "namespace",
 };
 
+/**
+ * Runtime-ish kinds (importable functions/classes/consts - `h`, `render`,
+ * `Fragment`, `Component`...) rank above pure type-only kinds (`interface`,
+ * `type`, `alias`) - without this, a module with as many type exports as
+ * preact (every HTML/ARIA attribute interface) buries the handful of actual
+ * functions under hundreds of interfaces in alphabetical order, since with
+ * an empty query (nothing typed yet, e.g. `import { |} from "preact"`)
+ * `prism-code-editor`'s own filter/sort gives every entry the same score.
+ */
+const KIND_BOOST: Record<string, number> = {
+  function: 2,
+  "local function": 2,
+  const: 2,
+  class: 2,
+  "local class": 2,
+  method: 1,
+  property: 1,
+  interface: -1,
+  type: -1,
+  alias: -1,
+};
+
 function computeCompletions(pos: number): EditerCompletionItem[] {
   const completions = languageService.getCompletionsAtPosition(MAIN_FILE, pos, {
     includeCompletionsForModuleExports: false,
   });
   if (!completions) return [];
-  return completions.entries.slice(0, 50).map((entry) => ({
+  const entries = [...completions.entries].sort((a, b) => {
+    const boostDiff = (KIND_BOOST[b.kind] ?? 0) - (KIND_BOOST[a.kind] ?? 0);
+    return boostDiff !== 0 ? boostDiff : a.sortText.localeCompare(b.sortText);
+  });
+  return entries.slice(0, 50).map((entry) => ({
     label: entry.name,
     insert: entry.insertText ?? entry.name,
     kind: KIND_MAP[entry.kind] ?? "text",
+    boost: KIND_BOOST[entry.kind] ?? 0,
   }));
 }
 
