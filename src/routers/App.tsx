@@ -23,9 +23,7 @@ const Dashboard = lazy(() => import("../pages/Dashboard.js"));
 const Showcase = lazy(() => import("../pages/Showcase.js"));
 const RichTextDemo = lazy(() => import("../pages/RichTextDemo.js"));
 const Media = lazy(() => import("../pages/Media.js"));
-const ContentTypes = lazy(() => import("../pages/ContentTypes.js"));
 const BuilderContentType = lazy(() => import("../pages/BuilderContentType.js"));
-const ContentTypeEditor = lazy(() => import("../pages/ContentTypeEditor.js"));
 const ContentEntryList = lazy(() => import("../pages/ContentEntryList.js"));
 const ContentEntryEditor = lazy(() => import("../pages/ContentEntryEditor.js"));
 const AiKeyEditor = lazy(() => import("../pages/AiKeyEditor.js"));
@@ -158,18 +156,9 @@ function AuthenticatedApp() {
                 path={`${path}/richtext-components`}
                 component={RichtextComponents}
               />
-              <Route path={`${path}/content-types`} component={ContentTypes} />
               <Route
-                path={`${path}/content-types/builder-content-type`}
+                path={`${path}/content-types`}
                 component={BuilderContentType}
-              />
-              <Route
-                path={`${path}/content-types/new/:kind`}
-                component={ContentTypeEditor}
-              />
-              <Route
-                path={`${path}/content-types/:id/edit`}
-                component={ContentTypeEditor}
               />
               <Route
                 path={`${path}/content/aiKey/new`}

@@ -20,7 +20,7 @@ import {
   fieldTypeColors,
   fieldTypeIcons,
 } from "../components/field-type-icons.js";
-import { EditIcon, PlusIcon, UploadIcon } from "../components/icons.js";
+import { PlusIcon, UploadIcon } from "../components/icons.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
@@ -32,10 +32,12 @@ function CollectionCard({
   definition,
   status,
   onOpen,
+  onApply,
 }: {
   definition: ContentTypeDefinition;
   status: { isNew: boolean; editedCount: number } | null;
   onOpen: (id: string) => void;
+  onApply: (id: string) => void;
 }) {
   const fields = definition.fields.filter(
     (field) => !(definition.deletedFieldIds ?? []).includes(field.id),
@@ -44,9 +46,13 @@ function CollectionCard({
     Boolean,
   ).length;
 
+  const featureLabels = Object.entries(definition.features ?? {})
+    .filter(([, enabled]) => enabled)
+    .map(([feature]) => feature)
+    .join(", ");
+
   return (
-    <button
-      type="button"
+    <div
       class={`builder-collection-card${status?.isNew ? " new" : ""}${status?.editedCount ? " edited" : ""}`}
       onClick={() => onOpen(definition.id)}
     >
@@ -62,30 +68,18 @@ function CollectionCard({
             - {definition.description || "No description"}
           </span>
         </span>
-        <span
-            data-tooltip={`${featureCount} features`}
-            class="badge secondary"
-          >
-            {featureCount}
-          </span>
-        {/* <div class="row" style={{ flexWrap: "nowrap", gap: "0.5rem" }}>
-          {status?.isNew && (
-            <span class="badge warning" style={{ width: 20 }}>
-              <PlusIcon />
-            </span>
-          )}
+        <span class="builder-collection-card-status">
+          {status?.isNew && <span class="badge sm info">Draft</span>}
           {!!status && !status.isNew && status.editedCount > 0 && (
-            <span class="badge info">
-              <EditIcon />
-            </span>
+            <span class="badge sm warning">{status.editedCount} edited</span>
           )}
           <span
-            data-tooltip={`${featureCount} features`}
+            data-tooltip={`Features: ${featureLabels}`}
             class="badge secondary"
           >
             {featureCount}
           </span>
-        </div> */}
+        </span>
       </span>
       <span
         class="builder-collection-card-fields"
@@ -110,7 +104,19 @@ function CollectionCard({
           })
         )}
       </span>
-    </button>
+      {status && (
+        <button
+          type="button"
+          class="outline sm builder-collection-card-apply"
+          onClick={(event) => {
+            event.stopPropagation();
+            onApply(definition.id);
+          }}
+        >
+          <UploadIcon /> Apply Builder
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -127,12 +133,16 @@ const KIND_PLURAL_LABELS: Record<ContentTypeKind, string> = {
 
 function BuilderCollectionList({
   kind,
+  search,
   onOpen,
+  onApply,
   definitions,
   error,
 }: {
   kind: ContentTypeKind;
+  search: string;
   onOpen: (id: string) => void;
+  onApply: (id: string) => void;
   definitions: ContentTypeDefinition[] | undefined;
   error: unknown;
 }) {
@@ -180,20 +190,37 @@ function BuilderCollectionList({
       <div class="builder-collection-list-empty">
         <strong>No {KIND_LABELS[kind].toLowerCase()}s yet</strong>
         <span class="hint">
-          Create a {KIND_LABELS[kind].toLowerCase()} from Content Types to start
-          building.
+          Click Add above to start building a {KIND_LABELS[kind].toLowerCase()}.
         </span>
+      </div>
+    );
+
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? collections.filter(({ definition }) =>
+        [definition.label, definition.name, definition.description].some(
+          (value) => value?.toLowerCase().includes(query),
+        ),
+      )
+    : collections;
+
+  if (filtered.length === 0)
+    return (
+      <div class="builder-collection-list-empty">
+        <strong>No matches</strong>
+        <span class="hint">Try a different search term.</span>
       </div>
     );
 
   return (
     <div class="builder-collection-list">
-      {collections.map((definition) => (
+      {filtered.map((definition) => (
         <CollectionCard
           key={definition.definition.id}
           definition={definition.definition}
           status={definition.status}
           onOpen={onOpen}
+          onApply={onApply}
         />
       ))}
     </div>
@@ -235,10 +262,12 @@ function CollectionEditorDialog({
 }
 
 export default function BuilderContentType() {
-  useDocumentTitle("Builder Content type");
+  useDocumentTitle("Content Types");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingKind, setAddingKind] = useState<ContentTypeKind | null>(null);
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [applyBuilderId, setApplyBuilderId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const api = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
     [],
@@ -252,10 +281,7 @@ export default function BuilderContentType() {
     data: definitions,
     error: definitionsError,
     reload,
-  } = useFetch<ContentTypeDefinition[]>(
-    "builder:content-types",
-    listFetcher,
-  );
+  } = useFetch<ContentTypeDefinition[]>("content-types:list", listFetcher);
   const skipFirstVersionEffect = useRef(true);
   useEffect(() => {
     if (skipFirstVersionEffect.current) {
@@ -273,19 +299,46 @@ export default function BuilderContentType() {
     "selectedKind",
     "collection",
   );
+
+  const kindCounts = useMemo(() => {
+    const counts: Record<ContentTypeKind, number> = {
+      collection: 0,
+      singleton: 0,
+      component: 0,
+    };
+    for (const definition of liveDefinitions) counts[definition.kind]++;
+    for (const draft of Object.values(pendingDrafts)) {
+      if (
+        draft.isNew &&
+        !liveDefinitions.some((d) => d.id === draft.definition.id)
+      ) {
+        counts[draft.definition.kind]++;
+      }
+    }
+    return counts;
+  }, [liveDefinitions, pendingDrafts]);
+
+  function openApplyDialog(id: string | null) {
+    setApplyBuilderId(id);
+    setApplyDialogOpen(true);
+  }
+
   return (
     <>
       <div class="page-header">
         <div>
-          <h1>Builder Content type</h1>
-          <p>Build a content type.</p>
+          <h1>Content Types</h1>
+          <p>
+            Define the shape of your content - Collections, Singletons, and
+            Components.
+          </p>
         </div>
         {pendingCount > 0 && (
           <button
             type="button"
             aria-busy={definitions ? false : true}
             disabled={!definitions}
-            onClick={() => setApplyDialogOpen(true)}
+            onClick={() => openApplyDialog(null)}
           >
             <UploadIcon /> Apply Builder
           </button>
@@ -314,18 +367,36 @@ export default function BuilderContentType() {
                     onClick={() => setSelectedKind(kind)}
                   >
                     {KIND_LABELS[kind]}
+                    <span class="badge outline sm">{kindCounts[kind]}</span>
                   </button>
                 ))}
               </div>
-              <button type="button" class="outline" onClick={() => setAddingKind(selectedKind)}>
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setAddingKind(selectedKind)}
+              >
                 <PlusIcon /> Add
               </button>
             </div>
           </header>
+          <div class="row builder-collections-toolbar">
+            <input
+              type="search"
+              value={search}
+              placeholder="e.g. blog_posts"
+              aria-label="Search content types"
+              onInput={(event) =>
+                setSearch((event.currentTarget as HTMLInputElement).value)
+              }
+            />
+          </div>
           <div class="builder-panel-body builder-collections-body">
             <BuilderCollectionList
               kind={selectedKind}
+              search={search}
               onOpen={setEditingId}
+              onApply={(id) => openApplyDialog(id)}
               definitions={definitions}
               error={definitionsError}
             />
@@ -342,8 +413,12 @@ export default function BuilderContentType() {
       />
       <ApplyBuildDialog
         open={applyDialogOpen}
+        contentTypeId={applyBuilderId ?? undefined}
         liveDefinitions={liveDefinitions}
-        onClose={() => setApplyDialogOpen(false)}
+        onClose={() => {
+          setApplyDialogOpen(false);
+          setApplyBuilderId(null);
+        }}
         onApplied={() => void reload()}
       />
     </>

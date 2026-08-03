@@ -6,7 +6,7 @@ const STORAGE_KEY = "drycms:content-type-drafts";
 export interface DraftEntry {
   definition: ContentTypeDefinition;
   /** Whether this id exists on the server yet - `true` for a content type
-   * that was drafted but never applied, so `ContentTypes.tsx`/
+   * that was drafted but never applied, so `BuilderContentType.tsx`/
    * `ContentTypeEditor.tsx` know there's no live row to diff against or
    * delete. */
   isNew: boolean;
@@ -40,7 +40,7 @@ function writeToStorage(value: DraftMap): void {
  * tradeoff for not needing a DB schema change to ship this.
  *
  * A `@preact/signals` value (same pattern as `store/content-types.ts`'s
- * `contentTypesVersion`) so `ContentTypes.tsx`'s list/badges and
+ * `contentTypesVersion`) so `BuilderContentType.tsx`'s list/badges and
  * `ContentTypeEditor.tsx`'s Save button both re-render on every change
  * without prop drilling or manual event wiring.
  */

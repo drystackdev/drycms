@@ -110,8 +110,9 @@ export interface ContentTypeDefinition {
   /** Optimistic-lock counter, incremented on every successful save. */
   version: number;
   /** True for a content type that must never appear anywhere a person picks
-   * or browses content types by hand: the Content Types list (`ContentTypes.
-   * tsx`), the sidebar's Content dropdown (`DryLayout.tsx`), and every
+   * or browses content types by hand: the Content Types list
+   * (`BuilderContentType.tsx`), the sidebar's Content dropdown
+   * (`DryLayout.tsx`), and every
    * relation/component target picker (`ContentTypeEditor.tsx`'s
    * `dynamicOptions`). Still fully functional underneath (own table, own
    * entries API) - just reached through a dedicated page instead of the

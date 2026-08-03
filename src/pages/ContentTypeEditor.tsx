@@ -56,7 +56,7 @@ interface Props {
   onClose?: () => void;
 }
 
-/** Matches `ContentTypes.tsx`'s nav wording ("Single", not "Singleton") -
+/** Matches `BuilderContentType.tsx`'s nav wording ("Single", not "Singleton") -
  * shown next to the label so it's clear which of the 3 kinds is being
  * edited, since the label/table name alone don't say. */
 const KIND_LABELS: Record<ContentTypeKind, string> = {
@@ -264,8 +264,8 @@ export default function ContentTypeEditor({
             liveType = loaded;
           }
           // `hidden` types (role/aiKey) have no schema editor of
-          // their own - only reachable here via a direct/stale URL, since
-          // `ContentTypes.tsx`/`DryLayout.tsx` never link to one. Bounce back
+          // their own - only reachable here via a stale draft/id, since
+          // `BuilderContentType.tsx`/`DryLayout.tsx` never link to one. Bounce back
           // rather than rendering a form whose Save the server will reject
           // anyway (see `routes/content-types.ts`'s `frozen` check).
           if (liveType?.hidden) {

@@ -77,15 +77,6 @@ const NAV: {
     superAdminOnly: true,
   },
   {
-    key: "builder-content-type",
-    label: "Builder Content type",
-    href: `${path}/content-types/builder-content-type`,
-    icon: "Content",
-    ready: true,
-    section: "Content",
-    superAdminOnly: true,
-  },
-  {
     key: "media",
     label: "Media",
     href: `${path}/media`,
@@ -302,8 +293,8 @@ export default function DryLayout({ children }: Props) {
       contentTypesApi.listVersioned(ifVersion, signal),
     [contentTypesApi],
   );
-  // Same cache key `ContentTypes.tsx` uses - a warm IndexedDB entry from
-  // either page shows up instantly in the other. Unlike a route component,
+  // Same cache key `BuilderContentType.tsx` uses - a warm IndexedDB entry
+  // from either page shows up instantly in the other. Unlike a route component,
   // this sidebar lives outside `<Router>` and never remounts (see
   // `App.tsx`), so `key` alone can't pick up a change made through
   // `ContentTypeEditor` - the `contentTypesVersion.value` effect below does
