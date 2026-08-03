@@ -44,6 +44,11 @@ interface ServerCredential {
   model: string;
 }
 
+interface ChatStreamResult {
+  stream: ReadableStream<Uint8Array>;
+  aiLabel: string;
+}
+
 class AiProviderError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -61,6 +66,16 @@ const CONVERSATION_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_CONVERSATIONS = 1_000;
 const MAX_ACTIVE_AI_STREAMS = 4;
 let activeAiStreams = 0;
+
+function aiProviderLabel(provider: ServerCredential["provider"] | "codex" | "claude"): string {
+  return {
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    google: "Google AI",
+    codex: "Codex",
+    claude: "Claude",
+  }[provider];
+}
 
 function providerFromEntry(value: unknown): "openai" | "anthropic" | "google" | "custom" {
   const provider = String(value ?? "").trim().toLowerCase();
@@ -653,13 +668,21 @@ async function createChatStream(
   context: DryRouteContext,
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
-): Promise<ReadableStream<Uint8Array>> {
-  if (ai.mode === "local") return streamLocalCli(messages, onDelta);
+): Promise<ChatStreamResult> {
+  if (ai.mode === "local") {
+    return {
+      stream: streamLocalCli(messages, onDelta),
+      aiLabel: `${aiProviderLabel(ai.provider)} (local)`,
+    };
+  }
   const credentials = await readServerCredentials(context);
   const errors: Error[] = [];
   for (const credential of credentials) {
     try {
-      return await streamServerAiWithCredential(messages, credential, onDelta);
+      return {
+        stream: await streamServerAiWithCredential(messages, credential, onDelta),
+        aiLabel: `${aiProviderLabel(credential.provider)} · ${credential.model}`,
+      };
     } catch (error) {
       if (!isAiKeyFallbackError(error)) throw error;
       errors.push(error instanceof Error ? error : new Error("AI provider request failed."));
@@ -844,10 +867,13 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
     const assistant = { text: "" };
     activeAiStreams += 1;
     let stream: ReadableStream<Uint8Array>;
+    let aiLabel = "AI";
     try {
-      stream = await createChatStream(context, conversation.messages, (delta) => {
+      const result = await createChatStream(context, conversation.messages, (delta) => {
         assistant.text += delta;
       });
+      stream = result.stream;
+      aiLabel = result.aiLabel;
     } catch (error) {
       activeAiStreams -= 1;
       throw error;
@@ -872,6 +898,7 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         "X-Accel-Buffering": "no",
+        "X-DryCMS-AI": aiLabel,
       },
     });
   } catch (error) {

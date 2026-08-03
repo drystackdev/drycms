@@ -241,6 +241,7 @@ interface ChatMessage {
   id: number;
   role: "user" | "assistant";
   text: string;
+  aiLabel?: string;
 }
 
 function renderAssistantMessage(text: string): string {
@@ -336,6 +337,12 @@ export default function BuilderContentType() {
         };
         throw new Error(body.message ?? "AI request failed.");
       }
+      const aiLabel = response.headers.get("X-DryCMS-AI") ?? "AI";
+      setChatMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId ? { ...message, aiLabel } : message,
+        ),
+      );
       const contentType = response.headers.get("content-type") ?? "";
       if (!contentType.includes("text/event-stream")) {
         // Backward-compatible fallback while a dev server is HMR-reloading:
@@ -516,6 +523,9 @@ export default function BuilderContentType() {
                     class={`ai-chat-message ${message.role}`}
                     key={message.id}
                   >
+                    {message.role === "assistant" && message.aiLabel && (
+                      <div class="hint">{message.aiLabel}</div>
+                    )}
                     {message.role === "assistant" &&
                     message.text &&
                     message.text !== "AI is thinking…" ? (
