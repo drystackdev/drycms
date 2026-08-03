@@ -1,5 +1,6 @@
 import type { DryRouteContext } from "../context.js";
 import type { SessionPayload } from "../../lib/session-token.js";
+import { encodeEntryId } from "../../lib/id-hash.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
@@ -250,6 +251,46 @@ describe("content-entries route - authorization", () => {
     });
     const roleManagerSession: SessionPayload = { id: roleManagerUser.id, name: "Role Manager User", email: "role-manager@example.com" };
     expect((await post("role", { name: "Forged Super Admin", isSuperAdmin: true, permissions: [] }, roleManagerSession)).status).toBe(403);
+  });
+
+  it("hides a Super Admin's own `user` row from a delegated admin's direct-by-id GET, and blocks editing it even with roles unchanged", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const userType = allTypes.find((t) => t.name === "user")!;
+    const roleType = allTypes.find((t) => t.name === "role")!;
+
+    const userManagerRole = await entries.createEntry(roleType, allTypes, {
+      name: "User Manager",
+      description: "",
+      isSuperAdmin: false,
+      permissions: [`${userType.id}:view`, `${userType.id}:update`],
+    });
+    const userManager = await entries.createEntry(userType, allTypes, {
+      name: "User Manager User",
+      email: "user-manager@example.com",
+      password: { hasExisting: false, new: "hunter2" },
+      roles: [userManagerRole.id],
+    });
+    const userManagerSession: SessionPayload = { id: userManager.id, name: "User Manager User", email: "user-manager@example.com" };
+
+    const superAdminUserSlug = `user/${encodeEntryId(superAdminSession.id)}`;
+
+    // Direct-by-id GET must 404, matching the list, which already hides it.
+    expect((await get(superAdminUserSlug, undefined, userManagerSession)).status).toBe(404);
+
+    // A crafted PUT resubmitting the Super Admin's own unchanged roles - only
+    // `email` differs - must still be rejected, not just role/password edits.
+    const superAdminRow = await entries.getEntry(userType, allTypes, superAdminSession.id);
+    const attempted = await put(
+      superAdminUserSlug,
+      { ...superAdminRow!.value, email: "hijacked@example.com" },
+      userManagerSession,
+    );
+    expect(attempted.status).toBe(403);
+
+    const stillOriginal = await entries.getEntry(userType, allTypes, superAdminSession.id);
+    expect(stillOriginal!.value.email).toBe("test-admin@example.com");
   });
 
   it("requires publish permission when a draft-enabled entry is published", async () => {

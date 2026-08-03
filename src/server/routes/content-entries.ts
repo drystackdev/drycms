@@ -183,14 +183,25 @@ async function protectSystemMutation(
         if (roles.some((role) => role?.value.isSuperAdmin === true)) return forbiddenResponse("Only a super administrator can assign the Super Admin role.");
       }
     }
-    if (action === "delete") {
-      // Use the stored roles, never a client-supplied role shape, before
-      // allowing a delegated administrator to delete a user.
+    // Use the stored roles, never a client-supplied role shape, to decide
+    // whether the entry being deleted/updated is itself a Super Admin.
+    let existingIsSuperAdmin = false;
+    if ((action === "delete" || action === "update") && existingRoles.length > 0) {
       const roleType = allTypes.find((candidate) => candidate.name === "role");
       if (roleType) {
         const roles = await Promise.all(existingRoles.filter((roleId): roleId is number => typeof roleId === "number").map((roleId) => entryAdapter.getEntry(roleType, allTypes, roleId)));
-        if (roles.some((role) => role?.value.isSuperAdmin === true)) return forbiddenResponse("A Super Admin user cannot be deleted by a delegated administrator.");
+        existingIsSuperAdmin = roles.some((role) => role?.value.isSuperAdmin === true);
       }
+    }
+    if (action === "delete" && existingIsSuperAdmin) {
+      return forbiddenResponse("A Super Admin user cannot be deleted by a delegated administrator.");
+    }
+    if (action === "update" && existingIsSuperAdmin) {
+      // Not just roles/credentials - a delegated administrator must not be
+      // able to touch a Super Admin account at all (e.g. its email), even
+      // when resubmitting the same role list. A Super Admin edits their own
+      // account through `auth.ts`'s `update-profile` instead.
+      return forbiddenResponse("A Super Admin account cannot be changed by a delegated administrator.");
     }
     if (action === "update" && JSON.stringify(existingRoles) !== JSON.stringify(incomingRoles)) {
       return forbiddenResponse("Only a super administrator can change user roles.");
@@ -360,7 +371,13 @@ export const GET: DryRouteHandler = async (context) => {
     if (hashedId) {
       const row = await entryAdapter.getEntry(type, allTypes, decodeIdOrThrow(hashedId));
       if (!row) throw new ContentEntryError("not_found", `Entry "${hashedId}" not found.`);
-      if (type.name === "role" && row.value.isSuperAdmin === true) {
+      // Same "hidden entry" rule as the list branch below - a Super Admin's
+      // `role`/`user` row must not be fetchable directly by id either, or a
+      // delegated administrator who merely has `view` could learn (and then,
+      // via `protectSystemMutation`, previously edit) an account the list UI
+      // deliberately never shows them.
+      const superAdminIds = type.name === "user" ? await superAdminRoleIds(entryAdapter, allTypes) : new Set<number>();
+      if (isHiddenEntry(type, row.value, superAdminIds)) {
         throw new ContentEntryError("not_found", `Entry "${hashedId}" not found.`);
       }
       return jsonResponse({ changed: true, version, entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });

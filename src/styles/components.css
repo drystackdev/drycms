@@ -2498,7 +2498,7 @@
       flex-direction: column;
       gap: 0.75rem;
       background-color: var(--dry-sidebar);
-      border-inline-end: 1px dashed var(--dry-border);
+      border-inline-end: 1px solid var(--dry-border);
       position: sticky;
       top: 0;
       height: 100dvh;
