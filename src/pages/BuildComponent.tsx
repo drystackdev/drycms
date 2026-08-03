@@ -4,9 +4,13 @@ import { CodeEditerField } from "../components/CodeEditorField.js";
 import { transformTsxToElement } from "./build-component-transform.js";
 import { useDocumentTitle } from "./page-common.js";
 
-const SAMPLE_CODE = `<div style={{ padding: "1rem", color: "crimson" }}>
-  Hello from build-component
-</div>`;
+const SAMPLE_CODE = `export default function Greeting() {
+  return (
+    <div style={{ padding: "1rem", color: "crimson" }}>
+      Hello from build-component
+    </div>
+  );
+}`;
 
 type Device = "mobile" | "tablet" | "desktop";
 
@@ -126,7 +130,7 @@ export default function BuildComponent() {
         <div style={{ flex: 1 }}>
           <h1>Build Component</h1>
           <p>
-            Type a TSX expression on the right - it's compiled in the
+            Type an export default Preact component on the right - it's compiled in the
             browser and rendered live on the left, isolated in a shadow
             root.
           </p>
@@ -186,7 +190,7 @@ export default function BuildComponent() {
             onChange={setCode}
             language="jsx"
             placeholder={SAMPLE_CODE}
-            description="A bare JSX expression, no imports - rendered with Preact's h/Fragment."
+            description="An export default Preact component, no imports - rendered with Preact's h/Fragment."
           />
         </div>
       </div>

@@ -1,16 +1,14 @@
-import type { ComponentChild, Fragment, h } from "preact";
+import type { ComponentChild, ComponentType, Fragment, h } from "preact";
 import { transform } from "sucrase";
 
 /**
- * Compiles a bare TSX expression (e.g. `<div style={{...}}>...</div>`)
- * entirely in the browser and evaluates it into a Preact vnode. Only the
- * `"jsx"` transform is enabled - `jsxPragma`/`jsxFragmentPragma` point
- * sucrase's classic-runtime output straight at the caller's own `h`/
- * `Fragment` (no React shim needed). Any `import`/`export` statement in
- * `code` passes through untouched (the `"imports"` transform is off) and
- * surfaces as a `SyntaxError` from `new Function` below - a real ES module
- * import isn't supported by this demo, but the failure is a clear build
- * error rather than a silent no-op.
+ * Compiles TSX entirely in the browser and evaluates it into a Preact vnode.
+ * Both a bare JSX expression and a small module-style
+ * `export default function Component() { return <div />; }` are supported.
+ * Only the `"jsx"` transform is enabled - `jsxPragma`/`jsxFragmentPragma`
+ * point sucrase's classic-runtime output straight at the caller's own `h`/
+ * `Fragment` (no React shim needed). Real imports remain unsupported because
+ * this preview deliberately has no module loader.
  */
 export function transformTsxToElement(
   code: string,
@@ -23,6 +21,22 @@ export function transformTsxToElement(
     jsxFragmentPragma: "Fragment",
     production: true,
   });
+  const defaultExport = /^\s*export\s+default\s+/m.test(transformed);
+  if (defaultExport) {
+    const componentCode = transformed.replace(
+      /(^\s*)export\s+default\s+/m,
+      "$1const __defaultComponent = ",
+    );
+    // eslint-disable-next-line no-new-func
+    const loadComponent = new Function(
+      "h",
+      "Fragment",
+      `${componentCode}\nreturn __defaultComponent;`,
+    );
+    const Component = loadComponent(hFn, FragmentValue) as ComponentType<{}>;
+    return hFn(Component, {}) as ComponentChild;
+  }
+
   const cleanCode = transformed.replace(/;\s*$/, "");
   // eslint-disable-next-line no-new-func
   const renderFn = new Function("h", "Fragment", `return (${cleanCode})`);

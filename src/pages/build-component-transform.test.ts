@@ -24,6 +24,20 @@ describe("transformTsxToElement", () => {
     expect(vnode.props.children).toHaveLength(2);
   });
 
+  it("compiles and renders an export default Preact component", () => {
+    const vnode = transformTsxToElement(
+      `export default function Greeting() {
+        return <strong>Hello from a component</strong>;
+      }`,
+      h,
+      Fragment,
+    ) as any;
+    expect(vnode.type.name).toBe("Greeting");
+    const rendered = vnode.type(vnode.props) as any;
+    expect(rendered.type).toBe("strong");
+    expect(rendered.props.children).toBe("Hello from a component");
+  });
+
   it("throws a clear error for invalid syntax", () => {
     expect(() =>
       transformTsxToElement(`<div>unclosed`, h, Fragment),

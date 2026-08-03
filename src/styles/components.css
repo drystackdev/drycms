@@ -3553,6 +3553,11 @@
       --pce-line-number: var(--dry-muted-foreground);
       --pce-bg-highlight: var(--dry-accent);
       --pce-border-highlight: 0 solid transparent;
+      --pce-widget-bg: var(--dry-popover);
+      --pce-widget-color: var(--dry-popover-foreground);
+      --pce-widget-border: var(--dry-border);
+      --pce-widget-color-active: var(--dry-foreground);
+      --pce-ac-match: var(--dry-primary);
       min-height: 13rem;
       overflow: hidden;
       border: 1px solid var(--dry-input);
@@ -3578,7 +3583,7 @@
         }
       }
 
-      &:has(textarea:disabled) {
+      &[aria-disabled="true"] {
         cursor: not-allowed;
         opacity: 0.5;
       }
@@ -3594,6 +3599,15 @@
 
       & .pce-textarea {
         font: inherit;
+      }
+
+      & .pce-ac-wrapper {
+        z-index: 3;
+        font: inherit;
+      }
+
+      & .pce-ac-row {
+        height: 1.75rem;
       }
     }
 
