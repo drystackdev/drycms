@@ -1,4 +1,4 @@
-import { verifySessionClaims, type SessionPayload } from "../lib/session-token.js";
+import { verifySessionClaims, type SessionPayload, type SessionTokenClaims } from "../lib/session-token.js";
 import { isAuthSessionValid } from "./auth-security.js";
 
 /**
@@ -46,10 +46,16 @@ export function readRefreshCookie(request: Request): string | undefined {
   return undefined;
 }
 
-export async function resolveSession(request: Request, env: Record<string, unknown> = {}): Promise<SessionPayload | null> {
+export async function resolveSession(
+  request: Request,
+  env: Record<string, unknown> = {},
+  verifiedClaims?: SessionTokenClaims | null,
+): Promise<SessionPayload | null> {
   const token = readSessionCookie(request);
   if (!token) return null;
-  const claims = await verifySessionClaims(token);
+  // `handler.ts` already verifies the cookie to retain its session id. When
+  // claims are supplied, reuse them so one request performs one JWT check.
+  const claims = verifiedClaims === undefined ? await verifySessionClaims(token) : verifiedClaims;
   if (!claims || !(await isAuthSessionValid(claims.sessionId, claims.id, claims.issuedAt, env))) return null;
   return { id: claims.id, name: claims.name, email: claims.email };
 }

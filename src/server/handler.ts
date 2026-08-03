@@ -100,7 +100,7 @@ export async function handleApiRequest(
   const sessionToken = readSessionCookie(request);
   const refreshToken = readRefreshCookie(request);
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
-  const session = await resolveSession(request, env);
+  const session = await resolveSession(request, env, claims);
   if (segment !== "auth" && !session) {
     return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,

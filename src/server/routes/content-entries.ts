@@ -1,15 +1,14 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
-import { content } from "../config.js";
 import { resolveAccess } from "../../content-types/access.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
-import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
-import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
+import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { PermissionAction } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { decodeEntryId, encodeEntryId } from "../../lib/id-hash.js";
-import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { getContentAdapters } from "../content-adapters.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
@@ -17,10 +16,6 @@ const STATUS_BY_CODE: Record<string, number> = {
   validation_failed: 422,
   unsupported: 501,
 };
-
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
-}
 
 function errorResponse(error: unknown): Response {
   if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
@@ -38,23 +33,6 @@ function errorResponse(error: unknown): Response {
   return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
 }
 
-/** Same module-cache/fresh-per-request split as `routes/content-types.ts` -
- * one pair of adapters here since this route needs both the schema adapter
- * (to resolve `typeSlug` -> `ContentTypeDefinition`) and the entry adapter
- * (for the actual row CRUD). */
-const moduleSchemaAdapter: ContentEngineAdapter | undefined =
-  content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
-const moduleEntryAdapter: ContentEntryEngineAdapter | undefined =
-  content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
-
-function getSchemaAdapter(context: DryRouteContext): ContentEngineAdapter {
-  return moduleSchemaAdapter ?? createContentEngineAdapter(content, context.env);
-}
-
-function getEntryAdapter(context: DryRouteContext): ContentEntryEngineAdapter {
-  return moduleEntryAdapter ?? createContentEntryEngineAdapter(content, context.env);
-}
-
 function parseSlug(context: DryRouteContext): { typeSlug: string; hashedId?: string } {
   const raw = (context.params.slug as string | undefined) ?? "";
   const [typeSlug, hashedId] = raw.split("/").filter(Boolean);
@@ -69,7 +47,7 @@ async function resolveType(
   context: DryRouteContext,
   typeSlug: string,
 ): Promise<{ type: ContentTypeDefinition; allTypes: ContentTypeDefinition[] }> {
-  const allTypes = await getSchemaAdapter(context).listContentTypes();
+  const allTypes = await getContentAdapters(context).schema.listContentTypes();
   const type = allTypes.find((t) => t.name === typeSlug && t.kind !== "component");
   if (!type) throw new ContentEntryError("not_found", `Content type "${typeSlug}" not found.`);
   return { type, allTypes };
@@ -342,7 +320,7 @@ export const GET: DryRouteHandler = async (context) => {
   try {
     const { typeSlug, hashedId } = parseSlug(context);
     const { type, allTypes } = await resolveType(context, typeSlug);
-    const entryAdapter = getEntryAdapter(context);
+    const entryAdapter = getContentAdapters(context).entries;
     const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "view");
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
@@ -436,7 +414,7 @@ export const POST: DryRouteHandler = async (context) => {
     const { typeSlug, hashedId } = parseSlug(context);
     if (hashedId) throw new ContentEntryError("not_found", "POST doesn't take an id - use PUT to update an existing entry.");
     const { type, allTypes } = await resolveType(context, typeSlug);
-    const entryAdapter = getEntryAdapter(context);
+    const entryAdapter = getContentAdapters(context).entries;
     const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "create");
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
@@ -461,7 +439,7 @@ export const PUT: DryRouteHandler = async (context) => {
   try {
     const { typeSlug, hashedId } = parseSlug(context);
     const { type, allTypes } = await resolveType(context, typeSlug);
-    const entryAdapter = getEntryAdapter(context);
+    const entryAdapter = getContentAdapters(context).entries;
     const denied = await checkAccess(context, entryAdapter, allTypes, type, type.kind === "singleton" ? "setting" : "update");
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
@@ -504,7 +482,7 @@ export const PATCH: DryRouteHandler = async (context) => {
     if (type.kind !== "collection" || !type.features?.sortable) {
       throw new ContentEntryError("unsupported", `"${typeSlug}" isn't a sortable collection.`);
     }
-    const entryAdapter = getEntryAdapter(context);
+    const entryAdapter = getContentAdapters(context).entries;
     const denied = await checkAccess(context, entryAdapter, allTypes, type, "update");
     if (denied) return denied;
     const body = (await context.request.json()) as { updates?: { id: string; sortIndex: number }[] };
@@ -530,7 +508,7 @@ export const DELETE: DryRouteHandler = async (context) => {
     const { type, allTypes } = await resolveType(context, typeSlug);
     if (type.kind === "singleton") throw new ContentEntryError("unsupported", "A singleton's entry can't be deleted.");
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to delete.");
-    const entryAdapter = getEntryAdapter(context);
+    const entryAdapter = getContentAdapters(context).entries;
     const denied = await checkAccess(context, entryAdapter, allTypes, type, "delete");
     if (denied) return denied;
     const entryId = decodeIdOrThrow(hashedId);

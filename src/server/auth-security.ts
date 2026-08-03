@@ -25,6 +25,7 @@ export interface AuthUserSecurityRecord {
   userId: number;
   sessionVersion: number;
   revokedAfter?: string;
+  revokeReason?: "password-change" | "reuse";
   updatedAt: string;
 }
 
@@ -158,11 +159,11 @@ export async function revokeAllAuthSessions(userId: number, reason: "password-ch
     userId,
     sessionVersion: current.sessionVersion + 1,
     revokedAfter: new Date().toISOString(),
+    revokeReason: reason,
     updatedAt: new Date().toISOString(),
   } satisfies AuthUserSecurityRecord, { durability: "sync" });
   // Existing session records become invalid through the version check. Their
   // TTL cleanup is intentionally deferred so this path stays O(1).
-  void reason;
 }
 
 export async function rotateAuthSession(refreshToken: string, env: Record<string, unknown> = {}): Promise<{ session: AuthSessionRecord; refreshToken: string } | null> {

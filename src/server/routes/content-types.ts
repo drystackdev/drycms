@@ -1,7 +1,6 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { content } from "../config.js";
-import { resolveAccess } from "../../content-types/access.js";
-import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
+import { getContentAdapters } from "../content-adapters.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import {
   ContentEngineError,
@@ -19,7 +18,8 @@ import {
 import { collectTableNames, resolveTableTree } from "../../content-types/tree.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
 import { randomUUID } from "../../lib/uuid.js";
-import { forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { requireSuperAdmin } from "../admin-access.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
@@ -32,10 +32,6 @@ const STATUS_BY_CODE: Record<string, number> = {
   protected: 403,
 };
 
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
-}
-
 function errorResponse(error: unknown): Response {
   if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
   if (error instanceof ContentEngineError) {
@@ -46,29 +42,6 @@ function errorResponse(error: unknown): Response {
   }
   console.error("[drycms] content type route error", error);
   return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
-}
-
-/**
- * `sqlite` and `file` are both cheap and safe to share across requests (a
- * single open connection / a local `StorageAdapter` module-cached exactly
- * like `routes/storage.ts`'s adapter - no local backend needs a
- * per-request Cloudflare binding). `D1` cannot be: its live binding only
- * exists per-request (`context.env`, the adapter-supplied runtime
- * environment - see `DryRouteContext`), so that branch is constructed fresh
- * on every call instead - see `ResolvedD1ContentOption`'s docs.
- */
-const moduleAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
-const moduleEntryAdapter: ContentEntryEngineAdapter | undefined =
-  content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
-
-function getAdapter(context: DryRouteContext): ContentEngineAdapter {
-  if (moduleAdapter) return moduleAdapter;
-  return createContentEngineAdapter(content, context.env);
-}
-
-function getEntryAdapter(context: DryRouteContext): ContentEntryEngineAdapter {
-  if (moduleEntryAdapter) return moduleEntryAdapter;
-  return createContentEntryEngineAdapter(content, context.env);
 }
 
 /** The data-version protocol (see `status/build-cache.md`) - `undefined` if
@@ -91,23 +64,6 @@ function readId(context: DryRouteContext): string | undefined {
   } catch {
     throw new ContentEngineError("invalid_definition", "Id contains invalid percent-encoding.");
   }
-}
-
-/** Schema WRITES (POST/PUT/DELETE here) have no per-resource permission
- * action of their own in the existing model (only entries do - see
- * `content-types/access.ts`/`permissions.ts`) - restricted to Super Admin
- * outright instead. Schema READS (`GET`) stay open to any authenticated user
- * (`if (!context.session) return unauthenticatedResponse()` alone) since the
- * sidebar and every entry editor need the type list regardless of role. */
-async function requireSuperAdmin(
-  context: DryRouteContext,
-  entryAdapter: ContentEntryEngineAdapter,
-  allTypes: ContentTypeDefinition[],
-): Promise<Response | null> {
-  if (!context.session) return unauthenticatedResponse();
-  const access = await resolveAccess(entryAdapter, allTypes, context.session);
-  if (!access?.isSuperAdmin) return forbiddenResponse("Only Super Admin can edit content type schemas.");
-  return null;
 }
 
 interface SaveRequestBody {
@@ -263,7 +219,7 @@ async function handleBatch(
 export const GET: DryRouteHandler = async (context) => {
   try {
     if (!context.session) return unauthenticatedResponse();
-    const adapter = getAdapter(context);
+    const adapter = getContentAdapters(context).schema;
 
     // Data-version protocol (see `status/build-cache.md`) - the whole
     // content-types collection is one resource, so this check covers both
@@ -290,9 +246,8 @@ export const GET: DryRouteHandler = async (context) => {
 
 export const POST: DryRouteHandler = async (context) => {
   try {
-    const adapter = getAdapter(context);
-    const entryAdapter = getEntryAdapter(context);
-    const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
+    const { schema: adapter, entries: entryAdapter } = getContentAdapters(context);
+    const denied = await requireSuperAdmin(context, "Only Super Admin can edit content type schemas.");
     if (denied) return denied;
 
     const raw = (await context.request.json()) as Partial<SaveRequestBody> & {
@@ -324,9 +279,8 @@ export const POST: DryRouteHandler = async (context) => {
 
 export const PUT: DryRouteHandler = async (context) => {
   try {
-    const adapter = getAdapter(context);
-    const entryAdapter = getEntryAdapter(context);
-    const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
+    const { schema: adapter, entries: entryAdapter } = getContentAdapters(context);
+    const denied = await requireSuperAdmin(context, "Only Super Admin can edit content type schemas.");
     if (denied) return denied;
 
     const id = readId(context);
@@ -347,9 +301,8 @@ export const PUT: DryRouteHandler = async (context) => {
 
 export const DELETE: DryRouteHandler = async (context) => {
   try {
-    const adapter = getAdapter(context);
-    const entryAdapter = getEntryAdapter(context);
-    const denied = await requireSuperAdmin(context, entryAdapter, await adapter.listContentTypes());
+    const { schema: adapter, entries: entryAdapter } = getContentAdapters(context);
+    const denied = await requireSuperAdmin(context, "Only Super Admin can edit content type schemas.");
     if (denied) return denied;
 
     const id = readId(context);

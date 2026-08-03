@@ -1,13 +1,13 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
-import { content, path as basePath } from "../config.js";
-import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
+import { path as basePath } from "../config.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { resolveAccess } from "../../content-types/access.js";
-import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
+import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { verifyPassword } from "../../lib/password-hash.js";
 import { signSession } from "../../lib/session-token.js";
 import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
+import { getContentAdapters } from "../content-adapters.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
@@ -88,20 +88,6 @@ function errorResponse(error: unknown): Response {
   }
   console.error("[drycms] auth route error", error);
   return jsonResponse({ error: "internal", message: "Internal server error." }, 500);
-}
-
-/** Same module-cache/fresh-per-request adapter split as `content-entries.ts`. */
-const moduleSchemaAdapter: ContentEngineAdapter | undefined =
-  content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
-const moduleEntryAdapter: ContentEntryEngineAdapter | undefined =
-  content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
-
-function getSchemaAdapter(context: DryRouteContext): ContentEngineAdapter {
-  return moduleSchemaAdapter ?? createContentEngineAdapter(content, context.env);
-}
-
-function getEntryAdapter(context: DryRouteContext): ContentEntryEngineAdapter {
-  return moduleEntryAdapter ?? createContentEntryEngineAdapter(content, context.env);
 }
 
 function findType(allTypes: ContentTypeDefinition[], name: string): ContentTypeDefinition {
@@ -220,8 +206,7 @@ export const GET: DryRouteHandler = async (context) => {
     const endpoint = context.params.slug;
     if (endpoint !== "session") return jsonResponse({ error: "not_found", message: `Unknown auth endpoint "${String(endpoint)}".` }, 404);
 
-    const schemaAdapter = getSchemaAdapter(context);
-    const entryAdapter = getEntryAdapter(context);
+    const { schema: schemaAdapter, entries: entryAdapter } = getContentAdapters(context);
     const allTypes = await schemaAdapter.listContentTypes();
     const userType = findType(allTypes, "user");
     const roleType = findType(allTypes, "role");
@@ -245,8 +230,7 @@ export const GET: DryRouteHandler = async (context) => {
 export const POST: DryRouteHandler = async (context) => {
   try {
     const endpoint = context.params.slug;
-    const schemaAdapter = getSchemaAdapter(context);
-    const entryAdapter = getEntryAdapter(context);
+    const { schema: schemaAdapter, entries: entryAdapter } = getContentAdapters(context);
 
     if (endpoint === "register-first-admin") {
       const bootstrapToken = readEnvVar("DRYCMS_BOOTSTRAP_TOKEN");

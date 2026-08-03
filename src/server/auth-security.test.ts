@@ -4,6 +4,7 @@ vi.mock("./config.js", () => ({ path: "/dry" }));
 
 const {
   createAuthSession,
+  getAuthSecurityStore,
   isAuthSessionValid,
   revokeAllAuthSessions,
   rotateAuthSession,
@@ -22,6 +23,7 @@ describe("auth security sessions", () => {
 
     expect(await rotateAuthSession(first.refreshToken, {})).toBeNull();
     expect(await isAuthSessionValid(rotated!.session.sessionId, userId, Math.floor(Date.now() / 1000), {})).toBe(false);
+    expect(await getAuthSecurityStore({}).get("auth-users", `user-${userId}`)).toMatchObject({ revokeReason: "reuse" });
   });
 
   it("revokes every session for a user without affecting a different user", async () => {
@@ -33,5 +35,6 @@ describe("auth security sessions", () => {
 
     expect(await isAuthSessionValid(session.sessionId, userId, Math.floor(Date.now() / 1000), {})).toBe(false);
     expect(await isAuthSessionValid(other.sessionId, otherUserId, Math.floor(Date.now() / 1000), {})).toBe(true);
+    expect(await getAuthSecurityStore({}).get("auth-users", `user-${userId}`)).toMatchObject({ revokeReason: "password-change" });
   });
 });

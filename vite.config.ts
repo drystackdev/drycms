@@ -1,32 +1,32 @@
 import preact from "@preact/preset-vite";
 import { defineConfig } from "vite";
-import dryUserOptions from "./dry.config.js";
-import { resolveOptions } from "./src/server/options.js";
+import { resolved } from "./src/server/config.js";
 
-// Config-time only (this file is evaluated once, in Node, by Vite's own
-// config loader) - `resolveOptions` validates `dry.config.ts` up front so a
-// bad value fails at startup instead of on the first request. The full
-// resolved config is re-read at runtime by `src/server/config.ts`; the two
-// client-safe fields are exposed by `clientConfigPlugin` below.
-const resolved = resolveOptions(dryUserOptions);
+// Importing `resolved` (rather than calling `resolveOptions(dryUserOptions)`
+// again here) both re-validates `dry.config.ts` at Vite-config-load time -
+// this file is evaluated once, in Node, by Vite's own config loader, so a bad
+// value fails at startup instead of on the first request - and keeps that
+// validation to the one place (`src/server/config.ts`) instead of a second,
+// redundant `resolveOptions` call. The two client-safe fields are exposed to
+// the browser by `clientConfigPlugin` below.
 
-const clientConfigModule = "virtual:drycms/config";
-const resolvedClientConfigModule = `\0${clientConfigModule}`;
+const CLIENT_CONFIG_MODULE = "virtual:drycms/config";
+const RESOLVED_CLIENT_CONFIG_MODULE = `\0${CLIENT_CONFIG_MODULE}`;
 
 /** Keep client config literal in both dev and production through one module. */
 function clientConfigPlugin() {
   return {
     name: "drycms-client-config",
     resolveId(id: string) {
-      return id === clientConfigModule ? resolvedClientConfigModule : undefined;
+      return id === CLIENT_CONFIG_MODULE ? RESOLVED_CLIENT_CONFIG_MODULE : undefined;
     },
     load(id: string) {
-      if (id !== resolvedClientConfigModule) return undefined;
-      return [
-        `export const path = ${JSON.stringify(resolved.path)};`,
-        `export const contentEngine = ${JSON.stringify(resolved.content.engine)};`,
-        `export default { path, contentEngine };`,
-      ].join("\n");
+      if (id !== RESOLVED_CLIENT_CONFIG_MODULE) return undefined;
+      return `
+        export const path = ${JSON.stringify(resolved.path)};
+        export const contentEngine = ${JSON.stringify(resolved.content.engine)};
+        export default { path, contentEngine };
+      `;
     },
   };
 }
@@ -38,7 +38,7 @@ export default defineConfig({
     // chunk; it is lazy-loaded from the app shell, so this size is not part of
     // the initial path. Keep Vite's warning threshold above that deliberate
     // demo bundle while retaining the default warning for normal chunks.
-    chunkSizeWarningLimit: 3500,
+    chunkSizeWarningLimit: 1024,
   },
   resolve: {
     // Keep `preact-iso` and the app on one Preact singleton.

@@ -1,13 +1,10 @@
-import { ai, content } from "../config.js";
+import { ai } from "../config.js";
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { decryptSecret } from "../../lib/secret-crypto.js";
 import { decodeEntryId } from "../../lib/id-hash.js";
-import { resolveAccess } from "../../content-types/access.js";
-import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
-import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
-import type { ContentEngineAdapter } from "../../content-types/engine/types.js";
-import type { ContentTypeDefinition } from "../../content-types/types.js";
-import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { jsonResponse } from "../route-helpers.js";
+import { requireSuperAdmin } from "../admin-access.js";
+import { getContentAdapters } from "../content-adapters.js";
 import { validateOutboundUrlForRequest } from "../outbound-url.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
@@ -65,26 +62,6 @@ const MAX_CONVERSATIONS = 1_000;
 const MAX_ACTIVE_AI_STREAMS = 4;
 let activeAiStreams = 0;
 
-const moduleSchemaAdapter: ContentEngineAdapter | undefined = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
-const moduleEntryAdapter: ContentEntryEngineAdapter | undefined = content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
-
-function getSchemaAdapter(context: DryRouteContext): ContentEngineAdapter {
-  return moduleSchemaAdapter ?? createContentEngineAdapter(content, context.env);
-}
-
-function getEntryAdapter(context: DryRouteContext): ContentEntryEngineAdapter {
-  return moduleEntryAdapter ?? createContentEntryEngineAdapter(content, context.env);
-}
-
-async function requireSuperAdmin(context: DryRouteContext): Promise<Response | null> {
-  if (!context.session) return unauthenticatedResponse();
-  const schema = getSchemaAdapter(context);
-  const entries = getEntryAdapter(context);
-  const allTypes = await schema.listContentTypes();
-  const access = await resolveAccess(entries, allTypes, context.session);
-  return access?.isSuperAdmin ? null : forbiddenResponse("Only Super Admin can use AI chat.");
-}
-
 function providerFromEntry(value: unknown): "openai" | "anthropic" | "google" | "custom" {
   const provider = String(value ?? "").trim().toLowerCase();
   if (provider === "chatgpt" || provider === "openai") return "openai";
@@ -97,8 +74,7 @@ function providerFromEntry(value: unknown): "openai" | "anthropic" | "google" | 
 async function readServerCredentials(context: DryRouteContext): Promise<ServerCredential[]> {
   const serverAi = ai;
   if (serverAi.mode !== "server") throw new Error("Server AI mode is not configured.");
-  const schema = getSchemaAdapter(context);
-  const entries = getEntryAdapter(context);
+  const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
   const type = allTypes.find((candidate) => candidate.name === "aiKey");
   if (!type) throw new Error('The system collection "aiKey" is not available.');
@@ -693,8 +669,7 @@ async function createChatStream(
 }
 
 async function readStoredAiKey(context: DryRouteContext, entryIdValue?: string, entryName?: string): Promise<string> {
-  const schema = getSchemaAdapter(context);
-  const entries = getEntryAdapter(context);
+  const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
   const type = allTypes.find((candidate) => candidate.name === "aiKey");
   if (!type) throw new Error('The system collection "aiKey" is not available.');
@@ -851,7 +826,7 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
 
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
   try {
-    const denied = await requireSuperAdmin(context);
+    const denied = await requireSuperAdmin(context, "Only Super Admin can use AI chat.");
     if (denied) return denied;
     if (context.params.slug === "check") {
       await checkAiKey(context, await context.request.json() as CheckKeyRequest);

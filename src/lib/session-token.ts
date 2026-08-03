@@ -2,8 +2,8 @@ import { readEnvVar } from "../server/options.js";
 
 /** Stateless JWT session token for the built-in `user` collection's login.
  * Uses HS256 with the application secret and standard `header.payload.signature`
- * encoding. The token remains self-contained so session checks do not need to
- * re-query the user row; the KV-backed session blacklist handles revocation. */
+ * encoding. The identity claims are self-contained, while auth-security's
+ * server-side session records still control revocation before token expiry. */
 
 const SESSION_MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
 const ISSUER = "drycms";

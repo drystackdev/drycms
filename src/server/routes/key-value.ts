@@ -1,11 +1,10 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
-import { content, kv } from "../config.js";
-import { resolveAccess } from "../../content-types/access.js";
-import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../content-types/engine/index.js";
+import { kv } from "../config.js";
 import { KeyValueStore } from "../../kv/memory.js";
 import { createKeyValueAdapter, createRequestKeyValueAdapter } from "../../kv/factory.js";
 import { KeyValueError } from "../../kv/types.js";
-import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { jsonResponse } from "../route-helpers.js";
+import { requireSuperAdmin } from "../admin-access.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 const moduleStore = kv.kind !== "D1" && kv.kind !== "KV"
@@ -21,9 +20,6 @@ const moduleStore = kv.kind !== "D1" && kv.kind !== "KV"
     })
   : undefined;
 const requestStores = new WeakMap<object, KeyValueStore>();
-
-const moduleSchemaAdapter = content.engine !== "D1" ? createContentEngineAdapter(content) : undefined;
-const moduleEntryAdapter = content.engine !== "D1" ? createContentEntryEngineAdapter(content) : undefined;
 
 function getStore(context?: DryRouteContext): KeyValueStore {
   if (moduleStore) return moduleStore;
@@ -42,15 +38,6 @@ function getStore(context?: DryRouteContext): KeyValueStore {
   });
   requestStores.set(context.env, store);
   return store;
-}
-
-async function requireSuperAdmin(context: DryRouteContext): Promise<Response | null> {
-  if (!context.session) return unauthenticatedResponse();
-  const schema = moduleSchemaAdapter ?? createContentEngineAdapter(content, context.env);
-  const entries = moduleEntryAdapter ?? createContentEntryEngineAdapter(content, context.env);
-  const allTypes = await schema.listContentTypes();
-  const access = await resolveAccess(entries, allTypes, context.session);
-  return access?.isSuperAdmin ? null : forbiddenResponse("Only Super Admin can access Key Value.");
 }
 
 function pathParts(context: DryRouteContext): string[] {
@@ -80,7 +67,7 @@ function etag(revision: number): string {
 }
 
 export const GET: DryRouteHandler = async (context) => {
-  const denied = await requireSuperAdmin(context);
+  const denied = await requireSuperAdmin(context, "Only Super Admin can access Key Value.");
   if (denied) return denied;
   try {
     const parts = pathParts(context);
@@ -113,7 +100,7 @@ export const GET: DryRouteHandler = async (context) => {
 };
 
 export const PUT: DryRouteHandler = async (context) => {
-  const denied = await requireSuperAdmin(context);
+  const denied = await requireSuperAdmin(context, "Only Super Admin can access Key Value.");
   if (denied) return denied;
   try {
     const parts = pathParts(context);
@@ -132,7 +119,7 @@ export const PUT: DryRouteHandler = async (context) => {
 };
 
 export const DELETE: DryRouteHandler = async (context) => {
-  const denied = await requireSuperAdmin(context);
+  const denied = await requireSuperAdmin(context, "Only Super Admin can access Key Value.");
   if (denied) return denied;
   try {
     const parts = pathParts(context);
