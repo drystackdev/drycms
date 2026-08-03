@@ -22,5 +22,6 @@
 
 # giao diện 
 - path: /page-builder - khi vào trang này tự động thêm thu nhỉ menu (.collapsed dùng signal để quản lý chung) 
-- bên trái sẽ là navbar quản lý role như tree của menu nav chính (collapse menu) nhưng nhỏ hơn chỉ hiện các page
-- 
+- bên trái sẽ là navbar quản lý role như tree của menu nav chính (collapse menu) nhưng nhỏ hơn chỉ hiện các page có thể dóng lại thành float button menu ở trên bên trái
+- bên phải sẽ làm phần viết code chia theo tab, có tab để chạy trang web realtime
+- viết code dùng monacal có sẵn tsx

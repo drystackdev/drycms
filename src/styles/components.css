@@ -114,6 +114,12 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+
+      & mark {
+        background-color: color-mix(in srgb, var(--dry-warning) 35%, transparent);
+        color: inherit;
+        border-radius: 0.15em;
+      }
     }
 
     .builder-collection-card-fields {

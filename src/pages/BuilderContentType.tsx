@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
 } from "preact/hooks";
+import type { ComponentChildren } from "preact";
+import fuzzysort from "fuzzysort";
 const { path } = window.__DRY_CONFIG__;
 
 import { useDialogSync } from "../components/list-nav.js";
@@ -28,14 +30,37 @@ import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
 import { useDocumentTitle } from "./page-common.js";
 
+interface CardHighlights {
+  label: ComponentChildren;
+  name: ComponentChildren;
+  description: ComponentChildren;
+}
+
+/** `result.score` is 0 when this particular key had no match (an empty
+ * field, or one the query just didn't hit) - fuzzysort's own `.highlight()`
+ * would render as empty in that case since it only knows the ''-prepared
+ * placeholder, not the real field text, so it falls back to `fallback`
+ * (the untouched original string) instead. */
+function highlightOrPlain(
+  result: Fuzzysort.Result | undefined,
+  fallback: string,
+): ComponentChildren {
+  if (!result || result.score <= 0) return fallback;
+  return result.highlight((match, i) => (
+    <mark key={i}>{match}</mark>
+  )) as ComponentChildren;
+}
+
 function CollectionCard({
   definition,
   status,
+  highlights,
   onOpen,
   onApply,
 }: {
   definition: ContentTypeDefinition;
   status: { isNew: boolean; editedCount: number } | null;
+  highlights: CardHighlights | null;
   onOpen: (id: string) => void;
   onApply: (id: string) => void;
 }) {
@@ -59,13 +84,16 @@ function CollectionCard({
       <span class="builder-collection-card-header">
         <span class="builder-collection-card-title">
           <strong>
-            {definition.label || definition.name || "Untitled collection"}
+            {highlights?.label ??
+              (definition.label || definition.name || "Untitled collection")}
           </strong>
           <span class="hint">
             <span class="badge outline sm">
-              {definition.name || "no-table-name"}
+              {highlights?.name ?? (definition.name || "no-table-name")}
             </span>{" "}
-            - {definition.description || "No description"}
+            -{" "}
+            {highlights?.description ??
+              (definition.description || "No description")}
           </span>
         </span>
         <span class="builder-collection-card-status">
@@ -195,14 +223,43 @@ function BuilderCollectionList({
       </div>
     );
 
-  const query = search.trim().toLowerCase();
-  const filtered = query
-    ? collections.filter(({ definition }) =>
-        [definition.label, definition.name, definition.description].some(
-          (value) => value?.toLowerCase().includes(query),
-        ),
-      )
-    : collections;
+  const query = search.trim();
+  const filtered: Array<{
+    definition: ContentTypeDefinition;
+    status: { isNew: boolean; editedCount: number } | null;
+    highlights: CardHighlights | null;
+  }> = query
+    ? fuzzysort
+        .go(query, collections, {
+          keys: [
+            "definition.label",
+            "definition.name",
+            "definition.description",
+          ],
+          threshold: -10000,
+        })
+        .map((result) => {
+          const { definition } = result.obj;
+          return {
+            definition,
+            status: result.obj.status,
+            highlights: {
+              label: highlightOrPlain(
+                result[0],
+                definition.label || definition.name || "Untitled collection",
+              ),
+              name: highlightOrPlain(
+                result[1],
+                definition.name || "no-table-name",
+              ),
+              description: highlightOrPlain(
+                result[2],
+                definition.description || "No description",
+              ),
+            },
+          };
+        })
+    : collections.map((entry) => ({ ...entry, highlights: null }));
 
   if (filtered.length === 0)
     return (
@@ -219,6 +276,7 @@ function BuilderCollectionList({
           key={definition.definition.id}
           definition={definition.definition}
           status={definition.status}
+          highlights={definition.highlights}
           onOpen={onOpen}
           onApply={onApply}
         />
@@ -352,35 +410,29 @@ export default function BuilderContentType() {
               <h2>{KIND_PLURAL_LABELS[selectedKind]}</h2>
               <p>Choose a {KIND_LABELS[selectedKind].toLowerCase()} to edit.</p>
             </div>
-            <div class="row" style={{ flexWrap: "nowrap" }}>
-              <div
-                class="file-view-toggle"
-                role="group"
-                aria-label="Content type kind"
-              >
-                {(Object.keys(KIND_LABELS) as ContentTypeKind[]).map((kind) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    class="sm ghost"
-                    aria-pressed={selectedKind === kind}
-                    onClick={() => setSelectedKind(kind)}
-                  >
-                    {KIND_LABELS[kind]}
-                    <span class="badge outline sm">{kindCounts[kind]}</span>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                class="outline"
-                onClick={() => setAddingKind(selectedKind)}
-              >
-                <PlusIcon /> Add
-              </button>
+            <div
+              class="file-view-toggle"
+              role="group"
+              aria-label="Content type kind"
+            >
+              {(Object.keys(KIND_LABELS) as ContentTypeKind[]).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  class="sm ghost"
+                  aria-pressed={selectedKind === kind}
+                  onClick={() => setSelectedKind(kind)}
+                >
+                  {KIND_LABELS[kind]}
+                  <span class="badge outline sm">{kindCounts[kind]}</span>
+                </button>
+              ))}
             </div>
           </header>
-          <div class="row builder-collections-toolbar">
+          <div
+            class="row builder-collections-toolbar"
+            style={{ flexWrap: "nowrap", justifyContent: "space-between" }}
+          >
             <input
               type="search"
               value={search}
@@ -390,6 +442,13 @@ export default function BuilderContentType() {
                 setSearch((event.currentTarget as HTMLInputElement).value)
               }
             />
+            <button
+              type="button"
+              class="outline"
+              onClick={() => setAddingKind(selectedKind)}
+            >
+              <PlusIcon /> Add
+            </button>
           </div>
           <div class="builder-panel-body builder-collections-body">
             <BuilderCollectionList
