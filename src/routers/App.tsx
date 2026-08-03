@@ -21,6 +21,7 @@ import "../components/native.js";
 // form-input component - keeping it out of Dashboard's chunk matters here.
 const Dashboard = lazy(() => import("../pages/Dashboard.js"));
 const Showcase = lazy(() => import("../pages/Showcase.js"));
+const BuildComponent = lazy(() => import("../pages/BuildComponent.js"));
 const RichTextDemo = lazy(() => import("../pages/RichTextDemo.js"));
 const Media = lazy(() => import("../pages/Media.js"));
 const BuilderContentType = lazy(() => import("../pages/BuilderContentType.js"));
@@ -128,6 +129,16 @@ function AuthenticatedApp() {
               <Route path={`${path}/dashboard`} component={Dashboard} />
               {import.meta.env.DEV ? (
                 <Route path={`${path}/showcase/:tab?`} component={Showcase} />
+              ) : (
+                <></>
+              )}
+              {/* Evals arbitrary typed code (`plans/build-component.md`) -
+               * dev-only demo, not a production admin surface (yet). */}
+              {import.meta.env.DEV ? (
+                <Route
+                  path={`${path}/build-component`}
+                  component={BuildComponent}
+                />
               ) : (
                 <></>
               )}

@@ -2880,6 +2880,56 @@
       }
     }
 
+    /* --- Build Component demo (pages/BuildComponent.tsx) - even 2-up card
+     * grid (preview | code), collapsing to one column on narrow viewports
+     * same as every other 2-column grid above. */
+    .build-component-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--dry-gap) 2rem;
+      align-items: start;
+
+      @media (width < 64rem) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    /* Fixed-aspect frame the mobile/tablet/desktop device box sits in,
+     * scaled down (never up, see `fitScale` in BuildComponent.tsx) to fit -
+     * same shape as `.dry-component-preview`/`.dry-component-preview-scale`
+     * (RichTextField's component grid), just parameterized by device width
+     * here instead of a single fixed 768px. */
+    .build-component-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      aspect-ratio: 16 / 9;
+      padding: 1rem;
+      border-radius: var(--dry-radius-lg);
+      background-color: var(--dry-muted);
+      overflow: hidden;
+    }
+
+    .build-component-preview-scale {
+      flex-shrink: 0;
+      aspect-ratio: 16 / 9;
+      transform-origin: center center;
+    }
+
+    /* Deliberately unstyled beyond sizing/border - no app theme leaks in, so
+     * the shadow root's own default UA styling is what's visible, proving
+     * the isolation actually works. */
+    .build-component-preview-host {
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      overflow: auto;
+      border: 1px dashed var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      padding: 1rem;
+      background-color: var(--dry-background);
+    }
+
     /* --- Role editor (pages/RoleEditor.tsx) - one resource per row, using
      * the same bare `<details>`/`<summary>` accordion already styled above
      * (hover, chevron, animated reveal) rather than a parallel class - only

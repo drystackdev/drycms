@@ -57,6 +57,14 @@ const NAV: {
           ready: true,
           section: "Development" as const,
         },
+        {
+          key: "build-component",
+          label: "Build Component",
+          href: `${path}/build-component`,
+          icon: "Showcase" as IconName,
+          ready: true,
+          section: "Development" as const,
+        },
       ]
     : []),
   {
