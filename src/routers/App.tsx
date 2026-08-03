@@ -22,6 +22,7 @@ import "../components/native.js";
 const Dashboard = lazy(() => import("../pages/Dashboard.js"));
 const Showcase = lazy(() => import("../pages/Showcase.js"));
 const RichTextDemo = lazy(() => import("../pages/RichTextDemo.js"));
+const CodeEditerDemo = lazy(() => import("../pages/CodeEditerDemo.js"));
 const Media = lazy(() => import("../pages/Media.js"));
 const BuilderContentType = lazy(() => import("../pages/BuilderContentType.js"));
 const ContentEntryList = lazy(() => import("../pages/ContentEntryList.js"));
@@ -135,6 +136,13 @@ function AuthenticatedApp() {
                * RichTextField specifically, reached via a direct URL or the
                * link on Showcase's "Rich text field" tab. */}
               <Route path={`${path}/richtext-demo`} component={RichTextDemo} />
+              {/* Standalone sandbox for `Editer` (plans/code-editer.md) - not
+               * linked from Showcase or anywhere else, unlike RichTextDemo
+               * above; reached only via a direct URL. */}
+              <Route
+                path={`${path}/code-editer-demo`}
+                component={CodeEditerDemo}
+              />
               <Route path={`${path}/media`} component={Media} />
               <Route
                 path={`${path}/icon-management`}

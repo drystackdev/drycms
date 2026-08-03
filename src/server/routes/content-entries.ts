@@ -100,22 +100,6 @@ async function checkAccess(
   return null;
 }
 
-/** Publishing is a distinct capability from editing. A delegated editor may
- * save drafts, but cannot flip a draft-enabled collection to published unless
- * their role explicitly grants `publish`. */
-async function checkPublishAccess(
-  context: DryRouteContext,
-  entryAdapter: ContentEntryEngineAdapter,
-  allTypes: ContentTypeDefinition[],
-  type: ContentTypeDefinition,
-  value: EntryValue,
-  previousValue?: EntryValue,
-): Promise<Response | null> {
-  if (type.kind !== "collection" || !type.features?.draft) return null;
-  if (value.draft !== false || previousValue?.draft === false) return null;
-  return checkAccess(context, entryAdapter, allTypes, type, "publish");
-}
-
 async function protectSystemMutation(
   context: DryRouteContext,
   entryAdapter: ContentEntryEngineAdapter,
@@ -419,8 +403,6 @@ export const POST: DryRouteHandler = async (context) => {
     if (denied) return denied;
     const nodes = buildEntryFieldTree(type, allTypes);
     const value = decodeRelationIds(nodes, (await context.request.json()) as EntryValue);
-    const publishDenied = await checkPublishAccess(context, entryAdapter, allTypes, type, value);
-    if (publishDenied) return publishDenied;
     const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "create", undefined, value);
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
@@ -455,8 +437,6 @@ export const PUT: DryRouteHandler = async (context) => {
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to update.");
     const entryId = decodeIdOrThrow(hashedId);
     const existing = await entryAdapter.getEntry(type, allTypes, entryId);
-    const publishDenied = await checkPublishAccess(context, entryAdapter, allTypes, type, value, existing?.value);
-    if (publishDenied) return publishDenied;
     const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "update", entryId, value);
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);

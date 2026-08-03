@@ -2,9 +2,9 @@ import type { Statement } from "./migration.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 /** The actions a role can be granted on a resource. A collection gets
- * View/Create/Update/Delete plus Publish when Draft is enabled; a singleton
- * gets the single Setting action; components get none. */
-export const PERMISSION_ACTIONS = ["view", "create", "update", "delete", "publish", "setting"] as const;
+ * View/Create/Update/Delete; a singleton gets the single Setting action;
+ * components get none. */
+export const PERMISSION_ACTIONS = ["view", "create", "update", "delete", "setting"] as const;
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
 /** Stable value stored in `role.permissions`; it references content-type
@@ -22,9 +22,7 @@ export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
 export function permissionActionsFor(target: ContentTypeDefinition): PermissionAction[] {
   if (target.kind === "component") return [];
   if (target.kind === "singleton") return ["setting"];
-  return target.features?.draft
-    ? ["view", "create", "update", "delete", "publish"]
-    : ["view", "create", "update", "delete"];
+  return ["view", "create", "update", "delete"];
 }
 
 /** `isSuperAdmin` is a bypass switch, not an ordinary role attribute - it's

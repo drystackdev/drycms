@@ -6,6 +6,7 @@ import MultiSelect from "../../components/MultiSelect.js";
 import NumberField from "../../components/NumberField.js";
 import OptionListEditor from "../../components/OptionListEditor.js";
 import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
+import RichTextField from "../../components/RichTextField.js";
 import Select from "../../components/Select.js";
 import SlugField from "../../components/SlugField.js";
 import TextField from "../../components/TextField.js";
@@ -16,6 +17,7 @@ import {
   resolveFieldShape,
   resolveValidationFields,
   type FieldTypeDefinition,
+  type RichTextFieldConfig,
   type SelectFieldConfig,
   type SettingDescriptor,
   type SettingOption,
@@ -385,7 +387,19 @@ function DefaultValueInput({
         />
       );
     case "richtext":
-      return null;
+      {
+        const richTextConfig = config as RichTextFieldConfig;
+        return (
+          <RichTextField
+            label="Default value"
+            value={typeof value === "string" ? value : ""}
+            onChange={onChange}
+            inline={richTextConfig.inline === true}
+            features={richTextConfig}
+            disabled={disabled}
+          />
+        );
+      }
     case "number":
       return (
         <NumberField

@@ -293,7 +293,7 @@ describe("content-entries route - authorization", () => {
     expect(stillOriginal!.value.email).toBe("test-admin@example.com");
   });
 
-  it("requires publish permission when a draft-enabled entry is published", async () => {
+  it("allows an editor with update permission to publish a draft-enabled entry", async () => {
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
@@ -326,9 +326,9 @@ describe("content-entries route - authorization", () => {
     const draft = await post(article.name, { title: "Draft", draft: true }, editorSession);
     expect(draft.status).toBe(201);
     const published = await post(article.name, { title: "Published", draft: false }, editorSession);
-    expect(published.status).toBe(403);
+    expect(published.status).toBe(201);
     const draftId = draft.json.entry.id as string;
     expect((await put(`${article.name}/${draftId}`, { title: "Still draft", draft: true }, editorSession)).status).toBe(200);
-    expect((await put(`${article.name}/${draftId}`, { title: "Now published", draft: false }, editorSession)).status).toBe(403);
+    expect((await put(`${article.name}/${draftId}`, { title: "Now published", draft: false }, editorSession)).status).toBe(200);
   });
 });

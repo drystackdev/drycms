@@ -82,25 +82,36 @@ Bắt lỗi syntax dùng chính `ts.createSourceFile` + đọc `.parseDiagnostic
 của source file đó - rẻ hơn nhiều so với chạy full semantic diagnostics của
 language service, dùng ngay trong cùng Worker ở mục 2.
 
-### 4. Tailwind class suggestion: chỉ tailwind thuần, không tự sinh gì thêm
+### 4. Tailwind class suggestion: dùng thẳng `tailwindcss` core, không phải `@tailwindcss/browser`
 
-Không dùng danh sách class tự chế. Cài `@tailwindcss/browser` (package
-chính thức Tailwind v4 dành cho chạy trong browser, compile qua WASM) và lấy
-**full theme mặc định** cho v1 - chưa cần khớp `tailwind.config`/`@theme`
-thật của site người dùng. Cơ chế đọc theme thật của từng site để sau, làm
-riêng.
+**Đã sửa lại sau khi đọc thật type definitions của package (bản nháp trước
+chọn nhầm)**: `@tailwindcss/browser` (đã gỡ khỏi deps) chỉ là 1 bundle IIFE
+tự chạy (`index.global.js`, không export gì) - việc chính của nó là tự
+theo dõi `document` bằng `MutationObserver` rồi tự tiêm `<style>`, không hề
+có API enumerate/validate class name nào cả. Không phải công cụ đúng cho
+suggestion.
 
-**Đã chốt lại phạm vi, bỏ rủi ro "tự sinh candidate" từng nêu ở bản trước**:
-chỉ hỗ trợ suggestion cho class Tailwind thuần/mặc định của package (utility
-class có sẵn), không tự sinh biến thể/candidate đặc biệt nào (không tự ghép
-arbitrary value dạng `w-[137px]`, không tự suy luận custom variant...). Nhờ
-vậy không cần tự đọc `theme` object rồi tự tổng hợp danh sách như lo ngại
-trước - chỉ cần lấy đúng danh sách utility class package expose sẵn.
+Công cụ đúng là chính package `tailwindcss` core (v4, đã cài) qua API
+`__unstable__loadDesignSystem(css, opts): Promise<DesignSystem>` - đây
+chính là API mà Tailwind CSS IntelliSense (extension VSCode chính thức)
+dùng để build autocomplete. `DesignSystem.getClassList(): [string,
+ClassMetadata][]` trả ra thẳng danh sách toàn bộ utility class hợp lệ -
+đúng thứ suggestion cần, không phải tự tổng hợp/generate gì thêm:
+- Gọi 1 lần: `__unstable__loadDesignSystem('@import "tailwindcss";')` để
+  lấy **full theme mặc định** cho v1 (chưa khớp `tailwind.config`/`@theme`
+  thật của site người dùng - để sau, làm riêng).
+- `getClassList()` cho ngay danh sách class thuần/mặc định để filter theo
+  prefix đang gõ - không cần tự sinh arbitrary value hay custom variant gì
+  thêm (`getVariants()` cũng có sẵn nếu sau này cần suggest cả biến thể
+  `hover:`/`focus:`...).
+- Chạy hoàn toàn programmatic (Promise-based), không đụng `document` -
+  dùng thẳng trong Worker ở mục 2 luôn được, không cần DOM/host ẩn nào,
+  không có rủi ro multi-instance như bản nháp @tailwindcss/browser trước
+  lo ngại.
 
-**Không cần xuất CSS thật ra ngoài**: Editer lấy full theme mặc định trong
-browser chỉ để phục vụ suggestion, không cần compile/export CSS thật cho
-code đang gõ - việc đó (nếu cần) thuộc build pipeline thật của site sau
-này, không phải việc của Editer.
+**Không cần xuất CSS thật ra ngoài**: chỉ cần danh sách class cho
+suggestion, không compile CSS thật cho code đang gõ - việc đó (nếu cần)
+thuộc build pipeline thật của site sau này, không phải việc của Editer.
 
 ### 5. Demo page riêng, KHÔNG gắn vào Showcase
 
@@ -118,30 +129,20 @@ không thêm tab/mục trong Showcase, không có nút qua lại giữa 2 trang:
 - Editer là **full panel lấp đầy container cha** (giống panel code trong
   VSCode) - không border-radius, không tự vẽ border/card bao quanh; kích
   thước/vị trí do nơi đặt nó quyết định, Editer không tự "đóng khung" mình.
-- **Quyết định: dùng Shadow DOM thật ngay từ đầu**, không chỉ reset CSS suông
-  - theo đúng pattern đã có ở `RichTextField` (`useRichTextEditor.ts` +
-  `content-shadow-styles.ts`):
-  - Chỉ vùng soạn code thật (text/highlight/gutter) nằm trong shadow root
-    này; phần chrome xung quanh (nếu có toolbar, panel liệt kê `errors` từ
-    `EditerResult`, dropdown suggestion...) vẫn ở light DOM dùng style
-    chung của app - giống RichTextField chỉ shadow `.richtext-content`,
-    không shadow toolbar/menu/dialog.
-  - `attachShadow({ mode: "open" })` trên 1 mount element riêng, rồi tự viết
-    1 file style constant kiểu `content-shadow-styles.ts` (TS string, không
-    file `.css` riêng - đúng convention RichText đang dùng) tiêm vào qua
-    `<style>` trong shadow root.
-  - Vẫn giữ dòng đầu tiên của stylesheet đó là
-    `*, *::before, *::after { all: unset }` (hoặc `all: initial`) - vì
-    Shadow DOM chỉ chặn được **rule CSS ngoài nhắm theo selector**, còn các
-    property có tính kế thừa (font, color, line-height...) vẫn xuyên qua
-    ranh giới shadow từ computed style của host element, nên vẫn cần reset
-    ở dòng đầu để chặn luôn phần đó - 2 việc bổ trợ nhau, không thay thế.
-  - **Bẫy HMR cần nhớ** (đã gặp thật ở RichTextField): shadow root là vĩnh
-    viễn với 1 host element - gọi `attachShadow()` lần 2 trên cùng element
-    sẽ throw. Vite HMR có thể remount hook trên cùng host element, nên
-    phải viết kiểu `mountEl.shadowRoot ?? mountEl.attachShadow(...)` rồi
-    `shadowRoot.replaceChildren()` trước khi mount lại, không gọi thẳng
-    `attachShadow()` mỗi lần.
+  Đây là style của **element host ở light DOM** (do Editer tự dựng, size
+  100%/100%), khác với shadow root ở dưới.
+- **Đã sửa lại sau khi đọc thật source của `prism-code-editor` (bản nháp
+  trước định tự tay làm, thừa)**: `prism-code-editor/setups`'s
+  `basicEditor()`/`minimalEditor()` **đã tự mount vào Shadow DOM sẵn** -
+  `el.shadowRoot || el.attachShadow({ mode: "open" })`, đúng ngay cái bẫy
+  HMR đã lo (an toàn khi gọi lại), tự load layout+theme CSS async và tiêm
+  `<style>` vào trong shadow root đó. Không cần tự viết
+  `attachShadow`/`content-shadow-styles.ts` như RichTextField nữa - dùng
+  thẳng `basicEditor(container, { theme, language: "tsx", value, ... })`.
+- Vẫn theo đúng tinh thần "chỉ vùng soạn code nằm trong shadow root, chrome
+  xung quanh ở light DOM" - vì đó chính xác là cách `basicEditor` hoạt động
+  (nó chỉ shadow hoá `editor.container`, panel `errors`/toolbar do Editer
+  tự dựng bên ngoài vẫn ở light DOM, dùng style chung của app).
 
 ## Ngoài phạm vi (plan khác lo)
 

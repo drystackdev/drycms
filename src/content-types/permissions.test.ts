@@ -20,7 +20,6 @@ describe("permission metadata", () => {
       "create",
       "update",
       "delete",
-      "publish",
     ]);
     expect(permissionActionsFor(type("singleton"))).toEqual(["setting"]);
     expect(permissionActionsFor(type("component"))).toEqual([]);

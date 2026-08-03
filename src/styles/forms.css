@@ -491,6 +491,10 @@
         min-height: 16.75rem;
       }
 
+      &.inline .richtext-content-mount {
+        min-height: 0;
+      }
+
       /* The actual shadow host `RichTextField.tsx`'s `contentRef` attaches
        * to (see `useRichTextEditor.ts`) - a plain full-height fill of
        * `.richtext-content-mount` above it. */

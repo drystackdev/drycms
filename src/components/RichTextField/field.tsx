@@ -119,7 +119,7 @@ export default function RichTextField({
       {description && <small>{description}</small>}
       <div
         ref={richtextRef}
-        class={`richtext${fullscreen ? " richtext-fullscreen" : ""}`}
+        class={`richtext${fullscreen ? " richtext-fullscreen" : ""}${inline ? " inline" : ""}`}
         aria-invalid={error || undefined}
       >
         {fullscreen && (

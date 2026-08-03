@@ -37,7 +37,6 @@ const ACTION_LABELS: Record<PermissionAction, string> = {
   create: "Create",
   update: "Update",
   delete: "Delete",
-  publish: "Publish",
   setting: "Setting",
 };
 
@@ -46,7 +45,6 @@ const ACTION_DESCRIPTIONS: Record<PermissionAction, string> = {
   create: "Can create new entries in this collection.",
   update: "Can edit existing entries in this collection.",
   delete: "Can delete entries from this collection.",
-  publish: "Can publish draft entries in this collection.",
   setting: "Can view and edit this singleton's settings.",
 };
 
@@ -294,7 +292,7 @@ export default function RoleEditor({ id }: Props) {
             Name, description, assigned users, and per-resource permissions.
           </p>
         </div>
-        {isDirty && (
+        {(!isNew || isDirty) && (
           <button
             type="button"
             disabled={!canEditRole || saving}
@@ -306,126 +304,126 @@ export default function RoleEditor({ id }: Props) {
         )}
       </div>
 
-      <fieldset disabled={!canEditRole} class="role-editor-form">
-      <div class="content-entry-editor-grid">
-        <div class="stack">
-          {otherNodes.map((node) => (
-            <div key={node.fieldName}>
-              <FieldRenderer
-                node={node}
-                value={value[node.fieldName]}
-                onChange={(fieldValue) =>
-                  updateField(node.fieldName, fieldValue)
-                }
-                error={fieldErrors[node.fieldName]}
-                allTypes={allTypes}
-              />
-            </div>
-          ))}
-        </div>
+      <div inert={!canEditRole || undefined}>
+        <div class="content-entry-editor-grid">
+          <div class="stack">
+            {otherNodes.map((node) => (
+              <div key={node.fieldName}>
+                <FieldRenderer
+                  node={node}
+                  value={value[node.fieldName]}
+                  onChange={(fieldValue) =>
+                    updateField(node.fieldName, fieldValue)
+                  }
+                  error={fieldErrors[node.fieldName]}
+                  allTypes={allTypes}
+                />
+              </div>
+            ))}
+          </div>
 
-        <div class="stack">
-          <fieldset>
-            <legend>Permissions</legend>
-            <div class="permission-view-card">
-              {resources.map((resource) => {
-                const expected = permissionActionsFor(resource);
-                const isGranted = (action: PermissionAction) => {
-                  const permId = permissionIdFor(resource, action);
-                  return !!permId && grantedIds.has(permId);
-                };
-                const viewGranted = expected.includes("view")
-                  ? isGranted("view")
-                  : true;
-                return (
-                  <details key={resource.id}>
-                    <summary>
-                      <span class="stack" style={{ gap: "0.25rem" }}>
-                        <strong>{resource.label}</strong>
-                        <span class="hint">{resource.description}</span>
-                      </span>
-                      <div class="spacer" />
-                      <span class="role-permission-dots">
+          <div class="stack">
+            <fieldset>
+              <legend>Permissions</legend>
+              <div class="permission-view-card">
+                {resources.map((resource) => {
+                  const expected = permissionActionsFor(resource);
+                  const isGranted = (action: PermissionAction) => {
+                    const permId = permissionIdFor(resource, action);
+                    return !!permId && grantedIds.has(permId);
+                  };
+                  const viewGranted = expected.includes("view")
+                    ? isGranted("view")
+                    : true;
+                  return (
+                    <details key={resource.id}>
+                      <summary>
+                        <span class="stack" style={{ gap: "0.25rem" }}>
+                          <strong>{resource.label}</strong>
+                          <span class="hint">{resource.description}</span>
+                        </span>
+                        <div class="spacer" />
+                        <span class="role-permission-dots">
+                          {expected.map((action) => (
+                            <span
+                              key={action}
+                              class={`role-permission-dot${isGranted(action) ? " on" : ""}`}
+                              title={ACTION_LABELS[action]}
+                            />
+                          ))}
+                        </span>
+                      </summary>
+                      <div class="role-permission-switches">
                         {expected.map((action) => (
-                          <span
+                          <CheckField
                             key={action}
-                            class={`role-permission-dot${isGranted(action) ? " on" : ""}`}
-                            title={ACTION_LABELS[action]}
+                            role="switch"
+                            label={ACTION_LABELS[action]}
+                            description={ACTION_DESCRIPTIONS[action]}
+                            value={isGranted(action)}
+                            disabled={action !== "view" && !viewGranted}
+                            onChange={(checked) =>
+                              togglePermission(resource, action, checked)
+                            }
                           />
                         ))}
-                      </span>
-                    </summary>
-                    <div class="role-permission-switches">
-                      {expected.map((action) => (
-                        <CheckField
-                          key={action}
-                          role="switch"
-                          label={ACTION_LABELS[action]}
-                          description={ACTION_DESCRIPTIONS[action]}
-                          value={isGranted(action)}
-                          disabled={action !== "view" && !viewGranted}
-                          onChange={(checked) =>
-                            togglePermission(resource, action, checked)
-                          }
-                        />
-                      ))}
-                    </div>
-                  </details>
-                );
-              })}
-            </div>
-          </fieldset>
-
-          {singletons.length > 0 && (
-            <fieldset>
-              <legend>Singletons</legend>
-              <div
-                class="stack"
-                style={{ marginBottom: "0.5rem", gap: "1rem" }}
-              >
-                {singletons.map((singleton) => {
-                  const permissionId = permissionIdFor(singleton, "setting");
-                  return (
-                    <div key={singleton.id}>
-                      <CheckField
-                        role="switch"
-                        label={singleton.label}
-                        description={
-                          singleton.description ??
-                          "Manage this singleton's settings."
-                        }
-                        value={!!permissionId && grantedIds.has(permissionId)}
-                        onChange={(checked) =>
-                          togglePermission(singleton, "setting", checked)
-                        }
-                      />
-                    </div>
+                      </div>
+                    </details>
                   );
                 })}
               </div>
             </fieldset>
-          )}
 
-          {canDeleteRole && !value.isSuperAdmin && (
-            <div class="content-type-editor-danger">
-              <div>
-                <h2>Danger zone</h2>
-                <p>Delete this role. This cannot be undone.</p>
-              </div>
-              <div>
-                <button
-                  type="button"
-                  class="destructive"
-                  onClick={() => setShowDeleteConfirm(true)}
+            {singletons.length > 0 && (
+              <fieldset>
+                <legend>Singletons</legend>
+                <div
+                  class="stack"
+                  style={{ marginBottom: "0.5rem", gap: "1rem" }}
                 >
-                  <TrashIcon /> Delete role
-                </button>
+                  {singletons.map((singleton) => {
+                    const permissionId = permissionIdFor(singleton, "setting");
+                    return (
+                      <div key={singleton.id}>
+                        <CheckField
+                          role="switch"
+                          label={singleton.label}
+                          description={
+                            singleton.description ??
+                            "Manage this singleton's settings."
+                          }
+                          value={!!permissionId && grantedIds.has(permissionId)}
+                          onChange={(checked) =>
+                            togglePermission(singleton, "setting", checked)
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            )}
+
+            {canDeleteRole && !value.isSuperAdmin && (
+              <div class="content-type-editor-danger">
+                <div>
+                  <h2>Danger zone</h2>
+                  <p>Delete this role. This cannot be undone.</p>
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    class="destructive"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <TrashIcon /> Delete role
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
-      </fieldset>
 
       <ConfirmDialog
         open={showDeleteConfirm}
