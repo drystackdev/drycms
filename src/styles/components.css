@@ -2924,7 +2924,7 @@
       height: 100%;
       box-sizing: border-box;
       overflow: auto;
-      border: 1px dashed var(--dry-border);
+      border: 1px solid var(--dry-border);
       border-radius: var(--dry-radius-lg);
       padding: 1rem;
       background-color: var(--dry-background);
@@ -3540,6 +3540,60 @@
           outline: none;
           box-shadow: none;
         }
+      }
+    }
+
+    /* Prism Code Editor's core leaves theming to the host. Keeping these
+     * variables on a wrapper lets the field follow drycms's light/dark tokens
+     * while retaining the library's real textarea and line-number layout. */
+    .code-editor-field {
+      --pce-bg: var(--dry-muted);
+      --pce-cursor: var(--dry-foreground);
+      --pce-selection: var(--dry-selected);
+      --pce-line-number: var(--dry-muted-foreground);
+      --pce-bg-highlight: var(--dry-accent);
+      --pce-border-highlight: 0 solid transparent;
+      min-height: 13rem;
+      overflow: hidden;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      font-family: var(--dry-font-mono);
+      font-size: var(--dry-text-xs);
+      box-shadow: var(--dry-shadow-xs);
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
+
+      &:focus-within {
+        border-color: var(--dry-ring);
+        box-shadow: 0 0 0 3px var(--dry-focus), var(--dry-shadow-xs);
+      }
+
+      &[aria-invalid="true"] {
+        border-color: var(--dry-error);
+
+        &:focus-within {
+          border-color: var(--dry-error);
+          box-shadow: 0 0 0 3px var(--dry-focus), var(--dry-shadow-xs);
+        }
+      }
+
+      &:has(textarea:disabled) {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      & .prism-code-editor {
+        min-height: 13rem;
+        font: inherit;
+      }
+
+      & .pce-wrapper {
+        margin-block: 0.75rem;
+      }
+
+      & .pce-textarea {
+        font: inherit;
       }
     }
 

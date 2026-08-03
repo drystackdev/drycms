@@ -1,6 +1,6 @@
 import { Component, Fragment, h, render, type ComponentChild, type ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import CodeField from "../components/CodeField.js";
+import { CodeEditerField } from "../components/CodeEditorField.js";
 import { transformTsxToElement } from "./build-component-transform.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -180,10 +180,11 @@ export default function BuildComponent() {
           <header>
             <h2>Code</h2>
           </header>
-          <CodeField
+          <CodeEditerField
             label="Component TSX"
             value={code}
             onChange={setCode}
+            language="jsx"
             placeholder={SAMPLE_CODE}
             description="A bare JSX expression, no imports - rendered with Preact's h/Fragment."
           />
