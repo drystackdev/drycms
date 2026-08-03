@@ -80,6 +80,30 @@ reach the page in this Playwright/macOS harness (same class of issue as the
 prior `Meta+`-vs-`Control+` finding) - verified completions via normal
 implicit-trigger typing instead, which is also the realistic usage path.
 
+JSX tag-name suggestion (`<div`, `<span`, ...) added after user request -
+this needed real investigation, not just wiring:
+- Confirmed empirically (not assumed) that TS's completions engine only
+  offers JSX intrinsic elements/components when the element parses as a
+  *complete* `JsxOpeningElement` - a still-open `<di`, even a bare `<`
+  alone, never gets them; editing inside an already-closed `<a></a>` does.
+  `getSyntacticDiagnostics` already proved the parser treats it as real JSX
+  (`'/' expected`, a JSX-specific message) - this is specifically a
+  completions-classification gap, not a parsing one.
+- Fix in `ts-worker.ts`: detect an open tag right before the cursor
+  (`OPEN_JSX_TAG_RE`), splice a synthetic ` />` into the completions query
+  only (never into the real file), then filter the result through
+  `isPlausibleJsxName` (lowercase `property`-kind = intrinsic element,
+  capitalized value-kind = component) rather than just boosting - the
+  synthetic splice makes TS return the *entire* global scope plus the tag
+  names all mixed together (900+ entries), and generic kind-based boosting
+  alone left `div`/`span` tied with unrelated globals like
+  `addEventListener`, losing the top-50 cutoff race.
+- Verified: `<di` now suggests `dialog`, `div`, `audio`, `bdi`, `datalist`,
+  `details` - real HTML tags, fuzzy-matched correctly.
+- `CodeEditerDemo.tsx`'s seed code now uses `useState` (counter example,
+  `preact/hooks` import + JSX + event handler) instead of a static div -
+  verified it loads with 0 diagnostics.
+
 # Speed
 
 Completed 2026-08-04, same session as the plan discussion.

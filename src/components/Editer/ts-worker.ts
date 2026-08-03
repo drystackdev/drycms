@@ -184,10 +184,62 @@ const KIND_BOOST: Record<string, number> = {
   alias: -1,
 };
 
+/** Matches an unclosed `<` right before the cursor, with zero or more tag/
+ * member-name characters already typed (`<`, `<d`, `<di`, `<Foo.Bar`...). */
+const OPEN_JSX_TAG_RE = /<([A-Za-z][\w.]*)?$/;
+
+function rawCompletionsAt(pos: number): ts.CompletionInfo | undefined {
+  return languageService.getCompletionsAtPosition(MAIN_FILE, pos, {});
+}
+
+/**
+ * Once the synthetic-close trick (below) makes TS treat the position as
+ * JSX, `entries` is the *entire* global scope (900+ names) plus the JSX tag
+ * names mixed in - `div`/`span` are "property"-kind entries indistinguishable
+ * by kind alone from an unrelated global "method" like `addEventListener`,
+ * so generic `KIND_BOOST` ties them and the real tag names can lose out to
+ * sortText and fall past the top-50 cutoff before ever reaching the client.
+ * Since we already know this position *is* a tag name (that's why we're in
+ * this branch), filter instead of merely boosting: intrinsic elements are
+ * always lowercase "property" entries (`JSX.IntrinsicElements`'s own keys),
+ * components are always capitalized values - nothing else is a legal JSX
+ * tag name here regardless of what the synthetic splice also surfaced.
+ */
+function isPlausibleJsxName(entry: ts.CompletionEntry): boolean {
+  const first = entry.name[0];
+  if (!first) return false;
+  if (entry.kind === "property" && first === first.toLowerCase()) return true;
+  return first === first.toUpperCase() && first !== first.toLowerCase() && (KIND_BOOST[entry.kind] ?? 0) > 0;
+}
+
 function computeCompletions(pos: number): EditerCompletionItem[] {
-  const completions = languageService.getCompletionsAtPosition(MAIN_FILE, pos, {
-    includeCompletionsForModuleExports: false,
-  });
+  const mainFile = files.get(MAIN_FILE)!;
+  const before = mainFile.text.slice(0, pos);
+  const isOpenTag = OPEN_JSX_TAG_RE.test(before);
+  let completions: ts.CompletionInfo | undefined;
+  if (isOpenTag) {
+    // TS's completions engine only offers JSX intrinsic elements/component
+    // names (`div`, `span`, `MyComponent`...) when the containing element
+    // parses as a *complete* JsxOpeningElement - confirmed empirically: a
+    // still-open `<di` (even a bare `<` alone) never gets them, editing
+    // inside an already-closed `<a></a>` does. So for completions purposes
+    // only, splice in a synthetic self-close right after the cursor - just
+    // enough for the parser to recognize valid JSX - query against that, and
+    // restore the real (unmodified) text before returning. The real file
+    // the user sees/types into never contains this synthetic text.
+    const synthetic = mainFile.text.slice(0, pos) + " />" + mainFile.text.slice(pos);
+    setFile(MAIN_FILE, synthetic);
+    try {
+      completions = rawCompletionsAt(pos);
+    } finally {
+      setFile(MAIN_FILE, mainFile.text);
+    }
+    if (completions) {
+      completions = { ...completions, entries: completions.entries.filter(isPlausibleJsxName) };
+    }
+  } else {
+    completions = rawCompletionsAt(pos);
+  }
   if (!completions) return [];
   const entries = [...completions.entries].sort((a, b) => {
     const boostDiff = (KIND_BOOST[b.kind] ?? 0) - (KIND_BOOST[a.kind] ?? 0);

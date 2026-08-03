@@ -3,8 +3,17 @@ import Editer from "../components/Editer.js";
 import type { EditerResult } from "../components/Editer/types.js";
 import { useDocumentTitle } from "./page-common.js";
 
-const INITIAL_CODE = `export default function Demo() {
-  return <div className="flex items-center gap-2 p-4">Hello</div>;
+const INITIAL_CODE = `import { useState } from "preact/hooks";
+
+export default function Demo() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div className="flex items-center gap-2 p-4">
+      <span>Count: {count}</span>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  );
 }
 `;
 
