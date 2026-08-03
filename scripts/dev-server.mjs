@@ -17,6 +17,7 @@ const vite = await createViteServer({
 
 const { applySecurityHeaders, createApiMiddleware, toFetchRequest, sendFetchResponse } = await vite.ssrLoadModule("/src/server/adapters/node.js");
 const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts");
+const { injectClientConfig } = await vite.ssrLoadModule("/src/server/client-config.ts");
 const apiMiddleware = createApiMiddleware();
 
 const server = createHttpServer((req, res) => {
@@ -28,6 +29,7 @@ const server = createHttpServer((req, res) => {
           const url = req.url ?? "/";
           let html = readFileSync("index.html", "utf8");
           html = await vite.transformIndexHtml(url, html);
+          html = injectClientConfig(html);
           applySecurityHeaders(res);
           res.setHeader("Content-Type", "text/html");
           res.end(html);

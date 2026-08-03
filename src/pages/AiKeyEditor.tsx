@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import Combobox from "../components/Combobox.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SecretKeyField from "../components/SecretKeyField.js";

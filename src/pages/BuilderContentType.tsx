@@ -7,7 +7,7 @@ import {
 } from "preact/hooks";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 
 import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
 import { useDialogSync } from "../components/list-nav.js";

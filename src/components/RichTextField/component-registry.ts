@@ -1,4 +1,4 @@
-import { path as basePath } from "virtual:drycms/config";
+const { path: basePath } = window.__DRY_CONFIG__;
 import type { DryComponentRecord } from "./component-registry-types.js";
 
 /** Shared registry request for toolbar pickers and the editor runtime. Kept

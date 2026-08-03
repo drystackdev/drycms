@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import DataTable from "../components/DataTable.js";
 import Icon from "../components/Icon.js";
 import { PlusIcon, UploadIcon, type IconName } from "../components/icons.js";

@@ -1,11 +1,16 @@
 import { defineConfig } from "@playwright/test";
 
-// Relies on `bun run dev` (see `scripts/dev-server.mjs`) already running
-// rather than a Playwright-owned `webServer` - the dev server's lifecycle is
-// managed independently.
 export default defineConfig({
   testDir: "./e2e",
+  globalSetup: "./e2e/global-setup.ts",
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173",
+    storageState: "test-results/e2e-storage-state.json",
+  },
+  webServer: {
+    command: "bun scripts/e2e-server.mjs",
+    url: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173/dry/api/auth/session",
+    reuseExistingServer: false,
+    timeout: 120_000,
   },
 });

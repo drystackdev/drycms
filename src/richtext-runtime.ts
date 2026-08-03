@@ -1,4 +1,4 @@
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import type { DryComponentRecord } from "./components/RichTextField/component-registry-types.js";
 import { defineBuiltComponents } from "./components/RichTextField/dry-component-runtime.js";
 

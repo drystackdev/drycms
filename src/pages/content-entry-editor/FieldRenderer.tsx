@@ -1,5 +1,5 @@
 import { useMemo } from "preact/hooks";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import ComponentField from "../../components/ComponentField.js";
 import RelationField, {
   type RelationFieldSource,

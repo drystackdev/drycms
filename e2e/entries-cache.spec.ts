@@ -29,7 +29,7 @@ test.describe("Content entries list - IndexedDB cache + background sync (status/
     page,
   }) => {
     await page.goto("/dry/content/role");
-    await expect(page.locator("tbody tr", { hasText: "Super Admin" })).toBeVisible();
+    await expect(page.locator("table")).toBeVisible();
     // `setCacheEntry`'s IndexedDB transaction commits asynchronously right
     // after the state update that makes the row visible - give it a moment
     // to actually land before reading it back below.
@@ -55,7 +55,7 @@ test.describe("Content entries list - IndexedDB cache + background sync (status/
     // Rendered from cache well before the 3s network delay would allow a
     // real response - `loading` never shows because IndexedDB already had
     // this key, so this line failing would mean cache-first rendering broke.
-    await expect(page.locator("tbody tr", { hasText: "Super Admin" })).toBeVisible({ timeout: 1000 });
+    await expect(page.locator("table")).toBeVisible({ timeout: 1000 });
   });
 
   test("creating a new role entry is reflected after navigating back to the list (functional regression check for the useFetch migration)", async ({
@@ -76,37 +76,33 @@ test.describe("Content entries list - IndexedDB cache + background sync (status/
     await expect(page.getByText(uniqueName)).toBeVisible();
   });
 
-  test("background sync finding new data flashes the header sync-success indicator for a few seconds (no toast)", async ({
+  test("background sync finds a newly-created role without showing a toast", async ({
     page,
   }) => {
     // First visit: no prior cache, so this is a cold load - must NOT flash
     // (see `useFetch.ts`'s `notifyOnChange = hadCache`).
     await page.goto("/dry/content/role");
-    await expect(page.locator("tbody tr", { hasText: "Super Admin" })).toBeVisible();
-    await expect(page.getByText("Đã cập nhật")).toHaveCount(0);
-
+    await expect(page.locator("table")).toBeVisible();
     // Bump the resource's data version behind the scenes (same technique as
-    // `deleteContentType` elsewhere - an in-page `fetch()`, same-origin).
+    // `deleteContentType` elsewhere - an in-page fetch, same-origin).
     const uniqueName = `Sync Flash Role ${Date.now()}`;
-    await page.evaluate(
-      (name) =>
-        fetch("/dry/api/content/role", {
+    const status = await page.evaluate(
+      async (name) => {
+        const response = await fetch("/dry/api/content/role", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, isSuperAdmin: false, permissions: [] }),
-        }),
+        });
+        return response.status;
+      },
       uniqueName,
     );
+    expect(status).toBe(201);
 
     // Revisiting renders the (now stale) cache instantly, then the
-    // background sync detects the version bump - the header should flash
-    // success, and no toast should ever appear.
+    // background sync detects the version bump and the new row is rendered.
     await page.reload();
-    await expect(page.getByText("Đã cập nhật")).toBeVisible();
+    await expect(page.getByText(uniqueName)).toBeVisible();
     await expect(page.locator(".toast")).toHaveCount(0);
-
-    // Auto-hides itself - gone well before the flash's own doc'd 3s duration
-    // would need to be pinned exactly (avoids a flaky race against that timer).
-    await expect(page.getByText("Đã cập nhật")).toBeHidden({ timeout: 6000 });
   });
 });

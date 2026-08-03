@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "preact/hooks";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import { authState, loadSession } from "../store/auth.js";
 import Icon from "../components/Icon.js";
 import { ReplaceIcon } from "../components/icons.js";

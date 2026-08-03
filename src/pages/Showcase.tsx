@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import CheckField from "../components/CheckField.js";
 import CodeField from "../components/CodeField.js";
 import Combobox from "../components/Combobox.js";

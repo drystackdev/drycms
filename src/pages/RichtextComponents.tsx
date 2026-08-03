@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 // A component is a default export from a file named `dry.<name>.<ext>`.
 const componentModules = import.meta.glob<{ default?: unknown }>("/src/**/dry.*.{ts,tsx,js,jsx}");
 import CheckField from "../components/CheckField.js";

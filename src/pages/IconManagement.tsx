@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import IconGlyph from "../components/IconGlyph.js";
 import {
   ArrowLeftIcon,

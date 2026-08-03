@@ -15,7 +15,7 @@ import SyncIndicator from "./SyncIndicator.js";
 import ThemeToggle from "./ThemeToggle.js";
 import Toaster from "./Toast.js";
 import type { IconName } from "./icons.js";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import { collapsed } from "../store/dashboard.js";
 import { contentTypesVersion } from "../store/content-types.js";
 import { useOverlayScrollbars } from "./overlayscrollbars.js";

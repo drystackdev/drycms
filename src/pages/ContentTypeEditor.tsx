@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SlugField from "../components/SlugField.js";
 import TextField from "../components/TextField.js";

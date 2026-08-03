@@ -22,6 +22,10 @@ test("richtext grid layout feature works end-to-end", async ({ page }) => {
   const content = page.locator(".richtext-content-mount").first();
   await expect(content).toBeVisible();
 
+  // The demo starts empty; seed a normal flow paragraph so the test can also
+  // verify that grid highlight survives moving the selection outside the grid.
+  await page.getByRole("button", { name: "Plain paragraph", exact: true }).click();
+
   const insertGridBtn = page.getByRole("button", { name: "Insert grid" });
   await expect(insertGridBtn).toBeVisible();
   await insertGridBtn.click();
@@ -142,7 +146,7 @@ test("richtext grid layout feature works end-to-end", async ({ page }) => {
   // plain inline style directly on its own tag, but only when it's not the
   // all-default span (the fixed <style> tag's own default + !important
   // mobile-override rule covers the rest).
-  const htmlOutput = page.locator(".field", { has: page.getByText("Output (HTML)") }).locator("code");
+  const htmlOutput = page.locator(".code-block code").first();
   const exportedHtml = (await htmlOutput.textContent()) ?? "";
   expect(exportedHtml).toContain("<style>");
   expect(exportedHtml).not.toContain("dry-tx-grid-item");

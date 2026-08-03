@@ -8,7 +8,7 @@ import {
   lazy,
   useLocation,
 } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import DryLayout from "../components/DryLayout.js";
 import Icon from "../components/Icon.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";

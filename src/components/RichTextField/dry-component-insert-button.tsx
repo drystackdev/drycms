@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { TextSelection } from "prosemirror-state";
-import { path as basePath } from "virtual:drycms/config";
+const { path: basePath } = window.__DRY_CONFIG__;
 import { ComponentIcon, EyeIcon } from "../icons.js";
 import { useDialogSync } from "../list-nav.js";
 import { useOverlayScrollbars } from "../overlayscrollbars.js";

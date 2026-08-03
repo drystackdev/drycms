@@ -2,6 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { applySecurityHeaders, createApiMiddleware, sendFetchResponse, toFetchRequest } from "./adapters/node.js";
+import { injectClientConfig } from "./client-config.js";
 import { mimeType } from "./route-helpers.js";
 import { guardPageRequest } from "./page-guard.js";
 
@@ -12,7 +13,7 @@ import { guardPageRequest } from "./page-guard.js";
  * involved at runtime, unlike `scripts/dev-server.mjs`.
  */
 const clientDir = join(process.cwd(), "dist/client");
-const indexHtml = readFileSync(join(clientDir, "index.html"), "utf8");
+const indexHtml = injectClientConfig(readFileSync(join(clientDir, "index.html"), "utf8"));
 const apiMiddleware = createApiMiddleware();
 
 function serveShellOrAsset(req: IncomingMessage, res: ServerResponse): void {

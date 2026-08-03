@@ -1,6 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
 import CodeBlock from "./CodeBlock.js";
 import ConfirmDialog from "./ConfirmDialog.js";

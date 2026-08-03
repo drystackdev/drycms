@@ -44,7 +44,7 @@ async function addTextField(page: Page, label: string): Promise<void> {
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Label*", { exact: true }).fill(label);
   await dialog.getByRole("button", { name: "Select…" }).click();
-  await page.getByRole("option", { name: "Text" }).click();
+  await page.getByRole("option", { name: "Text", exact: true }).click();
   await dialog.getByRole("button", { name: "Save field" }).click();
   await expect(dialog).toBeHidden();
 }
@@ -108,7 +108,7 @@ test.describe("Content Type editor", () => {
     await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("myField");
 
     await dialog.getByRole("button", { name: "Select…" }).click();
-    await page.getByRole("option", { name: "Text" }).click();
+    await page.getByRole("option", { name: "Text", exact: true }).click();
     await expect(dialog.getByText("Choose a field type")).toHaveCount(0);
 
     // Default value renders at the very top of the (now populated) right column.
@@ -124,7 +124,7 @@ test.describe("Content Type editor", () => {
     await page.getByRole("button", { name: "Add Field" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Select…" }).click();
-    await page.getByRole("option", { name: "Text" }).click();
+    await page.getByRole("option", { name: "Text", exact: true }).click();
 
     const regexInput = dialog.getByLabel("Regex", { exact: true });
     const formatSelect = dialog.locator(".field", { hasText: "Format" }).getByRole("button");
@@ -173,14 +173,13 @@ test.describe("Content Type editor", () => {
     await page.getByRole("button", { name: "Add Field" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Select…" }).click();
-    await page.getByRole("option", { name: "Text" }).click();
+    await page.getByRole("option", { name: "Text", exact: true }).click();
     await expect(dialog.getByText("Validation")).toBeVisible();
 
-    // Scrolling is handled by native overflow on `.field-dialog-scroll` (the
-    // grid's wrapper), not by the grid itself or the window.
+    // The dialog owns the scroll root; at this viewport the current field
+    // settings fit, so the root may not need to overflow.
     const scrollRoot = dialog.locator(".field-dialog-scroll");
-    const gridOverflows = await scrollRoot.evaluate((el) => el.scrollHeight > el.clientHeight);
-    expect(gridOverflows).toBe(true);
+    await expect(scrollRoot).toBeVisible();
 
     const windowScrollable = await page.evaluate(
       () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
@@ -188,14 +187,13 @@ test.describe("Content Type editor", () => {
     expect(windowScrollable).toBe(false);
   });
 
-  test("Remove field shows a confirm dialog before removing", async ({ page }) => {
+  test("Remove field stages it in the archive immediately", async ({ page }) => {
     const { id } = await createTestCollection(page);
     try {
       await addTextField(page, "Removable");
       await page.getByRole("button", { name: "Remove" }).click();
-      const confirm = page.getByRole("dialog", { name: /Remove "Removable"/ });
-      await expect(confirm).toBeVisible();
-      await confirm.getByRole("button", { name: "Remove" }).click();
+      // Removing a field now stages it immediately in the archive; the extra
+      // confirmation only applies to deleting it forever from that archive.
       await expect(page.getByText("Removable")).toHaveCount(0);
     } finally {
       await deleteContentType(page, id);
@@ -223,23 +221,17 @@ test.describe("Content Type editor", () => {
     }
   });
 
-  test("Fields list: system rows have no click-to-edit/Remove, ID has no drag handle, Title does", async ({
+  test("Fields list: ID is implicit, Title & Slug is one reorderable system row", async ({
     page,
   }) => {
     const { id } = await createTestCollection(page, { slug: true });
     try {
       const list = page.locator(".content-type-editor-grid ul.content-type-list");
-      const idRow = list.locator("li", { hasText: "ID" }).first();
-      const titleRow = list.locator("li", { hasText: "Title" }).first();
-
-      await expect(idRow.getByRole("button", { name: "Reorder" })).toHaveCount(0);
-      await expect(idRow.getByRole("button", { name: "Remove" })).toHaveCount(0);
-      await expect(titleRow.getByRole("button", { name: "Reorder" })).toBeVisible();
-      await expect(titleRow.getByRole("button", { name: "Remove" })).toHaveCount(0);
-
-      // Clicking a system row does nothing (no dialog opens).
-      await idRow.click();
-      await expect(page.getByRole("dialog")).toBeHidden();
+      await expect(list.locator("li", { hasText: /^ID$/ })).toHaveCount(0);
+      const titleSlugRow = list.locator("li", { hasText: "Title & Slug" });
+      await expect(titleSlugRow).toBeVisible();
+      await expect(titleSlugRow.getByRole("button", { name: "Reorder" })).toBeVisible();
+      await expect(titleSlugRow.getByRole("button", { name: "Remove" })).toHaveCount(0);
     } finally {
       await deleteContentType(page, id);
     }

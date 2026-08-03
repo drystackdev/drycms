@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import { useDialogSync } from "../../components/list-nav.js";
 import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
 import { toast } from "../../components/Toast.js";

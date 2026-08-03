@@ -8,7 +8,7 @@ import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-li
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { goToNextCell, tableEditing } from "prosemirror-tables";
-import { path as basePath } from "virtual:drycms/config";
+const { path: basePath } = window.__DRY_CONFIG__;
 import { richtextContentShadowStyles } from "./content-shadow-styles.js";
 import {
   insertHardBreak,

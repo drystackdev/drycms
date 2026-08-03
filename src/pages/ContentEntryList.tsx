@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { JSX } from "preact/jsx-runtime";
-import { contentEngine, path } from "virtual:drycms/config";
+const { contentEngine, path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../components/file-manager-http-source.js";

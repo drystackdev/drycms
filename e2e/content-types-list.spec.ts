@@ -20,12 +20,12 @@ test.describe("Content Types list page", () => {
     await expect(navItems.nth(0)).toHaveAttribute("aria-current", "page");
     await expect(page.locator(".page-header h1")).toHaveText("Content Types - Collection");
 
-    // Right panel renders a real table; description is folded into the Name
-    // cell (muted subtitle), not its own column, and there's no Delete column.
+    // The current list includes last-edited metadata and row actions alongside
+    // the name; descriptions remain folded into the Name cell.
     const table = page.locator(".content-types-panel table");
     await expect(table).toBeVisible();
     const headers = await table.locator("th").allTextContents();
-    expect(headers).toEqual(["Name", "Fields"]);
+    expect(headers).toEqual(["Name", "Edited", "Actions"]);
 
     // The "Add <Kind>" button (icon + text, no literal "+") lives alongside the table's search bar.
     await expect(page.locator(".content-types-panel").getByRole("button", { name: "Add Collection" })).toBeVisible();

@@ -1,4 +1,4 @@
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const SESSION_REFRESH_INTERVAL_MS = 10 * 60 * 1000;

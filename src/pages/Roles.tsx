@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
 import { PlusIcon } from "../components/icons.js";
 import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";

@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals";
-import { path } from "virtual:drycms/config";
+const { path } = window.__DRY_CONFIG__;
 import { permissionKeyFor, type PermissionAction } from "../content-types/permissions.js";
 
 export interface AuthUser {
