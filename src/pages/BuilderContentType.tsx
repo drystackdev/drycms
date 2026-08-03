@@ -23,11 +23,12 @@ import {
   fieldTypeColors,
   fieldTypeIcons,
 } from "../components/field-type-icons.js";
-import { EditIcon, PlusIcon } from "../components/icons.js";
+import { EditIcon, PlusIcon, UploadIcon } from "../components/icons.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
+import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
 import { useDocumentTitle } from "./page-common.js";
 
 function CollectionCard({
@@ -130,35 +131,14 @@ const KIND_PLURAL_LABELS: Record<ContentTypeKind, string> = {
 function BuilderCollectionList({
   kind,
   onOpen,
+  definitions,
+  error,
 }: {
   kind: ContentTypeKind;
   onOpen: (id: string) => void;
+  definitions: ContentTypeDefinition[] | undefined;
+  error: unknown;
 }) {
-  const api = useMemo(
-    () => createContentTypesApi(`${path}/api/content-types`),
-    [],
-  );
-  const listFetcher = useCallback(
-    (ifVersion: number | undefined, signal: AbortSignal) =>
-      api.listVersioned(ifVersion, signal),
-    [api],
-  );
-  const {
-    data: definitions,
-    error,
-    reload,
-  } = useFetch<ContentTypeDefinition[]>(
-    "builder:content-types",
-    listFetcher,
-  );
-  const skipFirstVersionEffect = useRef(true);
-  useEffect(() => {
-    if (skipFirstVersionEffect.current) {
-      skipFirstVersionEffect.current = false;
-      return;
-    }
-    void reload();
-  }, [contentTypesVersion.value, reload]);
   const pendingDrafts = draftsSignal.value;
   const liveDefinitions = (definitions ?? []).filter(
     (definition) => definition.kind === kind && !definition.hidden,
@@ -271,6 +251,37 @@ export default function BuilderContentType() {
   useDocumentTitle("Builder Content type");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingKind, setAddingKind] = useState<ContentTypeKind | null>(null);
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const api = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
+  const listFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) =>
+      api.listVersioned(ifVersion, signal),
+    [api],
+  );
+  const {
+    data: definitions,
+    error: definitionsError,
+    reload,
+  } = useFetch<ContentTypeDefinition[]>(
+    "builder:content-types",
+    listFetcher,
+  );
+  const skipFirstVersionEffect = useRef(true);
+  useEffect(() => {
+    if (skipFirstVersionEffect.current) {
+      skipFirstVersionEffect.current = false;
+      return;
+    }
+    void reload();
+  }, [contentTypesVersion.value, reload]);
+  const pendingDrafts = draftsSignal.value;
+  const pendingCount = Object.keys(pendingDrafts).length;
+  const liveDefinitions = (definitions ?? []).filter(
+    (definition) => !definition.hidden,
+  );
   const [selectedKind, setSelectedKind] = useParam<ContentTypeKind>(
     "selectedKind",
     "collection",
@@ -407,6 +418,16 @@ export default function BuilderContentType() {
           <h1>Builder Content type</h1>
           <p>Build a content type with help from AI.</p>
         </div>
+        {pendingCount > 0 && (
+          <button
+            type="button"
+            aria-busy={definitions ? false : true}
+            disabled={!definitions}
+            onClick={() => setApplyDialogOpen(true)}
+          >
+            <UploadIcon /> Apply Builder
+          </button>
+        )}
       </div>
 
       <div
@@ -465,7 +486,12 @@ export default function BuilderContentType() {
             </div>
           </header>
           <div class="builder-panel-body builder-collections-body">
-            <BuilderCollectionList kind={selectedKind} onOpen={setEditingId} />
+            <BuilderCollectionList
+              kind={selectedKind}
+              onOpen={setEditingId}
+              definitions={definitions}
+              error={definitionsError}
+            />
           </div>
         </section>
 
@@ -571,6 +597,12 @@ export default function BuilderContentType() {
           setEditingId(null);
           setAddingKind(null);
         }}
+      />
+      <ApplyBuildDialog
+        open={applyDialogOpen}
+        liveDefinitions={liveDefinitions}
+        onClose={() => setApplyDialogOpen(false)}
+        onApplied={() => void reload()}
       />
     </>
   );

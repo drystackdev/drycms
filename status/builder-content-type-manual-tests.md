@@ -7,8 +7,9 @@
 
 ## Status
 
-- Added an E2E test for creating a Collection from Builder, applying its draft,
-  creating an entry, and deleting that entry.
+- Added an E2E test for creating a Collection from Builder, applying its draft
+  through the Builder page's `Apply Builder` button, creating an entry, and
+  deleting that entry.
 - Fixed the embedded editor so its Save draft action is available in Builder.
 - The test logs in through `E2E_EMAIL`/`E2E_PASSWORD`; credentials are not
   stored in the repository.

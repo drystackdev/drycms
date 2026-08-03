@@ -27,6 +27,7 @@ interface Row extends Record<string, unknown> {
   label: string;
   description: string;
   editedCount: number;
+  hasDraft: boolean;
   isDraftOnly: boolean;
 }
 
@@ -44,6 +45,7 @@ export default function ContentTypes() {
     "collection",
   );
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [applyBuilderId, setApplyBuilderId] = useState<string | null>(null);
 
   const listFetcher = useCallback(
     (ifVersion: number | undefined, signal: AbortSignal) => api.listVersioned(ifVersion, signal),
@@ -75,8 +77,9 @@ export default function ContentTypes() {
     .map((entry) => ({
       id: entry.definition.id,
       label: entry.definition.label || entry.definition.name || "(untitled)",
-      description: entry.definition.description ?? "",
-      editedCount: diffContentType(undefined, entry.definition).editedCount,
+          description: entry.definition.description ?? "",
+          editedCount: diffContentType(undefined, entry.definition).editedCount,
+      hasDraft: true,
       isDraftOnly: true,
     }));
 
@@ -90,6 +93,7 @@ export default function ContentTypes() {
           label: d.label,
           description: d.description ?? "",
           editedCount: draft ? diffContentType(d, draft.definition).editedCount : 0,
+          hasDraft: !!draft,
           isDraftOnly: false,
         };
       }),
@@ -149,6 +153,27 @@ export default function ContentTypes() {
                     </span>
                   ),
                 },
+                {
+                  key: "applyBuilder",
+                  label: "Actions",
+                  sortable: false,
+                  render: (_value, row) =>
+                    row.hasDraft ? (
+                      <button
+                        type="button"
+                        class="outline sm"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setApplyBuilderId(row.id);
+                          setApplyDialogOpen(true);
+                        }}
+                      >
+                        <UploadIcon /> Apply Builder
+                      </button>
+                    ) : (
+                      <span aria-hidden="true" />
+                    ),
+                },
               ]}
               rows={rows}
               rowKey={(row) => row.id}
@@ -196,7 +221,13 @@ export default function ContentTypes() {
                   {pendingCount === 1 ? "has" : "have"} draft changes waiting
                   to be applied.
                 </p>
-                <button type="button" onClick={() => setApplyDialogOpen(true)}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApplyBuilderId(null);
+                    setApplyDialogOpen(true);
+                  }}
+                >
                   <UploadIcon /> Apply and build
                 </button>
               </div>
@@ -207,8 +238,12 @@ export default function ContentTypes() {
 
       <ApplyBuildDialog
         open={applyDialogOpen}
+        contentTypeId={applyBuilderId ?? undefined}
         liveDefinitions={visibleDefinitions}
-        onClose={() => setApplyDialogOpen(false)}
+        onClose={() => {
+          setApplyDialogOpen(false);
+          setApplyBuilderId(null);
+        }}
         onApplied={() => void reload()}
       />
     </>

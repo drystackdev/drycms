@@ -18,6 +18,8 @@ import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types
 
 export interface ApplyBuildDialogProps {
   open: boolean;
+  /** When set, review/apply only this content type's pending draft. */
+  contentTypeId?: string;
   /** All non-`hidden` content types currently live on the server, across
    * every kind - used to diff each pending draft against. */
   liveDefinitions: ContentTypeDefinition[];
@@ -59,7 +61,13 @@ const api = createContentTypesApi(`${path}/api/content-types`);
  *    succeeded is discarded from the local draft store; whatever's left
  *    stays pending for a retry.
  */
-export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApplied }: ApplyBuildDialogProps) {
+export default function ApplyBuildDialog({
+  open,
+  contentTypeId,
+  liveDefinitions,
+  onClose,
+  onApplied,
+}: ApplyBuildDialogProps) {
   const ref = useDialogSync(open, onClose);
   const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([open]);
 
@@ -91,10 +99,15 @@ export default function ApplyBuildDialog({ open, liveDefinitions, onClose, onApp
     setPlanResults(null);
     setApplyResults(null);
     setError(null);
-    setItems(Object.values(drafts.value));
+    const pending = Object.values(drafts.value);
+    setItems(
+      contentTypeId
+        ? pending.filter((entry) => entry.definition.id === contentTypeId)
+        : pending,
+    );
     setLiveSnapshot(liveDefinitions);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-snapshots on `open` toggling, not on every `liveDefinitions` identity change (e.g. the post-apply reload this dialog itself triggers).
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-snapshots when the dialog or selected row changes, not on every `liveDefinitions` identity change (e.g. the post-apply reload this dialog itself triggers).
+  }, [open, contentTypeId]);
 
   const diffs = items.map((entry) => ({
     entry,
