@@ -10,7 +10,8 @@ suggestion). Không quan tâm nơi gọi dùng nó để làm gì (ghi file, pre
 
 - `value: string` - code hiện tại (controlled).
 - `onChange: (result: EditerResult) => void` - xem shape bên dưới.
-- extra type files (string[]/record) - xem mục 2.
+- `extraFiles?: Record<string, string>` - path -> nội dung `.tsx`/`.ts`
+  khác, nạp vào virtual FS (xem mục 2).
 
 ### Shape của `EditerResult` (trả ra từ `onChange`, không chỉ trả code string)
 
@@ -34,6 +35,11 @@ interface EditerDiagnostic {
   - lỗi `type` vẫn liệt kê trong `errors` để hiển thị nhưng không làm
   `success` thành `false`, vì nơi gọi có thể vẫn muốn chạy preview code dù
   còn lỗi type.
+- `errors` **chỉ tính cho file đang gõ (`value`), không tính cho
+  `extraFiles`**: `extraFiles` chỉ đóng vai trò ambient reference nạp vào
+  virtual FS (mục 2), không tự sinh diagnostics riêng hiển thị ra ngoài -
+  cần chốt rõ vì `EditerDiagnostic` không có field `file` để phân biệt lỗi
+  thuộc file nào, nếu tính cả `extraFiles` sẽ mơ hồ ngay.
 - Field cụ thể có thể chỉnh lại khi code thật (vd thêm `warnings` riêng nếu
   cần) - đây là bản nháp shape để thống nhất hướng trước khi build.
 
@@ -91,12 +97,18 @@ arbitrary value dạng `w-[137px]`, không tự suy luận custom variant...). N
 vậy không cần tự đọc `theme` object rồi tự tổng hợp danh sách như lo ngại
 trước - chỉ cần lấy đúng danh sách utility class package expose sẵn.
 
-### 5. Demo page riêng
+**Không cần xuất CSS thật ra ngoài**: Editer lấy full theme mặc định trong
+browser chỉ để phục vụ suggestion, không cần compile/export CSS thật cho
+code đang gõ - việc đó (nếu cần) thuộc build pipeline thật của site sau
+này, không phải việc của Editer.
 
-Theo đúng pattern `RichTextDemo.tsx` đang có (route lazy-load riêng, không
-kéo theo Showcase khi không cần):
-- Route riêng kiểu `/code-editer-demo`, lazy import trong `routers/App.tsx`.
-- Có nút quay lại Showcase (như RichTextDemo).
+### 5. Demo page riêng, KHÔNG gắn vào Showcase
+
+Chỉ mượn kỹ thuật route lazy-load riêng của `RichTextDemo.tsx` (không kéo
+theo Showcase khi không cần), **không** gắn vào Showcase theo cách nào cả -
+không thêm tab/mục trong Showcase, không có nút qua lại giữa 2 trang:
+- Route riêng kiểu `/code-editer-demo`, lazy import trong `routers/App.tsx`,
+  độc lập hoàn toàn với Showcase.
 - Nội dung demo: gõ TSX tự do, thấy suggestion type + suggestion Tailwind
   class + báo lỗi syntax trực tiếp; có thể hiện luôn `EditerResult` (mục
   Mục tiêu) dạng raw để dễ kiểm tra khi build.
@@ -109,8 +121,8 @@ kéo theo Showcase khi không cần):
 - **Quyết định: dùng Shadow DOM thật ngay từ đầu**, không chỉ reset CSS suông
   - theo đúng pattern đã có ở `RichTextField` (`useRichTextEditor.ts` +
   `content-shadow-styles.ts`):
-  - Chỉ vùng soạn code thật (text/highlight/gutter) nằm trong shadow root;
-    phần chrome xung quanh (nếu có toolbar, panel liệt kê `errors` từ
+  - Chỉ vùng soạn code thật (text/highlight/gutter) nằm trong shadow root
+    này; phần chrome xung quanh (nếu có toolbar, panel liệt kê `errors` từ
     `EditerResult`, dropdown suggestion...) vẫn ở light DOM dùng style
     chung của app - giống RichTextField chỉ shadow `.richtext-content`,
     không shadow toolbar/menu/dialog.
