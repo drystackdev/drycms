@@ -60,7 +60,7 @@ const NAV: {
         {
           key: "build-component",
           label: "Build Component",
-          href: `${path}/build-component`,
+          href: `${path}/build-component-demo`,
           icon: "Showcase" as IconName,
           ready: true,
           section: "Development" as const,
