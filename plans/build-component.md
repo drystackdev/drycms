@@ -10,9 +10,9 @@
 
 # ở trang /build-componet 
 
-- có 2 tabs
-+ tab1: có preview (Tận dụng lại cái đã có)
-+ tab2: có CodeField chuyển đổi code trực tiếp 
+- có 2 column trên desktop
++ column 1: có preview (Tận dụng lại cái đã có)
++ column 2: có CodeField (TSX) chuyển đổi code trực tiếp 
 
 # Đây chỉ là demo ban đầu
 
