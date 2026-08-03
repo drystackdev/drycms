@@ -232,6 +232,7 @@
       padding: 1rem;
       margin-block-start: 1rem;
       max-height: calc(100dvh - 20rem);
+      overflow-y: auto;
     }
 
     .ai-chat-empty {
