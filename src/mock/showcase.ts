@@ -31,7 +31,6 @@ export const groups: ShowcaseGroup[] = [
     items: [
       { id: "text-field", label: "Text field" },
       { id: "code-field", label: "Code field" },
-      { id: "code-editor-field", label: "Code editor field" },
       { id: "richtext-field", label: "Rich text field" },
       { id: "slug-field", label: "Slug field" },
       { id: "password-field", label: "Password field" },
@@ -555,16 +554,6 @@ import SidebarToggle from 'drycms/components/SidebarToggle';
   onChange={setRenderFn}
   description="Highlighted live as JSX."
   helperText="Runs on the server for each request."
-  style={{ width: "100%" }}
-/>`,
-  codeEditorField: `<CodeEditorField
-  label="Script"
-  value={source}
-  onChange={setSource}
-  language="jsx"
-  description="Edit the source directly in the field."
-  helperText="The value is controlled by the parent component."
-  lineNumbers
   style={{ width: "100%" }}
 />`,
   richTextField: `<div class="stack" style={{ width: "100%" }}>

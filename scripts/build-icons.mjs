@@ -23,12 +23,7 @@ const collections = new Map(
   SETS.map((prefix) => [prefix, require(`@iconify-json/${prefix}/icons.json`)]),
 );
 
-function render(source) {
-  if (typeof source === "object" && source !== null) {
-    return source;
-  }
-
-  const id = source;
+function render(id) {
   const [prefix, name] = id.split(":");
   if (!prefix || !name) {
     throw new Error(`Icon "${id}" must be written as "<set>:<name>".`);
@@ -54,11 +49,7 @@ const DEFAULT_VIEW_BOX = "0 0 24 24";
 const entries = Object.entries(config.icons).filter(
   ([key]) => !key.startsWith("$"),
 );
-const rendered = entries.map(([key, source]) => ({
-  key,
-  id: typeof source === "string" ? source : "custom SVG",
-  ...render(source),
-}));
+const rendered = entries.map(([key, id]) => ({ key, id, ...render(id) }));
 
 function iconEntry(icon) {
   return icon.viewBox === DEFAULT_VIEW_BOX

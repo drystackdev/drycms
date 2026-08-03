@@ -3,7 +3,6 @@ import { Fragment } from "preact";
 const { path } = window.__DRY_CONFIG__;
 import CheckField from "../components/CheckField.js";
 import CodeField from "../components/CodeField.js";
-import CodeEditorField from "../components/CodeEditorField.js";
 import Combobox from "../components/Combobox.js";
 import ComponentField from "../components/ComponentField.js";
 import ContextMenu from "../components/ContextMenu.js";
@@ -1028,34 +1027,6 @@ function DemoContent({ id }: { id: string }) {
               onChange={setRenderFn}
               description="Highlighted live as JSX."
               helperText="Runs on the server for each request."
-              style={{ width: "100%" }}
-            />
-          )}
-        />
-      );
-    }
-
-    case "code-editor-field": {
-      const [source, setSource] = useState(
-        "const Greeting = ({ name }) => <h1>Hello, {name}!</h1>;\n\n<Greeting name=\"drycms\" />;",
-      );
-      return (
-        <EditableDemo
-          id="code-editor-field"
-          title="Code editor field"
-          description="A Prism Code Editor-backed controlled field with line numbers, JSX syntax highlighting, tab indentation, and a real textarea for form integration."
-          code={code.codeEditorField!}
-          context={{ source, setSource }}
-          components={{ CodeEditorField }}
-          renderPreview={({ source, setSource }) => (
-            <CodeEditorField
-              label="Script"
-              value={source}
-              onChange={setSource}
-              language="jsx"
-              description="Edit the source directly in the field."
-              helperText="The value is controlled by the parent component."
-              lineNumbers
               style={{ width: "100%" }}
             />
           )}
