@@ -17,7 +17,7 @@ import type { RouteMatch } from "./match.js";
  * not done yet, this only works in dev.
  *
  * `/@vite/client` (dev only) is Vite's own HMR WebSocket client - needed
- * for `hmr-plugin.ts`'s full-reload broadcast to reach this page at all,
+ * for `app-router-plugin.ts`'s full-reload broadcast to reach this page at all,
  * since nothing else here ever loads client JS yet (no hydrate bundle
  * until later in Giai đoạn 2). Never included in production (no dev
  * server there to connect to). */

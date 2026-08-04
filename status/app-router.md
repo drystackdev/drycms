@@ -102,3 +102,15 @@ việc đầu tiên. Tailwind (phần của Giai đoạn 2) làm thêm cùng phi
 
 Tiếp theo: client hydration (`preact-iso/hydrate`) - phần còn lại của
 Giai đoạn 2 - khi được yêu cầu. Xem `plans/app-router.md`.
+
+## Cập nhật 2026-08-05: gộp 2 Vite plugin thành 1
+
+`dry-global-plugin.ts` (`transform`) và `hmr-plugin.ts` (`handleHotUpdate`)
+gộp thành 1 file/1 plugin object: `app-router-plugin.ts`
+(`appRouterPlugin()`) - cả 2 hook cùng phục vụ `src/apps/pages/**`, không
+lý do kỹ thuật nào để tách riêng 2 entry trong `plugins: [...]`. Test gộp
+theo: `app-router-plugin.test.ts` (7 case - 4 case `transform` cũ + 3 case
+`handleHotUpdate` mới, trước đó chưa có test cho `handleHotUpdate`).
+Cập nhật path ở mọi nơi tham chiếu tên file cũ (`vite.config.ts`,
+`render.ts`'s comment, `codegen.ts`'s template cho `dry.generated.d.ts`).
+`bun run typecheck` + `bun run test` xanh sau khi gộp.

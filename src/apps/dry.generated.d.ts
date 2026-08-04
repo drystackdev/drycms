@@ -3,7 +3,7 @@
 // content type's schema; see plans/reader.md.
 //
 // Calling the ambient global `dry()` below works for free in any file under
-// `src/apps/pages/**` - `src/server/app-router/dry-global-plugin.ts`
+// `src/apps/pages/**` - `src/server/app-router/app-router-plugin.ts`
 // (registered in `vite.config.ts`) injects the real import automatically.
 // Outside that folder, import it yourself instead:
 // `import { dry } from "../content-types/dry-reader.js"`.
