@@ -15,6 +15,7 @@ import "prism-code-editor/prism/languages/tsx";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { addTooltip } from "prism-code-editor/tooltips";
+import { insertText } from "prism-code-editor/utils";
 import { toast } from "../Toast.js";
 import { tailwindCompletionSource } from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
@@ -22,6 +23,7 @@ import { EditerWorkerClient } from "./worker-client.js";
 import type {
   EditerCodeFix,
   EditerCompletionItem,
+  EditerLanguageConfig,
   EditerSignatureHelp,
   EditerTextEdit,
 } from "./worker-protocol.js";
@@ -34,6 +36,26 @@ export interface EditerProps {
   extraFiles?: Record<string, string>;
   /** Set once at mount - not live-updatable, matching `basicEditor`'s own contract. */
   theme?: IncludedTheme;
+  /** Merged on top of `ts-worker.ts`'s own defaults (ES2022/bundler resolution/preact
+   * JSX/strict) - set once at mount, like `theme`. */
+  compilerOptions?: EditerLanguageConfig["compilerOptions"];
+  /** Merged on top of `ts-worker.ts`'s own default `Shift+Alt+F` formatting style - set
+   * once at mount, like `theme`. */
+  formatOptions?: EditerLanguageConfig["formatOptions"];
+  /** @default 2 */
+  tabSize?: number;
+  /** Delay after the last keystroke before diagnostics recompute and `onChange` fires.
+   * @default 300 */
+  debounceMs?: number;
+  /** Whether `className`/`class` JSX attribute strings offer Tailwind class-name
+   * completions (see `tailwind-completions.ts`) - per-instance, since the completion
+   * source itself is registered once, globally, the first time any `Editer` mounts.
+   * @default true */
+  tailwindCompletions?: boolean;
+  /** Diagnostics/hover/completions/signature-help stay fully active (useful for
+   * reviewing generated/example code with type errors surfaced) - only typing,
+   * `Shift+Alt+F`, and applying a quick fix are disabled. @default false */
+  readOnly?: boolean;
   class?: string;
   style?: JSX.CSSProperties;
 }
@@ -43,6 +65,7 @@ interface InstanceState {
   /** Per-position cache bridging the worker's async completions onto
    * `CompletionSource`'s synchronous return contract - see `tsCompletionSource`. */
   cache: Map<number, EditerCompletionItem[]>;
+  tailwindCompletions: boolean;
 }
 
 /** Keyed by editor instance so the (registered once, globally) "tsx" completion
@@ -122,11 +145,23 @@ function tsCompletionSource(
   return { from: wordStart(context.before), options: cached.map(toCompletion) };
 }
 
+/** `registerCompletions` is global (once for every `Editer` on the page, first-mount
+ * wins), but `tailwindCompletions` is a per-instance prop - gated here via the same
+ * `instances` map the other sources already key off, rather than registering a
+ * different source list per instance (which `registerCompletions` doesn't support). */
+function scopedTailwindCompletionSource(
+  context: Parameters<typeof tailwindCompletionSource>[0],
+  editor: PrismEditor,
+) {
+  if (instances.get(editor)?.tailwindCompletions === false) return null;
+  return tailwindCompletionSource(context, editor);
+}
+
 let completionsRegistered = false;
 function ensureCompletionsRegistered() {
   if (completionsRegistered) return;
   completionsRegistered = true;
-  registerCompletions(["tsx"], { sources: [tailwindCompletionSource, tsCompletionSource] });
+  registerCompletions(["tsx"], { sources: [scopedTailwindCompletionSource, tsCompletionSource] });
 }
 
 const DIAGNOSTIC_CLASS = "editer-diagnostic";
@@ -186,14 +221,6 @@ function findDiagnosticAt(
     const start = absoluteOffset(lineTexts, error.line, error.column);
     return pos >= start && pos <= start + error.length;
   });
-}
-
-function applyTextEdits(code: string, edits: EditerTextEdit[]): string {
-  let result = code;
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
-    result = result.slice(0, edit.start) + edit.newText + result.slice(edit.start + edit.length);
-  }
-  return result;
 }
 
 /** Width of one `ch` (one monospace character cell) in the editor, in CSS pixels -
@@ -269,6 +296,23 @@ function renderHoverMessage(panel: HTMLDivElement, message: string): void {
   panel.append(doc);
 }
 
+/** Diagnostics are otherwise only visible - a squiggly underline plus a mouse-hover-only
+ * message (see `scheduleHover`) - which a screen reader user gets no signal from at all.
+ * `aria-live="polite"` on this (visually-hidden, but not `display:none` - screen readers
+ * ignore that) region announces a summary on every diagnostics update instead. */
+function announceDiagnostics(liveRegion: HTMLDivElement, errors: EditerDiagnostic[]): void {
+  if (!errors.length) {
+    liveRegion.textContent = "No problems";
+    return;
+  }
+  const errorCount = errors.filter((error) => error.source === "syntax").length;
+  const warningCount = errors.length - errorCount;
+  const parts: string[] = [];
+  if (errorCount) parts.push(`${errorCount} error${errorCount === 1 ? "" : "s"}`);
+  if (warningCount) parts.push(`${warningCount} warning${warningCount === 1 ? "" : "s"}`);
+  liveRegion.textContent = parts.join(", ");
+}
+
 function renderSignatureTooltip(el: HTMLDivElement, help: EditerSignatureHelp): void {
   el.replaceChildren();
   const label = document.createElement("div");
@@ -301,12 +345,13 @@ const shadowStyles = `.prism-code-editor{height:100%}
 .editer-hover-panel{padding:.5em .7em;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
 .editer-hover-sig{margin:0;white-space:pre-wrap;font-family:inherit}
 .editer-hover-doc{margin-top:.4em;white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;opacity:.85}
-.editer-sig-tooltip{padding:.4em .6em;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--pce-widget-bg);color:var(--pce-widget-color);border:1px solid var(--pce-widget-border);border-radius:.3em;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.editer-sig-tooltip,.editer-hover-tooltip{padding:.4em .6em;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--pce-widget-bg);color:var(--pce-widget-color);border:1px solid var(--pce-widget-border);border-radius:.3em;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .editer-sig-label{white-space:pre-wrap}
 .editer-sig-active-param{font-weight:700;text-decoration:underline}
 .editer-quickfix-menu{padding:.25em;display:flex;flex-direction:column;gap:2px}
 .editer-quickfix-menu button{all:unset;cursor:pointer;padding:.3em .5em;border-radius:.2em;white-space:nowrap;font:12px ui-sans-serif,system-ui,sans-serif}
 .editer-quickfix-menu button:hover,.editer-quickfix-menu button:focus-visible{background:var(--pce-widget-bg-hover)}
+.editer-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 ${autocompleteCss}
 ${autocompleteIconsCss}`;
 
@@ -314,9 +359,13 @@ ${autocompleteIconsCss}`;
  * TSX/Preact code editor: `prism-code-editor` (mounted in its own Shadow DOM
  * by `basicEditor` - see `plans/code-editer.md` mục 6) for the surface, a
  * `typescript` Language Service running in a Web Worker for diagnostics,
- * completions, hover (Quick Info), signature help, quick fixes, and
+ * completions, mouse hover and `Mod+I` (cursor-based, also the only
+ * non-mouse way to reach it) Quick Info, signature help, quick fixes, and
  * `Shift+Alt+F` formatting (`ts-worker.ts`), and `tailwindcss`'s design
- * system for class name suggestions (`tailwind-completions.ts`).
+ * system for class name suggestions (`tailwind-completions.ts`). The worker
+ * is watched for hangs and transparently restarted (`worker-client.ts`) -
+ * surfaced via a toast, not silent. A visually-hidden `aria-live` region
+ * announces diagnostic counts for screen readers.
  * `basicEditor` itself already wires up bracket/tag matching, indent guides,
  * comment toggling, line move/copy/delete, undo/redo, and Ctrl/Cmd+F find &
  * replace (`searchWidget`) - see its own bundle for that command list. Full
@@ -327,6 +376,12 @@ export default function Editer({
   onChange,
   extraFiles,
   theme = "vs-code-dark",
+  compilerOptions,
+  formatOptions,
+  tabSize = 2,
+  debounceMs = 300,
+  tailwindCompletions = true,
+  readOnly = false,
   class: className,
   style,
 }: EditerProps) {
@@ -350,12 +405,23 @@ export default function Editer({
     if (!host) return;
 
     let currentErrors: EditerDiagnostic[] = [];
-    const client = new EditerWorkerClient((result) => {
-      lastReportedCodeRef.current = result.code;
-      currentErrors = result.errors;
-      if (editorRef.current) applyDiagnostics(editorRef.current, result.errors);
-      onChangeRef.current(result);
-    });
+    const client = new EditerWorkerClient(
+      (result) => {
+        lastReportedCodeRef.current = result.code;
+        currentErrors = result.errors;
+        if (editorRef.current) applyDiagnostics(editorRef.current, result.errors);
+        announceDiagnostics(liveRegion, result.errors);
+        onChangeRef.current(result);
+      },
+      { compilerOptions, formatOptions },
+      debounceMs,
+      () =>
+        toast.add({
+          type: "error",
+          title: "Code editor restarted",
+          description: "The language service stopped responding and was restarted.",
+        }),
+    );
     // Every cached position is only valid against the code it was computed
     // from - stale entries would otherwise resurface via `tsCompletionSource`
     // if the cursor ever returns to a position number it previously visited.
@@ -368,7 +434,8 @@ export default function Editer({
       language: "tsx",
       value,
       theme,
-      tabSize: 2,
+      tabSize,
+      readOnly,
       onUpdate: (code) => {
         cache.clear();
         client.update(code, extraFilesRef.current);
@@ -376,20 +443,30 @@ export default function Editer({
       },
     });
     editorRef.current = editor;
-    instances.set(editor, { client, cache });
+    instances.set(editor, { client, cache, tailwindCompletions });
     ensureCompletionsRegistered();
     editor.addExtensions(cursorPosition(), autoComplete({ filter: fuzzyFilter }));
 
-    /** Applies a quick-fix/format response's edits, keeping the worker's copy of the
-     * file (and downstream diagnostics) in sync - `editor.setOptions` alone only
-     * updates what's on screen, it doesn't run `onUpdate`. */
+    /**
+     * Applies a quick-fix/format response's edits through `prism-code-editor/utils`'
+     * `insertText` - the same primitive the library's own completion-insert path uses -
+     * instead of `editor.setOptions({ value })`. Not just a style choice: `basicEditor`'s
+     * `editHistory` extension treats *any* `setOptions({ value })` call as "a whole new
+     * document" (its own `update()` hook checks `editor.value != textarea.value`) and
+     * collapses the entire undo stack down to one entry - so a `setOptions`-based apply
+     * doesn't add one undo step, it silently discards every earlier one. `insertText`
+     * goes through the real `beforeinput`/`input` pipeline, which both `editHistory` and
+     * this component's own `onUpdate` see as a normal edit.
+     */
     function commitEdits(edits: EditerTextEdit[]): void {
       if (!edits.length) return;
-      const next = applyTextEdits(editor.value, edits);
-      if (next === editor.value) return;
       cache.clear();
-      editor.setOptions({ value: next });
-      client.update(next, extraFilesRef.current);
+      // Descending `start` - so a not-yet-applied edit's position is never shifted by
+      // one already applied later in the loop (i.e. earlier in the document).
+      for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+        insertText(editor, edit.newText, edit.start, edit.start + edit.length);
+      }
+      client.update(editor.value, extraFilesRef.current);
     }
 
     let quickFixMenu: HTMLDivElement | undefined;
@@ -424,6 +501,10 @@ export default function Editer({
       document.addEventListener("click", hideQuickFixMenu, { once: true });
     }
     async function handleDiagnosticClick(pos: number, clientX: number, clientY: number): Promise<void> {
+      // `insertText` (see `commitEdits`) already no-ops under `readOnly` on its own, so
+      // skipping here isn't needed for correctness - it's to avoid a pointless worker
+      // round trip and an actionable-looking menu that would do nothing if clicked.
+      if (readOnly) return;
       const fixes = await client.getCodeFixes(pos);
       if (!fixes.length) {
         toast.add({ type: "default", title: "No quick fix available." });
@@ -453,12 +534,49 @@ export default function Editer({
     // `Alt+<letter>`. `event.code` is the physical key position ("KeyF") regardless of
     // what character modifiers produce, so it works the same on every keyboard layout.
     const onFormatKeydown = (event: KeyboardEvent) => {
+      if (readOnly) return;
       if (event.code === "KeyF" && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
         client.getFormatting().then(commitEdits);
       }
     };
     editor.textarea.addEventListener("keydown", onFormatKeydown);
+
+    // Every other way to see a symbol's type or a diagnostic's message in this editor
+    // (`scheduleHover` below, and the click handler for quick fixes) is mouse-only - a
+    // keyboard-only or touch/mobile user has no way to reach either. `Mod+I` (own choice,
+    // not tied to any single-key VS Code default - "Show Hover" there is a two-key
+    // `Mod+K Mod+I` chord) shows Quick Info/the diagnostic message for the symbol at the
+    // *cursor* instead of the mouse position. `event.code`-based for the same
+    // layout-independence reason as `onFormatKeydown`, though `Mod` alone (unlike
+    // `Alt+<letter>`) doesn't actually hit the Option-key character-substitution problem -
+    // kept consistent with the other custom binding regardless.
+    let keyboardHoverToken = 0;
+    const onKeyboardHoverKeydown = (event: KeyboardEvent) => {
+      if (event.code === "Escape") return hideKeyboardHover?.();
+      if (event.code !== "KeyI" || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const pos = editor.getSelection()[0];
+      const diagnostic = findDiagnosticAt(currentErrors, editor.value.split("\n"), pos);
+      if (diagnostic) {
+        renderHoverMessage(keyboardHoverElement, diagnostic.message);
+        return showKeyboardHover?.();
+      }
+      const token = ++keyboardHoverToken;
+      client.getHover(pos).then((info) => {
+        if (token !== keyboardHoverToken) return;
+        if (!info) return hideKeyboardHover?.();
+        renderHoverPanel(keyboardHoverElement, info.text, info.documentation);
+        showKeyboardHover?.();
+      });
+    };
+    editor.textarea.addEventListener("keydown", onKeyboardHoverKeydown);
+    // Cursor moved away (typing counts too) - the popover's content is no longer about
+    // whatever's now at the cursor, so it shouldn't linger.
+    editor.on("selectionChange", () => hideKeyboardHover?.());
+
+    let showKeyboardHover: (() => void) | undefined;
+    let hideKeyboardHover: (() => void) | undefined;
 
     let sigSeq = 0;
     let showSig: (() => void) | undefined;
@@ -517,6 +635,8 @@ export default function Editer({
     const shadowRoot = host.shadowRoot;
     let sigElement!: HTMLDivElement;
     let hoverPanel!: HTMLDivElement;
+    let keyboardHoverElement!: HTMLDivElement;
+    let liveRegion!: HTMLDivElement;
     if (shadowRoot) {
       // `.prism-code-editor` (layout.css, loaded by `basicEditor` itself) has
       // no explicit height - it sizes to its content (line count) by
@@ -545,6 +665,16 @@ export default function Editer({
     sigElement.className = "editer-sig-tooltip";
     [showSig, hideSig] = addTooltip(editor, sigElement);
 
+    keyboardHoverElement = document.createElement("div");
+    keyboardHoverElement.className = "editer-hover-tooltip";
+    [showKeyboardHover, hideKeyboardHover] = addTooltip(editor, keyboardHoverElement);
+
+    liveRegion = document.createElement("div");
+    liveRegion.className = "editer-sr-only";
+    liveRegion.setAttribute("aria-live", "polite");
+    liveRegion.setAttribute("role", "status");
+    editor.container.append(liveRegion);
+
     client.update(value, extraFilesRef.current);
 
     return () => {
@@ -555,11 +685,16 @@ export default function Editer({
       host.removeEventListener("mouseleave", hideHover);
       host.removeEventListener("click", onClick);
       editor.textarea.removeEventListener("keydown", onFormatKeydown);
+      editor.textarea.removeEventListener("keydown", onKeyboardHoverKeydown);
       editor.remove();
       client.dispose();
     };
-    // Mount once; `value`/`extraFiles`/`theme` prop changes are synced by
-    // the effects below instead of remounting the editor.
+    // Mount once; `value`/`extraFiles` prop changes are synced by the effects
+    // below instead of remounting the editor. `theme`/`compilerOptions`/
+    // `formatOptions`/`tabSize`/`debounceMs`/`tailwindCompletions` are all
+    // captured here at their current value and stay fixed for the editor's
+    // lifetime - like `theme`, changing any of them requires remounting
+    // (changing `key` on the `Editer` element) rather than updating a prop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

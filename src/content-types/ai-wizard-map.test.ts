@@ -148,4 +148,48 @@ describe("mapWizardTables", () => {
     const [result] = mapWizardTables([table], []);
     expect(result!.ok).toBe(false);
   });
+
+  it("applies proposed features to a new table", () => {
+    const table: WizardProposedTable = {
+      name: "posts",
+      label: "Posts",
+      kind: "collection",
+      isNew: true,
+      fields: [{ name: "heading", label: "Heading", type: "text" }],
+      features: { slug: true, timestamps: true },
+    };
+    const [result] = mapWizardTables([table], []);
+    expect(result!.ok).toBe(true);
+    if (result!.ok) expect(result.definition.features).toEqual({ slug: true, timestamps: true });
+  });
+
+  it("merges proposed features onto an existing table's features without dropping the existing ones", () => {
+    const existingWithFeature: ContentTypeDefinition = { ...existingCategory, features: { seo: true } };
+    const table: WizardProposedTable = {
+      name: "category",
+      label: "Category",
+      kind: "collection",
+      isNew: false,
+      fields: [],
+      features: { slug: true },
+    };
+    const [result] = mapWizardTables([table], [existingWithFeature]);
+    expect(result!.ok).toBe(true);
+    if (result!.ok) expect(result.definition.features).toEqual({ seo: true, slug: true });
+  });
+
+  it("never disables an existing feature even if the proposal sends false", () => {
+    const existingWithFeature: ContentTypeDefinition = { ...existingCategory, features: { seo: true } };
+    const table: WizardProposedTable = {
+      name: "category",
+      label: "Category",
+      kind: "collection",
+      isNew: false,
+      fields: [],
+      features: { seo: false },
+    };
+    const [result] = mapWizardTables([table], [existingWithFeature]);
+    expect(result!.ok).toBe(true);
+    if (result!.ok) expect(result.definition.features).toEqual({ seo: true });
+  });
 });

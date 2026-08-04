@@ -1,11 +1,18 @@
 /**
- * The structured question/proposal/done protocol the Content Types "Ask AI"
+ * The structured question/proposal protocol the Content Types "Ask AI"
  * wizard (`AiSchemaWizardDialog.tsx`) speaks with the model, over
- * `/api/ai/chat`'s `wizard` mode (`src/server/routes/ai.ts`). Deliberately a
- * closed, narrow shape - the wizard never shows a free-text chat box, so
- * every model reply must parse into exactly one of these three turn kinds or
- * it's rejected and the model is asked to resend (see `describeWizardIssue`
- * below, used to build that corrective follow-up).
+ * `/api/ai/wizard` (`src/server/routes/ai.ts`). Deliberately a closed,
+ * narrow shape - the wizard never shows a free-text chat box, so every
+ * model reply must parse into exactly one of these two turn kinds or it's
+ * rejected and the model is asked to resend.
+ *
+ * `proposal` is the terminal turn - there is no separate "done"/confirm
+ * round-trip with the model. Content Types already has its own staged-
+ * draft review (`status/content-type-staged-apply.md`'s "Apply Builder"),
+ * so asking the model to confirm a SECOND time before staging would just
+ * duplicate that: the admin reviews/keeps/drops/reorders the proposed
+ * tables directly in the dialog, and confirming there stages them as
+ * drafts immediately (client-side, `ai-wizard-map.ts`) - no further AI call.
  *
  * Field vocabulary is intentionally a subset of `field-registry.ts`'s full
  * set: `password`/`secretkey` are security-sensitive internal types not
@@ -30,6 +37,14 @@ export type WizardRelationCardinality = (typeof WIZARD_RELATION_CARDINALITIES)[n
 
 export const WIZARD_TABLE_KINDS = ["collection", "singleton"] as const;
 export type WizardTableKind = (typeof WIZARD_TABLE_KINDS)[number];
+
+/** Mirrors `ContentTypeFeatures` (`content-types/types.ts`) - kept as its
+ * own closed list here (rather than importing that type directly) so this
+ * protocol module stays the single place that defines what a model is
+ * allowed to send, independent of the app's internal type ever growing a
+ * field the wizard isn't ready to offer yet. */
+export const WIZARD_FEATURE_KEYS = ["slug", "draft", "schedule", "timestamps", "seo", "sortable"] as const;
+export type WizardFeatureKey = (typeof WIZARD_FEATURE_KEYS)[number];
 
 export interface WizardChoice {
   id: string;
@@ -71,6 +86,10 @@ export interface WizardProposedTable {
   fields: WizardProposedField[];
   /** Existing field names to stage into the trash (`ContentTypeDefinition.deletedFieldIds`) - `isNew: false` only, ignored otherwise. */
   removeFields?: string[];
+  /** Only `true` values are ever applied (see `ai-wizard-map.ts`'s
+   * `mergeFeatures`) - the wizard can enable a feature but never disable one
+   * an admin already turned on for an existing table. */
+  features?: Partial<Record<WizardFeatureKey, boolean>>;
 }
 
 export interface WizardProposalTurn {
@@ -79,13 +98,7 @@ export interface WizardProposalTurn {
   tables: WizardProposedTable[];
 }
 
-export interface WizardDoneTurn {
-  kind: "done";
-  summary: string;
-  tables: WizardProposedTable[];
-}
-
-export type WizardTurn = WizardQuestionTurn | WizardProposalTurn | WizardDoneTurn;
+export type WizardTurn = WizardQuestionTurn | WizardProposalTurn;
 
 export type WizardValidationResult =
   | { ok: true; turn: WizardTurn }
@@ -192,6 +205,8 @@ function validateTable(raw: unknown, path: string): string | WizardProposedTable
     }
     removeFields = raw.removeFields as string[];
   }
+  const features = validateFeatures(raw.features, `${path}.features`);
+  if (typeof features === "string") return features;
   return {
     name: raw.name,
     label: raw.label,
@@ -200,7 +215,22 @@ function validateTable(raw: unknown, path: string): string | WizardProposedTable
     isNew: raw.isNew,
     fields,
     removeFields,
+    features,
   };
+}
+
+function validateFeatures(value: unknown, path: string): string | Partial<Record<WizardFeatureKey, boolean>> | undefined {
+  if (value === undefined) return undefined;
+  if (!isPlainObject(value)) return `"${path}" must be an object when present.`;
+  const result: Partial<Record<WizardFeatureKey, boolean>> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!(WIZARD_FEATURE_KEYS as readonly string[]).includes(key)) {
+      return `"${path}.${key}" is not a recognized feature - allowed: ${WIZARD_FEATURE_KEYS.join(", ")}.`;
+    }
+    if (typeof entry !== "boolean") return `"${path}.${key}" must be a boolean.`;
+    result[key as WizardFeatureKey] = entry;
+  }
+  return result;
 }
 
 function validateTables(value: unknown, path: string): string | WizardProposedTable[] {
@@ -253,13 +283,7 @@ export function parseWizardTurn(raw: unknown): WizardValidationResult {
     if (typeof tables === "string") return { ok: false, error: tables };
     return { ok: true, turn: { kind: "proposal", question: raw.question, tables } };
   }
-  if (kind === "done") {
-    if (!isNonEmptyString(raw.summary)) return { ok: false, error: '"summary" must be a non-empty string.' };
-    const tables = validateTables(raw.tables, "tables");
-    if (typeof tables === "string") return { ok: false, error: tables };
-    return { ok: true, turn: { kind: "done", summary: raw.summary, tables } };
-  }
-  return { ok: false, error: `"kind" ("${String(kind)}") must be one of: "question", "proposal", "done".` };
+  return { ok: false, error: `"kind" ("${String(kind)}") must be one of: "question", "proposal".` };
 }
 
 /** Extracts the first top-level `{...}` JSON object from a model reply,
@@ -277,4 +301,154 @@ export function extractWizardJson(text: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+/** Closes an open string and any open `{}`/`[]` left on the stack at the
+ * end of `text`, tracking escape sequences so an escaped quote/backslash
+ * inside a string is never mistaken for its unescaped counterpart. Doesn't
+ * attempt to fix anything else - a dangling key with no `:` yet, or a
+ * trailing `:`/`,`, still won't parse after this alone (see
+ * `repairPartialJson`, which backs off past those). */
+function closeOpenJson(text: string): string {
+  let result = "";
+  const stack: Array<"}" | "]"> = [];
+  let inString = false;
+  let escaped = false;
+
+  for (const char of text) {
+    if (inString) {
+      result += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      result += char;
+      continue;
+    }
+    if (char === "{" || char === "[") {
+      stack.push(char === "{" ? "}" : "]");
+      result += char;
+    } else if (char === "}" || char === "]") {
+      if (stack[stack.length - 1] === char) stack.pop();
+      result += char;
+    } else {
+      result += char;
+    }
+  }
+
+  if (inString) result += '"';
+  while (stack.length > 0) result += stack.pop();
+  return result;
+}
+
+/** How far `repairPartialJson` will back off from the end of the buffer
+ * looking for a prefix that parses - generous enough to skip past any
+ * dangling key name in this protocol's schema (the longest,
+ * "relationCardinality", is 20 characters) plus quoting/whitespace, without
+ * risking real cost: this only ever runs on a wizard turn's own JSON
+ * (at most a few KB), and the fast path (no backoff needed) is the common
+ * case - most cut points land mid-string-value or mid-array, which
+ * `closeOpenJson` alone already makes valid. */
+const PARTIAL_JSON_BACKOFF_LIMIT = 80;
+
+/**
+ * Best-effort completion of a JSON string truncated mid-stream, for a live
+ * PREVIEW only - `parseWizardTurn` on the final, complete text is still the
+ * only result ever treated as authoritative or acted on. Closes what's
+ * unambiguously still open (`closeOpenJson`); if that alone doesn't parse
+ * (the cutoff landed mid-token - a dangling key with no `:` yet, a partial
+ * number/`true`/`false`/`null` literal, a trailing `,`), backs off one
+ * character at a time until some prefix does, rather than pattern-matching
+ * every possible truncation shape individually.
+ */
+export function repairPartialJson(text: string): string {
+  const limit = Math.min(PARTIAL_JSON_BACKOFF_LIMIT, text.length);
+  for (let trim = 0; trim <= limit; trim++) {
+    const candidate = closeOpenJson(text.slice(0, text.length - trim));
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Try one character shorter.
+    }
+  }
+  return "{}";
+}
+
+export interface PartialWizardChoice {
+  id?: string;
+  label?: string;
+}
+
+export interface PartialWizardTable {
+  name?: string;
+  label?: string;
+  kind?: string;
+  isNew?: boolean;
+  /** `fields.length` so far - the array itself isn't surfaced, a streaming
+   * table's field list is too noisy to render field-by-field. */
+  fieldCount: number;
+}
+
+export interface PartialWizardTurn {
+  kind?: string;
+  question?: string;
+  choices?: PartialWizardChoice[];
+  tables?: PartialWizardTable[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Loose, tolerant read of whatever's parseable from a wizard turn still
+ * streaming in - unlike `parseWizardTurn`, this never rejects: it just
+ * returns however much of `question`/`choices`/`tables` is legible right
+ * now (an in-progress choice's `label` may end mid-word; that's fine, it
+ * finishes filling in on the next delta). Returns `undefined` only when
+ * nothing in the buffer parses as a JSON object at all yet.
+ */
+export function parsePartialWizardTurn(rawText: string): PartialWizardTurn | undefined {
+  const fenced = rawText.match(/```(?:json)?\s*([\s\S]*)$/i);
+  const candidate = fenced?.[1] ?? rawText;
+  const start = candidate.indexOf("{");
+  if (start === -1) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(repairPartialJson(candidate.slice(start)));
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+
+  const result: PartialWizardTurn = {};
+  if (typeof parsed.kind === "string") result.kind = parsed.kind;
+  if (typeof parsed.question === "string") result.question = parsed.question;
+  if (Array.isArray(parsed.choices)) {
+    result.choices = parsed.choices
+      .filter(isRecord)
+      .map((choice) => ({
+        id: typeof choice.id === "string" ? choice.id : undefined,
+        label: typeof choice.label === "string" ? choice.label : undefined,
+      }))
+      .filter((choice) => choice.label);
+  }
+  if (Array.isArray(parsed.tables)) {
+    result.tables = parsed.tables
+      .filter(isRecord)
+      .map((table) => ({
+        name: typeof table.name === "string" ? table.name : undefined,
+        label: typeof table.label === "string" ? table.label : undefined,
+        kind: typeof table.kind === "string" ? table.kind : undefined,
+        isNew: typeof table.isNew === "boolean" ? table.isNew : undefined,
+        fieldCount: Array.isArray(table.fields) ? table.fields.length : 0,
+      }))
+      .filter((table) => table.label || table.name);
+  }
+  return result;
 }

@@ -146,4 +146,91 @@ test.describe("Code editer demo", () => {
     const relativeRows = await page.locator(".pce-ac-row").allTextContents();
     expect(relativeRows.some((row) => row.includes("./Button.tsx"))).toBe(true);
   });
+
+  test("applying a quick fix doesn't wipe the rest of the undo history", async ({ page }) => {
+    await page.goto("/dry/code-editer-demo");
+    await page.waitForSelector(".prism-code-editor", { timeout: 15000 });
+    await page.waitForTimeout(500);
+    await page.locator(".pce-textarea").click();
+    await page.keyboard.type("\nuseEffect(() => {}, []);");
+    await page.waitForTimeout(1200);
+
+    const underline = page.locator(".editer-diagnostic-error").first();
+    await expect(underline).toHaveCount(1);
+    const box = await underline.boundingBox();
+    if (box) await page.mouse.click(box.x + 2, box.y + 1);
+    const menu = page.locator(".editer-quickfix-menu");
+    await expect(menu).toBeVisible();
+
+    // Regression guard: `commitEdits` used to apply fixes via `editor.setOptions({value})`,
+    // which `basicEditor`'s `editHistory` extension treats as "a whole new document" and
+    // collapses the *entire* undo stack to one entry - not one new undo step, every prior
+    // one gone. `insertText` (from `prism-code-editor/utils`) goes through the real
+    // `beforeinput`/`input` pipeline instead, so undo/redo keeps working normally.
+    await menu.getByText("import", { exact: false }).first().click();
+    await page.waitForTimeout(700);
+    const afterFix = (await page.locator(".pce-line").allTextContents()).join("\n");
+    expect(afterFix).toMatch(/import \{[^}]*useEffect/);
+
+    await page.keyboard.press("Meta+z");
+    await page.waitForTimeout(400);
+    const afterOneUndo = (await page.locator(".pce-line").allTextContents()).join("\n");
+    // Still has the typed call - one undo didn't jump past it to some fully-collapsed state.
+    expect(afterOneUndo).toContain("useEffect(() => {}, [])");
+
+    await page.keyboard.press("Meta+z");
+    await page.waitForTimeout(300);
+    const afterTwoUndos = (await page.locator(".pce-line").allTextContents()).join("\n");
+    // A second undo keeps making incremental progress instead of being a no-op - the
+    // stack wasn't collapsed down to a single (post-fix) entry.
+    expect(afterTwoUndos).not.toBe(afterOneUndo);
+  });
+
+  test("readOnly (toggled via the demo's own checkbox) blocks edits but keeps hover", async ({ page }) => {
+    await page.goto("/dry/code-editer-demo");
+    await page.waitForSelector(".prism-code-editor", { timeout: 15000 });
+    await page.waitForTimeout(500);
+
+    await page.locator("#code-editer-readonly").check();
+    await page.waitForTimeout(500);
+    await expect(page.locator(".pce-textarea")).toHaveAttribute("aria-readonly", "true");
+
+    const before = (await page.locator(".pce-line").allTextContents()).join("\n");
+    await page.locator(".pce-textarea").click();
+    await page.keyboard.type("nope");
+    await page.waitForTimeout(400);
+    const after = (await page.locator(".pce-line").allTextContents()).join("\n");
+    expect(after).toBe(before);
+
+    // Diagnostics/hover stay active in read-only mode - only editing is disabled.
+    const token = page.locator(".pce-line span", { hasText: /^useState$/ }).first();
+    const box = await token.boundingBox();
+    if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(900);
+    await expect(page.locator(".editer-hover-panel")).toHaveCSS("display", "block");
+
+    await page.locator("#code-editer-readonly").uncheck();
+    await page.waitForTimeout(500);
+    await expect(page.locator(".pce-textarea")).toHaveAttribute("aria-readonly", "false");
+    await page.locator(".pce-textarea").click();
+    await page.keyboard.type("yep");
+    await page.waitForTimeout(400);
+    const afterUncheck = (await page.locator(".pce-line").allTextContents()).join("\n");
+    expect(afterUncheck).toContain("yep");
+  });
+
+  test("diagnostics live region announces error/warning counts for screen readers", async ({ page }) => {
+    await page.goto("/dry/code-editer-demo");
+    await page.waitForSelector(".prism-code-editor", { timeout: 15000 });
+    await page.waitForTimeout(500);
+    const liveRegion = page.locator(".editer-sr-only");
+    await expect(liveRegion).toHaveAttribute("aria-live", "polite");
+    await expect(liveRegion).toHaveText("No problems");
+
+    await page.locator(".pce-textarea").click();
+    await page.keyboard.type("\nmath.random();");
+    await page.waitForTimeout(900);
+    await expect(liveRegion).not.toHaveText("No problems");
+    await expect(liveRegion).toContainText(/error|warning/);
+  });
 });

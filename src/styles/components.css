@@ -3238,7 +3238,29 @@
     .ai-wizard-loading {
       padding: 2rem 1rem;
       color: var(--dry-muted-foreground);
-      justify-content: center;
+
+      & > .row {
+        justify-content: center;
+      }
+    }
+
+    /* Live progressive preview while a wizard turn streams in
+     * (`parsePartialWizardTurn`) - question/choice/table text fills in as
+     * the model generates it, left-aligned unlike `.ai-wizard-loading`'s
+     * centered spinner above it. */
+    .ai-wizard-partial-preview {
+      width: 100%;
+      text-align: left;
+      color: var(--dry-foreground);
+    }
+
+    /* Marks a preview chip/row as not-yet-final: inert (no pointer, no
+     * hover state) and gently pulsing, same `dry-pulse` keyframe `.skeleton`
+     * already uses elsewhere, so it reads as "still forming" rather than a
+     * normal interactive choice. */
+    .ai-wizard-preview-pulse {
+      pointer-events: none;
+      animation: dry-pulse 1.6s ease-in-out infinite;
     }
 
     .ai-wizard-choices {

@@ -213,29 +213,127 @@ Implemented and verified. All 8 steps above are done:
       again" button, no console errors beyond incidental Vite HMR/WebSocket
       noise from the ad-hoc launch.
 
-### Known gaps / deliberately deferred
+### Follow-up round (same day, post-implementation feedback)
 
-- No real multi-turn AI conversation was exercised end-to-end (no live API
-  key was available in this pass to test against) - the retry-on-invalid-
-  structure loop is covered by the `parseWizardTurn` unit tests plus a
-  careful read of `handleWizard`'s orchestration, not by watching a real
-  model get corrected live. Worth a follow-up pass once a real `aiKey` (or
-  local `codex`/`claude`) is available to test with.
-- `component` fields are still excluded from the wizard's vocabulary (needs
-  a component-target picker UI too) - see the original "Explicitly out of
-  scope" section above, unchanged.
-- The wizard's server-side system prompt only sees the LIVE type list
-  (`schema.listContentTypes()`) - it doesn't know about a browser's pending
-  localStorage drafts, so it may re-suggest a name/relation target that a
-  not-yet-applied draft already claims. `mapWizardTables()` still catches the
-  collision client-side (against the merged live+draft list) when staging,
-  it just can't warn the model about it mid-conversation.
+- **Real multi-turn AI conversation verified live**: found `codex` isn't on
+  this machine's PATH (`runWizardTurn` used to swallow that as a generic
+  "AI returned an empty response" - fixed by decoding the SSE `data:` lines
+  instead of blindly draining them, so real errors like "Unable to start
+  codex" now surface). Verified the full path with `claude` (installed,
+  local mode) against a disposable E2E server: real Vietnamese structured
+  replies, validated on the first attempt, no retry needed.
+- **Selected-choice styling fixed**: `.ai-wizard-choice[aria-pressed="true"]`
+  wasn't visually distinguishable - specificity looked sufficient on paper
+  but empirically lost to `button.outline`'s own rule (root cause not fully
+  pinned down despite CDP-level inspection; fixed pragmatically with a more
+  specific selector + `!important`, a pattern already used 30+ times
+  elsewhere in this file). Selected = solid filled primary, verified via a
+  real computed-style check in a live page, not just visual inspection.
+- **Question budget added**: system prompt now caps clarifying questions at
+  3 and instructs the model to infer sensible defaults and move to a
+  `proposal` as soon as reasonably possible, rather than interrogating.
+- **Real token streaming**: `/api/ai/wizard` changed from a single buffered
+  JSON response to a genuine SSE stream (`{delta}`/`{retry}`/`{turn}`/
+  `{error}` events, same envelope `/api/ai/chat` already used) - the dialog
+  shows the model's raw output live in a small scrolling preview while
+  waiting, swapping to the parsed choice UI once a turn validates. Known,
+  pre-existing limitation carried over from the old chat feature: a local
+  CLI (`codex`/`claude`) may flush short replies as one OS-buffered chunk
+  rather than token-by-token - only the provider-API (server mode) and
+  longer local replies show genuinely incremental delivery.
+- **Initial goal step added**: the dialog no longer fires an AI call the
+  instant it opens. It now shows a one-time free-text "what do you want to
+  build" box first (with a "Skip, let AI ask" escape hatch) - the ONE
+  deliberate exception to "no free text box", since it's a single seed
+  input before the interview starts, not an ongoing chat. Folded into the
+  first priming message server-side (`WizardHttpRequest.goal`) rather than
+  sent as a separate history entry, so the conversation still opens with
+  exactly one "user" turn (avoids a same-role-twice reject on strict
+  providers like Anthropic). Verified live: a concrete goal made the model
+  skip clarifying questions entirely and jump straight to a `proposal`.
+
+All of the above verified through real browser passes (Playwright against a
+disposable E2E server/database, never the developer's live dev data) plus
+`bun run typecheck` / `bun run test` (618/618) / `bun run build` after each
+change, not just static review.
+
+### Second follow-up round (same day): progressive reveal, protocol simplification
+
+- **Progressive JSON reveal** ("json dở dang"): considered switching the wire
+  format to YAML for its line-oriented partial-parseability, recommended
+  against it (would forfeit every provider's native JSON-schema-enforced
+  output mode, and YAML's quoting rules are a bigger source of malformed
+  output than JSON's) in favor of a partial-JSON repairer that keeps the
+  format unchanged. Added `closeOpenJson`/`repairPartialJson`/
+  `parsePartialWizardTurn` (`ai-wizard-protocol.ts`): closes whatever
+  string/`{}`/`[]` is left open at the streaming cutoff, with a bounded
+  (80-char) backoff for cuts that land mid-token (a dangling key with no
+  `:` yet, a partial literal) rather than pattern-matching every truncation
+  shape. The dialog's loading stage now renders question text and
+  choice/table rows as they complete (`PartialPreview`, inert/pulsing until
+  the full turn validates) instead of a raw-text SSE preview. 16 new unit
+  tests, including one that feeds every prefix length of a real turn and
+  asserts the extracted fields only grow, never regress.
+- **Icon replaced**: the user supplied an exact SVG (a 3-sparkle mark) not
+  found in either installed Iconify set (`solar`/`lucide` - checked by
+  distinctive path substring, no match) - hand-written as
+  `src/components/AiSparkleIcon.tsx` instead of forcing it through the
+  generated `icons.tsx` pipeline (which is `do not edit`, sourced only from
+  those two sets). The unused `Sparkle` manifest entry added earlier this
+  session was reverted from `icons.config.json` and regenerated out.
+- **`ContentTypeFeatures` support added**: the wizard previously had no way
+  to propose `slug`/`draft`/`schedule`/`timestamps`/`seo`/`sortable` at
+  all - `WizardProposedTable` gained an optional `features` field (closed
+  vocabulary `WIZARD_FEATURE_KEYS`, mirroring `ContentTypeFeatures`
+  independently rather than importing it, so this protocol module stays
+  the one place defining what a model may send), validated the same way as
+  everything else, and the system prompt now describes each feature (per
+  `FeaturesFieldset.tsx`'s own descriptions) with an explicit
+  enable-only-never-disable rule. `ai-wizard-map.ts`'s `mergeFeatures` only
+  ever turns a feature on, even if the model sends `false` for something
+  already enabled on an existing table.
+- **Collapsed `proposal`+`done` into one terminal turn**: the protocol used
+  to round-trip a THIRD AI call to turn a confirmed `proposal` into `done`
+  before staging anything. Since Content Types already reviews every draft
+  again before it touches the database (`ApplyBuildDialog`/"Apply Builder"),
+  that AI-mediated confirm step just duplicated an existing one - removed
+  `WizardDoneTurn` from the protocol entirely; `proposal` is now terminal,
+  and `ProposalStep`'s "Save as drafts" button stages the
+  kept/reordered tables directly (`mapWizardTables` + `saveDraft`),
+  client-side, no further network call. The keep/drop/reorder review UI
+  itself is unchanged - only the round-trip-with-the-model it used to
+  require before staging is gone.
+- Verified live end-to-end with a real `claude` call: a Vietnamese goal
+  mentioning draft/scheduled publishing produced a staged draft with
+  `features: {slug, draft, schedule, timestamps}` all correctly inferred,
+  a `relation` field correctly resolved to the real built-in `user` table's
+  id, exactly one `/api/ai/wizard` request for the whole flow (zero more
+  after confirming), and the new icon rendering correctly - inspected the
+  actual staged `localStorage` draft JSON, not just the UI. Progressive
+  reveal's live-visual confirmation was inconclusive this run (`claude -p`
+  again flushed the whole short reply in one chunk, same CLI-buffering
+  characteristic noted in the streaming section above) - covered instead by
+  the pure-function monotonic-growth unit test.
+- 643/643 tests, typecheck, and build clean throughout.
+
+### Known concurrent-editing note
+
+Mid-session, an unrelated automated commit (`b511d9f`, message "push") landed
+on this branch while this work was in progress - matches this project's
+already-known pattern of another process periodically committing/pushing the
+shared working tree (see `[[feedback_concurrent_repo_editing]]` in the auto
+memory). Not caused by this work and not acted on (no history rewrite) -
+noted here in case that intermediate snapshot matters later.
 
 ## Speed
 
-Implemented in one session, directly following the approved plan above (no
-scope changes). Most of the time went to grounding the field/config mapping
-in the existing schema editor's own logic (`field-registry.ts`,
-`naming.ts`) so wizard-generated drafts behave identically to a hand-built
-one, and to setting up a safe way to smoke-test against a disposable server
-instead of the developer's live dev database.
+Implemented in one session, directly following the approved plan (no scope
+changes to the core design). Two same-day follow-up rounds addressed live-
+usage feedback in sequence - the first covering styling/UX/error-surfacing
+fixes and real token streaming, the second covering progressive JSON reveal,
+an icon swap, features support, and a protocol simplification that removes
+an entire redundant AI round-trip. Every change in both rounds was verified
+against a real running instance (typecheck/test/build plus a live browser
+pass, several against real local-AI output) rather than left as "should
+work" - most of the added time went to that verification loop rather than
+the code changes themselves, which were each fairly small and well-isolated.

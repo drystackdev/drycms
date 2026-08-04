@@ -1,8 +1,19 @@
 import { randomUUID } from "../lib/uuid.js";
 import { fieldTypes } from "./field-registry.js";
 import { NamingError, validateContentTypeDefinition } from "./naming.js";
-import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
+import type { ContentTypeDefinition, ContentTypeFeatures, FieldDefinition } from "./types.js";
 import type { WizardProposedField, WizardProposedTable } from "./ai-wizard-protocol.js";
+
+/** Only ever turns a feature ON, never off - the wizard can enable
+ * something an existing table doesn't have yet, but never silently
+ * disables a feature an admin already turned on for it. */
+function mergeFeatures(existing: ContentTypeFeatures | undefined, proposed: WizardProposedTable["features"]): ContentTypeFeatures {
+  const next = { ...(existing ?? {}) };
+  for (const [key, value] of Object.entries(proposed ?? {})) {
+    if (value === true) (next as Record<string, boolean>)[key] = true;
+  }
+  return next;
+}
 
 export interface WizardMapSuccess {
   ok: true;
@@ -63,7 +74,7 @@ function buildNewDefinition(
     name: table.name,
     label: table.label,
     description: table.description?.trim() || undefined,
-    features: {},
+    features: mergeFeatures(undefined, table.features),
     fields: table.fields.map((field) => mapField(field, newIds, allTypes)),
     version: 0,
   };
@@ -97,11 +108,12 @@ function buildExtendedDefinition(
     ...existing,
     fields: [...existing.fields, ...newFields],
     deletedFieldIds,
+    features: mergeFeatures(existing.features, table.features),
   };
 }
 
 /**
- * Pure mapping from the AI wizard's confirmed `done` tables
+ * Pure mapping from the AI wizard's confirmed `proposal` tables
  * (`ai-wizard-protocol.ts`) onto real `ContentTypeDefinition` drafts - no
  * side effects, so it's independently testable. The caller (
  * `AiSchemaWizardDialog.tsx`) is responsible for actually calling

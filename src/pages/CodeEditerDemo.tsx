@@ -34,6 +34,7 @@ export default function CodeEditerDemo() {
   useDocumentTitle("Code editer demo");
   const [files, setFiles] = useState(INITIAL_FILES);
   const [activeFile, setActiveFile] = useState(DEMO_FILE);
+  const [readOnly, setReadOnly] = useState(false);
   const [result, setResult] = useState<EditerResult>({
     code: INITIAL_FILES[DEMO_FILE]!,
     success: true,
@@ -76,32 +77,45 @@ export default function CodeEditerDemo() {
           <p>
             Sandbox for building/testing <code>Editer</code> - type TSX/Preact
             code below, watch type/syntax diagnostics and the raw{" "}
-            <code>EditerResult</code> update live. Hover an identifier for
-            Quick Info, type inside a call's parens for signature help, click
-            a red/orange underline for quick fixes, and press{" "}
-            <code>Shift+Alt+F</code> to format. <code>Ctrl/Cmd+F</code> opens
-            find &amp; replace.
+            <code>EditerResult</code> update live. Hover an identifier (or
+            press <code>Mod+I</code> at the cursor) for Quick Info, type
+            inside a call's parens for signature help, click a red/orange
+            underline for quick fixes, and press <code>Shift+Alt+F</code> to
+            format. <code>Ctrl/Cmd+F</code> opens find &amp; replace.
           </p>
         </div>
       </div>
 
       <div class="stack">
-        <div role="tablist">
-          {Object.keys(files).map((file) => (
-            <button
-              key={file}
-              type="button"
-              role="tab"
-              aria-selected={activeFile === file}
-              onClick={() => switchTab(file)}
-            >
-              {file}
-            </button>
-          ))}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div role="tablist">
+            {Object.keys(files).map((file) => (
+              <button
+                key={file}
+                type="button"
+                role="tab"
+                aria-selected={activeFile === file}
+                onClick={() => switchTab(file)}
+              >
+                {file}
+              </button>
+            ))}
+          </div>
+          <div class="field inline">
+            <input
+              id="code-editer-readonly"
+              type="checkbox"
+              role="switch"
+              checked={readOnly}
+              onChange={(event) => setReadOnly((event.target as HTMLInputElement).checked)}
+            />
+            <label for="code-editer-readonly">Read-only</label>
+          </div>
         </div>
 
         <div style={{ height: "60vh" }}>
-          <Editer value={result.code} onChange={handleChange} extraFiles={extraFiles} />
+          {/* `readOnly` is set once at mount (see `Editer.tsx`) - remount on toggle via `key`. */}
+          <Editer key={String(readOnly)} value={result.code} onChange={handleChange} extraFiles={extraFiles} readOnly={readOnly} />
         </div>
 
         <div class="field">

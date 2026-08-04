@@ -416,7 +416,9 @@ function computeCodeFixes(pos: number): EditerCodeFix[] {
   }
 }
 
-const FORMAT_SETTINGS: ts.FormatCodeSettings = {
+/** `Editer`'s `formatOptions` prop overrides these - see the `"configure"` case in
+ * `self.onmessage` below. */
+const DEFAULT_FORMAT_SETTINGS: ts.FormatCodeSettings = {
   indentSize: 2,
   tabSize: 2,
   convertTabsToSpaces: true,
@@ -430,11 +432,12 @@ const FORMAT_SETTINGS: ts.FormatCodeSettings = {
   placeOpenBraceOnNewLineForControlBlocks: false,
   semicolons: ts.SemicolonPreference.Insert,
 };
+let formatSettings: ts.FormatCodeSettings = DEFAULT_FORMAT_SETTINGS;
 
 function computeFormatting(): EditerTextEdit[] {
   try {
     return languageService
-      .getFormattingEditsForDocument(MAIN_FILE, FORMAT_SETTINGS)
+      .getFormattingEditsForDocument(MAIN_FILE, formatSettings)
       .map((tc) => ({ start: tc.span.start, length: tc.span.length, newText: tc.newText }));
   } catch {
     return [];
@@ -443,7 +446,13 @@ function computeFormatting(): EditerTextEdit[] {
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
-  if (request.kind === "update") {
+  if (request.kind === "configure") {
+    // `EditerWorkerClient` sends this once, right after creating the worker and before
+    // its first "update" - safe to merge onto the defaults unconditionally since there's
+    // no user content/diagnostics computed yet for changed options to invalidate.
+    if (request.compilerOptions) compilerOptions = { ...DEFAULT_COMPILER_OPTIONS, ...request.compilerOptions };
+    if (request.formatOptions) formatSettings = { ...DEFAULT_FORMAT_SETTINGS, ...request.formatOptions };
+  } else if (request.kind === "update") {
     setFile(MAIN_FILE, request.code);
     setExtraFiles(request.extraFiles);
     if (request.emitDiagnostics) {

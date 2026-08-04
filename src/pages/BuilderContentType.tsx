@@ -22,7 +22,8 @@ import {
   fieldTypeColors,
   fieldTypeIcons,
 } from "../components/field-type-icons.js";
-import { PlusIcon, SparkleIcon, UploadIcon } from "../components/icons.js";
+import { PlusIcon, UploadIcon } from "../components/icons.js";
+import { SparkleIcon } from "../components/AiSparkleIcon.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";

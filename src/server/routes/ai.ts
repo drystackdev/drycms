@@ -9,6 +9,7 @@ import { validateOutboundUrlForRequest } from "../outbound-url.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import {
+  WIZARD_FEATURE_KEYS,
   WIZARD_FIELD_TYPES,
   WIZARD_RELATION_CARDINALITIES,
   extractWizardJson,
@@ -381,7 +382,7 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
 
 const streamEncoder = new TextEncoder();
 
-function streamEvent(payload: { delta?: string; done?: boolean; error?: string }): Uint8Array {
+function streamEvent(payload: Record<string, unknown>): Uint8Array {
   return streamEncoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
@@ -870,6 +871,13 @@ interface WizardHttpRequest {
   /** Overrides `ai.keyName`'s fallback order for this one wizard run - the
    * Content Types "Ask AI" dialog's AI Key combobox (server mode only). */
   aiKeyName?: string;
+  /** The admin's own one-time starting description, collected by the
+   * dialog's initial screen before any AI call happens - only meaningful
+   * (and only ever sent) on the very first turn, `history: []`. Folded into
+   * the priming message rather than sent as a separate history entry so the
+   * conversation still opens with exactly one "user" turn (some server
+   * providers reject two consecutive same-role messages). */
+  goal?: string;
 }
 
 const WIZARD_MAX_ATTEMPTS = 3;
@@ -895,6 +903,14 @@ function buildWizardSystemPrompt(lang: string, existingTypes: ContentTypeDefinit
     `- Allowed field types: ${WIZARD_FIELD_TYPES.join(", ")}, relation.`,
     '  - A "select" field must include "options": a non-empty array of plain strings.',
     `  - A "relation" field must include "relationTarget" (another table's "name" - either an existing one listed below, or another table's "name" in this same proposal) and may include "relationCardinality" (one of ${WIZARD_RELATION_CARDINALITIES.join(", ")}; default manyToOne).`,
+    "- A table may also enable these optional built-in features (booleans, only enable what's genuinely useful - most tables need none of these):",
+    `  - "${WIZARD_FEATURE_KEYS[0]}" (collection or singleton): adds a URL-friendly Slug field alongside a Title field.`,
+    `  - "${WIZARD_FEATURE_KEYS[1]}" (collection only): lets an entry be saved as a private draft before publishing.`,
+    `  - "${WIZARD_FEATURE_KEYS[2]}" (collection only): lets an entry be set to go live automatically at a future date/time.`,
+    `  - "${WIZARD_FEATURE_KEYS[3]}" (collection only): records when each entry was created/last updated.`,
+    `  - "${WIZARD_FEATURE_KEYS[4]}" (collection or singleton): adds Title/Description/Image fields for search engines and social previews.`,
+    `  - "${WIZARD_FEATURE_KEYS[5]}" (collection only): lets entries be manually drag-reordered.`,
+    "  Features can only be enabled here, never disabled - never propose turning one off.",
     "",
     "Existing content types already in this project (propose adding/removing fields on one of these instead of a new table when that fits better, and use their names as relation targets):",
     existingList,
@@ -902,12 +918,11 @@ function buildWizardSystemPrompt(lang: string, existingTypes: ContentTypeDefinit
     "Interview protocol - reply with EXACTLY ONE JSON object per turn, nothing else (no prose, no markdown fences, no trailing commentary):",
     '1. `{"kind":"question","topic":"...","question":"...","choices":[{"id":"...","label":"..."}],"multi":true|false,"allowOther":true|false}` - ask ONE clarifying, multiple-choice question at a time (1 to 8 choices). Set "allowOther": true only when the option space is inherently open-ended (e.g. naming a table), so the interface can accept one short typed value alongside your choices.',
     "   Ask AT MOST 3 questions total, and only if genuinely necessary to avoid a bad guess - prefer inferring sensible defaults (common field names/types for the kind of table requested) over asking. Most requests should need 0-1 questions before you have enough to propose something concrete; never ask a question just to confirm something you can reasonably infer yourself.",
-    '2. As soon as you have enough information (which is often immediately), send `{"kind":"proposal","question":"...","tables":[...]}` - the exact tables/fields you intend to create or change, plus a short question asking the admin to confirm, drop a table, or request an adjustment. Wait for their reply before finalizing anything.',
-    '3. Only after they confirm, send `{"kind":"done","summary":"...","tables":[...]}` with the final tables - this is the only turn that actually gets applied, so it must exactly match what was confirmed.',
+    '2. As soon as you have enough information (which is often immediately), send `{"kind":"proposal","question":"...","tables":[...]}` - the exact tables/fields/features you intend to create or change. This is the FINAL turn: the admin reviews, keeps/drops, and reorders your suggested tables directly in the interface and stages them from exactly what you send - you will not be asked again and there is no further turn, so make it complete and correct the first time. Use "question" for a short one-line intro/summary of what you propose (e.g. "Here is what I would build:"), not a question expecting a reply.',
     "",
-    'Each entry in "tables" is `{"name":"...","label":"...","kind":"collection"|"singleton","description":"...","isNew":true|false,"fields":[...],"removeFields":["..."]}`. Set "isNew": false and "name" to an exact existing type\'s name above when you are only adding or removing fields on it - "removeFields" (existing field names to stage for removal) is only valid then. A brand-new table needs "isNew": true, a fresh unique "name", and at least one field.',
+    'Each entry in "tables" is `{"name":"...","label":"...","kind":"collection"|"singleton","description":"...","isNew":true|false,"fields":[...],"removeFields":["..."],"features":{...}}`. Set "isNew": false and "name" to an exact existing type\'s name above when you are only adding or removing fields/features on it - "removeFields" (existing field names to stage for removal) is only valid then. A brand-new table needs "isNew": true, a fresh unique "name", and at least one field. "features" is optional on any table.',
     "",
-    `Language: the person you're talking to reads "${lang}". Write every "question" and every "label"/"description" (on choices, tables, and fields) in "${lang}". Never translate "name" (machine identifiers), "type", "kind", "topic", choice "id"s, "relationTarget", or "relationCardinality" - those always stay the exact English/ASCII token specified above.`,
+    `Language: the person you're talking to reads "${lang}". Write every "question" and every "label"/"description" (on choices, tables, and fields) in "${lang}". Never translate "name" (machine identifiers), "type", "kind", "topic", choice "id"s, "relationTarget", "relationCardinality", or feature keys - those always stay the exact English/ASCII token specified above.`,
   ].join("\n");
 }
 
@@ -936,10 +951,12 @@ async function runWizardTurn(
   context: DryRouteContext,
   messages: ChatMessage[],
   aiKeyName: string | undefined,
+  onDelta?: (delta: string) => void,
 ): Promise<{ text: string; aiLabel: string }> {
   let text = "";
   const { stream, aiLabel } = await createChatStream(context, messages, (delta) => {
     text += delta;
+    onDelta?.(delta);
   }, aiKeyName);
   // The stream is SSE-encoded `data: {...}` events (same shape `/api/ai/chat`
   // forwards to the browser) - draining it without decoding those payloads
@@ -971,44 +988,94 @@ async function runWizardTurn(
   return { text, aiLabel };
 }
 
-async function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Promise<Response> {
+/**
+ * Unlike the old prose chat, a wizard turn's actual PAYLOAD (the structured
+ * `question`/`proposal`/`done` object) still only ever appears once fully
+ * formed and validated - a half-parsed JSON object isn't renderable as
+ * choice chips. What streams incrementally here is the model's raw output
+ * as it's generated (`{delta}` events, same shape `/api/ai/chat` uses) so
+ * the dialog can show real progress instead of a silent wait; the client
+ * only swaps to the parsed UI once a `{turn}` event (or `{error}`) arrives.
+ * A `{retry: true}` event marks the raw preview restarting because the
+ * previous attempt didn't validate.
+ */
+function streamWizard(
+  context: DryRouteContext,
+  history: ChatMessage[],
+  aiKeyName: string | undefined,
+  goal: string | undefined,
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      void (async () => {
+        try {
+          const { schema } = getContentAdapters(context);
+          const existingTypes = (await schema.listContentTypes()).filter((type) => !type.hidden);
+          const kickoff = goal
+            ? `\n\nThe admin's own starting description of what they want: "${goal}"\n\nUse it as real context. Ask a clarifying question only if genuinely necessary to avoid a bad guess; otherwise move straight to a "proposal" built from this description.`
+            : history.length === 0
+              ? "\n\nBegin: ask your first clarifying question."
+              : "";
+          const priming: ChatMessage = {
+            role: "user",
+            text: `${buildWizardSystemPrompt(ai.lang, existingTypes)}${kickoff}`,
+          };
+          let messages: ChatMessage[] = [priming, ...history];
+          let lastError = "";
+          for (let attempt = 0; attempt < WIZARD_MAX_ATTEMPTS; attempt++) {
+            if (attempt > 0) controller.enqueue(streamEvent({ retry: true }));
+            const result = await runWizardTurn(context, messages, aiKeyName, (delta) => {
+              controller.enqueue(streamEvent({ delta }));
+            });
+            const parsed = extractWizardJson(result.text);
+            const validation = parseWizardTurn(parsed);
+            if (validation.ok) {
+              controller.enqueue(streamEvent({ turn: validation.turn, aiLabel: result.aiLabel }));
+              controller.close();
+              return;
+            }
+            lastError = validation.error;
+            messages = [
+              ...messages,
+              { role: "assistant", text: result.text },
+              {
+                role: "user",
+                text: `Your last reply did not match the required JSON structure: ${validation.error} Resend a single corrected JSON object only - no prose, no markdown fences.`,
+              },
+            ];
+          }
+          controller.enqueue(streamEvent({ error: `AI could not produce a valid structured reply after ${WIZARD_MAX_ATTEMPTS} attempts. Last issue: ${lastError}` }));
+          controller.close();
+        } catch (error) {
+          controller.enqueue(streamEvent({ error: safeAiMessage(error) }));
+          controller.close();
+        }
+      })();
+    },
+  });
+}
+
+function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Response {
   const history = validateWizardHistory(body.history);
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
-  const { schema } = getContentAdapters(context);
-  const existingTypes = (await schema.listContentTypes()).filter((type) => !type.hidden);
-  const priming: ChatMessage = {
-    role: "user",
-    text: `${buildWizardSystemPrompt(ai.lang, existingTypes)}${history.length === 0 ? "\n\nBegin: ask your first clarifying question." : ""}`,
-  };
+  const goal = history.length === 0 && typeof body.goal === "string" && body.goal.trim()
+    ? body.goal.trim().slice(0, 2000)
+    : undefined;
 
   if (activeAiStreams >= MAX_ACTIVE_AI_STREAMS) {
     return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
   }
   activeAiStreams += 1;
-  try {
-    let messages: ChatMessage[] = [priming, ...history];
-    let lastError = "";
-    for (let attempt = 0; attempt < WIZARD_MAX_ATTEMPTS; attempt++) {
-      const result = await runWizardTurn(context, messages, aiKeyName);
-      const parsed = extractWizardJson(result.text);
-      const validation = parseWizardTurn(parsed);
-      if (validation.ok) {
-        return jsonResponse({ turn: validation.turn, aiLabel: result.aiLabel });
-      }
-      lastError = validation.error;
-      messages = [
-        ...messages,
-        { role: "assistant", text: result.text },
-        {
-          role: "user",
-          text: `Your last reply did not match the required JSON structure: ${validation.error} Resend a single corrected JSON object only - no prose, no markdown fences.`,
-        },
-      ];
-    }
-    throw new Error(`AI could not produce a valid structured reply after ${WIZARD_MAX_ATTEMPTS} attempts. Last issue: ${lastError}`);
-  } finally {
+  const stream = streamWizard(context, history, aiKeyName, goal);
+  return new Response(trackAiStream(stream, () => {
     activeAiStreams = Math.max(0, activeAiStreams - 1);
-  }
+  }), {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
@@ -1024,7 +1091,7 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
       return jsonResponse({ models });
     }
     if (context.params.slug === "wizard") {
-      return await handleWizard(context, await context.request.json() as WizardHttpRequest);
+      return handleWizard(context, await context.request.json() as WizardHttpRequest);
     }
     if (activeAiStreams >= MAX_ACTIVE_AI_STREAMS) {
       return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);

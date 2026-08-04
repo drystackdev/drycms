@@ -227,6 +227,42 @@ the browser-side testing above didn't catch:
   `.`/`/` aren't word characters, so the generic scan otherwise stopped
   mid-path and duplicated the typed prefix on insert.
 
+Config refactor, per explicit user request ("cần tái cấu trúc để dễ config
+hơn" - confirmed via AskUserQuestion to mean the `Editer` component, not
+`dry.config.ts`). Previously-hardcoded worker/editor behavior is now
+`EditerProps`, all optional with the prior hardcoded values as defaults, set
+once at mount like `theme` already was (not live-updatable - same
+remount-via-`key` contract):
+
+- `compilerOptions`/`formatOptions` (`Partial<ts.CompilerOptions>`/
+  `Partial<ts.FormatCodeSettings>`, type-only import of `typescript` so the
+  client bundle doesn't pull in the real package) - merged onto
+  `ts-worker.ts`'s own `DEFAULT_COMPILER_OPTIONS`/`DEFAULT_FORMAT_SETTINGS`
+  via a new `"configure"` worker-protocol message, sent once by
+  `EditerWorkerClient`'s constructor before its first "update" so every
+  computation after that sees the configured options.
+- `tabSize` (was hardcoded `2` in the `basicEditor` call) and `debounceMs`
+  (was a module-level `DEBOUNCE_MS` constant in `worker-client.ts`, now a
+  constructor param defaulting to the same 300).
+- `tailwindCompletions` (default `true`) - toggles the Tailwind class-list
+  source per instance. Not a straightforward prop-to-callee thread like the
+  others: `registerCompletions` is a *global*, once-per-page registration
+  (first `Editer` to mount wins), so this required gating inside a new
+  `scopedTailwindCompletionSource` wrapper that checks the querying editor's
+  own entry in the existing per-instance `instances` `WeakMap` instead.
+- `resolveModuleName`'s bare-specifier special cases and
+  `computeImportSpecifierCompletions`'s bare-specifier list were two
+  hand-synced copies of the same 3 entries - consolidated into one
+  `BARE_MODULE_PATHS` map both now read.
+
+Verified end-to-end in a real browser, not just typecheck: temporarily set
+`tailwindCompletions={false}` on the demo page's `Editer`, confirmed
+`className="fle` completions actually disappear, confirmed they return with
+the prop removed again (ruling out "always empty" as a false positive) -
+then reverted the demo page back (this was a temporary probe, not a real
+demo change). `bun run typecheck`, `bun run test` (618, unchanged), and the
+full `e2e/code-editer-demo.spec.ts` (7/7) all still pass after the refactor.
+
 Two Mac-Playwright-host quirks hit again, same class as prior `Meta+`-vs-
 `Control+` findings: `Control+Home`/`Control+End` don't reliably reach the
 true start/end of a multi-line `<textarea>` here (landed mid-token more than
@@ -242,6 +278,83 @@ Already present via `basicEditor`'s own bundle, not newly added: bracket/tag
 matching + highlighting, indent guides, comment toggling (`Mod+/`), line
 move/copy/delete, undo/redo, and `Mod+F` find & replace (`searchWidget`) -
 worth knowing before reaching for a library add-on that's already wired up.
+
+Hardening pass ("cần bạn ghi ra kế hoạch đầy đủ" - user asked what real/
+practical use still needed, then asked for a written plan against that
+list; plan mode, plan file `cheerful-zooming-hennessy.md`, then executed
+directly). 4 of the 5 items from that plan; worker pooling across multiple
+simultaneous `Editer` instances explicitly **not** done - still only one
+consumer (`CodeEditerDemo.tsx`) exists, so there's no real problem yet to
+justify a pooling layer's complexity.
+
+- **Fixed: Format/quick-fix apply was wiping the entire undo history, not
+  adding one step.** Root-caused by reading `basicEditor`'s own
+  `editHistory` extension source (not guessed) -
+  `editor.addExtensions({ update() { if (editor.value != textarea.value)
+  reset() } })` treats *any* `setOptions({ value })` call as "a whole new
+  document." `commitEdits` (`Editer.tsx`) now applies each edit through
+  `prism-code-editor/utils`'s public `insertText(editor, text, start, end)`
+  instead - documented as keeping undo/redo history, the same primitive the
+  library's own completion-insert path uses. `applyTextEdits` (the old
+  manual string-splice helper) is gone, nothing else called it.
+- **Added `readOnly` prop.** Thin pass-through to `basicEditor`'s own
+  already-supported `readOnly` option - diagnostics/hover/completions/
+  signature-help all stay active, only typing and Format/quick-fix-apply
+  are affected (the latter two now no-op for free once routed through
+  `insertText`, which already checks `editor.options.readOnly` itself - the
+  `onFormatKeydown`/`handleDiagnosticClick` guards just avoid a pointless
+  worker round trip and a dead-looking quick-fix menu). Demo page
+  (`CodeEditerDemo.tsx`) got a real "Read-only" checkbox (`role="switch"`,
+  matching `Showcase.tsx`'s existing toggle markup) - `readOnly` is a
+  mount-once prop like `theme`, so the checkbox drives `key={String(readOnly)}`
+  on `<Editer>` to force a remount on toggle, same contract as every other
+  config prop.
+- **Added a worker hang watchdog** (`worker-client.ts`): every outgoing
+  postMessage (re)arms one shared 8s timer; any incoming message (a specific
+  response *or* the fire-and-forget debounced diagnostics) disarms it - so
+  it fires only when the worker has stopped responding to *anything*, not
+  merely been slow on one request. On fire: terminate the stuck worker,
+  construct a fresh one, resend `"configure"` + the last known
+  `{code, extraFiles}`, resolve every in-flight promise to `null` (each
+  `get*` method already had a safe empty/`null` fallback). Surfaced via a
+  new `onRestart` constructor callback -> `Editer.tsx` shows an error toast,
+  not a silent recovery. Unit-tested directly
+  (`worker-client.test.ts`, 5 tests, `vi.useFakeTimers()` + a hand-rolled
+  `MockWorker` via `vi.stubGlobal("Worker", ...)`) rather than trying to
+  force a real hang through Playwright, per the plan's own reasoning.
+- **Added keyboard-triggered Quick Info (`Mod+I` at the cursor) and an
+  `aria-live="polite"` diagnostics-count region** - the only two ways to see
+  a symbol's type or a diagnostic's message were both mouse-only before
+  this. Reuses `renderHoverPanel`/`renderHoverMessage` as-is; shown via a
+  second `addTooltip` instance (`keyboardHoverElement`, cursor-anchored,
+  same mechanism signature help already uses) rather than hand-rolling the
+  cursor-position-to-screen-coordinate math `addTooltip` already solves.
+  `event.code`-based like `onFormatKeydown`, though `Mod` alone doesn't
+  actually hit the Option-key-substitution problem the way `Alt+<letter>`
+  does - kept consistent anyway.
+  - **`Mod+I` could not be verified through Playwright on this host** -
+    confirmed empirically (not assumed): `page.keyboard.press("Meta+i")`,
+    `.down("Meta")`+`.press("i")`+`.up("Meta")`, and a direct
+    `dispatchEvent(new KeyboardEvent(...))` all failed to reach the page's
+    listener with "KeyI" - matches this project's own prior finding
+    ("explicit-trigger keybindings (Ctrl+Space, Mod+I) don't reach the page
+    in this Playwright/macOS harness"), independently rediscovered by
+    picking the same combo. Verified the *surrounding* logic (cursor
+    position -> `getHover` -> render -> `addTooltip` show, real theme
+    background color, real content) was actually correct by temporarily
+    swapping the matched key to `F2` - full pipeline confirmed working end
+    to end - then reverted back to the real `Mod+I` binding. Not covered by
+    the permanent e2e suite for this reason; the other 3 items above are.
+
+New permanent e2e tests (`e2e/code-editer-demo.spec.ts`, now 10/10): quick-
+fix-apply undo preservation (types a call, triggers a real "Update import"
+fix, confirms one `Meta+Z` keeps the typed text and a second keeps making
+progress rather than being a no-op), the demo's new read-only checkbox
+(blocks typing, keeps hover, `aria-readonly` toggles both ways), and the
+live region's text actually changing from "No problems" once a real error
+is introduced. `bun run typecheck`, `bun run test` (643, up from 618 - 5 are
+mine, the rest are unrelated concurrent work on this repo), and
+`bun run build` (client + SSR) all still pass.
 
 # Speed
 
