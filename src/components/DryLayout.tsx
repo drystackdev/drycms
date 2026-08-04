@@ -25,6 +25,7 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
+import { temporaryFeatureVisibility } from "../features/temporary-visibility.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -162,6 +163,14 @@ const NAV: {
 ];
 
 const NAV_SECTIONS = ["Overview", "Content", "System", "Development"] as const;
+
+const HIDDEN_NAV_KEYS = new Set(
+  [
+    !temporaryFeatureVisibility.codeEditerDemo && "code-editer-demo",
+    !temporaryFeatureVisibility.richtextComponents && "richtext-components",
+    !temporaryFeatureVisibility.pageComponents && "page-components",
+  ].filter((key): key is string => Boolean(key)),
+);
 
 const CONTENT_PREFIX = `${path}/content/`;
 
@@ -387,6 +396,7 @@ export default function DryLayout({ children }: Props) {
               const sectionItems = NAV.filter(
                 (item) =>
                   item.section === section &&
+                  !HIDDEN_NAV_KEYS.has(item.key) &&
                   (!item.superAdminOnly || authState.value.user?.isSuperAdmin) &&
                   (!item.permissionName || (() => {
                     const type = contentTypes?.find((candidate) => candidate.name === item.permissionName);

@@ -21,12 +21,14 @@ pnpm-debug.log*
 # jetbrains setting folder
 .idea/
 
-# drycms local file storage (see `storage.root` in dry.config.ts)
-/storage/
+# drycms local data (all default local roots live under `.dry/`)
+/.dry/
 
-# drycms Icon Management's own local file storage (see `icons.root` in dry.config.ts)
+# Legacy root-level local data (kept ignored for upgrades from older defaults)
+/storage/
 /icons/
 /content/
+/components/
 /richtext-components/
 
 # Playwright artifacts (unanchored - a command run from the wrong cwd can
@@ -34,7 +36,7 @@ pnpm-debug.log*
 test-results/
 playwright-report/
 
-# default `content.engine: "sqlite"` database file (see `dry.config.ts`)
+# Legacy root-level SQLite database files
 *.sqlite
 
 Sortable-master
@@ -42,6 +44,3 @@ drystack
 .qa-tmp3
 .codegraph
 /kv/
-
-# Component Builder's own local file storage (see `pageComponents.storage.root` in dry.config.ts)
-/.dry/

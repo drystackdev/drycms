@@ -22,6 +22,7 @@ import ListMenu from "./list-menu.js";
 import { removeAllMarks } from "./commands.js";
 import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
+import { temporaryFeatureVisibility } from "../../features/temporary-visibility.js";
 
 /**
  * The toolbar's item registry - `toolbar.tsx` only knows how to render
@@ -146,13 +147,14 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     { type: "custom", key: "align", Component: AlignMenu, blockOnly: true, shortcut: "Ctrl/Cmd+L/E/R/J", isDisabled: (state) => !!state.selectedImage },
     { type: "custom", key: "list", Component: ListMenu, blockOnly: true, shortcut: "Ctrl/Cmd+Shift+L / Ctrl/Cmd+.", isDisabled: (state) => !!state.selectedImage },
   ],
-  // Feature group: both insert a whole standalone block (an image, or a dry
-  // component) rather than formatting text - `insert-image` also carries
-  // `requiresSource` (hidden with no `source` prop), both carry `blockOnly`
-  // (neither belongs in a single-inline-run field).
+  // Feature group: insert a whole standalone block rather than formatting
+  // text. The custom RichText component entry point is temporarily hidden;
+  // its implementation and persisted content remain supported underneath.
   [
     { type: "custom", key: "insert-image", Component: ImageInsertButton, blockOnly: true, requiresSource: true, shortcut: "Ctrl/Cmd+Alt+M" },
-    { type: "custom", key: "insert-component", Component: DryComponentInsertButton, blockOnly: true },
+    ...(temporaryFeatureVisibility.richtextComponentInsert
+      ? [{ type: "custom" as const, key: "insert-component", Component: DryComponentInsertButton, blockOnly: true }]
+      : []),
   ],
   // View group: fullscreen changes how the whole field is presented rather
   // than formatting its content. Reorder remains implemented in the editor,

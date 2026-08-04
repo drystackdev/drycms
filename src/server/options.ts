@@ -16,7 +16,7 @@ export interface DryStorageOption {
    * `local`: directory files are read from/written to, relative to the
    * consuming project's cwd (or an absolute path).
    *
-   * @default "storage"
+   * @default ".dry/storage"
    */
   root?: string;
 }
@@ -33,7 +33,7 @@ export interface DryIconsOption {
    * feature's own storage root - kept separate from `storage.root` so
    * managed UI icons never mix with user-uploaded media.
    *
-   * @default "icons"
+   * @default ".dry/icons"
    */
   root?: string;
 }
@@ -51,7 +51,7 @@ export interface DryContentOption {
    * `sqlite` only: path to the database file, relative to the consuming
    * project's cwd (or an absolute path).
    *
-   * @default "content.sqlite"
+   * @default ".dry/content.sqlite"
    */
   file?: string;
   /**
@@ -73,7 +73,7 @@ export interface DryContentOption {
    * `engine: "file"` only: same semantics as `DryStorageOption.root`, but
    * for the JSON content store's own root.
    *
-   * @default "content"
+   * @default ".dry/content"
   */
   root?: string;
 }
@@ -85,7 +85,7 @@ export interface DryComponentsOption {
    * a root of its own, same shape as `storage`/`icons`, so it never mixes
    * with user-uploaded media.
    *
-   * @default { root: "richtext-components" }
+   * @default { root: ".dry/richtext-components" }
    */
   storage?: DryStorageOption;
 }
@@ -132,9 +132,9 @@ export interface DryAiOption {
 export interface DryKvOption {
   /** Persistence backend for the server-side Key Value store. */
   kind?: "local" | "sqlite" | "D1" | "KV";
-  /** Directory root for local persistence. */
+  /** Directory root for local persistence. @default ".dry/kv" */
   root?: string;
-  /** SQLite file path when `kind` is `sqlite`. */
+  /** SQLite file path when `kind` is `sqlite`. @default ".dry/kv.sqlite" */
   file?: string;
   /** D1/KV binding name when using a Workers runtime. */
   binding?: string;
@@ -261,14 +261,14 @@ export interface ResolvedDryOption {
 }
 
 export const DEFAULT_PATH = "/dry";
-export const DEFAULT_STORAGE_ROOT = "storage";
-export const DEFAULT_ICONS_ROOT = "icons";
-export const DEFAULT_CONTENT_FILE = "content.sqlite";
-export const DEFAULT_CONTENT_ROOT = "content";
-export const DEFAULT_COMPONENTS_STORAGE_ROOT = "components";
+export const DEFAULT_STORAGE_ROOT = ".dry/storage";
+export const DEFAULT_ICONS_ROOT = ".dry/icons";
+export const DEFAULT_CONTENT_FILE = ".dry/content.sqlite";
+export const DEFAULT_CONTENT_ROOT = ".dry/content";
+export const DEFAULT_COMPONENTS_STORAGE_ROOT = ".dry/richtext-components";
 export const DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT = ".dry/components";
-export const DEFAULT_KV_ROOT = "kv";
-export const DEFAULT_KV_FILE = "kv.sqlite";
+export const DEFAULT_KV_ROOT = ".dry/kv";
+export const DEFAULT_KV_FILE = ".dry/kv.sqlite";
 export const DEFAULT_KV_BINDING = "KV";
 
 let dotEnvCache: Record<string, string> | undefined;

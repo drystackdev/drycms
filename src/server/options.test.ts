@@ -17,11 +17,11 @@ describe('resolveOptions', () => {
 	it('defaults all file-backed subsystems to local storage', () => {
 		const expected = {
 			path: '/dry',
-			storage: { kind: 'local', root: resolve(process.cwd(), 'storage') },
-			icons: { kind: 'local', root: resolve(process.cwd(), 'icons') },
-			content: { engine: 'sqlite', file: resolve(process.cwd(), 'content.sqlite') },
+			storage: { kind: 'local', root: resolve(process.cwd(), '.dry/storage') },
+			icons: { kind: 'local', root: resolve(process.cwd(), '.dry/icons') },
+			content: { engine: 'sqlite', file: resolve(process.cwd(), '.dry/content.sqlite') },
 			components: {
-				storage: { kind: 'local', root: resolve(process.cwd(), 'components') },
+				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/richtext-components') },
 			},
 			pageComponents: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/components') },
@@ -32,7 +32,7 @@ describe('resolveOptions', () => {
 				cwd: undefined, timeoutMs: 120_000, lang: 'en',
 			},
 			kv: {
-				kind: 'local', root: resolve(process.cwd(), 'kv'), maxEntries: 10_000,
+				kind: 'local', root: resolve(process.cwd(), '.dry/kv'), maxEntries: 10_000,
 				maxBytes: 32 * 1024 * 1024, cleanupIntervalMs: 30_000,
 				flushDebounceMs: 100, flushBatchSize: 100, durability: 'async',
 				defaultTtlMs: undefined, idleTtlMs: undefined,
@@ -45,6 +45,13 @@ describe('resolveOptions', () => {
 	it('resolves local roots relative to cwd', () => {
 		expect(resolveOptions({ storage: { root: 'assets' } }).storage).toEqual({
 			kind: 'local', root: resolve(process.cwd(), 'assets'),
+		});
+	});
+
+	it('uses .dry defaults for file content and SQLite KV', () => {
+		expect(resolveOptions({ content: { engine: 'file' }, kv: { kind: 'sqlite' } })).toMatchObject({
+			content: { engine: 'file', kind: 'local', root: resolve(process.cwd(), '.dry/content') },
+			kv: { kind: 'sqlite', file: resolve(process.cwd(), '.dry/kv.sqlite') },
 		});
 	});
 

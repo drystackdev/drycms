@@ -185,9 +185,10 @@ enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
 `src/storage/` implements one adapter interface (`types.ts`) through the local
 filesystem adapter, constructed via `createStorageAdapter()` from a
 `ResolvedStorageOption`.
-`storage` (user-uploaded media), `icons` (Icon Management's own assets),
-`content` (the `file` content engine's JSON store), and `components.storage`
-(confirmed RichText component bundles) are **four independent roots**
+The default local roots are grouped under `.dry/`: `storage` (user-uploaded
+media), `icons` (Icon Management's own assets), `content` (the `file` content
+engine's JSON store), and `components.storage` (confirmed RichText component
+bundles). They remain **four independent roots**
 sharing this same mechanism - never sharing a directory. Remote Git hosting
 is intentionally not a storage or KV backend: it would add network round
 trips, rate limits, retry/concurrency behavior and failure modes to ordinary

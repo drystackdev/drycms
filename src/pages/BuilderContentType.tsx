@@ -31,6 +31,7 @@ import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
 import AiSchemaWizardPanel from "./content-type-editor/AiSchemaWizardPanel.js";
 import { useDocumentTitle } from "./page-common.js";
+import { temporaryFeatureVisibility } from "../features/temporary-visibility.js";
 
 interface CardHighlights {
   label: ComponentChildren;
@@ -160,6 +161,10 @@ const KIND_PLURAL_LABELS: Record<ContentTypeKind, string> = {
   singleton: "Singletons",
   component: "Components",
 };
+
+const VISIBLE_KINDS: ContentTypeKind[] = temporaryFeatureVisibility.contentTypeComponents
+  ? ["collection", "singleton", "component"]
+  : ["collection", "singleton"];
 
 function BuilderCollectionList({
   kind,
@@ -356,10 +361,17 @@ export default function BuilderContentType() {
   const liveDefinitions = (definitions ?? []).filter(
     (definition) => !definition.hidden,
   );
-  const [selectedKind, setSelectedKind] = useParam<ContentTypeKind>(
+  const [requestedKind, setRequestedKind] = useParam<ContentTypeKind>(
     "selectedKind",
     "collection",
   );
+  const selectedKind = VISIBLE_KINDS.includes(requestedKind)
+    ? requestedKind
+    : "collection";
+
+  useEffect(() => {
+    if (requestedKind !== selectedKind) setRequestedKind(selectedKind);
+  }, [requestedKind, selectedKind, setRequestedKind]);
 
   const kindCounts = useMemo(() => {
     const counts: Record<ContentTypeKind, number> = {
@@ -456,13 +468,13 @@ export default function BuilderContentType() {
               role="group"
               aria-label="Content type kind"
             >
-              {(Object.keys(KIND_LABELS) as ContentTypeKind[]).map((kind) => (
+              {VISIBLE_KINDS.map((kind) => (
                 <button
                   key={kind}
                   type="button"
                   class="sm ghost"
                   aria-pressed={selectedKind === kind}
-                  onClick={() => setSelectedKind(kind)}
+                  onClick={() => setRequestedKind(kind)}
                 >
                   {KIND_LABELS[kind]}
                   <span class="badge outline sm">{kindCounts[kind]}</span>
