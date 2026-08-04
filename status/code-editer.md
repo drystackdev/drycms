@@ -32,8 +32,9 @@ Done. All files under `src/components/Editer/` + thin re-export at
   from the live :5173 dev server) via Playwright, not just typecheck:
   syntax errors surfaced live, both completion sources show real popups
   (Tailwind classes filtered by prefix, TS/DOM members for `document.`).
-- `bun run typecheck`, `bun run test` (591 tests, no regressions), and
-  `bun run build` (client + SSR) all pass. Worker chunk is ~6.5MB
+- `bun run typecheck`, `bun run test` (591 tests as of this pass, 618 after
+  the later IDE-parity pass below - no regressions), and `bun run build`
+  (client + SSR) all pass. Worker chunk is ~6.5MB
   (typescript + all lib.d.ts + preact types) - lazy, only loaded when an
   Editer mounts; accepted cost per plan mục 1's engine tradeoff.
 
@@ -104,6 +105,145 @@ this needed real investigation, not just wiring:
   `preact/hooks` import + JSX + event handler) instead of a static div -
   verified it loads with 0 diagnostics.
 
+IDE-parity pass, same day, per user request ("develop the editor fully -
+type/command/underline support like VS Code, add whatever else it needs"):
+
+- **Precise squiggly underlines** replace the old line-tint: `applyDiagnostics`
+  in `Editer.tsx` positions a zero-width `<span>` per diagnostic at
+  `calc(var(--padding-left) + Nch)` (monospace `ch` math off `column`/`length`),
+  recolored via a `mask-image` SVG wave (`border-style` has no `wavy` keyword -
+  that only exists for `text-decoration-style`, which needs real glyphs these
+  empty overlay spans don't have).
+- **Hover / Quick Info**: `ts-worker.ts` gained `computeHover` via
+  `getQuickInfoAtPosition`. Mouse position -> character offset is resolved
+  *geometrically* (`offsetFromPoint`/`measureChWidth`: which `.pce-line` row
+  contains `clientY`, then a `ch`-width division for the column) rather than
+  via `caretPositionFromPoint`/`caretRangeFromPoint` - confirmed empirically
+  that those resolve to the editor's real (transparently-overlaid, for input
+  capture) `<textarea>` instead of the `.pce-line` spans, since the textarea
+  visually covers the same text. The same geometric approach resolves clicks
+  on a diagnostic underline (`findDiagnosticAt`) for the same reason - a
+  listener on the underline `<span>` itself never fires, the textarea always
+  wins hit-testing.
+- **Signature help**: `computeSignatureHelp` via `getSignatureHelpItems`,
+  shown through `prism-code-editor/tooltips`' `addTooltip` (cursor-anchored,
+  requires the `cursorPosition` extension already in use) - fires on every
+  keystroke and `selectionChange`, guarded by a sequence counter so a slow
+  response can't clobber a newer one.
+- **Quick fixes**: `computeCodeFixes` via `getCodeFixesAtPosition`. Clicking a
+  diagnostic fetches fixes for the error code(s) at that position and shows a
+  small menu; picking one applies its edits and re-syncs the worker.
+  `includeCompletionsForModuleExports: true` in the preferences argument was
+  required for "Update import from '...'" fixes to appear at all - without it
+  `getCodeFixesAtPosition` silently omits auto-import fixes (returns only the
+  *other* applicable fixes, not an error) even when the module is already
+  part of the program. This is now the working answer to "add automatic
+  import suggestions" - surfaced by clicking the red squiggle on an
+  unresolved name, not inline in the completion dropdown (`Completion` in
+  `prism-code-editor/autocomplete` has no `additionalTextEdits` equivalent,
+  so a completion-time auto-import isn't feasible without forking the
+  library's selection handling).
+- **Format Document**: `computeFormatting` via `getFormattingEditsForDocument`,
+  bound to `Shift+Alt+F` (VS Code's default) via `addEditorHotkey`.
+- **Tooltip theming, twice-broken then fixed**: the hover panel and quick-fix
+  menu were first appended directly to the shadow root (sibling of
+  `.prism-code-editor`) - the theme's `--pce-widget-*` custom properties are
+  scoped to `.prism-code-editor` itself, so a sibling doesn't inherit them
+  and rendered with no background/color at all. Fixed by mounting both
+  *inside* `editor.container` instead (both use `position: fixed`, so this
+  doesn't affect layout - grid/`overflow` don't apply to non-static
+  descendants). Separately, hover/signature text was flat single-color -
+  now run through `prism-code-editor/prism`'s `highlightText(text, "tsx")`
+  instead of `textContent`, so `.token.*` classes pick up the same theme
+  colors as the editor body. Diagnostic *messages* (prose, not code) stay
+  plain text - only Quick Info/signature *code* text is tokenized.
+- **Completions dropped keywords under a broad scope - real bug, not a
+  triggering issue**: `computeCompletions` sorted by `KIND_BOOST`/`sortText`
+  and truncated to the top 50 *before* considering what the user had actually
+  typed - for a position with hundreds/thousands of raw entries (e.g. global
+  scope), the 50 survivors could easily all be boosted names that don't even
+  contain the typed prefix, so `const`/`number`/`console` etc. never reached
+  the client's own fuzzy filter to be shown. Fixed by narrowing to entries
+  whose name contains the current word prefix *before* the boost-sort-slice
+  (falling back to unfiltered only if that empties the list). Traced with a
+  temporary worker-side debug log proving the pipeline delivered 0 items end
+  to end - not a caching/race red herring, which is what it looked like at
+  first from the client side alone.
+- **Multi-file tabs**: `CodeEditerDemo.tsx` now holds `files: Record<string,
+  string>` + `activeFile` state and a `role="tablist"` bar (Demo.tsx +
+  Button.tsx, Demo now imports Button for real). No `Editer`/worker protocol
+  changes needed - switching tabs just swaps which slice of `files` is passed
+  as `value` vs `extraFiles`, reusing the existing prop-sync effects
+  unchanged. (Known limitation, documented in a code comment: a file can't be
+  imported by its own name while it's the *active* tab, since the worker
+  always compiles the active buffer as one fixed `/main.tsx` - only matters
+  for import cycles between tabs, not this demo's one-directional import.)
+
+New permanent regression test: `e2e/code-editer-demo.spec.ts` (tabs, hover
+panel background+content, diagnostic underline+quick fix+apply, signature
+help, format+search widget, keyword completions, import-specifier
+completions) - all 7 passing.
+
+Follow-up round after real (non-Playwright) macOS usage surfaced 3 more bugs
+the browser-side testing above didn't catch:
+
+- **`Shift+Alt+F` didn't fire on a real Mac keyboard.** `addEditorHotkey`
+  keys off `event.key`, which is layout-dependent - Option (Alt) turns
+  letter keys into different characters on a real Mac keyboard (`Option+F`
+  types "ƒ", `Shift+Option+F` types a different accented letter, never
+  "f"), so the hotkey's `event.key` never matched. The library special-cases
+  this for `Shift+Meta+<letter>` but not `Alt+<letter>`. Playwright's
+  synthetic `press("Shift+Alt+F")` doesn't reproduce this (it just sets
+  `key: "F"` directly), which is exactly why the e2e test above passed while
+  the real thing didn't - a case where the test gave false confidence rather
+  than a false alarm. Fixed by handling `keydown` directly and matching
+  `event.code === "KeyF"` (the physical key position, unaffected by what
+  character modifiers produce) instead of going through the hotkey map at
+  all.
+- **Two tooltips stacked on top of each other for the same error.** Hovering
+  a diagnostic (shows its message in the hover panel) then clicking it
+  (opens the quick-fix menu) left both open at once - neither panel knew
+  about the other. Fixed by hiding the hover panel when the quick-fix menu
+  opens.
+- **No "Add import" fix, only "Add missing function declaration", for a name
+  with *no* existing import of that module anywhere** (e.g. typing
+  `useState(...)` with the `preact/hooks` import deleted first, vs. the
+  `useEffect`-with-`useState`-already-imported case verified earlier in this
+  same session). Root cause: TS's auto-import search only scans
+  `program.getSourceFiles()`, and a module nothing currently imports is
+  never parsed into the program at all with this minimal host. Fixed by
+  making `preact`/`preact/hooks`/`preact/jsx-runtime` permanent root files
+  in `getScriptFileNames` (`ALWAYS_LOADED_MODULES`), not just
+  resolvable-if-imported.
+- **Bonus, from a direct user question**: import-specifier completions
+  (`from "pre|`, `from "./B|`) returned nothing at all - TS's own
+  module-specifier completions need `readDirectory`-style enumeration this
+  virtual FS doesn't support. Added a dedicated
+  `computeImportSpecifierCompletions` path instead of trying to make TS's
+  own engine work here: bare specifiers from `BARE_MODULE_PATHS`' own keys
+  (now the single source of truth `resolveModuleName` also reads from),
+  relative paths from the current `extraFiles`. Required `Editer.tsx`'s
+  `wordStart` to special-case being inside an open string literal too -
+  `.`/`/` aren't word characters, so the generic scan otherwise stopped
+  mid-path and duplicated the typed prefix on insert.
+
+Two Mac-Playwright-host quirks hit again, same class as prior `Meta+`-vs-
+`Control+` findings: `Control+Home`/`Control+End` don't reliably reach the
+true start/end of a multi-line `<textarea>` here (landed mid-token more than
+once while testing, corrupting the very position being tested) - use
+`.fill("")` + real `.type()` for a clean isolated spot instead. And a
+locator `.click()` on `.pce-line` gets flagged as "intercepted" by the
+transparently-overlaid `.pce-textarea` - that interception is correct
+behavior (it's the actual input-capture element), not a bug; use a
+coordinate-based `page.mouse.click()` instead of a strict-actionability
+locator click when a test needs to land on a specific line.
+
+Already present via `basicEditor`'s own bundle, not newly added: bracket/tag
+matching + highlighting, indent guides, comment toggling (`Mod+/`), line
+move/copy/delete, undo/redo, and `Mod+F` find & replace (`searchWidget`) -
+worth knowing before reaching for a library add-on that's already wired up.
+
 # Speed
 
-Completed 2026-08-04, same session as the plan discussion.
+Completed 2026-08-04, same session as the plan discussion. IDE-parity pass
+completed later the same day.

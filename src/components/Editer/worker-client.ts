@@ -1,5 +1,13 @@
 import type { EditerResult } from "./types.js";
-import type { EditerCompletionItem, WorkerRequest, WorkerResponse } from "./worker-protocol.js";
+import type {
+  EditerCodeFix,
+  EditerCompletionItem,
+  EditerHoverInfo,
+  EditerSignatureHelp,
+  EditerTextEdit,
+  WorkerRequest,
+  WorkerResponse,
+} from "./worker-protocol.js";
 
 const DEBOUNCE_MS = 300;
 
@@ -8,7 +16,7 @@ export class EditerWorkerClient {
   #worker: Worker;
   #debounceTimer: ReturnType<typeof setTimeout> | undefined;
   #nextRequestId = 0;
-  #pendingCompletions = new Map<number, (items: EditerCompletionItem[]) => void>();
+  #pending = new Map<number, (response: WorkerResponse) => void>();
   #latest: { code: string; extraFiles: Record<string, string> } | undefined;
 
   constructor(onDiagnostics: (result: EditerResult) => void) {
@@ -17,11 +25,11 @@ export class EditerWorkerClient {
       const response = event.data;
       if (response.kind === "diagnostics") {
         onDiagnostics(response.result);
-      } else {
-        const resolve = this.#pendingCompletions.get(response.requestId);
-        this.#pendingCompletions.delete(response.requestId);
-        resolve?.(response.items);
+        return;
       }
+      const resolve = this.#pending.get(response.requestId);
+      this.#pending.delete(response.requestId);
+      resolve?.(response);
     };
   }
 
@@ -44,26 +52,50 @@ export class EditerWorkerClient {
    * Syncs the worker's copy of the file first - silently, without emitting a
    * `diagnostics` response, and *without* touching the debounce timer above
    * - so the worker resolves a position in it against what's on screen, not
-   * stale text. `autoComplete`'s `startQuery` fires on nearly every keystroke
-   * while typing, so this can't reuse `update`'s timer: cancelling it here
-   * (only to not reschedule it - a completions request doesn't itself
-   * warrant a fresh `onChange`) would starve the debounced emit indefinitely
-   * as long as the user keeps typing with completions active, and `onChange`
-   * would never fire.
+   * stale text. `autoComplete`'s `startQuery` (and the hover/signature-help
+   * lookups below) fire on nearly every keystroke while typing, so this can't
+   * reuse `update`'s timer: cancelling it here (only to not reschedule it -
+   * these requests don't themselves warrant a fresh `onChange`) would starve
+   * the debounced emit indefinitely as long as the user keeps typing, and
+   * `onChange` would never fire.
    */
-  getCompletions(pos: number): Promise<EditerCompletionItem[]> {
+  #request(build: (requestId: number) => WorkerRequest): Promise<WorkerResponse> {
     this.#sync(false);
     const requestId = this.#nextRequestId++;
-    const request: WorkerRequest = { kind: "completions", requestId, pos };
     return new Promise((resolve) => {
-      this.#pendingCompletions.set(requestId, resolve);
-      this.#worker.postMessage(request);
+      this.#pending.set(requestId, resolve);
+      this.#worker.postMessage(build(requestId));
     });
+  }
+
+  async getCompletions(pos: number): Promise<EditerCompletionItem[]> {
+    const response = await this.#request((requestId) => ({ kind: "completions", requestId, pos }));
+    return response.kind === "completions" ? response.items : [];
+  }
+
+  async getHover(pos: number): Promise<EditerHoverInfo | null> {
+    const response = await this.#request((requestId) => ({ kind: "hover", requestId, pos }));
+    return response.kind === "hover" ? response.info : null;
+  }
+
+  async getSignatureHelp(pos: number): Promise<EditerSignatureHelp | null> {
+    const response = await this.#request((requestId) => ({ kind: "signatureHelp", requestId, pos }));
+    return response.kind === "signatureHelp" ? response.help : null;
+  }
+
+  async getCodeFixes(pos: number): Promise<EditerCodeFix[]> {
+    const response = await this.#request((requestId) => ({ kind: "codeFixes", requestId, pos }));
+    return response.kind === "codeFixes" ? response.fixes : [];
+  }
+
+  async getFormatting(): Promise<EditerTextEdit[]> {
+    const response = await this.#request((requestId) => ({ kind: "format", requestId }));
+    return response.kind === "format" ? response.edits : [];
   }
 
   dispose(): void {
     clearTimeout(this.#debounceTimer);
-    this.#pendingCompletions.clear();
+    this.#pending.clear();
     this.#worker.terminate();
   }
 }

@@ -8,7 +8,7 @@ const FIELD_NAME_RE = /^[a-z][a-z0-9]*$/i;
  * synthetic system column names baked into every generated table. A field or
  * content type literally named e.g. `slug` would otherwise silently collide
  * with the synthetic `slug` system column when `features.slug` is on. */
-const RESERVED_NAMES = new Set([
+export const RESERVED_NAMES = new Set([
   "metadata",
   "id",
   "title",

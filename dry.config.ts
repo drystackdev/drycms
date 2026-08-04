@@ -15,12 +15,20 @@ export default config({
         // the developer's local content database or uploaded assets.
         storage: { kind: "local" as const, root: `${e2eDataRoot}/storage` },
         icons: { kind: "local" as const, root: `${e2eDataRoot}/icons` },
-        content: { engine: "sqlite" as const, file: `${e2eDataRoot}/content.sqlite` },
-        components: { storage: { kind: "local" as const, root: `${e2eDataRoot}/components` } },
+        content: {
+          engine: "sqlite" as const,
+          file: `${e2eDataRoot}/content.sqlite`,
+        },
+        components: {
+          storage: {
+            kind: "local" as const,
+            root: `${e2eDataRoot}/components`,
+          },
+        },
         kv: { kind: "local" as const, root: `${e2eDataRoot}/kv` },
       }
     : {}),
   // Local development uses the installed Codex CLI. For a deployed server,
   // switch to e.g. `{ mode: "server", keyName: "OpenAI" }`; the key is read from the Ai Key collection.
-  ai: { mode: "server" },
+  ai: { mode: "local", lang: "vi" },
 });

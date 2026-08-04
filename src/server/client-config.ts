@@ -3,11 +3,16 @@ import { resolved } from "./config.js";
 export interface DryClientConfig {
   path: string;
   contentEngine: "sqlite" | "D1" | "file";
+  /** Whether AI features (the Content Types "Ask AI" wizard) run against a
+   * local CLI or the `aiKey` collection - not secret, just tells the client
+   * whether to offer the AI Key picker combobox. */
+  aiMode: "local" | "server";
 }
 
 const clientConfig: DryClientConfig = {
   path: resolved.path,
   contentEngine: resolved.content.engine,
+  aiMode: resolved.ai.mode,
 };
 
 function serializeConfig(config: DryClientConfig): string {

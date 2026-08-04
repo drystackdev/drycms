@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./config.js", () => ({
-  resolved: { path: "/dry", content: { engine: "sqlite" } },
+  resolved: { path: "/dry", content: { engine: "sqlite" }, ai: { mode: "local" } },
 }));
 
 const { injectClientConfig } = await import("./client-config.js");
@@ -11,9 +11,10 @@ describe("client config injection", () => {
     const html = injectClientConfig("<html><head></head><body></body></html>", {
       path: "/admin",
       contentEngine: "file",
+      aiMode: "server",
     });
 
-    expect(html).toContain("window.__DRY_CONFIG__={\"path\":\"/admin\",\"contentEngine\":\"file\"};");
+    expect(html).toContain("window.__DRY_CONFIG__={\"path\":\"/admin\",\"contentEngine\":\"file\",\"aiMode\":\"server\"};");
     expect(html.indexOf("__DRY_CONFIG__")).toBeLessThan(html.indexOf("</head>"));
   });
 
@@ -21,6 +22,7 @@ describe("client config injection", () => {
     const html = injectClientConfig("<html></html>", {
       path: "</script><script>alert(1)</script>",
       contentEngine: "sqlite",
+      aiMode: "local",
     });
 
     expect(html).toContain("\\u003c/script\\u003e\\u003cscript\\u003ealert(1)\\u003c/script\\u003e");

@@ -7,7 +7,15 @@ import {
   preactVirtualFiles,
   tsLibFiles,
 } from "./virtual-fs-files.js";
-import type { EditerCompletionItem, WorkerRequest, WorkerResponse } from "./worker-protocol.js";
+import type {
+  EditerCodeFix,
+  EditerCompletionItem,
+  EditerHoverInfo,
+  EditerSignatureHelp,
+  EditerTextEdit,
+  WorkerRequest,
+  WorkerResponse,
+} from "./worker-protocol.js";
 
 const MAIN_FILE = "/main.tsx";
 
@@ -59,10 +67,18 @@ function normalizePath(path: string): string {
   return "/" + stack.join("/");
 }
 
+/** The only bare (non-relative) specifiers this sandbox resolves - also the source of
+ * truth for import-specifier completions (see `computeImportSpecifierCompletions`),
+ * since TS's own module-specifier completions need a real `node_modules` layout to
+ * enumerate that this virtual FS doesn't have. */
+const BARE_MODULE_PATHS: Record<string, string> = {
+  preact: PREACT_INDEX_PATH,
+  "preact/hooks": PREACT_HOOKS_PATH,
+  "preact/jsx-runtime": PREACT_JSX_RUNTIME_PATH,
+};
+
 function resolveModuleName(spec: string, containingFile: string): string | undefined {
-  if (spec === "preact") return PREACT_INDEX_PATH;
-  if (spec === "preact/hooks") return PREACT_HOOKS_PATH;
-  if (spec === "preact/jsx-runtime") return PREACT_JSX_RUNTIME_PATH;
+  if (spec in BARE_MODULE_PATHS) return BARE_MODULE_PATHS[spec];
   if (!spec.startsWith(".")) return undefined;
   const containingDir = containingFile.slice(0, containingFile.lastIndexOf("/"));
   const base = normalizePath(`${containingDir}/${spec}`);
@@ -72,7 +88,10 @@ function resolveModuleName(spec: string, containingFile: string): string | undef
   return undefined;
 }
 
-const compilerOptions: ts.CompilerOptions = {
+/** `Editer`'s `compilerOptions` prop overrides these - see the `"configure"` case in
+ * `self.onmessage` below. Kept separate from the live `compilerOptions` binding so a
+ * page with no override still gets a clean, known-good set. */
+const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.ESNext,
   moduleResolution: ts.ModuleResolutionKind.Bundler,
@@ -82,9 +101,18 @@ const compilerOptions: ts.CompilerOptions = {
   skipLibCheck: true,
   esModuleInterop: true,
 };
+let compilerOptions: ts.CompilerOptions = DEFAULT_COMPILER_OPTIONS;
+
+// Always part of the program's root files (not just resolvable-if-imported) so TS's
+// auto-import search - both the "Update import from '...'" code fix and, if ever enabled,
+// completion-time auto-import - can find their exports even when nothing *currently*
+// imports them (e.g. `useState` typed with no import at all yet, not just an existing
+// import missing one more name). That search only scans `program.getSourceFiles()` -
+// our minimal host has no real filesystem for it to fall back to scanning instead.
+const ALWAYS_LOADED_MODULES = [PREACT_INDEX_PATH, PREACT_HOOKS_PATH, PREACT_JSX_RUNTIME_PATH];
 
 const host: ts.LanguageServiceHost = {
-  getScriptFileNames: () => [MAIN_FILE, ...extraFilePaths],
+  getScriptFileNames: () => [MAIN_FILE, ...extraFilePaths, ...ALWAYS_LOADED_MODULES],
   getScriptVersion: (path) => String(files.get(path)?.version ?? 0),
   getScriptSnapshot: (path) => {
     const file = files.get(path);
@@ -188,6 +216,33 @@ const KIND_BOOST: Record<string, number> = {
  * member-name characters already typed (`<`, `<d`, `<di`, `<Foo.Bar`...). */
 const OPEN_JSX_TAG_RE = /<([A-Za-z][\w.]*)?$/;
 
+/** Matches the cursor sitting inside an open string literal right after `from`/`import` -
+ * i.e. a module specifier being typed (`import x from "|`, `import "pre|`, dynamic
+ * `import("./|`). Captures what's been typed inside the quotes so far. */
+const IMPORT_SPECIFIER_RE = /\b(?:from|import)\s*\(?\s*["']([^"']*)$/;
+
+/**
+ * TS's own module-specifier completions need to enumerate a real `node_modules`
+ * (bare specifiers) or directory listing (relative paths) via `readDirectory` - this
+ * virtual FS has neither, so `getCompletionsAtPosition` returns nothing useful inside
+ * an import string (confirmed empirically: empty entries for both `from "pre` and
+ * `from "./B`). Suggests from what's actually resolvable instead: `BARE_MODULE_PATHS`'
+ * own keys for a bare specifier, or the current `extraFiles` for a relative one -
+ * exactly the two things `resolveModuleName` above can turn into a real file.
+ */
+function computeImportSpecifierCompletions(typed: string): EditerCompletionItem[] {
+  const typedLower = typed.toLowerCase();
+  if (typed.startsWith(".") || typed.startsWith("/")) {
+    return extraFilePaths
+      .map((path) => `.${path}`)
+      .filter((spec) => spec.toLowerCase().includes(typedLower))
+      .map((label) => ({ label, insert: label, kind: "namespace" as const }));
+  }
+  return Object.keys(BARE_MODULE_PATHS)
+    .filter((spec) => spec.toLowerCase().includes(typedLower))
+    .map((label) => ({ label, insert: label, kind: "namespace" as const }));
+}
+
 function rawCompletionsAt(pos: number): ts.CompletionInfo | undefined {
   return languageService.getCompletionsAtPosition(MAIN_FILE, pos, {});
 }
@@ -212,9 +267,19 @@ function isPlausibleJsxName(entry: ts.CompletionEntry): boolean {
   return first === first.toUpperCase() && first !== first.toLowerCase() && (KIND_BOOST[entry.kind] ?? 0) > 0;
 }
 
+/** The identifier characters immediately before `pos` - mirrors `Editer.tsx`'s own
+ * `wordStart`, just working over the worker's copy of the text instead of a DOM event. */
+function currentWordPrefix(text: string, pos: number): string {
+  let start = pos;
+  while (start > 0 && /[A-Za-z0-9_$]/.test(text[start - 1]!)) start--;
+  return text.slice(start, pos);
+}
+
 function computeCompletions(pos: number): EditerCompletionItem[] {
   const mainFile = files.get(MAIN_FILE)!;
   const before = mainFile.text.slice(0, pos);
+  const importSpecifierMatch = IMPORT_SPECIFIER_RE.exec(before);
+  if (importSpecifierMatch) return computeImportSpecifierCompletions(importSpecifierMatch[1] ?? "");
   const isOpenTag = OPEN_JSX_TAG_RE.test(before);
   let completions: ts.CompletionInfo | undefined;
   if (isOpenTag) {
@@ -241,7 +306,22 @@ function computeCompletions(pos: number): EditerCompletionItem[] {
     completions = rawCompletionsAt(pos);
   }
   if (!completions) return [];
-  const entries = [...completions.entries].sort((a, b) => {
+  // TS's raw `entries` for a broad scope (e.g. global/module position) commonly number in
+  // the thousands and are *not* pre-narrowed to what's already been typed - the client
+  // (`Editer.tsx`'s `tsCompletionSource`) fuzzy-filters by the typed prefix, but only
+  // against whatever survives the `slice(0, 50)` below. Without this prefix pass first,
+  // that slice is taken purely by `KIND_BOOST`/`sortText`, which for a several-thousand-
+  // entry scope can easily fill all 50 slots with entries that don't even contain what's
+  // been typed (e.g. typing "cons" - `const`/`console` themselves silently truncated away
+  // by unrelated boosted names alphabetically ahead of them) - completions would then
+  // reach the client, but the client's own fuzzy filter has nothing relevant left to show.
+  const prefix = currentWordPrefix(mainFile.text, pos).toLowerCase();
+  let candidates = completions.entries;
+  if (prefix) {
+    const matching = candidates.filter((entry) => entry.name.toLowerCase().includes(prefix));
+    if (matching.length) candidates = matching;
+  }
+  const entries = [...candidates].sort((a, b) => {
     const boostDiff = (KIND_BOOST[b.kind] ?? 0) - (KIND_BOOST[a.kind] ?? 0);
     return boostDiff !== 0 ? boostDiff : a.sortText.localeCompare(b.sortText);
   });
@@ -251,6 +331,114 @@ function computeCompletions(pos: number): EditerCompletionItem[] {
     kind: KIND_MAP[entry.kind] ?? "text",
     boost: KIND_BOOST[entry.kind] ?? 0,
   }));
+}
+
+function computeHover(pos: number): EditerHoverInfo | null {
+  const info = languageService.getQuickInfoAtPosition(MAIN_FILE, pos);
+  if (!info) return null;
+  const text = ts.displayPartsToString(info.displayParts ?? []);
+  const documentation = ts.displayPartsToString(info.documentation ?? []);
+  if (!text && !documentation) return null;
+  return { text, documentation };
+}
+
+function computeSignatureHelp(pos: number): EditerSignatureHelp | null {
+  const help = languageService.getSignatureHelpItems(MAIN_FILE, pos, undefined);
+  if (!help || !help.items.length) return null;
+  const item = help.items[help.selectedItemIndex] ?? help.items[0]!;
+  const separator = ts.displayPartsToString(item.separatorDisplayParts);
+  let label = ts.displayPartsToString(item.prefixDisplayParts);
+  let activeParameterStart = 0;
+  let activeParameterEnd = 0;
+  item.parameters.forEach((param, i) => {
+    const paramText = ts.displayPartsToString(param.displayParts);
+    if (i === help.argumentIndex) {
+      activeParameterStart = label.length;
+      activeParameterEnd = activeParameterStart + paramText.length;
+    }
+    label += paramText;
+    if (i < item.parameters.length - 1) label += separator;
+  });
+  label += ts.displayPartsToString(item.suffixDisplayParts);
+  return {
+    label,
+    activeParameterStart,
+    activeParameterEnd,
+    documentation: ts.displayPartsToString(item.documentation),
+  };
+}
+
+/**
+ * Only offers fixes for diagnostics that actually cover `pos` - `getCodeFixesAtPosition`
+ * requires the caller to know which error codes it's fixing, so the diagnostics at `pos`
+ * (recomputed here rather than reused from the last `computeDiagnostics()` call, which may
+ * be stale relative to the just-synced file) are the source of truth for that list.
+ */
+function computeCodeFixes(pos: number): EditerCodeFix[] {
+  const codes = new Set<number>();
+  const diagnostics = [
+    ...languageService.getSyntacticDiagnostics(MAIN_FILE),
+    ...languageService.getSemanticDiagnostics(MAIN_FILE),
+  ];
+  for (const d of diagnostics) {
+    if (d.start !== undefined && d.length !== undefined && pos >= d.start && pos <= d.start + d.length) {
+      codes.add(d.code);
+    }
+  }
+  if (!codes.size) return [];
+  try {
+    // `includeCompletionsForModuleExports` is the flag that makes "Update import from
+    // 'preact/hooks'" (add a name to/create an import for an already-known module) show
+    // up at all - without it `getCodeFixesAtPosition` silently omits auto-import fixes
+    // entirely (returns the *other* applicable fixes only, not an error) even when the
+    // module is already part of the program, confirmed empirically against a real
+    // unresolved-name diagnostic.
+    const fixes = languageService.getCodeFixesAtPosition(MAIN_FILE, pos, pos, [...codes], {}, {
+      includeCompletionsForModuleExports: true,
+      includeCompletionsWithInsertText: true,
+      allowIncompleteCompletions: true,
+    });
+    return fixes
+      .map((fix) => ({
+        description: fix.description,
+        edits: fix.changes
+          .filter((change) => change.fileName === MAIN_FILE)
+          .flatMap((change) =>
+            change.textChanges.map((tc) => ({ start: tc.span.start, length: tc.span.length, newText: tc.newText })),
+          ),
+      }))
+      .filter((fix): fix is EditerCodeFix => fix.edits.length > 0);
+  } catch {
+    // Some fix kinds need program state this virtual FS doesn't have (e.g. cross-file
+    // organize-imports) and throw instead of returning an empty array - not worth
+    // surfacing to the user as an error for what's just "no fix available here".
+    return [];
+  }
+}
+
+const FORMAT_SETTINGS: ts.FormatCodeSettings = {
+  indentSize: 2,
+  tabSize: 2,
+  convertTabsToSpaces: true,
+  insertSpaceAfterCommaDelimiter: true,
+  insertSpaceAfterSemicolonInForStatements: true,
+  insertSpaceBeforeAndAfterBinaryOperators: true,
+  insertSpaceAfterKeywordsInControlFlowStatements: true,
+  insertSpaceAfterFunctionKeywordForAnonymousFunctions: true,
+  insertSpaceBeforeFunctionParenthesis: false,
+  placeOpenBraceOnNewLineForFunctions: false,
+  placeOpenBraceOnNewLineForControlBlocks: false,
+  semicolons: ts.SemicolonPreference.Insert,
+};
+
+function computeFormatting(): EditerTextEdit[] {
+  try {
+    return languageService
+      .getFormattingEditsForDocument(MAIN_FILE, FORMAT_SETTINGS)
+      .map((tc) => ({ start: tc.span.start, length: tc.span.length, newText: tc.newText }));
+  } catch {
+    return [];
+  }
 }
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
@@ -264,7 +452,18 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     }
   } else if (request.kind === "completions") {
     const items = computeCompletions(request.pos);
-    const response: WorkerResponse = { kind: "completions", requestId: request.requestId, items };
-    postMessage(response);
+    postMessage({ kind: "completions", requestId: request.requestId, items } satisfies WorkerResponse);
+  } else if (request.kind === "hover") {
+    const info = computeHover(request.pos);
+    postMessage({ kind: "hover", requestId: request.requestId, info } satisfies WorkerResponse);
+  } else if (request.kind === "signatureHelp") {
+    const help = computeSignatureHelp(request.pos);
+    postMessage({ kind: "signatureHelp", requestId: request.requestId, help } satisfies WorkerResponse);
+  } else if (request.kind === "codeFixes") {
+    const fixes = computeCodeFixes(request.pos);
+    postMessage({ kind: "codeFixes", requestId: request.requestId, fixes } satisfies WorkerResponse);
+  } else if (request.kind === "format") {
+    const edits = computeFormatting();
+    postMessage({ kind: "format", requestId: request.requestId, edits } satisfies WorkerResponse);
   }
 };

@@ -7,6 +7,7 @@ declare global {
 		__DRY_CONFIG__: {
 			path: string;
 			contentEngine: "sqlite" | "D1" | "file";
+			aiMode: "local" | "server";
 		};
 	}
 }

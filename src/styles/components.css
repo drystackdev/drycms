@@ -3200,6 +3200,71 @@
       align-items: center;
     }
 
+    /* ------------------------------------------------------ AI schema wizard */
+    /* Same fixed-header/scrolling-body shape as `.apply-build-dialog[open]`
+     * above - a long choice list or table review can run past the viewport. */
+    .ai-wizard-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(38rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    .ai-wizard-key-picker {
+      padding: 0.5rem 0;
+    }
+
+    .ai-wizard-body {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      scrollbar-gutter: stable;
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
+    }
+
+    .ai-wizard-question-text {
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .ai-wizard-loading {
+      padding: 2rem 1rem;
+      color: var(--dry-muted-foreground);
+      justify-content: center;
+    }
+
+    .ai-wizard-choices {
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* Selected = solid filled (same primary look as a bare, non-`.outline`
+     * button) instead of just a tinted border - a clearer, unmistakable
+     * "this one's picked" signal than a subtle tint reads as, especially
+     * against `.outline`'s own transparent resting state. `!important`
+     * because this needs to beat `button.outline`'s own background/border/
+     * color unconditionally regardless of source order - a selected chip is
+     * never ALSO meant to look like a resting outline button. */
+    button.ai-wizard-choice[aria-pressed="true"] {
+      background-color: var(--dry-primary) !important;
+      border-color: var(--dry-primary) !important;
+      color: var(--dry-primary-foreground) !important;
+      box-shadow: var(--dry-shadow-primary);
+    }
+
+    button.ai-wizard-choice[aria-pressed="true"]:hover {
+      background-color: var(--dry-primary-dark) !important;
+      border-color: var(--dry-primary-dark) !important;
+    }
+
     /* Mobile: sidebar becomes an off-canvas drawer toggled by `.open`. */
     @media (width < 48rem) {
       .shell {

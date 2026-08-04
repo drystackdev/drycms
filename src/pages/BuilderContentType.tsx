@@ -22,12 +22,13 @@ import {
   fieldTypeColors,
   fieldTypeIcons,
 } from "../components/field-type-icons.js";
-import { PlusIcon, UploadIcon } from "../components/icons.js";
+import { PlusIcon, SparkleIcon, UploadIcon } from "../components/icons.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
+import AiSchemaWizardDialog from "./content-type-editor/AiSchemaWizardDialog.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface CardHighlights {
@@ -325,6 +326,7 @@ export default function BuilderContentType() {
   const [addingKind, setAddingKind] = useState<ContentTypeKind | null>(null);
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [applyBuilderId, setApplyBuilderId] = useState<string | null>(null);
+  const [aiWizardOpen, setAiWizardOpen] = useState(false);
   const [search, setSearch] = useState("");
   const api = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
@@ -391,16 +393,27 @@ export default function BuilderContentType() {
             Components.
           </p>
         </div>
-        {pendingCount > 0 && (
+        <div class="row">
           <button
             type="button"
+            class="outline"
             aria-busy={definitions ? false : true}
             disabled={!definitions}
-            onClick={() => openApplyDialog(null)}
+            onClick={() => setAiWizardOpen(true)}
           >
-            <UploadIcon /> Apply Builder
+            <SparkleIcon /> Ask AI
           </button>
-        )}
+          {pendingCount > 0 && (
+            <button
+              type="button"
+              aria-busy={definitions ? false : true}
+              disabled={!definitions}
+              onClick={() => openApplyDialog(null)}
+            >
+              <UploadIcon /> Apply Builder
+            </button>
+          )}
+        </div>
       </div>
 
       <div class="builder-content-type-layout">
@@ -479,6 +492,11 @@ export default function BuilderContentType() {
           setApplyBuilderId(null);
         }}
         onApplied={() => void reload()}
+      />
+      <AiSchemaWizardDialog
+        open={aiWizardOpen}
+        allDefinitions={definitions ?? []}
+        onClose={() => setAiWizardOpen(false)}
       />
     </>
   );

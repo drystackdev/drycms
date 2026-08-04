@@ -26,7 +26,7 @@ describe('resolveOptions', () => {
 			ai: {
 				mode: 'local', provider: 'codex', command: 'codex',
 				args: ['exec', '--ephemeral', '--skip-git-repo-check'],
-				cwd: undefined, timeoutMs: 120_000,
+				cwd: undefined, timeoutMs: 120_000, lang: 'en',
 			},
 			kv: {
 				kind: 'local', root: resolve(process.cwd(), 'kv'), maxEntries: 10_000,
@@ -68,5 +68,16 @@ describe('resolveOptions', () => {
 	it('rejects GitHub and GitLab KV kinds', () => {
 		expect(() => resolveOptions({ kv: { kind: 'github' as 'local' } })).toThrow(/kv.kind/);
 		expect(() => resolveOptions({ kv: { kind: 'gitlab' as 'local' } })).toThrow(/kv.kind/);
+	});
+
+	it('defaults ai.lang to "en" and accepts an override, in both local and server mode', () => {
+		expect(resolveOptions().ai.lang).toBe('en');
+		expect(resolveOptions({ ai: { lang: 'vi' } }).ai.lang).toBe('vi');
+		expect(resolveOptions({ ai: { mode: 'server', lang: 'vi' } }).ai.lang).toBe('vi');
+	});
+
+	it('rejects an empty ai.lang', () => {
+		expect(() => resolveOptions({ ai: { lang: '' } })).toThrow(/ai\.lang/);
+		expect(() => resolveOptions({ ai: { lang: '   ' } })).toThrow(/ai\.lang/);
 	});
 });

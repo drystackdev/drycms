@@ -7,6 +7,14 @@ import { requireSuperAdmin } from "../admin-access.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { validateOutboundUrlForRequest } from "../outbound-url.js";
 import { RequestBodyLimitError } from "../request-limits.js";
+import type { ContentTypeDefinition } from "../../content-types/types.js";
+import {
+  WIZARD_FIELD_TYPES,
+  WIZARD_RELATION_CARDINALITIES,
+  extractWizardJson,
+  parseWizardTurn,
+} from "../../content-types/ai-wizard-protocol.js";
+import { RESERVED_NAMES } from "../../content-types/naming.js";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -86,7 +94,7 @@ function providerFromEntry(value: unknown): "openai" | "anthropic" | "google" | 
   throw new Error(`Unsupported AI Key provider "${String(value)}".`);
 }
 
-async function readServerCredentials(context: DryRouteContext): Promise<ServerCredential[]> {
+async function readServerCredentials(context: DryRouteContext, preferredName?: string): Promise<ServerCredential[]> {
   const serverAi = ai;
   if (serverAi.mode !== "server") throw new Error("Server AI mode is not configured.");
   const { schema, entries } = getContentAdapters(context);
@@ -94,14 +102,23 @@ async function readServerCredentials(context: DryRouteContext): Promise<ServerCr
   const type = allTypes.find((candidate) => candidate.name === "aiKey");
   if (!type) throw new Error('The system collection "aiKey" is not available.');
   const page = await entries.listEntries(type, allTypes, { page: 0, pageSize: 10_000 });
-  const orderedRows = serverAi.keyName
+  // An explicit per-request override (the wizard's AI Key combobox) restricts
+  // to exactly that one key, with no fallback to the others - the admin
+  // picked it on purpose. Absent an override, fall back to `ai.keyName`'s
+  // preferred-first-then-fallback ordering, same as before.
+  if (preferredName) {
+    const match = page.rows.find((row) => String(row.value.name ?? "") === preferredName);
+    if (!match) throw new Error(`AI Key "${preferredName}" was not found.`);
+    page.rows = [match];
+  }
+  const orderedRows = !preferredName && serverAi.keyName
     ? [...page.rows].sort((left, right) => {
         const leftPreferred = String(left.value.name ?? "") === serverAi.keyName;
         const rightPreferred = String(right.value.name ?? "") === serverAi.keyName;
         return Number(rightPreferred) - Number(leftPreferred);
       })
     : page.rows;
-  if (serverAi.keyName && !orderedRows.some((row) => String(row.value.name ?? "") === serverAi.keyName)) {
+  if (!preferredName && serverAi.keyName && !orderedRows.some((row) => String(row.value.name ?? "") === serverAi.keyName)) {
     throw new Error(`AI Key "${serverAi.keyName}" was not found.`);
   }
 
@@ -668,6 +685,7 @@ async function createChatStream(
   context: DryRouteContext,
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
+  preferredKeyName?: string,
 ): Promise<ChatStreamResult> {
   if (ai.mode === "local") {
     return {
@@ -675,7 +693,7 @@ async function createChatStream(
       aiLabel: `${aiProviderLabel(ai.provider)} (local)`,
     };
   }
-  const credentials = await readServerCredentials(context);
+  const credentials = await readServerCredentials(context, preferredKeyName);
   const errors: Error[] = [];
   for (const credential of credentials) {
     try {
@@ -847,6 +865,152 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
     .filter(Boolean))];
 }
 
+interface WizardHttpRequest {
+  history?: ChatMessage[];
+  /** Overrides `ai.keyName`'s fallback order for this one wizard run - the
+   * Content Types "Ask AI" dialog's AI Key combobox (server mode only). */
+  aiKeyName?: string;
+}
+
+const WIZARD_MAX_ATTEMPTS = 3;
+
+function summarizeExistingType(type: ContentTypeDefinition): string {
+  const fieldNames = type.fields
+    .filter((field) => !(type.deletedFieldIds ?? []).includes(field.id))
+    .map((field) => `${field.name}:${field.type}`)
+    .join(", ");
+  const labelPart = type.label && type.label !== type.name ? `, label "${type.label}"` : "";
+  return `- "${type.name}" (${type.kind}${labelPart})${fieldNames ? ` - fields: ${fieldNames}` : " - no custom fields yet"}`;
+}
+
+function buildWizardSystemPrompt(lang: string, existingTypes: ContentTypeDefinition[]): string {
+  const existingList = existingTypes.length ? existingTypes.map(summarizeExistingType).join("\n") : "(none yet)";
+  return [
+    "You are the schema-design assistant for drycms, a headless content management system. You help an administrator design or extend its content types (database tables) through a strictly structured, choice-driven interview - never free-form chat.",
+    "",
+    "drycms content-type model:",
+    '- A content type is "collection" (many rows), "singleton" (exactly one row), or "component" (an embeddable sub-shape - not offered in this wizard).',
+    "- A field has: name (machine identifier, letters/digits only, no spaces/underscores/hyphens), label (display name), type, optional description, optional required.",
+    `- Table and field "name"s can never be one of these reserved words (case-insensitive): ${[...RESERVED_NAMES].join(", ")}. Use a synonym instead (e.g. "heading" instead of "title", "slugValue" instead of "slug") when the natural word is reserved.`,
+    `- Allowed field types: ${WIZARD_FIELD_TYPES.join(", ")}, relation.`,
+    '  - A "select" field must include "options": a non-empty array of plain strings.',
+    `  - A "relation" field must include "relationTarget" (another table's "name" - either an existing one listed below, or another table's "name" in this same proposal) and may include "relationCardinality" (one of ${WIZARD_RELATION_CARDINALITIES.join(", ")}; default manyToOne).`,
+    "",
+    "Existing content types already in this project (propose adding/removing fields on one of these instead of a new table when that fits better, and use their names as relation targets):",
+    existingList,
+    "",
+    "Interview protocol - reply with EXACTLY ONE JSON object per turn, nothing else (no prose, no markdown fences, no trailing commentary):",
+    '1. `{"kind":"question","topic":"...","question":"...","choices":[{"id":"...","label":"..."}],"multi":true|false,"allowOther":true|false}` - ask ONE clarifying, multiple-choice question at a time (1 to 8 choices). Set "allowOther": true only when the option space is inherently open-ended (e.g. naming a table), so the interface can accept one short typed value alongside your choices.',
+    "   Ask AT MOST 3 questions total, and only if genuinely necessary to avoid a bad guess - prefer inferring sensible defaults (common field names/types for the kind of table requested) over asking. Most requests should need 0-1 questions before you have enough to propose something concrete; never ask a question just to confirm something you can reasonably infer yourself.",
+    '2. As soon as you have enough information (which is often immediately), send `{"kind":"proposal","question":"...","tables":[...]}` - the exact tables/fields you intend to create or change, plus a short question asking the admin to confirm, drop a table, or request an adjustment. Wait for their reply before finalizing anything.',
+    '3. Only after they confirm, send `{"kind":"done","summary":"...","tables":[...]}` with the final tables - this is the only turn that actually gets applied, so it must exactly match what was confirmed.',
+    "",
+    'Each entry in "tables" is `{"name":"...","label":"...","kind":"collection"|"singleton","description":"...","isNew":true|false,"fields":[...],"removeFields":["..."]}`. Set "isNew": false and "name" to an exact existing type\'s name above when you are only adding or removing fields on it - "removeFields" (existing field names to stage for removal) is only valid then. A brand-new table needs "isNew": true, a fresh unique "name", and at least one field.',
+    "",
+    `Language: the person you're talking to reads "${lang}". Write every "question" and every "label"/"description" (on choices, tables, and fields) in "${lang}". Never translate "name" (machine identifiers), "type", "kind", "topic", choice "id"s, "relationTarget", or "relationCardinality" - those always stay the exact English/ASCII token specified above.`,
+  ].join("\n");
+}
+
+function validateWizardHistory(value: unknown): ChatMessage[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 60) {
+    throw new Error("AI wizard history must be an array of at most 60 messages.");
+  }
+  return value.map((message, index) => {
+    if (
+      !message ||
+      typeof message !== "object" ||
+      ((message as ChatMessage).role !== "user" && (message as ChatMessage).role !== "assistant") ||
+      typeof (message as ChatMessage).text !== "string" ||
+      !(message as ChatMessage).text.trim()
+    ) {
+      throw new Error(`AI wizard history entry ${index} is invalid.`);
+    }
+    const text = (message as ChatMessage).text;
+    if (text.length > 20_000) throw new Error(`AI wizard history entry ${index} is too long.`);
+    return { role: (message as ChatMessage).role, text };
+  });
+}
+
+async function runWizardTurn(
+  context: DryRouteContext,
+  messages: ChatMessage[],
+  aiKeyName: string | undefined,
+): Promise<{ text: string; aiLabel: string }> {
+  let text = "";
+  const { stream, aiLabel } = await createChatStream(context, messages, (delta) => {
+    text += delta;
+  }, aiKeyName);
+  // The stream is SSE-encoded `data: {...}` events (same shape `/api/ai/chat`
+  // forwards to the browser) - draining it without decoding those payloads
+  // would silently swallow a real `{error}` event (CLI not found, timed out,
+  // provider failure) and only ever surface a generic "empty response",
+  // regardless of what actually went wrong.
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let streamError: string | undefined;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      try {
+        const event = JSON.parse(line.slice(5).trim()) as { error?: string };
+        if (event.error) streamError = event.error;
+      } catch {
+        // Ignore a malformed/partial line - real payloads are always one JSON object per `data:` line.
+      }
+    }
+  }
+  if (streamError) throw new Error(streamError);
+  if (!text.trim()) throw new Error("AI returned an empty response.");
+  return { text, aiLabel };
+}
+
+async function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Promise<Response> {
+  const history = validateWizardHistory(body.history);
+  const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
+  const { schema } = getContentAdapters(context);
+  const existingTypes = (await schema.listContentTypes()).filter((type) => !type.hidden);
+  const priming: ChatMessage = {
+    role: "user",
+    text: `${buildWizardSystemPrompt(ai.lang, existingTypes)}${history.length === 0 ? "\n\nBegin: ask your first clarifying question." : ""}`,
+  };
+
+  if (activeAiStreams >= MAX_ACTIVE_AI_STREAMS) {
+    return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
+  }
+  activeAiStreams += 1;
+  try {
+    let messages: ChatMessage[] = [priming, ...history];
+    let lastError = "";
+    for (let attempt = 0; attempt < WIZARD_MAX_ATTEMPTS; attempt++) {
+      const result = await runWizardTurn(context, messages, aiKeyName);
+      const parsed = extractWizardJson(result.text);
+      const validation = parseWizardTurn(parsed);
+      if (validation.ok) {
+        return jsonResponse({ turn: validation.turn, aiLabel: result.aiLabel });
+      }
+      lastError = validation.error;
+      messages = [
+        ...messages,
+        { role: "assistant", text: result.text },
+        {
+          role: "user",
+          text: `Your last reply did not match the required JSON structure: ${validation.error} Resend a single corrected JSON object only - no prose, no markdown fences.`,
+        },
+      ];
+    }
+    throw new Error(`AI could not produce a valid structured reply after ${WIZARD_MAX_ATTEMPTS} attempts. Last issue: ${lastError}`);
+  } finally {
+    activeAiStreams = Math.max(0, activeAiStreams - 1);
+  }
+}
+
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
   try {
     const denied = await requireSuperAdmin(context, "Only Super Admin can use AI chat.");
@@ -858,6 +1022,9 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
     if (context.params.slug === "models") {
       const models = await listAiModels(context, await context.request.json() as ModelsRequest);
       return jsonResponse({ models });
+    }
+    if (context.params.slug === "wizard") {
+      return await handleWizard(context, await context.request.json() as WizardHttpRequest);
     }
     if (activeAiStreams >= MAX_ACTIVE_AI_STREAMS) {
       return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);

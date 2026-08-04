@@ -109,6 +109,12 @@ export interface DryAiOption {
   cwd?: string;
   /** Request/process timeout in milliseconds. */
   timeoutMs?: number;
+  /** Display language for AI-generated, user-facing text (e.g. the Content
+   * Types AI schema wizard's questions/choice labels). The prompt sent to
+   * the model always stays English regardless of this setting - only the
+   * text it's asked to write back for a person to read follows `lang`.
+   * @default "en" */
+  lang?: string;
 }
 
 export interface DryKvOption {
@@ -193,6 +199,7 @@ export interface ResolvedLocalAiOption {
   args: string[];
   cwd?: string;
   timeoutMs: number;
+  lang: string;
 }
 
 export interface ResolvedServerAiOption {
@@ -202,6 +209,7 @@ export interface ResolvedServerAiOption {
   model: string;
   baseUrl: string;
   timeoutMs: number;
+  lang: string;
 }
 
 export type ResolvedAiOption = ResolvedLocalAiOption | ResolvedServerAiOption;
@@ -467,6 +475,10 @@ function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
 function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
   const mode = option.mode ?? "local";
   const timeoutMs = resolvePositiveNumber(option.timeoutMs, "ai.timeoutMs", 120_000);
+  const lang = option.lang ?? "en";
+  if (typeof lang !== "string" || !lang.trim()) {
+    throw new TypeError('[drycms] `ai.lang` must be a non-empty string.');
+  }
 
   if (mode === "local") {
     const provider = option.provider ?? "codex";
@@ -482,7 +494,7 @@ function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
       throw new TypeError('[drycms] `ai.args` must be an array of strings.');
     }
     const cwd = option.cwd === undefined ? undefined : resolvePath(process.cwd(), option.cwd);
-    return { mode, provider, command: command.trim(), args: [...args], cwd, timeoutMs };
+    return { mode, provider, command: command.trim(), args: [...args], cwd, timeoutMs, lang: lang.trim() };
   }
 
   if (mode !== "server") {
@@ -499,7 +511,7 @@ function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
   if (option.keyName !== undefined && (typeof option.keyName !== "string" || !option.keyName.trim())) {
     throw new TypeError('[drycms] `ai.keyName` must be a non-empty string when provided.');
   }
-  return { mode, provider, keyName: option.keyName?.trim(), model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs };
+  return { mode, provider, keyName: option.keyName?.trim(), model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs, lang: lang.trim() };
 }
 
 /**

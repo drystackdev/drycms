@@ -10,13 +10,21 @@ import {
 import autocompleteIconsCss from "prism-code-editor/autocomplete-icons.css?raw";
 import autocompleteCss from "prism-code-editor/autocomplete.css?raw";
 import { cursorPosition } from "prism-code-editor/cursor";
+import { highlightText } from "prism-code-editor/prism";
 import "prism-code-editor/prism/languages/tsx";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
+import { addTooltip } from "prism-code-editor/tooltips";
+import { toast } from "../Toast.js";
 import { tailwindCompletionSource } from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
 import { EditerWorkerClient } from "./worker-client.js";
-import type { EditerCompletionItem } from "./worker-protocol.js";
+import type {
+  EditerCodeFix,
+  EditerCompletionItem,
+  EditerSignatureHelp,
+  EditerTextEdit,
+} from "./worker-protocol.js";
 
 export interface EditerProps {
   value: string;
@@ -52,9 +60,21 @@ function toCompletion(item: EditerCompletionItem): Completion {
   };
 }
 
+const WORD_CHAR_RE = /[A-Za-z0-9_$]/;
+/** Matches an unterminated string literal ending at the cursor - i.e. the cursor is
+ * inside a string. Captures nothing; only `.index` (the quote's position) is used. */
+const OPEN_STRING_RE = /["'][^"']*$/;
+
+/** Import-specifier completions (`./Button.tsx`, `preact/hooks`...) replace the whole
+ * typed path, not just a trailing identifier run - `.`/`/` aren't `WORD_CHAR_RE`, so the
+ * generic scan below would otherwise stop mid-path and duplicate the already-typed
+ * prefix on insert. Being inside a string at all is enough of a signal: nothing else
+ * this editor completes from inside one. */
 function wordStart(before: string): number {
+  const openString = OPEN_STRING_RE.exec(before);
+  if (openString) return openString.index + 1;
   let i = before.length;
-  while (i > 0 && /[A-Za-z0-9_$]/.test(before[i - 1]!)) i--;
+  while (i > 0 && WORD_CHAR_RE.test(before[i - 1]!)) i--;
   return i;
 }
 
@@ -75,8 +95,18 @@ function wordStart(before: string): number {
  * always eventually do). Hit this once as an infinite loop that froze the
  * tab - only fire a request when this exact position has never been asked
  * about since the last edit.
+ *
+ * Also gates the query itself: implicit (while-typing) queries only fire
+ * while the character right before the cursor is part of an identifier -
+ * punctuation like `,` `.` `;` shouldn't pop the tooltip back open with an
+ * unfiltered completion list. Ctrl+Space (`explicit`) bypasses this, same as
+ * TS's own behavior.
  */
-function tsCompletionSource(context: { pos: number; before: string }, editor: PrismEditor) {
+function tsCompletionSource(
+  context: { pos: number; before: string; explicit: boolean },
+  editor: PrismEditor,
+) {
+  if (!context.explicit && !WORD_CHAR_RE.test(context.before.slice(-1))) return null;
   const state = instances.get(editor);
   if (!state) return null;
   const { client, cache } = state;
@@ -99,48 +129,198 @@ function ensureCompletionsRegistered() {
   registerCompletions(["tsx"], { sources: [tailwindCompletionSource, tsCompletionSource] });
 }
 
-const ERROR_LINE_CLASS = "editer-line-error";
-const WARNING_LINE_CLASS = "editer-line-warning";
+const DIAGNOSTIC_CLASS = "editer-diagnostic";
+const ERROR_CLASS = "editer-diagnostic-error";
+const WARNING_CLASS = "editer-diagnostic-warning";
 
-/**
- * Marks each line with a diagnostic (background tint + left bar, see the
- * injected CSS below) instead of precise squiggly underlines under the
- * exact `column`/`length` range - `editor.lines[n]` already holds
- * syntax-highlighted HTML for that line (nested spans from tokenizing), and
- * slicing a plain character range out of that without corrupting it needs
- * hooking `onTokenize` to split tokens at the right boundaries. Line-level
- * marking gets "errors visible in the editor" without that - precise
- * per-range underlines are a possible follow-up, not implemented here.
- */
-function applyLineDiagnostics(editor: PrismEditor, errors: EditerDiagnostic[]): void {
-  const lines = editor.lines;
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    line?.classList.remove(ERROR_LINE_CLASS, WARNING_LINE_CLASS);
-    line?.removeAttribute("title");
-  }
-  const byLine = new Map<number, { source: EditerDiagnostic["source"]; messages: string[] }>();
-  for (const error of errors) {
-    const entry = byLine.get(error.line) ?? { source: error.source, messages: [] };
-    if (error.source === "syntax") entry.source = "syntax"; // syntax outranks type when a line has both
-    entry.messages.push(error.message);
-    byLine.set(error.line, entry);
-  }
-  for (const [lineNumber, { source, messages }] of byLine) {
-    const line = lines[lineNumber];
-    if (!line) continue;
-    line.classList.add(source === "syntax" ? ERROR_LINE_CLASS : WARNING_LINE_CLASS);
-    line.title = messages.join("\n");
+function clearDiagnostics(editor: PrismEditor): void {
+  for (let i = 1; i < editor.lines.length; i++) {
+    editor.lines[i]?.querySelectorAll(`.${DIAGNOSTIC_CLASS}`).forEach((el) => el.remove());
   }
 }
+
+/** Sum of the lengths of every line before `line` (1-indexed), plus `column - 1` -
+ * i.e. the absolute character offset `{line, column}` (both 1-indexed, as `ts-worker.ts`
+ * reports them) points to in the full text. */
+function absoluteOffset(lineTexts: string[], line: number, column: number): number {
+  let offset = 0;
+  for (let i = 0; i < line - 1; i++) offset += (lineTexts[i]?.length ?? 0) + 1;
+  return offset + (column - 1);
+}
+
+/**
+ * Renders precise squiggly underlines (VS Code-style) at each diagnostic's exact
+ * column/length instead of tinting the whole line: `.pce-line` is already
+ * `position: relative` (layout.css), and since the editor is monospace, a
+ * diagnostic's column converts losslessly to a `ch`-unit horizontal offset - no
+ * need to touch the tokenizer's own nested `<span>` output at all. Purely visual -
+ * the real `<textarea>` `basicEditor` stacks transparently *over* these lines (to
+ * capture input) always wins hit-testing, so hover/click on a diagnostic is instead
+ * resolved geometrically against `errors` from the host effect (see `offsetFromPoint`
+ * and `findDiagnosticAt`), not from a listener on the underline itself.
+ */
+function applyDiagnostics(editor: PrismEditor, errors: EditerDiagnostic[]): void {
+  clearDiagnostics(editor);
+  if (!errors.length) return;
+  const lineTexts = editor.value.split("\n");
+  for (const error of errors) {
+    const line = editor.lines[error.line];
+    const lineText = lineTexts[error.line - 1];
+    if (!line || lineText === undefined) continue;
+    const maxLength = Math.max(1, lineText.length - (error.column - 1));
+    const span = document.createElement("span");
+    span.className = `${DIAGNOSTIC_CLASS} ${error.source === "syntax" ? ERROR_CLASS : WARNING_CLASS}`;
+    span.style.left = `calc(var(--padding-left) + ${error.column - 1}ch)`;
+    span.style.width = `${Math.min(error.length, maxLength)}ch`;
+    line.append(span);
+  }
+}
+
+/** First diagnostic (if any) whose `{line, column, length}` range contains `pos`. */
+function findDiagnosticAt(
+  errors: EditerDiagnostic[],
+  lineTexts: string[],
+  pos: number,
+): EditerDiagnostic | undefined {
+  return errors.find((error) => {
+    const start = absoluteOffset(lineTexts, error.line, error.column);
+    return pos >= start && pos <= start + error.length;
+  });
+}
+
+function applyTextEdits(code: string, edits: EditerTextEdit[]): string {
+  let result = code;
+  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, edit.start) + edit.newText + result.slice(edit.start + edit.length);
+  }
+  return result;
+}
+
+/** Width of one `ch` (one monospace character cell) in the editor, in CSS pixels -
+ * measured with a throwaway probe rather than assumed, since it depends on the
+ * theme's font. Used by `offsetFromPoint` to convert a mouse position to a column. */
+function measureChWidth(editor: PrismEditor): number {
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:absolute;visibility:hidden;width:1ch";
+  const line = editor.lines[1] ?? editor.wrapper;
+  line.append(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width || 8;
+}
+
+/**
+ * Locates the character an `(x, y)` viewport point falls on, as an absolute offset
+ * into `editor.value` - used to resolve hover requests from a mouse event. Deliberately
+ * geometric (which `.pce-line` row contains `clientY`, then a `ch`-width division for the
+ * column) rather than `caretPositionFromPoint`/`caretRangeFromPoint`: the editor's real
+ * `<textarea>` is transparently stacked *over* the highlighted lines to capture input, so
+ * those point-based caret APIs resolve to the textarea's own (identical, but differently
+ * parented) text instead of the `.pce-line` spans this needs to map back to a line number.
+ */
+function offsetFromPoint(editor: PrismEditor, clientX: number, clientY: number, chPx: number): number | null {
+  let lineNumber = -1;
+  for (let i = 1; i < editor.lines.length; i++) {
+    const rect = editor.lines[i]?.getBoundingClientRect();
+    if (rect && clientY >= rect.top && clientY < rect.bottom) {
+      lineNumber = i;
+      break;
+    }
+  }
+  if (lineNumber < 1) return null;
+  const line = editor.lines[lineNumber]!;
+  const paddingLeft = parseFloat(getComputedStyle(line).paddingLeft) || 0;
+  const column = Math.max(0, Math.round((clientX - line.getBoundingClientRect().left - paddingLeft) / chPx));
+  const lineTexts = editor.value.split("\n");
+  const lineText = lineTexts[lineNumber - 1] ?? "";
+  return absoluteOffset(lineTexts, lineNumber, Math.min(column, lineText.length) + 1);
+}
+
+/** Renders `code` with the same TSX token colors as the editor itself (`.token.*`
+ * classes styled by the theme CSS already loaded into the shadow root - no ancestor
+ * scoping needed) instead of a flat, single-color string. */
+function highlightTsx(code: string): string {
+  return highlightText(code, "tsx");
+}
+
+/** Quick Info hover: `text` is a code signature (highlighted), `documentation` is prose. */
+function renderHoverPanel(panel: HTMLDivElement, text: string, documentation: string): void {
+  panel.replaceChildren();
+  if (text) {
+    const sig = document.createElement("pre");
+    sig.className = "editer-hover-sig";
+    sig.innerHTML = highlightTsx(text);
+    panel.append(sig);
+  }
+  if (documentation) {
+    const doc = document.createElement("div");
+    doc.className = "editer-hover-doc";
+    doc.textContent = documentation;
+    panel.append(doc);
+  }
+}
+
+/** Diagnostic-message hover: prose only, never run through the TSX tokenizer. */
+function renderHoverMessage(panel: HTMLDivElement, message: string): void {
+  panel.replaceChildren();
+  const doc = document.createElement("div");
+  doc.className = "editer-hover-doc";
+  doc.textContent = message;
+  panel.append(doc);
+}
+
+function renderSignatureTooltip(el: HTMLDivElement, help: EditerSignatureHelp): void {
+  el.replaceChildren();
+  const label = document.createElement("div");
+  label.className = "editer-sig-label";
+  const active = help.label.slice(help.activeParameterStart, help.activeParameterEnd);
+  label.innerHTML =
+    highlightTsx(help.label.slice(0, help.activeParameterStart)) +
+    (active ? `<span class="editer-sig-active-param">${highlightTsx(active)}</span>` : "") +
+    highlightTsx(help.label.slice(help.activeParameterEnd));
+  el.append(label);
+  if (help.documentation) {
+    const doc = document.createElement("div");
+    doc.className = "editer-hover-doc";
+    doc.textContent = help.documentation;
+    el.append(doc);
+  }
+}
+
+// `border-style` has no "wavy" keyword (that only exists for `text-decoration-style`,
+// which needs real glyphs to underline - these are empty overlay spans) - a repeating
+// SVG wave, recolored per diagnostic kind via `mask-image` + `background-color`, is the
+// standard CSS-only way to draw a VS Code-style squiggle without either.
+const SQUIGGLE_MASK =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Cpath d='M0 3 Q2 0.5 4 3 T8 3' stroke='white' stroke-width='1.4' fill='none'/%3E%3C/svg%3E\")";
+const shadowStyles = `.prism-code-editor{height:100%}
+.${DIAGNOSTIC_CLASS}{position:absolute;bottom:0;height:4px;width:0;cursor:pointer;pointer-events:auto;background-color:var(--editer-diagnostic-color);-webkit-mask-image:${SQUIGGLE_MASK};mask-image:${SQUIGGLE_MASK};-webkit-mask-repeat:repeat-x;mask-repeat:repeat-x;-webkit-mask-size:8px 4px;mask-size:8px 4px}
+.${ERROR_CLASS}{--editer-diagnostic-color:#f14c4c}
+.${WARNING_CLASS}{--editer-diagnostic-color:#cca700}
+.editer-hover-panel,.editer-quickfix-menu{position:fixed;z-index:20;max-width:32em;background:var(--pce-widget-bg);color:var(--pce-widget-color);border:1px solid var(--pce-widget-border);border-radius:.3em;box-shadow:0 2px 8px rgba(0,0,0,.35);pointer-events:auto;display:none}
+.editer-hover-panel{padding:.5em .7em;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.editer-hover-sig{margin:0;white-space:pre-wrap;font-family:inherit}
+.editer-hover-doc{margin-top:.4em;white-space:pre-wrap;font-family:ui-sans-serif,system-ui,sans-serif;opacity:.85}
+.editer-sig-tooltip{padding:.4em .6em;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--pce-widget-bg);color:var(--pce-widget-color);border:1px solid var(--pce-widget-border);border-radius:.3em;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.editer-sig-label{white-space:pre-wrap}
+.editer-sig-active-param{font-weight:700;text-decoration:underline}
+.editer-quickfix-menu{padding:.25em;display:flex;flex-direction:column;gap:2px}
+.editer-quickfix-menu button{all:unset;cursor:pointer;padding:.3em .5em;border-radius:.2em;white-space:nowrap;font:12px ui-sans-serif,system-ui,sans-serif}
+.editer-quickfix-menu button:hover,.editer-quickfix-menu button:focus-visible{background:var(--pce-widget-bg-hover)}
+${autocompleteCss}
+${autocompleteIconsCss}`;
 
 /**
  * TSX/Preact code editor: `prism-code-editor` (mounted in its own Shadow DOM
  * by `basicEditor` - see `plans/code-editer.md` mục 6) for the surface, a
- * `typescript` Language Service running in a Web Worker for diagnostics and
- * completions (`ts-worker.ts`), and `tailwindcss`'s design system for class
- * name suggestions (`tailwind-completions.ts`). Full panel, no card chrome -
- * sizing/border is the caller's call via `class`/`style`.
+ * `typescript` Language Service running in a Web Worker for diagnostics,
+ * completions, hover (Quick Info), signature help, quick fixes, and
+ * `Shift+Alt+F` formatting (`ts-worker.ts`), and `tailwindcss`'s design
+ * system for class name suggestions (`tailwind-completions.ts`).
+ * `basicEditor` itself already wires up bracket/tag matching, indent guides,
+ * comment toggling, line move/copy/delete, undo/redo, and Ctrl/Cmd+F find &
+ * replace (`searchWidget`) - see its own bundle for that command list. Full
+ * panel, no card chrome - sizing/border is the caller's call via `class`/`style`.
  */
 export default function Editer({
   value,
@@ -169,15 +349,21 @@ export default function Editer({
     const host = hostRef.current;
     if (!host) return;
 
+    let currentErrors: EditerDiagnostic[] = [];
     const client = new EditerWorkerClient((result) => {
       lastReportedCodeRef.current = result.code;
-      if (editorRef.current) applyLineDiagnostics(editorRef.current, result.errors);
+      currentErrors = result.errors;
+      if (editorRef.current) applyDiagnostics(editorRef.current, result.errors);
       onChangeRef.current(result);
     });
     // Every cached position is only valid against the code it was computed
     // from - stale entries would otherwise resurface via `tsCompletionSource`
     // if the cursor ever returns to a position number it previously visited.
     const cache = new Map<number, EditerCompletionItem[]>();
+    // Lazily measured (needs a mounted line to probe) and cached - the font never
+    // changes after mount, so one measurement covers every hover/click lookup.
+    let chPx: number | undefined;
+    const getChPx = () => (chPx ??= measureChWidth(editor));
     const editor = basicEditor(host, {
       language: "tsx",
       value,
@@ -186,6 +372,7 @@ export default function Editer({
       onUpdate: (code) => {
         cache.clear();
         client.update(code, extraFilesRef.current);
+        checkSignatureHelp(editor.getSelection()[0]);
       },
     });
     editorRef.current = editor;
@@ -193,9 +380,144 @@ export default function Editer({
     ensureCompletionsRegistered();
     editor.addExtensions(cursorPosition(), autoComplete({ filter: fuzzyFilter }));
 
+    /** Applies a quick-fix/format response's edits, keeping the worker's copy of the
+     * file (and downstream diagnostics) in sync - `editor.setOptions` alone only
+     * updates what's on screen, it doesn't run `onUpdate`. */
+    function commitEdits(edits: EditerTextEdit[]): void {
+      if (!edits.length) return;
+      const next = applyTextEdits(editor.value, edits);
+      if (next === editor.value) return;
+      cache.clear();
+      editor.setOptions({ value: next });
+      client.update(next, extraFilesRef.current);
+    }
+
+    let quickFixMenu: HTMLDivElement | undefined;
+    function hideQuickFixMenu(): void {
+      quickFixMenu?.remove();
+      quickFixMenu = undefined;
+      document.removeEventListener("click", hideQuickFixMenu);
+    }
+    function showQuickFixMenu(fixes: EditerCodeFix[], x: number, y: number): void {
+      hideQuickFixMenu();
+      // Both are positioned off the same click point and neither knows about the
+      // other - without this a lingering hover message (shown by hovering the
+      // diagnostic just before clicking it) stays stacked underneath the menu.
+      hideHover();
+      const menu = document.createElement("div");
+      menu.className = "editer-quickfix-menu";
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      menu.style.display = "flex";
+      for (const fix of fixes) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = fix.description;
+        button.addEventListener("click", () => {
+          commitEdits(fix.edits);
+          hideQuickFixMenu();
+        });
+        menu.append(button);
+      }
+      editor.container.append(menu);
+      quickFixMenu = menu;
+      document.addEventListener("click", hideQuickFixMenu, { once: true });
+    }
+    async function handleDiagnosticClick(pos: number, clientX: number, clientY: number): Promise<void> {
+      const fixes = await client.getCodeFixes(pos);
+      if (!fixes.length) {
+        toast.add({ type: "default", title: "No quick fix available." });
+        return;
+      }
+      showQuickFixMenu(fixes, clientX, clientY);
+    }
+    /** Diagnostics are purely visual (see `applyDiagnostics`) - the real `<textarea>`
+     * sits transparently on top of them and always wins hit-testing, so a click on one
+     * has to be resolved the same geometric way as hover (`offsetFromPoint`), not from a
+     * listener on the underline `<span>` itself (which would never receive the event). */
+    const onClick = (event: MouseEvent) => {
+      if (!currentErrors.length) return;
+      const pos = offsetFromPoint(editor, event.clientX, event.clientY, getChPx());
+      if (pos === null) return;
+      const diagnostic = findDiagnosticAt(currentErrors, editor.value.split("\n"), pos);
+      if (!diagnostic) return;
+      void handleDiagnosticClick(pos, event.clientX, event.clientY);
+    };
+    host.addEventListener("click", onClick);
+
+    // Not `addEditorHotkey(editor, "shift+alt+f", ...)`: that keys off `event.key`,
+    // which is layout-dependent - on a real Mac keyboard, Option (Alt) turns letter
+    // keys into special characters (`Option+F` types "ƒ", `Shift+Option+F` a different
+    // accented letter, never "f"), so `event.key` is never "f" and the hotkey silently
+    // never fires. The library special-cases this for `Shift+Meta+<letter>` but not for
+    // `Alt+<letter>`. `event.code` is the physical key position ("KeyF") regardless of
+    // what character modifiers produce, so it works the same on every keyboard layout.
+    const onFormatKeydown = (event: KeyboardEvent) => {
+      if (event.code === "KeyF" && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        client.getFormatting().then(commitEdits);
+      }
+    };
+    editor.textarea.addEventListener("keydown", onFormatKeydown);
+
+    let sigSeq = 0;
+    let showSig: (() => void) | undefined;
+    let hideSig: (() => void) | undefined;
+    function checkSignatureHelp(pos: number): void {
+      const seq = ++sigSeq;
+      client.getSignatureHelp(pos).then((help) => {
+        if (seq !== sigSeq || !editorRef.current) return;
+        if (help) {
+          renderSignatureTooltip(sigElement, help);
+          showSig?.();
+        } else {
+          hideSig?.();
+        }
+      });
+    }
+    editor.on("selectionChange", (selection) => checkSignatureHelp(selection[0]));
+
+    let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+    let hoverToken = 0;
+    function hideHover(): void {
+      clearTimeout(hoverTimer);
+      hoverPanel.style.display = "none";
+    }
+    function positionHoverPanel(clientX: number, clientY: number): void {
+      hoverPanel.style.left = `${clientX + 12}px`;
+      hoverPanel.style.top = `${clientY + 20}px`;
+      hoverPanel.style.display = "block";
+    }
+    function scheduleHover(clientX: number, clientY: number): void {
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => {
+        const pos = offsetFromPoint(editor, clientX, clientY, getChPx());
+        if (pos === null) return hideHover();
+        // A diagnostic's message takes priority over quick info when both are under
+        // the cursor - it's more actionable, and doesn't need a worker round trip.
+        const diagnostic = findDiagnosticAt(currentErrors, editor.value.split("\n"), pos);
+        if (diagnostic) {
+          renderHoverMessage(hoverPanel, diagnostic.message);
+          return positionHoverPanel(clientX, clientY);
+        }
+        const token = ++hoverToken;
+        client.getHover(pos).then((info) => {
+          if (token !== hoverToken) return;
+          if (!info) return hideHover();
+          renderHoverPanel(hoverPanel, info.text, info.documentation);
+          positionHoverPanel(clientX, clientY);
+        });
+      }, 200);
+    }
+    const onMouseMove = (event: MouseEvent) => scheduleHover(event.clientX, event.clientY);
+    host.addEventListener("mousemove", onMouseMove);
+    host.addEventListener("mouseleave", hideHover);
+    editor.container.addEventListener("scroll", hideHover);
+
     const shadowRoot = host.shadowRoot;
+    let sigElement!: HTMLDivElement;
+    let hoverPanel!: HTMLDivElement;
     if (shadowRoot) {
-      const style = document.createElement("style");
       // `.prism-code-editor` (layout.css, loaded by `basicEditor` itself) has
       // no explicit height - it sizes to its content (line count) by
       // default. Without this override the "full panel" host div (mục 6)
@@ -203,18 +525,36 @@ export default function Editer({
       // - the autocomplete tooltip's max-height (computed off the editor's
       // own `clientHeight`) then gets squeezed to a couple px too, since
       // there's barely any container height to work with.
-      style.textContent = `.prism-code-editor{height:100%}
-.${ERROR_LINE_CLASS}{background:color-mix(in srgb, red 15%, transparent);box-shadow:inset 2px 0 0 0 red;}
-.${WARNING_LINE_CLASS}{background:color-mix(in srgb, orange 12%, transparent);box-shadow:inset 2px 0 0 0 orange;}
-${autocompleteCss}
-${autocompleteIconsCss}`;
-      shadowRoot.append(style);
+      const styleEl = document.createElement("style");
+      styleEl.textContent = shadowStyles;
+      shadowRoot.append(styleEl);
     }
+    // The theme (loaded async by `basicEditor` itself) defines `--pce-widget-*` as
+    // custom properties scoped to `.prism-code-editor` (`editor.container`) - a sibling
+    // of it in the shadow root wouldn't inherit them and would render unstyled/
+    // transparent, so this mounts *inside* `editor.container` instead. It uses
+    // `position: fixed`, which escapes `editor.container`'s `overflow: auto` and takes
+    // it out of its `display: grid` layout, so nesting it here is otherwise inert - and
+    // `editor.remove()` then cleans it up for free. (`sigElement` doesn't need the same
+    // treatment - `addTooltip` below already parents it under `editor`'s own overlays.)
+    hoverPanel = document.createElement("div");
+    hoverPanel.className = "editer-hover-panel";
+    editor.container.append(hoverPanel);
+
+    sigElement = document.createElement("div");
+    sigElement.className = "editer-sig-tooltip";
+    [showSig, hideSig] = addTooltip(editor, sigElement);
 
     client.update(value, extraFilesRef.current);
 
     return () => {
       editorRef.current = undefined;
+      clearTimeout(hoverTimer);
+      hideQuickFixMenu();
+      host.removeEventListener("mousemove", onMouseMove);
+      host.removeEventListener("mouseleave", hideHover);
+      host.removeEventListener("click", onClick);
+      editor.textarea.removeEventListener("keydown", onFormatKeydown);
       editor.remove();
       client.dispose();
     };
