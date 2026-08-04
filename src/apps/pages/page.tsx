@@ -1,24 +1,101 @@
-export default async function HomePage() {
-  const { total: userTotal } = await dry().collection("user").list();
-  const { total: roleTotal } = await dry().collection("role").list();
+const VALUE_PROPS = [
+  {
+    title: "Kiến thức đáng tin cậy",
+    text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent nec lacus vel elit dictum interdum.",
+  },
+  {
+    title: "Đồng hành riêng tư",
+    text: "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
+  },
+  {
+    title: "Cộng đồng hỗ trợ",
+    text: "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.",
+  },
+];
 
+const LATEST_POSTS = [
+  { tag: "Kiến thức cơ bản", title: "Lorem ipsum dolor sit amet consectetur", date: "01/08/2026" },
+  { tag: "Điều trị ARV", title: "Ut enim ad minim veniam quis nostrud", date: "29/07/2026" },
+  { tag: "Hỏi đáp", title: "Duis aute irure dolor in reprehenderit", date: "27/07/2026" },
+];
+
+export default async function HomePage() {
   return (
-    <main class="space-y-3">
-      <h1 class="text-2xl font-bold">App Router demo</h1>
-      <p class="text-gray-700">
-        {userTotal} user(s), {roleTotal} role(s) in the database.
-      </p>
-      <p class="text-gray-700">
-        Try{" "}
-        <a class="text-blue-600 hover:underline" href="/users">
-          /users
-        </a>{" "}
-        (collection list) or{" "}
-        <a class="text-blue-600 hover:underline" href="/roles">
-          /roles
-        </a>{" "}
-        (another collection, no nested layout).
-      </p>
-    </main>
+    <div>
+      <section class="bg-linear-to-b from-teal-50 to-white">
+        <div class="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 py-20 text-center">
+          <span class="rounded-full bg-teal-100 px-4 py-1 text-sm font-medium text-teal-700">Kiến thức HIV & ARV</span>
+          <h1 class="max-w-2xl text-4xl font-bold text-slate-900 sm:text-5xl">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit
+          </h1>
+          <p class="max-w-xl text-lg leading-relaxed text-slate-600">
+            Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud
+            exercitation ullamco laboris.
+          </p>
+          <div class="flex flex-wrap justify-center gap-3">
+            <a href="/blogs" class="rounded-full bg-teal-600 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-700">
+              Xem bài viết
+            </a>
+            <a
+              href="/contact"
+              class="rounded-full border border-teal-600 px-6 py-3 text-sm font-semibold text-teal-700 hover:bg-teal-50"
+            >
+              Liên hệ tư vấn
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="mx-auto max-w-6xl px-4 py-16">
+        <div class="grid gap-6 sm:grid-cols-3">
+          {VALUE_PROPS.map((item) => (
+            <div key={item.title} class="rounded-2xl border border-slate-200 p-6">
+              <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-5 w-5">
+                  <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </div>
+              <h3 class="text-base font-semibold text-slate-900">{item.title}</h3>
+              <p class="mt-2 text-sm leading-relaxed text-slate-600">{item.text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section class="bg-slate-50">
+        <div class="mx-auto max-w-6xl px-4 py-16">
+          <div class="mb-8 flex items-end justify-between">
+            <h2 class="text-2xl font-bold text-slate-900">Bài viết mới nhất</h2>
+            <a href="/blogs" class="text-sm font-medium text-teal-700 hover:underline">
+              Xem tất cả →
+            </a>
+          </div>
+          <div class="grid gap-6 sm:grid-cols-3">
+            {LATEST_POSTS.map((post) => (
+              <article key={post.title} class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div class="h-36 bg-slate-200" />
+                <div class="space-y-2 p-5">
+                  <span class="text-xs font-semibold uppercase tracking-wide text-teal-700">{post.tag}</span>
+                  <h3 class="text-base font-semibold text-slate-900">{post.title}</h3>
+                  <p class="text-xs text-slate-500">{post.date}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="mx-auto max-w-6xl px-4 py-16">
+        <div class="flex flex-col items-center gap-4 rounded-2xl bg-teal-600 px-8 py-12 text-center text-white">
+          <h2 class="text-2xl font-bold">Bạn cần được tư vấn riêng tư?</h2>
+          <p class="max-w-xl text-sm leading-relaxed text-teal-50">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.
+          </p>
+          <a href="/contact" class="rounded-full bg-white px-6 py-3 text-sm font-semibold text-teal-700 hover:bg-teal-50">
+            Liên hệ ngay
+          </a>
+        </div>
+      </section>
+    </div>
   );
 }
