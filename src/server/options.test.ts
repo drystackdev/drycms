@@ -26,6 +26,12 @@ describe('resolveOptions', () => {
 			pageComponents: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/components') },
 			},
+			pagesCache: {
+				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/pages-cache') },
+			},
+			typesCache: {
+				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/types-cache') },
+			},
 			ai: {
 				mode: 'local', provider: 'codex', command: 'codex',
 				args: ['exec', '--ephemeral', '--skip-git-repo-check'],

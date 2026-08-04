@@ -160,13 +160,32 @@ tiếp** - chấp nhận được cho v1, ghi rõ ở đây để không ai ng�
   route admin - nhưng chưa có caller thật nào (route/page) gọi
   `runWithDryContext` cả, vì không có gì để gọi nó.
 
-## Giai đoạn 4 - Nối vào App Router + build cache - CHƯA LÀM
+## Giai đoạn 4 - Nối vào App Router + build cache - XONG (phần "nối vào")
 
-Không đổi so với kế hoạch gốc - vẫn chặn hoàn toàn bởi App Router chưa tồn
-tại. Không có `page.tsx`/`layout.tsx` nào để gọi `runWithDryContext`, nên
-không có gì để test integration thật. Preview mode (đọc draft qua session
-cookie) cũng chưa làm - `get()` hiện tại luôn published-only, không có cách
-nào bypass.
+(2026-08-05) App Router's `src/server/page-handler.ts` (`plans/app-router.md`)
+giờ là caller thật đầu tiên gọi `runWithDryContext`/`dry()` - dựng
+`entries` bằng `getContentAdapters()` có sẵn (kế thừa quy tắc D1-per-request
+miễn phí), `allTypes` qua `schema.listContentTypes()`. "Gọi `dry()` trần
+không cần import" (Giai đoạn 3 để dành) cũng xong - `dry-global-plugin.ts`
+đăng ký trong `vite.config.ts`, inject import tự động cho `src/apps/pages/**`.
+Đã verify qua dev server thật: `dry()` gọi trực tiếp không import tay, query
+DB thật thành công.
+
+**1 thay đổi thật (nhỏ) vào code ở đây**: `DryRequestContext`
+(`dry-context.ts`) có thêm field optional `touchedTypes?: Set<string>`;
+`dry-reader.ts`'s 3 điểm gọi `mustFindType` (collection `get`/`list`,
+singleton `get`) giờ ghi `type.name` vào đó nếu có mặt - phục vụ App
+Router's `pages-cache` biết 1 trang phụ thuộc content type nào để
+invalidate đúng. Additive, optional (context không có field này vẫn chạy y
+hệt trước - mọi test cũ trong `dry-reader.test.ts` không đổi gì), thêm 3
+test case mới riêng cho `touchedTypes`.
+
+**Vẫn chưa làm** (không phải việc của lượt này): preview mode (đọc draft
+qua session cookie) - `get()` vẫn luôn published-only, không có cách bypass;
+đây là Giai đoạn 4 của chính `plans/app-router.md` (Polish), chưa tới lượt.
+Cache dedup TRONG 1 lần render (`(typeName, op, args)`, mục Giai đoạn 3 ở
+trên) cũng vẫn hoãn - khác tầng với `pages-cache` (cross-request), không bị
+thay thế bởi nó.
 
 ## Thứ tự làm
 
@@ -174,6 +193,7 @@ nào bypass.
 2. ~~Giai đoạn 1 (engine query)~~ - xong.
 3. ~~Giai đoạn 2 (codegen)~~ - xong, trừ hook apply (xem trên).
 4. ~~Giai đoạn 3~~ - code+test xong; phần "gọi `dry()` trần không cần import"
-   để dành cho lúc làm Giai đoạn 4.
-5. Giai đoạn 4 - cần App Router có bộ khung tối thiểu trước (file mới, tách
-   riêng khỏi việc này).
+   xong luôn ở Giai đoạn 4 (xem dưới).
+5. ~~Giai đoạn 4~~ - phần "nối vào App Router" xong (2026-08-05, xem trên).
+   Preview mode vẫn hoãn - việc của `plans/app-router.md`'s Giai đoạn 4
+   riêng, không phải ở đây.

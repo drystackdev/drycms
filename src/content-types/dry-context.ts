@@ -15,6 +15,15 @@ import type { ContentTypeDefinition } from "./types.js";
 export interface DryRequestContext {
   entries: ContentEntryEngineAdapter;
   allTypes: ContentTypeDefinition[];
+  /** Content type names read during this render - `dry-reader.ts`'s
+   * reader functions add to this as they go. Optional (not every caller
+   * needs it, e.g. `dry-reader.test.ts`'s existing cases) so an omitted
+   * value degrades to "don't track" instead of forcing every call site to
+   * pass one - same self-healing-optional-field idiom as
+   * `ContentTypeDefinition.fieldOrder` etc. (see `docs/ARCHITECTURE.md`).
+   * `plans/app-router.md`'s `page-handler.ts` populates this to know which
+   * `getResourceVersion()`s a cached render needs to re-check. */
+  touchedTypes?: Set<string>;
 }
 
 const storage = new AsyncLocalStorage<DryRequestContext>();

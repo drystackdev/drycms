@@ -18,6 +18,7 @@ const vite = await createViteServer({
 const { applySecurityHeaders, createApiMiddleware, toFetchRequest, sendFetchResponse } = await vite.ssrLoadModule("/src/server/adapters/node.js");
 const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts");
 const { injectClientConfig } = await vite.ssrLoadModule("/src/server/client-config.ts");
+const { path: adminPath, content } = await vite.ssrLoadModule("/src/server/config.ts");
 const apiMiddleware = createApiMiddleware();
 
 /**
@@ -30,18 +31,47 @@ const apiMiddleware = createApiMiddleware();
  * startup. Never fatal: a codegen bug must not block the dev server itself.
  */
 try {
-  const { content } = await vite.ssrLoadModule("/src/server/config.ts");
   if (content.engine !== "D1") {
     const { createContentEngineAdapter } = await vite.ssrLoadModule("/src/content-types/engine/index.ts");
     const { generateDryTypes } = await vite.ssrLoadModule("/src/content-types/codegen.ts");
+    const { writeGeneratedDryTypes } = await vite.ssrLoadModule("/src/content-types/types-cache.ts");
     const adapter = createContentEngineAdapter(content);
     const allTypes = await adapter.listContentTypes();
-    const { writeFile } = await import("node:fs/promises");
-    await writeFile(new URL("../src/apps/dry.generated.d.ts", import.meta.url), generateDryTypes(allTypes));
+    await writeGeneratedDryTypes(generateDryTypes(allTypes));
     console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types)`);
   }
 } catch (error) {
   console.error("[drycms] failed to generate dry.generated.d.ts:", error);
+}
+
+/**
+ * `src/apps/pages` (see `plans/app-router.md`) - only for a pathname
+ * OUTSIDE the admin's own `path`, symmetric to `routers/App.tsx`'s
+ * `AuthGate` (which renders nothing for exactly that space today). Loads
+ * `page-handler.ts` fresh via `vite.ssrLoadModule` on EVERY call (not
+ * hoisted like the modules above) so a page/layout added or edited while
+ * this dev server is running is picked up without a restart - this is the
+ * one module whose whole job is "trên dev có thể vào xem trực tiếp live
+ * preview qua vite", unlike the rest of `src/server/**` (see
+ * `status/content-type-staged-apply.md`'s note on that restart caveat).
+ * Returns `true` if it fully handled the response (matched or a real
+ * 404), `false` to fall through to the admin SPA shell.
+ */
+async function tryServeAppRouterPage(req, res) {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  if (url.pathname === adminPath || url.pathname.startsWith(`${adminPath}/`)) return false;
+
+  const { handlePageRequest } = await vite.ssrLoadModule("/src/server/page-handler.ts");
+  const response = await handlePageRequest(toFetchRequest(req), {});
+  if (!response) {
+    applySecurityHeaders(res);
+    res.statusCode = 404;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.end("Not found");
+    return true;
+  }
+  await sendFetchResponse(response, res);
+  return true;
 }
 
 const server = createHttpServer((req, res) => {
@@ -50,6 +80,8 @@ const server = createHttpServer((req, res) => {
       if (redirect) return sendFetchResponse(redirect, res);
       vite.middlewares(req, res, async () => {
         try {
+          if (await tryServeAppRouterPage(req, res)) return;
+
           const url = req.url ?? "/";
           let html = readFileSync("index.html", "utf8");
           html = await vite.transformIndexHtml(url, html);

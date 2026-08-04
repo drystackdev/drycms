@@ -68,8 +68,10 @@ function isPublished(value: Record<string, unknown>): boolean {
 function createCollectionReader(name: string): DryCollectionReader<Record<string, unknown>> {
   return {
     async get(idOrSlug) {
-      const { entries, allTypes } = getDryContext();
+      const context = getDryContext();
+      const { entries, allTypes } = context;
       const type = mustFindType(allTypes, name, "collection");
+      context.touchedTypes?.add(type.name);
       if (typeof idOrSlug === "number") {
         const row = await entries.getEntry(type, allTypes, idOrSlug);
         if (!row || !isPublished(row.value)) return null;
@@ -79,8 +81,10 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
       return row ? toRecord(row) : null;
     },
     async list(options = {}) {
-      const { entries, allTypes } = getDryContext();
+      const context = getDryContext();
+      const { entries, allTypes } = context;
       const type = mustFindType(allTypes, name, "collection");
+      context.touchedTypes?.add(type.name);
       const page = await entries.listEntries(type, allTypes, {
         page: options.page ?? 0,
         pageSize: options.pageSize ?? 100,
@@ -97,8 +101,10 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
 function createSingletonReader(name: string): DrySingletonReader<Record<string, unknown>> {
   return {
     async get() {
-      const { entries, allTypes } = getDryContext();
+      const context = getDryContext();
+      const { entries, allTypes } = context;
       const type = mustFindType(allTypes, name, "singleton");
+      context.touchedTypes?.add(type.name);
       const row = await entries.getSingletonEntry(type, allTypes);
       return row ? toRecord(row) : null;
     },

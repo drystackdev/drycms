@@ -12,10 +12,9 @@
  * those natively without needing Vite's `ssrLoadModule` the way
  * `dev-server.mjs` does for the live dev server.
  */
-import { mkdir, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { createContentEngineAdapter } from "../src/content-types/engine/index.js";
 import { generateDryTypes } from "../src/content-types/codegen.js";
+import { writeGeneratedDryTypes } from "../src/content-types/types-cache.js";
 import { content } from "../src/server/config.js";
 
 if (content.engine === "D1") {
@@ -26,9 +25,6 @@ if (content.engine === "D1") {
 const adapter = createContentEngineAdapter(content);
 const allTypes = await adapter.listContentTypes();
 const output = generateDryTypes(allTypes);
+await writeGeneratedDryTypes(output);
 
-const target = fileURLToPath(new URL("../src/apps/dry.generated.d.ts", import.meta.url));
-await mkdir(fileURLToPath(new URL("../src/apps/", import.meta.url)), { recursive: true });
-await writeFile(target, output);
-
-console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types) -> ${target}`);
+console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types)`);

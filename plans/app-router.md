@@ -21,13 +21,19 @@ trúc" #1 và #3.)
 
 ## Trạng thái (2026-08-05)
 
-Ý tưởng ở trên giờ đã có kế hoạch triển khai cụ thể (phần dưới) - chưa code
-gì, `src/apps/pages` vẫn trống (chỉ có `dry.generated.d.ts`, sinh sẵn bởi
-Reader). `plans/reader.md` đã xong Giai đoạn 1-3 (engine query cho sqlite+
-D1, codegen `.d.ts`, runtime `dry()`/`runWithDryContext` qua
-`AsyncLocalStorage`) nhưng Giai đoạn 4 của nó ("nối vào App Router") bị
-chặn hoàn toàn vì App Router chưa tồn tại - kế hoạch dưới đây chính là công
-việc mở khóa Giai đoạn 4 đó.
+**Giai đoạn 1 (SSR pipeline) đã code + test xong** - chi tiết thực thi ở
+`status/app-router.md`. `page-handler.ts` giờ là caller thật đầu tiên gọi
+`runWithDryContext`/`dry()` - `reader.md`'s Giai đoạn 4 ("nối vào App
+Router") coi như xong theo đó (xem mục "`reader.md` sẽ ra sao" bên dưới).
+Đã verify qua dev server thật (route tĩnh, route động `[slug]`, nested
+layout, `dry()` query DB thật, 404 thật cho path không khớp) - xem
+`status/app-router.md`'s bước 7 cho chi tiết. Chưa verify được:
+`pages-cache`'s hành vi production thật (cache chỉ bật ngoài dev, chưa có
+server production - Giai đoạn 3 - để test qua) - đã verify đầy đủ ở tầng
+unit test thay thế (5 case).
+
+Giai đoạn 2-4 chưa làm - `src/apps/pages` hiện lại trống (fixture test đã
+xoá sau khi verify), sẵn sàng cho page thật đầu tiên.
 
 2 quyết định user chốt trực tiếp khi lập kế hoạch (khác với cách ý tưởng
 gốc đọc thoáng qua như "build ra file tĩnh"):
@@ -84,28 +90,39 @@ Tóm tắt quan hệ với `plans/reader.md` để khỏi phải lật lại:
 
 ## Quyết định kiến trúc
 
-1. **Streaming SSR bằng `renderToReadableStream`** - export có sẵn trong
-   `preact-render-to-string` bản đã cài (`dist/stream.d.ts`), chưa được
-   dùng ở đâu trong repo:
-   ```ts
-   function renderToReadableStream<P>(vnode: VNode<P>, context?: any):
-     ReadableStream<Uint8Array> & { allReady: Promise<void> };
-   ```
-   Trả thẳng làm `Response` body. Khớp ngay với hạ tầng có sẵn:
-   `adapters/node.ts`'s `sendFetchResponse` **đã** pipe `response.body` qua
-   `Readable.fromWeb(...)` không đổi gì - Response thân stream tự chảy ra
-   client, không cần sửa tầng Node adapter.
-   - **Rủi ro kỹ thuật cần spike đầu tiên**: `renderToStringAsync` (thứ ý
-     tưởng gốc + `reader.md` chọn ban đầu) chắc chắn hỗ trợ `await` 1 async
-     function component đúng nghĩa. `renderToReadableStream` không có tài
-     liệu xác nhận rõ có hỗ trợ y hệt hay không (2 hàm khác code path
-     trong lib). **Việc đầu tiên của Giai đoạn 1**: viết 1 `page.tsx` thật
-     gọi `dry()` async, render thử bằng `renderToReadableStream`, xác nhận
-     nó đợi đúng promise rồi mới enqueue phần HTML tương ứng - không render
-     rỗng/lỗi. Nếu không hỗ trợ đúng, phương án dự phòng: tự chunk theo
-     từng layout (render mỗi layout thành shell tĩnh quanh 1 placeholder,
-     `await` phần con, rồi enqueue tiếp) - vẫn giữ được "HTML gửi sớm" cho
-     khung ngoài, chỉ phức tạp hơn.
+1. **Streaming SSR - đã spike, `renderToReadableStream` KHÔNG dùng được
+   cho async function component, chọn phương án dự phòng 2-chunk**
+   (2026-08-05, `src/server/app-router/render-stream.spike.test.ts`):
+   - Đọc source `preact-render-to-string/dist/stream/index.mjs` xác nhận:
+     renderer streaming gọi function component đồng bộ, nếu nó trả về
+     Promise (đúng những gì 1 `async function` trả về) thì Promise đó bị
+     coi là "object lạ" (có `.constructor`) và render ra chuỗi RỖNG, không
+     đợi. Nó chỉ hỗ trợ Suspense-style (component THROW 1 promise ra, như
+     `preact-iso/lazy`'s `LazyComponent`) - khác hẳn convention
+     `async function Page() { await dry()...; return ... }` mà ý tưởng
+     gốc/`reader.md` đã chọn.
+   - `renderToStringAsync` thì xử lý đúng, đã verify bằng script thật: tự
+     resolve cây bottom-up (`await Page(props)` trước, rồi
+     `await Layout({ children: pageVnode })` từng lớp ra ngoài), sau đó
+     `renderToStringAsync(layoutVnode)` ra đúng HTML lồng nhau.
+   - **Quyết định**: `render.ts` tự resolve cây async bottom-up như trên
+     (không dùng `renderToReadableStream`), lấy HTML BODY qua
+     `renderToStringAsync` (buffered - không tránh được, vì chính cách
+     await-rồi-return của convention này vốn không có "điểm dừng giữa
+     chừng" để enqueue sớm). Bù lại vẫn giữ được stream THẬT ở **đúng 1
+     ranh giới rẻ tiền**: enqueue phần `<!DOCTYPE html><head>...` (tĩnh,
+     không phụ thuộc `dry()` - gồm cả `<link>` CSS chung) NGAY khi bắt đầu
+     xử lý request, TRƯỚC khi await xong cây page/layout; enqueue phần
+     `<body>`...`</body>` sau khi `renderToStringAsync` xong. Response vẫn
+     là `ReadableStream` thật (khớp `adapters/node.ts`'s
+     `sendFetchResponse` không đổi gì), trình duyệt bắt đầu tải CSS ngay
+     từ chunk đầu thay vì đợi cả trang render xong - "HTML trả về cho
+     client trước" đúng nghĩa cho phần không phụ thuộc dữ liệu, dù không
+     progressive tới từng layout.
+   - **Để sau nếu cần hơn**: streaming progressive theo từng layout (tách
+     HTML mỗi layout quanh vị trí `children` bằng 1 sentinel string, render
+     riêng phần "trước"/"sau" phần con) - phức tạp hơn hẳn, chỉ đáng làm
+     nếu profiling cho thấy 2-chunk không đủ.
 2. **Giữ nguyên "API async"** đã chốt trong `reader.md` - `page.tsx`/
    `layout.tsx` export `async function`, gọi `dry()` bên trong.
 3. **Sửa lỗi `Dry.params` của ý tưởng gốc**: `reader.md` đã tự phê bình ý
@@ -135,9 +152,12 @@ src/server/app-router/
                     Thứ tự ưu tiên kiểu Next.js: segment tĩnh > [dynamic]
                     > [...catchAll]. params.slug: string, params.path:
                     string[] cho catch-all.
-  render.ts        - dựng cây <Layout>...<Page/>...</Layout> lồng nhau,
-                    bọc runWithDryContext(...), gọi renderToReadableStream,
-                    trả Response (Content-Type: text/html; streaming).
+  render.ts        - bọc runWithDryContext(...), resolve cây layout/page
+                    bottom-up (await Page trước, await từng Layout bọc
+                    ra ngoài - xem quyết định kiến trúc #1), render HTML
+                    body qua renderToStringAsync, trả Response dạng
+                    ReadableStream 2-chunk (head tĩnh trước, body sau khi
+                    resolve xong).
   dry-global-plugin.ts - Vite plugin mục 4 ở trên.
 src/server/page-handler.ts (hoặc thêm export vào handler.ts hiện có)
   - handlePageRequest(request, env): Promise<Response | null>.
@@ -279,11 +299,10 @@ cho editor hay chính cái editor đó** - tránh lấn phạm vi kế hoạch n
   cùng lúc với bước "Nối dev" ở Giai đoạn 1 (đang đụng `dev-server.mjs`
   sẵn rồi).
 
-## Giai đoạn 1 - SSR pipeline (trọng tâm, làm trước)
+## Giai đoạn 1 - SSR pipeline (trọng tâm, làm trước) - XONG
 
-1. Spike `renderToReadableStream` + async component (rủi ro kỹ thuật ở
-   trên) - làm TRƯỚC khi viết route-tree/match, vì nếu phải fallback sang
-   phương án chunk-theo-layout thì `render.ts`'s shape sẽ khác hẳn.
+1. ~~Spike `renderToReadableStream` + async component~~ - xong
+   (2026-08-05), kết quả và quyết định ở mục "Quyết định kiến trúc" #1.
 2. `route-tree.ts` + `match.ts` + unit test cho độ ưu tiên match (tĩnh >
    dynamic > catch-all, nested layout đúng thứ tự cha->con).
 3. `render.ts` + `dry-global-plugin.ts`.
@@ -469,15 +488,12 @@ khi code.
 
 ## Thứ tự làm
 
-1. Giai đoạn 1 (SSR pipeline) - trọng tâm, làm trước, có spike rủi ro kỹ
-   thuật ở bước đầu.
+1. ~~Giai đoạn 1 (SSR pipeline)~~ - xong (2026-08-05), chi tiết ở
+   `status/app-router.md`.
 2. Giai đoạn 2 (hydrate + Tailwind) - cần Giai đoạn 1 render ra HTML thật
    trước mới có gì để hydrate.
 3. Giai đoạn 3 (production build) - refine chi tiết khi bắt đầu, hướng đi
    đã phác ở trên.
 4. Giai đoạn 4 - sau, không chặn việc dùng App Router ở dev.
-5. Sau khi Giai đoạn 1 chạy được, quay lại `reader.md` đánh dấu Giai đoạn 4
-   của nó "xong" (dry() context đã có chỗ gọi thật), và note thêm việc
-   `touchedTypes` đã được thêm vào `DryRequestContext`/`dry-reader.ts` cho
-   `pages-cache` - đúng tinh thần "ghi lại chỗ lệch so với kế hoạch gốc"
-   `reader.md` đang làm cho từng giai đoạn của chính nó.
+5. ~~Sau khi Giai đoạn 1 chạy được, quay lại `reader.md` đánh dấu Giai đoạn
+   4 của nó "xong"~~ - xong, xem mục "`reader.md` sẽ ra sao" ở đầu file.

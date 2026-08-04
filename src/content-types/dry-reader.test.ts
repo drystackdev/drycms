@@ -144,4 +144,39 @@ describe("dry()", () => {
       await expect(dry().collection("settings" as never).get(1)).rejects.toThrow(/is a singleton, not a collection/);
     });
   });
+
+  describe("touchedTypes (pages-cache dependency tracking)", () => {
+    it("records the collection name read by get() and list()", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const created = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", views: 3 });
+      const touchedTypes = new Set<string>();
+
+      await runWithDryContext({ entries, allTypes, touchedTypes }, async () => {
+        await dry().collection("post").get(created.id);
+        await dry().collection("post").list();
+      });
+      expect(touchedTypes).toEqual(new Set(["post"]));
+    });
+
+    it("records the singleton name read by get()", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const touchedTypes = new Set<string>();
+
+      await runWithDryContext({ entries, allTypes, touchedTypes }, async () => {
+        await dry().singleton("settings").get();
+      });
+      expect(touchedTypes).toEqual(new Set(["settings"]));
+    });
+
+    it("is a no-op when the context omits touchedTypes (existing callers unaffected)", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      await runWithDryContext({ entries, allTypes }, async () => {
+        await expect(dry().singleton("settings").get()).resolves.not.toBeNull();
+      });
+    });
+  });
 });

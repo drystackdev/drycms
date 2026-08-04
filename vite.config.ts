@@ -1,8 +1,12 @@
 import preact from "@preact/preset-vite";
 import { defineConfig } from "vite";
+import { dryGlobalPlugin } from "./src/server/app-router/dry-global-plugin.js";
 
 export default defineConfig({
-  plugins: [preact()],
+  // `dryGlobalPlugin` (`enforce: "pre"`) injects `dry()`'s import for
+  // `src/apps/pages/**` before Preact's own JSX transform runs - see
+  // `plans/app-router.md`'s "Quyết định kiến trúc" #4.
+  plugins: [dryGlobalPlugin(), preact()],
   build: {
     // Showcase intentionally bundles every component demo into one route
     // chunk; it is lazy-loaded from the app shell, so this size is not part of

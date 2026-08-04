@@ -86,6 +86,32 @@ export interface DryPageComponentsOption {
   storage?: DryStorageOption;
 }
 
+export interface DryPagesCacheOption {
+  /**
+   * Where rendered App Router HTML (`src/apps/pages`) is cached, keyed by
+   * pathname - a root of its own, same shape as `storage`/`icons`. See
+   * `plans/app-router.md`'s "Cache SSR theo file (`pages-cache`)" - never
+   * used in dev (`import.meta.env.DEV` always skips it), only production.
+   *
+   * @default { root: ".dry/pages-cache" }
+   */
+  storage?: DryStorageOption;
+}
+
+export interface DryTypesCacheOption {
+  /**
+   * Extra copy of `src/apps/dry.generated.d.ts`'s generated content,
+   * written alongside the real file - a root of its own, same shape as
+   * `storage`/`icons`. See `plans/app-router.md`'s "Cache cho
+   * `dry.generated.d.ts`" - prep for a future browser-based code editor to
+   * read this over an API instead of the filesystem. Not read by anything
+   * yet.
+   *
+   * @default { root: ".dry/types-cache" }
+   */
+  storage?: DryStorageOption;
+}
+
 export interface DryAiOption {
   /** `local` runs a CLI on the same machine; `server` calls an AI HTTP API. */
   mode?: "local" | "server";
@@ -145,6 +171,8 @@ export interface DryOption {
   content?: DryContentOption;
   components?: DryComponentsOption;
   pageComponents?: DryPageComponentsOption;
+  pagesCache?: DryPagesCacheOption;
+  typesCache?: DryTypesCacheOption;
   ai?: DryAiOption;
   kv?: DryKvOption;
 }
@@ -187,6 +215,14 @@ export interface ResolvedComponentsOption {
 }
 
 export interface ResolvedPageComponentsOption {
+  storage: ResolvedStorageOption;
+}
+
+export interface ResolvedPagesCacheOption {
+  storage: ResolvedStorageOption;
+}
+
+export interface ResolvedTypesCacheOption {
   storage: ResolvedStorageOption;
 }
 
@@ -237,6 +273,8 @@ export interface ResolvedDryOption {
   content: ResolvedContentOption;
   components: ResolvedComponentsOption;
   pageComponents: ResolvedPageComponentsOption;
+  pagesCache: ResolvedPagesCacheOption;
+  typesCache: ResolvedTypesCacheOption;
   ai: ResolvedAiOption;
   kv: ResolvedKvOption;
 }
@@ -247,6 +285,8 @@ export const DEFAULT_ICONS_ROOT = ".dry/icons";
 export const DEFAULT_CONTENT_FILE = ".dry/content.sqlite";
 export const DEFAULT_COMPONENTS_STORAGE_ROOT = ".dry/richtext-components";
 export const DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT = ".dry/components";
+export const DEFAULT_PAGES_CACHE_STORAGE_ROOT = ".dry/pages-cache";
+export const DEFAULT_TYPES_CACHE_STORAGE_ROOT = ".dry/types-cache";
 export const DEFAULT_KV_ROOT = ".dry/kv";
 export const DEFAULT_KV_FILE = ".dry/kv.sqlite";
 export const DEFAULT_KV_BINDING = "KV";
@@ -365,6 +405,18 @@ function resolveComponentsOption(components: DryComponentsOption = {}): Resolved
 function resolvePageComponentsOption(pageComponents: DryPageComponentsOption = {}): ResolvedPageComponentsOption {
   return {
     storage: resolveFileBackedOption(pageComponents.storage, DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT, "pageComponents.storage"),
+  };
+}
+
+function resolvePagesCacheOption(pagesCache: DryPagesCacheOption = {}): ResolvedPagesCacheOption {
+  return {
+    storage: resolveFileBackedOption(pagesCache.storage, DEFAULT_PAGES_CACHE_STORAGE_ROOT, "pagesCache.storage"),
+  };
+}
+
+function resolveTypesCacheOption(typesCache: DryTypesCacheOption = {}): ResolvedTypesCacheOption {
+  return {
+    storage: resolveFileBackedOption(typesCache.storage, DEFAULT_TYPES_CACHE_STORAGE_ROOT, "typesCache.storage"),
   };
 }
 
@@ -543,6 +595,8 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     content: resolveContentOption(options.content),
     components: resolveComponentsOption(options.components),
     pageComponents: resolvePageComponentsOption(options.pageComponents),
+    pagesCache: resolvePagesCacheOption(options.pagesCache),
+    typesCache: resolveTypesCacheOption(options.typesCache),
     ai: resolveAiOption(options.ai),
     kv: resolveKvOption(options.kv),
   };
