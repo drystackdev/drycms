@@ -556,16 +556,20 @@ plan riêng khi tới lúc" - ý này chính là hình hài cụ thể hơn củ
 builder sau" đó (storage + build-on-demand + gắn `pages-cache`). Cần bàn
 lại kỹ trước khi scope chi tiết.
 
-## Giả định cần xác nhận lại
+## Quyết định: điều hướng giữa trang - MPA (đã chốt, 2026-08-05)
 
-**Điều hướng giữa trang: đề xuất MPA thuần** (mỗi link là 1 lần load trang
-thật, `hydrate()` chỉ chạy cho đúng trang đang đứng) thay vì SPA
-client-side. Lý do: khớp chữ "hydrate tải lazy về sau" trong ý tưởng gốc
-hơn, JS tải về ít nhất, và SSR-per-request (quyết định đã chốt) vốn đã làm
-mỗi navigation = 1 request mới rồi - thêm client router phía trên sẽ cần 1
-cơ chế fetch data riêng cho transition, chưa có trong ý tưởng gốc. Đề xuất
-chưa được xác nhận dứt điểm - nếu muốn SPA thì đổi hướng Giai đoạn 2 trước
-khi code.
+**MPA thuần** (mỗi link là 1 lần load trang thật, `hydrate()` chỉ chạy cho
+đúng trang đang đứng) - không phải SPA client-side. Lý do chốt: khớp chữ
+"hydrate tải lazy về sau" trong ý tưởng gốc hơn, JS tải về ít nhất, và
+SSR-per-request (quyết định đã chốt, Giai đoạn 1-3 đã code+test xong theo
+đúng model này) vốn đã làm mỗi navigation = 1 request mới rồi - SPA sẽ cần
+thiết kế MỚI HOÀN TOÀN 1 cơ chế fetch data cho transition (`page.tsx`/
+`layout.tsx` là `async function` chạy Ở SERVER, client router không có gì
+để gọi) và phá luôn giả định "SSR per request" mà `render.ts`/`page-handler.ts`
+đã dựa vào - rủi ro/effort cao hơn hẳn so với lợi ích (chuyển trang mượt
+hơn, giữ state UI xuyên trang) cho v1. Giai đoạn 2's phần hydration còn lại
+code theo hướng này: `hydrate()` gọi 1 lần mỗi trang, không bọc thêm
+`Router`/`LocationProvider` nào.
 
 ## Kiểm chứng
 
