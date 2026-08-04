@@ -16,6 +16,12 @@ to reproduce the same mistakes.
 - [SPACING.md](SPACING.md) - the de facto spacing scale, layout primitives
   (`.stack`/`.row`/`.grid`/`.container`), page structure, and per-component
   padding/gap reference. Read before laying out a new page, dialog, or card.
+- [APP-ROUTER.md](APP-ROUTER.md) - the file-based router for the site's own
+  public content pages (`src/apps/pages/**`): routing conventions, `dry()`,
+  the async-vs-sync/hooks rule, Tailwind-only styling, MPA navigation. A
+  completely separate design system from the admin UI above - read this
+  instead of DESIGN.md/SPACING.md before touching `src/apps/pages/**` or
+  `src/apps/globals.css`.
 - [CODING-PRINCIPLES.md](CODING-PRINCIPLES.md) - standing rules about how
   changes get made in this codebase (dependencies, comments, validation UX,
   testing/QA method, config-resolution timing, concurrent-editing hazards).
