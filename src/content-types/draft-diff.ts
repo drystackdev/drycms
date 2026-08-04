@@ -1,40 +1,20 @@
-import type { AnyDestructiveChange } from "./engine/types.js";
+import type { DestructiveChange } from "./migration.js";
 import { fieldTypes } from "./field-registry.js";
 import { activeFields, effectiveFeatures } from "./system-fields.js";
 import type { ContentTypeDefinition, ContentTypeFeatures } from "./types.js";
 
-/** Human-readable line for one destructive change - either SQL's
- * `DestructiveChange` (`migration.ts`) or the `file` engine's
- * `FileDestructiveChange` (`engine/file/migration-file.ts`), shared by every
- * place that surfaces a migration's data-loss summary. */
-export function describeDestructiveChange(change: AnyDestructiveChange): string {
-  // Both engines have their own, differently-shaped `"shape-changed"` case -
-  // `"tableName" in change` splits SQL's `DestructiveChange` (this property)
-  // from the `file` engine's `FileDestructiveChange` (`typeName`/`fieldName`
-  // instead), so each switch below narrows cleanly.
-  if ("tableName" in change) {
-    switch (change.kind) {
-      case "drop-column":
-        return `Column "${change.columnName}" on "${change.tableName}" will be dropped - its data will be lost.`;
-      case "drop-table":
-        return `Table "${change.tableName}" will be dropped - every row in it will be lost.`;
-      case "shape-changed":
-        return `"${change.columnOrField}" on "${change.tableName}" changes from ${change.from} to ${change.to} - its existing data will be lost.`;
-      case "lossy-retype":
-        return `Column "${change.columnName}" on "${change.tableName}" changes type from ${change.from} to ${change.to} - values that don't convert cleanly will become 0/empty.`;
-      default:
-        return "This field will change.";
-    }
-  }
+/** Human-readable line for one of `migration.ts`'s `DestructiveChange`s,
+ * shared by every place that surfaces a migration's data-loss summary. */
+export function describeDestructiveChange(change: DestructiveChange): string {
   switch (change.kind) {
-    case "field-removed":
-      return `Field "${change.fieldName}" on "${change.typeName}" will be dropped - its data will be lost.`;
-    case "field-renamed":
-      return `Field "${change.fieldName}" on "${change.typeName}" is renamed - ${change.detail}`;
+    case "drop-column":
+      return `Column "${change.columnName}" on "${change.tableName}" will be dropped - its data will be lost.`;
+    case "drop-table":
+      return `Table "${change.tableName}" will be dropped - every row in it will be lost.`;
     case "shape-changed":
-      return `Field "${change.fieldName}" on "${change.typeName}" changes shape - ${change.detail}`;
-    case "retyped":
-      return `Field "${change.fieldName}" on "${change.typeName}" changes type - ${change.detail}`;
+      return `"${change.columnOrField}" on "${change.tableName}" changes from ${change.from} to ${change.to} - its existing data will be lost.`;
+    case "lossy-retype":
+      return `Column "${change.columnName}" on "${change.tableName}" changes type from ${change.from} to ${change.to} - values that don't convert cleanly will become 0/empty.`;
     default:
       return "This field will change.";
   }

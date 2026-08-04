@@ -7,7 +7,7 @@ or after the user corrected an approach. Re-deriving them from scratch tends
 to reproduce the same mistakes.
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - how the app is put together: server
-  request flow, the three pluggable content engines, the content-type/field
+  request flow, the two pluggable content engines, the content-type/field
   model, storage backends, RichText. Read before touching `src/server/**`,
   `src/content-types/**`, `src/storage/**`, or `src/components/RichTextField/**`.
 - [DESIGN.md](DESIGN.md) - the visual system and its CSS conventions

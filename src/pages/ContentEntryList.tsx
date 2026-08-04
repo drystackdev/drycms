@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { JSX } from "preact/jsx-runtime";
-const { contentEngine, path } = window.__DRY_CONFIG__;
+const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../components/file-manager-http-source.js";
@@ -180,6 +180,7 @@ function collectListCells(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix 
       out.push({
         kind: "field",
         column: {
+          fieldId: node.fieldId,
           fieldName,
           columnName: node.columnName,
           label,
@@ -285,16 +286,12 @@ function ContentEntryListCollection({
   const isSortable = !!type.features?.sortable;
   const canCreate = canAccess(type.id, "create");
   const canUpdate = canAccess(type.id, "update");
-  // `engine: "file"`'s `listEntries` re-scans every record on each call (see
-  // `entries-file.ts`) rather than running a SQL query, so round-tripping
-  // search/sort/pagination per keystroke would re-scan the whole collection
-  // repeatedly - rows are fetched once instead and `DataTable`'s existing
-  // fully-client-side mode (triggered below by omitting `serverQuery`) does
-  // search/sort/pagination in memory. A `sortable` collection needs the same
-  // "fetch everything up front" treatment regardless of engine: dragging a
-  // row only makes sense against the WHOLE order, never just the current
-  // page/search-filtered slice.
-  const useClientSearch = contentEngine === "file" || isSortable;
+  // A `sortable` collection needs "fetch everything up front" treatment:
+  // dragging a row only makes sense against the WHOLE order, never just the
+  // current page/search-filtered slice, so rows are fetched once and
+  // `DataTable`'s fully-client-side mode (triggered below by omitting
+  // `serverQuery`) does search/sort/pagination in memory instead.
+  const useClientSearch = isSortable;
   const fieldTree = useMemo(() => buildEntryFieldTree(type, allTypes), [type, allTypes]);
   // `queryableFieldNames` is the subset a sort/search request may actually
   // target - see `entry-tree.ts`'s doc comments on `flattenQueryableColumns`.

@@ -50,6 +50,9 @@ dev server.
 - [x] `src/content-types/draft-diff.ts` - pure diff helper (`diffContentType`,
       `describeDestructiveChange` handling both SQL's `DestructiveChange` and
       the file engine's `FileDestructiveChange`).
+      *(2026-08-04: the `file` engine was removed - `describeDestructiveChange`
+      now takes SQL's `DestructiveChange` only. See
+      `plans/remove-file-engine.md`.)*
 - [x] `src/content-types/draft-store.ts` - localStorage-backed
       `@preact/signals` store (`drafts` signal, `saveDraft`/`getDraft`/
       `discardDraft`/`discardDrafts`).

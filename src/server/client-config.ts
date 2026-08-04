@@ -2,7 +2,7 @@ import { resolved } from "./config.js";
 
 export interface DryClientConfig {
   path: string;
-  contentEngine: "sqlite" | "D1" | "file";
+  contentEngine: "sqlite" | "D1";
   /** Whether AI features (the Content Types "Ask AI" wizard) run against a
    * local CLI or the `aiKey` collection - not secret, just tells the client
    * whether to offer the AI Key picker combobox. */

@@ -1,13 +1,8 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
-import { content } from "../config.js";
 import { getContentAdapters } from "../content-adapters.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
-import {
-  ContentEngineError,
-  type AnyDestructiveChange,
-  type AnySavePlan,
-  type ContentEngineAdapter,
-} from "../../content-types/engine/types.js";
+import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
+import type { DestructiveChange, SavePlan } from "../../content-types/migration.js";
 import {
   assertNotFrozen,
   NamingError,
@@ -73,7 +68,7 @@ interface SaveRequestBody {
 
 interface SaveResultData {
   requiresConfirm?: true;
-  destructiveSummary?: AnyDestructiveChange[];
+  destructiveSummary?: DestructiveChange[];
   definition?: ContentTypeDefinition;
 }
 
@@ -100,11 +95,7 @@ async function performSave(
   // child table (e.g. "posts_categories") might collide with some OTHER
   // type's table name, since that's a property of the resolved tree, not
   // the definition itself. Components never produce tables of their own.
-  // SQL/D1 only - the `file` engine never generates a separate physical
-  // table for a repeatable component/relation-many field (it nests directly
-  // in the owning record's own JSON), so this whole collision class doesn't
-  // exist there.
-  if (definition.kind !== "component" && content.engine !== "file") {
+  if (definition.kind !== "component") {
     const newTableNames = collectTableNames(resolveTableTree(definition, allTypes));
     const others = allTypes.filter((t) => t.id !== definition.id && t.kind !== "component");
     for (const other of others) {
@@ -118,7 +109,7 @@ async function performSave(
     }
   }
 
-  const plan: AnySavePlan = await adapter.planSave(definition);
+  const plan: SavePlan = await adapter.planSave(definition);
   if (dryRun) {
     return { destructiveSummary: plan.destructiveSummary };
   }
@@ -158,7 +149,7 @@ interface BatchItemResult {
   label: string;
   kind: ContentTypeKind;
   ok: boolean;
-  destructiveSummary?: AnyDestructiveChange[];
+  destructiveSummary?: DestructiveChange[];
   error?: string;
 }
 

@@ -514,6 +514,30 @@ export const relationMirrorFieldType: FieldTypeDefinition = {
   validationFields: [],
 };
 
+/**
+ * The TS type `codegen.ts`'s `generateDryTypes` (the `dry()` reader's
+ * generated `.d.ts` - see `plans/reader.md`) emits for a plain scalar field.
+ * Only the 7 non-internal, non-relational types: `password`/`secretkey`
+ * are never emitted as a field at all (always masked, see `entry-codec.ts`'s
+ * `MASKED_FIELD_TYPES`), and `relation`/`component`/`relationmirror` have
+ * shapes that depend on their own `config` (target type, cardinality,
+ * repeatable) - handled directly in `codegen.ts`, which needs the full type
+ * graph (`allTypes`) to resolve them, not just this table. `select`'s own
+ * `options` become a string-literal union there too (more specific than the
+ * plain `string` fallback here); `image`/`select` becoming `T[]` under
+ * `config.multiple` is also `codegen.ts`'s job - this table is only ever the
+ * single-value base type.
+ */
+export const FIELD_TYPE_TS_TYPE: Record<string, string> = {
+  text: "string",
+  richtext: "string",
+  number: "number",
+  boolean: "boolean",
+  date: "Date",
+  image: "string",
+  select: "string",
+};
+
 export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [textFieldType.key]: textFieldType,
   [richTextFieldType.key]: richTextFieldType,

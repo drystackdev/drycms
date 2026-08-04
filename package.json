@@ -13,6 +13,7 @@
     "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server",
     "start": "node dist/server/entry-node.js",
     "build:icons": "node scripts/build-icons.mjs",
+    "dry:generate": "bun scripts/dry-generate.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"

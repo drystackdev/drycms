@@ -157,21 +157,4 @@ describe("describeDestructiveChange", () => {
     expect(text).toContain("views");
   });
 
-  it("describes a file-engine field-removed change without confusing it for SQL's shape-changed", () => {
-    const text = describeDestructiveChange({ kind: "field-removed", typeName: "posts", fieldName: "body" });
-    expect(text).toContain("body");
-    expect(text).toContain("posts");
-  });
-
-  it("describes a file-engine shape-changed change using its own (typeName/fieldName) shape", () => {
-    const text = describeDestructiveChange({
-      kind: "shape-changed",
-      typeName: "posts",
-      fieldName: "tags",
-      detail: "column becomes an array",
-    });
-    expect(text).toContain("tags");
-    expect(text).toContain("posts");
-    expect(text).toContain("column becomes an array");
-  });
 });

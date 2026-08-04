@@ -309,6 +309,14 @@ function buildNodes(
 }
 
 export interface QueryableColumn {
+  /** The declared or synthetic-system `FieldDefinition.id` - see
+   * `EntryColumnNode.fieldId`'s doc comment for why matching a SPECIFIC
+   * system field (e.g. the `draft`/`schedule` flags `entry-where.ts`'s
+   * `buildPublishedOnlyClause` looks for) must go through this, not
+   * `fieldName`: a name match alone can't tell the real system field apart
+   * from a same-named custom field on a type that has the matching feature
+   * off. */
+  fieldId: string;
   /** Dotted path for a field nested inside a `flatten` component (e.g.
    * `"seo.metaTitle"`) - matches the path `entry-codec.ts`'s `validateEntryValue`
    * reports field errors under. */
@@ -347,6 +355,7 @@ export function flattenDisplayColumns(nodes: EntryFieldNode[], pathPrefix = "", 
     if (node.kind === "column") {
       if (UNDISPLAYABLE_FIELD_TYPES.has(node.fieldType)) continue;
       out.push({
+        fieldId: node.fieldId,
         fieldName,
         columnName: node.columnName,
         label: labelPrefix ? `${labelPrefix} / ${node.label}` : node.label,

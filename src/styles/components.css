@@ -21,6 +21,14 @@
       }
     }
 
+    /* Redundant with the "Ask AI" tab in `.builder-content-type-tabs` above
+     * once that tablist takes over below `64rem`. */
+    .builder-ai-header-button {
+      @media (width < 64rem) {
+        display: none;
+      }
+    }
+
     .builder-content-type-layout {
       display: grid;
       gap: var(--dry-gap);

@@ -41,7 +41,7 @@ Content has two orthogonal concerns, each with its own adapter interface
   saves.
 - **`ContentEntryEngineAdapter`** - rows: CRUD on the actual entries.
 
-Three engines implement both, selected by `content.engine` in `dry.config.ts`
+Two engines implement both, selected by `content.engine` in `dry.config.ts`
 (`src/content-types/engine/index.ts`'s `createContentEngineAdapter` /
 `createContentEntryEngineAdapter` factories):
 
@@ -49,13 +49,13 @@ Three engines implement both, selected by `content.engine` in `dry.config.ts`
 | :-- | :-- | :-- | :-- |
 | `sqlite` (default) | `engine/sqlite.ts` | `engine/entries-sqlite.ts` | a real SQLite file, real DDL |
 | `D1` | `engine/d1.ts` | `engine/entries-d1.ts` | Cloudflare D1, real DDL |
-| `file` | `engine/file/file.ts` | `engine/file/entries-file.ts` | one JSON file per record, no DDL, git-diffable |
 
-The `file` engine reuses the same local storage adapter as `storage`/`icons`
-(see below) - it's a third root within the same disk, not a separate storage
-mechanism. When adding a feature to the
-content engine, check whether it needs implementing symmetrically across all
-three, or is legitimately sqlite/D1-only.
+Both are SQL, so a content-engine feature almost always needs implementing
+symmetrically in each pair of modules - the two files stay deliberately
+parallel. A third `file` engine (one JSON file per record, no DDL) existed
+until 2026-08-04 and was removed: it only earned its keep while the storage
+layer still had `github`/`gitlab` backends that made content git-diffable,
+and those are gone (see `plans/remove-file-engine.md`).
 
 ## Content-type / field model
 

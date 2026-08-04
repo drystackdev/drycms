@@ -5,6 +5,7 @@ import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
+import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 
 /** Same escaping as `entries-sqlite.ts` - kept as its own small copy rather
@@ -288,16 +289,20 @@ export function createD1ContentEntryEngineAdapter(
     const queryable = flattenQueryableColumns(nodes);
     const tableName = quoteIdent(type.name);
 
-    const params: unknown[] = [];
-    let whereSql = "";
+    let searchFragment: { sql: string; params: unknown[] } | null = null;
     if (query.search && query.searchableFields && query.searchableFields.length > 0) {
       const matching = queryable.filter((c) => query.searchableFields!.includes(c.fieldName));
       if (matching.length > 0) {
         const likeTerm = `%${escapeLikeTerm(query.search)}%`;
-        whereSql = ` WHERE (${matching.map((c) => `${quoteIdent(c.columnName)} LIKE ? ESCAPE '\\'`).join(" OR ")})`;
-        for (const _ of matching) params.push(likeTerm);
+        searchFragment = {
+          sql: matching.map((c) => `${quoteIdent(c.columnName)} LIKE ? ESCAPE '\\'`).join(" OR "),
+          params: matching.map(() => likeTerm),
+        };
       }
     }
+    const whereFragment = query.where ? buildWhereClause(queryable, query.where) : null;
+    const publishedFragment = query.publishedOnly ? buildPublishedOnlyClause(queryable, new Date().toISOString()) : null;
+    const { sql: whereSql, params } = combineWhereClauses([searchFragment, whereFragment, publishedFragment]);
 
     const sortColumn = query.sortField ? queryable.find((c) => c.fieldName === query.sortField)?.columnName : undefined;
     const orderSql = sortColumn
@@ -316,6 +321,31 @@ export function createD1ContentEntryEngineAdapter(
     ]);
 
     return { total, rows: rows.map((row) => ({ id: Number(row.id), value: rowToValue(nodes, row) })) };
+  }
+
+  async function findEntry(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    where: EntryWhere,
+    options?: { publishedOnly?: boolean },
+  ): Promise<EntryRow | null> {
+    const nodes = buildEntryFieldTree(type, allTypes);
+    const queryable = flattenQueryableColumns(nodes);
+    const whereFragment = buildWhereClause(queryable, where);
+    const publishedFragment = options?.publishedOnly ? buildPublishedOnlyClause(queryable, new Date().toISOString()) : null;
+    const { sql: whereSql, params } = combineWhereClauses([whereFragment, publishedFragment]);
+
+    const rows = await dbAll<Record<string, unknown>>(
+      db,
+      `SELECT * FROM ${quoteIdent(type.name)}${whereSql} ORDER BY "id" ASC LIMIT 1;`,
+      params,
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const id = Number(row.id);
+    const value = rowToValue(nodes, row);
+    await populateChildFields(db, nodes, id, value);
+    return { id, value };
   }
 
   async function getEntry(
@@ -464,6 +494,7 @@ export function createD1ContentEntryEngineAdapter(
   return {
     listEntries,
     getEntry,
+    findEntry,
     getRawEntry,
     createEntry,
     updateEntry,

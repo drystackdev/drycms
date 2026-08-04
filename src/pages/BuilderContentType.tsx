@@ -81,7 +81,7 @@ function CollectionCard({
 
   return (
     <div
-      class={`builder-collection-card${status?.isNew ? " new" : ""}${status?.editedCount ? " edited" : ""}`}
+      class={`builder-collection-card${status?.isNew ? " new" : status?.editedCount ? " edited" : ""}`}
       onClick={() => onOpen(definition.id)}
     >
       <span class="builder-collection-card-header">
@@ -100,9 +100,9 @@ function CollectionCard({
           </span>
         </span>
         <span class="builder-collection-card-status">
-          {status?.isNew && <span class="badge sm info">Draft</span>}
+          {status?.isNew && <span class="badge sm warning">New</span>}
           {!!status && !status.isNew && status.editedCount > 0 && (
-            <span class="badge sm warning">{status.editedCount} edited</span>
+            <span class="badge sm info">{status.editedCount} Edited</span>
           )}
           <span
             data-tooltip={`Features: ${featureLabels}`}
@@ -409,7 +409,7 @@ export default function BuilderContentType() {
         <div class="row">
           <button
             type="button"
-            class="outline"
+            class="outline builder-ai-header-button"
             aria-busy={definitions ? false : true}
             disabled={!definitions}
             onClick={() => setAiWizardOpen(true)}

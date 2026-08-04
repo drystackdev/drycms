@@ -41,12 +41,10 @@ export interface DryIconsOption {
 export interface DryContentOption {
   /**
    * Which backend the Content-Type Builder generates/migrates tables into.
-   * `"file"` stores each record as a JSON file instead of a SQL table - no
-   * DDL, no SQL parser, git-diffable.
    *
    * @default "sqlite"
    */
-  engine?: "sqlite" | "D1" | "file";
+  engine?: "sqlite" | "D1";
   /**
    * `sqlite` only: path to the database file, relative to the consuming
    * project's cwd (or an absolute path).
@@ -62,20 +60,6 @@ export interface DryContentOption {
    * isn't a JSON-serializable value, unlike every other resolved option).
    */
   binding?: string;
-  /**
-   * `engine: "file"` only: which backend serves the JSON content store -
-   * local directory used for the JSON content store.
-   *
-   * @default "local"
-   */
-  kind?: "local";
-  /**
-   * `engine: "file"` only: same semantics as `DryStorageOption.root`, but
-   * for the JSON content store's own root.
-   *
-   * @default ".dry/content"
-  */
-  root?: string;
 }
 
 export interface DryComponentsOption {
@@ -196,10 +180,7 @@ export interface ResolvedD1ContentOption {
   binding: string;
 }
 
-/** The file content engine reuses `createStorageAdapter()` unchanged. */
-export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOption;
-
-export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
+export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption;
 
 export interface ResolvedComponentsOption {
   storage: ResolvedStorageOption;
@@ -264,7 +245,6 @@ export const DEFAULT_PATH = "/dry";
 export const DEFAULT_STORAGE_ROOT = ".dry/storage";
 export const DEFAULT_ICONS_ROOT = ".dry/icons";
 export const DEFAULT_CONTENT_FILE = ".dry/content.sqlite";
-export const DEFAULT_CONTENT_ROOT = ".dry/content";
 export const DEFAULT_COMPONENTS_STORAGE_ROOT = ".dry/richtext-components";
 export const DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT = ".dry/components";
 export const DEFAULT_KV_ROOT = ".dry/kv";
@@ -389,14 +369,13 @@ function resolvePageComponentsOption(pageComponents: DryPageComponentsOption = {
 }
 
 function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
-  const legacyBranch = (content as DryContentOption & { branch?: unknown }).branch;
   const engine = content.engine ?? "sqlite";
   if (typeof engine !== "string") {
     throw new TypeError(`[drycms] \`content.engine\` must be a string, received ${typeof engine}.`);
   }
-  if (engine !== "sqlite" && engine !== "D1" && engine !== "file") {
+  if (engine !== "sqlite" && engine !== "D1") {
     throw new Error(
-      `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite", "D1" and "file" are available today.`,
+      `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite" and "D1" are available today.`,
     );
   }
   // A `binding` only means anything under `engine: "D1"` - silently falling
@@ -408,12 +387,6 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
       '[drycms] `content.binding` is only used with `content.engine: "D1"` - add `engine: "D1"` or remove `binding`.',
     );
   }
-  if (engine !== "file" && (content.kind !== undefined || content.root !== undefined || legacyBranch !== undefined)) {
-    throw new Error(
-      '[drycms] `content.kind`/`content.root`/`content.branch` are only used with `content.engine: "file"` - add `engine: "file"` or remove them.',
-    );
-  }
-
   if (engine === "D1") {
     const binding = content.binding;
     if (!binding || typeof binding !== "string") {
@@ -422,15 +395,6 @@ function resolveContentOption(content: DryContentOption = {}): ResolvedContentOp
       );
     }
     return { engine: "D1", binding };
-  }
-
-  if (engine === "file") {
-    const storageOption = resolveFileBackedOption(
-      { kind: content.kind, root: content.root, branch: legacyBranch },
-      DEFAULT_CONTENT_ROOT,
-      "content",
-    );
-    return { engine: "file", ...storageOption };
   }
 
   const file = content.file ?? DEFAULT_CONTENT_FILE;

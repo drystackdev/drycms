@@ -20,6 +20,30 @@ const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts
 const { injectClientConfig } = await vite.ssrLoadModule("/src/server/client-config.ts");
 const apiMiddleware = createApiMiddleware();
 
+/**
+ * Regenerates `src/apps/dry.generated.d.ts` (see `plans/reader.md`) once on
+ * startup, so a fresh checkout has correct `dry()` types without a manual
+ * step - `bun run dry:generate` (`scripts/dry-generate.ts`) covers the
+ * mid-session case (schema changed, no restart) this can't. `content.engine
+ * === "D1"` has no local binding to read here, same as that script - skipped
+ * silently rather than logging a scary, expected error on every D1 dev
+ * startup. Never fatal: a codegen bug must not block the dev server itself.
+ */
+try {
+  const { content } = await vite.ssrLoadModule("/src/server/config.ts");
+  if (content.engine !== "D1") {
+    const { createContentEngineAdapter } = await vite.ssrLoadModule("/src/content-types/engine/index.ts");
+    const { generateDryTypes } = await vite.ssrLoadModule("/src/content-types/codegen.ts");
+    const adapter = createContentEngineAdapter(content);
+    const allTypes = await adapter.listContentTypes();
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(new URL("../src/apps/dry.generated.d.ts", import.meta.url), generateDryTypes(allTypes));
+    console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types)`);
+  }
+} catch (error) {
+  console.error("[drycms] failed to generate dry.generated.d.ts:", error);
+}
+
 const server = createHttpServer((req, res) => {
   apiMiddleware(req, res, () => {
     guardPageRequest(toFetchRequest(req), {}).then((redirect) => {

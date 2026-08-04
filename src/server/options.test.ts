@@ -48,11 +48,17 @@ describe('resolveOptions', () => {
 		});
 	});
 
-	it('uses .dry defaults for file content and SQLite KV', () => {
-		expect(resolveOptions({ content: { engine: 'file' }, kv: { kind: 'sqlite' } })).toMatchObject({
-			content: { engine: 'file', kind: 'local', root: resolve(process.cwd(), '.dry/content') },
+	it('uses .dry defaults for sqlite content and SQLite KV', () => {
+		expect(resolveOptions({ kv: { kind: 'sqlite' } })).toMatchObject({
+			content: { engine: 'sqlite', file: resolve(process.cwd(), '.dry/content.sqlite') },
 			kv: { kind: 'sqlite', file: resolve(process.cwd(), '.dry/kv.sqlite') },
 		});
+	});
+
+	it('rejects the removed "file" content engine', () => {
+		expect(() => resolveOptions({ content: { engine: 'file' as 'sqlite' } })).toThrow(
+			/Only "sqlite" and "D1" are available today/,
+		);
 	});
 
 	it('rejects GitHub and GitLab storage kinds', () => {

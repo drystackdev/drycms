@@ -535,6 +535,130 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     expect(await entries.getResourceVersion(role)).toBe(1);
     expect(await entries.getResourceVersion(user)).toBe(0);
   });
+
+  it("findEntry looks a row up by slug (features.slug) and returns null on no match", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const custom: ContentTypeDefinition = {
+      id: "custom-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      features: { slug: true },
+      fields: [],
+      version: 0,
+    };
+    await schema.applySave(custom, await schema.planSave(custom));
+    const allTypes = await schema.listContentTypes();
+    const post = allTypes.find((t) => t.id === "custom-post")!;
+
+    const created = await entries.createEntry(post, allTypes, { title: "Hello", slug: "hello" });
+    await entries.createEntry(post, allTypes, { title: "Other", slug: "other" });
+
+    const found = await entries.findEntry(post, allTypes, [{ field: "slug", op: "eq", value: "hello" }]);
+    expect(found?.id).toBe(created.id);
+    expect(found?.value.title).toBe("Hello");
+
+    expect(await entries.findEntry(post, allTypes, [{ field: "slug", op: "eq", value: "nope" }])).toBeNull();
+  });
+
+  it("listEntries/findEntry apply a `where` filter, resolved against queryable field names", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const custom: ContentTypeDefinition = {
+      id: "custom-article",
+      kind: "collection",
+      name: "article",
+      label: "Article",
+      fields: [
+        { id: "f-views", name: "views", label: "Views", type: "number", config: {}, validation: {}, order: 0 },
+        { id: "f-category", name: "category", label: "Category", type: "text", config: {}, validation: {}, order: 1 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(custom, await schema.planSave(custom));
+    const allTypes = await schema.listContentTypes();
+    const article = allTypes.find((t) => t.id === "custom-article")!;
+
+    await entries.createEntry(article, allTypes, { views: 5, category: "news" });
+    await entries.createEntry(article, allTypes, { views: 15, category: "news" });
+    await entries.createEntry(article, allTypes, { views: 25, category: "sports" });
+
+    const highViews = await entries.listEntries(article, allTypes, {
+      page: 0,
+      pageSize: 10,
+      where: [{ field: "views", op: "gte", value: 10 }],
+    });
+    expect(highViews.total).toBe(2);
+    expect(highViews.rows.map((r) => r.value.views).sort()).toEqual([15, 25]);
+
+    const newsOrSports = await entries.listEntries(article, allTypes, {
+      page: 0,
+      pageSize: 10,
+      where: [{ field: "category", op: "in", value: ["sports"] }],
+    });
+    expect(newsOrSports.total).toBe(1);
+    expect(newsOrSports.rows[0]?.value.views).toBe(25);
+
+    const combined = await entries.listEntries(article, allTypes, {
+      page: 0,
+      pageSize: 10,
+      where: [
+        { field: "category", op: "eq", value: "news" },
+        { field: "views", op: "gt", value: 10 },
+      ],
+    });
+    expect(combined.total).toBe(1);
+    expect(combined.rows[0]?.value.views).toBe(15);
+
+    await expect(
+      entries.listEntries(article, allTypes, { page: 0, pageSize: 10, where: [{ field: "not-a-field", op: "eq", value: 1 }] }),
+    ).rejects.toThrow(/not a queryable field/);
+  });
+
+  it("publishedOnly excludes draft rows and future-scheduled rows, treating an untouched draft/schedule as published", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const custom: ContentTypeDefinition = {
+      id: "custom-story",
+      kind: "collection",
+      name: "story",
+      label: "Story",
+      features: { slug: true, draft: true, schedule: true },
+      fields: [],
+      version: 0,
+    };
+    await schema.applySave(custom, await schema.planSave(custom));
+    const allTypes = await schema.listContentTypes();
+    const story = allTypes.find((t) => t.id === "custom-story")!;
+
+    const untouched = await entries.createEntry(story, allTypes, { title: "Untouched", slug: "untouched" });
+    await entries.createEntry(story, allTypes, { title: "Draft", slug: "draft-story", draft: true });
+    const past = await entries.createEntry(story, allTypes, {
+      title: "Past",
+      slug: "past",
+      draft: false,
+      schedule: new Date(Date.now() - 86_400_000),
+    });
+    await entries.createEntry(story, allTypes, {
+      title: "Future",
+      slug: "future",
+      draft: false,
+      schedule: new Date(Date.now() + 86_400_000),
+    });
+
+    const published = await entries.listEntries(story, allTypes, { page: 0, pageSize: 10, publishedOnly: true });
+    expect(published.total).toBe(2);
+    expect(published.rows.map((r) => r.id).sort()).toEqual([untouched.id, past.id].sort());
+
+    const all = await entries.listEntries(story, allTypes, { page: 0, pageSize: 10 });
+    expect(all.total).toBe(4);
+
+    expect(await entries.findEntry(story, allTypes, [{ field: "slug", op: "eq", value: "draft-story" }], { publishedOnly: true })).toBeNull();
+    expect(await entries.findEntry(story, allTypes, [{ field: "slug", op: "eq", value: "future" }], { publishedOnly: true })).toBeNull();
+    const foundPast = await entries.findEntry(story, allTypes, [{ field: "slug", op: "eq", value: "past" }], { publishedOnly: true });
+    expect(foundPast?.id).toBe(past.id);
+  });
 });
 
 async function rawQuery<T = unknown>(dir: string, sql: string): Promise<T[]> {

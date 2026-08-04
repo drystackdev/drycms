@@ -1,5 +1,6 @@
 import type { ContentTypeDefinition } from "../types.js";
 import type { EntryValue } from "./entry-codec.js";
+import type { EntryWhere } from "./entry-where.js";
 
 export type ContentEntryErrorCode = "not_found" | "validation_failed" | "unsupported";
 
@@ -31,6 +32,16 @@ export interface EntryQuery {
    * fields the caller has toggled visible (see `status/content.md`'s "only a
    * toggled-on column is searchable"). */
   searchableFields?: string[];
+  /** ANDed with `search` and `publishedOnly` (each independently optional) -
+   * see `entry-where.ts`. Existing admin-UI callers (`ContentEntryList.tsx`)
+   * never set this; it exists for the `dry()` reader (`plans/reader.md`). */
+  where?: EntryWhere;
+  /** Excludes draft/future-scheduled rows (see `entry-where.ts`'s
+   * `buildPublishedOnlyClause`) - a no-op when the type has neither
+   * `features.draft` nor `features.schedule`. The `dry()` reader defaults
+   * this to `true`; every other caller leaves it unset (an editor needs to
+   * see everything, published or not). */
+  publishedOnly?: boolean;
 }
 
 export interface EntryRow {
@@ -56,6 +67,23 @@ export interface EntryPage {
 export interface ContentEntryEngineAdapter {
   listEntries(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], query: EntryQuery): Promise<EntryPage>;
   getEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<EntryRow | null>;
+  /**
+   * Like `getEntry`, but looks the row up by an arbitrary `EntryWhere`
+   * instead of its `id` - e.g. `dry()`'s slug lookup (`get("my-slug")`).
+   * Fully populated (relations/child-tables included), same as `getEntry`.
+   * Ordered by `"id"` ascending and takes the first match when `where`
+   * matches more than one row (no `ORDER BY` guarantee otherwise, so a
+   * multi-match result would be DB/engine-order-dependent without this).
+   * `null` if nothing matches. `publishedOnly` is the same gate
+   * `EntryQuery.publishedOnly` applies - see `entry-where.ts`'s
+   * `buildPublishedOnlyClause`.
+   */
+  findEntry(
+    type: ContentTypeDefinition,
+    allTypes: ContentTypeDefinition[],
+    where: EntryWhere,
+    options?: { publishedOnly?: boolean },
+  ): Promise<EntryRow | null>;
   /**
    * Like `getEntry`, but returns the row exactly as stored - no
    * `entry-codec.ts` `rowToValue` masking (`password`/`secretkey` columns

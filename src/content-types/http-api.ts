@@ -1,9 +1,9 @@
-import type { AnyDestructiveChange } from "./engine/types.js";
+import type { DestructiveChange } from "./migration.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "./types.js";
 
 export interface SaveResponse {
   requiresConfirm?: true;
-  destructiveSummary?: AnyDestructiveChange[];
+  destructiveSummary?: DestructiveChange[];
   definition?: ContentTypeDefinition;
 }
 
@@ -12,7 +12,7 @@ export interface BatchItemResult {
   label: string;
   kind: ContentTypeKind;
   ok: boolean;
-  destructiveSummary?: AnyDestructiveChange[];
+  destructiveSummary?: DestructiveChange[];
   error?: string;
 }
 

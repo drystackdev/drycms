@@ -10,11 +10,11 @@ describe("client config injection", () => {
   it("places server config before the document head closes", () => {
     const html = injectClientConfig("<html><head></head><body></body></html>", {
       path: "/admin",
-      contentEngine: "file",
+      contentEngine: "D1",
       aiMode: "server",
     });
 
-    expect(html).toContain("window.__DRY_CONFIG__={\"path\":\"/admin\",\"contentEngine\":\"file\",\"aiMode\":\"server\"};");
+    expect(html).toContain("window.__DRY_CONFIG__={\"path\":\"/admin\",\"contentEngine\":\"D1\",\"aiMode\":\"server\"};");
     expect(html.indexOf("__DRY_CONFIG__")).toBeLessThan(html.indexOf("</head>"));
   });
 
