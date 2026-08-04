@@ -1,3 +1,5 @@
+import { PRESS_MENTIONS } from "./press-data.js";
+
 const VALUE_PROPS = [
   {
     title: "Kiến thức đáng tin cậy",
@@ -22,14 +24,14 @@ const LATEST_POSTS = [
 export default async function HomePage() {
   return (
     <div>
-      <section class="relative overflow-hidden bg-teal-50">
+      <section class="relative overflow-hidden bg-red-50">
         <div class="mx-auto flex max-w-6xl flex-col px-4 sm:flex-row sm:items-end">
           <div class="flex flex-col justify-center gap-1 py-10 sm:w-1/2 sm:py-24">
-            <span class="w-fit rounded-full bg-teal-100 px-4 py-1 text-sm font-medium text-teal-700">
+            <span class="w-fit rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">
               Kiến thức HIV & ARV
             </span>
             <h1 class="mt-4 text-5xl font-bold text-slate-900 uppercase">Mai Anh Quyền</h1>
-            <p class="mt-2 text-lg font-semibold text-teal-700">
+            <p class="mt-2 text-lg font-semibold text-red-900">
               Tiếp cận viên cộng đồng, chung tay phòng chống HIV/AIDS
             </p>
             <p class="mt-4 max-w-lg text-sm leading-relaxed text-slate-600 sm:text-base">
@@ -37,12 +39,12 @@ export default async function HomePage() {
               dolore magna aliqua.
             </p>
             <div class="mt-6 flex flex-wrap gap-3">
-              <a href="/blogs" class="rounded-full bg-teal-600 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-700">
+              <a href="/blogs" class="rounded-full bg-red-800 px-6 py-3 text-sm font-semibold text-white hover:bg-red-900">
                 Xem bài viết
               </a>
               <a
                 href="/contact"
-                class="rounded-full border border-teal-600 px-6 py-3 text-sm font-semibold text-teal-700 hover:bg-teal-50"
+                class="rounded-full border border-red-800 px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50"
               >
                 Liên hệ tư vấn
               </a>
@@ -67,7 +69,7 @@ export default async function HomePage() {
         <div class="grid gap-6 sm:grid-cols-3">
           {VALUE_PROPS.map((item) => (
             <div key={item.title} class="rounded-2xl border border-slate-200 p-6">
-              <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+              <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-900">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-5 w-5">
                   <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
@@ -94,7 +96,7 @@ export default async function HomePage() {
           <p class="max-w-xl text-sm leading-relaxed text-slate-100 sm:text-base">
             Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud.
           </p>
-          <a href="/blogs" class="mt-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-teal-700 hover:bg-teal-50">
+          <a href="/blogs" class="mt-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50">
             Xem bài viết
           </a>
         </div>
@@ -104,7 +106,7 @@ export default async function HomePage() {
         <div class="mx-auto max-w-6xl px-4 py-16">
           <div class="mb-8 flex items-end justify-between">
             <h2 class="text-2xl font-bold text-slate-900">Bài viết mới nhất</h2>
-            <a href="/blogs" class="text-sm font-medium text-teal-700 hover:underline">
+            <a href="/blogs" class="text-sm font-medium text-red-900 hover:underline">
               Xem tất cả →
             </a>
           </div>
@@ -113,7 +115,7 @@ export default async function HomePage() {
               <article key={post.title} class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                 <div class="h-36 bg-slate-200" />
                 <div class="space-y-2 p-5">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-teal-700">{post.tag}</span>
+                  <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{post.tag}</span>
                   <h3 class="text-base font-semibold text-slate-900">{post.title}</h3>
                   <p class="text-xs text-slate-500">{post.date}</p>
                 </div>
@@ -124,12 +126,48 @@ export default async function HomePage() {
       </section>
 
       <section class="mx-auto max-w-6xl px-4 py-16">
-        <div class="flex flex-col items-center gap-4 rounded-2xl bg-teal-600 px-8 py-12 text-center text-white">
+        <div class="mb-8 flex items-end justify-between">
+          <h2 class="text-2xl font-bold text-slate-900">Bài báo nói về tôi</h2>
+          <a href="/about" class="text-sm font-medium text-red-900 hover:underline">
+            Xem tất cả →
+          </a>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2">
+          {PRESS_MENTIONS.map((item) => (
+            <a
+              key={item.title}
+              href={item.href}
+              target="_blank"
+              rel="noreferrer"
+              class="group flex items-start gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
+            >
+              <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
+              <div class="flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-red-900">{item.outlet}</p>
+                <p class="mt-1 text-sm font-semibold text-slate-900 group-hover:text-red-900">{item.title}</p>
+                <p class="mt-1 text-xs text-slate-500">{item.date}</p>
+              </div>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                class="mt-1 h-4 w-4 shrink-0 text-slate-400 group-hover:text-red-800"
+              >
+                <path d="M7 17L17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section class="mx-auto max-w-6xl px-4 py-16">
+        <div class="flex flex-col items-center gap-4 rounded-2xl bg-red-800 px-8 py-12 text-center text-white">
           <h2 class="text-2xl font-bold">Bạn cần được tư vấn riêng tư?</h2>
-          <p class="max-w-xl text-sm leading-relaxed text-teal-50">
+          <p class="max-w-xl text-sm leading-relaxed text-red-50">
             Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.
           </p>
-          <a href="/contact" class="rounded-full bg-white px-6 py-3 text-sm font-semibold text-teal-700 hover:bg-teal-50">
+          <a href="/contact" class="rounded-full bg-white px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50">
             Liên hệ ngay
           </a>
         </div>

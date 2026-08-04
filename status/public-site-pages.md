@@ -79,10 +79,44 @@ requests so network never goes idle. Use `waitUntil: "load"` (+ a short
 explicit wait if needed) for any future Playwright check that touches the
 Home route.
 
+## Follow-up 3 (same session)
+
+Hero image resized 2/5 → 1/2 width. That widened box changed
+`object-contain`'s fit-by-width/fit-by-height outcome enough to reintroduce
+a top-fade bug: the image was letterboxed (empty gap above the photo,
+`object-bottom`), and the top `mask-image` gradient landed inside that
+already-invisible gap instead of over real pixels, so the actual photo
+edge still cut in sharply right where the gap ended. Fixed at the root -
+gave the image box a fixed `aspect-4/3` (matching the source photo's real
+ratio) instead of stretching it to the row height, switched to
+`object-cover`, and changed the row from `items-stretch` to `items-end`.
+Zero letterboxing now, so the mask fades real pixels on all three edges
+(verified again via Pillow pixel sampling - background color bleeds in
+gradually starting right at the image's own top edge). Lesson: a
+percentage-based edge mask on an `object-contain`ed image is only reliable
+when the box's aspect ratio matches the image's own - otherwise the
+"blank" and "faded" regions can silently swap depending on viewport width.
+
+Added a "Bài viết liên quan" (related posts) block on the blog detail page,
+below the contact CTA - up to 3 posts sharing the same `tag`, self-hides
+when none exist.
+
+Full color re-theme: teal → deep red ("đỏ đô") across all 5 pages, to match
+the hero photo/video's red event-backdrop tone. Word-boundary-safe Perl
+substitution (not naive string replace - `teal-50` is a literal prefix of
+`teal-500`, so an unguarded replace would have corrupted it) with an
+intentionally non-linear shade map: light tints kept their position
+(`teal-50`→`red-50`, `teal-100`→`red-100`, `teal-300`→`red-300`) but the
+primary/accent shades shifted two steps darker (`teal-600`→`red-800`,
+`teal-700`→`red-900`, focus-ring `teal-500`→`red-600`) - a straight 1:1
+hue swap onto `red-600`/`red-700` would have read as bright alert-red, not
+the deep burgundy "đỏ đô" that was asked for.
+
 ## Speed
 
 Single session, complete. Hero photo blend took several iterations (object-
 cover crop → object-contain letterbox → color-matched overlay divs → CSS
-mask) before landing on the mask approach; the overlay-div version is what
-the user's screenshot caught as a hard edge, which is what motivated the
-switch.
+mask → aspect-ratio fix for a resize regression) before landing on the
+final version; each visual bug in this thread was caught by the user
+looking at a real screenshot, not by my own review, worth being more
+skeptical of "looks done" going forward.

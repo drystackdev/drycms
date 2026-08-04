@@ -6,7 +6,7 @@ export default async function BlogsPage() {
   return (
     <div class="mx-auto max-w-6xl px-4 py-16">
       <div class="max-w-2xl">
-        <span class="rounded-full bg-teal-100 px-4 py-1 text-sm font-medium text-teal-700">Blog</span>
+        <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">Blog</span>
         <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Kiến thức HIV & ARV</h1>
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
           Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore
@@ -29,7 +29,7 @@ export default async function BlogsPage() {
           <input
             type="search"
             placeholder="Tìm kiếm bài viết..."
-            class="w-full rounded-full border border-slate-300 py-2 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none"
+            class="w-full rounded-full border border-slate-300 py-2 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-red-600 focus:outline-none"
           />
         </div>
         <div class="flex flex-wrap gap-2">
@@ -37,7 +37,7 @@ export default async function BlogsPage() {
             <span
               key={category}
               class={`rounded-full px-4 py-1.5 text-xs font-medium ${
-                index === 0 ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600"
+                index === 0 ? "bg-red-800 text-white" : "bg-slate-100 text-slate-600"
               }`}
             >
               {category}
@@ -51,12 +51,12 @@ export default async function BlogsPage() {
           <article key={post.slug} class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div class="h-40 bg-slate-200" />
             <div class="space-y-2 p-5">
-              <span class="text-xs font-semibold uppercase tracking-wide text-teal-700">{post.tag}</span>
+              <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{post.tag}</span>
               <h3 class="text-base font-semibold text-slate-900">{post.title}</h3>
               <p class="text-sm leading-relaxed text-slate-600">{post.excerpt}</p>
               <div class="flex items-center justify-between pt-2">
                 <p class="text-xs text-slate-500">{post.date}</p>
-                <a href={`/blogs/${post.slug}`} class="text-sm font-medium text-teal-700 hover:underline">
+                <a href={`/blogs/${post.slug}`} class="text-sm font-medium text-red-900 hover:underline">
                   Đọc thêm →
                 </a>
               </div>
@@ -67,7 +67,7 @@ export default async function BlogsPage() {
 
       <div class="mt-12 flex items-center justify-center gap-2">
         <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">‹</span>
-        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-teal-600 text-sm font-semibold text-white">
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-red-800 text-sm font-semibold text-white">
           1
         </span>
         <span class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">

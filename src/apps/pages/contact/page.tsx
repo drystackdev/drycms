@@ -40,7 +40,7 @@ export default async function ContactPage() {
   return (
     <div class="mx-auto max-w-6xl px-4 py-16">
       <div class="max-w-2xl">
-        <span class="rounded-full bg-teal-100 px-4 py-1 text-sm font-medium text-teal-700">Liên hệ</span>
+        <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">Liên hệ</span>
         <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Cùng trò chuyện</h1>
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
           Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mọi thông tin được giữ riêng tư và bảo mật tuyệt đối.
@@ -53,9 +53,9 @@ export default async function ContactPage() {
             <a
               key={channel.label}
               href={channel.href}
-              class="flex items-center gap-4 rounded-2xl border border-slate-200 p-5 hover:border-teal-300 hover:bg-teal-50"
+              class="flex items-center gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
             >
-              <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+              <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-900">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-5 w-5">
                   {channel.icon}
                 </svg>
@@ -78,7 +78,7 @@ export default async function ContactPage() {
                 id="name"
                 type="text"
                 placeholder="Nguyễn Văn A"
-                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-red-600 focus:outline-none"
               />
             </div>
             <div class="space-y-1.5">
@@ -89,7 +89,7 @@ export default async function ContactPage() {
                 id="phone"
                 type="tel"
                 placeholder="09xx xxx xxx"
-                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-red-600 focus:outline-none"
               />
             </div>
           </div>
@@ -101,7 +101,7 @@ export default async function ContactPage() {
               id="email"
               type="email"
               placeholder="ban@example.com"
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-red-600 focus:outline-none"
             />
           </div>
           <div class="space-y-1.5">
@@ -112,10 +112,10 @@ export default async function ContactPage() {
               id="message"
               rows={4}
               placeholder="Lorem ipsum dolor sit amet, consectetur adipiscing elit..."
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-red-600 focus:outline-none"
             />
           </div>
-          <button type="submit" class="w-full rounded-full bg-teal-600 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-700">
+          <button type="submit" class="w-full rounded-full bg-red-800 px-6 py-3 text-sm font-semibold text-white hover:bg-red-900">
             Gửi thông tin
           </button>
         </form>
