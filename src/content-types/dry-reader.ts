@@ -72,13 +72,16 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
       const { entries, allTypes } = context;
       const type = mustFindType(allTypes, name, "collection");
       context.touchedTypes?.add(type.name);
+      let result: Record<string, unknown> | null;
       if (typeof idOrSlug === "number") {
         const row = await entries.getEntry(type, allTypes, idOrSlug);
-        if (!row || !isPublished(row.value)) return null;
-        return toRecord(row);
+        result = row && isPublished(row.value) ? toRecord(row) : null;
+      } else {
+        const row = await entries.findEntry(type, allTypes, [{ field: "slug", op: "eq", value: idOrSlug }], { publishedOnly: true });
+        result = row ? toRecord(row) : null;
       }
-      const row = await entries.findEntry(type, allTypes, [{ field: "slug", op: "eq", value: idOrSlug }], { publishedOnly: true });
-      return row ? toRecord(row) : null;
+      context.callLog?.push({ kind: "collection", name, method: "get", result });
+      return result;
     },
     async list(options = {}) {
       const context = getDryContext();
@@ -93,7 +96,9 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
         where: options.where,
         publishedOnly: !options.includeDraft,
       });
-      return { rows: page.rows.map(toRecord), total: page.total };
+      const result = { rows: page.rows.map(toRecord), total: page.total };
+      context.callLog?.push({ kind: "collection", name, method: "list", result });
+      return result;
     },
   };
 }
@@ -106,7 +111,9 @@ function createSingletonReader(name: string): DrySingletonReader<Record<string, 
       const type = mustFindType(allTypes, name, "singleton");
       context.touchedTypes?.add(type.name);
       const row = await entries.getSingletonEntry(type, allTypes);
-      return row ? toRecord(row) : null;
+      const result = row ? toRecord(row) : null;
+      context.callLog?.push({ kind: "singleton", name, method: "get", result });
+      return result;
     },
   };
 }

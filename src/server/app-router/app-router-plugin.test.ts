@@ -4,8 +4,8 @@ import { appRouterPlugin } from "./app-router-plugin.js";
 
 const plugin = appRouterPlugin();
 
-function transform(code: string, id: string) {
-  return plugin.transform.call({} as never, code, id);
+function transform(code: string, id: string, consumer: "server" | "client" = "server") {
+  return plugin.transform.call({ environment: { config: { consumer } } } as never, code, id);
 }
 
 /** Real absolute paths under this repo's own cwd - `app-router-plugin.ts`
@@ -41,6 +41,14 @@ describe("appRouterPlugin transform", () => {
     const id = join(process.cwd(), "src/pages/Dashboard.tsx");
     const code = `dry();`;
     expect(transform(code, id)).toBeNull();
+  });
+
+  it("injects the client dry-reader-client for the client build (consumer=client)", () => {
+    const id = pagePath("blog/[slug]/page.tsx");
+    const code = `export default async function Page() { const post = await dry().collection("post").get(1); return post; }`;
+    const result = transform(code, id, "client");
+    expect(result).not.toBeNull();
+    expect(result!.code).toMatch(/^import \{ dry \} from "..\/..\/..\/..\/content-types\/dry-reader-client\.js";\n/);
   });
 });
 

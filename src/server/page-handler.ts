@@ -58,7 +58,8 @@ export async function handlePageRequest(
   }
 
   const touchedTypes = new Set<string>();
-  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes };
+  const callLog: DryRequestContext["callLog"] = [];
+  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog };
 
   return renderPage(match, dryContext, {
     onDocumentReady: (fullHtml) => {

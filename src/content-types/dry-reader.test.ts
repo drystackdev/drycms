@@ -179,4 +179,35 @@ describe("dry()", () => {
       });
     });
   });
+
+  describe("callLog (client hydration replay)", () => {
+    it("records collection get()/list() and singleton get() in call order", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const created = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", views: 3 });
+      const callLog: import("./dry-context.js").DryCallLogEntry[] = [];
+
+      await runWithDryContext({ entries, allTypes, callLog }, async () => {
+        await dry().collection("post").get(created.id);
+        await dry().collection("post").list();
+        await dry().singleton("settings").get();
+      });
+
+      expect(callLog.map((e) => `${e.kind}.${e.name}.${e.method}`)).toEqual([
+        "collection.post.get",
+        "collection.post.list",
+        "singleton.settings.get",
+      ]);
+      expect((callLog[0]!.result as { slug: string }).slug).toBe("hello");
+    });
+
+    it("is a no-op when the context omits callLog (existing callers unaffected)", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      await runWithDryContext({ entries, allTypes }, async () => {
+        await expect(dry().singleton("settings").get()).resolves.not.toBeNull();
+      });
+    });
+  });
 });

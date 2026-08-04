@@ -12,6 +12,20 @@ import type { ContentTypeDefinition } from "./types.js";
  * supported on Cloudflare Workers too, so this stays usable if `dry()` is
  * ever called from a Workers-deployed render, not just Node.
  */
+/** 1 recorded `dry()` call result, in call order - see `dry-replay-codec.ts`
+ * and `dry-reader-client.ts`. Client hydration can't call `dry()` for real
+ * (no `AsyncLocalStorage`/DB access in the browser), so it replays
+ * `page.tsx`/`layout.tsx` against these already-fetched results instead -
+ * matched purely by POSITION (the client re-runs the exact same code path
+ * in the exact same order), not by `kind`/`name`/`method`, which exist only
+ * for a dev-time mismatch warning. */
+export interface DryCallLogEntry {
+  kind: "collection" | "singleton";
+  name: string;
+  method: "get" | "list";
+  result: unknown;
+}
+
 export interface DryRequestContext {
   entries: ContentEntryEngineAdapter;
   allTypes: ContentTypeDefinition[];
@@ -24,6 +38,10 @@ export interface DryRequestContext {
    * `plans/app-router.md`'s `page-handler.ts` populates this to know which
    * `getResourceVersion()`s a cached render needs to re-check. */
   touchedTypes?: Set<string>;
+  /** Every `dry()` call's result, in order - optional same as `touchedTypes`
+   * above. `page-handler.ts` populates this so `render.ts` can embed it for
+   * `hydrate-client.ts` to replay (`plans/app-router.md`'s Giai đoạn 2). */
+  callLog?: DryCallLogEntry[];
 }
 
 const storage = new AsyncLocalStorage<DryRequestContext>();

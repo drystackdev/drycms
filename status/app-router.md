@@ -1,13 +1,13 @@
-# App Router (`src/apps`) - thực thi Giai đoạn 1 + Tailwind (Giai đoạn 2) + Giai đoạn 3
+# App Router (`src/apps`) - Giai đoạn 1-3 XONG
 
 ## Plan
 
 Xem `plans/app-router.md` cho toàn bộ kế hoạch (4 giai đoạn + 2 cơ chế
 cache). File này track việc thực thi - Giai đoạn 1 (SSR streaming qua
-adapter, file-based routing, `pages-cache`) đã xong đầy đủ; phần Tailwind
-v4 của Giai đoạn 2 cũng đã xong (client hydration của Giai đoạn 2 thì
-chưa); Giai đoạn 3 (production build, SSR-only - xem mục riêng bên dưới)
-đã xong.
+adapter, file-based routing, `pages-cache`), Giai đoạn 2 (Tailwind v4 +
+client hydration) và Giai đoạn 3 (production build) đều đã xong. Còn lại:
+Giai đoạn 4 (Polish - preview draft, 404/error tuỳ biến, per-page
+metadata), không chặn dùng App Router ở dev/prod.
 
 Bước theo đúng thứ tự `plans/app-router.md`'s Giai đoạn 1:
 1. Spike `renderToReadableStream` + async component.
@@ -165,6 +165,67 @@ Cập nhật path ở mọi nơi tham chiếu tên file cũ (`vite.config.ts`,
 
 ## Cập nhật 2026-08-05: Giai đoạn 3 (production build) xong
 
-Chi tiết ở mục "Giai đoạn 3" phía trên. Còn lại: client hydration
-(`preact-iso/hydrate`, phần chưa làm của Giai đoạn 2) - khi được yêu cầu,
-xem `plans/app-router.md`.
+Chi tiết ở mục "Giai đoạn 3" phía trên.
+
+## Cập nhật 2026-08-05: Giai đoạn 2 - Client hydration xong
+
+Chi tiết thiết kế đầy đủ ở `plans/app-router.md`'s "Client hydration -
+XONG" (spike xác nhận vì sao `useState` lỗi + quyết định kiến trúc mới
+"async = data-fetching, sync child = hooks", full data-replay). Tóm tắt
+file đổi:
+
+- `content-types/dry-context.ts` - `DryCallLogEntry` + `callLog?` field.
+- `content-types/dry-reader.ts` - ghi `callLog` trong `get`/`list` (cạnh
+  `touchedTypes` đã có).
+- `content-types/dry-reader-client.ts` (mới) - `dry()` bản client, replay
+  tuần tự, console.warn khi hết log hoặc lệch kind/name/method.
+- `server/app-router/dry-replay-codec.ts` (mới) - `encodeCallLog`/
+  `decodeCallLog`, tag `Date` + escape `<` cho an toàn nhúng `<script>`.
+- `server/app-router/render-types.ts` (mới) - `PageProps`/`LayoutProps`
+  tách khỏi `render.ts` để `resolve-match.ts` dùng chung không kéo theo
+  `preact-render-to-string`.
+- `server/app-router/resolve-match.ts` (mới, tách từ `render.ts`'s
+  `renderMatchToHtml` cũ) - `resolveMatchToVNode`, dùng chung server+client.
+- `apps/hydrate-client.ts` (mới) - bootstrap client, `discoverRoutes`+
+  `matchRoute`+`resolveMatchToVNode`+`hydrate()`.
+- `render.ts` - dùng `resolveMatchToVNode`; nhúng `dry-replay-data` +
+  `isodata` script trước `</body>`; head thêm hydrate `<script module>`.
+- `server/app-router/assets.ts` - tổng quát `resolveBuiltAssetHref`, thêm
+  `HYDRATE_ENTRY_HREF`.
+- `server/app-router/app-router-plugin.ts` - transform chọn
+  `dry-reader.js`/`dry-reader-client.js` theo
+  `this.environment.config.consumer`.
+- `server/page-handler.ts` - khởi tạo `callLog: []` trong `DryRequestContext`.
+- `vite.config.ts` - thêm `hydrate-client.ts` làm entry thứ 3 (client build).
+- `apps/pages/layout.tsx` - revert về content-only (sửa lẫn từ phiên trước
+  tự thêm `<html>/<head>/<body>` lồng trong document shell - đã hỏi lại
+  user, xác nhận không phải chủ đích, revert trước khi code hydration).
+- `apps/pages/users/page.tsx` - fixture thật để verify: tách
+  `AddUserButton` (đồng bộ, `useState`) khỏi `UsersListPage` (async,
+  `dry()`) - đúng request gốc của user.
+
+Test mới: `dry-replay-codec.test.ts` (3 case, gồm escape `</script>`+XSS
+payload), `dry-reader-client.test.ts` (3 case), `resolve-match.test.ts`
+(2 case, tách từ `render.test.ts`), `assets.test.ts` +3 case
+(`resolveHydrateEntryHref`), `dry-reader.test.ts` +2 case (`callLog`),
+`app-router-plugin.test.ts` +1 case (client consumer), `render.test.ts`
++2 assertion (script tags đúng vị trí/nội dung).
+
+**Verify thật bằng Playwright thật** (không chỉ đọc code hay curl - cần
+tương tác JS thật), cả 2 server (`bun run dev` port 5173 VÀ
+`bun run build && bun run start` port 3000): mở `/`, `/users`, `/roles`,
+`/users/1`, path lạ - 0 console error/warning trên mọi route (không có
+cảnh báo hydration-mismatch/replay-mismatch nào); click nút "Add User" ở
+CẢ 2 server - class đổi đúng `bg-blue-600...` → thêm
+`bg-green-600 hover:bg-green-700` - xác nhận `hydrate()` THẬT SỰ gắn event
+handler. `curl` xác nhận `dry-replay-data` chứa data thật (field rich text
+có `<p>` đã escape đúng thành `<p>`, field Date tag đúng
+`__drycmsDate`), asset CSS/JS build (`appsGlobals-*.css`/
+`appsHydrate-*.js`) serve đúng, `pages-cache` vẫn hoạt động bình thường
+sau khi thêm script tag mới (không vỡ cache cũ).
+
+`bun run typecheck` xanh. `bun run test`: 674/675 pass (70 file) - 1 fail
+KHÔNG LIÊN QUAN (`build-component-bundle.test.ts`, thiếu file
+`src/dry-components/dry.color-text.tsx` - bị xoá bởi 1 session khác cùng
+lúc, xem `feedback_concurrent_repo_editing` memory; đã xác nhận không phải
+do thay đổi trong phiên này, không tự sửa vì ngoài phạm vi task).

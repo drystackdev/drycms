@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveGlobalsCssHref } from "./assets.js";
+import { resolveGlobalsCssHref, resolveHydrateEntryHref } from "./assets.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -32,5 +32,23 @@ describe("resolveGlobalsCssHref", () => {
   it("throws a clear error when the manifest has no globals.css entry", () => {
     const path = writeManifest({ "index.html": { file: "assets/main-def456.js" } });
     expect(() => resolveGlobalsCssHref(false, path)).toThrow(/src\/apps\/globals\.css/);
+  });
+});
+
+describe("resolveHydrateEntryHref", () => {
+  it("returns the dev source path without touching the filesystem", () => {
+    expect(resolveHydrateEntryHref(true, "/does/not/exist.json")).toBe("/src/apps/hydrate-client.ts");
+  });
+
+  it("reads the built, hashed asset path from the manifest in production", () => {
+    const path = writeManifest({
+      "src/apps/hydrate-client.ts": { file: "assets/appsHydrate-abc123.js" },
+    });
+    expect(resolveHydrateEntryHref(false, path)).toBe("/assets/appsHydrate-abc123.js");
+  });
+
+  it("throws a clear error when the manifest has no hydrate-client entry", () => {
+    const path = writeManifest({ "index.html": { file: "assets/main-def456.js" } });
+    expect(() => resolveHydrateEntryHref(false, path)).toThrow(/hydrate-client\.ts/);
   });
 });

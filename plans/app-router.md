@@ -329,10 +329,10 @@ cho editor hay chính cái editor đó** - tránh lấn phạm vi kế hoạch n
    xác nhận cache tự invalidate đúng (nội dung mới hiện ra, không phải
    bản cache cũ).
 
-## Giai đoạn 2 - Client hydration + Tailwind v4
+## Giai đoạn 2 - Client hydration + Tailwind v4 - XONG (2026-08-05)
 
-**Phần Tailwind v4 đã xong** (2026-08-05) - client hydration (`preact-iso/
-hydrate`) vẫn chưa làm, xem mục riêng bên dưới.
+Tailwind v4 xong trước; client hydration (`preact-iso/hydrate`) xong sau,
+xem mục riêng bên dưới.
 
 - `@tailwindcss/vite` cài + đăng ký vào `vite.config.ts` như dự kiến.
   `render.ts`'s `HEAD_AND_BODY_OPEN` giờ có
@@ -386,18 +386,82 @@ file liên quan đổi, không phải HMR từng phần:
   hẹp vì không muốn đoán mò cách Vite client match `path` khi chưa có nhu
   cầu thật.
 
-### Client hydration - chưa làm
+### Client hydration - XONG (2026-08-05)
 
-- Dùng `preact-iso/hydrate` (đã có sẵn trong dependency, chưa dùng ở đâu) -
-  đúng khớp "hydrate tải lazy về sau" của ý tưởng gốc: check
-  `<script type="isodata">` marker để chọn `hydrate()` vs `render()`.
-  `preact-iso/lazy` cho code-splitting per-page (cùng cơ chế `App.tsx`
-  admin đang dùng cho từng route).
-- **preact-iso còn có sẵn `preact-iso/prerender`** - wrapper mỏng quanh
-  `renderToStringAsync` + tự thêm `<script type="isodata">` + thu thập
-  `<a href>`. Không dùng trực tiếp (mình cần streaming, không phải
-  buffered), nhưng `render.ts` nên tự thêm cùng script-tag marker đó để
-  `hydrate.js` (dùng nguyên bản, không viết lại) nhận diện đúng.
+**Quyết định kiến trúc mới #5 - async component = data-fetching, KHÔNG
+hooks; component đồng bộ con = hooks, không `dry()`.** Phát hiện qua spike
+thật (`node -e`, dùng đúng bản `preact`/`preact-render-to-string` cài
+trong repo, không đoán mò) khi user thử thêm `useState` vào 1
+`async function page.tsx`:
+- `preact-render-to-string`'s `_renderToString` có 1 check bảo mật
+  (`node_modules/preact-render-to-string/src/index.js:315`:
+  `if (vnode.constructor !== undefined) return EMPTY_STR;`) khiến 1
+  `Promise` (return value của async component gọi qua `h()`) luôn bị coi
+  là "không render được", trả rỗng - xác nhận lại đúng lý do Giai đoạn 1
+  đã tự resolve cây bottom-up thay vì đưa thẳng async component vào
+  `renderToStringAsync` (Quyết định kiến trúc #1).
+- Nhưng spike CŨNG xác nhận: 1 component ĐỒNG BỘ (không `async`) lồng BÊN
+  TRONG cây đã resolve đó (vd `<AddUserButton/>` bên trong `<main>` mà
+  `UsersListPage` async trả về) hoạt động `useState` HOÀN TOÀN BÌNH
+  THƯỜNG - vì `renderToStringAsync`/`hydrate()` đều dispatch nó qua đúng
+  cơ chế Preact thật (set hook context trước khi gọi). `render.ts`/
+  `resolveMatchToVNode` không cần đổi kiến trúc gì.
+- Quy ước: giống Next.js App Router Server/Client Component, không cần
+  directive `"use client"` - `async function` = data-fetching qua `dry()`,
+  không hooks; tách phần tương tác ra 1 function con đồng bộ, nhận data
+  qua props.
+
+**Full data-replay** (theo lựa chọn user, xem 2 phương án đã cân nhắc ở
+mục quyết định trước đây - lựa chọn còn lại "island-only" không chọn):
+`dry-reader.ts`'s `get`/`list` giờ ghi thêm vào `DryRequestContext.callLog`
+(field mới, optional, cùng idiom `touchedTypes`) - mỗi lần gọi 1 entry
+`{kind, name, method, result}`. `render.ts` nhúng log này (qua
+`dry-replay-codec.ts`'s `encodeCallLog` - JSON + tag riêng cho `Date`
+instance vì field type `date` deserialize ra `Date` thật + escape mọi `<`
+thành `<` cho an toàn nhúng `<script>`, đã verify bằng data thật chứa
+rich text có `<p>`) vào `<script type="application/json"
+id="dry-replay-data">` trước `<script type="isodata">` (phải là node CUỐI
+trong `<body>` - đúng tiền lệ `preact-iso/prerender.js`, `hydrate.js` dùng
+`isodata.parentNode` làm mount root).
+
+`src/apps/hydrate-client.ts` (bundle riêng, nạp qua `<script type="module">`
+trong head, chạy ở CẢ dev lẫn prod - khác `/@vite/client` chỉ dev):
+`discoverRoutes()`+`matchRoute()` (dùng lại nguyên `route-tree.ts`/
+`match.ts` - đã "pure", `import.meta.glob` chạy được ở client y hệt server,
+tiền lệ `RichtextComponents.tsx`) khớp `window.location.pathname`, decode
+log đã nhúng, gọi `resolveMatchToVNode` (logic resolve cây - tách từ
+`render.ts` cũ ra `resolve-match.ts`, dùng chung 2 bên) với `dry()` bản
+CLIENT (`dry-reader-client.ts` - không `AsyncLocalStorage`, chỉ 1 biến
+module-level, trả data theo VỊ TRÍ tuần tự trong log, không match theo
+key - đúng vì client chạy lại y hệt code path server đã chạy). `app-router-
+plugin.ts`'s transform giờ chọn import `dry-reader.js` hay
+`dry-reader-client.js` theo `this.environment.config.consumer` (`"server"`/
+`"client"` - idiom chính bản Vite này dùng nội bộ).
+
+`vite.config.ts` thêm `src/apps/hydrate-client.ts` làm entry thứ 3 (cạnh
+`index.html`/`globals.css`) trong nhánh client-build đã có từ Giai đoạn 3;
+`assets.ts` tổng quát hoá thành `resolveBuiltAssetHref` dùng chung, trả cả
+`GLOBALS_CSS_HREF` lẫn `HYDRATE_ENTRY_HREF`.
+
+**Fixture thật để verify** (không phải file tạm): `src/apps/pages/users/
+page.tsx` - `AddUserButton` (đồng bộ, `useState` toggle class) tách ra khỏi
+`UsersListPage` (async, gọi `dry()`) - đúng chính request thật của user.
+`src/apps/pages/layout.tsx` revert về content-only (1 sửa lẫn từ phiên
+trước tự thêm `<html>/<head>/<body>` lồng bên trong document shell của
+`render.ts`, gây `<html>` lặp đôi - đã xác nhận qua user đây không phải chủ
+đích, cần revert trước khi code hydration vì mount root phụ thuộc trực
+tiếp).
+
+**Verify thật** (Playwright, cả dev lẫn `bun run build && bun run start`):
+mở `/`, `/users`, `/roles`, `/users/1`, path lạ (404) - 0 console
+error/warning (không có cảnh báo hydration-mismatch/replay-mismatch nào);
+click nút "Add User" trên CẢ 2 server (dev + production build) - class đổi
+đúng từ `bg-blue-600` sang thêm `bg-green-600 hover:bg-green-700` - xác
+nhận `hydrate()` THẬT SỰ gắn event handler, không phải HTML tĩnh. `curl`
+xác nhận `dry-replay-data` chứa đúng data thật (kể cả field rich text có
+`<p>` đã escape đúng `<p>`), `pages-cache` vẫn hoạt động đúng sau khi
+thêm script tag mới (không phá cache cũ).
+
 - Tailwind v4: thêm devDependency `@tailwindcss/vite`, đăng ký vào
   `vite.config.ts` (plugin chỉ transform file CSS có
   `@import "tailwindcss"` - CSS hand-rolled hiện có của admin không đụng
@@ -589,10 +653,9 @@ code theo hướng này: `hydrate()` gọi 1 lần mỗi trang, không bọc th�
 
 1. ~~Giai đoạn 1 (SSR pipeline)~~ - xong (2026-08-05), chi tiết ở
    `status/app-router.md`.
-2. Giai đoạn 2 (hydrate + Tailwind) - cần Giai đoạn 1 render ra HTML thật
-   trước mới có gì để hydrate.
-3. Giai đoạn 3 (production build) - refine chi tiết khi bắt đầu, hướng đi
-   đã phác ở trên.
-4. Giai đoạn 4 - sau, không chặn việc dùng App Router ở dev.
+2. ~~Giai đoạn 2 (hydrate + Tailwind)~~ - xong (2026-08-05, Tailwind trước,
+   hydrate sau cùng phiên với Giai đoạn 3).
+3. ~~Giai đoạn 3 (production build)~~ - xong (2026-08-05).
+4. Giai đoạn 4 - sau, không chặn việc dùng App Router ở dev/prod.
 5. ~~Sau khi Giai đoạn 1 chạy được, quay lại `reader.md` đánh dấu Giai đoạn
    4 của nó "xong"~~ - xong, xem mục "`reader.md` sẽ ra sao" ở đầu file.

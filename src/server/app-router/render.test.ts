@@ -34,6 +34,7 @@ describe("renderPage", () => {
     expect(first.done).toBe(false);
     const headChunk = decoder.decode(first.value!);
     expect(headChunk).toContain("<!DOCTYPE html>");
+    expect(headChunk).toMatch(/<script type="module" src="[^"]*hydrate-client[^"]*"><\/script>/);
     expect(headChunk).not.toContain("page-content");
 
     resolvePage();
@@ -41,6 +42,13 @@ describe("renderPage", () => {
     const bodyChunk = decoder.decode(rest.value!);
     expect(bodyChunk).toContain("<article>page-content</article>");
     expect(bodyChunk).toContain("</body></html>");
+    // The `dry()` replay payload + isodata marker must both land AFTER the
+    // rendered content and BEFORE `</body>` - `preact-iso/hydrate` uses
+    // the isodata script's `parentNode` as its mount root, so it must be
+    // the LAST node in `<body>` (see `render.ts`'s `ISODATA_MARKER` doc).
+    expect(bodyChunk).toMatch(
+      /<article>page-content<\/article><script type="application\/json" id="dry-replay-data">.*<\/script><script type="isodata"><\/script><\/body><\/html>$/,
+    );
   });
 
   it("wraps the page with layouts root-to-leaf and threads params as a prop (not a global)", async () => {
