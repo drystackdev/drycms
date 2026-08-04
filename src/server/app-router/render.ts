@@ -14,11 +14,19 @@ import type { RouteMatch } from "./match.js";
  * request like this (same mechanism `index.html` relies on, just not going
  * through `transformIndexHtml` here). Giai đoạn 3 (production build) needs
  * to swap this for the built, hashed asset path once that pipeline exists -
- * not done yet, this only works in dev. */
+ * not done yet, this only works in dev.
+ *
+ * `/@vite/client` (dev only) is Vite's own HMR WebSocket client - needed
+ * for `hmr-plugin.ts`'s full-reload broadcast to reach this page at all,
+ * since nothing else here ever loads client JS yet (no hydrate bundle
+ * until later in Giai đoạn 2). Never included in production (no dev
+ * server there to connect to). */
 const HEAD_AND_BODY_OPEN =
   '<!DOCTYPE html><html><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-  '<link rel="stylesheet" href="/src/apps/globals.css"></head><body>';
+  '<link rel="stylesheet" href="/src/apps/globals.css">' +
+  (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
+  "</head><body>";
 const BODY_AND_HTML_CLOSE = "</body></html>";
 
 export interface PageProps {

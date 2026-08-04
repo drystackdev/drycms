@@ -362,6 +362,30 @@ hydrate`) vẫn chưa làm, xem mục riêng bên dưới.
   sang class Tailwind - giữ lại trong repo làm ví dụ sống, không xoá như
   fixture Giai đoạn 1.
 
+### HMR (full-reload) - đã làm
+
+Page/layout render hoàn toàn ở server, chưa có client bundle nào (hydrate
+vẫn chưa làm - mục dưới) nên Vite's HMR client không có module graph nào
+để "walk" tới - route chuẩn cho kiểu SSR-only này là full-reload thô khi
+file liên quan đổi, không phải HMR từng phần:
+
+- `hmr-plugin.ts` (`appRouterHmrPlugin`, hook `handleHotUpdate`) - file đổi
+  khớp `src/apps/pages/**` hoặc `src/apps/globals.css` -> broadcast
+  `{ type: "full-reload" }` qua `server.ws`.
+- `render.ts`'s head giờ có `<script type="module" src="/@vite/client">`
+  (dev only, qua `import.meta.env.DEV`) - không có script này thì trình
+  duyệt không có kết nối WebSocket nào để nhận tín hiệu reload.
+- **Verify thật bằng WebSocket** (không chỉ đọc code): script Node nối vào
+  đúng cổng HMR thật của Vite (**không phải port 5173** - `scripts/
+  dev-server.mjs` tạo `http.createServer()` riêng ở middleware mode nên
+  Vite tự mở 1 cổng HMR riêng, ở đây là `24678`, xem qua `lsof`), sửa
+  `page.tsx`, nhận đúng `{"type":"full-reload"}` trong ~300ms.
+- **Gap chấp nhận cho v1**: reload không giới hạn phạm vi (không set
+  `path`) - tab admin đang mở cùng lúc cũng bị reload theo khi sửa trang
+  App Router. Chấp nhận được (không mất dữ liệu, chỉ phiền nhẹ), chưa thu
+  hẹp vì không muốn đoán mò cách Vite client match `path` khi chưa có nhu
+  cầu thật.
+
 ### Client hydration - chưa làm
 
 - Dùng `preact-iso/hydrate` (đã có sẵn trong dependency, chưa dùng ở đâu) -

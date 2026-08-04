@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
 import { defineConfig } from "vite";
 import { dryGlobalPlugin } from "./src/server/app-router/dry-global-plugin.js";
+import { appRouterHmrPlugin } from "./src/server/app-router/hmr-plugin.js";
 
 export default defineConfig({
   // `dryGlobalPlugin` (`enforce: "pre"`) injects `dry()`'s import for
@@ -11,8 +12,10 @@ export default defineConfig({
   // (`src/apps/globals.css` - see "CSS: 1 file chung" in the same doc) -
   // the admin's own hand-rolled `.css` files (`docs/DESIGN.md`) never
   // opt in, so this is safe to register globally rather than needing a
-  // separate Vite config just for `src/apps`.
-  plugins: [dryGlobalPlugin(), tailwindcss(), preact()],
+  // separate Vite config just for `src/apps`. `appRouterHmrPlugin` forces
+  // a full reload on `src/apps/pages/**`/`globals.css` changes - App
+  // Router has no client bundle yet for Vite's normal HMR to attach to.
+  plugins: [dryGlobalPlugin(), tailwindcss(), preact(), appRouterHmrPlugin()],
   build: {
     // Showcase intentionally bundles every component demo into one route
     // chunk; it is lazy-loaded from the app shell, so this size is not part of
