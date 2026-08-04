@@ -1,10 +1,12 @@
-# App Router (`src/apps`) - Giai đoạn 1 (SSR pipeline)
+# App Router (`src/apps`) - thực thi Giai đoạn 1 + Tailwind (Giai đoạn 2)
 
 ## Plan
 
 Xem `plans/app-router.md` cho toàn bộ kế hoạch (4 giai đoạn + 2 cơ chế
-cache). File này track việc thực thi Giai đoạn 1 - trọng tâm: SSR
-streaming qua adapter, file-based routing, `pages-cache`.
+cache). File này track việc thực thi - Giai đoạn 1 (SSR streaming qua
+adapter, file-based routing, `pages-cache`) đã xong đầy đủ; phần Tailwind
+v4 của Giai đoạn 2 cũng đã xong (client hydration của Giai đoạn 2 thì
+chưa).
 
 Bước theo đúng thứ tự `plans/app-router.md`'s Giai đoạn 1:
 1. Spike `renderToReadableStream` + async component.
@@ -70,12 +72,33 @@ verify qua server thật khi Giai đoạn 3 xong.
 `bun run typecheck` xanh, `bun run test` 655/655 pass (66 file, tăng từ
 639/62 trước khi bắt đầu).
 
+## Tailwind v4 (phần của Giai đoạn 2) - xong
+
+`@tailwindcss/vite` + `src/apps/globals.css` (1 file chung, đúng quyết
+định đã chốt) + `<link>` trong `render.ts`'s head. Verify bằng cURL giả
+lập header trình duyệt thật (`Sec-Fetch-Dest: style`) - Vite dev server trả
+đúng CSS Tailwind thật (không phải JS wrapper), có đủ utility class 5
+trang demo dùng.
+
+**Sự cố dependency thật gặp phải**: gộp `@tailwindcss/vite` vào
+`plugins: [...]` làm `tsc` báo "Excessive stack depth comparing types
+'Plugin<any>[]'". Gốc rễ: `node_modules/.bun/` có sẵn nhiều bản `vite`
+trùng version khác hash từ trước (không phải do cài tailwind) - 2 plugin
+resolve type `vite` qua 2 instance khác nhau. Sửa bằng cách thêm
+`"vite": "^8.0.13"` vào `package.json`'s `overrides` (đúng tiền lệ
+`rollup` có sẵn) + xoá cache cũ + `bun install` lại - dedupe về 1 instance,
+không cần workaround nào ở code.
+
+5 trang demo (Giai đoạn 1 để lại) đã đổi từ inline `style=""` sang
+Tailwind utility class, giữ trong repo làm ví dụ sống.
+
 ## Speed
 
 Bắt đầu và hoàn tất Giai đoạn 1 trong 1 phiên (2026-08-05). Spike ở bước 1
 lật ngược giả định ban đầu (`renderToReadableStream`) ngay từ đầu, tránh
 phải viết lại `render.ts` giữa chừng - đúng lý do kế hoạch đặt spike làm
-việc đầu tiên.
+việc đầu tiên. Tailwind (phần của Giai đoạn 2) làm thêm cùng phiên, không
+định trước.
 
-Tiếp theo: Giai đoạn 2 (client hydration + Tailwind v4) khi được yêu cầu -
-xem `plans/app-router.md`.
+Tiếp theo: client hydration (`preact-iso/hydrate`) - phần còn lại của
+Giai đoạn 2 - khi được yêu cầu. Xem `plans/app-router.md`.

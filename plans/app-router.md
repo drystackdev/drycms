@@ -331,6 +331,39 @@ cho editor hay chính cái editor đó** - tránh lấn phạm vi kế hoạch n
 
 ## Giai đoạn 2 - Client hydration + Tailwind v4
 
+**Phần Tailwind v4 đã xong** (2026-08-05) - client hydration (`preact-iso/
+hydrate`) vẫn chưa làm, xem mục riêng bên dưới.
+
+- `@tailwindcss/vite` cài + đăng ký vào `vite.config.ts` như dự kiến.
+  `render.ts`'s `HEAD_AND_BODY_OPEN` giờ có
+  `<link rel="stylesheet" href="/src/apps/globals.css">` - trỏ thẳng path
+  nguồn, Vite dev server tự compile+serve CSS thật cho request `<link>`
+  (đã verify bằng header `Sec-Fetch-Dest: style` giả lập trình duyệt thật -
+  ra đúng CSS Tailwind, không phải JS wrapper). Giai đoạn 3 cần đổi path
+  này sang asset đã build (chưa làm, ghi rõ trong code).
+  `src/apps/globals.css` chỉ có `@import "tailwindcss";` - đúng quyết định
+  1 file chung đã chốt.
+- **Phát hiện + sửa 1 vấn đề dependency thật khi cài**: `tsc` báo lỗi
+  "Excessive stack depth comparing types 'Plugin<any>[]'..." khi gộp
+  `@tailwindcss/vite` + `@preact/preset-vite` + `dryGlobalPlugin` vào cùng
+  `plugins: [...]`. Gốc rễ: `node_modules/.bun/` có SẴN nhiều bản `vite`
+  trùng version khác hash (7.3.6 x2, 8.1.5 x2) từ trước - 2 plugin resolve
+  `vite`'s type qua 2 instance khác nhau dù cùng version, `tsc` coi là 2
+  type khác nhau. Sửa đúng gốc: thêm `"vite": "^8.0.13"` vào
+  `package.json`'s `overrides` (đúng tiền lệ `rollup` đã có sẵn), xoá cache
+  `.bun/vite@*` cũ, `bun install` lại - dedupe về đúng 1 instance,
+  `defineConfig` bình thường chạy lại sạch không cần workaround nào khác.
+- Đã kiểm tra bằng cURL: CSS output thật có đúng các utility class
+  các trang demo dùng (`.flex`, `.gap-4`, `text-blue-600`,
+  `hover\:underline`, `.border-dashed`, `.rounded-md`, `.font-bold`) - xác
+  nhận Tailwind quét đúng `src/apps/pages/**/*.tsx`.
+- 5 trang demo (`layout.tsx`/`page.tsx`/`users/{layout,page}.tsx`/
+  `users/[slug]/page.tsx`/`roles/page.tsx`) đã đổi từ inline `style=""`
+  sang class Tailwind - giữ lại trong repo làm ví dụ sống, không xoá như
+  fixture Giai đoạn 1.
+
+### Client hydration - chưa làm
+
 - Dùng `preact-iso/hydrate` (đã có sẵn trong dependency, chưa dùng ở đâu) -
   đúng khớp "hydrate tải lazy về sau" của ý tưởng gốc: check
   `<script type="isodata">` marker để chọn `hydrate()` vs `render()`.

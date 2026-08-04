@@ -5,12 +5,20 @@ import type { RouteMatch } from "./match.js";
 /** `render.ts` owns the outer HTML document for Giai đoạn 1 - `page.tsx`/
  * `layout.tsx` return inner content only (not `<html>`/`<body>` themselves,
  * unlike real Next.js) so the head/body-open prefix below can be enqueued
- * before any `dry()` call resolves. No CSS `<link>`/hydrate marker yet -
- * Giai đoạn 2 adds both alongside Tailwind. No per-page `<title>`/meta yet
- * either - deferred to Giai đoạn 4 same as `plans/app-router.md` notes. */
+ * before any `dry()` call resolves. No hydrate marker yet - that's the rest
+ * of Giai đoạn 2 (`preact-iso/hydrate`). No per-page `<title>`/meta yet
+ * either - deferred to Giai đoạn 4 same as `plans/app-router.md` notes.
+ *
+ * The `<link>` below points at the SOURCE path (`/src/apps/globals.css`) -
+ * Vite's dev server compiles+serves real CSS text for a direct `<link>`
+ * request like this (same mechanism `index.html` relies on, just not going
+ * through `transformIndexHtml` here). Giai đoạn 3 (production build) needs
+ * to swap this for the built, hashed asset path once that pipeline exists -
+ * not done yet, this only works in dev. */
 const HEAD_AND_BODY_OPEN =
   '<!DOCTYPE html><html><head><meta charset="utf-8">' +
-  '<meta name="viewport" content="width=device-width, initial-scale=1"></head><body>';
+  '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+  '<link rel="stylesheet" href="/src/apps/globals.css"></head><body>';
 const BODY_AND_HTML_CLOSE = "</body></html>";
 
 export interface PageProps {

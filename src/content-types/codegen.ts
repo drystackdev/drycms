@@ -149,10 +149,10 @@ export function generateDryTypes(allTypes: ContentTypeDefinition[]): string {
 // once on dev-server startup) - do not edit by hand. Re-run after changing a
 // content type's schema; see plans/reader.md.
 //
-// Calling the ambient global \`dry()\` below requires the Vite plugin that
-// injects it into \`src/apps/**\` bundles (plans/reader.md's Phase 3 "Vite
-// virtual module" step - not implemented yet, tracked as blocked on the App
-// Router itself existing). Until then, import the real function instead:
+// Calling the ambient global \`dry()\` below works for free in any file under
+// \`src/apps/pages/**\` - \`src/server/app-router/dry-global-plugin.ts\`
+// (registered in \`vite.config.ts\`) injects the real import automatically.
+// Outside that folder, import it yourself instead:
 // \`import { dry } from "../content-types/dry-reader.js"\`.
 
 import type { DryReader } from "../content-types/dry-reader.js";

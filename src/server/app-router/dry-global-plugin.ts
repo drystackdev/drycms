@@ -1,4 +1,5 @@
 import { dirname, join, relative } from "node:path";
+import type { Plugin } from "vite";
 
 const DRY_CALL = /\bdry\s*\(/;
 const HAS_DRY_IMPORT = /import\s*\{[^}]*\bdry\b[^}]*\}\s*from\s*["'][^"']*dry-reader(\.js)?["']/;
@@ -16,7 +17,7 @@ const DRY_READER_ABS_PATH = join(process.cwd(), "src/content-types/dry-reader.ts
  * `build-component-bundle.ts`'s `dryComponentFilenamePlugin` - a small,
  * regex-gated `transform` hook keyed by file path, not a full parser.
  */
-export function dryGlobalPlugin() {
+export function dryGlobalPlugin(): Plugin {
   return {
     name: "dry-global",
     enforce: "pre" as const,
