@@ -38,6 +38,7 @@
     "prosemirror-tables": "^1.8.5",
     "prosemirror-transform": "^1.10.5",
     "prosemirror-view": "^1.30.2",
+    "sucrase": "^3.35.1",
     "tailwindcss": "^4.3.3"
   },
   "optionalDependencies": {

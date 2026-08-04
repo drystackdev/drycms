@@ -23,6 +23,9 @@ describe('resolveOptions', () => {
 			components: {
 				storage: { kind: 'local', root: resolve(process.cwd(), 'components') },
 			},
+			pageComponents: {
+				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/components') },
+			},
 			ai: {
 				mode: 'local', provider: 'codex', command: 'codex',
 				args: ['exec', '--ephemeral', '--skip-git-repo-check'],

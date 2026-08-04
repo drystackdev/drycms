@@ -42,3 +42,6 @@ drystack
 .qa-tmp3
 .codegraph
 /kv/
+
+# Component Builder's own local file storage (see `pageComponents.storage.root` in dry.config.ts)
+/.dry/

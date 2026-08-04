@@ -90,6 +90,18 @@ export interface DryComponentsOption {
   storage?: DryStorageOption;
 }
 
+export interface DryPageComponentsOption {
+  /**
+   * Where Component Builder's `.tsx` component tree (independent from
+   * RichText's `components.storage` above - a page-builder concern, not a
+   * RichText one) is stored - a root of its own, same shape as `storage`/
+   * `icons`.
+   *
+   * @default { root: ".dry/components" }
+   */
+  storage?: DryStorageOption;
+}
+
 export interface DryAiOption {
   /** `local` runs a CLI on the same machine; `server` calls an AI HTTP API. */
   mode?: "local" | "server";
@@ -148,6 +160,7 @@ export interface DryOption {
   icons?: DryIconsOption;
   content?: DryContentOption;
   components?: DryComponentsOption;
+  pageComponents?: DryPageComponentsOption;
   ai?: DryAiOption;
   kv?: DryKvOption;
 }
@@ -189,6 +202,10 @@ export type ResolvedFileContentOption = { engine: "file" } & ResolvedStorageOpti
 export type ResolvedContentOption = ResolvedSqliteContentOption | ResolvedD1ContentOption | ResolvedFileContentOption;
 
 export interface ResolvedComponentsOption {
+  storage: ResolvedStorageOption;
+}
+
+export interface ResolvedPageComponentsOption {
   storage: ResolvedStorageOption;
 }
 
@@ -238,6 +255,7 @@ export interface ResolvedDryOption {
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
   components: ResolvedComponentsOption;
+  pageComponents: ResolvedPageComponentsOption;
   ai: ResolvedAiOption;
   kv: ResolvedKvOption;
 }
@@ -248,6 +266,7 @@ export const DEFAULT_ICONS_ROOT = "icons";
 export const DEFAULT_CONTENT_FILE = "content.sqlite";
 export const DEFAULT_CONTENT_ROOT = "content";
 export const DEFAULT_COMPONENTS_STORAGE_ROOT = "components";
+export const DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT = ".dry/components";
 export const DEFAULT_KV_ROOT = "kv";
 export const DEFAULT_KV_FILE = "kv.sqlite";
 export const DEFAULT_KV_BINDING = "KV";
@@ -360,6 +379,12 @@ function resolveIconsOption(icons?: DryIconsOption): ResolvedIconsOption {
 function resolveComponentsOption(components: DryComponentsOption = {}): ResolvedComponentsOption {
   return {
     storage: resolveFileBackedOption(components.storage, DEFAULT_COMPONENTS_STORAGE_ROOT, "components.storage"),
+  };
+}
+
+function resolvePageComponentsOption(pageComponents: DryPageComponentsOption = {}): ResolvedPageComponentsOption {
+  return {
+    storage: resolveFileBackedOption(pageComponents.storage, DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT, "pageComponents.storage"),
   };
 }
 
@@ -553,6 +578,7 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     icons: resolveIconsOption(options.icons),
     content: resolveContentOption(options.content),
     components: resolveComponentsOption(options.components),
+    pageComponents: resolvePageComponentsOption(options.pageComponents),
     ai: resolveAiOption(options.ai),
     kv: resolveKvOption(options.kv),
   };

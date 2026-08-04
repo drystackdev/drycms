@@ -147,7 +147,11 @@
       }
 
       & mark {
-        background-color: color-mix(in srgb, var(--dry-warning) 35%, transparent);
+        background-color: color-mix(
+          in srgb,
+          var(--dry-warning) 35%,
+          transparent
+        );
         color: inherit;
         border-radius: 0.15em;
       }
@@ -279,7 +283,6 @@
         flex: 0 0 auto;
       }
     }
-
   }
 
   /* `@keyframes` can't nest inside a style rule via CSS nesting (only
@@ -5209,6 +5212,266 @@
         backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
       }
+    }
+
+    /* ------------------------------------------------- Page Components */
+    /* Component Builder (`plans/component-builder.md`): a VS Code-style
+       shell - toolbar, then a resizable sidebar (search + tree) flush
+       against a resizable preview/editor split. Every region is bordered,
+       never gapped, per that reference. `Editer`/`prism-code-editor` bring
+       their own styling; only the shell/tree/preview frame need rules here. */
+    /* Full-bleed, not a card sitting inside `.content`'s padding - cancels
+       it via negative margins (same values as `.content`'s own
+       `padding: 1rem 1.5rem 4rem`) so the shell spans the full width of
+       `.main` and fills the exact height left under the sticky topbar. */
+    .page-components-shell {
+      display: flex;
+      flex-direction: column;
+      height: calc(100dvh - var(--dry-topbar-height));
+      margin: -1rem -1.5rem -4rem;
+      border-block: 1px solid var(--dry-border);
+      background-color: var(--dry-background);
+      overflow: hidden;
+    }
+
+    .page-components-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 0 0 auto;
+      padding: 0.375rem 0.5rem;
+      border-bottom: 1px solid var(--dry-border);
+    }
+
+    .page-components-body {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .page-components-sidebar {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-width: 0;
+    }
+
+    .page-components-sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      flex: 0 0 auto;
+      padding: 0.5rem;
+      border-bottom: 1px solid var(--dry-border);
+    }
+
+    .page-components-search {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      flex: 1;
+      min-width: 0;
+      padding-inline: 0.5rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+
+      & svg {
+        flex: 0 0 auto;
+        width: 1rem;
+        height: 1rem;
+        color: var(--dry-muted-foreground);
+      }
+
+      & input {
+        all: unset;
+        flex: 1;
+        min-width: 0;
+        padding-block: 0.375rem;
+        font-size: var(--dry-text-sm);
+      }
+    }
+
+    .page-components-tree {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 0.5rem;
+      font-size: var(--dry-text-sm);
+    }
+
+    .page-components-tree-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-radius: var(--dry-radius-md);
+      padding-block: 0.375rem;
+      padding-inline-end: 0.5rem;
+
+      & svg {
+        width: 1.125rem;
+        height: 1.125rem;
+        flex: none;
+      }
+
+      &:hover {
+        background-color: var(--dry-muted);
+      }
+
+      &.selected {
+        background-color: var(--dry-primary-lighter);
+        color: var(--dry-primary-darker);
+        font-weight: 600;
+      }
+
+      &.drop-target {
+        background-color: var(--dry-primary-lighter);
+        outline: 1.5px dashed var(--dry-primary);
+        outline-offset: -1.5px;
+      }
+    }
+
+    /* Indent + vertical guide line for one nesting level - a fresh wrapper
+       per folder's children (not a per-row calculated padding) so the line
+       reads as one continuous rail down the whole subtree, shadcn
+       `sidebar-11`-style. */
+    .page-components-tree-children {
+      margin-inline-start: 0.9375rem;
+      padding-inline-start: 0.75rem;
+      border-inline-start: 1px solid var(--dry-border);
+    }
+
+    .page-components-tree-create {
+      border-bottom: 1px solid var(--dry-border);
+      padding: 0.5rem;
+    }
+
+    .page-components-tree-chevron {
+      all: unset;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 1.125rem;
+      height: 1.125rem;
+      color: var(--dry-muted-foreground);
+      cursor: pointer;
+      transition: transform 120ms ease;
+
+      &[aria-expanded="true"] {
+        transform: rotate(90deg);
+      }
+    }
+
+    .page-components-tree-chevron-spacer {
+      flex: 0 0 1.125rem;
+    }
+
+    .page-components-tree-item {
+      all: unset;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      flex: 1;
+      min-width: 0;
+      cursor: pointer;
+      color: inherit;
+
+      & span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+
+    .page-components-tree-input {
+      all: unset;
+      box-sizing: border-box;
+      flex: 1;
+      min-width: 0;
+      padding-block: 0.25rem;
+      padding-inline: 0.375rem;
+      border: 1px solid var(--dry-primary);
+      border-radius: var(--dry-radius-sm);
+      background-color: var(--dry-background);
+    }
+
+    .page-components-tree-drop-root-hint {
+      height: 2px;
+      margin: 0.25rem;
+      border-radius: 999px;
+      background-color: var(--dry-primary);
+    }
+
+    .page-components-resize-handle {
+      flex: 0 0 4px;
+      cursor: col-resize;
+      background-color: transparent;
+      touch-action: none;
+
+      &.horizontal {
+        cursor: row-resize;
+      }
+
+      &:hover,
+      &.dragging {
+        background-color: var(--dry-primary);
+      }
+    }
+
+    .page-components-main {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .page-components-editor {
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Connected segmented control (VS Code/shadcn "toggle group" look) -
+       reusable anywhere a mutually-exclusive set of choices reads better as
+       one bordered pill than as underline tabs (`[role="tablist"]` above)
+       or a set of separately-bordered buttons. */
+    .button-group {
+      display: inline-flex;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      overflow: hidden;
+
+      & > button {
+        border: none;
+        border-radius: 0;
+        border-inline-start: 1px solid var(--dry-border);
+        background-color: transparent;
+
+        &:first-child {
+          border-inline-start: none;
+        }
+
+        &[aria-pressed="true"] {
+          background-color: var(--dry-primary);
+          color: var(--dry-primary-foreground);
+        }
+      }
+    }
+
+    .page-components-preview-viewport {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      height: 100%;
+      overflow: auto;
+      padding: 1rem;
+      border-bottom: 1px solid var(--dry-border);
+      background-color: var(--dry-background);
+    }
+
+    .page-components-preview-frame {
+      width: 100%;
+      flex-shrink: 0;
+      background-color: #fff;
     }
   }
 

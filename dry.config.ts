@@ -25,6 +25,12 @@ export default config({
             root: `${e2eDataRoot}/components`,
           },
         },
+        pageComponents: {
+          storage: {
+            kind: "local" as const,
+            root: `${e2eDataRoot}/page-components`,
+          },
+        },
         kv: { kind: "local" as const, root: `${e2eDataRoot}/kv` },
       }
     : {}),

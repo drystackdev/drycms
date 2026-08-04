@@ -9,10 +9,12 @@ import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
+import * as pageComponentsRoute from "./routes/page-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as keyValueRoute from "./routes/key-value.js";
 import * as aiRoute from "./routes/ai.js";
-import { requireSuperAdmin } from "./admin-access.js";
+import { requirePermission, requireSuperAdmin } from "./admin-access.js";
+import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
 type RouteModule = Record<string, DryRouteHandler | undefined>;
@@ -42,6 +44,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "content-types": contentTypesRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
+  "page-components": pageComponentsRoute,
   auth: authRoute,
   "key-value": keyValueRoute,
   ai: aiRoute,
@@ -112,6 +115,14 @@ export async function handleApiRequest(
   const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
   if ((segment === "icons" || segment === "richtext-components") && request.method !== "GET") {
     const denied = await requireSuperAdmin(context);
+    if (denied) return secureResponse(denied, request);
+  }
+  // Every method, including `GET` - Component Builder has no separate
+  // "view" permission, its `role.permissions` toggle is one all-or-nothing
+  // `setting` grant (see `PAGE_COMPONENTS_RESOURCE_ID`), same collapse a
+  // real singleton's schema gets in `permissionActionsFor`.
+  if (segment === "page-components") {
+    const denied = await requirePermission(context, PAGE_COMPONENTS_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   return secureResponse(await handler(context), request);

@@ -16,6 +16,7 @@ import {
 } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import {
+  PAGE_COMPONENTS_RESOURCE_ID,
   permissionActionsFor,
   permissionKeyFor,
   type PermissionAction,
@@ -56,6 +57,19 @@ const PERMISSION_RESOURCE: ContentTypeDefinition = {
   name: "permission",
   label: "Permission",
   description: "Manage permission assignments for roles.",
+  fields: [],
+  version: 0,
+};
+
+/** Component Builder isn't a content type either - a single grantable
+ * toggle, same treatment as `PERMISSION_RESOURCE` above, rendered alongside
+ * real singletons since it's an all-or-nothing "can use this page" grant. */
+const PAGE_COMPONENTS_RESOURCE: ContentTypeDefinition = {
+  id: PAGE_COMPONENTS_RESOURCE_ID,
+  kind: "singleton",
+  name: "pageComponents",
+  label: "Page Components",
+  description: "Build and manage saved page-builder components.",
   fields: [],
   version: 0,
 };
@@ -270,6 +284,7 @@ export default function RoleEditor({ id }: Props) {
     .sort((a, b) => a.label.localeCompare(b.label));
   const singletons = allTypes
     .filter((t) => t.kind === "singleton")
+    .concat(PAGE_COMPONENTS_RESOURCE)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const grantedIds = new Set(

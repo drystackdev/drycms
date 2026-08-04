@@ -24,6 +24,7 @@ import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
+import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -38,6 +39,10 @@ const NAV: {
   section: "Overview" | "Content" | "System" | "Development";
   superAdminOnly?: boolean;
   permissionName?: string;
+  /** Like `permissionName`, but for a synthetic resource id with no real
+   * `ContentTypeDefinition` row to look up (see `RoleEditor.tsx`'s
+   * `PAGE_COMPONENTS_RESOURCE`) - checked directly via `canAccess`. */
+  permissionResourceId?: string;
 }[] = [
   {
     key: "dashboard",
@@ -109,6 +114,15 @@ const NAV: {
     ready: true,
     section: "Content",
     superAdminOnly: true,
+  },
+  {
+    key: "page-components",
+    label: "Page Components",
+    href: `${path}/page-components`,
+    icon: "Content",
+    ready: true,
+    section: "Content",
+    permissionResourceId: PAGE_COMPONENTS_RESOURCE_ID,
   },
   {
     key: "roles",
@@ -377,7 +391,8 @@ export default function DryLayout({ children }: Props) {
                   (!item.permissionName || (() => {
                     const type = contentTypes?.find((candidate) => candidate.name === item.permissionName);
                     return !!type && canAccess(type.id, "view");
-                  })()),
+                  })()) &&
+                  (!item.permissionResourceId || canAccess(item.permissionResourceId, "setting")),
               );
               if (sectionItems.length === 0) return null;
               return (

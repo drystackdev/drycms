@@ -35,6 +35,7 @@ const IconManagement = lazy(() => import("../pages/IconManagement.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
 const IconManualForm = lazy(() => import("../pages/IconManualForm.js"));
 const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
+const PageComponents = lazy(() => import("../pages/PageComponents.js"));
 const KeyValue = lazy(() => import("../pages/KeyValue.js"));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
@@ -163,6 +164,10 @@ function AuthenticatedApp() {
               <Route
                 path={`${path}/richtext-components`}
                 component={RichtextComponents}
+              />
+              <Route
+                path={`${path}/page-components`}
+                component={PageComponents}
               />
               <Route
                 path={`${path}/content-types`}
