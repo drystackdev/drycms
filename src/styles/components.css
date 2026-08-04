@@ -7,11 +7,42 @@
  */
 @layer dry.components {
   .dry {
+    /* Mobile (`< 64rem`) switcher between the two `.builder-content-type-layout`
+     * panels below - hidden at `>= 64rem`, where both panels are always
+     * visible side by side and there's nothing to switch between. Reuses the
+     * app-wide `[role="tablist"]`/`[role="tab"]` look (declared under
+     * "Tabs" above); state lives in `BuilderContentType`'s `aiWizardOpen` -
+     * same boolean that gates the AI column's `.ai-open` modifier below. */
+    .builder-content-type-tabs {
+      margin-block-end: 1rem;
+
+      @media (width >= 64rem) {
+        display: none;
+      }
+    }
+
     .builder-content-type-layout {
       display: grid;
       gap: var(--dry-gap);
       grid-template-columns: minmax(0, 1fr);
       min-height: min(42rem, calc(100dvh - 15rem));
+
+      /* `>= 64rem`: the AI panel becomes a second column beside the list
+       * instead of overlaying it (`.ai-wizard-panel` below handles its own
+       * show/hide via `.open`, independent of this). */
+      @media (width >= 64rem) {
+        &.ai-open {
+          grid-template-columns: minmax(0, 1fr) minmax(22rem, 28rem);
+        }
+      }
+
+      /* `< 64rem`: no room for both at once - the tablist above exclusively
+       * switches between the list and the AI panel. */
+      @media (width < 64rem) {
+        &.ai-open .builder-panel {
+          display: none;
+        }
+      }
     }
 
     .builder-panel {
@@ -3200,33 +3231,31 @@
     }
 
     /* ------------------------------------------------------ AI schema wizard */
-    /* Docked to the right edge instead of a centered `<dialog>` - the
-     * content-types list stays visible/usable behind it (that's the point:
-     * a staged draft shows up live in the list, no separate in-panel review
-     * needed). Always rendered so `.open`'s `translate` can transition it
-     * in/out, same off-canvas technique `.sidebar`'s mobile drawer uses
-     * above, just docked to the opposite edge and available at every width.
-     * Not a `<dialog>`, so - unlike everywhere else in this file - it gets
-     * its own padding/header/footer rules instead of inheriting the base
-     * `dialog { ... }` block's. */
+    /* A `.builder-content-type-layout` grid child (`>= 64rem`: second column
+     * beside the list; `< 64rem`: the tablist's other tab, full width) - not
+     * a `<dialog>` or overlay, so the content-types list stays visible/
+     * usable beside or under it wherever width allows (that's the point: a
+     * staged draft shows up live in the list, no separate in-panel review
+     * needed). Always rendered so `open`/`onClose` can reset its own stage
+     * state on the way in, but only occupies a grid cell while `.open` -
+     * `display: none` otherwise, same as any other conditionally-shown grid
+     * item. Not a `<dialog>`, so - unlike everywhere else in this file - it
+     * gets its own padding/header/footer rules instead of inheriting the
+     * base `dialog { ... }` block's. */
     .ai-wizard-panel {
-      position: fixed;
-      inset-block: 0;
-      inset-inline-end: 0;
-      z-index: 45;
-      display: flex;
+      display: none;
       flex-direction: column;
-      width: min(26rem, 100vw);
+      min-width: 0;
+      min-height: 32rem;
       padding: 1.5rem;
-      background-color: var(--dry-popover);
-      color: var(--dry-popover-foreground);
-      border-inline-start: 1px solid var(--dry-border);
-      box-shadow: var(--dry-shadow-lg);
-      translate: 100% 0;
-      transition: translate 200ms ease;
+      background-color: var(--dry-card);
+      color: var(--dry-card-foreground);
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-xl);
+      box-shadow: var(--dry-shadow-md);
 
       &.open {
-        translate: 0 0;
+        display: flex;
       }
 
       & :is(h1, h2, h3, h4, h5, h6) {
@@ -3250,7 +3279,6 @@
         justify-content: flex-end;
         gap: 0.5rem;
         flex: none;
-        margin-block-start: 1rem;
       }
     }
 

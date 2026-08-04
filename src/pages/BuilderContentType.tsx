@@ -417,8 +417,35 @@ export default function BuilderContentType() {
         </div>
       </div>
 
-      <div class="builder-content-type-layout">
-        <section class="card builder-panel">
+      <div
+        class="builder-content-type-tabs"
+        role="tablist"
+        aria-label="Content type panels"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!aiWizardOpen}
+          aria-controls="builder-collections-panel"
+          onClick={() => setAiWizardOpen(false)}
+        >
+          Content Types
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={aiWizardOpen}
+          aria-controls="ai-wizard-panel"
+          onClick={() => setAiWizardOpen(true)}
+        >
+          <SparkleIcon /> Ask AI
+        </button>
+      </div>
+
+      <div
+        class={`builder-content-type-layout${aiWizardOpen ? " ai-open" : ""}`}
+      >
+        <section class="card builder-panel" id="builder-collections-panel">
           <header class="row justify-between">
             <div class="spacer">
               <h2>{KIND_PLURAL_LABELS[selectedKind]}</h2>
@@ -475,6 +502,11 @@ export default function BuilderContentType() {
             />
           </div>
         </section>
+        <AiSchemaWizardPanel
+          open={aiWizardOpen}
+          allDefinitions={definitions ?? []}
+          onClose={() => setAiWizardOpen(false)}
+        />
       </div>
       <CollectionEditorDialog
         id={editingId}
@@ -493,11 +525,6 @@ export default function BuilderContentType() {
           setApplyBuilderId(null);
         }}
         onApplied={() => void reload()}
-      />
-      <AiSchemaWizardPanel
-        open={aiWizardOpen}
-        allDefinitions={definitions ?? []}
-        onClose={() => setAiWizardOpen(false)}
       />
     </>
   );

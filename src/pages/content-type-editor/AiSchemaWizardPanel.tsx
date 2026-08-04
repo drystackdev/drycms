@@ -251,10 +251,12 @@ function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined })
 
 /**
  * Content Types "Ask AI" panel (see `status/ai-schema-wizard.md`) - a
- * choice-driven interview, never a free-text chat box, docked to the right
- * edge instead of a modal dialog specifically so the content-types list
- * stays visible and usable behind/beside it: the list itself, updating live
- * as drafts land, IS the review step. A `proposal` turn is therefore
+ * choice-driven interview, never a free-text chat box. Rendered by
+ * `BuilderContentType` as a second grid column beside the content-types
+ * list (`>= 64rem`) or as a second tab replacing it (`< 64rem`), rather
+ * than a modal dialog, specifically so the list stays visible and usable
+ * alongside it wherever screen width allows: the list itself, updating
+ * live as drafts land, IS the review step. A `proposal` turn is therefore
  * terminal AND non-interactive - the moment one validates, every table in
  * it is staged as a draft (`applyProposal`) and the panel closes, no
  * confirm click. Content Types already reviews every draft again before it
@@ -311,10 +313,13 @@ export default function AiSchemaWizardPanel({
   }, [open, onClose]);
 
   /** Stages every proposed table as a draft directly - client-side, no AI
-   * round-trip - and closes the panel. Only stays open (with an error) if
-   * every single table failed to stage (a name collision, most likely);
-   * a partial success still closes, since whatever landed is already
-   * visible in the list behind this panel. */
+   * round-trip. Never closes the panel itself: now that it's a persistent
+   * column/tab rather than an overlay, closing it after every successful
+   * proposal would just force the admin to reopen it to ask for the next
+   * table. Instead it resets back to the start step (same shape `open`'s
+   * effect above resets to on a fresh open) so another goal can be typed
+   * right away, while the newly staged draft(s) show up live in the list
+   * beside/under it. */
   function applyProposal(proposal: WizardProposalTurn) {
     const mapped = mapWizardTables(proposal.tables, mergedAllTypes(allDefinitions));
     const succeeded = mapped.filter((result) => result.ok);
@@ -333,7 +338,11 @@ export default function AiSchemaWizardPanel({
         ? `Staged ${succeeded.length} of ${mapped.length} - "${failed.map((result) => result.name).join(", ")}" needs manual review.`
         : `Staged ${succeeded.length} content type${succeeded.length === 1 ? "" : "s"} as drafts - review in Apply Builder.`,
     });
-    onClose();
+    setStage("start");
+    setTurn(null);
+    setHistory([]);
+    setError(null);
+    setLastGoal(undefined);
   }
 
   async function advance(nextHistory: WizardHistoryMessage[], keyName: string | undefined, goal?: string) {
@@ -377,7 +386,7 @@ export default function AiSchemaWizardPanel({
   }
 
   return (
-    <div class={`ai-wizard-panel${open ? " open" : ""}`} aria-hidden={!open}>
+    <div id="ai-wizard-panel" class={`ai-wizard-panel${open ? " open" : ""}`} aria-hidden={!open}>
       {open && (
         <>
           <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
