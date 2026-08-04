@@ -1,13 +1,6 @@
-const CATEGORIES = ["Tất cả", "Kiến thức cơ bản", "Điều trị ARV", "Sức khỏe tình dục", "Hỏi đáp"];
+import { POSTS } from "./posts-data.js";
 
-const POSTS = [
-  { tag: "Kiến thức cơ bản", title: "Lorem ipsum dolor sit amet consectetur", excerpt: "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim.", date: "01/08/2026" },
-  { tag: "Điều trị ARV", title: "Ut enim ad minim veniam quis nostrud", excerpt: "Exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis.", date: "29/07/2026" },
-  { tag: "Hỏi đáp", title: "Duis aute irure dolor in reprehenderit", excerpt: "In voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur.", date: "27/07/2026" },
-  { tag: "Sức khỏe tình dục", title: "Excepteur sint occaecat cupidatat non", excerpt: "Proident sunt in culpa qui officia deserunt mollit anim id est laborum.", date: "24/07/2026" },
-  { tag: "Kiến thức cơ bản", title: "Praesent nec lacus vel elit dictum", excerpt: "Interdum nulla facilisi vestibulum ante ipsum primis in faucibus orci luctus.", date: "20/07/2026" },
-  { tag: "Điều trị ARV", title: "Vestibulum ante ipsum primis in faucibus", excerpt: "Orci luctus et ultrices posuere cubilia curae mauris blandit aliquet.", date: "18/07/2026" },
-];
+const CATEGORIES = ["Tất cả", "Kiến thức cơ bản", "Điều trị ARV", "Sức khỏe tình dục", "Hỏi đáp"];
 
 export default async function BlogsPage() {
   return (
@@ -55,7 +48,7 @@ export default async function BlogsPage() {
 
       <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {POSTS.map((post) => (
-          <article key={post.title} class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <article key={post.slug} class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div class="h-40 bg-slate-200" />
             <div class="space-y-2 p-5">
               <span class="text-xs font-semibold uppercase tracking-wide text-teal-700">{post.tag}</span>
@@ -63,7 +56,9 @@ export default async function BlogsPage() {
               <p class="text-sm leading-relaxed text-slate-600">{post.excerpt}</p>
               <div class="flex items-center justify-between pt-2">
                 <p class="text-xs text-slate-500">{post.date}</p>
-                <span class="text-sm font-medium text-teal-700">Đọc thêm →</span>
+                <a href={`/blogs/${post.slug}`} class="text-sm font-medium text-teal-700 hover:underline">
+                  Đọc thêm →
+                </a>
               </div>
             </div>
           </article>

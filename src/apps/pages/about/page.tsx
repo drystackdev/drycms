@@ -10,15 +10,26 @@ const EXPERIENCE_ITEMS = [
   { year: "2021", text: "Ut enim ad minim veniam quis nostrud exercitation ullamco." },
 ];
 
+const PRESS_MENTIONS = [
+  { outlet: "[Tên báo/tạp chí]", title: "Lorem ipsum dolor sit amet consectetur adipiscing elit", date: "12/2025", href: "#" },
+  { outlet: "[Tên báo/tạp chí]", title: "Sed do eiusmod tempor incididunt ut labore et dolore", date: "10/2025", href: "#" },
+  { outlet: "[Tên báo/tạp chí]", title: "Ut enim ad minim veniam quis nostrud exercitation", date: "06/2025", href: "#" },
+  { outlet: "[Tên báo/tạp chí]", title: "Duis aute irure dolor in reprehenderit in voluptate", date: "03/2025", href: "#" },
+];
+
 export default async function AboutPage() {
   return (
     <div>
       <section class="mx-auto max-w-6xl px-4 py-16">
         <div class="grid items-center gap-10 sm:grid-cols-2">
-          <div class="aspect-square rounded-2xl bg-slate-200" />
+          <img
+            src="/IMG_8153.JPG"
+            alt="Mai Anh Quyền"
+            class="aspect-square w-full rounded-2xl object-cover object-bottom"
+          />
           <div class="space-y-4">
             <span class="rounded-full bg-teal-100 px-4 py-1 text-sm font-medium text-teal-700">Giới thiệu</span>
-            <h1 class="text-3xl font-bold text-slate-900 sm:text-4xl">[Tên của bạn]</h1>
+            <h1 class="text-3xl mt-2 font-bold text-slate-900 sm:text-4xl">Mai Anh Quyền</h1>
             <p class="text-sm leading-relaxed text-slate-600">
               Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et
               dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip.
@@ -72,6 +83,40 @@ export default async function AboutPage() {
               </li>
             ))}
           </ol>
+        </div>
+      </section>
+
+      <section class="mx-auto max-w-6xl px-4 py-16">
+        <h2 class="text-2xl font-bold text-slate-900">Bài báo nói về tôi</h2>
+        <p class="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.
+        </p>
+        <div class="mt-6 grid gap-4 sm:grid-cols-2">
+          {PRESS_MENTIONS.map((item) => (
+            <a
+              key={item.title}
+              href={item.href}
+              target="_blank"
+              rel="noreferrer"
+              class="group flex items-start gap-4 rounded-2xl border border-slate-200 p-5 hover:border-teal-300 hover:bg-teal-50"
+            >
+              <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
+              <div class="flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">{item.outlet}</p>
+                <p class="mt-1 text-sm font-semibold text-slate-900 group-hover:text-teal-700">{item.title}</p>
+                <p class="mt-1 text-xs text-slate-500">{item.date}</p>
+              </div>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                class="mt-1 h-4 w-4 shrink-0 text-slate-400 group-hover:text-teal-600"
+              >
+                <path d="M7 17L17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          ))}
         </div>
       </section>
 
