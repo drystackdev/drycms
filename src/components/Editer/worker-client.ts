@@ -51,6 +51,12 @@ export class EditerWorkerClient {
 
   #createWorker(): Worker {
     const worker = new Worker(new URL("./ts-worker.ts", import.meta.url), { type: "module" });
+    // An uncaught error *inside* a message handler (as opposed to a hang) doesn't stop
+    // the worker from processing its next message, but it does mean whatever request
+    // was in flight when it threw never gets a response - left alone, that's the same
+    // "promise never settles" symptom as a real hang, just from a different cause. Route
+    // it through the same restart path rather than adding a second recovery mechanism.
+    worker.onerror = () => this.#restart();
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       clearTimeout(this.#hangTimer);
       const response = event.data;

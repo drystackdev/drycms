@@ -356,6 +356,33 @@ is introduced. `bun run typecheck`, `bun run test` (643, up from 618 - 5 are
 mine, the rest are unrelated concurrent work on this repo), and
 `bun run build` (client + SSR) all still pass.
 
+User reported "đã mất khả năng suggestion rồi" (completions stopped working)
+right after the hardening pass above. Investigated with the same
+worker-side/client-side `console.log` tracing technique used earlier this
+session for the prefix-truncation bug - this time the worker-side log
+(unconditional, first line of `self.onmessage`) never printed at all, for
+*any* message, not even the very first mount-time "update" - meaning the
+worker wasn't receiving anything, not that one request kind was broken.
+Added `worker.onerror` logging to check for a silent construction/load
+failure - and on the very next run, with no further code change, completions
+worked again, repeatably. Read as Vite dev-server/worker-module staleness
+from the volume of rapid edits to `ts-worker.ts`/`worker-client.ts` a few
+messages earlier in this same session (each edit invalidates and rebuilds
+the worker's module graph; a page loaded against a stale intermediate build
+is a known rough edge of Vite's dev-mode worker handling, not something the
+app code controls) - not a real regression in the shipped logic. Likely hit
+the user's own dev server session the same way; another hard refresh should
+have cleared it.
+
+Kept a real improvement out of the investigation rather than reverting it
+to a bare console.log: `worker.onerror` is now wired into the same
+`#restart()` path as a hang, on the reasoning that an uncaught error inside
+a message handler produces the identical symptom (whatever request was in
+flight never gets a response) even though the worker itself keeps running -
+same recovery, no second mechanism needed. Covered by a 6th
+`worker-client.test.ts` case (`throwError()` on the mock triggers an
+immediate restart, not waiting for the 8s hang timeout).
+
 # Speed
 
 Completed 2026-08-04, same session as the plan discussion. IDE-parity pass

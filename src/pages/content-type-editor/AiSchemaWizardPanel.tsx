@@ -1,27 +1,18 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 const { path, aiMode } = window.__DRY_CONFIG__;
 
-import { useDialogSync } from "../../components/list-nav.js";
 import Combobox from "../../components/Combobox.js";
 import { toast } from "../../components/Toast.js";
-import {
-  ArrowDownIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  XIcon,
-} from "../../components/icons.js";
+import { ArrowRightIcon, XIcon } from "../../components/icons.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import { normalizeFieldOrder } from "../../content-types/naming.js";
 import { saveDraft, drafts, getDraft } from "../../content-types/draft-store.js";
-import { mapWizardTables, type WizardMapResult } from "../../content-types/ai-wizard-map.js";
+import { mapWizardTables } from "../../content-types/ai-wizard-map.js";
 import { parsePartialWizardTurn, type PartialWizardTurn } from "../../content-types/ai-wizard-protocol.js";
 import type {
   WizardChoice,
   WizardProposalTurn,
-  WizardProposedTable,
   WizardQuestionTurn,
   WizardTurn,
 } from "../../content-types/ai-wizard-protocol.js";
@@ -32,7 +23,7 @@ interface WizardHistoryMessage {
   text: string;
 }
 
-export interface AiSchemaWizardDialogProps {
+export interface AiSchemaWizardPanelProps {
   open: boolean;
   /** Every content type (including hidden ones) currently known on the
    * client - used, merged with pending drafts, both to ground the model's
@@ -212,163 +203,13 @@ function QuestionStep({
 }
 
 /**
- * The wizard's terminal step - review, keep/drop, and reorder the AI's
- * proposed tables, then stage them as drafts directly (client-side,
- * `mapWizardTables` + `saveDraft`). No further AI round-trip: Content Types
- * already reviews every draft again before it touches the database (the
- * existing "Apply Builder" flow), so a second AI-mediated confirm step
- * would just duplicate that.
- */
-function ProposalStep({
-  turn,
-  allDefinitions,
-  onStaged,
-  onClose,
-}: {
-  turn: WizardProposalTurn;
-  allDefinitions: ContentTypeDefinition[];
-  onStaged?: () => void;
-  onClose: () => void;
-}) {
-  const [order, setOrder] = useState<string[]>([]);
-  const [kept, setKept] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<WizardMapResult[] | null>(null);
-
-  useEffect(() => {
-    setOrder(turn.tables.map((table) => table.name));
-    setKept(new Set(turn.tables.map((table) => table.name)));
-    setResults(null);
-  }, [turn]);
-
-  function move(name: string, direction: -1 | 1) {
-    setOrder((prev) => {
-      const index = prev.indexOf(name);
-      const target = index + direction;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
-      [next[index], next[target]] = [next[target]!, next[index]!];
-      return next;
-    });
-  }
-
-  function toggleKeep(name: string) {
-    setKept((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }
-
-  const byName = useMemo(() => new Map(turn.tables.map((table) => [table.name, table])), [turn]);
-  const canSubmit = order.some((name) => kept.has(name));
-
-  function confirm() {
-    const selected = order
-      .filter((name) => kept.has(name))
-      .map((name) => byName.get(name))
-      .filter((table): table is WizardProposedTable => !!table);
-    const mapped = mapWizardTables(selected, mergedAllTypes(allDefinitions));
-    for (const result of mapped) {
-      if (result.ok) saveDraft(normalizeFieldOrder(result.definition), result.isNew);
-    }
-    setResults(mapped);
-    if (mapped.some((result) => result.ok)) {
-      toast.add({ type: "success", title: "Staged as drafts - review them in Apply Builder." });
-      onStaged?.();
-    }
-  }
-
-  if (results) {
-    return (
-      <div class="stack ai-wizard-results">
-        <ul class="content-type-list">
-          {results.map((result) => (
-            <li key={result.name} class="content-type-list-item row justify-between">
-              <span>{result.name}</span>
-              {result.ok ? (
-                <span class="row align-center badge sm secondary"><CheckCircleIcon /> Staged</span>
-              ) : (
-                <span class="row align-center hint" style={{ color: "var(--dry-destructive)" }}>
-                  <XCircleIcon /> {result.error}
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-        <footer>
-          <button type="button" onClick={onClose}>Done</button>
-        </footer>
-      </div>
-    );
-  }
-
-  return (
-    <div class="stack ai-wizard-proposal">
-      <p class="ai-wizard-question-text">{turn.question}</p>
-      <ul class="content-type-list">
-        {order.map((name, index) => {
-          const table = byName.get(name);
-          if (!table) return null;
-          return (
-            <li key={name} class="content-type-list-item row justify-between">
-              <label class="row align-center" style={{ gap: "0.5rem", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={kept.has(name)}
-                  onChange={() => toggleKeep(name)}
-                />
-                <span class="stack" style={{ gap: "0.125rem" }}>
-                  <span class="row align-center" style={{ gap: "0.375rem" }}>
-                    {table.label || table.name}
-                    <span class="badge sm outline">{table.isNew ? "New" : "Extend"}</span>
-                  </span>
-                  <small class="hint">
-                    {table.fields.length} field{table.fields.length === 1 ? "" : "s"}
-                    {table.removeFields?.length ? `, removing ${table.removeFields.length}` : ""}
-                  </small>
-                </span>
-              </label>
-              <div class="row">
-                <button
-                  type="button"
-                  class="icon ghost sm"
-                  aria-label={`Move ${table.label || table.name} up`}
-                  disabled={index === 0}
-                  onClick={() => move(name, -1)}
-                >
-                  <ArrowUpIcon />
-                </button>
-                <button
-                  type="button"
-                  class="icon ghost sm"
-                  aria-label={`Move ${table.label || table.name} down`}
-                  disabled={index === order.length - 1}
-                  onClick={() => move(name, 1)}
-                >
-                  <ArrowDownIcon />
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      <footer>
-        <button type="button" disabled={!canSubmit} onClick={confirm}>
-          Save as drafts <ArrowRightIcon />
-        </button>
-      </footer>
-    </div>
-  );
-}
-
-/**
  * Live preview while a turn is still streaming in - a loose, best-effort
  * read of `parsePartialWizardTurn` (never the validated `parseWizardTurn`),
  * so fields appear as they complete instead of an all-or-nothing reveal
  * once the whole JSON object closes. Every piece here is inert (`<span>`/
- * `<li>`, not `<button>`) - nothing is clickable until the full turn
- * validates and the real `QuestionStep`/`ProposalStep` takes over.
+ * `<li>`, not `<button>`) - nothing is clickable, and a `proposal` never
+ * even reaches this preview's "tables" branch for long: it's applied and
+ * the panel closes the moment it validates (see `applyProposal` below).
  */
 function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined }) {
   if (!partial) return null;
@@ -409,27 +250,25 @@ function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined })
 }
 
 /**
- * Content Types "Ask AI" wizard (see `status/ai-schema-wizard.md`) - a
- * choice-driven interview, never a free-text chat box. Every turn from
- * `/api/ai/wizard` is one of `question`/`proposal` (`ai-wizard-protocol.ts`);
- * this component only ever renders those two shapes and never lets the
- * admin type prose back to the model (only a short "other" value on
- * questions that declare `allowOther`, or picking which proposed tables to
- * keep/drop/reorder). `proposal` is terminal - confirming it stages
- * `ContentTypeDefinition` drafts directly (`draft-store.ts`), no further AI
- * call, so the result always lands in the same manual review/"Apply
- * Builder" flow as any hand-edited schema change - that's the real confirm
- * step, not a second round-trip with the model.
+ * Content Types "Ask AI" panel (see `status/ai-schema-wizard.md`) - a
+ * choice-driven interview, never a free-text chat box, docked to the right
+ * edge instead of a modal dialog specifically so the content-types list
+ * stays visible and usable behind/beside it: the list itself, updating live
+ * as drafts land, IS the review step. A `proposal` turn is therefore
+ * terminal AND non-interactive - the moment one validates, every table in
+ * it is staged as a draft (`applyProposal`) and the panel closes, no
+ * confirm click. Content Types already reviews every draft again before it
+ * touches the database ("Apply Builder"); an admin who wants to drop or
+ * adjust something the AI proposed does it there, or in the normal schema
+ * editor - not through a second confirm layer in this panel.
  */
-export default function AiSchemaWizardDialog({
+export default function AiSchemaWizardPanel({
   open,
   allDefinitions,
   onClose,
-  onStaged,
-}: AiSchemaWizardDialogProps) {
-  const ref = useDialogSync(open, onClose);
-  const [stage, setStage] = useState<Stage>("loading");
-  const [turn, setTurn] = useState<WizardTurn | null>(null);
+}: AiSchemaWizardPanelProps) {
+  const [stage, setStage] = useState<Stage>("start");
+  const [turn, setTurn] = useState<WizardQuestionTurn | null>(null);
   const [history, setHistory] = useState<WizardHistoryMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -462,6 +301,41 @@ export default function AiSchemaWizardDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-runs on open/close, deliberately not on aiKeyName (that's read at request time, not at reset time).
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  /** Stages every proposed table as a draft directly - client-side, no AI
+   * round-trip - and closes the panel. Only stays open (with an error) if
+   * every single table failed to stage (a name collision, most likely);
+   * a partial success still closes, since whatever landed is already
+   * visible in the list behind this panel. */
+  function applyProposal(proposal: WizardProposalTurn) {
+    const mapped = mapWizardTables(proposal.tables, mergedAllTypes(allDefinitions));
+    const succeeded = mapped.filter((result) => result.ok);
+    const failed = mapped.filter((result) => !result.ok);
+    for (const result of succeeded) {
+      if (result.ok) saveDraft(normalizeFieldOrder(result.definition), result.isNew);
+    }
+    if (succeeded.length === 0) {
+      setError(failed.map((result) => `${result.name}: ${!result.ok ? result.error : ""}`).join("; "));
+      setStage("error");
+      return;
+    }
+    toast.add({
+      type: failed.length ? "warning" : "success",
+      title: failed.length
+        ? `Staged ${succeeded.length} of ${mapped.length} - "${failed.map((result) => result.name).join(", ")}" needs manual review.`
+        : `Staged ${succeeded.length} content type${succeeded.length === 1 ? "" : "s"} as drafts - review in Apply Builder.`,
+    });
+    onClose();
+  }
+
   async function advance(nextHistory: WizardHistoryMessage[], keyName: string | undefined, goal?: string) {
     setStage("loading");
     setError(null);
@@ -474,6 +348,10 @@ export default function AiSchemaWizardDialog({
         (delta) => setStreamingText((current) => current + delta),
         () => setStreamingText(""),
       );
+      if (result.turn.kind === "proposal") {
+        applyProposal(result.turn);
+        return;
+      }
       setHistory(nextHistory);
       setTurn(result.turn);
       setStage("turn");
@@ -499,7 +377,7 @@ export default function AiSchemaWizardDialog({
   }
 
   return (
-    <dialog ref={ref} class="md ai-wizard-dialog" aria-label="Ask AI">
+    <div class={`ai-wizard-panel${open ? " open" : ""}`} aria-hidden={!open}>
       {open && (
         <>
           <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
@@ -540,15 +418,12 @@ export default function AiSchemaWizardDialog({
                 </footer>
               </div>
             )}
-            {stage === "turn" && turn?.kind === "question" && (
+            {stage === "turn" && turn && (
               <QuestionStep turn={turn} busy={false} onAnswer={answer} />
-            )}
-            {stage === "turn" && turn?.kind === "proposal" && (
-              <ProposalStep turn={turn} allDefinitions={allDefinitions} onStaged={onStaged} onClose={onClose} />
             )}
           </div>
         </>
       )}
-    </dialog>
+    </div>
   );
 }

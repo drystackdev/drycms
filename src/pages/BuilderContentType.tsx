@@ -29,7 +29,7 @@ import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
-import AiSchemaWizardDialog from "./content-type-editor/AiSchemaWizardDialog.js";
+import AiSchemaWizardPanel from "./content-type-editor/AiSchemaWizardPanel.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface CardHighlights {
@@ -494,7 +494,7 @@ export default function BuilderContentType() {
         }}
         onApplied={() => void reload()}
       />
-      <AiSchemaWizardDialog
+      <AiSchemaWizardPanel
         open={aiWizardOpen}
         allDefinitions={definitions ?? []}
         onClose={() => setAiWizardOpen(false)}

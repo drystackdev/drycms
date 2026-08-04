@@ -2699,7 +2699,6 @@
         color: var(--dry-foreground);
       }
       &:first-child {
-        margin-top: 2rem;
         border-top: 1px solid var(--dry-border);
       }
 
@@ -3201,16 +3200,57 @@
     }
 
     /* ------------------------------------------------------ AI schema wizard */
-    /* Same fixed-header/scrolling-body shape as `.apply-build-dialog[open]`
-     * above - a long choice list or table review can run past the viewport. */
-    .ai-wizard-dialog[open] {
+    /* Docked to the right edge instead of a centered `<dialog>` - the
+     * content-types list stays visible/usable behind it (that's the point:
+     * a staged draft shows up live in the list, no separate in-panel review
+     * needed). Always rendered so `.open`'s `translate` can transition it
+     * in/out, same off-canvas technique `.sidebar`'s mobile drawer uses
+     * above, just docked to the opposite edge and available at every width.
+     * Not a `<dialog>`, so - unlike everywhere else in this file - it gets
+     * its own padding/header/footer rules instead of inheriting the base
+     * `dialog { ... }` block's. */
+    .ai-wizard-panel {
+      position: fixed;
+      inset-block: 0;
+      inset-inline-end: 0;
+      z-index: 45;
       display: flex;
       flex-direction: column;
-      max-height: min(38rem, calc(100vh - 4rem));
+      width: min(26rem, 100vw);
+      padding: 1.5rem;
+      background-color: var(--dry-popover);
+      color: var(--dry-popover-foreground);
+      border-inline-start: 1px solid var(--dry-border);
+      box-shadow: var(--dry-shadow-lg);
+      translate: 100% 0;
+      transition: translate 200ms ease;
 
-      & header,
-      & footer {
+      &.open {
+        translate: 0 0;
+      }
+
+      & :is(h1, h2, h3, h4, h5, h6) {
+        font-size: var(--dry-text-md);
+      }
+
+      & header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.25rem;
         flex: none;
+        margin-block-end: 1rem;
+
+        & > p {
+          color: var(--dry-muted-foreground);
+        }
+      }
+
+      & footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        flex: none;
+        margin-block-start: 1rem;
       }
     }
 

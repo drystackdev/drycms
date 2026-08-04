@@ -8,11 +8,16 @@ import type { WorkerRequest, WorkerResponse } from "./worker-protocol.js";
  * request/response and hang-detection bookkeeping is under test). */
 class MockWorker {
   onmessage: ((event: MessageEvent<WorkerResponse>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
   postMessage = vi.fn<(request: WorkerRequest) => void>();
   terminate = vi.fn();
 
   respond(response: WorkerResponse): void {
     this.onmessage?.({ data: response } as MessageEvent<WorkerResponse>);
+  }
+
+  throwError(): void {
+    this.onerror?.({ message: "boom" } as ErrorEvent);
   }
 }
 
@@ -100,6 +105,21 @@ describe("EditerWorkerClient", () => {
 
     const restartedWorker = workers[2]!;
     expect(restartedWorker.postMessage).toHaveBeenCalledWith({ kind: "configure", ...config });
+  });
+
+  it("restarts immediately (not waiting for the hang timeout) on a worker error", async () => {
+    const onRestart = vi.fn();
+    const client = new EditerWorkerClient(() => {}, undefined, 300, onRestart);
+    const promise = client.getCompletions(1);
+    const worker = workers[0]!;
+
+    worker.throwError();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await promise).toEqual([]);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect(onRestart).toHaveBeenCalledOnce();
+    expect(workers).toHaveLength(2);
   });
 
   it("does not throw calling dispose after a request is already pending", async () => {

@@ -297,12 +297,10 @@ change, not just static review.
   before staging anything. Since Content Types already reviews every draft
   again before it touches the database (`ApplyBuildDialog`/"Apply Builder"),
   that AI-mediated confirm step just duplicated an existing one - removed
-  `WizardDoneTurn` from the protocol entirely; `proposal` is now terminal,
-  and `ProposalStep`'s "Save as drafts" button stages the
-  kept/reordered tables directly (`mapWizardTables` + `saveDraft`),
-  client-side, no further network call. The keep/drop/reorder review UI
-  itself is unchanged - only the round-trip-with-the-model it used to
-  require before staging is gone.
+  `WizardDoneTurn` from the protocol entirely; `proposal` is now terminal
+  and stages directly, client-side, no further network call. (The
+  keep/drop/reorder review UI this originally landed on was itself removed
+  one round later - see below.)
 - Verified live end-to-end with a real `claude` call: a Vietnamese goal
   mentioning draft/scheduled publishing produced a staged draft with
   `features: {slug, draft, schedule, timestamps}` all correctly inferred,
@@ -316,6 +314,53 @@ change, not just static review.
   the pure-function monotonic-growth unit test.
 - 643/643 tests, typecheck, and build clean throughout.
 
+### Third follow-up round (same day): panel instead of dialog, fully auto-apply
+
+- **Modal dialog → docked side panel**: `AiSchemaWizardDialog.tsx` renamed
+  to `AiSchemaWizardPanel.tsx` and rebuilt on a plain `<div>` instead of
+  `<dialog>` - a `showModal()` dialog's native backdrop blocks interaction
+  with the page behind it, which defeats the actual goal here: the
+  content-types list needs to stay live and clickable while the panel is
+  open, since the list IS the review surface now (see next point). Docked
+  `position: fixed` to the right edge, full height, `translate`-based
+  slide transition (same off-canvas technique `.sidebar`'s mobile drawer
+  already used, mirrored to the opposite edge and available at every
+  width, not just mobile) - no backdrop, no dimming. Lost `useDialogSync`'s
+  native focus-trap/Escape handling that came for free with `<dialog>`;
+  replaced Escape with a manual `keydown` listener. `.ai-wizard-dialog`'s
+  CSS (which inherited padding/header/footer layout from the base
+  `dialog { }` rule) became a self-contained `.ai-wizard-panel` block since
+  a plain `div` inherits none of that.
+- **`proposal` is now fully automatic**: previously confirmed by the admin
+  via a keep/drop/reorder review screen inside the panel (added earlier
+  this same day) before staging. That whole review UI is now gone - the
+  moment a `proposal` turn validates, every table in it is staged as a
+  draft immediately and the panel closes on its own, no click. Only stays
+  open (with an error) if every table in the proposal failed to stage (a
+  name collision, most likely); a partial success still stages what it can
+  and closes, telling the admin via toast which one(s) need manual
+  attention. Rationale is the same one behind removing the AI-mediated
+  confirm round-trip earlier: content-types' own "Apply Builder" already
+  reviews every draft before it touches the database, and now that the
+  list is visibly live behind the panel, even the CLIENT-SIDE review step
+  was redundant on top of that - "xem chỉnh thêm nếu cần" (view/adjust more
+  if needed) happens in the normal list/schema editor, not in this panel.
+- `WizardMapResult`/`ArrowUpIcon`/`ArrowDownIcon`/`CheckCircleIcon`/
+  `XCircleIcon` and the whole `ProposalStep` component are gone - the panel
+  now only ever renders `start` → `loading` → `question` (looping) → either
+  auto-closes (success) or `error`. `useMemo`'s only remaining use is the
+  partial-preview parse.
+- Verified live: panel mounts docked exactly to the viewport's right edge
+  (`x + width === viewport width`, full height) once open, slide transition
+  settles correctly, content-types list stays visible and clickable behind
+  it throughout. Drove a full run with `claude`: submitted a goal, AI
+  proposed 2 tables, panel closed itself with zero clicks, and the
+  content-types list immediately showed both new rows with "Draft" badges
+  live, no reload - confirming the list-as-review-surface design actually
+  works, not just closes.
+- 644/644 tests (one new elsewhere, unrelated to this work), typecheck, and
+  build clean.
+
 ### Known concurrent-editing note
 
 Mid-session, an unrelated automated commit (`b511d9f`, message "push") landed
@@ -328,12 +373,16 @@ noted here in case that intermediate snapshot matters later.
 ## Speed
 
 Implemented in one session, directly following the approved plan (no scope
-changes to the core design). Two same-day follow-up rounds addressed live-
-usage feedback in sequence - the first covering styling/UX/error-surfacing
-fixes and real token streaming, the second covering progressive JSON reveal,
-an icon swap, features support, and a protocol simplification that removes
-an entire redundant AI round-trip. Every change in both rounds was verified
-against a real running instance (typecheck/test/build plus a live browser
-pass, several against real local-AI output) rather than left as "should
-work" - most of the added time went to that verification loop rather than
-the code changes themselves, which were each fairly small and well-isolated.
+changes to the core design). Three same-day follow-up rounds addressed
+live-usage feedback in sequence - styling/UX/error-surfacing fixes and real
+token streaming; then progressive JSON reveal, an icon swap, features
+support, and dropping a redundant AI round-trip; then dropping the modal
+dialog and its in-panel review step entirely in favor of a docked side
+panel that auto-applies straight into the (now live-updating) content-types
+list. Each round simplified the interaction model further, converging on
+"the list itself is the review UI." Every change across all three rounds
+was verified against a real running instance (typecheck/test/build plus a
+live browser pass, most against real local-AI output) rather than left as
+"should work" - most of the added time went to that verification loop
+rather than the code changes themselves, which were each fairly small and
+well-isolated.
