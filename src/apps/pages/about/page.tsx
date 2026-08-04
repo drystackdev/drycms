@@ -56,8 +56,8 @@ export default async function AboutPage() {
           {MISSION_ITEMS.map((item) => (
             <li key={item} class="flex items-start gap-3 text-sm leading-relaxed text-slate-600">
               <span class="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-900">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3 w-3">
-                  <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-3 w-3">
+                  <path d="m8.5 12.5l2 2l5-5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </span>
               {item}
@@ -101,14 +101,11 @@ export default async function AboutPage() {
                 <p class="mt-1 text-sm font-semibold text-slate-900 group-hover:text-red-900">{item.title}</p>
                 <p class="mt-1 text-xs text-slate-500">{item.date}</p>
               </div>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                class="mt-1 h-4 w-4 shrink-0 text-slate-400 group-hover:text-red-800"
-              >
-                <path d="M7 17L17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round" />
+              <svg viewBox="0 0 24 24" class="mt-1 h-4 w-4 shrink-0 text-slate-400 group-hover:text-red-800">
+                <g fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m9 15l6-6m0 0h-4.5M15 9v4.5" />
+                  <path d="M2 12c0-4.714 0-7.071 1.464-8.536C4.93 2 7.286 2 12 2s7.071 0 8.535 1.464C22 4.93 22 7.286 22 12s0 7.071-1.465 8.535C19.072 22 16.714 22 12 22s-7.071 0-8.536-1.465C2 19.072 2 16.714 2 12Z" />
+                </g>
               </svg>
             </a>
           ))}

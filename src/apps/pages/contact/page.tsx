@@ -5,9 +5,8 @@ const CONTACT_CHANNELS = [
     href: "tel:0000000000",
     icon: (
       <path
-        d="M4 5c0-.6.4-1 1-1h3l2 5-2 1a11 11 0 005 5l1-2 5 2v3c0 .6-.4 1-1 1A15 15 0 014 6z"
+        d="m10.038 5.316l.649 1.163c.585 1.05.35 2.426-.572 3.349c0 0-1.12 1.119.91 3.148c2.028 2.028 3.147.91 3.147.91c.923-.923 2.3-1.158 3.349-.573l1.163.65c1.585.884 1.772 3.106.379 4.5c-.837.836-1.863 1.488-2.996 1.53c-1.908.073-5.149-.41-8.4-3.66c-3.25-3.251-3.733-6.492-3.66-8.4c.043-1.133.694-2.159 1.53-2.996c1.394-1.393 3.616-1.206 4.5.38Z"
         stroke-linecap="round"
-        stroke-linejoin="round"
       />
     ),
   },
@@ -17,8 +16,8 @@ const CONTACT_CHANNELS = [
     href: "mailto:contact@example.com",
     icon: (
       <>
-        <path d="M4 6h16v12H4z" stroke-linecap="round" stroke-linejoin="round" />
-        <path d="M4 7l8 6 8-6" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M2 12c0-3.771 0-5.657 1.172-6.828S6.229 4 10 4h4c3.771 0 5.657 0 6.828 1.172S22 8.229 22 12s0 5.657-1.172 6.828S17.771 20 14 20h-4c-3.771 0-5.657 0-6.828-1.172S2 15.771 2 12Z" />
+        <path d="m6 8l2.159 1.8c1.837 1.53 2.755 2.295 3.841 2.295s2.005-.765 3.841-2.296L18 8" stroke-linecap="round" />
       </>
     ),
   },
@@ -56,7 +55,7 @@ export default async function ContactPage() {
               class="flex items-center gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
             >
               <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-900">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-5 w-5">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-5 w-5">
                   {channel.icon}
                 </svg>
               </span>

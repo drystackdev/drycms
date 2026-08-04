@@ -112,6 +112,35 @@ primary/accent shades shifted two steps darker (`teal-600`→`red-800`,
 hue swap onto `red-600`/`red-700` would have read as bright alert-red, not
 the deep burgundy "đỏ đô" that was asked for.
 
+## Follow-up 4 (same session)
+
+Extracted `PRESS_MENTIONS` out of `about/page.tsx` into a shared
+`press-data.ts` (same pattern as `blogs/posts-data.ts`) so Home could show
+the same "Bài báo nói về tôi" cards below "Bài viết mới nhất" without
+duplicating the array. Blog detail article column widened
+`max-w-3xl` → `max-w-4xl` (then further to `max-w-5xl` by an external
+edit - left as-is, not mine to revert).
+
+Replaced every hand-rolled icon site-wide with real Solar icons (Iconify
+`solar` collection, 7401 icons, CC BY 4.0). Followed this repo's existing
+"hand-roll API glue, no new runtime dependency" convention (same one
+behind the CMS's own Icon Management feature) - fetched each icon's raw
+`.svg` via `curl https://api.iconify.design/solar/<name>.svg` and inlined
+the returned markup directly, rather than adding `@iconify/react` or
+similar as a package dependency. Mapping: logo mark → `heart-pulse-bold`,
+mobile menu open/close → `hamburger-menu-linear`/`close-circle-linear`,
+all checkmarks → the bare tick path lifted out of `check-circle-linear`
+(kept our own light-circle badge wrapper rather than switching to the
+solid `-bold` circle variant, to stay consistent with the site's existing
+soft-badge look), search → `magnifer-linear`, pagination arrows →
+`alt-arrow-left/right-linear`, external-link (press cards) →
+`square-arrow-right-up-linear`, contact phone → `phone-rounded-linear`
+(the plain `phone-linear` turned out to be a solid-fill path despite the
+name, not an outline - rounded variant is the true stroke-based one),
+contact email → `letter-linear`. Facebook/"Fanpage" icon deliberately left
+as the original hand-drawn glyph - Solar is a generic UI icon set with no
+brand/social logos, so there's no Solar equivalent to swap in.
+
 ## Speed
 
 Single session, complete. Hero photo blend took several iterations (object-
@@ -120,3 +149,10 @@ mask → aspect-ratio fix for a resize regression) before landing on the
 final version; each visual bug in this thread was caught by the user
 looking at a real screenshot, not by my own review, worth being more
 skeptical of "looks done" going forward.
+
+Noticed mid-session that the repo is now on a `mai-anh-quyen` branch (not
+`master`, where this session started) with commits already covering some
+of this same work ("Add blog detail page and posts data", "...color
+re-theme...") - another session/process is committing alongside this one.
+Left all commits to whatever is doing that; this session only ever edited
+the working tree, never ran `git commit`.

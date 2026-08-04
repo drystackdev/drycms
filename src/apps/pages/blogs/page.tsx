@@ -20,11 +20,11 @@ export default async function BlogsPage() {
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            stroke-width="1.8"
+            stroke-width="1.5"
             class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
           >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4.3-4.3" stroke-linecap="round" />
+            <circle cx="11.5" cy="11.5" r="9.5" />
+            <path d="M18.5 18.5L22 22" stroke-linecap="round" />
           </svg>
           <input
             type="search"
@@ -66,7 +66,11 @@ export default async function BlogsPage() {
       </div>
 
       <div class="mt-12 flex items-center justify-center gap-2">
-        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">‹</span>
+        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" class="h-4 w-4">
+            <path d="m15 5l-6 7l6 7" />
+          </svg>
+        </span>
         <span class="flex h-9 w-9 items-center justify-center rounded-full bg-red-800 text-sm font-semibold text-white">
           1
         </span>
@@ -76,7 +80,11 @@ export default async function BlogsPage() {
         <span class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">
           3
         </span>
-        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">›</span>
+        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" class="h-4 w-4">
+            <path d="m9 5l6 7l-6 7" />
+          </svg>
+        </span>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
 
   if (!post) {
     return (
-      <div class="mx-auto max-w-3xl px-4 py-24 text-center">
+      <div class="mx-auto max-w-5xl px-4 py-24 text-center">
         <h1 class="text-2xl font-bold text-slate-900">Không tìm thấy bài viết</h1>
         <p class="mt-2 text-sm text-slate-600">Bài viết này có thể đã bị gỡ hoặc đường dẫn không đúng.</p>
         <a href="/blogs" class="mt-6 inline-block text-sm font-medium text-red-900 hover:underline">
@@ -17,7 +17,7 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
   }
 
   return (
-    <article class="mx-auto max-w-3xl px-4 py-16">
+    <article class="mx-auto max-w-5xl px-4 py-16">
       <a href="/blogs" class="text-sm font-medium text-red-900 hover:underline">
         ← Quay lại Blog
       </a>
