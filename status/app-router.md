@@ -1,4 +1,4 @@
-# App Router (`src/apps`) - thực thi Giai đoạn 1 + Tailwind (Giai đoạn 2)
+# App Router (`src/apps`) - thực thi Giai đoạn 1 + Tailwind (Giai đoạn 2) + Giai đoạn 3
 
 ## Plan
 
@@ -6,7 +6,8 @@ Xem `plans/app-router.md` cho toàn bộ kế hoạch (4 giai đoạn + 2 cơ ch
 cache). File này track việc thực thi - Giai đoạn 1 (SSR streaming qua
 adapter, file-based routing, `pages-cache`) đã xong đầy đủ; phần Tailwind
 v4 của Giai đoạn 2 cũng đã xong (client hydration của Giai đoạn 2 thì
-chưa).
+chưa); Giai đoạn 3 (production build, SSR-only - xem mục riêng bên dưới)
+đã xong.
 
 Bước theo đúng thứ tự `plans/app-router.md`'s Giai đoạn 1:
 1. Spike `renderToReadableStream` + async component.
@@ -63,11 +64,8 @@ Giai đoạn 1 xong. Tất cả 7 bước đã code + test.
       (có độ trễ nhỏ do file watcher, không phải bug). Đã xoá fixture sau
       khi verify xong.
 
-Không verify được: `pages-cache`'s hành vi PRODUCTION thật qua dev server
-(cache chỉ bật khi `!import.meta.env.DEV`, và Giai đoạn 3 - production
-build - chưa tồn tại để có server production thật mà test). Đã verify đầy
-đủ ở tầng unit test (5 case) thay thế - đủ tin cậy cho v1, sẽ có 1 lượt
-verify qua server thật khi Giai đoạn 3 xong.
+`pages-cache`'s hành vi PRODUCTION thật - đã verify qua server production
+thật, xem mục "Giai đoạn 3" bên dưới (không còn treo).
 
 `bun run typecheck` xanh, `bun run test` 655/655 pass (66 file, tăng từ
 639/62 trước khi bắt đầu).
@@ -103,6 +101,56 @@ việc đầu tiên. Tailwind (phần của Giai đoạn 2) làm thêm cùng phi
 Tiếp theo: client hydration (`preact-iso/hydrate`) - phần còn lại của
 Giai đoạn 2 - khi được yêu cầu. Xem `plans/app-router.md`.
 
+## Giai đoạn 3 (Production build) - xong (2026-08-05)
+
+Chi tiết thiết kế/lý do ở `plans/app-router.md`'s Giai đoạn 3 (đọc thẳng
+source `vite` cài trong repo để xác nhận `--ssr <entry>` override
+`rollupOptions.input`, và manifest key theo path nguồn chứ không theo alias
+name - 2 điểm quyết định cách code chạy đúng). Tóm tắt file đổi:
+
+- `vite.config.ts` - function-config form, `isSsrBuild`-gated thêm
+  `src/apps/globals.css` làm entry thứ 2 + `manifest: true` cho build client.
+- `src/server/app-router/assets.ts` (mới) - `resolveGlobalsCssHref(dev,
+  manifestPath?)`, pure/testable (tham số hoá thay vì đọc thẳng
+  `import.meta.env`/`process.cwd()` bên trong, cùng tinh thần
+  `route-tree.ts`'s `buildRouteTree`). Test: `assets.test.ts` (3 case: dev
+  path, prod đọc manifest thật, prod báo lỗi rõ khi thiếu entry).
+- `render.ts` - `<link>` dùng `GLOBALS_CSS_HREF` thay vì hardcode path
+  nguồn.
+- `entry-node.ts` - nhánh mới `tryServeStaticAsset` (tách riêng khỏi shell
+  fallback cũ) PHẢI chạy trước nhánh `handlePageRequest` - khác dev (Vite
+  middleware tự lọc asset request trước khi tới App Router ở đó), prod
+  không có lớp lọc đó nên phải tự kiểm tra file thật trước, nếu không
+  request kiểu `/assets/main-abc123.js` sẽ bị route nhầm thành 404 (vỡ
+  chính JS bundle của admin).
+
+**Verify qua `bun run build && bun run start` thật (không chỉ đọc code)**:
+- `bun run typecheck` xanh, `bun run test` 661/661 pass (67 file, tăng từ
+  655/66 - thêm `assets.test.ts`).
+- `bun run build`: xác nhận `dist/client/assets/appsGlobals-*.css` +
+  `dist/client/.vite/manifest.json` sinh ra đúng (key `"src/apps/globals.css"`
+  → `{ file: "assets/appsGlobals-....css" }`, đọc thử bằng `node -e`).
+  `dist/server` sinh đúng 6 chunk riêng cho 2 `layout.tsx` + 4 `page.tsx`
+  hiện có (root, `roles`, `users`, `users/[slug]`, 2 layout) - xác nhận
+  `import.meta.glob` code-split đúng qua `vite build --ssr` mà KHÔNG cần
+  script gom entry thủ công nào, đúng dự đoán trong plan.
+- `node dist/server/entry-node.js` (port 3000) + `curl` thật:
+  - `/`, `/users`, `/roles`, `/users/1` → 200, HTML render đúng, có `dry()`
+    query DB thật (`/users/1` ra đúng "Khan Trần" / email thật; `/` ra đúng
+    "1 user(s), 2 role(s)"), `<link>` trỏ đúng
+    `/assets/appsGlobals-....css`.
+  - `/assets/appsGlobals-....css` và 1 file JS admin thật
+    (`/assets/main-....js`) → 200, không bị nhánh App Router nuốt mất.
+  - `/dry` → vẫn admin SPA shell y nguyên, không đổi.
+  - `/this-does-not-exist` → 404 thật (`Content-Type: text/plain`), không
+    còn trang trắng.
+  - `pages-cache` production: gọi `/users/1` 3 lần, đọc thẳng
+    `.dry/pages-cache/users%2F1.json` giữa các lần gọi - `renderedAt`
+    KHÔNG đổi giữa lần 2 và lần 3 (chỉ render 1 lần thật, các lần sau đọc
+    cache) - xác nhận cache thật sự engage trong production, không phải
+    trùng hợp HTML giống nhau do data không đổi. Đã xoá
+    `.dry/pages-cache/` sau khi verify xong (không phải fixture cần giữ).
+
 ## Cập nhật 2026-08-05: gộp 2 Vite plugin thành 1
 
 `dry-global-plugin.ts` (`transform`) và `hmr-plugin.ts` (`handleHotUpdate`)
@@ -114,3 +162,9 @@ theo: `app-router-plugin.test.ts` (7 case - 4 case `transform` cũ + 3 case
 Cập nhật path ở mọi nơi tham chiếu tên file cũ (`vite.config.ts`,
 `render.ts`'s comment, `codegen.ts`'s template cho `dry.generated.d.ts`).
 `bun run typecheck` + `bun run test` xanh sau khi gộp.
+
+## Cập nhật 2026-08-05: Giai đoạn 3 (production build) xong
+
+Chi tiết ở mục "Giai đoạn 3" phía trên. Còn lại: client hydration
+(`preact-iso/hydrate`, phần chưa làm của Giai đoạn 2) - khi được yêu cầu,
+xem `plans/app-router.md`.

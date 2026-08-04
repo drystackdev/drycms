@@ -1,5 +1,6 @@
 import renderToString, { renderToStringAsync } from "preact-render-to-string";
 import { runWithDryContext, type DryRequestContext } from "../../content-types/dry-context.js";
+import { GLOBALS_CSS_HREF } from "./assets.js";
 import type { RouteMatch } from "./match.js";
 
 /** `render.ts` owns the outer HTML document for Giai đoạn 1 - `page.tsx`/
@@ -9,12 +10,10 @@ import type { RouteMatch } from "./match.js";
  * of Giai đoạn 2 (`preact-iso/hydrate`). No per-page `<title>`/meta yet
  * either - deferred to Giai đoạn 4 same as `plans/app-router.md` notes.
  *
- * The `<link>` below points at the SOURCE path (`/src/apps/globals.css`) -
- * Vite's dev server compiles+serves real CSS text for a direct `<link>`
- * request like this (same mechanism `index.html` relies on, just not going
- * through `transformIndexHtml` here). Giai đoạn 3 (production build) needs
- * to swap this for the built, hashed asset path once that pipeline exists -
- * not done yet, this only works in dev.
+ * `GLOBALS_CSS_HREF` (`./assets.js`) is the SOURCE path in dev (Vite's dev
+ * server compiles+serves real CSS text for a direct `<link>` request like
+ * this) and the built, hashed asset path in production (Giai đoạn 3, read
+ * from the client build's `manifest.json`).
  *
  * `/@vite/client` (dev only) is Vite's own HMR WebSocket client - needed
  * for `app-router-plugin.ts`'s full-reload broadcast to reach this page at all,
@@ -24,7 +23,7 @@ import type { RouteMatch } from "./match.js";
 const HEAD_AND_BODY_OPEN =
   '<!DOCTYPE html><html><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-  '<link rel="stylesheet" href="/src/apps/globals.css">' +
+  `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}">` +
   (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
   "</head><body>";
 const BODY_AND_HTML_CLOSE = "</body></html>";

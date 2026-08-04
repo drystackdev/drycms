@@ -459,23 +459,61 @@ do đủ mạnh để đổi hướng - giữ nguyên 1 file chung.
   `hydrate()` gọi 1 lần mỗi trang (MPA) hay bọc thêm 1 `Router`/
   `LocationProvider` như admin (SPA).
 
-## Giai đoạn 3 - Production build
+## Giai đoạn 3 - Production build - XONG (2026-08-05)
 
-- Chưa chốt chi tiết implementation (đúng tinh thần "không thiết kế cho
-  hypothetical" - để refine khi tới lúc, sau khi Giai đoạn 1-2 chạy thật).
-  Hướng đi: 1 script Node mới (kiểu `scripts/dry-generate.ts`) quét
-  `route-tree.ts`'s cùng cơ chế glob để liệt kê **entry files thật** (page/
-  layout paths), feed vào 1 lần `vite build` với nhiều `rollupOptions.input`
-  (hoặc nhiều lần gọi `build()` như `build-component-bundle.ts` đang làm
-  cho từng component) - output JS theo từng route + 1 vendor chunk Preact
-  dùng chung (tiền lệ: `buildSharedPreactBundle()`).
-- 1 build SSR riêng (`vite build --ssr <entry>`) cho phần render server,
-  giống hệt `package.json`'s `build` script đang làm cho
-  `src/server/entry-node.ts`, để `dist/server` có bản đã bundle của
-  `page-handler.ts`. Cùng lúc sinh `buildId` (mục `pages-cache` ở trên).
-- `entry-node.ts`'s `serveShellOrAsset` cần nhánh mới tương ứng nhánh dev ở
-  Giai đoạn 1 bước 6 (gọi page-handler đã build thay vì fallback
-  `indexHtml` cho path ngoài admin).
+Scope thật hoá ra đơn giản hơn hẳn hướng đi speculative đã ghi trước đây
+(dưới đây), đúng vì Giai đoạn này CHỈ cần SSR chạy được trong production -
+không cần client hydration bundle (Giai đoạn 2's phần đó vẫn chưa làm, để
+sau, độc lập):
+
+- **Không cần script Node/multi-entry riêng cho route discovery** - đã xác
+  nhận bằng cách đọc thẳng source `vite` cài trong repo
+  (`node_modules/vite/dist/node/chunks/node.js:32938`): `vite build --ssr
+  <entry>` khiến `<entry>` là input DUY NHẤT cho build đó, hoàn toàn không
+  quan tâm `rollupOptions.input` khác trong config. `page-handler.ts` ->
+  `route-tree.ts`'s `import.meta.glob(...)` chỉ cần được import (transitively)
+  từ `entry-node.ts` - Rollup tự code-split từng `page.tsx`/`layout.tsx`
+  thành chunk riêng trong `dist/server`, không cần liệt kê entry files thủ
+  công. (Ý tưởng "vendor chunk Preact dùng chung + multi-entry" bên dưới
+  vẫn đúng CHO client hydration bundle sau này khi Giai đoạn 2 làm tiếp -
+  không áp dụng cho SSR bundle.)
+- `package.json`'s `build` script không đổi gì - vẫn 2 lệnh `vite build`
+  cũ. `vite.config.ts` chuyển sang function-config form để dùng
+  `isSsrBuild` context - chỉ build client (`vite build --outDir
+  dist/client`, không có `--ssr`) mới thêm `src/apps/globals.css` làm
+  entry thứ 2 + bật `build.manifest: true`; build SSR (`--ssr
+  entry-node.ts`) không đụng gì (đã verify key: manifest key theo path
+  nguồn relative-root `"src/apps/globals.css"`, không phải theo tên alias
+  đặt trong `rollupOptions.input`).
+- `src/server/app-router/assets.ts` (mới) - `resolveGlobalsCssHref(dev,
+  manifestPath?)`: dev trả thẳng path nguồn (như cũ); prod đọc
+  `dist/client/.vite/manifest.json` lấy path asset đã build+hash thật.
+  `render.ts`'s `<link>` giờ dùng `GLOBALS_CSS_HREF` thay vì hardcode path
+  nguồn.
+- `buildId` (`build-id.ts`) không cần đổi gì - `randomUUID()` per-process-
+  start đã tự thoả đúng contract "mỗi lần deploy = buildId mới" mà không
+  cần build-time content-hash.
+- `entry-node.ts` - thêm nhánh mới: static asset (dist/client) check TRƯỚC
+  (khác dev - dev có Vite middleware tự lọc asset request trước khi tới
+  App Router, prod không có lớp đó nên phải tự kiểm tra file thật trước,
+  nếu không request kiểu `/assets/main-abc123.js` sẽ bị App Router route
+  nhầm thành "không khớp route -> 404", vỡ JS bundle của chính admin) -> rồi
+  mới tới nhánh `handlePageRequest` cho path ngoài admin (khớp -> stream,
+  không khớp -> 404 thật) -> cuối cùng mới fallback admin SPA shell.
+
+Verify qua `bun run build && bun run start` thật + `curl` - xem
+`status/app-router.md`'s Giai đoạn 3 section cho chi tiết.
+
+### Hướng đi cũ (không còn áp dụng cho SSR, giữ lại cho client hydration bundle sau này)
+
+- 1 script Node mới (kiểu `scripts/dry-generate.ts`) quét `route-tree.ts`'s
+  cùng cơ chế glob để liệt kê **entry files thật** (page/layout paths), feed
+  vào 1 lần `vite build` với nhiều `rollupOptions.input` (hoặc nhiều lần gọi
+  `build()` như `build-component-bundle.ts` đang làm cho từng component) -
+  output JS theo từng route + 1 vendor chunk Preact dùng chung (tiền lệ:
+  `buildSharedPreactBundle()`). Đây là việc cho **client hydration bundle**
+  (browser cần discover/tải đúng file JS theo route), khác hẳn SSR bundle
+  (Node tự resolve import tương đối, không cần biết trước tên file).
 
 ## Giai đoạn 4 - Polish / để sau
 

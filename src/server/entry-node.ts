@@ -3,8 +3,10 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { applySecurityHeaders, createApiMiddleware, sendFetchResponse, toFetchRequest } from "./adapters/node.js";
 import { injectClientConfig } from "./client-config.js";
+import { path as adminPath } from "./config.js";
 import { mimeType } from "./route-helpers.js";
 import { guardPageRequest } from "./page-guard.js";
+import { handlePageRequest } from "./page-handler.js";
 
 /**
  * Production entry - bundled by `vite build --ssr src/server/entry-node.ts`
@@ -16,7 +18,38 @@ const clientDir = join(process.cwd(), "dist/client");
 const indexHtml = injectClientConfig(readFileSync(join(clientDir, "index.html"), "utf8"));
 const apiMiddleware = createApiMiddleware();
 
-function serveShellOrAsset(req: IncomingMessage, res: ServerResponse): void {
+/** Serves a real file under `dist/client` if `pathname` matches one -
+ * `null` (not "fall back to the shell") when it doesn't, so callers can
+ * distinguish "not a static asset" from "here's the SPA shell" - the two
+ * used to be the same branch when this was the only kind of non-API
+ * request, but `src/apps/pages/**` routing (below) needs the distinction:
+ * an asset request like `/assets/main-abc123.js` must never be treated as a
+ * possible App Router page path. */
+function tryServeStaticAsset(pathname: string, res: ServerResponse): boolean {
+  const filePath = resolve(clientDir, `.${pathname}`);
+  const fileRelative = relative(clientDir, filePath);
+  if (pathname === "/" || !fileRelative || fileRelative.startsWith("..") || isAbsolute(fileRelative)) return false;
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) return false;
+  applySecurityHeaders(res);
+  res.setHeader("Content-Type", mimeType(filePath));
+  createReadStream(filePath).pipe(res);
+  return true;
+}
+
+function serveAdminShell(res: ServerResponse): void {
+  applySecurityHeaders(res);
+  res.setHeader("Content-Type", "text/html");
+  res.end(indexHtml);
+}
+
+/**
+ * `src/apps/pages/**` (see `plans/app-router.md`'s Giai đoạn 3) - only for a
+ * pathname OUTSIDE the admin's own `path`, mirroring `scripts/dev-server.mjs`'s
+ * `tryServeAppRouterPage`. Unlike dev, there's no Vite middleware here to
+ * have already filtered out static-asset requests, so `tryServeStaticAsset`
+ * above MUST run first - see its own comment.
+ */
+async function serveRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   let pathname: string;
   try {
@@ -27,17 +60,23 @@ function serveShellOrAsset(req: IncomingMessage, res: ServerResponse): void {
     res.end("Bad request");
     return;
   }
-  const filePath = resolve(clientDir, `.${pathname}`);
-  const fileRelative = relative(clientDir, filePath);
-  if (pathname !== "/" && fileRelative && !fileRelative.startsWith("..") && !isAbsolute(fileRelative) && existsSync(filePath) && statSync(filePath).isFile()) {
+
+  if (tryServeStaticAsset(pathname, res)) return;
+
+  if (pathname !== adminPath && !pathname.startsWith(`${adminPath}/`)) {
+    const pageResponse = await handlePageRequest(toFetchRequest(req), {});
+    if (pageResponse) {
+      await sendFetchResponse(pageResponse, res);
+      return;
+    }
     applySecurityHeaders(res);
-    res.setHeader("Content-Type", mimeType(filePath));
-    createReadStream(filePath).pipe(res);
+    res.statusCode = 404;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.end("Not found");
     return;
   }
-  applySecurityHeaders(res);
-  res.setHeader("Content-Type", "text/html");
-  res.end(indexHtml);
+
+  serveAdminShell(res);
 }
 
 const server = createHttpServer((req, res) => {
@@ -47,7 +86,7 @@ const server = createHttpServer((req, res) => {
       await sendFetchResponse(redirect, res);
       return;
     }
-    serveShellOrAsset(req, res);
+    await serveRequest(req, res);
   });
 });
 
