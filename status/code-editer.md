@@ -383,7 +383,57 @@ same recovery, no second mechanism needed. Covered by a 6th
 `worker-client.test.ts` case (`throwError()` on the mock triggers an
 immediate restart, not waiting for the 8s hang timeout).
 
+Real bug reported by the user with a screenshot ("mất suggestion khi gõ
+trong hàm" - typing `const [] = useS` inside a function body showed no
+popup), on top of the false-alarm Vite worker-staleness investigation above
+- the two looked identical from the outside but were unrelated:
+
+- Root-caused via bisection with a scratch Playwright spec (not guessed):
+  completions broke specifically whenever the file had *any* string literal
+  already typed earlier (e.g. the demo's own `import ... from "preact/hooks"`
+  line) - `let z = 1;\ncons` worked, `import {useState} from "preact/hooks";
+  \ncons` didn't, same prefix, same position shape.
+- `Editer.tsx`'s `wordStart` used a single regex (`["'][^"']*$`) to detect
+  "cursor is inside an unterminated string" (needed so import-specifier
+  completions replace the whole typed path). It only checked "is there a
+  quote character before the cursor with no quote after it" - which is
+  equally true for a genuinely open string *and* for an already-*closed*
+  string earlier in the file with nothing but non-quote characters since.
+  Every completion after any prior string literal computed the wrong
+  replacement `from`, so the fuzzy-match query sent to
+  `prism-code-editor`'s own filter was garbage (e.g. `";\ncons"` instead of
+  `"cons"`) - silently zero matches, popup never opens, no error anywhere.
+  Fixed by replacing the regex with `openStringStart`, a real quote-by-quote
+  walk (escape-aware) scoped to the current line (JS/TS strings can't span
+  lines), which correctly tracks open/closed state instead of just "nearest
+  quote".
+- Traced end-to-end via `prism-code-editor`'s own shipped source
+  (`node_modules/.../tooltip-*.js`) rather than guessing at its behavior -
+  confirmed the mechanism precisely: `startQuery()` re-derives `pos`/`before`
+  fresh each call and re-invokes every registered source; a source's
+  `result.from` combined with the *current* `before` becomes the query
+  string filtered against each option's label, so a wrong `from` silently
+  drops every option regardless of the completion data being correct.
+- Found and fixed a second, real (if less severe) issue while instrumenting
+  this: `tsCompletionSource`'s cache-miss check only prevented re-fetching
+  *after* a response landed, not multiple concurrent fetches for the same
+  position - each stale per-keystroke promise resolving after typing stopped
+  re-triggered `startQuery()`, and every one of those saw the same
+  not-yet-resolved cache slot and fired its own duplicate `getCompletions`
+  call. Measured via temporary debug logging: typing one word could fire 30+
+  duplicate worker requests for its final position alone. Added a `pending:
+  Set<number>` per `Editer` instance so at most one request per position is
+  ever in flight. Confirmed via the same logging this wasn't the cause of
+  the reported bug (data was already correct on every duplicate) - the
+  `wordStart` fix alone resolves the report; this is a separate,
+  independently-verified efficiency fix kept because it's real waste.
+- New permanent regression test in `e2e/code-editer-demo.spec.ts`
+  ("completions still work after a completed string literal earlier in the
+  file") - reproduces the user's exact reported shape. Full suite now 11/11.
+  `bun run typecheck` and `bun run test` (644, unchanged) still pass.
+
 # Speed
 
 Completed 2026-08-04, same session as the plan discussion. IDE-parity pass
-completed later the same day.
+completed later the same day. String-literal completion bug found and fixed
+later the same day, same session.

@@ -122,6 +122,25 @@ test.describe("Code editer demo", () => {
     expect(consRows.some((row) => row.includes("console"))).toBe(true);
   });
 
+  test("completions still work after a completed string literal earlier in the file", async ({ page }) => {
+    await page.goto("/dry/code-editer-demo");
+    await page.waitForSelector(".prism-code-editor", { timeout: 15000 });
+    await page.waitForTimeout(500);
+    const textarea = page.locator(".pce-textarea");
+
+    // Regression guard: `wordStart`'s old "nearest preceding quote with no quote chars
+    // after it" check couldn't tell an actually-open string apart from an already-closed
+    // one earlier in the file with nothing but non-quote characters since - any import
+    // statement (or any other string literal) before the cursor silently broke every
+    // completion query for the rest of the file, since the computed replacement range
+    // (and therefore the fuzzy-match query) pointed at garbage starting mid-string.
+    await textarea.fill("");
+    await textarea.type('import {useState} from "preact/hooks";\n\nexport default function () {\n  const [] = useS');
+    await page.waitForTimeout(700);
+    const rows = await page.locator(".pce-ac-row").allTextContents();
+    expect(rows.some((row) => row.includes("useState"))).toBe(true);
+  });
+
   test("import specifiers get bare-module and relative-file completions", async ({ page }) => {
     await page.goto("/dry/code-editer-demo");
     await page.waitForSelector(".prism-code-editor", { timeout: 15000 });

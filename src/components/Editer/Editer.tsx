@@ -65,6 +65,8 @@ interface InstanceState {
   /** Per-position cache bridging the worker's async completions onto
    * `CompletionSource`'s synchronous return contract - see `tsCompletionSource`. */
   cache: Map<number, EditerCompletionItem[]>;
+  /** Positions with a `getCompletions` request already in flight - see `tsCompletionSource`. */
+  pending: Set<number>;
   tailwindCompletions: boolean;
 }
 
@@ -84,18 +86,45 @@ function toCompletion(item: EditerCompletionItem): Completion {
 }
 
 const WORD_CHAR_RE = /[A-Za-z0-9_$]/;
-/** Matches an unterminated string literal ending at the cursor - i.e. the cursor is
- * inside a string. Captures nothing; only `.index` (the quote's position) is used. */
-const OPEN_STRING_RE = /["'][^"']*$/;
+
+/**
+ * Index right after the quote that opens a still-unterminated string literal on `line`,
+ * or -1 if the cursor isn't inside one. Walks the line quote-by-quote (respecting `\`
+ * escapes) rather than a single regex match ending at the cursor - a naive "nearest
+ * preceding quote with none after it" match (the previous approach here) can't tell an
+ * actually-open string apart from a *closed* one earlier on the same line with nothing
+ * but non-quote characters since (e.g. `import x from "pre/hooks"; useS` - the closing
+ * quote after "hooks" has no further quote before the cursor either, so it looked
+ * identical to a genuinely open string and silently broke every completion after any
+ * string literal already typed on the line).
+ */
+function openStringStart(line: string): number {
+  let quote: string | undefined;
+  let start = -1;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = undefined;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      start = i;
+    }
+  }
+  return quote ? start + 1 : -1;
+}
 
 /** Import-specifier completions (`./Button.tsx`, `preact/hooks`...) replace the whole
  * typed path, not just a trailing identifier run - `.`/`/` aren't `WORD_CHAR_RE`, so the
  * generic scan below would otherwise stop mid-path and duplicate the already-typed
  * prefix on insert. Being inside a string at all is enough of a signal: nothing else
- * this editor completes from inside one. */
+ * this editor completes from inside one. Scoped to the current line only - JS/TS string
+ * literals can't span lines, and scoping avoids treating an already-closed string on an
+ * *earlier* line as still open (see `openStringStart`). */
 function wordStart(before: string): number {
-  const openString = OPEN_STRING_RE.exec(before);
-  if (openString) return openString.index + 1;
+  const lineStart = before.lastIndexOf("\n") + 1;
+  const openQuote = openStringStart(before.slice(lineStart));
+  if (openQuote !== -1) return lineStart + openQuote;
   let i = before.length;
   while (i > 0 && WORD_CHAR_RE.test(before[i - 1]!)) i--;
   return i;
@@ -119,6 +148,19 @@ function wordStart(before: string): number {
  * tab - only fire a request when this exact position has never been asked
  * about since the last edit.
  *
+ * `pending` closes a second, subtler gap on top of that: a cache miss alone
+ * doesn't mean "nothing in flight for this position" - it means "nothing
+ * *resolved* yet". While a request for a position is still in flight, every
+ * `startQuery` re-check (there are many - each stale response from an
+ * *earlier* position also re-triggers one, per the `.then` below) saw the
+ * same `undefined` cache entry and fired its own duplicate request for that
+ * same position, all racing the worker independently - confirmed via a
+ * temporary debug log: typing a single word could fire 30+ duplicate
+ * `getCompletions` calls for its final position alone, all resolving in a
+ * burst once typing stopped. Harmless once `wordStart` (below) is correct -
+ * each duplicate just replays the same result - but pure waste. `pending`
+ * ensures at most one request per position is ever in flight.
+ *
  * Also gates the query itself: implicit (while-typing) queries only fire
  * while the character right before the cursor is part of an identifier -
  * punctuation like `,` `.` `;` shouldn't pop the tooltip back open with an
@@ -132,13 +174,17 @@ function tsCompletionSource(
   if (!context.explicit && !WORD_CHAR_RE.test(context.before.slice(-1))) return null;
   const state = instances.get(editor);
   if (!state) return null;
-  const { client, cache } = state;
+  const { client, cache, pending } = state;
   const cached = cache.get(context.pos);
   if (cached === undefined) {
-    client.getCompletions(context.pos).then((items) => {
-      cache.set(context.pos, items);
-      if (instances.get(editor) === state) editor.extensions.autoComplete?.startQuery();
-    });
+    if (!pending.has(context.pos)) {
+      pending.add(context.pos);
+      client.getCompletions(context.pos).then((items) => {
+        pending.delete(context.pos);
+        cache.set(context.pos, items);
+        if (instances.get(editor) === state) editor.extensions.autoComplete?.startQuery();
+      });
+    }
     return null;
   }
   if (!cached.length) return null;
@@ -426,6 +472,7 @@ export default function Editer({
     // from - stale entries would otherwise resurface via `tsCompletionSource`
     // if the cursor ever returns to a position number it previously visited.
     const cache = new Map<number, EditerCompletionItem[]>();
+    const pending = new Set<number>();
     // Lazily measured (needs a mounted line to probe) and cached - the font never
     // changes after mount, so one measurement covers every hover/click lookup.
     let chPx: number | undefined;
@@ -443,7 +490,7 @@ export default function Editer({
       },
     });
     editorRef.current = editor;
-    instances.set(editor, { client, cache, tailwindCompletions });
+    instances.set(editor, { client, cache, pending, tailwindCompletions });
     ensureCompletionsRegistered();
     editor.addExtensions(cursorPosition(), autoComplete({ filter: fuzzyFilter }));
 
