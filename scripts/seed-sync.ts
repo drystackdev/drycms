@@ -27,6 +27,10 @@ const adapter = createContentEngineAdapter(content);
 const allTypes = await adapter.listContentTypes();
 
 const target = fileURLToPath(new URL("../dry.seed.json", import.meta.url));
-await writeFile(target, `${JSON.stringify({ contentTypes: allTypes }, null, 2)}\n`);
+// `$schema` (a VS Code/JSON-language-server convention, not part of the
+// PackagedSeed type itself - loadPackagedSeed() only ever reads
+// `.contentTypes`) points editors at `dry.seed.schema.json` for
+// autocomplete/validation on this file.
+await writeFile(target, `${JSON.stringify({ $schema: "./dry.seed.schema.json", contentTypes: allTypes }, null, 2)}\n`);
 
 console.log(`[drycms] seed:sync wrote ${allTypes.length} content type(s) -> ${target}`);
