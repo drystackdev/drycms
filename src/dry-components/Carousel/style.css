@@ -1,0 +1,28 @@
+.carousel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.carousel__content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.carousel__content img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.carousel__content button {
+  position: absolute;
+  z-index: 2;
+  background-color: var(--dry-error);
+}
+
+.carousel__caption {
+  margin: 0;
+  text-align: center;
+}
