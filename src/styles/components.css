@@ -2616,6 +2616,31 @@
       font-weight: 500 !important;
     }
 
+    /* Unsaved-draft indicator (`entry-draft-store.ts`, DryLayout.tsx's
+     * `ContentNavGroup`, `ContentEntryList.tsx`'s table row) - a singleton
+     * gets one dot (at most one draft possible); a collection gets a count
+     * badge instead (`.badge.sm.secondary`, styled elsewhere), reusing this
+     * same dot for its List page's per-row indicator. */
+    .nav-draft-dot {
+      display: inline-block;
+      inline-size: 0.5rem;
+      block-size: 0.5rem;
+      flex: none;
+      border-radius: 50%;
+      background-color: var(--dry-secondary-main);
+    }
+
+    .nav-subitem > .nav-draft-dot,
+    .nav-subitem > .badge {
+      margin-inline-start: auto;
+    }
+
+    .sidebar-nav-popup-item > a > .nav-draft-dot,
+    .sidebar-nav-popup-item > a > .badge {
+      margin-inline-start: 0.375rem;
+      vertical-align: middle;
+    }
+
     /* Account menu trigger, pinned at the bottom of the sidebar (DryLayout.tsx)
      * - opens a `Popover` with Profile/Logout. Shares nav `a`'s hover/height
      * conventions so it reads as part of the same list, not a separate widget. */
@@ -2923,6 +2948,23 @@
         & > *:first-child {
           padding: 0;
         }
+      }
+    }
+
+    /* --- Layout content field (pages/content-entry-editor/ContentLayoutField.tsx)
+     * - a richtext field marked "Layout content" takes over the whole left
+     * column by itself in place of the normal label/description-wrapped
+     * `.field`. `min-height` (not `height`) makes it fill down toward the
+     * bottom of the viewport on a short entry without capping it on a long
+     * one - the admin shell's own sticky `.topbar` + scrolling `.content`
+     * (see `.main`/`.topbar` above) keep handling anything taller, since
+     * nothing here gives the editor's shadow-DOM content host a DEFINITE
+     * height for its own `overflow-y: auto` to latch onto (see
+     * `content-shadow-styles.ts`'s doc comment) - a second, nested
+     * scrollbar inside the field itself is exactly what this avoids. */
+    .content-layout-field {
+      & .richtext {
+        min-height: calc(100dvh - var(--dry-topbar-height) - 10rem);
       }
     }
 
@@ -3244,6 +3286,58 @@
 
     .apply-build-change > .row {
       align-items: center;
+    }
+
+    /* --- Entry Preview dialog (pages/content-entry-editor/EntryPreviewDialog.tsx)
+     * - the changed-fields diff list shown by `ContentEntryEditor.tsx`'s
+     * Preview button. Same card-per-item shape as `.content-type-list-item`
+     * above, just a plainer body (a two-column before/after, not a change
+     * summary list) since there's only ever one kind of change per row here. */
+    .entry-preview-diff-list {
+      display: grid;
+      gap: 0.75rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .entry-preview-diff-item {
+      display: grid;
+      gap: 0.5rem;
+      padding: 1rem;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-lg);
+      background: var(--dry-card);
+      box-shadow: var(--dry-shadow-xs);
+    }
+
+    .entry-preview-diff-item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .entry-preview-diff-values {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.75rem;
+      font-size: var(--dry-text-sm);
+    }
+
+    .entry-preview-diff-before,
+    .entry-preview-diff-after {
+      overflow-wrap: break-word;
+    }
+
+    .entry-preview-diff-before {
+      color: var(--dry-muted-foreground);
+      text-decoration: line-through;
+    }
+
+    .entry-preview-diff-after {
+      color: light-dark(var(--dry-success-dark), var(--dry-success-light));
+      font-weight: 500;
     }
 
     /* ------------------------------------------------------ AI schema wizard */

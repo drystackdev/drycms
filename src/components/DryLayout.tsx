@@ -26,6 +26,7 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
+import { countEntryDrafts, hasEntryDraft, hydrateEntryDraftIndex } from "../content-types/entry-draft-store.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -203,6 +204,10 @@ interface ContentNavGroupProps {
   url: string;
   collapsed: boolean;
   onToggle: () => void;
+  /** Unsaved-draft indicator (a dot for a singleton, a count badge for a
+   * collection) next to each item's label - see `entry-draft-store.ts` and
+   * `status/entry-drafts.md`. `null` renders nothing for that item. */
+  renderBadge?: (type: ContentTypeDefinition) => ComponentChildren;
 }
 
 function ContentNavGroup({
@@ -214,6 +219,7 @@ function ContentNavGroup({
   url,
   collapsed,
   onToggle,
+  renderBadge,
 }: ContentNavGroupProps) {
   const popupItems = (
     <>
@@ -223,6 +229,7 @@ function ContentNavGroup({
           <li key={type.id} class="sidebar-nav-popup-item">
             <a role="menuitem" href={href} aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
               {type.label}
+              {renderBadge?.(type)}
             </a>
           </li>
         );
@@ -281,7 +288,12 @@ function ContentNavGroup({
           <div class="nav-subitems">
             {items.map((type) => {
               const href = `${path}/content/${type.name}`;
-              return <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}><span>{type.label}</span></a>;
+              return (
+                <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
+                  <span>{type.label}</span>
+                  {renderBadge?.(type)}
+                </a>
+              );
             })}
           </div>
         </div>
@@ -361,6 +373,14 @@ export default function DryLayout({ children }: Props) {
     scrollMainToTop();
   }, [url]);
 
+  // One-time IndexedDB read to populate `entryDraftIndex` - the nav dot/badge
+  // below pop in shortly after first paint rather than blocking on it (see
+  // `entry-draft-store.ts`'s own doc comment). `DryLayout` never remounts
+  // (outside `<Router>`, see `App.tsx`), so `[]` is correct here.
+  useEffect(() => {
+    void hydrateEntryDraftIndex();
+  }, []);
+
   const shellClass = [
     "shell",
     collapsed.value && "collapsed",
@@ -420,6 +440,10 @@ export default function DryLayout({ children }: Props) {
                           url={url}
                           collapsed={collapsed.value}
                           onToggle={() => setCollectionMenuOpen(!collectionMenuOpen)}
+                          renderBadge={(type) => {
+                            const count = countEntryDrafts(type.name);
+                            return count > 0 ? <span class="badge sm secondary">{count}</span> : null;
+                          }}
                         />
                       )}
                       {singletonNavItems.length > 0 && (
@@ -432,6 +456,9 @@ export default function DryLayout({ children }: Props) {
                           url={url}
                           collapsed={collapsed.value}
                           onToggle={() => setSingletonMenuOpen(!singletonMenuOpen)}
+                          renderBadge={(type) =>
+                            hasEntryDraft(type.name, null) ? <span class="nav-draft-dot" aria-label="Unsaved changes" /> : null
+                          }
                         />
                       )}
                     </>

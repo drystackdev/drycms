@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
@@ -51,6 +52,14 @@ export interface DataTableDragReorder<Row> {
   disabled?: boolean;
 }
 
+export interface DataTableLeadingColumn<Row> {
+  /** Renders a pinned cell before every other column, for the same row -
+   * `null`/`undefined` renders an empty cell (e.g. no unsaved draft for that
+   * row). Purely presentational, unlike `dragReorder`'s handle column - no
+   * `stopPropagation()` needed since there's no interactive control here. */
+  render: (row: Row) => ComponentChildren;
+}
+
 export interface DataTableColumnToggle {
   /** `useStore` key - persists which columns are visible across visits. */
   storageKey: string;
@@ -100,6 +109,10 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
    * dragging auto-disables (on top of `disabled` below) whenever the search
    * box has text, and re-enables once it's cleared. */
   dragReorder?: DataTableDragReorder<Row>;
+  /** Pinned column before every other column - e.g. `ContentEntryList.tsx`'s
+   * per-row unsaved-draft dot (see `status/entry-drafts.md`). Independent of
+   * `dragReorder`; both can be set at once (drag handle first, then this). */
+  leadingColumn?: DataTableLeadingColumn<Row>;
 }
 
 function toText(value: unknown): string {
@@ -138,6 +151,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
   serverQuery,
   columnToggle,
   dragReorder,
+  leadingColumn,
 }: DataTableProps<Row>) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
@@ -315,6 +329,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
           <thead>
             <tr>
               {dragReorder && <th aria-hidden="true" />}
+              {leadingColumn && <th aria-hidden="true" />}
               {visibleColumns.map((column) => {
                 const sortable = !dragReorder && column.sortable !== false;
                 const active = activeSort?.key === column.key;
@@ -358,7 +373,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
           <tbody {...(dragReorder ? sortableList.containerProps : undefined)}>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length + (dragReorder ? 1 : 0)}>
+                <td colSpan={visibleColumns.length + (dragReorder ? 1 : 0) + (leadingColumn ? 1 : 0)}>
                   <div class="empty">{emptyLabel}</div>
                 </td>
               </tr>
@@ -383,6 +398,7 @@ export default function DataTable<Row extends Record<string, unknown>>({
                         </button>
                       </td>
                     )}
+                    {leadingColumn && <td>{leadingColumn.render(row)}</td>}
                     {visibleColumns.map((column) => (
                       <td
                         key={column.key}

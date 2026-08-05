@@ -4,7 +4,7 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SlugField from "../components/fields/SlugField.js";
 import { toast } from "../components/Toast.js";
-import { ArrowLeftIcon, TrashIcon } from "../components/icons/index.js";
+import { ArrowLeftIcon, PreviewIcon, TrashIcon } from "../components/icons/index.js";
 import {
   ContentEntriesApiError,
   createContentEntriesApi,
@@ -13,8 +13,11 @@ import type { EntryValue } from "../content-types/engine/entry-codec.js";
 import { findPasswordChangeErrors } from "../content-types/engine/entry-validate.js";
 import {
   buildEntryFieldTree,
+  type EntryColumnNode,
   type EntryFieldNode,
 } from "../content-types/engine/entry-tree.js";
+import type { RichTextFieldConfig } from "../content-types/field-registry.js";
+import ContentLayoutField from "./content-entry-editor/ContentLayoutField.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import {
   resolveFieldSide,
@@ -24,6 +27,13 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import { useParam } from "../hooks/useParam.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
+import { diffEntryValue } from "../content-types/entry-draft-diff.js";
+import {
+  discardEntryDraft,
+  loadEntryDraft,
+  saveEntryDraft,
+} from "../content-types/entry-draft-store.js";
+import EntryPreviewDialog from "./content-entry-editor/EntryPreviewDialog.js";
 import {
   dispatchFieldInput,
   FIELD_ANCHOR_ATTR,
@@ -46,7 +56,9 @@ interface Props {
  * `features.slug` system Title field with its immediately-following Slug
  * field into one `SlugField` control (label -> auto-derived, editable slug)
  * instead of two independent text inputs - mirrors the schema editor's single
- * "Title & Slug" row (see `ContentTypeEditor.tsx`'s `systemFieldsForUi`). */
+ * "Title & Slug" row (see `ContentTypeEditor.tsx`'s `systemFieldsForUi`). Per-
+ * field reset lives in the Preview dialog instead of here - see
+ * `status/entry-drafts.md`. */
 function renderFieldNodes(
   nodes: EntryFieldNode[],
   value: EntryValue,
@@ -123,12 +135,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showResetAllConfirm, setShowResetAllConfirm] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [checkingAiKey, setCheckingAiKey] = useState(false);
   const [aiKeyCheck, setAiKeyCheck] = useState<{ ok: boolean; message: string } | undefined>();
 
   // Snapshot of `value` right after load, before any edits - see
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
+  const originalValue: EntryValue | null = initialSnapshot !== null ? (JSON.parse(initialSnapshot) as EntryValue) : null;
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
   const isDirty =
     initialSnapshot !== null &&
@@ -146,6 +161,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   );
 
   const isSingleton = type?.kind === "singleton";
+  // IndexedDB draft key (see `content-types/entry-draft-store.ts`) - a
+  // singleton and a brand-new not-yet-created entry both key off `null`
+  // (there's exactly one draft slot for either), an existing entry off its
+  // real `id`. Deliberately independent of the async-loaded `entryId` state
+  // so it's stable from the very first render.
+  const draftEntryId = isSingleton ? null : id ?? null;
   const isNew = !isSingleton && !id;
   const requiredAction = type ? (isSingleton ? "setting" : isNew ? "create" : "view") : null;
   const canEdit = !!type && canAccess(type.id, isSingleton ? "setting" : isNew ? "create" : "update");
@@ -197,6 +218,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           setEntryId(null);
           setInitialSnapshot(JSON.stringify(blank));
         }
+        // `initialSnapshot` above always reflects the server's own value -
+        // a pending IndexedDB draft (if any) only overrides `value` itself,
+        // so `isDirty`/reset/diff all keep comparing against the real
+        // last-saved state, not the draft. See `status/entry-drafts.md`.
+        const draft = await loadEntryDraft(typeSlug, type.kind === "singleton" ? null : id ?? null);
+        if (draft) setValue(draft);
       } catch (error) {
         setLoadError(
           error instanceof Error ? error.message : "Failed to load entry.",
@@ -208,6 +235,17 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // schema list happens to get a new array identity would be wasteful.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, id, requiredAction]);
+
+  // Autosaves every edit to IndexedDB (debounced inside `saveEntryDraft`)
+  // while the entry is dirty, so a reload/crash/accidental-close doesn't
+  // lose typed edits - see `status/entry-drafts.md`. Deliberately gated on
+  // `isDirty` (not just `value !== null`): once the value matches what was
+  // last saved again (Save succeeded, or Reset All), there's nothing left
+  // to autosave and any earlier draft has already been discarded below.
+  useEffect(() => {
+    if (!isDirty || value === null) return;
+    saveEntryDraft(typeSlug, draftEntryId, value);
+  }, [value, isDirty, typeSlug, draftEntryId]);
 
   useDocumentTitle(
     type ? (isNew ? `New ${type.label}` : type.label) : "Content",
@@ -337,15 +375,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         setValue(entry.value);
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
+        await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Saved "${type.label}".` });
       } else if (isNew) {
         await entriesApi.create(value);
+        await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Created "${type.label}" entry.` });
         route(`${path}/content/${type.name}`);
       } else if (entryId) {
         const entry = await entriesApi.update(entryId, value);
         setValue(entry.value);
         setInitialSnapshot(JSON.stringify(entry.value));
+        await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Saved "${type.label}" entry.` });
         route(`${path}/content/${type.name}`);
       }
@@ -363,6 +404,25 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Both reset actions live inside the Preview dialog (`EntryPreviewDialog`),
+  // not on the field rows themselves - see `status/entry-drafts.md`.
+  function handleResetField(fieldName: string) {
+    if (!originalValue) return;
+    updateFieldValue(fieldName, originalValue[fieldName]);
+  }
+
+  function handleResetAll() {
+    if (!originalValue) return;
+    setValue(originalValue);
+    setFieldErrors({});
+    setShowResetAllConfirm(false);
+    // The value now matches what's last saved, so there's nothing left to
+    // recover from a draft - discard it rather than leave a no-op draft
+    // behind (this is also what clears the nav dot/badge and table dot
+    // right away, without waiting for the autosave effect to notice).
+    void discardEntryDraft(typeSlug, draftEntryId);
   }
 
   async function handleDelete() {
@@ -407,15 +467,32 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const editableNodes = nodes.filter((n) => !isTimestampField(n) && !isSortIndexField(n));
   const sideOf = (n: EntryFieldNode) =>
     resolveFieldSide(n.fieldId, n.kind !== "column", type.fieldSides);
+  // A richtext field set to "Layout content" (the FieldDialog's Content /
+  // Layout content toggle) is meant to BE the entry's main body - it takes
+  // over the left column by itself, and every other field (regardless of
+  // its own configured side) moves to the right, rather than being mixed
+  // in alongside it.
+  const isLayoutContentField = (n: EntryFieldNode): n is EntryColumnNode =>
+    n.kind === "column" &&
+    n.fieldType === "richtext" &&
+    (n.fieldConfig as RichTextFieldConfig | undefined)?.layoutContent === true;
+  const layoutContentFields = editableNodes.filter(isLayoutContentField);
   const leftFields = editableNodes.filter((n) => sideOf(n) === "left");
   const rightFields = editableNodes.filter((n) => sideOf(n) === "right");
   // If every field ends up on the right (none left), the wide `2fr` left
   // column would render empty and everything else would cram into the
-  // narrow `1.75fr` right column - fall back to showing the right-side
+  // narrow `1.25fr` right column - fall back to showing the right-side
   // fields in the left column instead, leaving the right column (danger
   // zone aside) empty rather than the reverse.
-  const mainFields = leftFields.length > 0 ? leftFields : rightFields;
-  const sideFields = leftFields.length > 0 ? rightFields : [];
+  const mainFields =
+    layoutContentFields.length > 0 ? layoutContentFields : leftFields.length > 0 ? leftFields : rightFields;
+  const sideFields =
+    layoutContentFields.length > 0
+      ? editableNodes.filter((n) => !isLayoutContentField(n))
+      : leftFields.length > 0
+        ? rightFields
+        : [];
+  const previewDiffs = originalValue ? diffEntryValue(originalValue, value, editableNodes) : [];
 
   return (
     <>
@@ -443,22 +520,39 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               Cancel
             </button>
           )}
+          {!isNew && isDirty && (
+            <button type="button" class="outline" onClick={() => setShowPreview(true)}>
+              <PreviewIcon /> Preview
+            </button>
+          )}
           {canEdit && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
         </div>
       </div>
 
       <fieldset disabled={!canEdit} class="content-entry-editor-form">
       <div class="content-entry-editor-grid">
-        <div class="stack">
-          {renderFieldNodes(
-            mainFields,
-            value,
-            fieldErrors,
-            updateFieldValue,
-            allTypes,
-            typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
-          )}
-        </div>
+        {layoutContentFields.length > 0 ? (
+          layoutContentFields.map((node) => (
+            <ContentLayoutField
+              key={node.fieldName}
+              node={node}
+              value={value[node.fieldName]}
+              onChange={(fieldValue) => updateFieldValue(node.fieldName, fieldValue)}
+              error={fieldErrors[node.fieldName]}
+            />
+          ))
+        ) : (
+          <div class="stack">
+            {renderFieldNodes(
+              mainFields,
+              value,
+              fieldErrors,
+              updateFieldValue,
+              allTypes,
+              typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
+            )}
+          </div>
+        )}
 
         <div class="stack">
           {renderFieldNodes(
@@ -521,6 +615,29 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           route(to);
         }}
         onCancel={() => setLeaveTo(null)}
+      />
+
+      <ConfirmDialog
+        open={showResetAllConfirm}
+        title="Reset all changes?"
+        message={
+          <p>
+            This reverts every field back to the last saved value. Unsaved
+            edits will be lost.
+          </p>
+        }
+        confirmLabel="Reset all"
+        destructive
+        onConfirm={handleResetAll}
+        onCancel={() => setShowResetAllConfirm(false)}
+      />
+
+      <EntryPreviewDialog
+        open={showPreview}
+        diffs={previewDiffs}
+        onClose={() => setShowPreview(false)}
+        onResetField={handleResetField}
+        onRequestResetAll={() => setShowResetAllConfirm(true)}
       />
     </>
   );

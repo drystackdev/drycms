@@ -17,6 +17,7 @@ import {
 import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";
 import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
+import { hasEntryDraft } from "../content-types/entry-draft-store.js";
 import { SUPER_ADMIN_FIELD_NAME } from "../content-types/permissions.js";
 import { canAccess } from "../store/auth.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -576,6 +577,10 @@ function ContentEntryListCollection({
             ? { getId: (row) => row.id, onReorder: setDragOrder, disabled: savingOrder || !canUpdate }
             : undefined
         }
+        leadingColumn={{
+          render: (row) =>
+            hasEntryDraft(type.name, row.id) ? <span class="nav-draft-dot" aria-label="Unsaved changes" /> : null,
+        }}
         actions={
           <>
             {isSortable && dragOrder && canUpdate && (
