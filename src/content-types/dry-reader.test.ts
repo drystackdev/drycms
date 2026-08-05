@@ -478,6 +478,25 @@ describe("dry()", () => {
       });
     });
 
+    it("list()'s `where` can filter on a manyToOne relation field and exclude by id - the blog related-posts pattern", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const authorType = allTypes.find((t) => t.name === "author")!;
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const author = await entries.createEntry(authorType, allTypes, { title: "Ada", name: "Ada", slug: "ada" });
+      const other = await entries.createEntry(authorType, allTypes, { title: "Bea", name: "Bea", slug: "bea" });
+      const p1 = await entries.createEntry(postType, allTypes, { title: "One", slug: "one", author: author.id });
+      const p2 = await entries.createEntry(postType, allTypes, { title: "Two", slug: "two", author: author.id });
+      await entries.createEntry(postType, allTypes, { title: "Other author", slug: "other-author", author: other.id });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const result = await dry()
+          .collection("post")
+          .list({ where: [{ field: "author", op: "eq", value: author.id }, { field: "id", op: "ne", value: p1.id }] });
+        expect(result.rows.map((r) => r.id)).toEqual([p2.id]);
+      });
+    });
+
     it("throws a clear error for a populate field that isn't a relation/relationmirror field", async () => {
       const { dir, entries, allTypes } = await freshPopulateSetup();
       dirs.push(dir);

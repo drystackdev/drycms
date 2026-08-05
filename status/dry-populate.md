@@ -88,3 +88,69 @@ blog slugs return 200 with no new server errors.
 
 Scoped via AskUserQuestion, implemented, tested (unit + typecheck + live
 dev-server browser check), done in one session.
+
+## Follow-up: `where` on a manyToOne relation field + `id`
+
+User wanted `list({ where: [{field:"category",...}, {field:"id",...}] })` to
+actually work (the pattern `entry-tree.ts` blocked) rather than working
+around it. Implemented for real:
+
+- `entry-tree.ts`: new `flattenWhereColumns()` (superset of
+  `flattenQueryableColumns` - also includes a `manyToOne` relation field's
+  own FK column, typed as plain `number`) and `ID_WHERE_COLUMN` (synthetic
+  pseudo-column for the row's own primary key, never a declared
+  `FieldDefinition` so never in `flattenDisplayColumns`/`flattenQueryableColumns`).
+  Deliberately kept SEPARATE from `flattenQueryableColumns` rather than
+  widening it - that function's output also feeds admin-UI surfaces
+  (`ContentEntryList.tsx`'s searchable-fields toggle, `FieldRenderer.tsx`'s
+  relation-picker label/columns) where a raw FK id showing up would be
+  confusing/misleading, not just unhelpful (confirmed via a research agent
+  before touching it - real regression risk, not hypothetical). `oneToMany`/
+  `manyToMany` still excluded - no single column to compare without a
+  join/subquery `buildWhereClause` doesn't do.
+- `entries-sqlite.ts`/`entries-d1.ts`: `listEntries`/`findEntry` now build
+  `where`'s column set from `[...flattenWhereColumns(nodes), ID_WHERE_COLUMN]`
+  instead of the narrower `queryable`; `sort`/`search`/`publishedOnly`/
+  unique-violation-translation all keep using the original narrow
+  `flattenQueryableColumns` result, unchanged.
+- Tests: `entry-tree.test.ts` (+4: manyToOne included, manyToMany still
+  excluded, plain columns still included, `ID_WHERE_COLUMN` shape),
+  `entries-sqlite.test.ts` (+1: real `listEntries` call filtering by
+  relation + excluding self by id), `dry-reader.test.ts` (+1: same pattern
+  through the public `dry()` reader). 735/735 tests pass, typecheck clean.
+- `blogs/[slug]/page.tsx` finalized on this: one `list({ where: [category
+  eq, id ne], sort: date desc, pageSize: 3 })` call - real SQL filter+sort+
+  limit, no more N+1 `.get()` loop. Verified live against the dev DB
+  (`WHERE category = 2 AND id != 42 ORDER BY date DESC LIMIT 3` returns the
+  correct single related post).
+
+## Follow-up: `where: [{ or: [...] }]`
+
+`EntryWhere` was flat-AND-only (`entry-where.ts` doc comment explicitly
+called this out as a future extension point). User asked for OR support
+directly. Implemented one level of OR grouping:
+
+- `entry-where.ts`: new `EntryWhereGroup { or: EntryWhereCondition[] }`;
+  `EntryWhere = (EntryWhereCondition | EntryWhereGroup)[]` - each top-level
+  entry either a plain condition or a group, ANDed together; a group's own
+  conditions are OR-joined and parenthesized. One level only (a group can't
+  contain another group) - matches the exact shape asked for, deeper mixed
+  nesting deferred same as the original doc comment already deferred OR
+  itself. Extracted `buildCondition()` (single-condition SQL) out of
+  `buildWhereClause`'s loop so the group path reuses it instead of
+  duplicating the `in`/null/plain-op branching. Empty group -> `"0"` (matches
+  nothing), same convention as an existing empty `in`.
+- No changes needed in `entries-sqlite.ts`/`entries-d1.ts`/`dry-reader.ts` -
+  `EntryWhere` was already opaquely passed through everywhere except
+  `entry-where.ts` itself (confirmed via grep before touching the type, to
+  avoid breaking a caller that destructured `.field` off every entry
+  assuming it was always a plain condition - none do).
+- New `entry-where.test.ts` (11 tests, this module had no dedicated test
+  file before - only indirect coverage through `entries-sqlite.test.ts`):
+  plain conditions (AND, `in`, empty `in`, null-as-IS-NULL, unknown-field
+  throw) plus the new group behavior (OR-join, AND with siblings,
+  group-only where, empty group, multiple groups, throw for a bad field
+  inside a group). 746/746 total tests pass, typecheck clean. Verified live
+  against the real dev DB (`{ or: [{category eq 4},{category eq 3}] }`
+  correctly returned posts from either category) and re-checked all 5 blog
+  pages still 200 with no new errors.

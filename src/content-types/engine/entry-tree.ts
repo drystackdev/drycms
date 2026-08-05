@@ -379,6 +379,65 @@ export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = ""
   return flattenDisplayColumns(nodes, pathPrefix, labelPrefix).filter((c) => !UNQUERYABLE_FIELD_TYPES.has(c.fieldType));
 }
 
+/**
+ * `flattenQueryableColumns` plus a `manyToOne` relation field's own id
+ * column - a real, single physical column (the FK itself), safe for a
+ * `WHERE` to compare directly (`buildWhereClause` doesn't need to know it's
+ * a relation at all; treated as a plain `number` column). `oneToMany`/
+ * `manyToMany` stay excluded - those are child-table-backed, no single
+ * column to compare against without a join/subquery `buildWhereClause`
+ * doesn't do.
+ *
+ * Deliberately its OWN function rather than widening `flattenQueryableColumns`
+ * itself: that function's result also feeds UI surfaces that treat
+ * "queryable" as "safe to show a human" - the List page's searchable-fields
+ * toggle and `FieldRenderer.tsx`'s relation-picker label/columns - where a
+ * raw FK id showing up as a "searchable field" or as a relation's own
+ * display label would be confusing, not just unhelpful. Only
+ * `entries-sqlite.ts`/`entries-d1.ts`'s `where`-clause resolution should see
+ * the wider set; `sort`/`search`/display all keep using the narrower
+ * `flattenQueryableColumns` unchanged.
+ */
+export function flattenWhereColumns(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): QueryableColumn[] {
+  const out = flattenQueryableColumns(nodes, pathPrefix, labelPrefix);
+  for (const node of nodes) {
+    if (node.kind === "flatten") {
+      const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+      const label = labelPrefix ? `${labelPrefix} / ${node.label}` : node.label;
+      out.push(...flattenWhereColumns(node.children, fieldName, label));
+    } else if (node.kind === "relation" && node.cardinality === "manyToOne" && node.columnName) {
+      const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+      out.push({
+        fieldId: node.fieldId,
+        fieldName,
+        columnName: node.columnName,
+        label: labelPrefix ? `${labelPrefix} / ${node.label}` : node.label,
+        fieldType: "number",
+        fieldConfig: undefined,
+        validation: node.validation,
+      });
+    }
+  }
+  return out;
+}
+
+/** The row's own primary key - never a declared `FieldDefinition`, so it's
+ * never part of `flattenDisplayColumns`/`flattenQueryableColumns`'s output,
+ * but a real, always-present physical column a `WHERE` can safely target
+ * (e.g. excluding "this same row" from a `list()` result). Appended once,
+ * directly by `entries-sqlite.ts`/`entries-d1.ts`, next to `flattenWhereColumns`'s
+ * result - not folded into that function itself, since "id" isn't derived
+ * from `nodes` at all. */
+export const ID_WHERE_COLUMN: QueryableColumn = {
+  fieldId: "id",
+  fieldName: "id",
+  columnName: "id",
+  label: "ID",
+  fieldType: "number",
+  fieldConfig: undefined,
+  validation: {},
+};
+
 /** A non-inline `richtext` field's authored HTML can be large enough to slow
  * down a plain `list()` query if fetched for every row by default - `inline`
  * richtext (short, text-like) has no such concern, so only non-inline is

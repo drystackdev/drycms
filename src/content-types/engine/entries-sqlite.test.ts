@@ -249,6 +249,53 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     expect(paged.rows.map((r) => r.value.name)).toEqual(["Grace"]);
   });
 
+  it("filters `where` on a manyToOne relation field's own id column and on the row's own id (flattenWhereColumns/ID_WHERE_COLUMN)", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+
+    const category: ContentTypeDefinition = { id: "t-category", kind: "collection", name: "category", label: "Category", fields: [], version: 0 };
+    await schema.applySave(category, await schema.planSave(category));
+    const post: ContentTypeDefinition = {
+      id: "t-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      fields: [
+        { id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 },
+        { id: "f-category", name: "category", label: "Category", type: "relation", config: { target: "t-category", cardinality: "manyToOne" }, validation: {}, order: 1 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(post, await schema.planSave(post));
+
+    const allTypes = await schema.listContentTypes();
+    const categoryType = allTypes.find((t) => t.name === "category")!;
+    const postType = allTypes.find((t) => t.name === "post")!;
+
+    const catA = await entries.createEntry(categoryType, allTypes, {});
+    const catB = await entries.createEntry(categoryType, allTypes, {});
+    const p1 = await entries.createEntry(postType, allTypes, { title: "One", category: catA.id });
+    const p2 = await entries.createEntry(postType, allTypes, { title: "Two", category: catA.id });
+    await entries.createEntry(postType, allTypes, { title: "Three", category: catB.id });
+
+    const byCategory = await entries.listEntries(postType, allTypes, {
+      page: 0,
+      pageSize: 10,
+      where: [{ field: "category", op: "eq", value: catA.id }],
+    });
+    expect(byCategory.rows.map((r) => r.value.title).sort()).toEqual(["One", "Two"]);
+
+    const excludingSelf = await entries.listEntries(postType, allTypes, {
+      page: 0,
+      pageSize: 10,
+      where: [
+        { field: "category", op: "eq", value: catA.id },
+        { field: "id", op: "ne", value: p1.id },
+      ],
+    });
+    expect(excludingSelf.rows.map((r) => r.id)).toEqual([p2.id]);
+  });
+
   it("reads and writes back an auto-generated relationmirror field reflecting a manyToMany relation (role.user mirrors user.roles)", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);

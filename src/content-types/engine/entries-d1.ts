@@ -4,7 +4,7 @@ import type { ContentTypeDefinition } from "../types.js";
 import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
-import { buildEntryFieldTree, flattenQueryableColumns, listSelectColumnNames, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
+import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, listSelectColumnNames, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 
@@ -300,7 +300,7 @@ export function createD1ContentEntryEngineAdapter(
         };
       }
     }
-    const whereFragment = query.where ? buildWhereClause(queryable, query.where) : null;
+    const whereFragment = query.where ? buildWhereClause([...flattenWhereColumns(nodes), ID_WHERE_COLUMN], query.where) : null;
     const publishedFragment = query.publishedOnly ? buildPublishedOnlyClause(queryable, new Date().toISOString()) : null;
     const { sql: whereSql, params } = combineWhereClauses([searchFragment, whereFragment, publishedFragment]);
 
@@ -339,7 +339,7 @@ export function createD1ContentEntryEngineAdapter(
   ): Promise<EntryRow | null> {
     const nodes = buildEntryFieldTree(type, allTypes);
     const queryable = flattenQueryableColumns(nodes);
-    const whereFragment = buildWhereClause(queryable, where);
+    const whereFragment = buildWhereClause([...flattenWhereColumns(nodes), ID_WHERE_COLUMN], where);
     const publishedFragment = options?.publishedOnly ? buildPublishedOnlyClause(queryable, new Date().toISOString()) : null;
     const { sql: whereSql, params } = combineWhereClauses([whereFragment, publishedFragment]);
 

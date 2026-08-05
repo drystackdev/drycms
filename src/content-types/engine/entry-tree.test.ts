@@ -6,6 +6,8 @@ import {
   buildEntryFieldTree,
   flattenDisplayColumns,
   flattenQueryableColumns,
+  flattenWhereColumns,
+  ID_WHERE_COLUMN,
   type EntryColumnNode,
   type EntryRelationMirrorNode,
   type EntryRelationNode,
@@ -308,5 +310,51 @@ describe("flattenQueryableColumns", () => {
     const aiKey = allTypes.find((t) => t.name === "aiKey")!;
     const aiKeyColumns = flattenDisplayColumns(buildEntryFieldTree(aiKey, allTypes));
     expect(aiKeyColumns.find((c) => c.fieldName === "key")).toBeUndefined();
+  });
+});
+
+describe("flattenWhereColumns", () => {
+  const category: ContentTypeDefinition = { id: "t-category", kind: "collection", name: "category", label: "Category", fields: [], version: 0 };
+  const post: ContentTypeDefinition = {
+    id: "t-post",
+    kind: "collection",
+    name: "post",
+    label: "Post",
+    fields: [
+      { id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 },
+      { id: "f-category", name: "category", label: "Category", type: "relation", config: { target: "t-category", cardinality: "manyToOne" }, validation: {}, order: 1 },
+      { id: "f-tags", name: "tags", label: "Tags", type: "relation", config: { target: "t-category", cardinality: "manyToMany" }, validation: {}, order: 2 },
+    ],
+    version: 0,
+  };
+  const postTypes = [category, post];
+
+  it("includes a manyToOne relation field's own id column, unlike flattenQueryableColumns", () => {
+    const nodes = buildEntryFieldTree(post, postTypes);
+    expect(flattenQueryableColumns(nodes).map((c) => c.fieldName)).not.toContain("category");
+
+    const whereColumns = flattenWhereColumns(nodes);
+    const categoryColumn = whereColumns.find((c) => c.fieldName === "category");
+    expect(categoryColumn).toBeDefined();
+    expect(categoryColumn?.columnName).toBe("category");
+    expect(categoryColumn?.fieldType).toBe("number");
+  });
+
+  it("still excludes a manyToMany relation field - no single column to compare against", () => {
+    const nodes = buildEntryFieldTree(post, postTypes);
+    expect(flattenWhereColumns(nodes).map((c) => c.fieldName)).not.toContain("tags");
+  });
+
+  it("still includes every plain column flattenQueryableColumns already returns", () => {
+    const nodes = buildEntryFieldTree(post, postTypes);
+    expect(flattenWhereColumns(nodes).map((c) => c.fieldName)).toEqual(expect.arrayContaining(["title"]));
+  });
+});
+
+describe("ID_WHERE_COLUMN", () => {
+  it("is a synthetic queryable column for the row's own primary key", () => {
+    expect(ID_WHERE_COLUMN.fieldName).toBe("id");
+    expect(ID_WHERE_COLUMN.columnName).toBe("id");
+    expect(ID_WHERE_COLUMN.fieldType).toBe("number");
   });
 });
