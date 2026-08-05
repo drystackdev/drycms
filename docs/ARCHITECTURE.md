@@ -188,19 +188,24 @@ toggles through `RoleEditor.tsx`, which deliberately excludes the field.
 enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
 `role`'s `isSuperAdmin` flag bypasses every check unconditionally.
 
-## Storage: one adapter interface, one backend, four independent roots
+## Storage: one adapter interface, one backend, icons nested inside storage
 
 `src/storage/` implements one adapter interface (`types.ts`) through the local
 filesystem adapter, constructed via `createStorageAdapter()` from a
 `ResolvedStorageOption`.
-The default local roots are grouped under `.dry/`: `storage` (user-uploaded
-media), `icons` (Icon Management's own assets), `content` (the `file` content
-engine's JSON store), and `components.storage` (confirmed RichText component
-bundles). They remain **four independent roots**
-sharing this same mechanism - never sharing a directory. Remote Git hosting
-is intentionally not a storage or KV backend: it would add network round
-trips, rate limits, retry/concurrency behavior and failure modes to ordinary
-runtime requests.
+
+`storage` (user-uploaded media) is the independent root: under `kind:
+"local"` it resolves straight to the project's `public/` directory (not
+`.dry/`), so an upload is reachable at its plain `/name.ext` URL through
+Vite's normal static-asset serving. `icons` (Icon Management's own SVGs) is
+never independent - it always resolves to a `dry-icons` subfolder of
+`storage`'s own resolved root (`public/dry-icons/` by default), under both
+`kind`s, since an icon is just an image file. `content` (the `file` content
+engine's JSON store) and `components.storage` (confirmed RichText component
+bundles) remain their own roots under `.dry/`, sharing the same adapter
+mechanism without sharing a directory. Remote Git hosting is intentionally
+not a storage or KV backend: it would add network round trips, rate limits,
+retry/concurrency behavior and failure modes to ordinary runtime requests.
 
 ## RichText
 

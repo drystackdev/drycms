@@ -20,7 +20,10 @@ const KV_NAMESPACE_BINDING = "KV";
  * the same root under `kind: "cloudflare"`) - see `R2_BUCKET_BINDING`'s doc
  * comment on why these are fixed rather than configurable. */
 const STORAGE_DIR_NAME = "storage";
-const ICONS_DIR_NAME = "icons";
+/** Icons are just image files too - `icons` is always resolved as a
+ * subfolder of `storage`'s own root (see `resolveIconsOption()`) rather than
+ * an independent root, under both `kind`s. */
+const ICONS_DIR_NAME = "dry-icons";
 const CONTENT_FILE_NAME = "content.sqlite";
 const COMPONENTS_STORAGE_DIR_NAME = "richtext-components";
 const PAGE_COMPONENTS_STORAGE_DIR_NAME = "components";
@@ -101,7 +104,10 @@ export interface DryOption {
    * `scripts/e2e-server.mjs`) - except `storage` (user-uploaded media),
    * which resolves straight to the project's `public/` directory instead
    * (see `resolveStorageOption()`), so an upload is reachable at its plain
-   * `/name.ext` URL through Vite's normal static-asset serving.
+   * `/name.ext` URL through Vite's normal static-asset serving. `icons`
+   * is not an independent root either way - it's always a `dry-icons`
+   * subfolder of wherever `storage` itself landed (see
+   * `resolveIconsOption()`), local or `cloudflare` alike.
    *
    * `"cloudflare"`: Cloudflare Workers - D1 (content), one shared R2 bucket (every
    * storage-backed root, key-prefixed) and Workers KV, using the fixed
@@ -143,7 +149,8 @@ export interface ResolvedR2StorageOption {
 export type ResolvedStorageOption = ResolvedLocalStorageOption | ResolvedR2StorageOption;
 
 /** Same shape as `ResolvedStorageOption` - the Icon Management feature reuses
- * `createStorageAdapter()` unchanged, it just points at a different root. */
+ * `createStorageAdapter()` unchanged, it just points at a subfolder of
+ * `storage`'s own root (see `resolveIconsOption()`). */
 export type ResolvedIconsOption = ResolvedStorageOption;
 
 export interface ResolvedSqliteContentOption {
@@ -343,6 +350,23 @@ function resolveStorageOption(
   return { kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), STORAGE_DIR_NAME) };
 }
 
+/**
+ * `icons` (Icon Management's SVG library) is not an independent root - an
+ * icon is just an image file, so it's always resolved as a `dry-icons`
+ * subfolder of `storage`'s own already-resolved root, under both `kind`s.
+ * Deriving it from `storage`'s resolved value (rather than recomputing a
+ * root independently from `overrides`/`localBaseDir()`) is what makes this
+ * hold in every case at once - the real `public/` default, a unit test's
+ * `overrides.localDataRoot`, and `DRYCMS_E2E=1` all "just work" without
+ * their own icons-specific branch.
+ */
+function resolveIconsOption(storage: ResolvedStorageOption): ResolvedIconsOption {
+  if (storage.kind === "r2") {
+    return { kind: "r2", binding: storage.binding, prefix: `${storage.prefix}/${ICONS_DIR_NAME}` };
+  }
+  return { kind: "local", root: resolvePath(storage.root, ICONS_DIR_NAME) };
+}
+
 function resolveContentOption(kind: "local" | "cloudflare", overrides: ResolveOptionsOverrides): ResolvedContentOption {
   if (kind === "cloudflare") return { engine: "D1", binding: D1_CONTENT_BINDING };
   return { engine: "sqlite", file: resolvePath(process.cwd(), localBaseDir(overrides), CONTENT_FILE_NAME) };
@@ -462,11 +486,13 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
     throw new Error(`[drycms] \`kind\` must be "local" or "cloudflare", received "${String(kind)}".`);
   }
 
+  const storage = resolveStorageOption(kind, overrides);
+
   return {
     path,
     kind,
-    storage: resolveStorageOption(kind, overrides),
-    icons: resolveStorageBackedOption(kind, ICONS_DIR_NAME, overrides),
+    storage,
+    icons: resolveIconsOption(storage),
     content: resolveContentOption(kind, overrides),
     components: { storage: resolveStorageBackedOption(kind, COMPONENTS_STORAGE_DIR_NAME, overrides) },
     pageComponents: { storage: resolveStorageBackedOption(kind, PAGE_COMPONENTS_STORAGE_DIR_NAME, overrides) },

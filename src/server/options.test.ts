@@ -19,7 +19,7 @@ describe('resolveOptions', () => {
 			path: '/dry',
 			kind: 'local',
 			storage: { kind: 'local', root: resolve(process.cwd(), 'public') },
-			icons: { kind: 'local', root: resolve(process.cwd(), '.dry/icons') },
+			icons: { kind: 'local', root: resolve(process.cwd(), 'public/dry-icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), '.dry/content.sqlite') },
 			components: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/richtext-components') },
@@ -55,7 +55,7 @@ describe('resolveOptions', () => {
 		expect(resolved.kind).toBe('cloudflare');
 		expect(resolved.content).toEqual({ engine: 'D1', binding: 'CONTENT_DB' });
 		expect(resolved.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage' });
-		expect(resolved.icons).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'icons' });
+		expect(resolved.icons).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage/dry-icons' });
 		expect(resolved.components.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'richtext-components' });
 		expect(resolved.pageComponents.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'components' });
 		expect(resolved.pagesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-cache' });
@@ -86,6 +86,7 @@ describe('resolveOptions', () => {
 		it('is not reachable through the public DryOption `kind` field - only the second resolveOptions() argument', () => {
 			const resolved = resolveOptions({}, { localDataRoot: '/tmp/drycms-test-root' });
 			expect(resolved.storage).toEqual({ kind: 'local', root: resolve('/tmp/drycms-test-root', 'storage') });
+			expect(resolved.icons).toEqual({ kind: 'local', root: resolve('/tmp/drycms-test-root', 'storage', 'dry-icons') });
 			expect(resolved.content).toEqual({ engine: 'sqlite', file: resolve('/tmp/drycms-test-root', 'content.sqlite') });
 			expect(resolved.kv).toMatchObject({ kind: 'local', root: resolve('/tmp/drycms-test-root', 'kv') });
 		});
@@ -93,6 +94,7 @@ describe('resolveOptions', () => {
 		it('has no effect under kind "cloudflare" (there is no local root to override)', () => {
 			const resolved = resolveOptions({ kind: 'cloudflare' }, { localDataRoot: '/tmp/drycms-test-root' });
 			expect(resolved.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage' });
+			expect(resolved.icons).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage/dry-icons' });
 		});
 	});
 
@@ -108,11 +110,15 @@ describe('resolveOptions', () => {
 			expect(resolveOptions().storage).toEqual({
 				kind: 'local', root: resolve(process.cwd(), 'test-results/e2e-data/storage'),
 			});
+			expect(resolveOptions().icons).toEqual({
+				kind: 'local', root: resolve(process.cwd(), 'test-results/e2e-data/storage/dry-icons'),
+			});
 		});
 
 		it('does not apply when unset', () => {
 			delete process.env.DRYCMS_E2E;
 			expect(resolveOptions().storage).toEqual({ kind: 'local', root: resolve(process.cwd(), 'public') });
+			expect(resolveOptions().icons).toEqual({ kind: 'local', root: resolve(process.cwd(), 'public/dry-icons') });
 		});
 	});
 
