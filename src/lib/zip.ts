@@ -153,7 +153,12 @@ export function parseZip(buffer: Uint8Array): ZipEntry[] {
 }
 
 export interface ZipRoot {
-  /** Prefix inside the zip, e.g. "storage" - entries are stored as `${prefix}/${relativePath}`. */
+  /** Prefix inside the zip, e.g. "storage" - entries are stored as
+   * `${prefix}/${relativePath}`. An empty string flattens the root's own
+   * contents directly to the zip root (`${relativePath}`, no leading
+   * slash) - for a single-root zip meant to be extracted with a plain
+   * `unzip` rather than routed back through `unzipToDirectories`'s
+   * prefix->dir map. */
   prefix: string;
   /** Absolute directory on disk to walk. */
   dir: string;
@@ -189,7 +194,8 @@ export async function zipDirectories(roots: ZipRoot[]): Promise<Uint8Array | nul
   const entries: ZipEntry[] = [];
   for (const root of roots) {
     for (const file of await walkFiles(root.dir)) {
-      entries.push({ path: `${root.prefix}/${file.relative}`, data: await fs.readFile(file.absolute) });
+      const path = root.prefix ? `${root.prefix}/${file.relative}` : file.relative;
+      entries.push({ path, data: await fs.readFile(file.absolute) });
     }
   }
   return entries.length === 0 ? null : createZip(entries);

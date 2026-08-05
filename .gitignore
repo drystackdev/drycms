@@ -24,6 +24,12 @@ pnpm-debug.log*
 # drycms local data (all default local roots live under `.dry/`)
 /.dry/
 
+# Local `storage` root (uploaded media + dry-icons/ - see resolveStorageOption()
+# in server/options.ts). `bun run build:schema` packages this into
+# `public.zip` at the repo root instead - that's the artifact meant to be
+# committed/pushed for deploy; extract it back to `public/` before `vite build`.
+/public/
+
 # Legacy root-level local data (kept ignored for upgrades from older defaults)
 /storage/
 /icons/

@@ -409,6 +409,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     resolveFieldSide(n.fieldId, n.kind !== "column", type.fieldSides);
   const leftFields = editableNodes.filter((n) => sideOf(n) === "left");
   const rightFields = editableNodes.filter((n) => sideOf(n) === "right");
+  // If every field ends up on the right (none left), the wide `2fr` left
+  // column would render empty and everything else would cram into the
+  // narrow `1.75fr` right column - fall back to showing the right-side
+  // fields in the left column instead, leaving the right column (danger
+  // zone aside) empty rather than the reverse.
+  const mainFields = leftFields.length > 0 ? leftFields : rightFields;
+  const sideFields = leftFields.length > 0 ? rightFields : [];
 
   return (
     <>
@@ -444,7 +451,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       <div class="content-entry-editor-grid">
         <div class="stack">
           {renderFieldNodes(
-            leftFields,
+            mainFields,
             value,
             fieldErrors,
             updateFieldValue,
@@ -455,7 +462,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
         <div class="stack">
           {renderFieldNodes(
-            rightFields,
+            sideFields,
             value,
             fieldErrors,
             updateFieldValue,

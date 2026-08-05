@@ -270,7 +270,14 @@ export default function ContentEntryList({ typeSlug }: Props) {
     return <ContentEntryEditor typeSlug={typeSlug} />;
   }
 
-  return <ContentEntryListCollection type={type} allTypes={allTypes} route={route} />;
+  // Keyed by `type.name` - client-side navigation between two different
+  // content types' list pages doesn't unmount `ContentEntryList` itself (the
+  // matched route component stays the same), so without this key every
+  // per-type hook state below (DataTable's `useStore` column visibility,
+  // search/sort/page) would keep stale values from the PREVIOUS type
+  // instead of resetting - e.g. `visibleKeys` holding field names that don't
+  // exist on the new type, filtering the table down to zero columns.
+  return <ContentEntryListCollection key={type.name} type={type} allTypes={allTypes} route={route} />;
 }
 
 function ContentEntryListCollection({

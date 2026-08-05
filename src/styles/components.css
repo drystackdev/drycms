@@ -2914,7 +2914,7 @@
       display: grid;
       grid-template-columns:
         minmax(0, 2fr)
-        minmax(0, 1.75fr);
+        minmax(0, 1.5fr);
       gap: 2rem;
       align-items: start;
 
