@@ -12,6 +12,16 @@ export interface DryListOptions<T> {
    * public page, never showing a draft/future-scheduled row unless asked.
    * `get()` has no equivalent override - see its own doc comment. */
   includeDraft?: boolean;
+  /** Force-include a field `list()` would otherwise leave out of its SELECT
+   * (currently only non-inline `richtext` fields - see `entry-tree.ts`'s
+   * `listSelectColumnNames`). A listing page rarely needs a post's full
+   * authored HTML body, only `get()`'s single row does, so `list()` skips
+   * that column by default to avoid pulling it across every row; a row
+   * without it comes back with that field `null`, not the real HTML. Pass
+   * the field name here on the rare page that genuinely renders full content
+   * from a `list()` call. `get()` never needs this - it always fetches every
+   * column. */
+  include?: (keyof T & string)[];
 }
 
 export interface DryCollectionReader<T> {
@@ -95,6 +105,7 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
         sortDir: options.sort?.dir,
         where: options.where,
         publishedOnly: !options.includeDraft,
+        include: options.include,
       });
       const result = { rows: page.rows.map(toRecord), total: page.total };
       context.callLog?.push({ kind: "collection", name, method: "list", result });

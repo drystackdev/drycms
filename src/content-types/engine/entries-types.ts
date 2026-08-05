@@ -42,6 +42,10 @@ export interface EntryQuery {
    * this to `true`; every other caller leaves it unset (an editor needs to
    * see everything, published or not). */
   publishedOnly?: boolean;
+  /** Field names to force back into `listEntries`'s SELECT even though
+   * they'd normally be excluded (currently only non-inline `richtext`
+   * fields) - see `entry-tree.ts`'s `listSelectColumnNames`. */
+  include?: string[];
 }
 
 export interface EntryRow {

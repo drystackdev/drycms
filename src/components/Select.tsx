@@ -30,6 +30,9 @@ export interface SelectProps {
 	invalid?: boolean;
 	name?: string;
 	id?: string;
+	/** For a standalone Select with no visible `<label>` next to it (e.g. a
+	 * toolbar filter) - forwarded straight to the trigger button. */
+	ariaLabel?: string;
 }
 
 /**
@@ -48,6 +51,7 @@ export default function Select({
 	invalid = false,
 	name,
 	id,
+	ariaLabel,
 }: SelectProps) {
 	const [uncontrolled, setUncontrolled] = useState(defaultValue);
 	const current = value !== undefined ? value : uncontrolled;
@@ -150,6 +154,7 @@ export default function Select({
 				aria-expanded={open}
 				aria-controls={listId}
 				aria-invalid={invalid || undefined}
+				aria-label={ariaLabel}
 				onClick={() => (open ? close(true) : openAt(selectedIndex))}
 				onKeyDown={onTriggerKeyDown}
 			>

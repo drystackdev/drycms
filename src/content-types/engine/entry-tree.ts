@@ -1,4 +1,4 @@
-import type { ComponentFieldConfig, RelationCardinality, RelationFieldConfig, RelationMirrorFieldConfig } from "../field-registry.js";
+import type { ComponentFieldConfig, RelationCardinality, RelationFieldConfig, RelationMirrorFieldConfig, RichTextFieldConfig } from "../field-registry.js";
 import { fieldTypes } from "../field-registry.js";
 import { activeFields, activeSystemFieldsFor, applyFieldOrder, relationMirrorFieldsFor } from "../system-fields.js";
 import { resolveTableTree, type TableNode } from "../tree.js";
@@ -377,6 +377,45 @@ export function flattenDisplayColumns(nodes: EntryFieldNode[], pathPrefix = "", 
  * `RelationFieldAdapter`). */
 export function flattenQueryableColumns(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): QueryableColumn[] {
   return flattenDisplayColumns(nodes, pathPrefix, labelPrefix).filter((c) => !UNQUERYABLE_FIELD_TYPES.has(c.fieldType));
+}
+
+/** A non-inline `richtext` field's authored HTML can be large enough to slow
+ * down a plain `list()` query if fetched for every row by default - `inline`
+ * richtext (short, text-like) has no such concern, so only non-inline is
+ * excludable. */
+function isExcludableFromList(node: EntryColumnNode): boolean {
+  if (node.fieldType !== "richtext") return false;
+  return !(node.fieldConfig as RichTextFieldConfig | undefined)?.inline;
+}
+
+/**
+ * Real physical column names for a `list()` SELECT: every plain `column`
+ * node (any field type, except an excluded non-inline `richtext` one) plus a
+ * `manyToOne` `relation`'s own id column, recursing into `flatten` component
+ * fields (same table). `component-repeat`/`oneToMany`/`manyToMany`
+ * relation/`relation-mirror` nodes have no column of their own (child-table
+ * or virtual) so they're skipped - `populateChildFields` fills those in
+ * separately regardless of this list.
+ *
+ * `include` names (matched against `EntryColumnNode.fieldName`, not a dotted
+ * path) opt specific otherwise-excluded fields back in - see
+ * `DryListOptions.include` in `dry-reader.ts`. `get()`/`findEntry` never call
+ * this; they always fetch every column (`SELECT *`), so this only shapes
+ * `list()`'s result.
+ */
+export function listSelectColumnNames(nodes: EntryFieldNode[], include: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (const node of nodes) {
+    if (node.kind === "column") {
+      if (isExcludableFromList(node) && !include.has(node.fieldName)) continue;
+      out.push(node.columnName);
+    } else if (node.kind === "flatten") {
+      out.push(...listSelectColumnNames(node.children, include));
+    } else if (node.kind === "relation" && node.columnName) {
+      out.push(node.columnName);
+    }
+  }
+  return out;
 }
 
 /**

@@ -659,6 +659,38 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const foundPast = await entries.findEntry(story, allTypes, [{ field: "slug", op: "eq", value: "past" }], { publishedOnly: true });
     expect(foundPast?.id).toBe(past.id);
   });
+
+  it("listEntries omits a non-inline richtext field by default, includes it when asked, and getEntry always includes it", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const article: ContentTypeDefinition = {
+      id: "custom-article",
+      kind: "collection",
+      name: "article",
+      label: "Article",
+      features: {},
+      fields: [
+        { id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 },
+        { id: "f-body", name: "body", label: "Body", type: "richtext", config: { inline: false }, validation: {}, order: 1 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(article, await schema.planSave(article));
+    const allTypes = await schema.listContentTypes();
+    const articleType = allTypes.find((t) => t.id === "custom-article")!;
+
+    const created = await entries.createEntry(articleType, allTypes, { title: "Hello", body: "<p>Full body</p>" });
+
+    const listed = await entries.listEntries(articleType, allTypes, { page: 0, pageSize: 10 });
+    expect(listed.rows[0]?.value.title).toBe("Hello");
+    expect(listed.rows[0]?.value.body).toBeNull();
+
+    const listedWithBody = await entries.listEntries(articleType, allTypes, { page: 0, pageSize: 10, include: ["body"] });
+    expect(listedWithBody.rows[0]?.value.body).toBe("<p>Full body</p>");
+
+    const fetched = await entries.getEntry(articleType, allTypes, created.id);
+    expect(fetched?.value.body).toBe("<p>Full body</p>");
+  });
 });
 
 async function rawQuery<T = unknown>(dir: string, sql: string): Promise<T[]> {

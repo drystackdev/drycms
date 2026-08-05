@@ -50,7 +50,8 @@ interface Row extends Record<string, unknown> {
   id: string;
 }
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 5;
+const PAGE_SIZE_OPTIONS = [5, 10, 15];
 
 /**
  * Not a real page size - just large enough that a typical collection's
@@ -532,6 +533,7 @@ function ContentEntryListCollection({
   }, [relationColumns, allTypes]);
 
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [sort, setSort] = useState<SortState>(null);
   const [search, setSearch] = useState("");
   const [searchableFields, setSearchableFields] = useState<string[]>(
@@ -545,7 +547,7 @@ function ContentEntryListCollection({
   // every param the query below actually sends.
   const listCacheKey = useClientSearch
     ? `entries:${type.name}:all`
-    : `entries:${type.name}:list:${page}:${sort?.key ?? ""}:${sort?.direction ?? ""}:${search}:${searchableFields.join(",")}`;
+    : `entries:${type.name}:list:${page}:${pageSize}:${sort?.key ?? ""}:${sort?.direction ?? ""}:${search}:${searchableFields.join(",")}`;
   const listFetcher = useCallback(
     (ifVersion: number | undefined, signal: AbortSignal) =>
       entriesApi.listVersioned(
@@ -567,7 +569,7 @@ function ContentEntryListCollection({
             }
           : {
               page,
-              pageSize: DEFAULT_PAGE_SIZE,
+              pageSize,
               sortField: sort?.key,
               sortDir: sort?.direction,
               search: search || undefined,
@@ -576,7 +578,7 @@ function ContentEntryListCollection({
         ifVersion,
         signal,
       ),
-    [entriesApi, page, sort, search, searchableFields, isSortable],
+    [entriesApi, page, pageSize, sort, search, searchableFields, isSortable],
   );
   const {
     data: listData,
@@ -825,7 +827,9 @@ function ContentEntryListCollection({
         // `dragReorder` below) - `DataTable` itself auto-disables dragging
         // while the search box has text, since a filtered view has no
         // single well-defined drag order to save.
-        pageSize={isSortable ? 0 : undefined}
+        pageSize={isSortable ? 0 : pageSize}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        onPageSizeChange={setPageSize}
         onRowClick={(row) => route(`${path}/content/${type.name}/${row.id}`)}
         columnToggle={{
           storageKey: `contentList:${type.name}:columns`,

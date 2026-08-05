@@ -10,6 +10,7 @@ import {
   SortIcon,
 } from "./icons/index.js";
 import Popover from "./Popover.js";
+import Select from "./Select.js";
 import { useStore } from "../hooks/useStore.js";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { useSortableList } from "../lib/dnd/useSortableList.js";
@@ -76,6 +77,14 @@ export interface DataTableProps<Row extends Record<string, unknown>> {
   rows: Row[];
   /** Rows per page. Pass `0` to disable pagination. @default 10 */
   pageSize?: number;
+  /** Rows-per-page choices, shown as a `Select` next to the `columnToggle`
+   * button - omit to keep the pager fixed at `pageSize` (no picker), the
+   * original behavior. `pageSize` itself stays the single source of truth
+   * for the current choice (like `rows`/`columns`, always caller-owned, in
+   * both client and `serverQuery` modes) - picking an option just calls this
+   * back so the caller can update whatever state it passes as `pageSize`. */
+  pageSizeOptions?: number[];
+  onPageSizeChange?: (pageSize: number) => void;
   /** Show the filter input. @default true */
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -142,6 +151,8 @@ export default function DataTable<Row extends Record<string, unknown>>({
   columns,
   rows,
   pageSize = 10,
+  pageSizeOptions,
+  onPageSizeChange,
   searchable = true,
   searchPlaceholder = "Filter…",
   emptyLabel = "No results.",
@@ -313,6 +324,19 @@ export default function DataTable<Row extends Record<string, unknown>>({
                 );
               })}
             </Popover>
+          )}
+          {pageSizeOptions && (
+            <div style="width: 100%; max-width: 8.5rem">
+              <Select
+                ariaLabel="Rows per page"
+                options={pageSizeOptions.map((size) => ({ value: String(size), label: `${size} / page` }))}
+                value={String(pageSize)}
+                onChange={(value) => {
+                  onPageSizeChange?.(Number(value));
+                  goToPage(0);
+                }}
+              />
+            </div>
           )}
           <span class="spacer" />
           <small>

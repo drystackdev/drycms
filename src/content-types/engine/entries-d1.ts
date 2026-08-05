@@ -4,7 +4,7 @@ import type { ContentTypeDefinition } from "../types.js";
 import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
-import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
+import { buildEntryFieldTree, flattenQueryableColumns, listSelectColumnNames, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 
@@ -314,11 +314,12 @@ export function createD1ContentEntryEngineAdapter(
 
     const pageSize = Math.max(1, query.pageSize);
     const offset = Math.max(0, query.page) * pageSize;
-    const rows = await dbAll<Record<string, unknown>>(db, `SELECT * FROM ${tableName}${whereSql}${orderSql} LIMIT ? OFFSET ?;`, [
-      ...params,
-      pageSize,
-      offset,
-    ]);
+    const selectColumns = ["id", ...listSelectColumnNames(nodes, new Set(query.include ?? []))].map(quoteIdent).join(", ");
+    const rows = await dbAll<Record<string, unknown>>(
+      db,
+      `SELECT ${selectColumns} FROM ${tableName}${whereSql}${orderSql} LIMIT ? OFFSET ?;`,
+      [...params, pageSize, offset],
+    );
 
     const result: EntryRow[] = [];
     for (const row of rows) {
