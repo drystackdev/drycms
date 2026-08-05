@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import SlugField from "../components/SlugField.js";
+import SlugField from "../components/fields/SlugField.js";
 import { toast } from "../components/Toast.js";
-import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
+import { ArrowLeftIcon, TrashIcon } from "../components/icons/index.js";
 import {
   ContentEntriesApiError,
   createContentEntriesApi,

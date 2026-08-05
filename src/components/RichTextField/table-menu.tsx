@@ -4,7 +4,7 @@ import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { addRowAfter, addRowBefore, deleteRow, mergeCells, toggleHeaderRow } from "prosemirror-tables";
 import Popover from "../Popover.js";
-import TextField from "../TextField.js";
+import TextField from "../fields/TextField.js";
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
@@ -19,8 +19,8 @@ import {
   TableHeaderRowIcon,
   TableRowsIcon,
   TrashIcon,
-} from "../icons.js";
-import { useDialogSync } from "../list-nav.js";
+} from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
 import { runCommand } from "./commands.js";
 import { insertGrid } from "./grid.js";
 import TableCellAlignButton from "./table-cell-align-button.js";

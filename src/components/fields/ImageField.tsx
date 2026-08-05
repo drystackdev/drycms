@@ -1,12 +1,12 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import FileManager from "./FileManager.js";
-import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
-import { parentFolderOf, thumbnailUrl } from "./file-manager-utils.js";
-import { AddIcon, CloseIcon, DragHandleIcon, MediaIcon, TrashIcon, UploadIcon } from "./icons.js";
-import { useDialogSync } from "./list-nav.js";
-import { useOverlayScrollbars } from "./overlayscrollbars.js";
-import { useSortableList } from "../lib/dnd/useSortableList.js";
+import FileManager from "../FileManager/FileManager.js";
+import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
+import { parentFolderOf, thumbnailUrl } from "../../storage/entry-utils.js";
+import { AddIcon, CloseIcon, DragHandleIcon, MediaIcon, TrashIcon, UploadIcon } from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
+import { useSortableList } from "../../lib/dnd/useSortableList.js";
 
 /** A picked id is either a `source` path (resolved through `FileManager`) or
  * a URL - either typed into the picker's "Link" tab, or a caller that has no

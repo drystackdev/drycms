@@ -1,8 +1,8 @@
 import { Readable } from "node:stream";
 import type { DryRouteHandler } from "../context.js";
 import { storage } from "../config.js";
-import type { FileEntry } from "../../components/file-manager-types.js";
-import { extensionToCategory } from "../../components/file-manager-utils.js";
+import type { FileEntry } from "../../storage/entry-types.js";
+import { extensionToCategory } from "../../storage/entry-utils.js";
 import {
   apiBaseFrom,
   errorResponse,

@@ -1,6 +1,6 @@
 import { useId } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import { MinusIcon, PlusIcon } from "./icons.js";
+import { MinusIcon, PlusIcon } from "../icons/index.js";
 
 export interface NumberFieldProps extends FieldProps<number> {
   min?: number;

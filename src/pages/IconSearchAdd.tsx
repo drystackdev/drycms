@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
-import CheckField from "../components/CheckField.js";
+import CheckField from "../components/fields/CheckField.js";
 import Combobox, { type ComboboxOption } from "../components/Combobox.js";
-import { ArrowLeftIcon, ArrowRightIcon, CopyIcon } from "../components/icons.js";
+import { ArrowLeftIcon, ArrowRightIcon, CopyIcon } from "../components/icons/index.js";
 import IconCopyDialog from "../components/IconCopyDialog.js";
 import IconGlyph from "../components/IconGlyph.js";
-import TextField from "../components/TextField.js";
+import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
 import {
   createIconifyApi,

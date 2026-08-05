@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import Popover from "../Popover.js";
-import { EyeClosedIcon, EyeIcon, TrashIcon } from "../icons.js";
+import { EyeClosedIcon, EyeIcon, TrashIcon } from "../icons/index.js";
 import { runCommand } from "./commands.js";
 import { removeGrid, setGridColumns } from "./grid.js";
 import { isHighlightLineOn, setHighlightLine } from "./grid-resize.js";

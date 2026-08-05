@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
-import { PlusIcon } from "../components/icons.js";
+import { PlusIcon } from "../components/icons/index.js";
 import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useDocumentTitle } from "./page-common.js";

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { TextSelection } from "prosemirror-state";
 const { path: basePath } = window.__DRY_CONFIG__;
-import { ComponentIcon, EyeIcon } from "../icons.js";
-import { useDialogSync } from "../list-nav.js";
-import { useOverlayScrollbars } from "../overlayscrollbars.js";
+import { ComponentIcon, EyeIcon } from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import Search from "../Search.js";
 import ComponentPreview from "./ComponentPreview.js";
 import type { DryComponentRecord } from "./component-registry-types.js";

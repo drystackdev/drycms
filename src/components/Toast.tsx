@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import Icon from './Icon.js';
-import type { IconName } from './icons.js';
+import type { IconName } from './icons/index.js';
 
 export type ToastType = 'default' | 'success' | 'error' | 'warning' | 'info' | 'loading';
 

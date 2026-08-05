@@ -1,8 +1,8 @@
 import { useState } from "preact/hooks";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { passwordConfirmError } from "../content-types/engine/entry-validate.js";
-import PasswordField from "../components/PasswordField.js";
-import TextField from "../components/TextField.js";
+import PasswordField from "../components/fields/PasswordField.js";
+import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
 import { AuthApiError, authState, updateProfile } from "../store/auth.js";
 import PasswordChangeField from "./content-entry-editor/PasswordChangeField.js";

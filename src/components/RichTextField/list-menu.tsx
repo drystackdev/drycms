@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { runCommand } from "./commands.js";
 import Popover from "../Popover.js";
-import { BulletListIcon, OrderedListIcon, type IconProps } from "../icons.js";
+import { BulletListIcon, OrderedListIcon, type IconProps } from "../icons/index.js";
 import { toggleList, type ListType } from "./lists.js";
 import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";

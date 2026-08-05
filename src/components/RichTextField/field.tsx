@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentType, RefObject } from "preact";
-import type { FieldProps } from "../field-common.js";
-import type { FileManagerSource } from "../file-manager-types.js";
-import { useScrollLock } from "../list-nav.js";
+import type { FieldProps } from "../fields/field-common.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
+import { useScrollLock } from "../../hooks/list-nav.js";
 import ImageMenu from "./image-menu.js";
 import DryComponentMention from "./dry-component-mention.js";
 import DryRichTextSlash from "./dry-richtext-slash.js";

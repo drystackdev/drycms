@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { runCommand, setTextAlign } from "./commands.js";
 import Popover from "../Popover.js";
-import { AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, type IconProps } from "../icons.js";
+import { AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, type IconProps } from "../icons/index.js";
 import type { TextAlign, ToolbarCustomProps } from "./types.js";
 
 const ALIGN_OPTIONS: { value: TextAlign; label: string; Icon: (props: IconProps) => JSX.Element }[] = [

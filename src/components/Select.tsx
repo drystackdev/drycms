@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'preact/hooks';
-import { ArrowDownIcon, CheckIcon } from './icons.js';
+import { ArrowDownIcon, CheckIcon } from './icons/index.js';
 import {
 	firstEnabledIndex,
 	lastEnabledIndex,
@@ -15,8 +15,8 @@ import {
 	useScrollLock,
 	useTypeahead,
 	type ListOption,
-} from './list-nav.js';
-import { useOverlayScrollbars } from './overlayscrollbars.js';
+} from '../hooks/list-nav.js';
+import { useOverlayScrollbars } from '../hooks/overlayscrollbars.js';
 
 export type SelectOption = ListOption;
 

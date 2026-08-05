@@ -1,5 +1,5 @@
-import type { FileEntry, FileManagerSource } from './file-manager-types.js';
-import { fileThumbnails, type FileThumbnailName } from './file-manager-thumbnails.js';
+import type { FileEntry, FileManagerSource } from './entry-types.js';
+import { fileThumbnails, type FileThumbnailName } from './entry-thumbnails.js';
 
 /** The 12 thumbnail categories with a bundled `ic-*.svg`. */
 export type FileThumbCategory =

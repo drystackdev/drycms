@@ -17,7 +17,6 @@ export interface User {
   roles?: number[]; // relation -> role
   createdAt?: Date;
   updatedAt?: Date;
-  content?: string;
 }
 
 export interface Menu {

@@ -1,11 +1,11 @@
 import type { ComponentType } from "preact";
-import CheckField from "../components/CheckField.js";
-import DatePickerField from "../components/DatePickerField.js";
-import ImageField from "../components/ImageField.js";
-import NumberField from "../components/NumberField.js";
-import SecretKeyField from "../components/SecretKeyField.js";
-import SelectField from "../components/SelectField.js";
-import TextField from "../components/TextField.js";
+import CheckField from "../components/fields/CheckField.js";
+import DatePickerField from "../components/fields/DatePickerField.js";
+import ImageField from "../components/fields/ImageField.js";
+import NumberField from "../components/fields/NumberField.js";
+import SecretKeyField from "../components/fields/SecretKeyField.js";
+import SelectField from "../components/fields/SelectField.js";
+import TextField from "../components/fields/TextField.js";
 import RichTextField from "./richtext-editor.js";
 
 export type FieldShape = "column" | "flatten" | "child-table" | "virtual";

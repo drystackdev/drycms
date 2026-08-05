@@ -1,7 +1,7 @@
 import { useMemo } from 'preact/hooks';
 const { path } = window.__DRY_CONFIG__;
-import FileManager from '../components/FileManager.js';
-import { createHttpFileSource } from '../components/file-manager-http-source.js';
+import FileManager from '../components/FileManager/FileManager.js';
+import { createHttpFileSource } from '../storage/http-source.js';
 import { useDocumentTitle } from './page-common.js';
 
 export default function Media() {

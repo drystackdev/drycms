@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHttpFileSource } from "./file-manager-http-source.js";
-import type { FileEntry } from "./file-manager-types.js";
+import { createHttpFileSource } from "./http-source.js";
+import type { FileEntry } from "./entry-types.js";
 
 const API_BASE = "/dry/api/storage";
 

@@ -2,7 +2,7 @@ import { runCommand, setTextColor } from "./commands.js";
 import { useEffect, useRef } from "preact/hooks";
 import type { EditorView } from "prosemirror-view";
 import Popover from "../Popover.js";
-import { BaselineIcon } from "../icons.js";
+import { BaselineIcon } from "../icons/index.js";
 import type { ToolbarCustomProps } from "./types.js";
 import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
 

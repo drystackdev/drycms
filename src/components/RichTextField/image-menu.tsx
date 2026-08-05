@@ -2,13 +2,13 @@ import { useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import FileManager from "../FileManager.js";
+import FileManager from "../FileManager/FileManager.js";
 import FloatingPanel from "../FloatingPanel.js";
-import NumberField from "../NumberField.js";
+import NumberField from "../fields/NumberField.js";
 import Select, { type SelectOption } from "../Select.js";
-import TextField from "../TextField.js";
-import type { FileManagerSource } from "../file-manager-types.js";
-import { parentFolderOf } from "../file-manager-utils.js";
+import TextField from "../fields/TextField.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
+import { parentFolderOf } from "../../storage/entry-utils.js";
 import {
   AlignCenterIcon,
   AlignLeftIcon,
@@ -17,9 +17,9 @@ import {
   LockIcon,
   ReplaceIcon,
   TrashIcon,
-} from "../icons.js";
-import { useDialogSync } from "../list-nav.js";
-import { useOverlayScrollbars } from "../overlayscrollbars.js";
+} from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { removeNodeAt, replaceImageSrc, runCommand, setImageAlign, setImageAttrs } from "./commands.js";
 import type { ImageAlign, ImageObjectFit } from "./schema.js";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";

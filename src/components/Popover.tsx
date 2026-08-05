@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { CheckIcon, MoreVerticalIcon } from "./icons.js";
-import { useCloseOnResize, usePopupFlip, useTrackRect } from "./list-nav.js";
+import { CheckIcon, MoreVerticalIcon } from "./icons/index.js";
+import { useCloseOnResize, usePopupFlip, useTrackRect } from "../hooks/list-nav.js";
 
 /** Matches `.popover-menu`'s `width: 11rem` in components.css. */
 const MENU_WIDTH = 176;

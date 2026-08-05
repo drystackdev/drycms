@@ -1,12 +1,12 @@
 import { useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
-import CheckField from "../components/CheckField.js";
+import CheckField from "../components/fields/CheckField.js";
 import CodeBlock from "../components/CodeBlock.js";
-import { createHttpFileSource } from "../components/file-manager-http-source.js";
-import { ArrowLeftIcon } from "../components/icons.js";
+import { createHttpFileSource } from "../storage/http-source.js";
+import { ArrowLeftIcon } from "../components/icons/index.js";
 import RichTextField from "../components/RichTextField.js";
-import TextField from "../components/TextField.js";
+import TextField from "../components/fields/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface Preset {

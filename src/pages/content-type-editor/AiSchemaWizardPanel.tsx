@@ -3,7 +3,7 @@ const { path, aiMode } = window.__DRY_CONFIG__;
 
 import Combobox from "../../components/Combobox.js";
 import { toast } from "../../components/Toast.js";
-import { ArrowRightIcon, XIcon } from "../../components/icons.js";
+import { ArrowRightIcon, XIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import { normalizeFieldOrder } from "../../content-types/naming.js";

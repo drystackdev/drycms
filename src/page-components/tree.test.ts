@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildComponentTree, filterComponentTree } from "./tree.js";
-import type { FileEntry } from "../components/file-manager-types.js";
+import type { FileEntry } from "../storage/entry-types.js";
 
 function file(id: string, parentId: string | null): FileEntry {
   const name = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : id;

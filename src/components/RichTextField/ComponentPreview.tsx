@@ -5,7 +5,7 @@ import {
   type DryComponentLoader,
 } from "./dry-component-runtime.js";
 import { isDryComponentDefinition } from "./register-component.js";
-import { MinusIcon, PlusIcon } from "../icons.js";
+import { MinusIcon, PlusIcon } from "../icons/index.js";
 
 export interface ComponentPreviewProps {
   name: string;

@@ -1,7 +1,7 @@
 import type { Node as PMNode } from "prosemirror-model";
 import type { EditorView } from "prosemirror-view";
 import type { RefObject } from "preact";
-import type { FileManagerSource } from "../file-manager-types.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
 import type { ListType } from "./lists.js";
 
 export type InlineFormat = "bold" | "italic" | "underline";

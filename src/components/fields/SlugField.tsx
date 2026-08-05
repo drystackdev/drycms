@@ -1,7 +1,7 @@
 import { useId, useState } from "preact/hooks";
 import type { JSX } from "preact/jsx-runtime";
 import TextField from "./TextField.js";
-import { slugify } from "../lib/slugify.js";
+import { slugify } from "../../lib/slugify.js";
 
 export interface SlugFieldProps {
   /** Top input - the human label the slug is derived from (e.g. Title). */

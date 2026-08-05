@@ -2,7 +2,7 @@ import { useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import Popover from "../Popover.js";
-import { TableIcon } from "../icons.js";
+import { TableIcon } from "../icons/index.js";
 import { runCommand } from "./commands.js";
 import { insertTable } from "./table.js";
 import type { ToolbarIconSize } from "./types.js";

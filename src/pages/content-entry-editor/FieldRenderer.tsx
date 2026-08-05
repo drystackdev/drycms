@@ -1,9 +1,9 @@
 import { useMemo } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
-import ComponentField from "../../components/ComponentField.js";
+import ComponentField from "../../components/fields/ComponentField.js";
 import RelationField, {
   type RelationFieldSource,
-} from "../../components/RelationField.js";
+} from "../../components/fields/RelationField.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { validateEntryValue } from "../../content-types/engine/entry-validate.js";

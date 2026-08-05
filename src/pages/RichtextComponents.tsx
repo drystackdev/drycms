@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 // A component is a default export from a file named `dry.<name>.<ext>`.
 const componentModules = import.meta.glob<{ default?: unknown }>("/src/**/dry.*.{ts,tsx,js,jsx}");
-import CheckField from "../components/CheckField.js";
-import { createHttpFileSource } from "../components/file-manager-http-source.js";
+import CheckField from "../components/fields/CheckField.js";
+import { createHttpFileSource } from "../storage/http-source.js";
 import ComponentPreview from "../components/RichTextField/ComponentPreview.js";
 import type { DryComponentRecord, PlainFieldDef } from "../components/RichTextField/component-registry-types.js";
 import DryComponentPropsForm from "../components/RichTextField/dry-component-props-form.js";
@@ -13,8 +13,8 @@ import {
   isDryComponentDefinition,
   type DryComponentDefinition,
 } from "../components/RichTextField/register-component.js";
-import { useDialogSync } from "../components/list-nav.js";
-import { ReplaceIcon, SettingsIcon } from "../components/icons.js";
+import { useDialogSync } from "../hooks/list-nav.js";
+import { ReplaceIcon, SettingsIcon } from "../components/icons/index.js";
 import DryComponentIcon from "../components/RichTextField/dry-component-icon.js";
 import { useDocumentTitle } from "./page-common.js";
 

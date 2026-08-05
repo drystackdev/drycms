@@ -1,4 +1,4 @@
-import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
+import type { FileEntry, FileManagerSource } from "./entry-types.js";
 
 function basename(path: string): string {
   const index = path.lastIndexOf("/");

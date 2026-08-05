@@ -1,4 +1,4 @@
-import { CheckCircleIcon } from "./icons.js";
+import { CheckCircleIcon } from "./icons/index.js";
 import { globalRefreshing, syncSuccess } from "../store/sync.js";
 
 /**

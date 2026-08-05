@@ -1,15 +1,15 @@
 import { useEffect, useState } from "preact/hooks";
-import CheckField from "../../components/CheckField.js";
-import DatePickerField from "../../components/DatePickerField.js";
-import { useDialogSync } from "../../components/list-nav.js";
+import CheckField from "../../components/fields/CheckField.js";
+import DatePickerField from "../../components/fields/DatePickerField.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
 import MultiSelect from "../../components/MultiSelect.js";
-import NumberField from "../../components/NumberField.js";
+import NumberField from "../../components/fields/NumberField.js";
 import OptionListEditor from "../../components/OptionListEditor.js";
-import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import RichTextField from "../../components/RichTextField.js";
 import Select from "../../components/Select.js";
-import SlugField from "../../components/SlugField.js";
-import TextField from "../../components/TextField.js";
+import SlugField from "../../components/fields/SlugField.js";
+import TextField from "../../components/fields/TextField.js";
 import { slugifyIdentifier } from "../../lib/slugify.js";
 import { randomUUID } from "../../lib/uuid.js";
 import {

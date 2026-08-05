@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import type { DryRouteHandler } from "../context.js";
 import { icons } from "../config.js";
-import type { FileEntry } from "../../components/file-manager-types.js";
+import type { FileEntry } from "../../storage/entry-types.js";
 import { fetchIconifySvg } from "../../icons/iconify-client.js";
 import { IconValidationError, sanitizeSvg } from "../../icons/sanitize-svg.js";
 import { slugify } from "../../lib/slugify.js";

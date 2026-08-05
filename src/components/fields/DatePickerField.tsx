@@ -1,7 +1,7 @@
 import dayjs, { type Dayjs } from "dayjs";
 import { useId, useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon } from "./icons.js";
+import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon } from "../icons/index.js";
 import {
   useCloseOnResize,
   useFloatingPosition,
@@ -9,7 +9,7 @@ import {
   useOutsideClick,
   usePopupFlip,
   useScrollLock,
-} from "./list-nav.js";
+} from "../../hooks/list-nav.js";
 import NumberField from "./NumberField.js";
 
 export type DatePickerMode = "calendar" | "select" | "input";

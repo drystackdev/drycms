@@ -1,4 +1,4 @@
-import CheckField from "../../components/CheckField.js";
+import CheckField from "../../components/fields/CheckField.js";
 import type {
   ContentTypeFeatures,
   ContentTypeKind,

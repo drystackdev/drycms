@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import IconGlyph from "../components/IconGlyph.js";
-import TextField from "../components/TextField.js";
+import TextField from "../components/fields/TextField.js";
 import { createIconsApi } from "../icons/icons-http-api.js";
 import { useDocumentTitle } from "./page-common.js";
 

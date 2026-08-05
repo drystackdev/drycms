@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'preact/hooks';
-import { ArrowDownIcon, CheckIcon, XIcon } from './icons.js';
+import { ArrowDownIcon, CheckIcon, XIcon } from './icons/index.js';
 import {
 	filterOptions,
 	firstEnabledIndex,
@@ -13,8 +13,8 @@ import {
 	usePopupFlip,
 	useScrollLock,
 	type ListOption,
-} from './list-nav.js';
-import { useOverlayScrollbars } from './overlayscrollbars.js';
+} from '../hooks/list-nav.js';
+import { useOverlayScrollbars } from '../hooks/overlayscrollbars.js';
 
 export type MultiSelectOption = ListOption;
 

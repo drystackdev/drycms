@@ -1,6 +1,6 @@
 import type { SortableHandleProps } from "../../lib/dnd/useSortableList.js";
-import { DragHandleIcon, TextFieldTypeIcon, TrashIcon } from "../../components/icons.js";
-import { fieldTypeColors, fieldTypeIcons } from "../../components/field-type-icons.js";
+import { DragHandleIcon, TextFieldTypeIcon, TrashIcon } from "../../components/icons/index.js";
+import { fieldTypeColors, fieldTypeIcons } from "../../components/fields/field-type-icons.js";
 import type { FieldDefinition } from "../../content-types/types.js";
 
 export interface FieldListItemProps {

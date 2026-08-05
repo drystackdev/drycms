@@ -1,12 +1,12 @@
 import { useRef, useState } from "preact/hooks";
 import { useEffect } from "preact/hooks";
 import type { EditorView } from "prosemirror-view";
-import FileManager from "../FileManager.js";
-import type { FileEntry } from "../file-manager-types.js";
-import { parentFolderOf } from "../file-manager-utils.js";
-import { MediaIcon } from "../icons.js";
-import { useDialogSync } from "../list-nav.js";
-import { useOverlayScrollbars } from "../overlayscrollbars.js";
+import FileManager from "../FileManager/FileManager.js";
+import type { FileEntry } from "../../storage/entry-types.js";
+import { parentFolderOf } from "../../storage/entry-utils.js";
+import { MediaIcon } from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { schema } from "./schema.js";
 import type { ToolbarCustomProps } from "./types.js";
 import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";

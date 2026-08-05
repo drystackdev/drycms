@@ -2,8 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import { fieldTypes } from "../../content-types/field-registry.js";
 import type { ContentTypeFeatures, FieldDefinition } from "../../content-types/types.js";
-import { useDialogSync } from "../../components/list-nav.js";
-import { TrashIcon, UndoIcon, XIcon } from "../../components/icons.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { TrashIcon, UndoIcon, XIcon } from "../../components/icons/index.js";
 
 export interface TrashedFeature {
   key: keyof ContentTypeFeatures;

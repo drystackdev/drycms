@@ -4,9 +4,9 @@ import type { Node as PMNode } from "prosemirror-model";
 import { NodeSelection, type Transaction } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import FloatingPanel from "../FloatingPanel.js";
-import type { FileManagerSource } from "../file-manager-types.js";
-import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ArrowRightIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons.js";
-import { useDialogSync } from "../list-nav.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
+import { AlignCenterIcon, AlignLeftIcon, AlignRightIcon, ArrowRightIcon, LockIcon, SettingsIcon, TrashIcon } from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
 import { flattenDryComponentRecords, type DryComponentRecord } from "./component-registry-types.js";
 import DryComponentPropsForm, {
   emptyDryComponentProps,

@@ -1,8 +1,8 @@
 import type { JSX } from "preact";
-import { MonitorIcon, MoonIcon, SunIcon, type IconProps } from "./icons.js";
+import { MonitorIcon, MoonIcon, SunIcon, type IconProps } from "./icons/index.js";
 import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
-import { applyTheme, type DryTheme } from "./theme.js";
+import { applyTheme, type DryTheme } from "../lib/native/theme.js";
 
 const ORDER: DryTheme[] = ["system", "light", "dark"];
 

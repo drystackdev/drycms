@@ -9,7 +9,7 @@ import type { ComponentChildren } from "preact";
 import fuzzysort from "fuzzysort";
 const { path } = window.__DRY_CONFIG__;
 
-import { useDialogSync } from "../components/list-nav.js";
+import { useDialogSync } from "../hooks/list-nav.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { diffContentType } from "../content-types/draft-diff.js";
 import { drafts as draftsSignal } from "../content-types/draft-store.js";
@@ -21,8 +21,8 @@ import type {
 import {
   fieldTypeColors,
   fieldTypeIcons,
-} from "../components/field-type-icons.js";
-import { PlusIcon, UploadIcon } from "../components/icons.js";
+} from "../components/fields/field-type-icons.js";
+import { PlusIcon, UploadIcon } from "../components/icons/index.js";
 import { SparkleIcon } from "../components/AiSparkleIcon.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
@@ -31,7 +31,7 @@ import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
 import AiSchemaWizardPanel from "./content-type-editor/AiSchemaWizardPanel.js";
 import { useDocumentTitle } from "./page-common.js";
-import { temporaryFeatureVisibility } from "../features/temporary-visibility.js";
+import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
 
 interface CardHighlights {
   label: ComponentChildren;

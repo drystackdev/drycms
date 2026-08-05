@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { useTrackRect } from "./list-nav.js";
+import { useTrackRect } from "../hooks/list-nav.js";
 
 export interface FloatingPanelProps {
   /** Element the panel follows - its position *and* size (via `ResizeObserver`)

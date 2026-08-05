@@ -1,5 +1,5 @@
 import type { ComponentType, JSX } from "preact";
-import { ComponentIcon } from "../icons.js";
+import { ComponentIcon } from "../icons/index.js";
 
 type DryIcon = ComponentType<JSX.SVGAttributes<SVGSVGElement>>;
 

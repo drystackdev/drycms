@@ -1,4 +1,4 @@
-import type { IconProps } from "../icons.js";
+import type { IconProps } from "../icons/index.js";
 import type { CellHAlign, CellVAlign } from "./schema.js";
 
 const H_INDEX: Record<CellHAlign, number> = { left: 0, center: 1, right: 2 };

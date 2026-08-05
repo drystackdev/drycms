@@ -21,7 +21,7 @@ import {
   ImageFieldTypeIcon,
   RelationFieldTypeIcon,
   ComponentFieldTypeIcon,
-} from "./icons.js";
+} from "../icons/index.js";
 
 export const fieldTypeIcons: Record<string, ComponentType<IconProps>> = {
   "text-field": TextFieldTypeIcon,

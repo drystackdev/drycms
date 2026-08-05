@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { useDialogSync } from "./list-nav.js";
+import { useDialogSync } from "../hooks/list-nav.js";
 
 export interface ConfirmDialogProps {
   open: boolean;

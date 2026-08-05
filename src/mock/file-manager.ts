@@ -1,5 +1,5 @@
-import type { FileEntry, FileManagerSource } from "../components/file-manager-types.js";
-import { isHiddenEntry } from "../components/file-manager-utils.js";
+import type { FileEntry, FileManagerSource } from "../storage/entry-types.js";
+import { isHiddenEntry } from "../storage/entry-utils.js";
 
 function extOf(name: string): string | undefined {
   const dot = name.lastIndexOf(".");

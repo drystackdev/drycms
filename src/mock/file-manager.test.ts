@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FileEntry } from "../components/file-manager-types.js";
+import type { FileEntry } from "../storage/entry-types.js";
 import { createMemoryFileSource } from "./file-manager.js";
 
 const seed: FileEntry[] = [

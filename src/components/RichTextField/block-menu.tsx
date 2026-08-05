@@ -10,7 +10,7 @@ import {
   ParagraphIcon,
   QuoteIcon,
   type IconProps,
-} from "../icons.js";
+} from "../icons/index.js";
 import type { BlockType, ToolbarCustomProps } from "./types.js";
 
 const BLOCK_TYPE_OPTIONS: { value: BlockType; label: string; Icon: (props: IconProps) => JSX.Element }[] = [

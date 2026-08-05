@@ -1,4 +1,4 @@
-import type { IconProps } from "./icons.js";
+import type { IconProps } from "./icons/index.js";
 
 /**
  * The Content Types "Ask AI" button/dialog's icon - a specific SVG the user

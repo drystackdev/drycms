@@ -1,5 +1,5 @@
-import type { FileEntry } from "../components/file-manager-types.js";
-import { encodePath } from "../components/file-manager-http-source.js";
+import type { FileEntry } from "../storage/entry-types.js";
+import { encodePath } from "../storage/http-source.js";
 
 export class PageComponentsApiError extends Error {}
 

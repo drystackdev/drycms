@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
-import { useDialogSync } from "../../components/list-nav.js";
-import { useOverlayScrollbars } from "../../components/overlayscrollbars.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { toast } from "../../components/Toast.js";
 import {
   AlertTriangleIcon,
@@ -9,7 +9,7 @@ import {
   UploadIcon,
   XCircleIcon,
   XIcon,
-} from "../../components/icons.js";
+} from "../../components/icons/index.js";
 import { createContentTypesApi, type BatchItemResult } from "../../content-types/http-api.js";
 import { describeDestructiveChange, diffContentType } from "../../content-types/draft-diff.js";
 import { discardDrafts, drafts, type DraftEntry } from "../../content-types/draft-store.js";

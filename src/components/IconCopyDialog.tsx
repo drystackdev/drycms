@@ -1,10 +1,10 @@
 import { useState } from "preact/hooks";
-import CheckField from "./CheckField.js";
+import CheckField from "./fields/CheckField.js";
 import CodeBlock from "./CodeBlock.js";
 import IconGlyph from "./IconGlyph.js";
-import { XIcon } from "./icons.js";
-import { useDialogSync } from "./list-nav.js";
-import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { XIcon } from "./icons/index.js";
+import { useDialogSync } from "../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 
 interface Props {
   /** `"prefix:name"` pairs - the currently selected icons on the search grid. */

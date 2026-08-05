@@ -7,7 +7,7 @@ import type {
 } from "../../content-types/types.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import FieldListItem, { fieldListItemProps } from "./FieldListItem.js";
-import { ArchiveIcon, PlusIcon } from "../../components/icons.js";
+import { ArchiveIcon, PlusIcon } from "../../components/icons/index.js";
 import type { JSX } from "preact/jsx-runtime";
 
 export interface SystemFieldEntry {

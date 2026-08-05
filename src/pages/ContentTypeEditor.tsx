@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import SlugField from "../components/SlugField.js";
-import TextField from "../components/TextField.js";
+import SlugField from "../components/fields/SlugField.js";
+import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { bumpContentTypesVersion } from "../store/content-types.js";
@@ -35,7 +35,7 @@ import {
   ArrowLeftIcon,
   InfoCircleIcon,
   TrashIcon,
-} from "../components/icons.js";
+} from "../components/icons/index.js";
 import FeaturesFieldset, {
   FEATURES_BY_KIND,
 } from "./content-type-editor/FeaturesFieldset.js";
@@ -45,7 +45,7 @@ import FieldsList, {
 } from "./content-type-editor/FieldsList.js";
 import FieldTrashDialog from "./content-type-editor/FieldTrashDialog.js";
 import { useDocumentTitle } from "./page-common.js";
-import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 
 interface Props {
   id?: string;

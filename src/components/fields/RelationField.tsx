@@ -1,9 +1,9 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import DataTable, { type DataTableColumn, type SortState } from "./DataTable.js";
-import { DragHandleIcon, EditIcon } from "./icons.js";
-import { useDialogSync } from "./list-nav.js";
-import { useSortableList } from "../lib/dnd/useSortableList.js";
+import DataTable, { type DataTableColumn, type SortState } from "../DataTable.js";
+import { DragHandleIcon, EditIcon } from "../icons/index.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useSortableList } from "../../lib/dnd/useSortableList.js";
 
 export interface RelationFieldQuery {
   page: number;

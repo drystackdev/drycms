@@ -5,8 +5,8 @@ import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
 import CodeBlock from "./CodeBlock.js";
 import ConfirmDialog from "./ConfirmDialog.js";
 import IconGlyph from "./IconGlyph.js";
-import { CloseIcon, RenameIcon, TrashIcon, XIcon } from "./icons.js";
-import { useDialogSync } from "./list-nav.js";
+import { CloseIcon, RenameIcon, TrashIcon, XIcon } from "./icons/index.js";
+import { useDialogSync } from "../hooks/list-nav.js";
 
 interface Props {
   entry: IconEntry;

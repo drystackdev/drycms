@@ -6,10 +6,10 @@ import {
   optimizedUploadName,
   optimizeUploadImage,
 } from "./file-manager-image-optimize.js";
-import type { FileEntry, FileManagerSource } from "./file-manager-types.js";
-import { useDialogSync } from "./list-nav.js";
-import { useOverlayScrollbars } from "./overlayscrollbars.js";
-import { useStore } from "../hooks/useStore.js";
+import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
+import { useStore } from "../../hooks/useStore.js";
 import {
   collectDescendantIds,
   folderPath,
@@ -22,7 +22,7 @@ import {
   retargetSubtree,
   sortEntries,
   thumbnailUrl,
-} from "./file-manager-utils.js";
+} from "../../storage/entry-utils.js";
 import {
   AddFolderIcon,
   ArrowDownIcon,
@@ -43,12 +43,12 @@ import {
   TrashIcon,
   UploadIcon,
   XIcon,
-} from "./icons.js";
-import { toast } from "./Toast.js";
-import ConfirmDialog from "./ConfirmDialog.js";
+} from "../icons/index.js";
+import { toast } from "../Toast.js";
+import ConfirmDialog from "../ConfirmDialog.js";
 import FileManagerUploadArtwork from "./FileManagerUploadArtwork.js";
-import Popover, { type PopoverMenuEntry } from "./Popover.js";
-import Search from "./Search.js";
+import Popover, { type PopoverMenuEntry } from "../Popover.js";
+import Search from "../Search.js";
 
 export interface FileManagerProps {
   /** Where data is read from and writes are sent - see `FileManagerSource`. */

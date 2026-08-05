@@ -5,8 +5,8 @@ import type { JSX } from "preact/jsx-runtime";
 const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
-import { encodePath } from "../components/file-manager-http-source.js";
-import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, PlusIcon } from "../components/icons.js";
+import { encodePath } from "../storage/http-source.js";
+import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, PlusIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import {
   flattenQueryableColumns,

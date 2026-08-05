@@ -10,7 +10,7 @@ import {
   UnderlineIcon,
   UndoIcon,
   type IconProps,
-} from "../icons.js";
+} from "../icons/index.js";
 import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
@@ -22,7 +22,7 @@ import ListMenu from "./list-menu.js";
 import { removeAllMarks } from "./commands.js";
 import { schema } from "./schema.js";
 import type { InlineFormat, ToolbarCustomProps, ToolbarState } from "./types.js";
-import { temporaryFeatureVisibility } from "../../features/temporary-visibility.js";
+import { temporaryFeatureVisibility } from "../../lib/temporary-visibility.js";
 
 /**
  * The toolbar's item registry - `toolbar.tsx` only knows how to render

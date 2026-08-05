@@ -5,8 +5,8 @@ import { closeHistory } from "prosemirror-history";
 import { toggleMark } from "prosemirror-commands";
 import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import type { FileManagerSource } from "../file-manager-types.js";
-import { useOverlayScrollbars } from "../overlayscrollbars.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import {
   AlignCenterIcon,
   AlignJustifyIcon,
@@ -25,7 +25,7 @@ import {
   ParagraphIcon,
   TableIcon,
   UnderlineIcon,
-} from "../icons.js";
+} from "../icons/index.js";
 import { runCommand, removeAllMarks, setBlockTypeCommand, setTextAlign } from "./commands.js";
 import { insertGrid } from "./grid.js";
 import { toggleList } from "./lists.js";

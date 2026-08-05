@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
-import CheckField from "../components/CheckField.js";
+import CheckField from "../components/fields/CheckField.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import { ArrowLeftIcon, TrashIcon } from "../components/icons.js";
+import { ArrowLeftIcon, TrashIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import {
   ContentEntriesApiError,

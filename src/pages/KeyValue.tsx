@@ -8,7 +8,7 @@ import {
 const { path } = window.__DRY_CONFIG__;
 import { authState, loadSession } from "../store/auth.js";
 import Icon from "../components/Icon.js";
-import { ReplaceIcon } from "../components/icons.js";
+import { ReplaceIcon } from "../components/icons/index.js";
 import Combobox from "../components/Combobox.js";
 import DataTable from "../components/DataTable.js";
 import { useDocumentTitle } from "./page-common.js";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { CloseIcon, MenuIcon } from "./icons.js";
+import { CloseIcon, MenuIcon } from "./icons/index.js";
 import { collapsed } from "../store/dashboard.js";
 
 /**

@@ -6,7 +6,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   PlusIcon,
-} from "../components/icons.js";
+} from "../components/icons/index.js";
 import IconPreviewDialog from "../components/IconPreviewDialog.js";
 import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
 import { useDocumentTitle } from "./page-common.js";

@@ -4,7 +4,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { closeHistory } from "prosemirror-history";
 import { NodeSelection, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import { useOverlayScrollbars } from "../overlayscrollbars.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import type { DryComponentRecord } from "./component-registry-types.js";
 import { flattenDryComponentRecords } from "./component-registry-types.js";
 import { loadRichtextComponents } from "./component-registry.js";

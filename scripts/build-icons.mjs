@@ -1,5 +1,9 @@
 /**
- * Generates `src/components/icons.tsx` from `icons.config.json`.
+ * Generates `src/components/icons/index.tsx` from `icons.config.json` -
+ * `src/components/icons.tsx` is a checked-in, hand-written barrel
+ * (`export * from "./icons/index.js"`) re-exporting this, same pattern
+ * `RichTextField.tsx`/`Editer.tsx` already use for their own subfolders, so
+ * this generator never touches it.
  *
  * Icons are inlined at build time so the published package carries no icon
  * dependency and the browser makes no request to the Iconify API. Each icon is
@@ -97,7 +101,7 @@ for (const icon of rendered) {
   );
 }
 
-const target = new URL("src/components/icons.tsx", root);
+const target = new URL("src/components/icons/index.tsx", root);
 writeFileSync(fileURLToPath(target), parts.join("\n"));
 
 console.log(`Generated ${rendered.length} icons -> ${fileURLToPath(target)}`);

@@ -1,5 +1,5 @@
 import type { JSX } from "preact/jsx-runtime";
-import PasswordField from "../../components/PasswordField.js";
+import PasswordField from "../../components/fields/PasswordField.js";
 import type { MaskedValue } from "../../content-types/engine/entry-codec.js";
 import { passwordConfirmError } from "../../content-types/engine/entry-validate.js";
 

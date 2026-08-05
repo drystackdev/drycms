@@ -8,24 +8,24 @@ import {
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
-import { LogOutIcon, UserIcon } from "./icons.js";
+import { LogOutIcon, UserIcon } from "./icons/index.js";
 import Popover from "./Popover.js";
 import SidebarToggle from "./SidebarToggle.js";
 import SyncIndicator from "./SyncIndicator.js";
 import ThemeToggle from "./ThemeToggle.js";
 import Toaster from "./Toast.js";
-import type { IconName } from "./icons.js";
+import type { IconName } from "./icons/index.js";
 const { path } = window.__DRY_CONFIG__;
 import { collapsed } from "../store/dashboard.js";
 import { contentTypesVersion } from "../store/content-types.js";
-import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { useStore } from "../hooks/useStore.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
-import { temporaryFeatureVisibility } from "../features/temporary-visibility.js";
+import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
 
 interface Props {
   children?: ComponentChildren;

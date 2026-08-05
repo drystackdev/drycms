@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FileEntry } from "./file-manager-types.js";
-import { formatDate, retargetSubtree } from "./file-manager-utils.js";
+import type { FileEntry } from "./entry-types.js";
+import { formatDate, retargetSubtree } from "./entry-utils.js";
 
 const folder = (id: string, parentId: string | null): FileEntry => ({
   id,

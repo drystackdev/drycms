@@ -1,4 +1,4 @@
-import type { FileEntry } from "../components/file-manager-types.js";
+import type { FileEntry } from "../storage/entry-types.js";
 
 export interface ComponentTreeNode {
   entry: FileEntry;

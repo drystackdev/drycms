@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import Icon from "../components/Icon.js";
-import PasswordField from "../components/PasswordField.js";
-import TextField from "../components/TextField.js";
+import PasswordField from "../components/fields/PasswordField.js";
+import TextField from "../components/fields/TextField.js";
 import { AuthApiError, login } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 

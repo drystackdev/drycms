@@ -14,7 +14,7 @@ import Icon from "../components/Icon.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
 import { authState, loadSession } from "../store/auth.js";
-import "../components/native.js";
+import "../lib/native/native.js";
 
 // Code-split per route: the whole app renders `client:only`, so nothing
 // paints until its JS is downloaded. Showcase alone pulls in Prism plus every

@@ -5,9 +5,9 @@ import Prism from "prismjs";
 // snippets) still highlight fine under it too.
 import "prismjs/components/prism-jsx";
 import { toast } from "./Toast.js";
-import { CopyIcon } from "./icons.js";
+import { CopyIcon } from "./icons/index.js";
 import type { CSSProperties } from "preact";
-import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 
 const JSX_GRAMMAR = Prism.languages.jsx!;
 

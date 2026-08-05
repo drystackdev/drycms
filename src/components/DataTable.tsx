@@ -7,13 +7,13 @@ import {
   ColumnsIcon,
   DragHandleIcon,
   SortIcon,
-} from "./icons.js";
+} from "./icons/index.js";
 import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
-import { useOverlayScrollbars } from "./overlayscrollbars.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { useSortableList } from "../lib/dnd/useSortableList.js";
 import type { JSX } from "preact/jsx-runtime";
-import CheckField from "./CheckField.js";
+import CheckField from "./fields/CheckField.js";
 
 export interface DataTableColumn<Row> {
   key: string & keyof Row;

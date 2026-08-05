@@ -1,6 +1,6 @@
 import { useEffect } from "preact/hooks";
 import type { EditorView } from "prosemirror-view";
-import { FullscreenExitIcon, FullscreenIcon } from "../icons.js";
+import { FullscreenExitIcon, FullscreenIcon } from "../icons/index.js";
 import type { ToolbarCustomProps } from "./types.js";
 import { RICH_TEXT_SHORTCUT_EVENT } from "./shortcuts.js";
 

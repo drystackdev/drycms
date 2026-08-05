@@ -1,7 +1,7 @@
 import { useMemo, useState } from "preact/hooks";
 import ContextMenu from "../../components/ContextMenu.js";
-import type { FileEntry } from "../../components/file-manager-types.js";
-import { AddFolderIcon, CodeFieldTypeIcon, FolderIcon, PlusIcon, RenameIcon, SearchIcon, TrashIcon } from "../../components/icons.js";
+import type { FileEntry } from "../../storage/entry-types.js";
+import { AddFolderIcon, CodeFieldTypeIcon, FolderIcon, PlusIcon, RenameIcon, SearchIcon, TrashIcon } from "../../components/icons/index.js";
 import { buildComponentTree, filterComponentTree, type ComponentTreeNode } from "../../page-components/tree.js";
 
 interface ComponentTreePanelProps {

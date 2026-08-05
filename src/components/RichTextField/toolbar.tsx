@@ -2,7 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { EditorView } from "prosemirror-view";
 import { runCommand } from "./commands.js";
-import type { FileManagerSource } from "../file-manager-types.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
 import DryComponentMenu from "./dry-component-menu.js";
 import GridMenu from "./grid-menu.js";
 import TableMenu from "./table-menu.js";

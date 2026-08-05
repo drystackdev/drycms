@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import { useNativePopover } from "./list-nav.js";
+import { useNativePopover } from "../hooks/list-nav.js";
 import type { PopoverMenuEntry } from "./Popover.js";
 
 export interface ContextMenuProps {

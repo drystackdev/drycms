@@ -1,42 +1,42 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact";
 const { path } = window.__DRY_CONFIG__;
-import CheckField from "../components/CheckField.js";
-import CodeField from "../components/CodeField.js";
+import CheckField from "../components/fields/CheckField.js";
+import CodeField from "../components/fields/CodeField.js";
 import Combobox from "../components/Combobox.js";
-import ComponentField from "../components/ComponentField.js";
+import ComponentField from "../components/fields/ComponentField.js";
 import ContextMenu from "../components/ContextMenu.js";
 import DataTable from "../components/DataTable.js";
-import DatePickerField from "../components/DatePickerField.js";
+import DatePickerField from "../components/fields/DatePickerField.js";
 import Demo from "../components/Demo.js";
 import EditableDemo from "../components/EditableDemo.js";
 import FloatingPanel from "../components/FloatingPanel.js";
-import { createHttpFileSource } from "../components/file-manager-http-source.js";
-import { fieldTypeIcons } from "../components/field-type-icons.js";
-import FileManager from "../components/FileManager.js";
+import { createHttpFileSource } from "../storage/http-source.js";
+import { fieldTypeIcons } from "../components/fields/field-type-icons.js";
+import FileManager from "../components/FileManager/FileManager.js";
 import Icon from "../components/Icon.js";
-import ImageField from "../components/ImageField.js";
+import ImageField from "../components/fields/ImageField.js";
 import {
   CopyIcon,
   type IconName,
   RenameIcon,
   TrashIcon,
   iconBodies,
-} from "../components/icons.js";
+} from "../components/icons/index.js";
 import MultiSelect from "../components/MultiSelect.js";
-import NumberField from "../components/NumberField.js";
-import { useOverlayScrollbars } from "../components/overlayscrollbars.js";
-import PasswordField from "../components/PasswordField.js";
+import NumberField from "../components/fields/NumberField.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
+import PasswordField from "../components/fields/PasswordField.js";
 import Popover from "../components/Popover.js";
 import RelationField, {
   type RelationFieldSource,
-} from "../components/RelationField.js";
+} from "../components/fields/RelationField.js";
 import Search from "../components/Search.js";
-import SecretKeyField from "../components/SecretKeyField.js";
+import SecretKeyField from "../components/fields/SecretKeyField.js";
 import Select from "../components/Select.js";
-import SelectField from "../components/SelectField.js";
-import SlugField from "../components/SlugField.js";
-import TextField from "../components/TextField.js";
+import SelectField from "../components/fields/SelectField.js";
+import SlugField from "../components/fields/SlugField.js";
+import TextField from "../components/fields/TextField.js";
 import RichTextField from "../components/RichTextField.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { toast } from "../components/Toast.js";

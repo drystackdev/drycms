@@ -1,4 +1,4 @@
-import { type IconName, iconBodies } from './icons.js';
+import { type IconName, iconBodies } from './icons/index.js';
 
 interface Props {
 	name: IconName;

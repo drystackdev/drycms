@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { useSortableList } from "../lib/dnd/useSortableList.js";
 import { randomUUID } from "../lib/uuid.js";
-import { DragHandleIcon, PlusIcon, XIcon } from "./icons.js";
+import { DragHandleIcon, PlusIcon, XIcon } from "./icons/index.js";
 
 export interface OptionListEditorProps {
   label: string;

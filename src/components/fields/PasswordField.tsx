@@ -1,7 +1,7 @@
 import { useId } from "preact/hooks";
 import type { ComponentChildren } from "preact";
-import Icon from "./Icon.js";
-import { passwordVisible } from "../store/field-visibility.js";
+import Icon from "../Icon.js";
+import { passwordVisible } from "../../store/field-visibility.js";
 import type { FieldProps } from "./field-common.js";
 
 export interface PasswordFieldProps extends FieldProps<string> {

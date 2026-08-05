@@ -1,4 +1,4 @@
-import type { FileEntry } from "../components/file-manager-types.js";
+import type { FileEntry } from "./entry-types.js";
 import { storagePathParent } from "./path.js";
 import type { StorageStatEntry } from "./types.js";
 

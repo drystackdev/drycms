@@ -1,9 +1,9 @@
 import { useId } from "preact/hooks";
-import type { SelectFieldConfig } from "../content-types/field-registry.js";
+import type { SelectFieldConfig } from "../../content-types/field-registry.js";
 import type { FieldProps } from "./field-common.js";
-import type { ListOption } from "./list-nav.js";
-import MultiSelect from "./MultiSelect.js";
-import Select from "./Select.js";
+import type { ListOption } from "../../hooks/list-nav.js";
+import MultiSelect from "../MultiSelect.js";
+import Select from "../Select.js";
 
 export interface SelectFieldProps extends FieldProps<string | string[]> {
   config: SelectFieldConfig;
