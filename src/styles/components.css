@@ -256,6 +256,9 @@
 
     .ai-key-editor-card {
       gap: 1rem;
+      /* Matches `dialog.lg`'s own max-width - the credentials form reads
+       * cramped full-width on a wide screen, same as an unbounded dialog. */
+      max-width: min(56rem, 100%);
     }
 
     .ai-key-editor-card > .under {
@@ -4907,12 +4910,6 @@
           flex: 1;
           justify-content: center;
         }
-      }
-
-      & .file-view-toggle button {
-        width: auto;
-        height: 1.75rem;
-        justify-content: center;
       }
     }
 

@@ -813,89 +813,103 @@ function ContentEntryListCollection({
         </div>
       </div>
 
-      {loadError && <span class="error">{loadError}</span>}
-      {/* See `useClientSearch` above - `serverQuery` below carries its own
-          `loading` readout, which this mode doesn't use. */}
-      {useClientSearch && showListLoading && <span class="hint">Loading…</span>}
+      <section class="card">
+        <header>
+          <h2>Entries</h2>
+          <p>
+            {total} {total === 1 ? "entry" : "entries"}
+          </p>
+        </header>
+        <div class="under stack">
+          {loadError && <span class="error">{loadError}</span>}
+          {/* See `useClientSearch` above - `serverQuery` below carries its own
+              `loading` readout, which this mode doesn't use. */}
+          {useClientSearch && showListLoading && (
+            <span class="hint">Loading…</span>
+          )}
 
-      <DataTable
-        columns={columns}
-        rows={displayRows}
-        rowKey={(row) => row.id}
-        emptyLabel="No entries yet."
-        // Search stays available even when `features.sortable` (see
-        // `dragReorder` below) - `DataTable` itself auto-disables dragging
-        // while the search box has text, since a filtered view has no
-        // single well-defined drag order to save.
-        pageSize={isSortable ? 0 : pageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        onPageSizeChange={setPageSize}
-        onRowClick={(row) => route(`${path}/content/${type.name}/${row.id}`)}
-        columnToggle={{
-          storageKey: `contentList:${type.name}:columns`,
-          defaultVisible,
-          onVisibleChange: (visible) => {
-            setSearchableFields(
-              visible.filter((key) => queryableFieldNames.has(key)),
-            );
-            setVisibleKeys(visible);
-          },
-        }}
-        // See `useClientSearch` above - omitting `serverQuery` drops
-        // `DataTable` into its existing fully-client-side search/sort/
-        // paginate mode.
-        serverQuery={
-          useClientSearch
-            ? undefined
-            : {
-                total,
-                page,
-                onPageChange: setPage,
-                sort,
-                onSortChange: setSort,
-                onSearchChange: setSearch,
-                loading: showListLoading,
-              }
-        }
-        dragReorder={
-          isSortable
-            ? {
-                getId: (row) => row.id,
-                onReorder: setDragOrder,
-                disabled: savingOrder || !canUpdate,
-              }
-            : undefined
-        }
-        leadingColumn={{
-          render: (row) =>
-            hasEntryDraft(type.name, row.id) ? (
-              <span class="nav-draft-dot" aria-label="Unsaved changes" />
-            ) : null,
-        }}
-        actions={
-          <>
-            {isSortable && dragOrder && canUpdate && (
-              <button
-                type="button"
-                class="outline"
-                disabled={savingOrder}
-                aria-busy={savingOrder}
-                onClick={handleSaveOrder}
-              >
-                Save order
-              </button>
-            )}
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => route(`${path}/content/${type.name}/new`)}
-              >
-                <PlusIcon /> Add
-              </button>
-            )}
-          </>
-        }
-      />
+          <DataTable
+            columns={columns}
+            rows={displayRows}
+            rowKey={(row) => row.id}
+            emptyLabel="No entries yet."
+            // Search stays available even when `features.sortable` (see
+            // `dragReorder` below) - `DataTable` itself auto-disables dragging
+            // while the search box has text, since a filtered view has no
+            // single well-defined drag order to save.
+            pageSize={isSortable ? 0 : pageSize}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageSizeChange={setPageSize}
+            onRowClick={(row) =>
+              route(`${path}/content/${type.name}/${row.id}`)
+            }
+            columnToggle={{
+              storageKey: `contentList:${type.name}:columns`,
+              defaultVisible,
+              onVisibleChange: (visible) => {
+                setSearchableFields(
+                  visible.filter((key) => queryableFieldNames.has(key)),
+                );
+                setVisibleKeys(visible);
+              },
+            }}
+            // See `useClientSearch` above - omitting `serverQuery` drops
+            // `DataTable` into its existing fully-client-side search/sort/
+            // paginate mode.
+            serverQuery={
+              useClientSearch
+                ? undefined
+                : {
+                    total,
+                    page,
+                    onPageChange: setPage,
+                    sort,
+                    onSortChange: setSort,
+                    onSearchChange: setSearch,
+                    loading: showListLoading,
+                  }
+            }
+            dragReorder={
+              isSortable
+                ? {
+                    getId: (row) => row.id,
+                    onReorder: setDragOrder,
+                    disabled: savingOrder || !canUpdate,
+                  }
+                : undefined
+            }
+            leadingColumn={{
+              render: (row) =>
+                hasEntryDraft(type.name, row.id) ? (
+                  <span class="nav-draft-dot" aria-label="Unsaved changes" />
+                ) : null,
+            }}
+            actions={
+              <>
+                {isSortable && dragOrder && canUpdate && (
+                  <button
+                    type="button"
+                    class="outline"
+                    disabled={savingOrder}
+                    aria-busy={savingOrder}
+                    onClick={handleSaveOrder}
+                  >
+                    Save order
+                  </button>
+                )}
+                {canCreate && (
+                  <button
+                    type="button"
+                    onClick={() => route(`${path}/content/${type.name}/new`)}
+                  >
+                    <PlusIcon /> Add
+                  </button>
+                )}
+              </>
+            }
+          />
+        </div>
+      </section>
 
       <RichTextPreviewDialog
         preview={richTextPreview}

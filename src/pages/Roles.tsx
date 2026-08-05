@@ -66,21 +66,31 @@ export default function Roles() {
         </div>
       </div>
 
-      {loadError && <span class="error">{loadError}</span>}
-      {loading && <span class="hint">Loading...</span>}
+      <section class="card">
+        <header>
+          <h2>Roles</h2>
+          <p>
+            {rows.length} {rows.length === 1 ? "role" : "roles"}
+          </p>
+        </header>
+        <div class="under stack">
+          {loadError && <span class="error">{loadError}</span>}
+          {loading && <span class="hint">Loading...</span>}
 
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(row) => row.id}
-        emptyLabel="No roles yet."
-        onRowClick={(row) => route(`${path}/roles/${row.id}`)}
-        actions={canCreate ? (
-          <button type="button" onClick={() => route(`${path}/roles/new`)}>
-            <PlusIcon /> Add
-          </button>
-        ) : undefined}
-      />
+          <DataTable
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => row.id}
+            emptyLabel="No roles yet."
+            onRowClick={(row) => route(`${path}/roles/${row.id}`)}
+            actions={canCreate ? (
+              <button type="button" onClick={() => route(`${path}/roles/new`)}>
+                <PlusIcon /> Add
+              </button>
+            ) : undefined}
+          />
+        </div>
+      </section>
     </>
   );
 }
