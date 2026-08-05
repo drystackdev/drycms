@@ -112,6 +112,11 @@ export interface SeoDefaults {
   seo: Seo;
 }
 
+export interface BlogsPage {
+  id: number;
+  header: BlogsHeader;
+}
+
 export interface MenuItem {
   label: string;
   description?: string;
@@ -129,6 +134,7 @@ export interface HeroSection {
   headline: string;
   subtitle: string;
   content?: string;
+  image: string;
 }
 
 export interface ValueProp {
@@ -215,8 +221,14 @@ export interface ContactChannel {
   href: string;
 }
 
+export interface BlogsHeader {
+  eyebrow: string;
+  headline: string;
+  description?: string;
+}
+
 export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category";
-export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults";
+export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage";
 
 export interface DryCollectionMap {
   "user": User;
@@ -233,6 +245,7 @@ export interface DrySingletonMap {
   "contact": Contact;
   "siteSettings": SiteSettings;
   "seoDefaults": SeoDefaults;
+  "blogsPage": BlogsPage;
 }
 
 declare global {

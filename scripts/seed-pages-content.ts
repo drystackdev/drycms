@@ -60,6 +60,7 @@ const heroSection = await upsertContentType({
     field("app-hero-headline", "headline", "Title", "text", {}, { required: true }),
     field("app-hero-subtitle", "subtitle", "Subtitle", "text", {}, { required: true }),
     field("app-hero-content", "content", "Content", "text", { multiline: true }),
+    field("app-hero-image", "image", "Image", "image", {}, { required: true }),
   ]),
 });
 
@@ -186,6 +187,7 @@ await writeSingletonEntry("homepage", {
     subtitle: "Tiếp cận viên cộng đồng, chung tay phòng chống HIV/AIDS",
     content:
       "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+    image: "hero.jpg",
   },
   valueProps: [
     {
@@ -400,6 +402,39 @@ for (const post of posts) {
 }
 console.log(`[seed] inserted ${posts.length} "blog" row(s)`);
 
+// --- The `blogsPage` singleton (src/apps/pages/blogs/page.tsx's header copy) ---
+
+const blogsHeader = await upsertContentType({
+  id: "app-blogs-header",
+  kind: "component",
+  name: "blogsHeader",
+  label: "Blogs Header",
+  fields: withOrder([
+    field("app-blogs-header-eyebrow", "eyebrow", "Eyebrow", "text", {}, { required: true }),
+    field("app-blogs-header-headline", "headline", "Headline", "text", {}, { required: true }),
+    field("app-blogs-header-description", "description", "Description", "text", { multiline: true }),
+  ]),
+});
+
+await upsertContentType({
+  id: "app-blogs-page",
+  kind: "singleton",
+  name: "blogsPage",
+  label: "Blogs Page",
+  description: "Content for /blogs.",
+  fields: withOrder([
+    field("app-blogs-page-header", "header", "Header", "component", { componentId: blogsHeader.id, repeatable: false }),
+  ]),
+});
+
+await writeSingletonEntry("blogsPage", {
+  header: {
+    eyebrow: "Blog",
+    headline: "Kiến thức HIV & ARV",
+    description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+  },
+});
+
 // --- The `about` singleton (src/apps/pages/about/page.tsx) ---
 
 const aboutIntro = await upsertContentType({
@@ -411,7 +446,7 @@ const aboutIntro = await upsertContentType({
     field("app-about-intro-eyebrow", "eyebrow", "Eyebrow", "text", {}, { required: true }),
     field("app-about-intro-headline", "headline", "Headline", "text", {}, { required: true }),
     field("app-about-intro-description", "description", "Description", "text", { multiline: true }, { required: true }),
-    field("app-about-intro-image", "image", "Image path", "text", {}, { required: true }),
+    field("app-about-intro-image", "image", "Image", "image", {}, { required: true }),
   ]),
 });
 
@@ -518,7 +553,7 @@ await writeSingletonEntry("about", {
     headline: "Mai Anh Quyền",
     description:
       "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip.",
-    image: "/dry/api/storage/main.jpg",
+    image: "main.jpg",
   },
   story: {
     heading: "Câu chuyện của tôi",

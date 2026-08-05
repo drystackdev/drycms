@@ -1,3 +1,5 @@
+import { imageSrc } from "./lib/image-url.js";
+
 function formatDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -48,7 +50,7 @@ export default async function HomePage() {
           </div>
           <div class="-mx-4 mt-8 aspect-4/3 sm:mx-0 sm:mt-0 sm:w-1/2">
             <img
-              src="/dry/api/storage/hero.jpg"
+              src={imageSrc(hero.image)}
               alt="Mai Anh Quyền tại lễ trao giải Báo chí toàn quốc về phòng, chống HIV/AIDS"
               class="h-full w-full object-cover"
               style={{

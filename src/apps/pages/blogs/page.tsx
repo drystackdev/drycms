@@ -3,22 +3,25 @@ function formatDate(date: Date): string {
 }
 
 export default async function BlogsPage() {
+  const blogsPage = await dry().singleton("blogsPage").get();
   const { rows: posts } = await dry().collection("blog").list({ sort: { field: "date", dir: "desc" } });
   const { rows: categories } = await dry().collection("category").list();
   const categoryNameById = new Map(categories.map((c) => [c.id, c.title]));
+
+  if (!blogsPage) return null;
+  const { header } = blogsPage;
 
   return (
     <div class="mx-auto max-w-6xl px-4 py-16">
       <div class="max-w-2xl">
         <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">
-          Blog
+          {header.eyebrow}
         </span>
         <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
-          Kiến thức HIV & ARV
+          {header.headline}
         </h1>
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-          eiusmod tempor incididunt ut labore et dolore magna aliqua.
+          {header.description}
         </p>
       </div>
 
