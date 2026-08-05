@@ -50,6 +50,16 @@ export interface DryRequestContext {
    * `dry-seo.ts`) on the final value once rendering finishes to build the
    * page's `<title>`/meta tags. */
   seo?: DrySeoLayers;
+  /** The matched route's dynamic segments (`[slug]` -> `string`,
+   * `[...path]` -> `string[]`) - the exact value `resolve-match.ts` already
+   * passes every page/layout component as its `params` prop, mirrored here
+   * so `params-reader.ts`'s ambient global can read it from a helper
+   * function that isn't the top-level page/layout component itself.
+   * Optional same as `touchedTypes`/`callLog`/`seo` above - a caller that
+   * never sets it (e.g. most of `dry-reader.test.ts`, which has no real
+   * route match at all) just gets `{}` back from `params()`.
+   * `page-handler.ts` seeds this from `match.params` before rendering. */
+  params?: Record<string, string | string[]>;
 }
 
 const storage = new AsyncLocalStorage<DryRequestContext>();

@@ -1,5 +1,6 @@
 import hydrate from "preact-iso/hydrate";
 import { setReplayLog } from "../content-types/dry-reader-client.js";
+import { setCurrentParams } from "../content-types/params-reader-client.js";
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import { matchRoute } from "../server/app-router/match.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
@@ -28,6 +29,11 @@ async function main(): Promise<void> {
 
   const logElement = document.getElementById("dry-replay-data");
   setReplayLog(logElement?.textContent ? decodeCallLog(logElement.textContent) : []);
+  // Same `match.params` the server seeded its own `DryRequestContext` with -
+  // re-derived here from the identical `matchRoute()` call above, so the
+  // ambient `params()` global (`params-reader-client.ts`) returns the same
+  // value during hydration as it did during SSR.
+  setCurrentParams(match.params);
 
   const vnode = await resolveMatchToVNode(match);
   hydrate(vnode as never);

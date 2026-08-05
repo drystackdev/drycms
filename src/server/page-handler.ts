@@ -72,7 +72,7 @@ export async function handlePageRequest(
     const value = row?.value.seo;
     if (value && typeof value === "object") seo.default = value as DrySeoValue;
   }
-  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo };
+  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo, params: match.params };
 
   return renderPage(match, dryContext, {
     onDocumentReady: (fullHtml) => {

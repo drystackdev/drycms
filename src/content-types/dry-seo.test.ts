@@ -78,4 +78,16 @@ describe("mergeSeoLayers", () => {
     });
     expect(merged.metaTitle).toBe("Default title");
   });
+
+  it("lets the 'page' layer (setTitle()) override every other layer, including entry", () => {
+    const merged = mergeSeoLayers({
+      default: { metaTitle: "Default title", description: "Default description" },
+      singleton: { metaTitle: "Singleton title" },
+      entry: { metaTitle: "Entry title" },
+      page: { metaTitle: "setTitle() wins" },
+    });
+    expect(merged.metaTitle).toBe("setTitle() wins");
+    // Only the field the page layer actually set is overridden.
+    expect(merged.description).toBe("Default description");
+  });
 });

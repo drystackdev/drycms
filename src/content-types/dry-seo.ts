@@ -18,6 +18,13 @@ export interface DrySeoLayers {
   default?: DrySeoValue;
   singleton?: DrySeoValue;
   entry?: DrySeoValue;
+  /** Set directly by `dry-title.ts`'s `setTitle()`, never by a `dry()` read -
+   * the highest-priority layer, above even a collection entry's own
+   * `features.seo` field. For a page whose title isn't driven by a content
+   * entry at all (a static page, or one that wants to compose the title
+   * from data already in hand rather than a dedicated `seo` component
+   * field). */
+  page?: DrySeoValue;
 }
 
 /** Which `DrySeoLayers` slot a `get()` result for `type` belongs in, or
@@ -50,9 +57,10 @@ function applyLayer(base: DrySeoValue, layer: DrySeoValue | undefined): DrySeoVa
   return result;
 }
 
-/** Applies the fixed Default < Singleton < Entry priority, once, at read
- * time - each slot in `layers` was filled independently (see
- * `dry-reader.ts`) regardless of call order, so priority only exists here. */
+/** Applies the fixed Default < Singleton < Entry < Page priority, once, at
+ * read time - each slot in `layers` was filled independently (see
+ * `dry-reader.ts`/`dry-title.ts`) regardless of call order, so priority
+ * only exists here. */
 export function mergeSeoLayers(layers: DrySeoLayers | undefined): DrySeoValue {
-  return applyLayer(applyLayer(applyLayer({}, layers?.default), layers?.singleton), layers?.entry);
+  return applyLayer(applyLayer(applyLayer(applyLayer({}, layers?.default), layers?.singleton), layers?.entry), layers?.page);
 }

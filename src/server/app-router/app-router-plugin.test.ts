@@ -50,6 +50,42 @@ describe("appRouterPlugin transform", () => {
     expect(result).not.toBeNull();
     expect(result!.code).toMatch(/^import \{ dry \} from "..\/..\/..\/..\/content-types\/dry-reader-client\.js";\n/);
   });
+
+  it("injects a params-reader import for a page calling params() without importing it", () => {
+    const id = pagePath("blog/[slug]/page.tsx");
+    const code = `export default function Page() { return params().slug; }`;
+    const result = transform(code, id);
+    expect(result!.code).toMatch(/^import \{ params \} from "..\/..\/..\/..\/content-types\/params-reader\.js";\n/);
+
+    const client = transform(code, id, "client");
+    expect(client!.code).toMatch(/^import \{ params \} from "..\/..\/..\/..\/content-types\/params-reader-client\.js";\n/);
+  });
+
+  it("injects a dry-title import for a page calling setTitle() without importing it", () => {
+    const id = pagePath("about/page.tsx");
+    const code = `export default function Page() { setTitle("About us"); return null; }`;
+    const result = transform(code, id);
+    expect(result!.code).toMatch(/^import \{ setTitle \} from "..\/..\/..\/content-types\/dry-title\.js";\n/);
+
+    const client = transform(code, id, "client");
+    expect(client!.code).toMatch(/^import \{ setTitle \} from "..\/..\/..\/content-types\/dry-title-client\.js";\n/);
+  });
+
+  it("injects one import per global actually called, in a file using several", () => {
+    const id = pagePath("blog/[slug]/page.tsx");
+    const code = `export default async function Page() { const p = params(); setTitle(p.slug); return dry(); }`;
+    const result = transform(code, id);
+    expect(result!.code).toContain('import { dry } from "../../../../content-types/dry-reader.js";');
+    expect(result!.code).toContain('import { params } from "../../../../content-types/params-reader.js";');
+    expect(result!.code).toContain('import { setTitle } from "../../../../content-types/dry-title.js";');
+    expect(result!.code).toContain(code);
+  });
+
+  it("leaves a file alone that already imports params/setTitle itself", () => {
+    const id = pagePath("page.tsx");
+    const code = `import { params } from "../../content-types/params-reader.js";\nimport { setTitle } from "../../content-types/dry-title.js";\nexport default function Page() { setTitle("x"); return params(); }`;
+    expect(transform(code, id)).toBeNull();
+  });
 });
 
 describe("appRouterPlugin handleHotUpdate", () => {

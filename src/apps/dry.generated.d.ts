@@ -2,11 +2,14 @@
 // once on dev-server startup) - do not edit by hand. Re-run after changing a
 // content type's schema; see plans/reader.md.
 //
-// Calling the ambient global `dry()` below works for free in any file under
-// `src/apps/pages/**` - `src/server/app-router/app-router-plugin.ts`
-// (registered in `vite.config.ts`) injects the real import automatically.
-// Outside that folder, import it yourself instead:
-// `import { dry } from "../content-types/dry-reader.js"`.
+// Calling the ambient globals `dry()`/`params()`/`setTitle()` below works for
+// free in any file under `src/apps/pages/**` -
+// `src/server/app-router/app-router-plugin.ts` (registered in
+// `vite.config.ts`) injects the real import automatically. Outside that
+// folder, import them yourself instead:
+// `import { dry } from "../content-types/dry-reader.js"`,
+// `import { params } from "../content-types/params-reader.js"`,
+// `import { setTitle } from "../content-types/dry-title.js"`.
 
 import type { DryReader } from "../content-types/dry-reader.js";
 
@@ -303,4 +306,11 @@ export interface DrySingletonRelationsMap {
 
 declare global {
   function dry(): DryReader<DryCollectionMap, DrySingletonMap, DryCollectionRelationsMap, DrySingletonRelationsMap>;
+  /** The matched route's dynamic segments - `[slug]` -> `string`,
+   * `[...path]` -> `string[]`. Same value a page/layout receives as its
+   * `params` prop, readable from any helper function too. */
+  function params(): Record<string, string | string[]>;
+  /** Sets this page's `<title>`/`og:title`, overriding every SEO cascade
+   * layer (see `dry-seo.ts`). Last call wins. */
+  function setTitle(title: string): void;
 }
