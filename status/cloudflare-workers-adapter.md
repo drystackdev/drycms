@@ -7,19 +7,20 @@ backend, and explicitly block the two Node-only features (AI local mode,
 RichText Component Builder's "Build" button) on Workers rather than leaving
 them to fail obscurely.
 
-## Phase 0 — Audit (done)
+## Phase 0 - Audit (done)
 
 Confirmed via `grep`/reads across `src/`:
+
 - `handler.ts`/`page-handler.ts`/`page-guard.ts` are already pure
   `(Request, env) => Promise<Response>` - no Node deps. Per
   `adapters/types.ts`'s own doc comment, these need **no bridging**, unlike
   `adapters/node.ts`.
 - Content engine already has a working D1 path (`content-types/engine/d1.ts`
-  + `entries-d1.ts`), selected via `content.engine: "D1"` +
-  `content.binding`. KV already has `cloudflare-kv.ts` for `kv.kind: "KV"`
-  and a D1 kv kind too. Neither needs new work.
+  - `entries-d1.ts`), selected via `content.engine: "D1"` +
+    `content.binding`. KV already has `cloudflare-kv.ts` for `kv.kind: "KV"`
+    and a D1 kv kind too. Neither needs new work.
 - Blockers found (all `node:*` or `child_process` usage, `src/**`, runtime
-  code only — build-time/dev-only tooling excluded):
+  code only - build-time/dev-only tooling excluded):
   1. **Storage-backed options** (`storage`, `icons`, `components.storage`,
      `pageComponents.storage`, `pagesCache.storage`, `typesCache.storage`)
      only support `kind: "local"` (`src/storage/local.ts`, `node:fs`).
@@ -30,26 +31,26 @@ Confirmed via `grep`/reads across `src/`:
   3. **`app-router/assets.ts`** resolves `GLOBALS_CSS_HREF`/
      `HYDRATE_ENTRY_HREF` via a synchronous `readFileSync` of
      `dist/client/.vite/manifest.json` **at module load**. Workers has no
-     sync fs at all — this must become a build-time-generated module
+     sync fs at all - this must become a build-time-generated module
      (bake the resolved hrefs into a generated `.ts` file during
      `vite build --ssr`) instead of a runtime file read. This fixes both
      runtimes at once, not just Workers.
   4. **`ai.ts`** local mode (`ai.mode: "local"`) spawns a CLI via
-     `node:child_process`. No Workers equivalent — must hard-error.
+     `node:child_process`. No Workers equivalent - must hard-error.
   5. **RichText Component Builder's "Build"** (`routes/richtext-components.ts`
-     + `RichTextField/build-component-bundle.ts`) runs a nested Vite build
-     via dynamic `import()`/`pathToFileURL` — Node-only, no Workers
-     equivalent. Must hard-error on Workers.
-  6. **`app-router/build-id.ts`** uses `node:crypto`'s `randomUUID` — trivial
+     - `RichTextField/build-component-bundle.ts`) runs a nested Vite build
+       via dynamic `import()`/`pathToFileURL` - Node-only, no Workers
+       equivalent. Must hard-error on Workers.
+  6. **`app-router/build-id.ts`** uses `node:crypto`'s `randomUUID` - trivial
      swap to the global `crypto.randomUUID()` (Web Crypto, portable to both
      runtimes), removing the dependency rather than relying on
      `nodejs_compat`.
   7. `content-types/types-cache.ts` writes `dry.generated.d.ts`'s copy via
-     `node:fs/promises` — confirmed dev-only (mirrors `pagesCache`'s
+     `node:fs/promises` - confirmed dev-only (mirrors `pagesCache`'s
      `import.meta.env.DEV` gate), not reachable at Workers runtime. No
      change needed, just confirm the gate still holds.
 
-## Phase 1 — R2 storage backend
+## Phase 1 - R2 storage backend
 
 - Extend `DryStorageOption`/`DryIconsOption`/etc. in `options.ts`:
   `kind: "local" | "r2"`, `r2` variant takes a `binding` (name in
@@ -70,27 +71,27 @@ Confirmed via `grep`/reads across `src/`:
   `icons/`, etc.) rather than one bucket per option, to keep
   `wrangler.jsonc` simple.
 
-## Phase 2 — Static asset + shell serving on Workers
+## Phase 2 - Static asset + shell serving on Workers
 
 - Use Workers Static Assets (`wrangler.jsonc`'s `assets` config, `env.ASSETS`
   binding) instead of `node:fs`.
 - New `src/server/entry-worker.ts`: `export default { fetch(request, env,
-  ctx) }`. Order: `handleApiRequest` for `${path}/api/*` → `guardPageRequest`
+ctx) }`. Order: `handleApiRequest` for `${path}/api/*` → `guardPageRequest`
   → `handlePageRequest` for non-admin paths → else serve the admin shell
   (`env.ASSETS.fetch()` for `index.html`, with `injectClientConfig` applied
-  to the text — same transform `entry-node.ts` does, just sourced from the
+  to the text - same transform `entry-node.ts` does, just sourced from the
   Assets binding instead of `readFileSync`).
 - No `adapters/worker.ts` bridging file is needed per `adapters/types.ts`'s
-  own reasoning — `entry-worker.ts` is the "thin entry file" it describes,
+  own reasoning - `entry-worker.ts` is the "thin entry file" it describes,
   calling `handleApiRequest`/`handlePageRequest` directly.
 
-## Phase 3 — Block Node-only features cleanly on Workers
+## Phase 3 - Block Node-only features cleanly on Workers
 
 - `ai.ts`: if `ai.mode === "local"` and the runtime is Workers, return a
   clear error instead of attempting `node:child_process` import.
 - `routes/richtext-components.ts`'s Build handler: same treatment.
 
-## Phase 4 — wrangler.jsonc + docs
+## Phase 4 - wrangler.jsonc + docs
 
 - Add `wrangler.jsonc` at repo root: `d1_databases`, `r2_buckets`,
   `kv_namespaces` (if `kv.kind: "KV"`), `assets` config pointing at
@@ -109,7 +110,7 @@ Confirmed via `grep`/reads across `src/`:
   `StorageAdapter` over a hand-rolled `R2BucketLike` (no
   `@cloudflare/workers-types` dependency, matches `kv/cloudflare-kv.ts`'s
   existing approach) - folder emulation via a `.dir` marker + `delimiter:
-  "/"` listing, same convention `storage/local.ts` uses. `listAll()` is
+"/"` listing, same convention `storage/local.ts` uses. `listAll()` is
   deliberately NOT implemented for R2 (matches `StorageAdapter.listAll`'s
   own doc comment on object-storage kinds). New
   `src/server/storage-adapters.ts`'s `getStorageAdapter()` resolves
@@ -166,11 +167,12 @@ unrelated: a missing `src/dry-components/` fixture directory, confirmed via
 `git log` to predate this work).
 
 **Still open / explicitly out of scope for this pass:**
+
 - `wrangler.jsonc`'s D1/R2/KV IDs are placeholders - real deployment needs
   the user to provision those Cloudflare resources themselves
   (`wrangler d1 create` / `r2 bucket create` / `kv namespace create`) and
   set `dry.config.ts`'s `content.engine: "D1"` / `storage.kind: "r2"` (etc.)
-  + matching bindings.
+  - matching bindings.
 - `docs/ARCHITECTURE.md`'s adapter section updated to describe both
   entries; the rest of that doc (content-engine table, storage kinds
   elsewhere) not swept for every stale "local only" mention.

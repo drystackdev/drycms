@@ -1,18 +1,19 @@
 # Kế hoạch xây dựng Cache & Background Sync cho Preact CMS
 
 > **Tiến độ**: Phase 2-9 đã triển khai 2026-07-30.
-> - Phase 2 (Version Backend): `ContentEntryEngineAdapter.getResourceVersion()` + bump trên create/update/delete/saveSingleton cho cả 3 engine (`file` qua `.index/<type>._version.json`, `sqlite` qua bảng `_versions` trong transaction thật, `D1` qua bảng `_versions` bump tuần tự sau khi data ghi thành công — xem mục 6/7 về caveat D1). Test cho sqlite/file.
+>
+> - Phase 2 (Version Backend): `ContentEntryEngineAdapter.getResourceVersion()` + bump trên create/update/delete/saveSingleton cho cả 3 engine (`file` qua `.index/<type>._version.json`, `sqlite` qua bảng `_versions` trong transaction thật, `D1` qua bảng `_versions` bump tuần tự sau khi data ghi thành công - xem mục 6/7 về caveat D1). Test cho sqlite/file.
 > - Phase 3 (API Version Protocol): `GET` ở `routes/content-entries.ts` đọc header `X-Data-Version`, trả `{changed, version, data?}`; nếu version khớp thì bỏ qua cả query, không chỉ response. Client (`entries-http-api.ts`) có thêm `listVersioned`/`getVersioned`/`getSingletonVersioned`. Test ở `routes/content-entries.test.ts`.
-> - Phase 4 (IndexedDB Cache Layer): `lib/idb-cache.ts` — `getCacheEntry`/`setCacheEntry`/`deleteCacheEntry`/`clearCache`, hand-rolled, không dùng thư viện, tự degrade về no-op nếu IndexedDB không khả dụng.
-> - Phase 5+6 (`useFetch()` + debounce/abort): `hooks/useFetch.ts` — `useFetch(key, fetcher, options)` kiểu SWR-lite, cache-first render, debounce 150ms mặc định, `AbortController` + request-id chống response cũ ghi đè response mới.
+> - Phase 4 (IndexedDB Cache Layer): `lib/idb-cache.ts` - `getCacheEntry`/`setCacheEntry`/`deleteCacheEntry`/`clearCache`, hand-rolled, không dùng thư viện, tự degrade về no-op nếu IndexedDB không khả dụng.
+> - Phase 5+6 (`useFetch()` + debounce/abort): `hooks/useFetch.ts` - `useFetch(key, fetcher, options)` kiểu SWR-lite, cache-first render, debounce 150ms mặc định, `AbortController` + request-id chống response cũ ghi đè response mới.
 > - Phase 7 (Signals): `store/sync.ts` (`refreshingCount`/`globalRefreshing`), hiển thị qua `components/SyncIndicator.tsx` gắn trong `DryLayout.tsx`'s topbar.
-> - Phase 8 (thông báo đồng bộ thành công): **đã đổi từ toast sang inline trong header** (2026-07-30, theo yêu cầu) — `store/sync.ts` thêm signal `syncSuccess` + `flashSyncSuccess()` (tự ẩn sau 3s, gọi lại thì gia hạn thay vì chồng). `SyncIndicator.tsx` (cạnh nút đổi theme) hiện icon check + "Đã cập nhật" thay vì spinner khi vừa đồng bộ xong; không còn toast nào cho trường hợp này. Vẫn chỉ kích hoạt khi có cache cũ VÀ version đổi (không phải lần load đầu). Test: `entries-cache.spec.ts` thêm case xác nhận hiện rồi tự ẩn, không có `.toast` nào xuất hiện.
-> - Phase 9 (Migration màn hình): `pages/ContentEntryList.tsx` (List cho mọi content type, vd Roles) và `pages/ContentTypes.tsx` (List content-types) đã chuyển sang `useFetch()`. Đã đánh giá 2 ứng viên khác (`ContentEntryEditor.tsx`, `RelationField.tsx`) và **quyết định không migrate** — form đang edit dở dễ bị background-sync ghi đè, và `RelationField` cố tình backend-agnostic (dùng cả cho nguồn in-memory ở Showcase). Các màn hình khác chưa động tới.
-> - **Mở rộng phạm vi**: `ContentTypes.tsx` cũng cần cơ chế version riêng (đúng như build-cache.md nói, đây là bảng/danh sách như bất kỳ resource nào khác) — đã thêm `ContentEngineAdapter.getResourceVersion()` (tách biệt với schema `version` của từng definition), bump trong `applySave`/`deleteContentType`/boot-seed, cho cả 3 engine (`sqlite`/`D1`/`file`, khoá `"__content-types__"`). Route `content-types.ts` áp cùng protocol `X-Data-Version`. Client thêm `listVersioned`.
+> - Phase 8 (thông báo đồng bộ thành công): **đã đổi từ toast sang inline trong header** (2026-07-30, theo yêu cầu) - `store/sync.ts` thêm signal `syncSuccess` + `flashSyncSuccess()` (tự ẩn sau 3s, gọi lại thì gia hạn thay vì chồng). `SyncIndicator.tsx` (cạnh nút đổi theme) hiện icon check + "Đã cập nhật" thay vì spinner khi vừa đồng bộ xong; không còn toast nào cho trường hợp này. Vẫn chỉ kích hoạt khi có cache cũ VÀ version đổi (không phải lần load đầu). Test: `entries-cache.spec.ts` thêm case xác nhận hiện rồi tự ẩn, không có `.toast` nào xuất hiện.
+> - Phase 9 (Migration màn hình): `pages/ContentEntryList.tsx` (List cho mọi content type, vd Roles) và `pages/ContentTypes.tsx` (List content-types) đã chuyển sang `useFetch()`. Đã đánh giá 2 ứng viên khác (`ContentEntryEditor.tsx`, `RelationField.tsx`) và **quyết định không migrate** - form đang edit dở dễ bị background-sync ghi đè, và `RelationField` cố tình backend-agnostic (dùng cả cho nguồn in-memory ở Showcase). Các màn hình khác chưa động tới.
+> - **Mở rộng phạm vi**: `ContentTypes.tsx` cũng cần cơ chế version riêng (đúng như build-cache.md nói, đây là bảng/danh sách như bất kỳ resource nào khác) - đã thêm `ContentEngineAdapter.getResourceVersion()` (tách biệt với schema `version` của từng definition), bump trong `applySave`/`deleteContentType`/boot-seed, cho cả 3 engine (`sqlite`/`D1`/`file`, khoá `"__content-types__"`). Route `content-types.ts` áp cùng protocol `X-Data-Version`. Client thêm `listVersioned`.
 > - Verify: unit test (route + cả 2 loại engine: entries VÀ content-types) + 3 test Playwright mới (`e2e/entries-cache.spec.ts`, `e2e/content-types-cache.spec.ts`).
 > - Gap đã biết: boot-time seed role/permission vẫn bypass version (mục Phase 2); D1 chưa có test harness nào trong repo.
-> - **Phát hiện quan trọng khi verify**: `astro.config.mjs` đã bị đổi (bởi phiên/tiến trình khác, đã commit sẵn, không phải tôi) từ `content.engine: "sqlite"` sang `{engine:"file", kind:"github"}` (repo `khancoder282/test-filestorage`) giữa chừng phiên làm việc — khiến các lần tôi restart dev server để build lại lib vô tình nạp cấu hình GitHub thật (POST mất ~8s, GET ~3-4s), làm loạt test Playwright timeout dù code không sai. Đã xác minh lại bằng cách tạm trả về sqlite, chạy pass sạch, rồi phục hồi đúng nguyên trạng github qua `git checkout`. Sau đó bạn tự đổi config sang `{engine:"file"}` (local) — build-cache đã verify lại pass sạch trên cả 3 config (sqlite/github/local-file).
-> - **Đã sửa luôn 10/11 test Playwright lỗi có sẵn** (không liên quan build-cache, phát hiện trong lúc verify): stale selector do UI đổi (label "Title"→"Table Name", nút icon không có "+"/aria-label, IconGlyph thay `<img>` bằng `<span>` mask-image, field name giờ camelCase, URL có thêm query string, form Save bị disabled tới khi dirty) — sửa hết trong `e2e/*.spec.ts`. Riêng 1 lỗi thật trong app: nút Remove ở field-list thiếu `aria-label` (đã thêm, khớp convention `aria-label="Reorder"` có sẵn). Còn lại 2 test cần quyết định người: overflow-viewport test (nội dung dialog giờ ngắn hơn, không overflow ở viewport cũ) và test "ID row" (UI không còn hiển thị field "ID" riêng nữa) — xem chi tiết trong memory.
+> - **Phát hiện quan trọng khi verify**: `astro.config.mjs` đã bị đổi (bởi phiên/tiến trình khác, đã commit sẵn, không phải tôi) từ `content.engine: "sqlite"` sang `{engine:"file", kind:"github"}` (repo `khancoder282/test-filestorage`) giữa chừng phiên làm việc - khiến các lần tôi restart dev server để build lại lib vô tình nạp cấu hình GitHub thật (POST mất ~8s, GET ~3-4s), làm loạt test Playwright timeout dù code không sai. Đã xác minh lại bằng cách tạm trả về sqlite, chạy pass sạch, rồi phục hồi đúng nguyên trạng github qua `git checkout`. Sau đó bạn tự đổi config sang `{engine:"file"}` (local) - build-cache đã verify lại pass sạch trên cả 3 config (sqlite/github/local-file).
+> - **Đã sửa luôn 10/11 test Playwright lỗi có sẵn** (không liên quan build-cache, phát hiện trong lúc verify): stale selector do UI đổi (label "Title"→"Table Name", nút icon không có "+"/aria-label, IconGlyph thay `<img>` bằng `<span>` mask-image, field name giờ camelCase, URL có thêm query string, form Save bị disabled tới khi dirty) - sửa hết trong `e2e/*.spec.ts`. Riêng 1 lỗi thật trong app: nút Remove ở field-list thiếu `aria-label` (đã thêm, khớp convention `aria-label="Reorder"` có sẵn). Còn lại 2 test cần quyết định người: overflow-viewport test (nội dung dialog giờ ngắn hơn, không overflow ở viewport cũ) và test "ID row" (UI không còn hiển thị field "ID" riêng nữa) - xem chi tiết trong memory.
 
 ## 1. Mục tiêu
 
@@ -20,9 +21,9 @@ CMS sử dụng **Preact + Preact Signals**, không có HTTP/fetch wrapper trung
 
 Dữ liệu backend đến từ `content.engine`, có 3 giá trị thực tế trong drycms:
 
-* **`file` engine** — dữ liệu lưu dưới dạng file JSON (`data/<type>/<id>.json` + `.index/<type>._seq.json`), qua storage adapter `local` / `github` / `gitlab`. "GitHub" **không phải** một engine riêng — nó là một storage kind bên trong engine `file`, dùng chung code path `index-store.ts` với `local` và `gitlab`.
-* **`sqlite` engine** — SQLite cục bộ.
-* **`D1` engine** — Cloudflare D1, cùng SQL dialect với SQLite nhưng chạy qua HTTP binding, **không có transaction đa-statement thật** (`db.batch()` chỉ atomic trong một lần gọi, xem `content-types/engine/d1.ts:124-132`).
+- **`file` engine** - dữ liệu lưu dưới dạng file JSON (`data/<type>/<id>.json` + `.index/<type>._seq.json`), qua storage adapter `local` / `github` / `gitlab`. "GitHub" **không phải** một engine riêng - nó là một storage kind bên trong engine `file`, dùng chung code path `index-store.ts` với `local` và `gitlab`.
+- **`sqlite` engine** - SQLite cục bộ.
+- **`D1` engine** - Cloudflare D1, cùng SQL dialect với SQLite nhưng chạy qua HTTP binding, **không có transaction đa-statement thật** (`db.batch()` chỉ atomic trong một lần gọi, xem `content-types/engine/d1.ts:124-132`).
 
 Storage adapter `github`/`gitlab` có độ trễ tương đối cao (gọi Git API), vì vậy không nên để UI phụ thuộc trực tiếp vào thời gian phản hồi. Để giữ kiến trúc đơn giản, áp dụng **cùng một cơ chế version** cho cả 3 storage kind của `file` engine lẫn cho `sqlite`/`D1`, dù `local`/`sqlite`/`D1` vốn đã nhanh.
 
@@ -84,22 +85,16 @@ Hệ thống hiện tại **không có fetch wrapper trung tâm**.
 
 Không nên ép toàn bộ hệ thống phải chuyển sang một wrapper fetch mới chỉ để phục vụ cache.
 
-Thay vào đó xây dựng một abstraction độc lập, dạng SWR-lite: nhận **cache key** + **fetcher function**, không phải raw URL — vì hệ thống hiện tại gọi API qua các wrapper theo resource (`entries-http-api.ts`: `list/get/getSingleton/...`, `http-api.ts`), không phải URL string thuần. `useFetch(url)` sẽ buộc phải viết thêm lớp chuyển đổi URL ↔ tham số không cần thiết.
+Thay vào đó xây dựng một abstraction độc lập, dạng SWR-lite: nhận **cache key** + **fetcher function**, không phải raw URL - vì hệ thống hiện tại gọi API qua các wrapper theo resource (`entries-http-api.ts`: `list/get/getSingleton/...`, `http-api.ts`), không phải URL string thuần. `useFetch(url)` sẽ buộc phải viết thêm lớp chuyển đổi URL ↔ tham số không cần thiết.
 
 ```ts
-const {
-  data,
-  loading,
-  refreshing,
-  reload,
-} = useFetch("posts:list", () => entriesApi.list("posts"));
+const { data, loading, refreshing, reload } = useFetch("posts:list", () =>
+  entriesApi.list("posts"),
+);
 
-const {
-  data,
-  loading,
-  refreshing,
-  reload,
-} = useFetch(`role:${id}`, () => entriesApi.get("role", id));
+const { data, loading, refreshing, reload } = useFetch(`role:${id}`, () =>
+  entriesApi.get("role", id),
+);
 ```
 
 `useFetch()` là điểm tích hợp của cơ chế cache đối với Preact. Fetcher function chịu trách nhiệm gọi đúng wrapper hiện có (`entries-http-api.ts`, `http-api.ts`, ...) và trả về `{ data, version }` hoặc `{ changed, version, data? }` (xem mục 8); `useFetch()` không tự biết resource đến từ engine nào.
@@ -202,7 +197,7 @@ Client biết:
 
 # 5. Version cho `file` engine (local / github / gitlab)
 
-Áp dụng đồng nhất cho cả 3 storage kind của engine `file` — `local`, `github`, `gitlab` — vì cả ba dùng chung code path trong `index-store.ts`. Không tách riêng "local" ra khỏi cơ chế version để tránh một nhánh đặc biệt chỉ vì local vốn nhanh.
+Áp dụng đồng nhất cho cả 3 storage kind của engine `file` - `local`, `github`, `gitlab` - vì cả ba dùng chung code path trong `index-store.ts`. Không tách riêng "local" ra khỏi cơ chế version để tránh một nhánh đặc biệt chỉ vì local vốn nhanh.
 
 Dữ liệu `file` engine giữ nguyên cấu trúc hiện tại.
 
@@ -274,9 +269,9 @@ role version
 
 # 6. Version cho `sqlite` / `D1` engine
 
-Cả `sqlite` và `D1` sử dụng cùng một bảng riêng để quản lý data version — D1 cùng SQL dialect nên schema và statement giống hệt SQLite.
+Cả `sqlite` và `D1` sử dụng cùng một bảng riêng để quản lý data version - D1 cùng SQL dialect nên schema và statement giống hệt SQLite.
 
-Lưu ý: `metadata.version` đã tồn tại sẵn ở cả hai engine (`content-types/engine/sqlite.ts`, `content-types/engine/d1.ts`), nhưng đó là **schema version** dùng cho optimistic-concurrency của content-type definition — khác hoàn toàn với **data version** ở đây. Bảng mới `_versions` không thay thế hay tái dùng `metadata.version`.
+Lưu ý: `metadata.version` đã tồn tại sẵn ở cả hai engine (`content-types/engine/sqlite.ts`, `content-types/engine/d1.ts`), nhưng đó là **schema version** dùng cho optimistic-concurrency của content-type definition - khác hoàn toàn với **data version** ở đây. Bảng mới `_versions` không thay thế hay tái dùng `metadata.version`.
 
 Không thêm `version` vào từng bảng dữ liệu.
 
@@ -290,7 +285,7 @@ CREATE TABLE _versions (
 );
 ```
 
-**Caveat riêng cho D1**: D1 không có transaction đa-statement thật (`db.batch()` chỉ atomic trong một lần gọi — xem `d1.ts:124-132`, nơi engine hiện tại đã phải xử lý vấn đề này bằng cách batch theo từng bảng rồi mới bump `metadata` version sau cùng). Việc bump `_versions` cho D1 phải nằm **trong cùng một `db.batch()`** với các statement ghi dữ liệu của resource đó — không phải một `UPDATE _versions` riêng chạy sau. Nếu một resource ghi vào nhiều bảng (component cascade, child table), atomicity chỉ đảm bảo per-table như cách `applySave` hiện tại đang làm, không phải toàn bộ plan.
+**Caveat riêng cho D1**: D1 không có transaction đa-statement thật (`db.batch()` chỉ atomic trong một lần gọi - xem `d1.ts:124-132`, nơi engine hiện tại đã phải xử lý vấn đề này bằng cách batch theo từng bảng rồi mới bump `metadata` version sau cùng). Việc bump `_versions` cho D1 phải nằm **trong cùng một `db.batch()`** với các statement ghi dữ liệu của resource đó - không phải một `UPDATE _versions` riêng chạy sau. Nếu một resource ghi vào nhiều bảng (component cascade, child table), atomicity chỉ đảm bảo per-table như cách `applySave` hiện tại đang làm, không phải toàn bộ plan.
 
 Ví dụ:
 
@@ -316,7 +311,7 @@ Nếu `roles` thay đổi:
 
 Đối với SQLite, thay đổi dữ liệu và tăng version phải nằm trong cùng transaction thật (`BEGIN`/`COMMIT`).
 
-Đối với D1, không có `BEGIN`/`COMMIT` đa-statement — thay vào đó bump version phải nằm trong cùng lệnh `db.batch()` với các statement ghi dữ liệu (xem caveat ở mục 6).
+Đối với D1, không có `BEGIN`/`COMMIT` đa-statement - thay vào đó bump version phải nằm trong cùng lệnh `db.batch()` với các statement ghi dữ liệu (xem caveat ở mục 6).
 
 Ví dụ (SQLite):
 
@@ -354,7 +349,7 @@ hoặc ngược lại.
 
 # 8. API Layer thống nhất `file` / `sqlite` / `D1`
 
-Dù nguồn dữ liệu đến từ engine nào (`file` với storage kind local/github/gitlab, `sqlite`, hay `D1`), API phía client nên nhận một format thống nhất. Trong drycms, các route (`routes/content-entries.ts`, ...) đã funnel qua `createContentEntryEngineAdapter` chung — đây là điểm hợp lý để chuẩn hóa response, thay vì sửa từng route riêng lẻ.
+Dù nguồn dữ liệu đến từ engine nào (`file` với storage kind local/github/gitlab, `sqlite`, hay `D1`), API phía client nên nhận một format thống nhất. Trong drycms, các route (`routes/content-entries.ts`, ...) đã funnel qua `createContentEntryEngineAdapter` chung - đây là điểm hợp lý để chuẩn hóa response, thay vì sửa từng route riêng lẻ.
 
 Ví dụ:
 
@@ -498,8 +493,8 @@ Có cache
 State:
 
 ```ts
-loading = false
-refreshing = true
+loading = false;
+refreshing = true;
 ```
 
 UI không cần chờ GitHub API.
@@ -529,8 +524,8 @@ IndexedDB
 State:
 
 ```ts
-loading = true
-refreshing = false
+loading = true;
+refreshing = false;
 ```
 
 ---
@@ -658,7 +653,7 @@ Vì CMS sử dụng **Preact**, dùng **Preact Signals** cho trạng thái backg
 Không dùng boolean global đơn giản:
 
 ```ts
-refreshing = true
+refreshing = true;
 ```
 
 vì nhiều request có thể chạy đồng thời.
@@ -684,9 +679,7 @@ refreshingCount--
 Global state:
 
 ```ts
-refreshing = computed(
-  () => refreshingCount.value > 0
-);
+refreshing = computed(() => refreshingCount.value > 0);
 ```
 
 ---
@@ -726,12 +719,7 @@ Nó chỉ cho biết:
 `useFetch()` vẫn có state riêng:
 
 ```ts
-const {
-  data,
-  loading,
-  refreshing,
-  reload,
-} = useFetch(url);
+const { data, loading, refreshing, reload } = useFetch(url);
 ```
 
 Hai trạng thái khác nhau:
@@ -934,7 +922,7 @@ Query parameter cần được normalize để tránh cùng một request tạo 
 Không thực hiện:
 
 ```ts
-JSON.stringify(oldData) === JSON.stringify(newData)
+JSON.stringify(oldData) === JSON.stringify(newData);
 ```
 
 Client không chịu trách nhiệm xác định data có thay đổi hay không.
@@ -1136,13 +1124,13 @@ Request ID
 
 Chịu trách nhiệm:
 
-* Open database.
-* Tạo cache store.
-* `get(key)`.
-* `set(key, data, version)`.
-* `delete(key)` nếu cần cho maintenance.
-* `clear()` chỉ dành cho reset/debug/migration.
-* Normalize cache key.
+- Open database.
+- Tạo cache store.
+- `get(key)`.
+- `set(key, data, version)`.
+- `delete(key)` nếu cần cho maintenance.
+- `clear()` chỉ dành cho reset/debug/migration.
+- Normalize cache key.
 
 ---
 
@@ -1150,10 +1138,10 @@ Chịu trách nhiệm:
 
 Chịu trách nhiệm:
 
-* Tạo/quản lý `.index/<resource>._version.json` — dùng chung code path `index-store.ts` cho cả 3 storage kind.
-* Tăng version khi resource thay đổi.
-* Đọc version khi API request.
-* Trả version cho API layer.
+- Tạo/quản lý `.index/<resource>._version.json` - dùng chung code path `index-store.ts` cho cả 3 storage kind.
+- Tăng version khi resource thay đổi.
+- Đọc version khi API request.
+- Trả version cho API layer.
 
 ---
 
@@ -1161,11 +1149,11 @@ Chịu trách nhiệm:
 
 Chịu trách nhiệm:
 
-* Tạo `_versions` (schema giống nhau cho cả hai engine).
-* Lấy version theo resource.
-* Tăng version khi resource thay đổi.
-* SQLite: đảm bảo data update và version update nằm cùng transaction (`BEGIN`/`COMMIT`).
-* D1: đảm bảo data update và version update nằm cùng `db.batch()` (không có transaction đa-statement thật — xem mục 6/7).
+- Tạo `_versions` (schema giống nhau cho cả hai engine).
+- Lấy version theo resource.
+- Tăng version khi resource thay đổi.
+- SQLite: đảm bảo data update và version update nằm cùng transaction (`BEGIN`/`COMMIT`).
+- D1: đảm bảo data update và version update nằm cùng `db.batch()` (không có transaction đa-statement thật - xem mục 6/7).
 
 ---
 
@@ -1189,18 +1177,18 @@ Có thể thay đổi implementation sang HTTP `304/ETag` sau này nếu phù h�
 
 Chịu trách nhiệm:
 
-* Read cache.
-* Set initial data.
-* Background sync.
-* Debounce.
-* Abort request.
-* Request identity.
-* Version check.
-* Update IndexedDB.
-* Update Preact state.
-* `loading`.
-* `refreshing`.
-* `reload()`.
+- Read cache.
+- Set initial data.
+- Background sync.
+- Debounce.
+- Abort request.
+- Request identity.
+- Version check.
+- Update IndexedDB.
+- Update Preact state.
+- `loading`.
+- `refreshing`.
+- `reload()`.
 
 ---
 
@@ -1208,9 +1196,9 @@ Chịu trách nhiệm:
 
 Chịu trách nhiệm:
 
-* Theo dõi số lượng background sync đang chạy.
-* Cung cấp trạng thái cho Layout.
-* Không phụ thuộc vào component cụ thể.
+- Theo dõi số lượng background sync đang chạy.
+- Cung cấp trạng thái cho Layout.
+- Không phụ thuộc vào component cụ thể.
 
 ---
 
@@ -1218,26 +1206,26 @@ Chịu trách nhiệm:
 
 Chịu trách nhiệm:
 
-* Thông báo khi nhận data mới.
-* Không thông báo khi version không thay đổi.
+- Thông báo khi nhận data mới.
+- Không thông báo khi version không thay đổi.
 
 ---
 
 # 32. Thứ tự triển khai
 
-## Phase 1 — Kiểm tra kiến trúc
+## Phase 1 - Kiểm tra kiến trúc
 
-* Kiểm tra cách CMS hiện tại gọi GitHub API.
-* Kiểm tra SQLite API.
-* Xác định resource cần cache.
-* Xác định format API hiện tại.
-* Xác định nơi có thể quản lý version.
+- Kiểm tra cách CMS hiện tại gọi GitHub API.
+- Kiểm tra SQLite API.
+- Xác định resource cần cache.
+- Xác định format API hiện tại.
+- Xác định nơi có thể quản lý version.
 
 **Không vội thay đổi fetch architecture.**
 
 ---
 
-## Phase 2 — Version Backend
+## Phase 2 - Version Backend
 
 ### `file` engine (local / github / gitlab)
 
@@ -1255,11 +1243,11 @@ Tạo:
 _versions
 ```
 
-Đảm bảo mutation làm thay đổi data đồng thời tăng version — cùng transaction cho SQLite, cùng `db.batch()` cho D1 (mục 6/7).
+Đảm bảo mutation làm thay đổi data đồng thời tăng version - cùng transaction cho SQLite, cùng `db.batch()` cho D1 (mục 6/7).
 
 ---
 
-## Phase 3 — API Version Protocol
+## Phase 3 - API Version Protocol
 
 Thống nhất:
 
@@ -1275,7 +1263,7 @@ hoặc lựa chọn HTTP `ETag/304` nếu phù hợp.
 
 ---
 
-## Phase 4 — IndexedDB Cache Layer
+## Phase 4 - IndexedDB Cache Layer
 
 Xây dựng:
 
@@ -1290,7 +1278,7 @@ Test độc lập với Preact.
 
 ---
 
-## Phase 5 — `useFetch()`
+## Phase 5 - `useFetch()`
 
 Implement:
 
@@ -1312,7 +1300,7 @@ reload
 
 ---
 
-## Phase 6 — Debounce + Request Cancellation
+## Phase 6 - Debounce + Request Cancellation
 
 Thêm:
 
@@ -1334,7 +1322,7 @@ và response trả về không đúng thứ tự.
 
 ---
 
-## Phase 7 — Preact Signals
+## Phase 7 - Preact Signals
 
 Tạo global:
 
@@ -1347,7 +1335,7 @@ Tích hợp vào Layout.
 
 ---
 
-## Phase 8 — Toast
+## Phase 8 - Toast
 
 Khi:
 
@@ -1367,7 +1355,7 @@ Toast
 
 ---
 
-## Phase 9 — Migration dần các màn hình
+## Phase 9 - Migration dần các màn hình
 
 Không cần sửa toàn CMS một lần.
 
@@ -1399,20 +1387,20 @@ và kiểm tra behavior.
 
 Phiên bản đầu không có:
 
-* SWR.
-* TanStack Query.
-* Fetch wrapper toàn hệ thống.
-* Cache invalidation.
-* Auto clear cache khi POST.
-* Auto clear cache khi PUT.
-* Auto clear cache khi DELETE.
-* Deep comparison JSON.
-* Optimistic update.
-* WebSocket.
-* Realtime synchronization.
-* Version trên từng record.
-* Dependency graph giữa các cache.
-* Polling liên tục.
+- SWR.
+- TanStack Query.
+- Fetch wrapper toàn hệ thống.
+- Cache invalidation.
+- Auto clear cache khi POST.
+- Auto clear cache khi PUT.
+- Auto clear cache khi DELETE.
+- Deep comparison JSON.
+- Optimistic update.
+- WebSocket.
+- Realtime synchronization.
+- Version trên từng record.
+- Dependency graph giữa các cache.
+- Polling liên tục.
 
 Những thứ này chỉ được bổ sung nếu hệ thống thực tế phát sinh nhu cầu.
 
@@ -1460,4 +1448,4 @@ Cuối cùng hệ thống sẽ có 4 tầng version/cache rõ ràng:
 
 > **Preact CMS ưu tiên tốc độ hiển thị hơn việc chờ API. IndexedDB cung cấp snapshot gần nhất ngay lập tức, trong khi dữ liệu từ engine `file` (local/github/gitlab) hoặc `sqlite`/`D1` được kiểm tra và đồng bộ dần ở background. Data version được quản lý ở backend theo từng resource; `file` engine lưu version trong `.index/*._version.json`, `sqlite`/`D1` lưu version trong bảng `_versions` (tách biệt với `metadata.version` vốn là schema version, không phải data version). Client chỉ lưu version đó cùng cache trong IndexedDB. Preact Signals (đã có sẵn trong drycms) quản lý trạng thái đồng bộ toàn hệ thống để Layout có thể hiển thị indicator nhỏ. Khi server phát hiện version mới, client cập nhật cache, cập nhật UI và hiển thị Toast. Không cần clear/invalidate cache sau POST, PUT hoặc DELETE.**
 
-Đây là kiến trúc **đơn giản, ít coupling và phù hợp với đặc thù CMS có storage adapter (github/gitlab) độ trễ cao**, đồng thời vẫn mở đường để nâng cấp lên ETag/304, realtime sync hoặc các cơ chế cache nâng cao nếu sau này thực sự cần. Kiến trúc này khớp tốt với mô hình SPA `client:only` hiện tại của drycms (preact-iso, không có SSR data-fetching cần đối chiếu) — không có xung đột server/client boundary khi thêm IndexedDB.
+Đây là kiến trúc **đơn giản, ít coupling và phù hợp với đặc thù CMS có storage adapter (github/gitlab) độ trễ cao**, đồng thời vẫn mở đường để nâng cấp lên ETag/304, realtime sync hoặc các cơ chế cache nâng cao nếu sau này thực sự cần. Kiến trúc này khớp tốt với mô hình SPA `client:only` hiện tại của drycms (preact-iso, không có SSR data-fetching cần đối chiếu) - không có xung đột server/client boundary khi thêm IndexedDB.

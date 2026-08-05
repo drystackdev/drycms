@@ -1,7 +1,8 @@
 # Homepage content type + seed tooling
 
 ## Plan
-1. `scripts/lib/content-seed.ts` — reusable helpers (`upsertContentType`,
+
+1. `scripts/lib/content-seed.ts` - reusable helpers (`upsertContentType`,
    `writeSingletonEntry`, `insertCollectionEntry`) built on
    `createContentEngineAdapter`/`createContentEntryEngineAdapter`, same
    standalone-bun-script pattern as `scripts/seed-sync.ts`/`dry-generate.ts`.
@@ -9,14 +10,14 @@
    `src/apps/pages/**` section -> design `ContentTypeDefinition`(s)
    (component/collection/singleton) -> write a data file -> run via the
    library -> wire `dry()` into the page.
-3. `scripts/seed-pages-content.ts` — concrete usage: defines 7 component
+3. `scripts/seed-pages-content.ts` - concrete usage: defines 7 component
    types (heroSection, valueProp, videoSection, latestPostsSection,
    pressSection, pressMention, bottomCta) + `homepage` singleton, and a
    `blog` collection (features.slug, tag/excerpt/date/content) - seeds real
    data copied from `page.tsx`'s hardcoded arrays, `posts-data.ts`,
    `press-data.ts`.
 4. Run the script against the live `.dry/content.sqlite`, `bun run
-   dry:generate`, then wire `page.tsx` / `blogs/page.tsx` /
+dry:generate`, then wire `page.tsx` / `blogs/page.tsx` /
    `blogs/[slug]/page.tsx` to `dry()` reads instead of hardcoded arrays.
 
 Scope decided with user: ALL 6 homepage blocks (hero, value props, video
@@ -25,8 +26,10 @@ CTA, latest posts, press mentions, bottom CTA). Hero fields are exactly
 hero image stay hardcoded in the template (not requested).
 
 ## Status
+
 Done - extended to the whole public site, not just the homepage. `bun run
 seed:pages` now creates/reconciles content types and seeds data for:
+
 - `homepage` singleton (hero/valueProps/videoSection/latestPostsSection/
   pressSection/pressMentions/bottomCta)
 - `blog` collection (6 posts)
@@ -43,6 +46,7 @@ Typecheck clean; verified rendered output for every route via curl against
 the running dev server.
 
 Deliberately NOT content-managed:
+
 - `NAV_LINKS` in `layout.tsx` stays hardcoded - the built-in `menu`/
   `menuItem` types require an absolute URL for `href` (entry-validate.ts's
   `new URL(value)` check), which relative in-app routes ("/", "/about", ...)
@@ -58,5 +62,6 @@ Deliberately NOT content-managed:
 anything after the migration).
 
 ## Speed
+
 Single session, no blockers. Dev server was already running on :5173
 (started by an earlier/other session).

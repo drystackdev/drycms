@@ -76,7 +76,7 @@ Access token chỉ chứa thông tin cần cho authorization:
 Refresh token là chuỗi random opaque, không chứa user data. Server chỉ lưu
 hash của refresh token.
 
-## 4. Phase 0 — Chuẩn hóa contract và config
+## 4. Phase 0 - Chuẩn hóa contract và config
 
 ### Config mới
 
@@ -117,7 +117,7 @@ Yêu cầu:
 - Secret phải có entropy tối thiểu 32 bytes.
 - Nếu thiếu hoặc yếu secret thì server fail fast khi khởi động.
 
-## 5. Phase 1 — Access token và refresh session
+## 5. Phase 1 - Access token và refresh session
 
 ### Session record
 
@@ -169,7 +169,7 @@ user/session để xử lý token theft.
 - Blacklist access JWT hiện tại đến khi hết hạn.
 - Xóa cả ba cookie.
 
-## 6. Phase 2 — Thu hồi toàn bộ session khi đổi mật khẩu
+## 6. Phase 2 - Thu hồi toàn bộ session khi đổi mật khẩu
 
 Lưu record theo user trong namespace `auth-users`:
 
@@ -200,7 +200,7 @@ Khi resolve JWT:
 Nếu security store không truy cập được, request phải fail closed với lỗi
 `503`, không được coi token là hợp lệ.
 
-## 7. Phase 3 — CSRF protection
+## 7. Phase 3 - CSRF protection
 
 ### Cơ chế
 
@@ -236,7 +236,7 @@ Tạo wrapper `authFetch()`:
 - Nếu nhận `401`, gọi refresh/session flow một lần rồi retry có giới hạn.
 - Không lưu access/refresh token trong `localStorage`.
 
-## 8. Phase 4 — Rate limit và chống brute-force
+## 8. Phase 4 - Rate limit và chống brute-force
 
 ### Key
 
@@ -268,7 +268,7 @@ Thêm một trong các cơ chế:
 
 GitHub/GitLab không được dùng cho rate limit production.
 
-## 9. Phase 5 — Secret rotation
+## 9. Phase 5 - Secret rotation
 
 ### Verify
 
@@ -293,7 +293,7 @@ Nếu key bị lộ:
 - Tăng user/session revocation version.
 - Bắt tất cả user đăng nhập lại.
 
-## 10. Phase 6 — API và middleware
+## 10. Phase 6 - API và middleware
 
 ### Route mới
 
@@ -359,7 +359,7 @@ Không đưa password, refresh token, raw IP hoặc secret vào log response/err
 
 ## 12. Lộ trình triển khai
 
-### Milestone A — nền tảng
+### Milestone A - nền tảng
 
 - Auth config.
 - Key ring.
@@ -367,19 +367,19 @@ Không đưa password, refresh token, raw IP hoặc secret vào log response/err
 - Access token TTL ngắn.
 - Refresh endpoint.
 
-### Milestone B — kiểm soát request
+### Milestone B - kiểm soát request
 
 - CSRF middleware.
 - `authFetch()` client.
 - Xử lý `401` và refresh một lần.
 
-### Milestone C — thu hồi và chống brute-force
+### Milestone C - thu hồi và chống brute-force
 
 - User revocation version.
 - Revoke toàn bộ session khi đổi password.
 - Atomic rate limit.
 
-### Milestone D — vận hành
+### Milestone D - vận hành
 
 - Key rotation procedure.
 - Migration cookie cũ sang cookie mới trong một lần deploy.

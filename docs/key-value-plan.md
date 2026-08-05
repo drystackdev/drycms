@@ -60,7 +60,7 @@ interface KeyValueAdapter {
 ```ts
 interface KvRecord {
   key: string;
-  value: unknown;                 // JSON-safe ở phase 1
+  value: unknown; // JSON-safe ở phase 1
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -329,9 +329,9 @@ tree rỗng. Branch mới không được kế thừa dữ liệu từ branch ch
 
 API route phase sau, nếu cần quản trị/debug:
 
-- `GET /api/kv/:namespace/:key` — chỉ cho quyền admin hoặc internal caller;
-- `PUT`, `DELETE` — không mở cho public content API;
-- `GET /api/kv-health` — queue depth, last flush, backend latency, error state; tuyệt đối không trả value/secret.
+- `GET /api/kv/:namespace/:key` - chỉ cho quyền admin hoặc internal caller;
+- `PUT`, `DELETE` - không mở cho public content API;
+- `GET /api/kv-health` - queue depth, last flush, backend latency, error state; tuyệt đối không trả value/secret.
 
 Trước khi thêm route cần quyết định KV là internal service hay là tính năng public. Mặc định kế hoạch này chọn internal service; route quản trị chỉ là phase sau.
 
@@ -355,7 +355,7 @@ Danh sách hiển thị metadata trước, không tải toàn bộ value cho m�
 Value đầy đủ chỉ tải khi mở trang chi tiết key. Key nhạy cảm phải được mask
 mặc định và không ghi value vào log.
 
-### 8.2. Cơ chế tự cập nhật — quyết định MVP
+### 8.2. Cơ chế tự cập nhật - quyết định MVP
 
 Chọn **REST + polling định kỳ**, không dùng WebSocket, long response hoặc SSE
 trong MVP. Khi server cập nhật hoặc xóa key, UI sẽ nhận biết ở lần polling
@@ -411,14 +411,14 @@ Có thể đổi `cloudflare-kv.ts` thành `kv.ts`, nhưng nên dùng tên đầ
 
 ## 10. Lộ trình triển khai
 
-### Phase 0 — Chốt contract và benchmark baseline
+### Phase 0 - Chốt contract và benchmark baseline
 
 - Viết RFC ngắn cho semantics TTL, version, durability và consistency.
 - Định nghĩa giới hạn MVP: JSON-only, kích thước value tối đa, namespace bắt buộc hay mặc định.
 - Benchmark mục tiêu: p50/p95 `get` cache hit, `set` async, flush batch, hydrate startup.
 - Chốt adapter nào là primary theo môi trường triển khai.
 
-### Phase 1 — Core memory store
+### Phase 1 - Core memory store
 
 - Tạo types/error/options.
 - Implement Map wrapper, TTL, idle TTL, max entries/max bytes và cleanup timer.
@@ -426,14 +426,14 @@ Có thể đổi `cloudflare-kv.ts` thành `kv.ts`, nhưng nên dùng tên đầ
 - Implement dirty queue nhưng dùng fake adapter trước.
 - Test write coalescing, concurrent set cùng key, eviction không làm mất dirty data.
 
-### Phase 2 — Persistence coordinator và local adapter
+### Phase 2 - Persistence coordinator và local adapter
 
 - Implement async/sync durability, debounce, retry, flush/close.
 - Implement local adapter atomic write, list metadata, journal tối thiểu.
 - Thêm startup hydrate và shutdown hook cho Node.
 - Test crash-like scenario: mutation chưa flush, restart, journal replay.
 
-### Phase 3 — SQLite và D1
+### Phase 3 - SQLite và D1
 
 - Tái sử dụng driver/helper hiện có.
 - Migration/schema cho bảng KV và index expiry.
@@ -441,21 +441,21 @@ Có thể đổi `cloudflare-kv.ts` thành `kv.ts`, nhưng nên dùng tên đầ
 - Implement per-request D1 adapter factory và batch statements.
 - Test persistence, version conflict, expiration và D1 fake binding.
 
-### Phase 4 — GitHub và GitLab
+### Phase 4 - GitHub và GitLab
 
 - Tách codec/index/snapshot để giảm request.
 - Implement tree/commit batch và conflict retry.
 - Tái sử dụng conventions/env của `src/storage/github.ts` và `gitlab.ts`.
 - Test bằng fake REST server, không gọi network thật trong unit test.
 
-### Phase 5 — Cloudflare KV và runtime integration
+### Phase 5 - Cloudflare KV và runtime integration
 
 - Thêm binding type/config.
 - Implement `get/put/delete/list` với TTL và cursor.
 - Tích hợp `env`/`ctx` vào lifecycle route hoặc request-scoped factory.
 - Test eventual consistency bằng fake delayed backend.
 
-### Phase 6 — Observability, migration và rollout
+### Phase 6 - Observability, migration và rollout
 
 - Metrics/logs: cache, cleanup, queue, flush, backend, conflict, stale reads.
 - Health endpoint hoặc server startup diagnostics.

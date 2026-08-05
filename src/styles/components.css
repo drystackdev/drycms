@@ -2747,7 +2747,11 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: var(--dry-text-sm);
-      font-weight: 600;
+      min-width: 0;
+
+      & strong {
+        font-weight: 600;
+      }
     }
 
     .content {

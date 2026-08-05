@@ -15,8 +15,12 @@ export interface EntryFieldDiff {
  * per-field-type renderer: the Preview dialog is a changed-fields diff list,
  * not a fully rendered preview (see `status/entry-drafts.md`). */
 export function formatDiffValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (value === null || value === undefined || value === "") return "-";
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return String(value);
   }
   try {

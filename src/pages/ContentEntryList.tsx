@@ -366,7 +366,7 @@ function renderRelationCell(
   multiple: boolean,
 ): JSX.Element {
   if (ids === undefined) return <>…</>;
-  if (ids.length === 0) return <>—</>;
+  if (ids.length === 0) return <>-</>;
   if (!multiple) {
     return (
       <span class="badge lg info">

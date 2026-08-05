@@ -1,7 +1,7 @@
 # AI Schema Builder wizard (Content Types)
 
 Supersedes `status/builder-ai-chat.md` / `status/ai-chat-stream.md`'s free-form
-chat direction — that UI was fully removed at some point (confirmed via git
+chat direction - that UI was fully removed at some point (confirmed via git
 history: no `*Chat*.tsx` component ever existed as a separate file, and
 `BuilderContentType.tsx` has zero AI references today) even though its
 backend survived. This is a new, independent design: a single-button,
@@ -11,7 +11,7 @@ choice-driven schema wizard, not a chat box.
 
 - `dry.config.ts`'s `ai` option / `resolveAiOption` (`src/server/options.ts`):
   `local` (`codex`/`claude` CLI) vs `server` (`openai`/`anthropic`/`google`
-  via the `aiKey` collection) — already exactly the local/server split the
+  via the `aiKey` collection) - already exactly the local/server split the
   spec asks for.
 - `src/server/routes/ai.ts`: authenticated (`requireSuperAdmin`) `/api/ai/chat`
   with SSE streaming, per-conversation history, local CLI spawn
@@ -19,22 +19,22 @@ choice-driven schema wizard, not a chat box.
   (`readServerCredentials`, `isAiKeyFallbackError`), plus `/api/ai/check` and
   `/api/ai/models`. Fully implemented and tested
   (`status/ai-chat-stream.md`, `status/ai-key-fallback.md`,
-  `status/ai-key-model-check.md`), but has **no client caller right now** —
+  `status/ai-key-model-check.md`), but has **no client caller right now** -
   this is the backend the new dialog will call, it just needs a structured
   (non-chat) mode added to it.
 - `aiKey` singleton (`src/content-types/seed.ts`, sortable `keys` list:
-  name/provider/model/URL/write-only key) — the "AI key table" for server
+  name/provider/model/URL/write-only key) - the "AI key table" for server
   mode, already readable (list, no secret) by any user with read permission
   on it (`src/server/routes/content-entries.ts`'s `protectSystemMutation`
-  only restricts *writes* to super admin).
+  only restricts _writes_ to super admin).
 - `src/content-types/draft-store.ts` (`saveDraft`/`drafts` signal) +
-  `ApplyBuildDialog.tsx` + `content-types.ts`'s batch plan/apply — the
+  `ApplyBuildDialog.tsx` + `content-types.ts`'s batch plan/apply - the
   existing stage-locally → dry-run → apply pipeline
   (`status/content-type-staged-apply.md`). This is the landing spot for
   whatever the wizard produces; no second apply path needed.
 - `field-registry.ts`'s fixed field-type vocabulary (`text`, `richtext`,
   `number`, `boolean`, `date`, `image`, `select`, `password`, `secretkey`,
-  `relation`, `component`; `relationmirror` is auto-generated only) — the
+  `relation`, `component`; `relationmirror` is auto-generated only) - the
   closed vocabulary the AI must be constrained to when proposing fields.
 
 ## Plan
@@ -43,11 +43,11 @@ choice-driven schema wizard, not a chat box.
    header (next to "Apply Builder"), opening `AiSchemaWizardDialog`.
 2. **No free-text box**: every AI turn renders as a question with a fixed
    set of choices (single/multi-select), plus an "other" escape hatch only
-   where the option space is inherently open (e.g. a table name) — never a
+   where the option space is inherently open (e.g. a table name) - never a
    chat transcript.
 3. **Structured protocol**: one JSON schema the model must always return,
    e.g. `{kind:"question", question, choices:[{id,label_en,label_vi}],
-   multi}` | `{kind:"proposal", tables:[...], question}` |
+multi}` | `{kind:"proposal", tables:[...], question}` |
    `{kind:"done", drafts:[...]}`. Every model turn goes through a
    validate-then-retry loop server-side: parse as JSON against this schema;
    on failure (bad JSON, missing fields, unknown field type/kind, wrong
@@ -55,9 +55,9 @@ choice-driven schema wizard, not a chat box.
    for a resend, up to N retries, before surfacing an error to the client.
    This is the "yêu cầu lại đến khi chuẩn cấu trúc" requirement.
 4. **System prompt**: fixed English prompt describing drycms's content-type
-   model — kinds (collection/singleton/component), the closed field-type
+   model - kinds (collection/singleton/component), the closed field-type
    vocabulary and their `config`/`validation` shapes, `features` flags,
-   naming rules (`naming.ts`) — enough for the model to emit
+   naming rules (`naming.ts`) - enough for the model to emit
    `ContentTypeDefinition`/`FieldDefinition` fragments directly instead of
    prose that needs re-interpretation.
 5. **Flow**: clarifying choice-driven questions → AI presents suggested
@@ -67,73 +67,73 @@ choice-driven schema wizard, not a chat box.
    emit the final `done` payload with concrete field/table changes.
 6. **Landing the result**: map each proposed table/field addition into
    `ContentTypeDefinition`/`FieldDefinition` objects (reusing `naming.ts`'s
-   id/order helpers) and call `saveDraft()` per type — new tables with
+   id/order helpers) and call `saveDraft()` per type - new tables with
    `isNew: true`, extensions merged onto the live definition. The admin then
    reviews/applies through the existing, untouched `ApplyBuildDialog`. The
    wizard itself never talks to the DB.
 7. **Provider combobox**: in server mode, a combobox lists the admin's
-   configured `aiKey` entries (name/provider/model only, no secret — same
+   configured `aiKey` entries (name/provider/model only, no secret - same
    read path `AiKeyEditor.tsx` already uses) so the admin can pick which key
    this wizard run uses, overriding the automatic fallback order. In local
    mode there is nothing to pick (single CLI from `dry.config.ts`); the
    combobox is hidden or shows the fixed provider label only.
-8. **Output language**: resolved — a new `ai.lang` field on `DryAiOption`
+8. **Output language**: resolved - a new `ai.lang` field on `DryAiOption`
    (`src/server/options.ts`, alongside `mode`/`provider`/`keyName`, e.g.
    `ai: { lang: "vi" }`, default `"en"`). The system prompt itself (schema
-   description, field-type vocabulary, instructions) stays English always —
+   description, field-type vocabulary, instructions) stays English always -
    only user-facing strings inside the structured reply (`question`,
    `choices[].label`) are requested in `lang`, via one line in that same
    English system prompt ("write `question`/`label` values in {lang};
-   everything else — field `type` tokens, content-type/field `name`s, ids —
+   everything else - field `type` tokens, content-type/field `name`s, ids -
    stays in English/ASCII, never translated"). One field, one call, no
    second translation round-trip: `label_en`/`label_vi` dual-field design is
    dropped in favor of this simpler config-driven single-language output.
 
 ## Field deletion via the wizard
 
-Resolved — the wizard CAN propose removing an existing field, but it goes
+Resolved - the wizard CAN propose removing an existing field, but it goes
 through the exact same trash mechanism the manual schema editor already uses
 (`ContentTypeDefinition.deletedFieldIds`, `FieldTrashDialog.tsx`): the field
 id is staged into `deletedFieldIds` on the draft, not spliced out of
 `fields[]`. `tree.ts`/`migration.ts` keep generating its column as before
 until someone empties it from the trash for real, exactly like a manual
 Remove today. The wizard never performs a real `DROP COLUMN` and never
-empties the trash itself — that stays a deliberate, separate manual action
+empties the trash itself - that stays a deliberate, separate manual action
 in the existing Field Trash UI. No new "archive" concept needed; this is a
 straight reuse of what's already there.
 
 ## Explicitly out of scope for this pass (confirm before expanding)
 
-- Auto-applying AI-proposed drafts — always lands in the existing manual
+- Auto-applying AI-proposed drafts - always lands in the existing manual
   review/apply dialog, never writes the DB directly.
 - Permanently emptying the field trash (real `DROP COLUMN`) from the wizard
-  — it can stage a deletion into `deletedFieldIds`, never purge it for good.
+  - it can stage a deletion into `deletedFieldIds`, never purge it for good.
 - Resuming a wizard session across a page reload / a history of past
-  sessions — the wizard's conversation lives only for as long as the dialog
+  sessions - the wizard's conversation lives only for as long as the dialog
   is open.
-- Token-by-token streaming for wizard turns — structured JSON isn't
+- Token-by-token streaming for wizard turns - structured JSON isn't
   meaningfully renderable mid-stream choice-by-choice, so wizard turns use
   a single completed-reply request (reusing the same local/server call
   plumbing, just not the SSE delta path), unlike the old prose chat.
 
 ## Implementation steps (draft ordering, not started)
 
-1. `src/server/options.ts` — add `lang?: string` to `DryAiOption` /
+1. `src/server/options.ts` - add `lang?: string` to `DryAiOption` /
    `ResolvedAiOption` (default `"en"`), resolved by `resolveAiOption()` like
    every other `ai.*` field.
-2. `src/content-types/ai-wizard-protocol.ts` — shared JSON schema types +
+2. `src/content-types/ai-wizard-protocol.ts` - shared JSON schema types +
    parse/validate function (single source of truth for both the system
    prompt's schema description and client/server validation).
-3. `src/server/routes/ai.ts` — add a `wizard` mode: takes the running
+3. `src/server/routes/ai.ts` - add a `wizard` mode: takes the running
    structured turn history, builds the fixed English system prompt (schema
    vocabulary + the one `ai.lang` output-language instruction), calls
    existing local/server AI plumbing (non-streaming), validates the reply,
    auto-retries with a corrective message, returns the parsed structured
    turn. Retry logic lives server-side only.
 4. Small read-only listing for the `aiKey` combobox (name/provider/model,
-   no secret) — likely just the existing generic content-entries list call
+   no secret) - likely just the existing generic content-entries list call
    already used elsewhere, not a new route.
-5. `src/pages/content-type-editor/AiSchemaWizardDialog.tsx` — renders the
+5. `src/pages/content-type-editor/AiSchemaWizardDialog.tsx` - renders the
    current question/choices, multi-select + "other", the table-suggestion
    review/reorder step, and the final step that calls `saveDraft()` per
    proposed type (new tables `isNew: true`; field removals staged into

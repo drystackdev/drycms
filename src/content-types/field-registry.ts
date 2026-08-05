@@ -65,7 +65,9 @@ export interface FieldTypeDefinition<V = unknown> {
    * `resolveValidationFields()` rather than reading `.validationFields`
    * directly.
    */
-  validationFields?: SettingDescriptor[] | ((config: unknown) => SettingDescriptor[]);
+  validationFields?:
+    | SettingDescriptor[]
+    | ((config: unknown) => SettingDescriptor[]);
   /** Seeded into `draftConfig`/`draftValidation` when this type is picked in
    * the "Add Field" dialog (replacing the previous unconditional reset to
    * `{}`), so a type can declare sensible defaults - e.g. `number`'s `step`
@@ -85,12 +87,20 @@ const REQUIRED_UNIQUE_VALIDATION: SettingDescriptor[] = [
   { key: "unique", label: "Unique", widget: "boolean" },
 ];
 
-export function resolveFieldShape(def: FieldTypeDefinition, config: unknown): FieldShape {
+export function resolveFieldShape(
+  def: FieldTypeDefinition,
+  config: unknown,
+): FieldShape {
   return typeof def.shape === "function" ? def.shape(config) : def.shape;
 }
 
-export function resolveValidationFields(def: FieldTypeDefinition, config: unknown): SettingDescriptor[] {
-  return typeof def.validationFields === "function" ? def.validationFields(config) : (def.validationFields ?? []);
+export function resolveValidationFields(
+  def: FieldTypeDefinition,
+  config: unknown,
+): SettingDescriptor[] {
+  return typeof def.validationFields === "function"
+    ? def.validationFields(config)
+    : (def.validationFields ?? []);
 }
 
 /** Shared `min`/`max` item-count descriptors for the 3 field types whose
@@ -159,13 +169,43 @@ export interface RichTextFieldConfig {
 
 const RICH_TEXT_FEATURE_CONFIG: SettingDescriptor[] = [
   { key: "bold", label: "Bold", widget: "boolean", group: "Text formatting" },
-  { key: "italic", label: "Italic", widget: "boolean", group: "Text formatting" },
-  { key: "underline", label: "Underline", widget: "boolean", group: "Text formatting" },
-  { key: "color", label: "Text color", widget: "boolean", group: "Text formatting" },
+  {
+    key: "italic",
+    label: "Italic",
+    widget: "boolean",
+    group: "Text formatting",
+  },
+  {
+    key: "underline",
+    label: "Underline",
+    widget: "boolean",
+    group: "Text formatting",
+  },
+  {
+    key: "color",
+    label: "Text color",
+    widget: "boolean",
+    group: "Text formatting",
+  },
   { key: "link", label: "Link", widget: "boolean", group: "Text formatting" },
-  { key: "heading", label: "Headings", widget: "boolean", group: "Block formatting" },
-  { key: "alignment", label: "Alignment", widget: "boolean", group: "Block formatting" },
-  { key: "lists", label: "Lists", widget: "boolean", group: "Block formatting" },
+  {
+    key: "heading",
+    label: "Headings",
+    widget: "boolean",
+    group: "Block formatting",
+  },
+  {
+    key: "alignment",
+    label: "Alignment",
+    widget: "boolean",
+    group: "Block formatting",
+  },
+  {
+    key: "lists",
+    label: "Lists",
+    widget: "boolean",
+    group: "Block formatting",
+  },
   { key: "image", label: "Images", widget: "boolean", group: "Insert" },
   { key: "component", label: "Components", widget: "boolean", group: "Insert" },
   { key: "table", label: "Tables", widget: "boolean", group: "Insert" },
@@ -251,7 +291,8 @@ export const dateFieldType: FieldTypeDefinition<Date> = {
   // `value` is a `Date` when serializing a live entry, but a plain ISO
   // string when it arrives as a `FieldDefinition.default` that already
   // round-tripped through JSON (see `migration.ts`'s `defaultLiteralFor`).
-  serialize: (value) => (value instanceof Date ? value : new Date(value)).toISOString(),
+  serialize: (value) =>
+    (value instanceof Date ? value : new Date(value)).toISOString(),
   deserialize: (raw) => new Date(raw as string),
   configFields: [
     {
@@ -302,7 +343,11 @@ export const imageFieldType: FieldTypeDefinition<string | string[]> = {
     return raw.split(",");
   },
   configFields: [
-    { key: "isAvatar", label: "Show as a circular avatar in lists", widget: "boolean" },
+    {
+      key: "isAvatar",
+      label: "Show as a circular avatar in lists",
+      widget: "boolean",
+    },
     { key: "multiple", label: "Allow multiple images", widget: "boolean" },
   ],
   defaultConfig: { multiple: false },
@@ -380,7 +425,9 @@ export type RelationCardinality = "manyToOne" | "oneToMany" | "manyToMany";
  * `manyToMany` reverses to itself. Shared by `codegen.ts` (typing a mirror
  * field) and `dry-populate.ts` (resolving one at runtime) so both agree on
  * the same shape a mirror field actually returns. */
-export function flipCardinality(cardinality: RelationCardinality): RelationCardinality {
+export function flipCardinality(
+  cardinality: RelationCardinality,
+): RelationCardinality {
   if (cardinality === "manyToOne") return "oneToMany";
   if (cardinality === "oneToMany") return "manyToOne";
   return "manyToMany";
@@ -438,30 +485,55 @@ export interface RelationFieldConfig {
 export const relationFieldType: FieldTypeDefinition = {
   key: "relation",
   label: "Relation",
-  shape: (config) => ((config as RelationFieldConfig).cardinality === "manyToOne" ? "column" : "child-table"),
+  shape: (config) =>
+    (config as RelationFieldConfig).cardinality === "manyToOne"
+      ? "column"
+      : "child-table",
   // Only consulted when cardinality is 'manyToOne' (resolved shape 'column') -
   // stores the target row's `id`.
   sqlType: () => "INTEGER",
   configFields: [
-    { key: "target", label: "Target collection", widget: "select", optionsSource: "collections" },
+    {
+      key: "target",
+      label: "Target collection",
+      widget: "select",
+      optionsSource: "collections",
+    },
     {
       key: "cardinality",
       label: "Cardinality",
       widget: "select",
       options: [
-        { value: "manyToOne", label: "[n - 1] One target per entry — many entries can share the same target" },
-        { value: "oneToMany", label: "[1 - n] Many targets per entry — but each target belongs to only one entry" },
-        { value: "manyToMany", label: "[n - n] Entries and targets can link to each other freely" },
+        {
+          value: "manyToOne",
+          label:
+            "[n - 1] One target per entry - many entries can share the same target",
+        },
+        {
+          value: "oneToMany",
+          label:
+            "[1 - n] Many targets per entry - but each target belongs to only one entry",
+        },
+        {
+          value: "manyToMany",
+          label: "[n - n] Entries and targets can link to each other freely",
+        },
       ],
     },
-    { key: "sortable", label: "Sortable (drag to reorder items)", widget: "boolean" },
+    {
+      key: "sortable",
+      label: "Sortable (drag to reorder items)",
+      widget: "boolean",
+    },
   ],
   defaultConfig: { target: "", cardinality: "manyToOne" },
   // Min/max item count only means anything once cardinality is multi-valued
   // (`oneToMany`/`manyToMany`) - `manyToOne` stores a single target, nothing
   // to count-limit.
   validationFields: (config) =>
-    (config as RelationFieldConfig).cardinality !== "manyToOne" ? ITEM_COUNT_VALIDATION : [],
+    (config as RelationFieldConfig).cardinality !== "manyToOne"
+      ? ITEM_COUNT_VALIDATION
+      : [],
 };
 
 export interface ComponentFieldConfig {
@@ -478,16 +550,27 @@ export interface ComponentFieldConfig {
 export const componentFieldType: FieldTypeDefinition = {
   key: "component",
   label: "Component",
-  shape: (config) => ((config as ComponentFieldConfig).repeatable ? "child-table" : "flatten"),
+  shape: (config) =>
+    (config as ComponentFieldConfig).repeatable ? "child-table" : "flatten",
   // No sqlType: 'flatten'/'child-table' shapes never call it.
   configFields: [
-    { key: "componentId", label: "Component", widget: "select", optionsSource: "components" },
+    {
+      key: "componentId",
+      label: "Component",
+      widget: "select",
+      optionsSource: "components",
+    },
     { key: "repeatable", label: "Repeatable", widget: "boolean" },
-    { key: "sortable", label: "Sortable (drag to reorder items)", widget: "boolean" },
+    {
+      key: "sortable",
+      label: "Sortable (drag to reorder items)",
+      widget: "boolean",
+    },
   ],
   // Min/max item count only means anything once `repeatable` is on - a
   // non-repeatable component only ever has the one inline instance.
-  validationFields: (config) => ((config as ComponentFieldConfig).repeatable ? ITEM_COUNT_VALIDATION : []),
+  validationFields: (config) =>
+    (config as ComponentFieldConfig).repeatable ? ITEM_COUNT_VALIDATION : [],
 };
 
 export interface RelationMirrorFieldConfig {

@@ -162,18 +162,18 @@ function useRelationFieldSource(
   allTypes: ContentTypeDefinition[],
 ): RelationFieldSource<{ id: string } & Record<string, unknown>> | null {
   const entriesApi = useMemo(
-    () => (type ? createContentEntriesApi(`${path}/api/content`, type.name) : null),
+    () =>
+      type ? createContentEntriesApi(`${path}/api/content`, type.name) : null,
     [type],
   );
-  const queryableColumns = useMemo(
-    () => {
-      const columns = type ? flattenQueryableColumns(buildEntryFieldTree(type, allTypes)).slice(0, 3) : [];
-      return type?.name === "role"
-        ? columns.filter((column) => column.fieldName !== SUPER_ADMIN_FIELD_NAME)
-        : columns;
-    },
-    [type, allTypes],
-  );
+  const queryableColumns = useMemo(() => {
+    const columns = type
+      ? flattenQueryableColumns(buildEntryFieldTree(type, allTypes)).slice(0, 3)
+      : [];
+    return type?.name === "role"
+      ? columns.filter((column) => column.fieldName !== SUPER_ADMIN_FIELD_NAME)
+      : columns;
+  }, [type, allTypes]);
 
   return useMemo(() => {
     if (!type || !entriesApi) return null;
@@ -183,7 +183,11 @@ function useRelationFieldSource(
         key: column.fieldName,
         label: column.label,
         render: (cellValue: unknown) => (
-          <>{cellValue === null || cellValue === undefined || cellValue === "" ? "—" : String(cellValue)}</>
+          <>
+            {cellValue === null || cellValue === undefined || cellValue === ""
+              ? "-"
+              : String(cellValue)}
+          </>
         ),
       })),
       fetchRows: async (query) => {
@@ -293,7 +297,9 @@ function RelationMirrorFieldAdapter({
   allTypes: ContentTypeDefinition[];
   error?: string;
 }) {
-  const sourceType = node.resolved ? allTypes.find((t) => t.id === node.sourceTypeId) : undefined;
+  const sourceType = node.resolved
+    ? allTypes.find((t) => t.id === node.sourceTypeId)
+    : undefined;
   const multiple = node.resolved && node.reverseCardinality !== "manyToOne";
   const source = useRelationFieldSource(sourceType, allTypes);
 
@@ -349,7 +355,9 @@ function ComponentRepeatFieldAdapter({
   error?: string;
   revealPath?: string[];
 }) {
-  const summaryField = node.itemFields.find((f) => f.kind === "column")?.fieldName;
+  const summaryField = node.itemFields.find(
+    (f) => f.kind === "column",
+  )?.fieldName;
 
   // `revealPath` here is `[node.fieldName, <item index>, <item's own field
   // name>, ...]` (`field-path.ts`'s own dotted/indexed convention) - the
@@ -376,7 +384,9 @@ function ComponentRepeatFieldAdapter({
       error={!!error}
       helperText={error}
       itemLabel={node.label}
-      summaryOf={(item) => (summaryField ? String(item[summaryField] ?? "") : "")}
+      summaryOf={(item) =>
+        summaryField ? String(item[summaryField] ?? "") : ""
+      }
       blankItem={() => blankEntryValue(node.itemFields)}
       validateItem={(item) => validateEntryValue(node.itemFields, item)}
       revealIndex={revealIndex}

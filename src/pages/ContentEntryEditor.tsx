@@ -4,7 +4,11 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SlugField from "../components/fields/SlugField.js";
 import { toast } from "../components/Toast.js";
-import { ArrowLeftIcon, PreviewIcon, TrashIcon } from "../components/icons/index.js";
+import {
+  ArrowLeftIcon,
+  PreviewIcon,
+  TrashIcon,
+} from "../components/icons/index.js";
 import {
   ContentEntriesApiError,
   createContentEntriesApi,
@@ -41,7 +45,9 @@ import {
 } from "./content-entry-editor/field-events.js";
 import { closeVeiDialog, isVeiFrame } from "./vei/bridge.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
-import FieldRenderer, { type FieldRendererProps } from "./content-entry-editor/FieldRenderer.js";
+import FieldRenderer, {
+  type FieldRendererProps,
+} from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
 import { canAccess } from "../store/auth.js";
 
@@ -88,15 +94,27 @@ function renderFieldNodes(
           <SlugField
             label={node.label}
             slugLabel={next.label}
-            value={typeof value[node.fieldName] === "string" ? (value[node.fieldName] as string) : ""}
-            slug={typeof value[next.fieldName] === "string" ? (value[next.fieldName] as string) : ""}
+            value={
+              typeof value[node.fieldName] === "string"
+                ? (value[node.fieldName] as string)
+                : ""
+            }
+            slug={
+              typeof value[next.fieldName] === "string"
+                ? (value[next.fieldName] as string)
+                : ""
+            }
             onChange={(titleValue, slugValue) => {
               onFieldChange(node.fieldName, titleValue);
               onFieldChange(next.fieldName, slugValue);
             }}
             required={!!node.validation.required}
-            error={!!fieldErrors[node.fieldName] || !!fieldErrors[next.fieldName]}
-            helperText={fieldErrors[node.fieldName] ?? fieldErrors[next.fieldName]}
+            error={
+              !!fieldErrors[node.fieldName] || !!fieldErrors[next.fieldName]
+            }
+            helperText={
+              fieldErrors[node.fieldName] ?? fieldErrors[next.fieldName]
+            }
           />
         </div>,
       );
@@ -111,8 +129,14 @@ function renderFieldNodes(
           onChange={(fieldValue) => onFieldChange(node.fieldName, fieldValue)}
           error={fieldErrors[node.fieldName]}
           allTypes={allTypes}
-          checkSecretKey={node.kind === "column" && node.fieldName === "key" ? checkSecretKey : undefined}
-          revealPath={revealPath?.[0] === node.fieldName ? revealPath : undefined}
+          checkSecretKey={
+            node.kind === "column" && node.fieldName === "key"
+              ? checkSecretKey
+              : undefined
+          }
+          revealPath={
+            revealPath?.[0] === node.fieldName ? revealPath : undefined
+          }
         />
       </div>,
     );
@@ -140,12 +164,17 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [showResetAllConfirm, setShowResetAllConfirm] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [checkingAiKey, setCheckingAiKey] = useState(false);
-  const [aiKeyCheck, setAiKeyCheck] = useState<{ ok: boolean; message: string } | undefined>();
+  const [aiKeyCheck, setAiKeyCheck] = useState<
+    { ok: boolean; message: string } | undefined
+  >();
 
   // Snapshot of `value` right after load, before any edits - see
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
-  const originalValue: EntryValue | null = initialSnapshot !== null ? (JSON.parse(initialSnapshot) as EntryValue) : null;
+  const originalValue: EntryValue | null =
+    initialSnapshot !== null
+      ? (JSON.parse(initialSnapshot) as EntryValue)
+      : null;
   const isDirty =
     initialSnapshot !== null &&
     value !== null &&
@@ -178,12 +207,17 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         (n) =>
           !(
             n.kind === "column" &&
-            (n.fieldId === SYSTEM_FIELD_IDS.createdAt || n.fieldId === SYSTEM_FIELD_IDS.updatedAt)
-          ) && !(n.kind === "column" && n.fieldId === SYSTEM_FIELD_IDS.sortIndex),
+            (n.fieldId === SYSTEM_FIELD_IDS.createdAt ||
+              n.fieldId === SYSTEM_FIELD_IDS.updatedAt)
+          ) &&
+          !(n.kind === "column" && n.fieldId === SYSTEM_FIELD_IDS.sortIndex),
       ),
     [nodes],
   );
-  const previewDiffs = originalValue && value ? diffEntryValue(originalValue, value, editableNodes) : [];
+  const previewDiffs =
+    originalValue && value
+      ? diffEntryValue(originalValue, value, editableNodes)
+      : [];
 
   const veiFrame = isVeiFrame();
   const isSingleton = type?.kind === "singleton";
@@ -192,11 +226,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // (there's exactly one draft slot for either), an existing entry off its
   // real `id`. Deliberately independent of the async-loaded `entryId` state
   // so it's stable from the very first render.
-  const draftEntryId = isSingleton ? null : id ?? null;
+  const draftEntryId = isSingleton ? null : (id ?? null);
   const isNew = !isSingleton && !id;
-  const requiredAction = type ? (isSingleton ? "setting" : isNew ? "create" : "view") : null;
-  const canEdit = !!type && canAccess(type.id, isSingleton ? "setting" : isNew ? "create" : "update");
-  const canDelete = !!type && !isSingleton && !isNew && canAccess(type.id, "delete");
+  const requiredAction = type
+    ? isSingleton
+      ? "setting"
+      : isNew
+        ? "create"
+        : "view"
+    : null;
+  const canEdit =
+    !!type &&
+    canAccess(type.id, isSingleton ? "setting" : isNew ? "create" : "update");
+  const canDelete =
+    !!type && !isSingleton && !isNew && canAccess(type.id, "delete");
   const showLoading = useDelayedLoading(!type || value === null);
 
   useEffect(() => {
@@ -223,7 +266,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }, [typeSlug]);
 
   useEffect(() => {
-    if (!type || !entriesApi || !requiredAction || !canAccess(type.id, requiredAction)) return;
+    if (
+      !type ||
+      !entriesApi ||
+      !requiredAction ||
+      !canAccess(type.id, requiredAction)
+    )
+      return;
     (async () => {
       try {
         const builtNodes = buildEntryFieldTree(type, allTypes);
@@ -248,7 +297,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         // a pending IndexedDB draft (if any) only overrides `value` itself,
         // so `isDirty`/reset/diff all keep comparing against the real
         // last-saved state, not the draft. See `status/entry-drafts.md`.
-        const draft = await loadEntryDraft(typeSlug, type.kind === "singleton" ? null : id ?? null);
+        const draft = await loadEntryDraft(
+          typeSlug,
+          type.kind === "singleton" ? null : (id ?? null),
+        );
         if (draft) setValue(draft);
       } catch (error) {
         setLoadError(
@@ -290,25 +342,45 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     !veiFrame && type ? (
       <>
         {!isSingleton && (
-          <button type="button" class="icon ghost" onClick={() => route(`${path}/content/${type.name}`)}>
+          <button
+            type="button"
+            class="icon ghost"
+            onClick={() => route(`${path}/content/${type.name}`)}
+          >
             <ArrowLeftIcon />
           </button>
         )}
-        <strong class="topbar-page-title">{isNew ? `New ${type.label}` : type.label}</strong>
+        <div class="topbar-page-title">
+          <strong>{isNew ? `New ${type.label}` : type.label}</strong>
+          {type.description && <span class="hint"> - {type.description}</span>}
+        </div>
         <span class="spacer" />
         {!isSingleton && (
-          <button type="button" class="outline" onClick={() => route(`${path}/content/${type.name}`)}>
+          <button
+            type="button"
+            class="outline"
+            onClick={() => route(`${path}/content/${type.name}`)}
+          >
             Cancel
           </button>
         )}
         {!isNew && isDirty && (
-          <button type="button" class="outline" onClick={() => setShowPreview(true)}>
+          <button
+            type="button"
+            class="outline"
+            onClick={() => setShowPreview(true)}
+          >
             <PreviewIcon /> Preview
             <span class="badge sm secondary">{previewDiffs.length}</span>
           </button>
         )}
         {canEdit && (
-          <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>
+          <button
+            type="button"
+            disabled={saving}
+            aria-busy={saving}
+            onClick={handleSave}
+          >
             Save
           </button>
         )}
@@ -337,7 +409,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     const model = typeof value.model === "string" ? value.model.trim() : "";
     const url = typeof value.url === "string" ? value.url.trim() : "";
     if (!key || !provider || !model) {
-      setAiKeyCheck({ ok: false, message: "Enter provider, model, and key first." });
+      setAiKeyCheck({
+        ok: false,
+        message: "Enter provider, model, and key first.",
+      });
       return;
     }
     setCheckingAiKey(true);
@@ -348,13 +423,22 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, key, model, url }),
       });
-      const body = await response.json() as { ok?: boolean; message?: string };
+      const body = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+      };
       setAiKeyCheck({
         ok: response.ok && body.ok === true,
-        message: body.message ?? (response.ok ? "AI key is valid." : "AI key check failed."),
+        message:
+          body.message ??
+          (response.ok ? "AI key is valid." : "AI key check failed."),
       });
     } catch (error) {
-      setAiKeyCheck({ ok: false, message: error instanceof Error ? error.message : "AI key check failed." });
+      setAiKeyCheck({
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "AI key check failed.",
+      });
     } finally {
       setCheckingAiKey(false);
     }
@@ -380,8 +464,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // (`ComponentField.tsx`), the write lands in `value` correctly but the
   // dialog's own local draft won't pick it up live until closed/reopened.
   function applyFieldSet(path: string, fieldValue: unknown) {
-    setValue((current) => (current ? setValueAtPath(current, path, fieldValue) : current));
-    dispatchFieldInput(path.split(".", 1)[0]!, fieldValue, { typeSlug, entryId });
+    setValue((current) =>
+      current ? setValueAtPath(current, path, fieldValue) : current,
+    );
+    dispatchFieldInput(path.split(".", 1)[0]!, fieldValue, {
+      typeSlug,
+      entryId,
+    });
   }
   // Re-subscribes on `typeSlug`/`entryId` change (not just `[]`) so the
   // closure `applyFieldSet` dispatches through never reports a stale
@@ -414,7 +503,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // the only highlight there, same as before.
   const [scrollField] = useParam("_field");
   const [scrollPath] = useParam("_path");
-  const revealPath = scrollPath ? scrollPath.split(".") : scrollField ? [scrollField] : undefined;
+  const revealPath = scrollPath
+    ? scrollPath.split(".")
+    : scrollField
+      ? [scrollField]
+      : undefined;
   useEffect(() => {
     if (!scrollField || value === null) return;
     scrollToField(scrollField);
@@ -543,8 +636,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   if (loadError) return <span class="error">{loadError}</span>;
   if (!type) return showLoading ? <span class="hint">Loading…</span> : null;
-  if (!requiredAction || !canAccess(type.id, requiredAction)) return <span class="error">You don't have permission to view this content.</span>;
-  if (value === null) return showLoading ? <span class="hint">Loading…</span> : null;
+  if (!requiredAction || !canAccess(type.id, requiredAction))
+    return (
+      <span class="error">You don't have permission to view this content.</span>
+    );
+  if (value === null)
+    return showLoading ? <span class="hint">Loading…</span> : null;
 
   const backTo = `${path}/content/${type.name}`;
   const sideOf = (n: EntryFieldNode) =>
@@ -598,7 +695,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               </button>
             )}
             {!isNew && isDirty && (
-              <button type="button" class="outline" onClick={() => setShowPreview(true)}>
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setShowPreview(true)}
+              >
                 <PreviewIcon /> Preview
                 <span class="badge sm secondary">{previewDiffs.length}</span>
               </button>
@@ -607,55 +708,76 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
              * button drives this entry's `handleSave` too (via `dry:entry-save`,
              * `listenForEntrySave` above), but scoped across every marked entry
              * on the page rather than just this one. */}
-            {canEdit && !veiFrame && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
+            {canEdit && !veiFrame && (
+              <button
+                type="button"
+                disabled={saving}
+                aria-busy={saving}
+                onClick={handleSave}
+              >
+                Save
+              </button>
+            )}
           </div>
         </div>
       )}
 
       <fieldset disabled={!canEdit} class="content-entry-editor-form">
-      <div class="content-entry-editor-grid">
-        <div class="stack">
-          {renderFieldNodes(
-            mainFields,
-            value,
-            fieldErrors,
-            updateFieldValue,
-            allTypes,
-            typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
-            revealPath,
-          )}
-        </div>
+        <div class="content-entry-editor-grid">
+          <div class="stack">
+            {renderFieldNodes(
+              mainFields,
+              value,
+              fieldErrors,
+              updateFieldValue,
+              allTypes,
+              typeSlug === "aiKey" && isNew
+                ? {
+                    onCheck: handleCheckAiKey,
+                    loading: checkingAiKey,
+                    result: aiKeyCheck,
+                  }
+                : undefined,
+              revealPath,
+            )}
+          </div>
 
-        <div class="stack">
-          {renderFieldNodes(
-            sideFields,
-            value,
-            fieldErrors,
-            updateFieldValue,
-            allTypes,
-            typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
-            revealPath,
-          )}
+          <div class="stack">
+            {renderFieldNodes(
+              sideFields,
+              value,
+              fieldErrors,
+              updateFieldValue,
+              allTypes,
+              typeSlug === "aiKey" && isNew
+                ? {
+                    onCheck: handleCheckAiKey,
+                    loading: checkingAiKey,
+                    result: aiKeyCheck,
+                  }
+                : undefined,
+              revealPath,
+            )}
 
-          {canDelete && (
-            <div class="content-type-editor-danger">
-              <div>
-                <h2>Danger zone</h2>
-                <p>Delete this entry. This cannot be undone.</p>
+            {canDelete && (
+              <div class="content-type-editor-danger">
+                <div>
+                  <h2>Danger zone</h2>
+                  <p>Delete this entry. This cannot be undone.</p>
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    class="destructive"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <TrashIcon /> Delete entry
+                  </button>
+                </div>
               </div>
-              <div>
-                <button
-                  type="button"
-                  class="destructive"
-                  onClick={() => setShowDeleteConfirm(true)}
-                >
-                  <TrashIcon /> Delete entry
-                </button>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
       </fieldset>
 
       <ConfirmDialog
@@ -676,8 +798,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         title="Reset all changes?"
         message={
           <p>
-            This reverts every field back to the last saved value. Unsaved
-            edits will be lost.
+            This reverts every field back to the last saved value. Unsaved edits
+            will be lost.
           </p>
         }
         confirmLabel="Reset all"
