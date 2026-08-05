@@ -302,8 +302,11 @@
    * `scrollbar.css`'s own doc comment for its `@property`/`@keyframes`
    * rules. Referenced by `.entry-field-highlight`'s `animation`. */
   @keyframes dry-entry-field-highlight {
-    0%,
-    40% {
+    0% {
+      opacity: 0;
+    }
+    20%,
+    60% {
       opacity: 1;
     }
     100% {
@@ -4901,7 +4904,6 @@
      * (Profile/Logout), so restore the equal-width controls and keep the
      * labels visible without changing the real menu items above. */
     .popover-menu-theme {
-      
       & .file-view-toggle {
         width: auto;
 
