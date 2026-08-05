@@ -572,6 +572,42 @@ function main(): void {
   scope.append(highlight);
   let hoveredElement: Element | null = null;
 
+  /**
+   * A dashed outline says "this is editable" but nothing says HOW, and the
+   * Ctrl/Cmd+click gesture in particular is invisible until someone guesses
+   * it. So the hovered field carries a plain native `title` spelling both
+   * out - it can't live on `.field-highlight` (that box is
+   * `pointer-events: none`, and lives in the shadow root besides), it has to
+   * be on the site's own element.
+   *
+   * Applied per hover rather than stamped on every marked element up front,
+   * because the element may already HAVE a title of its own (a link hint, an
+   * abbreviation) that has to come back the moment the pointer leaves.
+   */
+  // The gesture's name differs by platform, and so must the hint - `⌘` on
+  // Apple, `Ctrl` everywhere else. `userAgentData.platform` ("macOS") is the
+  // non-deprecated source where it exists; the UA string is the fallback for
+  // Safari/Firefox, which don't implement it.
+  const platform =
+    (navigator as { userAgentData?: { platform?: string } }).userAgentData
+      ?.platform ?? navigator.userAgent;
+  const EDIT_HINT = `Click to edit · ${
+    /mac|iphone|ipad|ipod/i.test(platform) ? "⌘" : "Ctrl"
+  }+click to open the full editor in a new tab`;
+  let hintedTitle: string | null = null;
+
+  function applyHint(el: Element): void {
+    hintedTitle = el.getAttribute("title");
+    el.setAttribute("title", EDIT_HINT);
+  }
+
+  function clearHint(): void {
+    if (!hoveredElement) return;
+    if (hintedTitle === null) hoveredElement.removeAttribute("title");
+    else hoveredElement.setAttribute("title", hintedTitle);
+    hintedTitle = null;
+  }
+
   function positionHighlight(el: Element): void {
     const rect = el.getBoundingClientRect();
     highlight.style.left = `${rect.left}px`;
@@ -583,6 +619,7 @@ function main(): void {
   }
 
   function hideHighlight(): void {
+    clearHint();
     hoveredElement = null;
     highlight.style.display = "none";
   }
@@ -595,6 +632,10 @@ function main(): void {
       if (!marked) {
         hideHighlight();
         return;
+      }
+      if (marked !== hoveredElement) {
+        clearHint();
+        applyHint(marked);
       }
       hoveredElement = marked;
       positionHighlight(marked);
