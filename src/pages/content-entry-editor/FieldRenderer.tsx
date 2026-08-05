@@ -39,6 +39,15 @@ export interface FieldRendererProps {
    * renders once its own dialog is open (`ComponentField.tsx`'s
    * `revealIndex`/`revealField`). */
   revealPath?: string[];
+  /** The dotted path from the entry root to THIS node (e.g. `"hero"`, or
+   * `"hero.cta"` for a `flatten` block nested inside another) - only ever
+   * set by the `flatten` branch below, recursing into itself. Lets nested
+   * `flatten` children carry their own `data-field-name` anchor scoped to
+   * their exact position (`"hero.title"`) instead of only the top-level
+   * wrapper's plain field name, which `highlightAnchor` would otherwise
+   * resolve to the whole block's `<fieldset>` - see the second `scrollToField`
+   * call in `ContentEntryEditor.tsx`'s `?_field=`/`?_path=` effect. */
+  pathPrefix?: string;
 }
 
 /**
@@ -60,6 +69,7 @@ export default function FieldRenderer({
   allTypes,
   checkSecretKey,
   revealPath,
+  pathPrefix,
 }: FieldRendererProps) {
   if (node.kind === "column") {
     return (
@@ -76,23 +86,29 @@ export default function FieldRenderer({
   if (node.kind === "flatten") {
     const nested = (value as EntryValue) ?? {};
     const rest = revealPath?.slice(1);
+    const ownPath = pathPrefix ?? node.fieldName;
     return (
       <fieldset>
         <legend>{node.label}</legend>
         {node.description && <small>{node.description}</small>}
         <div class="stack">
-          {node.children.map((child) => (
-            <FieldRenderer
-              key={child.fieldName}
-              node={child}
-              value={nested[child.fieldName]}
-              onChange={(childValue) =>
-                onChange({ ...nested, [child.fieldName]: childValue })
-              }
-              allTypes={allTypes}
-              revealPath={rest?.[0] === child.fieldName ? rest : undefined}
-            />
-          ))}
+          {node.children.map((child) => {
+            const childPath = `${ownPath}.${child.fieldName}`;
+            return (
+              <div key={child.fieldName} data-field-name={childPath}>
+                <FieldRenderer
+                  node={child}
+                  value={nested[child.fieldName]}
+                  onChange={(childValue) =>
+                    onChange({ ...nested, [child.fieldName]: childValue })
+                  }
+                  allTypes={allTypes}
+                  revealPath={rest?.[0] === child.fieldName ? rest : undefined}
+                  pathPrefix={childPath}
+                />
+              </div>
+            );
+          })}
         </div>
       </fieldset>
     );

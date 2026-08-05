@@ -258,8 +258,8 @@ iframe.agent {
   z-index: 2147483000;
   display: none;
   pointer-events: none;
-  border: 2px solid #00a76f;
-  border-radius: 4px;
+  outline: 3px solid var(--dry-primary);
+  outline-offset: -1px;
   background: rgba(0, 167, 111, 0.08);
   transition: left 100ms ease, top 100ms ease, width 100ms ease, height 100ms ease;
 }

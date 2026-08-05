@@ -333,24 +333,31 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // the real "fields are on screen now" signal this effect waits for.
   //
   // `?_path=` (`overlay.ts`'s `editorUrl`, only ever set alongside `_field`
-  // and only when the click landed inside a `component-repeat` item) reaches
-  // further than a top-level field can highlight on its own - `revealPath`
-  // below threads it through `renderFieldNodes` -> `FieldRenderer` ->
-  // `ComponentField.tsx`'s `revealIndex`/`revealField`, which opens that
-  // item's own dialog (otherwise unreachable - its fields don't exist in the
-  // DOM until then) and flashes the field inside it. This effect still
-  // flashes the top-level field regardless, same as a plain `?_field=` -
-  // harmless even when a dialog immediately opens over it, and correct on
-  // its own for a nested `flatten` path (no dialog involved) `revealPath`
-  // doesn't otherwise resolve any deeper than its own fieldset.
+  // and only when the click landed past a top-level field) reaches further
+  // than a top-level field can highlight on its own - `revealPath` below
+  // threads it through `renderFieldNodes` -> `FieldRenderer`, which now gives
+  // every nested `flatten` child its own composite `data-field-name`
+  // (`"hero.title"`, `FieldRenderer.tsx`'s `pathPrefix`), and separately into
+  // `ComponentField.tsx`'s `revealIndex`/`revealField`, which opens a
+  // `component-repeat` item's own dialog (otherwise unreachable - its fields
+  // don't exist in the DOM until then) and flashes the field inside it.
+  //
+  // This effect always flashes the top-level field first, then - if
+  // `scrollPath` is more specific - flashes again at the deeper anchor,
+  // which wins by running last (`highlightAnchor` cancels the previous
+  // box). The second call is a no-op wherever the deeper anchor doesn't
+  // exist yet (a `component-repeat` item, whose fields only render once
+  // `ComponentField.tsx` opens its dialog), leaving the top-level flash as
+  // the only highlight there, same as before.
   const [scrollField] = useParam("_field");
   const [scrollPath] = useParam("_path");
   const revealPath = scrollPath ? scrollPath.split(".") : scrollField ? [scrollField] : undefined;
   useEffect(() => {
     if (!scrollField || value === null) return;
     scrollToField(scrollField);
+    if (scrollPath && scrollPath !== scrollField) scrollToField(scrollPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run only when the field list actually (re)appears, not on every keystroke that changes `value`'s contents
-  }, [scrollField, value === null]);
+  }, [scrollField, scrollPath, value === null]);
 
   async function handleSave() {
     if (!type || !entriesApi || !value) return;

@@ -47,7 +47,9 @@ const cancelPreviousByDoc = new WeakMap<Document, () => void>();
  * instead of over the field.
  */
 export function highlightAnchor(root: ParentNode, name: string): void {
-  const found = root.querySelector(`[${FIELD_ANCHOR_ATTR}="${CSS.escape(name)}"]`);
+  const found = root.querySelector(
+    `[${FIELD_ANCHOR_ATTR}="${CSS.escape(name)}"]`,
+  );
   if (!(found instanceof HTMLElement)) return;
   const el = found;
   el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -60,13 +62,12 @@ export function highlightAnchor(root: ParentNode, name: string): void {
   box.id = BOX_ID;
   box.className = HIGHLIGHT_CLASS;
   host.append(box);
-
   function position(): void {
     const rect = el.getBoundingClientRect();
-    box.style.left = `${rect.left - BOX_INSET*2}px`;
-    box.style.top = `${rect.top - BOX_INSET}px`;
+    box.style.left = `${rect.left - BOX_INSET * 2}px`;
+    box.style.top = `${rect.top - BOX_INSET * 2}px`;
     box.style.width = `${rect.width + BOX_INSET * 4}px`;
-    box.style.height = `${rect.height + BOX_INSET * 2}px`;
+    box.style.height = `${rect.height + BOX_INSET * 4}px`;
   }
   position();
 

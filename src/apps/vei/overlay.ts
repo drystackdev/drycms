@@ -52,7 +52,10 @@ function currentLocation(): string {
 const SCROLL_STORAGE_KEY = "dry-vei-scroll";
 
 function storeScrollPosition(): void {
-  sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify({ x: window.scrollX, y: window.scrollY }));
+  sessionStorage.setItem(
+    SCROLL_STORAGE_KEY,
+    JSON.stringify({ x: window.scrollX, y: window.scrollY }),
+  );
 }
 
 /** Restores whatever `storeScrollPosition` saved before the enter/exit
@@ -436,10 +439,10 @@ function main(): void {
 
   function positionHighlight(el: Element): void {
     const rect = el.getBoundingClientRect();
-    highlight.style.left = `${rect.left - 2}px`;
-    highlight.style.top = `${rect.top -2}px`;
-    highlight.style.width = `${rect.width + 4}px`;
-    highlight.style.height = `${rect.height + 4}px`;
+    highlight.style.left = `${rect.left}px`;
+    highlight.style.top = `${rect.top}px`;
+    highlight.style.width = `${rect.width}px`;
+    highlight.style.height = `${rect.height}px`;
     highlight.style.display = "block";
     highlight.style.borderRadius = getComputedStyle(el).borderRadius;
   }
