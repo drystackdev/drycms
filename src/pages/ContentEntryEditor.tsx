@@ -294,6 +294,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             <ArrowLeftIcon />
           </button>
         )}
+        <strong class="topbar-page-title">{isNew ? `New ${type.label}` : type.label}</strong>
         <span class="spacer" />
         {!isSingleton && (
           <button type="button" class="outline" onClick={() => route(`${path}/content/${type.name}`)}>
@@ -560,23 +561,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   return (
     <>
-      {/* Back/Cancel/Preview/Save live in DryLayout's topbar instead
-       * (`usePageHeaderActions` above) - the title/description stay here,
-       * in-page, rather than cramming a second line into that fixed-height
-       * topbar row. */}
-      {!veiFrame && type && (
-        <div class="page-header">
-          <div>
-            <h3>{isNew ? `New ${type.label}` : type.label}</h3>
-            <p class="hint">
-              {type.description || `Edit this ${type.kind}'s content.`}
-              {!isSingleton && !isNew && id && ` · ID ${id}`}
-              {` · ${type.kind}`}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Outside the dialog, this same title/Cancel/Preview/Save row is
        * handed to DryLayout's topbar instead (`usePageHeaderActions` above)
        * - `VeiFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
