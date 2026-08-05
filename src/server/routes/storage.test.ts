@@ -1,5 +1,8 @@
 import type { DryRouteContext } from "../context.js";
+import type { SessionPayload } from "../../lib/session-token.js";
 import { afterAll, describe, expect, it, vi } from "vitest";
+
+const testSession: SessionPayload = { id: 1, name: "Test Admin", email: "test-admin@example.com" };
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 
@@ -24,6 +27,7 @@ function context(opts: {
   body?: BodyInit;
   headers?: Record<string, string>;
   query?: Record<string, string>;
+  session?: SessionPayload | null;
 }): DryRouteContext {
   const url = new URL(`http://localhost/dry/api/storage/${opts.slug ?? ""}`);
   for (const [key, value] of Object.entries(opts.query ?? {})) url.searchParams.set(key, value);
@@ -32,7 +36,8 @@ function context(opts: {
     body: opts.body,
     headers: opts.headers,
   });
-  return { params: { slug: opts.slug }, request, url, env: {}, session: null };
+  const session = opts.session !== undefined ? opts.session : testSession;
+  return { params: { slug: opts.slug }, request, url, env: {}, session };
 }
 
 function jsonBody(body: unknown): { body: string; headers: Record<string, string> } {
@@ -92,6 +97,62 @@ describe("GET /dry/api/storage/[...slug]", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/plain");
     expect(await response.text()).toBe("hello world");
+  });
+
+  it("serves a file's bytes with no session - uploaded media backs public reader pages", async () => {
+    await upload("", new File(["hello world"], "public-notes.txt", { type: "text/plain" }));
+    const response = await GET(context({ slug: "public-notes.txt", session: null }));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("hello world");
+  });
+
+  it("401s a folder listing with no session - only single-file reads are public", async () => {
+    await mkdir("private-listing");
+    const response = await GET(context({ slug: "private-listing", session: null }));
+    expect(response.status).toBe(401);
+    expect((await response.json()).error).toBe("unauthenticated");
+  });
+
+  // New uploads reject `.svg` outright (see the POST/PUT tests below), so the
+  // only way one ever ends up in storage is a pre-existing/legacy file -
+  // simulated here by writing straight to the temp root instead of through
+  // the upload endpoint.
+  describe("legacy .svg files", () => {
+    async function writeLegacySvg(name: string, contents: string): Promise<void> {
+      const { writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      await writeFile(join(tempDirBox.path, name), contents);
+    }
+
+    it("still forces a raw download, unsanitized", async () => {
+      await writeLegacySvg("legacy.svg", '<svg><script>alert(1)</script></svg>');
+      const response = await GET(context({ slug: "legacy.svg" }));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/octet-stream");
+      expect(response.headers.get("content-disposition")).toContain("attachment");
+      expect(await response.text()).toContain("<script>");
+    });
+
+    it("`?preview` serves it sanitized as real image/svg+xml", async () => {
+      await writeLegacySvg(
+        "legacy-preview.svg",
+        '<svg viewBox="0 0 10 10"><path d="M0 0h10v10z"/><script>alert(1)</script></svg>',
+      );
+      const response = await GET(context({ slug: "legacy-preview.svg", query: { preview: "" } }));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/svg+xml");
+      expect(response.headers.get("content-disposition")).toBeNull();
+      const body = await response.text();
+      expect(body).toContain("<path");
+      expect(body).not.toContain("<script");
+    });
+
+    it("`?preview` on a payload with no <svg> root has nothing safe to show", async () => {
+      await writeLegacySvg("legacy-malicious.svg", '<script>alert(1)</script>');
+      const response = await GET(context({ slug: "legacy-malicious.svg", query: { preview: "" } }));
+      expect(response.status).toBe(501);
+      expect((await response.json()).error).toBe("unsupported");
+    });
   });
 });
 

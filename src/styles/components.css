@@ -2389,6 +2389,9 @@
       align-items: center;
       justify-content: center;
       background-color: var(--dry-muted);
+      background-image: url(/dry/api/storage/main.jpg);
+      background-size: cover;
+      background-position: center;
 
       @media (width < 64rem) {
         display: none;

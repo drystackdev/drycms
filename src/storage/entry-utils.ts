@@ -77,6 +77,18 @@ export function isImageEntry(entry: FileEntry): boolean {
 	return entry.kind === 'file' && extensionToCategory(entry.ext) === 'image';
 }
 
+/** Most SVGs a File Manager preview ever shows (the managed Icon Management
+ * library under `dry-icons/`, and any Iconify-style icon a legacy upload
+ * happens to be) draw with `fill="currentColor"` rather than a real color -
+ * a plain `<img>` decodes that in its own isolated image-document context,
+ * where `currentColor` resolves to the browser's default (black) instead of
+ * the page's actual text color, regardless of theme. `FileManager` renders
+ * these through a CSS `mask-image` instead (same technique as `IconGlyph`)
+ * so they tint with the surrounding UI like every other icon in the app. */
+export function isSvgEntry(entry: FileEntry): boolean {
+	return entry.kind === 'file' && entry.ext?.toLowerCase() === 'svg';
+}
+
 /** `.dir` is a placeholder file dropped into every newly-created folder (object
  * storage like R2 has no such thing as an empty "directory" - a prefix only
  * exists once something is stored under it). Never shown in the UI. */

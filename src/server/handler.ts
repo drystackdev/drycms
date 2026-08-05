@@ -95,16 +95,24 @@ export async function handleApiRequest(
 
   // Resolved for every segment (including `auth`, so `GET /api/auth/session`
   // can read it straight off `context.session` instead of re-parsing the
-  // cookie itself) but only ENFORCED for every segment except `auth` -
-  // register/login/logout have to be reachable with no session to begin
-  // with. Individual routes (`content-entries.ts`/`content-types.ts`) do
+  // cookie itself) but only ENFORCED for every segment except `auth` and a
+  // public-media GET on `storage` - uploaded files back `<img>`s on the
+  // public reader site, which has no session to send, so an anonymous file
+  // read has to reach the route handler. `?tree` stays gated (it's a bulk
+  // listing, not a single file), and `storage.ts`'s own `GET` still enforces
+  // `context.session` itself before returning a *folder* listing - this
+  // exemption only lets an unauthenticated request as far as the route, it
+  // doesn't decide file-vs-folder (that needs a `stat()` only the route has).
+  // Individual routes (`content-entries.ts`/`content-types.ts`) do
   // finer-grained resource/action authorization on top of this - see
   // `content-types/access.ts`.
+  const isPublicStorageRead =
+    segment === "storage" && request.method === "GET" && !url.searchParams.has("tree");
   const sessionToken = readSessionCookie(request);
   const refreshToken = readRefreshCookie(request);
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
   const session = await resolveSession(request, env, claims);
-  if (segment !== "auth" && !session) {
+  if (segment !== "auth" && !isPublicStorageRead && !session) {
     return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

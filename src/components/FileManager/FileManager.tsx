@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, CSSProperties } from "preact";
 import { readCachedFile } from "./file-manager-blob-cache.js";
 import {
   canOptimizeUploadImage,
@@ -18,6 +18,7 @@ import {
   isAccepted,
   isHiddenEntry,
   isImageEntry,
+  isSvgEntry,
   namesEqual,
   retargetSubtree,
   sortEntries,
@@ -78,6 +79,31 @@ export interface FileManagerProps {
 type MoveCopyState = { mode: "move" | "copy"; ids: string[] } | null;
 
 const FOLDER_QUERY_KEY = "dry_folder";
+
+/** Renders an SVG preview (see `isSvgEntry`) as a `currentColor`-tinted CSS
+ * mask instead of a plain `<img>` - same technique as `IconGlyph`, just
+ * sized through `class`/`style` (the caller's existing thumbnail box)
+ * instead of a fixed square, since these previews land in four differently
+ * shaped contexts (list row, grid card, filmstrip, full-size dialog) rather
+ * than one icon slot. */
+function SvgMaskPreview({
+  src,
+  class: className,
+  style,
+}: {
+  src: string;
+  class?: string;
+  style?: CSSProperties;
+}) {
+  const mask = `url('${src}') no-repeat center / contain`;
+  return (
+    <span
+      aria-hidden="true"
+      class={className}
+      style={{ display: "block", backgroundColor: "currentColor", WebkitMask: mask, mask, ...style }}
+    />
+  );
+}
 
 /** Reads the folder id encoded in the current URL, if any - lets a reload or
  * a shared link land back in the same folder. Guarded for SSR. */
@@ -526,11 +552,18 @@ function ListView({
                       }}
                     >
                       {preview && isImageEntry(entry) ? (
-                        <img
-                          class="file-thumb-preview"
-                          src={entry.previewUrl ?? thumbnailUrl(entry)}
-                          alt=""
-                        />
+                        isSvgEntry(entry) && entry.previewUrl ? (
+                          <SvgMaskPreview
+                            class="file-thumb-preview"
+                            src={entry.previewUrl}
+                          />
+                        ) : (
+                          <img
+                            class="file-thumb-preview"
+                            src={entry.previewUrl ?? thumbnailUrl(entry)}
+                            alt=""
+                          />
+                        )
                       ) : (
                         <img
                           class="file-thumb-icon"
@@ -622,11 +655,18 @@ function GridView({
                  * menu, name, size) lives in a blurred overlay that's hidden
                  * until hover/focus (or the item is already checked), so the
                  * default view reads as a plain photo grid. */}
-                <img
-                  class="file-card-media-image"
-                  src={entry.previewUrl ?? thumbnailUrl(entry)}
-                  alt=""
-                />
+                {isSvgEntry(entry) && entry.previewUrl ? (
+                  <SvgMaskPreview
+                    class="file-card-media-image"
+                    src={entry.previewUrl}
+                  />
+                ) : (
+                  <img
+                    class="file-card-media-image"
+                    src={entry.previewUrl ?? thumbnailUrl(entry)}
+                    alt=""
+                  />
+                )}
                 <div class="file-card-media-overlay">
                   <label
                     class="file-card-media-top"
@@ -1435,13 +1475,25 @@ function PreviewDialog({
                 }
               >
                 {image ? (
-                  <img
-                    src={previewSrc}
-                    alt={entry.name}
-                    class="file-preview-image"
-                    draggable={false}
-                    style={{ transform: `scale(${zoom / 100})` }}
-                  />
+                  isSvgEntry(entry) ? (
+                    <SvgMaskPreview
+                      src={previewSrc!}
+                      class="file-preview-image"
+                      style={{
+                        width: "min(60vmin, 480px)",
+                        height: "min(60vmin, 480px)",
+                        transform: `scale(${zoom / 100})`,
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src={previewSrc}
+                      alt={entry.name}
+                      class="file-preview-image"
+                      draggable={false}
+                      style={{ transform: `scale(${zoom / 100})` }}
+                    />
+                  )
                 ) : (
                   <div class="file-preview-card">
                     <img
@@ -1547,12 +1599,19 @@ function PreviewDialog({
                   aria-selected={item.id === entry.id}
                   onClick={() => onNavigate(item.id)}
                 >
-                  <img
-                    src={item.previewUrl ?? thumbnailUrl(item)}
-                    alt={item.name}
-                    width={40}
-                    height={40}
-                  />
+                  {isSvgEntry(item) && item.previewUrl ? (
+                    <SvgMaskPreview
+                      src={item.previewUrl}
+                      style={{ width: "100%", height: "100%" }}
+                    />
+                  ) : (
+                    <img
+                      src={item.previewUrl ?? thumbnailUrl(item)}
+                      alt={item.name}
+                      width={40}
+                      height={40}
+                    />
+                  )}
                 </button>
               ))}
             </div>

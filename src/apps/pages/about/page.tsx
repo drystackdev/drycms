@@ -18,7 +18,7 @@ export default async function AboutPage() {
       <section class="mx-auto max-w-6xl px-4 py-16">
         <div class="grid items-center gap-10 sm:grid-cols-2">
           <img
-            src="/IMG_8153.JPG"
+            src="/dry/api/storage/main.jpg"
             alt="Mai Anh Quyền"
             class="aspect-square w-full rounded-2xl object-cover object-bottom"
           />

@@ -1,6 +1,37 @@
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createViteServer } from "vite";
+
+/**
+ * Closes a previous `bun run dev` still running (matched by command line,
+ * `pgrep`/`kill` - macOS/Linux only; an unsupported platform or missing
+ * `pgrep` just no-ops) before this instance touches any port. Has to run
+ * BEFORE `createViteServer()` below, not just around this file's own
+ * `server.listen()`: Vite binds its HMR WebSocket port independently of the
+ * main HTTP port as part of that call, so a leftover old process still
+ * holding it would otherwise fail that bind with no retry.
+ */
+function closeExistingDevServer() {
+  let output;
+  try {
+    output = execSync('pgrep -f "node .*scripts/dev-server\\.mjs"', { encoding: "utf8" });
+  } catch {
+    return; // No previous instance found, or `pgrep` isn't available.
+  }
+  const pids = output.trim().split("\n").filter((pid) => pid && Number(pid) !== process.pid);
+  if (pids.length === 0) return;
+  console.log(`[drycms] closing previous dev server (pid ${pids.join(", ")})...`);
+  for (const pid of pids) {
+    try {
+      process.kill(Number(pid), "SIGTERM");
+    } catch {
+      // Already gone.
+    }
+  }
+  execSync("sleep 0.5");
+}
+closeExistingDevServer();
 
 /**
  * Dev entry - deliberately plain JS (not TypeScript): this is the one file

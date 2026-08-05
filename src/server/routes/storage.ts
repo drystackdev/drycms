@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { text as readStreamText } from "node:stream/consumers";
 import type { DryRouteHandler } from "../context.js";
 import { storage } from "../config.js";
 import type { FileEntry } from "../../storage/entry-types.js";
@@ -11,19 +12,30 @@ import {
   readLeafName,
   readSlug,
   toUrlPath,
+  unauthenticatedResponse,
 } from "../route-helpers.js";
 import { toFileEntry } from "../../storage/entry.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath, storagePathParent } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
+import { sanitizeSvg, IconValidationError } from "../../icons/sanitize-svg.js";
 
 function isSvgName(name: string): boolean {
   return /\.svg$/i.test(name);
 }
 
+/** Legacy `.svg` files predate the upload block below and may still carry
+ * `<script>`/event-handler payloads, so the raw bytes stay locked behind
+ * `application/octet-stream` + `attachment` (see the `GET` handler). The
+ * Media page still needs to show *something* for them, so `previewUrl`
+ * points image entries at `?preview` instead of the raw path - that variant
+ * runs the same allowlist sanitizer the Icon Management feature uses before
+ * ever writing a file, and serves the result as real `image/svg+xml` (or
+ * 422s if nothing safe survives, e.g. a script-only payload). */
 function withPreview(entry: FileEntry, apiBase: string): FileEntry {
   if (entry.kind === "file" && entry.ext && extensionToCategory(entry.ext) === "image") {
-    return { ...entry, previewUrl: `${apiBase}/${toUrlPath(entry.id)}` };
+    const url = `${apiBase}/${toUrlPath(entry.id)}`;
+    return { ...entry, previewUrl: isSvgName(entry.name) ? `${url}?preview` : url };
   }
   return entry;
 }
@@ -56,6 +68,13 @@ export const GET: DryRouteHandler = async (context) => {
     if (!stat) throw new StorageError("not_found", `"${path}" does not exist.`);
 
     if (stat.kind === "folder") {
+      // Unlike a single file read (see the module-level comment on
+      // `withPreview`), a folder listing enumerates every name/size in it -
+      // real management surface, not public media - so it stays behind the
+      // session `handler.ts` otherwise would have already required for this
+      // route. `handler.ts` lets an unauthenticated `GET` this far only
+      // because it can't tell file from folder without this same `stat()`.
+      if (!context.session) return unauthenticatedResponse();
       const children = await adapter.list(path);
       const apiBase = apiBaseFrom(context.url, "storage");
       const entries = children.map((child) => withPreview(toFileEntry(child), apiBase));
@@ -64,6 +83,23 @@ export const GET: DryRouteHandler = async (context) => {
 
     const file = await adapter.read(path);
     const isSvg = isSvgName(stat.name);
+
+    if (isSvg && context.url.searchParams.has("preview")) {
+      let sanitized: string;
+      try {
+        sanitized = sanitizeSvg(await readStreamText(file.stream));
+      } catch (error) {
+        if (error instanceof IconValidationError) {
+          throw new StorageError("unsupported", "This SVG has no safe content to preview.");
+        }
+        throw error;
+      }
+      return new Response(sanitized, {
+        status: 200,
+        headers: { "Content-Type": "image/svg+xml" },
+      });
+    }
+
     return new Response(Readable.toWeb(file.stream) as unknown as ReadableStream, {
       status: 200,
       headers: {

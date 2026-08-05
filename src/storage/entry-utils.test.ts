@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileEntry } from "./entry-types.js";
-import { formatDate, retargetSubtree } from "./entry-utils.js";
+import { formatDate, isSvgEntry, retargetSubtree } from "./entry-utils.js";
 
 const folder = (id: string, parentId: string | null): FileEntry => ({
   id,
@@ -69,6 +69,18 @@ describe("retargetSubtree", () => {
     const entries = [file("a.txt", null)];
     expect(retargetSubtree(entries, "missing", null, "x")).toBe(entries);
     expect(retargetSubtree(entries, "a.txt", null, "a.txt")).toBe(entries);
+  });
+});
+
+describe("isSvgEntry", () => {
+  it("is true for a .svg file, case-insensitively", () => {
+    expect(isSvgEntry({ ...file("icon.svg", null), ext: "svg" })).toBe(true);
+    expect(isSvgEntry({ ...file("icon.SVG", null), ext: "SVG" })).toBe(true);
+  });
+
+  it("is false for a non-svg file and for folders", () => {
+    expect(isSvgEntry(file("photo.jpg", null))).toBe(false);
+    expect(isSvgEntry(folder("icons", null))).toBe(false);
   });
 });
 
