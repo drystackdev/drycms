@@ -161,6 +161,33 @@ function editorUrl(
   return `${base}?${params.toString()}`;
 }
 
+/**
+ * Opens `url` in a new FOREGROUND tab, from a handler that is itself running
+ * on a Ctrl/Cmd+click.
+ *
+ * That combination is the whole difficulty. The browser decides where a new
+ * tab goes from the modifiers on the INPUT EVENT IT IS CURRENTLY DISPATCHING
+ * - not from how the open was spelled - so while the real Ctrl/Cmd+click is
+ * still on the stack every route (`window.open`, a synthetic anchor click
+ * carrying no modifiers of its own) yields a background tab, and `focus()` on
+ * the opened window is ignored as focus-stealing. Deferring by one task is
+ * what actually escapes it: no input event is in flight by then, while the
+ * page still holds the transient user activation (good for ~5s) that keeps
+ * the open from being treated as an unsolicited popup.
+ */
+function openInNewTab(url: string): void {
+  setTimeout(() => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }, 0);
+}
+
 /** Walks `value` down the part of `ref.path` below `fromField`. The editor
  * reports changes per TOP-LEVEL field, so a change to `hero.name` arrives as
  * the whole `hero` component object and the rest of the path has to be
@@ -756,7 +783,16 @@ function main(): void {
     if (!marked) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.type === "click") openDialog(refsOn(marked)[0]!);
+    if (event.type !== "click") return;
+    const ref = refsOn(marked)[0]!;
+    // Ctrl/Cmd+click is the browser's native "open elsewhere" gesture - here
+    // that means the field's own admin editor page, in a new tab, instead
+    // of the inline dialog a plain click opens.
+    if (event.ctrlKey || event.metaKey) {
+      openInNewTab(editorUrl(config as VeiConfig, ref, ref.path));
+    } else {
+      openDialog(ref);
+    }
   };
   document.addEventListener("mousedown", intercept, true);
   document.addEventListener("click", intercept, true);
