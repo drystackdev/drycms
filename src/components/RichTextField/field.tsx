@@ -57,10 +57,6 @@ export interface RichTextFieldProps extends FieldProps<string> {
   inline?: boolean;
   iconSize?: ToolbarIconSize;
   features?: RichTextFieldConfig;
-  /** Suppresses the `<label>`/description above the editor - for a "Layout
-   * content" field (see `ContentLayoutField.tsx`), which IS the entry's
-   * main body rather than one labeled field among others. */
-  hideLabel?: boolean;
 }
 
 export default function RichTextField({
@@ -77,7 +73,6 @@ export default function RichTextField({
   source,
   iconSize = "sm",
   features,
-  hideLabel = false,
   class: className,
   style,
 }: RichTextFieldProps) {
@@ -117,13 +112,11 @@ export default function RichTextField({
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
-      {!hideLabel && (
-        <label>
-          {label}
-          {required && <span class="required-asterisk">*</span>}
-        </label>
-      )}
-      {!hideLabel && description && <small>{description}</small>}
+      <label>
+        {label}
+        {required && <span class="required-asterisk">*</span>}
+      </label>
+      {description && <small>{description}</small>}
       <div
         ref={richtextRef}
         class={`richtext${fullscreen ? " richtext-fullscreen" : ""}${inline ? " inline" : ""}`}

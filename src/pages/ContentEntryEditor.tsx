@@ -13,11 +13,8 @@ import type { EntryValue } from "../content-types/engine/entry-codec.js";
 import { findPasswordChangeErrors } from "../content-types/engine/entry-validate.js";
 import {
   buildEntryFieldTree,
-  type EntryColumnNode,
   type EntryFieldNode,
 } from "../content-types/engine/entry-tree.js";
-import type { RichTextFieldConfig } from "../content-types/field-registry.js";
-import ContentLayoutField from "./content-entry-editor/ContentLayoutField.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import {
   resolveFieldSide,
@@ -26,7 +23,6 @@ import {
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { useParam } from "../hooks/useParam.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import { diffEntryValue } from "../content-types/entry-draft-diff.js";
 import {
@@ -159,27 +155,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     () => (type ? buildEntryFieldTree(type, allTypes) : []),
     [type, allTypes],
   );
-  // Computed off `nodes` directly (not the later, post-guard `editableNodes`/
-  // `layoutContentFields`) purely so it's available THIS early - hooks must
-  // run unconditionally before the `if (...) return` guards below, and the
-  // OS scrollbar hook needs to know up front whether the split-pane layout
-  // (see `.content-entry-editor-grid:has(.content-layout-field)`,
-  // components.css) is even in play this render. `isTimestampField`/
-  // `isSortIndexField`'s exclusions never apply to a richtext field, so
-  // skipping them here doesn't change the answer.
-  const hasLayoutContentField = nodes.some(
-    (n) => n.kind === "column" && n.fieldType === "richtext" && (n.fieldConfig as RichTextFieldConfig | undefined)?.layoutContent === true,
-  );
-  // Re-inits (via `deps`) whenever the split-pane layout toggles on/off -
-  // e.g. navigating client-side between a layout-content entry and a plain
-  // one without a full remount (same class of bug `ContentEntryList.tsx`'s
-  // `key={type.name}` fixes for its own List page). Only actually attached
-  // to a DOM node (see the `ref={hasLayoutContentField ? sideScroll.ref :
-  // undefined}` below) while the split-pane layout is active - the metadata
-  // sidebar otherwise stays a plain in-page-flow block like any other entry
-  // form, using the page's own OverlayScrollbars-managed scroll instead of
-  // its own (`DryLayout.tsx`'s `.main`).
-  const sideScroll = useOverlayScrollbars<HTMLDivElement>([hasLayoutContentField]);
 
   const isSingleton = type?.kind === "singleton";
   // IndexedDB draft key (see `content-types/entry-draft-store.ts`) - a
@@ -415,6 +390,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   function handleResetField(fieldName: string) {
     if (!originalValue) return;
     updateFieldValue(fieldName, originalValue[fieldName]);
+    // Nothing left to review once this was the last remaining change - close
+    // the dialog instead of leaving it open on an empty list. `previewDiffs`
+    // here is the PRE-reset diff (this render's closure), so `<= 1` means
+    // this field was the only one left.
+    if (previewDiffs.length <= 1) setShowPreview(false);
   }
 
   function handleResetAll() {
@@ -475,16 +455,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const editableNodes = nodes.filter((n) => !isTimestampField(n) && !isSortIndexField(n));
   const sideOf = (n: EntryFieldNode) =>
     resolveFieldSide(n.fieldId, n.kind !== "column", type.fieldSides);
-  // A richtext field set to "Layout content" (the FieldDialog's Content /
-  // Layout content toggle) is meant to BE the entry's main body - it takes
-  // over the left column by itself, and every other field (regardless of
-  // its own configured side) moves to the right, rather than being mixed
-  // in alongside it.
-  const isLayoutContentField = (n: EntryFieldNode): n is EntryColumnNode =>
-    n.kind === "column" &&
-    n.fieldType === "richtext" &&
-    (n.fieldConfig as RichTextFieldConfig | undefined)?.layoutContent === true;
-  const layoutContentFields = editableNodes.filter(isLayoutContentField);
   const leftFields = editableNodes.filter((n) => sideOf(n) === "left");
   const rightFields = editableNodes.filter((n) => sideOf(n) === "right");
   // If every field ends up on the right (none left), the wide `2fr` left
@@ -492,14 +462,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // narrow `1.25fr` right column - fall back to showing the right-side
   // fields in the left column instead, leaving the right column (danger
   // zone aside) empty rather than the reverse.
-  const mainFields =
-    layoutContentFields.length > 0 ? layoutContentFields : leftFields.length > 0 ? leftFields : rightFields;
-  const sideFields =
-    layoutContentFields.length > 0
-      ? editableNodes.filter((n) => !isLayoutContentField(n))
-      : leftFields.length > 0
-        ? rightFields
-        : [];
+  const mainFields = leftFields.length > 0 ? leftFields : rightFields;
+  const sideFields = leftFields.length > 0 ? rightFields : [];
   const previewDiffs = originalValue ? diffEntryValue(originalValue, value, editableNodes) : [];
 
   return (
@@ -540,30 +504,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
       <fieldset disabled={!canEdit} class="content-entry-editor-form">
       <div class="content-entry-editor-grid">
-        {layoutContentFields.length > 0 ? (
-          layoutContentFields.map((node) => (
-            <ContentLayoutField
-              key={node.fieldName}
-              node={node}
-              value={value[node.fieldName]}
-              onChange={(fieldValue) => updateFieldValue(node.fieldName, fieldValue)}
-              error={fieldErrors[node.fieldName]}
-            />
-          ))
-        ) : (
-          <div class="stack">
-            {renderFieldNodes(
-              mainFields,
-              value,
-              fieldErrors,
-              updateFieldValue,
-              allTypes,
-              typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
-            )}
-          </div>
-        )}
+        <div class="stack">
+          {renderFieldNodes(
+            mainFields,
+            value,
+            fieldErrors,
+            updateFieldValue,
+            allTypes,
+            typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
+          )}
+        </div>
 
-        <div class="stack" ref={hasLayoutContentField ? sideScroll.ref : undefined}>
+        <div class="stack">
           {renderFieldNodes(
             sideFields,
             value,

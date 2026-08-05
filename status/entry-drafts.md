@@ -27,6 +27,10 @@ approved design. Summary:
   correction, 2026-08-05) - now redundant since every edit is already
   autosaved to IndexedDB, so navigating away without saving no longer loses
   anything. Back/Cancel now call `route(backTo)` directly.
+- Preview dialog auto-closes itself the instant `diffs` would go empty (last
+  field reset via the dialog's own undo, or Reset all) - removed the "No
+  changes yet" empty-state notice entirely, since it's now unreachable (user
+  correction, 2026-08-05).
 - `DryLayout.tsx` — hydrate index on mount; `ContentNavGroup` gets a
   `renderBadge` prop; singleton items get a `.nav-draft-dot`
   (`--dry-secondary-main`), collection items get a `badge sm secondary`

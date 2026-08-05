@@ -1,6 +1,6 @@
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
-import { CheckCircleIcon, EraserIcon, UndoIcon } from "../../components/icons/index.js";
+import { EraserIcon, UndoIcon } from "../../components/icons/index.js";
 import { formatDiffValue, type EntryFieldDiff } from "../../content-types/entry-draft-diff.js";
 
 export interface EntryPreviewDialogProps {
@@ -42,44 +42,37 @@ export default function EntryPreviewDialog({
             <p>{diffs.length} field{diffs.length === 1 ? "" : "s"} changed since the last save.</p>
           </header>
 
+          {/* `ContentEntryEditor.tsx` closes this dialog itself the moment
+              `diffs` would go empty (the last field reset, or Reset all) -
+              there's no "no changes" state to design for here. */}
           <div class="under" ref={bodyScroll}>
-            {diffs.length === 0 ? (
-              <div class="apply-build-empty">
-                <CheckCircleIcon />
-                <strong>No changes yet</strong>
-                <span class="hint">Everything matches what was last saved.</span>
-              </div>
-            ) : (
-              <ul class="entry-preview-diff-list">
-                {diffs.map((diff) => (
-                  <li key={diff.fieldName} class="entry-preview-diff-item">
-                    <div class="entry-preview-diff-item-head">
-                      <strong>{diff.label}</strong>
-                      <button
-                        type="button"
-                        class="ghost icon sm"
-                        title="Reset to saved value"
-                        onClick={() => onResetField(diff.fieldName)}
-                      >
-                        <UndoIcon />
-                      </button>
-                    </div>
-                    <div class="entry-preview-diff-values">
-                      <span class="entry-preview-diff-before">{formatDiffValue(diff.before)}</span>
-                      <span class="entry-preview-diff-after">{formatDiffValue(diff.after)}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ul class="entry-preview-diff-list">
+              {diffs.map((diff) => (
+                <li key={diff.fieldName} class="entry-preview-diff-item">
+                  <div class="entry-preview-diff-item-head">
+                    <strong>{diff.label}</strong>
+                    <button
+                      type="button"
+                      class="ghost icon sm"
+                      title="Reset to saved value"
+                      onClick={() => onResetField(diff.fieldName)}
+                    >
+                      <UndoIcon />
+                    </button>
+                  </div>
+                  <div class="entry-preview-diff-values">
+                    <span class="entry-preview-diff-before">{formatDiffValue(diff.before)}</span>
+                    <span class="entry-preview-diff-after">{formatDiffValue(diff.after)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
 
           <footer>
-            {diffs.length > 0 && (
-              <button type="button" class="destructive" onClick={onRequestResetAll}>
-                <EraserIcon /> Reset all
-              </button>
-            )}
+            <button type="button" class="destructive" onClick={onRequestResetAll}>
+              <EraserIcon /> Reset all
+            </button>
             <span class="spacer" />
             <button type="button" onClick={onClose}>Close</button>
           </footer>
