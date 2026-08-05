@@ -1,4 +1,5 @@
 import userOptions from "../../dry.config.js";
+import { setAdminPath } from "../storage/admin-path.js";
 import { resolveOptions } from "./options.js";
 
 /**
@@ -10,6 +11,10 @@ import { resolveOptions } from "./options.js";
 export const resolved = resolveOptions(userOptions);
 
 export const { path, storage, icons, content, ai, kv } = resolved;
+
+// Hands the base path to the one module that needs it on BOTH sides -
+// see `storage/admin-path.ts` for why it can't just import this file.
+setAdminPath(resolved.path);
 export const componentsStorage = resolved.components.storage;
 export const pageComponentsStorage = resolved.pageComponents.storage;
 export const pagesCacheStorage = resolved.pagesCache.storage;

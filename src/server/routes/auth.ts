@@ -13,6 +13,7 @@ import { resolved } from "../config.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
+import { clearVeiCookieHeader, clearVeiHintCookieHeader, veiHintCookieHeader } from "../vei-session.js";
 import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../rate-limit.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 import { readEnvVar } from "../options.js";
@@ -188,6 +189,7 @@ function withSessionCookies(response: Response, context: DryRouteContext, token:
   response.headers.append("Set-Cookie", sessionCookieHeader(context, token, 15 * 60));
   response.headers.append("Set-Cookie", sessionCookieHeader(context, refreshToken, SESSION_MAX_AGE_SECONDS, REFRESH_COOKIE_NAME));
   response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
+  response.headers.append("Set-Cookie", veiHintCookieHeader(context.url, SESSION_MAX_AGE_SECONDS));
   return response;
 }
 
@@ -195,6 +197,11 @@ function withClearedSessionCookie(response: Response, context: DryRouteContext):
   response.headers.append("Set-Cookie", sessionCookieHeader(context, "", 0));
   response.headers.append("Set-Cookie", sessionCookieHeader(context, "", 0, REFRESH_COOKIE_NAME));
   response.headers.append("Set-Cookie", clearCsrfCookieHeader(context));
+  // Both `Path=/` cookies go too - a signed-out browser must not keep
+  // rendering edit markers on the public site, nor keep offering the
+  // overlay's button (see `server/vei-session.ts`).
+  response.headers.append("Set-Cookie", clearVeiCookieHeader(context.url));
+  response.headers.append("Set-Cookie", clearVeiHintCookieHeader(context.url));
   return response;
 }
 

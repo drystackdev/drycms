@@ -1,3 +1,4 @@
+import { unbox } from "../dry-vei-ref.js";
 import { fieldTypes } from "../field-registry.js";
 import { quoteIdent } from "../naming.js";
 import { SYSTEM_FIELD_IDS } from "../system-fields.js";
@@ -56,8 +57,13 @@ const SQL_OP: Record<Exclude<EntryWhereOp, "in">, string> = {
 };
 
 function serializeConditionValue(column: QueryableColumn, raw: unknown): unknown {
+  // `unbox` first: in an edit-mode render (`plans/vei.md`) a value read back
+  // out of `dry()` is a `String` object, and a page filtering by one it just
+  // rendered - `where: [{ field: "slug", value: post.slug }]` - would
+  // otherwise hand a driver an object it can't bind.
+  const value = unbox(raw);
   const serialize = fieldTypes[column.fieldType]?.serialize;
-  return serialize ? serialize(raw as never) : raw;
+  return serialize ? serialize(value as never) : value;
 }
 
 function resolveColumn(queryable: QueryableColumn[], fieldName: string): QueryableColumn {

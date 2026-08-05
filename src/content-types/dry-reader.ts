@@ -1,5 +1,6 @@
 import { getDryContext, type DryRequestContext } from "./dry-context.js";
-import { populateRelations, toRecord, isPublished } from "./dry-populate.js";
+import { markRecord, populateRelations, toRecord, isPublished } from "./dry-populate.js";
+import type { DryEntry } from "./dry-vei.js";
 import { seoTierFor, type DrySeoValue } from "./dry-seo.js";
 import type { EntryWhere } from "./engine/entry-where.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "./types.js";
@@ -43,14 +44,14 @@ export interface DryCollectionReader<T, R extends Record<string, unknown> = Reco
    * preview a draft is a future, session-gated feature (`plans/reader.md`'s
    * deferred Phase 4), not something a build-time reader should make easy to
    * reach for by accident. */
-  get(idOrSlug: number | string): Promise<T | null>;
-  get<K extends keyof R & string>(idOrSlug: number | string, options: DryGetOptions<K>): Promise<(Omit<T, K> & Pick<R, K>) | null>;
-  list(options?: DryListOptions<T>): Promise<{ rows: T[]; total: number }>;
+  get(idOrSlug: number | string): Promise<DryEntry<T> | null>;
+  get<K extends keyof R & string>(idOrSlug: number | string, options: DryGetOptions<K>): Promise<DryEntry<Omit<T, K> & Pick<R, K>> | null>;
+  list(options?: DryListOptions<T>): Promise<{ rows: DryEntry<T>[]; total: number }>;
 }
 
 export interface DrySingletonReader<T, R extends Record<string, unknown> = Record<string, unknown>> {
-  get(): Promise<T | null>;
-  get<K extends keyof R & string>(options: DryGetOptions<K>): Promise<(Omit<T, K> & Pick<R, K>) | null>;
+  get(): Promise<DryEntry<T> | null>;
+  get<K extends keyof R & string>(options: DryGetOptions<K>): Promise<DryEntry<Omit<T, K> & Pick<R, K>> | null>;
 }
 
 /** Generic over the project's OWN generated name->interface maps
@@ -104,10 +105,10 @@ async function getCollectionEntry(
   let result: Record<string, unknown> | null;
   if (typeof idOrSlug === "number") {
     const row = await entries.getEntry(type, allTypes, idOrSlug);
-    result = row && isPublished(row.value) ? toRecord(row) : null;
+    result = row && isPublished(row.value) ? markRecord(context, type, toRecord(row)) : null;
   } else {
     const row = await entries.findEntry(type, allTypes, [{ field: "slug", op: "eq", value: idOrSlug }], { publishedOnly: true });
-    result = row ? toRecord(row) : null;
+    result = row ? markRecord(context, type, toRecord(row)) : null;
   }
   if (result && populate && populate.length > 0) {
     await populateRelations(context, type, allTypes, result, populate);
@@ -140,7 +141,7 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
         publishedOnly: !options.includeDraft,
         include: options.include,
       });
-      const result = { rows: page.rows.map(toRecord), total: page.total };
+      const result = { rows: page.rows.map((row) => markRecord(context, type, toRecord(row))), total: page.total };
       context.callLog?.push({ kind: "collection", name, method: "list", result });
       return result;
     },
@@ -155,7 +156,7 @@ function createSingletonReader(name: string): DrySingletonReader<Record<string, 
       const type = mustFindType(allTypes, name, "singleton");
       context.touchedTypes?.add(type.name);
       const row = await entries.getSingletonEntry(type, allTypes);
-      const result = row ? toRecord(row) : null;
+      const result = row ? markRecord(context, type, toRecord(row)) : null;
       if (result && options?.populate && options.populate.length > 0) {
         await populateRelations(context, type, allTypes, result, options.populate);
       }

@@ -1,4 +1,5 @@
 import type { DryRequestContext } from "./dry-context.js";
+import { attachRefs, boxRecordStrings, createInertRefProxy } from "./dry-vei.js";
 import type { EntryRow } from "./engine/entries-types.js";
 import { flipCardinality, type RelationFieldConfig, type RelationMirrorFieldConfig } from "./field-registry.js";
 import { activeFields, relationMirrorFieldsFor } from "./system-fields.js";
@@ -9,6 +10,39 @@ import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
  * lookups, so both produce identically-shaped rows. */
 export function toRecord(row: EntryRow): Record<string, unknown> {
   return { id: row.id, ...row.value };
+}
+
+/**
+ * Gives a record its `$` (see `dry-vei.ts`). Everything `dry()` returns
+ * funnels through here, INCLUDING a populated relation target - a
+ * `category.title` rendered on a blog page belongs to the category, and
+ * marking it here is what lets it point at its own entry rather than the
+ * page's.
+ *
+ * `$` is attached UNCONDITIONALLY, resolving to nothing outside an
+ * edit-mode render or for a type the viewer can't write. A page that writes
+ * `dryBind(post.$.title)` is ordinary page code that runs on every request
+ * and during client hydration too - leaving `$` off would make it throw for
+ * every anonymous visitor, which is exactly the failure this shape exists
+ * to prevent. An inert `$` costs one non-enumerable property.
+ */
+export function markRecord(
+  context: DryRequestContext,
+  type: ContentTypeDefinition,
+  record: Record<string, unknown>,
+): Record<string, unknown> {
+  const id = record.id;
+  if (!context.vei?.canUpdate(type) || typeof id !== "number") {
+    Object.defineProperty(record, "$", { value: createInertRefProxy(), enumerable: false, configurable: true });
+    return record;
+  }
+  const target = {
+    kind: type.kind === "singleton" ? ("singleton" as const) : ("collection" as const),
+    type,
+    allTypes: context.allTypes,
+    id,
+  };
+  return attachRefs(boxRecordStrings(record, target), target);
 }
 
 /** Same "an untouched draft/schedule counts as published" rule `dry-reader.ts`'s
@@ -74,7 +108,7 @@ async function fetchPublished(
   id: number,
 ): Promise<Record<string, unknown> | null> {
   const row = await context.entries.getEntry(targetType, allTypes, id);
-  return row && isPublished(row.value) ? toRecord(row) : null;
+  return row && isPublished(row.value) ? markRecord(context, targetType, toRecord(row)) : null;
 }
 
 /**

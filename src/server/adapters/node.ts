@@ -60,7 +60,12 @@ export function toFetchRequest(req: IncomingMessage): Request {
 
 export function applySecurityHeaders(res: ServerResponse): void {
   if (!res.hasHeader("X-Content-Type-Options")) res.setHeader("X-Content-Type-Options", "nosniff");
-  if (!res.hasHeader("X-Frame-Options")) res.setHeader("X-Frame-Options", "DENY");
+  // `SAMEORIGIN`, not `DENY`: the Visual Editing Interface (`plans/vei.md`)
+  // frames the admin's own entry editor inside a public page of the same
+  // origin. Cross-origin framing - the actual clickjacking vector - stays
+  // blocked, and `handler.ts`'s API responses still set `DENY` explicitly
+  // (response headers are copied over these defaults, not under them).
+  if (!res.hasHeader("X-Frame-Options")) res.setHeader("X-Frame-Options", "SAMEORIGIN");
   if (!res.hasHeader("Referrer-Policy")) res.setHeader("Referrer-Policy", "no-referrer");
   if (!res.hasHeader("Permissions-Policy")) res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 }

@@ -1,4 +1,5 @@
-import { path } from "../server/config.js";
+import { boxString, refOf } from "../content-types/dry-vei-ref.js";
+import { adminPath } from "./admin-path.js";
 import type { FileEntry, FileManagerSource } from "./entry-types.js";
 
 function basename(path: string): string {
@@ -40,8 +41,14 @@ export function encodePath(path: string): string {
  * importing project page code.
  */
 export function resolveImageSrc(value: string): string {
-  if (/^https?:\/\//i.test(value) || value.startsWith("/")) return value;
-  return `${path}/api/storage/${encodePath(value)}`;
+  const resolved =
+    /^https?:\/\//i.test(value) || value.startsWith("/") ? String(value) : `${adminPath()}/api/storage/${encodePath(value)}`;
+  // Carries the Visual Editing Interface's provenance across the rewrite, so
+  // `<img src={imageUrl(post.hero)} />` still marks itself (`plans/vei.md`).
+  // A `String.prototype` method would have dropped it - this is the one
+  // helper in the repo that a stored image value routinely passes through.
+  const ref = refOf(value);
+  return ref ? boxString(resolved, ref) : resolved;
 }
 
 async function parseJson<T>(response: Response): Promise<T> {

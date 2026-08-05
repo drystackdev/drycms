@@ -13,6 +13,7 @@ import DryLayout from "../components/DryLayout.js";
 import Icon from "../components/Icon.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
+import { isVeiFrame, startVeiBridge } from "../pages/vei/bridge.js";
 import { authState, loadSession } from "../store/auth.js";
 import "../lib/native/native.js";
 
@@ -101,12 +102,25 @@ class Boundary extends Component<
  * SuperAdmin instead, without `DryLayout`'s sidebar/topbar chrome or any of
  * these lazy route chunks ever loading for a visitor who isn't authenticated
  * yet. */
+/** The Visual Editing Interface's dialog (`plans/vei.md`) frames one entry
+ * editor route inside a public page, where the sidebar/topbar would be
+ * noise wrapped around a modal. `AuthGate` already establishes that
+ * rendering a route without `DryLayout`'s chrome is a normal thing to do
+ * here (Sign in/Register do exactly that); this is the same move for a
+ * route that IS authenticated. */
+function Chrome({ children }: { children: ComponentChildren }) {
+  if (isVeiFrame()) return <>{children}</>;
+  return <DryLayout>{children}</DryLayout>;
+}
+
 function AuthenticatedApp() {
   // Router's onLoadStart/onLoadEnd fire whenever it's waiting on a lazy
   // chunk - both the very first paint (nothing else has committed yet) and
   // later in-app navigations - so this bar is the one loading indicator for
   // both cases described in the comment above.
   const [routeLoading, setRouteLoading] = useState(false);
+
+  useEffect(() => (isVeiFrame() ? startVeiBridge() : undefined), []);
 
   return (
     <>
@@ -117,7 +131,7 @@ function AuthenticatedApp() {
         {/* Outside `Router` so it survives route changes - swapping it in
          * per-route remounted the sidebar (losing scroll position, replaying
          * the collapse-state flash) on every navigation. */}
-        <DryLayout>
+        <Chrome>
           <Boundary>
             <Router
               onLoadStart={() => setRouteLoading(true)}
@@ -209,7 +223,7 @@ function AuthenticatedApp() {
               />
             </Router>
           </Boundary>
-        </DryLayout>
+        </Chrome>
       </ErrorBoundary>
     </>
   );

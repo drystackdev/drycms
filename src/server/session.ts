@@ -10,40 +10,28 @@ import { isAuthSessionValid } from "./auth-security.js";
 export const SESSION_COOKIE_NAME = "drycms_session";
 export const REFRESH_COOKIE_NAME = "drycms_refresh";
 
-export function readSessionCookie(request: Request): string | undefined {
+export function readCookie(request: Request, name: string): string | undefined {
   const header = request.headers.get("Cookie");
   if (!header) return undefined;
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
     if (eq === -1) continue;
-    const key = part.slice(0, eq).trim();
-    if (key === SESSION_COOKIE_NAME) {
-      try {
-        return decodeURIComponent(part.slice(eq + 1).trim());
-      } catch {
-        return undefined;
-      }
+    if (part.slice(0, eq).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      return undefined;
     }
   }
   return undefined;
 }
 
+export function readSessionCookie(request: Request): string | undefined {
+  return readCookie(request, SESSION_COOKIE_NAME);
+}
+
 export function readRefreshCookie(request: Request): string | undefined {
-  const header = request.headers.get("Cookie");
-  if (!header) return undefined;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    const key = part.slice(0, eq).trim();
-    if (key === REFRESH_COOKIE_NAME) {
-      try {
-        return decodeURIComponent(part.slice(eq + 1).trim());
-      } catch {
-        return undefined;
-      }
-    }
-  }
-  return undefined;
+  return readCookie(request, REFRESH_COOKIE_NAME);
 }
 
 export async function resolveSession(

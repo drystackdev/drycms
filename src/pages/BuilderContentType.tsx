@@ -412,7 +412,7 @@ export default function BuilderContentType() {
             class="outline builder-ai-header-button"
             aria-busy={definitions ? false : true}
             disabled={!definitions}
-            onClick={() => setAiWizardOpen(true)}
+            onClick={() => setAiWizardOpen(!aiWizardOpen)}
           >
             <SparkleIcon /> Ask AI
           </button>
@@ -517,7 +517,6 @@ export default function BuilderContentType() {
         <AiSchemaWizardPanel
           open={aiWizardOpen}
           allDefinitions={definitions ?? []}
-          onClose={() => setAiWizardOpen(false)}
         />
       </div>
       <CollectionEditorDialog

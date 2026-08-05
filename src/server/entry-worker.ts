@@ -3,6 +3,7 @@ import { injectClientConfig } from "./client-config.js";
 import { path as adminPath } from "./config.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
+import { handleVeiRoute } from "./vei-routes.js";
 
 /**
  * Cloudflare Workers entry - bundled by `vite build --ssr
@@ -36,7 +37,9 @@ interface ExecutionContext {
 
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
+  // See `adapters/node.ts`'s `applySecurityHeaders` for why this is
+  // `SAMEORIGIN` rather than `DENY`.
+  "X-Frame-Options": "SAMEORIGIN",
   "Referrer-Policy": "no-referrer",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 };
@@ -79,6 +82,9 @@ export default {
 
     const guardResponse = await guardPageRequest(request, env);
     if (guardResponse) return withSecurityHeaders(guardResponse);
+
+    const veiResponse = await handleVeiRoute(request, env);
+    if (veiResponse) return withSecurityHeaders(veiResponse);
 
     let pathname: string;
     try {

@@ -5,3 +5,4 @@
 // (`entry-node.ts`/`entry-worker.ts`) runs.
 export const GLOBALS_CSS_HREF = "";
 export const HYDRATE_ENTRY_HREF = "";
+export const VEI_OVERLAY_HREF = "";

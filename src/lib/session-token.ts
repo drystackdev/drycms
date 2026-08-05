@@ -25,6 +25,14 @@ export interface SessionTokenClaims extends SessionPayload {
 
 export interface SignSessionOptions {
   sessionId: string;
+  /** Overrides the 15-minute default. Only the Visual Editing Interface's
+   * own `Path=/` cookie uses this (`server/vei-session.ts`): its holder is
+   * browsing the public site, where nothing refreshes the admin cookie
+   * pair, so a 15-minute token would drop them out of edit mode mid-edit.
+   * Revocation is unaffected either way - `resolveSession`/
+   * `resolveVeiSession` still check the server-side session record, so a
+   * logout kills a long-lived token immediately. */
+  expiresInMs?: number;
 }
 
 interface JwtPayload {
@@ -135,7 +143,7 @@ export async function signSession(payload: SessionPayload, options: SignSessionO
     name: payload.name,
     email: payload.email,
     iat: now,
-    exp: now + SESSION_MAX_AGE_MS / 1000,
+    exp: now + (options.expiresInMs ?? SESSION_MAX_AGE_MS) / 1000,
     jti: crypto.randomUUID(),
     iss: ISSUER,
     aud: AUDIENCE,

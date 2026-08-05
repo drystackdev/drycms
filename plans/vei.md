@@ -1,7 +1,11 @@
 # Visual Editing Interface (VEI)
 
 Sửa field ngay trên trang public (`src/apps/pages/**`), không phải vào `/dry`
-tìm entry. Kế hoạch này đủ chi tiết để làm một lượt, mọi quyết định đã chốt.
+tìm entry.
+
+> **Đã thực thi xong (2026-08-06)** - cả 6 bước. Tiến độ thật, những chỗ lệch so
+> với kế hoạch dưới đây, và phần chưa làm (`e2e/vei.spec.ts`) nằm trong
+> `status/vei.md`. Tài liệu này giữ nguyên như lúc chốt kế hoạch để so được.
 
 ## Khả thi - phần khó nhất đã có sẵn
 

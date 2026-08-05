@@ -3339,7 +3339,13 @@
       display: none;
       flex-direction: column;
       min-width: 0;
-      min-height: 32rem;
+      /* Sized by its own content, not by the grid row: `align-self: start`
+       * opts out of the default `stretch`, so a short stage (the one-line
+       * start prompt, a two-choice question) renders a short panel instead
+       * of a tall mostly-empty card next to the list. The cap keeps a long
+       * turn inside the viewport - `.ai-wizard-body` scrolls past it. */
+      align-self: start;
+      max-height: min(42rem, calc(100dvh - 15rem));
       padding: 1.5rem;
       background-color: var(--dry-card);
       color: var(--dry-card-foreground);

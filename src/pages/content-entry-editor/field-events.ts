@@ -8,6 +8,18 @@
 
 export const FIELD_INPUT_EVENT = "dry:field-input";
 export const FIELD_SET_EVENT = "dry:field-set";
+/** Whole-entry counterparts of the two field events: ask the open editor to
+ * run its own Save (`dry:entry-save`), and hear back how it went
+ * (`dry:entry-saved`). The Visual Editing Interface (`plans/vei.md`) saves
+ * several entries in a row this way, driving the real editor rather than
+ * reimplementing its save path - validation, draft cleanup and error
+ * reporting all stay in the one place that already does them. */
+export const ENTRY_SAVE_EVENT = "dry:entry-save";
+export const ENTRY_SAVED_EVENT = "dry:entry-saved";
+
+export interface EntrySavedEventDetail {
+  ok: boolean;
+}
 
 export interface FieldInputEventDetail {
   /** The entry's own top-level field name (`EntryFieldNode.fieldName`) -
@@ -59,6 +71,21 @@ export function dispatchFieldInput(
   );
 }
 
+/** The listening half of `dispatchFieldInput` above. Outside code can of
+ * course call `window.addEventListener(FIELD_INPUT_EVENT, ...)` itself -
+ * that's the point of these being plain CustomEvents - but every in-repo
+ * consumer would then repeat the same detail-shape cast, so it lives here
+ * next to the dispatcher instead (mirroring `listenForFieldSet`). */
+export function listenForFieldInput(onInput: (detail: FieldInputEventDetail) => void): () => void {
+  const handler = (event: Event) => {
+    const detail = (event as CustomEvent<FieldInputEventDetail>).detail;
+    if (!detail || typeof detail.name !== "string") return;
+    onInput(detail);
+  };
+  window.addEventListener(FIELD_INPUT_EVENT, handler);
+  return () => window.removeEventListener(FIELD_INPUT_EVENT, handler);
+}
+
 /**
  * The other direction - an outside listener drives a field by dispatching
  * `dry:field-set` on `window` with `{ name, value }`. Always overwrites,
@@ -74,6 +101,22 @@ export function listenForFieldSet(onSet: (name: string, value: unknown) => void)
   };
   window.addEventListener(FIELD_SET_EVENT, handler);
   return () => window.removeEventListener(FIELD_SET_EVENT, handler);
+}
+
+export function listenForEntrySave(onSave: () => void): () => void {
+  const handler = () => onSave();
+  window.addEventListener(ENTRY_SAVE_EVENT, handler);
+  return () => window.removeEventListener(ENTRY_SAVE_EVENT, handler);
+}
+
+export function dispatchEntrySaved(ok: boolean): void {
+  window.dispatchEvent(new CustomEvent<EntrySavedEventDetail>(ENTRY_SAVED_EVENT, { detail: { ok } }));
+}
+
+export function listenForEntrySaved(onSaved: (detail: EntrySavedEventDetail) => void): () => void {
+  const handler = (event: Event) => onSaved((event as CustomEvent<EntrySavedEventDetail>).detail ?? { ok: false });
+  window.addEventListener(ENTRY_SAVED_EVENT, handler);
+  return () => window.removeEventListener(ENTRY_SAVED_EVENT, handler);
 }
 
 /** Attribute `renderFieldNodes` (`ContentEntryEditor.tsx`) sets on each

@@ -54,3 +54,10 @@ export function resolveHydrateEntryHref(
 ): string {
   return resolveBuiltAssetHref(dev, "src/apps/hydrate-client.ts", manifestPath);
 }
+
+export function resolveVeiOverlayHref(
+  dev: boolean,
+  manifestPath: string = join(process.cwd(), "dist/client/.vite/manifest.json"),
+): string {
+  return resolveBuiltAssetHref(dev, "src/apps/vei/overlay.ts", manifestPath);
+}

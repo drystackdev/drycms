@@ -32,11 +32,14 @@ import {
 } from "../content-types/entry-draft-store.js";
 import EntryPreviewDialog from "./content-entry-editor/EntryPreviewDialog.js";
 import {
+  dispatchEntrySaved,
   dispatchFieldInput,
   FIELD_ANCHOR_ATTR,
+  listenForEntrySave,
   listenForFieldSet,
   scrollToField,
 } from "./content-entry-editor/field-events.js";
+import { isVeiFrame } from "./vei/bridge.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import FieldRenderer, { type FieldRendererProps } from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -348,6 +351,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     }
 
     setSaving(true);
+    let saved = false;
     try {
       if (isSingleton) {
         const entry = await entriesApi.saveSingleton(value);
@@ -367,8 +371,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Saved "${type.label}" entry.` });
-        route(`${path}/content/${type.name}`);
+        // Inside the VEI dialog there's no list to go back to - the frame is
+        // about to be reused for the next entry (or closed).
+        if (!isVeiFrame()) route(`${path}/content/${type.name}`);
       }
+      saved = true;
     } catch (error) {
       if (error instanceof ContentEntriesApiError && error.fieldErrors) {
         setFieldErrors(error.fieldErrors);
@@ -382,8 +389,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       }
     } finally {
       setSaving(false);
+      dispatchEntrySaved(saved);
     }
   }
+
+  // Lets the Visual Editing Interface run this editor's own Save from
+  // outside the frame (`plans/vei.md`). No dependency array on purpose:
+  // `handleSave` closes over `value`/`entryId`/`type`, so re-subscribing
+  // each render is what keeps the handler from saving a stale snapshot.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the latest closure is the point
+  useEffect(() => listenForEntrySave(() => void handleSave()));
 
   // Both reset actions live inside the Preview dialog (`EntryPreviewDialog`),
   // not on the field rows themselves - see `status/entry-drafts.md`.

@@ -27,9 +27,21 @@ export interface DryCallLogEntry {
   result: unknown;
 }
 
+/** Present only while rendering for the Visual Editing Interface
+ * (`plans/vei.md`) - its absence is what makes a normal public render
+ * byte-identical to one from before this feature existed: no refs attached,
+ * no values boxed, nothing marked. */
+export interface DryVeiContext {
+  /** Whether the viewer may edit this content type at all. Filtering here,
+   * at the moment a value gets its provenance, is what keeps a field the
+   * viewer can't write from ever being offered as editable. */
+  canUpdate(type: ContentTypeDefinition): boolean;
+}
+
 export interface DryRequestContext {
   entries: ContentEntryEngineAdapter;
   allTypes: ContentTypeDefinition[];
+  vei?: DryVeiContext;
   /** Content type names read during this render - `dry-reader.ts`'s
    * reader functions add to this as they go. Optional (not every caller
    * needs it, e.g. `dry-reader.test.ts`'s existing cases) so an omitted

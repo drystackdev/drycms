@@ -313,4 +313,10 @@ declare global {
   /** Sets this page's `<title>`/`og:title`, overriding every SEO cascade
    * layer (see `dry-seo.ts`). Last call wins. */
   function setTitle(title: string): void;
+  /** Marks an element as the editable source of one field, for the Visual
+   * Editing Interface (`plans/vei.md`):
+   * `<h1 {...dryBind(post.$.title)}>{post.title}</h1>`, or
+   * `<img {...dryBind(post.$.hero, "src")} src={imageUrl(post.hero)} />`.
+   * Emits nothing at all outside edit mode. */
+  function dryBind(value: unknown, attribute?: string): Record<string, string>;
 }

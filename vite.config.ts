@@ -42,6 +42,7 @@ export default defineConfig(({ isSsrBuild }) => ({
               main: "index.html",
               appsGlobals: "src/apps/globals.css",
               appsHydrate: "src/apps/hydrate-client.ts",
+              appsVeiOverlay: "src/apps/vei/overlay.ts",
             },
           },
           manifest: true,

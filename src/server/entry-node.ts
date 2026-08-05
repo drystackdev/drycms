@@ -7,6 +7,7 @@ import { path as adminPath } from "./config.js";
 import { mimeType } from "./route-helpers.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
+import { handleVeiRoute } from "./vei-routes.js";
 
 /**
  * Production entry - bundled by `vite build --ssr src/server/entry-node.ts`
@@ -81,9 +82,15 @@ async function serveRequest(req: IncomingMessage, res: ServerResponse): Promise<
 
 const server = createHttpServer((req, res) => {
   apiMiddleware(req, res, async () => {
-    const redirect = await guardPageRequest(toFetchRequest(req), {});
+    const request = toFetchRequest(req);
+    const redirect = await guardPageRequest(request, {});
     if (redirect) {
       await sendFetchResponse(redirect, res);
+      return;
+    }
+    const veiResponse = await handleVeiRoute(request, {});
+    if (veiResponse) {
+      await sendFetchResponse(veiResponse, res);
       return;
     }
     await serveRequest(req, res);

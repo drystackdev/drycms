@@ -37,6 +37,16 @@ const AMBIENT_GLOBALS: AmbientGlobal[] = [
     clientPath: join(CONTENT_TYPES_DIR, "params-reader-client.ts"),
   },
   {
+    // Same module on both sides, unlike the three above: `dryBind` reads a
+    // ref off a value it's handed and returns an attribute object - no DB
+    // access, nothing to swap out for the browser.
+    name: "dryBind",
+    callPattern: /\bdryBind\s*\(/,
+    importPattern: /import\s*\{[^}]*\bdryBind\b[^}]*\}\s*from\s*["'][^"']*dry-vei(\.js)?["']/,
+    serverPath: join(CONTENT_TYPES_DIR, "dry-vei.ts"),
+    clientPath: join(CONTENT_TYPES_DIR, "dry-vei.ts"),
+  },
+  {
     name: "setTitle",
     callPattern: /\bsetTitle\s*\(/,
     importPattern: /import\s*\{[^}]*\bsetTitle\b[^}]*\}\s*from\s*["'][^"']*dry-title(-client)?(\.js)?["']/,

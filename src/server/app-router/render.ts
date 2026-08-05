@@ -2,10 +2,14 @@ import renderToString, { renderToStringAsync } from "preact-render-to-string";
 import { runWithDryContext, type DryRequestContext } from "../../content-types/dry-context.js";
 import { mergeSeoLayers, type DrySeoValue } from "../../content-types/dry-seo.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
-import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF } from "./assets.js";
+import { path as adminPath } from "../config.js";
+import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { resolveMatchToVNode } from "./resolve-match.js";
+import { installVeiMarkerHook } from "./vei-marker-hook.js";
+
+installVeiMarkerHook();
 
 export type { PageProps, LayoutProps } from "./render-types.js";
 
@@ -38,7 +42,8 @@ const DOC_HEAD_PREFIX =
   '<meta name="viewport" content="width=device-width, initial-scale=1">' +
   `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}">` +
   (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
-  `<script type="module" src="${HYDRATE_ENTRY_HREF}"></script>`;
+  `<script type="module" src="${HYDRATE_ENTRY_HREF}"></script>` +
+  `<script type="module" src="${VEI_OVERLAY_HREF}"></script>`;
 const DOC_BODY_OPEN = "</head><body>";
 const BODY_AND_HTML_CLOSE = "</body></html>";
 
@@ -80,6 +85,19 @@ function buildSeoTags(seo: DrySeoValue): string {
  * (append after the fully rendered content, not before). */
 const ISODATA_MARKER = '<script type="isodata"></script>';
 
+/**
+ * What `apps/vei/overlay.ts` needs before it can decide anything: the admin
+ * base path (the site bundle has no other source for it) and whether THIS
+ * render carries edit markers. Emitted on every page, including cached and
+ * anonymous ones - it names no user and grants nothing, and leaving it out
+ * of the cached variant would mean the overlay could never offer its button
+ * to a signed-in admin browsing normally. `path` is a config value matching
+ * `/^\/[a-z0-9/-]*$/` (`options.ts`), so it needs no escaping here.
+ */
+function veiConfigScript(editMode: boolean): string {
+  return `<script type="application/json" id="dry-vei-config">{"path":${JSON.stringify(adminPath)},"edit":${editMode}}</script>`;
+}
+
 export interface RenderPageOptions {
   /** Fires with the FULL document (head+body+tail, same bytes already
    * streamed to the client) once rendering finishes - `page-handler.ts`
@@ -117,9 +135,12 @@ export function renderPage(
         const vnode = await runWithDryContext(dryContext, () => resolveMatchToVNode(match));
         const head = DOC_HEAD_PREFIX + buildSeoTags(mergeSeoLayers(dryContext.seo)) + DOC_BODY_OPEN;
         controller.enqueue(encoder.encode(head));
-        const bodyHtml = await renderToStringAsync(vnode as never);
+        // Inside the context too, not just `resolveMatchToVNode`: nested
+        // components render HERE, and a `dry()` call from one of them would
+        // otherwise land outside the request it belongs to.
+        const bodyHtml = await runWithDryContext(dryContext, () => renderToStringAsync(vnode as never));
         const replayData = `<script type="application/json" id="dry-replay-data">${encodeCallLog(dryContext.callLog ?? [])}</script>`;
-        const rest = bodyHtml + replayData + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
+        const rest = bodyHtml + replayData + veiConfigScript(dryContext.vei !== undefined) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
         controller.enqueue(encoder.encode(rest));
         controller.close();
         options.onDocumentReady?.(head + rest);

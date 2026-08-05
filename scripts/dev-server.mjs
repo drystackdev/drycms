@@ -48,6 +48,7 @@ const vite = await createViteServer({
 
 const { applySecurityHeaders, createApiMiddleware, toFetchRequest, sendFetchResponse } = await vite.ssrLoadModule("/src/server/adapters/node.js");
 const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts");
+const { handleVeiRoute } = await vite.ssrLoadModule("/src/server/vei-routes.ts");
 const { injectClientConfig } = await vite.ssrLoadModule("/src/server/client-config.ts");
 const { path: adminPath, content } = await vite.ssrLoadModule("/src/server/config.ts");
 const apiMiddleware = createApiMiddleware();
@@ -107,8 +108,10 @@ async function tryServeAppRouterPage(req, res) {
 
 const server = createHttpServer((req, res) => {
   apiMiddleware(req, res, () => {
-    guardPageRequest(toFetchRequest(req), {}).then((redirect) => {
+    guardPageRequest(toFetchRequest(req), {}).then(async (redirect) => {
       if (redirect) return sendFetchResponse(redirect, res);
+      const veiResponse = await handleVeiRoute(toFetchRequest(req), {});
+      if (veiResponse) return sendFetchResponse(veiResponse, res);
       vite.middlewares(req, res, async () => {
         try {
           if (await tryServeAppRouterPage(req, res)) return;

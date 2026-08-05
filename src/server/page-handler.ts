@@ -1,8 +1,12 @@
 import { path as adminPath } from "./config.js";
 import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
-import type { DryRequestContext } from "../content-types/dry-context.js";
+import type { DryRequestContext, DryVeiContext } from "../content-types/dry-context.js";
 import type { DrySeoLayers, DrySeoValue } from "../content-types/dry-seo.js";
+import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
+import type { ContentTypeDefinition } from "../content-types/types.js";
+import { resolveAccess } from "../content-types/access.js";
+import { resolveVeiSession } from "./vei-session.js";
 import { discoverRoutes } from "./app-router/route-tree.js";
 import { matchRoute } from "./app-router/match.js";
 import { renderPage } from "./app-router/render.js";
@@ -47,11 +51,17 @@ export async function handlePageRequest(
   const { schema, entries } = getContentAdapters(routeContext);
   const allTypes = await schema.listContentTypes();
 
+  const vei = await resolveVeiContext(request, env, entries, allTypes);
+
   // pages-cache only runs in production - a version-based cache has no way
   // to detect a `page.tsx`/`layout.tsx` CODE edit (only content changes),
   // which would make dev's "live preview qua vite" show stale output after
   // editing a page - see `plans/app-router.md`'s "Chỉ bật ở production".
-  if (!import.meta.env.DEV) {
+  // An edit-mode render is excluded on BOTH sides: its markup carries
+  // per-viewer editing metadata, so serving it from - or writing it into -
+  // a cache shared with anonymous visitors would be wrong in both
+  // directions.
+  if (!import.meta.env.DEV && !vei) {
     const cached = await readPageCache(routeContext, url.pathname, entries, allTypes);
     if (cached !== null) {
       return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -72,12 +82,45 @@ export async function handlePageRequest(
     const value = row?.value.seo;
     if (value && typeof value === "object") seo.default = value as DrySeoValue;
   }
-  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo, params: match.params };
+  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo, params: match.params, vei };
 
-  return renderPage(match, dryContext, {
+  const response = renderPage(match, dryContext, {
     onDocumentReady: (fullHtml) => {
-      if (import.meta.env.DEV) return;
+      if (import.meta.env.DEV || vei) return;
       void writePageCache(routeContext, url.pathname, fullHtml, touchedTypes, entries, allTypes);
     },
   });
+  if (vei) response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
+/**
+ * The viewer's editing rights for this render, or `undefined` for the
+ * ordinary anonymous case (no `drycms_vei` cookie, an expired/revoked one,
+ * or a signed-in user whose roles grant no content permission at all).
+ * Permissions are resolved once per request and closed over, so marking a
+ * value costs a map lookup rather than a role query per field.
+ */
+async function resolveVeiContext(
+  request: Request,
+  env: Record<string, unknown>,
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+): Promise<DryVeiContext | undefined> {
+  const session = await resolveVeiSession(request, env);
+  if (!session) return undefined;
+  const access = await resolveAccess(entries, allTypes, session);
+  if (!access) return undefined;
+  const editable = new Map<string, boolean>();
+  return {
+    canUpdate(type) {
+      const cached = editable.get(type.id);
+      if (cached !== undefined) return cached;
+      // A singleton's schema collapses every action into one `setting`
+      // grant - see `permissions.ts`'s `permissionActionsFor`.
+      const allowed = type.kind === "singleton" ? access.can(type.id, "setting") : access.can(type.id, "update");
+      editable.set(type.id, allowed);
+      return allowed;
+    },
+  };
 }

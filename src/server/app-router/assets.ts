@@ -1,6 +1,10 @@
-import { GLOBALS_CSS_HREF as GENERATED_GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF as GENERATED_HYDRATE_ENTRY_HREF } from "./generated-asset-hrefs.js";
+import {
+  GLOBALS_CSS_HREF as GENERATED_GLOBALS_CSS_HREF,
+  HYDRATE_ENTRY_HREF as GENERATED_HYDRATE_ENTRY_HREF,
+  VEI_OVERLAY_HREF as GENERATED_VEI_OVERLAY_HREF,
+} from "./generated-asset-hrefs.js";
 
-export { resolveGlobalsCssHref, resolveHydrateEntryHref } from "./resolve-asset-href.js";
+export { resolveGlobalsCssHref, resolveHydrateEntryHref, resolveVeiOverlayHref } from "./resolve-asset-href.js";
 
 /**
  * Resolved once at module load, same "resolve once, reuse for process
@@ -16,3 +20,4 @@ export { resolveGlobalsCssHref, resolveHydrateEntryHref } from "./resolve-asset-
  */
 export const GLOBALS_CSS_HREF = import.meta.env.DEV ? "/src/apps/globals.css" : GENERATED_GLOBALS_CSS_HREF;
 export const HYDRATE_ENTRY_HREF = import.meta.env.DEV ? "/src/apps/hydrate-client.ts" : GENERATED_HYDRATE_ENTRY_HREF;
+export const VEI_OVERLAY_HREF = import.meta.env.DEV ? "/src/apps/vei/overlay.ts" : GENERATED_VEI_OVERLAY_HREF;

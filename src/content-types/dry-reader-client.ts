@@ -1,4 +1,5 @@
 import type { DryCallLogEntry } from "./dry-context.js";
+import { createInertRefProxy } from "./dry-vei.js";
 import type { DryCollectionReader, DryReader, DrySingletonReader } from "./dry-reader.js";
 
 /**
@@ -24,6 +25,17 @@ export function setReplayLog(entries: DryCallLogEntry[]): void {
   index = 0;
 }
 
+/** Replayed rows carry no `$` of their own - there's no schema in the
+ * browser to resolve a path against - so one is grafted on that resolves to
+ * nothing. See `createInertRefProxy` for why that's the right answer rather
+ * than shipping the schema down. */
+function withInertRefs<T>(value: T): T {
+  if (value && typeof value === "object") {
+    Object.defineProperty(value, "$", { value: createInertRefProxy(), enumerable: false, configurable: true });
+  }
+  return value;
+}
+
 function next(kind: DryCallLogEntry["kind"], name: string, method: DryCallLogEntry["method"]): unknown {
   const entry = log[index++];
   if (!entry) {
@@ -44,10 +56,12 @@ function next(kind: DryCallLogEntry["kind"], name: string, method: DryCallLogEnt
 function createCollectionReader(name: string): DryCollectionReader<Record<string, unknown>> {
   return {
     async get(_idOrSlug: number | string, _options?: { populate?: string[] }) {
-      return next("collection", name, "get") as Record<string, unknown> | null;
+      return withInertRefs(next("collection", name, "get") as Record<string, unknown> | null);
     },
     async list() {
-      return next("collection", name, "list") as { rows: Record<string, unknown>[]; total: number };
+      const page = next("collection", name, "list") as { rows: Record<string, unknown>[]; total: number };
+      page.rows.forEach(withInertRefs);
+      return page;
     },
   } as DryCollectionReader<Record<string, unknown>>;
 }
@@ -55,7 +69,7 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
 function createSingletonReader(name: string): DrySingletonReader<Record<string, unknown>> {
   return {
     async get(_options?: { populate?: string[] }) {
-      return next("singleton", name, "get") as Record<string, unknown> | null;
+      return withInertRefs(next("singleton", name, "get") as Record<string, unknown> | null);
     },
   } as DrySingletonReader<Record<string, unknown>>;
 }

@@ -29,7 +29,6 @@ export interface AiSchemaWizardPanelProps {
    * client - used, merged with pending drafts, both to ground the model's
    * "existing types" context and to validate proposed names/relations. */
   allDefinitions: ContentTypeDefinition[];
-  onClose: () => void;
   /** Called once at least one table is successfully staged as a draft. */
   onStaged?: () => void;
 }
@@ -267,7 +266,6 @@ function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined })
 export default function AiSchemaWizardPanel({
   open,
   allDefinitions,
-  onClose,
 }: AiSchemaWizardPanelProps) {
   const [stage, setStage] = useState<Stage>("start");
   const [turn, setTurn] = useState<WizardQuestionTurn | null>(null);
@@ -302,15 +300,6 @@ export default function AiSchemaWizardPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-runs on open/close, deliberately not on aiKeyName (that's read at request time, not at reset time).
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
 
   /** Stages every proposed table as a draft directly - client-side, no AI
    * round-trip. Never closes the panel itself: now that it's a persistent
@@ -389,15 +378,6 @@ export default function AiSchemaWizardPanel({
     <div id="ai-wizard-panel" class={`ai-wizard-panel${open ? " open" : ""}`} aria-hidden={!open}>
       {open && (
         <>
-          <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
-            <div class="spacer" style={{ minWidth: 0 }}>
-              <h3 class="row align-center" style={{ gap: "0.375rem" }}><SparkleIcon /> Ask AI</h3>
-              <p>A guided, choice-only interview - no free typing needed except an occasional short value.</p>
-            </div>
-            <button type="button" class="icon ghost" aria-label="Close" onClick={onClose}>
-              <XIcon />
-            </button>
-          </header>
           {aiMode === "server" && aiKeyOptions.length > 1 && (
             <div class="row align-center ai-wizard-key-picker" style={{ gap: "0.5rem" }}>
               <small class="hint">AI Key</small>
