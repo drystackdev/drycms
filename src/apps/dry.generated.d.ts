@@ -17,7 +17,6 @@ export interface User {
   roles?: number[]; // relation -> role
   createdAt?: Date;
   updatedAt?: Date;
-  content?: string;
 }
 
 export interface Menu {
@@ -47,76 +46,6 @@ export interface Role {
   user?: number[]; // relationmirror -> user, read-only
 }
 
-export interface Blog {
-  id: number;
-  category: number | null; // relation -> category
-  excerpt: string;
-  date: Date;
-  content: string;
-  title: string;
-  slug: string;
-  seo: Seo;
-}
-
-export interface Category {
-  id: number;
-  title: string;
-  slug: string;
-  blog?: number[]; // relationmirror -> blog, read-only
-}
-
-export interface Homepage {
-  id: number;
-  hero: HeroSection;
-  valueProps: ValueProp[];
-  videoSection: VideoSection;
-  latestPostsSection: LatestPostsSection;
-  pressSection: PressSection;
-  pressMentions: PressMention[];
-  bottomCta: BottomCta;
-}
-
-export interface About {
-  id: number;
-  intro: AboutIntro;
-  story: AboutStory;
-  missionSection: AboutMissionSection;
-  missionItems: MissionItem[];
-  experienceSection: AboutExperienceSection;
-  experienceItems: ExperienceItem[];
-  pressSection: AboutPressSection;
-  pressMentions: PressMention[];
-  bottomCta: BottomCta;
-}
-
-export interface Contact {
-  id: number;
-  header: ContactHeader;
-  channels: ContactChannel[];
-}
-
-export interface SiteSettings {
-  id: number;
-  brandName: string;
-  headerCtaLabel?: string;
-  headerCtaHref?: string;
-  footerDescription?: string;
-  phone?: string;
-  email?: string;
-  fanpageUrl?: string;
-  copyrightText?: string;
-}
-
-export interface SeoDefaults {
-  id: number;
-  seo: Seo;
-}
-
-export interface BlogsPage {
-  id: number;
-  header: BlogsHeader;
-}
-
 export interface MenuItem {
   label: string;
   description?: string;
@@ -129,123 +58,18 @@ export interface Seo {
   image?: string;
 }
 
-export interface HeroSection {
-  eyebrow: string;
-  headline: string;
-  subtitle: string;
-  content?: string;
-  image: string;
-}
-
-export interface ValueProp {
-  headline: string;
-  description: string;
-}
-
-export interface VideoSection {
-  videoUrl: string;
-  heading: string;
-  description?: string;
-  ctaLabel?: string;
-  ctaHref?: string;
-}
-
-export interface LatestPostsSection {
-  heading: string;
-  viewAllHref?: string;
-}
-
-export interface PressSection {
-  heading: string;
-  viewAllHref?: string;
-}
-
-export interface PressMention {
-  outlet: string;
-  headline: string;
-  date: string;
-  href?: string;
-}
-
-export interface BottomCta {
-  heading: string;
-  description?: string;
-  ctaLabel?: string;
-  ctaHref?: string;
-}
-
-export interface AboutIntro {
-  eyebrow: string;
-  headline: string;
-  description: string;
-  image: string;
-}
-
-export interface AboutStory {
-  heading: string;
-  content: string;
-}
-
-export interface AboutMissionSection {
-  heading: string;
-}
-
-export interface MissionItem {
-  text: string;
-}
-
-export interface AboutExperienceSection {
-  heading: string;
-}
-
-export interface ExperienceItem {
-  year: string;
-  description: string;
-}
-
-export interface AboutPressSection {
-  heading: string;
-  description?: string;
-}
-
-export interface ContactHeader {
-  eyebrow: string;
-  headline: string;
-  description?: string;
-}
-
-export interface ContactChannel {
-  kind: "phone" | "email" | "fanpage";
-  label: string;
-  value: string;
-  href: string;
-}
-
-export interface BlogsHeader {
-  eyebrow: string;
-  headline: string;
-  description?: string;
-}
-
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category";
-export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage";
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role";
+export type DrySingletonName = never;
 
 export interface DryCollectionMap {
   "user": User;
   "menu": Menu;
   "aiKey": AiKey;
   "role": Role;
-  "blog": Blog;
-  "category": Category;
 }
 
 export interface DrySingletonMap {
-  "homepage": Homepage;
-  "about": About;
-  "contact": Contact;
-  "siteSettings": SiteSettings;
-  "seoDefaults": SeoDefaults;
-  "blogsPage": BlogsPage;
+
 }
 
 declare global {

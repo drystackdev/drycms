@@ -6,8 +6,10 @@ const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../storage/http-source.js";
-import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, PlusIcon } from "../components/icons/index.js";
+import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, EyeIcon, PlusIcon, XIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
+import CodeBlock from "../components/CodeBlock.js";
+import { useDialogSync } from "../hooks/list-nav.js";
 import {
   flattenQueryableColumns,
   buildEntryFieldTree,
@@ -74,7 +76,12 @@ function flattenRowValue(value: Record<string, unknown>, prefix = ""): Record<st
  * detail than the type alone gives) - each field type gets the read-only
  * treatment its data shape calls for, instead of one generic stringify.
  */
-function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Element {
+function renderCell(
+  column: QueryableColumn,
+  value: unknown,
+  row: Row,
+  onPreviewRichText: (label: string, html: string) => void,
+): JSX.Element {
   const config = (column.fieldConfig ?? {}) as Record<string, unknown>;
 
   // Always has a value either way (see `field-registry.ts`'s `booleanFieldType`
@@ -102,6 +109,24 @@ function renderCell(column: QueryableColumn, value: unknown, row: Row): JSX.Elem
 
   if (column.validation.format === "email") {
     return <span class="badge secondary">{String(value)}</span>;
+  }
+
+  // Raw HTML string (see `field-registry.ts`'s `richTextFieldType`, `shape: "column"`
+  // / `sqlType: () => "TEXT"`) - only `inline` richtext (short, text-like content per
+  // `FieldDialog.tsx`'s three-way mode picker) is worth previewing as plain text right
+  // in the cell; block-level richtext (paragraphs/headings/tables/grids) would just
+  // dump tag soup into the cell, so it opens a dialog with the formatted HTML instead
+  // (same `CodeBlock`/`formatHtml` combo `IconPreviewDialog.tsx` uses for its snippet).
+  if (column.fieldType === "richtext") {
+    if (config.inline) {
+      const plainText = String(value).replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+      return plainText ? <>{plainText}</> : <small><i>No value</i></small>;
+    }
+    return (
+      <button type="button" class="outline sm" onClick={() => onPreviewRichText(column.label, String(value))}>
+        <EyeIcon /> View HTML
+      </button>
+    );
   }
 
   if (column.fieldType === "date") {
@@ -413,6 +438,11 @@ function ContentEntryListCollection({
   // no need for this extra step (see `renderRelationCell`'s doc).
   const [rowRelationValues, setRowRelationValues] = useState<Record<string, Record<string, string[]>>>({});
 
+  // Block-level richtext cells open this instead of rendering their HTML inline
+  // (see `renderCell`'s `richtext` branch) - one shared dialog rather than one
+  // per cell, populated on click.
+  const [richTextPreview, setRichTextPreview] = useState<{ label: string; html: string } | null>(null);
+
   // Populates `rowRelationValues`: one `entriesApi.get(row.id)` per row still
   // missing a visible multi-cardinality column's value - `listEntries` (the
   // paginated query `rows` came from) doesn't run the child-table query a
@@ -498,7 +528,8 @@ function ContentEntryListCollection({
         // `image` is technically queryable (it's a plain TEXT column of file
         // paths), but sorting by that path is meaningless for a thumbnail cell.
         sortable: queryableFieldNames.has(column.fieldName) && column.fieldType !== "image",
-        render: (value, row) => renderCell(column, value, row),
+        render: (value, row) =>
+          renderCell(column, value, row, (label, html) => setRichTextPreview({ label, html })),
       };
     }
     const column = cell.column;
