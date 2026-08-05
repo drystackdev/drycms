@@ -18,6 +18,7 @@
  * meant to be used from.
  */
 import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../../src/content-types/engine/index.js";
+import type { EntryRow } from "../../src/content-types/engine/entries-types.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "../../src/content-types/types.js";
 import { content } from "../../src/server/config.js";
 
@@ -81,4 +82,29 @@ export async function clearCollection(name: string): Promise<void> {
   const page = await entryAdapter.listEntries(type, allTypes, { page: 0, pageSize: 1000 });
   for (const row of page.rows) await entryAdapter.deleteEntry(type, allTypes, row.id);
   if (page.rows.length > 0) console.log(`[seed] cleared ${page.rows.length} existing "${name}" row(s)`);
+}
+
+/** Create-or-update one row of a collection, matched by an arbitrary field
+ * (e.g. a unique `title`/`name`) rather than wiping the whole table first -
+ * use this instead of `clearCollection`+`insertCollectionEntry` for a
+ * collection the seed script doesn't own exclusively, or whose row ids
+ * other seeded data references by id (a blind clear+reinsert would change
+ * those ids every run). Returns the row so callers can read back its id
+ * (e.g. to point a `relation` field at it). */
+export async function upsertCollectionEntryByField(
+  name: string,
+  matchField: string,
+  matchValue: string | number,
+  value: Record<string, unknown>,
+): Promise<EntryRow> {
+  const { type, allTypes } = await findType(name, "collection");
+  const existing = await entryAdapter.findEntry(type, allTypes, [{ field: matchField, op: "eq", value: matchValue }]);
+  if (existing) {
+    const updated = await entryAdapter.updateEntry(type, allTypes, existing.id, value);
+    console.log(`[seed] collection "${name}" row (${matchField}="${matchValue}") updated`);
+    return updated;
+  }
+  const created = await entryAdapter.createEntry(type, allTypes, value);
+  console.log(`[seed] collection "${name}" row (${matchField}="${matchValue}") created`);
+  return created;
 }

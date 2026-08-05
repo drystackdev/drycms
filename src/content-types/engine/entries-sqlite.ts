@@ -322,7 +322,14 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
       offset,
     ]);
 
-    return { total, rows: rows.map((row) => ({ id: Number(row.id), value: rowToValue(nodes, row) })) };
+    const result: EntryRow[] = [];
+    for (const row of rows) {
+      const id = Number(row.id);
+      const value = rowToValue(nodes, row);
+      await populateChildFields(handle, nodes, id, value);
+      result.push({ id, value });
+    }
+    return { total, rows: result };
   }
 
   async function findEntry(

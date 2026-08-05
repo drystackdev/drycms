@@ -2384,6 +2384,11 @@
       }
     }
 
+    .content-entry-editor-form {
+      border: none;
+      padding: 0;
+    }
+
     .auth-split-panel {
       display: flex;
       align-items: center;
@@ -2730,6 +2735,7 @@
       list-style: none;
       margin-inline: -2rem;
       padding-inline: 0;
+      margin-block-start: 2rem;
     }
 
     .content-type-list-item {
@@ -2907,14 +2913,10 @@
     .content-entry-editor-grid {
       display: grid;
       grid-template-columns:
-        minmax(0, 1.5fr)
+        minmax(0, 2fr)
         minmax(0, 1.75fr);
-      gap: var(--dry-gap) 0;
+      gap: 2rem;
       align-items: start;
-
-      & > *:first-child {
-        padding-inline: 2rem;
-      }
 
       @media (width < 64rem) {
         grid-template-columns: minmax(0, 1fr);

@@ -1,17 +1,11 @@
-const CATEGORIES = [
-  "Tất cả",
-  "Kiến thức cơ bản",
-  "Điều trị ARV",
-  "Sức khỏe tình dục",
-  "Hỏi đáp",
-];
-
 function formatDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 export default async function BlogsPage() {
   const { rows: posts } = await dry().collection("blog").list({ sort: { field: "date", dir: "desc" } });
+  const { rows: categories } = await dry().collection("category").list();
+  const categoryNameById = new Map(categories.map((c) => [c.id, c.title]));
 
   return (
     <div class="mx-auto max-w-6xl px-4 py-16">
@@ -47,16 +41,15 @@ export default async function BlogsPage() {
           />
         </div>
         <div class="flex flex-wrap gap-2">
-          {CATEGORIES.map((category, index) => (
+          <span class="rounded-full px-4 py-1.5 text-xs font-medium bg-red-800 text-white">
+            Tất cả
+          </span>
+          {categories.map((category) => (
             <span
-              key={category}
-              class={`rounded-full px-4 py-1.5 text-xs font-medium ${
-                index === 0
-                  ? "bg-red-800 text-white"
-                  : "bg-slate-100 text-slate-600"
-              }`}
+              key={category.id}
+              class="rounded-full px-4 py-1.5 text-xs font-medium bg-slate-100 text-slate-600"
             >
-              {category}
+              {category.title}
             </span>
           ))}
         </div>
@@ -72,7 +65,7 @@ export default async function BlogsPage() {
             <div class="h-40 bg-slate-200" />
             <div class="space-y-2 p-5">
               <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
-                {post.tag}
+                {post.category !== null ? categoryNameById.get(post.category) : null}
               </span>
               <h3 class="text-base font-semibold text-slate-900">
                 {post.title}

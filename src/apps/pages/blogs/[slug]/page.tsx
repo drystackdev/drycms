@@ -4,12 +4,9 @@ function formatDate(date: Date): string {
 
 export default async function BlogDetailPage({ params }: { params: { slug: string } }) {
   const post = await dry().collection("blog").get(params.slug);
-  const { rows: relatedPosts } = post
-    ? await dry()
-        .collection("blog")
-        .list({ where: [{ field: "tag", op: "eq", value: post.tag }], sort: { field: "date", dir: "desc" }, pageSize: 4 })
-    : { rows: [] };
-  const related = relatedPosts.filter((p) => p.id !== post?.id).slice(0, 3);
+  const category = post?.category != null ? await dry().collection("category").get(post.category) : null;
+  const { rows: allPosts } = await dry().collection("blog").list({ sort: { field: "date", dir: "desc" } });
+  const related = allPosts.filter((p) => p.id !== post?.id && p.category === post?.category).slice(0, 3);
 
   if (!post) {
     return (
@@ -30,18 +27,21 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
       </a>
 
       <div class="mt-4">
-        <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">{post.tag}</span>
+        <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">{category?.title}</span>
         <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">{post.title}</h1>
         <p class="mt-2 text-sm text-slate-500">{formatDate(post.date)}</p>
       </div>
 
       <div class="mt-8 h-64 rounded-2xl bg-slate-200 sm:h-96" />
 
-      <div class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base">
-        {post.content.split("\n\n").map((paragraph, index) => (
-          <p key={index}>{paragraph}</p>
-        ))}
-      </div>
+      {/* `content` is a `richtext` field - HTML authored through the CMS's own
+          RichText editor by an authenticated, permissioned admin, not public
+          input, so rendering it directly is the same trust boundary every
+          other admin-authored field on this page already crosses. */}
+      <div
+        class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base"
+        dangerouslySetInnerHTML={{ __html: post.content }}
+      />
 
       <div class="mt-12 flex items-center gap-4 rounded-2xl border border-slate-200 p-5">
         <div class="h-12 w-12 shrink-0 rounded-full bg-slate-200" />
@@ -73,7 +73,7 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
               >
                 <div class="h-32 bg-slate-200" />
                 <div class="space-y-1 p-4">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{relatedPost.tag}</span>
+                  <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{category?.title}</span>
                   <h3 class="text-sm font-semibold text-slate-900">{relatedPost.title}</h3>
                   <p class="text-xs text-slate-500">{formatDate(relatedPost.date)}</p>
                 </div>

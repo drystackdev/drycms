@@ -8,6 +8,8 @@ export default async function HomePage() {
     sort: { field: "date", dir: "desc" },
     pageSize: 3,
   });
+  const { rows: categories } = await dry().collection("category").list();
+  const categoryNameById = new Map(categories.map((c) => [c.id, c.title]));
 
   if (!home) return null;
   const { hero, valueProps, videoSection, latestPostsSection, pressSection, pressMentions, bottomCta } = home;
@@ -139,7 +141,7 @@ export default async function HomePage() {
                 <div class="h-36 bg-slate-200" />
                 <div class="space-y-2 p-5">
                   <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
-                    {post.tag}
+                    {post.category !== null ? categoryNameById.get(post.category) : null}
                   </span>
                   <h3 class="text-base font-semibold text-slate-900">
                     {post.title}

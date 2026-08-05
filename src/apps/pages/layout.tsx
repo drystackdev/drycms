@@ -1,14 +1,12 @@
 import { useState } from "preact/hooks";
 
-const NAV_LINKS = [
-  { href: "/", label: "Trang chủ" },
-  { href: "/about", label: "Giới thiệu" },
-  { href: "/blogs", label: "Blog" },
-  { href: "/contact", label: "Liên hệ" },
-];
+interface NavLink {
+  href: string;
+  label: string;
+}
 
 /** Plain sync component - hooks work here (see APP-ROUTER.md's async/sync rule). */
-function MobileNavToggle() {
+function MobileNavToggle({ navLinks }: { navLinks: NavLink[] }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -40,7 +38,7 @@ function MobileNavToggle() {
       {open ? (
         <div class="absolute inset-x-0 top-16 z-20 border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
           <nav class="flex flex-col gap-1">
-            {NAV_LINKS.map((link) => (
+            {navLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
@@ -57,6 +55,11 @@ function MobileNavToggle() {
 }
 
 export default async function RootLayout({ children }: { children?: unknown }) {
+  const site = await dry().singleton("siteSettings").get();
+  const { rows: menus } = await dry().collection("menu").list({ where: [{ field: "name", op: "eq", value: "Main Navigation" }] });
+  const navLinks: NavLink[] = menus[0]?.refs.map((ref) => ({ href: ref.href, label: ref.label })) ?? [];
+  if (!site) return null;
+
   return (
     <div class="flex min-h-screen flex-col bg-white font-sans text-slate-900">
       <header class="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -74,10 +77,10 @@ export default async function RootLayout({ children }: { children?: unknown }) {
                 />
               </svg>
             </span>
-            Mai Anh Quyền
+            {site.brandName}
           </a>
           <nav class="hidden gap-6 sm:flex">
-            {NAV_LINKS.map((link) => (
+            {navLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
@@ -88,12 +91,12 @@ export default async function RootLayout({ children }: { children?: unknown }) {
             ))}
           </nav>
           <a
-            href="/contact"
+            href={site.headerCtaHref ?? "/contact"}
             class="hidden rounded-full bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 sm:block"
           >
-            Tư vấn ngay
+            {site.headerCtaLabel}
           </a>
-          <MobileNavToggle />
+          <MobileNavToggle navLinks={navLinks} />
         </div>
       </header>
 
@@ -102,17 +105,13 @@ export default async function RootLayout({ children }: { children?: unknown }) {
       <footer class="border-t border-slate-200 bg-slate-50">
         <div class="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:grid-cols-3">
           <div>
-            <p class="text-lg font-bold text-red-900">Mai Anh Quyền</p>
-            <p class="mt-2 text-sm leading-relaxed text-slate-600">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Đồng hành
-              và chia sẻ kiến thức về HIV, điều trị ARV một cách riêng tư và tận
-              tâm.
-            </p>
+            <p class="text-lg font-bold text-red-900">{site.brandName}</p>
+            <p class="mt-2 text-sm leading-relaxed text-slate-600">{site.footerDescription}</p>
           </div>
           <div>
             <p class="text-sm font-semibold text-slate-900">Liên kết</p>
             <ul class="mt-2 space-y-2 text-sm text-slate-600">
-              {NAV_LINKS.map((link) => (
+              {navLinks.map((link) => (
                 <li key={link.href}>
                   <a href={link.href} class="hover:text-red-900">
                     {link.label}
@@ -125,27 +124,24 @@ export default async function RootLayout({ children }: { children?: unknown }) {
             <p class="text-sm font-semibold text-slate-900">Liên hệ</p>
             <ul class="mt-2 space-y-2 text-sm text-slate-600">
               <li>
-                <a href="tel:0000000000" class="hover:text-red-900">
-                  0000 000 000
+                <a href={`tel:${(site.phone ?? "").replace(/\D/g, "")}`} class="hover:text-red-900">
+                  {site.phone}
                 </a>
               </li>
               <li>
-                <a href="mailto:contact@example.com" class="hover:text-red-900">
-                  contact@example.com
+                <a href={`mailto:${site.email}`} class="hover:text-red-900">
+                  {site.email}
                 </a>
               </li>
               <li>
-                <a href="#" class="hover:text-red-900">
+                <a href={site.fanpageUrl} class="hover:text-red-900">
                   Fanpage Facebook
                 </a>
               </li>
             </ul>
           </div>
         </div>
-        <div class="border-t border-slate-200 px-4 py-4 text-center text-xs text-slate-500">
-          © 2026 Mai Anh Quyền. Nội dung chỉ mang tính chất tham khảo, không
-          thay thế tư vấn y tế chuyên môn.
-        </div>
+        <div class="border-t border-slate-200 px-4 py-4 text-center text-xs text-slate-500">{site.copyrightText}</div>
       </footer>
     </div>
   );

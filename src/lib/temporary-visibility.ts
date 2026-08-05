@@ -9,6 +9,6 @@ export const temporaryFeatureVisibility = {
   pageComponents: false,
   richtextComponents: false,
   codeEditerDemo: false,
-  contentTypeComponents: false,
+  contentTypeComponents: true,
   richtextComponentInsert: false,
 } as const;

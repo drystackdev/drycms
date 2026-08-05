@@ -49,12 +49,20 @@ export interface Role {
 
 export interface Blog {
   id: number;
-  tag: "Kiến thức cơ bản" | "Điều trị ARV" | "Sức khỏe tình dục" | "Hỏi đáp";
+  category: number | null; // relation -> category
   excerpt: string;
   date: Date;
   content: string;
   title: string;
   slug: string;
+  seo: Seo;
+}
+
+export interface Category {
+  id: number;
+  title: string;
+  slug: string;
+  blog?: number[]; // relationmirror -> blog, read-only
 }
 
 export interface Homepage {
@@ -66,6 +74,42 @@ export interface Homepage {
   pressSection: PressSection;
   pressMentions: PressMention[];
   bottomCta: BottomCta;
+}
+
+export interface About {
+  id: number;
+  intro: AboutIntro;
+  story: AboutStory;
+  missionSection: AboutMissionSection;
+  missionItems: MissionItem[];
+  experienceSection: AboutExperienceSection;
+  experienceItems: ExperienceItem[];
+  pressSection: AboutPressSection;
+  pressMentions: PressMention[];
+  bottomCta: BottomCta;
+}
+
+export interface Contact {
+  id: number;
+  header: ContactHeader;
+  channels: ContactChannel[];
+}
+
+export interface SiteSettings {
+  id: number;
+  brandName: string;
+  headerCtaLabel?: string;
+  headerCtaHref?: string;
+  footerDescription?: string;
+  phone?: string;
+  email?: string;
+  fanpageUrl?: string;
+  copyrightText?: string;
+}
+
+export interface SeoDefaults {
+  id: number;
+  seo: Seo;
 }
 
 export interface MenuItem {
@@ -124,8 +168,55 @@ export interface BottomCta {
   ctaHref?: string;
 }
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog";
-export type DrySingletonName = "homepage";
+export interface AboutIntro {
+  eyebrow: string;
+  headline: string;
+  description: string;
+  image: string;
+}
+
+export interface AboutStory {
+  heading: string;
+  content: string;
+}
+
+export interface AboutMissionSection {
+  heading: string;
+}
+
+export interface MissionItem {
+  text: string;
+}
+
+export interface AboutExperienceSection {
+  heading: string;
+}
+
+export interface ExperienceItem {
+  year: string;
+  description: string;
+}
+
+export interface AboutPressSection {
+  heading: string;
+  description?: string;
+}
+
+export interface ContactHeader {
+  eyebrow: string;
+  headline: string;
+  description?: string;
+}
+
+export interface ContactChannel {
+  kind: "phone" | "email" | "fanpage";
+  label: string;
+  value: string;
+  href: string;
+}
+
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category";
+export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults";
 
 export interface DryCollectionMap {
   "user": User;
@@ -133,10 +224,15 @@ export interface DryCollectionMap {
   "aiKey": AiKey;
   "role": Role;
   "blog": Blog;
+  "category": Category;
 }
 
 export interface DrySingletonMap {
   "homepage": Homepage;
+  "about": About;
+  "contact": Contact;
+  "siteSettings": SiteSettings;
+  "seoDefaults": SeoDefaults;
 }
 
 declare global {
