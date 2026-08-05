@@ -47,6 +47,27 @@ export interface Role {
   user?: number[]; // relationmirror -> user, read-only
 }
 
+export interface Blog {
+  id: number;
+  tag: "Kiến thức cơ bản" | "Điều trị ARV" | "Sức khỏe tình dục" | "Hỏi đáp";
+  excerpt: string;
+  date: Date;
+  content: string;
+  title: string;
+  slug: string;
+}
+
+export interface Homepage {
+  id: number;
+  hero: HeroSection;
+  valueProps: ValueProp[];
+  videoSection: VideoSection;
+  latestPostsSection: LatestPostsSection;
+  pressSection: PressSection;
+  pressMentions: PressMention[];
+  bottomCta: BottomCta;
+}
+
 export interface MenuItem {
   label: string;
   description?: string;
@@ -59,18 +80,63 @@ export interface Seo {
   image?: string;
 }
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role";
-export type DrySingletonName = never;
+export interface HeroSection {
+  eyebrow: string;
+  headline: string;
+  subtitle: string;
+  content?: string;
+}
+
+export interface ValueProp {
+  headline: string;
+  description: string;
+}
+
+export interface VideoSection {
+  videoUrl: string;
+  heading: string;
+  description?: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+}
+
+export interface LatestPostsSection {
+  heading: string;
+  viewAllHref?: string;
+}
+
+export interface PressSection {
+  heading: string;
+  viewAllHref?: string;
+}
+
+export interface PressMention {
+  outlet: string;
+  headline: string;
+  date: string;
+  href?: string;
+}
+
+export interface BottomCta {
+  heading: string;
+  description?: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+}
+
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog";
+export type DrySingletonName = "homepage";
 
 export interface DryCollectionMap {
   "user": User;
   "menu": Menu;
   "aiKey": AiKey;
   "role": Role;
+  "blog": Blog;
 }
 
 export interface DrySingletonMap {
-
+  "homepage": Homepage;
 }
 
 declare global {

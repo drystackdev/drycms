@@ -1,56 +1,33 @@
-import { PRESS_MENTIONS } from "./press-data.js";
-
-const VALUE_PROPS = [
-  {
-    title: "Kiến thức đáng tin cậy",
-    text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent nec lacus vel elit dictum interdum.",
-  },
-  {
-    title: "Đồng hành riêng tư",
-    text: "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
-  },
-  {
-    title: "Cộng đồng hỗ trợ",
-    text: "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.",
-  },
-];
-
-const LATEST_POSTS = [
-  {
-    tag: "Kiến thức cơ bản",
-    title: "Lorem ipsum dolor sit amet consectetur",
-    date: "01/08/2026",
-  },
-  {
-    tag: "Điều trị ARV",
-    title: "Ut enim ad minim veniam quis nostrud",
-    date: "29/07/2026",
-  },
-  {
-    tag: "Hỏi đáp",
-    title: "Duis aute irure dolor in reprehenderit",
-    date: "27/07/2026",
-  },
-];
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
 
 export default async function HomePage() {
+  const home = await dry().singleton("homepage").get();
+  const { rows: latestPosts } = await dry().collection("blog").list({
+    sort: { field: "date", dir: "desc" },
+    pageSize: 3,
+  });
+
+  if (!home) return null;
+  const { hero, valueProps, videoSection, latestPostsSection, pressSection, pressMentions, bottomCta } = home;
+
   return (
     <div>
       <section class="relative overflow-hidden bg-red-50">
         <div class="mx-auto flex max-w-6xl flex-col px-4 sm:flex-row sm:items-end">
           <div class="flex flex-col justify-center gap-1 py-10 sm:w-1/2 sm:py-24">
             <span class="w-fit rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">
-              Kiến thức HIV & ARV
+              {hero.eyebrow}
             </span>
             <h1 class="mt-4 text-5xl font-bold text-slate-900 uppercase">
-              Mai Anh Quyền
+              {hero.headline}
             </h1>
             <p class="mt-2 text-lg font-semibold text-red-900">
-              Tiếp cận viên cộng đồng, chung tay phòng chống HIV/AIDS
+              {hero.subtitle}
             </p>
             <p class="mt-4 max-w-lg text-sm leading-relaxed text-slate-600 sm:text-base">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-              eiusmod tempor incididunt ut labore et dolore magna aliqua.
+              {hero.content}
             </p>
             <div class="mt-6 flex flex-wrap gap-3">
               <a
@@ -84,9 +61,9 @@ export default async function HomePage() {
 
       <section class="mx-auto max-w-6xl px-4 py-16">
         <div class="grid gap-6 sm:grid-cols-3">
-          {VALUE_PROPS.map((item) => (
+          {valueProps.map((item) => (
             <div
-              key={item.title}
+              key={item.headline}
               class="rounded-2xl border border-slate-200 p-6"
             >
               <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-900">
@@ -105,10 +82,10 @@ export default async function HomePage() {
                 </svg>
               </div>
               <h3 class="text-base font-semibold text-slate-900">
-                {item.title}
+                {item.headline}
               </h3>
               <p class="mt-2 text-sm leading-relaxed text-slate-600">
-                {item.text}
+                {item.description}
               </p>
             </div>
           ))}
@@ -118,7 +95,7 @@ export default async function HomePage() {
       <section class="relative isolate overflow-hidden">
         <video
           class="absolute inset-0 h-full w-full object-cover"
-          src="/video_16x9_480_noaudio_trimmed.mp4"
+          src={videoSection.videoUrl}
           autoPlay
           loop
           muted
@@ -127,17 +104,16 @@ export default async function HomePage() {
         <div class="absolute inset-0 bg-slate-900/60" />
         <div class="relative mx-auto flex min-h-140 max-w-6xl flex-col items-center justify-center gap-4 px-4 py-24 text-center text-white">
           <h2 class="text-2xl font-bold sm:text-3xl">
-            Lorem ipsum dolor sit amet consectetur adipiscing elit
+            {videoSection.heading}
           </h2>
           <p class="max-w-xl text-sm leading-relaxed text-slate-100 sm:text-base">
-            Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut
-            enim ad minim veniam quis nostrud.
+            {videoSection.description}
           </p>
           <a
-            href="/blogs"
+            href={videoSection.ctaHref ?? "/blogs"}
             class="mt-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50"
           >
-            Xem bài viết
+            {videoSection.ctaLabel}
           </a>
         </div>
       </section>
@@ -145,18 +121,19 @@ export default async function HomePage() {
       <section class="bg-slate-50">
         <div class="mx-auto max-w-6xl px-4 py-16">
           <div class="mb-8 flex items-end justify-between">
-            <h2 class="text-2xl font-bold text-slate-900">Bài viết mới nhất</h2>
+            <h2 class="text-2xl font-bold text-slate-900">{latestPostsSection.heading}</h2>
             <a
-              href="/blogs"
+              href={latestPostsSection.viewAllHref ?? "/blogs"}
               class="text-sm font-medium text-red-900 hover:underline"
             >
               Xem tất cả →
             </a>
           </div>
           <div class="grid gap-6 sm:grid-cols-3">
-            {LATEST_POSTS.map((post) => (
-              <article
-                key={post.title}
+            {latestPosts.map((post) => (
+              <a
+                key={post.slug}
+                href={`/blogs/${post.slug}`}
                 class="overflow-hidden rounded-2xl border border-slate-200 bg-white"
               >
                 <div class="h-36 bg-slate-200" />
@@ -167,9 +144,9 @@ export default async function HomePage() {
                   <h3 class="text-base font-semibold text-slate-900">
                     {post.title}
                   </h3>
-                  <p class="text-xs text-slate-500">{post.date}</p>
+                  <p class="text-xs text-slate-500">{formatDate(post.date)}</p>
                 </div>
-              </article>
+              </a>
             ))}
           </div>
         </div>
@@ -177,19 +154,19 @@ export default async function HomePage() {
 
       <section class="mx-auto max-w-6xl px-4 py-16">
         <div class="mb-8 flex items-end justify-between">
-          <h2 class="text-2xl font-bold text-slate-900">Bài báo nói về tôi</h2>
+          <h2 class="text-2xl font-bold text-slate-900">{pressSection.heading}</h2>
           <a
-            href="/about"
+            href={pressSection.viewAllHref ?? "/about"}
             class="text-sm font-medium text-red-900 hover:underline"
           >
             Xem tất cả →
           </a>
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
-          {PRESS_MENTIONS.map((item) => (
+          {pressMentions.map((item) => (
             <a
-              key={item.title}
-              href={item.href}
+              key={item.headline}
+              href={item.href ?? "#"}
               target="_blank"
               rel="noreferrer"
               class="group flex items-start gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
@@ -200,7 +177,7 @@ export default async function HomePage() {
                   {item.outlet}
                 </p>
                 <p class="mt-1 text-sm font-semibold text-slate-900 group-hover:text-red-900">
-                  {item.title}
+                  {item.headline}
                 </p>
                 <p class="mt-1 text-xs text-slate-500">{item.date}</p>
               </div>
@@ -224,16 +201,15 @@ export default async function HomePage() {
 
       <section class="mx-auto max-w-6xl px-4 py-16">
         <div class="flex flex-col items-center gap-4 rounded-2xl bg-red-800 px-8 py-12 text-center text-white">
-          <h2 class="text-2xl font-bold">Bạn cần được tư vấn riêng tư?</h2>
+          <h2 class="text-2xl font-bold">{bottomCta.heading}</h2>
           <p class="max-w-xl text-sm leading-relaxed text-red-50">
-            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
-            eiusmod tempor incididunt.
+            {bottomCta.description}
           </p>
           <a
-            href="/contact"
+            href={bottomCta.ctaHref ?? "/contact"}
             class="rounded-full bg-white px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50"
           >
-            Liên hệ ngay
+            {bottomCta.ctaLabel}
           </a>
         </div>
       </section>

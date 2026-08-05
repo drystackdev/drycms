@@ -1,8 +1,15 @@
-import { POSTS } from "../posts-data.js";
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
 
 export default async function BlogDetailPage({ params }: { params: { slug: string } }) {
-  const post = POSTS.find((p) => p.slug === params.slug);
-  const relatedPosts = post ? POSTS.filter((p) => p.tag === post.tag && p.slug !== post.slug).slice(0, 3) : [];
+  const post = await dry().collection("blog").get(params.slug);
+  const { rows: relatedPosts } = post
+    ? await dry()
+        .collection("blog")
+        .list({ where: [{ field: "tag", op: "eq", value: post.tag }], sort: { field: "date", dir: "desc" }, pageSize: 4 })
+    : { rows: [] };
+  const related = relatedPosts.filter((p) => p.id !== post?.id).slice(0, 3);
 
   if (!post) {
     return (
@@ -25,13 +32,13 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
       <div class="mt-4">
         <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">{post.tag}</span>
         <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">{post.title}</h1>
-        <p class="mt-2 text-sm text-slate-500">{post.date}</p>
+        <p class="mt-2 text-sm text-slate-500">{formatDate(post.date)}</p>
       </div>
 
       <div class="mt-8 h-64 rounded-2xl bg-slate-200 sm:h-96" />
 
       <div class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base">
-        {post.content.map((paragraph, index) => (
+        {post.content.split("\n\n").map((paragraph, index) => (
           <p key={index}>{paragraph}</p>
         ))}
       </div>
@@ -54,21 +61,21 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
         </a>
       </div>
 
-      {relatedPosts.length > 0 ? (
+      {related.length > 0 ? (
         <div class="mt-12">
           <h2 class="text-lg font-bold text-slate-900">Bài viết liên quan</h2>
           <div class="mt-4 grid gap-6 sm:grid-cols-3">
-            {relatedPosts.map((related) => (
+            {related.map((relatedPost) => (
               <a
-                key={related.slug}
-                href={`/blogs/${related.slug}`}
+                key={relatedPost.slug}
+                href={`/blogs/${relatedPost.slug}`}
                 class="block overflow-hidden rounded-2xl border border-slate-200 hover:border-red-300"
               >
                 <div class="h-32 bg-slate-200" />
                 <div class="space-y-1 p-4">
-                  <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{related.tag}</span>
-                  <h3 class="text-sm font-semibold text-slate-900">{related.title}</h3>
-                  <p class="text-xs text-slate-500">{related.date}</p>
+                  <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{relatedPost.tag}</span>
+                  <h3 class="text-sm font-semibold text-slate-900">{relatedPost.title}</h3>
+                  <p class="text-xs text-slate-500">{formatDate(relatedPost.date)}</p>
                 </div>
               </a>
             ))}

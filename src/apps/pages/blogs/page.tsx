@@ -1,16 +1,30 @@
-import { POSTS } from "./posts-data.js";
+const CATEGORIES = [
+  "Tất cả",
+  "Kiến thức cơ bản",
+  "Điều trị ARV",
+  "Sức khỏe tình dục",
+  "Hỏi đáp",
+];
 
-const CATEGORIES = ["Tất cả", "Kiến thức cơ bản", "Điều trị ARV", "Sức khỏe tình dục", "Hỏi đáp"];
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
 
 export default async function BlogsPage() {
+  const { rows: posts } = await dry().collection("blog").list({ sort: { field: "date", dir: "desc" } });
+
   return (
     <div class="mx-auto max-w-6xl px-4 py-16">
       <div class="max-w-2xl">
-        <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">Blog</span>
-        <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Kiến thức HIV & ARV</h1>
+        <span class="rounded-full bg-red-100 px-4 py-1 text-sm font-medium text-red-900">
+          Blog
+        </span>
+        <h1 class="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
+          Kiến thức HIV & ARV
+        </h1>
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore
-          magna aliqua.
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do
+          eiusmod tempor incididunt ut labore et dolore magna aliqua.
         </p>
       </div>
 
@@ -37,7 +51,9 @@ export default async function BlogsPage() {
             <span
               key={category}
               class={`rounded-full px-4 py-1.5 text-xs font-medium ${
-                index === 0 ? "bg-red-800 text-white" : "bg-slate-100 text-slate-600"
+                index === 0
+                  ? "bg-red-800 text-white"
+                  : "bg-slate-100 text-slate-600"
               }`}
             >
               {category}
@@ -47,27 +63,40 @@ export default async function BlogsPage() {
       </div>
 
       <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {POSTS.map((post) => (
-          <article key={post.slug} class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        {posts.map((post) => (
+          <a
+            href={`/blogs/${post.slug}`}
+            key={post.slug}
+            class="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+          >
             <div class="h-40 bg-slate-200" />
             <div class="space-y-2 p-5">
-              <span class="text-xs font-semibold uppercase tracking-wide text-red-900">{post.tag}</span>
-              <h3 class="text-base font-semibold text-slate-900">{post.title}</h3>
-              <p class="text-sm leading-relaxed text-slate-600">{post.excerpt}</p>
-              <div class="flex items-center justify-between pt-2">
-                <p class="text-xs text-slate-500">{post.date}</p>
-                <a href={`/blogs/${post.slug}`} class="text-sm font-medium text-red-900 hover:underline">
-                  Đọc thêm →
-                </a>
-              </div>
+              <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
+                {post.tag}
+              </span>
+              <h3 class="text-base font-semibold text-slate-900">
+                {post.title}
+              </h3>
+              <p class="text-sm leading-relaxed text-slate-600">
+                {post.excerpt}
+              </p>
+              <p class="text-xs text-slate-500">{formatDate(post.date)}</p>
             </div>
-          </article>
+          </a>
         ))}
       </div>
 
       <div class="mt-12 flex items-center justify-center gap-2">
         <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" class="h-4 w-4">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.5"
+            class="h-4 w-4"
+          >
             <path d="m15 5l-6 7l6 7" />
           </svg>
         </span>
@@ -81,7 +110,15 @@ export default async function BlogsPage() {
           3
         </span>
         <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" class="h-4 w-4">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.5"
+            class="h-4 w-4"
+          >
             <path d="m9 5l6 7l-6 7" />
           </svg>
         </span>

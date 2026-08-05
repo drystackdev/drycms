@@ -17,6 +17,7 @@
     "build:icons": "node scripts/build-icons.mjs",
     "dry:generate": "bun scripts/dry-generate.ts",
     "seed:sync": "bun scripts/seed-sync.ts",
+    "seed:pages": "bun scripts/seed-pages-content.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"
