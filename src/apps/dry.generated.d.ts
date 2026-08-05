@@ -17,7 +17,6 @@ export interface User {
   roles?: number[]; // relation -> role
   createdAt?: Date;
   updatedAt?: Date;
-  content?: string;
 }
 
 export interface Menu {
@@ -74,6 +73,7 @@ export interface Homepage {
   pressSection: PressSection;
   pressMentions: PressMention[];
   bottomCta: BottomCta;
+  seo: Seo;
 }
 
 export interface About {
@@ -87,12 +87,14 @@ export interface About {
   pressSection: AboutPressSection;
   pressMentions: PressMention[];
   bottomCta: BottomCta;
+  seo: Seo;
 }
 
 export interface Contact {
   id: number;
   header: ContactHeader;
   channels: ContactChannel[];
+  seo: Seo;
 }
 
 export interface SiteSettings {
@@ -115,6 +117,7 @@ export interface SeoDefaults {
 export interface BlogsPage {
   id: number;
   header: BlogsHeader;
+  seo: Seo;
 }
 
 export interface MenuItem {
@@ -227,6 +230,38 @@ export interface BlogsHeader {
   description?: string;
 }
 
+export interface UserRelations {
+  roles: Role[];
+}
+
+export interface MenuRelations {}
+
+export interface AiKeyRelations {}
+
+export interface RoleRelations {
+  user: User[];
+}
+
+export interface BlogRelations {
+  category: Category | null;
+}
+
+export interface CategoryRelations {
+  blog: Blog[];
+}
+
+export interface HomepageRelations {}
+
+export interface AboutRelations {}
+
+export interface ContactRelations {}
+
+export interface SiteSettingsRelations {}
+
+export interface SeoDefaultsRelations {}
+
+export interface BlogsPageRelations {}
+
 export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category";
 export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage";
 
@@ -248,6 +283,24 @@ export interface DrySingletonMap {
   "blogsPage": BlogsPage;
 }
 
+export interface DryCollectionRelationsMap {
+  "user": UserRelations;
+  "menu": MenuRelations;
+  "aiKey": AiKeyRelations;
+  "role": RoleRelations;
+  "blog": BlogRelations;
+  "category": CategoryRelations;
+}
+
+export interface DrySingletonRelationsMap {
+  "homepage": HomepageRelations;
+  "about": AboutRelations;
+  "contact": ContactRelations;
+  "siteSettings": SiteSettingsRelations;
+  "seoDefaults": SeoDefaultsRelations;
+  "blogsPage": BlogsPageRelations;
+}
+
 declare global {
-  function dry(): DryReader<DryCollectionMap, DrySingletonMap>;
+  function dry(): DryReader<DryCollectionMap, DrySingletonMap, DryCollectionRelationsMap, DrySingletonRelationsMap>;
 }

@@ -584,8 +584,13 @@ Verify qua `bun run build && bun run start` thật + `curl` - xem
 - Preview draft qua session cookie (đã hoãn 1 lần ở `reader.md`, hoãn tiếp
   - `DryPageContext.session` đã có chỗ cắm sẵn).
 - Trang 404/error tuỳ biến (`not-found.tsx` kiểu Next.js).
-- `<head>`/metadata per-page (title, meta tags) - ý tưởng gốc không nhắc,
-  nhưng 1 site thật chắc chắn cần - để bàn khi Giai đoạn 1-2 xong.
+- ~~`<head>`/metadata per-page (title, meta tags)~~ - **XONG (2026-08-05,
+  xem `status/reader-seo.md`)**: SEO cascade Default (`features.seoDefault`
+  singleton) < Singleton < Entry (`dry-seo.ts`'s `DrySeoLayers`/
+  `mergeSeoLayers`, filled as a side effect of `dry()`'s `get()` calls),
+  render vào `<title>`/`og:*`/`description` sau khi `resolveMatchToVNode`
+  resolve (`render.ts` không còn enqueue head tĩnh ngay lập tức nữa - xem
+  doc comment mới ở đó cho lý do vẫn không mất gì so với streaming cũ).
 
 ## Ý tưởng lớn hơn: page lưu qua storage, build on-demand (chưa scope, để sau)
 

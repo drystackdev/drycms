@@ -187,6 +187,79 @@ describe("generateDryTypes", () => {
     const post: ContentTypeDefinition = { id: "post", kind: "collection", name: "post", label: "Post", version: 0, fields: [] };
     const out = generateDryTypes([post]);
     expect(out).toContain("declare global {");
-    expect(out).toContain("function dry(): DryReader<DryCollectionMap, DrySingletonMap>;");
+    expect(out).toContain("function dry(): DryReader<DryCollectionMap, DrySingletonMap, DryCollectionRelationsMap, DrySingletonRelationsMap>;");
+  });
+
+  describe("<Type>Relations (typed populate())", () => {
+    it("types a manyToOne relation field as the target interface or null", () => {
+      const category: ContentTypeDefinition = { id: "category", kind: "collection", name: "category", label: "Category", version: 0, fields: [] };
+      const post: ContentTypeDefinition = {
+        id: "post",
+        kind: "collection",
+        name: "post",
+        label: "Post",
+        version: 0,
+        fields: [field({ id: "f1", name: "category", type: "relation", config: { target: "category", cardinality: "manyToOne" } })],
+      };
+      const out = generateDryTypes([post, category]);
+      expect(out).toContain("export interface PostRelations {");
+      expect(out).toMatch(/category: Category \| null;/);
+    });
+
+    it("types a manyToMany relation field as the target interface array", () => {
+      const category: ContentTypeDefinition = { id: "category", kind: "collection", name: "category", label: "Category", version: 0, fields: [] };
+      const post: ContentTypeDefinition = {
+        id: "post",
+        kind: "collection",
+        name: "post",
+        label: "Post",
+        version: 0,
+        fields: [field({ id: "f1", name: "tags", type: "relation", config: { target: "category", cardinality: "manyToMany" } })],
+      };
+      const out = generateDryTypes([post, category]);
+      expect(out).toMatch(/tags: Category\[\];/);
+    });
+
+    it("types a relationmirror field using the flipped cardinality of its source relation", () => {
+      const author: ContentTypeDefinition = { id: "author", kind: "collection", name: "author", label: "Author", version: 0, fields: [] };
+      const post: ContentTypeDefinition = {
+        id: "post",
+        kind: "collection",
+        name: "post",
+        label: "Post",
+        version: 0,
+        fields: [field({ id: "f-author", name: "author", type: "relation", config: { target: "author", cardinality: "manyToOne" } })],
+      };
+      const out = generateDryTypes([author, post]);
+      // source is manyToOne -> mirror (flipped) is oneToMany -> Post[]; the
+      // auto-generated mirror field on `author` is named after `post` (the
+      // source type), same as `relationMirrorFieldsFor` names it - not
+      // hand-declared, see `field-registry.ts`'s "auto-generated, never
+      // hand-added" doc comment.
+      expect(out).toMatch(/export interface AuthorRelations \{\s*post: Post\[\];\s*\}/);
+    });
+
+    it("emits an empty interface for a type with no populatable relation fields", () => {
+      const post: ContentTypeDefinition = {
+        id: "post",
+        kind: "collection",
+        name: "post",
+        label: "Post",
+        version: 0,
+        fields: [field({ id: "f1", name: "title", type: "text" })],
+      };
+      const out = generateDryTypes([post]);
+      expect(out).toContain("export interface PostRelations {}");
+    });
+
+    it("builds DryCollectionRelationsMap/DrySingletonRelationsMap with one entry per collection/singleton", () => {
+      const post: ContentTypeDefinition = { id: "post", kind: "collection", name: "post", label: "Post", version: 0, fields: [] };
+      const settings: ContentTypeDefinition = { id: "settings", kind: "singleton", name: "settings", label: "Settings", version: 0, fields: [] };
+      const out = generateDryTypes([post, settings]);
+      expect(out).toContain("export interface DryCollectionRelationsMap {");
+      expect(out).toMatch(/"post": PostRelations;/);
+      expect(out).toContain("export interface DrySingletonRelationsMap {");
+      expect(out).toMatch(/"settings": SettingsRelations;/);
+    });
   });
 });

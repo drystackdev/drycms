@@ -330,4 +330,163 @@ describe("dry()", () => {
       });
     });
   });
+
+  describe("populate (get()'s N+1 relation resolution - see dry-populate.ts)", () => {
+    async function freshPopulateSetup() {
+      const dir = mkdtempSync(join(tmpdir(), "drycms-dry-reader-populate-test-"));
+      const file = join(dir, "content.sqlite");
+      const schema = createSqliteContentEngineAdapter({ engine: "sqlite", file });
+      const entries = createSqliteContentEntryEngineAdapter({ engine: "sqlite", file });
+
+      const author: ContentTypeDefinition = {
+        id: "custom-author",
+        kind: "collection",
+        name: "author",
+        label: "Author",
+        features: { slug: true, draft: true },
+        fields: [{ id: "f-name", name: "name", label: "Name", type: "text", config: {}, validation: {}, order: 0 }],
+        version: 0,
+      };
+      await schema.applySave(author, await schema.planSave(author));
+
+      const tag: ContentTypeDefinition = {
+        id: "custom-tag",
+        kind: "collection",
+        name: "tag",
+        label: "Tag",
+        features: { slug: true },
+        fields: [{ id: "f-name", name: "name", label: "Name", type: "text", config: {}, validation: {}, order: 0 }],
+        version: 0,
+      };
+      await schema.applySave(tag, await schema.planSave(tag));
+
+      const post: ContentTypeDefinition = {
+        id: "custom-post",
+        kind: "collection",
+        name: "post",
+        label: "Post",
+        features: { slug: true, draft: true },
+        fields: [
+          { id: "f-author", name: "author", label: "Author", type: "relation", config: { target: "custom-author", cardinality: "manyToOne" }, validation: {}, order: 0 },
+          { id: "f-tags", name: "tags", label: "Tags", type: "relation", config: { target: "custom-tag", cardinality: "manyToMany" }, validation: {}, order: 1 },
+        ],
+        version: 0,
+      };
+      await schema.applySave(post, await schema.planSave(post));
+
+      const siteSettings: ContentTypeDefinition = {
+        id: "custom-site-settings",
+        kind: "singleton",
+        name: "siteSettings",
+        label: "Site Settings",
+        fields: [{ id: "f-featured", name: "featuredAuthor", label: "Featured Author", type: "relation", config: { target: "custom-author", cardinality: "manyToOne" }, validation: {}, order: 0 }],
+        version: 0,
+      };
+      await schema.applySave(siteSettings, await schema.planSave(siteSettings));
+      await entries.ensureSingletonEntry(siteSettings, await schema.listContentTypes());
+
+      const allTypes = await schema.listContentTypes();
+      return { dir, entries, allTypes };
+    }
+
+    it("resolves a manyToOne relation field into the target's full published row, and records both types as touched", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const authorType = allTypes.find((t) => t.name === "author")!;
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const author = await entries.createEntry(authorType, allTypes, { title: "Ada", name: "Ada", slug: "ada" });
+      const post = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", author: author.id });
+      const touchedTypes = new Set<string>();
+
+      await runWithDryContext({ entries, allTypes, touchedTypes }, async () => {
+        const found = await dry().collection("post").get(post.id, { populate: ["author"] });
+        expect(found?.author).toMatchObject({ id: author.id, name: "Ada", slug: "ada" });
+      });
+      expect(touchedTypes).toEqual(new Set(["post", "author"]));
+    });
+
+    it("leaves a null manyToOne relation as null rather than looking anything up", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const post = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello" });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const found = await dry().collection("post").get(post.id, { populate: ["author"] });
+        expect(found?.author).toBeNull();
+      });
+    });
+
+    it("filters an unpublished (draft) manyToOne target out to null", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const authorType = allTypes.find((t) => t.name === "author")!;
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const ghost = await entries.createEntry(authorType, allTypes, { title: "Ghost", name: "Ghost", slug: "ghost", draft: true });
+      const post = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", author: ghost.id });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const found = await dry().collection("post").get(post.id, { populate: ["author"] });
+        expect(found?.author).toBeNull();
+      });
+    });
+
+    it("resolves a manyToMany relation field into an array of the target's rows", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const tagType = allTypes.find((t) => t.name === "tag")!;
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const tagA = await entries.createEntry(tagType, allTypes, { title: "A", name: "A", slug: "a" });
+      const tagB = await entries.createEntry(tagType, allTypes, { title: "B", name: "B", slug: "b" });
+      const post = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", tags: [tagA.id, tagB.id] });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const found = await dry().collection("post").get(post.id, { populate: ["tags"] });
+        expect(found?.tags).toEqual([expect.objectContaining({ id: tagA.id, name: "A" }), expect.objectContaining({ id: tagB.id, name: "B" })]);
+      });
+    });
+
+    it("resolves a relationmirror field (the reverse of a manyToOne) into an array of the source rows", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const authorType = allTypes.find((t) => t.name === "author")!;
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const author = await entries.createEntry(authorType, allTypes, { title: "Ada", name: "Ada", slug: "ada" });
+      const post1 = await entries.createEntry(postType, allTypes, { title: "One", slug: "one", author: author.id });
+      const post2 = await entries.createEntry(postType, allTypes, { title: "Two", slug: "two", author: author.id });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        // the auto-generated reverse mirror field on `author` is literally
+        // named after the source type ("post") - see `system-fields.ts`'s
+        // `relationMirrorFieldsFor`.
+        const found = await dry().collection("author").get(author.id, { populate: ["post"] });
+        expect(found?.post).toEqual(expect.arrayContaining([expect.objectContaining({ id: post1.id }), expect.objectContaining({ id: post2.id })]));
+      });
+    });
+
+    it("singleton().get() resolves a populate field the same way as collection().get()", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const authorType = allTypes.find((t) => t.name === "author")!;
+      const settingsType = allTypes.find((t) => t.name === "siteSettings")!;
+      const author = await entries.createEntry(authorType, allTypes, { title: "Ada", name: "Ada", slug: "ada" });
+      await entries.saveSingletonEntry(settingsType, allTypes, { featuredAuthor: author.id });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const found = await dry().singleton("siteSettings").get({ populate: ["featuredAuthor"] });
+        expect(found?.featuredAuthor).toMatchObject({ id: author.id, name: "Ada" });
+      });
+    });
+
+    it("throws a clear error for a populate field that isn't a relation/relationmirror field", async () => {
+      const { dir, entries, allTypes } = await freshPopulateSetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const post = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello" });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        await expect(dry().collection("post").get(post.id, { populate: ["title" as never] })).rejects.toThrow(/has no relation\/relationmirror field named/);
+      });
+    });
+  });
 });

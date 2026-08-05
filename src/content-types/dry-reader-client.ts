@@ -38,23 +38,26 @@ function next(kind: DryCallLogEntry["kind"], name: string, method: DryCallLogEnt
   return entry.result;
 }
 
+/** `options` (a `populate` list) is accepted but ignored - the server
+ * already ran `populateRelations` before recording the result into
+ * `callLog`, so a replayed row comes back pre-populated for free. */
 function createCollectionReader(name: string): DryCollectionReader<Record<string, unknown>> {
   return {
-    async get(idOrSlug) {
+    async get(_idOrSlug: number | string, _options?: { populate?: string[] }) {
       return next("collection", name, "get") as Record<string, unknown> | null;
     },
     async list() {
       return next("collection", name, "list") as { rows: Record<string, unknown>[]; total: number };
     },
-  };
+  } as DryCollectionReader<Record<string, unknown>>;
 }
 
 function createSingletonReader(name: string): DrySingletonReader<Record<string, unknown>> {
   return {
-    async get() {
+    async get(_options?: { populate?: string[] }) {
       return next("singleton", name, "get") as Record<string, unknown> | null;
     },
-  };
+  } as DrySingletonReader<Record<string, unknown>>;
 }
 
 export function dry(): DryReader {

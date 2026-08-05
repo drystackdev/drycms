@@ -373,6 +373,19 @@ export const passwordFieldType: FieldTypeDefinition<string> = {
 
 export type RelationCardinality = "manyToOne" | "oneToMany" | "manyToMany";
 
+/** The cardinality a `relationmirror` field sees, looking back from the
+ * target side at a `relation` field of the given cardinality on the source
+ * side - `manyToOne` (this entry -> one target, many entries may share it)
+ * reverses to `oneToMany` (that target <- many entries) and vice versa;
+ * `manyToMany` reverses to itself. Shared by `codegen.ts` (typing a mirror
+ * field) and `dry-populate.ts` (resolving one at runtime) so both agree on
+ * the same shape a mirror field actually returns. */
+export function flipCardinality(cardinality: RelationCardinality): RelationCardinality {
+  if (cardinality === "manyToOne") return "oneToMany";
+  if (cardinality === "oneToMany") return "manyToOne";
+  return "manyToMany";
+}
+
 export const secretKeyFieldType: FieldTypeDefinition<string> = {
   key: "secretkey",
   label: "Secret Key",

@@ -3,10 +3,7 @@ function formatDate(date: Date): string {
 }
 
 export default async function BlogDetailPage({ params }: { params: { slug: string } }) {
-  const post = await dry().collection("blog").get(params.slug);
-  const category = post?.category != null ? await dry().collection("category").get(post.category) : null;
-  const { rows: allPosts } = await dry().collection("blog").list({ sort: { field: "date", dir: "desc" } });
-  const related = allPosts.filter((p) => p.id !== post?.id && p.category === post?.category).slice(0, 3);
+  const post = await dry().collection("blog").get(params.slug, { populate: ["category"] });
 
   if (!post) {
     return (
@@ -19,6 +16,18 @@ export default async function BlogDetailPage({ params }: { params: { slug: strin
       </div>
     );
   }
+
+  const category = post.category;
+  // `relation` fields aren't queryable in a `where` clause (see
+  // `entry-tree.ts`'s `flattenDisplayColumns`), so filtering blogs by
+  // category can't go through `list({ where })`. Populating the category's
+  // own auto-generated `blog` relationmirror gets the same "posts in this
+  // category" set directly instead.
+  const categoryWithPosts = category != null ? await dry().collection("category").get(category.id, { populate: ["blog"] }) : null;
+  const related = (categoryWithPosts?.blog ?? [])
+    .filter((p) => p.id !== post.id)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .slice(0, 3);
 
   return (
     <article class="mx-auto max-w-5xl px-4 py-16">
