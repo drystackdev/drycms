@@ -112,44 +112,6 @@ export default async function BlogsPage() {
       </div>
 
       <BlogsFilterSection posts={posts} categories={categories} />
-
-      <div class="mt-12 flex items-center justify-center gap-2">
-        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            class="h-4 w-4"
-          >
-            <path d="m15 5l-6 7l6 7" />
-          </svg>
-        </span>
-        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-red-800 text-sm font-semibold text-white">
-          1
-        </span>
-        <span class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">
-          2
-        </span>
-        <span class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100">
-          3
-        </span>
-        <span class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-400">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            class="h-4 w-4"
-          >
-            <path d="m9 5l6 7l-6 7" />
-          </svg>
-        </span>
-      </div>
     </div>
   );
 }

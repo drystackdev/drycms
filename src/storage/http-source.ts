@@ -1,3 +1,4 @@
+import { path } from "../server/config.js";
 import type { FileEntry, FileManagerSource } from "./entry-types.js";
 
 function basename(path: string): string {
@@ -26,6 +27,21 @@ export function encodePath(path: string): string {
     .filter(Boolean)
     .map(encodeURIComponent)
     .join("/");
+}
+
+/**
+ * Resolves an `image`-typed field's stored value into a servable `<img
+ * src>`/`og:image` URL. The value is either a bare relative storage id
+ * (e.g. "hero.jpg", resolved through the storage API) or a raw Link URL
+ * typed in the picker's "Link" tab (already absolute/root-relative, stored
+ * verbatim) - mirrors the admin's own resolution in `ContentEntryList.tsx`.
+ * Lives here (not `src/apps/pages/lib`, its original home) so server-side
+ * framework code (`app-router/render.ts`'s SEO tags) can use it too without
+ * importing project page code.
+ */
+export function resolveImageSrc(value: string): string {
+  if (/^https?:\/\//i.test(value) || value.startsWith("/")) return value;
+  return `${path}/api/storage/${encodePath(value)}`;
 }
 
 async function parseJson<T>(response: Response): Promise<T> {

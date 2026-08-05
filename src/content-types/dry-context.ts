@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
+import type { DrySeoLayers } from "./dry-seo.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 /**
@@ -42,6 +43,13 @@ export interface DryRequestContext {
    * above. `page-handler.ts` populates this so `render.ts` can embed it for
    * `hydrate-client.ts` to replay (`plans/app-router.md`'s Giai đoạn 2). */
   callLog?: DryCallLogEntry[];
+  /** Accumulates the SEO cascade's 3 layers as `dry-reader.ts`'s `get()`
+   * calls touch `features.seo` types during this render - optional same as
+   * `touchedTypes`/`callLog` above. `page-handler.ts` seeds `.default`
+   * before rendering starts; `render.ts` calls `mergeSeoLayers` (see
+   * `dry-seo.ts`) on the final value once rendering finishes to build the
+   * page's `<title>`/meta tags. */
+  seo?: DrySeoLayers;
 }
 
 const storage = new AsyncLocalStorage<DryRequestContext>();

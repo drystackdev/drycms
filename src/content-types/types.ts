@@ -35,6 +35,13 @@ export interface ContentTypeFeatures {
   /** Flattens the built-in `seo` component's fields (Title/Description/Image
    * - see `seed.ts`) in as `seo_metaTitle`/`seo_description`/`seo_image`. */
   seo?: boolean;
+  /** Marks this singleton as the site-wide fallback SEO source - only
+   * meaningful combined with `features.seo` itself. `dry()`'s reader
+   * (`dry-seo.ts`'s `seoTierFor`) auto-seeds every render's "Default" SEO
+   * layer from whichever singleton has this set, so a page that never sets
+   * its own SEO still gets sensible `<title>`/meta tags. `singleton` only -
+   * there's exactly one site to default for, not one per entry. */
+  seoDefault?: boolean;
   /** Adds a system `sortIndex` column (see `system-fields.ts`) so this
    * collection's entries can be manually drag-reordered, independent of the
    * `FieldDefinition.order` mirror of a content TYPE's own field order -

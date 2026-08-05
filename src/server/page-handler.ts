@@ -2,6 +2,7 @@ import { path as adminPath } from "./config.js";
 import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
 import type { DryRequestContext } from "../content-types/dry-context.js";
+import type { DrySeoLayers, DrySeoValue } from "../content-types/dry-seo.js";
 import { discoverRoutes } from "./app-router/route-tree.js";
 import { matchRoute } from "./app-router/match.js";
 import { renderPage } from "./app-router/render.js";
@@ -59,7 +60,19 @@ export async function handlePageRequest(
 
   const touchedTypes = new Set<string>();
   const callLog: DryRequestContext["callLog"] = [];
-  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog };
+  const seo: DrySeoLayers = {};
+  // Seeds the SEO cascade's "Default" layer once per request - the one
+  // layer no page/layout ever fetches on its own (see `dry-seo.ts`'s
+  // `seoTierFor`), so it has to be done here rather than as a side effect
+  // of some `dry()` call. Driven by `features.seoDefault`, not a hardcoded
+  // type name, so this stays generic across drycms projects.
+  const seoDefaultsType = allTypes.find((t) => t.kind === "singleton" && t.features?.seoDefault);
+  if (seoDefaultsType) {
+    const row = await entries.getSingletonEntry(seoDefaultsType, allTypes);
+    const value = row?.value.seo;
+    if (value && typeof value === "object") seo.default = value as DrySeoValue;
+  }
+  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo };
 
   return renderPage(match, dryContext, {
     onDocumentReady: (fullHtml) => {

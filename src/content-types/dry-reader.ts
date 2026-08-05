@@ -1,4 +1,5 @@
-import { getDryContext } from "./dry-context.js";
+import { getDryContext, type DryRequestContext } from "./dry-context.js";
+import { seoTierFor, type DrySeoValue } from "./dry-seo.js";
 import type { EntryWhere } from "./engine/entry-where.js";
 import type { EntryRow } from "./engine/entries-types.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "./types.js";
@@ -63,6 +64,20 @@ function toRecord(row: EntryRow): Record<string, unknown> {
   return { id: row.id, ...row.value };
 }
 
+/** Records `result`'s `seo` field (if it has one) into `context.seo`'s
+ * matching tier - a side effect of `get()`, not something callers ask for
+ * explicitly, so a page's own `dry().singleton(x).get()`/
+ * `dry().collection(x).get()` call for its own data automatically feeds the
+ * SEO cascade (`plans/reader.md`'s "tự động đọc" requirement) with no extra
+ * code in `page.tsx`. Not called from `list()` - a listing row isn't "the
+ * page's own" entity. */
+function recordSeoLayer(context: DryRequestContext, type: ContentTypeDefinition, result: Record<string, unknown> | null): void {
+  const tier = seoTierFor(type);
+  if (!tier || !context.seo || !result) return;
+  const seo = result.seo;
+  if (seo && typeof seo === "object") context.seo[tier] = seo as DrySeoValue;
+}
+
 /** Client-side mirror of `entry-where.ts`'s `buildPublishedOnlyClause`,
  * applied to a single already-fetched row - needed because `getEntry` (the
  * plain id lookup) has no `publishedOnly` support of its own (unlike
@@ -90,6 +105,7 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
         const row = await entries.findEntry(type, allTypes, [{ field: "slug", op: "eq", value: idOrSlug }], { publishedOnly: true });
         result = row ? toRecord(row) : null;
       }
+      recordSeoLayer(context, type, result);
       context.callLog?.push({ kind: "collection", name, method: "get", result });
       return result;
     },
@@ -123,6 +139,7 @@ function createSingletonReader(name: string): DrySingletonReader<Record<string, 
       context.touchedTypes?.add(type.name);
       const row = await entries.getSingletonEntry(type, allTypes);
       const result = row ? toRecord(row) : null;
+      recordSeoLayer(context, type, result);
       context.callLog?.push({ kind: "singleton", name, method: "get", result });
       return result;
     },
