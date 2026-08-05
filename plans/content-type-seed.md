@@ -55,11 +55,13 @@ tạo tay lại từng cái qua UI.
                 │
                 │  bun run build   (tự động, không cần dev làm gì thêm)
                 ▼
-  dist/server/entry-node.js   (dry.seed.json được Vite glob-import, inline
-                                thành 1 field JS ngay trong content-types/seed.ts)
+  dist/server/entry-node.js   (KHÔNG đụng dry.seed.json - file đó ở nguyên
+                                repo root, đọc tươi mỗi lần module load)
   dist/server/seed-assets.zip (storage/icons/components/pageComponents zip lại)
                 │
-                │  deploy lên production, chạy `node dist/server/entry-node.js`
+                │  deploy lên production CÙNG VỚI dry.seed.json ở repo root
+                │  (file thật cần tồn tại lúc runtime - xem "Sự cố khi
+                │  implement" bên dưới), chạy `node dist/server/entry-node.js`
                 ▼
   MỖI LẦN BOOT: engine/sqlite.ts|d1.ts gọi pendingSeedStatements() như cũ,
   nhưng danh sách "default" giờ lấy từ dry.seed.json đã đóng gói (nếu có)
@@ -79,15 +81,28 @@ tạo tay lại từng cái qua UI.
         tạo user superadmin, đăng nhập vào hệ thống đã có sẵn schema + asset
 ```
 
-Điểm mấu chốt: **không đọc `dry.seed.json` bằng `fs` ở runtime production** -
-dùng `import.meta.glob("/dry.seed.json", { eager: true })` ngay trong
-`content-types/seed.ts`, để Vite tự quyết định lúc `vite build --ssr` chạy:
-file có tồn tại trên đĩa lúc build hay không. `import.meta.glob` với 0 file
-khớp không lỗi (khác với `import` tĩnh một path cụ thể - path đó KHÔNG được
-phép thiếu, nên không dùng cách đó). Nhờ vậy KHÔNG cần ship một
-`dry.seed.json` mặc định rỗng trong repo template - sự tồn tại của file
-chính là công tắc bật/tắt tính năng, đúng yêu cầu "không có file thì lấy
-seed.ts, có thì bỏ qua seed.ts".
+Điểm mấu chốt (**đã sửa sau khi implement, xem "Sự cố khi implement" ở cuối
+mục này**): `content-types/seed.ts` đọc `dry.seed.json` bằng `node:fs`
+thường (`readFileSync`, đồng bộ, tha thứ khi file thiếu) - CÙNG một idiom
+`server/options.ts`'s `readDotEnv` đã dùng cho `.env`. Sự tồn tại của file
+(tại `process.cwd()`, tức repo root/deployment root) chính là công tắc
+bật/tắt tính năng, đúng yêu cầu "không có file thì lấy seed.ts, có thì bỏ
+qua seed.ts" - nhưng KHÔNG bake vào JS bundle như bản thiết kế đầu tiên định
+làm; xem lý do bên dưới.
+
+> **Sự cố khi implement, đã sửa**: bản thiết kế đầu tiên dùng
+> `import.meta.glob("/dry.seed.json", { eager: true })` để Vite tự bỏ qua
+> file thiếu thay vì lỗi build (khác `import` tĩnh, vốn bắt buộc file phải
+> tồn tại). Đây là cú pháp CHỈ Vite hiểu - `content-types/seed.ts` cũng được
+> require bởi 2 script chạy bằng `bun` thẳng (không qua Vite):
+> `scripts/dry-generate.ts` (đã có từ trước) và `scripts/seed-sync.ts` (mục
+> 4) - cả hai import content engine, kéo theo `seed.ts`. Chạy `bun run
+> seed:sync` với bản `import.meta.glob` ném lỗi ngay khi module load:
+> `TypeError: import.meta.glob is not a function`. Đổi hẳn sang `node:fs`
+> đồng bộ giải quyết triệt để (chạy giống hệt dưới bun/Node/Vite, không cần
+> transform nào), đổi lại: `dry.seed.json` giờ là một file thật cần tồn tại
+> ở deployment root lúc RUNTIME (đọc mỗi lần module load, không bake vào
+> bundle) - xem mục 5 cập nhật.
 
 ## 4. Thành phần mới
 
@@ -106,24 +121,49 @@ seed.ts, có thì bỏ qua seed.ts".
 
 - **`content-types/seed.ts`** - thêm:
   ```ts
-  const packagedSeedModules = import.meta.glob("/dry.seed.json", {
-    eager: true,
-    import: "default",
-  }) as Record<string, { contentTypes: ContentTypeDefinition[] } | undefined>;
-  const packagedSeed = Object.values(packagedSeedModules)[0];
+  import { readFileSync } from "node:fs";
+  import { resolve as resolvePath } from "node:path";
 
-  export function resolveDefaultContentTypeDefinitions(): ContentTypeDefinition[] {
+  export interface PackagedSeed {
+    contentTypes: ContentTypeDefinition[];
+  }
+
+  function loadPackagedSeed(): PackagedSeed | undefined {
+    try {
+      return JSON.parse(readFileSync(resolvePath(process.cwd(), "dry.seed.json"), "utf8")) as PackagedSeed;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const realPackagedSeed = loadPackagedSeed();
+
+  export function resolveDefaultContentTypeDefinitions(
+    packagedSeed: PackagedSeed | undefined = realPackagedSeed,
+  ): ContentTypeDefinition[] {
     return packagedSeed?.contentTypes ?? defaultContentTypeDefinitions();
   }
   ```
-  `pendingSeedStatements` đổi dòng `const all = defaultContentTypeDefinitions();`
-  thành `const all = resolveDefaultContentTypeDefinitions();` - **chỉ một
-  dòng đổi**, mọi logic diff-by-name/tạo statement còn lại giữ nguyên.
+  (`packagedSeed` là tham số có default, không phải hardcode thẳng
+  `realPackagedSeed` bên trong - để unit test tiêm một seed giả mà không cần
+  file thật trên đĩa.) `pendingSeedStatements` đổi dòng
+  `const all = defaultContentTypeDefinitions();` thành
+  `const all = resolveDefaultContentTypeDefinitions();` - **chỉ một dòng
+  đổi**, mọi logic diff-by-name/tạo statement còn lại giữ nguyên.
   `defaultContentTypeDefinitions()` (hardcoded) vẫn giữ nguyên, dùng làm
   fallback khi không có `dry.seed.json`.
   → **`engine/sqlite.ts` và `engine/d1.ts` KHÔNG cần sửa gì** - chúng vẫn gọi
   `pendingSeedStatements(existingNames)` y như cũ, chỉ là hàm này giờ trả kết
   quả khác tuỳ có `dry.seed.json` hay không.
+  **Đọc bằng `node:fs` thường, KHÔNG dùng `import.meta.glob`** - xem "Sự cố
+  khi implement" ở mục 3: `seed.ts` bị require bởi 2 script chạy thẳng qua
+  `bun` (`dry-generate.ts`, `seed-sync.ts`), nơi cú pháp riêng của Vite không
+  tồn tại. Hệ quả: `dry.seed.json` được đọc TƯƠI mỗi lần module load (không
+  bake vào JS bundle), tại `process.cwd()` - đúng giả định `resolveOptions()`
+  đã dùng cho mọi root khác, nhưng khác với cách `dry.config.ts` được bake
+  thẳng vào bundle qua `import` tĩnh ở `server/config.ts`. Production cần
+  file `dry.seed.json` tồn tại thật ở deployment root (nơi `bun run start`
+  chạy) - không phải chỉ trong bundle.
 
 - **`src/content-types/seed-assets.ts`** - CHỈ xử lý phần asset (zip), không
   còn liên quan schema nữa:
@@ -136,7 +176,7 @@ seed.ts, có thì bỏ qua seed.ts".
     map từng prefix sang root TƯƠNG ỨNG mà `resolveOptions()` của
     **production đang chạy** trả về (không phải root lúc build).
 
-- **`src/lib/zip.ts`** - zip writer (dùng ở `scripts/build-seed-assets.mjs`)
+- **`src/lib/zip.ts`** - zip writer (dùng ở `scripts/build-seed-assets.ts`)
   + zip reader/extractor (dùng ở runtime, bundle vào `entry-node.js`). Tự
   viết tay, không thêm dependency mới: chỉ dùng `node:fs`, `node:path`,
   `node:zlib` (`zlib.crc32()` - có sẵn từ Node 22.2+, engines của package.json
@@ -145,7 +185,7 @@ seed.ts, có thì bỏ qua seed.ts".
   `zlib.deflateRawSync`/`inflateRawSync`, vẫn stdlib) có thể thêm sau như một
   cải tiến độc lập, không đổi format container.
 
-- **`scripts/build-seed-assets.mjs`** - bước build mới. Gọi
+- **`scripts/build-seed-assets.ts`** - bước build mới. Gọi
   `resolveOptions()` với `dry.config.ts` hiện tại (giống hệt cách dev server
   resolve), với 4 root "có thể đóng gói":
 
@@ -165,18 +205,19 @@ seed.ts, có thì bỏ qua seed.ts".
 
 ## 5. Thay đổi ở file có sẵn
 
-- **`src/content-types/seed.ts`** - thêm `import.meta.glob` +
-  `resolveDefaultContentTypeDefinitions()` như mục 4; đổi 1 dòng trong
-  `pendingSeedStatements`. Cập nhật doc comment ở đầu file (đang nói
+- **`src/content-types/seed.ts`** - thêm `loadPackagedSeed()` (đọc
+  `node:fs`) + `resolveDefaultContentTypeDefinitions()` như mục 4; đổi 1 dòng
+  trong `pendingSeedStatements`. Cập nhật doc comment ở đầu file (đang nói
   "`pendingSeedStatements` re-seeds một default còn thiếu theo TÊN" - giờ
   thêm 1 câu nói rõ danh sách "default" có thể đến từ `dry.seed.json`).
 
 - **`package.json`**:
   - Thêm script `"seed:sync": "bun scripts/seed-sync.ts"`.
   - Sửa `"build"` thành 3 bước tuần tự: `vite build --outDir dist/client &&
-    vite build --ssr src/server/entry-node.ts --outDir dist/server && node
-    scripts/build-seed-assets.mjs` (bước zip chạy SAU vite SSR build vì ghi
-    vào `dist/server/`).
+    vite build --ssr src/server/entry-node.ts --outDir dist/server && bun
+    scripts/build-seed-assets.ts` (bước zip chạy SAU vite SSR build vì ghi
+    vào `dist/server/`; `bun` chứ không phải `node` - script import thẳng
+    `.ts` project, giống `dry:generate` đã làm từ trước).
 
 - **`src/server/routes/auth.ts`** - trong nhánh `register-first-admin`, bên
   trong `withFirstAdminRegistrationLock`, ngay sau khi xác nhận
@@ -225,12 +266,17 @@ production khác nhau vẫn cùng một danh tính logic.
 - **`dry.seed.json` chứa type đã bị xoá khỏi dev DB** - `seed:sync` OVERWRITE
   toàn bộ file mỗi lần chạy, type bị xoá tự động biến mất khỏi seed lần chụp
   kế tiếp.
-- **Singleton trong seed** - `pendingSeedStatements`/`planMigration` hiện tại
-  đã tự lo phần tạo bảng cho singleton qua migration statement; cần xác nhận
-  lại xem có cần thêm bước tương đương `ensureSingletonEntry` cho singleton
-  MỚI xuất hiện lần đầu qua đường boot-seed hay không, hay cơ chế hiện tại
-  của `engine/sqlite.ts`/`engine/d1.ts` đã tự lo việc này cho 6 type hệ thống
-  rồi (kiểm tra lúc implement, không phải quyết định thiết kế).
+- **Singleton trong seed - đã kiểm tra, không chặn** - `pendingSeedStatements`
+  chỉ tạo TABLE (qua `planMigration`), không gọi `ensureSingletonEntry`
+  (hàm đó chỉ được `routes/content-types.ts`'s `performSave` gọi, tức chỉ khi
+  tạo/sửa qua Content-Type Builder UI). Một singleton đến từ `dry.seed.json`
+  vì vậy KHÔNG có sẵn row ngay lúc boot, khác với tạo tay qua UI. Không phải
+  lỗi: `GET` một singleton chưa có row trả `entry: null` (không throw -
+  `content-entries.ts:324-330`), và `PUT` (`saveSingletonEntry`) tự tạo row ở
+  lần lưu đầu tiên - chỉ là admin thấy trang trống tới khi tự lưu lần đầu,
+  không phải tự động có sẵn dữ liệu mặc định như tạo qua UI. Hợp lý với
+  quyết định #1 (seed chỉ schema, không seed dữ liệu) - hành vi hiện tại thật
+  ra NHẤT QUÁN hơn, không phải một khoảng trống cần vá.
 - **Build không chạy `bun run seed:sync` trước** - `dry.seed.json` vẫn là
   bản cũ nhất đã được chốt tay/lần sync gần nhất, KHÔNG tự động đồng bộ lúc
   build. Quên `seed:sync` thì build đóng gói seed cũ, không phải state DB mới
@@ -262,8 +308,8 @@ production khác nhau vẫn cùng một danh tính logic.
 
 - `bun run typecheck` sạch.
 - Unit test cho `content-types/seed.ts`: `resolveDefaultContentTypeDefinitions()`
-  trả về `defaultContentTypeDefinitions()` khi không có `dry.seed.json` (mock
-  glob rỗng), trả về nội dung packaged khi có.
+  trả về `defaultContentTypeDefinitions()` khi tiêm `undefined` (không có
+  `dry.seed.json`), trả về nội dung packaged khi tiêm một `PackagedSeed` giả.
 - Unit test cho `lib/zip.ts`: roundtrip write → read cho vài file nhỏ + thư
   mục lồng nhau + file rỗng.
 - Test thủ công end-to-end: tạo 1 content type mới qua UI dev, `bun run
@@ -280,14 +326,15 @@ production khác nhau vẫn cùng một danh tính logic.
 ## 10. Thứ tự triển khai gợi ý
 
 1. `src/content-types/seed.ts`'s `resolveDefaultContentTypeDefinitions()` +
-   `import.meta.glob` + đổi 1 dòng trong `pendingSeedStatements` + unit test.
-   Bước này tự đứng được, không phụ thuộc gì khác, và đã giải quyết trọn vẹn
-   phần schema.
+   `loadPackagedSeed()` (đọc `node:fs`, KHÔNG `import.meta.glob` - xem "Sự cố
+   khi implement" ở mục 3) + đổi 1 dòng trong `pendingSeedStatements` + unit
+   test. Bước này tự đứng được, không phụ thuộc gì khác, và đã giải quyết
+   trọn vẹn phần schema.
 2. `src/lib/zip.ts` (writer + reader) + unit test.
 3. `src/content-types/seed-assets.ts` (`extractPackagedSeedAssets`) + unit
    test.
 4. Nối `extractPackagedSeedAssets` vào `routes/auth.ts`'s
    `register-first-admin` + test tích hợp.
-5. `scripts/build-seed-assets.mjs` + sửa `package.json`'s `build` script.
+5. `scripts/build-seed-assets.ts` + sửa `package.json`'s `build` script.
 6. `scripts/seed-sync.ts` + `package.json`'s `seed:sync` script.
 7. Test thủ công end-to-end đầy đủ (mục 9) + cập nhật `docs/ARCHITECTURE.md`.

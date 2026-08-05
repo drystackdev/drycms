@@ -1,6 +1,34 @@
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { planMigration, type Statement } from "./migration.js";
 import { SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
+
+export interface PackagedSeed {
+  contentTypes: ContentTypeDefinition[];
+}
+
+/**
+ * `dry.seed.json` (repo root, alongside `dry.config.ts`) is an app's own
+ * packaged content-type seed - see `plans/content-type-seed.md`. Read with
+ * plain `node:fs`, synchronously, tolerating absence - the exact same idiom
+ * `server/options.ts`'s `readDotEnv` already uses for `.env`. Deliberately
+ * NOT Vite's `import.meta.glob` (which would also tolerate absence): this
+ * module is reached from plain `bun scripts/*.ts` runs too (`seed-sync.ts`,
+ * `dry-generate.ts`, both import the content engine, which imports this
+ * file) - those never go through Vite at all, so `import.meta.glob` isn't a
+ * real function there and throws the moment this module loads. `node:fs`
+ * works identically under bun, Node, and Vite's SSR module graph.
+ */
+function loadPackagedSeed(): PackagedSeed | undefined {
+  try {
+    return JSON.parse(readFileSync(resolvePath(process.cwd(), "dry.seed.json"), "utf8")) as PackagedSeed;
+  } catch {
+    return undefined;
+  }
+}
+
+const realPackagedSeed = loadPackagedSeed();
 
 /** Fixed ids for the built-in default content types/fields, so re-running
  * `pendingSeedStatements` on every boot (see the engine adapters) always
@@ -367,6 +395,26 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
 }
 
 /**
+ * The list `pendingSeedStatements` treats as "must exist" - an app's own
+ * `dry.seed.json` takes over COMPLETELY when present, in place of the 6
+ * built-in defaults, not alongside them (`seed:sync`, which produces that
+ * file, snapshots the FULL content-type list of a real dev DB, so it already
+ * includes copies of `user`/`role`/etc. - see `plans/content-type-seed.md`).
+ * Only falls back to `defaultContentTypeDefinitions()` when no
+ * `dry.seed.json` exists - the ordinary drycms-with-no-app-seed case this
+ * always was.
+ *
+ * `packagedSeed` defaults to the real, module-scope `loadPackagedSeed()`
+ * result but is a plain parameter so tests can inject a fake one instead of
+ * needing a real `dry.seed.json` on disk.
+ */
+export function resolveDefaultContentTypeDefinitions(
+  packagedSeed: PackagedSeed | undefined = realPackagedSeed,
+): ContentTypeDefinition[] {
+  return packagedSeed?.contentTypes ?? defaultContentTypeDefinitions();
+}
+
+/**
  * Statements to create whichever default content types (by name,
  * case-insensitively) aren't already present - `[]` once every default has
  * been seeded once. Called on every bootstrap (not just when `metadata` is
@@ -376,12 +424,13 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
  * `newAllTypes` for every planned type is the FULL default set regardless of
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
  * component from it even on a run where `menuItem` itself isn't being
- * (re-)created.
+ * (re-)created. "Default" here means `resolveDefaultContentTypeDefinitions()`
+ * - the packaged app seed when one exists, otherwise the 6 built-in types.
  */
 export function pendingSeedStatements(
   existingNamesLowercase: ReadonlySet<string>,
 ): Statement[] {
-  const all = defaultContentTypeDefinitions();
+  const all = resolveDefaultContentTypeDefinitions();
   const missing = all.filter(
     (t) => !existingNamesLowercase.has(t.name.toLowerCase()),
   );

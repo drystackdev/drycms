@@ -8,6 +8,8 @@ import { verifyPassword } from "../../lib/password-hash.js";
 import { signSession } from "../../lib/session-token.js";
 import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
 import { getContentAdapters } from "../content-adapters.js";
+import { extractPackagedSeedAssets } from "../../content-types/seed-assets.js";
+import { resolved } from "../config.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
@@ -250,6 +252,17 @@ export const POST: DryRouteHandler = async (context) => {
         if (await hasAnyUser(entryAdapter, userType, allTypes)) {
           throw new AuthError("already_setup", "An account already exists - sign in instead.");
         }
+
+        // The one point that knows for certain this is a genuinely fresh
+        // instance (no user yet) - extract a build-time-packaged
+        // `seed-assets.zip` (if any) BEFORE creating the admin, so a failure
+        // here fails the whole request instead of leaving a half-seeded
+        // instance with an admin account already created (see
+        // `plans/content-type-seed.md`). Content-type schema itself doesn't
+        // need anything here - `content-types/seed.ts`'s every-boot seeding
+        // already applies an app's own `dry.seed.json` (if any) before any
+        // request is served.
+        await extractPackagedSeedAssets(resolved);
 
         const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
         const name = typeof body.name === "string" ? body.name.trim() : "";

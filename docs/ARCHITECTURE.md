@@ -274,6 +274,26 @@ SPA and fall into its router's dashboard-redirect fallback; `AuthGate`
 checks `url.startsWith(path)` first and renders nothing (a blank page,
 skipping the session fetch too) when it doesn't match.
 
+### App-level seed: `dry.seed.json` + packaged storage assets
+
+An app's OWN content types (as opposed to the 6 built-in defaults above) can
+be packaged for a fresh production deploy - see `plans/content-type-seed.md`
+for the full design. `bun run seed:sync` snapshots the current dev content-
+type DB (every type, including the 6 defaults) into `dry.seed.json` at the
+repo root; when that file exists, `content-types/seed.ts`'s
+`resolveDefaultContentTypeDefinitions()` uses it INSTEAD of
+`defaultContentTypeDefinitions()` for every boot's `pendingSeedStatements`
+diff - completely replacing the built-in list, not layering on top of it.
+Read with plain `node:fs` (not Vite's `import.meta.glob`): this module is
+also reached from plain `bun scripts/*.ts` runs (`seed-sync.ts`,
+`dry-generate.ts`), which never go through Vite. Separately, `bun run build`
+zips the `storage`/`icons`/`components.storage`/`pageComponents.storage`
+roots into `dist/server/seed-assets.zip` (`src/lib/zip.ts`, a hand-rolled
+STORE-only container - no new dependency); `routes/auth.ts`'s
+`register-first-admin` extracts it into whichever roots the RUNNING
+server's own `dry.config.ts` resolves to (once, gated on `hasAnyUser` being
+false - never re-extracted on a later boot, unlike the schema seed above).
+
 ### Enforcement (added 2026-07-31): a session for everything, permissions for content
 
 `src/server/session.ts`'s `resolveSession()` runs once in `handler.ts`

@@ -10,10 +10,11 @@
   },
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server",
+    "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server && bun scripts/build-seed-assets.ts",
     "start": "node dist/server/entry-node.js",
     "build:icons": "node scripts/build-icons.mjs",
     "dry:generate": "bun scripts/dry-generate.ts",
+    "seed:sync": "bun scripts/seed-sync.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"

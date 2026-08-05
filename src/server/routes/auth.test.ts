@@ -10,9 +10,28 @@ vi.mock("../config.js", async () => {
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
+  const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-auth-route-"));
-  return { path: "/dry", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  const resolved = resolveOptions({
+    content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    storage: { root: join(tempDirBox.path, "storage") },
+  });
+  return { path: resolved.path, content: resolved.content, resolved };
 });
+
+/** Spies on `register-first-admin`'s call to `extractPackagedSeedAssets` -
+ * the real one reads a `seed-assets.zip` from disk next to the compiled
+ * `seed-assets.js` module (already covered by `seed-assets.test.ts`'s own
+ * unit tests), so this test only needs to verify `routes/auth.ts` calls it
+ * with the right argument, at the right point (before the admin account is
+ * created - a throw here must leave `hasAnyUser` false). */
+const seedAssetsBox = vi.hoisted(() => ({ calls: [] as unknown[], shouldThrow: false }));
+vi.mock("../../content-types/seed-assets.js", () => ({
+  extractPackagedSeedAssets: async (resolved: unknown) => {
+    seedAssetsBox.calls.push(resolved);
+    if (seedAssetsBox.shouldThrow) throw new Error("seed-assets extraction boom");
+  },
+}));
 
 const { GET, POST } = await import("./auth.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../../content-types/engine/index.js");
@@ -22,6 +41,8 @@ const { resolveSession } = await import("../session.js");
 beforeEach(() => {
   process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
   process.env.DRYCMS_BOOTSTRAP_TOKEN = "test-bootstrap-token-do-not-use-in-prod-1234567890";
+  seedAssetsBox.calls = [];
+  seedAssetsBox.shouldThrow = false;
 });
 
 afterEach(() => {
@@ -103,6 +124,23 @@ describe("auth route", () => {
     expect(json.user).toBeNull();
   });
 
+  it("fails the whole request (and creates no user) if packaged seed-asset extraction throws", async () => {
+    seedAssetsBox.shouldThrow = true;
+    const { status } = await registerFirstAdmin({
+      name: "Should Not Exist",
+      email: "should-not-exist@example.com",
+      password: "hunter2-long-password",
+    });
+    expect(status).toBe(500);
+    expect(seedAssetsBox.calls).toHaveLength(1);
+
+    // No half-seeded instance left behind - hasAnyUser is still false, so a
+    // retry (next POST, seedAssetsBox.shouldThrow reset by beforeEach) can
+    // succeed cleanly.
+    const { json } = await getSession();
+    expect(json.hasAnyUser).toBe(false);
+  });
+
   it("registers the first Super Admin account, assigns the Super Admin role, and signs a session", async () => {
     const { status, json, response } = await registerFirstAdmin({
       name: "Ada Lovelace",
@@ -110,6 +148,10 @@ describe("auth route", () => {
       password: "hunter2-long-password",
     });
     expect(status).toBe(201);
+    // Packaged seed-asset extraction ran exactly once, with the running
+    // server's resolved options, before the admin account was created.
+    const { resolved } = await import("../config.js");
+    expect(seedAssetsBox.calls).toEqual([resolved]);
     expect(json.user).toEqual({
       id: expect.any(Number),
       name: "Ada Lovelace",

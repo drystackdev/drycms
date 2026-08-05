@@ -3,6 +3,7 @@ import { validateContentTypeDefinition } from "./naming.js";
 import {
   defaultContentTypeDefinitions,
   pendingSeedStatements,
+  resolveDefaultContentTypeDefinitions,
 } from "./seed.js";
 import { resolveTableTree } from "./tree.js";
 import type { ContentTypeDefinition } from "./types.js";
@@ -204,6 +205,31 @@ describe("defaultContentTypeDefinitions", () => {
     expect(tree.columns.map((c) => c.name)).toEqual(
       expect.arrayContaining(["seo_metaTitle", "seo_description", "seo_image"]),
     );
+  });
+});
+
+describe("resolveDefaultContentTypeDefinitions", () => {
+  it("falls back to the 6 built-in defaults when no packaged seed is given", () => {
+    const resolved = resolveDefaultContentTypeDefinitions(undefined);
+    expect(resolved.map((t) => t.name).sort()).toEqual(
+      defaultContentTypeDefinitions().map((t) => t.name).sort(),
+    );
+  });
+
+  it("uses the packaged app seed instead of the built-in defaults when present", () => {
+    const appType: ContentTypeDefinition = {
+      id: "app-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      fields: [],
+      version: 0,
+    };
+    const resolved = resolveDefaultContentTypeDefinitions({ contentTypes: [appType] });
+    expect(resolved).toEqual([appType]);
+    // Completely replaces the built-in list - `user`/`role`/etc. are NOT
+    // silently unioned in, matching decision #4 in plans/content-type-seed.md.
+    expect(resolved.find((t) => t.name === "user")).toBeUndefined();
   });
 });
 
