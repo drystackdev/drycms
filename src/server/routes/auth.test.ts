@@ -12,10 +12,7 @@ vi.mock("../config.js", async () => {
   const { join } = await import("node:path");
   const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-auth-route-"));
-  const resolved = resolveOptions({
-    content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
-    storage: { root: join(tempDirBox.path, "storage") },
-  });
+  const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
   return { path: resolved.path, content: resolved.content, resolved };
 });
 

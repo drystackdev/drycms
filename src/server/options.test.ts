@@ -1,10 +1,10 @@
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { config, resolveOptions } from './options.js';
 
 describe('config', () => {
 	it('returns the raw options for startup resolution', () => {
-		const options = { path: '/admin', content: { engine: 'file' as const } };
+		const options = { path: '/admin', kind: 'cloudflare' as const };
 		expect(config(options)).toBe(options);
 	});
 
@@ -14,9 +14,10 @@ describe('config', () => {
 });
 
 describe('resolveOptions', () => {
-	it('defaults all file-backed subsystems to local storage', () => {
+	it('defaults every backend to kind "local"', () => {
 		const expected = {
 			path: '/dry',
+			kind: 'local',
 			storage: { kind: 'local', root: resolve(process.cwd(), '.dry/storage') },
 			icons: { kind: 'local', root: resolve(process.cwd(), '.dry/icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), '.dry/content.sqlite') },
@@ -46,69 +47,89 @@ describe('resolveOptions', () => {
 		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);
+		expect(resolveOptions({ kind: 'local' })).toEqual(expected);
 	});
 
-	it('resolves local roots relative to cwd', () => {
-		expect(resolveOptions({ storage: { root: 'assets' } }).storage).toEqual({
-			kind: 'local', root: resolve(process.cwd(), 'assets'),
+	it('resolves kind "cloudflare" to D1 content, one shared R2 bucket per prefix, and Workers KV - all with fixed binding names', () => {
+		const resolved = resolveOptions({ kind: 'cloudflare' });
+		expect(resolved.kind).toBe('cloudflare');
+		expect(resolved.content).toEqual({ engine: 'D1', binding: 'CONTENT_DB' });
+		expect(resolved.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage' });
+		expect(resolved.icons).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'icons' });
+		expect(resolved.components.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'richtext-components' });
+		expect(resolved.pageComponents.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'components' });
+		expect(resolved.pagesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-cache' });
+		expect(resolved.typesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'types-cache' });
+		expect(resolved.kv).toMatchObject({ kind: 'KV', binding: 'KV' });
+	});
+
+	it('rejects an unrecognized top-level kind', () => {
+		expect(() => resolveOptions({ kind: 'r2' as 'cloudflare' })).toThrow(/"local" or "cloudflare"/);
+		expect(() => resolveOptions({ kind: 'github' as 'local' })).toThrow(/"local" or "cloudflare"/);
+	});
+
+	it('still accepts kv tuning independent of kind', () => {
+		expect(resolveOptions({ kv: { maxEntries: 5, durability: 'sync' } }).kv).toMatchObject({
+			kind: 'local', maxEntries: 5, durability: 'sync',
+		});
+		expect(resolveOptions({ kind: 'cloudflare', kv: { maxEntries: 5 } }).kv).toMatchObject({
+			kind: 'KV', binding: 'KV', maxEntries: 5,
 		});
 	});
 
-	it('uses .dry defaults for sqlite content and SQLite KV', () => {
-		expect(resolveOptions({ kv: { kind: 'sqlite' } })).toMatchObject({
-			content: { engine: 'sqlite', file: resolve(process.cwd(), '.dry/content.sqlite') },
-			kv: { kind: 'sqlite', file: resolve(process.cwd(), '.dry/kv.sqlite') },
+	it('rejects invalid kv tuning values', () => {
+		expect(() => resolveOptions({ kv: { maxEntries: -1 } })).toThrow(/kv\.maxEntries/);
+		expect(() => resolveOptions({ kv: { cleanupIntervalMs: 0 } })).toThrow(/kv\.cleanupIntervalMs/);
+	});
+
+	describe('overrides.localDataRoot (test/tooling-only escape hatch)', () => {
+		it('is not reachable through the public DryOption `kind` field - only the second resolveOptions() argument', () => {
+			const resolved = resolveOptions({}, { localDataRoot: '/tmp/drycms-test-root' });
+			expect(resolved.storage).toEqual({ kind: 'local', root: resolve('/tmp/drycms-test-root', 'storage') });
+			expect(resolved.content).toEqual({ engine: 'sqlite', file: resolve('/tmp/drycms-test-root', 'content.sqlite') });
+			expect(resolved.kv).toMatchObject({ kind: 'local', root: resolve('/tmp/drycms-test-root', 'kv') });
+		});
+
+		it('has no effect under kind "cloudflare" (there is no local root to override)', () => {
+			const resolved = resolveOptions({ kind: 'cloudflare' }, { localDataRoot: '/tmp/drycms-test-root' });
+			expect(resolved.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage' });
 		});
 	});
 
-	it('rejects the removed "file" content engine', () => {
-		expect(() => resolveOptions({ content: { engine: 'file' as 'sqlite' } })).toThrow(
-			/Only "sqlite" and "D1" are available today/,
-		);
-	});
+	describe('DRYCMS_E2E redirect', () => {
+		const ORIGINAL = process.env.DRYCMS_E2E;
+		afterEach(() => {
+			if (ORIGINAL === undefined) delete process.env.DRYCMS_E2E;
+			else process.env.DRYCMS_E2E = ORIGINAL;
+		});
 
-	it('rejects GitHub and GitLab storage kinds', () => {
-		expect(() => resolveOptions({ storage: { kind: 'github' as 'local' } })).toThrow(/not a recognized storage kind/);
-		expect(() => resolveOptions({ storage: { kind: 'gitlab' as 'local' } })).toThrow(/not a recognized storage kind/);
-	});
+		it('redirects local defaults under test-results/e2e-data instead of .dry when set to "1"', () => {
+			process.env.DRYCMS_E2E = '1';
+			expect(resolveOptions().storage).toEqual({
+				kind: 'local', root: resolve(process.cwd(), 'test-results/e2e-data/storage'),
+			});
+		});
 
-	it('rejects remote branches after GitHub/GitLab removal', () => {
-		expect(() => resolveOptions({ storage: { branch: 'main' } })).toThrow(/branch.*no longer supported/);
-	});
-
-	it('rejects an unimplemented storage kind and names the roadmap', () => {
-		expect(() => resolveOptions({ storage: { kind: 's3' as 'local' } })).toThrow(/planned: s3/);
-		expect(() => resolveOptions({ storage: { kind: 's3' as 'local' } })).toThrow(/Only "local" and "r2" are available today/);
-	});
-
-	it('resolves an r2 storage kind given a binding, defaulting the prefix from the root default', () => {
-		expect(resolveOptions({ storage: { kind: 'r2', binding: 'MEDIA_BUCKET' } }).storage).toEqual({
-			kind: 'r2',
-			binding: 'MEDIA_BUCKET',
-			prefix: 'dry/storage',
+		it('does not apply when unset', () => {
+			delete process.env.DRYCMS_E2E;
+			expect(resolveOptions().storage).toEqual({ kind: 'local', root: resolve(process.cwd(), '.dry/storage') });
 		});
 	});
 
-	it('rejects r2 storage without a binding, and a binding without r2', () => {
-		expect(() => resolveOptions({ storage: { kind: 'r2' } })).toThrow(/requires a `storage.binding`/);
-		expect(() => resolveOptions({ storage: { binding: 'MEDIA_BUCKET' } })).toThrow(/binding.*only used with.*kind: "r2"/);
+	it('derives ai.mode from kind - "local" runs a CLI, "cloudflare" calls a provider API', () => {
+		expect(resolveOptions().ai).toMatchObject({ mode: 'local', provider: 'codex' });
+		expect(resolveOptions({ kind: 'cloudflare' }).ai).toMatchObject({ mode: 'server', provider: 'openai' });
 	});
 
-	it('rejects an unrecognized storage kind and invalid values', () => {
-		expect(() => resolveOptions({ storage: { kind: 'made-up' as 'local' } })).toThrow(/not a recognized storage kind/);
-		expect(() => resolveOptions({ storage: { kind: 42 as unknown as 'local' } })).toThrow(TypeError);
-		expect(() => resolveOptions({ storage: { root: 42 as unknown as string } })).toThrow(TypeError);
+	it('rejects an ai.provider that does not match the derived mode', () => {
+		expect(() => resolveOptions({ ai: { provider: 'openai' } })).toThrow(/codex.*claude.*kind.*local/);
+		expect(() => resolveOptions({ kind: 'cloudflare', ai: { provider: 'codex' as 'openai' } })).toThrow(/openai.*anthropic.*kind.*cloudflare/);
 	});
 
-	it('rejects GitHub and GitLab KV kinds', () => {
-		expect(() => resolveOptions({ kv: { kind: 'github' as 'local' } })).toThrow(/kv.kind/);
-		expect(() => resolveOptions({ kv: { kind: 'gitlab' as 'local' } })).toThrow(/kv.kind/);
-	});
-
-	it('defaults ai.lang to "en" and accepts an override, in both local and server mode', () => {
+	it('defaults ai.lang to "en" and accepts an override, under both kinds', () => {
 		expect(resolveOptions().ai.lang).toBe('en');
 		expect(resolveOptions({ ai: { lang: 'vi' } }).ai.lang).toBe('vi');
-		expect(resolveOptions({ ai: { mode: 'server', lang: 'vi' } }).ai.lang).toBe('vi');
+		expect(resolveOptions({ kind: 'cloudflare', ai: { lang: 'vi' } }).ai.lang).toBe('vi');
 	});
 
 	it('rejects an empty ai.lang', () => {

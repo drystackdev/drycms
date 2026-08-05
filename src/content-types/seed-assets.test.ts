@@ -20,7 +20,7 @@ function tempDir(prefix: string): string {
 
 describe("applyPackagedSeedAssets", () => {
   it("no-ops when there is no packaged zip", async () => {
-    const resolved = resolveOptions({ storage: { root: tempDir("storage") } });
+    const resolved = resolveOptions({}, { localDataRoot: tempDir("data-root") });
     await expect(applyPackagedSeedAssets(null, resolved)).resolves.toBeUndefined();
   });
 
@@ -32,12 +32,7 @@ describe("applyPackagedSeedAssets", () => {
       { path: "page-components-storage/tree.json", data: new TextEncoder().encode("[]") },
     ]);
 
-    const resolved = resolveOptions({
-      storage: { root: tempDir("storage") },
-      icons: { root: tempDir("icons") },
-      components: { storage: { root: tempDir("components-storage") } },
-      pageComponents: { storage: { root: tempDir("page-components-storage") } },
-    });
+    const resolved = resolveOptions({}, { localDataRoot: tempDir("data-root") });
 
     await applyPackagedSeedAssets(zip, resolved);
 
@@ -48,16 +43,12 @@ describe("applyPackagedSeedAssets", () => {
   });
 
   it("never touches pagesCache/typesCache/kv roots even if a zip somehow contained them", async () => {
-    const pagesCacheRoot = tempDir("pages-cache");
     const zip = createZip([{ path: "pagesCache/should-not-land.json", data: new Uint8Array([1]) }]);
 
-    const resolved = resolveOptions({
-      storage: { root: tempDir("storage") },
-      pagesCache: { storage: { root: pagesCacheRoot } },
-    });
+    const resolved = resolveOptions({}, { localDataRoot: tempDir("data-root") });
 
     await applyPackagedSeedAssets(zip, resolved);
 
-    await expect(readFile(join(pagesCacheRoot, "should-not-land.json"))).rejects.toThrow();
+    await expect(readFile(join(resolved.pagesCache.storage.root, "should-not-land.json"))).rejects.toThrow();
   });
 });

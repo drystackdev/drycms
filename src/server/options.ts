@@ -1,135 +1,45 @@
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 
-/** Roadmap kinds not implemented yet - listed so an unsupported `kind` can
- * name what's coming instead of just saying "unknown". */
-const PLANNED_STORAGE_KINDS = ["s3"];
+/**
+ * Fixed binding names every `kind: "cloudflare"` resolution uses - matching
+ * `wrangler.jsonc`'s `r2_buckets[].binding`/`d1_databases[].binding`/
+ * `kv_namespaces[].binding`. Not configurable: collapsing every backend
+ * choice to one `kind` field (see `DryOption.kind`'s doc comment) only
+ * works if the binding names on both sides of that contract are fixed too -
+ * a customizable binding name would just reintroduce the per-option
+ * surface this was meant to remove. Rename these (and `wrangler.jsonc` to
+ * match) if you need different binding names for your own Cloudflare
+ * account.
+ */
+const R2_BUCKET_BINDING = "MEDIA_BUCKET";
+const D1_CONTENT_BINDING = "CONTENT_DB";
+const KV_NAMESPACE_BINDING = "KV";
 
-export interface DryStorageOption {
-  /**
-   * Which backend serves `/dry/api/storage/**`. `"r2"` requires a live
-   * `R2Bucket` binding, only reachable per-request (`context.env`) on a
-   * Workers-shaped runtime - see `server/storage-adapters.ts`.
-   *
-   * @default "local"
-   */
-  kind?: "local" | "r2";
-  /**
-   * `local`: directory files are read from/written to, relative to the
-   * consuming project's cwd (or an absolute path). `r2`: key prefix within
-   * the bucket (leading/trailing slashes trimmed).
-   *
-   * @default ".dry/storage"
-   */
-  root?: string;
-  /**
-   * `r2` only: the binding name configured in `wrangler.jsonc`'s
-   * `r2_buckets[].binding` (e.g. `"MEDIA_BUCKET"`) - required for
-   * `kind: "r2"`. The live `R2Bucket` itself is looked up per-request from
-   * `context.env`, not from this option, same pattern as
-   * `DryContentOption.binding` for `engine: "D1"`.
-   */
-  binding?: string;
-}
+/** Fixed local directory/file names (also reused as the R2 key prefix for
+ * the same root under `kind: "cloudflare"`) - see `R2_BUCKET_BINDING`'s doc
+ * comment on why these are fixed rather than configurable. */
+const STORAGE_DIR_NAME = "storage";
+const ICONS_DIR_NAME = "icons";
+const CONTENT_FILE_NAME = "content.sqlite";
+const COMPONENTS_STORAGE_DIR_NAME = "richtext-components";
+const PAGE_COMPONENTS_STORAGE_DIR_NAME = "components";
+const PAGES_CACHE_STORAGE_DIR_NAME = "pages-cache";
+const TYPES_CACHE_STORAGE_DIR_NAME = "types-cache";
+const KV_DIR_NAME = "kv";
 
-export interface DryIconsOption {
-  /**
-   * Which backend serves `/dry/api/icons/**`. Same semantics as
-   * `DryStorageOption.kind`.
-   *
-   * @default "local"
-   */
-  kind?: "local" | "r2";
-  /**
-   * Same semantics as `DryStorageOption.root`, but for the Icon Management
-   * feature's own storage root - kept separate from `storage.root` so
-   * managed UI icons never mix with user-uploaded media.
-   *
-   * @default ".dry/icons"
-   */
-  root?: string;
-  /** `r2` only - see `DryStorageOption.binding`. */
-  binding?: string;
-}
-
-export interface DryContentOption {
-  /**
-   * Which backend the Content-Type Builder generates/migrates tables into.
-   *
-   * @default "sqlite"
-   */
-  engine?: "sqlite" | "D1";
-  /**
-   * `sqlite` only: path to the database file, relative to the consuming
-   * project's cwd (or an absolute path).
-   *
-   * @default ".dry/content.sqlite"
-   */
-  file?: string;
-  /**
-   * `D1` only: the binding name configured in `wrangler.jsonc`'s
-   * `d1_databases[].binding` (e.g. `"CONTENT_DB"`) - required for
-   * `engine: "D1"`. The live `D1Database` itself is looked up per-request
-   * from `context.env` (see `server/context.ts`), not from this option (it
-   * isn't a JSON-serializable value, unlike every other resolved option).
-   */
-  binding?: string;
-}
-
-export interface DryComponentsOption {
-  /**
-   * Where "confirmed" component records (label/type/props/shadow, written
-   * once an admin picks "Use" on the component management page) are stored -
-   * a root of its own, same shape as `storage`/`icons`, so it never mixes
-   * with user-uploaded media.
-   *
-   * @default { root: ".dry/richtext-components" }
-   */
-  storage?: DryStorageOption;
-}
-
-export interface DryPageComponentsOption {
-  /**
-   * Where Component Builder's `.tsx` component tree (independent from
-   * RichText's `components.storage` above - a page-builder concern, not a
-   * RichText one) is stored - a root of its own, same shape as `storage`/
-   * `icons`.
-   *
-   * @default { root: ".dry/components" }
-   */
-  storage?: DryStorageOption;
-}
-
-export interface DryPagesCacheOption {
-  /**
-   * Where rendered App Router HTML (`src/apps/pages`) is cached, keyed by
-   * pathname - a root of its own, same shape as `storage`/`icons`. See
-   * `plans/app-router.md`'s "Cache SSR theo file (`pages-cache`)" - never
-   * used in dev (`import.meta.env.DEV` always skips it), only production.
-   *
-   * @default { root: ".dry/pages-cache" }
-   */
-  storage?: DryStorageOption;
-}
-
-export interface DryTypesCacheOption {
-  /**
-   * Extra copy of `src/apps/dry.generated.d.ts`'s generated content,
-   * written alongside the real file - a root of its own, same shape as
-   * `storage`/`icons`. See `plans/app-router.md`'s "Cache cho
-   * `dry.generated.d.ts`" - prep for a future browser-based code editor to
-   * read this over an API instead of the filesystem. Not read by anything
-   * yet.
-   *
-   * @default { root: ".dry/types-cache" }
-   */
-  storage?: DryStorageOption;
-}
+const LOCAL_DATA_ROOT_DIR = ".dry";
+const E2E_DATA_ROOT_DIR = "test-results/e2e-data";
 
 export interface DryAiOption {
-  /** `local` runs a CLI on the same machine; `server` calls an AI HTTP API. */
-  mode?: "local" | "server";
-  /** `codex`/`claude` for local mode, `openai`/`anthropic` for server mode. */
+  /**
+   * `codex`/`claude` under `kind: "local"` (runs that CLI on the same
+   * machine), `openai`/`anthropic` under `kind: "cloudflare"` (calls the
+   * provider's HTTP API using a stored `aiKey` record). There is no
+   * separate `ai.mode` anymore - which provider values are valid follows
+   * the top-level `DryOption.kind` toggle directly, same as every other
+   * backend.
+   */
   provider?: "codex" | "claude" | "openai" | "anthropic";
   /** Local executable name/path. Defaults to the selected provider CLI. */
   command?: string;
@@ -153,15 +63,13 @@ export interface DryAiOption {
   lang?: string;
 }
 
-export interface DryKvOption {
-  /** Persistence backend for the server-side Key Value store. */
-  kind?: "local" | "sqlite" | "D1" | "KV";
-  /** Directory root for local persistence. @default ".dry/kv" */
-  root?: string;
-  /** SQLite file path when `kind` is `sqlite`. @default ".dry/kv.sqlite" */
-  file?: string;
-  /** D1/KV binding name when using a Workers runtime. */
-  binding?: string;
+/**
+ * Key Value store performance/eviction tuning - independent of `kind`
+ * (`DryOption.kind` decides WHERE the store lives; these decide how it
+ * behaves once it's there), so they stay their own optional block rather
+ * than collapsing into the top-level toggle.
+ */
+export interface DryKvTuningOption {
   maxEntries?: number;
   maxBytes?: number;
   defaultTtlMs?: number;
@@ -180,15 +88,27 @@ export interface DryOption {
    * @default "/dry"
    */
   path?: string;
-  storage?: DryStorageOption;
-  icons?: DryIconsOption;
-  content?: DryContentOption;
-  components?: DryComponentsOption;
-  pageComponents?: DryPageComponentsOption;
-  pagesCache?: DryPagesCacheOption;
-  typesCache?: DryTypesCacheOption;
+  /**
+   * Single toggle for every persistence backend the app needs at once -
+   * object storage (`storage`/`icons`/richtext components/page components/
+   * pages cache/types cache), the content engine, and the Key Value store.
+   *
+   * `"local"`: real Node - a SQLite file plus local filesystem directories
+   * under `.dry/` (or `test-results/e2e-data/` when `DRYCMS_E2E=1`, see
+   * `scripts/e2e-server.mjs`).
+   *
+   * `"cloudflare"`: Cloudflare Workers - D1 (content), one shared R2 bucket (every
+   * storage-backed root, key-prefixed) and Workers KV, using the fixed
+   * binding names `wrangler.jsonc` declares (`CONTENT_DB`/`MEDIA_BUCKET`/
+   * `KV`) - see `status/cloudflare-workers-adapter.md`. There is no
+   * per-backend `kind`/`root`/`binding`/`file` override anymore; this one
+   * field is the whole surface.
+   *
+   * @default "local"
+   */
+  kind?: "local" | "cloudflare";
   ai?: DryAiOption;
-  kv?: DryKvOption;
+  kv?: DryKvTuningOption;
 }
 
 /**
@@ -281,6 +201,14 @@ export interface ResolvedKvTuning {
   durability: "memory" | "async" | "sync";
 }
 
+/**
+ * The union still has all 4 historical kinds (`kv/factory.ts`'s
+ * `createKeyValueAdapter`/`createRequestKeyValueAdapter` still implement
+ * every one of them) even though `resolveOptions()` below only ever
+ * produces `"local"` or `"KV"` now - `"sqlite"`/`"D1"` remain valid values
+ * for anything that builds a `ResolvedKvOption` by hand instead of through
+ * `DryOption.kind`.
+ */
 export type ResolvedKvOption = ResolvedKvTuning & (
   | ({ kind: "local"; root: string })
   | ({ kind: "sqlite"; file: string })
@@ -290,6 +218,7 @@ export type ResolvedKvOption = ResolvedKvTuning & (
 
 export interface ResolvedDryOption {
   path: string;
+  kind: "local" | "cloudflare";
   storage: ResolvedStorageOption;
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
@@ -302,16 +231,6 @@ export interface ResolvedDryOption {
 }
 
 export const DEFAULT_PATH = "/dry";
-export const DEFAULT_STORAGE_ROOT = ".dry/storage";
-export const DEFAULT_ICONS_ROOT = ".dry/icons";
-export const DEFAULT_CONTENT_FILE = ".dry/content.sqlite";
-export const DEFAULT_COMPONENTS_STORAGE_ROOT = ".dry/richtext-components";
-export const DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT = ".dry/components";
-export const DEFAULT_PAGES_CACHE_STORAGE_ROOT = ".dry/pages-cache";
-export const DEFAULT_TYPES_CACHE_STORAGE_ROOT = ".dry/types-cache";
-export const DEFAULT_KV_ROOT = ".dry/kv";
-export const DEFAULT_KV_FILE = ".dry/kv.sqlite";
-export const DEFAULT_KV_BINDING = "KV";
 
 let dotEnvCache: Record<string, string> | undefined;
 
@@ -366,135 +285,37 @@ export function readEnvVar(name: string): string | undefined {
   return readDotEnv()[name];
 }
 
-/**
- * Shared by `resolveStorageOption` and `resolveIconsOption` - both are just a
- * only in which config key/default root they read. `optionName` is used
- * purely for error messages (`"storage"` or `"icons"`).
- */
-function resolveFileBackedOption(
-  option: { kind?: unknown; root?: unknown; branch?: unknown; binding?: unknown } | undefined,
-  defaultRoot: string,
-  optionName: string,
+export interface ResolveOptionsOverrides {
+  /**
+   * Test/tooling-only escape hatch - NOT part of `DryOption`, so a real
+   * `dry.config.ts` has no way to reach it. Overrides the directory
+   * `kind: "local"` resolves every default path under (normally `.dry`, or
+   * `test-results/e2e-data` when `DRYCMS_E2E=1` - see
+   * `scripts/e2e-server.mjs`) - lets a unit test that calls `resolveOptions`
+   * directly get a real, isolated `mkdtempSync` root without
+   * `resolveOptions()` regaining a per-backend `root`/`file`/`binding`
+   * surface just for that.
+   */
+  localDataRoot?: string;
+}
+
+function localBaseDir(overrides: ResolveOptionsOverrides): string {
+  if (overrides.localDataRoot !== undefined) return overrides.localDataRoot;
+  return readEnvVar("DRYCMS_E2E") === "1" ? E2E_DATA_ROOT_DIR : LOCAL_DATA_ROOT_DIR;
+}
+
+function resolveStorageBackedOption(
+  kind: "local" | "cloudflare",
+  dirName: string,
+  overrides: ResolveOptionsOverrides,
 ): ResolvedStorageOption {
-  const { kind: rawKind, root: rawRoot, branch: rawBranch, binding: rawBinding } = option ?? {};
-  const kind = rawKind ?? "local";
-  if (typeof kind !== "string") {
-    throw new TypeError(
-      `[drycms] \`${optionName}.kind\` must be a string, received ${typeof kind}.`,
-    );
-  }
-  if (kind !== "local" && kind !== "r2") {
-    const roadmap = PLANNED_STORAGE_KINDS.includes(kind)
-      ? ` \`${optionName}.kind: "${kind}"\` is on the roadmap but not implemented yet.`
-      : ` "${kind}" is not a recognized storage kind.`;
-    throw new Error(
-      `[drycms]${roadmap} Only "local" and "r2" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
-    );
-  }
-  if (rawBranch !== undefined && typeof rawBranch !== "string") {
-    throw new TypeError(
-      `[drycms] \`${optionName}.branch\` must be a string, received ${typeof rawBranch}.`,
-    );
-  }
-  if (rawBranch !== undefined) {
-    throw new Error(`[drycms] \`${optionName}.branch\` is no longer supported; use local storage without a branch.`);
-  }
-
-  if (kind === "r2") {
-    if (typeof rawBinding !== "string" || !rawBinding.trim()) {
-      throw new Error(
-        `[drycms] \`${optionName}.kind: "r2"\` requires a \`${optionName}.binding\` string naming the R2 binding (matching \`wrangler.jsonc\`'s \`r2_buckets[].binding\`).`,
-      );
-    }
-    const root = rawRoot ?? defaultRoot;
-    if (typeof root !== "string") {
-      throw new TypeError(
-        `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
-      );
-    }
-    const prefix = root.replace(/^\.\/?/, "").replace(/^\/+|\/+$/g, "");
-    return { kind: "r2", binding: rawBinding.trim(), prefix };
-  }
-  if (rawBinding !== undefined) {
-    throw new Error(`[drycms] \`${optionName}.binding\` is only used with \`${optionName}.kind: "r2"\` - add \`kind: "r2"\` or remove \`binding\`.`);
-  }
-
-  const root = rawRoot ?? defaultRoot;
-  if (typeof root !== "string") {
-    throw new TypeError(
-      `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
-    );
-  }
-  const normalizedRoot = root.replace(/\/+$/, "");
-  return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };
+  if (kind === "cloudflare") return { kind: "r2", binding: R2_BUCKET_BINDING, prefix: dirName };
+  return { kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), dirName) };
 }
 
-function resolveStorageOption(storage?: DryStorageOption): ResolvedStorageOption {
-  return resolveFileBackedOption(storage, DEFAULT_STORAGE_ROOT, "storage");
-}
-
-function resolveIconsOption(icons?: DryIconsOption): ResolvedIconsOption {
-  return resolveFileBackedOption(icons, DEFAULT_ICONS_ROOT, "icons");
-}
-
-function resolveComponentsOption(components: DryComponentsOption = {}): ResolvedComponentsOption {
-  return {
-    storage: resolveFileBackedOption(components.storage, DEFAULT_COMPONENTS_STORAGE_ROOT, "components.storage"),
-  };
-}
-
-function resolvePageComponentsOption(pageComponents: DryPageComponentsOption = {}): ResolvedPageComponentsOption {
-  return {
-    storage: resolveFileBackedOption(pageComponents.storage, DEFAULT_PAGE_COMPONENTS_STORAGE_ROOT, "pageComponents.storage"),
-  };
-}
-
-function resolvePagesCacheOption(pagesCache: DryPagesCacheOption = {}): ResolvedPagesCacheOption {
-  return {
-    storage: resolveFileBackedOption(pagesCache.storage, DEFAULT_PAGES_CACHE_STORAGE_ROOT, "pagesCache.storage"),
-  };
-}
-
-function resolveTypesCacheOption(typesCache: DryTypesCacheOption = {}): ResolvedTypesCacheOption {
-  return {
-    storage: resolveFileBackedOption(typesCache.storage, DEFAULT_TYPES_CACHE_STORAGE_ROOT, "typesCache.storage"),
-  };
-}
-
-function resolveContentOption(content: DryContentOption = {}): ResolvedContentOption {
-  const engine = content.engine ?? "sqlite";
-  if (typeof engine !== "string") {
-    throw new TypeError(`[drycms] \`content.engine\` must be a string, received ${typeof engine}.`);
-  }
-  if (engine !== "sqlite" && engine !== "D1") {
-    throw new Error(
-      `[drycms] \`content.engine: "${engine}"\` is not recognized. Only "sqlite" and "D1" are available today.`,
-    );
-  }
-  // A `binding` only means anything under `engine: "D1"` - silently falling
-  // back to local sqlite when it's set without that would turn a config typo
-  // into a "why is my data going to the wrong place" bug discovered later,
-  // instead of surfacing at config time like every other mistake here does.
-  if (engine !== "D1" && content.binding !== undefined) {
-    throw new Error(
-      '[drycms] `content.binding` is only used with `content.engine: "D1"` - add `engine: "D1"` or remove `binding`.',
-    );
-  }
-  if (engine === "D1") {
-    const binding = content.binding;
-    if (!binding || typeof binding !== "string") {
-      throw new Error(
-        '[drycms] `content.engine: "D1"` requires a `content.binding` string naming the D1 binding (matching `wrangler.jsonc`\'s `d1_databases[].binding`).',
-      );
-    }
-    return { engine: "D1", binding };
-  }
-
-  const file = content.file ?? DEFAULT_CONTENT_FILE;
-  if (typeof file !== "string") {
-    throw new TypeError(`[drycms] \`content.file\` must be a string, received ${typeof file}.`);
-  }
-  return { engine: "sqlite", file: resolvePath(process.cwd(), file) };
+function resolveContentOption(kind: "local" | "cloudflare", overrides: ResolveOptionsOverrides): ResolvedContentOption {
+  if (kind === "cloudflare") return { engine: "D1", binding: D1_CONTENT_BINDING };
+  return { engine: "sqlite", file: resolvePath(process.cwd(), localBaseDir(overrides), CONTENT_FILE_NAME) };
 }
 
 function resolvePositiveNumber(value: unknown, key: string, fallback: number): number {
@@ -505,27 +326,11 @@ function resolvePositiveNumber(value: unknown, key: string, fallback: number): n
   return result;
 }
 
-function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
-  const legacyBranch = (option as DryKvOption & { branch?: unknown }).branch;
-  if (legacyBranch !== undefined) {
-    throw new Error('[drycms] `kv.branch` is no longer supported; use local, SQLite, D1 or Cloudflare KV.');
-  }
-  const kind = option.kind ?? "local";
-  if (typeof kind !== "string" || !["local", "sqlite", "D1", "KV"].includes(kind)) {
-    throw new Error(`[drycms] \`kv.kind\` must be one of local, sqlite, D1 or KV.`);
-  }
-  if (kind === "sqlite") {
-    if (option.root !== undefined || option.binding !== undefined) {
-      throw new Error('[drycms] `kv.root`/`kv.binding` are not used with `kv.kind: "sqlite"`.');
-    }
-  }
-  if ((kind === "D1" || kind === "KV") && (option.root !== undefined || option.file !== undefined)) {
-    throw new Error(`[drycms] \`kv.root\`/\`kv.file\` are not used with \`kv.kind: "${kind}"\`.`);
-  }
-  if (kind === "local" && (option.file !== undefined || option.binding !== undefined)) {
-    throw new Error(`[drycms] \`kv.file\`/\`kv.binding\` are not used with \`kv.kind: "${kind}"\`.`);
-  }
-
+function resolveKvOption(
+  kind: "local" | "cloudflare",
+  option: DryKvTuningOption = {},
+  overrides: ResolveOptionsOverrides,
+): ResolvedKvOption {
   const tuning: ResolvedKvTuning = {
     maxEntries: resolvePositiveNumber(option.maxEntries, "kv.maxEntries", 10_000),
     maxBytes: resolvePositiveNumber(option.maxBytes, "kv.maxBytes", 32 * 1024 * 1024),
@@ -540,22 +345,15 @@ function resolveKvOption(option: DryKvOption = {}): ResolvedKvOption {
     if (value !== undefined) resolvePositiveNumber(value, `kv.${key}`, value);
   }
 
-  if (kind === "sqlite") return { ...tuning, kind, file: resolvePath(process.cwd(), option.file ?? DEFAULT_KV_FILE) };
-  if (kind === "D1" || kind === "KV") {
-    const binding = option.binding ?? (kind === "KV" ? DEFAULT_KV_BINDING : "KV_DB");
-    if (typeof binding !== "string" || !binding.trim()) throw new TypeError(`[drycms] \`kv.binding\` must be a non-empty string.`);
-    return { ...tuning, kind, binding };
-  }
-  const storageOption = resolveFileBackedOption(
-    { kind, root: option.root ?? DEFAULT_KV_ROOT },
-    DEFAULT_KV_ROOT,
-    "kv",
-  );
-  return { ...tuning, ...storageOption } as ResolvedKvOption;
+  if (kind === "cloudflare") return { ...tuning, kind: "KV", binding: KV_NAMESPACE_BINDING };
+  return { ...tuning, kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), KV_DIR_NAME) };
 }
 
-function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
-  const mode = option.mode ?? "local";
+/** `mode` is derived from the top-level `kind`, never set independently
+ * anymore - `"local"` runs a CLI, `"cloudflare"` calls a provider HTTP API
+ * via a stored `aiKey` record (see `DryAiOption.provider`'s doc comment). */
+function resolveAiOption(kind: "local" | "cloudflare", option: DryAiOption = {}): ResolvedAiOption {
+  const mode = kind === "local" ? "local" : "server";
   const timeoutMs = resolvePositiveNumber(option.timeoutMs, "ai.timeoutMs", 120_000);
   const lang = option.lang ?? "en";
   if (typeof lang !== "string" || !lang.trim()) {
@@ -565,7 +363,7 @@ function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
   if (mode === "local") {
     const provider = option.provider ?? "codex";
     if (provider !== "codex" && provider !== "claude") {
-      throw new Error('[drycms] `ai.provider` must be `codex` or `claude` when `ai.mode` is `local`.');
+      throw new Error('[drycms] `ai.provider` must be `codex` or `claude` when `kind` is `local`.');
     }
     const command = option.command ?? provider;
     if (typeof command !== "string" || !command.trim()) {
@@ -579,12 +377,9 @@ function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
     return { mode, provider, command: command.trim(), args: [...args], cwd, timeoutMs, lang: lang.trim() };
   }
 
-  if (mode !== "server") {
-    throw new Error('[drycms] `ai.mode` must be `local` or `server`.');
-  }
   const provider = option.provider ?? "openai";
   if (provider !== "openai" && provider !== "anthropic") {
-    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic` when `ai.mode` is `server`.');
+    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic` when `kind` is `cloudflare`.');
   }
   const model = option.model ?? (provider === "openai" ? "gpt-5" : "claude-sonnet-4-20250514");
   const baseUrl = option.baseUrl ?? (provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com");
@@ -599,8 +394,11 @@ function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
 /**
  * Normalizes and validates user options. Throws on values that would produce a
  * broken route so the failure surfaces at config time rather than at request time.
+ *
+ * `overrides` is never supplied by `dry.config.ts`/`config()` - see
+ * `ResolveOptionsOverrides`'s own doc comment.
  */
-export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
+export function resolveOptions(options: DryOption = {}, overrides: ResolveOptionsOverrides = {}): ResolvedDryOption {
   const raw = options.path ?? DEFAULT_PATH;
 
   if (typeof raw !== "string") {
@@ -629,16 +427,22 @@ export function resolveOptions(options: DryOption = {}): ResolvedDryOption {
     );
   }
 
+  const kind = options.kind ?? "local";
+  if (kind !== "local" && kind !== "cloudflare") {
+    throw new Error(`[drycms] \`kind\` must be "local" or "cloudflare", received "${String(kind)}".`);
+  }
+
   return {
     path,
-    storage: resolveStorageOption(options.storage),
-    icons: resolveIconsOption(options.icons),
-    content: resolveContentOption(options.content),
-    components: resolveComponentsOption(options.components),
-    pageComponents: resolvePageComponentsOption(options.pageComponents),
-    pagesCache: resolvePagesCacheOption(options.pagesCache),
-    typesCache: resolveTypesCacheOption(options.typesCache),
-    ai: resolveAiOption(options.ai),
-    kv: resolveKvOption(options.kv),
+    kind,
+    storage: resolveStorageBackedOption(kind, STORAGE_DIR_NAME, overrides),
+    icons: resolveStorageBackedOption(kind, ICONS_DIR_NAME, overrides),
+    content: resolveContentOption(kind, overrides),
+    components: { storage: resolveStorageBackedOption(kind, COMPONENTS_STORAGE_DIR_NAME, overrides) },
+    pageComponents: { storage: resolveStorageBackedOption(kind, PAGE_COMPONENTS_STORAGE_DIR_NAME, overrides) },
+    pagesCache: { storage: resolveStorageBackedOption(kind, PAGES_CACHE_STORAGE_DIR_NAME, overrides) },
+    typesCache: { storage: resolveStorageBackedOption(kind, TYPES_CACHE_STORAGE_DIR_NAME, overrides) },
+    ai: resolveAiOption(kind, options.ai),
+    kv: resolveKvOption(kind, options.kv, overrides),
   };
 }

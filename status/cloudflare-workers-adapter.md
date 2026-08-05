@@ -177,7 +177,61 @@ unrelated: a missing `src/dry-components/` fixture directory, confirmed via
 - No CI/GitHub Actions wiring for the Workers deploy - `bun run deploy`
   is manual only.
 
+## Follow-up: `dry.config.ts` collapsed to one `kind` field (2026-08-05)
+
+Per-backend `kind`/`root`/`binding`/`file`/`engine` options (`storage`,
+`icons`, `content`, `components.storage`, `pageComponents.storage`,
+`pagesCache.storage`, `typesCache.storage`, `kv.kind`/`root`/`file`/
+`binding`) are gone from `DryOption` entirely, replaced by one field:
+`kind?: "local" | "R2"`. `resolveOptions()` derives all 8 sub-options from
+it alone, using fixed binding names (`CONTENT_DB`/`MEDIA_BUCKET`/`KV`,
+matching `wrangler.jsonc`) and fixed local directory/file basenames under
+`.dry/` - `dry.config.ts` is now just `config({ ai: {...} })`, `kind`
+defaults to `"local"`.
+
+`kv`'s tuning knobs (`maxEntries`/`maxBytes`/TTLs/flush/`durability`) are
+independent of backend choice, so they survive as a separate optional `kv`
+block on `DryOption` (tuning only - no more `kv.kind`/`root`/`file`/
+`binding`).
+
+E2E test isolation (never touching a developer's real `.dry/` data) moved
+from `dry.config.ts` branching into `resolveOptions()` itself, keyed off
+the same `DRYCMS_E2E` env var `scripts/e2e-server.mjs` already sets - no
+per-option override needed for that anymore either.
+
+Unit tests that need real filesystem isolation (`mkdtempSync`) can't set a
+per-option `root` anymore, so `resolveOptions()` gained a second parameter,
+`overrides: { localDataRoot?: string }` - explicitly NOT part of
+`DryOption` (a real `dry.config.ts` has no way to reach it), just a single
+base-directory override every local default nests under. Updated
+`options.test.ts` (full rewrite for the new API), `routes/auth.test.ts`,
+`content-types/seed-assets.test.ts` to use it instead of per-option roots.
+
+Verified: `bun run typecheck` clean, `bun run test` 689/690 (same one
+pre-existing unrelated failure), `bun run build:worker` +
+`wrangler deploy --dry-run` both still succeed with the new minimal
+`dry.config.ts` and updated `wrangler.jsonc` comments.
+
+## Follow-up 2: `kind` renamed to `"local" | "cloudflare"`, `ai` follows it too (2026-08-05)
+
+Per user feedback, `"R2"` (too narrow - it's really "the whole Cloudflare
+profile", not just the object-storage piece) renamed to `"cloudflare"`
+everywhere: `DryOption.kind`, `ResolvedDryOption.kind`, the internal
+`resolveStorageBackedOption`/`resolveContentOption`/`resolveKvOption`
+parameter type, `wrangler.jsonc`'s comments, `dry.config.ts`. (The
+lower-level per-backend `ResolvedStorageOption.kind: "r2"` - a different,
+more specific enum about which storage adapter to construct - is unchanged;
+only the top-level toggle's naming moved.)
+
+`DryAiOption.mode` is gone - `ai.mode` is now derived from the same
+top-level `kind` (`"local"` → CLI mode, `"cloudflare"` → HTTP-API mode via
+a stored `aiKey` record), not set independently. `ai.provider` validation
+now reads "when `kind` is `local`/`cloudflare`" instead of "when `ai.mode`
+is `local`/`server`" in its error messages. `resolveAiOption()` takes
+`kind` as its first parameter.
+
 # Speed
 
-Single-session implementation, all 4 phases completed and verified
-2026-08-05. No open blockers.
+Single-session implementation, all 4 phases + two `dry.config.ts`
+simplification follow-ups completed and verified 2026-08-05. No open
+blockers.
