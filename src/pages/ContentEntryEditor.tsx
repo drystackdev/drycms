@@ -551,7 +551,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               <span class="badge sm secondary">{previewDiffs.length}</span>
             </button>
           )}
-          {canEdit && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
+          {/* Redundant inside the VEI dialog - the overlay's own dock Save
+           * button drives this entry's `handleSave` too (via `dry:entry-save`,
+           * `listenForEntrySave` above), but scoped across every marked entry
+           * on the page rather than just this one. */}
+          {canEdit && !veiFrame && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
         </div>
       </div>
 

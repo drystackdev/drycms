@@ -255,7 +255,7 @@ iframe.agent {
  * the field underneath. */
 .field-highlight {
   position: fixed;
-  z-index: 2147483000;
+  z-index: 2147482999;
   display: none;
   pointer-events: none;
   outline: 3px solid var(--dry-primary);

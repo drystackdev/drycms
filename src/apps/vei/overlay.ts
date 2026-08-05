@@ -412,6 +412,30 @@ function main(): void {
   }
   void refreshPreviewCount();
 
+  /**
+   * Reapplies whatever drafts are already sitting in IndexedDB as soon as
+   * the page loads - without this, a plain reload (anything other than
+   * `saveAll()`'s own `window.location.reload()` after a real save) silently
+   * drops every unsaved edit's preview back to the last-saved server value,
+   * even though the draft that produced it is still right there. Same
+   * `applyPreview` the live `vei:input` bridge message uses; the only
+   * difference is the source is IndexedDB instead of a postMessage.
+   */
+  async function applyPendingDrafts(): Promise<void> {
+    const drafts = await getAllEntryDraftRecords().catch(() => []);
+    if (drafts.length === 0) return;
+    const draftsByKey = new Map(drafts.map((draft) => [draft.key, draft]));
+    for (const target of markedTargets()) {
+      const draft = draftsByKey.get(draftKeyFor(target));
+      if (!draft) continue;
+      const entryId = target.kind === "singleton" ? null : encodeEntryId(target.id);
+      for (const [name, value] of Object.entries(draft.value)) {
+        applyPreview({ name, value, typeSlug: target.type, entryId });
+      }
+    }
+  }
+  void applyPendingDrafts();
+
   // A field's debounced IndexedDB write (`saveEntryDraft`'s 300ms) lags the
   // `vei:input` message that triggers this, so the badge is deliberately
   // read back after it - and coalesced into one timer per burst of keystrokes
