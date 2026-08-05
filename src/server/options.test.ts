@@ -18,7 +18,7 @@ describe('resolveOptions', () => {
 		const expected = {
 			path: '/dry',
 			kind: 'local',
-			storage: { kind: 'local', root: resolve(process.cwd(), '.dry/storage') },
+			storage: { kind: 'local', root: resolve(process.cwd(), 'public') },
 			icons: { kind: 'local', root: resolve(process.cwd(), '.dry/icons') },
 			content: { engine: 'sqlite', file: resolve(process.cwd(), '.dry/content.sqlite') },
 			components: {
@@ -112,7 +112,7 @@ describe('resolveOptions', () => {
 
 		it('does not apply when unset', () => {
 			delete process.env.DRYCMS_E2E;
-			expect(resolveOptions().storage).toEqual({ kind: 'local', root: resolve(process.cwd(), '.dry/storage') });
+			expect(resolveOptions().storage).toEqual({ kind: 'local', root: resolve(process.cwd(), 'public') });
 		});
 	});
 

@@ -31,6 +31,9 @@ const KV_DIR_NAME = "kv";
 const LOCAL_DATA_ROOT_DIR = ".dry";
 const E2E_DATA_ROOT_DIR = "test-results/e2e-data";
 
+/** `storage`'s real (non-test) local root - see `resolveStorageOption()`. */
+const PUBLIC_DIR_NAME = "public";
+
 export interface DryAiOption {
   /**
    * `codex`/`claude` under `kind: "local"` (runs that CLI on the same
@@ -95,7 +98,10 @@ export interface DryOption {
    *
    * `"local"`: real Node - a SQLite file plus local filesystem directories
    * under `.dry/` (or `test-results/e2e-data/` when `DRYCMS_E2E=1`, see
-   * `scripts/e2e-server.mjs`).
+   * `scripts/e2e-server.mjs`) - except `storage` (user-uploaded media),
+   * which resolves straight to the project's `public/` directory instead
+   * (see `resolveStorageOption()`), so an upload is reachable at its plain
+   * `/name.ext` URL through Vite's normal static-asset serving.
    *
    * `"cloudflare"`: Cloudflare Workers - D1 (content), one shared R2 bucket (every
    * storage-backed root, key-prefixed) and Workers KV, using the fixed
@@ -313,6 +319,30 @@ function resolveStorageBackedOption(
   return { kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), dirName) };
 }
 
+/**
+ * `storage` (the generic File Manager root - user-uploaded media) is
+ * special-cased under `kind: "local"`: it resolves directly to the
+ * project's `public/` directory rather than nesting under `.dry/` like
+ * every other backend, so an uploaded file is immediately reachable at its
+ * plain `/name.ext` URL through Vite's normal static-asset serving instead
+ * of only through the storage API route.
+ *
+ * Test isolation still wins over this default exactly like every other
+ * local root: `overrides.localDataRoot` and `DRYCMS_E2E=1` both keep
+ * nesting storage under their own root, so tests never write into the
+ * repo's real `public/`.
+ */
+function resolveStorageOption(
+  kind: "local" | "cloudflare",
+  overrides: ResolveOptionsOverrides,
+): ResolvedStorageOption {
+  if (kind === "cloudflare") return { kind: "r2", binding: R2_BUCKET_BINDING, prefix: STORAGE_DIR_NAME };
+  if (overrides.localDataRoot === undefined && readEnvVar("DRYCMS_E2E") !== "1") {
+    return { kind: "local", root: resolvePath(process.cwd(), PUBLIC_DIR_NAME) };
+  }
+  return { kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), STORAGE_DIR_NAME) };
+}
+
 function resolveContentOption(kind: "local" | "cloudflare", overrides: ResolveOptionsOverrides): ResolvedContentOption {
   if (kind === "cloudflare") return { engine: "D1", binding: D1_CONTENT_BINDING };
   return { engine: "sqlite", file: resolvePath(process.cwd(), localBaseDir(overrides), CONTENT_FILE_NAME) };
@@ -435,7 +465,7 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
   return {
     path,
     kind,
-    storage: resolveStorageBackedOption(kind, STORAGE_DIR_NAME, overrides),
+    storage: resolveStorageOption(kind, overrides),
     icons: resolveStorageBackedOption(kind, ICONS_DIR_NAME, overrides),
     content: resolveContentOption(kind, overrides),
     components: { storage: resolveStorageBackedOption(kind, COMPONENTS_STORAGE_DIR_NAME, overrides) },
