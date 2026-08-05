@@ -110,15 +110,20 @@ test.describe("Code editer demo", () => {
     // truncated away before the client ever got a chance to fuzzy-match them.
     await textarea.fill("");
     await textarea.type("let myValue: numb");
-    await page.waitForTimeout(700);
-    const numberRows = await page.locator(".pce-ac-row").allTextContents();
-    expect(numberRows.some((row) => row.includes("number"))).toBe(true);
+    // `expect.poll` instead of a fixed wait + single snapshot - the worker
+    // round-trip this depends on doesn't have a fixed latency (varies with
+    // system/CPU load, e.g. under parallel Playwright workers), so a single
+    // timed check is inherently racy where polling isn't.
+    await expect
+      .poll(async () => (await page.locator(".pce-ac-row").allTextContents()).some((row) => row.includes("number")))
+      .toBe(true);
 
     await textarea.fill("");
     await textarea.type("cons");
-    await page.waitForTimeout(700);
+    await expect
+      .poll(async () => (await page.locator(".pce-ac-row").allTextContents()).some((row) => row.includes("const")))
+      .toBe(true);
     const consRows = await page.locator(".pce-ac-row").allTextContents();
-    expect(consRows.some((row) => row.includes("const"))).toBe(true);
     expect(consRows.some((row) => row.includes("console"))).toBe(true);
   });
 
@@ -136,9 +141,9 @@ test.describe("Code editer demo", () => {
     // (and therefore the fuzzy-match query) pointed at garbage starting mid-string.
     await textarea.fill("");
     await textarea.type('import {useState} from "preact/hooks";\n\nexport default function () {\n  const [] = useS');
-    await page.waitForTimeout(700);
-    const rows = await page.locator(".pce-ac-row").allTextContents();
-    expect(rows.some((row) => row.includes("useState"))).toBe(true);
+    await expect
+      .poll(async () => (await page.locator(".pce-ac-row").allTextContents()).some((row) => row.includes("useState")))
+      .toBe(true);
   });
 
   test("import specifiers get bare-module and relative-file completions", async ({ page }) => {
@@ -152,18 +157,18 @@ test.describe("Code editer demo", () => {
     // dedicated `computeImportSpecifierCompletions` path, both of these returned nothing.
     await textarea.fill("");
     await textarea.type('import { useState } from "pre');
-    await page.waitForTimeout(700);
-    const bareRows = await page.locator(".pce-ac-row").allTextContents();
-    expect(bareRows.some((row) => row.includes("preact/hooks"))).toBe(true);
+    await expect
+      .poll(async () => (await page.locator(".pce-ac-row").allTextContents()).some((row) => row.includes("preact/hooks")))
+      .toBe(true);
 
     await page.reload();
     await page.waitForSelector(".prism-code-editor", { timeout: 15000 });
     await page.waitForTimeout(500);
     await page.locator(".pce-textarea").fill("");
     await page.locator(".pce-textarea").type('import Button from "./B');
-    await page.waitForTimeout(700);
-    const relativeRows = await page.locator(".pce-ac-row").allTextContents();
-    expect(relativeRows.some((row) => row.includes("./Button.tsx"))).toBe(true);
+    await expect
+      .poll(async () => (await page.locator(".pce-ac-row").allTextContents()).some((row) => row.includes("./Button.tsx")))
+      .toBe(true);
   });
 
   test("applying a quick fix doesn't wipe the rest of the undo history", async ({ page }) => {

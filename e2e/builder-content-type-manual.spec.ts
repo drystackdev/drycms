@@ -29,7 +29,7 @@ test.describe("Builder Content type manual workflow", () => {
     let contentTypeId: string | undefined;
 
     try {
-      await page.goto("/dry/content-types/builder-content-type");
+      await page.goto("/dry/content-types/");
       await page.getByRole("button", { name: "Add" }).click();
 
       const editor = page.locator("dialog.builder-editor-dialog");
@@ -39,7 +39,7 @@ test.describe("Builder Content type manual workflow", () => {
       await editor.locator(".builder-editor-footer").getByRole("button", { name: "Save draft" }).click();
       await expect(editor).toBeHidden();
 
-      const applyBuilderButton = page.getByRole("button", { name: "Apply Builder" });
+      const applyBuilderButton = page.locator(".page-header").getByRole("button", { name: "Apply Builder" });
       await expect(applyBuilderButton).toBeEnabled();
       await applyBuilderButton.click();
 
@@ -50,9 +50,11 @@ test.describe("Builder Content type manual workflow", () => {
       await applyDialog.getByRole("button", { name: "Save" }).click();
       await expect(applyDialog).toBeHidden();
 
-      await page.goto("/dry/content-types/?selectedKind=collection");
-      const row = page.getByRole("row", { name: new RegExp(label) });
-      await expect(row).toBeVisible();
+      // The list is a card grid now (`.builder-collection-card`), not a
+      // table - "Collection" is already the default-selected kind, so no
+      // `?selectedKind=` navigation is needed either.
+      const card = page.locator(".builder-collection-card").filter({ hasText: label });
+      await expect(card).toBeVisible();
       const applied = await page.evaluate(async (contentTypeLabel) => {
         const response = await fetch("/dry/api/content-types");
         const body = (await response.json()) as {
@@ -63,8 +65,14 @@ test.describe("Builder Content type manual workflow", () => {
         return { id: definition.id, name: definition.name };
       }, label);
       contentTypeId = applied.id;
-      await row.click();
-      await page.waitForURL(/\/dry\/content-types\/[^/]+\/edit/);
+      // A card opens the SAME dialog-based editor as "Add" (edit mode this
+      // time) instead of navigating to a dedicated `/edit` URL.
+      await card.click();
+      const editDialog = page.getByRole("dialog", { name: "Edit collection" });
+      await expect(editDialog).toBeVisible();
+      await editDialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(editDialog).toBeHidden();
+
       await page.goto(`/dry/content/${encodeURIComponent(applied.name)}/new`);
       await expect(page.getByLabel(fieldLabel, { exact: true })).toBeVisible();
       await page.getByLabel(fieldLabel, { exact: true }).fill("Manual entry");

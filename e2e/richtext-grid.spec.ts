@@ -167,11 +167,19 @@ test("richtext grid layout feature works end-to-end", async ({ page }) => {
   await expect(content.locator("p", { hasText: "hello" })).toHaveCount(1);
   await expect(content.locator("p", { hasText: "world" })).toHaveCount(1);
 
-  // Filters out Vite dev-mode's own "Outdated Optimize Dep" 504 noise - a
-  // transient dep-reoptimization artifact of the dev server itself (fires
-  // on the first request after any restart, regardless of page/feature),
-  // not a real app error.
-  const realErrors = consoleErrors.filter((msg) => !msg.includes("Outdated Optimize Dep"));
+  // Filters out Vite dev-mode's own known-benign noise, neither of which is
+  // a real app error: "Outdated Optimize Dep" 504s (a transient
+  // dep-reoptimization artifact of the dev server itself, fires on the
+  // first request after any restart regardless of page/feature) and the
+  // HMR client's WebSocket reconnect chatter (its own dev-only overlay
+  // socket dropping/retrying, unrelated to anything this test exercises).
+  const realErrors = consoleErrors.filter(
+    (msg) =>
+      !msg.includes("Outdated Optimize Dep") &&
+      !msg.includes("WebSocket") &&
+      !msg.includes("[vite] failed to connect") &&
+      !msg.includes("Failed to send error to Vite server"),
+  );
   expect(realErrors).toEqual([]);
 });
 
@@ -231,6 +239,13 @@ test("table and nested grid both land inside the focused cell, not escape it", a
   await expect(content.locator("div.dry-tx-grid")).toHaveCount(2);
   await expect(content.locator("div.dry-tx-grid div.dry-tx-grid")).toHaveCount(1);
 
-  const realErrors = consoleErrors.filter((msg) => !msg.includes("Outdated Optimize Dep"));
+  // Same known-benign Vite dev-mode noise filtered out above.
+  const realErrors = consoleErrors.filter(
+    (msg) =>
+      !msg.includes("Outdated Optimize Dep") &&
+      !msg.includes("WebSocket") &&
+      !msg.includes("[vite] failed to connect") &&
+      !msg.includes("Failed to send error to Vite server"),
+  );
   expect(realErrors).toEqual([]);
 });

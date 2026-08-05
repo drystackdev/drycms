@@ -1,47 +1,65 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/** Creates a fresh collection via the "new" flow so the rest of the suite
- * doesn't depend on any particular content type already existing in the
- * dev database, then leaves the page on its edit URL. Returns its id too,
- * so callers can delete it again via the API once done (see
- * `deleteContentType`) - this suite runs against the real dev database, not
- * a throwaway fixture, so it must not leave test rows behind. */
+/** Creates a fresh collection via the "Add" dialog on the Content Types list
+ * page (there is no dedicated `/content-types/new/:kind` route anymore -
+ * creation/editing both happen through `CollectionEditorDialog`'s modal,
+ * see `pages/BuilderContentType.tsx`), applies it so it's real/queryable,
+ * then re-opens it in the edit dialog and leaves the page there for the
+ * rest of the test. Returns its id too, so callers can delete it again via
+ * the API once done (see `deleteContentType`) - this suite runs against the
+ * real dev database, not a throwaway fixture, so it must not leave test
+ * rows behind. */
 async function createTestCollection(page: Page, options?: { slug?: boolean }): Promise<{ id: string; title: string }> {
-  await page.goto("/dry/content-types/new/collection");
+  await page.goto("/dry/content-types/");
   const uniqueTitle = `E2E Test ${Date.now()}`;
-  await page.getByLabel("Table Name*", { exact: true }).fill(uniqueTitle);
+
+  await page.getByRole("button", { name: "Add" }).click();
+  const addDialog = page.getByRole("dialog", { name: "Add collection" });
+  await addDialog.getByLabel("Table Name*", { exact: true }).fill(uniqueTitle);
   if (options?.slug) {
     // `CheckField`'s description text lives inside the same `<label>` with no
     // separator, so the accessible name is "SlugAdds a URL-friendly Slug
     // field, ..." (no space between label and description) - matched as a
     // prefix rather than pinned to that whole description string. No `\b`
     // here: "g"/"A" are both word characters, so a boundary never appears.
-    await page.getByLabel(/^Slug/).check();
+    await addDialog.getByLabel(/^Slug/).check();
   }
-  await page.getByRole("button", { name: "Save draft" }).click();
-  // The list page now persists the selected kind in a query string
-  // (`?selectedKind=collection`), so the pattern needs a trailing wildcard.
-  await page.waitForURL("**/dry/content-types**");
-  await page.getByRole("button", { name: "Apply and build" }).click();
+  await addDialog.getByRole("button", { name: "Save draft" }).click();
+  await expect(addDialog).toBeHidden();
+
+  await page.locator(".page-header").getByRole("button", { name: "Apply Builder" }).click();
   const applyDialog = page.getByRole("dialog", { name: "Apply and build" });
   await applyDialog.getByRole("button", { name: "Confirm" }).click();
   await expect(applyDialog).toContainText("No conflicts found");
   await applyDialog.getByRole("button", { name: "Save" }).click();
   await expect(applyDialog).toBeHidden();
-  // Filter down to the one row - repeated runs leave earlier collections
-  // around, which would otherwise push this one onto a later table page.
-  await page.getByPlaceholder("Filter…").fill(uniqueTitle);
-  await page.getByRole("row", { name: new RegExp(uniqueTitle) }).click();
-  await page.waitForURL(/\/dry\/content-types\/.+\/edit/);
-  const id = page.url().match(/\/content-types\/([^/]+)\/edit/)?.[1];
-  if (!id) throw new Error("Could not extract content type id from URL.");
+
+  // No more URL to read an id off - the list is dialog-driven now, so look
+  // the newly-applied type up by its (unique) label through the same API
+  // `deleteContentType` already uses an in-page `fetch()` for.
+  const id = await page.evaluate(async (title) => {
+    const response = await fetch("/dry/api/content-types");
+    const body = (await response.json()) as { definitions: { id: string; label: string }[] };
+    return body.definitions.find((d) => d.label === title)?.id;
+  }, uniqueTitle);
+  if (!id) throw new Error("Could not find the newly-applied content type via the API.");
+
+  // Filter down to the one card, then open it for editing - repeated runs
+  // leave earlier collections around, which could otherwise match more than
+  // one card for a loose title. Scoped to the panel: the sidebar nav lists
+  // every collection too (including this brand-new one), so an unscoped
+  // text match would also hit that link.
+  await page.getByPlaceholder("e.g. blog_posts").fill(uniqueTitle);
+  await page.locator("#builder-collections-panel").getByText(uniqueTitle, { exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Edit collection" })).toBeVisible();
+
   return { id, title: uniqueTitle };
 }
 
 /** Adds a custom text field via the dialog, using its default settings. */
 async function addTextField(page: Page, label: string): Promise<void> {
   await page.getByRole("button", { name: "Add Field" }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", { name: "Add field" });
   await dialog.getByLabel("Label*", { exact: true }).fill(label);
   await dialog.getByRole("button", { name: "Select…" }).click();
   await page.getByRole("option", { name: "Text", exact: true }).click();
@@ -62,10 +80,12 @@ async function deleteContentType(page: Page, id: string): Promise<void> {
 
 test.describe("Content Type editor", () => {
   test("SlugField auto-derives the slug from the title, editably", async ({ page }) => {
-    await page.goto("/dry/content-types/new/collection");
+    await page.goto("/dry/content-types/");
+    await page.getByRole("button", { name: "Add" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add collection" });
 
-    const titleInput = page.getByLabel("Table Name*", { exact: true });
-    const slugInput = page.getByLabel("Table", { exact: true });
+    const titleInput = dialog.getByLabel("Table Name*", { exact: true });
+    const slugInput = dialog.getByLabel("Table", { exact: true });
 
     await titleInput.fill("My Blog Post");
     await expect(slugInput).toHaveValue("my-blog-post");
@@ -76,18 +96,20 @@ test.describe("Content Type editor", () => {
     await expect(slugInput).toHaveValue("custom-slug");
 
     // The regenerate button re-syncs it from the current title.
-    await page.getByRole("button", { name: "Regenerate slug from title" }).click();
+    await dialog.getByRole("button", { name: "Regenerate slug from title" }).click();
     await expect(slugInput).toHaveValue("my-blog-post-two");
   });
 
   test("Add Field dialog: 2-column layout, type-gated placeholder, default value at top of right column", async ({
     page,
   }) => {
-    await page.goto("/dry/content-types/new/collection");
-    await page.getByLabel("Table Name*", { exact: true }).fill("Dialog Test");
+    await page.goto("/dry/content-types/");
+    await page.getByRole("button", { name: "Add" }).click();
+    const addDialog = page.getByRole("dialog", { name: "Add collection" });
+    await addDialog.getByLabel("Table Name*", { exact: true }).fill("Dialog Test");
 
-    await page.getByRole("button", { name: "Add Field" }).click();
-    const dialog = page.getByRole("dialog");
+    await addDialog.getByRole("button", { name: "Add Field" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add field" });
     await expect(dialog).toBeVisible();
 
     // 2-column grid at desktop width.
@@ -119,10 +141,12 @@ test.describe("Content Type editor", () => {
   test("text validation: regex/format mutually exclusive, minLength=0 does not force Required, minLength>0 does", async ({
     page,
   }) => {
-    await page.goto("/dry/content-types/new/collection");
-    await page.getByLabel("Table Name*", { exact: true }).fill("Dialog Test 2");
-    await page.getByRole("button", { name: "Add Field" }).click();
-    const dialog = page.getByRole("dialog");
+    await page.goto("/dry/content-types/");
+    await page.getByRole("button", { name: "Add" }).click();
+    const addDialog = page.getByRole("dialog", { name: "Add collection" });
+    await addDialog.getByLabel("Table Name*", { exact: true }).fill("Dialog Test 2");
+    await addDialog.getByRole("button", { name: "Add Field" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add field" });
     await dialog.getByRole("button", { name: "Select…" }).click();
     await page.getByRole("option", { name: "Text", exact: true }).click();
 
@@ -167,11 +191,13 @@ test.describe("Content Type editor", () => {
 
   test("Add Field dialog scrolls its own body instead of the window when content overflows", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 500 });
-    await page.goto("/dry/content-types/new/collection");
-    await page.getByLabel("Table Name*", { exact: true }).fill("Scroll Test");
+    await page.goto("/dry/content-types/");
+    await page.getByRole("button", { name: "Add" }).click();
+    const addDialog = page.getByRole("dialog", { name: "Add collection" });
+    await addDialog.getByLabel("Table Name*", { exact: true }).fill("Scroll Test");
 
-    await page.getByRole("button", { name: "Add Field" }).click();
-    const dialog = page.getByRole("dialog");
+    await addDialog.getByRole("button", { name: "Add Field" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add field" });
     await dialog.getByRole("button", { name: "Select…" }).click();
     await page.getByRole("option", { name: "Text", exact: true }).click();
     await expect(dialog.getByText("Validation")).toBeVisible();
@@ -206,12 +232,16 @@ test.describe("Content Type editor", () => {
       // Save draft is disabled until the form is actually dirty - add a field
       // first so there is a real schema change to stage.
       await addTextField(page, "Some Field");
-      await page.getByRole("button", { name: "Save draft" }).click();
-      await page.waitForURL("**/dry/content-types**");
-      await expect(page.getByText("Unapplied changes")).toBeVisible();
+      const editDialog = page.getByRole("dialog", { name: "Edit collection" });
+      await editDialog.getByRole("button", { name: "Save draft" }).click();
+      await expect(editDialog).toBeHidden();
+      // Back on the list, the pending draft surfaces as the header's "Apply
+      // Builder" button (only rendered while `pendingCount > 0`) rather than
+      // a dedicated "Unapplied changes" banner.
+      await expect(page.locator(".page-header").getByRole("button", { name: "Apply Builder" })).toBeVisible();
 
       const applyDialog = page.getByRole("dialog", { name: "Apply and build" });
-      await page.getByRole("button", { name: "Apply and build" }).click();
+      await page.locator(".page-header").getByRole("button", { name: "Apply Builder" }).click();
       await applyDialog.getByRole("button", { name: "Confirm" }).click();
       await expect(applyDialog).toContainText("No conflicts found");
       await applyDialog.getByRole("button", { name: "Save" }).click();

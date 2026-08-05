@@ -26,7 +26,8 @@ test.describe("Content Types list - IndexedDB cache + background sync (status/bu
     page,
   }) => {
     await page.goto("/dry/content-types/");
-    await expect(page.locator("tbody tr", { has: page.getByText("User", { exact: true }) })).toBeVisible();
+    // The list is a card grid now (`.builder-collection-card`), not a table.
+    await expect(page.locator(".builder-collection-card").filter({ hasText: "User" })).toBeVisible();
     await page.waitForTimeout(500);
 
     const cached = await readCacheEntry(page, "content-types:list");
@@ -39,6 +40,6 @@ test.describe("Content Types list - IndexedDB cache + background sync (status/bu
     });
 
     await page.reload();
-    await expect(page.locator("tbody tr", { has: page.getByText("User", { exact: true }) })).toBeVisible({ timeout: 1000 });
+    await expect(page.locator(".builder-collection-card").filter({ hasText: "User" })).toBeVisible({ timeout: 1000 });
   });
 });

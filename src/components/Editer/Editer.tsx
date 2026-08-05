@@ -748,7 +748,17 @@ export default function Editer({
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || value === lastReportedCodeRef.current) return;
-    if (editor.value !== value) editor.setOptions({ value });
+    if (editor.value !== value) {
+      editor.setOptions({ value });
+      // Mark it reported immediately, not just once the worker's debounced
+      // echo eventually lands - otherwise a THIRD value change back to
+      // whatever `lastReportedCodeRef` still held from before this one
+      // (e.g. a consumer flipping between two fixed `value`s, like
+      // `CodeEditerDemo.tsx`'s file tabs) would look like "parent echoed
+      // our own change" and get silently skipped, leaving the editor
+      // showing the wrong file's content.
+      lastReportedCodeRef.current = value;
+    }
   }, [value]);
 
   useEffect(() => {

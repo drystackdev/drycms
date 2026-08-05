@@ -1,56 +1,60 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Content Types list page", () => {
-  test("shows a small sticky icon-menu (with count badges) + table, Collection open by default", async ({
+  test("shows a Collection/Singleton toggle (with count badges) + card list, Collection open by default", async ({
     page,
   }) => {
     await page.goto("/dry/content-types/");
 
-    const nav = page.locator(".content-types-nav");
+    // `component` is hidden while `temporaryFeatureVisibility.contentTypeComponents`
+    // is off (see `lib/temporary-visibility.ts`) - only 2 kinds are pickable today.
+    const nav = page.locator(".file-view-toggle");
     const navItems = nav.locator("button");
-    await expect(navItems).toHaveCount(3);
+    await expect(navItems).toHaveCount(2);
     await expect(navItems.nth(0)).toContainText("Collection");
-    await expect(navItems.nth(1)).toContainText("Single");
-    await expect(navItems.nth(2)).toContainText("Component");
+    await expect(navItems.nth(1)).toContainText("Singleton");
 
-    // Each nav item shows a count badge.
+    // Each kind button shows a count badge.
     await expect(navItems.nth(0).locator(".badge")).toBeVisible();
 
-    // Collection selected by default - the page header names the kind.
-    await expect(navItems.nth(0)).toHaveAttribute("aria-current", "page");
-    await expect(page.locator(".page-header h1")).toHaveText("Content Types - Collection");
+    // Collection selected by default.
+    await expect(navItems.nth(0)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#builder-collections-panel h2")).toHaveText("Collections");
 
-    // The current list includes last-edited metadata and row actions alongside
-    // the name; descriptions remain folded into the Name cell.
-    const table = page.locator(".content-types-panel table");
-    await expect(table).toBeVisible();
-    const headers = await table.locator("th").allTextContents();
-    expect(headers).toEqual(["Name", "Edited", "Actions"]);
+    // Cards render for existing collections (User/Menu ship by default).
+    const list = page.locator(".builder-collection-list");
+    await expect(list).toBeVisible();
+    await expect(list.locator(".builder-collection-card")).not.toHaveCount(0);
 
-    // The "Add <Kind>" button (icon + text, no literal "+") lives alongside the table's search bar.
-    await expect(page.locator(".content-types-panel").getByRole("button", { name: "Add Collection" })).toBeVisible();
+    // "Add" (icon + text, no per-kind suffix) lives alongside the search bar.
+    await expect(page.locator(".builder-collections-toolbar").getByRole("button", { name: "Add" })).toBeVisible();
   });
 
-  test("switching the left menu changes which kind's table is shown, and the Add button's label", async ({
+  test("switching the toggle changes which kind's cards are shown", async ({
     page,
   }) => {
     await page.goto("/dry/content-types/");
-    await page.locator(".content-types-nav button", { hasText: "Component" }).click();
-    await expect(page.locator(".page-header h1")).toHaveText("Content Types - Component");
-    await expect(page.locator(".content-types-nav button", { hasText: "Component" })).toHaveAttribute(
-      "aria-current",
-      "page",
+    await page.locator(".file-view-toggle button", { hasText: "Singleton" }).click();
+    await expect(page.locator("#builder-collections-panel h2")).toHaveText("Singletons");
+    await expect(page.locator(".file-view-toggle button", { hasText: "Singleton" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
-    await expect(page.locator(".content-types-panel").getByRole("button", { name: "Add Component" })).toBeVisible();
   });
 
-  test("nav stays sticky while the table scrolls", async ({ page }) => {
+  test("the kind toggle stays in the viewport while the card list scrolls", async ({ page }) => {
     await page.goto("/dry/content-types/");
-    const navBox = await page.locator(".content-types-nav").boundingBox();
-    expect(navBox).not.toBeNull();
+    const toggle = page.locator(".file-view-toggle");
+    await expect(toggle).toBeInViewport();
+    // `.builder-collections-body` is its own scroll container (flex layout,
+    // not `position: sticky`) - the toggle sits outside it in `.builder-panel`,
+    // so scrolling the card list never pushes it out of view. Not asserting
+    // an exact unchanged pixel position: this suite runs several specs in
+    // parallel against one shared dev database, and another spec creating/
+    // deleting a collection mid-run can reflow the header's own content
+    // (e.g. the count badge) by a few px independent of any real scrolling.
+    await page.locator(".builder-collections-body").hover();
     await page.mouse.wheel(0, 400);
-    const navBoxAfterScroll = await page.locator(".content-types-nav").boundingBox();
-    expect(navBoxAfterScroll).not.toBeNull();
-    expect(navBoxAfterScroll!.y).toBe(navBox!.y);
+    await expect(toggle).toBeInViewport();
   });
 });
