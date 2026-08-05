@@ -76,10 +76,50 @@ component, nằm trên attribute**), `c:category:2:title:text` (row đã populat
 đúng entry của chính nó), `s:siteSettings:1:...` (singleton). `where:
 category.id` vẫn query đúng.
 
+**Polish sau khi xong 6/6 bước (cùng ngày, theo yêu cầu tiếp theo):**
+
+- **Bare mode thiếu scroll+padding+toast**: `Chrome`'s `?_vei=1` bỏ qua
+  `DryLayout` cũng bỏ luôn `.main`'s OverlayScrollbars, `.content`'s padding,
+  và `<Toaster />` (chưa từng mount trong iframe → toast lỗi save trước đây
+  sẽ câm lặng). File mới `pages/vei/VeiFrame.tsx` khôi phục cả ba ở quy mô
+  dialog (padding `1.25rem 1.5rem 1.5rem` thay vì `4rem` đáy của trang đầy
+  đủ). CSS: `.vei-frame`/`.vei-frame-content` cạnh `.content` trong
+  `components.css`. Verify: `[data-overlayscrollbars-viewport]` có mặt,
+  `.toast-viewport` có mặt, padding tính toán đúng 20/24/24px.
+- **Cancel chuyển vào trong iframe, cạnh Preview**: nút "Hủy" nổi ở panel
+  ngoài (đè góc iframe) bị bỏ hẳn. `ContentEntryEditor.tsx`'s nút Cancel sẵn
+  có (trước chỉ hiện với collection, điều hướng `route(backTo)`) giờ hiện cả
+  với singleton khi `isVeiFrame()`, và gọi `closeVeiDialog()` (mới, export từ
+  `bridge.ts`) thay vì điều hướng. Panel ngoài không còn header/title -
+  đóng bằng: nút Cancel trong iframe, click nền, hoặc Escape.
+- **Màu + animation khớp admin**: `--vei-*` không thể `inherit` `--dry-*`
+  thật (site chỉ nạp Tailwind, không nạp `tokens.css`) → copy nguyên giá trị
+  (`--dry-primary #00a76f`, `--dry-backdrop`/`--dry-shadow-lg` 2 lớp đúng
+  công thức, `--dry-border` 20% đúng bằng thay vì 24% đoán trước đó).
+  Animation `vei-panel-in`/`vei-backdrop-in` copy nguyên keyframe
+  `dry-dialog-in`/`dry-dialog-backdrop-in` (opacity+scale / opacity, 120ms
+  ease). Verify: `getComputedStyle` panel bg `rgb(255,255,255)`, nút Save
+  `rgb(0,167,111)`, backdrop `rgba(145,158,171,0.8)`, `animationName` đúng 2
+  tên trên.
+- **Toàn bộ chữ trong overlay dịch sang tiếng Anh** ("Edit mode"/"Save"/
+  "Exit"/"Saving"/"No changes to save"/...) để khớp admin (admin 100% tiếng
+  Anh, chỉ nội dung site là tiếng Việt).
+- **Loading effect**: spinner phủ iframe (`.panel-loading`, tự ẩn khi bridge
+  báo `vei:ready`, timeout an toàn 15s) lúc mở dialog; spinner + "Saving"
+  trên nút Save lúc `saveAll()` chạy.
+
+Cạm bẫy gặp lại 2 lần khi viết CSS trong template literal: comment chứa
+backtick (`` `:host` ``, `` `ContentEntryEditor.tsx` ``) đóng sớm chuỗi JS
+bao ngoài, vỡ hẳn cú pháp cả file - sửa bằng cách bỏ backtick khỏi mọi
+comment bên trong `OVERLAY_STYLES`/`MARKER_STYLES`.
+
 ## Speed
 
-Xong 6/6 bước. `bun run typecheck` xanh, `bun run test` 802 pass (77 file),
-`bun run build` xanh (asset `appsVeiOverlay` 7.5KB).
+Xong 6/6 bước + polish. `bun run typecheck` xanh, `bun run test` 804 pass (78
+file), `bun run build` xanh (asset `appsVeiOverlay`). Verify lại toàn bộ
+vòng đời bằng Playwright thật sau polish: sửa → preview → Cancel trong
+iframe đóng dialog → Save (spinner hiện) → reload thấy giá trị mới → khôi
+phục nguyên trạng.
 
 ### Một lỗi CÓ SẴN phải sửa vì nó chặn dialog
 
@@ -155,3 +195,40 @@ khôi phục), cộng 35 unit test mới cho phần marker/boxing/hook/route.
   verify bước 2 đã gỡ, magic tự đánh dấu đúng chỗ đó.
 - Marker chỉ gắn cho type mà người xem có quyền `update` (singleton:
   `setting`), lọc ngay lúc box - không phải lọc ở UI.
+
+**Polish đợt 3 (cùng ngày, sau đợt polish đầu):**
+
+- **Dock float bên trái giờ animate width khi nội dung đổi** (status text
+  dài/ngắn, nút Save thêm/bớt spinner). CSS `transition: width` không tự chạy
+  giữa hai giá trị `auto` → `overlay.ts` thêm `animateDockWidth()`: đo
+  `getBoundingClientRect().width` hiện tại, khoá thành px, đổi nội dung, đợi 1
+  frame (`requestAnimationFrame`, cùng kiểu với `Toast.tsx`'s `mounted` dance),
+  rồi set `scrollWidth` mới - CSS transition lo phần nội suy. `setStatus()` +
+  `setSaving()` đều đi qua đây.
+- **`.page-header` (dùng chung bởi ~17 trang admin, không riêng VEI) giờ
+  sticky top**, nền mờ blur giống hệt công thức `.topbar` sẵn có
+  (`color-mix(... var(--dry-background) 80%, transparent)` + `blur(8px)`).
+  **Cạm bẫy phát hiện trước khi ship**: `.page-header` và `.topbar` cùng nằm
+  trong một vùng cuộn OverlayScrollbars (`.main`) - nếu cả hai đều `top:0` thì
+  khi cùng dính, `.page-header` (render sau) sẽ đè lên `.topbar`. Sửa bằng
+  `top: var(--dry-topbar-height)` mặc định, override `top: 0` riêng cho
+  `.vei-frame-content .page-header` (nơi không có topbar). Verify đo
+  `getBoundingClientRect().top` sau khi cuộn hết cỡ: trang admin dừng đúng
+  `64px` (không đè topbar), trong VEI dừng đúng `0px`.
+  **Cạm bẫy đo đạc**: `Playwright` `Locator.boundingBox()` trên một
+  `frameLocator` trả toạ độ theo hệ quy chiếu của TRANG NGOÀI (vị trí iframe
+  trên màn hình), không phải theo tài liệu bên trong iframe - lần đầu đo ra
+  `28px` tưởng là bug, thật ra do đo sai chỗ; đo lại bằng
+  `frameDoc.locator(...).evaluate(el => el.getBoundingClientRect())` (chạy
+  ngay trong context của iframe) mới ra đúng `0px`. Không có bug CSS thật -
+  chỉ là bài học đo đạc.
+- **Cancel chuyển hẳn vào trong iframe, cạnh Preview** (thay vì nút nổi ngoài
+  panel đè góc iframe) - xem đợt polish đầu ở trên, và **màu sắc/animation
+  overlay khớp `tokens.css`/`dry-dialog-in` thật** (không phải đoán).
+- **Toàn bộ chữ trong overlay là tiếng Anh** ("Edit mode"/"Save"/"Exit"/
+  "Saving"/"No changes to save"/...) khớp admin (nội dung site là tiếng Việt,
+  nhưng chrome VEI là công cụ admin).
+
+Không có file mới ở đợt này, chỉ sửa `overlay.ts`, `overlay-styles.ts`,
+`components.css` (`.page-header`, `.vei-frame-content .page-header`).
+`bun run typecheck`/`test`/`build` xanh sau mỗi đợt.

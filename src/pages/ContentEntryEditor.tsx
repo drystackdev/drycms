@@ -39,7 +39,7 @@ import {
   listenForFieldSet,
   scrollToField,
 } from "./content-entry-editor/field-events.js";
-import { isVeiFrame } from "./vei/bridge.js";
+import { closeVeiDialog, isVeiFrame } from "./vei/bridge.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import FieldRenderer, { type FieldRendererProps } from "./content-entry-editor/FieldRenderer.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -159,6 +159,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     [type, allTypes],
   );
 
+  const veiFrame = isVeiFrame();
   const isSingleton = type?.kind === "singleton";
   // IndexedDB draft key (see `content-types/entry-draft-store.ts`) - a
   // singleton and a brand-new not-yet-created entry both key off `null`
@@ -373,7 +374,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         toast.add({ type: "success", title: `Saved "${type.label}" entry.` });
         // Inside the VEI dialog there's no list to go back to - the frame is
         // about to be reused for the next entry (or closed).
-        if (!isVeiFrame()) route(`${path}/content/${type.name}`);
+        if (!veiFrame) route(`${path}/content/${type.name}`);
       }
       saved = true;
     } catch (error) {
@@ -505,11 +506,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           <p>{type.description || `Edit this ${type.kind}'s content.`}</p>
         </div>
         <div class="row">
-          {!isSingleton && (
+          {/* A singleton has no list to go "back" to, so this button was
+           * previously collection-only - the Visual Editing Interface
+           * changes what Cancel MEANS (close the dialog, not navigate) and
+           * that applies just as much to a singleton opened from the public
+           * site (`plans/vei.md`), so it's shown for both there. */}
+          {(!isSingleton || veiFrame) && (
             <button
               type="button"
               class="outline"
-              onClick={() => route(backTo)}
+              onClick={() => (veiFrame ? closeVeiDialog() : route(backTo))}
             >
               Cancel
             </button>

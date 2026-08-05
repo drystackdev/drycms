@@ -202,7 +202,7 @@ function main(): void {
   };
 
   if (!config.edit) {
-    const button = element("button", { type: "button", textContent: "Sửa nội dung" });
+    const button = element("button", { type: "button", textContent: "Edit content" });
     button.addEventListener("click", enter);
     root.append(element("div", { className: "dock" }, [button]));
     return;
@@ -211,11 +211,56 @@ function main(): void {
   document.head.append(element("style", { textContent: MARKER_STYLES }));
   document.documentElement.classList.add(EDITING_CLASS);
 
-  const exitButton = element("button", { type: "button", className: "ghost", textContent: "Thoát" });
+  const exitButton = element("button", { type: "button", className: "ghost", textContent: "Exit" });
   exitButton.addEventListener("click", exit);
-  const saveButton = element("button", { type: "button", textContent: "Lưu" });
-  const status = element("span", { className: "label", textContent: "Đang sửa nội dung" });
-  root.append(element("div", { className: "dock" }, [status, saveButton, exitButton]));
+  const saveButton = element("button", { type: "button" }, [document.createTextNode("Save")]);
+  const status = element("span", { className: "label", textContent: "Edit mode" });
+  const dock = element("div", { className: "dock" }, [status, saveButton, exitButton]);
+  root.append(dock);
+
+  /**
+   * Runs `mutate` (a status-text or Save-button content change) and animates
+   * the dock's width between its size before and after, instead of the box
+   * snapping to its new size instantly. CSS alone can't do this - a
+   * `transition` on `width` never animates to/from "auto" (the dock's
+   * resting state, sized by its content), so this measures a real pixel
+   * value on both sides and lets the CSS transition (`.dock`'s own,
+   * `overlay-styles.ts`) interpolate between them.
+   *
+   * The `requestAnimationFrame` mirrors `Toast.tsx`'s own `mounted` dance
+   * for the identical reason its comment gives: the "before" width has to
+   * actually commit to a rendered frame before setting the "after" width
+   * counts as a change to transition FROM, rather than both writes
+   * collapsing into one with nothing to animate.
+   */
+  function animateDockWidth(mutate: () => void): void {
+    const before = dock.getBoundingClientRect().width;
+    dock.style.width = `${before}px`;
+    mutate();
+    requestAnimationFrame(() => {
+      dock.style.width = `${dock.scrollWidth}px`;
+    });
+  }
+
+  function setStatus(text: string): void {
+    animateDockWidth(() => {
+      status.textContent = text;
+    });
+  }
+
+  /** Toggles the Save button between its idle label and a spinner + "Saving"
+   * while `saveAll()` runs - `status` already carries the granular
+   * per-entry progress, this is just the button's own busy affordance. */
+  function setSaving(saving: boolean): void {
+    animateDockWidth(() => {
+      saveButton.disabled = saving;
+      saveButton.replaceChildren(
+        ...(saving
+          ? [element("span", { className: "vei-spinner" }), document.createTextNode("Saving")]
+          : [document.createTextNode("Save")]),
+      );
+    });
+  }
 
   const agent = element("iframe", { className: "agent" });
   root.append(agent);
@@ -225,7 +270,7 @@ function main(): void {
    * that entry's admin route, wait for its bridge to announce itself, ask it
    * to Save, and wait for the outcome. Nothing here knows how saving works -
    * validation, draft cleanup and error reporting stay in
-   * `ContentEntryEditor`, which is the point (`plans/vei.md`'s "Luồng Save").
+   * `ContentEntryEditor`, which is the point (`plans/vei.md`'s "Save flow").
    */
   function saveTarget(target: EditTarget): Promise<boolean> {
     return new Promise((resolve) => {
@@ -251,18 +296,18 @@ function main(): void {
   async function saveAll(): Promise<void> {
     const targets = await pendingTargets();
     if (targets.length === 0) {
-      status.textContent = "Không có thay đổi nào";
+      setStatus("No changes to save");
       return;
     }
-    saveButton.disabled = true;
+    setSaving(true);
     let failed = 0;
     for (const [index, target] of targets.entries()) {
-      status.textContent = `Đang lưu ${target.type} (${index + 1}/${targets.length})`;
+      setStatus(`Saving ${target.type} (${index + 1}/${targets.length})`);
       if (!(await saveTarget(target))) failed += 1;
     }
     if (failed > 0) {
-      status.textContent = `${failed}/${targets.length} mục lưu không thành công`;
-      saveButton.disabled = false;
+      setStatus(`${failed}/${targets.length} entries failed to save`);
+      setSaving(false);
       return;
     }
     // The page has to come back from the server: `pages-cache` has already
@@ -273,21 +318,36 @@ function main(): void {
 
   saveButton.addEventListener("click", () => void saveAll());
 
+  // No close control of its own beyond the backdrop/Escape below - a title
+  // or a Cancel button here would duplicate what the admin page framed
+  // inside `frame` already shows (its own `<h1>`, and a Cancel button next
+  // to Preview - see `ContentEntryEditor.tsx`, which reaches `closeDialog`
+  // below via `postMessage` through `pages/vei/bridge.ts`).
   const sheet = element("div", { className: "sheet" });
   const frame = element("iframe");
-  const closeButton = element("button", { type: "button", className: "close", textContent: "×", title: "Đóng" });
-  sheet.append(element("div", { className: "panel" }, [frame, closeButton]));
-  closeButton.addEventListener("click", () => closeDialog());
+  const panelLoading = element("div", { className: "panel-loading" }, [element("span", { className: "vei-spinner lg" })]);
+  const panel = element("div", { className: "panel" }, [frame, panelLoading]);
+  sheet.append(panel);
   sheet.addEventListener("click", (event) => {
     if (event.target === sheet) closeDialog();
   });
 
+  let dialogLoadTimer: ReturnType<typeof setTimeout> | undefined;
+
   function openDialog(ref: DryRef): void {
+    panel.classList.add("loading");
     frame.src = editorUrl(config as VeiConfig, ref, ref.path);
     root.append(sheet);
+    // The panel-loading spinner covers the iframe until its bridge announces
+    // `vei:ready` (below) - a frame that never gets that far (a stalled
+    // request, an unexpected redirect out of the SPA) must not leave it
+    // spinning forever, so this reveals whatever the frame DID load anyway.
+    clearTimeout(dialogLoadTimer);
+    dialogLoadTimer = setTimeout(() => panel.classList.remove("loading"), 15000);
   }
 
   function closeDialog(): void {
+    clearTimeout(dialogLoadTimer);
     sheet.remove();
     frame.removeAttribute("src");
   }
@@ -302,7 +362,10 @@ function main(): void {
   window.addEventListener("message", (event) => {
     if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
     const message = event.data as { type?: string; detail?: Parameters<typeof applyPreview>[0] };
-    if (message?.type === "vei:input" && message.detail) applyPreview(message.detail);
+    if (message?.type === "vei:ready") {
+      clearTimeout(dialogLoadTimer);
+      panel.classList.remove("loading");
+    } else if (message?.type === "vei:input" && message.detail) applyPreview(message.detail);
     // Escape pressed with focus inside the frame never reaches this
     // document's own keydown listener - the bridge forwards it.
     else if (message?.type === "vei:close") closeDialog();

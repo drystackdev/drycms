@@ -2732,12 +2732,75 @@
       align-content: start;
     }
 
+    /* The Visual Editing Interface's dialog iframe (`pages/vei/VeiFrame.tsx`,
+     * `plans/vei.md`) - `.main`/`.content`'s own scroll+padding treatment,
+     * reused at DIALOG scale rather than full-page scale (a fixed ~720px
+     * iframe has no bottom nav to clear, so `.content`'s 4rem bottom
+     * cushion would just be dead space here). */
+    .vei-frame {
+      height: 100dvh;
+    }
+
+    .vei-frame-content {
+      padding: 1.25rem 1.5rem 1.5rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--dry-gap);
+      align-content: start;
+    }
+
+    /* No `.topbar` inside this frame (bare mode skips `DryLayout`
+     * entirely) - `.page-header`'s default `top` exists to clear one, so
+     * there's nothing to clear here; it should hug this scroll container's
+     * own top instead. See `.page-header`'s own comment for the full story. */
+    .vei-frame-content .page-header {
+      top: 0;
+      padding-block-start: 0.5rem;
+      margin-block-start: -0.5rem;
+      margin-inline: -2rem;
+      padding-inline: 2rem;
+    }
+
+    /* Sticky so a page's title and its primary actions (Save/Cancel/Preview,
+     * Delete, ...) stay reachable while scrolling a long form - same
+     * "sticky + translucent blur, at the scroll container's own top" idiom
+     * `.topbar` already establishes app-wide, reused rather than invented
+     * here. `top` matches `.topbar`'s own height, not `0` - `.page-header`
+     * lives INSIDE the same OverlayScrollbars viewport as `.topbar` (both
+     * are ordinary children of `.main`, which the hook restructures into
+     * one scrolling region - see `hooks/overlayscrollbars.ts`), so once both
+     * are stuck they'd occupy the same `y: 0` band and `.page-header`
+     * (later in paint order) would cover `.topbar`'s own icons if this were
+     * `0` too. `.vei-frame-content .page-header` below overrides this back
+     * to `0` for the one case that has no topbar to clear. No padding/margin
+     * trick to preserve the unstuck gap once stuck - that turns out to shift
+     * the STUCK position itself by the same amount (a negative margin
+     * changes what "top: 0" resolves to for a sticky box, not just its
+     * static-flow position), verified empirically, not assumed; the grid's
+     * own `gap` (`.content`/`.vei-frame-content`) already separates this
+     * from whatever scrolls beneath it, which is the breathing room that
+     * actually matters. This is shared markup (every admin page using
+     * `.page-header`, plus `ContentEntryEditor` inside the Visual Editing
+     * Interface's dialog - `pages/vei/VeiFrame.tsx` - which is exactly the
+     * case with the least headroom to scroll back up to Cancel/Save
+     * otherwise), so the fix lives here once rather than per-page. */
     .page-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 1rem;
       flex-wrap: wrap;
+      position: sticky;
+      top: var(--dry-topbar-height);
+      z-index: 20;
+      padding-block-end: 0.75rem;
+      background-color: color-mix(
+        in srgb,
+        var(--dry-background) 80%,
+        transparent
+      );
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
 
       & h1 {
         font-size: 1.5rem;

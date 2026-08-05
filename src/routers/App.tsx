@@ -14,6 +14,7 @@ import Icon from "../components/Icon.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
 import { isVeiFrame, startVeiBridge } from "../pages/vei/bridge.js";
+import VeiFrame from "../pages/vei/VeiFrame.js";
 import { authState, loadSession } from "../store/auth.js";
 import "../lib/native/native.js";
 
@@ -107,9 +108,12 @@ class Boundary extends Component<
  * noise wrapped around a modal. `AuthGate` already establishes that
  * rendering a route without `DryLayout`'s chrome is a normal thing to do
  * here (Sign in/Register do exactly that); this is the same move for a
- * route that IS authenticated. */
+ * route that IS authenticated. `VeiFrame` (not a bare passthrough) replaces
+ * what skipping `DryLayout` loses - a scroll container, padding, and the
+ * toast stack - at dialog rather than full-page scale; see its own doc
+ * comment. */
 function Chrome({ children }: { children: ComponentChildren }) {
-  if (isVeiFrame()) return <>{children}</>;
+  if (isVeiFrame()) return <VeiFrame>{children}</VeiFrame>;
   return <DryLayout>{children}</DryLayout>;
 }
 

@@ -58,6 +58,16 @@ function post(message: VeiMessage): void {
   window.parent.postMessage(message, window.location.origin);
 }
 
+/** Tells the overlay to close the dialog - used both by the Escape handler
+ * below and by `ContentEntryEditor`'s own Cancel button, which is the one
+ * the visible dialog offers (see `plans/vei.md`; the overlay's own outer
+ * chrome deliberately has no close control of its own beyond the backdrop/
+ * Escape, since the admin page already has one). A no-op outside the VEI
+ * frame - nothing is listening on the other end. */
+export function closeVeiDialog(): void {
+  post({ type: "vei:close" });
+}
+
 export function startVeiBridge(): () => void {
   const stopInput = listenForFieldInput((detail) => post({ type: "vei:input", detail }));
   const stopSaved = listenForEntrySaved(({ ok }) => post({ type: "vei:saved", ok }));
@@ -70,7 +80,7 @@ export function startVeiBridge(): () => void {
   // Escape inside the frame can't reach the hosting page's own listener, so
   // the dialog would otherwise only be closable by clicking its backdrop.
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") post({ type: "vei:close" });
+    if (event.key === "Escape") closeVeiDialog();
   };
   window.addEventListener("message", onMessage);
   window.addEventListener("keydown", onKeyDown);
