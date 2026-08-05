@@ -1,3 +1,5 @@
+import tokensCss from "../../styles/tokens.css?raw";
+
 /**
  * The overlay's own chrome, as a string for its shadow root - the one place
  * in this feature where a shadow root IS the right tool (see `plans/vei.md`):
@@ -9,26 +11,22 @@
  * a second `.css` entry would need its own Vite input + manifest lookup for
  * ~80 lines that only ever load inside this shadow root. Same call
  * `content-shadow-styles.ts` already made for RichText.
+ *
+ * The public site never loads `styles/tokens.css` (Tailwind only, see
+ * `apps/globals.css`), so the admin's real `--dry-*` custom properties never
+ * reach this document on their own - `tokensCss` (`?raw`, same pattern
+ * `dry.carousel.tsx`/`Editer.tsx` already use for third-party CSS) inlines
+ * the actual file verbatim instead of a hand-copied snapshot of its values,
+ * so this stays correct if the palette ever changes and can't drift the way
+ * a copy silently did once before (`status/vei.md`'s "màu + animation khớp
+ * admin" polish note). Its rules are scoped to `.dry` - `overlay.ts` gives
+ * exactly one element inside this shadow tree that class (`scope`), so
+ * `light-dark()`/`--dry-*` resolve on it and cascade to every rule below.
  */
 export const OVERLAY_STYLES = `
-/* Values copied from styles/tokens.css's Minimals palette (--dry-primary,
- * --dry-popover, --dry-foreground, --dry-muted-foreground, --dry-border,
- * --dry-backdrop, --dry-shadow-lg) - not referenced live, since a value
- * defined under ".dry" in the admin bundle's own stylesheet never reaches
- * this document at all (the public site loads Tailwind only, see
- * apps/globals.css). Keeping the SAME numbers here is what makes the
- * overlay read as part of the admin, not a foreign widget. */
+${tokensCss}
+
 :host {
-  --vei-primary: #00a76f;
-  --vei-surface: #ffffff;
-  --vei-text: #1c252e;
-  --vei-muted: #637381;
-  --vei-border: rgb(145 158 171 / 20%);
-  --vei-backdrop: rgb(145 158 171 / 80%);
-  --vei-shadow-channel: 145 158 171;
-  --vei-shadow:
-    0 0 2px 0 rgb(var(--vei-shadow-channel) / 24%),
-    -20px 20px 40px -4px rgb(var(--vei-shadow-channel) / 24%);
   all: initial;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -54,8 +52,8 @@ export const OVERLAY_STYLES = `
   width: 14px;
   height: 14px;
   flex: none;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #ffffff;
+  border: 2px solid color-mix(in srgb, var(--dry-primary-foreground) 40%, transparent);
+  border-top-color: var(--dry-primary-foreground);
   border-radius: 50%;
   animation: vei-spin 700ms linear infinite;
 }
@@ -64,13 +62,13 @@ export const OVERLAY_STYLES = `
   width: 28px;
   height: 28px;
   border-width: 3px;
-  border-color: var(--vei-border);
-  border-top-color: var(--vei-primary);
+  border-color: var(--dry-border);
+  border-top-color: var(--dry-primary);
 }
 
 button.ghost .vei-spinner {
-  border-color: var(--vei-border);
-  border-top-color: var(--vei-text);
+  border-color: var(--dry-border);
+  border-top-color: var(--dry-foreground);
 }
 
 button {
@@ -82,8 +80,8 @@ button {
   border: 0;
   border-radius: 8px;
   padding: 8px 14px;
-  background: var(--vei-primary);
-  color: #ffffff;
+  background: var(--dry-primary);
+  color: var(--dry-primary-foreground);
   font-weight: 600;
   font-size: 14px;
   line-height: 1.4;
@@ -96,11 +94,37 @@ button:disabled {
 
 button.ghost {
   background: transparent;
-  color: var(--vei-text);
+  color: var(--dry-foreground);
 }
 
 button.ghost:hover {
-  background: rgba(145, 158, 171, 0.12);
+  background: var(--dry-accent);
+}
+
+/* Preview-count badge on the "Preview all" button - .badge/.sm/.secondary
+ * mirror components.css's own rules for the identical admin classes
+ * (overlay.ts sets exactly these on previewCount), scaled down to what this
+ * dock actually uses rather than pulling in every badge variant. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 1.5rem;
+  padding-inline: 0.5rem;
+  font-size: var(--dry-text-xs);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: var(--dry-radius-sm);
+}
+
+.badge.sm {
+  height: 1.25rem;
+  padding-inline: 0.375rem;
+}
+
+.badge.secondary {
+  background-color: var(--dry-secondary);
+  color: var(--dry-foreground);
 }
 
 .dock {
@@ -113,10 +137,10 @@ button.ghost:hover {
   gap: 8px;
   padding: 8px;
   border-radius: 12px;
-  background: var(--vei-surface);
-  border: 1px solid var(--vei-border);
-  box-shadow: var(--vei-shadow);
-  color: var(--vei-text);
+  background: var(--dry-popover);
+  border: 1px solid var(--dry-border);
+  box-shadow: var(--dry-shadow-lg);
+  color: var(--dry-foreground);
   font-size: 14px;
   /* Width goes from unset (fit-content) to an explicit px value the first
    * time overlay.ts's animateDockWidth() runs, and stays explicit from then
@@ -135,7 +159,7 @@ button.ghost:hover {
 
 .dock .label {
   padding-inline: 6px;
-  color: var(--vei-muted);
+  color: var(--dry-muted-foreground);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -148,8 +172,10 @@ iframe.agent {
 
 /* opacity+scale / opacity-only - the exact pair components.css's own
  * "dialog"/"dialog::backdrop" rules use (dry-dialog-in/dry-dialog-backdrop-in),
- * copied rather than referenced for the same reason the color values above
- * are copied: nothing in the admin's stylesheet reaches this document. */
+ * copied rather than referenced for the same reason tokensCss above ISN'T
+ * copied: an animation's keyframe steps aren't custom-property values a
+ * var() can reach into, so there's no way to share these short of ?raw-ing
+ * the whole of components.css for two keyframes. */
 @keyframes vei-panel-in {
   from {
     opacity: 0;
@@ -168,7 +194,7 @@ iframe.agent {
   inset: 0;
   z-index: 2147483001;
   display: flex;
-  background: var(--vei-backdrop);
+  background: var(--dry-backdrop);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
   animation: vei-backdrop-in 120ms ease;
@@ -188,8 +214,8 @@ iframe.agent {
   height: min(720px, 100vh - 32px);
   padding: 12px;
   border-radius: 16px;
-  background: var(--vei-surface);
-  box-shadow: var(--vei-shadow);
+  background: var(--dry-popover);
+  box-shadow: var(--dry-shadow-lg);
   animation: vei-panel-in 120ms ease;
 }
 
@@ -198,7 +224,7 @@ iframe.agent {
   min-height: 0;
   border: 0;
   border-radius: 12px;
-  background: var(--vei-surface);
+  background: var(--dry-popover);
 }
 
 /* Covers the iframe (still loading its own JS bundle underneath, so
@@ -211,21 +237,31 @@ iframe.agent {
   align-items: center;
   justify-content: center;
   border-radius: 12px;
-  background: var(--vei-surface);
+  background: var(--dry-popover);
 }
 
 .sheet .panel.loading .panel-loading {
   display: flex;
 }
 
-@media (prefers-color-scheme: dark) {
-  :host {
-    --vei-surface: #1c252e;
-    --vei-text: #ffffff;
-    --vei-muted: #919eab;
-    --vei-backdrop: rgb(0 0 0 / 35%);
-    --vei-shadow-channel: 0 0 0;
-  }
+/* The hover highlight around whatever marked field is under the pointer -
+ * a fixed box positioned by overlay.ts from getBoundingClientRect(), not
+ * an outline painted on the field itself. An outline inherits the target's
+ * own stacking context and clipping, so a field inside an overflow: hidden
+ * carousel/panel, or sitting behind a higher z-index sibling, would have
+ * it clipped or covered - this box is a sibling of the whole page
+ * (appended straight to body, same as .dock) instead, so neither problem
+ * applies. pointer-events: none so it never steals the click meant for
+ * the field underneath. */
+.field-highlight {
+  position: fixed;
+  z-index: 2147483000;
+  display: none;
+  pointer-events: none;
+  border: 2px solid #00a76f;
+  border-radius: 4px;
+  background: rgba(0, 167, 111, 0.08);
+  transition: left 100ms ease, top 100ms ease, width 100ms ease, height 100ms ease;
 }
 `;
 
@@ -239,13 +275,6 @@ html.dry-vei-editing [data-dry],
 html.dry-vei-editing [data-dry-src],
 html.dry-vei-editing [data-dry-html] {
   outline: 1px dashed rgba(0, 167, 111, 0.6);
-  outline-offset: 2px;
   cursor: pointer;
-}
-
-html.dry-vei-editing [data-dry]:hover,
-html.dry-vei-editing [data-dry-src]:hover,
-html.dry-vei-editing [data-dry-html]:hover {
-  outline: 2px solid #00a76f;
 }
 `;

@@ -1,11 +1,12 @@
 import type { ComponentChildren } from "preact";
-import { useId, useState } from "preact/hooks";
+import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import { DragHandleIcon, PlusIcon, TrashIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import { randomUUID } from "../../lib/uuid.js";
+import { highlightAnchor } from "./field-anchor.js";
 
 export interface ComponentFieldProps<
   T = Record<string, unknown>,
@@ -41,6 +42,16 @@ export interface ComponentFieldProps<
    * the same hook `FieldsList.tsx` uses for schema fields) - order is just
    * `value`'s own array order, nothing extra to persist. @default false */
   sortable?: boolean;
+  /** Opens straight to this item's edit dialog (as if `openEdit(revealIndex)`
+   * had been called) - the Visual Editing Interface's `?_path=` deep link
+   * (`ContentEntryEditor.tsx`'s `revealPath`, threaded down via
+   * `FieldRenderer.tsx`'s `ComponentRepeatFieldAdapter`) otherwise has no way
+   * to reach an item that only renders once its dialog is open. */
+  revealIndex?: number;
+  /** Paired with `revealIndex`: the item's own top-level field
+   * (`data-field-name` on `renderItem`'s wrapper, set by the caller) to
+   * scroll to and flash once the dialog's fields have rendered. */
+  revealField?: string;
 }
 
 /**
@@ -65,6 +76,8 @@ export default function ComponentField<T = Record<string, unknown>>({
   sortable = false,
   class: className,
   style,
+  revealIndex,
+  revealField,
 }: ComponentFieldProps<T>) {
   const reactId = useId();
   const fieldId = `component-field-${reactId}`;
@@ -103,6 +116,30 @@ export default function ComponentField<T = Record<string, unknown>>({
     setAttempted(false);
     setOpen(true);
   }
+
+  // `revealIndex` deep-links straight into this item's own dialog - it's
+  // the ONLY way to reach an item's fields at all, since `renderItem` below
+  // only mounts once `open` is true. Deps are `revealIndex` alone: this
+  // should open once for a given reveal target, not re-fire (and reset the
+  // user's own in-dialog edits) on every render `openEdit` itself isn't
+  // memoized across.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- open once per reveal target, see comment above
+  useEffect(() => {
+    if (revealIndex !== undefined) openEdit(revealIndex);
+  }, [revealIndex]);
+
+  // Once that dialog's fields have actually rendered, scroll to and flash
+  // the one `revealField` names - `requestAnimationFrame` waits for the
+  // frame the JSX below actually commits in, the same "has this appeared
+  // yet" wait `ContentEntryEditor.tsx`'s own `?_field=` effect does for the
+  // top-level form.
+  useEffect(() => {
+    if (!open || draft === null || !revealField) return;
+    const frame = requestAnimationFrame(() => {
+      if (bodyScroll.current) highlightAnchor(bodyScroll.current, revealField);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, draft, revealField]);
 
   function removeItem(index: number) {
     onChange(value.filter((_, i) => i !== index));

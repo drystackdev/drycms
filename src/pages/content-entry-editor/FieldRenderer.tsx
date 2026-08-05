@@ -31,6 +31,14 @@ export interface FieldRendererProps {
     loading?: boolean;
     result?: { ok: boolean; message: string };
   };
+  /** The Visual Editing Interface's `?_path=` deep link (`overlay.ts`),
+   * already confirmed to start at THIS node (`revealPath[0] === node.fieldName`
+   * - `ContentEntryEditor.tsx`'s `renderFieldNodes` only passes it down that
+   * far). Only `flatten` and `component-repeat` do anything with it: a
+   * `component-repeat` field has no other way to reach an item that only
+   * renders once its own dialog is open (`ComponentField.tsx`'s
+   * `revealIndex`/`revealField`). */
+  revealPath?: string[];
 }
 
 /**
@@ -51,6 +59,7 @@ export default function FieldRenderer({
   error,
   allTypes,
   checkSecretKey,
+  revealPath,
 }: FieldRendererProps) {
   if (node.kind === "column") {
     return (
@@ -66,6 +75,7 @@ export default function FieldRenderer({
 
   if (node.kind === "flatten") {
     const nested = (value as EntryValue) ?? {};
+    const rest = revealPath?.slice(1);
     return (
       <fieldset>
         <legend>{node.label}</legend>
@@ -80,6 +90,7 @@ export default function FieldRenderer({
                 onChange({ ...nested, [child.fieldName]: childValue })
               }
               allTypes={allTypes}
+              revealPath={rest?.[0] === child.fieldName ? rest : undefined}
             />
           ))}
         </div>
@@ -118,6 +129,7 @@ export default function FieldRenderer({
       onChange={onChange}
       allTypes={allTypes}
       error={error}
+      revealPath={revealPath}
     />
   );
 }
@@ -312,14 +324,31 @@ function ComponentRepeatFieldAdapter({
   onChange,
   allTypes,
   error,
+  revealPath,
 }: {
   node: EntryComponentRepeatNode;
   value: EntryValue[];
   onChange: (value: unknown) => void;
   allTypes: ContentTypeDefinition[];
   error?: string;
+  revealPath?: string[];
 }) {
   const summaryField = node.itemFields.find((f) => f.kind === "column")?.fieldName;
+
+  // `revealPath` here is `[node.fieldName, <item index>, <item's own field
+  // name>, ...]` (`field-path.ts`'s own dotted/indexed convention) - the
+  // deeper segments, if any, are the same "known limitation" `applyFieldSet`
+  // already documents (a nested write only surfaces as its top-level field
+  // to an outside listener), so revealing only goes as deep as the item's
+  // OWN top-level field, same granularity `ContentEntryEditor.tsx` already
+  // gives the entry's own top-level fields.
+  const rest = revealPath?.slice(1);
+  const revealIndexSegment = rest?.[0];
+  const revealIndex =
+    revealIndexSegment !== undefined && /^\d+$/.test(revealIndexSegment)
+      ? Number(revealIndexSegment)
+      : undefined;
+  const revealField = revealIndex !== undefined ? rest?.[1] : undefined;
 
   return (
     <ComponentField<EntryValue>
@@ -334,18 +363,21 @@ function ComponentRepeatFieldAdapter({
       summaryOf={(item) => (summaryField ? String(item[summaryField] ?? "") : "")}
       blankItem={() => blankEntryValue(node.itemFields)}
       validateItem={(item) => validateEntryValue(node.itemFields, item)}
+      revealIndex={revealIndex}
+      revealField={revealField}
       renderItem={(item, setItem, errors) =>
         node.itemFields.map((child) => (
-          <FieldRenderer
-            key={child.fieldName}
-            node={child}
-            value={item[child.fieldName]}
-            onChange={(childValue) =>
-              setItem({ ...item, [child.fieldName]: childValue })
-            }
-            error={errors[child.fieldName]}
-            allTypes={allTypes}
-          />
+          <div key={child.fieldName} data-field-name={child.fieldName}>
+            <FieldRenderer
+              node={child}
+              value={item[child.fieldName]}
+              onChange={(childValue) =>
+                setItem({ ...item, [child.fieldName]: childValue })
+              }
+              error={errors[child.fieldName]}
+              allTypes={allTypes}
+            />
+          </div>
         ))
       }
     />

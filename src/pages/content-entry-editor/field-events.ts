@@ -5,6 +5,9 @@
  * `window` `CustomEvent`s on purpose, not an internal pub/sub export: the
  * whole point is reaching code that never imported anything from drycms.
  */
+import { FIELD_ANCHOR_ATTR, highlightAnchor } from "../../components/fields/field-anchor.js";
+
+export { FIELD_ANCHOR_ATTR };
 
 export const FIELD_INPUT_EVENT = "dry:field-input";
 export const FIELD_SET_EVENT = "dry:field-set";
@@ -119,27 +122,12 @@ export function listenForEntrySaved(onSaved: (detail: EntrySavedEventDetail) => 
   return () => window.removeEventListener(ENTRY_SAVED_EVENT, handler);
 }
 
-/** Attribute `renderFieldNodes` (`ContentEntryEditor.tsx`) sets on each
- * top-level field's own wrapper - both this field's own identity for the
- * `dry:field-input`/`dry:field-set` events above, and the anchor
- * `scrollToField` below searches for. */
-export const FIELD_ANCHOR_ATTR = "data-field-name";
-
-const HIGHLIGHT_CLASS = "entry-field-highlight";
-const HIGHLIGHT_MS = 1500;
-
 /**
  * `?_field=` deep link - scrolls the matching top-level field to the middle
- * of the viewport and flashes an outline for `HIGHLIGHT_MS` to draw the
- * user's eye to it (the CSS transition driving the actual fade lives on
- * `.entry-field-highlight` in components.css; this only toggles the class).
- * A no-op if no field with that name is on the page (typo'd name, or called
- * before the fields have rendered).
+ * of the viewport and flashes its outline (`highlightAnchor`,
+ * `components/fields/field-anchor.ts`). A no-op if no field with that name
+ * is on the page (typo'd name, or called before the fields have rendered).
  */
 export function scrollToField(name: string): void {
-  const el = document.querySelector(`[${FIELD_ANCHOR_ATTR}="${CSS.escape(name)}"]`);
-  if (!(el instanceof HTMLElement)) return;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-  el.classList.add(HIGHLIGHT_CLASS);
-  setTimeout(() => el.classList.remove(HIGHLIGHT_CLASS), HIGHLIGHT_MS);
+  highlightAnchor(document, name);
 }

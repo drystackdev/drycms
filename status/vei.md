@@ -232,3 +232,198 @@ khôi phục), cộng 35 unit test mới cho phần marker/boxing/hook/route.
 Không có file mới ở đợt này, chỉ sửa `overlay.ts`, `overlay-styles.ts`,
 `components.css` (`.page-header`, `.vei-frame-content .page-header`).
 `bun run typecheck`/`test`/`build` xanh sau mỗi đợt.
+
+**Polish đợt 4 (2026-08-06): nút "Preview all" trên dock ngoài.** Dock giờ có
+3 nút (status, **Preview all**, Save, Exit) thay vì 2. File mới
+`pages/vei/ChangesPreview.tsx` - route `${path}/vei/changes`, đọc TOÀN BỘ
+draft đang chờ trong IndexedDB (`getAllEntryDraftRecords()`, không lọc theo
+trang - khác `saveAll()`'s `pendingTargets()` vốn chỉ lấy entry có marker
+trên trang hiện tại), với từng entry: tải giá trị gốc từ server
+(`entriesApi.get`/`getSingleton`, hoặc `blankEntryValue` cho entry mới chưa
+tạo), `diffEntryValue` để ra danh sách field đổi, lọc theo `canAccess` như
+`ContentEntryEditor` vẫn làm. Mỗi entry có nút "Open" điều hướng
+`route()` ngay trong iframe (giữ `?_vei=1`) sang editor thật - dùng lại
+đúng route/`ContentEntryEditor`, không phải trang riêng.
+
+Mở bằng `overlay.ts`'s `openFrame()` (tách ra từ `openDialog()` cũ - giờ
+`openDialog` chỉ còn gọi `openFrame(editorUrl(...))`), trỏ URL sang
+`${config.path}/vei/changes?_vei=1` - dùng lại đúng sheet/panel/spinner/
+Escape/backdrop-close đã có, không thêm cơ chế dialog mới.
+
+Verify bằng script Playwright thật (không phải Playwright MCP, gọi trực
+tiếp `@playwright/test` qua `bun run <script>.mjs`) trên dev server thật:
+login → vào edit mode ở `/blogs/:slug` → sửa field title → Cancel (không
+Save) → click "Preview all" → iframe mở `/vei/changes?_vei=1` → giá trị vừa
+sửa xuất hiện đúng trong diff → click "Open" trên entry đó → điều hướng
+đúng `/content/blog/<id>?_vei=1` NGAY TRONG CÙNG iframe, input vẫn giữ giá
+trị draft → Cancel đóng dialog. Không đụng DB thật (draft chỉ ở IndexedDB
+trình duyệt, không bao giờ bấm Save) nên không cần khôi phục gì sau khi
+test. `bun run typecheck`/`test` (804 pass)/`build` xanh.
+
+**Polish đợt 5 (2026-08-06, cùng ngày): số lượng trên "Preview all" + nút
+Reset cạnh Open.** Dock's nút "Preview all" giờ có `<span class="badge sm
+secondary">` đếm **tổng số draft trong IndexedDB** (không diff từng entry -
+`ChangesPreview.tsx` lọc còn ít hơn vì nó bỏ draft không thực sự đổi so với
+server, nhưng diff cần 1 request/entry nên quá nặng để chạy lại mỗi lần gõ
+phím; đếm thô là đủ, sai số hiếm - chỉ khi 1 type/entry bị xoá sau khi tạo
+draft). `overlay.ts` thêm `refreshPreviewCount()` (đọc
+`getAllEntryDraftRecords().length`, ẩn badge khi 0), gọi lúc: mount, sau khi
+đóng dialog sửa field (`closeDialog`), và (debounce 400ms, dài hơn draft
+write's 300ms) mỗi lần nhận `vei:input` qua `schedulePreviewCountRefresh()`.
+
+`ChangesPreview.tsx` mỗi entry card thêm nút Reset (icon `EraserIcon`, cạnh
+Open) - xoá hẳn draft của entry đó (`discardEntryDraft`), có `ConfirmDialog`
+"Discard these changes?" trước khi thực thi (giống hệt `ContentEntryEditor`'s
+"Reset all" - đây CHÍNH LÀ hành động đó, chỉ gọi được từ danh sách nhiều
+entry thay vì entry đang mở). Sau khi discard, card biến mất khỏi danh sách
+(state cục bộ), không cần tải lại trang.
+
+**Giới hạn đã biết, không phải bug**: discard draft ở `/vei/changes` không
+đẩy revert ngược lại DOM của trang public đang mở (không có kênh "un-preview"
+- `applyPreview()` chỉ có chiều patch tới, không có chiều ngược). Trang public
+vẫn hiện giá trị đã gõ cho tới khi F5 - đúng như hạn chế preview DOM-only đã
+ghi ở bước 4/plans/vei.md, không phải lỗi mới.
+
+Verify bằng script Playwright thật: sửa field → badge dock hiện "1" (cả lúc
+dialog sửa field còn mở, cả sau khi Cancel) → mở "Preview all" → bấm Reset
+trên card → Confirm "Discard" → card biến mất, trang trống hiện "No pending
+changes" → đóng dialog → badge dock quay lại ẩn (0). Không có file mới, chỉ
+sửa `overlay.ts` + `ChangesPreview.tsx`. `bun run typecheck`/`test` (804
+pass)/`build` xanh.
+
+**Polish đợt 6 (2026-08-06, cùng ngày): dialog tự đóng khi hết thay đổi.**
+`handleReset` giờ tính danh sách còn lại NGAY trong `setChanges`'s updater
+(không đọc `changes` từ closure ngoài, tránh giá trị cũ) - nếu rỗng thì gọi
+`closeVeiDialog()` luôn, không chờ người dùng bấm Close để thấy "No pending
+changes" trước. Giống hệt lý do `ContentEntryEditor.tsx`'s
+`handleResetField`/`handleResetAll` đóng `EntryPreviewDialog` khi hết diff.
+`closeVeiDialog()` là no-op ngoài VEI frame nên gọi vô điều kiện, không cần
+`isVeiFrame()` guard riêng ở đây. Verify Playwright thật: discard draft duy
+nhất còn lại → Confirm → sheet tự biến mất khỏi shadow root, không cần click
+Close. Chỉ sửa `ChangesPreview.tsx`. `bun run typecheck`/`test` (804
+pass)/`build` xanh.
+
+**Polish đợt 7 (2026-08-06, cùng ngày): ẩn nút back ở header trong VEI.**
+`ContentEntryEditor.tsx`'s nút back (`ArrowLeftIcon`, góc trái `.page-header`,
+chỉ hiện với collection) giờ thêm điều kiện `!veiFrame` - cùng lý do Cancel
+đã đổi ý nghĩa trong VEI (không có list để "back" tới, xem polish đầu). Nút
+Cancel bên phải header vẫn còn, vẫn là cách đóng dialog. Verify Playwright
+thật: admin bình thường còn back button (1), trong VEI dialog ẩn (0), Cancel
+vẫn có mặt (1). Chỉ sửa `ContentEntryEditor.tsx`. `bun run typecheck`/`test`
+(804 pass)/`build` xanh.
+
+**Polish đợt 8 (2026-08-06, cùng ngày): reveal xuyên vào item trong
+`component-repeat`, + dock dùng thẳng `tokens.css` thay vì copy màu.**
+
+Trước đây `?_path=` (deep link `_field`+`_path` từ click marker của một field
+nằm trong `component-repeat`, ví dụ `pressMentions.0.outlet`) được `overlay.ts`
+gửi đi nhưng KHÔNG bên nào đọc - `scrollToField` chỉ biết `?_field=` (top-level),
+nên click vào một item bên trong dialog riêng của `ComponentField.tsx` chỉ
+highlight cái field wrapper ngoài cùng, dialog của item đó (đóng theo mặc định,
+chỉ mount fields khi `open`) không tự mở - đúng y hệt yêu cầu ban đầu: "hight
+luôn item trong component" + "item trong dialog thì bật dialog lên luôn".
+
+Sửa bằng cách thread `revealPath` (mảng segment của `_path`, fallback
+`_field`) xuyên `ContentEntryEditor.tsx` → `FieldRenderer.tsx` (`flatten` tự
+đệ quy, `component-repeat` tách `[index, tên field trong item]`) →
+`ComponentField.tsx`'s 2 prop mới `revealIndex`/`revealField`: `revealIndex`
+tự gọi `openEdit()` (mở đúng dialog của item đó - cách DUY NHẤT field bên
+trong tồn tại trên DOM, vì `renderItem` chỉ mount khi `open`), `revealField`
+sau đó tìm-và-flash field đó bên trong `.component-item-dialog-body` (scope
+theo `bodyScroll.current`, không phải `document` - tránh trùng tên với field
+top-level khác). File mới `components/fields/field-anchor.ts` (tách
+`FIELD_ANCHOR_ATTR`+hàm flash ra khỏi `content-entry-editor/field-events.ts`,
+vì `ComponentField.tsx` là component dùng chung (`Showcase.tsx` cũng dùng),
+không được import ngược vào `pages/`). Giới hạn đã biết (ghi thẳng trong code):
+reveal chỉ sâu tới field TOP-LEVEL của item, không sâu hơn - cùng độ sâu
+`applyFieldSet`'s comment đã chấp nhận cho `dry:field-input`.
+
+Verify Playwright thật (`@playwright/test` gọi trực tiếp qua script `.mjs`,
+không phải MCP): click marker `pressMentions.0.outlet` trên trang chủ → dialog
+`Edit Press Mentions` tự mở (trước đó luôn đóng) → field `outlet` bên trong
+VÀ field `pressMentions` top-level đều flash `.entry-field-highlight` cùng
+lúc, tự tắt sau ~1.5s. `bun run typecheck`/`test` (804 pass)/`build` xanh.
+
+**Cùng đợt: dock/nút VEI đổi từ copy màu tay sang dùng thẳng `styles/tokens.css`.**
+`overlay-styles.ts`'s `:host { --vei-primary: #00a76f; ... }` (bản copy tay
+của palette thật, ghi từ polish đợt 1 - xem trên) có nguy cơ lệch dần với
+`tokens.css` (đã lệch 1 lần, "24% đoán trước đó" chính là polish đợt 1 tự sửa).
+Giờ `import tokensCss from "../../styles/tokens.css?raw"` (cùng cách
+`dry.carousel.tsx`/`Editer.tsx` đã dùng cho CSS bên thứ 3) nhúng NGUYÊN VĂN
+file thật vào đầu `OVERLAY_STYLES`, mọi rule còn lại đổi từ `var(--vei-*)`
+sang thẳng `var(--dry-*)` (`--vei-shadow` bỏ hẳn, dùng `var(--dry-shadow-lg)`
+có sẵn - công thức giống hệt). `overlay.ts` thêm 1 div `class="dry"` (biến
+`scope`) bọc toàn bộ nội dung shadow root thay vì append thẳng vào `root` -
+đây là phần tử DUY NHẤT bên trong shadow tree mang class mà rule thật của
+`tokens.css` (`.dry {...}`) cần để match; không sửa selector nào trong
+`tokensCss` (nhúng verbatim, 0 transform) nên ăn theo mọi thay đổi tương lai
+của `tokens.css` tự động, không cần đồng bộ tay nữa. Badge đếm draft trên nút
+"Preview all" (`className: "badge sm secondary"`, polish đợt 5 ở trên) trước
+đó CHƯA có rule CSS nào trong `overlay-styles.ts` (chỉ tồn tại trong
+`components.css`, shadow root không nạp) - tiện thể thêm `.badge`/`.badge.sm`/
+`.badge.secondary` mirror đúng `components.css`.
+
+Cạm bẫy gặp lại lần 3 (đã ghi ở polish đầu, lần 2 ở top): backtick trong
+comment CSS bên trong template literal `OVERLAY_STYLES` vỡ cú pháp JS - sửa
+bằng bỏ backtick khỏi mọi comment viết mới.
+
+Verify Playwright thật, `page.emulateMedia`/`newContext({ colorScheme })`
+light+dark: `getComputedStyle` dock/Save/Exit/label/badge khớp CHÍNH XÁC giá
+trị tính từ `tokens.css` thật ở cả 2 theme (không còn số copy tay), kể cả
+`--dry-shadow-channel`'s dark-mode switch (`0 0 0` thay vì `145 158 171`) qua
+đúng `@media (prefers-color-scheme: dark)` rule thật của `tokens.css`, không
+phải block riêng VEI tự viết (đã xoá). `bun run typecheck`/`test` (804
+pass)/`build` xanh - bundle `appsVeiOverlay` tăng ~11.7kB → ~18.6kB (gzip
+4.78kB → 6.52kB) vì nhúng nguyên `tokens.css`, chấp nhận được để đổi lấy
+không bao giờ lệch màu nữa.
+
+**Polish đợt 7 (2026-08-06, cùng ngày): spinner khi enter/exit, ẩn hẳn nút
+"Preview all" khi rỗng, highlight field bằng div nổi thay outline, fix bug
+dock không co lại.**
+
+- **Spinner ngay khi click Edit content/Exit**: `/vei/enter`/`/vei/exit` là
+  navigation thật (`window.location.href`), không tránh được reload (xem
+  giải thích đã đưa cho người dùng - cookie cần round-trip `Set-Cookie`
+  thật, marker chỉ tồn tại trong 1 lần render mới từ server). Thêm
+  `navigateWithSpinner()` trong `overlay.ts`: disable nút + đổi thành
+  spinner+text ("Opening editor"/"Exiting") NGAY trong click handler, trước
+  khi set `location.href` - cho người dùng thấy phản hồi tức thì trong lúc
+  chờ network round-trip, đỡ cảm giác nút bị "nháy"/giật. Verify Playwright:
+  đọc state nút NGAY trong cùng 1 `evaluate()` vừa dispatch `click()` (tránh
+  race với unload), cả 2 nút Edit content và Exit đều disabled+spinner đúng.
+
+- **Ẩn hẳn nút "Preview all" khi không có draft nào** (trước chỉ ẩn badge số,
+  nút vẫn còn). `refreshPreviewCount()` giờ set
+  `previewButton.style.display = "none"` khi `records.length === 0`.
+
+- **Highlight field khi hover trong VEI đổi từ CSS outline sang 1 div nổi
+  riêng** (`.field-highlight`, `position: fixed`, `pointer-events: none`,
+  z-index bằng `.dock`) - theo yêu cầu: outline vẽ trực tiếp trên field bị
+  ăn theo stacking context/clipping của field đó, nên field nằm trong
+  `overflow: hidden` hoặc bị component khác đè z-index cao hơn thì outline
+  bị cắt/che. Div highlight là con của `scope` (chính shadow host đã gắn
+  thẳng vào `<body>`, ngang hàng `.dock`) nên không bị 2 vấn đề đó.
+  `overlay.ts` track bằng `mousemove` (capture) + `markedElementFor()` có
+  sẵn, định vị qua `getBoundingClientRect()`, đồng bộ lại khi `scroll`
+  (capture, bắt được cả scroll trong container lồng nhau) hoặc `resize`.
+  Baseline dashed outline (mọi field có thể sửa, không chỉ field đang hover)
+  vẫn giữ nguyên trong `MARKER_STYLES` - chỉ bỏ riêng rule `:hover` cũ (nay
+  do div JS đảm nhiệm). `hideHighlight()` gọi thêm lúc `openFrame()` mở
+  dialog (phòng hờ, dù backdrop `.sheet` đã che kín rồi). Verify Playwright:
+  hover đúng field ra div `position: fixed` khớp toạ độ
+  `getBoundingClientRect()` của field (sai số ≤2px), rời chuột ra thì ẩn.
+
+- **Bug tự phát hiện lúc verify polish trên: dock không co lại khi ẩn nút**.
+  `animateDockWidth()` cũ đo "after" bằng `dock.scrollWidth` ngay sau khi
+  `dock.style.width` còn đang bị khoá cứng ở giá trị `before` - `scrollWidth`
+  chỉ báo được phần con NHÔ RA ngoài box hiện tại (đúng khi nội dung tăng),
+  không báo được khi nội dung GIẢM (ẩn hẳn "Preview all") vì box vẫn còn đủ
+  rộng để chứa, không có gì "overflow" để đo. Sửa: nhả `dock.style.width =
+  "auto"` để đo kích thước tự nhiên thật bằng `getBoundingClientRect().width`
+  (đúng cả 2 chiều tăng/giảm), rồi khoá lại `before`px trước khi chạy
+  animation sang giá trị đo được. Verify Playwright: dock 221px (0 draft) →
+  353px (1 draft, "Preview all" hiện) → về đúng lại 221px (reset draft) -
+  không còn kẹt ở 345px như trước khi sửa.
+
+Không có file mới, chỉ sửa `overlay.ts` + `overlay-styles.ts`. `bun run
+typecheck`/`test` (804 pass)/`build` xanh.

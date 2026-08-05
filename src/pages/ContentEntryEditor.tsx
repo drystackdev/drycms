@@ -66,6 +66,7 @@ function renderFieldNodes(
   onFieldChange: (fieldName: string, fieldValue: unknown) => void,
   allTypes: ContentTypeDefinition[],
   checkSecretKey?: FieldRendererProps["checkSecretKey"],
+  revealPath?: string[],
 ) {
   const elements = [];
   for (let i = 0; i < nodes.length; i++) {
@@ -111,6 +112,7 @@ function renderFieldNodes(
           error={fieldErrors[node.fieldName]}
           allTypes={allTypes}
           checkSecretKey={node.kind === "column" && node.fieldName === "key" ? checkSecretKey : undefined}
+          revealPath={revealPath?.[0] === node.fieldName ? revealPath : undefined}
         />
       </div>,
     );
@@ -329,7 +331,21 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // flash its outline. `scrollField` itself never changes without a
   // navigation, but `value` flips from `null` exactly once per load - that's
   // the real "fields are on screen now" signal this effect waits for.
+  //
+  // `?_path=` (`overlay.ts`'s `editorUrl`, only ever set alongside `_field`
+  // and only when the click landed inside a `component-repeat` item) reaches
+  // further than a top-level field can highlight on its own - `revealPath`
+  // below threads it through `renderFieldNodes` -> `FieldRenderer` ->
+  // `ComponentField.tsx`'s `revealIndex`/`revealField`, which opens that
+  // item's own dialog (otherwise unreachable - its fields don't exist in the
+  // DOM until then) and flashes the field inside it. This effect still
+  // flashes the top-level field regardless, same as a plain `?_field=` -
+  // harmless even when a dialog immediately opens over it, and correct on
+  // its own for a nested `flatten` path (no dialog involved) `revealPath`
+  // doesn't otherwise resolve any deeper than its own fieldset.
   const [scrollField] = useParam("_field");
+  const [scrollPath] = useParam("_path");
+  const revealPath = scrollPath ? scrollPath.split(".") : scrollField ? [scrollField] : undefined;
   useEffect(() => {
     if (!scrollField || value === null) return;
     scrollToField(scrollField);
@@ -492,7 +508,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   return (
     <>
       <div class="page-header">
-        {!isSingleton && (
+        {/* No list to go back to inside the VEI dialog - same reasoning as
+         * the Cancel button below not navigating there either. */}
+        {!isSingleton && !veiFrame && (
           <button
             type="button"
             class="icon ghost"
@@ -540,6 +558,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             updateFieldValue,
             allTypes,
             typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
+            revealPath,
           )}
         </div>
 
@@ -551,6 +570,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             updateFieldValue,
             allTypes,
             typeSlug === "aiKey" && isNew ? { onCheck: handleCheckAiKey, loading: checkingAiKey, result: aiKeyCheck } : undefined,
+            revealPath,
           )}
 
           {canDelete && (

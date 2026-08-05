@@ -43,6 +43,38 @@ function currentLocation(): string {
   return `${window.location.pathname}${window.location.search}`;
 }
 
+/** Toggling edit mode round-trips through a real `/vei/enter`/`/vei/exit`
+ * navigation (see `navigateWithSpinner`), which reloads the document from
+ * scratch and would otherwise always land back at the top of the page.
+ * `sessionStorage` carries the scroll offset across that reload - a query
+ * param on `to` would work too, but would also leak into the URL bar and
+ * survive a manual refresh, which this shouldn't. */
+const SCROLL_STORAGE_KEY = "dry-vei-scroll";
+
+function storeScrollPosition(): void {
+  sessionStorage.setItem(SCROLL_STORAGE_KEY, JSON.stringify({ x: window.scrollX, y: window.scrollY }));
+}
+
+/** Restores whatever `storeScrollPosition` saved before the enter/exit
+ * navigation, then discards it - a stale value must not resurrect itself on
+ * some later, unrelated reload. Applied twice: once immediately, and once
+ * more on `load` in case images/fonts still loading at that point shift the
+ * layout enough to make the first jump land short. */
+function restoreScrollPosition(): void {
+  const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+  if (!raw) return;
+  sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+  let position: { x: number; y: number };
+  try {
+    position = JSON.parse(raw) as { x: number; y: number };
+  } catch {
+    return;
+  }
+  const apply = () => window.scrollTo(position.x, position.y);
+  apply();
+  window.addEventListener("load", apply, { once: true });
+}
+
 /** Every marker on one element, across the text marker and the
  * attribute-scoped ones (`data-dry-src`, `data-dry-html`). */
 function refsOn(element: Element): DryRef[] {
@@ -73,7 +105,11 @@ function markedElementFor(event: Event): Element | null {
  * `${path}/content/<name>` is its editor URL, and `ContentEntryList`
  * forwards that route to the editor.
  */
-function editorUrl(config: VeiConfig, target: EditTarget, fieldPath?: string): string {
+function editorUrl(
+  config: VeiConfig,
+  target: EditTarget,
+  fieldPath?: string,
+): string {
   // The admin addresses an entry by its OBFUSCATED id (`id-hash.ts`), while
   // a ref carries the real row id the reader returned - `/content/blog/38`
   // is a 404, `/content/blog/3nWuyG` is the same row.
@@ -114,15 +150,22 @@ function valueAtPath(value: unknown, path: string, fromField: string): unknown {
  * diverge, which is fine for a page that never re-renders after hydration:
  * this is an MPA, and edit mode adds no client router.
  */
-function applyPreview(detail: { name: string; value: unknown; typeSlug: string; entryId: string | null }): void {
+function applyPreview(detail: {
+  name: string;
+  value: unknown;
+  typeSlug: string;
+  entryId: string | null;
+}): void {
   for (const node of document.querySelectorAll("*")) {
     for (const attribute of node.getAttributeNames()) {
-      if (attribute !== "data-dry" && !attribute.startsWith("data-dry-")) continue;
+      if (attribute !== "data-dry" && !attribute.startsWith("data-dry-"))
+        continue;
       for (const ref of decodeRefs(node.getAttribute(attribute))) {
         if (ref.type !== detail.typeSlug) continue;
         // A singleton's editor has no entry id of its own, so the type name
         // alone identifies it - matching `draftKey`'s own convention.
-        if (detail.entryId !== null && encodeEntryId(ref.id) !== detail.entryId) continue;
+        if (detail.entryId !== null && encodeEntryId(ref.id) !== detail.entryId)
+          continue;
         const next = valueAtPath(detail.value, ref.path, detail.name);
         if (next === undefined) continue;
         const target = attribute.slice("data-dry-".length);
@@ -149,9 +192,14 @@ function markedTargets(): EditTarget[] {
   const targets = new Map<string, EditTarget>();
   for (const node of document.querySelectorAll("*")) {
     for (const attribute of node.getAttributeNames()) {
-      if (attribute !== "data-dry" && !attribute.startsWith("data-dry-")) continue;
+      if (attribute !== "data-dry" && !attribute.startsWith("data-dry-"))
+        continue;
       for (const ref of decodeRefs(node.getAttribute(attribute))) {
-        targets.set(`${ref.type}:${ref.id}`, { kind: ref.kind, type: ref.type, id: ref.id });
+        targets.set(`${ref.type}:${ref.id}`, {
+          kind: ref.kind,
+          type: ref.type,
+          id: ref.id,
+        });
       }
     }
   }
@@ -184,6 +232,11 @@ function element<K extends keyof HTMLElementTagNameMap>(
 }
 
 function main(): void {
+  // Runs before either early-return below: a toggle can round-trip through
+  // either state (turning edit mode on OR off both go through
+  // navigateWithSpinner), so whichever page comes back has to check.
+  restoreScrollPosition();
+
   const config = readConfig();
   if (!config) return;
   if (!config.edit && !hasAdminHint()) return;
@@ -192,31 +245,92 @@ function main(): void {
   host.id = "dry-vei-overlay";
   const root = host.attachShadow({ mode: "open" });
   root.append(element("style", { textContent: OVERLAY_STYLES }));
+  // Everything else renders inside this wrapper rather than directly under
+  // the shadow root: `overlay-styles.ts` shares the real admin palette
+  // (`styles/tokens.css`, imported raw rather than hand-copied) by inlining
+  // it verbatim, and its rules are scoped to `.dry` exactly like the admin
+  // bundle itself scopes them - `scope` is the one element inside this
+  // shadow tree that actually carries that class for them to match.
+  const scope = element("div", { className: "dry" });
+  root.append(scope);
   document.body.append(host);
 
-  const enter = () => {
-    window.location.href = `${config.path}/vei/enter?to=${encodeURIComponent(currentLocation())}`;
-  };
-  const exit = () => {
-    window.location.href = `${config.path}/vei/exit?to=${encodeURIComponent(currentLocation())}`;
-  };
+  /**
+   * `/vei/enter`/`/vei/exit` are real navigations (a cookie only takes effect
+   * through a genuine `Set-Cookie` round trip, and the markers this whole
+   * overlay depends on only exist in a fresh server render - see
+   * `status/vei.md`'s writeup of why this can't be done client-side). That
+   * round trip isn't instant, so swapping the clicked button to a spinner
+   * BEFORE kicking off the navigation gives it something to show for that
+   * gap instead of just sitting there until the browser starts unloading -
+   * same idea as `setSaving()` below, just for a real page transition
+   * instead of `saveAll()`'s own async work.
+   */
+  function navigateWithSpinner(
+    button: HTMLButtonElement,
+    label: string,
+    url: string,
+  ): void {
+    storeScrollPosition();
+    button.disabled = true;
+    button.replaceChildren(
+      element("span", { className: "vei-spinner" }),
+      document.createTextNode(label),
+    );
+    window.location.href = url;
+  }
 
   if (!config.edit) {
-    const button = element("button", { type: "button", textContent: "Edit content" });
-    button.addEventListener("click", enter);
-    root.append(element("div", { className: "dock" }, [button]));
+    const button = element("button", {
+      type: "button",
+      textContent: "Edit content",
+    });
+    button.addEventListener("click", () =>
+      navigateWithSpinner(
+        button,
+        "Opening editor",
+        `${config.path}/vei/enter?to=${encodeURIComponent(currentLocation())}`,
+      ),
+    );
+    scope.append(element("div", { className: "dock" }, [button]));
     return;
   }
 
   document.head.append(element("style", { textContent: MARKER_STYLES }));
   document.documentElement.classList.add(EDITING_CLASS);
 
-  const exitButton = element("button", { type: "button", className: "ghost", textContent: "Exit" });
-  exitButton.addEventListener("click", exit);
-  const saveButton = element("button", { type: "button" }, [document.createTextNode("Save")]);
-  const status = element("span", { className: "label", textContent: "Edit mode" });
-  const dock = element("div", { className: "dock" }, [status, saveButton, exitButton]);
-  root.append(dock);
+  const exitButton = element("button", {
+    type: "button",
+    className: "ghost",
+    textContent: "Exit",
+  });
+  exitButton.addEventListener("click", () =>
+    navigateWithSpinner(
+      exitButton,
+      "Exiting",
+      `${config.path}/vei/exit?to=${encodeURIComponent(currentLocation())}`,
+    ),
+  );
+  const previewCount = element("span", { className: "badge sm secondary" });
+  const previewButton = element(
+    "button",
+    { type: "button", className: "ghost" },
+    [document.createTextNode("Preview all"), previewCount],
+  );
+  const saveButton = element("button", { type: "button" }, [
+    document.createTextNode("Save"),
+  ]);
+  const status = element("span", {
+    className: "label",
+    textContent: "Edit mode",
+  });
+  const dock = element("div", { className: "dock" }, [
+    status,
+    previewButton,
+    saveButton,
+    exitButton,
+  ]);
+  scope.append(dock);
 
   /**
    * Runs `mutate` (a status-text or Save-button content change) and animates
@@ -232,13 +346,25 @@ function main(): void {
    * actually commit to a rendered frame before setting the "after" width
    * counts as a change to transition FROM, rather than both writes
    * collapsing into one with nothing to animate.
+   *
+   * The "after" width is measured with the explicit width released back to
+   * "auto" rather than read straight off `scrollWidth` - `scrollWidth` on an
+   * element that's still pinned to `before`px can only ever report a value
+   * >= that (it measures overflow past the current box, not the content's
+   * own natural size), so it correctly grows a mutation that adds content
+   * but can't shrink one that removes it (e.g. "Preview all" going
+   * `display: none` entirely, not just its badge). "auto" always yields the
+   * true content-fit size in either direction.
    */
   function animateDockWidth(mutate: () => void): void {
     const before = dock.getBoundingClientRect().width;
     dock.style.width = `${before}px`;
     mutate();
+    dock.style.width = "auto";
+    const after = dock.getBoundingClientRect().width;
+    dock.style.width = `${before}px`;
     requestAnimationFrame(() => {
-      dock.style.width = `${dock.scrollWidth}px`;
+      dock.style.width = `${after}px`;
     });
   }
 
@@ -256,14 +382,105 @@ function main(): void {
       saveButton.disabled = saving;
       saveButton.replaceChildren(
         ...(saving
-          ? [element("span", { className: "vei-spinner" }), document.createTextNode("Saving")]
+          ? [
+              element("span", { className: "vei-spinner" }),
+              document.createTextNode("Saving"),
+            ]
           : [document.createTextNode("Save")]),
       );
     });
   }
 
+  /** The dock's "Preview all" badge - every distinct entry/singleton with a
+   * pending draft ANYWHERE on the site, not just this page (unlike
+   * `pendingTargets()` below, which `saveAll()` deliberately scopes to what
+   * this page marks). Reads IndexedDB directly rather than diffing each
+   * draft against its server value (what `pages/vei/ChangesPreview.tsx`
+   * itself does) - that's a network round trip per entry, too heavy to redo
+   * on every keystroke just for a badge count. */
+  async function refreshPreviewCount(): Promise<void> {
+    const records = await getAllEntryDraftRecords();
+    animateDockWidth(() => {
+      previewCount.textContent = String(records.length);
+      // Nothing to preview yet - the whole button goes away rather than
+      // sitting there disabled or pointing at an empty page.
+      previewButton.style.display = records.length > 0 ? "" : "none";
+    });
+  }
+  void refreshPreviewCount();
+
+  // A field's debounced IndexedDB write (`saveEntryDraft`'s 300ms) lags the
+  // `vei:input` message that triggers this, so the badge is deliberately
+  // read back after it - and coalesced into one timer per burst of keystrokes
+  // rather than one refresh per keystroke.
+  let previewCountTimer: ReturnType<typeof setTimeout> | undefined;
+  function schedulePreviewCountRefresh(): void {
+    clearTimeout(previewCountTimer);
+    previewCountTimer = setTimeout(() => void refreshPreviewCount(), 400);
+  }
+
+  /**
+   * The hover highlight around whatever marked field is under the pointer -
+   * a `position: fixed` box (`.field-highlight`, `overlay-styles.ts`) that
+   * this shadow host's own JS positions from `getBoundingClientRect()`,
+   * replacing the old CSS `:hover { outline }` on the field itself. An
+   * outline inherits the field's own stacking context and clipping - a
+   * field inside an `overflow: hidden` carousel/panel, or sitting behind a
+   * higher z-index sibling, would have it clipped or covered. This box is a
+   * sibling of the whole page (appended straight to `<body>`, same as
+   * `.dock`) instead, so neither problem applies.
+   */
+  const highlight = element("div", { className: "field-highlight" });
+  scope.append(highlight);
+  let hoveredElement: Element | null = null;
+
+  function positionHighlight(el: Element): void {
+    const rect = el.getBoundingClientRect();
+    highlight.style.left = `${rect.left - 2}px`;
+    highlight.style.top = `${rect.top -2}px`;
+    highlight.style.width = `${rect.width + 4}px`;
+    highlight.style.height = `${rect.height + 4}px`;
+    highlight.style.display = "block";
+    highlight.style.borderRadius = getComputedStyle(el).borderRadius;
+  }
+
+  function hideHighlight(): void {
+    hoveredElement = null;
+    highlight.style.display = "none";
+  }
+
+  document.addEventListener(
+    "mousemove",
+    (event) => {
+      if (sheet.isConnected) return;
+      const marked = markedElementFor(event);
+      if (!marked) {
+        hideHighlight();
+        return;
+      }
+      hoveredElement = marked;
+      positionHighlight(marked);
+    },
+    true,
+  );
+
+  // The pointer doesn't have to move for the highlighted rect to go stale -
+  // the page underneath can scroll (capture phase still sees this even from
+  // a nested scroll container, even though `scroll` itself doesn't bubble)
+  // or resize while hovering the same element.
+  document.addEventListener(
+    "scroll",
+    () => {
+      if (hoveredElement) positionHighlight(hoveredElement);
+    },
+    true,
+  );
+  window.addEventListener("resize", () => {
+    if (hoveredElement) positionHighlight(hoveredElement);
+  });
+
   const agent = element("iframe", { className: "agent" });
-  root.append(agent);
+  scope.append(agent);
 
   /**
    * Replays one entry through the REAL editor: point the hidden frame at
@@ -280,9 +497,17 @@ function main(): void {
         resolve(ok);
       };
       const onMessage = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin || event.source !== agent.contentWindow) return;
+        if (
+          event.origin !== window.location.origin ||
+          event.source !== agent.contentWindow
+        )
+          return;
         const message = event.data as { type?: string; ok?: boolean } | null;
-        if (message?.type === "vei:ready") agent.contentWindow?.postMessage({ type: "vei:save" }, window.location.origin);
+        if (message?.type === "vei:ready")
+          agent.contentWindow?.postMessage(
+            { type: "vei:save" },
+            window.location.origin,
+          );
         else if (message?.type === "vei:saved") done(message.ok === true);
       };
       // A frame that never reports back (a load failure, a session that
@@ -308,6 +533,11 @@ function main(): void {
     if (failed > 0) {
       setStatus(`${failed}/${targets.length} entries failed to save`);
       setSaving(false);
+      // The entries that DID succeed had their drafts discarded already
+      // (inside `ContentEntryEditor`'s own `handleSave`) - only the reload
+      // path below skips this because it's about to throw the whole badge
+      // away anyway.
+      void refreshPreviewCount();
       return;
     }
     // The page has to come back from the server: `pages-cache` has already
@@ -325,7 +555,9 @@ function main(): void {
   // below via `postMessage` through `pages/vei/bridge.ts`).
   const sheet = element("div", { className: "sheet" });
   const frame = element("iframe");
-  const panelLoading = element("div", { className: "panel-loading" }, [element("span", { className: "vei-spinner lg" })]);
+  const panelLoading = element("div", { className: "panel-loading" }, [
+    element("span", { className: "vei-spinner lg" }),
+  ]);
   const panel = element("div", { className: "panel" }, [frame, panelLoading]);
   sheet.append(panel);
   sheet.addEventListener("click", (event) => {
@@ -334,22 +566,41 @@ function main(): void {
 
   let dialogLoadTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function openDialog(ref: DryRef): void {
+  /** Opens the dialog on an arbitrary admin URL - the one field-edit dialog
+   * this overlay otherwise only ever points at one entry's editor
+   * (`openDialog` below), but "Preview all" has no single entry to aim at. */
+  function openFrame(url: string): void {
+    hideHighlight();
     panel.classList.add("loading");
-    frame.src = editorUrl(config as VeiConfig, ref, ref.path);
-    root.append(sheet);
+    frame.src = url;
+    scope.append(sheet);
     // The panel-loading spinner covers the iframe until its bridge announces
     // `vei:ready` (below) - a frame that never gets that far (a stalled
     // request, an unexpected redirect out of the SPA) must not leave it
     // spinning forever, so this reveals whatever the frame DID load anyway.
     clearTimeout(dialogLoadTimer);
-    dialogLoadTimer = setTimeout(() => panel.classList.remove("loading"), 15000);
+    dialogLoadTimer = setTimeout(
+      () => panel.classList.remove("loading"),
+      15000,
+    );
   }
+
+  function openDialog(ref: DryRef): void {
+    openFrame(editorUrl(config as VeiConfig, ref, ref.path));
+  }
+
+  previewButton.addEventListener("click", () =>
+    openFrame(`${config.path}/vei/changes?_vei=1`),
+  );
 
   function closeDialog(): void {
     clearTimeout(dialogLoadTimer);
     sheet.remove();
     frame.removeAttribute("src");
+    // Whatever ran in that frame - an edit, a Reset all from its own Preview
+    // dialog, a visit to `/vei/changes` itself - may have changed the set of
+    // pending drafts, so the badge could be stale the moment this closes.
+    void refreshPreviewCount();
   }
 
   document.addEventListener("keydown", (event) => {
@@ -360,12 +611,22 @@ function main(): void {
   // site), so anything from another origin - or from a window that isn't
   // our dialog - is not ours to act on.
   window.addEventListener("message", (event) => {
-    if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
-    const message = event.data as { type?: string; detail?: Parameters<typeof applyPreview>[0] };
+    if (
+      event.origin !== window.location.origin ||
+      event.source !== frame.contentWindow
+    )
+      return;
+    const message = event.data as {
+      type?: string;
+      detail?: Parameters<typeof applyPreview>[0];
+    };
     if (message?.type === "vei:ready") {
       clearTimeout(dialogLoadTimer);
       panel.classList.remove("loading");
-    } else if (message?.type === "vei:input" && message.detail) applyPreview(message.detail);
+    } else if (message?.type === "vei:input" && message.detail) {
+      applyPreview(message.detail);
+      schedulePreviewCountRefresh();
+    }
     // Escape pressed with focus inside the frame never reaches this
     // document's own keydown listener - the bridge forwards it.
     else if (message?.type === "vei:close") closeDialog();

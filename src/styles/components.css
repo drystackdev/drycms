@@ -301,10 +301,10 @@
   @keyframes dry-entry-field-highlight {
     0%,
     40% {
-      outline-color: var(--dry-primary);
+      opacity: 1;
     }
     100% {
-      outline-color: transparent;
+      opacity: 0;
     }
   }
 
@@ -2757,8 +2757,8 @@
       top: 0;
       padding-block-start: 0.5rem;
       margin-block-start: -0.5rem;
-      margin-inline: -2rem;
-      padding-inline: 2rem;
+      margin-inline: -1.5rem;
+      padding-inline: 1.5rem;
     }
 
     /* Sticky so a page's title and its primary actions (Save/Cancel/Preview,
@@ -3058,16 +3058,24 @@
     }
 
     /* `?_field=` deep link (`field-events.ts`'s own `scrollToField`) - a
-     * temporary outline on the target field's own wrapper, faded out by the
-     * animation itself rather than an abrupt class removal (the matching JS
-     * `setTimeout` in `scrollToField` still removes the class after the same
-     * 1.5s, so a field visited twice in a row - two dispatches of the same
-     * `_field` value - restarts the animation cleanly instead of doing
-     * nothing the second time). */
+     * temporary ring around the target field, faded out by the animation
+     * itself rather than an abrupt removal. Not an outline on the field's
+     * own wrapper: an outline is clipped by any scrolling/`overflow: hidden`
+     * ancestor (e.g. `ComponentField.tsx`'s own repeatable-item dialog body)
+     * the moment the field sits flush with its edge. `field-anchor.ts`
+     * instead appends this as a `position: fixed` box sized from the
+     * field's own `getBoundingClientRect()` - a sibling of the whole page
+     * (or of the nearest `<dialog>` ancestor, so it still paints above a
+     * modal's own top-layer content) - and removes it after the same 1.5s
+     * this animation runs, so a field visited twice in a row restarts
+     * cleanly instead of doing nothing the second time. */
     .entry-field-highlight {
-      outline: 2px solid var(--dry-primary);
-      outline-offset: 4px;
+      position: fixed;
+      z-index: 100;
+      pointer-events: none;
+      border: 2px solid var(--dry-primary);
       border-radius: var(--dry-radius-md);
+      background: color-mix(in srgb, var(--dry-primary) 8%, transparent);
       animation: dry-entry-field-highlight 1.5s ease-out;
     }
 
