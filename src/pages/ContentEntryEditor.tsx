@@ -394,7 +394,14 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // the dialog instead of leaving it open on an empty list. `previewDiffs`
     // here is the PRE-reset diff (this render's closure), so `<= 1` means
     // this field was the only one left.
-    if (previewDiffs.length <= 1) setShowPreview(false);
+    if (previewDiffs.length <= 1) {
+      setShowPreview(false);
+      // The value is about to match what's last saved again, so `isDirty`
+      // goes false and the autosave effect above never fires to update the
+      // draft - discard it here instead, same as `handleResetAll` already
+      // does, or the stale pre-reset draft lingers in IndexedDB forever.
+      void discardEntryDraft(typeSlug, draftEntryId);
+    }
   }
 
   function handleResetAll() {

@@ -3,10 +3,20 @@ import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import type { JSX } from "preact/jsx-runtime";
 const { path } = window.__DRY_CONFIG__;
-import DataTable, { type DataTableColumn, type SortState } from "../components/DataTable.js";
+import DataTable, {
+  type DataTableColumn,
+  type SortState,
+} from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../storage/http-source.js";
-import { ArrowDownIcon, ArrowLeftIcon, ComponentIcon, EyeIcon, PlusIcon, XIcon } from "../components/icons/index.js";
+import {
+  ArrowDownIcon,
+  ArrowLeftIcon,
+  ComponentIcon,
+  EyeIcon,
+  PlusIcon,
+  XIcon,
+} from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import CodeBlock from "../components/CodeBlock.js";
 import { useDialogSync } from "../hooks/list-nav.js";
@@ -16,7 +26,10 @@ import {
   type EntryFieldNode,
   type QueryableColumn,
 } from "../content-types/engine/entry-tree.js";
-import { createContentEntriesApi, type EntryListResult } from "../content-types/entries-http-api.js";
+import {
+  createContentEntriesApi,
+  type EntryListResult,
+} from "../content-types/entries-http-api.js";
 import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { hasEntryDraft } from "../content-types/entry-draft-store.js";
@@ -46,7 +59,11 @@ const DEFAULT_PAGE_SIZE = 10;
 const CLIENT_SEARCH_FETCH_ALL_SIZE = 10_000;
 
 function isMaskedValue(value: unknown): value is MaskedValue {
-  return typeof value === "object" && value !== null && "hasExisting" in (value as Record<string, unknown>);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "hasExisting" in (value as Record<string, unknown>)
+  );
 }
 
 /** Flattens a nested `flatten`-component entry value (e.g. `{ seo: { metaTitle:
@@ -57,12 +74,23 @@ function isMaskedValue(value: unknown): value is MaskedValue {
  * before they're usable as row data. Only descends into plain objects: arrays
  * (relation id lists, repeatable-component rows, neither of which get a
  * dotted-path column here) and other value types are left as-is. */
-function flattenRowValue(value: Record<string, unknown>, prefix = ""): Record<string, unknown> {
+function flattenRowValue(
+  value: Record<string, unknown>,
+  prefix = "",
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(value)) {
     const fieldName = prefix ? `${prefix}.${key}` : key;
-    if (val !== null && typeof val === "object" && !Array.isArray(val) && !isMaskedValue(val)) {
-      Object.assign(out, flattenRowValue(val as Record<string, unknown>, fieldName));
+    if (
+      val !== null &&
+      typeof val === "object" &&
+      !Array.isArray(val) &&
+      !isMaskedValue(val)
+    ) {
+      Object.assign(
+        out,
+        flattenRowValue(val as Record<string, unknown>, fieldName),
+      );
     } else {
       out[fieldName] = val;
     }
@@ -90,21 +118,33 @@ function renderCell(
     const on = !!value;
     return (
       <span class="row" style={{ gap: "0.375rem" }}>
-        <input type="checkbox" role="switch" checked={on} disabled aria-label={on ? "On" : "Off"} />
+        <input
+          type="checkbox"
+          role="switch"
+          checked={on}
+          disabled
+          aria-label={on ? "On" : "Off"}
+        />
         <span>{on ? "On" : "Off"}</span>
       </span>
     );
   }
 
-  if (value === null || value === undefined || value === "") return <small><i>No value</i></small>;
+  if (value === null || value === undefined || value === "")
+    return (
+      <small>
+        <i>No value</i>
+      </small>
+    );
 
   // The system `slug` field (`features.slug` - see `system-fields.ts`) always
   // ships paired with a sibling `title` field; a manually `format: "slug"`
   // text field may not have one, so this still degrades to just the slug.
-  if (column.fieldType === "text" && (column.fieldName === "slug" || column.validation.format === "slug")) {
-    return (
-      <small class="hint">{String(value)}</small>
-    );
+  if (
+    column.fieldType === "text" &&
+    (column.fieldName === "slug" || column.validation.format === "slug")
+  ) {
+    return <small class="hint">{String(value)}</small>;
   }
 
   if (column.validation.format === "email") {
@@ -119,11 +159,29 @@ function renderCell(
   // (same `CodeBlock`/`formatHtml` combo `IconPreviewDialog.tsx` uses for its snippet).
   if (column.fieldType === "richtext") {
     if (config.inline) {
-      const plainText = String(value).replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
-      return plainText ? <>{plainText}</> : <small><i>No value</i></small>;
+      return value ? (
+        <p
+          class="richtext-preview"
+          dangerouslySetInnerHTML={{ __html: String(value) }}
+        />
+      ) : (
+        <small>
+          <i>No value</i>
+        </small>
+      );
     }
     return (
-      <button type="button" class="outline sm" onClick={() => onPreviewRichText(column.label, String(value))}>
+      <button
+        type="button"
+        class="outline sm"
+        // Cell clicks otherwise bubble to the row's `onRowClick` (navigates to the
+        // entry editor - see `DataTable.tsx`'s `<tr onClick>`), which would fire
+        // right alongside opening this dialog.
+        onClick={(event) => {
+          event.stopPropagation();
+          onPreviewRichText(column.label, String(value));
+        }}
+      >
         <EyeIcon /> View HTML
       </button>
     );
@@ -150,9 +208,16 @@ function renderCell(
     return (
       <span class="row" style={{ gap: "0.375rem" }}>
         {shown.map((id) => (
-          <img key={String(id)} class={cellClass} src={`${path}/api/storage/${encodePath(String(id))}`} alt="" />
+          <img
+            key={String(id)}
+            class={cellClass}
+            src={`${path}/api/storage/${encodePath(String(id))}`}
+            alt=""
+          />
         ))}
-        {ids.length > shown.length && <small class="hint">+{ids.length - shown.length}</small>}
+        {ids.length > shown.length && (
+          <small class="hint">+{ids.length - shown.length}</small>
+        )}
       </span>
     );
   }
@@ -171,6 +236,49 @@ function renderCell(
   return <>{String(value)}</>;
 }
 
+/** Opened by a block-level richtext cell's "View HTML" button (`renderCell`
+ * above) - same `CodeBlock`/`formatHtml` pattern `IconPreviewDialog.tsx` uses
+ * for its own read-only snippet view. */
+function RichTextPreviewDialog({
+  preview,
+  onClose,
+}: {
+  preview: { label: string; html: string } | null;
+  onClose: () => void;
+}) {
+  const ref = useDialogSync(preview !== null, onClose);
+  return (
+    <dialog
+      ref={ref}
+      class="lg"
+      aria-label={preview ? `${preview.label} HTML` : "HTML preview"}
+    >
+      {preview && (
+        <>
+          <header class="row justify-between">
+            <h3>{preview.label}</h3>
+            <button type="button" class="icon ghost" onClick={onClose}>
+              <XIcon />
+            </button>
+          </header>
+          <CodeBlock
+            code={preview.html}
+            formatHtml
+            wrap
+            copyable
+            maxHeight="min(70vh, 32rem)"
+          />
+          <footer>
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          </footer>
+        </>
+      )}
+    </dialog>
+  );
+}
+
 interface RelationColumn {
   fieldName: string;
   label: string;
@@ -178,7 +286,9 @@ interface RelationColumn {
   cardinality: RelationCardinality;
 }
 
-type ListCell = { kind: "field"; column: QueryableColumn } | { kind: "relation"; column: RelationColumn };
+type ListCell =
+  | { kind: "field"; column: QueryableColumn }
+  | { kind: "relation"; column: RelationColumn };
 
 /** Mirrors `entry-tree.ts`'s own `UNDISPLAYABLE_FIELD_TYPES` (kept private
  * there) - `password` and `secretkey` never round-trip a real value to the
@@ -196,10 +306,16 @@ const UNDISPLAYABLE_FIELD_TYPES = new Set(["password", "secretkey"]);
  * `relation-mirror`/`component-repeat` nodes are silently skipped, same as
  * `flattenDisplayColumns` already does.
  */
-function collectListCells(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): ListCell[] {
+function collectListCells(
+  nodes: EntryFieldNode[],
+  pathPrefix = "",
+  labelPrefix = "",
+): ListCell[] {
   const out: ListCell[] = [];
   for (const node of nodes) {
-    const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+    const fieldName = pathPrefix
+      ? `${pathPrefix}.${node.fieldName}`
+      : node.fieldName;
     const label = labelPrefix ? `${labelPrefix} / ${node.label}` : node.label;
     if (node.kind === "column") {
       if (UNDISPLAYABLE_FIELD_TYPES.has(node.fieldType)) continue;
@@ -218,7 +334,15 @@ function collectListCells(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix 
     } else if (node.kind === "flatten") {
       out.push(...collectListCells(node.children, fieldName, label));
     } else if (node.kind === "relation") {
-      out.push({ kind: "relation", column: { fieldName, label, targetTypeId: node.targetTypeId, cardinality: node.cardinality } });
+      out.push({
+        kind: "relation",
+        column: {
+          fieldName,
+          label,
+          targetTypeId: node.targetTypeId,
+          cardinality: node.cardinality,
+        },
+      });
     }
   }
   return out;
@@ -266,29 +390,47 @@ function renderRelationCell(
 
 export default function ContentEntryList({ typeSlug }: Props) {
   const { route } = useLocation();
-  const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  const typesApi = useMemo(
+    () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
 
-  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
+  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(
+    null,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     typesApi
       .list()
       .then(setAllTypes)
-      .catch((error) => setLoadError(error instanceof Error ? error.message : "Failed to load content types."));
+      .catch((error) =>
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load content types.",
+        ),
+      );
   }, [typesApi]);
 
-  const type = allTypes?.find((t) => t.name === typeSlug && t.kind !== "component");
+  const type = allTypes?.find(
+    (t) => t.name === typeSlug && t.kind !== "component",
+  );
   const showTypeLoading = useDelayedLoading(allTypes === null);
 
   useDocumentTitle(type ? `${type.label} entries` : "Content");
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (allTypes === null) return showTypeLoading ? <span class="hint">Loading…</span> : null;
-  if (!type) return <span class="error">Content type "{typeSlug}" not found.</span>;
+  if (allTypes === null)
+    return showTypeLoading ? <span class="hint">Loading…</span> : null;
+  if (!type)
+    return <span class="error">Content type "{typeSlug}" not found.</span>;
 
   const readAction = type.kind === "singleton" ? "setting" : "view";
-  if (!canAccess(type.id, readAction)) return <span class="error">You don't have permission to view this content.</span>;
+  if (!canAccess(type.id, readAction))
+    return (
+      <span class="error">You don't have permission to view this content.</span>
+    );
 
   // A singleton has at most one row - there's nothing to list, so this route
   // renders the entry editor directly instead of a DataTable.
@@ -303,7 +445,14 @@ export default function ContentEntryList({ typeSlug }: Props) {
   // search/sort/page) would keep stale values from the PREVIOUS type
   // instead of resetting - e.g. `visibleKeys` holding field names that don't
   // exist on the new type, filtering the table down to zero columns.
-  return <ContentEntryListCollection key={type.name} type={type} allTypes={allTypes} route={route} />;
+  return (
+    <ContentEntryListCollection
+      key={type.name}
+      type={type}
+      allTypes={allTypes}
+      route={route}
+    />
+  );
 }
 
 function ContentEntryListCollection({
@@ -315,7 +464,10 @@ function ContentEntryListCollection({
   allTypes: ContentTypeDefinition[];
   route: (path: string) => void;
 }) {
-  const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, type.name), [type.name]);
+  const entriesApi = useMemo(
+    () => createContentEntriesApi(`${path}/api/content`, type.name),
+    [type.name],
+  );
   const isSortable = !!type.features?.sortable;
   const canCreate = canAccess(type.id, "create");
   const canUpdate = canAccess(type.id, "update");
@@ -325,7 +477,10 @@ function ContentEntryListCollection({
   // `DataTable`'s fully-client-side mode (triggered below by omitting
   // `serverQuery`) does search/sort/pagination in memory instead.
   const useClientSearch = isSortable;
-  const fieldTree = useMemo(() => buildEntryFieldTree(type, allTypes), [type, allTypes]);
+  const fieldTree = useMemo(
+    () => buildEntryFieldTree(type, allTypes),
+    [type, allTypes],
+  );
   // `queryableFieldNames` is the subset a sort/search request may actually
   // target - see `entry-tree.ts`'s doc comments on `flattenQueryableColumns`.
   const queryableFieldNames = useMemo(
@@ -336,20 +491,40 @@ function ContentEntryListCollection({
   // columns interleaved with relation columns of every cardinality, unlike
   // `entry-tree.ts`'s own `flattenDisplayColumns` (which only has the former).
   const listCells = useMemo(() => collectListCells(fieldTree), [fieldTree]);
-  const relationColumns = useMemo(() => listCells.filter((c) => c.kind === "relation").map((c) => c.column), [listCells]);
-  const defaultVisible = useMemo(() => listCells.slice(0, 5).map((c) => c.column.fieldName), [listCells]);
+  const relationColumns = useMemo(
+    () => listCells.filter((c) => c.kind === "relation").map((c) => c.column),
+    [listCells],
+  );
+  const defaultVisible = useMemo(
+    () => listCells.slice(0, 5).map((c) => c.column.fieldName),
+    [listCells],
+  );
   // One `entriesApi`/label field per relation column's target type - reused
   // across every row instead of rebuilt per cell.
   const relationTargets = useMemo(() => {
-    const map = new Map<string, { entriesApi: ReturnType<typeof createContentEntriesApi>; labelField?: string }>();
+    const map = new Map<
+      string,
+      {
+        entriesApi: ReturnType<typeof createContentEntriesApi>;
+        labelField?: string;
+      }
+    >();
     for (const column of relationColumns) {
       const targetType = allTypes.find((t) => t.id === column.targetTypeId);
       if (!targetType) continue;
-      const visibleTargetColumns = flattenQueryableColumns(buildEntryFieldTree(targetType, allTypes)).filter(
-        (c) => !(targetType.name === "role" && c.fieldName === SUPER_ADMIN_FIELD_NAME),
+      const visibleTargetColumns = flattenQueryableColumns(
+        buildEntryFieldTree(targetType, allTypes),
+      ).filter(
+        (c) =>
+          !(
+            targetType.name === "role" && c.fieldName === SUPER_ADMIN_FIELD_NAME
+          ),
       );
       map.set(column.fieldName, {
-        entriesApi: createContentEntriesApi(`${path}/api/content`, targetType.name),
+        entriesApi: createContentEntriesApi(
+          `${path}/api/content`,
+          targetType.name,
+        ),
         labelField: visibleTargetColumns[0]?.fieldName,
       });
     }
@@ -386,19 +561,44 @@ function ContentEntryListCollection({
           ? {
               page: 0,
               pageSize: CLIENT_SEARCH_FETCH_ALL_SIZE,
-              ...(isSortable ? { sortField: "sortIndex", sortDir: "asc" as const } : {}),
+              ...(isSortable
+                ? { sortField: "sortIndex", sortDir: "asc" as const }
+                : {}),
             }
-          : { page, pageSize: DEFAULT_PAGE_SIZE, sortField: sort?.key, sortDir: sort?.direction, search: search || undefined, searchableFields },
+          : {
+              page,
+              pageSize: DEFAULT_PAGE_SIZE,
+              sortField: sort?.key,
+              sortDir: sort?.direction,
+              search: search || undefined,
+              searchableFields,
+            },
         ifVersion,
         signal,
       ),
     [entriesApi, page, sort, search, searchableFields, isSortable],
   );
-  const { data: listData, loading, error: listError, reload } = useFetch<EntryListResult>(listCacheKey, listFetcher);
+  const {
+    data: listData,
+    loading,
+    error: listError,
+    reload,
+  } = useFetch<EntryListResult>(listCacheKey, listFetcher);
   const showListLoading = useDelayedLoading(loading);
-  const rows: Row[] = useMemo(() => (listData?.rows ?? []).map((r) => ({ id: r.id, ...flattenRowValue(r.value) })), [listData]);
+  const rows: Row[] = useMemo(
+    () =>
+      (listData?.rows ?? []).map((r) => ({
+        id: r.id,
+        ...flattenRowValue(r.value),
+      })),
+    [listData],
+  );
   const total = listData?.total ?? 0;
-  const loadError = listError ? (listError instanceof Error ? listError.message : "Failed to load entries.") : null;
+  const loadError = listError
+    ? listError instanceof Error
+      ? listError.message
+      : "Failed to load entries."
+    : null;
 
   // The in-progress drag order, pending a Save - `null` means "unchanged
   // from the fetched order". Reset whenever a fresh `rows` lands (initial
@@ -415,7 +615,9 @@ function ContentEntryListCollection({
     if (!dragOrder) return;
     setSavingOrder(true);
     try {
-      await entriesApi.reorder(dragOrder.map((row, index) => ({ id: row.id, sortIndex: index })));
+      await entriesApi.reorder(
+        dragOrder.map((row, index) => ({ id: row.id, sortIndex: index })),
+      );
       await reload();
       toast.add({ type: "success", title: "Order saved." });
     } catch (error) {
@@ -432,16 +634,23 @@ function ContentEntryListCollection({
   // fieldName -> target id -> resolved label. Only fetched for relation
   // columns the user actually has visible (`visibleKeys`) - `entriesApi.get`
   // is one request per distinct id, not worth paying for a hidden column.
-  const [relationLabels, setRelationLabels] = useState<Record<string, Record<string, string>>>({});
+  const [relationLabels, setRelationLabels] = useState<
+    Record<string, Record<string, string>>
+  >({});
   // row id -> fieldName -> resolved target ids, for `oneToMany`/`manyToMany`
   // relation columns only - `manyToOne`'s id is already on the row itself,
   // no need for this extra step (see `renderRelationCell`'s doc).
-  const [rowRelationValues, setRowRelationValues] = useState<Record<string, Record<string, string[]>>>({});
+  const [rowRelationValues, setRowRelationValues] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
 
   // Block-level richtext cells open this instead of rendering their HTML inline
   // (see `renderCell`'s `richtext` branch) - one shared dialog rather than one
   // per cell, populated on click.
-  const [richTextPreview, setRichTextPreview] = useState<{ label: string; html: string } | null>(null);
+  const [richTextPreview, setRichTextPreview] = useState<{
+    label: string;
+    html: string;
+  } | null>(null);
 
   // Populates `rowRelationValues`: one `entriesApi.get(row.id)` per row still
   // missing a visible multi-cardinality column's value - `listEntries` (the
@@ -451,9 +660,15 @@ function ContentEntryListCollection({
   // that instead of touching the paginated query itself.
   useEffect(() => {
     let cancelled = false;
-    const multiColumns = relationColumns.filter((c) => c.cardinality !== "manyToOne" && visibleKeys.includes(c.fieldName));
+    const multiColumns = relationColumns.filter(
+      (c) => c.cardinality !== "manyToOne" && visibleKeys.includes(c.fieldName),
+    );
     if (multiColumns.length === 0) return;
-    const missingRows = rows.filter((row) => multiColumns.some((c) => rowRelationValues[row.id]?.[c.fieldName] === undefined));
+    const missingRows = rows.filter((row) =>
+      multiColumns.some(
+        (c) => rowRelationValues[row.id]?.[c.fieldName] === undefined,
+      ),
+    );
     if (missingRows.length === 0) return;
     Promise.all(
       missingRows.map((row) =>
@@ -461,15 +676,24 @@ function ContentEntryListCollection({
           .get(row.id)
           .then((entry): [string, Record<string, string[]>] => [
             row.id,
-            Object.fromEntries(multiColumns.map((c) => [c.fieldName, (entry.value[c.fieldName] as string[] | undefined) ?? []])),
+            Object.fromEntries(
+              multiColumns.map((c) => [
+                c.fieldName,
+                (entry.value[c.fieldName] as string[] | undefined) ?? [],
+              ]),
+            ),
           ])
-          .catch((): [string, Record<string, string[]>] => [row.id, Object.fromEntries(multiColumns.map((c) => [c.fieldName, []]))]),
+          .catch((): [string, Record<string, string[]>] => [
+            row.id,
+            Object.fromEntries(multiColumns.map((c) => [c.fieldName, []])),
+          ]),
       ),
     ).then((pairs) => {
       if (cancelled) return;
       setRowRelationValues((current) => {
         const next = { ...current };
-        for (const [rowId, values] of pairs) next[rowId] = { ...next[rowId], ...values };
+        for (const [rowId, values] of pairs)
+          next[rowId] = { ...next[rowId], ...values };
         return next;
       });
     });
@@ -493,20 +717,34 @@ function ContentEntryListCollection({
       const target = relationTargets.get(column.fieldName);
       if (!target) continue;
       const known = relationLabels[column.fieldName] ?? {};
-      const ids = [...new Set(rows.flatMap((row) => idsForRow(column, row)).filter((id) => !(id in known)))];
+      const ids = [
+        ...new Set(
+          rows
+            .flatMap((row) => idsForRow(column, row))
+            .filter((id) => !(id in known)),
+        ),
+      ];
       if (ids.length === 0) continue;
       Promise.all(
         ids.map((id) =>
           target.entriesApi
             .get(id)
-            .then((entry): [string, string] => [id, target.labelField ? String(entry.value[target.labelField] ?? id) : id])
+            .then((entry): [string, string] => [
+              id,
+              target.labelField
+                ? String(entry.value[target.labelField] ?? id)
+                : id,
+            ])
             .catch((): [string, string] => [id, id]),
         ),
       ).then((pairs) => {
         if (cancelled) return;
         setRelationLabels((current) => ({
           ...current,
-          [column.fieldName]: { ...current[column.fieldName], ...Object.fromEntries(pairs) },
+          [column.fieldName]: {
+            ...current[column.fieldName],
+            ...Object.fromEntries(pairs),
+          },
         }));
       });
     }
@@ -518,36 +756,46 @@ function ContentEntryListCollection({
 
   const isPinned = pinnedContentTypeSlugs.has(type.name);
 
-  const columns: DataTableColumn<Row>[] = listCells.map((cell): DataTableColumn<Row> => {
-    if (cell.kind === "field") {
+  const columns: DataTableColumn<Row>[] = listCells.map(
+    (cell): DataTableColumn<Row> => {
+      if (cell.kind === "field") {
+        const column = cell.column;
+        return {
+          key: column.fieldName,
+          label: column.label,
+          numeric: column.fieldType === "number",
+          // `image` is technically queryable (it's a plain TEXT column of file
+          // paths), but sorting by that path is meaningless for a thumbnail cell.
+          sortable:
+            queryableFieldNames.has(column.fieldName) &&
+            column.fieldType !== "image",
+          render: (value, row) =>
+            renderCell(column, value, row, (label, html) =>
+              setRichTextPreview({ label, html }),
+            ),
+        };
+      }
       const column = cell.column;
       return {
         key: column.fieldName,
         label: column.label,
-        numeric: column.fieldType === "number",
-        // `image` is technically queryable (it's a plain TEXT column of file
-        // paths), but sorting by that path is meaningless for a thumbnail cell.
-        sortable: queryableFieldNames.has(column.fieldName) && column.fieldType !== "image",
-        render: (value, row) =>
-          renderCell(column, value, row, (label, html) => setRichTextPreview({ label, html })),
+        sortable: false,
+        render: (value, row) => {
+          const ids =
+            column.cardinality === "manyToOne"
+              ? typeof value === "string" && value !== ""
+                ? [value]
+                : []
+              : rowRelationValues[row.id]?.[column.fieldName];
+          return renderRelationCell(
+            ids,
+            (id) => relationLabels[column.fieldName]?.[id],
+            column.cardinality !== "manyToOne",
+          );
+        },
       };
-    }
-    const column = cell.column;
-    return {
-      key: column.fieldName,
-      label: column.label,
-      sortable: false,
-      render: (value, row) => {
-        const ids =
-          column.cardinality === "manyToOne"
-            ? typeof value === "string" && value !== ""
-              ? [value]
-              : []
-            : rowRelationValues[row.id]?.[column.fieldName];
-        return renderRelationCell(ids, (id) => relationLabels[column.fieldName]?.[id], column.cardinality !== "manyToOne");
-      },
-    };
-  });
+    },
+  );
 
   return (
     <>
@@ -583,7 +831,9 @@ function ContentEntryListCollection({
           storageKey: `contentList:${type.name}:columns`,
           defaultVisible,
           onVisibleChange: (visible) => {
-            setSearchableFields(visible.filter((key) => queryableFieldNames.has(key)));
+            setSearchableFields(
+              visible.filter((key) => queryableFieldNames.has(key)),
+            );
             setVisibleKeys(visible);
           },
         }}
@@ -605,27 +855,47 @@ function ContentEntryListCollection({
         }
         dragReorder={
           isSortable
-            ? { getId: (row) => row.id, onReorder: setDragOrder, disabled: savingOrder || !canUpdate }
+            ? {
+                getId: (row) => row.id,
+                onReorder: setDragOrder,
+                disabled: savingOrder || !canUpdate,
+              }
             : undefined
         }
         leadingColumn={{
           render: (row) =>
-            hasEntryDraft(type.name, row.id) ? <span class="nav-draft-dot" aria-label="Unsaved changes" /> : null,
+            hasEntryDraft(type.name, row.id) ? (
+              <span class="nav-draft-dot" aria-label="Unsaved changes" />
+            ) : null,
         }}
         actions={
           <>
             {isSortable && dragOrder && canUpdate && (
-              <button type="button" class="outline" disabled={savingOrder} aria-busy={savingOrder} onClick={handleSaveOrder}>
+              <button
+                type="button"
+                class="outline"
+                disabled={savingOrder}
+                aria-busy={savingOrder}
+                onClick={handleSaveOrder}
+              >
                 Save order
               </button>
             )}
             {canCreate && (
-              <button type="button" onClick={() => route(`${path}/content/${type.name}/new`)}>
+              <button
+                type="button"
+                onClick={() => route(`${path}/content/${type.name}/new`)}
+              >
                 <PlusIcon /> Add
               </button>
             )}
           </>
         }
+      />
+
+      <RichTextPreviewDialog
+        preview={richTextPreview}
+        onClose={() => setRichTextPreview(null)}
       />
     </>
   );
