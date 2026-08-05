@@ -3,31 +3,43 @@ import { resolve as resolvePath } from "node:path";
 
 /** Roadmap kinds not implemented yet - listed so an unsupported `kind` can
  * name what's coming instead of just saying "unknown". */
-const PLANNED_STORAGE_KINDS = ["r2", "s3"];
+const PLANNED_STORAGE_KINDS = ["s3"];
 
 export interface DryStorageOption {
   /**
-   * Which backend serves `/dry/api/storage/**`.
+   * Which backend serves `/dry/api/storage/**`. `"r2"` requires a live
+   * `R2Bucket` binding, only reachable per-request (`context.env`) on a
+   * Workers-shaped runtime - see `server/storage-adapters.ts`.
    *
    * @default "local"
    */
-  kind?: "local";
+  kind?: "local" | "r2";
   /**
    * `local`: directory files are read from/written to, relative to the
-   * consuming project's cwd (or an absolute path).
+   * consuming project's cwd (or an absolute path). `r2`: key prefix within
+   * the bucket (leading/trailing slashes trimmed).
    *
    * @default ".dry/storage"
    */
   root?: string;
+  /**
+   * `r2` only: the binding name configured in `wrangler.jsonc`'s
+   * `r2_buckets[].binding` (e.g. `"MEDIA_BUCKET"`) - required for
+   * `kind: "r2"`. The live `R2Bucket` itself is looked up per-request from
+   * `context.env`, not from this option, same pattern as
+   * `DryContentOption.binding` for `engine: "D1"`.
+   */
+  binding?: string;
 }
 
 export interface DryIconsOption {
   /**
-   * Which backend serves `/dry/api/icons/**`.
+   * Which backend serves `/dry/api/icons/**`. Same semantics as
+   * `DryStorageOption.kind`.
    *
    * @default "local"
    */
-  kind?: "local";
+  kind?: "local" | "r2";
   /**
    * Same semantics as `DryStorageOption.root`, but for the Icon Management
    * feature's own storage root - kept separate from `storage.root` so
@@ -36,6 +48,8 @@ export interface DryIconsOption {
    * @default ".dry/icons"
    */
   root?: string;
+  /** `r2` only - see `DryStorageOption.binding`. */
+  binding?: string;
 }
 
 export interface DryContentOption {
@@ -192,7 +206,15 @@ export interface ResolvedLocalStorageOption {
   root: string;
 }
 
-export type ResolvedStorageOption = ResolvedLocalStorageOption;
+export interface ResolvedR2StorageOption {
+  kind: "r2";
+  binding: string;
+  /** Key prefix within the bucket, no leading/trailing slash (`""` = bucket
+   * root). */
+  prefix: string;
+}
+
+export type ResolvedStorageOption = ResolvedLocalStorageOption | ResolvedR2StorageOption;
 
 /** Same shape as `ResolvedStorageOption` - the Icon Management feature reuses
  * `createStorageAdapter()` unchanged, it just points at a different root. */
@@ -350,30 +372,23 @@ export function readEnvVar(name: string): string | undefined {
  * purely for error messages (`"storage"` or `"icons"`).
  */
 function resolveFileBackedOption(
-  option: { kind?: unknown; root?: unknown; branch?: unknown } | undefined,
+  option: { kind?: unknown; root?: unknown; branch?: unknown; binding?: unknown } | undefined,
   defaultRoot: string,
   optionName: string,
 ): ResolvedStorageOption {
-  const { kind: rawKind, root: rawRoot, branch: rawBranch } = option ?? {};
+  const { kind: rawKind, root: rawRoot, branch: rawBranch, binding: rawBinding } = option ?? {};
   const kind = rawKind ?? "local";
   if (typeof kind !== "string") {
     throw new TypeError(
       `[drycms] \`${optionName}.kind\` must be a string, received ${typeof kind}.`,
     );
   }
-  if (kind !== "local") {
+  if (kind !== "local" && kind !== "r2") {
     const roadmap = PLANNED_STORAGE_KINDS.includes(kind)
       ? ` \`${optionName}.kind: "${kind}"\` is on the roadmap but not implemented yet.`
       : ` "${kind}" is not a recognized storage kind.`;
     throw new Error(
-      `[drycms]${roadmap} Only "local" is available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
-    );
-  }
-
-  const root = rawRoot ?? defaultRoot;
-  if (typeof root !== "string") {
-    throw new TypeError(
-      `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
+      `[drycms]${roadmap} Only "local" and "r2" are available today (planned: ${PLANNED_STORAGE_KINDS.join(", ")}).`,
     );
   }
   if (rawBranch !== undefined && typeof rawBranch !== "string") {
@@ -383,6 +398,32 @@ function resolveFileBackedOption(
   }
   if (rawBranch !== undefined) {
     throw new Error(`[drycms] \`${optionName}.branch\` is no longer supported; use local storage without a branch.`);
+  }
+
+  if (kind === "r2") {
+    if (typeof rawBinding !== "string" || !rawBinding.trim()) {
+      throw new Error(
+        `[drycms] \`${optionName}.kind: "r2"\` requires a \`${optionName}.binding\` string naming the R2 binding (matching \`wrangler.jsonc\`'s \`r2_buckets[].binding\`).`,
+      );
+    }
+    const root = rawRoot ?? defaultRoot;
+    if (typeof root !== "string") {
+      throw new TypeError(
+        `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
+      );
+    }
+    const prefix = root.replace(/^\.\/?/, "").replace(/^\/+|\/+$/g, "");
+    return { kind: "r2", binding: rawBinding.trim(), prefix };
+  }
+  if (rawBinding !== undefined) {
+    throw new Error(`[drycms] \`${optionName}.binding\` is only used with \`${optionName}.kind: "r2"\` - add \`kind: "r2"\` or remove \`binding\`.`);
+  }
+
+  const root = rawRoot ?? defaultRoot;
+  if (typeof root !== "string") {
+    throw new TypeError(
+      `[drycms] \`${optionName}.root\` must be a string, received ${typeof root}.`,
+    );
   }
   const normalizedRoot = root.replace(/\/+$/, "");
   return { kind: "local", root: resolvePath(process.cwd(), normalizedRoot) };

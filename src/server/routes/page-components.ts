@@ -7,11 +7,9 @@ import {
   readSlug,
 } from "../route-helpers.js";
 import { toFileEntry } from "../../storage/entry.js";
-import { createStorageAdapter } from "../../storage/index.js";
+import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath } from "../../storage/path.js";
-import { StorageError } from "../../storage/types.js";
-
-const adapter = createStorageAdapter(pageComponentsStorage);
+import { StorageError, type StorageAdapter } from "../../storage/types.js";
 
 /** Component Builder only ever stores `.tsx`/`.ts` source - anything else
  * (an upload, a renamed extension) would silently break both `Editer`'s
@@ -30,7 +28,7 @@ function requireComponentFileName(name: string): void {
 /** `?tree` prefetches the whole component tree in one response, same
  * contract as `routes/storage.ts`'s `handleTree` - the folder-tree sidebar
  * needs the full tree up front, not one folder at a time. */
-async function handleTree(): Promise<Response> {
+async function handleTree(adapter: StorageAdapter): Promise<Response> {
   if (!adapter.listAll) return jsonResponse({ supported: false });
   const all = await adapter.listAll();
   return jsonResponse({ supported: true, entries: all.map((entry) => toFileEntry(entry)) });
@@ -38,12 +36,13 @@ async function handleTree(): Promise<Response> {
 
 export const GET: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(pageComponentsStorage, context);
     const path = readSlug(context);
     if (context.url.searchParams.has("tree")) {
       if (path !== "") {
         throw new StorageError("invalid_path", "`?tree` is only valid at the root.");
       }
-      return await handleTree();
+      return await handleTree(adapter);
     }
 
     const stat = await adapter.stat(path);
@@ -72,7 +71,7 @@ export const GET: DryRouteHandler = async (context) => {
   }
 };
 
-async function handleCreateFolder(request: Request, folder: string): Promise<Response> {
+async function handleCreateFolder(adapter: StorageAdapter, request: Request, folder: string): Promise<Response> {
   const body = (await request.json()) as { action?: string; name?: unknown };
   if (body.action !== "mkdir") {
     throw new StorageError("invalid_path", `Unsupported action "${String(body.action)}".`);
@@ -85,8 +84,9 @@ async function handleCreateFolder(request: Request, folder: string): Promise<Res
 
 export const POST: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(pageComponentsStorage, context);
     const path = readSlug(context);
-    return await handleCreateFolder(context.request, path);
+    return await handleCreateFolder(adapter, context.request, path);
   } catch (error) {
     return errorResponse(error);
   }
@@ -97,6 +97,7 @@ export const POST: DryRouteHandler = async (context) => {
  * `StorageAdapter.write` already creates missing parent folders. */
 export const PUT: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(pageComponentsStorage, context);
     const path = readSlug(context);
     if (!path) throw new StorageError("invalid_path", "A component file path is required.");
     requireComponentFileName(path);
@@ -118,6 +119,7 @@ export const PUT: DryRouteHandler = async (context) => {
  * Builder has no product surface for duplicating a component yet. */
 export const PATCH: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(pageComponentsStorage, context);
     const from = readSlug(context);
     if (!from) throw new StorageError("invalid_path", "Cannot move/rename the root.");
 
@@ -148,6 +150,7 @@ export const PATCH: DryRouteHandler = async (context) => {
 
 export const DELETE: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(pageComponentsStorage, context);
     const path = readSlug(context);
     if (!path) throw new StorageError("invalid_path", "Cannot delete the root.");
     await adapter.remove(path);

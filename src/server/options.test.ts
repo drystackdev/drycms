@@ -77,8 +77,21 @@ describe('resolveOptions', () => {
 	});
 
 	it('rejects an unimplemented storage kind and names the roadmap', () => {
-		expect(() => resolveOptions({ storage: { kind: 'r2' as 'local' } })).toThrow(/planned: r2, s3/);
-		expect(() => resolveOptions({ storage: { kind: 'r2' as 'local' } })).toThrow(/Only "local" is available today/);
+		expect(() => resolveOptions({ storage: { kind: 's3' as 'local' } })).toThrow(/planned: s3/);
+		expect(() => resolveOptions({ storage: { kind: 's3' as 'local' } })).toThrow(/Only "local" and "r2" are available today/);
+	});
+
+	it('resolves an r2 storage kind given a binding, defaulting the prefix from the root default', () => {
+		expect(resolveOptions({ storage: { kind: 'r2', binding: 'MEDIA_BUCKET' } }).storage).toEqual({
+			kind: 'r2',
+			binding: 'MEDIA_BUCKET',
+			prefix: 'dry/storage',
+		});
+	});
+
+	it('rejects r2 storage without a binding, and a binding without r2', () => {
+		expect(() => resolveOptions({ storage: { kind: 'r2' } })).toThrow(/requires a `storage.binding`/);
+		expect(() => resolveOptions({ storage: { binding: 'MEDIA_BUCKET' } })).toThrow(/binding.*only used with.*kind: "r2"/);
 	});
 
 	it('rejects an unrecognized storage kind and invalid values', () => {

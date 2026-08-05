@@ -292,10 +292,27 @@ function promptForCli(messages: ChatMessage[]): string {
   ].join("\n\n");
 }
 
+/**
+ * `ai.mode: "local"` spawns a CLI via `node:child_process`, which no
+ * Workers runtime provides (not even under the `nodejs_compat`
+ * compatibility flag - there is no OS process for an isolate to spawn).
+ * Turns whatever cryptic module-resolution error that dynamic `import`
+ * would otherwise throw into a clear, actionable one - see
+ * `status/cloudflare-workers-adapter.md`'s Phase 3.
+ */
+async function loadNodeSpawn(): Promise<(typeof import("node:child_process"))["spawn"]> {
+  try {
+    const { spawn } = await import("node:child_process");
+    return spawn;
+  } catch {
+    throw new Error('`ai.mode: "local"` requires Node (`node:child_process` is not available on this runtime) - use `ai.mode: "server"` instead.');
+  }
+}
+
 async function runLocalCli(messages: ChatMessage[]): Promise<string> {
   const localAi = ai;
   if (localAi.mode !== "local") throw new Error("Local AI mode is not configured.");
-  const { spawn } = await import("node:child_process");
+  const spawn = await loadNodeSpawn();
   const prompt = promptForCli(messages);
   const hasPromptSlot = localAi.args.some((arg) => arg.includes("{prompt}"));
   const args = hasPromptSlot
@@ -414,7 +431,7 @@ function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => voi
   return new ReadableStream<Uint8Array>({
     start(controller) {
       void (async () => {
-        const { spawn } = await import("node:child_process");
+        const spawn = await loadNodeSpawn();
         const prompt = promptForCli(messages);
         const hasPromptSlot = localAi.args.some((arg) => arg.includes("{prompt}"));
         const baseArgs = hasPromptSlot

@@ -13,11 +13,9 @@ import {
   toUrlPath,
 } from "../route-helpers.js";
 import { toFileEntry } from "../../storage/entry.js";
-import { createStorageAdapter } from "../../storage/index.js";
+import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath, storagePathParent } from "../../storage/path.js";
-import { StorageError } from "../../storage/types.js";
-
-const adapter = createStorageAdapter(storage);
+import { StorageError, type StorageAdapter } from "../../storage/types.js";
 
 function isSvgName(name: string): boolean {
   return /\.svg$/i.test(name);
@@ -36,7 +34,7 @@ function withPreview(entry: FileEntry, apiBase: string): FileEntry {
  * implements `listAll` (not R2/S3). `supported: false` tells the client to
  * fall back to per-folder `list()`, same contract as every other optional
  * `FileManagerSource` method. */
-async function handleTree(apiBase: string): Promise<Response> {
+async function handleTree(adapter: StorageAdapter, apiBase: string): Promise<Response> {
   if (!adapter.listAll) return jsonResponse({ supported: false });
   const all = await adapter.listAll();
   const entries = all.map((entry) => withPreview(toFileEntry(entry), apiBase));
@@ -45,12 +43,13 @@ async function handleTree(apiBase: string): Promise<Response> {
 
 export const GET: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(storage, context);
     const path = readSlug(context);
     if (context.url.searchParams.has("tree")) {
       if (path !== "") {
         throw new StorageError("invalid_path", "`?tree` is only valid at the storage root.");
       }
-      return await handleTree(apiBaseFrom(context.url, "storage"));
+      return await handleTree(adapter, apiBaseFrom(context.url, "storage"));
     }
 
     const stat = await adapter.stat(path);
@@ -85,7 +84,7 @@ export const GET: DryRouteHandler = async (context) => {
   }
 };
 
-async function handleUpload(request: Request, folder: string, apiBase: string): Promise<Response> {
+async function handleUpload(adapter: StorageAdapter, request: Request, folder: string, apiBase: string): Promise<Response> {
   const target = await adapter.stat(folder);
   if (!target || target.kind !== "folder") {
     throw new StorageError("not_found", `"${folder}" is not an existing folder.`);
@@ -127,7 +126,7 @@ async function handleUpload(request: Request, folder: string, apiBase: string): 
   return jsonResponse({ entries }, 201);
 }
 
-async function handleCreateFolder(request: Request, folder: string): Promise<Response> {
+async function handleCreateFolder(adapter: StorageAdapter, request: Request, folder: string): Promise<Response> {
   const body = (await request.json()) as { action?: string; name?: unknown };
   if (body.action !== "mkdir") {
     throw new StorageError("invalid_path", `Unsupported action "${String(body.action)}".`);
@@ -140,13 +139,14 @@ async function handleCreateFolder(request: Request, folder: string): Promise<Res
 
 export const POST: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(storage, context);
     const path = readSlug(context);
     const contentType = context.request.headers.get("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
-      return await handleUpload(context.request, path, apiBaseFrom(context.url, "storage"));
+      return await handleUpload(adapter, context.request, path, apiBaseFrom(context.url, "storage"));
     }
     if (contentType.includes("application/json")) {
-      return await handleCreateFolder(context.request, path);
+      return await handleCreateFolder(adapter, context.request, path);
     }
     return jsonResponse(
       { error: "invalid_path", message: "Unsupported Content-Type." },
@@ -162,6 +162,7 @@ export const POST: DryRouteHandler = async (context) => {
  * collision - PUT is the deliberate "yes, overwrite this" path. */
 export const PUT: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(storage, context);
     const path = readSlug(context);
     if (!path) throw new StorageError("invalid_path", "A file path is required.");
     if (isSvgName(path)) throw new StorageError("unsupported", "SVG uploads are disabled in generic storage; use the managed Icons area.");
@@ -188,6 +189,7 @@ export const PUT: DryRouteHandler = async (context) => {
 
 export const PATCH: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(storage, context);
     const from = readSlug(context);
     if (!from) throw new StorageError("invalid_path", "Cannot move/copy the storage root.");
 
@@ -230,6 +232,7 @@ export const PATCH: DryRouteHandler = async (context) => {
 
 export const DELETE: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(storage, context);
     const path = readSlug(context);
     if (!path) throw new StorageError("invalid_path", "Cannot delete the storage root.");
     await adapter.remove(path);

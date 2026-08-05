@@ -9,15 +9,23 @@ import type { ResolvedDryOption } from "../server/options.js";
  * RUNNING server's own resolved local-filesystem roots - see
  * `plans/content-type-seed.md`. Deliberately covers only these 4 "real
  * asset" roots, not `pagesCache`/`typesCache` (caches, regenerate on their
- * own) or `kv` (runtime state, not a build-time asset).
+ * own) or `kv` (runtime state, not a build-time asset). A root backed by
+ * `kind: "r2"` has no local directory to extract into - skipped rather than
+ * erroring, since a Workers/R2 deployment has no local filesystem for this
+ * unzip step to touch at all.
  */
 function prefixToDirFor(resolved: ResolvedDryOption): Record<string, string> {
-  return {
-    storage: resolved.storage.root,
-    icons: resolved.icons.root,
-    "components-storage": resolved.components.storage.root,
-    "page-components-storage": resolved.pageComponents.storage.root,
+  const candidates: Record<string, ResolvedDryOption["storage"]> = {
+    storage: resolved.storage,
+    icons: resolved.icons,
+    "components-storage": resolved.components.storage,
+    "page-components-storage": resolved.pageComponents.storage,
   };
+  const result: Record<string, string> = {};
+  for (const [prefix, option] of Object.entries(candidates)) {
+    if (option.kind === "local") result[prefix] = option.root;
+  }
+  return result;
 }
 
 /**

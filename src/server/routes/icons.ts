@@ -7,11 +7,9 @@ import { IconValidationError, sanitizeSvg } from "../../icons/sanitize-svg.js";
 import { slugify } from "../../lib/slugify.js";
 import { apiBaseFrom, errorResponse, jsonResponse, mimeType, readLeafName, readSlug } from "../route-helpers.js";
 import { toFileEntry } from "../../storage/entry.js";
-import { createStorageAdapter } from "../../storage/index.js";
+import { getStorageAdapter } from "../storage-adapters.js";
 import { normalizeStoragePath } from "../../storage/path.js";
-import { StorageError, type StorageStatEntry } from "../../storage/types.js";
-
-const adapter = createStorageAdapter(icons);
+import { StorageError, type StorageAdapter, type StorageStatEntry } from "../../storage/types.js";
 
 const DEFAULT_PAGE_SIZE = 48;
 
@@ -64,7 +62,7 @@ function slugToFilename(label: string, prefixPart?: string): string {
   return ensureSvgExtension(prefixPart ? `${slugify(prefixPart)}-${slug}` : slug);
 }
 
-async function handleList(url: URL, apiBase: string): Promise<Response> {
+async function handleList(adapter: StorageAdapter, url: URL, apiBase: string): Promise<Response> {
   const rawPage = Number(url.searchParams.get("page"));
   const rawPageSize = Number(url.searchParams.get("pageSize"));
   const page = Number.isSafeInteger(rawPage) && rawPage >= 0 ? Math.min(rawPage, 1_000_000) : 0;
@@ -82,11 +80,12 @@ async function handleList(url: URL, apiBase: string): Promise<Response> {
 
 export const GET: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(icons, context);
     const name = readSlug(context);
     const apiBase = apiBaseFrom(context.url, "icons");
 
     if (name === "") {
-      return await handleList(context.url, apiBase);
+      return await handleList(adapter, context.url, apiBase);
     }
 
     const stat = await adapter.stat(name);
@@ -119,7 +118,7 @@ interface ImportBody {
   names: unknown;
 }
 
-async function handleCreate(body: CreateBody, apiBase: string): Promise<Response> {
+async function handleCreate(adapter: StorageAdapter, body: CreateBody, apiBase: string): Promise<Response> {
   const name = readLeafName(body.name);
   const svg = typeof body.svg === "string" ? body.svg : "";
   const sanitized = sanitizeOrThrow(svg);
@@ -136,7 +135,7 @@ interface SkippedIcon {
   reason: string;
 }
 
-async function handleImport(body: ImportBody, apiBase: string): Promise<Response> {
+async function handleImport(adapter: StorageAdapter, body: ImportBody, apiBase: string): Promise<Response> {
   const prefix = typeof body.prefix === "string" ? body.prefix.trim() : "";
   const names = Array.isArray(body.names) ? body.names.filter((n): n is string => typeof n === "string") : [];
   if (!prefix || names.length === 0) {
@@ -175,10 +174,11 @@ async function handleImport(body: ImportBody, apiBase: string): Promise<Response
 
 export const POST: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(icons, context);
     const apiBase = apiBaseFrom(context.url, "icons");
     const body = (await context.request.json()) as { action?: string };
-    if (body.action === "create") return await handleCreate(body as unknown as CreateBody, apiBase);
-    if (body.action === "import") return await handleImport(body as unknown as ImportBody, apiBase);
+    if (body.action === "create") return await handleCreate(adapter, body as unknown as CreateBody, apiBase);
+    if (body.action === "import") return await handleImport(adapter, body as unknown as ImportBody, apiBase);
     throw new StorageError("invalid_path", `Unsupported action "${String(body.action)}".`);
   } catch (error) {
     return errorResponse(error);
@@ -190,6 +190,7 @@ export const POST: DryRouteHandler = async (context) => {
  * capable of introducing something unsafe as the original creation was. */
 export const PUT: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(icons, context);
     const name = readSlug(context);
     if (!name) throw new StorageError("invalid_path", "An icon name is required.");
     const raw = await context.request.text();
@@ -205,6 +206,7 @@ export const PUT: DryRouteHandler = async (context) => {
  * concept for a flat icon library. */
 export const PATCH: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(icons, context);
     const from = readSlug(context);
     if (!from) throw new StorageError("invalid_path", "Cannot rename without a source name.");
 
@@ -228,6 +230,7 @@ export const PATCH: DryRouteHandler = async (context) => {
 
 export const DELETE: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(icons, context);
     const name = readSlug(context);
     if (!name) throw new StorageError("invalid_path", "An icon name is required.");
     await adapter.remove(name);

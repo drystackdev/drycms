@@ -43,6 +43,8 @@ afterEach(() => {
   while (dirs.length > 0) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
+const context = { env: {} };
+
 /** Same encoding `pages-cache.ts`'s own (unexported) `cacheKeyFor` uses -
  * duplicated here rather than exporting an internal helper just for tests. */
 function cacheFilePath(pathname: string): string {
@@ -54,43 +56,43 @@ describe("pages-cache", () => {
   it("misses when nothing has been cached yet", async () => {
     const { dir, entries, allTypes } = await freshSetup();
     dirs.push(dir);
-    expect(await readPageCache("/blog/hello", entries, allTypes)).toBeNull();
+    expect(await readPageCache(context, "/blog/hello", entries, allTypes)).toBeNull();
   });
 
   it("hits with the cached html when every touched type's version still matches", async () => {
     const { dir, entries, allTypes } = await freshSetup();
     dirs.push(dir);
-    await writePageCache("/blog/hello", "<html>cached</html>", new Set(["post"]), entries, allTypes);
-    expect(await readPageCache("/blog/hello", entries, allTypes)).toBe("<html>cached</html>");
+    await writePageCache(context, "/blog/hello", "<html>cached</html>", new Set(["post"]), entries, allTypes);
+    expect(await readPageCache(context, "/blog/hello", entries, allTypes)).toBe("<html>cached</html>");
   });
 
   it("misses once a touched type's entries change (its version bumps)", async () => {
     const { dir, entries, allTypes } = await freshSetup();
     dirs.push(dir);
     const postType = allTypes.find((t) => t.name === "post")!;
-    await writePageCache("/blog/hello", "<html>stale</html>", new Set(["post"]), entries, allTypes);
+    await writePageCache(context, "/blog/hello", "<html>stale</html>", new Set(["post"]), entries, allTypes);
     await entries.createEntry(postType, allTypes, {});
-    expect(await readPageCache("/blog/hello", entries, allTypes)).toBeNull();
+    expect(await readPageCache(context, "/blog/hello", entries, allTypes)).toBeNull();
   });
 
   it("misses when the cache entry's buildId doesn't match the running process", async () => {
     const { dir, entries, allTypes } = await freshSetup();
     dirs.push(dir);
-    await writePageCache("/blog/hello", "<html>old-build</html>", new Set(["post"]), entries, allTypes);
+    await writePageCache(context, "/blog/hello", "<html>old-build</html>", new Set(["post"]), entries, allTypes);
     const path = cacheFilePath("/blog/hello");
     const envelope = JSON.parse(readFileSync(path, "utf8"));
     expect(envelope.buildId).toBe(BUILD_ID);
     envelope.buildId = "a-previous-deploy";
     writeFileSync(path, JSON.stringify(envelope));
 
-    expect(await readPageCache("/blog/hello", entries, allTypes)).toBeNull();
+    expect(await readPageCache(context, "/blog/hello", entries, allTypes)).toBeNull();
   });
 
   it("overwrites the same cache path on a second write rather than accumulating files", async () => {
     const { dir, entries, allTypes } = await freshSetup();
     dirs.push(dir);
-    await writePageCache("/blog/hello", "<html>v1</html>", new Set(["post"]), entries, allTypes);
-    await writePageCache("/blog/hello", "<html>v2</html>", new Set(["post"]), entries, allTypes);
-    expect(await readPageCache("/blog/hello", entries, allTypes)).toBe("<html>v2</html>");
+    await writePageCache(context, "/blog/hello", "<html>v1</html>", new Set(["post"]), entries, allTypes);
+    await writePageCache(context, "/blog/hello", "<html>v2</html>", new Set(["post"]), entries, allTypes);
+    expect(await readPageCache(context, "/blog/hello", entries, allTypes)).toBe("<html>v2</html>");
   });
 });

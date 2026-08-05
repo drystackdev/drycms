@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
 import { defineConfig } from "vite";
 import { appRouterPlugin } from "./src/server/app-router/app-router-plugin.js";
+import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js";
 
 export default defineConfig(({ isSsrBuild }) => ({
   // `appRouterPlugin` (`enforce: "pre"`) injects `dry()`'s import for
@@ -18,7 +19,7 @@ export default defineConfig(({ isSsrBuild }) => ({
   // same doc) - the admin's own hand-rolled `.css` files (`docs/DESIGN.md`)
   // never opt in, so this is safe to register globally rather than needing
   // a separate Vite config just for `src/apps`.
-  plugins: [appRouterPlugin(), tailwindcss(), preact()],
+  plugins: [appRouterPlugin(), assetHrefsPlugin(), tailwindcss(), preact()],
   build: {
     // Showcase intentionally bundles every component demo into one route
     // chunk; it is lazy-loaded from the app shell, so this size is not part of

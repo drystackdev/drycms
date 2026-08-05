@@ -3985,7 +3985,9 @@
       padding: 0.25rem;
       border-radius: var(--dry-radius-md);
       background-color: var(--dry-muted);
-
+      & button {
+        border-radius: var(--dry-radius-sm);
+      }
       & button[aria-pressed="true"] {
         background-color: var(--dry-card) !important;
         box-shadow: var(--dry-shadow-xs);
@@ -5017,7 +5019,7 @@
       -webkit-backdrop-filter: blur(24px);
     }
 
-    .file-preview-header {
+    header.file-preview-header {
       grid-area: header;
       display: flex;
       align-items: center;

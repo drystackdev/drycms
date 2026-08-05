@@ -9,11 +9,27 @@ import { buildComponentBundle, buildSharedPreactBundle } from "../../components/
 import type { DryComponentRecord, PlainFieldDef } from "../../components/RichTextField/component-registry-types.js";
 import { isDryComponentDefinition, type DryComponentDefinition } from "../../components/RichTextField/register-component.js";
 import { slugify } from "../../lib/slugify.js";
-import { createStorageAdapter } from "../../storage/index.js";
-import { StorageError } from "../../storage/types.js";
+import { getStorageAdapter } from "../storage-adapters.js";
+import { StorageError, type StorageAdapter } from "../../storage/types.js";
 import { errorResponse, jsonResponse, readSlug } from "../route-helpers.js";
 
-const adapter = createStorageAdapter(componentsStorage);
+/**
+ * Building/rebuilding a component runs a nested Vite build over its real
+ * `.tsx` source (`buildAndStore` below) and then dynamically `import()`s
+ * the resulting bundle straight off disk to read its metadata
+ * (`hydrateRecordIcon`/`rebuildRecord`/the confirm `POST`) - both steps are
+ * Node-only (no Workers equivalent) and need a real local filesystem path,
+ * so they only make sense when `componentsStorage.kind === "local"`
+ * regardless of runtime. `buildAndStore` already refuses outside
+ * `import.meta.env.DEV`; this covers the remaining case of a `"r2"`-backed
+ * deployment that happens to run in dev.
+ */
+function requireLocalComponentsRoot(): string {
+  if (componentsStorage.kind !== "local") {
+    throw new StorageError("unsupported", 'Building richtext components requires `components.storage.kind: "local"`.');
+  }
+  return componentsStorage.root;
+}
 
 async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -23,7 +39,7 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function readRecord(filename: string): Promise<DryComponentRecord | null> {
+async function readRecord(adapter: StorageAdapter, filename: string): Promise<DryComponentRecord | null> {
   let result;
   try {
     result = await adapter.read(filename);
@@ -52,7 +68,7 @@ const SHARED_PREACT_BUNDLE_NAME = "preact.js";
  * shared file (see `buildComponentBundle`'s own doc comment) rather than
  * inlining its own copy - built once and left alone from then on, `stat`
  * (not a full `read`) is enough to tell whether that's already happened. */
-async function ensureSharedPreactBundle(): Promise<void> {
+async function ensureSharedPreactBundle(adapter: StorageAdapter): Promise<void> {
   if (await adapter.stat(SHARED_PREACT_BUNDLE_NAME)) return;
   const code = await buildSharedPreactBundle();
   await adapter.write(SHARED_PREACT_BUNDLE_NAME, Buffer.from(code, "utf8"));
@@ -66,11 +82,12 @@ async function ensureSharedPreactBundle(): Promise<void> {
  * already-absolute and discard `process.cwd()`. Dev only (mirrors
  * `buildComponentBundle`'s own dev-only tooling) - a deployed build may not
  * have the raw `.tsx` source on disk at all. */
-async function buildAndStore(sourcePath: string, slug: string): Promise<void> {
+async function buildAndStore(adapter: StorageAdapter, sourcePath: string, slug: string): Promise<void> {
   if (!import.meta.env.DEV) {
     throw new StorageError("unsupported", "Building richtext components is only available in dev.");
   }
-  await ensureSharedPreactBundle();
+  requireLocalComponentsRoot();
+  await ensureSharedPreactBundle(adapter);
   if (!/^\/src\/(?:[^/]+\/)*dry\.[^/]+\.(?:tsx?|jsx?)$/.test(sourcePath)) {
     throw new StorageError("invalid_path", "Component sourcePath must point to a dry.* source file under /src.");
   }
@@ -127,10 +144,10 @@ function recordFromDefinition(
  * introduced. The bundle is the source of truth; once an icon is found, save
  * the refreshed JSON so the insert dialog and `@` popup receive it normally on
  * later requests. */
-async function hydrateRecordIcon(record: DryComponentRecord): Promise<DryComponentRecord> {
+async function hydrateRecordIcon(adapter: StorageAdapter, record: DryComponentRecord): Promise<DryComponentRecord> {
   if (record.icon !== undefined || !record.sourcePath) return record;
   try {
-    const bundlePath = pathToFileURL(join(componentsStorage.root, `${slugFor(record.name)}.js`)).href;
+    const bundlePath = pathToFileURL(join(requireLocalComponentsRoot(), `${slugFor(record.name)}.js`)).href;
     const module = (await import(/* @vite-ignore */ `${bundlePath}?metadata=${Date.now()}`)) as { default?: unknown };
     if (!isDryComponentDefinition(module.default)) return record;
     const refreshed = recordFromDefinition(module.default, record.sourcePath);
@@ -143,9 +160,9 @@ async function hydrateRecordIcon(record: DryComponentRecord): Promise<DryCompone
   }
 }
 
-async function rebuildRecord(record: DryComponentRecord, slug: string): Promise<DryComponentRecord> {
-  await buildAndStore(record.sourcePath, slug);
-  const bundlePath = pathToFileURL(join(componentsStorage.root, `${slug}.js`)).href;
+async function rebuildRecord(adapter: StorageAdapter, record: DryComponentRecord, slug: string): Promise<DryComponentRecord> {
+  await buildAndStore(adapter, record.sourcePath, slug);
+  const bundlePath = pathToFileURL(join(requireLocalComponentsRoot(), `${slug}.js`)).href;
   const module = (await import(/* @vite-ignore */ `${bundlePath}?rebuild=${Date.now()}`)) as { default?: unknown };
   if (!isDryComponentDefinition(module.default)) {
     throw new StorageError("invalid_path", `Built component "${record.name}" has invalid metadata.`);
@@ -161,13 +178,14 @@ async function rebuildRecord(record: DryComponentRecord, slug: string): Promise<
  * detect "already confirmed" per discovered file. */
 export const GET: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(componentsStorage, context);
     const name = readSlug(context);
     if (name === "") {
       const entries = (await adapter.list("")).filter((entry) => entry.kind === "file" && entry.name.endsWith(".json"));
       const records = (
-        await Promise.all(entries.map((entry) => readRecord(entry.path)))
+        await Promise.all(entries.map((entry) => readRecord(adapter, entry.path)))
       ).filter((record): record is DryComponentRecord => record !== null);
-      return jsonResponse({ records: await Promise.all(records.map(hydrateRecordIcon)) });
+      return jsonResponse({ records: await Promise.all(records.map((record) => hydrateRecordIcon(adapter, record))) });
     }
     if (name.endsWith(".js")) {
       const slug = slugFor(name.slice(0, -".js".length));
@@ -177,9 +195,9 @@ export const GET: DryRouteHandler = async (context) => {
         headers: { "Content-Type": "text/javascript" },
       });
     }
-    const record = await readRecord(fileNameFor(name));
+    const record = await readRecord(adapter, fileNameFor(name));
     if (!record) throw new StorageError("not_found", `No confirmed component named "${name}".`);
-    return jsonResponse({ record: await hydrateRecordIcon(record) });
+    return jsonResponse({ record: await hydrateRecordIcon(adapter, record) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -223,12 +241,13 @@ const BUILD_ACTION_SUFFIX = "/build";
  * rebuilt definition (mục "nút Build" on the admin page). */
 export const POST: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(componentsStorage, context);
     const slug = readSlug(context);
     if (slug.endsWith(BUILD_ACTION_SUFFIX)) {
       const name = slug.slice(0, -BUILD_ACTION_SUFFIX.length);
-      const record = await readRecord(fileNameFor(name));
+      const record = await readRecord(adapter, fileNameFor(name));
       if (!record) throw new StorageError("not_found", `No confirmed component named "${name}".`);
-      const rebuilt = await rebuildRecord(record, slugFor(name));
+      const rebuilt = await rebuildRecord(adapter, record, slugFor(name));
       await adapter.write(fileNameFor(name), Buffer.from(JSON.stringify(rebuilt, null, 2), "utf8"));
       return jsonResponse({ ok: true, record: rebuilt });
     }
@@ -256,9 +275,9 @@ export const POST: DryRouteHandler = async (context) => {
     if (!name) throw new StorageError("invalid_path", "`name` is required.");
     if (!label) throw new StorageError("invalid_path", "`label` is required.");
 
-    await buildAndStore(sourcePath, slugFor(name));
+    await buildAndStore(adapter, sourcePath, slugFor(name));
 
-    const bundlePath = pathToFileURL(join(componentsStorage.root, `${slugFor(name)}.js`)).href;
+    const bundlePath = pathToFileURL(join(requireLocalComponentsRoot(), `${slugFor(name)}.js`)).href;
     const module = (await import(/* @vite-ignore */ `${bundlePath}?confirm=${Date.now()}`)) as { default?: unknown };
     if (!isDryComponentDefinition(module.default)) {
       throw new StorageError("invalid_path", `Built component "${name}" has invalid metadata.`);
@@ -277,6 +296,7 @@ export const POST: DryRouteHandler = async (context) => {
  * bundle; the source file on disk is untouched. */
 export const DELETE: DryRouteHandler = async (context) => {
   try {
+    const adapter = getStorageAdapter(componentsStorage, context);
     const name = readSlug(context);
     if (!name) throw new StorageError("invalid_path", "A component name is required.");
     const slug = slugFor(name);

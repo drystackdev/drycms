@@ -1,6 +1,8 @@
-import { createStorageAdapter, StorageError, type StorageAdapter } from "../../storage/index.js";
+import { StorageError } from "../../storage/index.js";
 import { bufferOf } from "../../storage/util.js";
 import { pagesCacheStorage } from "../config.js";
+import { getStorageAdapter } from "../storage-adapters.js";
+import type { DryRouteContext } from "../context.js";
 import { BUILD_ID } from "./build-id.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
@@ -10,12 +12,6 @@ interface PageCacheEnvelope {
   versions: Record<string, number>;
   buildId: string;
   renderedAt: string;
-}
-
-let adapter: StorageAdapter | undefined;
-function storage(): StorageAdapter {
-  if (!adapter) adapter = createStorageAdapter(pagesCacheStorage);
-  return adapter;
 }
 
 function cacheKeyFor(pathname: string): string {
@@ -32,13 +28,14 @@ function cacheKeyFor(pathname: string): string {
  * (`import.meta.env.DEV`) - this module doesn't gate itself.
  */
 export async function readPageCache(
+  context: Pick<DryRouteContext, "env">,
   pathname: string,
   entries: ContentEntryEngineAdapter,
   allTypes: ContentTypeDefinition[],
 ): Promise<string | null> {
   let envelope: PageCacheEnvelope;
   try {
-    const file = await storage().read(cacheKeyFor(pathname));
+    const file = await getStorageAdapter(pagesCacheStorage, context).read(cacheKeyFor(pathname));
     envelope = JSON.parse((await bufferOf(file.stream)).toString("utf8")) as PageCacheEnvelope;
   } catch (error) {
     if (error instanceof StorageError && error.code === "not_found") return null;
@@ -70,6 +67,7 @@ export async function readPageCache(
  * runs).
  */
 export async function writePageCache(
+  context: Pick<DryRouteContext, "env">,
   pathname: string,
   html: string,
   touchedTypes: Set<string>,
@@ -89,7 +87,7 @@ export async function writePageCache(
       buildId: BUILD_ID,
       renderedAt: new Date().toISOString(),
     };
-    await storage().write(cacheKeyFor(pathname), Buffer.from(JSON.stringify(envelope), "utf8"));
+    await getStorageAdapter(pagesCacheStorage, context).write(cacheKeyFor(pathname), Buffer.from(JSON.stringify(envelope), "utf8"));
   } catch (error) {
     console.error("[drycms] failed to write pages-cache entry:", error);
   }

@@ -12,10 +12,18 @@ doc is about how the pieces fit together and why; read it before touching
 `(Request) => Promise<Response>` function. It dispatches by the path segment
 right after `${path}/api/` (`storage`, `icons`, `iconify`, `content-types`,
 `content`, `richtext-components`) to a route module, then by HTTP method
-within that module. `src/server/adapters/node.ts` is the only adapter wired
-up today; `adapters/types.ts` documents the contract a future
-Workers/Bun adapter would need to satisfy. `env` stands in for a Workers-style
-`fetch(request, env, ctx)` env object - Node has nothing to put there (`{}`).
+within that module. `src/server/adapters/node.ts` bridges Node's
+`http.IncomingMessage`/`ServerResponse` to real `Request`/`Response` objects
+(`entry-node.ts`); `src/server/entry-worker.ts` is Cloudflare Workers'
+equivalent entry, needing no such bridge at all - `handler.ts`/
+`page-handler.ts`/`page-guard.ts` are already Fetch-API-shaped, so it's a
+thin `fetch(request, env, ctx)` export that calls them directly (see
+`adapters/types.ts`'s own doc comment on why Workers needs no bridging code,
+and `status/cloudflare-workers-adapter.md` for the full Workers-support
+plan/its remaining gaps - Bun is the one runtime still unimplemented). `env`
+is a Workers-style `fetch(request, env, ctx)` env object - Node's adapter has
+nothing real to put there (`{}`), Workers passes its real bindings
+(`R2Bucket`/`D1Database`/KV namespaces) straight through.
 
 `dry.config.ts` (repo root) is resolved once at server startup by
 `src/server/options.ts`'s `resolveOptions()` into a fully-normalized

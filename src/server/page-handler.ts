@@ -51,7 +51,7 @@ export async function handlePageRequest(
   // which would make dev's "live preview qua vite" show stale output after
   // editing a page - see `plans/app-router.md`'s "Chỉ bật ở production".
   if (!import.meta.env.DEV) {
-    const cached = await readPageCache(url.pathname, entries, allTypes);
+    const cached = await readPageCache(routeContext, url.pathname, entries, allTypes);
     if (cached !== null) {
       return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
@@ -64,7 +64,7 @@ export async function handlePageRequest(
   return renderPage(match, dryContext, {
     onDocumentReady: (fullHtml) => {
       if (import.meta.env.DEV) return;
-      void writePageCache(url.pathname, fullHtml, touchedTypes, entries, allTypes);
+      void writePageCache(routeContext, url.pathname, fullHtml, touchedTypes, entries, allTypes);
     },
   });
 }

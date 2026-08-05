@@ -1,0 +1,60 @@
+{
+  // Template for deploying drycms to Cloudflare Workers - see
+  // `status/cloudflare-workers-adapter.md` for the full plan this
+  // implements. Every ID/name below is a placeholder; fill them in with
+  // `wrangler d1 create`/`wrangler r2 bucket create`/`wrangler kv namespace
+  // create` output (or the dashboard) before `bun run deploy`, and match
+  // `dry.config.ts`'s `content.binding`/`storage.binding`/`kv.binding` to
+  // whatever binding names you choose here.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "drycms",
+  "main": "dist/server/entry-worker.js",
+  "compatibility_date": "2026-08-01",
+  // `node:stream`'s `Readable`/`Buffer` are used throughout `src/server/**`
+  // and `src/storage/r2.ts` (same as the existing `kv/cloudflare-kv.ts`
+  // Buffer usage) - required for all of it to run on workerd.
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Serves the client build (`dist/client/**`, built by `bun run
+  // build:worker`) - `entry-worker.ts` reads `env.ASSETS` for both real
+  // static files and the admin shell's `index.html`.
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS",
+  },
+
+  // `content.engine: "D1"` + `content.binding: "CONTENT_DB"` in
+  // `dry.config.ts` to use this. Leave both content and this block absent
+  // to keep the default `sqlite` engine (Node-only - a Workers deployment
+  // needs `"D1"` here, `sqlite` has no Workers driver).
+  "d1_databases": [
+    {
+      "binding": "CONTENT_DB",
+      "database_name": "drycms-content",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+    },
+  ],
+
+  // One bucket, key-prefixed per option (see `storage/r2.ts`'s doc comment)
+  // - point `storage`/`icons`/`components.storage`/`pageComponents.storage`/
+  // `pagesCache.storage` in `dry.config.ts` at this same binding with
+  // `kind: "r2"`, e.g. `storage: { kind: "r2", binding: "MEDIA_BUCKET" }`.
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "drycms-media",
+    },
+  ],
+
+  // Only needed if `dry.config.ts` sets `kv: { kind: "KV", binding: "KV" }`
+  // - the default `kv.kind: "local"` has no Workers driver either, same
+  // constraint as `content.engine: "sqlite"` above. `kind: "D1"` for the KV
+  // store is also available and reuses the `d1_databases` binding above
+  // instead of this block.
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID",
+    },
+  ],
+}

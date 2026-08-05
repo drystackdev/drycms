@@ -4,7 +4,7 @@
   "private": true,
   "version": "0.0.1",
   "workspaces": ["packages/*"],
-  "description": "A self-hosted Preact CMS admin UI, served via a pluggable server adapter (Node by default, Workers/Bun planned).",
+  "description": "A self-hosted Preact CMS admin UI, served via a pluggable server adapter (Node or Cloudflare Workers; Bun planned).",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -12,6 +12,8 @@
     "dev": "node scripts/dev-server.mjs",
     "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server && bun scripts/build-seed-assets.ts",
     "start": "node dist/server/entry-node.js",
+    "build:worker": "vite build --outDir dist/client && vite build --ssr src/server/entry-worker.ts --outDir dist/server",
+    "deploy": "bun run build:worker && wrangler deploy",
     "build:icons": "node scripts/build-icons.mjs",
     "dry:generate": "bun scripts/dry-generate.ts",
     "seed:sync": "bun scripts/seed-sync.ts",
@@ -60,7 +62,8 @@
     "@types/prismjs": "^1.26.6",
     "typescript": "^5.9.0",
     "vite": "^8.0.13",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "wrangler": "^4.118.0"
   },
   "overrides": {
     "rollup": "^4.62.2",
