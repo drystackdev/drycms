@@ -42,7 +42,7 @@ import {
 import { closeVeiDialog, isVeiFrame } from "./vei/bridge.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import FieldRenderer, { type FieldRendererProps } from "./content-entry-editor/FieldRenderer.js";
-import { useDocumentTitle } from "./page-common.js";
+import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
 import { canAccess } from "../store/auth.js";
 
 interface Props {
@@ -160,6 +160,30 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     () => (type ? buildEntryFieldTree(type, allTypes) : []),
     [type, allTypes],
   );
+  // `createdAt`/`updatedAt` are server-stamped on every save (see
+  // `entry-codec.ts`'s `applyTimestamps`) regardless of what's submitted for
+  // them - showing them as an editable date picker (especially pre-filled
+  // with "now" on a not-yet-created entry) would be misleading, so they're
+  // left out of the form entirely. The List page's columns already show
+  // them. `sortIndex` (see `system-fields.ts`'s `features.sortable`) is only
+  // ever written by the List page's drag-reorder Save action, never manually
+  // typed - same rationale. Computed here (rather than after the loading
+  // guards below, where the field-layout split further down still lives) so
+  // `previewDiffs` - needed by `usePageHeaderActions` right below, a hook
+  // that must run on every render - has something to diff against even
+  // before `type`/`value` are confirmed loaded.
+  const editableNodes = useMemo(
+    () =>
+      nodes.filter(
+        (n) =>
+          !(
+            n.kind === "column" &&
+            (n.fieldId === SYSTEM_FIELD_IDS.createdAt || n.fieldId === SYSTEM_FIELD_IDS.updatedAt)
+          ) && !(n.kind === "column" && n.fieldId === SYSTEM_FIELD_IDS.sortIndex),
+      ),
+    [nodes],
+  );
+  const previewDiffs = originalValue && value ? diffEntryValue(originalValue, value, editableNodes) : [];
 
   const veiFrame = isVeiFrame();
   const isSingleton = type?.kind === "singleton";
@@ -251,6 +275,45 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
   useDocumentTitle(
     type ? (isNew ? `New ${type.label}` : type.label) : "Content",
+  );
+
+  // Outside the VEI dialog, this entry's title/Cancel/Preview/Save move into
+  // DryLayout's shared topbar instead of a local `.page-header` - see
+  // `usePageHeaderActions`. Inside the dialog (`veiFrame`), there's no
+  // topbar to move them to (`VeiFrame.tsx` skips `DryLayout` entirely), so
+  // this stays `null` and the `.page-header` block further down (unchanged)
+  // renders them locally exactly as before. `handleSave`/`saving` are
+  // referenced before their own declarations below - safe, `function
+  // handleSave` is hoisted, and `saving` is a `useState` declared near the
+  // top of this component.
+  usePageHeaderActions(
+    !veiFrame && type ? (
+      <>
+        {!isSingleton && (
+          <button type="button" class="icon ghost" onClick={() => route(`${path}/content/${type.name}`)}>
+            <ArrowLeftIcon />
+          </button>
+        )}
+        <strong class="topbar-page-title">{isNew ? `New ${type.label}` : type.label}</strong>
+        <span class="spacer" />
+        {!isSingleton && (
+          <button type="button" class="outline" onClick={() => route(`${path}/content/${type.name}`)}>
+            Cancel
+          </button>
+        )}
+        {!isNew && isDirty && (
+          <button type="button" class="outline" onClick={() => setShowPreview(true)}>
+            <PreviewIcon /> Preview
+            <span class="badge sm secondary">{previewDiffs.length}</span>
+          </button>
+        )}
+        {canEdit && (
+          <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>
+            Save
+          </button>
+        )}
+      </>
+    ) : null,
   );
 
   function updateFieldValue(fieldName: string, fieldValue: unknown) {
@@ -484,21 +547,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   if (value === null) return showLoading ? <span class="hint">Loading…</span> : null;
 
   const backTo = `${path}/content/${type.name}`;
-  // `createdAt`/`updatedAt` are server-stamped on every save (see
-  // `entry-codec.ts`'s `applyTimestamps`) regardless of what's submitted for
-  // them - showing them as an editable date picker (especially pre-filled
-  // with "now" on a not-yet-created entry) would be misleading, so they're
-  // left out of the form entirely. The List page's columns already show them.
-  const isTimestampField = (node: EntryFieldNode) =>
-    node.kind === "column" &&
-    (node.fieldId === SYSTEM_FIELD_IDS.createdAt ||
-      node.fieldId === SYSTEM_FIELD_IDS.updatedAt);
-  // `sortIndex` (see `system-fields.ts`'s `features.sortable`) is only ever
-  // written by the List page's drag-reorder Save action, never manually
-  // typed - same rationale as excluding `createdAt`/`updatedAt` above.
-  const isSortIndexField = (node: EntryFieldNode) =>
-    node.kind === "column" && node.fieldId === SYSTEM_FIELD_IDS.sortIndex;
-  const editableNodes = nodes.filter((n) => !isTimestampField(n) && !isSortIndexField(n));
   const sideOf = (n: EntryFieldNode) =>
     resolveFieldSide(n.fieldId, n.kind !== "column", type.fieldSides);
   const leftFields = editableNodes.filter((n) => sideOf(n) === "left");
@@ -510,54 +558,59 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // zone aside) empty rather than the reverse.
   const mainFields = leftFields.length > 0 ? leftFields : rightFields;
   const sideFields = leftFields.length > 0 ? rightFields : [];
-  const previewDiffs = originalValue ? diffEntryValue(originalValue, value, editableNodes) : [];
 
   return (
     <>
-      <div class="page-header">
-        {/* No list to go back to inside the VEI dialog - same reasoning as
-         * the Cancel button below not navigating there either. */}
-        {!isSingleton && !veiFrame && (
-          <button
-            type="button"
-            class="icon ghost"
-            onClick={() => route(backTo)}
-          >
-            <ArrowLeftIcon />
-          </button>
-        )}
-        <div style={{ flex: 1 }}>
-          <h1>{isNew ? `New ${type.label}` : type.label}</h1>
-          <p>{type.description || `Edit this ${type.kind}'s content.`}</p>
-        </div>
-        <div class="row">
-          {/* A singleton has no list to go "back" to, so this button was
-           * previously collection-only - the Visual Editing Interface
-           * changes what Cancel MEANS (close the dialog, not navigate) and
-           * that applies just as much to a singleton opened from the public
-           * site (`plans/vei.md`), so it's shown for both there. */}
-          {(!isSingleton || veiFrame) && (
+      {/* Outside the dialog, this same title/Cancel/Preview/Save row is
+       * handed to DryLayout's topbar instead (`usePageHeaderActions` above)
+       * - `VeiFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
+       * dialog keeps its own local header exactly as it always has. */}
+      {veiFrame && (
+        <div class="page-header">
+          {/* No list to go back to inside the VEI dialog - same reasoning as
+           * the Cancel button below not navigating there either. */}
+          {!isSingleton && !veiFrame && (
             <button
               type="button"
-              class="outline"
-              onClick={() => (veiFrame ? closeVeiDialog() : route(backTo))}
+              class="icon ghost"
+              onClick={() => route(backTo)}
             >
-              Cancel
+              <ArrowLeftIcon />
             </button>
           )}
-          {!isNew && isDirty && (
-            <button type="button" class="outline" onClick={() => setShowPreview(true)}>
-              <PreviewIcon /> Preview
-              <span class="badge sm secondary">{previewDiffs.length}</span>
-            </button>
-          )}
-          {/* Redundant inside the VEI dialog - the overlay's own dock Save
-           * button drives this entry's `handleSave` too (via `dry:entry-save`,
-           * `listenForEntrySave` above), but scoped across every marked entry
-           * on the page rather than just this one. */}
-          {canEdit && !veiFrame && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
+          <div style={{ flex: 1 }}>
+            <h1>{isNew ? `New ${type.label}` : type.label}</h1>
+            <p>{type.description || `Edit this ${type.kind}'s content.`}</p>
+          </div>
+          <div class="row">
+            {/* A singleton has no list to go "back" to, so this button was
+             * previously collection-only - the Visual Editing Interface
+             * changes what Cancel MEANS (close the dialog, not navigate) and
+             * that applies just as much to a singleton opened from the public
+             * site (`plans/vei.md`), so it's shown for both there. */}
+            {(!isSingleton || veiFrame) && (
+              <button
+                type="button"
+                class="outline"
+                onClick={() => (veiFrame ? closeVeiDialog() : route(backTo))}
+              >
+                Cancel
+              </button>
+            )}
+            {!isNew && isDirty && (
+              <button type="button" class="outline" onClick={() => setShowPreview(true)}>
+                <PreviewIcon /> Preview
+                <span class="badge sm secondary">{previewDiffs.length}</span>
+              </button>
+            )}
+            {/* Redundant inside the VEI dialog - the overlay's own dock Save
+             * button drives this entry's `handleSave` too (via `dry:entry-save`,
+             * `listenForEntrySave` above), but scoped across every marked entry
+             * on the page rather than just this one. */}
+            {canEdit && !veiFrame && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
+          </div>
         </div>
-      </div>
+      )}
 
       <fieldset disabled={!canEdit} class="content-entry-editor-form">
       <div class="content-entry-editor-grid">

@@ -2724,6 +2724,29 @@
       z-index: 20;
     }
 
+    /* Holds whatever the current page hands the topbar via
+     * `usePageHeaderActions` (`ContentEntryEditor.tsx`'s title + Cancel/
+     * Preview/Save, outside the Visual Editing Interface's dialog, which
+     * keeps its own local `.page-header` instead - see `pageHeaderActions`).
+     * `min-width: 0` so a long entry title truncates instead of pushing
+     * `SyncIndicator` out of the topbar; empty (most pages) it's just a
+     * spacer, same role `.topbar`'s old `.spacer` span played. */
+    .topbar-page-actions {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .topbar-page-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--dry-text-sm);
+      font-weight: 600;
+    }
+
     .content {
       padding: 1rem 1.5rem 4rem;
       display: grid;
@@ -2754,6 +2777,14 @@
      * there's nothing to clear here; it should hug this scroll container's
      * own top instead. See `.page-header`'s own comment for the full story. */
     .vei-frame-content .page-header {
+      position: sticky;
+      z-index: 20;
+      padding-block-end: 0.75rem;
+      background-color: color-mix(
+        in srgb,
+        var(--dry-background) 80%,
+        transparent
+      );
       top: 0;
       padding-block-start: 0.5rem;
       margin-block-start: -0.5rem;
@@ -2790,15 +2821,6 @@
       justify-content: space-between;
       gap: 1rem;
       flex-wrap: wrap;
-      position: sticky;
-      top: var(--dry-topbar-height);
-      z-index: 20;
-      padding-block-end: 0.75rem;
-      background-color: color-mix(
-        in srgb,
-        var(--dry-background) 80%,
-        transparent
-      );
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
 
@@ -4864,6 +4886,34 @@
     .popover-menu-check {
       margin-left: auto;
       flex-shrink: 0;
+    }
+
+    /* The theme segmented control embedded in the sidebar's account popover
+     * (`DryLayout.tsx`, `ThemeToggle.tsx`'s `.file-view-toggle`) - `.popover-menu
+     * button` above sizes every menu button for a full-width action row
+     * (Profile/Logout), so restore the equal-width controls and keep the
+     * labels visible without changing the real menu items above. */
+    .popover-menu-theme {
+      display: flex;
+      justify-content: center;
+      padding: 0.25rem 0;
+
+      & .file-view-toggle {
+        width: 100%;
+
+        & > button {
+          width: auto;
+          min-width: 0;
+          flex: 1;
+          justify-content: center;
+        }
+      }
+
+      & .file-view-toggle button {
+        width: auto;
+        height: 1.75rem;
+        justify-content: center;
+      }
     }
 
     .sidebar-nav-popup-item {

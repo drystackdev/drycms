@@ -1937,13 +1937,15 @@ function DemoContent({ id }: { id: string }) {
         <Demo
           id="islands"
           title="Theme & sidebar toggles"
-          description="Both live in the topbar of every drycms page."
+          description="The sidebar toggle lives in the topbar; the theme toggle lives in the sidebar's account menu."
           code={code.islands!}
         >
           <p class="muted">
-            The theme toggle and the mobile sidebar toggle are in the topbar
-            above. The theme toggle cycles system → light → dark and stores the
-            choice in localStorage.
+            The mobile sidebar toggle is in the topbar above. The theme toggle
+            is the segmented System/Light/Dark control at the top of the
+            account menu (click your name/avatar at the bottom of the
+            sidebar) - it cycles system → light → dark and stores the choice
+            in localStorage.
           </p>
         </Demo>
       );

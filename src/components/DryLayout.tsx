@@ -18,6 +18,7 @@ import type { IconName } from "./icons/index.js";
 const { path } = window.__DRY_CONFIG__;
 import { collapsed } from "../store/dashboard.js";
 import { contentTypesVersion } from "../store/content-types.js";
+import { pageHeaderActions } from "../store/page-header.js";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { useStore } from "../hooks/useStore.js";
 import { useFetch } from "../hooks/useFetch.js";
@@ -26,7 +27,7 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
-import { countEntryDrafts, hasEntryDraft, hydrateEntryDraftIndex } from "../content-types/entry-draft-store.js";
+import { countEntryDrafts, hasEntryDraft, hydrateEntryDraftIndex, watchEntryDraftIndex } from "../content-types/entry-draft-store.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -377,8 +378,11 @@ export default function DryLayout({ children }: Props) {
   // below pop in shortly after first paint rather than blocking on it (see
   // `entry-draft-store.ts`'s own doc comment). `DryLayout` never remounts
   // (outside `<Router>`, see `App.tsx`), so `[]` is correct here.
+  // `watchEntryDraftIndex` keeps it current after that initial read whenever
+  // a DIFFERENT tab changes a draft.
   useEffect(() => {
     void hydrateEntryDraftIndex();
+    return watchEntryDraftIndex();
   }, []);
 
   const shellClass = [
@@ -501,6 +505,13 @@ export default function DryLayout({ children }: Props) {
             <Popover
               label="Account menu"
               tooltip=""
+              // Custom `children` below don't auto-close the popover by
+              // default (unlike `items`) - opted back in for the actual
+              // menu actions (matched by their `role="menuitem"`) so
+              // Profile/Logout behave exactly as they did as `items`, while
+              // the theme buttons (no such role) stay exempt: toggling
+              // theme shouldn't dismiss the menu you toggled it from.
+              closeOnItemClick
               trigger={(onClick, open) => (
                 <button
                   type="button"
@@ -524,22 +535,26 @@ export default function DryLayout({ children }: Props) {
                   )}
                 </button>
               )}
-              items={[
-                {
-                  type: "item",
-                  label: "Profile",
-                  icon: <UserIcon />,
-                  onClick: () => route(`${path}/profile`),
-                },
-                {
-                  type: "item",
-                  label: "Logout",
-                  icon: <LogOutIcon />,
-                  danger: true,
-                  onClick: () => void logout(),
-                },
-              ]}
-            />
+            >
+              {/* Custom `children` (not `items`) so the theme segmented
+               * control can sit above the Profile/Logout actions without
+               * auto-closing the popover on every click - `items` alone
+               * can't mix in non-action content like this. */}
+              <li class="popover-menu-theme" role="none">
+                <ThemeToggle />
+              </li>
+              <li class="popover-menu-separator" role="separator" />
+              <li role="none">
+                <button type="button" role="menuitem" onClick={() => route(`${path}/profile`)}>
+                  <UserIcon /> Profile
+                </button>
+              </li>
+              <li role="none">
+                <button type="button" role="menuitem" class="popover-menu-danger" onClick={() => void logout()}>
+                  <LogOutIcon /> Logout
+                </button>
+              </li>
+            </Popover>
           )}
         </div>
       </aside>
@@ -547,9 +562,8 @@ export default function DryLayout({ children }: Props) {
       <div class="main" ref={main}>
         <header class="topbar">
           <SidebarToggle />
-          <span class="spacer"></span>
+          <div class="topbar-page-actions">{pageHeaderActions.value}</div>
           <SyncIndicator />
-          <ThemeToggle />
         </header>
 
         <main class="content">{children}</main>

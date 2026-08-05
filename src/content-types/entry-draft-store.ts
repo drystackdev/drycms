@@ -5,6 +5,7 @@ import {
   getAllEntryDraftRecords,
   getEntryDraftRecord,
   putEntryDraftRecord,
+  subscribeEntryDraftChanges,
 } from "./entry-draft-db.js";
 
 /** `entryId: null` covers both a not-yet-created entry (`__new__`, one slot
@@ -46,6 +47,30 @@ export async function hydrateEntryDraftIndex(): Promise<void> {
     next[record.key] = { typeSlug: record.typeSlug, entryId: record.entryId, updatedAt: record.updatedAt };
   }
   entryDraftIndex.value = next;
+}
+
+/**
+ * Keeps `entryDraftIndex` current when a DIFFERENT tab writes or discards a
+ * draft - without this, the nav sidebar's dot/badge (and `ContentEntryList`'s
+ * per-row dot) only ever reflect what happened in this tab, stale until the
+ * next full reload. Called once from `DryLayout`'s mount effect, right next
+ * to `hydrateEntryDraftIndex()` (the initial read this then keeps in sync).
+ * Cheap, incremental updates rather than a full re-`hydrateEntryDraftIndex()`
+ * per message - there's no bound on how many drafts might exist, but each
+ * change event only ever touches one.
+ */
+export function watchEntryDraftIndex(): () => void {
+  return subscribeEntryDraftChanges((message) => {
+    if (message.type === "put") {
+      const { key, typeSlug, entryId, updatedAt } = message.record;
+      entryDraftIndex.value = { ...entryDraftIndex.value, [key]: { typeSlug, entryId, updatedAt } };
+    } else {
+      if (!(message.key in entryDraftIndex.value)) return;
+      const next = { ...entryDraftIndex.value };
+      delete next[message.key];
+      entryDraftIndex.value = next;
+    }
+  });
 }
 
 export async function loadEntryDraft(typeSlug: string, entryId: string | null): Promise<EntryValue | undefined> {

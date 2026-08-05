@@ -1,6 +1,5 @@
 import type { JSX } from "preact";
 import { MonitorIcon, MoonIcon, SunIcon, type IconProps } from "./icons/index.js";
-import Popover from "./Popover.js";
 import { useStore } from "../hooks/useStore.js";
 import { applyTheme, type DryTheme } from "../lib/native/theme.js";
 
@@ -18,13 +17,15 @@ const ICONS: Record<DryTheme, (props: IconProps) => JSX.Element> = {
   dark: MoonIcon,
 };
 
-/** A popover offering the three theme options - like align-menu.tsx, the
- * trigger shows whichever option is currently active rather than a fixed
- * icon. Selection is persisted via `useStore` (`drycms:store.theme` in
- * `localStorage`) and applied via `theme.ts`'s `applyTheme` - the same DOM
- * logic a framework-free `[data-theme-toggle]` button uses, so a page mixing
- * both stays in sync either way. The pre-mount flash is avoided separately,
- * by `index.html`'s own inline script reading the same storage before first
+/** A `.file-view-toggle` segmented control (`components.css`) offering the three
+ * theme options directly, rather than a dropdown - it lives inside the
+ * sidebar's own account popover (`DryLayout.tsx`), which is a menu already,
+ * so nesting another one inside it would be a menu-in-a-menu. Selection is
+ * persisted via `useStore` (`drycms:store.theme` in `localStorage`) and
+ * applied via `theme.ts`'s `applyTheme` - the same DOM logic a
+ * framework-free `[data-theme-toggle]` button uses, so a page mixing both
+ * stays in sync either way. The pre-mount flash is avoided separately, by
+ * `index.html`'s own inline script reading the same storage before first
  * paint. */
 export default function ThemeToggle() {
   const [theme, setTheme] = useStore<DryTheme>("theme", "system");
@@ -34,32 +35,25 @@ export default function ThemeToggle() {
     applyTheme(value);
   };
 
-  const CurrentIcon = ICONS[theme];
-
   return (
-    <Popover
-      label="Theme"
-      tooltip="Theme"
-      items={ORDER.map((value) => {
+    <div class="file-view-toggle" role="group" aria-label="Theme">
+      {ORDER.map((value) => {
         const Icon = ICONS[value];
-        return {
-          type: "item" as const,
-          label: LABELS[value],
-          icon: <Icon />,
-          onClick: () => choose(value),
-        };
+        return (
+          <button
+            key={value}
+            type="button"
+            class="ghost sm"
+            aria-pressed={theme === value}
+            title={LABELS[value]}
+            aria-label={LABELS[value]}
+            onClick={() => choose(value)}
+          >
+            <Icon />
+            <span>{value === "system" ? "System" : value === "light" ? "Light" : "Dark"}</span>
+          </button>
+        );
       })}
-      trigger={(onClick) => (
-        <button
-          type="button"
-          class="ghost icon"
-          onClick={onClick}
-          title={LABELS[theme]}
-          aria-label={LABELS[theme]}
-        >
-          <CurrentIcon />
-        </button>
-      )}
-    />
+    </div>
   );
 }

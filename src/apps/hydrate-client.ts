@@ -5,6 +5,7 @@ import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import { matchRoute } from "../server/app-router/match.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { discoverRoutes } from "../server/app-router/route-tree.js";
+import { HYDRATED_EVENT } from "./hydrated-event.js";
 
 /**
  * Client bootstrap for `src/apps/pages/**` (`plans/app-router.md`'s Giai
@@ -24,19 +25,30 @@ import { discoverRoutes } from "../server/app-router/route-tree.js";
  * existing DOM instead of re-creating it.
  */
 async function main(): Promise<void> {
-  const match = matchRoute(discoverRoutes(), window.location.pathname);
-  if (!match) return; // The server already 404'd for this URL - nothing to hydrate.
+  // `finally` so this fires even on the early return below (a 404, where
+  // `hydrate()` never runs at all) - `overlay.ts` waits on this event before
+  // it's safe to touch the DOM (see `hydrated-event.ts`), and it must not
+  // wait forever just because there was nothing to hydrate.
+  try {
+    const match = matchRoute(discoverRoutes(), window.location.pathname);
+    if (!match) return; // The server already 404'd for this URL - nothing to hydrate.
 
-  const logElement = document.getElementById("dry-replay-data");
-  setReplayLog(logElement?.textContent ? decodeCallLog(logElement.textContent) : []);
-  // Same `match.params` the server seeded its own `DryRequestContext` with -
-  // re-derived here from the identical `matchRoute()` call above, so the
-  // ambient `params()` global (`params-reader-client.ts`) returns the same
-  // value during hydration as it did during SSR.
-  setCurrentParams(match.params);
+    const logElement = document.getElementById("dry-replay-data");
+    setReplayLog(logElement?.textContent ? decodeCallLog(logElement.textContent) : []);
+    // Same `match.params` the server seeded its own `DryRequestContext` with -
+    // re-derived here from the identical `matchRoute()` call above, so the
+    // ambient `params()` global (`params-reader-client.ts`) returns the same
+    // value during hydration as it did during SSR.
+    setCurrentParams(match.params);
 
-  const vnode = await resolveMatchToVNode(match);
-  hydrate(vnode as never);
+    const vnode = await resolveMatchToVNode(match);
+    hydrate(vnode as never);
+  } finally {
+    // The flag lets a listener attached AFTER this point (`overlay.ts`'s
+    // `whenHydrated`) skip straight past the event it necessarily missed.
+    (window as { dryHydrated?: boolean }).dryHydrated = true;
+    window.dispatchEvent(new Event(HYDRATED_EVENT));
+  }
 }
 
 void main();

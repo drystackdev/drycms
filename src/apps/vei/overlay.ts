@@ -1,6 +1,11 @@
 import { decodeRefs, type DryRef } from "../../content-types/dry-vei-ref.js";
-import { getAllEntryDraftRecords } from "../../content-types/entry-draft-db.js";
+import {
+  getAllEntryDraftRecords,
+  subscribeEntryDraftChanges,
+  type EntryDraftRecord,
+} from "../../content-types/entry-draft-db.js";
 import { encodeEntryId } from "../../lib/id-hash.js";
+import { HYDRATED_EVENT } from "../hydrated-event.js";
 import { MARKER_STYLES, OVERLAY_STYLES } from "./overlay-styles.js";
 
 /**
@@ -76,6 +81,32 @@ function restoreScrollPosition(): void {
   const apply = () => window.scrollTo(position.x, position.y);
   apply();
   window.addEventListener("load", apply, { once: true });
+}
+
+/** `.sheet` is `position: fixed` over the whole viewport, but that alone
+ * doesn't stop a wheel/touch scroll from chaining past it: the backdrop
+ * itself has nothing to scroll, so the browser walks up to the next
+ * scrollable ancestor, which is the host page's own `<html>`/`<body>` -
+ * still scrolling the page visually hidden underneath. Locking overflow on
+ * both while the sheet is open (and restoring whatever was there before,
+ * rather than assuming it was empty) closes that gap. */
+let lockedOverflow: { html: string; body: string } | null = null;
+
+function lockBodyScroll(): void {
+  if (lockedOverflow) return;
+  lockedOverflow = {
+    html: document.documentElement.style.overflow,
+    body: document.body.style.overflow,
+  };
+  document.documentElement.style.overflow = "hidden";
+  document.body.style.overflow = "hidden";
+}
+
+function unlockBodyScroll(): void {
+  if (!lockedOverflow) return;
+  document.documentElement.style.overflow = lockedOverflow.html;
+  document.body.style.overflow = lockedOverflow.body;
+  lockedOverflow = null;
 }
 
 /** Every marker on one element, across the text marker and the
@@ -413,6 +444,26 @@ function main(): void {
   void refreshPreviewCount();
 
   /**
+   * `hydrate-client.ts` reconciles the page's DOM against its own (server-
+   * replayed, so still last-saved) vnode tree - any DOM edit made before
+   * that finishes gets silently overwritten the instant it does, since a
+   * mismatched text node is exactly what hydration "fixes". Its `main()` is
+   * async (`resolveMatchToVNode` route-splits), so this really can lose the
+   * race: `applyPendingDrafts` below reads IndexedDB and mutates the DOM
+   * well before hydration's dynamic import resolves. `HYDRATED_EVENT` fires
+   * once hydration is done either way (`hydrated-event.ts`), including on a
+   * 404 where hydration never runs at all - checking `dryHydrated` first
+   * covers the (normal, non-404) case where it already fired before this
+   * module's own script tag even started executing.
+   */
+  function whenHydrated(): Promise<void> {
+    if ((window as { dryHydrated?: boolean }).dryHydrated) return Promise.resolve();
+    return new Promise((resolve) => {
+      window.addEventListener(HYDRATED_EVENT, () => resolve(), { once: true });
+    });
+  }
+
+  /**
    * Reapplies whatever drafts are already sitting in IndexedDB as soon as
    * the page loads - without this, a plain reload (anything other than
    * `saveAll()`'s own `window.location.reload()` after a real save) silently
@@ -421,20 +472,58 @@ function main(): void {
    * `applyPreview` the live `vei:input` bridge message uses; the only
    * difference is the source is IndexedDB instead of a postMessage.
    */
+  /** One target's draft, every top-level field - shared by `applyPendingDrafts`
+   * (looping every marked target on load) and the cross-tab subscription
+   * below (one target at a time, as each remote change arrives). */
+  function applyDraftRecord(target: EditTarget, draft: EntryDraftRecord): void {
+    const entryId = target.kind === "singleton" ? null : encodeEntryId(target.id);
+    for (const [name, value] of Object.entries(draft.value)) {
+      applyPreview({ name, value, typeSlug: target.type, entryId });
+    }
+  }
+
   async function applyPendingDrafts(): Promise<void> {
+    await whenHydrated();
     const drafts = await getAllEntryDraftRecords().catch(() => []);
     if (drafts.length === 0) return;
     const draftsByKey = new Map(drafts.map((draft) => [draft.key, draft]));
     for (const target of markedTargets()) {
       const draft = draftsByKey.get(draftKeyFor(target));
-      if (!draft) continue;
-      const entryId = target.kind === "singleton" ? null : encodeEntryId(target.id);
-      for (const [name, value] of Object.entries(draft.value)) {
-        applyPreview({ name, value, typeSlug: target.type, entryId });
-      }
+      if (draft) applyDraftRecord(target, draft);
     }
   }
   void applyPendingDrafts();
+
+  /**
+   * Cross-tab live preview: a draft written or discarded in a DIFFERENT tab
+   * - another tab open on this same page, or the entry's own admin editor -
+   * reaches this page immediately via `BroadcastChannel`
+   * (`entry-draft-db.ts`'s `subscribeEntryDraftChanges`), instead of this
+   * page only catching up on its own next reload. A "put" patches the DOM
+   * exactly like a live `vei:input` bridge message does (`applyDraftRecord`,
+   * same helper `applyPendingDrafts` uses on load). A "delete" (the draft
+   * was saved or discarded elsewhere) reloads instead of trying to patch
+   * backwards - this overlay never keeps the pre-preview original value
+   * around to revert a marked node to, only what a draft says to show.
+   * Never torn down: this overlay runs for the page's whole lifetime (an
+   * MPA - there's no unmount to clean it up on), same as every other
+   * `window.addEventListener` in this file.
+   */
+  subscribeEntryDraftChanges((message) => {
+    console.log("[DEBUG crosstab] message", message);
+    void refreshPreviewCount();
+    const targets = markedTargets();
+    console.log("[DEBUG crosstab] targets", targets.map((t) => draftKeyFor(t)));
+    if (message.type === "put") {
+      const target = targets.find((candidate) => draftKeyFor(candidate) === message.record.key);
+      if (target) applyDraftRecord(target, message.record);
+    } else if (targets.some((candidate) => draftKeyFor(candidate) === message.key)) {
+      console.log("[DEBUG crosstab] reloading due to delete match");
+      window.location.reload();
+    } else {
+      console.log("[DEBUG crosstab] delete did not match any target");
+    }
+  });
 
   // A field's debounced IndexedDB write (`saveEntryDraft`'s 300ms) lags the
   // `vei:input` message that triggers this, so the badge is deliberately
@@ -494,11 +583,13 @@ function main(): void {
   // The pointer doesn't have to move for the highlighted rect to go stale -
   // the page underneath can scroll (capture phase still sees this even from
   // a nested scroll container, even though `scroll` itself doesn't bubble)
-  // or resize while hovering the same element.
+  // while hovering the same element. Rather than re-measuring on every
+  // scroll tick, just hide it - the next `mousemove` (scrolling never fires
+  // one on its own) re-marks whatever ends up under the pointer anyway.
   document.addEventListener(
     "scroll",
     () => {
-      if (hoveredElement) positionHighlight(hoveredElement);
+      if (hoveredElement) hideHighlight();
     },
     true,
   );
@@ -598,6 +689,7 @@ function main(): void {
    * (`openDialog` below), but "Preview all" has no single entry to aim at. */
   function openFrame(url: string): void {
     hideHighlight();
+    lockBodyScroll();
     panel.classList.add("loading");
     frame.src = url;
     scope.append(sheet);
@@ -622,6 +714,7 @@ function main(): void {
 
   function closeDialog(): void {
     clearTimeout(dialogLoadTimer);
+    unlockBodyScroll();
     sheet.remove();
     frame.removeAttribute("src");
     // Whatever ran in that frame - an edit, a Reset all from its own Preview
