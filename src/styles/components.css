@@ -2952,19 +2952,118 @@
     }
 
     /* --- Layout content field (pages/content-entry-editor/ContentLayoutField.tsx)
-     * - a richtext field marked "Layout content" takes over the whole left
-     * column by itself in place of the normal label/description-wrapped
-     * `.field`. `min-height` (not `height`) makes it fill down toward the
-     * bottom of the viewport on a short entry without capping it on a long
-     * one - the admin shell's own sticky `.topbar` + scrolling `.content`
-     * (see `.main`/`.topbar` above) keep handling anything taller, since
-     * nothing here gives the editor's shadow-DOM content host a DEFINITE
-     * height for its own `overflow-y: auto` to latch onto (see
-     * `content-shadow-styles.ts`'s doc comment) - a second, nested
-     * scrollbar inside the field itself is exactly what this avoids. */
+     * - a richtext field marked "Layout content" IS the entry's document,
+     * so this whole area switches from the normal one-column *page* (scrolls
+     * as part of `.content`, see `.main`/`.topbar` above) to a Keystatic-style
+     * fixed-height SPLIT PANE: both the editor (left) and the metadata
+     * sidebar (right) are pinned to the viewport and scroll independently of
+     * each other and of the outer page - the outer page itself never scrolls
+     * here. `:has(.content-layout-field)` scopes every rule below to only
+     * this mode, so a normal entry (no layout-content field) keeps the
+     * original in-page-flow grid untouched. */
+    .content-entry-editor-form:has(.content-layout-field) {
+      /* Standardized spacing for this whole split-pane mode - one place so
+       * the gutter/divider math below stays consistent instead of repeating
+       * matching magic numbers at each use site.
+       *   --gutter: `.content`'s own inline padding (this file, `.content`
+       *             above) - cancelled on the left so the editor pane sits
+       *             flush against the admin sidebar nav, and reused as the
+       *             editor's own inner inline-end padding so its text
+       *             doesn't hug the divider border it gets instead.
+       *   --pane-top-offset: the fixed gap above this grid on every entry
+       *             page (`.content`'s 1rem top padding + `.page-header`'s
+       *             own height + the 1.5rem gap `.content`'s `gap` puts
+       *             before this grid), rounded up slightly for breathing
+       *             room - measured against the actual rendered page, since
+       *             none of those three contributors has a token of its
+       *             own to read instead. */
+      --gutter: 1.5rem;
+      --pane-top-offset: 6rem;
+
+      /* Cancels `.content`'s own 4rem bottom padding (this file, `.content`
+       * above) - without this the split pane's own `height` below (already
+       * sized to exactly fill the viewport) would still leave that 4rem of
+       * page padding hanging past it, forcing a small outer page scroll
+       * even though both panes are already handling their own. */
+      margin-bottom: -4rem;
+
+      @media (width < 64rem) {
+        margin-bottom: 0;
+      }
+    }
+
+    .content-entry-editor-grid:has(.content-layout-field) {
+      height: calc(100dvh - var(--dry-topbar-height) - var(--pane-top-offset));
+      align-items: stretch;
+
+      /* The metadata sidebar (title/category/date/... + danger zone) scrolls
+       * on its own within the same fixed row height the editor pane gets -
+       * unrelated to the editor pane's own internal scroll. Overflow itself
+       * is handled by `useOverlayScrollbars` (`ContentEntryEditor.tsx`'s
+       * `sideScroll`) - the same scrollbar library/theme every other
+       * scrollable region in the app already uses, not a plain native
+       * `overflow: auto` - this rule only supplies the bounded height OS
+       * needs something to scroll within. `border-top` gives it a defined
+       * top edge to match the editor pane's own toolbar divider (below),
+       * since otherwise only the left pane would read as "boxed". */
+      & > .stack:last-child {
+        min-height: 0;
+        border-top: 1px solid var(--dry-border);
+        padding-block-start: 1rem;
+      }
+
+      /* Below the grid's own single-column collapse (`.content-entry-editor-grid`
+       * above), a fixed-height split pane makes no sense - there's only one
+       * column, stacked, and it should scroll as part of the normal page
+       * like everything else on a small screen. */
+      @media (width < 64rem) {
+        height: auto;
+        align-items: initial;
+      }
+    }
+
     .content-layout-field {
+      margin-left: calc(-1 * var(--gutter));
+      padding-inline-end: var(--gutter);
+      height: 100%;
+      /* A grid item's default `min-height` is `auto` (= "never shrink below
+       * your content's intrinsic height"), which overrides `align-items:
+       * stretch` above - without this, this pane (and the sidebar column
+       * next to it, forced to match the same stretched row) both balloon
+       * past the grid's own fixed `height` to fit the editor content
+       * instead of actually clipping/scrolling it. */
+      min-height: 0;
+      border-inline-end: 1px solid var(--dry-border);
+
+      /* Overrides `forms.css`'s boxed-card look (border/radius/shadow) -
+       * this is a full-bleed document pane, not one card among fields;
+       * `.richtext-toolbar` below gets its own bottom border as the only
+       * visual divider between it and the content, matching the sidebar's
+       * `border-top` above at the same row. `overflow: visible` (also an
+       * override - `forms.css`'s own rule is `hidden`) is required, not
+       * cosmetic: `overflow: hidden` makes an element a "scroll container"
+       * per the CSS spec even when nothing inside it actually scrolls
+       * (which is the case here - `useOverlayScrollbars`, above, moves the
+       * real scrolling onto its own generated `.os-viewport` ancestor
+       * instead), and a `position: sticky` descendant sticks against the
+       * NEAREST such container - so left as `hidden`, the toolbar below
+       * would bind to this always-static box instead of the actual
+       * scrolling viewport, and never appear to "stick" at all. */
       & .richtext {
-        min-height: calc(100dvh - var(--dry-topbar-height) - 10rem);
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        overflow: visible;
+      }
+
+      /* Sticks to the top of `useOverlayScrollbars`'s generated scroll
+       * viewport (not the page/admin topbar - this pane scrolls on its
+       * own, see the doc comment above) as the pane scrolls past it. */
+      & .richtext-toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        border-bottom: 1px solid var(--dry-border);
       }
     }
 

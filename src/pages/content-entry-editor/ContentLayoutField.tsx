@@ -1,6 +1,7 @@
 import RichTextField from "../../components/RichTextField.js";
 import type { EntryColumnNode } from "../../content-types/engine/entry-tree.js";
 import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 
 interface ContentLayoutFieldProps {
   node: EntryColumnNode;
@@ -16,18 +17,22 @@ interface ContentLayoutFieldProps {
  * renders this instead of the normal `.stack` of fields for its whole left
  * column whenever such a field is present (see its `layoutContentFields`).
  * `.content-layout-field` (components.css) drops the label/description and
- * gives the editor a generous min-height so it reads as a full document
- * surface - deliberately only a MIN, not a fixed height: the actual
- * contenteditable area stays intrinsically sized (see
- * `content-shadow-styles.ts`'s doc comment on why `height: 100%` there only
- * activates against a definite ancestor height), so normal page scroll
- * (the admin shell's sticky `.topbar` + scrolling `.content`, not a nested
- * scrollbox) still handles anything taller than the viewport.
+ * makes this its own fixed-height, independently-scrolling pane (Keystatic-
+ * style split view) - `useOverlayScrollbars` here is the same scrollbar
+ * library/theme every other scrollable region in the app already uses
+ * (`DryLayout.tsx`'s `.main`, `DataTable.tsx`), rather than a plain native
+ * `overflow: auto`. The toolbar (`.richtext-toolbar`) stays
+ * `position: sticky; top: 0` against the scrollbar's own generated
+ * `.os-viewport` - see the `overflow: visible` override on `.richtext`
+ * in components.css for why that's required (an `overflow: hidden`
+ * ancestor between a sticky element and its real scrolling ancestor breaks
+ * the stickiness).
  */
 export default function ContentLayoutField({ node, value, onChange, error }: ContentLayoutFieldProps) {
   const config = node.fieldConfig as RichTextFieldConfig | undefined;
+  const scroll = useOverlayScrollbars<HTMLDivElement>();
   return (
-    <div class="content-layout-field" data-field-name={node.fieldName}>
+    <div class="content-layout-field" data-field-name={node.fieldName} ref={scroll.ref}>
       <RichTextField
         label={node.label}
         value={typeof value === "string" ? value : ""}

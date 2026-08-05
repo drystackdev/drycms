@@ -20,7 +20,13 @@ approved design. Summary:
   `EntryPreviewDialog`, not on the field rows themselves (user correction,
   2026-08-05) - the outer form has no reset UI at all. Preview button itself
   only renders when `!isNew && isDirty` (user correction, 2026-08-05) - hidden
-  on the New-entry creation view and hidden until there's at least one edit.
+  on the New-entry creation view and hidden until there's at least one edit;
+  its label always shows a `badge sm secondary` count of changed fields.
+  Removed the "Discard unsaved changes?" leave-confirm (`leaveTo` state +
+  `requestLeave`) AND the `beforeunload` native-prompt guard entirely (user
+  correction, 2026-08-05) - now redundant since every edit is already
+  autosaved to IndexedDB, so navigating away without saving no longer loses
+  anything. Back/Cancel now call `route(backTo)` directly.
 - `DryLayout.tsx` — hydrate index on mount; `ContentNavGroup` gets a
   `renderBadge` prop; singleton items get a `.nav-draft-dot`
   (`--dry-secondary-main`), collection items get a `badge sm secondary`

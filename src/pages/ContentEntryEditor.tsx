@@ -26,6 +26,7 @@ import {
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { useParam } from "../hooks/useParam.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import { diffEntryValue } from "../content-types/entry-draft-diff.js";
 import {
@@ -144,7 +145,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const originalValue: EntryValue | null = initialSnapshot !== null ? (JSON.parse(initialSnapshot) as EntryValue) : null;
-  const [leaveTo, setLeaveTo] = useState<string | null>(null);
   const isDirty =
     initialSnapshot !== null &&
     value !== null &&
@@ -159,6 +159,27 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     () => (type ? buildEntryFieldTree(type, allTypes) : []),
     [type, allTypes],
   );
+  // Computed off `nodes` directly (not the later, post-guard `editableNodes`/
+  // `layoutContentFields`) purely so it's available THIS early - hooks must
+  // run unconditionally before the `if (...) return` guards below, and the
+  // OS scrollbar hook needs to know up front whether the split-pane layout
+  // (see `.content-entry-editor-grid:has(.content-layout-field)`,
+  // components.css) is even in play this render. `isTimestampField`/
+  // `isSortIndexField`'s exclusions never apply to a richtext field, so
+  // skipping them here doesn't change the answer.
+  const hasLayoutContentField = nodes.some(
+    (n) => n.kind === "column" && n.fieldType === "richtext" && (n.fieldConfig as RichTextFieldConfig | undefined)?.layoutContent === true,
+  );
+  // Re-inits (via `deps`) whenever the split-pane layout toggles on/off -
+  // e.g. navigating client-side between a layout-content entry and a plain
+  // one without a full remount (same class of bug `ContentEntryList.tsx`'s
+  // `key={type.name}` fixes for its own List page). Only actually attached
+  // to a DOM node (see the `ref={hasLayoutContentField ? sideScroll.ref :
+  // undefined}` below) while the split-pane layout is active - the metadata
+  // sidebar otherwise stays a plain in-page-flow block like any other entry
+  // form, using the page's own OverlayScrollbars-managed scroll instead of
+  // its own (`DryLayout.tsx`'s `.main`).
+  const sideScroll = useOverlayScrollbars<HTMLDivElement>([hasLayoutContentField]);
 
   const isSingleton = type?.kind === "singleton";
   // IndexedDB draft key (see `content-types/entry-draft-store.ts`) - a
@@ -250,23 +271,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   useDocumentTitle(
     type ? (isNew ? `New ${type.label}` : type.label) : "Content",
   );
-
-  // Same `beforeunload` + confirm-before-navigating pattern as
-  // `ContentTypeEditor.tsx` - see its doc comment for why browser-level
-  // navigation can only get the browser's own native prompt.
-  useEffect(() => {
-    if (!isDirty) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
-
-  function requestLeave(to: string) {
-    if (isDirty) setLeaveTo(to);
-    else route(to);
-  }
 
   function updateFieldValue(fieldName: string, fieldValue: unknown) {
     if (typeSlug === "aiKey" && fieldName === "key") setAiKeyCheck(undefined);
@@ -418,6 +422,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     setValue(originalValue);
     setFieldErrors({});
     setShowResetAllConfirm(false);
+    // Nothing left to review once every field is back to its saved value -
+    // close the Preview dialog too instead of leaving it open on its empty
+    // state.
+    setShowPreview(false);
     // The value now matches what's last saved, so there's nothing left to
     // recover from a draft - discard it rather than leave a no-op draft
     // behind (this is also what clears the nav dot/badge and table dot
@@ -501,7 +509,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           <button
             type="button"
             class="icon ghost"
-            onClick={() => requestLeave(backTo)}
+            onClick={() => route(backTo)}
           >
             <ArrowLeftIcon />
           </button>
@@ -515,7 +523,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             <button
               type="button"
               class="outline"
-              onClick={() => requestLeave(backTo)}
+              onClick={() => route(backTo)}
             >
               Cancel
             </button>
@@ -523,6 +531,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           {!isNew && isDirty && (
             <button type="button" class="outline" onClick={() => setShowPreview(true)}>
               <PreviewIcon /> Preview
+              <span class="badge sm secondary">{previewDiffs.length}</span>
             </button>
           )}
           {canEdit && <button type="button" disabled={saving} aria-busy={saving} onClick={handleSave}>Save</button>}
@@ -554,7 +563,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           </div>
         )}
 
-        <div class="stack">
+        <div class="stack" ref={hasLayoutContentField ? sideScroll.ref : undefined}>
           {renderFieldNodes(
             sideFields,
             value,
@@ -596,25 +605,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         busy={deleting}
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
-      />
-
-      <ConfirmDialog
-        open={leaveTo !== null}
-        title="Discard unsaved changes?"
-        message={
-          <p>
-            You have unsaved changes to this entry. Leaving now will discard
-            them.
-          </p>
-        }
-        confirmLabel="Discard changes"
-        destructive
-        onConfirm={() => {
-          const to = leaveTo!;
-          setLeaveTo(null);
-          route(to);
-        }}
-        onCancel={() => setLeaveTo(null)}
       />
 
       <ConfirmDialog
