@@ -11,12 +11,6 @@ const LABELS: Record<DryTheme, string> = {
   dark: "Dark theme",
 };
 
-const BUTTON_LABELS: Record<DryTheme, string> = {
-  system: "System",
-  light: "Light",
-  dark: "Dark",
-};
-
 const ICONS: Record<DryTheme, (props: IconProps) => JSX.Element> = {
   system: MonitorIcon,
   light: SunIcon,
@@ -49,14 +43,13 @@ export default function ThemeToggle() {
           <button
             key={value}
             type="button"
-            class="ghost sm"
+            class="ghost icon sm"
             aria-pressed={theme === value}
             title={LABELS[value]}
             aria-label={LABELS[value]}
             onClick={() => choose(value)}
           >
             <Icon />
-            <span>{BUTTON_LABELS[value]}</span>
           </button>
         );
       })}

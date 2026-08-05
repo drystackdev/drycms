@@ -801,24 +801,19 @@ function ContentEntryListCollection({
 
   return (
     <>
-      <div class="page-header">
-        {!isPinned && (
-          <a role="button" href={`${path}/content`} class="icon ghost">
-            <ArrowLeftIcon />
-          </a>
-        )}
-        <div style={{ flex: 1 }}>
-          <h1>{type.label}</h1>
-          <p>{type.description || "Entries in this collection."}</p>
-        </div>
-      </div>
-
       <section class="card">
         <header>
-          <h2>Entries</h2>
-          <p>
-            {total} {total === 1 ? "entry" : "entries"}
-          </p>
+          <div class="row">
+            {!isPinned && (
+              <a role="button" href={`${path}/content`} class="icon ghost">
+                <ArrowLeftIcon />
+              </a>
+            )}
+            <div style={{ flex: 1 }}>
+              <h2>{type.label}</h2>
+              <p>{type.description || "Entries in this collection."}</p>
+            </div>
+          </div>
         </header>
         <div class="under stack">
           {loadError && <span class="error">{loadError}</span>}

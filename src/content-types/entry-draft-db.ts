@@ -123,7 +123,6 @@ export async function putEntryDraftRecord(record: EntryDraftRecord): Promise<voi
 }
 
 export async function deleteEntryDraftRecord(key: string): Promise<void> {
-  console.log("[DEBUG] deleteEntryDraftRecord called", key);
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
@@ -132,10 +131,9 @@ export async function deleteEntryDraftRecord(key: string): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    console.log("[DEBUG] deleteEntryDraftRecord tx complete, broadcasting", key);
     broadcast({ type: "delete", key });
-  } catch (error) {
-    console.log("[DEBUG] deleteEntryDraftRecord failed", error);
+  } catch {
+    // no-op
   }
 }
 

@@ -510,18 +510,13 @@ function main(): void {
    * `window.addEventListener` in this file.
    */
   subscribeEntryDraftChanges((message) => {
-    console.log("[DEBUG crosstab] message", message);
     void refreshPreviewCount();
     const targets = markedTargets();
-    console.log("[DEBUG crosstab] targets", targets.map((t) => draftKeyFor(t)));
     if (message.type === "put") {
       const target = targets.find((candidate) => draftKeyFor(candidate) === message.record.key);
       if (target) applyDraftRecord(target, message.record);
     } else if (targets.some((candidate) => draftKeyFor(candidate) === message.key)) {
-      console.log("[DEBUG crosstab] reloading due to delete match");
       window.location.reload();
-    } else {
-      console.log("[DEBUG crosstab] delete did not match any target");
     }
   });
 

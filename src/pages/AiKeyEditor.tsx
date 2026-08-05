@@ -260,22 +260,21 @@ export default function AiKeyEditor({ id }: Props) {
   const modelOptions = value.model && !models.includes(value.model) ? [value.model, ...models] : models;
   return (
     <>
-      <div class="page-header">
-        <button type="button" class="icon ghost" onClick={() => route(`${path}/content/aiKey`)}><ArrowLeftIcon /></button>
-        <div style={{ flex: 1 }}>
-          <h1>{isNew ? "New AI Key" : value.name || "AI Key"}</h1>
-          <p>Manage provider credentials and the model used by AI features.</p>
-        </div>
-        <div class="row">
-          {canDelete && <button type="button" class="destructive" disabled={deleting} onClick={() => setShowDeleteConfirm(true)}><TrashIcon /> Delete</button>}
-          {isDirty && <button type="button" disabled={!canEdit || saving} aria-busy={saving || undefined} onClick={save}>Save</button>}
-        </div>
-      </div>
-
       <section class="card ai-key-editor-card">
         <header>
-          <h2>AI provider credentials</h2>
-          <p>Configure the provider, API key, and model used by AI features.</p>
+          <div class="row justify-between">
+            <div class="row">
+              <button type="button" class="icon ghost" onClick={() => route(`${path}/content/aiKey`)}><ArrowLeftIcon /></button>
+              <div style={{ flex: 1 }}>
+                <h2>{isNew ? "New AI Key" : value.name || "AI Key"}</h2>
+                <p>Manage provider credentials and the model used by AI features.</p>
+              </div>
+            </div>
+            <div class="row">
+              {canDelete && <button type="button" class="destructive" disabled={deleting} onClick={() => setShowDeleteConfirm(true)}><TrashIcon /> Delete</button>}
+              {isDirty && <button type="button" disabled={!canEdit || saving} aria-busy={saving || undefined} onClick={save}>Save</button>}
+            </div>
+          </div>
         </header>
         <div class="under stack">
           <fieldset disabled={!canEdit} class="ai-key-editor-form">
