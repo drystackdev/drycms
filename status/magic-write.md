@@ -752,6 +752,73 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
       - lỗi thuộc protocol parser có sẵn từ trước, không liên quan gì đến
       việc bỏ mode/scope; để lại cho phiên sau nếu cần điều tra thêm.)
 
+12. **RichText không hiện status nữa (banner thừa) + Rewrite selection sửa
+    lỗi mất format + thêm UI diff** — 3 yêu cầu liên tiếp trong 1 lượt:
+    - "UI của Richtext sẽ phải không hiện status" — banner "AI is
+      writing…" trong `ContentEntryEditor.tsx` (`.content-entry-editor-
+      field-writing`) vốn thêm cho MỌI field đang stream vì hầu hết field
+      không có cách nào khác để thấy AI đang chạy. Nhưng RichText đã tự
+      hiện nội dung realtime từ lâu (fix ở mục 6/7 phần trên) nên banner
+      này với RichText là thừa/gây rối. Fix: điều kiện render thêm
+      `node.fieldType !== "richtext"` — banner vẫn còn cho các field khác
+      (number/boolean/date/select/image/flatten/component-repeat/text),
+      chỉ ẩn riêng RichText.
+    - "AI replace text nhưng không replace được thẻ đang ở select làm cho
+      dữ liệu bị đổi format" — lỗi thật trong `ai-rewrite-button.tsx`
+      ("Rewrite selection", Phase 4): `apply()` LUÔN gọi
+      `replaceSelectionWithHtml(html, false)` — tức luôn coi HTML trả về
+      là BLOCK content (`<p>`/`<h2>`...). Khi user chỉ chọn MỘT ĐOẠN bên
+      trong 1 textblock có sẵn (vd giữa 1 `<h2>`, không chọn cả block),
+      `tr.replaceWith(from, to, fragment)` chèn 1 block node MỚI vào vị
+      trí ĐANG Ở GIỮA 1 block khác — ProseMirror không "vừa" được nên phải
+      tách/normalize, kết quả: tag bao ngoài (h2/blockquote/li...) bị vỡ
+      hoặc mất, "định dạng bị đổi" đúng như user mô tả. Root cause + fix:
+      - `html.ts`'s `exportFragmentHtml` thêm `options?.inline` — khi
+        đúng, xuất phần TEXT bên trong (không kèm tag block bao ngoài)
+        thay vì luôn bọc `<h2>`/`<p>`.
+      - `ai-rewrite-button.tsx` thêm `isInlineSelection(view)`: selection
+        nằm gọn trong ĐÚNG 1 textblock (`$from.parent === $to.parent &&
+        $from.parent.isTextblock`) → coi là "inline" — export passage
+        bằng `inline: true`, gửi `inline` lên server, và khi Replace dùng
+        `replaceSelectionWithHtml(html, inlineRef.current)` thay vì luôn
+        `false`. Khi inline, tag bao ngoài giữ nguyên, chỉ nội dung bên
+        trong đổi — không còn vỡ cấu trúc nữa.
+      - Server (`ai.ts`): `RewriteSelectionRequest` nhận thêm
+        `inline?: boolean`; `buildRewriteSelectionSystemPrompt(lang,
+        inline)` khi `inline` cấm hẳn model bọc `<p>`/`<h2>`-`<h6>`/
+        `<blockquote>`/`<ul>`/`<ol>`/`<li>` trong câu trả lời, chỉ cho
+        text + `<strong>/<em>/<u>/<a>/<br>`.
+      - Verify thật qua curl (restart dev server): `inline:true` → model
+        trả về plain text không tag block; `inline:false` (chọn nguyên 1
+        `<h2>`) → model vẫn trả `<h2>...</h2>` như cũ. Cả 2 case đúng như
+        thiết kế.
+    - ""Rewrite selection" cần có UI diff để người dùng biết" — trước đây
+      preview stage chỉ render thẳng HTML mới (`dangerouslySetInnerHTML`),
+      không cho biết CÁI GÌ đã đổi so với đoạn gốc. Thêm
+      `word-diff.ts` (module mới, hand-rolled LCS word-diff -
+      `feedback_prefer_api_over_library`: đây là display logic chứ không
+      phải parsing/security nên không cần thêm dependency; đã kiểm tra
+      không có sẵn diff algorithm nào trong repo, chỉ có
+      `entry-draft-diff.ts` so sánh NGUYÊN giá trị field chứ không phải
+      sub-string) + `htmlToPlainText` (regex strip, display-only, không
+      dùng cho phần apply thật). Preview stage giờ render diff theo từng
+      từ, tái dùng đúng 2 class CSS before/after có sẵn của
+      `EntryPreviewDialog.tsx` (`entry-preview-diff-before` = gạch ngang/
+      mờ, `entry-preview-diff-after` = màu success/đậm) qua `<del>`/`<ins>`
+      - nhất quán với ngôn ngữ diff sẵn có của app thay vì bịa class mới.
+      Thêm CSS `.ai-rewrite-diff` (white-space: pre-wrap, cần cho token
+      xuống dòng/khoảng trắng của diff không bị trình duyệt gộp mất).
+      8 test mới (`word-diff.test.ts`).
+    - Nhân tiện (yêu cầu chen giữa cùng lượt): đổi `<textarea>` thô trong
+      dialog "Rewrite selection" (ô "Instruction") sang dùng
+      `TextField multiline` có sẵn — đúng quy tắc "tận dụng UI có sẵn" đã
+      áp dụng cho Magic Write trước đó, giờ áp dụng luôn cho tính năng
+      này.
+    - Typecheck sạch. **880 test pass** (85 file - 872 sau mục 11 trước đó
+      + 8 test mới `word-diff.test.ts`).
+    - Restart dev server + 2 lượt curl thật (như trên) xác nhận cả
+      inline/block mode đều đúng thiết kế mới.
+
 ## Speed
 
 - Research + Plan agent + tách ai.mode/kind: xong trước đó.

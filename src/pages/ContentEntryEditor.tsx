@@ -143,13 +143,18 @@ function renderFieldNodes(
         disabled={streamingFieldName === node.fieldName}
         class="content-entry-editor-field"
       >
-        {streamingFieldName === node.fieldName && (
+        {streamingFieldName === node.fieldName && node.kind === "column" && node.fieldType !== "richtext" && (
           // Magic Write (status/magic-write.md decision #4, update 2): the
           // real growing value is only ever live-fed into a plain "text"
-          // field - everything else (richtext especially) sits disabled
-          // with no visible change while it streams, which reads as frozen/
-          // broken without this. Shown for every streaming field regardless
-          // of type (harmless next to a "text" field's own live content).
+          // field - everything else sits disabled with no visible change
+          // while it streams, which reads as frozen/broken without this.
+          // RichText is excluded (update 3, user: "UI của Richtext sẽ phải
+          // không hiện status") - it already shows the AI's live growing
+          // content directly in its own editor (`useRichTextEditor.ts`'s
+          // external-value sync), so this extra banner is redundant clutter
+          // on top of it, not a helpful signal the way it still is for a
+          // field with no live view of its own (number/boolean/date/select/
+          // image/flatten/component-repeat).
           <div class="content-entry-editor-field-writing">
             <span class="spinner" /> AI is writing…
           </div>

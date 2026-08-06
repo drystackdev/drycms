@@ -3453,6 +3453,17 @@
       font-weight: 500;
     }
 
+    /* `ai-rewrite-button.tsx`'s "Rewrite selection" preview - a word-level
+     * diff (`word-diff.ts`) against the original passage, reusing the two
+     * before/after classes above for its removed/added runs. `white-space:
+     * pre-wrap` is required here (unlike the plain scalar text those two
+     * classes normally wrap): `word-diff.ts` keeps real newlines/space runs
+     * as literal diff tokens, which a browser collapses by default. */
+    .ai-rewrite-diff {
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+    }
+
     /* ------------------------------------------------------ AI schema wizard */
     /* A `.builder-content-type-layout` grid child (`>= 64rem`: second column
      * beside the list; `< 64rem`: the tablist's other tab, full width) - not

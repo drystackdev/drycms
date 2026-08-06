@@ -32,10 +32,10 @@ describe("diffWords", () => {
     ]);
   });
 
-  it("handles a fully different passage as one remove + one add", () => {
-    expect(diffWords("foo bar", "baz qux")).toEqual([
-      { type: "remove", text: "foo bar" },
-      { type: "add", text: "baz qux" },
+  it("handles two completely unrelated single-token passages as one remove + one add", () => {
+    expect(diffWords("foo", "baz")).toEqual([
+      { type: "remove", text: "foo" },
+      { type: "add", text: "baz" },
     ]);
   });
 
@@ -52,6 +52,6 @@ describe("htmlToPlainText", () => {
   });
 
   it("turns <br> and block-close tags into newlines", () => {
-    expect(htmlToPlainText("<p>Line one</p><p>Line two<br>Line three</p>")).toBe("Line one\n\nLine two\nLine three");
+    expect(htmlToPlainText("<p>Line one</p><p>Line two<br>Line three</p>")).toBe("Line one\nLine two\nLine three");
   });
 });

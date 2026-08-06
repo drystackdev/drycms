@@ -1197,12 +1197,22 @@ interface RewriteSelectionRequest {
   passage?: string;
   instruction?: string;
   aiKeyName?: string;
+  /** Whether the client's own selection sat entirely inside ONE existing
+   * textblock (`ai-rewrite-button.tsx`'s `isInlineSelection` - mid-heading,
+   * mid-paragraph, mid-list-item), as opposed to spanning whole blocks. The
+   * reply format has to match: wrapping an inline-scoped reply in its own
+   * `<h2>`/`<p>` would corrupt the surrounding tag the moment the client
+   * splices it back in (see `replaceSelectionWithHtml`'s own `inline` flag
+   * and `html.ts`'s `exportFragmentHtml` doc comment for the full story). */
+  inline?: boolean;
 }
 
-function buildRewriteSelectionSystemPrompt(lang: string): string {
+function buildRewriteSelectionSystemPrompt(lang: string, inline: boolean): string {
   return [
-    "You rewrite a passage of RichText content inside drycms exactly as instructed. Reply with ONLY the rewritten HTML fragment - no prose, no markdown fences, no explanation of what you changed.",
-    'Use ONLY these HTML tags: <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <a href="...">, <br>. No classes, no style attributes, no <div>/<span>, no images, no tables.',
+    "You rewrite a passage of RichText content inside drycms exactly as instructed. Reply with ONLY the rewritten text - no prose, no markdown fences, no explanation of what you changed.",
+    inline
+      ? 'The passage is an inline run of text INSIDE a single existing block (e.g. mid-heading, mid-paragraph, mid-list-item) - it is NOT a whole block on its own. Reply with ONLY inline markup at most: plain text plus, only where the passage itself already used them, <strong>, <em>, <u>, <a href="...">, <br>. Do NOT wrap the reply in <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, or <li> - the surrounding block tag already exists in the document and stays exactly as it is; adding one here would corrupt it.'
+      : 'Use ONLY these HTML tags: <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <a href="...">, <br>. No classes, no style attributes, no <div>/<span>, no images, no tables.',
     `Write in "${lang}" unless the instruction explicitly asks for a different language.`,
   ].join("\n");
 }
@@ -1220,7 +1230,7 @@ function extractHtmlFragment(raw: string): string {
  * mid-stream provider error" helper, nothing wizard-specific about its
  * mechanics) rather than writing a third near-identical copy.
  */
-function streamRewriteSelection(context: DryRouteContext, passage: string, instruction: string, aiKeyName: string | undefined): ReadableStream<Uint8Array> {
+function streamRewriteSelection(context: DryRouteContext, passage: string, instruction: string, inline: boolean, aiKeyName: string | undefined): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       void (async () => {
@@ -1228,7 +1238,7 @@ function streamRewriteSelection(context: DryRouteContext, passage: string, instr
           const messages: ChatMessage[] = [
             {
               role: "user",
-              text: `${buildRewriteSelectionSystemPrompt(ai.lang)}\n\nCurrent passage:\n${passage}\n\nInstruction: ${instruction}`,
+              text: `${buildRewriteSelectionSystemPrompt(ai.lang, inline)}\n\nCurrent passage:\n${passage}\n\nInstruction: ${instruction}`,
             },
           ];
           const result = await runWizardTurn(context, messages, aiKeyName, (delta) => {
@@ -1254,11 +1264,12 @@ function handleRewriteSelection(context: DryRouteContext, body: RewriteSelection
   if (!instruction) return jsonResponse({ error: "invalid_request", message: "Describe how to rewrite this passage first." }, 400);
   if (instruction.length > 2_000) return jsonResponse({ error: "invalid_request", message: "That instruction is too long." }, 400);
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
+  const inline = body.inline === true;
 
   if (!acquireAiStreamSlot()) {
     return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
   }
-  const stream = streamRewriteSelection(context, passage, instruction, aiKeyName);
+  const stream = streamRewriteSelection(context, passage, instruction, inline, aiKeyName);
   return new Response(trackAiStream(stream, releaseAiStreamSlot), {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",

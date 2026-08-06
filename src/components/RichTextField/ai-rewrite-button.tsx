@@ -5,7 +5,9 @@ import TextField from "../fields/TextField.js";
 import { exportFragmentHtml } from "./html.js";
 import { replaceSelectionWithHtml, runCommand } from "./commands.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
+import { diffWords, htmlToPlainText } from "./word-diff.js";
 import type { ToolbarCustomProps } from "./types.js";
+import type { EditorView } from "prosemirror-view";
 
 const { path, aiMode } = window.__DRY_CONFIG__;
 
@@ -28,13 +30,14 @@ interface RewriteStreamEvent {
 async function requestRewrite(
   passage: string,
   instruction: string,
+  inline: boolean,
   onDelta: (delta: string) => void,
   signal: AbortSignal,
 ): Promise<string> {
   const response = await fetch(`${path}/api/ai/rewrite-selection`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passage, instruction }),
+    body: JSON.stringify({ passage, instruction, inline }),
     signal,
   });
   if (!response.ok || !response.body) {
@@ -66,6 +69,21 @@ async function requestRewrite(
   throw new Error("AI connection closed unexpectedly.");
 }
 
+/** Whether `view`'s current selection sits entirely inside ONE existing
+ * textblock (mid-heading/mid-paragraph/mid-list-item - the common "reword
+ * this line" case), as opposed to spanning multiple blocks. Drives both
+ * `passageRef`'s export and `apply()`'s replace: importing/replacing with
+ * `inline: true` in this case keeps the surrounding block tag (h2, li, ...)
+ * intact and only swaps its inline content, instead of trying to splice a
+ * brand new closed block node into a position that's mid-block - which
+ * ProseMirror can't do cleanly and previously surfaced as the selected
+ * heading/blockquote/list item losing its own tag ("format bị đổi") the
+ * moment a partial (not whole-block) selection was rewritten. */
+function isInlineSelection(view: EditorView): boolean {
+  const { $from, $to } = view.state.selection;
+  return $from.parent.isTextblock && $from.parent === $to.parent;
+}
+
 /**
  * Toolbar button for `RichTextFieldConfig.aiRewrite` (`status/magic-write.md`
  * Phase 4) - rewrites the CURRENT text selection via a short instruction.
@@ -88,6 +106,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
   const dialogRef = useDialogSync(open, () => handleCancel());
   const abortRef = useRef<AbortController | null>(null);
   const passageRef = useRef("");
+  const inlineRef = useRef(false);
 
   if (aiMode !== "server") return <></>;
 
@@ -97,7 +116,8 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
     const view = viewRef.current;
     if (!view) return;
     const { from, to } = view.state.selection;
-    passageRef.current = exportFragmentHtml(view.state.doc.slice(from, to).content);
+    inlineRef.current = isInlineSelection(view);
+    passageRef.current = exportFragmentHtml(view.state.doc.slice(from, to).content, { inline: inlineRef.current });
     setInstruction("");
     setStage("prompt");
     setPreview("");
@@ -113,7 +133,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const html = await requestRewrite(passageRef.current, instruction.trim(), (delta) => {
+      const html = await requestRewrite(passageRef.current, instruction.trim(), inlineRef.current, (delta) => {
         setPreview((current) => current + delta);
       }, controller.signal);
       setFinalHtml(html);
@@ -128,7 +148,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
   function apply() {
     const view = viewRef.current;
     if (!view) return;
-    runCommand(view, replaceSelectionWithHtml(sanitizeAiRichTextHtml(finalHtml), false));
+    runCommand(view, replaceSelectionWithHtml(sanitizeAiRichTextHtml(finalHtml), inlineRef.current));
     setOpen(false);
   }
 
@@ -178,12 +198,26 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
                 </div>
               )}
               {stage === "preview" && (
-                // Plain preview - `.richtext-content`'s real styling only
-                // applies inside the field's own shadow root
-                // (`content-shadow-styles.ts`, see
-                // `project_drycms_richtext_shadow_dom` memory), which this
-                // popover dialog isn't part of.
-                <div dangerouslySetInnerHTML={{ __html: sanitizeAiRichTextHtml(finalHtml) }} />
+                // Word-level diff against the original passage, not a plain
+                // rendered preview - the admin asked to actually SEE what
+                // changed, not just the end result (`word-diff.ts`). Reuses
+                // `EntryPreviewDialog.tsx`'s own before/after CSS classes
+                // for visual consistency with the rest of the app's diff UI.
+                <div class="ai-rewrite-diff">
+                  {diffWords(htmlToPlainText(passageRef.current), htmlToPlainText(finalHtml)).map((op, index) =>
+                    op.type === "same" ? (
+                      <span key={index}>{op.text}</span>
+                    ) : op.type === "remove" ? (
+                      <del key={index} class="entry-preview-diff-before">
+                        {op.text}
+                      </del>
+                    ) : (
+                      <ins key={index} class="entry-preview-diff-after">
+                        {op.text}
+                      </ins>
+                    ),
+                  )}
+                </div>
               )}
               {stage === "error" && <div class="alert destructive">{error}</div>}
             </div>
