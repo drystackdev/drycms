@@ -816,6 +816,29 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
       này.
     - Typecheck sạch. **880 test pass** (85 file - 872 sau mục 11 trước đó
       + 8 test mới `word-diff.test.ts`).
+    - User yêu cầu thêm "viết test cho chức năng này" ngay sau đó - bổ
+      sung test cho 2 phần logic thuần (không đụng DOM/DOMParser, theo
+      đúng quy ước "export-only nên test được, import qua DOMParser thì
+      để Playwright" đã ghi ở `export-fragment.test.ts`) của chính fix
+      format ở trên:
+      - Dời `isInlineSelection` từ `ai-rewrite-button.tsx` sang
+        `commands.ts` (chỗ ở tự nhiên hơn, cạnh `hasInlineContent`/
+        `hasTextSelection` - cùng là predicate đọc `EditorState`), đổi
+        chữ ký nhận thẳng `EditorState` thay vì `EditorView` - việc này
+        làm nó test được KHÔNG CẦN DOM (`EditorState.create` không cần
+        DOM, khác `EditorView`). Thêm `commands.test.ts` (5 test): trong 1
+        đoạn/1 heading/1 list-item → true; giữa 2 đoạn, giữa heading+đoạn
+        → false.
+      - `export-fragment.test.ts` thêm 4 test cho `exportFragmentHtml`'s
+        `options.inline`: heading → text trần (bỏ tag) khi `inline: true`,
+        vẫn giữ tag khi mặc định, giữ nguyên inline mark (`<strong>`) khi
+        unwrap, và một list (`<ul>`) vẫn giữ nguyên tag dù `inline: true`
+        (chỉ textblock mới unwrap).
+    - Không viết test cho nửa "import" (`replaceSelectionWithHtml`/
+      `importCleanHtmlFragment`, qua `DOMParser`) - đúng quy ước sẵn có
+      của file này, phần đó dựa vào Playwright/browser thật, vitest không
+      có jsdom.
+    - Typecheck sạch. **889 test pass** (86 file).
     - Restart dev server + 2 lượt curl thật (như trên) xác nhận cả
       inline/block mode đều đúng thiết kế mới.
 

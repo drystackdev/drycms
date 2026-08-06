@@ -3,11 +3,10 @@ import { useDialogSync } from "../../hooks/list-nav.js";
 import { SparkleIcon } from "../AiSparkleIcon.js";
 import TextField from "../fields/TextField.js";
 import { exportFragmentHtml } from "./html.js";
-import { replaceSelectionWithHtml, runCommand } from "./commands.js";
+import { isInlineSelection, replaceSelectionWithHtml, runCommand } from "./commands.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { diffWords, htmlToPlainText } from "./word-diff.js";
 import type { ToolbarCustomProps } from "./types.js";
-import type { EditorView } from "prosemirror-view";
 
 const { path, aiMode } = window.__DRY_CONFIG__;
 
@@ -69,21 +68,6 @@ async function requestRewrite(
   throw new Error("AI connection closed unexpectedly.");
 }
 
-/** Whether `view`'s current selection sits entirely inside ONE existing
- * textblock (mid-heading/mid-paragraph/mid-list-item - the common "reword
- * this line" case), as opposed to spanning multiple blocks. Drives both
- * `passageRef`'s export and `apply()`'s replace: importing/replacing with
- * `inline: true` in this case keeps the surrounding block tag (h2, li, ...)
- * intact and only swaps its inline content, instead of trying to splice a
- * brand new closed block node into a position that's mid-block - which
- * ProseMirror can't do cleanly and previously surfaced as the selected
- * heading/blockquote/list item losing its own tag ("format bị đổi") the
- * moment a partial (not whole-block) selection was rewritten. */
-function isInlineSelection(view: EditorView): boolean {
-  const { $from, $to } = view.state.selection;
-  return $from.parent.isTextblock && $from.parent === $to.parent;
-}
-
 /**
  * Toolbar button for `RichTextFieldConfig.aiRewrite` (`status/magic-write.md`
  * Phase 4) - rewrites the CURRENT text selection via a short instruction.
@@ -116,7 +100,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
     const view = viewRef.current;
     if (!view) return;
     const { from, to } = view.state.selection;
-    inlineRef.current = isInlineSelection(view);
+    inlineRef.current = isInlineSelection(view.state);
     passageRef.current = exportFragmentHtml(view.state.doc.slice(from, to).content, { inline: inlineRef.current });
     setInstruction("");
     setStage("prompt");

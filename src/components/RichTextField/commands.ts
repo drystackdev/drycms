@@ -69,6 +69,23 @@ export function hasTextSelection(state: EditorState): boolean {
   return !state.selection.empty;
 }
 
+/** Whether `state`'s current selection sits entirely inside ONE existing
+ * textblock (mid-heading/mid-paragraph/mid-list-item - the common "reword
+ * this line" case), as opposed to spanning multiple blocks. Drives
+ * `ai-rewrite-button.tsx`'s "Rewrite selection" both ways: exporting the
+ * passage (`html.ts`'s `exportFragmentHtml`) and importing/replacing the
+ * AI's reply (`replaceSelectionWithHtml` below) with `inline: true` in this
+ * case keeps the surrounding block tag (h2, li, ...) intact and only swaps
+ * its inline content, instead of trying to splice a brand new closed block
+ * node into a position that's mid-block - which ProseMirror can't do
+ * cleanly and previously surfaced as the selected heading/blockquote/list
+ * item losing its own tag ("format bị đổi") the moment a partial (not
+ * whole-block) selection was rewritten. */
+export function isInlineSelection(state: EditorState): boolean {
+  const { $from, $to } = state.selection;
+  return $from.parent.isTextblock && $from.parent === $to.parent;
+}
+
 /** Mirrors the old `ToolbarState.clearable`: true as soon as ANY selected
  * text carries a mark (bold/italic/underline/textColor - the only marks
  * this schema has), not just one that's uniformly applied. */
