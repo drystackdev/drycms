@@ -9,6 +9,18 @@ function previewValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+const normalizeName = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** The admin writes their prompt against the entry FORM, so they name fields
+ * by label ("Tiêu đề"), while the wire dialect keys off `fieldName`
+ * (`title`) - the model only ever saw the latter, so a label the name can't
+ * be read off of was pure guesswork. Skipped when the label adds nothing the
+ * name doesn't already carry ("Published Date" vs `publishedDate`). */
+function labelHint(node: EntryFieldNode): string {
+  if (!node.label || normalizeName(node.label) === normalizeName(node.fieldName)) return "";
+  return ` (label: ${JSON.stringify(node.label)})`;
+}
+
 function describeNode(node: EntryFieldNode, value: unknown, indent: string): string[] {
   if (node.kind === "relation" || node.kind === "relation-mirror") return [];
   if (node.kind === "column") {
@@ -16,20 +28,20 @@ function describeNode(node: EntryFieldNode, value: unknown, indent: string): str
     const options = node.fieldType === "select" ? (node.fieldConfig as SelectFieldConfig | undefined)?.options ?? [] : undefined;
     const extra = options ? ` (options: ${options.map((option) => JSON.stringify(option)).join(", ")})` : "";
     const description = node.description ? ` - ${node.description}` : "";
-    return [`${indent}- "${node.fieldName}" (${node.fieldType})${extra}${description} - current value: ${previewValue(value)}`];
+    return [`${indent}- "${node.fieldName}"${labelHint(node)} (${node.fieldType})${extra}${description} - current value: ${previewValue(value)}`];
   }
   if (node.kind === "flatten") {
     const nested = (value as EntryValue | undefined) ?? {};
     const lines = node.children.flatMap((child) => describeNode(child, nested[child.fieldName], `${indent}    `));
     if (lines.length === 0) return [];
-    return [`${indent}- "${node.fieldName}" (a group of fields - nest under this name in "fields"):`, ...lines];
+    return [`${indent}- "${node.fieldName}"${labelHint(node)} (a group of fields - nest under this name in "fields"):`, ...lines];
   }
   if (node.kind === "component-repeat") {
     const items = Array.isArray(value) ? value : [];
     const itemShape = node.itemFields.flatMap((child) => describeNode(child, undefined, `${indent}    `));
     if (itemShape.length === 0) return [];
     return [
-      `${indent}- "${node.fieldName}" (a repeatable list, currently ${items.length} item${items.length === 1 ? "" : "s"} - a block sequence of mappings under this name) - each item has:`,
+      `${indent}- "${node.fieldName}"${labelHint(node)} (a repeatable list, currently ${items.length} item${items.length === 1 ? "" : "s"} - a block sequence of mappings under this name) - each item has:`,
       ...itemShape,
     ];
   }
@@ -43,6 +55,15 @@ export function describeFieldsForPrompt(nodes: EntryFieldNode[], value: EntryVal
   const lines = nodes.flatMap((node) => describeNode(node, value[node.fieldName], ""));
   return lines.length > 0 ? lines.join("\n") : "(this content type has no field Magic Write can write to)";
 }
+
+/** The admin sees LABELS in the entry form, so their prompt refers to fields
+ * that way ("viết lại Tiêu đề"); the wire dialect and
+ * `ai-magic-write-fields.ts`'s `applyMagicWriteFields` both key off
+ * `fieldName`, and a key that isn't an exact `fieldName` match is dropped
+ * silently. Hence both halves: match the admin's wording against the label,
+ * write back under the name. */
+const LABEL_INSTRUCTION =
+  'Each field above is listed as its quoted field NAME, optionally followed by the `label:` the admin sees for it in the entry form. The admin\'s prompt will usually refer to fields by that label (or an approximation of it) - match their wording against the labels, but every key you write under "fields" MUST be the exact quoted field name, never the label.';
 
 /** No fixed mode/target-field list - the admin's own prompt is the only
  * signal for which fields to touch, and the model is trusted to read it
@@ -99,6 +120,8 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "",
     "Fields on this entry:",
     fieldsDescription,
+    "",
+    LABEL_INSTRUCTION,
     "",
     SCOPE_INSTRUCTION,
     ...describeImages(imagePaths),

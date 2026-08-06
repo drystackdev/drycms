@@ -842,6 +842,31 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
     - Restart dev server + 2 lượt curl thật (như trên) xác nhận cả
       inline/block mode đều đúng thiết kế mới.
 
+### Fix (2026-08-06): model không thấy label của field
+
+- **Vấn đề user hỏi**: "ở magic write nếu tôi nhắc đến label của field thì
+  AI có hiểu không?" → KHÔNG. `describeFieldsForPrompt` chỉ in `fieldName`
+  (+ type/options/description/current value), `EntryFieldNode.label` có sẵn
+  nhưng chưa bao giờ vào prompt. Admin viết prompt theo cái họ NHÌN THẤY
+  trên form (label, thường tiếng Việt) còn model chỉ thấy tên máy (tiếng
+  Anh) → phải đoán; đoán sai thì key model trả về không khớp `fieldName`,
+  `applyMagicWriteFields` (`!(node.fieldName in raw)`) **drop im lặng**,
+  field không được ghi mà không báo lỗi gì.
+- **Sửa** (`ai-magic-write-prompt.ts`):
+  - Thêm `labelHint(node)` → chèn ` (label: "…")` sau tên field ở CẢ 3
+    nhánh `column`/`flatten`/`component-repeat`. Bỏ qua khi label không
+    thêm thông tin gì so với tên (so sánh sau khi lowercase + bỏ ký tự
+    không phải `a-z0-9`: `Published Date` ≡ `publishedDate` → không in,
+    `Tiêu đề` vs `title` → in).
+  - Thêm `LABEL_INSTRUCTION` vào system prompt ngay sau danh sách field:
+    match cách nói của admin theo label, nhưng key trong `fields` BẮT BUỘC
+    là tên field chính xác, không phải label.
+- **Test**: file mới `ai-magic-write-prompt.test.ts` (5 test) - trước đó
+  module này chưa có test nào: label khác tên thì in, label chỉ đổi cách
+  viết thì bỏ, group/repeatable cũng có label, relation/password vẫn bị
+  loại hẳn, và system prompt chứa đúng 2 vế của `LABEL_INSTRUCTION`.
+  Typecheck sạch, 27 test magic-write cũ vẫn pass.
+
 ## Speed
 
 - Research + Plan agent + tách ai.mode/kind: xong trước đó.
