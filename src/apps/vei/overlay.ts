@@ -819,14 +819,31 @@ function main(): void {
   // link or a button, and letting that default action run would navigate
   // away mid-edit.
   const intercept = (event: MouseEvent) => {
+    // Only ever guards a REAL user gesture - the synthetic click replayed
+    // below (Shift+click) must never re-enter this same listener.
+    if (!event.isTrusted) return;
     if (sheet.isConnected) return;
-    // Shift+click is the escape hatch back to the page's OWN behavior - a
-    // marked `<a>` navigates, a marked element's own `onClick` fires, exactly
-    // as if edit mode weren't installed at all. Checked before even looking
-    // up the marked element so neither mousedown nor click gets touched.
-    if (event.shiftKey) return;
     const marked = markedElementFor(event);
     if (!marked) return;
+    if (event.shiftKey) {
+      // Shift+click is the escape hatch back to the page's OWN behavior, but
+      // the browser's native modifier semantics for a link get in the way:
+      // Shift+click on an `<a>` normally opens it in a whole NEW window
+      // (unlike Ctrl/Cmd, which opens a background TAB) - exactly what
+      // nobody wants when the point is "run it right here". So the
+      // shift-flagged original is cancelled and replaced with a plain,
+      // unmodified click: `.click()` on the nearest linked ancestor re-runs
+      // real navigation in THIS tab; anything else (a marked element's own
+      // `onClick`) just gets a plain click dispatched at it.
+      if (event.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
+        const anchor = marked.closest("a");
+        if (anchor?.href) anchor.click();
+        else marked.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (event.type !== "click") return;
