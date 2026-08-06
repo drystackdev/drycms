@@ -1,0 +1,363 @@
+/**
+ * Magic Write's wire format - a small hand-rolled YAML SUBSET (not full
+ * YAML): block-literal scalars (`key: |` + indented raw lines, used for
+ * every prose value so streamed content can be appended straight into an
+ * open preview without JSON string-escaping), plain scalars (`key: value`
+ * on one line, for number/boolean/date/select-id/image-path), nested
+ * mappings (`flatten` fields), and block sequences of mappings
+ * (`component-repeat` fields). See `status/magic-write.md` decision #4 for
+ * the rationale and the exact dialect rules the system prompt teaches the
+ * model. Deliberately independent of `ai-wizard-protocol.ts` (JSON, kept
+ * unchanged) - no shared parsing code between the two.
+ */
+
+export interface MagicWriteChoice {
+  id: string;
+  label: string;
+}
+
+export interface MagicWriteQuestionTurn {
+  kind: "question";
+  topic: string;
+  question: string;
+  choices: MagicWriteChoice[];
+  multi: boolean;
+  allowOther?: boolean;
+}
+
+/** A field's parsed-but-not-yet-schema-validated value - a bare string for
+ * every scalar (block-literal or plain, regardless of the real field's
+ * eventual number/boolean/date type; that coercion happens against the
+ * content type's own `EntryFieldNode[]` in `ai-magic-write.ts`'s
+ * `parseMagicWriteFields`, not here), a nested mapping for a `flatten`
+ * field, or an array of mappings for a `component-repeat` field. */
+export type MagicWriteRawValue = string | MagicWriteRawValue[] | MagicWriteRawFields;
+
+export interface MagicWriteRawFields {
+  [fieldName: string]: MagicWriteRawValue;
+}
+
+export interface MagicWriteFieldsTurn {
+  kind: "fields";
+  summary: string;
+  fields: MagicWriteRawFields;
+}
+
+export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn;
+
+export type MagicWriteValidationResult =
+  | { ok: true; turn: MagicWriteTurn }
+  | { ok: false; error: string };
+
+function isRawString(value: MagicWriteRawValue | undefined): value is string {
+  return typeof value === "string";
+}
+
+function isRawFields(value: MagicWriteRawValue | undefined): value is MagicWriteRawFields {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isRawArray(value: MagicWriteRawValue | undefined): value is MagicWriteRawValue[] {
+  return Array.isArray(value);
+}
+
+/**
+ * Strips a model reply down to just the dialect body - discards a
+ * ```yaml fenced wrapper (the system prompt forbids one, but tolerating it
+ * costs nothing) and any stray prose before the first `kind:` line, mirroring
+ * `ai-wizard-protocol.ts`'s `extractWizardJson`'s tolerance for the JSON
+ * dialect. Only used on a TERMINAL (fully received) reply, before
+ * `parseMagicWriteYaml` - never on a still-streaming partial, where a
+ * not-yet-closed fence would make this actively misleading.
+ */
+export function extractMagicWriteYaml(raw: string): string {
+  const fenced = /```(?:ya?ml)?\s*([\s\S]*?)```/i.exec(raw);
+  const body = fenced ? fenced[1]! : raw;
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^kind:\s*\S/.test(line));
+  return (start === -1 ? body : lines.slice(start).join("\n")).trim();
+}
+
+interface RawLine {
+  /** Leading-space count; `-1` marks a blank (whitespace-only) line - never
+   * used to decide where a block/mapping/sequence ends on its own, matching
+   * real YAML's own block-scalar rule that blank lines never terminate a
+   * scan by themselves. */
+  indent: number;
+  /** Line content with its leading indent already stripped. Empty for a
+   * blank line. */
+  text: string;
+}
+
+function toRawLines(source: string): RawLine[] {
+  return source.split(/\r?\n/).map((line) => {
+    if (line.trim() === "") return { indent: -1, text: "" };
+    const indent = line.length - line.trimStart().length;
+    return { indent, text: line.slice(indent) };
+  });
+}
+
+const KEY_LINE = /^([A-Za-z_][\w-]*):(.*)$/;
+const SEQ_ITEM = /^-\s?(.*)$/;
+
+function skipBlank(lines: RawLine[], index: number): number {
+  let next = index;
+  while (next < lines.length && lines[next]!.indent === -1) next++;
+  return next;
+}
+
+/**
+ * Consumes the block-literal body starting right after a `key: |` line -
+ * every following line indented more than `keyIndent` belongs to it. The
+ * block's own indentation is fixed by the first non-blank line encountered,
+ * then stripped from every line so any indentation beyond that (e.g. nested
+ * HTML) round-trips untouched. Trailing blank lines collected only because
+ * the stream (or the document) happened to end there are dropped - they
+ * belong to whatever separates this block from the next sibling, not to the
+ * block's own content.
+ */
+function consumeBlockLiteral(lines: RawLine[], start: number, keyIndent: number): { text: string; next: number } {
+  let index = start;
+  let blockIndent: number | null = null;
+  const collected: string[] = [];
+  while (index < lines.length) {
+    const line = lines[index]!;
+    if (line.indent === -1) {
+      collected.push("");
+      index++;
+      continue;
+    }
+    if (line.indent <= keyIndent) break;
+    blockIndent ??= line.indent;
+    const relative = Math.max(0, line.indent - blockIndent);
+    collected.push(" ".repeat(relative) + line.text);
+    index++;
+  }
+  while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+  return { text: collected.join("\n"), next: index };
+}
+
+/**
+ * Parses every sibling `key: ...` line found at exactly `indent`, starting
+ * at `start`, into a mapping - dispatching each value to a block literal, a
+ * plain one-line scalar, a nested mapping, or a block sequence based on
+ * what immediately follows the `key:`. Stops (without error) at the first
+ * line that doesn't fit - callers past the top level rely on that tolerance
+ * for partial/streaming text, where the last field is naturally still
+ * incomplete.
+ */
+function parseMapping(lines: RawLine[], start: number, indent: number): { fields: MagicWriteRawFields; next: number } {
+  const fields: MagicWriteRawFields = {};
+  let index = skipBlank(lines, start);
+  while (index < lines.length) {
+    const line = lines[index]!;
+    if (line.indent !== indent) break;
+    const match = KEY_LINE.exec(line.text);
+    if (!match) break;
+    const key = match[1]!;
+    const remainder = (match[2] ?? "").trim();
+    let value: MagicWriteRawValue;
+    let next: number;
+    if (remainder === "|") {
+      const block = consumeBlockLiteral(lines, index + 1, indent);
+      value = block.text;
+      next = block.next;
+    } else if (remainder === "") {
+      const childStart = skipBlank(lines, index + 1);
+      const child = lines[childStart];
+      if (child && child.indent > indent && SEQ_ITEM.test(child.text)) {
+        const seq = parseSequence(lines, childStart, child.indent);
+        value = seq.items;
+        next = seq.next;
+      } else if (child && child.indent > indent && KEY_LINE.test(child.text)) {
+        const nested = parseMapping(lines, childStart, child.indent);
+        value = nested.fields;
+        next = nested.next;
+      } else {
+        value = "";
+        next = index + 1;
+      }
+    } else {
+      value = remainder;
+      next = index + 1;
+    }
+    fields[key] = value;
+    index = skipBlank(lines, next);
+  }
+  return { fields, next: index };
+}
+
+/** Parses a block sequence of mappings (`- key: |` / `  otherKey: value`,
+ * one mapping per `-` item) starting at `start`, all items at `indent`. */
+function parseSequence(lines: RawLine[], start: number, indent: number): { items: MagicWriteRawFields[]; next: number } {
+  const items: MagicWriteRawFields[] = [];
+  let index = skipBlank(lines, start);
+  while (index < lines.length) {
+    const line = lines[index]!;
+    if (line.indent !== indent) break;
+    const match = SEQ_ITEM.exec(line.text);
+    if (!match) break;
+    const rest = match[1] ?? "";
+    const itemIndent = indent + 2;
+    if (rest.trim() === "") {
+      const nested = parseMapping(lines, index + 1, itemIndent);
+      items.push(nested.fields);
+      index = nested.next;
+      continue;
+    }
+    // The item's first key lives on the same physical line as "- " - splice
+    // a synthetic line standing in for it (re-indented to `itemIndent`, the
+    // column its own sibling keys align to) so the rest of this function's
+    // machinery can treat it exactly like any other mapping key line.
+    const synthetic: RawLine = { indent: itemIndent, text: rest };
+    const rewritten = [synthetic, ...lines.slice(index + 1)];
+    const nested = parseMapping(rewritten, 0, itemIndent);
+    items.push(nested.fields);
+    index += nested.next;
+  }
+  return { items, next: index };
+}
+
+function validateQuestionTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
+  const topic = top.topic;
+  const question = top.question;
+  const choicesRaw = top.choices;
+  if (!isRawString(topic) || !topic.trim()) return { ok: false, error: '"topic" must be a non-empty string.' };
+  if (!isRawString(question) || !question.trim()) return { ok: false, error: '"question" must be a non-empty string.' };
+  if (!isRawArray(choicesRaw) || choicesRaw.length === 0) return { ok: false, error: '"choices" must be a non-empty list.' };
+  const choices: MagicWriteChoice[] = [];
+  for (const raw of choicesRaw) {
+    if (!isRawFields(raw) || !isRawString(raw.id) || !isRawString(raw.label) || !raw.id.trim() || !raw.label.trim()) {
+      return { ok: false, error: 'Each choice needs a non-empty "id" and "label".' };
+    }
+    choices.push({ id: raw.id.trim(), label: raw.label.trim() });
+  }
+  const multi = isRawString(top.multi) && top.multi.trim().toLowerCase() === "true";
+  const allowOther = isRawString(top.allowOther) ? top.allowOther.trim().toLowerCase() === "true" : undefined;
+  return {
+    ok: true,
+    turn: { kind: "question", topic: topic.trim(), question: question.trim(), choices, multi, allowOther },
+  };
+}
+
+function validateFieldsTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
+  const summary = top.summary;
+  const fields = top.fields;
+  if (!isRawString(summary) || !summary.trim()) return { ok: false, error: '"summary" must be a non-empty string.' };
+  if (!isRawFields(fields)) return { ok: false, error: '"fields" must be a mapping of field name to value.' };
+  return { ok: true, turn: { kind: "fields", summary: summary.trim(), fields } };
+}
+
+/** Full, validated parse - only meaningful once the whole reply has been
+ * received (the terminal turn). Never throws; a malformed document comes
+ * back as `{ ok: false }` so the server's retry loop (mirroring
+ * `ai-wizard-protocol.ts`'s `parseWizardTurn` usage) can ask the model to
+ * resend instead of crashing the stream. */
+export function parseMagicWriteYaml(text: string): MagicWriteValidationResult {
+  let top: MagicWriteRawFields;
+  try {
+    top = parseMapping(toRawLines(text), 0, 0).fields;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not parse the AI's response." };
+  }
+  if (top.kind === "question") return validateQuestionTurn(top);
+  if (top.kind === "fields") return validateFieldsTurn(top);
+  return { ok: false, error: `Unknown or missing "kind": ${JSON.stringify(top.kind)}.` };
+}
+
+export interface MagicWritePartialState {
+  kind?: string;
+  /** Only meaningful once `kind === "fields"` - whatever of the summary
+   * block has streamed in so far. */
+  summary?: string;
+  /** Top-level `fields` children fully closed so far (a following sibling
+   * key confirmed the model moved past them) - in the order the model wrote
+   * them. */
+  closedFields: MagicWriteRawFields;
+  /** The `fields` child currently being written, if any - whatever of its
+   * value has streamed in so far. `MagicWriteDialog` decides how to use
+   * this per the field's real type (looked up from the content type's own
+   * `EntryFieldNode[]`, not from this protocol layer): fed live into
+   * `updateFieldValue` for a scalar field, ignored (shown as a generic
+   * "writing…" skeleton) for richtext/flatten/component-repeat until the
+   * field closes for good. */
+  streamingField?: { name: string; value: MagicWriteRawValue };
+}
+
+function findTopLevelKeyLine(lines: RawLine[], key: string): number | null {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (line.indent !== 0) continue;
+    const match = KEY_LINE.exec(line.text);
+    if (match && match[1] === key) return index;
+  }
+  return null;
+}
+
+interface ChildSpan {
+  key: string;
+  start: number;
+  end: number;
+}
+
+/** Every sibling `key:` line at exactly `indent`, starting at `start`, as a
+ * `[start, end)` line-index span each - the span for a field runs up to
+ * (but excludes) the next sibling's own start line, or the end of the
+ * document for the last one. */
+function topLevelChildSpans(lines: RawLine[], start: number, indent: number): ChildSpan[] {
+  const starts: { key: string; index: number }[] = [];
+  let index = start;
+  while (index < lines.length) {
+    const line = lines[index]!;
+    if (line.indent === -1) {
+      index++;
+      continue;
+    }
+    if (line.indent < indent) break;
+    if (line.indent === indent) {
+      const match = KEY_LINE.exec(line.text);
+      if (!match) break;
+      starts.push({ key: match[1]!, index });
+    }
+    index++;
+  }
+  return starts.map((entry, i) => ({
+    key: entry.key,
+    start: entry.index,
+    end: i + 1 < starts.length ? starts[i + 1]!.index : lines.length,
+  }));
+}
+
+/** Tolerant, incremental read of whatever's parseable from a still-streaming
+ * `fields` turn - never throws, never "repairs" anything (unlike
+ * `ai-wizard-protocol.ts`'s JSON `repairPartialJson`), just re-scans the
+ * growing text from scratch on every call and reports what's structurally
+ * complete. Cheap enough for that: Magic Write turns are at most a few KB. */
+export function parsePartialMagicWriteYaml(text: string): MagicWritePartialState {
+  const lines = toRawLines(text);
+  const top = parseMapping(lines, 0, 0).fields;
+  const kind = isRawString(top.kind) ? top.kind : undefined;
+  const summary = isRawString(top.summary) ? top.summary : undefined;
+  if (kind !== "fields") return { kind, summary, closedFields: {} };
+
+  const fieldsLineIndex = findTopLevelKeyLine(lines, "fields");
+  if (fieldsLineIndex === null) return { kind, summary, closedFields: {} };
+  const fieldsIndent = lines[fieldsLineIndex]!.indent;
+  const firstChildIndex = skipBlank(lines, fieldsLineIndex + 1);
+  const firstChild = lines[firstChildIndex];
+  if (!firstChild || firstChild.indent <= fieldsIndent) return { kind, summary, closedFields: {} };
+
+  const spans = topLevelChildSpans(lines, firstChildIndex, firstChild.indent);
+  if (spans.length === 0) return { kind, summary, closedFields: {} };
+
+  const closedFields: MagicWriteRawFields = {};
+  for (const span of spans.slice(0, -1)) {
+    const parsed = parseMapping(lines.slice(span.start, span.end), 0, firstChild.indent).fields;
+    if (span.key in parsed) closedFields[span.key] = parsed[span.key]!;
+  }
+  const lastSpan = spans[spans.length - 1]!;
+  const lastParsed = parseMapping(lines.slice(lastSpan.start, lastSpan.end), 0, firstChild.indent).fields;
+  const streamingField = lastSpan.key in lastParsed ? { name: lastSpan.key, value: lastParsed[lastSpan.key]! } : undefined;
+
+  return { kind, summary, closedFields, streamingField };
+}

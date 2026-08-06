@@ -60,7 +60,7 @@ async function decodeImage(file: File): Promise<DecodedUploadImage> {
   }
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
@@ -75,15 +75,28 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
         resolve(blob);
       },
       OPTIMIZED_IMAGE_MIME,
-      OPTIMIZED_IMAGE_QUALITY,
+      quality,
     );
   });
 }
 
-export async function optimizeUploadImage(file: File): Promise<File> {
+export interface OptimizeUploadImageOptions {
+  /** @default OPTIMIZED_IMAGE_MAX_WIDTH (1024) - Magic Write's image-context
+   * picker (`status/magic-write.md` decision #3) calls this with `240`
+   * instead: vision API token cost scales with pixel count, not
+   * quality/file size, and "recognize what's in the photo" doesn't need
+   * anywhere near upload-quality resolution. */
+  maxWidth?: number;
+  /** @default OPTIMIZED_IMAGE_QUALITY (0.82) */
+  quality?: number;
+}
+
+export async function optimizeUploadImage(file: File, options?: OptimizeUploadImageOptions): Promise<File> {
+  const maxWidth = options?.maxWidth ?? OPTIMIZED_IMAGE_MAX_WIDTH;
+  const quality = options?.quality ?? OPTIMIZED_IMAGE_QUALITY;
   const decoded = await decodeImage(file);
   try {
-    const scale = Math.min(1, OPTIMIZED_IMAGE_MAX_WIDTH / decoded.width);
+    const scale = Math.min(1, maxWidth / decoded.width);
     const width = Math.max(1, Math.round(decoded.width * scale));
     const height = Math.max(1, Math.round(decoded.height * scale));
     const canvas = document.createElement("canvas");
@@ -93,7 +106,7 @@ export async function optimizeUploadImage(file: File): Promise<File> {
     if (!context) throw new Error("The browser could not prepare this image.");
 
     context.drawImage(decoded.image, 0, 0, width, height);
-    const blob = await canvasToBlob(canvas);
+    const blob = await canvasToBlob(canvas, quality);
     return new File([blob], optimizedUploadName(file.name), {
       type: OPTIMIZED_IMAGE_MIME,
       lastModified: file.lastModified,

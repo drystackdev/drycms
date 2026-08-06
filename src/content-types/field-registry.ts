@@ -165,6 +165,10 @@ export interface RichTextFieldConfig {
   table?: boolean;
   grid?: boolean;
   fullscreen?: boolean;
+  /** Toolbar's "Rewrite selection with AI" button (`status/magic-write.md`
+   * Phase 4) - server-mode AI only, same as Magic Write; the button itself
+   * additionally checks `window.__DRY_CONFIG__.aiMode` at render time. */
+  aiRewrite?: boolean;
 }
 
 const RICH_TEXT_FEATURE_CONFIG: SettingDescriptor[] = [
@@ -211,6 +215,7 @@ const RICH_TEXT_FEATURE_CONFIG: SettingDescriptor[] = [
   { key: "table", label: "Tables", widget: "boolean", group: "Insert" },
   { key: "grid", label: "Grids", widget: "boolean", group: "Insert" },
   { key: "fullscreen", label: "Fullscreen", widget: "boolean", group: "View" },
+  { key: "aiRewrite", label: "AI rewrite selection", widget: "boolean", group: "Insert" },
 ];
 
 export const richTextFieldType: FieldTypeDefinition<string> = {
@@ -240,6 +245,7 @@ export const richTextFieldType: FieldTypeDefinition<string> = {
     table: true,
     grid: true,
     fullscreen: true,
+    aiRewrite: true,
   },
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
 };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-const { path } = window.__DRY_CONFIG__;
+const { path, aiMode } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SlugField from "../components/fields/SlugField.js";
 import { toast } from "../components/Toast.js";
@@ -9,6 +9,9 @@ import {
   PreviewIcon,
   TrashIcon,
 } from "../components/icons/index.js";
+import { SparkleIcon } from "../components/AiSparkleIcon.js";
+import MagicWriteDialog from "./content-entry-editor/MagicWriteDialog.js";
+import { createHttpFileSource } from "../storage/http-source.js";
 import {
   ContentEntriesApiError,
   createContentEntriesApi,
@@ -73,6 +76,12 @@ function renderFieldNodes(
   allTypes: ContentTypeDefinition[],
   checkSecretKey?: FieldRendererProps["checkSecretKey"],
   revealPath?: string[],
+  /** Magic Write (status/magic-write.md decision #4): the field currently
+   * being streamed into locks its own `<fieldset>` (native `disabled`
+   * cascades to every control inside it, including a `flatten`/
+   * `component-repeat` field's nested children) so the admin can't type over
+   * it mid-write. `null`/`undefined` outside a Magic Write run. */
+  streamingFieldName?: string | null,
 ) {
   const elements = [];
   for (let i = 0; i < nodes.length; i++) {
@@ -90,7 +99,12 @@ function renderFieldNodes(
         // and `?_field=` deep link (`field-events.ts`) - the SlugField pair
         // is addressed by the Title field's own name, since it's really one
         // control on screen.
-        <div key={node.fieldName} data-field-name={node.fieldName}>
+        <fieldset
+          key={node.fieldName}
+          data-field-name={node.fieldName}
+          disabled={streamingFieldName === node.fieldName}
+          class="content-entry-editor-field"
+        >
           <SlugField
             label={node.label}
             slugLabel={next.label}
@@ -116,13 +130,18 @@ function renderFieldNodes(
               fieldErrors[node.fieldName] ?? fieldErrors[next.fieldName]
             }
           />
-        </div>,
+        </fieldset>,
       );
       i++; // Slug node already rendered alongside Title above.
       continue;
     }
     elements.push(
-      <div key={node.fieldName} data-field-name={node.fieldName}>
+      <fieldset
+        key={node.fieldName}
+        data-field-name={node.fieldName}
+        disabled={streamingFieldName === node.fieldName}
+        class="content-entry-editor-field"
+      >
         <FieldRenderer
           node={node}
           value={value[node.fieldName]}
@@ -138,7 +157,7 @@ function renderFieldNodes(
             revealPath?.[0] === node.fieldName ? revealPath : undefined
           }
         />
-      </div>,
+      </fieldset>,
     );
   }
   return elements;
@@ -148,6 +167,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const { route } = useLocation();
   const typesApi = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
+    [],
+  );
+  const magicWriteImageSource = useMemo(
+    () => createHttpFileSource(`${path}/api/storage`),
     [],
   );
 
@@ -167,6 +190,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [aiKeyCheck, setAiKeyCheck] = useState<
     { ok: boolean; message: string } | undefined
   >();
+  const [showMagicWrite, setShowMagicWrite] = useState(false);
+  // Magic Write (status/magic-write.md): the top-level field name currently
+  // being streamed into, or `null` when no Magic Write run is active -
+  // `renderFieldNodes` disables that one field's `<fieldset>` while it's set.
+  const [streamingFieldName, setStreamingFieldName] = useState<string | null>(
+    null,
+  );
 
   // Snapshot of `value` right after load, before any edits - see
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
@@ -372,6 +402,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           >
             <PreviewIcon /> Preview
             <span class="badge sm secondary">{previewDiffs.length}</span>
+          </button>
+        )}
+        {canEdit && aiMode === "server" && (
+          <button
+            type="button"
+            class="outline"
+            onClick={() => setShowMagicWrite(true)}
+          >
+            <SparkleIcon /> Magic Write
           </button>
         )}
         {canEdit && (
@@ -704,6 +743,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 <span class="badge sm secondary">{previewDiffs.length}</span>
               </button>
             )}
+            {canEdit && aiMode === "server" && (
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setShowMagicWrite(true)}
+              >
+                <SparkleIcon /> Magic Write
+              </button>
+            )}
             {/* Redundant inside the VEI dialog - the overlay's own dock Save
              * button drives this entry's `handleSave` too (via `dry:entry-save`,
              * `listenForEntrySave` above), but scoped across every marked entry
@@ -739,6 +787,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                   }
                 : undefined,
               revealPath,
+              streamingFieldName,
             )}
           </div>
 
@@ -757,6 +806,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                   }
                 : undefined,
               revealPath,
+              streamingFieldName,
             )}
 
             {canDelete && (
@@ -815,6 +865,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         onResetField={handleResetField}
         onRequestResetAll={() => setShowResetAllConfirm(true)}
       />
+
+      {aiMode === "server" && (
+        <MagicWriteDialog
+          open={showMagicWrite}
+          onClose={() => setShowMagicWrite(false)}
+          typeSlug={typeSlug}
+          entryId={entryId}
+          nodes={editableNodes}
+          value={value}
+          updateFieldValue={updateFieldValue}
+          onStreamingFieldChange={setStreamingFieldName}
+          source={magicWriteImageSource}
+        />
+      )}
     </>
   );
 }

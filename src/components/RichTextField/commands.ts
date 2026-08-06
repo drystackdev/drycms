@@ -5,6 +5,7 @@ import type { EditorView } from "prosemirror-view";
 import { wrapIn } from "prosemirror-commands";
 import { liftTarget } from "prosemirror-transform";
 import { blockNodeTypeAndAttrs, blockTypeOfNode, schema, type ImageAlign, type ImageObjectFit } from "./schema.js";
+import { importCleanHtmlFragment } from "./html.js";
 import type { BlockType, TextAlign } from "./types.js";
 
 /**
@@ -495,6 +496,26 @@ export function replaceImageSrc(pos: number, src: string, alt: string): Command 
 export function removeNodeAt(pos: number, nodeSize: number): Command {
   return (state, dispatch) => {
     if (dispatch) dispatch(state.tr.delete(pos, pos + nodeSize));
+    return true;
+  };
+}
+
+/** `ai-rewrite-button.tsx`'s "replace selection with the AI's rewrite"
+ * (`status/magic-write.md` Phase 4) - a no-op on a collapsed selection
+ * (nothing to replace) or malformed HTML (`importCleanHtmlFragment` throws
+ * on input the DOM parser can't make sense of; caught here rather than left
+ * for the caller, same defensive stance `setLink`'s own range guard takes). */
+export function replaceSelectionWithHtml(html: string, inline: boolean): Command {
+  return (state, dispatch) => {
+    const { from, to } = state.selection;
+    if (from === to) return false;
+    let fragment;
+    try {
+      fragment = importCleanHtmlFragment(html, { inline });
+    } catch {
+      return false;
+    }
+    if (dispatch) dispatch(state.tr.replaceWith(from, to, fragment).scrollIntoView());
     return true;
   };
 }

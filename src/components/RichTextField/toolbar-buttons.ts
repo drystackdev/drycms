@@ -11,6 +11,7 @@ import {
   UndoIcon,
   type IconProps,
 } from "../icons/index.js";
+import AiRewriteButton from "./ai-rewrite-button.js";
 import AlignMenu from "./align-menu.js";
 import BlockTypeMenu from "./block-menu.js";
 import ColorMenu from "./color-menu.js";
@@ -155,6 +156,12 @@ export const TOOLBAR_GROUPS: ToolbarItem[][] = [
     ...(temporaryFeatureVisibility.richtextComponentInsert
       ? [{ type: "custom" as const, key: "insert-component", Component: DryComponentInsertButton, blockOnly: true }]
       : []),
+    // `blockOnly` here isn't about acting on a whole block (it rewrites a
+    // plain text SELECTION) - it sidesteps `html.ts`'s `exportFragmentHtml`/
+    // `importCleanHtmlFragment` needing to handle an inline-mode field's own
+    // flat-run selection shape, not yet worth the extra complexity for a
+    // first pass (`status/magic-write.md` Phase 4).
+    { type: "custom", key: "ai-rewrite", Component: AiRewriteButton, blockOnly: true, isDisabled: (state) => !state.hasSelection },
   ],
   // View group: fullscreen changes how the whole field is presented rather
   // than formatting its content. Reorder remains implemented in the editor,

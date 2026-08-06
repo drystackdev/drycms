@@ -1,3 +1,4 @@
+import { Fragment } from "prosemirror-model";
 import type { Mark, Node as PMNode, NodeType } from "prosemirror-model";
 import {
   blockNodeTypeAndAttrs,
@@ -453,6 +454,19 @@ export function exportCleanHtml(doc: PMNode, options?: { inline?: boolean }): st
   return out;
 }
 
+/** Same block-by-block export as `exportCleanHtml`, but for an arbitrary
+ * `Fragment` rather than a whole `doc` node - `ai-rewrite-button.tsx`'s
+ * "rewrite selection" feature (`status/magic-write.md` Phase 4) exports just
+ * `state.doc.slice(from, to).content` this way, since a partial selection
+ * is never itself a valid `doc` node to hand `exportCleanHtml`. */
+export function exportFragmentHtml(fragment: Fragment): string {
+  let out = "";
+  fragment.forEach((node) => {
+    out += exportBlockHtml(node);
+  });
+  return out;
+}
+
 interface InlineAncestry {
   bold: boolean;
   italic: boolean;
@@ -756,4 +770,19 @@ function blockChildrenFromContainer(container: Element): PMNode[] {
 export function importCleanHtml(html: string): PMNode {
   const dom = new DOMParser().parseFromString(html, "text/html");
   return schema.nodes.doc!.create(null, blockChildrenFromContainer(dom.body));
+}
+
+/** Like `importCleanHtml`, but returns a `Fragment` (not a full `doc` node)
+ * so the result can replace a SELECTION rather than the whole document -
+ * `commands.ts`'s `replaceSelectionWithHtml` (`status/magic-write.md` Phase
+ * 4) is the one caller. `options.inline` parses as a flat run of inline
+ * nodes (no block wrapper) instead of `blockChildrenFromContainer`'s normal
+ * block-by-block walk - only meaningful for an inline-mode field's own
+ * selection, which is always a single run of inline content. */
+export function importCleanHtmlFragment(html: string, options?: { inline?: boolean }): Fragment {
+  const dom = new DOMParser().parseFromString(html, "text/html");
+  if (options?.inline) {
+    return Fragment.from(Array.from(dom.body.childNodes).flatMap((child) => walkInlineHtml(child, NO_MARKS)));
+  }
+  return Fragment.from(blockChildrenFromContainer(dom.body));
 }

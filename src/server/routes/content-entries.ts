@@ -87,7 +87,7 @@ function isHiddenEntry(type: ContentTypeDefinition, row: EntryValue, superAdminI
  * `permissionActionsFor`); belt-and-suspenders with `handler.ts`'s central
  * "must have a session at all" gate, which this route's own direct-call
  * unit tests bypass entirely - see `context.ts`'s doc comment on `session`. */
-async function checkAccess(
+export async function checkAccess(
   context: DryRouteContext,
   entryAdapter: ContentEntryEngineAdapter,
   allTypes: ContentTypeDefinition[],

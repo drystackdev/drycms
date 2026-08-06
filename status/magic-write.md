@@ -335,19 +335,244 @@ thể làm sau, không block nhau.
 
 ## Status
 
-Feature Magic Write: chưa bắt đầu code — user đang xem lại plan trước khi
-chốt phase bắt đầu (Phase 1+2 khuyến nghị / chỉ Phase 1 / chỉ Phase 4 độc
-lập).
+User đã chỉ đạo "thực hiện đến khi hoàn thành kế hoạch" — không hỏi lại phase,
+làm tuần tự cả 5 phase trong 1 phiên liên tục. **CẢ 5 PHASE ĐÃ XONG CODE**
+(Phase 1, 5, 2, 3, 4 theo thứ tự triển khai — xem chi tiết từng phase bên
+dưới), typecheck sạch + 873 unit test pass xuyên suốt, đa số đã smoke-test
+với AI thật (Google Gemini, key thật trong dev DB). Việc còn lại (test UI
+browser thật, verify Anthropic/OpenAI's multimodal thật, 1 lượt
+rewrite-selection thật) liệt kê ở cuối file "## Speed" — không phải lỗi,
+là giới hạn không có browser tool trong phiên này.
 
-Việc phụ (prerequisite): đã xong — tách `ai.mode` khỏi `kind` để chạy được
-server-mode AI (gọi HTTP thật, cần cho gửi ảnh) mà không phải chuyển toàn bộ
-storage/content/kv sang Cloudflare. Server cần restart để áp dụng
-`dry.config.ts` mới (dev server hot-reload không tự áp dụng lại
-`resolveOptions()` ở lần đọc config gốc — cần xác nhận lại khi restart).
+Quyết định triển khai khác plan gốc 1 chỗ: gộp Phase 5 (câu hỏi làm rõ) vào
+ngay khi làm Phase 1, thay vì để riêng — vì server route vốn đã đối xứng
+`kind: question`/`kind: fields` giống hệt wizard ngay từ thiết kế ban đầu
+(để tránh 1 hệ prompt hứa hẹn tính năng mà client chưa hiểu được), nên làm
+UI hỏi-đáp luôn (inline trong `MagicWriteDialog.tsx`, không tách
+`AiChoiceQuestion.tsx` riêng — đúng lựa chọn "giảm tối đa file đụng tới" mà
+plan đã gợi ý) chỉ tốn thêm rất ít so với đã có sẵn hạ tầng.
+
+### Đã xong (Phase 1 + 5)
+
+- `src/content-types/ai-magic-write-protocol.ts` — parser YAML-subset đầy đủ
+  (`parseMagicWriteYaml`) + dở dang (`parsePartialMagicWriteYaml`) +
+  `extractMagicWriteYaml` (bóc fence/prose thừa). 12 unit test.
+- `src/content-types/ai-richtext-sanitize.ts` — sanitizer regex allow-list.
+  9 unit test. Verified thật: model tự viết `<h2>/<p>/<strong>/<em>/<blockquote>`
+  đúng dialect, qua sanitize nguyên vẹn.
+- `src/content-types/ai-magic-write-fields.ts` (file MỚI, không có trong plan
+  gốc) — `applyMagicWriteFields(nodes, raw, currentValue, scope,
+  allowedImageSrcs)`: coercion + scope enforcement (mode empty/selected)
+  dùng CHUNG giữa server (validate cuối cùng) và client
+  (`MagicWriteDialog.tsx` commit từng field khi đóng khi đang stream) — tách
+  ra khỏi `ai-magic-write.ts` vì logic này phải chạy được ở cả 2 nơi
+  (isomorphic, không có import server-only), tránh duplicate. 8 unit test.
+- `src/content-types/ai-magic-write-prompt.ts` — `describeFieldsForPrompt` +
+  `buildMagicWriteSystemPrompt`, dùng chung `isEmptyValue`/
+  `WRITABLE_COLUMN_TYPES` từ file fields.ts ở trên (không duplicate).
+- `src/server/routes/ai-magic-write.ts` — route handler đầy đủ: validate
+  request (+ `history` cho follow-up sau câu hỏi), checkAccess theo
+  update/setting permission thật (không phải requireSuperAdmin), stream SSE
+  với retry loop 3 lần khi model trả sai dialect, terminal `{turn}` event
+  mang field đã coerce/sanitize/scope-filtered.
+- Export thêm từ `ai.ts` (không đổi hành vi wizard/chat cũ):
+  `ChatMessage`/`ChatStreamResult` type, `createChatStream`, `streamEvent`,
+  `trackAiStream`, `safeAiMessage`, `acquireAiStreamSlot`/`releaseAiStreamSlot`
+  (counter dùng CHUNG `activeAiStreams` với chat/wizard, không phải counter
+  riêng). `checkAccess` export từ `content-entries.ts`.
+- `handler.ts`: `RouteModule` đổi từ `Record<string, DryRouteHandler>` sang
+  `{[K in HttpMethod]?: DryRouteHandler}` — bắt buộc vì `checkAccess`/
+  `acquireAiStreamSlot`... giờ là export thật của route module, phá kiểu cũ
+  (mọi export phải khớp `DryRouteHandler`). `route[request.method as
+  HttpMethod]` ở chỗ dispatch.
+- Dispatch `slug === "magic-write"` chèn TRƯỚC `requireSuperAdmin` trong
+  `ai.ts`'s POST handler (route khác vẫn y nguyên).
+- Client: `MagicWriteDialog.tsx` (mới) — stage start/loading/question/error,
+  live incremental commit (parse dở dang mỗi delta, field đóng thì commit
+  qua `applyMagicWriteFields`, field `text` đang mở thì feed value sống,
+  field khác chỉ disable+chờ đóng), terminal event ghi đè lần cuối cho chắc
+  (bắt cả field cuối cùng không bao giờ "đóng" được ở chế độ live).
+  `ContentEntryEditor.tsx`: field top-level giờ là `<fieldset
+  data-field-name disabled={streamingFieldName===...} class=
+  "content-entry-editor-field">` thay vì `<div>`; nút "Magic Write" ở cả 2
+  vị trí (topbar + VEI dialog header), gate `canEdit && aiMode==="server"`.
+  CSS reset `.content-entry-editor-field` thêm cạnh `.content-entry-editor-form`
+  trong `components.css`.
+
+**Verified bằng smoke test thật** (dev server restart lại — routes/**
+được load 1 LẦN lúc boot qua `adapters/node.ts`'s static import, KHÔNG
+hot-reload per-request như doc cũ tưởng; chỉ `page-handler.ts` có
+`ssrLoadModule` lại mỗi request, phần còn lại của `src/server/**` cần
+restart mới thấy code mới — ghi chú lại vì khác với CLAUDE.md's câu "no
+directory needs a manual rebuild"), login qua `/api/auth/login` +
+CSRF cookie, POST `/api/ai/magic-write` với `typeSlug: "blog"`, prompt tiếng
+Việt thật → Gemini trả về đúng dialect, stream đúng, server coerce đúng
+(date→ISO, richtext sanitize giữ nguyên vì đúng dialect, flatten `seo` group
+đúng, field `seo.image` bị DROP đúng như thiết kế Phase 1 chưa cho viết
+ảnh, field quan hệ `category` không hề xuất hiện trong prompt nên model
+không viết). `writtenFieldNames` đúng.
+
+**Chưa verify**: UI thật trong browser (không có browser tool trong session
+này) — chỉ verify qua typecheck sạch + 857 test pass + smoke test server-side
+trực tiếp bằng curl. Cần user tự bấm thử nút "Magic Write" trong app để xác
+nhận UX (fieldset disable, live streaming vào field `text`, dialog
+question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối.
+
+### Đã xong: Phase 2 (ảnh)
+
+- `file-manager-image-optimize.ts`: `optimizeUploadImage(file, {maxWidth?,
+  quality?})` — behavior mặc định giữ nguyên (upload thật vẫn 1024px/0.82),
+  Magic Write gọi `{maxWidth: 240}`.
+- Client `MagicWriteDialog.tsx`: picker ảnh (FileManager multi, chỉ
+  jpg/jpeg/png/webp — luôn optimizable, không cần fallback path cho
+  gif/svg), fetch bytes ảnh đã có trong storage qua `resolveImageSrc` +
+  `fetch`, resize 240px, base64, hiện thumbnail strip + nút xoá. Gửi lại
+  `images` y nguyên trên MỌI request trong 1 phiên (kể cả follow-up sau câu
+  hỏi — mỗi lần gọi server dựng lại request tới provider từ đầu, không có
+  bộ nhớ phía provider).
+- Server: `ai.ts`'s `ChatMessage` thêm `images?`; `streamServerAiWithCredential`
+  (Anthropic content blocks `type:"image"` + base64; OpenAI Responses API
+  `type:"input_image"` + data-URI) và `streamGoogleAiWithCredential`
+  (Gemini `inlineData`) build multimodal content khi có ảnh. Thêm
+  `maxOutputTokens` optional param xuyên suốt `createChatStream` →
+  `streamServerAiWithCredential` (chỉ ảnh hưởng nhánh Anthropic — OpenAI
+  vốn không set `max_tokens`; Magic Write dùng 8192 thay vì mặc định 2048
+  vì 1 entry đầy đủ field dễ vượt 2048 token) — KHÔNG đổi wizard/chat vì họ
+  không truyền param mới này.
+  **Lỗ hổng phát hiện trong lúc làm (không phải yêu cầu gốc, nhưng sửa
+  luôn vì ảnh hưởng đúng-sai dữ liệu)**: `max_tokens: 2048` cứng của nhánh
+  Anthropic có thể cắt cụt JSON/YAML giữa chừng mà `parseMagicWriteYaml`
+  (tolerant, dừng êm ở EOF) vẫn coi là hợp lệ — silently trả về field bị
+  cắt cụt. Bug này tồn tại tiềm ẩn cả ở Phase 1 (không cần ảnh cũng có thể
+  gặp nếu content dài), không chỉ Phase 2.
+- `ai-magic-write.ts`: validate `images` (path/mimeType/base64, cap 6 ảnh,
+  cap base64 length), verify THẬT qua `storage.stat()` trước khi tin (theo
+  đúng quyết định #3 — không tin path client tự khai), build
+  `allowedImageSrcs`, gắn vào priming message + prompt (danh sách path).
+- `ai-magic-write-fields.ts`: field `image` giờ coerce thật (trước là luôn
+  drop) — chỉ nhận path nằm trong `allowedImageSrcs`; field `multiple:
+  true` wrap thành mảng 1 phần tử.
+- `request-limits.ts`/`handler.ts`: `maxBodyBytesFor(segment, slug?)` thêm
+  case `ai`+`magic-write` ⇒ 6 MiB (JSON thường 2 MiB không đủ cho vài ảnh
+  base64). Thread `slug` qua `bodyLimitResponse`/`limitRequestBody`.
+- Unit test: +9 (image coercion trong `ai-magic-write-fields.test.ts`).
+  Tổng **861 test pass**, typecheck sạch.
+- **Verified bằng smoke test thật với ảnh thật**: tải `hero.jpg` có sẵn
+  trong storage dev, base64 encode, gửi kèm request, yêu cầu model mô tả
+  ảnh vào field `excerpt` — Gemini trả lời đúng ND ảnh thật ("cảnh bình
+  minh trên núi") → xác nhận multimodal wiring cho Google hoạt động thật
+  100% (không chỉ đọc text). **Chưa verify được** Anthropic/OpenAI's
+  content-block format bằng gọi thật (dev DB chỉ có key Google) — viết
+  theo đúng tài liệu chính thức của 2 hãng nhưng chỉ qua review code, chưa
+  chạy thật.
+
+### Đã xong: Phase 3 (relation context + component-repeat làm write target)
+
+- `src/content-types/engine/entry-relation-context.ts` (mới) —
+  `loadRelationContext(entryAdapter, allTypes, nodes, currentValue)`: đọc
+  MỘT cấp field `relation`/`relation-mirror` (kể cả lồng trong `flatten`,
+  không lồng vào `component-repeat` item để giữ chi phí thấp), lấy vài field
+  nguyên thuỷ (string/number/boolean) đầu tiên của row liên kết làm preview,
+  cap 20 dòng tổng + 5 row/field. Chỉ đọc — không bao giờ là write target
+  (đúng quyết định #2 gốc).
+- `ai-magic-write-prompt.ts`: thêm section "Linked data on this entry
+  (read-only context...)" vào system prompt khi có `relationContext`.
+- `ai-magic-write.ts`: gọi `loadRelationContext` trước khi build prompt,
+  truyền vào `buildMagicWriteSystemPrompt`.
+- `ai-magic-write-fields.ts`: `coerceNodeValue` thêm nhánh `component-repeat`
+  — model-provided array LUÔN thay thế toàn bộ mảng hiện có (dialect không
+  có id per-item để merge, giống ngữ nghĩa "thay hoàn toàn" của mọi field
+  khác); không tự enforce `min`/`max` item-count ở đây (Save-time
+  `entry-validate.ts` đã có sẵn, không duplicate).
+- `MagicWriteDialog.tsx`: `isMagicWriteCandidate` giờ nhận cả
+  `component-repeat` (đệ quy vào `itemFields`).
+- +14 unit test (5 cho `loadRelationContext`, 9 cho component-repeat
+  coercion + `allowedImageSrcs` truyền qua sanitizer). Tổng **870 test
+  pass**.
+- **Verified bằng smoke test thật**: viết `valueProps` (component-repeat,
+  2 field `headline`+`description`) của singleton `homepage` — Gemini trả
+  đúng block-sequence dialect (`- headline: |` / `  description: |`), server
+  parse+coerce đúng, `writtenFieldNames: ["valueProps"]`, nội dung tiếng
+  Việt hợp lý về drycms.
+  **Phát hiện quan trọng trong lúc debug** (không phải bug code, là đặc
+  tính môi trường dev): lần đầu request trả về `fields: {}` rỗng dù model
+  trả lời đúng — hoá ra do dev server CHƯA restart sau khi sửa
+  `ai-magic-write-fields.ts` (log Vite "page reload ...ts" xuất hiện nhưng
+  KHÔNG đồng nghĩa route đã áp dụng — xem lại ghi chú Phase 1 về
+  `adapters/node.ts`'s static import chỉ load 1 lần lúc boot). Sau restart
+  thật, chạy đúng ngay. Ghi nhớ: luôn restart dev server trước khi smoke
+  test thay đổi ở `src/server/**` (trừ `page-handler.ts`), đừng tin log
+  "page reload" một mình.
+  Chưa live-test riêng phần relation-context (blog entry thật trong dev DB
+  chưa có `category` được set) — đã unit-test kỹ (5 test), logic đơn giản,
+  rủi ro thấp.
+
+### Đã xong: Phase 4 (RichText chọn đoạn viết lại)
+
+- `html.ts`: `exportFragmentHtml(fragment)` (export block-by-block cho 1
+  `Fragment` bất kỳ, không cần cả `doc`, tái dùng `exportBlockHtml` nội bộ
+  sẵn có) + `importCleanHtmlFragment(html, {inline?})` (như
+  `importCleanHtml` nhưng trả `Fragment`, dùng `walkInlineHtml`/
+  `blockChildrenFromContainer` sẵn có).
+- `commands.ts`: `replaceSelectionWithHtml(html, inline): Command` —
+  `state.tr.replaceWith(from, to, fragment)`, no-op khi selection rỗng hoặc
+  HTML không parse được.
+- `field-registry.ts`: `RichTextFieldConfig.aiRewrite?: boolean` (default
+  `true`), thêm vào `RICH_TEXT_FEATURE_CONFIG`/`defaultConfig`.
+- `src/components/RichTextField/ai-rewrite-button.tsx` (mới) — nút toolbar
+  disable khi không có selection, dialog nhập instruction → stream preview
+  dạng TEXT THÔ (không inject HTML nửa vời vào dialog, tránh
+  DOMParser-misparse — cùng lý do Magic Write's richtext field không
+  live-feed) → khi xong hiện preview HTML đã sanitize + nút Replace/
+  Regenerate. `aiMode !== "server"` thì render fragment rỗng (ẩn nút).
+- `toolbar-buttons.ts`: đăng ký item `"ai-rewrite"` trong nhóm Feature,
+  `blockOnly: true` (ẩn ở field inline — chưa xử lý edge case fragment
+  của inline-mode field, ghi rõ lý do trong code).
+- `toolbar.tsx`: thêm nhánh ternary map `"ai-rewrite"` → config key
+  `"aiRewrite"` cho `enabled()`.
+- Server (`ai.ts`, KHÔNG file riêng — nhẹ, đúng gợi ý plan "mode riêng
+  trong cùng route"): slug `rewrite-selection` — KHÔNG dùng YAML dialect
+  của Magic Write, reply model = HTML fragment trực tiếp (tái dùng
+  `runWizardTurn` nguyên bản làm hàm generic "gọi AI, gom text, báo lỗi
+  giữa chừng" — không phải hàm riêng cho wizard, gọi thẳng an toàn, không
+  đổi wizard). Validate passage/instruction, cap độ dài, rate-limit dùng
+  chung `acquireAiStreamSlot`. Permission: chỉ cần đã đăng nhập (không có
+  content-type/entry cụ thể để check quyền theo resource — field RichText
+  ở bất kỳ đâu trong admin đều đã qua gate quyền của trang chứa nó rồi).
+- +3 unit test (`export-fragment.test.ts`, chỉ phần export — phần import/
+  `replaceSelectionWithHtml` dùng DOMParser nên KHÔNG unit-test được ở đây,
+  đúng convention đã có của `importCleanHtml` chính nó — cần Playwright).
+  Tổng **873 test pass**.
+- **Verified 1 phần bằng smoke test thật**: validate request (thiếu
+  passage/instruction, chưa đăng nhập) đúng; sanitize+fence-extraction
+  pipeline verify bằng script độc lập đúng. **Cuộc gọi AI thật bị lỗi
+  "model đang quá tải" từ Google (lỗi tạm thời phía provider, retry nhiều
+  lần trong phiên vẫn vậy)** — không phải bug code (cùng pipeline
+  `createChatStream`/`streamGoogleAiWithCredential` đã chạy thành công
+  nhiều lần ở Phase 1-3 với cùng key). Chưa xác nhận được 1 lượt rewrite
+  thật đầu-cuối do provider overload lúc test.
+- **Hoàn toàn chưa verify**: phần ProseMirror thật trong trình duyệt
+  (export selection → HTML → gửi AI → parse Fragment → replaceWith vào
+  đúng vị trí selection) — không có browser tool trong phiên này, cần
+  Playwright hoặc user tự bấm thử.
 
 ## Speed
 
-- Đã xong: research 3 hướng (entry editor/field system, RichText/ProseMirror,
-  File Management/server routes) + 1 lượt Plan agent thiết kế đầy đủ + tách
-  ai.mode/kind (code + test + typecheck pass).
-- Chưa làm: code Magic Write. Cần chốt phase bắt đầu với user.
+- Research + Plan agent + tách ai.mode/kind: xong trước đó.
+- Phase 1 + 5 + Phase 2 + Phase 3 + Phase 4: xong TRỌN kế hoạch trong phiên
+  này (không dừng lại hỏi thêm, theo đúng chỉ đạo "thực hiện đến khi hoàn
+  thành kế hoạch"). Tổng **873 test pass**, typecheck sạch xuyên suốt.
+  5 lượt smoke test thật với AI (text-only, text+ảnh thật, câu hỏi làm rõ,
+  component-repeat, rewrite-selection — lượt cuối bị provider overload).
+- **Việc còn lại, đề xuất cho phiên sau (không phải lỗi, là giới hạn môi
+  trường phiên này)**:
+  1. Test UI thật trong browser (Playwright hoặc user tự bấm) — chưa có
+     browser tool trong phiên này, mọi verify UI chỉ qua đọc code +
+     typecheck + smoke test server-side bằng curl.
+  2. Verify Anthropic/OpenAI's multimodal content-block format bằng gọi
+     thật (dev DB chỉ có key Google) — code viết đúng theo tài liệu chính
+     thức nhưng chưa chạy thật.
+  3. Retry lượt smoke test `rewrite-selection` khi Google's model hết quá
+     tải, để xác nhận 1 lượt rewrite thật đầu-cuối.
+  4. Cân nhắc thêm e2e Playwright test cho toàn bộ luồng Magic Write +
+     rewrite-selection (chưa có, chỉ có unit test).

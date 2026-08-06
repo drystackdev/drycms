@@ -137,7 +137,7 @@ export default function RichTextToolbar({
   const visibleGroups = TOOLBAR_GROUPS.map((group) =>
     group.filter(
       (item) =>
-        enabled(item.key === "block-type" ? "heading" : item.key === "align" ? "alignment" : item.key === "list" ? "lists" : item.key === "insert-image" ? "image" : item.key === "insert-component" ? "component" : item.key) &&
+        enabled(item.key === "block-type" ? "heading" : item.key === "align" ? "alignment" : item.key === "list" ? "lists" : item.key === "insert-image" ? "image" : item.key === "insert-component" ? "component" : item.key === "ai-rewrite" ? "aiRewrite" : item.key) &&
         !(inline && item.blockOnly) &&
         !(item.type === "custom" && item.requiresSource && !source),
     ),

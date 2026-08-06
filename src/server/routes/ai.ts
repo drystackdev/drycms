@@ -16,10 +16,16 @@ import {
   parseWizardTurn,
 } from "../../content-types/ai-wizard-protocol.js";
 import { RESERVED_NAMES } from "../../content-types/naming.js";
+import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
+import { handleMagicWrite } from "./ai-magic-write.js";
 
-interface ChatMessage {
+export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
+  /** Multimodal context images (Magic Write only, `status/magic-write.md`
+   * decision #3) - base64-encoded, already client-resized. Absent/empty for
+   * every other AI feature (chat, wizard), which stay text-only. */
+  images?: { mimeType: string; base64: string }[];
 }
 
 interface ChatRequest {
@@ -53,7 +59,7 @@ interface ServerCredential {
   model: string;
 }
 
-interface ChatStreamResult {
+export interface ChatStreamResult {
   stream: ReadableStream<Uint8Array>;
   aiLabel: string;
 }
@@ -75,6 +81,22 @@ const CONVERSATION_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_CONVERSATIONS = 1_000;
 const MAX_ACTIVE_AI_STREAMS = 4;
 let activeAiStreams = 0;
+
+/** Shared concurrency gate for every AI-backed route (chat, wizard, magic
+ * write) - one counter app-wide, so `ai-magic-write.ts` (which doesn't have
+ * direct access to the module-private `activeAiStreams` above) competes for
+ * the same slots rather than getting its own separate limit. Pair with
+ * `trackAiStream`'s `release` callback (or a direct `releaseAiStreamSlot()`
+ * call on a synchronous early failure) - never leave a slot acquired. */
+export function acquireAiStreamSlot(): boolean {
+  if (activeAiStreams >= MAX_ACTIVE_AI_STREAMS) return false;
+  activeAiStreams += 1;
+  return true;
+}
+
+export function releaseAiStreamSlot(): void {
+  activeAiStreams = Math.max(0, activeAiStreams - 1);
+}
 
 function aiProviderLabel(provider: ServerCredential["provider"] | "codex" | "claude"): string {
   return {
@@ -175,7 +197,7 @@ function errorResponse(error: unknown, status = 500): Response {
   );
 }
 
-function safeAiMessage(error: unknown): string {
+export function safeAiMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "AI request failed.";
   return message
     .replace(/(?:Bearer\s+|x-api-key[=: ]+|key=)[^\s&]+/gi, "$1[redacted]")
@@ -248,7 +270,7 @@ function rememberConversation(key: string, messages: ChatMessage[]): void {
   });
 }
 
-function trackAiStream(stream: ReadableStream<Uint8Array>, release: () => void): ReadableStream<Uint8Array> {
+export function trackAiStream(stream: ReadableStream<Uint8Array>, release: () => void): ReadableStream<Uint8Array> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let released = false;
   const timeout = setTimeout(releaseOnce, ai.timeoutMs + 5_000);
@@ -399,7 +421,7 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
 
 const streamEncoder = new TextEncoder();
 
-function streamEvent(payload: Record<string, unknown>): Uint8Array {
+export function streamEvent(payload: Record<string, unknown>): Uint8Array {
   return streamEncoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
@@ -524,10 +546,36 @@ function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => voi
   });
 }
 
+/** OpenAI Responses API `input[].content` - a plain string for a text-only
+ * message (unchanged from before Magic Write), or an array of typed parts
+ * once `message.images` is non-empty. */
+function openaiContentFor(message: ChatMessage): string | Record<string, unknown>[] {
+  if (!message.images?.length) return message.text;
+  return [
+    { type: "input_text", text: message.text },
+    ...message.images.map((image) => ({ type: "input_image", image_url: `data:${image.mimeType};base64,${image.base64}` })),
+  ];
+}
+
+/** Anthropic Messages API `messages[].content` - same string-vs-array split
+ * as `openaiContentFor`. */
+function anthropicContentFor(message: ChatMessage): string | Record<string, unknown>[] {
+  if (!message.images?.length) return message.text;
+  return [
+    { type: "text", text: message.text },
+    ...message.images.map((image) => ({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.base64 } })),
+  ];
+}
+
 async function streamServerAiWithCredential(
   messages: ChatMessage[],
   credential: ServerCredential,
   onDelta: (delta: string) => void,
+  /** Overrides Anthropic's own `max_tokens` (OpenAI's Responses API takes no
+   * such field here, so this only affects the Anthropic branch below) -
+   * Magic Write's replies (a whole entry's worth of fields) can run well
+   * past the 2048-token default chat/wizard replies fit comfortably under. */
+  maxOutputTokens?: number,
 ): Promise<ReadableStream<Uint8Array>> {
   if (credential.provider === "google") {
     return streamGoogleAiWithCredential(messages, credential, onDelta);
@@ -550,13 +598,13 @@ async function streamServerAiWithCredential(
         ? {
             model: credential.model,
             stream: true,
-            input: messages.map((message) => ({ role: message.role, content: message.text })),
+            input: messages.map((message) => ({ role: message.role, content: openaiContentFor(message) })),
           }
         : {
             model: credential.model,
             stream: true,
-            max_tokens: 2048,
-            messages: messages.map((message) => ({ role: message.role, content: message.text })),
+            max_tokens: maxOutputTokens ?? 2048,
+            messages: messages.map((message) => ({ role: message.role, content: anthropicContentFor(message) })),
           }),
       signal: controller.signal,
       redirect: "error",
@@ -615,7 +663,10 @@ async function streamGoogleAiWithCredential(
   const timer = setTimeout(() => controller.abort(), Math.min(ai.timeoutMs, 30_000));
   const contents = messages.map((message) => ({
     role: message.role === "assistant" ? "model" : "user",
-    parts: [{ text: message.text }],
+    parts: [
+      { text: message.text },
+      ...(message.images ?? []).map((image) => ({ inlineData: { mimeType: image.mimeType, data: image.base64 } })),
+    ],
   }));
   try {
     const request = (endpoint: string) => {
@@ -699,11 +750,12 @@ async function streamGoogleAiWithCredential(
   }
 }
 
-async function createChatStream(
+export async function createChatStream(
   context: DryRouteContext,
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
   preferredKeyName?: string,
+  maxOutputTokens?: number,
 ): Promise<ChatStreamResult> {
   if (ai.mode === "local") {
     return {
@@ -716,7 +768,7 @@ async function createChatStream(
   for (const credential of credentials) {
     try {
       return {
-        stream: await streamServerAiWithCredential(messages, credential, onDelta),
+        stream: await streamServerAiWithCredential(messages, credential, onDelta, maxOutputTokens),
         aiLabel: `${aiProviderLabel(credential.provider)} · ${credential.model}`,
       };
     } catch (error) {
@@ -1095,8 +1147,100 @@ function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Respon
   });
 }
 
+interface RewriteSelectionRequest {
+  passage?: string;
+  instruction?: string;
+  aiKeyName?: string;
+}
+
+function buildRewriteSelectionSystemPrompt(lang: string): string {
+  return [
+    "You rewrite a passage of RichText content inside drycms exactly as instructed. Reply with ONLY the rewritten HTML fragment - no prose, no markdown fences, no explanation of what you changed.",
+    'Use ONLY these HTML tags: <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <a href="...">, <br>. No classes, no style attributes, no <div>/<span>, no images, no tables.',
+    `Write in "${lang}" unless the instruction explicitly asks for a different language.`,
+  ].join("\n");
+}
+
+function extractHtmlFragment(raw: string): string {
+  const fenced = /```(?:html)?\s*([\s\S]*?)```/i.exec(raw);
+  return (fenced ? fenced[1]! : raw).trim();
+}
+
+/**
+ * `status/magic-write.md` Phase 4 - unlike Magic Write's own structured YAML
+ * turns, this reply IS the rewritten HTML fragment directly (see that file's
+ * "RichText chọn đoạn để AI viết lại" section: "không cần đổi protocol").
+ * Reuses `runWizardTurn` as-is (a generic "collect one AI reply, surface a
+ * mid-stream provider error" helper, nothing wizard-specific about its
+ * mechanics) rather than writing a third near-identical copy.
+ */
+function streamRewriteSelection(context: DryRouteContext, passage: string, instruction: string, aiKeyName: string | undefined): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      void (async () => {
+        try {
+          const messages: ChatMessage[] = [
+            {
+              role: "user",
+              text: `${buildRewriteSelectionSystemPrompt(ai.lang)}\n\nCurrent passage:\n${passage}\n\nInstruction: ${instruction}`,
+            },
+          ];
+          const result = await runWizardTurn(context, messages, aiKeyName, (delta) => {
+            controller.enqueue(streamEvent({ delta }));
+          });
+          const html = sanitizeAiRichTextHtml(extractHtmlFragment(result.text));
+          controller.enqueue(streamEvent({ html }));
+          controller.close();
+        } catch (error) {
+          controller.enqueue(streamEvent({ error: safeAiMessage(error) }));
+          controller.close();
+        }
+      })();
+    },
+  });
+}
+
+function handleRewriteSelection(context: DryRouteContext, body: RewriteSelectionRequest): Response {
+  const passage = typeof body.passage === "string" ? body.passage.trim() : "";
+  if (!passage) return jsonResponse({ error: "invalid_request", message: "Select some text to rewrite first." }, 400);
+  if (passage.length > 20_000) return jsonResponse({ error: "invalid_request", message: "That selection is too long." }, 400);
+  const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
+  if (!instruction) return jsonResponse({ error: "invalid_request", message: "Describe how to rewrite this passage first." }, 400);
+  if (instruction.length > 2_000) return jsonResponse({ error: "invalid_request", message: "That instruction is too long." }, 400);
+  const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
+
+  if (!acquireAiStreamSlot()) {
+    return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
+  }
+  const stream = streamRewriteSelection(context, passage, instruction, aiKeyName);
+  return new Response(trackAiStream(stream, releaseAiStreamSlot), {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
   try {
+    // Magic Write is scoped by the entry's own edit/setting permission (see
+    // `ai-magic-write.ts`'s own `checkAccess` call), not the Super-Admin-only
+    // gate every other AI route below uses - dispatched before that gate so
+    // a non-Super-Admin editor with real content-entry permissions isn't
+    // rejected before ever reaching it.
+    if (context.params.slug === "magic-write") {
+      return handleMagicWrite(context, await context.request.json());
+    }
+    // "Rewrite selection" (status/magic-write.md Phase 4) has no
+    // content-type/entry context to check a resource permission against -
+    // it only rewrites text the admin already has this RichText field open
+    // to edit, whatever page that is. Any authenticated session is enough
+    // (handler.ts's own central gate already rejects an anonymous request
+    // to this whole segment before dispatch ever reaches here).
+    if (context.params.slug === "rewrite-selection") {
+      return handleRewriteSelection(context, await context.request.json());
+    }
     const denied = await requireSuperAdmin(context, "Only Super Admin can use AI chat.");
     if (denied) return denied;
     if (context.params.slug === "check") {

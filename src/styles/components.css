@@ -2395,6 +2395,21 @@
       padding: 0;
     }
 
+    /* Magic Write (status/magic-write.md): each top-level field is its own
+     * `<fieldset>` now (disabled while it's the one being streamed into) -
+     * unlike `.content-entry-editor-form` above (which wraps the whole grid),
+     * this sits AS an item inside `.content-entry-editor-grid`'s own
+     * `.stack` column, so it additionally needs `margin: 0` (a bare
+     * `<fieldset>` has browser-default margin) and `min-width: 0` (a bare
+     * `<fieldset>` has an intrinsic min-width that fights a flex/grid item
+     * shrinking to fit). */
+    .content-entry-editor-field {
+      border: none;
+      padding: 0;
+      margin: 0;
+      min-width: 0;
+    }
+
     .auth-split-panel {
       display: flex;
       align-items: center;

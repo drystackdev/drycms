@@ -17,7 +17,16 @@ import { requirePermission, requireSuperAdmin } from "./admin-access.js";
 import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
-type RouteModule = Record<string, DryRouteHandler | undefined>;
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD";
+
+/** Only the HTTP-verb exports are required to match `DryRouteHandler` - a
+ * route module (`content-entries.ts`'s `checkAccess`, `ai.ts`'s
+ * `createChatStream`/`acquireAiStreamSlot`/...) may export other helpers
+ * too, reused directly by `ai-magic-write.ts` (see `status/magic-write.md`).
+ * No index signature here on purpose: `route[request.method]` below casts
+ * through `HttpMethod` instead, so an extra non-verb export never has to be
+ * (impossibly) assignable to `DryRouteHandler`. */
+type RouteModule = { [K in HttpMethod]?: DryRouteHandler };
 
 function secureResponse(response: Response, request?: Request): Response {
   response.headers.set("X-Content-Type-Options", "nosniff");
@@ -78,10 +87,10 @@ export async function handleApiRequest(
   const route = API_ROUTES[segment];
   if (!route) return secureResponse(new Response("Not found", { status: 404 }), request);
 
-  const handler = route[request.method];
+  const handler = route[request.method as HttpMethod];
   if (!handler) return secureResponse(new Response("Method not allowed", { status: 405 }), request);
 
-  const bodyTooLarge = bodyLimitResponse(request, segment, request.method);
+  const bodyTooLarge = bodyLimitResponse(request, segment, request.method, slug);
   if (bodyTooLarge) return secureResponse(bodyTooLarge, request);
 
   if (requiresCsrf(request, segment, slug)) {
@@ -119,7 +128,7 @@ export async function handleApiRequest(
     }), request);
   }
 
-  const boundedRequest = limitRequestBody(request, segment, request.method);
+  const boundedRequest = limitRequestBody(request, segment, request.method, slug);
   const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
   if ((segment === "icons" || segment === "richtext-components") && request.method !== "GET") {
     const denied = await requireSuperAdmin(context);
