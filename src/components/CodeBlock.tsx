@@ -15,8 +15,8 @@ interface Props {
   code: string;
   /** Wrap long lines instead of scrolling horizontally, capping the block's
    * own height (`maxHeight`) and scrolling vertically past that - opt-in,
-   * since Demo.tsx's wide JSX samples read better with the default
-   * horizontal-scroll behavior. @default false */
+   * since wide code samples read better with the default horizontal-scroll
+   * behavior. @default false */
   wrap?: boolean;
   /** Only meaningful with `wrap`. @default "7rem" */
   maxHeight?: string;
@@ -70,10 +70,10 @@ export function formatHtml(html: string): string {
   return out.join("\n");
 }
 
-/** The Prism-highlighted `<pre><code>` block `Demo.tsx` uses for every
- * showcase sample - pulled out standalone so other surfaces (the icon
- * preview dialog's copy-paste snippet) can reuse the exact same highlighted
- * look without Demo's header/description/live-preview-slot wrapper around it. */
+/** The Prism-highlighted `<pre><code>` block every code sample renders
+ * through (the icon preview dialog's copy-paste snippet, the page-components
+ * editor's read-only views) - standalone so each surface reuses the exact
+ * same highlighted look. */
 export default function CodeBlock({
   code: _code,
   wrap = false,
@@ -126,7 +126,7 @@ export default function CodeBlock({
   // (see `.editor` in components.css) - only the caret shows, the visible
   // text always comes from the re-highlighted `pre` underneath. Not wrapped
   // for the (default) non-editable case, so existing consumers keep getting
-  // a bare `<pre>` (e.g. Demo.tsx's `.demo-code > pre` styling).
+  // a bare `<pre>` they can style directly.
   const block = editable ? (
     <div class="editor">
       {highlightedPre}

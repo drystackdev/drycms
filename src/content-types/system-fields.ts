@@ -281,7 +281,7 @@ export function applyFieldOrder<T extends { id: string }>(items: T[], order: str
 
 export type FieldSide = "left" | "right";
 
-/** System fields that default to the right ("showcase") column despite being
+/** System fields that default to the right (side) column despite being
  * plain columns, not `relation`/`component` - `seo` is a `component` field
  * anyway (covered either way), `draft`/`schedule` are the two feature-driven
  * fields that carry a real input control (unlike read-only `createdAt`/

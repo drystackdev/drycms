@@ -69,7 +69,7 @@ async function parseJson<T>(response: Response): Promise<T> {
  * The real backend: talks to `${apiBase}` (i.e. `${path}/api/storage`,
  * see `routes/storage.ts` for the contract) over `fetch`. Used by the
  * `Media` page - `mock/file-manager.ts`'s `createMemoryFileSource` is the
- * in-memory equivalent Showcase's demos use instead, so playing with those
+ * in-memory equivalent a test/demo can use instead, so playing with those
  * never touches a real `storage/` folder.
  */
 export function createHttpFileSource(apiBase: string): FileManagerSource {

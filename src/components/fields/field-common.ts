@@ -1,6 +1,6 @@
 import type { JSX } from "preact/jsx-runtime";
 
-/** Shared controlled-field contract for the FIELD INPUT showcase group. */
+/** Shared controlled-field contract for every field-input component. */
 export interface FieldProps<V> {
   value: V;
   onChange: (value: V) => void;

@@ -34,7 +34,7 @@ export interface ComponentFieldProps<
    * `ComponentRepeatFieldAdapter` passes `entry-validate.ts`'s
    * `validateEntryValue` bound to this field's own item schema - the same
    * rules the server would otherwise reject the whole entry save for.
-   * Omitted entirely (as in `Showcase.tsx`'s demo) means no gate at all. */
+   * Omitted entirely means no gate at all. */
   validateItem?: (item: T) => Record<string, string>;
   disabled?: boolean;
   description?: string;

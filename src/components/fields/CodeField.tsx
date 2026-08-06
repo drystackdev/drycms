@@ -22,7 +22,7 @@ export interface CodeFieldProps extends FieldProps<string> {
  * every keystroke; only the caret is actually drawn by the textarea itself).
  * Built directly on `.editor` rather than wrapping `CodeBlock`, since
  * `CodeBlock`'s `editable` mode keeps its own uncontrolled copy of the code
- * (it's meant for the Showcase page's freely-editable static samples) and
+ * (it's meant for freely-editable static samples) and
  * wouldn't pick up an externally-changed `value`, unlike every other
  * controlled Field in this file's family.
  *

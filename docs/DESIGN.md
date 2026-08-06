@@ -121,18 +121,6 @@ carry a realistic demo `placeholder` (e.g. `"e.g. Blog Posts"`,
 `"e.g. ^[A-Za-z0-9_-]+$"`) - never left blank. Standing rule for any new text
 input anywhere in the app, not just the content-type editor.
 
-## Showcase page: exact-HTML rule
-
-`/dry/showcase` (`src/pages/Showcase.tsx`, sample data in
-`src/mock/showcase.ts`) exists as copy-paste reference material. Every code
-sample shown must be the **exact** HTML actually rendered above it -
-attribute-for-attribute (`type="button"`, real element order, real content
-instead of "…" placeholders, the `sc-` id-dedup prefix), never an
-approximation or idealized/shortened rewrite. Samples are always fully
-visible on the page - no `<details>/<summary>` collapse. When adding or
-editing a showcase entry, copy the actual rendered markup into `code:` in
-`mock/showcase.ts`, then verify it renders identically to the live preview.
-
 ## QA method for CSS/UI changes
 
 Verify with Playwright - both a visual screenshot **and** computed-style/DOM

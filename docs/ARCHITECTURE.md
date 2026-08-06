@@ -86,7 +86,7 @@ database column order**, kept as separate persisted maps precisely so
   and the entry editor's form. `tree.ts`'s `resolveTableTree` (real DB column
   order) always puts system columns first regardless of this.
 - `fieldSides?: Record<string, "left"|"right">` - which column (main content
-  vs. showcase panel) a field renders in on the entry editor.
+  vs. side panel) a field renders in on the entry editor.
 - `fieldDescriptions?: Record<string, string>` - per-id description override,
   only ever meaningful for a synthetic `relationmirror` row (see below),
   which has no `FieldDefinition.description` of its own.

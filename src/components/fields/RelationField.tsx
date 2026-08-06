@@ -15,8 +15,8 @@ export interface RelationFieldQuery {
 
 /** Abstracts the picker dialog's data away from any particular backend -
  * `content-entry-editor/FieldRenderer.tsx` builds one from
- * `createContentEntriesApi`/a target `ContentTypeDefinition`; a demo (see
- * `pages/Showcase.tsx`) can build one from an in-memory array instead. */
+ * `createContentEntriesApi`/a target `ContentTypeDefinition`; a test can
+ * build one from an in-memory array instead. */
 export interface RelationFieldSource<Row extends { id: string }> {
   /** Columns shown in the picker's table, target-specific - a select
    * (radio/checkbox) column is injected automatically, don't include one. */

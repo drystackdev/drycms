@@ -39,7 +39,7 @@ const NAV: {
   href: string;
   icon: IconName;
   ready: boolean;
-  section: "Overview" | "Content" | "System" | "Development";
+  section: "Overview" | "Content" | "System";
   superAdminOnly?: boolean;
   permissionName?: string;
   /** Like `permissionName`, but for a synthetic resource id with no real
@@ -54,34 +54,6 @@ const NAV: {
     icon: "Dashboard",
     ready: true,
     section: "Overview",
-  },
-  ...(import.meta.env.DEV
-    ? [
-        {
-          key: "showcase",
-          label: "Showcase",
-          href: `${path}/showcase`,
-          icon: "Showcase" as IconName,
-          ready: true,
-          section: "Development" as const,
-        },
-      ]
-    : []),
-  {
-    key: "richtext-demo",
-    label: "Rich Text Demo",
-    href: `${path}/richtext-demo`,
-    icon: "Content",
-    ready: true,
-    section: "Development",
-  },
-  {
-    key: "code-editer-demo",
-    label: "Code Editer Demo",
-    href: `${path}/code-editer-demo`,
-    icon: "CodeFieldType",
-    ready: true,
-    section: "Development",
   },
   {
     key: "content-types",
@@ -173,11 +145,10 @@ const NAV: {
   },
 ];
 
-const NAV_SECTIONS = ["Overview", "Content", "System", "Development"] as const;
+const NAV_SECTIONS = ["Overview", "Content", "System"] as const;
 
 const HIDDEN_NAV_KEYS = new Set(
   [
-    !temporaryFeatureVisibility.codeEditerDemo && "code-editer-demo",
     !temporaryFeatureVisibility.richtextComponents && "richtext-components",
     !temporaryFeatureVisibility.pageComponents && "page-components",
   ].filter((key): key is string => Boolean(key)),

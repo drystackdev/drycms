@@ -21,10 +21,11 @@ export default defineConfig(({ isSsrBuild }) => ({
   // a separate Vite config just for `src/apps`.
   plugins: [appRouterPlugin(), assetHrefsPlugin(), tailwindcss(), preact()],
   build: {
-    // Showcase intentionally bundles every component demo into one route
-    // chunk; it is lazy-loaded from the app shell, so this size is not part of
-    // the initial path. Keep Vite's warning threshold above that deliberate
-    // demo bundle while retaining the default warning for normal chunks.
+    // Page Components carries the whole `Editer` code editor (TypeScript
+    // services + Prism) in one route chunk; it is lazy-loaded from the app
+    // shell, so this size is not part of the initial path. Keep Vite's
+    // warning threshold above that deliberate bundle while retaining the
+    // default warning for normal chunks.
     chunkSizeWarningLimit: 1024,
     // `isSsrBuild` only (never) applies to `vite build --ssr entry-node.ts`
     // - CLI `--ssr <entry>` makes `<entry>` the sole rollup input for that

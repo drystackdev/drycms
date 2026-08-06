@@ -11,7 +11,7 @@ export interface FieldListItemProps {
   typeLabel: string;
   /** `FieldTypeDefinition.key` (e.g. "text", "relation") - looked up in
    * `field-type-icons.ts`'s `fieldTypeIcons`/`fieldTypeColors` for this row's
-   * icon, same mapping the showcase nav uses. Falls back to the plain text
+   * icon, from the shared `fieldTypeIcons` map. Falls back to the plain text
    * icon in its default color when absent/unrecognized. */
   type?: string;
   required?: boolean;

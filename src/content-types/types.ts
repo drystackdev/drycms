@@ -73,7 +73,7 @@ export interface ContentTypeDefinition {
    * appended in its natural default position instead of erroring. */
   fieldOrder?: string[];
   /** Which column (the entry editor's left "main content" column vs. right
-   * "showcase" column - see `ContentEntryEditor.tsx`) each unified system+
+   * side column - see `ContentEntryEditor.tsx`) each unified system+
    * custom field displays in, keyed the same way as `fieldOrder`. Missing ids
    * fall back to a computed default (`system-fields.ts`'s
    * `defaultFieldSide`: Relation/Component fields and the Draft/Schedule

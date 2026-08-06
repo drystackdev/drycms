@@ -1,9 +1,8 @@
 /**
- * Icon per field-input type, keyed by the same id used in
- * `mock/showcase.ts`'s "Field inputs" group and by
- * `FieldTypeDefinition.key` in `content-types/field-registry.ts` where a
- * registered type exists. Shared so any UI listing field types (showcase
- * nav, schema editor's type picker, ...) can render a consistent icon.
+ * Icon per field-input type, keyed by `FieldTypeDefinition.key` in
+ * `content-types/field-registry.ts`. Shared so any UI listing field types
+ * (the schema editor's type picker, the Fields list, ...) renders a
+ * consistent icon.
  */
 import type { ComponentType } from "preact";
 import {

@@ -81,7 +81,7 @@ export default function PageComponents() {
   const dirty = !!selectedPath && sourceByPath[selectedPath] !== savedByPath[selectedPath];
 
   /** Every OTHER loaded file - `Editer`'s ambient reference set for
-   * cross-file TS resolution, same shape `CodeEditerDemo.tsx` builds. */
+   * cross-file TS resolution. */
   const extraFiles = useMemo(() => {
     if (!selectedPath) return sourceByPath;
     const rest = { ...sourceByPath };

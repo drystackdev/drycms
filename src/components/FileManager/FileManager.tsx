@@ -144,7 +144,7 @@ interface MoreMenuProps {
 /** Row-level equivalent of the selection bar's Copy/Move/Delete trio - picking
  * one here acts on just this entry (it's put in the clipboard, or deleted,
  * on its own) without requiring the row's checkbox to be ticked first. Thin
- * wrapper around the generic `Popover` (see its showcase entry). */
+ * wrapper around the generic `Popover`. */
 function MoreMenu({
   label,
   onRename,
@@ -1903,7 +1903,7 @@ export default function FileManager({
    * navigable even in a `accept`-restricted picker). But a *restricted*
    * picker (`accept` set - always an `ImageField`/`image-menu.tsx`/
    * `image-insert-button.tsx` single-type dialog, never the plain `/dry/media`
-   * or Showcase browser, neither of which ever passes `accept`) has nothing
+   * browser, which never passes `accept`) has nothing
    * sensible to do with a folder as "the" selected value - checking one there
    * would let a folder id end up picked as if it were an image. Selection
    * (checkbox + drag) is disabled for folders in that case; opening one by

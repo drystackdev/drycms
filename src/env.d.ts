@@ -12,7 +12,3 @@ declare global {
 	}
 }
 
-declare module "@babel/standalone" {
-	const BabelStandalone: any;
-	export = BabelStandalone;
-}

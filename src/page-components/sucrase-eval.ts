@@ -81,7 +81,7 @@ function evalModule(
  * transform already emits `require(...)` calls, this just supplies one).
  * Re-evaluates the whole subtree fresh on every call (no cross-call cache) -
  * the caller is expected to only call this after code changes settle
- * (debounced), same as `EditableDemo.tsx`'s Babel path.
+ * (debounced).
  */
 export function evalPageComponent(entryPath: string, sourceByPath: Record<string, string>): ComponentType<any> {
   if (!(entryPath in sourceByPath)) {

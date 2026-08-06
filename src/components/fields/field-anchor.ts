@@ -7,7 +7,7 @@
  *
  * Lives under `components/fields/` rather than `pages/content-entry-editor/`
  * (where the deep-link handling itself lives) because `ComponentField.tsx`
- * is a generic, reusable component (also used by `Showcase.tsx`'s demo) -
+ * is a generic, reusable component -
  * it can't reach into `pages/` for this. `field-events.ts` re-exports
  * `FIELD_ANCHOR_ATTR` and wraps `highlightAnchor` for its own
  * `scrollToField`, so this stays the one place either side reads the
