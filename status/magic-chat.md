@@ -331,3 +331,74 @@ là chi tiết triển khai, không đổi UX đã chốt với user)
    làm; Magic vẫn không có e2e coverage nào.
 5. **Chưa xoá `/api/ai/chat` (conversation store không còn ai gọi)** - ngoài
    phạm vi lần này, chỉ ghi nhận lại như hạ tầng đã có từ trước.
+
+## Fix (2026-08-07): rà soát CSS layout + phản hồi UI vòng 1
+
+- **2 xung đột CSS thật phát hiện khi rà soát theo yêu cầu user**: (a)
+  `MagicChat.tsx` tự viết `useEffect` set `el.style.height` cho textarea
+  composer, trong khi `forms.css:84` đã có `:where(textarea) { field-sizing:
+  content }` auto-grow thuần CSS cho MỌI textarea trong app - inline style
+  từ JS luôn thắng, đá nhau mỗi lần gõ. Xoá hẳn effect + ref, chỉ giữ
+  `min-height`/`max-height` để giới hạn. (b) `.magic-chat-bubble` là
+  `<button>` trơn nên vẫn dính `padding: 0 0.75rem` từ base `button` rule
+  làm icon lệch tâm - thêm `padding: 0` (không dùng class `.icon` có sẵn vì
+  nó tự ép `width: 2.25rem`, sẽ đè mất kích thước bubble).
+- **User feedback 3 điểm**:
+  1. Bỏ nút "✕" (end conversation) - thay bằng nút "Clear all" (EraserIcon,
+     đúng convention `<EraserIcon /> Clear all` đã dùng ở
+     `ContentEntryEditor.tsx`), disable khi `messages.length === 0`. Khác
+     hành vi cũ: KHÔNG đóng panel nữa, chỉ xoá sạch history/messages/ảnh
+     đính kèm - về lại empty state ngay trong panel đang mở. `—` (thu gọn)
+     giữ nguyên, không đổi.
+  2. Bong bóng Magic to hơn: `3.25rem` → `4rem`, `font-size` icon
+     `1.375rem` → `1.625rem` theo tỉ lệ. Spinner ring/dot badge giữ nguyên
+     kích thước tuyệt đối (vẫn cân đối trên bubble to hơn, không cần đổi).
+  3. Bỏ box-shadow ở ô nhập composer - hoá ra không phải chỉ thiếu ở
+     `:focus` (đã có `box-shadow:none` sẵn ở đó), mà còn thiếu ở trạng thái
+     nghỉ: `:where(input,select,textarea)` gán `box-shadow:
+     var(--dry-shadow-xs)` mặc định, `:where()` specificity 0 nên property
+     nào `.magic-chat-input` không tự set thì vẫn lọt qua - thêm
+     `box-shadow: none` ở cấp base rule.
+- Typecheck sạch + build sạch + 900 test pass sau cả 2 vòng sửa. Vẫn CHƯA
+  test được UI thật trong browser (không có browser tool phiên này).
+
+## Fix (2026-08-07): user gửi screenshot thật - 2 bug thật + 1 UX
+
+User gửi ảnh chụp Magic đang chạy thật - phát hiện được những gì rà soát
+tĩnh (đọc code) không thấy ra:
+
+1. **BUG THẬT nghiêm trọng: bong bóng tin nhắn không xếp chồng dọc, bị bóp
+   hẹp/word-wrap từng chữ một.** Gốc rễ: `.magic-chat-messages` dùng
+   `useOverlayScrollbars` (hook OverlayScrollbars) - hook này DI CHUYỂN các
+   con thật của phần tử vào một `.os-viewport` được sinh ra bên trong (đúng
+   như doc comment gốc của chính hook đã cảnh báo), nên `display:flex;
+   flex-direction:column` tôi gán trên `.magic-chat-messages` không còn áp
+   dụng đúng chỗ các `.magic-chat-row` nữa - chúng đã bị chuyển xuống 1 cấp.
+   `.ai-wizard-body` (list lượt hội thoại tương tự của AI Schema Wizard) đã
+   từng gặp đúng dạng vấn đề này và chọn `overflow-y:auto` thuần (không dùng
+   hook) - sửa theo đúng tiền lệ đó: bỏ hẳn `useOverlayScrollbars` cho
+   `.magic-chat-messages`, thay bằng `ref` thường + tự tính `isNearBottom`/
+   `scrollToBottom` trực tiếp qua `scrollTop`/`scrollHeight`. Hệ quả: phần mở
+   rộng thêm vào `hooks/overlayscrollbars.ts` (`isNearBottom`, `viewport()`,
+   `scrollToBottom` nhận tham số) không còn ai gọi - **trả file về nguyên
+   trạng gốc** (qua git show, không sửa tay) thay vì để lại API thừa không
+   dùng. Picker ảnh đính kèm (`MagicChatImagePicker`) vẫn dùng hook bình
+   thường - không bị bug này vì nội dung bên trong (FileManager) không phụ
+   thuộc flex-column layout do component cha set.
+2. **Bong bóng tròn bị lộ viền bo góc gốc của trình duyệt (squircle, không
+   phải hình tròn).** Không phải lỗi CSS override như đoán ban đầu (đã kiểm
+   tra kỹ, `border-radius:50%` áp dụng đúng, không bị ghi đè) - mà là thiếu
+   `appearance: none`. Cả app không có chỗ nào reset `appearance` cho
+   `<button>` trơn vì mọi nút khác đều là hình chữ nhật bo góc
+   (`var(--dry-radius-md)`) nên control chrome gốc của OS/trình duyệt lẫn
+   vào không ai nhận ra - đây là nút hình tròn hoàn toàn ĐẦU TIÊN trong app
+   nên mới lộ ra. Thêm `appearance:none` + `-webkit-appearance:none`, kèm
+   `aspect-ratio:1` phòng hờ.
+3. **UX**: bong bóng nổi không còn hiện khi panel đang mở (`{!open && (...
+   bubble ...)}`) - panel tự nó đã là "chỗ Magic đang ở", hiện cả 2 cùng lúc
+   là thừa; nút "—" trong panel đã là đường quay lại trạng thái bong bóng.
+- Typecheck sạch + build sạch + 900 test pass. Bài học: rà soát CSS tĩnh
+  (đọc code, specificity) bắt được 2 lỗi ở vòng trước, nhưng bug OverlayScrollbars
+  + squircle chỉ lộ ra khi NHÌN THẤY ảnh chụp thật - nhắc lại đúng giới hạn
+  đã ghi trong "Việc CHƯA làm" #1: không có browser tool thì rủi ro bỏ sót
+  loại bug này là thật, không phải lý thuyết.

@@ -6078,24 +6078,36 @@
    * bottom-end pairing (`.toast-viewport` without `.start`, the widget
    * without `.vei`) and the VEI bottom-start pairing (`.toast-viewport.start`,
    * `.magic-chat-widget.vei`) shift the opposite inset each. */
-  body:has(.magic-chat-bubble):has(.magic-chat-widget:not(.vei)) .toast-viewport:not(.start) {
+  body:has(.magic-chat-bubble):has(.magic-chat-widget:not(.vei))
+    .toast-viewport:not(.start) {
     inset-inline-end: calc(1.5rem + 4.25rem);
   }
   body:has(.magic-chat-widget.vei) .toast-viewport.start {
     inset-inline-start: calc(1.5rem + 4.25rem);
   }
 
-  .magic-chat-bubble {
+  button.magic-chat-bubble {
     position: relative;
     flex: none;
-    width: 4rem;
-    height: 4rem;
+    width: 3rem;
+    height: 3rem;
+    aspect-ratio: 1;
     /* The base `button` rule (Button section, above) sets `padding: 0
      * 0.75rem` - fine for a text/icon-pair button, but left uncentered a
      * fixed-size circular icon button like this one. Deliberately NOT using
      * the `.icon` variant class instead (its own `width: 2.25rem` would
      * override the width above, being a more specific `button.icon`). */
     padding: 0;
+    /* No `appearance: none` anywhere else in the app resets this for a bare
+     * `<button>` - every other button here is already a rounded RECTANGLE
+     * (`var(--dry-radius-md)`), so the OS's own native control chrome
+     * blending in was invisible. This is the first fully circular one:
+     * without resetting `appearance`, Safari/Chrome can render their own
+     * native rounded-rect button chrome underneath/instead of the
+     * `border-radius: 50%` below, showing as a squircle instead of a true
+     * circle. */
+    appearance: none;
+    -webkit-appearance: none;
     display: grid;
     place-items: center;
     border: none;
@@ -6103,7 +6115,6 @@
     background-color: var(--dry-primary);
     color: var(--dry-primary-foreground);
     box-shadow: var(--dry-shadow-lg);
-    font-size: 1.625rem;
     cursor: pointer;
     transition: transform 120ms ease;
 
@@ -6177,6 +6188,7 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
     padding: 0.75rem 1rem;
     display: flex;
     flex-direction: column;
@@ -6309,7 +6321,7 @@
     flex: none;
     flex-wrap: wrap;
     gap: 0.375rem;
-    padding: 0.5rem 1rem 0;
+    padding: 0.5rem 1rem 0.25rem;
   }
 
   .magic-chat-attach-thumb {
@@ -6340,6 +6352,9 @@
     flex: none;
     padding: 0.625rem 0.75rem;
     border-top: 1px solid var(--dry-border);
+    & > button {
+      flex: 0 0 auto;
+    }
   }
 
   /* Auto-grow comes for free from `forms.css`'s app-wide `:where(textarea) {
@@ -6353,7 +6368,13 @@
     max-height: 10rem;
     border: none;
     background: none;
-    padding: 0.375rem 0;
+    /* The app-wide `:where(input, select, textarea)` base (forms.css) also
+     * sets a resting `box-shadow: var(--dry-shadow-xs)` - `:where()` has
+     * zero specificity, but a property this rule never touches still wins
+     * by default, so it has to be cleared explicitly here too, not just in
+     * `:focus` below. */
+    box-shadow: none;
+    padding: 0.5rem 0;
     font: inherit;
     color: inherit;
     outline: none;

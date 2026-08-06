@@ -261,24 +261,43 @@ export default function MagicChat({
     el.showPopover?.();
   }, []);
 
-  const { ref: messagesRef, scrollToBottom, isNearBottom, viewport } = useOverlayScrollbars<HTMLDivElement>([open]);
+  // Plain native scroll on the ref itself - deliberately NOT
+  // `useOverlayScrollbars` here (unlike the image picker body below). That
+  // hook moves an element's real children into a generated `.os-viewport`
+  // child (see the hook's own doc comment), which silently broke this
+  // container's `display: flex; flex-direction: column` (the styling stayed
+  // on the outer host, but the `.magic-chat-row` children it was meant for
+  // had already been relocated one level down) - messages rendered
+  // squeezed/misaligned instead of stacking. `.ai-wizard-body` (the schema
+  // wizard's own analogous scrollable turn list) hits the same shape of
+  // problem and already settled on plain native `overflow-y: auto` for
+  // exactly this reason - matched here rather than fighting the hook.
+  const messagesRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
+
+  function isNearBottom(px = 48): boolean {
+    const el = messagesRef.current;
+    if (!el) return false;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= px;
+  }
+
+  function scrollToBottom(options?: { behavior?: ScrollBehavior }) {
+    const el = messagesRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: options?.behavior ?? "auto" });
+  }
 
   // Notices the reader scrolling away from the bottom themselves, so a new
   // message doesn't yank them back down mid-read (`status/magic-chat.md`'s
-  // "auto-scroll dính đáy"). The OverlayScrollbars instance (and its
-  // `.os-viewport`) only exists once the panel has actually opened at least
-  // once - re-runs on `open` to attach right after that first mount.
+  // "auto-scroll dính đáy").
   useEffect(() => {
-    if (!open) return;
-    const viewportEl = viewport();
-    if (!viewportEl) return;
+    const el = messagesRef.current;
+    if (!el) return;
     const handleScroll = () => {
       wasNearBottomRef.current = isNearBottom();
     };
-    viewportEl.addEventListener("scroll", handleScroll, { passive: true });
-    return () => viewportEl.removeEventListener("scroll", handleScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
   }, [open]);
 
   useEffect(() => {
@@ -630,18 +649,23 @@ export default function MagicChat({
         </div>
       )}
 
-      <button
-        type="button"
-        class={`magic-chat-bubble${badgeSpinning ? " busy" : ""}`}
-        data-tooltip={bubbleTooltip}
-        aria-label="Magic"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <SparkleIcon />
-        {badgeSpinning && <span class="magic-chat-bubble-spinner" />}
-        {!badgeSpinning && messages.length > 0 && <span class="magic-chat-bubble-dot" />}
-      </button>
+      {/* Hidden while the panel itself is open - the panel already IS the
+       * "chat is here" surface (its own "—" gets back to bubble-only), so
+       * showing both at once just duplicated the same affordance. */}
+      {!open && (
+        <button
+          type="button"
+          class={`magic-chat-bubble${badgeSpinning ? " busy" : ""}`}
+          data-tooltip={bubbleTooltip}
+          aria-label="Magic"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <SparkleIcon />
+          {badgeSpinning && <span class="magic-chat-bubble-spinner" />}
+          {!badgeSpinning && messages.length > 0 && <span class="magic-chat-bubble-dot" />}
+        </button>
+      )}
 
       <MagicChatImagePicker
         source={source}

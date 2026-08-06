@@ -7,24 +7,8 @@ export interface OverlayScrollbarsHandle<T extends HTMLElement> {
 	ref: RefObject<T>;
 	/** Scrolls the OverlayScrollbars-managed viewport back to the top. */
 	scrollToTop: () => void;
-	/** Scrolls the OverlayScrollbars-managed viewport to its newest content.
-	 * `behavior` defaults to `"auto"` (instant) - pass `"smooth"` for a
-	 * deliberate user-triggered jump (e.g. a "new messages" chip), and leave
-	 * it `"auto"` for a "stick to bottom while streaming" tick, where a
-	 * smooth animation re-triggering on every delta would fight itself. */
-	scrollToBottom: (options?: { behavior?: ScrollBehavior }) => void;
-	/** Whether the viewport is within `px` of its own bottom right now - the
-	 * "should an incoming message auto-scroll, or has the reader scrolled up
-	 * to read something older" check (`status/magic-chat.md`'s "auto-scroll
-	 * dính đáy"). `false` before the instance has mounted. */
-	isNearBottom: (px?: number) => boolean;
-	/** The real scrolling element OverlayScrollbars generates (see this
-	 * function's own doc comment on `.os-viewport`) - an escape hatch for a
-	 * caller that needs to attach its own `scroll` listener (e.g. to notice
-	 * the reader scrolling away from the bottom themselves) rather than just
-	 * read/set position through the methods above. `undefined` before the
-	 * instance has mounted. */
-	viewport: () => HTMLElement | undefined;
+	/** Scrolls the OverlayScrollbars-managed viewport to its newest content. */
+	scrollToBottom: () => void;
 }
 
 const defaultOptions: PartialOptions = {
@@ -77,15 +61,9 @@ export function useOverlayScrollbars<T extends HTMLElement>(
 	return {
 		ref,
 		scrollToTop: () => instance.current?.elements().viewport.scrollTo({ top: 0 }),
-		scrollToBottom: ({ behavior = "auto" }: { behavior?: ScrollBehavior } = {}) => {
+		scrollToBottom: () => {
 			const viewport = instance.current?.elements().viewport;
-			if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior });
+			if (viewport) viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
 		},
-		isNearBottom: (px = 48) => {
-			const viewport = instance.current?.elements().viewport;
-			if (!viewport) return false;
-			return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= px;
-		},
-		viewport: () => instance.current?.elements().viewport,
 	};
 }
