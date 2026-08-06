@@ -117,7 +117,15 @@ function providerFromEntry(value: unknown): "openai" | "anthropic" | "google" | 
   throw new Error(`Unsupported AI Key provider "${String(value)}".`);
 }
 
-async function readServerCredentials(context: DryRouteContext, preferredName?: string): Promise<ServerCredential[]> {
+/** `model` used to be a single-value `text` field (a bare string in the DB) -
+ * see `AiKeyEditor.tsx`'s own `readModelList` doc comment for why an older
+ * row can still deserialize as a plain string instead of an array. */
+function readModelList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((model): model is string => typeof model === "string" && model.trim().length > 0);
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
+}
+
+async function readServerCredentials(context: DryRouteContext, preferredName?: string, preferredModel?: string): Promise<ServerCredential[]> {
   const serverAi = ai;
   if (serverAi.mode !== "server") throw new Error("Server AI mode is not configured.");
   const { schema, entries } = getContentAdapters(context);
@@ -138,6 +146,17 @@ async function readServerCredentials(context: DryRouteContext, preferredName?: s
     // sends back exactly the untrimmed stored name.
     const match = page.rows.find((row) => String(row.value.name ?? "").trim() === preferredName.trim());
     if (!match) throw new Error(`AI Key "${preferredName}" was not found.`);
+    // `preferredModel` (the dialog's own model picker, shown once a specific
+    // key is chosen) only ever makes sense paired with a `preferredName` - an
+    // "Automatic" run can land on any configured key, so there is no single
+    // model list to validate against. Checked here, against THIS key's own
+    // `model` list, rather than left to fall through silently below.
+    if (preferredModel) {
+      const entryModels = readModelList(match.value.model);
+      if (!entryModels.includes(preferredModel)) {
+        throw new Error(`Model "${preferredModel}" is not configured for AI Key "${preferredName}".`);
+      }
+    }
     page.rows = [match];
   }
   const orderedRows = !preferredName && serverAi.keyName
@@ -166,7 +185,8 @@ async function readServerCredentials(context: DryRouteContext, preferredName?: s
       const baseUrl = await validateOutboundUrlForRequest(typeof row.value.url === "string" && row.value.url.trim()
         ? row.value.url.trim()
         : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl, "AI provider URL");
-      const entryModel = typeof row.value.model === "string" ? row.value.model.trim() : "";
+      const entryModels = readModelList(row.value.model);
+      const entryModel = preferredModel && entryModels.includes(preferredModel) ? preferredModel : entryModels[0];
       credentials.push({ name, provider, apiKey: await decryptSecret(raw.key), baseUrl, model: entryModel || serverAi.model });
     } catch (error) {
       // A malformed or undecryptable key must not prevent later configured keys from being tried.
@@ -800,6 +820,7 @@ export async function createChatStream(
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
   preferredKeyName?: string,
+  preferredModel?: string,
   maxOutputTokens?: number,
   timeoutMs?: number,
 ): Promise<ChatStreamResult> {
@@ -809,7 +830,7 @@ export async function createChatStream(
       aiLabel: `${aiProviderLabel(ai.provider)} (local)`,
     };
   }
-  const credentials = await readServerCredentials(context, preferredKeyName);
+  const credentials = await readServerCredentials(context, preferredKeyName, preferredModel);
   const errors: Error[] = [];
   for (const credential of credentials) {
     try {
@@ -986,6 +1007,10 @@ interface WizardHttpRequest {
   /** Overrides `ai.keyName`'s fallback order for this one wizard run - the
    * Content Types "Ask AI" dialog's AI Key combobox (server mode only). */
   aiKeyName?: string;
+  /** Which of `aiKeyName`'s own configured models to use for this run - only
+   * meaningful (and only ever sent) alongside a real `aiKeyName`, once the
+   * dialog's second "Model" combobox has something to list. */
+  aiModel?: string;
   /** The admin's own one-time starting description, collected by the
    * dialog's initial screen before any AI call happens - only meaningful
    * (and only ever sent) on the very first turn, `history: []`. Folded into
@@ -1066,13 +1091,14 @@ async function runWizardTurn(
   context: DryRouteContext,
   messages: ChatMessage[],
   aiKeyName: string | undefined,
+  aiModel: string | undefined,
   onDelta?: (delta: string) => void,
 ): Promise<{ text: string; aiLabel: string }> {
   let text = "";
   const { stream, aiLabel } = await createChatStream(context, messages, (delta) => {
     text += delta;
     onDelta?.(delta);
-  }, aiKeyName);
+  }, aiKeyName, aiModel);
   // The stream is SSE-encoded `data: {...}` events (same shape `/api/ai/chat`
   // forwards to the browser) - draining it without decoding those payloads
   // would silently swallow a real `{error}` event (CLI not found, timed out,
@@ -1118,6 +1144,7 @@ function streamWizard(
   context: DryRouteContext,
   history: ChatMessage[],
   aiKeyName: string | undefined,
+  aiModel: string | undefined,
   goal: string | undefined,
 ): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -1139,7 +1166,7 @@ function streamWizard(
           let lastError = "";
           for (let attempt = 0; attempt < WIZARD_MAX_ATTEMPTS; attempt++) {
             if (attempt > 0) controller.enqueue(streamEvent({ retry: true }));
-            const result = await runWizardTurn(context, messages, aiKeyName, (delta) => {
+            const result = await runWizardTurn(context, messages, aiKeyName, aiModel, (delta) => {
               controller.enqueue(streamEvent({ delta }));
             });
             const parsed = extractWizardJson(result.text);
@@ -1173,6 +1200,7 @@ function streamWizard(
 function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Response {
   const history = validateWizardHistory(body.history);
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
+  const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
   const goal = history.length === 0 && typeof body.goal === "string" && body.goal.trim()
     ? body.goal.trim().slice(0, 2000)
     : undefined;
@@ -1181,7 +1209,7 @@ function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Respon
     return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
   }
   activeAiStreams += 1;
-  const stream = streamWizard(context, history, aiKeyName, goal);
+  const stream = streamWizard(context, history, aiKeyName, aiModel, goal);
   return new Response(trackAiStream(stream, () => {
     activeAiStreams = Math.max(0, activeAiStreams - 1);
   }), {
@@ -1241,7 +1269,7 @@ function streamRewriteSelection(context: DryRouteContext, passage: string, instr
               text: `${buildRewriteSelectionSystemPrompt(ai.lang, inline)}\n\nCurrent passage:\n${passage}\n\nInstruction: ${instruction}`,
             },
           ];
-          const result = await runWizardTurn(context, messages, aiKeyName, (delta) => {
+          const result = await runWizardTurn(context, messages, aiKeyName, undefined, (delta) => {
             controller.enqueue(streamEvent({ delta }));
           });
           const html = sanitizeAiRichTextHtml(extractHtmlFragment(result.text));

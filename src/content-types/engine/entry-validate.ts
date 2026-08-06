@@ -26,6 +26,7 @@ export function isMaskedValue(value: unknown): value is MaskedValue {
 
 function isEmptyValue(value: unknown): boolean {
   if (value === null || value === undefined || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
   if (isMaskedValue(value)) return !value.hasExisting && !value.new;
   return false;
 }

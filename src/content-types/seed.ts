@@ -320,8 +320,14 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         id: IDS.aiKeyModel,
         name: "model",
         label: "Model",
-        type: "text",
-        config: { placeholder: "e.g. gpt-5 or claude-sonnet-4-20250514" },
+        // Multiple models per key (e.g. one fast + one high-quality) - the
+        // caller-facing dialogs (Magic Write, the schema wizard) let the
+        // admin pick which one of THIS key's configured models to use for
+        // that one request; `options` stays empty because the real list is
+        // fetched live from the provider (`AiKeyEditor.tsx`'s `loadModels`),
+        // same as `role.permissions`'s empty-`options` precedent.
+        type: "select",
+        config: { options: [], multiple: true },
         validation: { required: true },
         order: 3,
       },

@@ -40,6 +40,9 @@ interface MagicWriteHttpRequest {
    * server call rebuilds its own provider request from scratch. */
   images?: unknown;
   aiKeyName?: string;
+  /** Which of `aiKeyName`'s own configured models to use for this run - see
+   * `ai.ts`'s `WizardHttpRequest.aiModel` doc comment, same shape/pairing. */
+  aiModel?: string;
 }
 
 interface MagicWriteImageInput {
@@ -81,6 +84,7 @@ interface MagicWriteValidatedRequest {
   history: ChatMessage[];
   images: MagicWriteImageInput[];
   aiKeyName?: string;
+  aiModel?: string;
 }
 
 function validateMagicWriteHistory(value: unknown): ChatMessage[] {
@@ -121,6 +125,7 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
   const images = validateMagicWriteImages(body.images);
 
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
+  const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
 
   return {
     typeSlug,
@@ -129,6 +134,7 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     history,
     images,
     aiKeyName,
+    aiModel,
   };
 }
 
@@ -140,13 +146,14 @@ async function runMagicWriteTurn(
   context: DryRouteContext,
   messages: ChatMessage[],
   aiKeyName: string | undefined,
+  aiModel: string | undefined,
   onDelta: (delta: string) => void,
 ): Promise<{ text: string; aiLabel: string }> {
   let text = "";
   const { stream, aiLabel } = await createChatStream(context, messages, (delta) => {
     text += delta;
     onDelta(delta);
-  }, aiKeyName, MAGIC_WRITE_MAX_OUTPUT_TOKENS, MAGIC_WRITE_TIMEOUT_MS);
+  }, aiKeyName, aiModel, MAGIC_WRITE_MAX_OUTPUT_TOKENS, MAGIC_WRITE_TIMEOUT_MS);
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -262,7 +269,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           let lastError = "";
           for (let attempt = 0; attempt < MAGIC_WRITE_MAX_ATTEMPTS; attempt++) {
             if (attempt > 0) controller.enqueue(streamEvent({ retry: true }));
-            const result = await runMagicWriteTurn(context, messages, request.aiKeyName, (delta) => {
+            const result = await runMagicWriteTurn(context, messages, request.aiKeyName, request.aiModel, (delta) => {
               controller.enqueue(streamEvent({ delta }));
             });
             const validation = parseMagicWriteYaml(extractMagicWriteYaml(result.text));

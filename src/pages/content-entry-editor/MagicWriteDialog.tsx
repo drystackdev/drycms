@@ -28,6 +28,14 @@ const { path, aiMode } = window.__DRY_CONFIG__;
  * provider that's temporarily overloaded). */
 const aiKeyApi = createContentEntriesApi(`${path}/api/content`, "aiKey");
 
+/** `model` used to be a single-value `text` field (a bare string in the DB) -
+ * see `AiKeyEditor.tsx`'s own `readModelList` doc comment for why an older
+ * row can still deserialize as a plain string instead of an array. */
+function readModelList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((model): model is string => typeof model === "string" && model.length > 0);
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
+}
+
 interface MagicWriteEncodedImage {
   path: string;
   mimeType: string;
@@ -209,6 +217,16 @@ export default function MagicWriteDialog({
   const [selectedImagePaths, setSelectedImagePaths] = useState<string[]>([]);
   const [aiKeyName, setAiKeyName] = useState<string | undefined>(undefined);
   const [aiKeyOptions, setAiKeyOptions] = useState<{ value: string; label: string }[]>([]);
+  const [aiKeyModels, setAiKeyModels] = useState<Record<string, string[]>>({});
+  const [aiModel, setAiModel] = useState<string | undefined>(undefined);
+
+  // With exactly one configured key there's nothing to pick between, so the
+  // "AI Key" combobox itself stays hidden (below) - but that key can still
+  // have more than one model, so it's still the effective key the Model
+  // combobox reads its options from and the request resolves against.
+  const effectiveAiKeyName = aiKeyOptions.length > 1 ? aiKeyName : aiKeyOptions[0]?.value;
+  const effectiveAiKeyModels = effectiveAiKeyName ? aiKeyModels[effectiveAiKeyName] ?? [] : [];
+  const effectiveAiModel = aiModel ?? effectiveAiKeyModels[0];
 
   const ref = useDialogSync(dialogVisible, () => handleCancel());
 
@@ -243,6 +261,7 @@ export default function MagicWriteDialog({
     setQuestionOther("");
     setSelectedImagePaths([]);
     setAiKeyName(undefined);
+    setAiModel(undefined);
     setRawText("");
     rawTextRef.current = "";
     committedRef.current = new Set();
@@ -261,8 +280,18 @@ export default function MagicWriteDialog({
               }))
               .filter((option) => option.value),
           );
+          setAiKeyModels(
+            Object.fromEntries(
+              result.rows
+                .map((row): [string, string[]] => [String(row.value.name ?? ""), readModelList(row.value.model)])
+                .filter(([name]) => name),
+            ),
+          );
         })
-        .catch(() => setAiKeyOptions([]));
+        .catch(() => {
+          setAiKeyOptions([]);
+          setAiKeyModels({});
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires only on a real button click (openToken change), never on the reveal-only branch above
   }, [openToken]);
@@ -332,7 +361,8 @@ export default function MagicWriteDialog({
           prompt: promptForThisTurn,
           history: historyForThisTurn,
           images,
-          aiKeyName,
+          aiKeyName: effectiveAiKeyName,
+          aiModel: effectiveAiModel,
         },
         handleDelta,
         () => {
@@ -427,15 +457,28 @@ export default function MagicWriteDialog({
           <div class="stack">
             {stage === "start" && (
               <div class="stack">
-                {aiMode === "server" && aiKeyOptions.length > 1 && (
+                {aiMode === "server" && aiKeyOptions.length > 0 && (
                   <div class="row align-center" style={{ gap: "0.5rem" }}>
                     <small class="hint">AI Key</small>
                     <Combobox
                       options={[{ value: "", label: "Automatic" }, ...aiKeyOptions]}
                       value={aiKeyName ?? ""}
-                      onChange={(value) => setAiKeyName(value || undefined)}
+                      onChange={(value) => {
+                        setAiKeyName(value || undefined);
+                        setAiModel(undefined);
+                      }}
                       placeholder="Automatic"
                     />
+                    {effectiveAiKeyModels.length > 0 && (
+                      <>
+                        <small class="hint">Model</small>
+                        <Combobox
+                          options={effectiveAiKeyModels.map((model) => ({ value: model, label: model }))}
+                          value={effectiveAiModel ?? ""}
+                          onChange={(value) => setAiModel(value || undefined)}
+                        />
+                      </>
+                    )}
                   </div>
                 )}
                 <TextField

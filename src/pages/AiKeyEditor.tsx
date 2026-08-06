@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
-import Combobox from "../components/Combobox.js";
+import MultiSelect from "../components/MultiSelect.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SecretKeyField from "../components/fields/SecretKeyField.js";
 import SelectField from "../components/fields/SelectField.js";
@@ -22,7 +22,7 @@ interface AiKeyValue extends Record<string, unknown> {
   name: string;
   description: string;
   provider: string;
-  model: string;
+  model: string[];
   key: string;
   url: string;
 }
@@ -33,6 +33,17 @@ interface CheckResult {
 }
 
 const PROVIDERS = ["Google", "Anthropic", "ChatGPT", "Custom"];
+
+/** `model` used to be a single-value `text` field (a bare string in the DB) -
+ * a row saved before this field became multi-`select` still deserializes as
+ * a plain string (`field-registry.ts`'s `selectFieldType.deserialize` only
+ * JSON-parses a value that already looks like `[...]`). Wrapping it in a
+ * one-element array here keeps that older key usable until the admin next
+ * saves it (which re-serializes it as a real JSON array). */
+function readModelList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((model): model is string => typeof model === "string" && model.length > 0);
+  return typeof value === "string" && value.trim() ? [value.trim()] : [];
+}
 
 export default function AiKeyEditor({ id }: Props) {
   const { route } = useLocation();
@@ -55,7 +66,7 @@ export default function AiKeyEditor({ id }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const previousModel = useRef<string | undefined>();
+  const previousModels = useRef<string[] | undefined>();
 
   const provider = value?.provider ?? "";
   const isCustom = provider === "Custom";
@@ -82,7 +93,7 @@ export default function AiKeyEditor({ id }: Props) {
   useEffect(() => {
     if (!type || !allTypes || !canEdit) return;
     if (isNew) {
-      const blank: AiKeyValue = { name: "", description: "", provider: "", model: "", key: "", url: "" };
+      const blank: AiKeyValue = { name: "", description: "", provider: "", model: [], key: "", url: "" };
       setValue(blank);
       setInitialSnapshot(JSON.stringify(blank));
       return;
@@ -95,7 +106,7 @@ export default function AiKeyEditor({ id }: Props) {
           name: typeof entry.value.name === "string" ? entry.value.name : "",
           description: typeof entry.value.description === "string" ? entry.value.description : "",
           provider: typeof entry.value.provider === "string" ? entry.value.provider : "",
-          model: typeof entry.value.model === "string" ? entry.value.model : "",
+          model: readModelList(entry.value.model),
           key: "",
           url: typeof entry.value.url === "string" ? entry.value.url : "",
         };
@@ -141,7 +152,6 @@ export default function AiKeyEditor({ id }: Props) {
       const next = Array.isArray(body.models) ? body.models.filter((model): model is string => typeof model === "string" && model.length > 0) : [];
       setModels(next);
       if (next.length === 0) setModelError("No models were returned by this provider.");
-      if (value.model && !next.includes(value.model)) setModels((current) => [value.model, ...current]);
     } catch (error) {
       setModels([]);
       setModelError(error instanceof Error ? error.message : "Failed to load models.");
@@ -164,11 +174,20 @@ export default function AiKeyEditor({ id }: Props) {
     if (field === "provider") {
       setModels([]);
       setModelError(undefined);
-      setValue((current) => current ? { ...current, model: "", [field]: next } : current);
+      setValue((current) => current ? { ...current, model: [], [field]: next } : current);
     }
   }
 
-  async function checkKey() {
+  function updateModel(next: string[]) {
+    setValue((current) => current ? { ...current, model: next } : current);
+    setFieldErrors((current) => ({ ...current, model: "" }));
+  }
+
+  // A model is checked against the provider the moment it's added to the
+  // selection - there is no separate "Check API key" button (see this
+  // component's header comment); each newly-added model gets its own check
+  // since a key can be valid for one model and not another.
+  async function checkKey(model: string) {
     if (!value) return;
     setChecking(true);
     setCheckResult(undefined);
@@ -177,7 +196,7 @@ export default function AiKeyEditor({ id }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ ...value, entryId, entryName: value.name }),
+        body: JSON.stringify({ ...value, model, entryId, entryName: value.name }),
       });
       const body = await response.json() as { ok?: boolean; message?: string };
       setCheckResult({ ok: response.ok && body.ok === true, message: body.message ?? "AI key check failed." });
@@ -190,18 +209,17 @@ export default function AiKeyEditor({ id }: Props) {
 
   useEffect(() => {
     const storedEntryId = entryId ?? (!isNew ? id : undefined);
-    const model = value?.model.trim() ?? "";
-    if (previousModel.current === undefined) {
-      previousModel.current = model;
+    const models = value?.model ?? [];
+    if (previousModels.current === undefined) {
+      previousModels.current = models;
       return;
     }
-    if (previousModel.current === model) return;
-    previousModel.current = model;
-    if (!model || !provider || (!value?.key.trim() && !storedEntryId) || (isCustom && !value?.url.trim())) {
-      setCheckResult(undefined);
-      return;
-    }
-    const timer = window.setTimeout(() => void checkKey(), 400);
+    const previous = previousModels.current;
+    previousModels.current = models;
+    const added = models.find((model) => !previous.includes(model));
+    if (models.length === 0) setCheckResult(undefined);
+    if (!added || !provider || (!value?.key.trim() && !storedEntryId) || (isCustom && !value?.url.trim())) return;
+    const timer = window.setTimeout(() => void checkKey(added), 400);
     return () => window.clearTimeout(timer);
   }, [entryId, id, isCustom, isNew, provider, value?.key, value?.model, value?.url]);
 
@@ -210,7 +228,7 @@ export default function AiKeyEditor({ id }: Props) {
     const errors: Record<string, string> = {};
     if (!value.name.trim()) errors.name = "Name is required.";
     if (!value.provider) errors.provider = "Provider is required.";
-    if (!value.model.trim()) errors.model = "Model is required.";
+    if (value.model.length === 0) errors.model = "At least one model is required.";
     if (isNew && !value.key.trim()) errors.key = "Key is required.";
     if (isCustom && !value.url.trim()) errors.url = "URL is required for Custom provider.";
     setFieldErrors(errors);
@@ -257,7 +275,7 @@ export default function AiKeyEditor({ id }: Props) {
   if (!type || !allTypes || !value) return <span class="hint">Loading…</span>;
   if (!canEdit && !canAccess(type.id, "view")) return <span class="error">You don't have permission to manage AI Keys.</span>;
 
-  const modelOptions = value.model && !models.includes(value.model) ? [value.model, ...models] : models;
+  const modelOptions = [...models, ...value.model.filter((model) => !models.includes(model))];
   return (
     <>
       <section class="card ai-key-editor-card">
@@ -290,7 +308,7 @@ export default function AiKeyEditor({ id }: Props) {
             <div class="field">
               <label for="ai-key-model">Model<span class="required-asterisk">*</span></label>
               <div class="row ai-key-model-row">
-                <Combobox
+                <MultiSelect
                   id="ai-key-model"
                   value={value.model}
                   options={modelOptions.map((model) => ({ value: model, label: model }))}
@@ -298,7 +316,7 @@ export default function AiKeyEditor({ id }: Props) {
                   noResultsLabel={modelError || "No models found."}
                   disabled={loadingModels || modelOptions.length === 0}
                   invalid={!!fieldErrors.model}
-                  onChange={(next) => update("model", next)}
+                  onChange={updateModel}
                 />
                 <button
                   type="button"
