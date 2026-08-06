@@ -128,8 +128,22 @@ describe('resolveOptions', () => {
 	});
 
 	it('rejects an ai.provider that does not match the derived mode', () => {
-		expect(() => resolveOptions({ ai: { provider: 'openai' } })).toThrow(/codex.*claude.*kind.*local/);
-		expect(() => resolveOptions({ kind: 'cloudflare', ai: { provider: 'codex' as 'openai' } })).toThrow(/openai.*anthropic.*kind.*cloudflare/);
+		expect(() => resolveOptions({ ai: { provider: 'openai' } })).toThrow(/codex.*claude.*ai\.mode.*local/);
+		expect(() => resolveOptions({ kind: 'cloudflare', ai: { provider: 'codex' as 'openai' } })).toThrow(/openai.*anthropic.*ai\.mode.*server/);
+	});
+
+	it('allows ai.mode to be overridden independently of kind - "server" while kind stays "local"', () => {
+		expect(resolveOptions({ ai: { mode: 'server', provider: 'anthropic' } }).ai).toMatchObject({
+			mode: 'server', provider: 'anthropic',
+		});
+		expect(resolveOptions({ ai: { mode: 'server', provider: 'anthropic' } }).kind).toBe('local');
+		expect(resolveOptions({ ai: { mode: 'server', provider: 'anthropic' } }).storage).toEqual({
+			kind: 'local', root: resolve(process.cwd(), 'public'),
+		});
+	});
+
+	it('rejects ai.mode "local" when kind is "cloudflare" - a CLI cannot spawn in a Workers runtime', () => {
+		expect(() => resolveOptions({ kind: 'cloudflare', ai: { mode: 'local' } })).toThrow(/ai\.mode.*local.*kind.*cloudflare/);
 	});
 
 	it('defaults ai.lang to "en" and accepts an override, under both kinds', () => {

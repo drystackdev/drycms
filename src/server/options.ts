@@ -39,13 +39,24 @@ const PUBLIC_DIR_NAME = "public";
 
 export interface DryAiOption {
   /**
-   * `codex`/`claude` under `kind: "local"` (runs that CLI on the same
-   * machine), `openai`/`anthropic` under `kind: "cloudflare"` (calls the
-   * provider's HTTP API using a stored `aiKey` record). There is no
-   * separate `ai.mode` anymore - which provider values are valid follows
-   * the top-level `DryOption.kind` toggle directly, same as every other
-   * backend.
+   * How AI requests are executed. Defaults to following the top-level
+   * `kind` toggle - `"local"` under `kind: "local"` (runs a CLI on the same
+   * machine), `"server"` under `kind: "cloudflare"` (calls a provider's
+   * HTTP API using a stored `aiKey` record).
+   *
+   * Set this explicitly to run server-mode AI (a real provider HTTP call,
+   * needed for anything that sends images/attachments - the local CLI mode
+   * has no attachment protocol) while every OTHER backend (storage/content/
+   * kv) stays on `kind: "local"` - e.g. for developing/testing an AI
+   * feature without standing up Cloudflare D1/R2/KV and a Workers adapter.
+   *
+   * `"local"` cannot be combined with `kind: "cloudflare"` - spawning a CLI
+   * via `node:child_process` does not work in a Workers runtime.
    */
+  mode?: "local" | "server";
+  /** `codex`/`claude` when `ai.mode` is `"local"`, `openai`/`anthropic` when
+   * `ai.mode` is `"server"` (see `mode`'s doc comment for how that's
+   * decided). */
   provider?: "codex" | "claude" | "openai" | "anthropic";
   /** Local executable name/path. Defaults to the selected provider CLI. */
   command?: string;
@@ -403,11 +414,17 @@ function resolveKvOption(
   return { ...tuning, kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), KV_DIR_NAME) };
 }
 
-/** `mode` is derived from the top-level `kind`, never set independently
- * anymore - `"local"` runs a CLI, `"cloudflare"` calls a provider HTTP API
- * via a stored `aiKey` record (see `DryAiOption.provider`'s doc comment). */
+/** `mode` defaults to following the top-level `kind` but can be overridden
+ * independently (see `DryAiOption.mode`'s doc comment) - `"local"` runs a
+ * CLI, `"server"` calls a provider HTTP API via a stored `aiKey` record. */
 function resolveAiOption(kind: "local" | "cloudflare", option: DryAiOption = {}): ResolvedAiOption {
-  const mode = kind === "local" ? "local" : "server";
+  const mode = option.mode ?? (kind === "local" ? "local" : "server");
+  if (mode !== "local" && mode !== "server") {
+    throw new Error('[drycms] `ai.mode` must be "local" or "server".');
+  }
+  if (mode === "local" && kind === "cloudflare") {
+    throw new Error('[drycms] `ai.mode` cannot be "local" when `kind` is "cloudflare" - spawning a CLI via `node:child_process` does not work in a Workers runtime.');
+  }
   const timeoutMs = resolvePositiveNumber(option.timeoutMs, "ai.timeoutMs", 120_000);
   const lang = option.lang ?? "en";
   if (typeof lang !== "string" || !lang.trim()) {
@@ -417,7 +434,7 @@ function resolveAiOption(kind: "local" | "cloudflare", option: DryAiOption = {})
   if (mode === "local") {
     const provider = option.provider ?? "codex";
     if (provider !== "codex" && provider !== "claude") {
-      throw new Error('[drycms] `ai.provider` must be `codex` or `claude` when `kind` is `local`.');
+      throw new Error('[drycms] `ai.provider` must be `codex` or `claude` when `ai.mode` is `local`.');
     }
     const command = option.command ?? provider;
     if (typeof command !== "string" || !command.trim()) {
@@ -433,7 +450,7 @@ function resolveAiOption(kind: "local" | "cloudflare", option: DryAiOption = {})
 
   const provider = option.provider ?? "openai";
   if (provider !== "openai" && provider !== "anthropic") {
-    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic` when `kind` is `cloudflare`.');
+    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic` when `ai.mode` is `server`.');
   }
   const model = option.model ?? (provider === "openai" ? "gpt-5" : "claude-sonnet-4-20250514");
   const baseUrl = option.baseUrl ?? (provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com");
