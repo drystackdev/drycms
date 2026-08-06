@@ -458,11 +458,25 @@ export function exportCleanHtml(doc: PMNode, options?: { inline?: boolean }): st
  * `Fragment` rather than a whole `doc` node - `ai-rewrite-button.tsx`'s
  * "rewrite selection" feature (`status/magic-write.md` Phase 4) exports just
  * `state.doc.slice(from, to).content` this way, since a partial selection
- * is never itself a valid `doc` node to hand `exportCleanHtml`. */
-export function exportFragmentHtml(fragment: Fragment): string {
+ * is never itself a valid `doc` node to hand `exportCleanHtml`.
+ *
+ * `options.inline` - when the selection sits entirely inside ONE existing
+ * textblock (a run mid-heading/mid-paragraph/mid-list-item, the common
+ * "rewrite this line" case), `doc.slice()` still hands back that textblock
+ * as the fragment's own top-level node (it's the nearest closed ancestor),
+ * so the plain block-by-block export below would wrap it in its own
+ * `<h2>`/`<p>` tag same as always. That's fine for showing the AI the
+ * passage, but reusing this same export for the RETURN trip
+ * (`replaceSelectionWithHtml`'s `inline` flag) needs the tag left off: the
+ * selection's `from`/`to` sit mid-block, not at its boundary, so re-parsing
+ * a closed block tag there and inserting it back would try to nest a new
+ * block node inside the existing one instead of just swapping its inline
+ * content - the exact "AI replaces the text but not the tag it's in, and
+ * the format changes" bug this option exists to avoid. */
+export function exportFragmentHtml(fragment: Fragment, options?: { inline?: boolean }): string {
   let out = "";
   fragment.forEach((node) => {
-    out += exportBlockHtml(node);
+    out += options?.inline && node.isTextblock ? inlineChildrenHtml(node) : exportBlockHtml(node);
   });
   return out;
 }

@@ -1,6 +1,7 @@
 import { useRef, useState } from "preact/hooks";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { SparkleIcon } from "../AiSparkleIcon.js";
+import TextField from "../fields/TextField.js";
 import { exportFragmentHtml } from "./html.js";
 import { replaceSelectionWithHtml, runCommand } from "./commands.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
@@ -160,15 +161,13 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
             </header>
             <div class="stack">
               {stage === "prompt" && (
-                <label>
-                  Instruction
-                  <textarea
-                    rows={3}
-                    placeholder="VD: Viết lại ngắn gọn hơn, giọng văn thân thiện"
-                    value={instruction}
-                    onInput={(event) => setInstruction((event.currentTarget as HTMLTextAreaElement).value)}
-                  />
-                </label>
+                <TextField
+                  label="Instruction"
+                  multiline
+                  value={instruction}
+                  onChange={setInstruction}
+                  placeholder="VD: Viết lại ngắn gọn hơn, giọng văn thân thiện"
+                />
               )}
               {stage === "loading" && (
                 <div class="stack">
