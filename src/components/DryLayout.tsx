@@ -20,12 +20,12 @@ import { collapsed } from "../store/dashboard.js";
 import { contentTypesVersion } from "../store/content-types.js";
 import { pageHeaderActions } from "../store/page-header.js";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
-import { useStore } from "../hooks/useStore.js";
+import { initMemorySync, useStore } from "../hooks/useStore.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
-import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
+import { PAGE_COMPONENTS_RESOURCE_ID, type PermissionAction } from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
 import { countEntryDrafts, hasEntryDraft, hydrateEntryDraftIndex, watchEntryDraftIndex } from "../content-types/entry-draft-store.js";
 
@@ -42,6 +42,13 @@ const NAV: {
   section: "Overview" | "Content" | "System";
   superAdminOnly?: boolean;
   permissionName?: string;
+  /** Which action `permissionName`'s resolved resource id is checked with -
+   * a collection's own real nav-worthy action is `"view"` (the default,
+   * unchanged for every pre-existing entry below), but a `singleton` only
+   * ever grants `"setting"` (see `permissions.ts`'s `permissionActionsFor`)
+   * - `"view"` would never be a real grant for one, silently hiding the item
+   * from anyone who isn't Super Admin. @default "view" */
+  permissionAction?: PermissionAction;
   /** Like `permissionName`, but for a synthetic resource id with no real
    * `ContentTypeDefinition` row to look up (see `RoleEditor.tsx`'s
    * `PAGE_COMPONENTS_RESOURCE`) - checked directly via `canAccess`. */
@@ -109,6 +116,25 @@ const NAV: {
     permissionName: "role",
   },
   {
+    key: "users",
+    label: "Users",
+    href: `${path}/content/user`,
+    icon: "Users",
+    ready: true,
+    section: "System",
+    permissionName: "user",
+  },
+  {
+    key: "seo-defaults",
+    label: "SEO Defaults",
+    href: `${path}/content/seoDefaults`,
+    icon: "Content",
+    ready: true,
+    section: "System",
+    permissionName: "seoDefaults",
+    permissionAction: "setting",
+  },
+  {
     key: "key-value",
     label: "Key Value",
     href: `${path}/key-value`,
@@ -140,8 +166,9 @@ const NAV: {
     label: "Settings",
     href: `${path}/settings`,
     icon: "Settings",
-    ready: false,
+    ready: true,
     section: "System",
+    superAdminOnly: true,
   },
 ];
 
@@ -365,6 +392,14 @@ export default function DryLayout({ children }: Props) {
     return watchEntryDraftIndex();
   }, []);
 
+  // One-time pull-then-reconcile against this account's server-side
+  // `memory` row (see `hooks/useStore.tsx`'s `initMemorySync`) - as early as
+  // possible after the authenticated shell mounts, same "`DryLayout` never
+  // remounts" reasoning as the effect above.
+  useEffect(() => {
+    void initMemorySync();
+  }, []);
+
   const shellClass = [
     "shell",
     collapsed.value && "collapsed",
@@ -404,7 +439,7 @@ export default function DryLayout({ children }: Props) {
                   (!item.superAdminOnly || authState.value.user?.isSuperAdmin) &&
                   (!item.permissionName || (() => {
                     const type = contentTypes?.find((candidate) => candidate.name === item.permissionName);
-                    return !!type && canAccess(type.id, "view");
+                    return !!type && canAccess(type.id, item.permissionAction ?? "view");
                   })()) &&
                   (!item.permissionResourceId || canAccess(item.permissionResourceId, "setting")),
               );

@@ -94,6 +94,11 @@ type MagicChatTurnResult = MagicChatFieldsResult | MagicChatQuestionResult | Mag
 interface MagicChatStreamEvent {
   delta?: string;
   retry?: boolean;
+  /** A `kind: fetch` hop just ran server-side (`status/magic-chat.md`
+   * decision #5, Phase B) - never a terminal reply, just a status label
+   * (e.g. `Looking up 5 "Blog Post" entries…`); another `{delta}`/`{turn}`
+   * follows on the SAME connection once the model's next reply streams in. */
+  fetching?: string;
   turn?: MagicChatTurnResult;
   aiLabel?: string;
   error?: string;
@@ -108,6 +113,7 @@ async function requestMagicTurn(
   payload: Record<string, unknown>,
   onDelta: (delta: string) => void,
   onRetry: () => void,
+  onFetching: (label: string) => void,
   signal: AbortSignal,
 ): Promise<{ turn: MagicChatTurnResult; aiLabel: string }> {
   const response = await fetch(`${path}/api/ai/magic-write`, {
@@ -140,19 +146,24 @@ async function requestMagicTurn(
       if (event.error) throw new Error(event.error);
       if (event.turn) return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
       if (event.retry) onRetry();
+      else if (event.fetching) onFetching(event.fetching);
       else if (event.delta) onDelta(event.delta);
     }
   }
   throw new Error("AI connection closed unexpectedly.");
 }
 
-/** A top-level field Magic can offer to write - relation/relation-mirror/
- * password/secretkey are never candidates (see `status/magic-write.md`
- * decision #2). */
+/** A top-level field Magic can offer to write - `relation-mirror`/password/
+ * secretkey are never candidates (see `status/magic-write.md` decision #2).
+ * Plain `relation` fields became candidates in `status/magic-chat.md`'s
+ * Phase B - never live-previewed while streaming (`handleDelta` below only
+ * live-injects a `column` node's value), but committed once closed, same as
+ * every other non-text/richtext field. */
 function isMagicChatCandidate(node: EntryFieldNode): boolean {
   if (node.kind === "column") return WRITABLE_COLUMN_TYPES.has(node.fieldType);
   if (node.kind === "flatten") return node.children.some(isMagicChatCandidate);
   if (node.kind === "component-repeat") return node.itemFields.some(isMagicChatCandidate);
+  if (node.kind === "relation") return true;
   return false;
 }
 
@@ -440,6 +451,16 @@ export default function MagicChat({
         (delta) => handleDelta(assistantBubbleId, delta),
         () => {
           rawTextRef.current = "";
+        },
+        (label) => {
+          // A `kind: fetch` hop just ran - the CURRENT assistant placeholder
+          // is about to keep growing with the model's NEXT reply (a fresh
+          // stream, same as after a dialect `{retry}`), so its buffer resets
+          // the same way. Unlike a silent retry, this gets its own status
+          // bubble ("Looking up 5 blog posts…") so the admin sees Magic is
+          // actively doing something, not just slow.
+          rawTextRef.current = "";
+          setMessages((current) => [...current, { id: newId(), role: "status", text: label }]);
         },
         controller.signal,
       );

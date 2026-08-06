@@ -14,6 +14,7 @@ import {
 } from "../../content-types/ai-magic-write-protocol.js";
 import { describeFieldsForPrompt, buildMagicWriteSystemPrompt } from "../../content-types/ai-magic-write-prompt.js";
 import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
+import { executeMagicFetch } from "./ai-magic-write-fetch.js";
 import {
   acquireAiStreamSlot,
   createChatStream,
@@ -220,6 +221,11 @@ async function runMagicWriteTurn(
 }
 
 const MAGIC_WRITE_MAX_ATTEMPTS = 3;
+/** `status/magic-chat.md` decision #5 - a separate budget from
+ * `MAGIC_WRITE_MAX_ATTEMPTS` above (dialect-repair retries): a turn that
+ * fetches cleanly every time but never gets around to actually answering
+ * shouldn't burn through the SAME 3 attempts a malformed reply would. */
+const MAGIC_FETCH_MAX_HOPS = 3;
 /** A whole entry's worth of fields (title/body/excerpt/SEO/...) easily runs
  * past the 2048-token default `ai.ts`'s Anthropic branch otherwise applies -
  * see that function's own doc comment. Only affects Anthropic (OpenAI/Google
@@ -306,7 +312,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const allowedImageSrcs = new Set([...verifiedImages.map((image) => image.path), ...verifiedSessionPaths]);
 
           const nodes = buildEntryFieldTree(type, allTypes);
-          const fieldsDescription = describeFieldsForPrompt(nodes, request.currentValue);
+          const fieldsDescription = describeFieldsForPrompt(nodes, request.currentValue, allTypes);
           const relationContext = await loadRelationContext(entries, allTypes, nodes, request.currentValue);
           const systemPrompt = buildMagicWriteSystemPrompt({
             lang: ai.lang,
@@ -329,37 +335,84 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const priming: ChatMessage = { role: "user", text: systemPrompt };
           const currentTurn: ChatMessage = { role: "user", text: request.prompt, images: chatImages };
           let messages: ChatMessage[] = [priming, ...request.history, currentTurn];
-          let lastError = "";
-          for (let attempt = 0; attempt < MAGIC_WRITE_MAX_ATTEMPTS; attempt++) {
-            if (attempt > 0) controller.enqueue(streamEvent({ retry: true }));
+          let lastError = "Magic used too many internal lookups without producing a final reply.";
+          let dialectAttempt = 0;
+          let fetchHops = 0;
+          // `EntryRelationNode.targetTypeId` -> every id `kind: fetch` actually
+          // surfaced THIS turn (`ai-magic-write-fields.ts`'s
+          // `AllowedRelationIds`) - a relation field write may only reference
+          // one of these, never accumulated across the session the way
+          // `allowedImageSrcs` is (see that type's own doc comment for why).
+          const allowedRelationIds = new Map<string, Set<number>>();
+
+          // One iteration is one full model call, whether it ends up being a
+          // dialect retry OR a fetch hop - bounding the total regardless of
+          // which budget below is being spent is the real backstop against a
+          // runaway loop (each budget's own check only stops THAT kind of
+          // iteration from recurring past its own limit).
+          const maxIterations = MAGIC_WRITE_MAX_ATTEMPTS + MAGIC_FETCH_MAX_HOPS;
+          for (let iteration = 0; iteration < maxIterations; iteration++) {
+            if (dialectAttempt > 0) controller.enqueue(streamEvent({ retry: true }));
             const result = await runMagicWriteTurn(context, messages, request.aiKeyName, request.aiModel, (delta) => {
               controller.enqueue(streamEvent({ delta }));
             });
             const validation = parseMagicWriteYaml(extractMagicWriteYaml(result.text));
-            if (validation.ok) {
-              const turn = validation.turn;
-              let event: MagicWriteFieldsTurnEvent | MagicWriteQuestionTurnEvent | MagicWriteChatTurnEvent;
-              if (turn.kind === "question") {
-                event = turn;
-              } else if (turn.kind === "chat") {
-                event = turn;
-              } else {
-                const applied = applyMagicWriteFields(nodes, turn.fields, allowedImageSrcs);
-                event = { kind: "fields", summary: turn.summary, fields: applied.value, writtenFieldNames: applied.writtenFieldNames };
-              }
-              controller.enqueue(streamEvent({ turn: event, aiLabel: result.aiLabel }));
-              controller.close();
-              return;
+
+            if (!validation.ok) {
+              lastError = validation.error;
+              dialectAttempt++;
+              if (dialectAttempt >= MAGIC_WRITE_MAX_ATTEMPTS) break;
+              messages = [
+                ...messages,
+                { role: "assistant", text: result.text },
+                {
+                  role: "user",
+                  text: `Your last reply did not match the required format: ${validation.error} Resend a single corrected reply only, in the exact dialect described above - no prose, no markdown fences.`,
+                },
+              ];
+              continue;
             }
-            lastError = validation.error;
-            messages = [
-              ...messages,
-              { role: "assistant", text: result.text },
-              {
-                role: "user",
-                text: `Your last reply did not match the required format: ${validation.error} Resend a single corrected reply only, in the exact dialect described above - no prose, no markdown fences.`,
-              },
-            ];
+
+            const turn = validation.turn;
+
+            if (turn.kind === "fetch") {
+              fetchHops++;
+              if (fetchHops > MAGIC_FETCH_MAX_HOPS) {
+                messages = [
+                  ...messages,
+                  { role: "assistant", text: result.text },
+                  { role: "user", text: "You've used up this turn's lookups - reply now with what you already have (kind: chat, fields, or question), no more kind: fetch." },
+                ];
+                continue;
+              }
+              const fetchResult = await executeMagicFetch(context, entries, allTypes, storage, turn);
+              if (fetchResult.seenEntryIds) {
+                const { targetTypeId, ids } = fetchResult.seenEntryIds;
+                const existing = allowedRelationIds.get(targetTypeId) ?? new Set<number>();
+                for (const id of ids) existing.add(id);
+                allowedRelationIds.set(targetTypeId, existing);
+              }
+              // Transient status only - never a terminal `turn` event, the
+              // admin never sees the raw query/result, just this label
+              // (`MagicChat.tsx` renders it as a status bubble and resets its
+              // streaming buffer, same as it already does for `{retry}`).
+              controller.enqueue(streamEvent({ fetching: fetchResult.label }));
+              messages = [...messages, { role: "assistant", text: result.text }, { role: "user", text: fetchResult.resultText }];
+              continue;
+            }
+
+            let event: MagicWriteFieldsTurnEvent | MagicWriteQuestionTurnEvent | MagicWriteChatTurnEvent;
+            if (turn.kind === "question") {
+              event = turn;
+            } else if (turn.kind === "chat") {
+              event = turn;
+            } else {
+              const applied = applyMagicWriteFields(nodes, turn.fields, allowedImageSrcs, allowedRelationIds);
+              event = { kind: "fields", summary: turn.summary, fields: applied.value, writtenFieldNames: applied.writtenFieldNames };
+            }
+            controller.enqueue(streamEvent({ turn: event, aiLabel: result.aiLabel }));
+            controller.close();
+            return;
           }
           controller.enqueue(streamEvent({ error: `AI could not produce a valid reply after ${MAGIC_WRITE_MAX_ATTEMPTS} attempts. Last issue: ${lastError}` }));
           controller.close();

@@ -45,26 +45,30 @@ afterEach(() => {
 });
 
 describe("createSqliteContentEngineAdapter", () => {
-  it("seeds the built-in user/menu/menuItem/aiKey/role/redirect/seoDefaults defaults on first boot", async () => {
+  it("seeds the built-in user/menu/menuItem/aiKey/role/redirect/memory/seoDefaults/systemSettings defaults on first boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
     const types = await adapter.listContentTypes();
     expect(types.map((t) => t.name).sort()).toEqual([
       "aiKey",
+      "memory",
       "menu",
       "menuItem",
       "redirect",
       "role",
       "seo",
       "seoDefaults",
+      "systemSettings",
       "user",
     ]);
     const byName = (name: string) => types.find((t) => t.name === name)!;
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("redirect").hidden).toBe(true);
-    expect(byName("user").hidden).toBeFalsy();
+    expect(byName("memory").hidden).toBe(true);
+    expect(byName("systemSettings").hidden).toBe(true);
+    expect(byName("user").hidden).toBe(true);
   });
 
   it("seeds the permanent Super Admin role at boot", async () => {

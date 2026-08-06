@@ -156,6 +156,54 @@ describe("parseMagicWriteYaml - question turn", () => {
   });
 });
 
+describe("parseMagicWriteYaml - fetch turn", () => {
+  it("parses an entries query with a search term", () => {
+    const doc = ["kind: fetch", "source: entries", "typeSlug: blog", "search: mountain"].join("\n");
+    const result = parseMagicWriteYaml(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "fetch", source: "entries", typeSlug: "blog", id: undefined, search: "mountain", path: undefined });
+  });
+
+  it("parses a single-entry query by id", () => {
+    const doc = ["kind: fetch", "source: entry", "typeSlug: blog", "id: 12"].join("\n");
+    const result = parseMagicWriteYaml(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "fetch", source: "entry", typeSlug: "blog", id: "12", search: undefined, path: undefined });
+  });
+
+  it("parses a media query with an optional path", () => {
+    const doc = ["kind: fetch", "source: media", "path: photos"].join("\n");
+    const result = parseMagicWriteYaml(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "fetch", source: "media", typeSlug: undefined, id: undefined, search: undefined, path: "photos" });
+  });
+
+  it("parses a types query with no other fields", () => {
+    const result = parseMagicWriteYaml("kind: fetch\nsource: types");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "fetch", source: "types", typeSlug: undefined, id: undefined, search: undefined, path: undefined });
+  });
+
+  it("rejects an unrecognized source", () => {
+    const result = parseMagicWriteYaml("kind: fetch\nsource: web");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects entries/entry with no typeSlug", () => {
+    expect(parseMagicWriteYaml("kind: fetch\nsource: entries").ok).toBe(false);
+    expect(parseMagicWriteYaml("kind: fetch\nsource: entry\nid: 1").ok).toBe(false);
+  });
+
+  it("rejects entry with no id", () => {
+    const result = parseMagicWriteYaml("kind: fetch\nsource: entry\ntypeSlug: blog");
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("extractMagicWriteYaml", () => {
   it("strips a markdown fence", () => {
     const wrapped = "```yaml\nkind: fields\nsummary: |\n  s\nfields:\n  a: |\n    b\n```";

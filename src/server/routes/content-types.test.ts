@@ -123,12 +123,14 @@ describe("GET /dry/api/content-types", () => {
     expect(status).toBe(200);
     expect((json.definitions as ContentTypeDefinition[]).map((t) => t.name).sort()).toEqual([
       "aiKey",
+      "memory",
       "menu",
       "menuItem",
       "redirect",
       "role",
       "seo",
       "seoDefaults",
+      "systemSettings",
       "user",
     ]);
     const byName = (name: string) =>
@@ -137,7 +139,7 @@ describe("GET /dry/api/content-types", () => {
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("redirect").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
-    expect(byName("user").hidden).toBeFalsy();
+    expect(byName("user").hidden).toBe(true);
   });
 });
 

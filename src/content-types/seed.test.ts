@@ -13,15 +13,17 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect (collections), and seoDefaults (singleton)", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect, memory (collections), and seoDefaults, systemSettings (singletons)", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
+      "memory",
       "menu",
       "menuItem",
       "redirect",
       "role",
       "seo",
       "seoDefaults",
+      "systemSettings",
       "user",
     ]);
     expect(byName("menuItem").kind).toBe("component");
@@ -31,38 +33,88 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
     expect(byName("redirect").kind).toBe("collection");
+    expect(byName("memory").kind).toBe("collection");
     expect(byName("seoDefaults").kind).toBe("singleton");
+    expect(byName("systemSettings").kind).toBe("singleton");
   });
 
-  it("hides role/aiKey/redirect/seo from the generic content-type UI, but leaves user/menu/menuItem/seoDefaults visible", () => {
+  it("hides role/aiKey/redirect/seo/user/seoDefaults/memory/systemSettings from the generic content-type UI, but leaves menu/menuItem visible", () => {
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("redirect").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
-    expect(byName("user").hidden).toBeFalsy();
+    // `user`/`seoDefaults` moved to their own pinned System nav entry
+    // instead of the generic Collection/Singleton group - still ordinary,
+    // freely editable content otherwise (see the `frozen` test below).
+    expect(byName("user").hidden).toBe(true);
+    expect(byName("seoDefaults").hidden).toBe(true);
+    // `memory`/`systemSettings` have no nav entry at all (see their own
+    // `frozen`/`locked` test) - `hidden` here is necessary but not
+    // sufficient for that; the route layer is what actually keeps them
+    // inaccessible.
+    expect(byName("memory").hidden).toBe(true);
+    expect(byName("systemSettings").hidden).toBe(true);
     expect(byName("menu").hidden).toBeFalsy();
     expect(byName("menuItem").hidden).toBeFalsy();
-    expect(byName("seoDefaults").hidden).toBeFalsy();
   });
 
-  it("freezes role/aiKey/redirect's schema entirely, but leaves seo's, user's, and seoDefaults' editable", () => {
+  it("freezes role/aiKey/redirect/memory's schema entirely, but leaves seo's, user's, seoDefaults', and systemSettings' editable", () => {
     expect(byName("role").frozen).toBe(true);
     expect(byName("aiKey").frozen).toBe(true);
     expect(byName("redirect").frozen).toBe(true);
+    expect(byName("memory").frozen).toBe(true);
     expect(byName("seo").frozen).toBeFalsy();
     expect(byName("user").frozen).toBeFalsy();
     expect(byName("seoDefaults").frozen).toBeFalsy();
+    expect(byName("systemSettings").frozen).toBeFalsy();
   });
 
-  it("locks user/seo/role/aiKey/redirect/seoDefaults' tables against deletion, but leaves menu/menuItem deletable", () => {
+  it("locks user/seo/role/aiKey/redirect/memory/seoDefaults/systemSettings' tables against deletion, but leaves menu/menuItem deletable", () => {
     expect(byName("user").locked).toBe(true);
     expect(byName("seo").locked).toBe(true);
     expect(byName("role").locked).toBe(true);
     expect(byName("aiKey").locked).toBe(true);
     expect(byName("redirect").locked).toBe(true);
+    expect(byName("memory").locked).toBe(true);
     expect(byName("seoDefaults").locked).toBe(true);
+    expect(byName("systemSettings").locked).toBe(true);
     expect(byName("menu").locked).toBeFalsy();
     expect(byName("menuItem").locked).toBeFalsy();
+  });
+
+  it("memory: required manyToOne user relation, a text data blob, a required numeric version", () => {
+    const memory = byName("memory");
+    const user = byName("user");
+    const relation = memory.fields.find((f) => f.name === "user")!;
+    expect(relation.type).toBe("relation");
+    expect(relation.config).toMatchObject({ target: user.id, cardinality: "manyToOne" });
+    expect(relation.validation.required).toBe(true);
+    const data = memory.fields.find((f) => f.name === "data")!;
+    expect(data.type).toBe("text");
+    const version = memory.fields.find((f) => f.name === "version")!;
+    expect(version.type).toBe("number");
+    expect(version.validation.required).toBe(true);
+    expect(version.default).toBe(0);
+  });
+
+  it("systemSettings: 6 hex-validated color fields, a required font family select, required base font size and radius", () => {
+    const systemSettings = byName("systemSettings");
+    const colorFields = ["primaryColor", "secondaryColor", "infoColor", "successColor", "warningColor", "errorColor"];
+    for (const name of colorFields) {
+      const field = systemSettings.fields.find((f) => f.name === name)!;
+      expect(field.type).toBe("text");
+      expect(field.validation.regex).toBe("^#[0-9a-fA-F]{6}$");
+      expect(typeof field.default).toBe("string");
+    }
+    const fontFamily = systemSettings.fields.find((f) => f.name === "fontFamily")!;
+    expect(fontFamily.type).toBe("select");
+    expect(fontFamily.validation.required).toBe(true);
+    const baseFontSize = systemSettings.fields.find((f) => f.name === "baseFontSize")!;
+    expect(baseFontSize.type).toBe("number");
+    expect(baseFontSize.validation).toMatchObject({ required: true, min: 12, max: 20 });
+    const radius = systemSettings.fields.find((f) => f.name === "radius")!;
+    expect(radius.type).toBe("number");
+    expect(radius.validation).toMatchObject({ required: true, min: 0, max: 24 });
   });
 
   it("seoDefaults is recognized by its fixed id, has features.seo on, and no custom fields", () => {
@@ -237,7 +289,7 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("resolveDefaultContentTypeDefinitions", () => {
-  it("falls back to the 8 built-in defaults when no packaged seed is given", () => {
+  it("falls back to the built-in defaults when no packaged seed is given", () => {
     const resolved = resolveDefaultContentTypeDefinitions(undefined);
     expect(resolved.map((t) => t.name).sort()).toEqual(
       defaultContentTypeDefinitions().map((t) => t.name).sort(),
@@ -262,7 +314,7 @@ describe("resolveDefaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/seoDefaults tables plus 8 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/memory/seoDefaults/systemSettings tables plus 10 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
@@ -272,14 +324,16 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "role"');
     expect(sql).toContain('CREATE TABLE "redirect"');
     expect(sql).toContain('CREATE TABLE "user_roles"');
+    expect(sql).toContain('CREATE TABLE "memory"');
     expect(sql).toContain('CREATE TABLE "seoDefaults"');
+    expect(sql).toContain('CREATE TABLE "systemSettings"');
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(8);
+    expect(metadataInserts).toHaveLength(10);
   });
 
   it("seeds nothing once every default name is already present", () => {
@@ -292,7 +346,9 @@ describe("pendingSeedStatements", () => {
         "aikey",
         "role",
         "redirect",
+        "memory",
         "seodefaults",
+        "systemsettings",
       ]),
     );
     expect(statements).toEqual([]);
@@ -307,11 +363,13 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
     expect(sql).toContain('CREATE TABLE "redirect"');
+    expect(sql).toContain('CREATE TABLE "memory"');
     expect(sql).toContain('CREATE TABLE "seoDefaults"');
+    expect(sql).toContain('CREATE TABLE "systemSettings"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(7);
+    expect(metadataInserts).toHaveLength(9);
   });
 });

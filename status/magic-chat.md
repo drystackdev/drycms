@@ -493,3 +493,109 @@ như không còn, dùng thẳng IndexedDB, DB riêng để không đụng `entry
   mở, chấm đỏ có hiện, không còn "đang gõ" bị kẹt. "Clear all" rồi reload →
   0 row, xác nhận discard xuyên suốt.
 - Typecheck sạch + build sạch + 900 test pass.
+
+## Phase B: `kind: fetch` + AI có thể chọn ref/refs (relation) — 2026-08-06/07
+
+User yêu cầu code thẳng `kind: fetch` (đã thiết kế sẵn ở quyết định #5, chưa
+làm) **cộng thêm** khả năng AI tự chọn giá trị cho field `relation`
+("ref"/"refs") - trước giờ field này luôn bị loại khỏi Magic (decision #2 gốc:
+"relation/relation-mirror... never a write target"), vì không có cách nào an
+toàn để AI biết ID nào hợp lệ. `kind: fetch` gỡ đúng nút thắt đó: AI tra cứu
+được danh sách entry thật trước khi chọn.
+
+### `kind: fetch` — tra cứu dữ liệu NỘI BỘ drycms (không phải internet)
+
+- **`ai-magic-write-protocol.ts`**: thêm `MagicWriteFetchTurn` (`source:
+  "entries"|"entry"|"media"|"types"` + `typeSlug`/`id`/`search`/`path`, toàn
+  scalar phẳng - không cần đổi parser YAML-subset chung, `parseMapping` vốn
+  đã đọc được `key: value` bất kỳ). `validateFetchTurn` theo đúng khuôn
+  `validateQuestionTurn`. Đây là turn KHÔNG BAO GIỜ terminal.
+- **File mới `server/routes/ai-magic-write-fetch.ts`** (`executeMagicFetch`):
+  - `source: entries/entry` - chạy lại `checkAccess` với action `"view"`
+    (KHÔNG mượn quyền `"update"` của entry đang mở) cho ĐÚNG type được hỏi.
+    `password`/`secretkey` không cần tự lọc tay - `entryAdapter.getEntry`/
+    `listEntries` đã tự mask thành `{hasExisting}` ngay ở tầng engine
+    (`entry-codec.ts`'s `rowToValue`, dùng chung mọi caller) - `formatRow`
+    chỉ in string/number/boolean nên marker bị bỏ qua tự nhiên. KHÔNG BAO GIỜ
+    gọi `getRawEntry` (hàm duy nhất cố tình bỏ qua mask).
+  - `source: media` dùng `storageAdapter.list()` (không phải `listNames()` -
+    optional trên interface, `list()` luôn có).
+  - `source: types` liệt kê tên/label/kind mọi content type không phải
+    component.
+  - Test thật với sqlite tạm (theo đúng khuôn `content-entries.test.ts`,
+    KHÔNG mock adapter) - kể cả case "session không có quyền view" và case
+    "secretkey không bao giờ lọt vào resultText".
+- **`ai-magic-write.ts`**: vòng lặp cũ (`for attempt < 3` retry sai dialect)
+  tách thành 2 ngân sách riêng - `dialectAttempt` (dialect sai, như cũ, vẫn
+  cap 3) và `fetchHops` (cap 3, riêng - lượt fetch sạch nhưng không chịu trả
+  lời cuối không được đốt chung ngân sách với lượt sai dialect). Tổng vòng
+  lặp có trần cứng `3+3=6` bất kể tổ hợp nào. Khi gặp `kind: fetch`: chạy
+  `executeMagicFetch`, gom `seenEntryIds` vào `allowedRelationIds` (Map
+  `targetTypeId -> Set<id>`), bắn SSE `{fetching: label}` (KHÔNG đóng
+  stream), nhét kết quả thành message `user` giả rồi gọi lại model.
+- **`MagicChat.tsx`**: `requestMagicTurn` thêm callback `onFetching` (reset
+  `rawTextRef` như `onRetry`, cộng thêm đẩy 1 bong bóng `role:"status"` hiện
+  `label`).
+
+### AI chọn "ref"/"refs" (relation) — mở khoá nhờ `kind: fetch`
+
+- **`isMagicChatCandidate`**: bỏ loại `relation` (giữ nguyên loại
+  `relation-mirror` - mirror vẫn read-only, ghi qua nó cần cơ chế
+  claim/unclaim của field gốc, không phải việc của Magic).
+- **`ai-magic-write-fields.ts`**: `applyMagicWriteFields` thêm tham số
+  `allowedRelationIds` (mirror hệt `allowedImageSrcs`) - một ID CHỈ được ghi
+  nếu nó nằm trong tập `kind: fetch` đã thực sự trả về **trong lượt này**
+  (KHÔNG cộng dồn qua nhiều lượt như ảnh - tra cứu lại rẻ, không như gửi lại
+  ảnh). Dây `manyToOne` = 1 scalar số (`category: 12`); `oneToMany`/
+  `manyToMany` = list số cách nhau dấu phẩy (`tags: 12,45,88`) - **cố tình
+  KHÔNG dùng block sequence** như `component-repeat`, để khỏi đụng vào parser
+  chung.
+- **`ai-magic-write-prompt.ts`**: `describeNode` thêm nhánh `relation` (chỉ
+  `relation-mirror` mới bị loại); `CAPABILITY_INSTRUCTION` cập nhật (bỏ "no
+  other entries", giữ nguyên "no web access"); `buildMagicWriteSystemPrompt`
+  thêm mục `4. kind: fetch` + hướng dẫn cách ghi relation ngay trong ví dụ
+  `kind: fields`.
+
+### 2 bug thật, chỉ lộ ra khi chạy thật (không phải đọc code)
+
+1. **`targetTypeId` (id nội bộ, vd `"app-category"`) ≠ `typeSlug` mà
+   `kind: fetch` thật sự khớp (`ContentTypeDefinition.name`, vd
+   `"category"`)** - phát hiện qua smoke test THẬT (curl + Google
+   `gemini-3.5-flash` thật): model gửi `kind: fetch typeSlug: app-category`
+   trước (sai, tốn 1 hop), tự sửa thành `category` ở hop sau nhờ đúng thông
+   điệp lỗi có gợi ý "Available: ...". Hệ thống KHÔNG gãy (cơ chế tự sửa lỗi
+   hoạt động đúng như thiết kế) nhưng phí 1 hop - sửa gốc: `describeNode`
+   giờ resolve `targetTypeId -> tên thật` qua `allTypes` (tham số mới của
+   `describeFieldsForPrompt`) rồi in đúng chữ `typeSlug "category"` - khớp y
+   hệt field mà `kind: fetch` cần. Chạy lại smoke test: model vẫn thỉnh
+   thoảng đoán sai lần đầu (bản chất xác suất của LLM, không phải bug - đã
+   thử 2 lần, cả 2 đều tự sửa đúng ở hop 2) - cơ chế phục hồi mới là điều đảm
+   bảo, không phải kỳ vọng model đúng ngay lần đầu.
+2. **BUG THẬT nghiêm trọng, chỉ thấy khi bấm thử trên UI**: `applyMagicWriteFields`
+   ghi relation ID dạng **số thô** (khớp tầng engine - `rowToValue`/
+   `entries.getEntry` đều trả `target_id` dạng number thật) nhưng
+   `RelationFieldAdapter` (`FieldRenderer.tsx`) chỉ nhận **string đã hash**
+   (`typeof value === "string" ? value : ""` - number lọt qua thành `""`,
+   tức "No items selected." dù AI đã "ghi" xong). Lý do: MỌI relation value
+   trong app đã được hash ở biên HTTP từ trước (`content-entries.ts`'s
+   `encodeRelationIds`/`decodeRelationIds`, chạy trên mọi GET/POST/PUT) -
+   `EntryValue` phía client LUÔN là string hash, chưa từng là number thô.
+   Sửa: `coerceRelation` gọi `encodeEntryId` (từ `lib/id-hash.ts`, thuần, an
+   toàn import ở module framework-agnostic) ngay bước cuối, sau khi đã xác
+   nhận ID nằm trong `allowedRelationIds` (allow-list vẫn giữ number - chỗ
+   duy nhất đổi sang string là giá trị TRẢ VỀ). Wire format model viết không
+   đổi gì (vẫn số thô, khớp đúng những gì `kind: fetch` cho nó thấy) - việc
+   encode là chi tiết triển khai ẩn, model không cần biết.
+   Bài học lặp lại đúng như 2 bug OverlayScrollbars/squircle ở trên: đọc code
+   tĩnh (kể cả đọc rất kỹ, đã trace đúng luồng `rowToValue`) không bắt được
+   loại lỗi "hai tầng dùng hai quy ước biểu diễn khác nhau cho cùng 1 khái
+   niệm" - phải bấm/gọi thật mới lộ ra.
+- Typecheck sạch + build sạch + 927 test pass (thêm test cho cả 2 file mới/
+  sửa, gồm test riêng xác nhận giá trị trả về là `encodeEntryId(...)` chứ
+  không phải number thô).
+- **Việc CHƯA làm / ngoài phạm vi lần này**: chưa verify lại bằng Playwright
+  thật trên UI sau bug #2 (đang bị Google free-tier rate-limit "20
+  requests/..." sau nhiều lần smoke test liên tục trong phiên - đã xác nhận
+  qua curl là SSE trả đúng string hash, nhưng chưa xác nhận bằng mắt
+  `RelationFieldAdapter` hiện đúng chip trong panel Category thật). Chưa đụng
+  `.ai-wizard-body`/schema wizard (không liên quan, ngoài yêu cầu).

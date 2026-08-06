@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyMagicWriteFields, isEmptyValue } from "./ai-magic-write-fields.js";
 import type { EntryFieldNode } from "./engine/entry-tree.js";
+import { encodeEntryId } from "../lib/id-hash.js";
 
 function column(overrides: Partial<EntryFieldNode> & { fieldName: string; fieldType: string }): EntryFieldNode {
   return {
@@ -41,6 +42,17 @@ const NODES: EntryFieldNode[] = [
     cardinality: "manyToOne",
     targetTypeId: "cat",
     columnName: "category_id",
+    sortable: false,
+    validation: {},
+  },
+  {
+    kind: "relation",
+    fieldId: "tags",
+    fieldName: "tags",
+    label: "Tags",
+    cardinality: "manyToMany",
+    targetTypeId: "tag",
+    tableName: "post_tags",
     sortable: false,
     validation: {},
   },
@@ -98,8 +110,13 @@ describe("applyMagicWriteFields", () => {
     expect(result.value.body).toBeUndefined();
   });
 
-  it("never writes relation, secretkey, or password fields", () => {
-    const result = applyMagicWriteFields(NODES, { category: "1", secretkey: "leak-me", password: "leak-me" });
+  it("never writes secretkey or password fields, regardless of allow-lists", () => {
+    const result = applyMagicWriteFields(NODES, { secretkey: "leak-me", password: "leak-me" });
+    expect(result.writtenFieldNames).toEqual([]);
+  });
+
+  it("never writes a relation field with no allowedRelationIds passed (e.g. the client's live per-field commit)", () => {
+    const result = applyMagicWriteFields(NODES, { category: "1", tags: "1,2" });
     expect(result.writtenFieldNames).toEqual([]);
   });
 
@@ -141,6 +158,43 @@ describe("applyMagicWriteFields - image fields (Phase 2)", () => {
   it("wraps the value in a single-element array for a multiple: true image field", () => {
     const result = applyMagicWriteFields(NODES, { gallery: "photos/a.jpg" }, new Set(["photos/a.jpg"]));
     expect(result.value.gallery).toEqual(["photos/a.jpg"]);
+  });
+});
+
+describe("applyMagicWriteFields - relation fields (Phase B)", () => {
+  it("drops a manyToOne relation id that isn't in the allowed set for that target type", () => {
+    const result = applyMagicWriteFields(NODES, { category: "1" }, new Set(), new Map([["cat", new Set([2, 3])]]));
+    expect(result.writtenFieldNames).toEqual([]);
+  });
+
+  it("writes a manyToOne relation id once it's allowed, ENCODED the same way content-entries.ts's own encodeRelationIds does - RelationFieldAdapter only ever reads the hashed-string form", () => {
+    const result = applyMagicWriteFields(NODES, { category: "1" }, new Set(), new Map([["cat", new Set([1])]]));
+    expect(result.value.category).toBe(encodeEntryId(1));
+    expect(typeof result.value.category).toBe("string");
+  });
+
+  it("writes only the allowed ids from a manyToMany comma-list, dropping the rest, all ENCODED", () => {
+    const result = applyMagicWriteFields(NODES, { tags: "1,2,3" }, new Set(), new Map([["tag", new Set([1, 3])]]));
+    expect(result.value.tags).toEqual([encodeEntryId(1), encodeEntryId(3)]);
+  });
+
+  it("drops a manyToMany field entirely when none of its ids are allowed", () => {
+    const result = applyMagicWriteFields(NODES, { tags: "9,10" }, new Set(), new Map([["tag", new Set([1, 2])]]));
+    expect(result.writtenFieldNames).toEqual([]);
+  });
+
+  it("keeps a target type's allow-list scoped to that type - an id allowed for 'tag' doesn't leak into 'cat'", () => {
+    const result = applyMagicWriteFields(NODES, { category: "1" }, new Set(), new Map([["tag", new Set([1])]]));
+    expect(result.writtenFieldNames).toEqual([]);
+  });
+
+  it("never writes a relation-mirror field, even with a matching allow-list", () => {
+    const nodes: EntryFieldNode[] = [
+      ...NODES,
+      { kind: "relation-mirror", fieldId: "posts", fieldName: "posts", label: "Posts", resolved: false } as EntryFieldNode,
+    ];
+    const result = applyMagicWriteFields(nodes, { posts: "1" }, new Set(), new Map([["cat", new Set([1])]]));
+    expect(result.writtenFieldNames).toEqual([]);
   });
 });
 

@@ -56,13 +56,16 @@ function previewRow(value: EntryValue): string {
 }
 
 /**
- * Read-only context for every `relation`/`relation-mirror` field on the
- * entry (`status/magic-write.md` decision #2: Magic Write reads linked data
- * to inform what it writes, but never writes to a relation field itself) -
- * one level deep only (a linked row's OWN relations are never followed), a
+ * Read-only preview of what's CURRENTLY linked, for every `relation`/
+ * `relation-mirror` field on the entry (`status/magic-write.md` decision #2)
+ * - one level deep only (a linked row's OWN relations are never followed), a
  * handful of each linked row's own simple fields, and an overall line cap so
  * a heavily-linked entry can't blow up the prompt. Returns `""` when there's
- * nothing to show (no relation fields, or none currently have a value).
+ * nothing to show (no relation fields, or none currently have a value). This
+ * function itself never changes: `status/magic-chat.md`'s Phase B made plain
+ * `relation` fields writable, but through `kind: fetch` +
+ * `ai-magic-write-fields.ts`'s `allowedRelationIds`, not through this preview
+ * - `relation-mirror` stays read-only-only, as it always was.
  */
 export async function loadRelationContext(
   entryAdapter: ContentEntryEngineAdapter,

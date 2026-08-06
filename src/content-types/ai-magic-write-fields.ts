@@ -3,13 +3,18 @@ import type { EntryValue } from "./engine/entry-codec.js";
 import type { ImageFieldConfig, SelectFieldConfig } from "./field-registry.js";
 import { sanitizeAiRichTextHtml } from "./ai-richtext-sanitize.js";
 import type { MagicWriteRawFields, MagicWriteRawValue } from "./ai-magic-write-protocol.js";
+import { encodeEntryId } from "../lib/id-hash.js";
 
 /** The field types Magic Write is allowed to write into - see
- * `status/magic-write.md` decision #2. `relation`/`relation-mirror` are
- * read-only context (never a write target, filtered out before this module
- * ever sees them); `password`/`secretkey` are never exposed to the model at
- * all (excluded from `WRITABLE_COLUMN_TYPES`, same as they're excluded from
- * `ai-magic-write-prompt.ts`'s field description). */
+ * `status/magic-write.md` decision #2. `relation-mirror` stays read-only
+ * context (never a write target - a mirror's "claim/unclaim" write semantics
+ * belong to the field it mirrors, not this one); `password`/`secretkey` are
+ * never exposed to the model at all (excluded from `WRITABLE_COLUMN_TYPES`,
+ * same as they're excluded from `ai-magic-write-prompt.ts`'s field
+ * description). Plain `relation` fields ("ref"/"refs") became writable in
+ * `status/magic-chat.md`'s Phase B, gated by `allowedRelationIds` below -
+ * see `coerceNodeValue`'s relation branch for why a `WRITABLE_COLUMN_TYPES`
+ * check alone can't cover it (a relation isn't a `column` node at all). */
 export const WRITABLE_COLUMN_TYPES = new Set(["text", "richtext", "number", "boolean", "date", "select", "image"]);
 
 export function isEmptyValue(value: unknown): boolean {
@@ -54,6 +59,55 @@ function coerceScalar(node: EntryColumnNode, text: string, allowedImageSrcs: Rea
   }
 }
 
+/** Per-target-type sets of entry ids Magic is actually allowed to link a
+ * relation field to - the relation counterpart to `allowedImageSrcs`, same
+ * "never trust a model-claimed value outright" rationale
+ * (`status/magic-write.md` decision #3). Populated ONLY from this turn's own
+ * `kind: fetch` results (`ai-magic-write.ts`), never accumulated across the
+ * session the way `allowedImageSrcs` is - re-running a cheap internal lookup
+ * is nowhere near the cost of re-sending an image, so there's no need to
+ * remember an id past the turn that fetched it. Keyed by `targetTypeId`
+ * (`EntryRelationNode.targetTypeId`), since a bare numeric id alone is
+ * ambiguous across different content types' tables. */
+export type AllowedRelationIds = ReadonlyMap<string, ReadonlySet<number>>;
+
+/** A `manyToOne` field writes a single scalar id (`author: 12`); `oneToMany`/
+ * `manyToMany` write a comma-separated list (`tags: 12,45,88`) - deliberately
+ * NOT a block sequence like `component-repeat` uses, so this needed zero
+ * changes to the shared YAML-subset parser (ids are still just one plain
+ * scalar line, same grammar rule number/boolean/date/select/image already
+ * use). Every id must appear in `allowed` (this turn's own `kind: fetch`
+ * results for this exact `targetTypeId`) or it's dropped - a relation write
+ * the model never actually looked up via `fetch` is treated the same as one
+ * that doesn't exist, per `status/magic-chat.md`'s "the model can only link
+ * what it's already seen" design (mirrors `allowedImageSrcs` exactly).
+ *
+ * The model's OWN wire format stays a raw engine id throughout (what
+ * `kind: fetch` showed it is exactly what it writes back - no translation
+ * for the model to get wrong) - but the FINAL `EntryValue` this returns
+ * encodes it (`lib/id-hash.ts`'s `encodeEntryId`) before handing it back.
+ * That's not optional: EVERY relation value already flowing through this
+ * app is the hashed-string form the moment it leaves the DB layer
+ * (`content-entries.ts`'s `encodeRelationIds`, run on every GET) - a raw
+ * number here would reach `updateFieldValue` and silently fail to render
+ * (`RelationFieldAdapter`'s `typeof value === "string"` check just falls
+ * through to "no selection") the instant the admin looks at the field,
+ * caught by an actual browser check, not by reading the code. */
+function coerceRelation(node: Extract<EntryFieldNode, { kind: "relation" }>, raw: MagicWriteRawValue, allowedRelationIds: AllowedRelationIds): unknown {
+  if (typeof raw !== "string") return undefined;
+  const allowed = allowedRelationIds.get(node.targetTypeId);
+  if (!allowed || allowed.size === 0) return undefined;
+  if (node.cardinality === "manyToOne") {
+    const id = Number(raw.trim());
+    return Number.isFinite(id) && allowed.has(id) ? encodeEntryId(id) : undefined;
+  }
+  const ids = raw
+    .split(",")
+    .map((piece) => Number(piece.trim()))
+    .filter((id) => Number.isFinite(id) && allowed.has(id));
+  return ids.length > 0 ? ids.map(encodeEntryId) : undefined;
+}
+
 /** Schema-driven, per-node coercion of one field's raw wire value into a
  * real `EntryValue` value - `undefined` means "drop this field" (wrong
  * shape from the model, an out-of-range select option, an unparseable
@@ -64,20 +118,21 @@ function coerceScalar(node: EntryColumnNode, text: string, allowedImageSrcs: Rea
  * against), same "whole value replaced" semantics every other field already
  * has; item-count `min`/`max` isn't enforced here - the normal Save-time
  * `entry-validate.ts` pass still catches that, same as it would for a
- * value typed in by hand. */
-function coerceNodeValue(node: EntryFieldNode, raw: MagicWriteRawValue, allowedImageSrcs: ReadonlySet<string>): unknown {
+ * value typed in by hand (also true for a relation field's `min`/`max`). */
+function coerceNodeValue(node: EntryFieldNode, raw: MagicWriteRawValue, allowedImageSrcs: ReadonlySet<string>, allowedRelationIds: AllowedRelationIds): unknown {
   if (node.kind === "column") {
     if (!WRITABLE_COLUMN_TYPES.has(node.fieldType)) return undefined;
     if (typeof raw !== "string") return undefined;
     return coerceScalar(node, raw, allowedImageSrcs);
   }
+  if (node.kind === "relation") return coerceRelation(node, raw, allowedRelationIds);
   if (node.kind === "flatten") {
     if (typeof raw !== "object" || Array.isArray(raw)) return undefined;
     const nested: EntryValue = {};
     let wroteAny = false;
     for (const child of node.children) {
       if (!(child.fieldName in raw)) continue;
-      const value = coerceNodeValue(child, (raw as MagicWriteRawFields)[child.fieldName]!, allowedImageSrcs);
+      const value = coerceNodeValue(child, (raw as MagicWriteRawFields)[child.fieldName]!, allowedImageSrcs, allowedRelationIds);
       if (value === undefined) continue;
       nested[child.fieldName] = value;
       wroteAny = true;
@@ -93,7 +148,7 @@ function coerceNodeValue(node: EntryFieldNode, raw: MagicWriteRawValue, allowedI
       let wroteAny = false;
       for (const child of node.itemFields) {
         if (!(child.fieldName in rawItem)) continue;
-        const value = coerceNodeValue(child, (rawItem as MagicWriteRawFields)[child.fieldName]!, allowedImageSrcs);
+        const value = coerceNodeValue(child, (rawItem as MagicWriteRawFields)[child.fieldName]!, allowedImageSrcs, allowedRelationIds);
         if (value === undefined) continue;
         item[child.fieldName] = value;
         wroteAny = true;
@@ -127,19 +182,25 @@ export interface ApplyMagicWriteFieldsResult {
  * terminal validation) and the client (`MagicChat.tsx`'s live
  * per-field commit as each one closes while streaming) - both need the
  * exact same rules, so this stays framework/runtime-agnostic (no
- * server-only or DOM-only imports).
+ * server-only or DOM-only imports). `allowedRelationIds` defaults to empty
+ * (nothing allowed) - the client's live per-field commit call never passes
+ * one, so a relation field simply never live-previews mid-stream, same as an
+ * `image` field already doesn't; both only actually land once the server's
+ * authoritative terminal call (which DOES have real ids from this turn's
+ * `fetch` results) applies them.
  */
 export function applyMagicWriteFields(
   nodes: EntryFieldNode[],
   raw: MagicWriteRawFields,
   allowedImageSrcs: ReadonlySet<string> = new Set(),
+  allowedRelationIds: AllowedRelationIds = new Map(),
 ): ApplyMagicWriteFieldsResult {
   const value: EntryValue = {};
   const writtenFieldNames: string[] = [];
   for (const node of nodes) {
-    if (node.kind === "relation" || node.kind === "relation-mirror") continue;
+    if (node.kind === "relation-mirror") continue;
     if (!(node.fieldName in raw)) continue;
-    const coerced = coerceNodeValue(node, raw[node.fieldName]!, allowedImageSrcs);
+    const coerced = coerceNodeValue(node, raw[node.fieldName]!, allowedImageSrcs, allowedRelationIds);
     if (coerced === undefined) continue;
     value[node.fieldName] = coerced;
     writtenFieldNames.push(node.fieldName);

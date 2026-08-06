@@ -15,12 +15,19 @@
  * write. Its own block literal (`text: |`) reuses the exact same streaming
  * mechanism `summary`/field values already use, so a chat reply renders
  * live too. Decision #2 also made the whole parser lenient: a reply that
- * doesn't recognize as `question`/`fields` (missing `kind:`, or a `kind`
- * value that isn't one of the three) is treated as `chat` using the raw
+ * doesn't recognize as `question`/`fields`/`fetch` (missing `kind:`, or a
+ * `kind` value that isn't one of those) is treated as `chat` using the raw
  * text, rather than a hard parse error - only a malformed `question`/
- * `fields` body (a real attempt at structured output gone wrong) still asks
- * the model to retry, since silently swallowing THAT would corrupt what
- * gets written to a field.
+ * `fields`/`fetch` body (a real attempt at structured output gone wrong)
+ * still asks the model to retry, since silently swallowing THAT would
+ * corrupt what gets written to a field (or, for `fetch`, run the wrong
+ * query).
+ *
+ * `status/magic-chat.md` decision #5 (Phase B) added a fourth shape, `kind:
+ * fetch` - all plain scalars (`source`/`typeSlug`/`id`/`search`/`path`), no
+ * block literal. Unlike the other three, never terminal: `ai-magic-write.ts`
+ * executes the query and loops back for another reply instead of closing the
+ * stream - see `MagicWriteFetchTurn`'s own doc comment.
  */
 
 export interface MagicWriteChoice {
@@ -64,7 +71,32 @@ export interface MagicWriteFieldsTurn {
   fields: MagicWriteRawFields;
 }
 
-export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn;
+export type MagicWriteFetchSource = "entries" | "entry" | "media" | "types";
+
+/** `status/magic-chat.md` decision #5 (Phase B) - the model actively looking
+ * up data OUTSIDE this entry, INSIDE drycms itself (never the internet - see
+ * `ai-magic-write-prompt.ts`'s `CAPABILITY_INSTRUCTION`). Never a terminal
+ * turn: `ai-magic-write.ts`'s `streamMagicWrite` executes the query
+ * server-side and loops back for another model reply, capped at a few hops
+ * per admin turn - the client never sees this shape directly, only a
+ * transient status line. All plain scalars (no block literal needed - these
+ * are short technical tokens, not prose). */
+export interface MagicWriteFetchTurn {
+  kind: "fetch";
+  source: MagicWriteFetchSource;
+  /** Required for "entries"/"entry" - the target content type's name. */
+  typeSlug?: string;
+  /** Required for "entry" - which row (the SAME plain numeric id a "ref"/
+   * "refs" field write uses, per `ai-magic-write-fields.ts`'s relation
+   * coercion - never a hashed HTTP-API id). */
+  id?: string;
+  /** Optional free-text filter, "entries" only. */
+  search?: string;
+  /** Optional folder path, "media" only - root when omitted. */
+  path?: string;
+}
+
+export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn | MagicWriteFetchTurn;
 
 export type MagicWriteValidationResult =
   | { ok: true; turn: MagicWriteTurn }
@@ -269,6 +301,30 @@ function validateFieldsTurn(top: MagicWriteRawFields): MagicWriteValidationResul
   return { ok: true, turn: { kind: "fields", summary: summary.trim(), fields } };
 }
 
+const FETCH_SOURCES = new Set<string>(["entries", "entry", "media", "types"]);
+
+function validateFetchTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
+  const source = top.source;
+  if (!isRawString(source) || !FETCH_SOURCES.has(source.trim())) {
+    return { ok: false, error: '"source" must be one of "entries", "entry", "media", "types".' };
+  }
+  const trimmedSource = source.trim() as MagicWriteFetchSource;
+  const typeSlug = isRawString(top.typeSlug) ? top.typeSlug.trim() : "";
+  if ((trimmedSource === "entries" || trimmedSource === "entry") && !typeSlug) {
+    return { ok: false, error: `"typeSlug" is required when source is "${trimmedSource}".` };
+  }
+  const id = isRawString(top.id) ? top.id.trim() : "";
+  if (trimmedSource === "entry" && !id) {
+    return { ok: false, error: '"id" is required when source is "entry".' };
+  }
+  const search = isRawString(top.search) && top.search.trim() ? top.search.trim() : undefined;
+  const path = isRawString(top.path) && top.path.trim() ? top.path.trim() : undefined;
+  return {
+    ok: true,
+    turn: { kind: "fetch", source: trimmedSource, typeSlug: typeSlug || undefined, id: id || undefined, search, path },
+  };
+}
+
 /** `kind: chat` reads its `text:` block literal like any other prose value;
  * falls back to the full raw reply when that's missing/empty (covers both
  * an explicit-but-malformed `kind: chat` and - via `parseMagicWriteYaml`
@@ -300,6 +356,7 @@ export function parseMagicWriteYaml(text: string): MagicWriteValidationResult {
   }
   if (top.kind === "question") return validateQuestionTurn(top);
   if (top.kind === "fields") return validateFieldsTurn(top);
+  if (top.kind === "fetch") return validateFetchTurn(top);
   return coerceChatTurn(top, text);
 }
 

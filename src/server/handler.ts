@@ -13,6 +13,8 @@ import * as pageComponentsRoute from "./routes/page-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as keyValueRoute from "./routes/key-value.js";
 import * as aiRoute from "./routes/ai.js";
+import * as memoryRoute from "./routes/memory.js";
+import * as systemSettingsRoute from "./routes/system-settings.js";
 import { requirePermission, requireSuperAdmin } from "./admin-access.js";
 import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
@@ -57,6 +59,8 @@ const API_ROUTES: Record<string, RouteModule> = {
   auth: authRoute,
   "key-value": keyValueRoute,
   ai: aiRoute,
+  memory: memoryRoute,
+  "system-settings": systemSettingsRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {
@@ -117,11 +121,18 @@ export async function handleApiRequest(
   // `content-types/access.ts`.
   const isPublicStorageRead =
     segment === "storage" && request.method === "GET" && !url.searchParams.has("tree");
+  // The rendered theme stylesheet (`routes/system-settings.ts`) has to load
+  // before the admin shell even knows whether a visitor is signed in (the
+  // login/register screens share the same `.dry` root and its color/font
+  // tokens - see `lib/apply-system-theme.ts`), and carries nothing more
+  // sensitive than the colors/fonts a Super Admin already chose to share
+  // with every user - same public-GET treatment as `storage` above.
+  const isPublicThemeCss = segment === "system-settings" && request.method === "GET";
   const sessionToken = readSessionCookie(request);
   const refreshToken = readRefreshCookie(request);
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
   const session = await resolveSession(request, env, claims);
-  if (segment !== "auth" && !isPublicStorageRead && !session) {
+  if (segment !== "auth" && !isPublicStorageRead && !isPublicThemeCss && !session) {
     return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

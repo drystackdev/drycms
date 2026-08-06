@@ -20,6 +20,7 @@ export interface User {
   roles?: number[]; // relation -> role
   createdAt?: Date;
   updatedAt?: Date;
+  memory?: number[]; // relationmirror -> memory, read-only
 }
 
 export interface Menu {
@@ -72,6 +73,13 @@ export interface Redirect {
   id: number;
   from: string;
   to: string;
+}
+
+export interface Memory {
+  id: number;
+  user: number | null; // relation -> user
+  data?: string;
+  version: number;
 }
 
 export interface Homepage {
@@ -128,6 +136,19 @@ export interface BlogsPage {
   id: number;
   header: BlogsHeader;
   seo: Seo;
+}
+
+export interface SystemSettings {
+  id: number;
+  primaryColor?: string;
+  secondaryColor?: string;
+  infoColor?: string;
+  successColor?: string;
+  warningColor?: string;
+  errorColor?: string;
+  fontFamily: "DM Sans Variable, DM Sans, ui-sans-serif, system-ui, sans-serif" | "Inter, ui-sans-serif, system-ui, sans-serif" | "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" | "ui-serif, Georgia, Cambria, Times New Roman, serif" | "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
+  baseFontSize: number;
+  radius: number;
 }
 
 export interface MenuItem {
@@ -243,6 +264,7 @@ export interface BlogsHeader {
 
 export interface UserRelations {
   roles: Role[];
+  memory: Memory[];
 }
 
 export interface MenuRelations {}
@@ -263,6 +285,10 @@ export interface CategoryRelations {
 
 export interface RedirectRelations {}
 
+export interface MemoryRelations {
+  user: User | null;
+}
+
 export interface HomepageRelations {}
 
 export interface AboutRelations {}
@@ -275,8 +301,10 @@ export interface SeoDefaultsRelations {}
 
 export interface BlogsPageRelations {}
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category" | "redirect";
-export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage";
+export interface SystemSettingsRelations {}
+
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category" | "redirect" | "memory";
+export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage" | "systemSettings";
 
 export interface DryCollectionMap {
   "user": User;
@@ -286,6 +314,7 @@ export interface DryCollectionMap {
   "blog": Blog;
   "category": Category;
   "redirect": Redirect;
+  "memory": Memory;
 }
 
 export interface DrySingletonMap {
@@ -295,6 +324,7 @@ export interface DrySingletonMap {
   "siteSettings": SiteSettings;
   "seoDefaults": SeoDefaults;
   "blogsPage": BlogsPage;
+  "systemSettings": SystemSettings;
 }
 
 export interface DryCollectionRelationsMap {
@@ -305,6 +335,7 @@ export interface DryCollectionRelationsMap {
   "blog": BlogRelations;
   "category": CategoryRelations;
   "redirect": RedirectRelations;
+  "memory": MemoryRelations;
 }
 
 export interface DrySingletonRelationsMap {
@@ -314,6 +345,7 @@ export interface DrySingletonRelationsMap {
   "siteSettings": SiteSettingsRelations;
   "seoDefaults": SeoDefaultsRelations;
   "blogsPage": BlogsPageRelations;
+  "systemSettings": SystemSettingsRelations;
 }
 
 declare global {

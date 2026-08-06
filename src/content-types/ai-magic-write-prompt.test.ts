@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildMagicWriteSystemPrompt, describeFieldsForPrompt } from "./ai-magic-write-prompt.js";
 import type { EntryFieldNode } from "./engine/entry-tree.js";
+import type { ContentTypeDefinition } from "./types.js";
 
 function column(overrides: Partial<EntryFieldNode> & { fieldName: string; fieldType: string }): EntryFieldNode {
   return {
@@ -56,22 +57,70 @@ describe("describeFieldsForPrompt", () => {
     expect(description).toContain('- "heading" (label: "Tiêu đề phần")');
   });
 
-  it("keeps relation and never-exposed field types out of the description", () => {
+  it("keeps password/secretkey and relation-mirror out of the description", () => {
     const nodes: EntryFieldNode[] = [
       column({ fieldName: "password", fieldType: "password", label: "Mật khẩu" }),
+      { kind: "relation-mirror", fieldId: "posts", fieldName: "posts", label: "Posts", resolved: false },
+    ];
+    expect(describeFieldsForPrompt(nodes, {})).toBe("(this content type has no field Magic Write can write to)");
+  });
+
+  it("describes a relation field by its target's NAME (typeSlug), not its internal id (Phase B - now writable)", () => {
+    const nodes: EntryFieldNode[] = [
       {
         kind: "relation",
         fieldId: "category",
         fieldName: "category",
         label: "Danh mục",
         cardinality: "manyToOne",
-        targetTypeId: "cat",
+        targetTypeId: "cat-internal-id",
+        columnName: "category_id",
+        sortable: false,
+        validation: {},
+      },
+      {
+        kind: "relation",
+        fieldId: "tags",
+        fieldName: "tags",
+        label: "Tags",
+        cardinality: "manyToMany",
+        targetTypeId: "tag-internal-id",
+        tableName: "post_tags",
+        sortable: false,
+        validation: {},
+      },
+    ];
+    const allTypes = [
+      { id: "cat-internal-id", kind: "collection", name: "category", label: "Category", fields: [], version: 0 },
+      { id: "tag-internal-id", kind: "collection", name: "tag", label: "Tag", fields: [], version: 0 },
+    ] as ContentTypeDefinition[];
+    const description = describeFieldsForPrompt(nodes, { category: 12, tags: [1, 5] }, allTypes);
+    // "typeSlug" here is deliberately the target's NAME ("category"/"tag"),
+    // NEVER `targetTypeId` ("cat-internal-id"/...) - a real smoke test showed
+    // the model trying the internal id first (a wasted `kind: fetch` hop)
+    // when this only showed the bare id with no hint a different string was
+    // the one `typeSlug` actually matches against.
+    expect(description).toContain('- "category" (label: "Danh mục") (relation, links content type typeSlug "category", one) - current value: 12');
+    expect(description).toContain('- "tags" (relation, links content type typeSlug "tag", many) - current value: [1,5]');
+    expect(description).not.toContain("cat-internal-id");
+    expect(description).not.toContain("tag-internal-id");
+  });
+
+  it("omits a relation field whose target type doesn't exist (broken schema), same degrade-by-omission as loadRelationContext", () => {
+    const nodes: EntryFieldNode[] = [
+      {
+        kind: "relation",
+        fieldId: "category",
+        fieldName: "category",
+        label: "Category",
+        cardinality: "manyToOne",
+        targetTypeId: "does-not-exist",
         columnName: "category_id",
         sortable: false,
         validation: {},
       },
     ];
-    expect(describeFieldsForPrompt(nodes, {})).toBe("(this content type has no field Magic Write can write to)");
+    expect(describeFieldsForPrompt(nodes, {}, [])).toBe("(this content type has no field Magic Write can write to)");
   });
 });
 

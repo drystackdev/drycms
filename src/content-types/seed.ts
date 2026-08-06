@@ -66,6 +66,20 @@ const IDS = {
   redirect: "system-redirect",
   redirectFrom: "system-redirect-from",
   redirectTo: "system-redirect-to",
+  memory: "system-memory",
+  memoryUser: "system-memory-user",
+  memoryData: "system-memory-data",
+  memoryVersion: "system-memory-version",
+  systemSettings: "system-settings",
+  systemSettingsPrimaryColor: "system-settings-primary-color",
+  systemSettingsSecondaryColor: "system-settings-secondary-color",
+  systemSettingsInfoColor: "system-settings-info-color",
+  systemSettingsSuccessColor: "system-settings-success-color",
+  systemSettingsWarningColor: "system-settings-warning-color",
+  systemSettingsErrorColor: "system-settings-error-color",
+  systemSettingsFontFamily: "system-settings-font-family",
+  systemSettingsBaseFontSize: "system-settings-base-font-size",
+  systemSettingsRadius: "system-settings-radius",
 } as const;
 
 /**
@@ -77,18 +91,25 @@ const IDS = {
  * (credentials for third-party AI providers), a `role` collection
  * (role-based access control), a `redirect` collection (301 targets, auto-
  * populated whenever a slugged entry's slug changes - see
- * `content-types/redirects.ts`), and a `seoDefaults` singleton (the one
- * site-wide fallback SEO source - see `dry-seo.ts`'s `seoTierFor`).
- * `menuItem`/`user`/`menu` are plain, ordinary content types the admin can
- * freely rename, edit, or delete, indistinguishable from anything created by
- * hand - EXCEPT `user`/`seoDefaults`, which carry `locked: true` (their
- * table can't be deleted - see `types.ts`) - `user` also has
- * `protectedFieldIds` over its `email`/`password`/`roles` fields (needed for
- * login/permissions, so they can't be edited or removed either, even though
- * the rest of `user`'s fields are as free as any other type's). `seo`,
- * `aiKey`, `role`, and `redirect` carry real restrictions too (`hidden`/
- * `locked`/`frozen` - see `types.ts`'s doc comments), because the role
- * schema is consumed by the auth layer and `system-fields.ts` hardcodes
+ * `content-types/redirects.ts`), a `seoDefaults` singleton (the one
+ * site-wide fallback SEO source - see `dry-seo.ts`'s `seoTierFor`), a
+ * `memory` collection (per-account synced preferences, server-managed only -
+ * see `routes/memory.ts`), and a `systemSettings` singleton (the admin UI's
+ * shared color/typography theme - see `routes/system-settings.ts`).
+ * `menuItem`/`menu` are plain, ordinary content types the admin can freely
+ * rename, edit, or delete, indistinguishable from anything created by hand -
+ * EXCEPT `user`/`seoDefaults`, which carry `locked: true` (their table can't
+ * be deleted - see `types.ts`) - `user` also has `protectedFieldIds` over
+ * its `email`/`password`/`roles` fields (needed for login/permissions, so
+ * they can't be edited or removed either, even though the rest of `user`'s
+ * fields are as free as any other type's). `seo`, `aiKey`, `role`,
+ * `redirect`, `memory`, and `systemSettings` carry real restrictions too
+ * (`hidden`/`locked`/`frozen` - see `types.ts`'s doc comments); `user`/
+ * `seoDefaults` are ALSO `hidden` now (reached through their own pinned
+ * System nav entry instead of the generic Collection/Singleton group - see
+ * `DryLayout.tsx`), even though their schema stays as editable as ever.
+ * `role`/`aiKey`/`redirect` carry restrictions because the role schema is
+ * consumed by the auth layer and `system-fields.ts` hardcodes
  * `seo`'s id - reshaping any of them through the generic schema editor would silently
  * break that. `seoDefaults` is recognized by its fixed id
  * (`SEO_DEFAULTS_TYPE_ID`), not by name, so renaming it (still allowed,
@@ -196,6 +217,12 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "User",
     description: "Accounts able to sign in.",
     features: { timestamps: true },
+    // Reached via its own pinned "Users" nav entry (`DryLayout.tsx`, System
+    // section) instead of the generic Collection nav group - same mechanism
+    // `redirect`/`aiKey` use (see their own comments). Rows still go through
+    // the normal content-entries API under `redirect`/`aiKey`'s same
+    // permission model; only the nav GROUPING moved, not the table shape.
+    hidden: true,
     // The table itself can't be deleted (login depends on it existing), and
     // email/password/roles individually can't be edited or removed either
     // (login/permissions depend on their fixed shape) - every other field
@@ -449,24 +476,209 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     name: "seoDefaults",
     label: "SEO Defaults",
     description: "Site-wide fallback SEO, used by any page that doesn't set its own.",
-    // Not `hidden` - it's ordinary user-facing content (the actual meta
-    // title/description/image an admin fills in), just reached through the
-    // generic singleton editor like `homepage`/`about` rather than a
-    // dedicated page. `locked` only - deleting the table would silently
-    // break the SEO cascade's "Default" layer (`dry-seo.ts`), but nothing
-    // else needs its schema frozen the way `role`/`aiKey`'s do.
+    // Reached via its own pinned "SEO Defaults" nav entry (`DryLayout.tsx`,
+    // System section) instead of the generic Singleton nav group - same
+    // mechanism `redirect`/`aiKey` use for collections, applied here to a
+    // singleton. Still ordinary user-facing content (the actual meta title/
+    // description/image an admin fills in) through the generic singleton
+    // editor - only the nav GROUPING moved. `locked` only - deleting the
+    // table would silently break the SEO cascade's "Default" layer
+    // (`dry-seo.ts`), but nothing else needs its schema frozen the way
+    // `role`/`aiKey`'s do.
+    hidden: true,
     locked: true,
     features: { seo: true },
     fields: [],
     version: 0,
   };
 
-  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults];
+  const memory: ContentTypeDefinition = {
+    id: IDS.memory,
+    kind: "collection",
+    name: "memory",
+    label: "Memory",
+    description: "Per-account synced preferences/history - server-managed only.",
+    // Completely invisible: no dedicated nav entry either, unlike
+    // `role`/`aiKey`/`redirect` (which are `hidden` from the generic
+    // Collection group but still reachable through their own pinned nav
+    // entry + page). This one has neither - the ONLY access path is the
+    // self-service `routes/memory.ts` (`/api/memory`), which always scopes
+    // to the calling session's own `user` id and never goes through the
+    // generic content-entries permission model at all (see that route's own
+    // doc comment) - `hidden`/`locked`/`frozen` here just keep it out of
+    // every admin picker/list, they don't grant any UI access on their own.
+    hidden: true,
+    locked: true,
+    frozen: true,
+    fields: [
+      {
+        id: IDS.memoryUser,
+        name: "user",
+        label: "User",
+        type: "relation",
+        // `manyToOne`, not a real DB-level one-to-one (unsupported by
+        // `RelationCardinality`) - "at most one row per user" is enforced by
+        // `routes/memory.ts` always finding-or-creating by this field before
+        // ever inserting, not by a table constraint.
+        config: { target: IDS.user, cardinality: "manyToOne" },
+        validation: { required: true },
+        order: 0,
+      },
+      {
+        id: IDS.memoryData,
+        name: "data",
+        label: "Data",
+        type: "text",
+        // JSON-serialized blob (no native "json" field type exists yet - see
+        // `field-registry.ts`) - same convention `aiKey.model` already uses
+        // for a structured value stored in a plain text column.
+        config: { multiline: true },
+        validation: {},
+        order: 1,
+      },
+      {
+        id: IDS.memoryVersion,
+        name: "version",
+        label: "Version",
+        type: "number",
+        // Client-visible optimistic-lock counter for the sync protocol
+        // itself (distinct from `ContentTypeDefinition.version`, the
+        // unrelated schema-version counter every type already carries) -
+        // server always bumps this by 1 on a successful write; a client
+        // write carrying a stale version is rejected, never merged.
+        config: { step: 1 },
+        validation: { required: true },
+        default: 0,
+        order: 2,
+      },
+    ],
+    version: 0,
+  };
+
+  const systemSettings: ContentTypeDefinition = {
+    id: IDS.systemSettings,
+    kind: "singleton",
+    name: "systemSettings",
+    label: "System Settings",
+    description: "Admin UI theme (colors/typography), shared by every user - Super Admin only.",
+    // Reached via its own pinned "Settings" nav entry (`DryLayout.tsx`,
+    // already stubbed) instead of the generic Singleton group - same
+    // treatment as `seoDefaults`/`user` above, not because its schema is
+    // frozen (it isn't - an ordinary singleton, editable through the normal
+    // content-entries API), just because a custom color-picker/live-preview
+    // page (`Settings.tsx`) replaces the generic field-loop editor.
+    hidden: true,
+    locked: true,
+    fields: [
+      {
+        id: IDS.systemSettingsPrimaryColor,
+        name: "primaryColor",
+        label: "Primary color",
+        type: "text",
+        config: { placeholder: "#00a76f" },
+        validation: { regex: "^#[0-9a-fA-F]{6}$" },
+        default: "#00a76f",
+        order: 0,
+      },
+      {
+        id: IDS.systemSettingsSecondaryColor,
+        name: "secondaryColor",
+        label: "Secondary color",
+        type: "text",
+        config: { placeholder: "#8e33ff" },
+        validation: { regex: "^#[0-9a-fA-F]{6}$" },
+        default: "#8e33ff",
+        order: 1,
+      },
+      {
+        id: IDS.systemSettingsInfoColor,
+        name: "infoColor",
+        label: "Info color",
+        type: "text",
+        config: { placeholder: "#00b8d9" },
+        validation: { regex: "^#[0-9a-fA-F]{6}$" },
+        default: "#00b8d9",
+        order: 2,
+      },
+      {
+        id: IDS.systemSettingsSuccessColor,
+        name: "successColor",
+        label: "Success color",
+        type: "text",
+        config: { placeholder: "#22c55e" },
+        validation: { regex: "^#[0-9a-fA-F]{6}$" },
+        default: "#22c55e",
+        order: 3,
+      },
+      {
+        id: IDS.systemSettingsWarningColor,
+        name: "warningColor",
+        label: "Warning color",
+        type: "text",
+        config: { placeholder: "#ffab00" },
+        validation: { regex: "^#[0-9a-fA-F]{6}$" },
+        default: "#ffab00",
+        order: 4,
+      },
+      {
+        id: IDS.systemSettingsErrorColor,
+        name: "errorColor",
+        label: "Error color",
+        type: "text",
+        config: { placeholder: "#ff5630" },
+        validation: { regex: "^#[0-9a-fA-F]{6}$" },
+        default: "#ff5630",
+        order: 5,
+      },
+      {
+        id: IDS.systemSettingsFontFamily,
+        name: "fontFamily",
+        label: "Font family",
+        type: "select",
+        config: {
+          options: [
+            "DM Sans Variable, DM Sans, ui-sans-serif, system-ui, sans-serif",
+            "Inter, ui-sans-serif, system-ui, sans-serif",
+            "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+            "ui-serif, Georgia, Cambria, Times New Roman, serif",
+            "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace",
+          ],
+          multiple: false,
+        },
+        validation: { required: true },
+        default: "DM Sans Variable, DM Sans, ui-sans-serif, system-ui, sans-serif",
+        order: 6,
+      },
+      {
+        id: IDS.systemSettingsBaseFontSize,
+        name: "baseFontSize",
+        label: "Base font size (px)",
+        type: "number",
+        config: { step: 1 },
+        validation: { required: true, min: 12, max: 20 },
+        default: 16,
+        order: 7,
+      },
+      {
+        id: IDS.systemSettingsRadius,
+        name: "radius",
+        label: "Corner radius (px)",
+        type: "number",
+        config: { step: 1 },
+        validation: { required: true, min: 0, max: 24 },
+        default: 8,
+        order: 8,
+      },
+    ],
+    version: 0,
+  };
+
+  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings];
 }
 
 /**
  * The list `pendingSeedStatements` treats as "must exist" - an app's own
- * `dry.seed.json` takes over COMPLETELY when present, in place of the 7
+ * `dry.seed.json` takes over COMPLETELY when present, in place of the
  * built-in defaults, not alongside them (`seed:sync`, which produces that
  * file, snapshots the FULL content-type list of a real dev DB, so it already
  * includes copies of `user`/`role`/etc. - see `plans/content-type-seed.md`).
@@ -495,7 +707,7 @@ export function resolveDefaultContentTypeDefinitions(
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
  * component from it even on a run where `menuItem` itself isn't being
  * (re-)created. "Default" here means `resolveDefaultContentTypeDefinitions()`
- * - the packaged app seed when one exists, otherwise the 8 built-in types.
+ * - the packaged app seed when one exists, otherwise the built-in types.
  */
 export function pendingSeedStatements(
   existingNamesLowercase: ReadonlySet<string>,

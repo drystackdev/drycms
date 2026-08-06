@@ -1,6 +1,7 @@
 import type { EntryFieldNode } from "./engine/entry-tree.js";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { SelectFieldConfig } from "./field-registry.js";
+import type { ContentTypeDefinition } from "./types.js";
 import { isEmptyValue, WRITABLE_COLUMN_TYPES } from "./ai-magic-write-fields.js";
 
 function previewValue(value: unknown): string {
@@ -21,8 +22,22 @@ function labelHint(node: EntryFieldNode): string {
   return ` (label: ${JSON.stringify(node.label)})`;
 }
 
-function describeNode(node: EntryFieldNode, value: unknown, indent: string): string[] {
-  if (node.kind === "relation" || node.kind === "relation-mirror") return [];
+function describeNode(node: EntryFieldNode, value: unknown, indent: string, typeNameById: ReadonlyMap<string, string>): string[] {
+  if (node.kind === "relation-mirror") return [];
+  if (node.kind === "relation") {
+    // The `typeSlug` a `kind: fetch`/an "entries"/"entry" lookup actually
+    // matches against is the target's NAME (`ContentTypeDefinition.name`,
+    // e.g. "category"), never its `targetTypeId` (`ContentTypeDefinition.id`,
+    // e.g. "app-category") - shown here as `typeSlug` explicitly, matching
+    // that exact wording, after a real smoke test showed the model trying
+    // the id first (a wasted fetch hop) when this only showed the bare id
+    // with no indication a DIFFERENT string was the one to actually use.
+    const targetName = typeNameById.get(node.targetTypeId);
+    if (!targetName) return []; // dangling target (broken schema) - same degrade-by-omission as entry-relation-context.ts's relationTargetInfo.
+    const description = node.description ? ` - ${node.description}` : "";
+    const arity = node.cardinality === "manyToOne" ? "one" : "many";
+    return [`${indent}- "${node.fieldName}"${labelHint(node)} (relation, links content type typeSlug "${targetName}", ${arity})${description} - current value: ${previewValue(value)}`];
+  }
   if (node.kind === "column") {
     if (!WRITABLE_COLUMN_TYPES.has(node.fieldType)) return [];
     const options = node.fieldType === "select" ? (node.fieldConfig as SelectFieldConfig | undefined)?.options ?? [] : undefined;
@@ -32,13 +47,13 @@ function describeNode(node: EntryFieldNode, value: unknown, indent: string): str
   }
   if (node.kind === "flatten") {
     const nested = (value as EntryValue | undefined) ?? {};
-    const lines = node.children.flatMap((child) => describeNode(child, nested[child.fieldName], `${indent}    `));
+    const lines = node.children.flatMap((child) => describeNode(child, nested[child.fieldName], `${indent}    `, typeNameById));
     if (lines.length === 0) return [];
     return [`${indent}- "${node.fieldName}"${labelHint(node)} (a group of fields - nest under this name in "fields"):`, ...lines];
   }
   if (node.kind === "component-repeat") {
     const items = Array.isArray(value) ? value : [];
-    const itemShape = node.itemFields.flatMap((child) => describeNode(child, undefined, `${indent}    `));
+    const itemShape = node.itemFields.flatMap((child) => describeNode(child, undefined, `${indent}    `, typeNameById));
     if (itemShape.length === 0) return [];
     return [
       `${indent}- "${node.fieldName}"${labelHint(node)} (a repeatable list, currently ${items.length} item${items.length === 1 ? "" : "s"} - a block sequence of mappings under this name) - each item has:`,
@@ -49,10 +64,16 @@ function describeNode(node: EntryFieldNode, value: unknown, indent: string): str
 }
 
 /** Describes every writable field of the entry, with its current value, for
- * the system prompt - recurses into `flatten`/`component-repeat`, skips
- * `relation`/`relation-mirror`/`password`/`secretkey`. */
-export function describeFieldsForPrompt(nodes: EntryFieldNode[], value: EntryValue): string {
-  const lines = nodes.flatMap((node) => describeNode(node, value[node.fieldName], ""));
+ * the system prompt - recurses into `flatten`/`component-repeat`, includes
+ * `relation` (Phase B - `buildMagicWriteSystemPrompt`'s own `kind: fields`
+ * shape documentation explains how one actually gets written), skips
+ * `relation-mirror`/`password`/`secretkey`. `allTypes` is only needed to
+ * resolve a relation's target `id` to its `name` (see `describeNode`'s doc
+ * comment) - pass `[]` for a type known to have no relation fields (every
+ * existing call site before Phase B did, hence the default). */
+export function describeFieldsForPrompt(nodes: EntryFieldNode[], value: EntryValue, allTypes: ContentTypeDefinition[] = []): string {
+  const typeNameById = new Map(allTypes.map((type) => [type.id, type.name]));
+  const lines = nodes.flatMap((node) => describeNode(node, value[node.fieldName], "", typeNameById));
   return lines.length > 0 ? lines.join("\n") : "(this content type has no field Magic Write can write to)";
 }
 
@@ -81,11 +102,14 @@ const SCOPE_INSTRUCTION =
 /** `status/magic-chat.md` decisions #1/#5 - Magic is now a genuine chat, not
  * a one-shot form. Sets the boundary explicitly so the model neither invents
  * abilities it doesn't have (saving/publishing, schema changes, deleting,
- * fetching the web) nor treats every message as a command to write fields. */
+ * the open internet) nor treats every message as a command to write fields.
+ * Phase B added `kind: fetch` for OTHER entries/media/types INSIDE drycms -
+ * narrow and access-checked (`ai-magic-write-fetch.ts`), a world apart from
+ * "the web", which stays a hard no exactly as before. */
 const CAPABILITY_INSTRUCTION = [
   "You are having an ongoing conversation with the admin, not filling out a one-shot form. Keep chatting across turns: after you write fields, the admin may reply to refine, correct, or ask for something else entirely - treat that as a continuation of the same task, not a new one.",
-  "What you CAN do: discuss what to write, ask questions, and write content into the fields listed above (a normal `kind: fields` reply).",
-  "What you CANNOT do, no matter how the admin phrases it: save or publish the entry, create or modify fields/content types, delete anything, upload files, or fetch anything from outside this conversation (no web access, no other entries). If asked for one of these, say so in a `kind: chat` reply and suggest the closest thing you actually can do instead of pretending to do it.",
+  "What you CAN do: discuss what to write, ask questions, write content into the fields listed above (a normal `kind: fields` reply, including choosing a relation field's linked entry/entries), and look up other entries/media/content types inside drycms via `kind: fetch` when that would help (e.g. finding the right category id, checking what similar posts already say, seeing what images are available).",
+  "What you CANNOT do, no matter how the admin phrases it: save or publish the entry, create or modify fields/content types, delete anything, upload files, or access anything outside drycms itself (no web access, no other websites, no search engines). If asked for one of these, say so in a `kind: chat` reply and suggest the closest thing you actually can do instead of pretending to do it.",
 ].join(" ");
 
 function describeImages(imagePaths: string[]): string[] {
@@ -102,7 +126,7 @@ function describeRelationContext(relationContext: string): string[] {
   if (!relationContext.trim()) return [];
   return [
     "",
-    "Linked data on this entry (read-only context - relation fields are never a write target, do not include them in \"fields\"):",
+    'Linked data on this entry (context only - this is a preview of what\'s CURRENTLY linked, not something to copy into "fields"; to actually change a relation field, follow its own instructions above):',
     relationContext,
   ];
 }
@@ -151,7 +175,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "- Indent consistently with exactly 2 spaces per level. Never use tabs.",
     "- Boolean values are the plain scalar text `true` or `false`.",
     "",
-    "There are three possible top-level replies:",
+    "There are four possible top-level replies:",
     "",
     '1. `kind: chat` - an ordinary conversational reply: discussing the task, answering a question about what you can do, acknowledging what you just wrote, or anything else that isn\'t writing field content right now. Shape:',
     "```",
@@ -170,6 +194,8 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "    The written value for a text/richtext field.",
     "  publishedDate: 2026-08-06",
     "  featured: true",
+    "  category: 12",
+    "  tags: 5,9,14",
     "  author:",
     "    name: |",
     "      A value nested under a group-of-fields.",
@@ -179,6 +205,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "      body: |",
     "        <p>...</p>",
     "```",
+    '   A `relation` field (listed above as "relation, links content type typeSlug ..., one" or "..., many") writes a plain numeric id - one bare number for "one" (`category: 12`), a comma-separated list of numbers on one line for "many" (`tags: 5,9,14`), never a block sequence. Use the "content type typeSlug" it names EXACTLY as the `typeSlug` of a `kind: fetch` (below) to find candidates - it is already the right value for that field, not something to guess or reshape. You may ONLY write an id you have actually seen this turn through such a `fetch` or the "Linked data on this entry" context - never invent or guess one; an id you never looked up is silently dropped.',
     '3. `kind: question` - ask a short, closed-ended clarifying question with a handful of concrete choices (prefer writing something reasonable and asking in a follow-up `kind: chat` instead, when the question would be open-ended or there isn\'t a small set of sensible choices). No fixed cap on how many you ask over the course of the conversation - ask whenever it would genuinely help, one at a time. Shape (same fields as the schema wizard, same dialect):',
     "```",
     "kind: question",
@@ -195,7 +222,18 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "    label: |",
     "      Second choice",
     "```",
+    '4. `kind: fetch` - look something up INSIDE drycms before replying (never the web - see the capability note above). Not a reply the admin sees: send it and you will immediately get another turn with the result, so you can fetch a few times in a row (up to a few per admin message) before actually answering with `chat`/`fields`/`question`. Shape - `source` is required, the rest depend on it:',
+    "```",
+    "kind: fetch",
+    "source: entries",
+    "typeSlug: blog",
+    "search: mountain",
+    "```",
+    '   - `source: entries` - up to a handful of rows from another content type. Requires `typeSlug` (its exact name, from the "Content types" lookup below or already known); `search` is optional free text.',
+    '   - `source: entry` - one specific row by id. Requires `typeSlug` and `id` (the plain numeric id, e.g. from an earlier `entries`/`entry` result).',
+    '   - `source: media` - files in the media library. Optional `path` (a folder; omit for the root).',
+    '   - `source: types` - the list of content types that exist, with their names - use this first if you do not already know the right `typeSlug`.',
     "",
-    `Language: the admin reads "${lang}". Write every prose value ("text", "summary", RichText/text content, "question", choice "label"s) in "${lang}". Never translate field names, "kind", "topic", choice "id"s, or the literal tokens true/false.`,
+    `Language: the admin reads "${lang}". Write every prose value ("text", "summary", RichText/text content, "question", choice "label"s) in "${lang}". Never translate field names, "kind", "topic", choice "id"s, "source", or the literal tokens true/false.`,
   ].join("\n");
 }
