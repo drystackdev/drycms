@@ -1,79 +1,26 @@
-import { useRef, useState } from "preact/hooks";
+import { useContext, useRef, useState } from "preact/hooks";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { SparkleIcon } from "../AiSparkleIcon.js";
-import AiKeyPicker, { useAiKeySelection } from "../AiKeyPicker.js";
 import TextField from "../fields/TextField.js";
 import { exportFragmentHtml } from "./html.js";
 import { isInlineSelection, replaceSelectionWithHtml, runCommand } from "./commands.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { diffWords, htmlToPlainText } from "./word-diff.js";
+import { RichTextRewriteContext } from "./ai-rewrite-context.js";
 import type { ToolbarCustomProps } from "./types.js";
-
-const { path, aiMode } = window.__DRY_CONFIG__;
 
 type Stage = "prompt" | "loading" | "preview" | "error";
 
-interface RewriteStreamEvent {
-  delta?: string;
-  html?: string;
-  error?: string;
-}
-
 /**
- * Reads `/api/ai/rewrite-selection`'s SSE stream (see `ai.ts`) - unlike
- * Magic Write's structured YAML turns, this endpoint's reply IS the
- * rewritten HTML fragment directly: `{delta}` chunks of raw model output
- * while it streams (shown as a plain-text preview, not injected into the
- * document mid-stream - see this component's own doc comment), then one
- * final `{html}` event once the server has sanitized the complete text.
- */
-async function requestRewrite(
-  passage: string,
-  instruction: string,
-  inline: boolean,
-  aiKeyName: string | undefined,
-  aiModel: string | undefined,
-  onDelta: (delta: string) => void,
-  signal: AbortSignal,
-): Promise<string> {
-  const response = await fetch(`${path}/api/ai/rewrite-selection`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passage, instruction, inline, aiKeyName, aiModel }),
-    signal,
-  });
-  if (!response.ok || !response.body) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(typeof body.message === "string" ? body.message : "AI request failed.");
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      let event: RewriteStreamEvent;
-      try {
-        event = JSON.parse(line.slice(5).trim());
-      } catch {
-        continue;
-      }
-      if (event.error) throw new Error(event.error);
-      if (event.html !== undefined) return event.html;
-      if (event.delta) onDelta(event.delta);
-    }
-  }
-  throw new Error("AI connection closed unexpectedly.");
-}
-
-/**
- * Toolbar button for `RichTextFieldConfig.aiRewrite` (`status/magic-write.md`
- * Phase 4) - rewrites the CURRENT text selection via a short instruction.
+ * Toolbar button for `RichTextFieldConfig.aiRewrite` - rewrites the CURRENT
+ * text selection via a short instruction. Runs as one more turn of the
+ * SAME Magic Chat conversation this entry already has open
+ * (`RichTextRewriteContext`, `status/richtext-rewrite-shared-chat.md`)
+ * rather than an isolated request - never shows its own AI Key/Model
+ * picker, it reuses whatever Magic Chat itself is using. Hides entirely
+ * (renders nothing) wherever no Magic Chat exists for this field (e.g. the
+ * content-type editor's default-value `RichTextField`).
+ *
  * Deliberately never injects a still-growing/unsanitized reply straight into
  * the document mid-stream (unlike Magic Write's own per-field live commit for
  * a plain "text" field) - a RichText passage always needs
@@ -94,9 +41,13 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
   const abortRef = useRef<AbortController | null>(null);
   const passageRef = useRef("");
   const inlineRef = useRef(false);
-  const aiKey = useAiKeySelection(open);
+  const rewriteApi = useContext(RichTextRewriteContext);
 
-  if (aiMode !== "server") return <></>;
+  if (!rewriteApi) return <></>;
+  // Re-bound to a plain (never-reassigned) `const` so `generate` below - a
+  // separate function scope, where TS's null-narrowing above doesn't reach -
+  // still sees a non-null type without an assertion.
+  const rewrite = rewriteApi;
 
   const preserveSelection = (event: MouseEvent) => event.preventDefault();
 
@@ -121,7 +72,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const html = await requestRewrite(passageRef.current, instruction.trim(), inlineRef.current, aiKey.keyName, aiKey.model, (delta) => {
+      const html = await rewrite.requestRewrite(passageRef.current, instruction.trim(), inlineRef.current, (delta) => {
         setPreview((current) => current + delta);
       }, controller.signal);
       setFinalHtml(html);
@@ -168,8 +119,8 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
               </h3>
             </header>
             <div class="stack">
-              {stage === "prompt" && (
-                <AiKeyPicker selection={aiKey} />
+              {stage === "prompt" && !rewriteApi.ready && (
+                <div class="hint">Choose an AI Key in the Magic chat bubble first.</div>
               )}
               {stage === "prompt" && (
                 <TextField
@@ -222,13 +173,13 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
                 Cancel
               </button>
               {stage === "prompt" && (
-                <button type="button" disabled={!instruction.trim() || !aiKey.ready} onClick={() => void generate()}>
+                <button type="button" disabled={!instruction.trim() || !rewriteApi.ready} onClick={() => void generate()}>
                   Generate
                 </button>
               )}
               {stage === "preview" && (
                 <>
-                  <button type="button" class="outline" disabled={!aiKey.ready} onClick={() => void generate()}>
+                  <button type="button" class="outline" disabled={!rewriteApi.ready} onClick={() => void generate()}>
                     Regenerate
                   </button>
                   <button type="button" onClick={apply}>
@@ -237,7 +188,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
                 </>
               )}
               {stage === "error" && (
-                <button type="button" disabled={!aiKey.ready} onClick={() => void generate()}>
+                <button type="button" disabled={!rewriteApi.ready} onClick={() => void generate()}>
                   Try again
                 </button>
               )}

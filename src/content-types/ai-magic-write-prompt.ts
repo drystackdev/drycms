@@ -175,7 +175,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "- Indent consistently with exactly 2 spaces per level. Never use tabs.",
     "- Boolean values are the plain scalar text `true` or `false`.",
     "",
-    "There are four possible top-level replies:",
+    "There are five possible top-level replies:",
     "",
     '1. `kind: chat` - an ordinary conversational reply: discussing the task, answering a question about what you can do, acknowledging what you just wrote, or anything else that isn\'t writing field content right now. Shape:',
     "```",
@@ -233,7 +233,37 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     '   - `source: entry` - one specific row by id. Requires `typeSlug` and `id` (the plain numeric id, e.g. from an earlier `entries`/`entry` result).',
     '   - `source: media` - files in the media library. Optional `path` (a folder; omit for the root).',
     '   - `source: types` - the list of content types that exist, with their names - use this first if you do not already know the right `typeSlug`.',
+    '5. `kind: rewrite` - ONLY when the admin\'s message is explicitly a rewrite-a-passage request: it will say so directly and include the exact current passage to rewrite. Reply with the FULL rewritten replacement for that exact passage, following whatever HTML-dialect instructions came with that specific request (it may restrict you to inline markup only - read it carefully). Never use this kind for an ordinary chat/fields/question turn, even if the admin\'s own typed message asks you to "rewrite" or "reword" something in a field - that is still a normal `kind: fields` write, not this. Shape:',
+    "```",
+    "kind: rewrite",
+    "html: |",
+    "  <p>...</p>",
+    "```",
     "",
     `Language: the admin reads "${lang}". Write every prose value ("text", "summary", RichText/text content, "question", choice "label"s) in "${lang}". Never translate field names, "kind", "topic", choice "id"s, "source", or the literal tokens true/false.`,
+  ].join("\n");
+}
+
+/**
+ * `status/richtext-rewrite-shared-chat.md` - the actual model-facing message
+ * for a `rewrite` turn. `displayText` is the short text the admin sees as
+ * their own chat bubble (`MagicChat.tsx`'s `Rewrite selection: "..."`) - the
+ * model sees that PLUS the passage's exact current HTML and which HTML
+ * dialect subset is valid for it. `inline` mirrors
+ * `RichTextField/ai-rewrite-button.tsx`'s own `isInlineSelection` check: an
+ * inline-scoped selection lives entirely inside one existing block, so the
+ * reply must never introduce a wrapping block tag that would corrupt it.
+ */
+export function buildRewriteTurnMessage(displayText: string, passage: string, inline: boolean): string {
+  return [
+    displayText,
+    "",
+    "This is a rewrite-a-passage request, not an ordinary chat message - reply with a SINGLE `kind: rewrite` turn (see the reply format above), nothing else.",
+    inline
+      ? 'The passage below is an inline run of text INSIDE a single existing block (e.g. mid-heading, mid-paragraph, mid-list-item) - it is NOT a whole block on its own. The "html" you reply with must be inline markup at most: plain text plus, only where the passage itself already used them, <strong>, <em>, <u>, <a href="...">, <br>. Do NOT wrap it in <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, or <li> - the surrounding block tag already exists in the document and stays exactly as it is; adding one here would corrupt it.'
+      : "The passage below may contain one or more whole blocks - reply using the same RichText HTML dialect described above (no images, no classes, no style attributes, no <div>/<span>).",
+    "",
+    "Passage to rewrite:",
+    passage,
   ].join("\n");
 }

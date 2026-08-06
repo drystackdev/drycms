@@ -97,9 +97,19 @@ describe("defaultContentTypeDefinitions", () => {
     expect(version.default).toBe(0);
   });
 
-  it("systemSettings: 6 hex-validated color fields, a required font family select, required base font size and radius", () => {
+  it("systemSettings: 9 hex-validated color fields (6 intents + background/card/text), a required font family select, required base font size and radius", () => {
     const systemSettings = byName("systemSettings");
-    const colorFields = ["primaryColor", "secondaryColor", "infoColor", "successColor", "warningColor", "errorColor"];
+    const colorFields = [
+      "primaryColor",
+      "secondaryColor",
+      "infoColor",
+      "successColor",
+      "warningColor",
+      "errorColor",
+      "backgroundColor",
+      "cardColor",
+      "textColor",
+    ];
     for (const name of colorFields) {
       const field = systemSettings.fields.find((f) => f.name === name)!;
       expect(field.type).toBe("text");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMagicWriteSystemPrompt, describeFieldsForPrompt } from "./ai-magic-write-prompt.js";
+import { buildMagicWriteSystemPrompt, buildRewriteTurnMessage, describeFieldsForPrompt } from "./ai-magic-write-prompt.js";
 import type { EntryFieldNode } from "./engine/entry-tree.js";
 import type { ContentTypeDefinition } from "./types.js";
 
@@ -133,5 +133,32 @@ describe("buildMagicWriteSystemPrompt", () => {
     });
     expect(prompt).toContain("refer to fields by that label");
     expect(prompt).toContain("MUST be the exact quoted field name, never the label");
+  });
+
+  it("documents kind: rewrite as a fifth reply, restricted to explicit rewrite requests", () => {
+    const prompt = buildMagicWriteSystemPrompt({
+      lang: "English",
+      typeLabel: "Post",
+      fieldsDescription: "(none)",
+    });
+    expect(prompt).toContain("kind: rewrite");
+    expect(prompt).toContain("five possible top-level replies");
+  });
+});
+
+describe("buildRewriteTurnMessage", () => {
+  it("tells the model this is a rewrite request and includes the passage", () => {
+    const message = buildRewriteTurnMessage('Rewrite selection: "shorter"', "<p>Original text.</p>", false);
+    expect(message).toContain('Rewrite selection: "shorter"');
+    expect(message).toContain("rewrite-a-passage request");
+    expect(message).toContain("Passage to rewrite:");
+    expect(message).toContain("<p>Original text.</p>");
+    expect(message).not.toContain("inline run of text");
+  });
+
+  it("adds the inline-only restriction when the selection is inline-scoped", () => {
+    const message = buildRewriteTurnMessage('Rewrite selection: "shorter"', "just a run of text", true);
+    expect(message).toContain("inline run of text");
+    expect(message).toContain("Do NOT wrap it in <p>");
   });
 });

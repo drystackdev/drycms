@@ -12,7 +12,6 @@ import { LogOutIcon, UserIcon } from "./icons/index.js";
 import Popover from "./Popover.js";
 import SidebarToggle from "./SidebarToggle.js";
 import SyncIndicator from "./SyncIndicator.js";
-import ThemeToggle from "./ThemeToggle.js";
 import Toaster from "./Toast.js";
 import type { IconName } from "./icons/index.js";
 const { path } = window.__DRY_CONFIG__;
@@ -551,14 +550,12 @@ export default function DryLayout({ children }: Props) {
                 </button>
               )}
             >
-              {/* Custom `children` (not `items`) so the theme segmented
-               * control can sit above the Profile/Logout actions without
-               * auto-closing the popover on every click - `items` alone
-               * can't mix in non-action content like this. */}
-              <li class="popover-menu-theme" role="none">
-                <ThemeToggle />
-              </li>
-              <li class="popover-menu-separator" role="separator" />
+              {/* Light/dark/system used to live here as a segmented control
+               * above these actions - moved to the Settings page instead
+               * (full-text labels, room to breathe - see `ThemeToggle.tsx`),
+               * since it's a per-device preference someone would only ever
+               * change occasionally, not something worth a permanent slot in
+               * a menu opened constantly for Profile/Logout. */}
               <li role="none">
                 <button type="button" role="menuitem" onClick={() => route(`${path}/profile`)}>
                   <UserIcon /> Profile

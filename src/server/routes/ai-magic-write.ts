@@ -12,8 +12,9 @@ import {
   parseMagicWriteYaml,
   type MagicWriteChoice,
 } from "../../content-types/ai-magic-write-protocol.js";
-import { describeFieldsForPrompt, buildMagicWriteSystemPrompt } from "../../content-types/ai-magic-write-prompt.js";
+import { describeFieldsForPrompt, buildMagicWriteSystemPrompt, buildRewriteTurnMessage } from "../../content-types/ai-magic-write-prompt.js";
 import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
+import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { executeMagicFetch } from "./ai-magic-write-fetch.js";
 import {
   acquireAiStreamSlot,
@@ -56,6 +57,20 @@ interface MagicWriteHttpRequest {
   /** Which of `aiKeyName`'s own configured models to use for this run - see
    * `ai.ts`'s `WizardHttpRequest.aiModel` doc comment, same shape/pairing. */
   aiModel?: string;
+  /** `status/richtext-rewrite-shared-chat.md` - present only when this turn
+   * is a RichText "Rewrite selection" request (`AiRewriteButton`'s own call,
+   * relayed through `MagicChat.tsx`'s shared conversation): the exact current
+   * HTML of the selected passage. When set, `prompt` stays the short display
+   * text shown as the admin's chat bubble, and this field's contents are
+   * appended server-side (`buildRewriteTurnMessage`) to what the model
+   * actually sees, so the bubble/history stay readable while the model still
+   * gets the real passage to rewrite. */
+  rewritePassage?: string;
+  /** Whether `rewritePassage` sits entirely inside ONE existing textblock -
+   * see `ai-rewrite-button.tsx`'s `isInlineSelection` and
+   * `buildRewriteTurnMessage`'s own doc comment. Meaningless without
+   * `rewritePassage`. */
+  rewriteInline?: boolean;
 }
 
 interface MagicWriteImageInput {
@@ -118,6 +133,15 @@ interface MagicWriteValidatedRequest {
   sessionImagePaths: string[];
   aiKeyName: string | undefined;
   aiModel: string | undefined;
+  rewritePassage: string | undefined;
+  rewriteInline: boolean;
+}
+
+function validateRewritePassage(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) throw new Error("Magic rewrite passage must be a non-empty string.");
+  if (value.length > 20_000) throw new Error("That selection is too long.");
+  return value.trim();
 }
 
 function validateMagicWriteHistory(value: unknown): ChatMessage[] {
@@ -167,6 +191,9 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
   if (ai.mode === "server" && !aiKeyName) throw new Error("Choose an AI Key before running Magic.");
 
+  const rewritePassage = validateRewritePassage(body.rewritePassage);
+  const rewriteInline = body.rewriteInline === true;
+
   return {
     typeSlug,
     currentValue,
@@ -176,6 +203,8 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     sessionImagePaths,
     aiKeyName,
     aiModel,
+    rewritePassage,
+    rewriteInline,
   };
 }
 
@@ -261,6 +290,11 @@ interface MagicWriteChatTurnEvent {
   text: string;
 }
 
+interface MagicWriteRewriteTurnEvent {
+  kind: "rewrite";
+  html: string;
+}
+
 function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidatedRequest): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -333,7 +367,15 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           // NOT resent - see `sessionImagePaths` above for how the model
           // keeps a usable reference to them anyway).
           const priming: ChatMessage = { role: "user", text: systemPrompt };
-          const currentTurn: ChatMessage = { role: "user", text: request.prompt, images: chatImages };
+          // `status/richtext-rewrite-shared-chat.md` - a "Rewrite selection"
+          // turn's displayed bubble (`request.prompt`) stays short; the model
+          // itself gets that PLUS the passage/dialect instructions appended
+          // here, never resent on later turns (only the short display text
+          // becomes part of `history` client-side).
+          const currentTurnText = request.rewritePassage
+            ? buildRewriteTurnMessage(request.prompt, request.rewritePassage, request.rewriteInline)
+            : request.prompt;
+          const currentTurn: ChatMessage = { role: "user", text: currentTurnText, images: chatImages };
           let messages: ChatMessage[] = [priming, ...request.history, currentTurn];
           let lastError = "Magic used too many internal lookups without producing a final reply.";
           let dialectAttempt = 0;
@@ -401,11 +443,17 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
               continue;
             }
 
-            let event: MagicWriteFieldsTurnEvent | MagicWriteQuestionTurnEvent | MagicWriteChatTurnEvent;
+            let event: MagicWriteFieldsTurnEvent | MagicWriteQuestionTurnEvent | MagicWriteChatTurnEvent | MagicWriteRewriteTurnEvent;
             if (turn.kind === "question") {
               event = turn;
             } else if (turn.kind === "chat") {
               event = turn;
+            } else if (turn.kind === "rewrite") {
+              // No image-src allowlist here (unlike `fields`' richtext
+              // values) - the rewrite dialect forbids `<img>` entirely
+              // (`buildRewriteTurnMessage`), so the default empty set is
+              // just defense-in-depth against a stray one slipping through.
+              event = { kind: "rewrite", html: sanitizeAiRichTextHtml(turn.html) };
             } else {
               const applied = applyMagicWriteFields(nodes, turn.fields, allowedImageSrcs, allowedRelationIds);
               event = { kind: "fields", summary: turn.summary, fields: applied.value, writtenFieldNames: applied.writtenFieldNames };

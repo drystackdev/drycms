@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path, aiMode } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
@@ -11,6 +11,9 @@ import {
   TrashIcon,
 } from "../components/icons/index.js";
 import MagicChat from "./content-entry-editor/MagicChat.js";
+import { useAiKeySelection } from "../components/AiKeyPicker.js";
+import { RichTextRewriteContext } from "../components/RichTextField/ai-rewrite-context.js";
+import type { RichTextRewriteFn } from "../components/RichTextField/ai-rewrite-context.js";
 import { createHttpFileSource } from "../storage/http-source.js";
 import {
   ContentEntriesApiError,
@@ -182,6 +185,25 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const magicChatImageSource = useMemo(
     () => createHttpFileSource(`${path}/api/storage`),
     [],
+  );
+  // `status/richtext-rewrite-shared-chat.md` - lifted out of `MagicChat.tsx`
+  // so a RichText field's "Rewrite selection" button can see a live `ready`
+  // answer (`rewriteApi.ready` below) as soon as this editor mounts, not
+  // only after the admin has opened the Magic Chat bubble at least once.
+  const aiKey = useAiKeySelection(aiMode === "server");
+  const rewriteFnRef = useRef<RichTextRewriteFn | null>(null);
+  const rewriteApi = useMemo(
+    () =>
+      aiMode === "server"
+        ? {
+            ready: aiKey.ready,
+            requestRewrite: ((passage, instruction, inline, onDelta, signal) => {
+              if (!rewriteFnRef.current) return Promise.reject(new Error("Magic is not ready yet."));
+              return rewriteFnRef.current(passage, instruction, inline, onDelta, signal);
+            }) as RichTextRewriteFn,
+          }
+        : null,
+    [aiKey.ready],
   );
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
@@ -667,7 +689,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const sideFields = leftFields.length > 0 ? rightFields : [];
 
   return (
-    <>
+    <RichTextRewriteContext.Provider value={rewriteApi}>
       {/* Outside the dialog, this same title/Cancel/Preview/Save row is
        * handed to DryLayout's topbar instead (`usePageHeaderActions` above)
        * - `VeiFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
@@ -835,8 +857,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           source={magicChatImageSource}
           canEdit={canEdit}
           veiFrame={veiFrame}
+          aiKey={aiKey}
+          rewriteFnRef={rewriteFnRef}
         />
       )}
-    </>
+    </RichTextRewriteContext.Provider>
   );
 }

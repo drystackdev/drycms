@@ -177,6 +177,104 @@ khi restart dev server để `pendingSeedStatements` chạy lại):
   lại ngay khi chạy riêng - không liên quan tới thay đổi của task này).
 - `bun run build`: client + SSR đều thành công, `Settings` code-split đúng.
 
+## Fix sau báo cáo của user: "setting mà style admin chưa đổi theo"
+
+Root cause xác nhận qua Playwright thật (login + đổi màu + save, không
+reload): cơ chế `@layer` KHÔNG có vấn đề - `computedStyle` sau hard reload
+luôn đúng màu mới. Bug thật: `<link>` theme chỉ fetch 1 lần lúc app boot
+(`apply-system-theme.ts` chạy 1 lần ở module scope) - save ở Settings chỉ
+đổi CSS phía server, tab đang mở không có gì bảo nó fetch lại.
+
+Fix: `apply-system-theme.ts` thêm `reapplySystemTheme()` (đánh dấu link bằng
+`data-dry-system-theme`, tìm lại đúng link đó thay vì tạo link mới, gán lại
+`href` kèm cache-bust `?t=timestamp` để refetch ngay, giữ style cũ áp dụng
+tới khi style mới load xong - không có flash). `Settings.tsx` gọi hàm này
+ngay sau `saveSingleton` thành công. Verify lại bằng Playwright: đổi màu,
+save, đọc `computedPrimary` KHÔNG reload - khớp màu mới ngay lập tức.
+
+Nhân tiện yêu cầu thêm của user ("dark - light - system cần hiện luôn ở
+đây"): thêm section "Theme" ở đầu trang Settings, nhúng `ThemeToggle` có
+sẵn (trước đây chỉ có trong account popover ở sidebar) - ghi rõ đây là
+preference riêng theo máy (`useStore`/`drycms:store`), không phải phần chia
+sẻ chung với `systemSettings`, để tránh nhầm 2 khái niệm.
+
+Verify cuối: `bun run typecheck` sạch (vẫn còn 2 lỗi cũ ở `ai-magic-write.ts`
+- phiên khác đang sửa, không đụng); `bun run test` 927/927 pass; nav sidebar
+đã confirm hiện đủ "Users"/"SEO Defaults"/"Settings" trong mục System qua
+Playwright thật.
+
+## Round 2: kiến trúc CSS color-mix(), showcase live preview, dời Theme toggle
+
+Yêu cầu user: (1) audit token nào tính dựa trên primary/intent mà không tự
+đồng bộ, đổi sang `color-mix()`; (2) dời Theme (dark/light/system) ra khỏi
+popup user, hiện đầy đủ text ở Settings; (3) trang Settings cần showcase
+element thật + cột chỉnh màu, đổi màu live (gợi ý dùng shadow root nạp toàn
+bộ CSS); (4) mở rộng cho phép đổi cả màu card/text/background; (5) layout:
+Theme full-width trên cùng, Preview to bên trái, control nhỏ bên phải,
+preview phải theo theme toggle live.
+
+**Kiến trúc token mới** - `tokens.css`: chỉ base (`--dry-primary` ...) và
+`-foreground` (WCAG contrast, không mix được) còn là giá trị thật; toàn bộ
+`-lighter/-light/-dark/-darker` đổi sang `color-mix(in srgb, white/black P%,
+var(--dry-primary) ...)` (khớp pattern `.soft`/`.badge`/`.alert` sẵn có
+trong `components.css` - không phải kỹ thuật mới trong repo). Bắt luôn 2
+token bị sót thật sự đang lệch: `--dry-shadow-primary`/`--dry-shadow-error`
+trước đây hardcode `rgb(0 167 111/24%)` - CHÍNH LÀ nguyên nhân của bug
+"style admin chưa đổi theo" round trước (không phải do @layer/thứ tự link
+như đoán ban đầu, mà do token phụ này quên tham chiếu `var()`). Dedup
+`--dry-popover`/`--dry-sidebar` → `var(--dry-card)`, `--dry-card-foreground`/
+`--dry-popover-foreground` → `var(--dry-foreground)`.
+
+`lib/color-shades.ts` rút gọn chỉ còn `pickForeground()` (luminance) +
+`isValidHexColor()` - phần lighten/darken cũ xoá hẳn, CSS tự lo.
+
+**Logic dùng chung server+client** - `lib/system-settings-theme.ts` (mới):
+hàm thuần `systemSettingsThemeVars(value)` build map `--dry-token -> value`
+từ 1 object `systemSettings`, dùng CHUNG bởi `routes/system-settings.ts`
+(render `.dry{...}` từ bản đã save) và `ThemePreview.tsx` (render live từ
+form chưa save) - tránh đúng kiểu lệch pha đã gây bug round trước.
+
+**Field mới**: `backgroundColor`/`cardColor`/`textColor` trên
+`systemSettings` (áp dụng như nhau cho light/dark một khi đã set - không cố
+tự sinh cặp light/dark, giữ đơn giản/dễ đoán). Đã PUT schema update lên DB
+dev sống (9 field màu tổng, field cũ 6 giữ nguyên id).
+
+**Showcase preview** (`pages/settings/ThemePreview.tsx`): shadow root
+(`attachShadow`), nạp TOÀN BỘ `src/styles/index.css` qua Vite `?inline`
+(không hand-copy như RichText's `content-shadow-styles.ts` - cần cả bộ
+components.css thật, không phải subset nhỏ) + markup tĩnh (button mọi
+variant, badge mọi variant, alert, card+field) render 1 lần lúc mount; mọi
+đổi màu sau đó chỉ `element.style.setProperty()` trên wrapper `.dry` trong
+shadow - không re-inject CSS, không network, `color-mix()`/`var()` tự lo
+phần còn lại. Theme (light/dark) theo dõi qua `store/theme.ts` (signal mới,
+xem bug cross-component bên dưới).
+
+**Bug phát hiện khi verify + fix ngay**: preview không theo theo khi bấm
+Theme toggle - vì `ThemeToggle`/`ThemePreview` mỗi cái tự `useStore("theme")`
+riêng, `useStore` KHÔNG broadcast giữa các instance (đúng lý do
+`store/dashboard.ts`'s `collapsed` phải là signal, không phải `useStore`
+thường). Fix: thêm `store/theme.ts` (signal, cùng pattern `collapsed`), cả
+`ThemeToggle` và `ThemePreview` đọc chung 1 signal.
+
+**Dời ThemeToggle**: xoá khỏi popup account (`DryLayout.tsx`), xoá luôn CSS
+`.popover-menu-theme` (mồ côi). `ThemeToggle.tsx` giờ luôn hiện text cạnh
+icon (chỉ còn đúng 1 nơi dùng - Settings - đủ chỗ).
+
+**Layout Settings.tsx**: Theme full-width trên cùng (ngoài grid) →
+`.content-entry-editor-grid` (class có sẵn, tái dùng - không viết CSS mới)
+với Preview là con ĐẦU (2fr, trái, to) và stack Brand/Surface/Typography là
+con SAU (1.25fr, phải, nhỏ).
+
+**Verify qua Playwright thật** (lặp lại nhiều vòng theo feedback): xác nhận
+ThemeToggle hết trong popup; label đầy đủ "System/Light/Dark theme"; gõ màu
+Primary mới - preview áp dụng NGAY (chưa bấm Save), đọc computed
+`--dry-shadow-primary` xác nhận đúng công thức `color-mix()` mới; theme.css
+server trả về đúng format rút gọn (base+foreground, không còn 4 shade dư
+thừa); bấm Theme toggle → preview đổi theo (sau fix signal); layout khớp
+yêu cầu (screenshot). Đã reset toàn bộ giá trị test về default sau khi xong.
+
+`bun run typecheck`/`test` (933/933)/`build` đều xanh sau round này.
+
 ## Speed
 
 Hoàn thành trong 1 lượt làm việc liên tục, từ khảo sát tới verify qua dev

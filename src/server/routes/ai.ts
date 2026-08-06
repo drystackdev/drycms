@@ -16,7 +16,6 @@ import {
   parseWizardTurn,
 } from "../../content-types/ai-wizard-protocol.js";
 import { RESERVED_NAMES } from "../../content-types/naming.js";
-import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { handleMagicWrite } from "./ai-magic-write.js";
 
 export interface ChatMessage {
@@ -1093,99 +1092,6 @@ function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Respon
   });
 }
 
-interface RewriteSelectionRequest {
-  passage?: string;
-  instruction?: string;
-  aiKeyName?: string;
-  /** Which of `aiKeyName`'s own configured models to use for this run - see
-   * `WizardHttpRequest.aiModel`, same shape/pairing. */
-  aiModel?: string;
-  /** Whether the client's own selection sat entirely inside ONE existing
-   * textblock (`ai-rewrite-button.tsx`'s `isInlineSelection` - mid-heading,
-   * mid-paragraph, mid-list-item), as opposed to spanning whole blocks. The
-   * reply format has to match: wrapping an inline-scoped reply in its own
-   * `<h2>`/`<p>` would corrupt the surrounding tag the moment the client
-   * splices it back in (see `replaceSelectionWithHtml`'s own `inline` flag
-   * and `html.ts`'s `exportFragmentHtml` doc comment for the full story). */
-  inline?: boolean;
-}
-
-function buildRewriteSelectionSystemPrompt(lang: string, inline: boolean): string {
-  return [
-    "You rewrite a passage of RichText content inside drycms exactly as instructed. Reply with ONLY the rewritten text - no prose, no markdown fences, no explanation of what you changed.",
-    inline
-      ? 'The passage is an inline run of text INSIDE a single existing block (e.g. mid-heading, mid-paragraph, mid-list-item) - it is NOT a whole block on its own. Reply with ONLY inline markup at most: plain text plus, only where the passage itself already used them, <strong>, <em>, <u>, <a href="...">, <br>. Do NOT wrap the reply in <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, or <li> - the surrounding block tag already exists in the document and stays exactly as it is; adding one here would corrupt it.'
-      : 'Use ONLY these HTML tags: <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <a href="...">, <br>. No classes, no style attributes, no <div>/<span>, no images, no tables.',
-    `Write in "${lang}" unless the instruction explicitly asks for a different language.`,
-  ].join("\n");
-}
-
-function extractHtmlFragment(raw: string): string {
-  const fenced = /```(?:html)?\s*([\s\S]*?)```/i.exec(raw);
-  return (fenced ? fenced[1]! : raw).trim();
-}
-
-/**
- * `status/magic-write.md` Phase 4 - unlike Magic Write's own structured YAML
- * turns, this reply IS the rewritten HTML fragment directly (see that file's
- * "RichText chọn đoạn để AI viết lại" section: "không cần đổi protocol").
- * Reuses `runWizardTurn` as-is (a generic "collect one AI reply, surface a
- * mid-stream provider error" helper, nothing wizard-specific about its
- * mechanics) rather than writing a third near-identical copy.
- */
-function streamRewriteSelection(context: DryRouteContext, passage: string, instruction: string, inline: boolean, aiKeyName: string | undefined, aiModel: string | undefined): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      void (async () => {
-        try {
-          const messages: ChatMessage[] = [
-            {
-              role: "user",
-              text: `${buildRewriteSelectionSystemPrompt(ai.lang, inline)}\n\nCurrent passage:\n${passage}\n\nInstruction: ${instruction}`,
-            },
-          ];
-          const result = await runWizardTurn(context, messages, aiKeyName, aiModel, (delta) => {
-            controller.enqueue(streamEvent({ delta }));
-          });
-          const html = sanitizeAiRichTextHtml(extractHtmlFragment(result.text));
-          controller.enqueue(streamEvent({ html }));
-          controller.close();
-        } catch (error) {
-          controller.enqueue(streamEvent({ error: safeAiMessage(error) }));
-          controller.close();
-        }
-      })();
-    },
-  });
-}
-
-function handleRewriteSelection(context: DryRouteContext, body: RewriteSelectionRequest): Response {
-  const passage = typeof body.passage === "string" ? body.passage.trim() : "";
-  if (!passage) return jsonResponse({ error: "invalid_request", message: "Select some text to rewrite first." }, 400);
-  if (passage.length > 20_000) return jsonResponse({ error: "invalid_request", message: "That selection is too long." }, 400);
-  const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
-  if (!instruction) return jsonResponse({ error: "invalid_request", message: "Describe how to rewrite this passage first." }, 400);
-  if (instruction.length > 2_000) return jsonResponse({ error: "invalid_request", message: "That instruction is too long." }, 400);
-  const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
-  const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
-  if (ai.mode === "server" && !aiKeyName) {
-    return jsonResponse({ error: "invalid_request", message: "Choose an AI Key before running this request." }, 400);
-  }
-  const inline = body.inline === true;
-
-  if (!acquireAiStreamSlot()) {
-    return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
-  }
-  const stream = streamRewriteSelection(context, passage, instruction, inline, aiKeyName, aiModel);
-  return new Response(trackAiStream(stream, releaseAiStreamSlot), {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      "X-Accel-Buffering": "no",
-    },
-  });
-}
-
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
   try {
     // Magic Write is scoped by the entry's own edit/setting permission (see
@@ -1195,15 +1101,6 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
     // rejected before ever reaching it.
     if (context.params.slug === "magic-write") {
       return handleMagicWrite(context, await context.request.json());
-    }
-    // "Rewrite selection" (status/magic-write.md Phase 4) has no
-    // content-type/entry context to check a resource permission against -
-    // it only rewrites text the admin already has this RichText field open
-    // to edit, whatever page that is. Any authenticated session is enough
-    // (handler.ts's own central gate already rejects an anonymous request
-    // to this whole segment before dispatch ever reaches here).
-    if (context.params.slug === "rewrite-selection") {
-      return handleRewriteSelection(context, await context.request.json());
     }
     const denied = await requireSuperAdmin(context, "Only Super Admin can use AI chat.");
     if (denied) return denied;

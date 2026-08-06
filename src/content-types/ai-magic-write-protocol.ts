@@ -28,6 +28,13 @@
  * block literal. Unlike the other three, never terminal: `ai-magic-write.ts`
  * executes the query and loops back for another reply instead of closing the
  * stream - see `MagicWriteFetchTurn`'s own doc comment.
+ *
+ * `status/richtext-rewrite-shared-chat.md` added a fifth shape, `kind:
+ * rewrite` - a single `html: |` block literal, the full rewritten
+ * replacement for one RichText passage. Only ever valid as the reply to an
+ * explicit per-turn "rewrite this exact passage" request (see
+ * `ai-magic-write-prompt.ts`'s `buildRewriteTurnMessage`) - never something
+ * the model reaches for on its own.
  */
 
 export interface MagicWriteChoice {
@@ -96,7 +103,16 @@ export interface MagicWriteFetchTurn {
   path?: string;
 }
 
-export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn | MagicWriteFetchTurn;
+/** The full rewritten replacement for one RichText passage - see this file's
+ * own doc comment. `html` follows whatever inline-vs-block dialect subset
+ * that turn's own request specified (never re-stated here; the protocol
+ * layer doesn't know about that distinction). */
+export interface MagicWriteRewriteTurn {
+  kind: "rewrite";
+  html: string;
+}
+
+export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn | MagicWriteFetchTurn | MagicWriteRewriteTurn;
 
 export type MagicWriteValidationResult =
   | { ok: true; turn: MagicWriteTurn }
@@ -325,6 +341,12 @@ function validateFetchTurn(top: MagicWriteRawFields): MagicWriteValidationResult
   };
 }
 
+function validateRewriteTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
+  const html = top.html;
+  if (!isRawString(html) || !html.trim()) return { ok: false, error: '"html" must be a non-empty string.' };
+  return { ok: true, turn: { kind: "rewrite", html: html.trim() } };
+}
+
 /** `kind: chat` reads its `text:` block literal like any other prose value;
  * falls back to the full raw reply when that's missing/empty (covers both
  * an explicit-but-malformed `kind: chat` and - via `parseMagicWriteYaml`
@@ -357,6 +379,7 @@ export function parseMagicWriteYaml(text: string): MagicWriteValidationResult {
   if (top.kind === "question") return validateQuestionTurn(top);
   if (top.kind === "fields") return validateFieldsTurn(top);
   if (top.kind === "fetch") return validateFetchTurn(top);
+  if (top.kind === "rewrite") return validateRewriteTurn(top);
   return coerceChatTurn(top, text);
 }
 

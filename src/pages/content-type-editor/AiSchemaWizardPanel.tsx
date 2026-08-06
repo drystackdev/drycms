@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 
 import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
 import { toast } from "../../components/Toast.js";
-import { ArrowRightIcon, XIcon } from "../../components/icons/index.js";
+import { ArrowRightIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { normalizeFieldOrder } from "../../content-types/naming.js";
 import { saveDraft, drafts, getDraft } from "../../content-types/draft-store.js";
@@ -23,13 +23,10 @@ interface WizardHistoryMessage {
 }
 
 export interface AiSchemaWizardPanelProps {
-  open: boolean;
   /** Every content type (including hidden ones) currently known on the
    * client - used, merged with pending drafts, both to ground the model's
    * "existing types" context and to validate proposed names/relations. */
   allDefinitions: ContentTypeDefinition[];
-  /** Called once at least one table is successfully staged as a draft. */
-  onStaged?: () => void;
 }
 
 type Stage = "start" | "loading" | "turn" | "error";
@@ -248,23 +245,29 @@ function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined })
 
 /**
  * Content Types "Ask AI" panel (see `status/ai-schema-wizard.md`) - a
- * choice-driven interview, never a free-text chat box. Rendered by
- * `BuilderContentType` as a second grid column beside the content-types
- * list (`>= 64rem`) or as a second tab replacing it (`< 64rem`), rather
- * than a modal dialog, specifically so the list stays visible and usable
- * alongside it wherever screen width allows: the list itself, updating
- * live as drafts land, IS the review step. A `proposal` turn is therefore
- * terminal AND non-interactive - the moment one validates, every table in
- * it is staged as a draft (`applyProposal`) and the panel closes, no
- * confirm click. Content Types already reviews every draft again before it
- * touches the database ("Apply Builder"); an admin who wants to drop or
- * adjust something the AI proposed does it there, or in the normal schema
- * editor - not through a second confirm layer in this panel.
+ * choice-driven interview, never a free-text chat box (a different domain
+ * and JSON dialect from `MagicChat.tsx`'s free-form entry-content chat -
+ * this component does NOT share that one's conversation/protocol/history,
+ * only its floating-widget PRESENTATION, ported here so the two read as one
+ * consistent pattern across the app). Bubble + non-modal popover panel,
+ * same `popover="manual"` top-layer mechanism `MagicChat.tsx`/`Toast.tsx`
+ * use - the content-types list underneath stays visible/usable while open
+ * (the list itself, updating live as drafts land, IS the review step for a
+ * `proposal` turn). Self-contained `open` state (no prop) - like
+ * `MagicChat`, nothing outside this component needs to know or control it.
+ * A `proposal` turn is terminal but NOT panel-closing: `applyProposal`
+ * stages every table as a draft and resets back to the start step (own doc
+ * comment below) rather than closing, so another goal can be asked right
+ * away. Content Types reviews every draft again before it touches the
+ * database ("Apply Builder"); an admin who wants to drop or adjust
+ * something the AI proposed does it there, or in the normal schema editor -
+ * not through a second confirm layer in this panel.
  */
 export default function AiSchemaWizardPanel({
-  open,
   allDefinitions,
 }: AiSchemaWizardPanelProps) {
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("start");
   const [turn, setTurn] = useState<WizardQuestionTurn | null>(null);
   const [history, setHistory] = useState<WizardHistoryMessage[]>([]);
@@ -273,6 +276,15 @@ export default function AiSchemaWizardPanel({
   const [lastGoal, setLastGoal] = useState<string | undefined>(undefined);
   const partialTurn = useMemo(() => parsePartialWizardTurn(streamingText), [streamingText]);
   const aiKey = useAiKeySelection(open);
+
+  // Floats the whole widget in the browser's top layer - same mechanism
+  // `MagicChat.tsx`/`Toast.tsx` use, see this file's own doc comment above.
+  useEffect(() => {
+    const el = widgetRef.current;
+    if (!el) return;
+    el.setAttribute("popover", "manual");
+    el.showPopover?.();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -284,13 +296,13 @@ export default function AiSchemaWizardPanel({
   }, [open]);
 
   /** Stages every proposed table as a draft directly - client-side, no AI
-   * round-trip. Never closes the panel itself: now that it's a persistent
-   * column/tab rather than an overlay, closing it after every successful
-   * proposal would just force the admin to reopen it to ask for the next
-   * table. Instead it resets back to the start step (same shape `open`'s
-   * effect above resets to on a fresh open) so another goal can be typed
-   * right away, while the newly staged draft(s) show up live in the list
-   * beside/under it. */
+   * round-trip. Never closes the panel itself: closing it after every
+   * successful proposal would just force the admin to reopen it to ask for
+   * the next table. Instead it resets back to the start step (same shape
+   * `open`'s effect above resets to on a fresh open) so another goal can be
+   * typed right away, while the newly staged draft(s) show up live in the
+   * list underneath - matches `MagicChat.tsx`'s own "stay open, keep
+   * chatting" behavior after a `fields` write turn. */
   function applyProposal(proposal: WizardProposalTurn) {
     const mapped = mapWizardTables(proposal.tables, mergedAllTypes(allDefinitions));
     const succeeded = mapped.filter((result) => result.ok);
@@ -358,9 +370,17 @@ export default function AiSchemaWizardPanel({
   }
 
   return (
-    <div id="ai-wizard-panel" class={`ai-wizard-panel${open ? " open" : ""}`} aria-hidden={!open}>
+    <div ref={widgetRef} class="ai-wizard-widget">
       {open && (
-        <>
+        <div class="ai-wizard-panel">
+          <header class="row justify-between align-center">
+            <h3>
+              <SparkleIcon /> Ask AI
+            </h3>
+            <button type="button" class="ghost icon sm" aria-label="Minimize" onClick={() => setOpen(false)}>
+              —
+            </button>
+          </header>
           <div class="ai-wizard-key-picker">
             <AiKeyPicker selection={aiKey} />
           </div>
@@ -386,7 +406,21 @@ export default function AiSchemaWizardPanel({
               <QuestionStep turn={turn} busy={false} onAnswer={answer} />
             )}
           </div>
-        </>
+        </div>
+      )}
+
+      {!open && (
+        <button
+          type="button"
+          class={`ai-wizard-bubble${stage === "loading" ? " busy" : ""}`}
+          data-tooltip="Ask AI"
+          aria-label="Ask AI"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        >
+          <SparkleIcon />
+          {stage === "loading" && <span class="ai-wizard-bubble-spinner" />}
+        </button>
       )}
     </div>
   );

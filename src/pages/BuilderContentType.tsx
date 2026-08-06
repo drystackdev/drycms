@@ -23,7 +23,6 @@ import {
   fieldTypeIcons,
 } from "../components/fields/field-type-icons.js";
 import { PlusIcon, UploadIcon } from "../components/icons/index.js";
-import { SparkleIcon } from "../components/AiSparkleIcon.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
@@ -332,7 +331,6 @@ export default function BuilderContentType() {
   const [addingKind, setAddingKind] = useState<ContentTypeKind | null>(null);
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [applyBuilderId, setApplyBuilderId] = useState<string | null>(null);
-  const [aiWizardOpen, setAiWizardOpen] = useState(false);
   const [search, setSearch] = useState("");
   const api = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
@@ -407,15 +405,6 @@ export default function BuilderContentType() {
           </p>
         </div>
         <div class="row">
-          <button
-            type="button"
-            class="outline builder-ai-header-button"
-            aria-busy={definitions ? false : true}
-            disabled={!definitions}
-            onClick={() => setAiWizardOpen(!aiWizardOpen)}
-          >
-            <SparkleIcon /> Ask AI
-          </button>
           {pendingCount > 0 && (
             <button
               type="button"
@@ -429,34 +418,7 @@ export default function BuilderContentType() {
         </div>
       </div>
 
-      <div
-        class="builder-content-type-tabs"
-        role="tablist"
-        aria-label="Content type panels"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!aiWizardOpen}
-          aria-controls="builder-collections-panel"
-          onClick={() => setAiWizardOpen(false)}
-        >
-          Content Types
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={aiWizardOpen}
-          aria-controls="ai-wizard-panel"
-          onClick={() => setAiWizardOpen(true)}
-        >
-          <SparkleIcon /> Ask AI
-        </button>
-      </div>
-
-      <div
-        class={`builder-content-type-layout${aiWizardOpen ? " ai-open" : ""}`}
-      >
+      <div class="builder-content-type-layout">
         <section class="card builder-panel" id="builder-collections-panel">
           <header class="row justify-between">
             <div class="spacer">
@@ -514,11 +476,8 @@ export default function BuilderContentType() {
             />
           </div>
         </section>
-        <AiSchemaWizardPanel
-          open={aiWizardOpen}
-          allDefinitions={definitions ?? []}
-        />
       </div>
+      <AiSchemaWizardPanel allDefinitions={definitions ?? []} />
       <CollectionEditorDialog
         id={editingId}
         addingKind={addingKind}

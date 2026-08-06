@@ -204,6 +204,26 @@ describe("parseMagicWriteYaml - fetch turn", () => {
   });
 });
 
+describe("parseMagicWriteYaml - rewrite turn", () => {
+  it("parses the rewritten html block literal", () => {
+    const doc = ["kind: rewrite", "html: |", "  <p>Rewritten passage.</p>"].join("\n");
+    const result = parseMagicWriteYaml(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "rewrite", html: "<p>Rewritten passage.</p>" });
+  });
+
+  it("rejects a rewrite turn with no html", () => {
+    const result = parseMagicWriteYaml("kind: rewrite");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a rewrite turn with an empty html block", () => {
+    const result = parseMagicWriteYaml("kind: rewrite\nhtml: |\n");
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("extractMagicWriteYaml", () => {
   it("strips a markdown fence", () => {
     const wrapped = "```yaml\nkind: fields\nsummary: |\n  s\nfields:\n  a: |\n    b\n```";

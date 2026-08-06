@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { MutableRef } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
-import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
+import AiKeyPicker from "../../components/AiKeyPicker.js";
+import type { AiKeySelection } from "../../components/AiKeyPicker.js";
+import type { RichTextRewriteFn } from "../../components/RichTextField/ai-rewrite-context.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { CloseIcon, EraserIcon, PlusIcon } from "../../components/icons/index.js";
 import FileManager from "../../components/FileManager/FileManager.js";
@@ -89,7 +92,17 @@ interface MagicChatChatResult {
   text: string;
 }
 
-type MagicChatTurnResult = MagicChatFieldsResult | MagicChatQuestionResult | MagicChatChatResult;
+/** `status/richtext-rewrite-shared-chat.md` - the terminal result of a
+ * RichText "Rewrite selection" turn (`requestRewrite` below). `html` is
+ * already server-sanitized (`ai-magic-write.ts`); `AiRewriteButton` still
+ * runs it through `sanitizeAiRichTextHtml` again before splicing it into the
+ * document, same defense-in-depth every other AI-written HTML path uses. */
+interface MagicChatRewriteResult {
+  kind: "rewrite";
+  html: string;
+}
+
+type MagicChatTurnResult = MagicChatFieldsResult | MagicChatQuestionResult | MagicChatChatResult | MagicChatRewriteResult;
 
 interface MagicChatStreamEvent {
   delta?: string;
@@ -193,6 +206,18 @@ export interface MagicChatProps {
    * `VeiFrame.tsx`) and shifts `Toaster` to `bottom-start` to avoid its own
    * dock - the bubble/panel mirror that same shift so they don't collide. */
   veiFrame?: boolean;
+  /** Lifted up to `ContentEntryEditor.tsx` (`status/richtext-rewrite-shared-chat.md`)
+   * so it loads as soon as the entry editor mounts, not just after the
+   * bubble is first opened - `RichTextRewriteContext`'s `ready` flag (read
+   * by `AiRewriteButton` before it ever opens this panel) needs a live
+   * answer immediately, not only once the admin has clicked the bubble. */
+  aiKey: AiKeySelection;
+  /** Published a fresh `requestRewrite` closure into this ref on every
+   * render (see the `useEffect` below) - `ContentEntryEditor.tsx`'s
+   * `RichTextRewriteContext` value calls through it imperatively, since the
+   * actual turn-running state (`historyRef`, `runAssistant`, session
+   * persistence) all lives inside this component, not the context itself. */
+  rewriteFnRef: MutableRef<RichTextRewriteFn | null>;
 }
 
 export default function MagicChat({
@@ -205,13 +230,14 @@ export default function MagicChat({
   source,
   canEdit,
   veiFrame = false,
+  aiKey,
+  rewriteFnRef,
 }: MagicChatProps) {
   const writableNodes = useMemo(() => nodes.filter(isMagicChatCandidate), [nodes]);
   const fieldLabel = (name: string) => writableNodes.find((candidate) => candidate.fieldName === name)?.label ?? name;
 
   const widgetRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [everOpened, setEverOpened] = useState(false);
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [prompt, setPrompt] = useState("");
   const [attachedPaths, setAttachedPaths] = useState<string[]>([]);
@@ -220,8 +246,6 @@ export default function MagicChat({
   const [streamingFieldName, setStreamingFieldName] = useState<string | null>(null);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showNewMessagesChip, setShowNewMessagesChip] = useState(false);
-
-  const aiKey = useAiKeySelection(everOpened);
 
   const historyRef = useRef<MagicChatHistoryMessage[]>([]);
   const sessionImagePathsRef = useRef<string[]>([]);
@@ -242,10 +266,6 @@ export default function MagicChat({
     },
     [],
   );
-
-  useEffect(() => {
-    if (open) setEverOpened(true);
-  }, [open]);
 
   // Floats the whole widget in the browser's top layer, same mechanism
   // `Toast.tsx` uses - see this file's own doc comment above.
@@ -420,6 +440,14 @@ export default function MagicChat({
       return;
     }
 
+    if (partial.kind === "rewrite") {
+      // The growing `html:` block itself is deliberately not shown here (raw,
+      // unsanitized, mid-tag HTML reads as garbled text) - `AiRewriteButton`
+      // gets its own live preview via `rewriteRequest.onDelta` below instead.
+      updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: "Rewriting the passage…" } : bubble));
+      return;
+    }
+
     // "chat", or not yet known (still nothing but a growing `kind:` line) -
     // both render as a plain growing assistant bubble; an unrecognized/
     // missing `kind` resolves as chat too (see `parseMagicWriteYaml`'s own
@@ -427,7 +455,18 @@ export default function MagicChat({
     updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: partial.text ?? "" } : bubble));
   }
 
-  async function runAssistant(userText: string, images: MagicChatEncodedImage[], assistantBubbleId: string) {
+  /** Distinguishes a `requestRewrite` (below) call from every other
+   * `runAssistant` caller (`sendTurn`/`handleAnswerQuestion`/`handleRetry`,
+   * none of which pass this) - see `status/richtext-rewrite-shared-chat.md`. */
+  interface RewriteRequest {
+    passage: string;
+    inline: boolean;
+    onDelta: (delta: string) => void;
+    resolve: (html: string) => void;
+    reject: (error: Error) => void;
+  }
+
+  async function runAssistant(userText: string, images: MagicChatEncodedImage[], assistantBubbleId: string, rewriteRequest?: RewriteRequest) {
     setSending(true);
     stopReasonRef.current = null;
     rawTextRef.current = "";
@@ -447,8 +486,12 @@ export default function MagicChat({
           sessionImagePaths: sessionImagePathsRef.current,
           aiKeyName: aiKey.keyName,
           aiModel: aiKey.model,
+          ...(rewriteRequest ? { rewritePassage: rewriteRequest.passage, rewriteInline: rewriteRequest.inline } : {}),
         },
-        (delta) => handleDelta(assistantBubbleId, delta),
+        (delta) => {
+          handleDelta(assistantBubbleId, delta);
+          rewriteRequest?.onDelta(delta);
+        },
         () => {
           rawTextRef.current = "";
         },
@@ -471,16 +514,24 @@ export default function MagicChat({
         const turn = result.turn;
         updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "assistant", text: turn.text, streaming: false }));
         assistantHistoryText = turn.text;
+        rewriteRequest?.reject(new Error("Magic replied without a rewrite - see its message in the chat panel."));
       } else if (result.turn.kind === "question") {
         const turn = result.turn;
         updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "question", question: turn.question, choices: turn.choices, multi: turn.multi, allowOther: turn.allowOther }));
         assistantHistoryText = turn.question;
+        rewriteRequest?.reject(new Error("Magic asked a question instead of rewriting - answer it in the chat panel, then try Rewrite again."));
+      } else if (result.turn.kind === "rewrite") {
+        const turn = result.turn;
+        assistantHistoryText = "Rewrote the passage.";
+        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: assistantHistoryText }));
+        rewriteRequest?.resolve(turn.html);
       } else {
         const turn = result.turn;
         for (const name of turn.writtenFieldNames) updateFieldValue(name, turn.fields[name]);
         const names = turn.writtenFieldNames.map(fieldLabel);
         assistantHistoryText = names.length > 0 ? `Wrote: ${names.join(", ")}${turn.summary ? ` — ${turn.summary}` : ""}` : `Nothing needed writing.${turn.summary ? ` — ${turn.summary}` : ""}`;
         updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: assistantHistoryText }));
+        rewriteRequest?.reject(new Error("Magic wrote fields instead of a rewrite - see the chat panel."));
       }
       historyRef.current = [...historyForThisTurn, { role: "user", text: userText }, { role: "assistant", text: assistantHistoryText }];
       sessionImagePathsRef.current = [...new Set([...sessionImagePathsRef.current, ...images.map((image) => image.path)])];
@@ -498,12 +549,14 @@ export default function MagicChat({
           // `status/magic-chat.md` decision B.
           historyRef.current = [...historyForThisTurn, { role: "user", text: userText }];
         }
+        rewriteRequest?.reject(new Error("Stopped."));
         return;
       }
       setStreaming(null);
       setSending(false);
       const message = error instanceof Error ? error.message : "AI request failed.";
       updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "error", text: message, retryText: userText, retryImages: images }));
+      rewriteRequest?.reject(new Error(message));
     }
   }
 
@@ -520,6 +573,39 @@ export default function MagicChat({
     const assistantBubbleId = pushAssistantPlaceholder();
     void runAssistant(userText, images, assistantBubbleId);
   }
+
+  /** `RichTextRewriteContext`'s implementation (`status/richtext-rewrite-shared-chat.md`)
+   * - published into `rewriteFnRef` below, called by `AiRewriteButton`
+   * anywhere in this entry's form. Runs the rewrite as one more turn of THIS
+   * conversation (opens the panel, shares `historyRef`/`aiKey`) rather than
+   * an isolated request, so the model has the whole entry's context. Only
+   * one turn (composer OR rewrite) can run at a time - `abortRef`/`sending`
+   * are shared singleton state, same as every other entry point into
+   * `runAssistant`. */
+  function requestRewrite(passage: string, instruction: string, inline: boolean, onDelta: (delta: string) => void, signal: AbortSignal): Promise<string> {
+    if (sending) return Promise.reject(new Error("Magic is busy with another request - try again shortly."));
+    setOpen(true);
+    const displayText = `Rewrite selection: "${instruction}"`;
+    return new Promise<string>((resolve, reject) => {
+      const userBubbleId = newId();
+      setMessages((current) => [...current, { id: userBubbleId, role: "user", text: displayText, imagePaths: [] }]);
+      wasNearBottomRef.current = true;
+      const assistantBubbleId = pushAssistantPlaceholder();
+      void runAssistant(displayText, [], assistantBubbleId, { passage, inline, onDelta, resolve, reject });
+      // `runAssistant` sets `abortRef.current` synchronously before its first
+      // `await`, so it's already populated by the time this listener is
+      // attached right after the (fire-and-forget) call above returns.
+      signal.addEventListener("abort", () => abortRef.current?.abort(), { once: true });
+    });
+  }
+
+  // Re-published every render (not just once) so the closure `AiRewriteButton`
+  // eventually calls always sees the CURRENT `aiKey`/`typeSlug`/`entryId` -
+  // safe with no dependency array since a click can only ever happen after
+  // mount, by which point this has already run at least once.
+  useEffect(() => {
+    rewriteFnRef.current = requestRewrite;
+  });
 
   async function handleComposerSubmit() {
     const text = prompt.trim();

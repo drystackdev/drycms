@@ -24,45 +24,54 @@
     --dry-grey-channel: 145 158 171;
 
     /* ----------------------------------------------------------- Intents */
-    --dry-primary-lighter: #c8fad6;
-    --dry-primary-light: #5be49b;
+    /* Only the BASE (`--dry-primary` etc) and `-foreground` (a contrast
+     * pick, not a blend - see `lib/color-shades.ts`) are real, independently
+     * settable colors. `-lighter`/`-light`/`-dark`/`-darker` are DERIVED via
+     * `color-mix()` from the base, same primitive `.soft`/`.badge`/`.alert`
+     * below already use for their own translucent fills - so a single
+     * `--dry-primary` override (`routes/system-settings.ts`) is enough to
+     * recolor every shade that depends on it, with nothing to keep in sync
+     * by hand. Percentages picked to land close to the original hand-tuned
+     * Minimals values at the shipped defaults, not an exact reproduction. */
     --dry-primary: #00a76f;
-    --dry-primary-dark: #007867;
-    --dry-primary-darker: #004b50;
+    --dry-primary-lighter: color-mix(in srgb, white 82%, var(--dry-primary) 18%);
+    --dry-primary-light: color-mix(in srgb, white 45%, var(--dry-primary) 55%);
+    --dry-primary-dark: color-mix(in srgb, black 25%, var(--dry-primary) 75%);
+    --dry-primary-darker: color-mix(in srgb, black 45%, var(--dry-primary) 55%);
     --dry-primary-foreground: #ffffff;
 
-    --dry-secondary-lighter: #efd6ff;
-    --dry-secondary-light: #c684ff;
     --dry-secondary-main: #8e33ff;
-    --dry-secondary-dark: #5119b7;
-    --dry-secondary-darker: #27097a;
+    --dry-secondary-lighter: color-mix(in srgb, white 82%, var(--dry-secondary-main) 18%);
+    --dry-secondary-light: color-mix(in srgb, white 45%, var(--dry-secondary-main) 55%);
+    --dry-secondary-dark: color-mix(in srgb, black 25%, var(--dry-secondary-main) 75%);
+    --dry-secondary-darker: color-mix(in srgb, black 45%, var(--dry-secondary-main) 55%);
 
-    --dry-info-lighter: #cafdf5;
-    --dry-info-light: #61f3f3;
     --dry-info: #00b8d9;
-    --dry-info-dark: #006c9c;
-    --dry-info-darker: #003768;
+    --dry-info-lighter: color-mix(in srgb, white 82%, var(--dry-info) 18%);
+    --dry-info-light: color-mix(in srgb, white 45%, var(--dry-info) 55%);
+    --dry-info-dark: color-mix(in srgb, black 25%, var(--dry-info) 75%);
+    --dry-info-darker: color-mix(in srgb, black 45%, var(--dry-info) 55%);
     --dry-info-foreground: #ffffff;
 
-    --dry-success-lighter: #d3fcd2;
-    --dry-success-light: #77ed8b;
     --dry-success: #22c55e;
-    --dry-success-dark: #118d57;
-    --dry-success-darker: #065e49;
+    --dry-success-lighter: color-mix(in srgb, white 82%, var(--dry-success) 18%);
+    --dry-success-light: color-mix(in srgb, white 45%, var(--dry-success) 55%);
+    --dry-success-dark: color-mix(in srgb, black 25%, var(--dry-success) 75%);
+    --dry-success-darker: color-mix(in srgb, black 45%, var(--dry-success) 55%);
     --dry-success-foreground: #ffffff;
 
-    --dry-warning-lighter: #fff5cc;
-    --dry-warning-light: #ffd666;
     --dry-warning: #ffab00;
-    --dry-warning-dark: #b76e00;
-    --dry-warning-darker: #7a4100;
+    --dry-warning-lighter: color-mix(in srgb, white 82%, var(--dry-warning) 18%);
+    --dry-warning-light: color-mix(in srgb, white 45%, var(--dry-warning) 55%);
+    --dry-warning-dark: color-mix(in srgb, black 25%, var(--dry-warning) 75%);
+    --dry-warning-darker: color-mix(in srgb, black 45%, var(--dry-warning) 55%);
     --dry-warning-foreground: #1c252e;
 
-    --dry-error-lighter: #ffe9d5;
-    --dry-error-light: #ffac82;
     --dry-error: #ff5630;
-    --dry-error-dark: #b71d18;
-    --dry-error-darker: #7a0916;
+    --dry-error-lighter: color-mix(in srgb, white 82%, var(--dry-error) 18%);
+    --dry-error-light: color-mix(in srgb, white 45%, var(--dry-error) 55%);
+    --dry-error-dark: color-mix(in srgb, black 25%, var(--dry-error) 75%);
+    --dry-error-darker: color-mix(in srgb, black 45%, var(--dry-error) 55%);
     --dry-error-foreground: #ffffff;
 
     /* `destructive` is the variant name; `error` is the Minimals token name. */
@@ -70,17 +79,29 @@
     --dry-destructive-foreground: var(--dry-error-foreground);
 
     /* ---------------------------------------------------------- Surfaces */
+    /* Also independently settable (`routes/system-settings.ts`) - unlike
+     * the intents above, these apply the SAME value in light and dark mode
+     * once overridden (a brand background/text/card color is usually meant
+     * to be exactly what was picked, not itself re-derived per theme) -
+     * only the shipped, un-overridden defaults still branch on
+     * `light-dark()`. `-popover`/`-sidebar`/`-card-foreground`/
+     * `-popover-foreground` are plain aliases of `-card`/`-foreground` (they
+     * were always the same values, just duplicated) so overriding those two
+     * covers all four for free. */
     --dry-background: light-dark(#f9fafb, #141a21);
     --dry-card: light-dark(#ffffff, #1c252e);
-    --dry-card-foreground: light-dark(#1c252e, #ffffff);
-    --dry-popover: light-dark(#ffffff, #1c252e);
-    --dry-popover-foreground: light-dark(#1c252e, #ffffff);
-    --dry-sidebar: light-dark(#ffffff, #1c252e);
+    --dry-foreground: light-dark(#1c252e, #ffffff);
+    --dry-card-foreground: var(--dry-foreground);
+    --dry-popover: var(--dry-card);
+    --dry-popover-foreground: var(--dry-foreground);
+    --dry-sidebar: var(--dry-card);
     /* background.neutral */
     --dry-muted: light-dark(#f4f6f8, #28323d);
 
     /* -------------------------------------------------------------- Text */
-    --dry-foreground: light-dark(#1c252e, #ffffff);
+    /* `--dry-foreground` itself moved up into Surfaces (declared alongside
+     * `--dry-background`/`--dry-card`, which its own override needs to sit
+     * before - see that section's comment). */
     --dry-muted-foreground: light-dark(#637381, #919eab);
     --dry-disabled-foreground: light-dark(#919eab, #637381);
 
@@ -148,8 +169,13 @@
     --dry-shadow-lg:
       0 0 2px 0 rgb(var(--dry-shadow-channel) / 24%),
       -20px 20px 40px -4px rgb(var(--dry-shadow-channel) / 24%);
-    --dry-shadow-primary: 0 8px 16px 0 rgb(0 167 111 / 24%);
-    --dry-shadow-error: 0 8px 16px 0 rgb(255 86 48 / 24%);
+    /* `color-mix()`, not a hardcoded `rgb(0 167 111 / 24%)` literal, so an
+     * admin-overridden `--dry-primary`/`--dry-error` (`routes/
+     * system-settings.ts`) re-tints these too - this exact pair was the
+     * bug report ("style admin chưa đổi theo"): they used to stay the
+     * shipped primary/error color forever, regardless of any override. */
+    --dry-shadow-primary: 0 8px 16px 0 color-mix(in srgb, var(--dry-primary) 24%, transparent);
+    --dry-shadow-error: 0 8px 16px 0 color-mix(in srgb, var(--dry-error) 24%, transparent);
 
     /* -------------------------------------- Code highlighting (Prism.js) */
     --dry-code-comment: var(--dry-muted-foreground);
