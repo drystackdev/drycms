@@ -624,6 +624,19 @@ function main(): void {
     highlight.style.display = "none";
   }
 
+  /** Previews what a click would do right now, via the highlight's own
+   * color - Shift (`--dry-warning`, `intercept`'s "run the real action"
+   * escape hatch) and Ctrl/Cmd (`--dry-info`, "open the full editor in a new
+   * tab") each read differently from a plain click's default `--dry-primary`.
+   * Reads straight off the triggering event rather than tracked booleans:
+   * every `MouseEvent`/`KeyboardEvent` already carries the CURRENT modifier
+   * state, so there's no separate keydown/keyup bookkeeping to keep in sync. */
+  function applyHighlightColor(state: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): void {
+    if (state.shiftKey) highlight.style.setProperty("--dry-highlight-color", "var(--dry-warning)");
+    else if (state.ctrlKey || state.metaKey) highlight.style.setProperty("--dry-highlight-color", "var(--dry-info)");
+    else highlight.style.removeProperty("--dry-highlight-color");
+  }
+
   document.addEventListener(
     "mousemove",
     (event) => {
@@ -639,9 +652,20 @@ function main(): void {
       }
       hoveredElement = marked;
       positionHighlight(marked);
+      applyHighlightColor(event);
     },
     true,
   );
+
+  // The pointer doesn't have to move for the modifier state to go stale -
+  // pressing/releasing Shift or Ctrl/Cmd while already hovering a field
+  // changes what a click would do without any mousemove to recompute it from.
+  window.addEventListener("keydown", (event) => {
+    if (hoveredElement) applyHighlightColor(event);
+  });
+  window.addEventListener("keyup", (event) => {
+    if (hoveredElement) applyHighlightColor(event);
+  });
 
   // The pointer doesn't have to move for the highlighted rect to go stale -
   // the page underneath can scroll (capture phase still sees this even from

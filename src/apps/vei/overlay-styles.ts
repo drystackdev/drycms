@@ -258,10 +258,16 @@ iframe.agent {
   z-index: 2147482999;
   display: none;
   pointer-events: none;
-  outline: 3px solid var(--dry-primary);
+  /* --dry-highlight-color is set inline by overlay.ts, reflecting whichever
+   * modifier key (if any) is currently held - Shift/Ctrl/Cmd change what a
+   * click on the hovered field will do, so the highlight itself previews
+   * which via color instead of only being discoverable through the title
+   * hint (EDIT_HINT) or by actually clicking. */
+  outline: 3px solid var(--dry-highlight-color, var(--dry-primary));
   outline-offset: -1px;
-  background: rgba(0, 167, 111, 0.08);
-  transition: left 100ms ease, top 100ms ease, width 100ms ease, height 100ms ease;
+  background: color-mix(in srgb, var(--dry-highlight-color, var(--dry-primary)) 8%, transparent);
+  transition: left 100ms ease, top 100ms ease, width 100ms ease, height 100ms ease,
+    outline-color 100ms ease, background-color 100ms ease;
 }
 `;
 
