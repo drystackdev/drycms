@@ -15,6 +15,7 @@ import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
 import type { MagicWriteChoice, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
 import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES, type MagicWriteScope } from "../../content-types/ai-magic-write-fields.js";
+import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 
 const { path, aiMode } = window.__DRY_CONFIG__;
 
@@ -153,8 +154,17 @@ function isMagicWriteCandidate(node: EntryFieldNode): boolean {
 type Stage = "start" | "loading" | "question" | "error";
 
 export interface MagicWriteDialogProps {
-  open: boolean;
-  onClose: () => void;
+  /** Bumped by `ContentEntryEditor.tsx` on every "Magic Write" button click
+   * - the trigger for a fresh session, NOT a plain visibility flag (unlike
+   * most dialogs here). Visibility itself is fully internal: the native
+   * `<dialog>` hides the moment a request starts streaming (the admin
+   * watches it happen directly in the real, disabled form fields instead -
+   * see `status/magic-write.md` decision #4) and re-shows itself the moment
+   * the model asks a clarifying question, or the run errors out. Clicking
+   * the button again while a run is already active just reveals whatever's
+   * currently going on instead of starting over - see `activeRef` below.
+   * `0` is a reserved "never opened yet" sentinel the initial mount skips. */
+  openToken: number;
   typeSlug: string;
   entryId: string | null;
   /** The entry's top-level editable `EntryFieldNode[]` (same list
@@ -173,8 +183,7 @@ export interface MagicWriteDialogProps {
 }
 
 export default function MagicWriteDialog({
-  open,
-  onClose,
+  openToken,
   typeSlug,
   entryId,
   nodes,
@@ -183,21 +192,22 @@ export default function MagicWriteDialog({
   onStreamingFieldChange,
   source,
 }: MagicWriteDialogProps) {
-  const ref = useDialogSync(open, () => handleCancel());
   const writableNodes = useMemo(() => nodes.filter(isMagicWriteCandidate), [nodes]);
 
+  const [dialogVisible, setDialogVisible] = useState(false);
   const [stage, setStage] = useState<Stage>("start");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"empty" | "selected">("empty");
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [rawText, setRawText] = useState("");
   const [question, setQuestion] = useState<MagicWriteQuestionResult | null>(null);
   const [questionChoice, setQuestionChoice] = useState<Set<string>>(new Set());
   const [questionOther, setQuestionOther] = useState("");
   const [selectedImagePaths, setSelectedImagePaths] = useState<string[]>([]);
   const [aiKeyName, setAiKeyName] = useState<string | undefined>(undefined);
   const [aiKeyOptions, setAiKeyOptions] = useState<{ value: string; label: string }[]>([]);
+
+  const ref = useDialogSync(dialogVisible, () => handleCancel());
 
   const rawTextRef = useRef("");
   const committedRef = useRef<Set<string>>(new Set());
@@ -206,15 +216,28 @@ export default function MagicWriteDialog({
   const scopeRef = useRef<MagicWriteScope>({ mode: "empty" });
   const historyRef = useRef<MagicWriteHistoryMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  /** True from the moment a session starts (the dialog first opens for this
+   * `openToken`) until it fully finishes (success) or is explicitly
+   * cancelled - independent of `dialogVisible`, which toggles freely within
+   * an active session (hidden while streaming, shown for start/question/
+   * error). Gates what a repeat button click does: reveal the active
+   * session, or start a brand new one. */
+  const activeRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (openToken === 0) return; // Initial mount value - the button was never actually clicked yet.
+    if (activeRef.current) {
+      // A session is already running (possibly hidden mid-stream) - just
+      // bring it back on screen, don't discard any in-progress state.
+      setDialogVisible(true);
+      return;
+    }
+    activeRef.current = true;
     setStage("start");
     setPrompt("");
     setMode("empty");
     setSelectedFields(new Set());
     setError(null);
-    setRawText("");
     setQuestion(null);
     setQuestionChoice(new Set());
     setQuestionOther("");
@@ -224,6 +247,7 @@ export default function MagicWriteDialog({
     committedRef.current = new Set();
     streamingNameRef.current = null;
     historyRef.current = [];
+    setDialogVisible(true);
     if (aiMode === "server") {
       void aiKeyApi
         .list({ page: 0, pageSize: 100 })
@@ -239,7 +263,8 @@ export default function MagicWriteDialog({
         })
         .catch(() => setAiKeyOptions([]));
     }
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires only on a real button click (openToken change), never on the reveal-only branch above
+  }, [openToken]);
 
   function setStreaming(name: string | null) {
     if (streamingNameRef.current === name) return;
@@ -258,28 +283,36 @@ export default function MagicWriteDialog({
 
   function handleDelta(delta: string) {
     rawTextRef.current += delta;
-    setRawText(rawTextRef.current);
     const partial = parsePartialMagicWriteYaml(rawTextRef.current);
     if (partial.kind !== "fields") return;
     for (const [name, raw] of Object.entries(partial.closedFields)) commitField(name, raw);
     const streaming = partial.streamingField;
     if (!streaming || committedRef.current.has(streaming.name)) return;
     setStreaming(streaming.name);
-    // Only a plain "text" field is safe to live-feed a still-growing raw
-    // string into - everything else (richtext needs sanitizing, number/
-    // boolean/date/select need real coercion, flatten is a nested object)
-    // stays disabled-but-inert until it fully closes (see
-    // `status/magic-write.md` decision #4, update 2).
+    // A plain "text" field is fed its still-growing raw string directly.
+    // "richtext" is fed too, but through `sanitizeAiRichTextHtml` first on
+    // every tick - that sanitizer is pure regex/string work (no DOMParser),
+    // so it never fails on a still-open tag the way `importCleanHtml` would;
+    // any transient mis-render self-heals on the next tick since this
+    // always re-derives from the FULL accumulated text, never patches
+    // incrementally, and the field's own `commitField` close-out re-applies
+    // the final validated value regardless. number/boolean/date/select/
+    // flatten stay disabled-but-inert until they fully close (still no safe
+    // partial value to coerce mid-stream).
     const node = writableNodes.find((candidate) => candidate.fieldName === streaming.name);
-    if (node?.kind === "column" && node.fieldType === "text" && typeof streaming.value === "string") {
-      updateFieldValue(streaming.name, streaming.value);
+    if (node?.kind === "column" && typeof streaming.value === "string") {
+      if (node.fieldType === "text") {
+        updateFieldValue(streaming.name, streaming.value);
+      } else if (node.fieldType === "richtext") {
+        updateFieldValue(streaming.name, sanitizeAiRichTextHtml(streaming.value, new Set(selectedImagePaths)));
+      }
     }
   }
 
   async function run(historyForThisTurn: MagicWriteHistoryMessage[], promptForThisTurn: string) {
     setStage("loading");
+    setDialogVisible(false); // The admin watches it happen in the real form fields instead - see this component's own doc comment.
     setError(null);
-    setRawText("");
     rawTextRef.current = "";
     committedRef.current = new Set();
     requestValueRef.current = value;
@@ -304,7 +337,6 @@ export default function MagicWriteDialog({
         handleDelta,
         () => {
           rawTextRef.current = "";
-          setRawText("");
         },
         controller.signal,
       );
@@ -315,6 +347,7 @@ export default function MagicWriteDialog({
         setQuestionOther("");
         historyRef.current = [...historyForThisTurn, { role: "assistant", text: rawTextRef.current }];
         setStage("question");
+        setDialogVisible(true); // Needs the admin's input - pop back up automatically.
         return;
       }
       for (const name of result.turn.writtenFieldNames) updateFieldValue(name, result.turn.fields[name]);
@@ -326,12 +359,13 @@ export default function MagicWriteDialog({
           : "Magic Write finished - nothing needed writing.",
         description: result.turn.summary,
       });
-      onClose();
+      activeRef.current = false; // Done - a later button click starts a brand new session, not a reveal.
     } catch (err) {
       if (controller.signal.aborted) return;
       setStreaming(null);
       setError(err instanceof Error ? err.message : "AI request failed.");
       setStage("error");
+      setDialogVisible(true); // Needs the admin to see what went wrong / retry / cancel.
     }
   }
 
@@ -353,7 +387,8 @@ export default function MagicWriteDialog({
   function handleCancel() {
     abortRef.current?.abort();
     setStreaming(null);
-    onClose();
+    activeRef.current = false;
+    setDialogVisible(false);
   }
 
   function toggleField(name: string) {
@@ -365,11 +400,9 @@ export default function MagicWriteDialog({
     });
   }
 
-  const progress = stage === "loading" ? parsePartialMagicWriteYaml(rawText) : null;
-
   return (
     <dialog ref={ref} class="md" aria-label="Magic Write">
-      {open && (
+      {dialogVisible && (
         <>
           <header>
             <h3>
@@ -430,29 +463,6 @@ export default function MagicWriteDialog({
                   onChange={(next) => setSelectedImagePaths(Array.isArray(next) ? next : [next])}
                   multiple
                 />
-              </div>
-            )}
-
-            {stage === "loading" && (
-              <div class="stack ai-wizard-loading">
-                <div class="row align-center" style={{ gap: "0.5rem" }}>
-                  <span class="spinner" /> Writing…
-                </div>
-                {progress?.kind === "fields" && (
-                  <div class="stack" style={{ gap: "0.25rem" }}>
-                    {Object.keys(progress.closedFields).map((name) => (
-                      <div key={name} class="row align-center" style={{ gap: "0.375rem" }}>
-                        ✓ {writableNodes.find((n) => n.fieldName === name)?.label ?? name}
-                      </div>
-                    ))}
-                    {progress.streamingField && (
-                      <div class="row align-center" style={{ gap: "0.375rem" }}>
-                        <span class="spinner" />
-                        {writableNodes.find((n) => n.fieldName === progress.streamingField!.name)?.label ?? progress.streamingField.name}…
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
 

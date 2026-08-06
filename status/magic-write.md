@@ -588,6 +588,53 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
    `run()` — đơn giản hơn, đúng 1 chỗ, không mất tính năng nào.
    Typecheck sạch + 873 test pass sau refactor (không có test nào phụ
    thuộc cấu trúc UI cũ).
+3. **Header gộp status + nút, RichText cần dấu hiệu đang viết** — user báo 3
+   điểm liền: (a) dialog đóng khi viết xong / tự mở lại khi có câu hỏi —
+   review code thấy ĐÃ ĐÚNG sẵn (`onClose()` chỉ gọi ở nhánh fields-turn,
+   nhánh question-turn `return` sớm, dialog không hề đóng nên không cần
+   "mở lại") — không sửa gì, chờ user xác nhận lại nếu vẫn thấy sai; (b)
+   status nên hiện gọn trong header cùng hàng với nút, đúng như plan gốc mô
+   tả ("Đang viết: title ✓ · body…" + nút Hủy) — ĐÃ SỬA: bỏ hẳn checklist
+   nhiều dòng trong body, thay bằng 1 dòng status (ellipsis khi dài) +
+   Cancel ngay trong `<header>` khi `stage==="loading"` (ẩn `<footer>` lúc
+   này vì Cancel đã có ở header); (c) field RichText không hiện dấu hiệu gì
+   trong lúc AI viết (vì quyết định #4 chỉ live-feed cho field "text", các
+   loại khác chỉ disable im lìm) — ĐÃ SỬA: `ContentEntryEditor.tsx`'s
+   `renderFieldNodes` thêm banner nhỏ "AI is writing…" bên trong fieldset
+   khi field đó là `streamingFieldName`, hiện với MỌI loại field đang stream
+   (không riêng richtext) — CSS mới `.content-entry-editor-field-writing`.
+   Chỉ sửa client, không cần restart dev server. Typecheck sạch + 873 test
+   pass.
+4. **User phản hồi lại điểm (a) là SAI** — "AI đang viết cũng tắt dialog
+   nhé" + "Rich text hiển thị realtime khi AI đang viết". Design thật sự
+   muốn: dialog TỰ ĐÓNG ngay khi bắt đầu viết (không đợi xong), TỰ MỞ LẠI
+   khi có câu hỏi cần xác nhận hoặc khi lỗi; và RichText phải hiện nội dung
+   THẬT đang lớn dần, không chỉ banner tĩnh.
+   - **Refactor lớn `MagicWriteDialog.tsx`**: đổi hẳn model quản lý
+     visibility — bỏ prop `open`/`onClose` (do parent sở hữu), thay bằng
+     `openToken: number` (parent bump mỗi lần bấm nút) + state nội bộ
+     `dialogVisible` + `activeRef` (đánh dấu "phiên đang chạy, dù dialog
+     đang ẩn hay hiện"). Component KHÔNG unmount khi ẩn (Preact chỉ toggle
+     `dialogVisible`, không gỡ khỏi cây), nên request/stream đang chạy vẫn
+     tiếp tục ngầm dù dialog đã đóng. `run()` gọi `setDialogVisible(false)`
+     ngay khi bắt đầu loading; `setDialogVisible(true)` lại khi có
+     `kind:"question"` hoặc lỗi. Bấm nút "Magic Write" lần nữa trong lúc
+     đang chạy (`activeRef.current===true`) chỉ hiện lại dialog, KHÔNG reset
+     phiên đang chạy — chỉ thật sự bắt đầu phiên mới khi phiên trước đã
+     xong (success) hoặc bị Cancel tường minh.
+   - Bỏ hẳn phần header-status-gọn vừa làm ở mục 3(b) — giờ dialog ẩn hoàn
+     toàn lúc loading nên không còn gì để hiện ở đó nữa; header quay lại
+     đơn giản chỉ có tiêu đề.
+   - `handleDelta`: mở rộng live-feed sang field `richtext` (trước chỉ
+     `text`) — sanitize qua `sanitizeAiRichTextHtml` mỗi tick (thuần regex,
+     không DOMParser nên không thể "parse lỗi" giữa chừng như lo ngại ban
+     đầu trong plan; sai lệch tạm thời tự sửa ở tick kế tiếp vì luôn tính
+     lại từ toàn bộ text tích luỹ, không patch tăng dần).
+   - `ContentEntryEditor.tsx`: `showMagicWrite: boolean` →
+     `magicWriteOpenToken: number`, cả 2 nút bấm đổi thành
+     `setMagicWriteOpenToken(t => t+1)`.
+   - Typecheck sạch + 873 test pass. Chỉ sửa client, không cần restart dev
+     server.
 
 ## Speed
 

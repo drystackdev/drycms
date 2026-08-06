@@ -142,6 +142,17 @@ function renderFieldNodes(
         disabled={streamingFieldName === node.fieldName}
         class="content-entry-editor-field"
       >
+        {streamingFieldName === node.fieldName && (
+          // Magic Write (status/magic-write.md decision #4, update 2): the
+          // real growing value is only ever live-fed into a plain "text"
+          // field - everything else (richtext especially) sits disabled
+          // with no visible change while it streams, which reads as frozen/
+          // broken without this. Shown for every streaming field regardless
+          // of type (harmless next to a "text" field's own live content).
+          <div class="content-entry-editor-field-writing">
+            <span class="spinner" /> AI is writing…
+          </div>
+        )}
         <FieldRenderer
           node={node}
           value={value[node.fieldName]}
@@ -190,7 +201,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [aiKeyCheck, setAiKeyCheck] = useState<
     { ok: boolean; message: string } | undefined
   >();
-  const [showMagicWrite, setShowMagicWrite] = useState(false);
+  // Bumped on every "Magic Write" button click - see `MagicWriteDialog.tsx`'s
+  // own `openToken` prop doc for why this is a counter, not a boolean.
+  const [magicWriteOpenToken, setMagicWriteOpenToken] = useState(0);
   // Magic Write (status/magic-write.md): the top-level field name currently
   // being streamed into, or `null` when no Magic Write run is active -
   // `renderFieldNodes` disables that one field's `<fieldset>` while it's set.
@@ -408,7 +421,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           <button
             type="button"
             class="outline"
-            onClick={() => setShowMagicWrite(true)}
+            onClick={() => setMagicWriteOpenToken((token) => token + 1)}
           >
             <SparkleIcon /> Magic Write
           </button>
@@ -747,7 +760,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               <button
                 type="button"
                 class="outline"
-                onClick={() => setShowMagicWrite(true)}
+                onClick={() => setMagicWriteOpenToken((token) => token + 1)}
               >
                 <SparkleIcon /> Magic Write
               </button>
@@ -868,8 +881,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
       {aiMode === "server" && (
         <MagicWriteDialog
-          open={showMagicWrite}
-          onClose={() => setShowMagicWrite(false)}
+          openToken={magicWriteOpenToken}
           typeSlug={typeSlug}
           entryId={entryId}
           nodes={editableNodes}
