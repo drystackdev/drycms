@@ -196,6 +196,11 @@ export default function MagicWriteDialog({
 
   const [dialogVisible, setDialogVisible] = useState(false);
   const [stage, setStage] = useState<Stage>("start");
+  // Only actually rendered when the dialog is re-opened WHILE still
+  // "loading" (the admin clicked the button again mid-stream - see the
+  // `openToken` effect's "reveal, don't reset" branch below); the dialog
+  // is hidden for the common case, so this never shows on its own.
+  const [rawText, setRawText] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<"empty" | "selected">("empty");
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
@@ -243,6 +248,7 @@ export default function MagicWriteDialog({
     setQuestionOther("");
     setSelectedImagePaths([]);
     setAiKeyName(undefined);
+    setRawText("");
     rawTextRef.current = "";
     committedRef.current = new Set();
     streamingNameRef.current = null;
@@ -283,6 +289,7 @@ export default function MagicWriteDialog({
 
   function handleDelta(delta: string) {
     rawTextRef.current += delta;
+    setRawText(rawTextRef.current);
     const partial = parsePartialMagicWriteYaml(rawTextRef.current);
     if (partial.kind !== "fields") return;
     for (const [name, raw] of Object.entries(partial.closedFields)) commitField(name, raw);
@@ -313,6 +320,7 @@ export default function MagicWriteDialog({
     setStage("loading");
     setDialogVisible(false); // The admin watches it happen in the real form fields instead - see this component's own doc comment.
     setError(null);
+    setRawText("");
     rawTextRef.current = "";
     committedRef.current = new Set();
     requestValueRef.current = value;
@@ -337,6 +345,7 @@ export default function MagicWriteDialog({
         handleDelta,
         () => {
           rawTextRef.current = "";
+          setRawText("");
         },
         controller.signal,
       );
@@ -400,14 +409,37 @@ export default function MagicWriteDialog({
     });
   }
 
+  // Only meaningful in the rare "re-opened while still loading" case (see
+  // `dialogVisible`'s own doc comment) - a compact "title ✓ · body…" status,
+  // same idea as `ai-rewrite-button.tsx`'s own footer status next to its
+  // Cancel button.
+  const progress = stage === "loading" ? parsePartialMagicWriteYaml(rawText) : null;
+  const statusLine = progress?.kind === "fields"
+    ? [
+        ...Object.keys(progress.closedFields).map((name) => `${writableNodes.find((n) => n.fieldName === name)?.label ?? name} ✓`),
+        progress.streamingField
+          ? `${writableNodes.find((n) => n.fieldName === progress.streamingField!.name)?.label ?? progress.streamingField.name}…`
+          : null,
+      ].filter(Boolean).join(" · ")
+    : "";
+
   return (
     <dialog ref={ref} class="md" aria-label="Magic Write">
       {dialogVisible && (
         <>
-          <header>
-            <h3>
-              <SparkleIcon /> Magic Write
-            </h3>
+          <header class="row justify-between align-center">
+            {stage === "loading" ? (
+              <div class="row align-center" style={{ gap: "0.5rem", minWidth: 0 }}>
+                <span class="spinner" />
+                <small class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {statusLine || "Writing…"}
+                </small>
+              </div>
+            ) : (
+              <h3>
+                <SparkleIcon /> Magic Write
+              </h3>
+            )}
           </header>
 
           <div class="stack">

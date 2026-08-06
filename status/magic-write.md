@@ -683,6 +683,27 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
    set `value` từ ngoài (Magic Write, Reset all, Clear all, VEI field-set
    event...), không phải patch riêng cho Magic Write.
    Typecheck sạch + 873 test pass (chỉ sửa client, không cần restart).
+8. **Google 503/"high demand" tự retry** — user paste lại đúng lỗi thật từ
+   Google lần 2. Thêm retry ngắn (1s rồi 2s, tối đa 2 lần) trong
+   `streamGoogleAiWithCredential` khi response không ok VÀ message khớp mẫu
+   "tạm thời" (`overloaded|high demand|temporarily unavailable|service
+   unavailable|try again`) hoặc status 503 — phân biệt với lỗi
+   quota/billing/key sai (fail ngay, không retry vô ích, theo đúng
+   `isAiKeyFallbackError`'s phân loại đã có). Verify thật: request tiếp
+   theo mất ~62s (chờ+thử lại) nhưng THÀNH CÔNG, không cần user tự bấm lại.
+   Áp dụng chung mọi tính năng dùng Google (wizard/chat/Magic Write).
+9. **Header cạnh Cancel vẫn trống khi mở lại dialog giữa lúc đang chạy** —
+   phát hiện lỗi trong chính fix ở mục 4: khi bấm nút "Magic Write" lúc
+   đang chạy (`activeRef.current===true`), code chỉ `setDialogVisible(true)`
+   mà KHÔNG có nhánh render nào cho `stage==="loading"` nữa (đã bỏ khi làm
+   ẩn dialog) - nên mở lại chỉ thấy nút Cancel trơ trọi, không trạng thái.
+   Lý do sâu hơn: đã bỏ luôn state `rawText` (chỉ giữ ref) nên dù có thêm
+   UI cũng không re-render theo từng delta. Fix: thêm lại `rawText` state
+   (đồng bộ cả 3 chỗ reset ref: state đầu phiên, đầu mỗi `run()`, và
+   callback `onRetry`), khôi phục header hiện "title ✓ · body…" +
+   spinner khi `stage==="loading"` (chỉ render khi dialog được mở lại chủ
+   động - trường hợp bình thường dialog vẫn ẩn hoàn toàn, không đổi hành vi
+   mục 4). Typecheck sạch + 873 test pass.
 
 ## Speed
 
