@@ -19,32 +19,6 @@ export function isEmptyValue(value: unknown): boolean {
   return false;
 }
 
-/** "Empty" for the purposes of `mode: "empty"` scoping - a `flatten` group is
- * empty if ANY of its children still is (there's something left to fill), a
- * `component-repeat` list is empty if it has zero items. */
-function isNodeEmpty(node: EntryFieldNode, currentValue: unknown): boolean {
-  if (node.kind === "column") return isEmptyValue(currentValue);
-  if (node.kind === "flatten") {
-    const nested = (currentValue as EntryValue | undefined) ?? {};
-    return node.children.some((child) => isNodeEmpty(child, nested[child.fieldName]));
-  }
-  if (node.kind === "component-repeat") return !Array.isArray(currentValue) || currentValue.length === 0;
-  return false;
-}
-
-export interface MagicWriteScope {
-  mode: "empty" | "selected";
-  /** Top-level field names only (the same granularity as
-   * `ContentEntryEditor.tsx`'s per-field checkbox list and
-   * `streamingFieldName`) - `mode: "selected"` only. */
-  targetFields?: string[];
-}
-
-function isNodeInScope(node: EntryFieldNode, currentValue: unknown, scope: MagicWriteScope): boolean {
-  if (scope.mode === "selected") return (scope.targetFields ?? []).includes(node.fieldName);
-  return isNodeEmpty(node, currentValue);
-}
-
 function coerceScalar(node: EntryColumnNode, text: string, allowedImageSrcs: ReadonlySet<string>): unknown {
   switch (node.fieldType) {
     case "text":
@@ -143,19 +117,21 @@ export interface ApplyMagicWriteFieldsResult {
  * The schema-driven validation step (`status/magic-write.md`'s "Validate
  * schema-driven") - walks `nodes` (the entry's TOP-LEVEL `EntryFieldNode[]`,
  * from `buildEntryFieldTree`) against the model's raw parsed `fields`
- * mapping, keeping only what's actually in scope (`mode`/`targetFields`,
- * enforced here rather than trusted from the model) and coerces every kept
- * value to match its real field type. Shared between the server route
- * (`ai-magic-write.ts`'s authoritative terminal validation) and the client
- * (`MagicWriteDialog.tsx`'s live per-field commit as each one closes while
- * streaming) - both need the exact same rules, so this stays framework/
- * runtime-agnostic (no server-only or DOM-only imports).
+ * mapping and coerces every field the model chose to write to match its
+ * real type. No scope/mode restriction: the admin's prompt is the only
+ * input the model gets on WHICH fields to touch (see
+ * `ai-magic-write-prompt.ts`'s own instructions) - it sees every field's
+ * current value and decides for itself what needs (or doesn't need)
+ * changing, rather than the admin pre-selecting a fixed set through the UI.
+ * Shared between the server route (`ai-magic-write.ts`'s authoritative
+ * terminal validation) and the client (`MagicWriteDialog.tsx`'s live
+ * per-field commit as each one closes while streaming) - both need the
+ * exact same rules, so this stays framework/runtime-agnostic (no
+ * server-only or DOM-only imports).
  */
 export function applyMagicWriteFields(
   nodes: EntryFieldNode[],
   raw: MagicWriteRawFields,
-  currentValue: EntryValue,
-  scope: MagicWriteScope,
   allowedImageSrcs: ReadonlySet<string> = new Set(),
 ): ApplyMagicWriteFieldsResult {
   const value: EntryValue = {};
@@ -163,7 +139,6 @@ export function applyMagicWriteFields(
   for (const node of nodes) {
     if (node.kind === "relation" || node.kind === "relation-mirror") continue;
     if (!(node.fieldName in raw)) continue;
-    if (!isNodeInScope(node, currentValue[node.fieldName], scope)) continue;
     const coerced = coerceNodeValue(node, raw[node.fieldName]!, allowedImageSrcs);
     if (coerced === undefined) continue;
     value[node.fieldName] = coerced;

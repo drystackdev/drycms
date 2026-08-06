@@ -30,7 +30,7 @@
  * unprocessed.
  */
 
-export const richtextContentShadowStyles = /*css*/`
+export const richtextContentShadowStyles = `
 :host {
   display: block;
 }
@@ -75,15 +75,6 @@ export const richtextContentShadowStyles = /*css*/`
   background-color: color-mix(in srgb, var(--dry-primary) 25%, transparent);
 }
 
-p {
-  margin: 0;
-}
-
-h2, h3, h4, h5, h6 {
-  margin: 0;
-  letter-spacing: -0.01em;
-  text-wrap: balance;
-}
 
 h2 {
   font-size: 2rem;

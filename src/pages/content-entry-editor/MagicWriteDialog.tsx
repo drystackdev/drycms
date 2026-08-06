@@ -14,7 +14,7 @@ import type { EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
 import type { MagicWriteChoice, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
-import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES, type MagicWriteScope } from "../../content-types/ai-magic-write-fields.js";
+import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES } from "../../content-types/ai-magic-write-fields.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 
 const { path, aiMode } = window.__DRY_CONFIG__;
@@ -202,8 +202,6 @@ export default function MagicWriteDialog({
   // is hidden for the common case, so this never shows on its own.
   const [rawText, setRawText] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState<"empty" | "selected">("empty");
-  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState<MagicWriteQuestionResult | null>(null);
   const [questionChoice, setQuestionChoice] = useState<Set<string>>(new Set());
@@ -218,7 +216,6 @@ export default function MagicWriteDialog({
   const committedRef = useRef<Set<string>>(new Set());
   const streamingNameRef = useRef<string | null>(null);
   const requestValueRef = useRef<EntryValue>({});
-  const scopeRef = useRef<MagicWriteScope>({ mode: "empty" });
   const historyRef = useRef<MagicWriteHistoryMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   /** True from the moment a session starts (the dialog first opens for this
@@ -240,8 +237,6 @@ export default function MagicWriteDialog({
     activeRef.current = true;
     setStage("start");
     setPrompt("");
-    setMode("empty");
-    setSelectedFields(new Set());
     setError(null);
     setQuestion(null);
     setQuestionChoice(new Set());
@@ -283,7 +278,7 @@ export default function MagicWriteDialog({
     committedRef.current.add(name);
     const node = writableNodes.find((candidate) => candidate.fieldName === name);
     if (!node) return;
-    const applied = applyMagicWriteFields([node], { [name]: raw }, requestValueRef.current, scopeRef.current);
+    const applied = applyMagicWriteFields([node], { [name]: raw });
     if (applied.writtenFieldNames.includes(name)) updateFieldValue(name, applied.value[name]);
   }
 
@@ -324,7 +319,6 @@ export default function MagicWriteDialog({
     rawTextRef.current = "";
     committedRef.current = new Set();
     requestValueRef.current = value;
-    scopeRef.current = mode === "selected" ? { mode: "selected", targetFields: [...selectedFields] } : { mode: "empty" };
     const controller = new AbortController();
     abortRef.current = controller;
     try {
@@ -336,8 +330,6 @@ export default function MagicWriteDialog({
           entryId: entryId ?? undefined,
           currentValue: requestValueRef.current,
           prompt: promptForThisTurn,
-          mode: scopeRef.current.mode,
-          targetFields: scopeRef.current.mode === "selected" ? scopeRef.current.targetFields : undefined,
           history: historyForThisTurn,
           images,
           aiKeyName,
@@ -380,7 +372,6 @@ export default function MagicWriteDialog({
 
   function handleStart() {
     if (!prompt.trim()) return;
-    if (mode === "selected" && selectedFields.size === 0) return;
     void run([], prompt.trim());
   }
 
@@ -398,15 +389,6 @@ export default function MagicWriteDialog({
     setStreaming(null);
     activeRef.current = false;
     setDialogVisible(false);
-  }
-
-  function toggleField(name: string) {
-    setSelectedFields((current) => {
-      const next = new Set(current);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
   }
 
   // Only meaningful in the rare "re-opened while still loading" case (see
@@ -463,30 +445,6 @@ export default function MagicWriteDialog({
                   onChange={setPrompt}
                   placeholder="VD: Viết một bài giới thiệu ngắn về cà phê Việt Nam"
                 />
-                <div class="stack" role="radiogroup" aria-label="Which fields to write">
-                  <label class="row align-center" style={{ gap: "0.5rem" }}>
-                    <input type="radio" name="magic-write-mode" checked={mode === "empty"} onChange={() => setMode("empty")} />
-                    Only fill in empty fields
-                  </label>
-                  <label class="row align-center" style={{ gap: "0.5rem" }}>
-                    <input type="radio" name="magic-write-mode" checked={mode === "selected"} onChange={() => setMode("selected")} />
-                    Choose fields to overwrite
-                  </label>
-                </div>
-                {mode === "selected" && (
-                  <div class="stack">
-                    {writableNodes.map((node) => (
-                      <label key={node.fieldName} class="row align-center" style={{ gap: "0.5rem" }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedFields.has(node.fieldName)}
-                          onChange={() => toggleField(node.fieldName)}
-                        />
-                        {node.label}
-                      </label>
-                    ))}
-                  </div>
-                )}
                 <ImageField
                   label="Images (optional)"
                   description="Shown to Magic Write as context, not written to any field unless you ask."
@@ -544,7 +502,7 @@ export default function MagicWriteDialog({
             </button>
             <span class="spacer" />
             {stage === "start" && (
-              <button type="button" disabled={!prompt.trim() || (mode === "selected" && selectedFields.size === 0)} onClick={handleStart}>
+              <button type="button" disabled={!prompt.trim()} onClick={handleStart}>
                 Write <ArrowRightIcon />
               </button>
             )}

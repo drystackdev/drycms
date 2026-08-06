@@ -13,7 +13,7 @@ import {
   type MagicWriteChoice,
 } from "../../content-types/ai-magic-write-protocol.js";
 import { describeFieldsForPrompt, buildMagicWriteSystemPrompt } from "../../content-types/ai-magic-write-prompt.js";
-import { applyMagicWriteFields, type MagicWriteScope } from "../../content-types/ai-magic-write-fields.js";
+import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
 import {
   acquireAiStreamSlot,
   createChatStream,
@@ -29,8 +29,6 @@ interface MagicWriteHttpRequest {
   entryId?: string;
   currentValue?: unknown;
   prompt?: string;
-  mode?: string;
-  targetFields?: unknown;
   /** Prior turns of this same Magic Write conversation - only non-empty when
    * this is a follow-up request after the model asked a clarifying question
    * (`kind: question`) and the admin answered it. Same shape/role as
@@ -80,7 +78,6 @@ interface MagicWriteValidatedRequest {
   typeSlug: string;
   currentValue: EntryValue;
   prompt: string;
-  scope: MagicWriteScope;
   history: ChatMessage[];
   images: MagicWriteImageInput[];
   aiKeyName?: string;
@@ -121,14 +118,6 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     ? (body.currentValue as EntryValue)
     : {};
 
-  const mode = body.mode === "selected" ? "selected" : "empty";
-  const targetFields = Array.isArray(body.targetFields)
-    ? body.targetFields.filter((name): name is string => typeof name === "string" && name.trim().length > 0)
-    : [];
-  if (mode === "selected" && targetFields.length === 0) {
-    throw new Error("Select at least one field for Magic Write to write to.");
-  }
-
   const images = validateMagicWriteImages(body.images);
 
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
@@ -137,7 +126,6 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     typeSlug,
     currentValue,
     prompt,
-    scope: mode === "selected" ? { mode, targetFields } : { mode },
     history,
     images,
     aiKeyName,
@@ -256,7 +244,6 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
             lang: ai.lang,
             typeLabel: type.label,
             fieldsDescription,
-            scope: request.scope,
             imagePaths: [...allowedImageSrcs],
             relationContext,
           });
@@ -285,7 +272,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
               if (turn.kind === "question") {
                 event = turn;
               } else {
-                const applied = applyMagicWriteFields(nodes, turn.fields, request.currentValue, request.scope, allowedImageSrcs);
+                const applied = applyMagicWriteFields(nodes, turn.fields, allowedImageSrcs);
                 event = { kind: "fields", summary: turn.summary, fields: applied.value, writtenFieldNames: applied.writtenFieldNames };
               }
               controller.enqueue(streamEvent({ turn: event, aiLabel: result.aiLabel }));

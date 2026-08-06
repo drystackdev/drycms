@@ -1,9 +1,7 @@
 import type { EntryFieldNode } from "./engine/entry-tree.js";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { SelectFieldConfig } from "./field-registry.js";
-import { isEmptyValue, WRITABLE_COLUMN_TYPES, type MagicWriteScope } from "./ai-magic-write-fields.js";
-
-export type { MagicWriteScope } from "./ai-magic-write-fields.js";
+import { isEmptyValue, WRITABLE_COLUMN_TYPES } from "./ai-magic-write-fields.js";
 
 function previewValue(value: unknown): string {
   if (isEmptyValue(value)) return "(empty)";
@@ -46,13 +44,13 @@ export function describeFieldsForPrompt(nodes: EntryFieldNode[], value: EntryVal
   return lines.length > 0 ? lines.join("\n") : "(this content type has no field Magic Write can write to)";
 }
 
-function describeScope(scope: MagicWriteScope): string {
-  if (scope.mode === "empty") {
-    return 'Only write to fields whose "current value" above is "(empty)". Leave every other field completely untouched - do not include it in "fields" at all.';
-  }
-  const fields = (scope.targetFields ?? []).map((name) => `"${name}"`).join(", ");
-  return `Only write to these fields, overwriting whatever they currently hold: ${fields || "(none specified)"}. Do not include any other field in "fields".`;
-}
+/** No fixed mode/target-field list - the admin's own prompt is the only
+ * signal for which fields to touch, and the model is trusted to read it
+ * against each field's "current value" above and decide for itself (see
+ * `status/magic-write.md` decision update: the admin no longer pre-selects
+ * "only empty fields" vs a specific field list through the UI). */
+const SCOPE_INSTRUCTION =
+  'Decide for yourself which fields to write to, based ONLY on what the admin\'s prompt below asks for - do not write to every field just because it exists. If a field already has good content and the prompt doesn\'t call for changing it, leave it out of "fields" entirely; if the prompt implies overwriting something that already has a value, overwrite it.';
 
 function describeImages(imagePaths: string[]): string[] {
   if (imagePaths.length === 0) return [];
@@ -77,7 +75,6 @@ export interface BuildMagicWriteSystemPromptParams {
   lang: string;
   typeLabel: string;
   fieldsDescription: string;
-  scope: MagicWriteScope;
   /** Storage paths of the context images this request attached (see
    * `status/magic-write.md` decision #3) - empty when none were picked. */
   imagePaths?: string[];
@@ -96,14 +93,14 @@ export interface BuildMagicWriteSystemPromptParams {
  * literal (`key: |` + indented lines) so a streamed reply can be shown
  * growing live, field by field, without any JSON-escaping gymnastics.
  */
-export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, scope, imagePaths = [], relationContext = "" }: BuildMagicWriteSystemPromptParams): string {
+export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, imagePaths = [], relationContext = "" }: BuildMagicWriteSystemPromptParams): string {
   return [
     `You are Magic Write, a writing assistant inside drycms that fills in content fields for "${typeLabel}" entries. The admin gives you a short prompt describing what they want; you write the actual field content directly - you are not designing a schema, only authoring content for one that already exists.`,
     "",
     "Fields on this entry:",
     fieldsDescription,
     "",
-    describeScope(scope),
+    SCOPE_INSTRUCTION,
     ...describeImages(imagePaths),
     ...describeRelationContext(relationContext),
     "",
