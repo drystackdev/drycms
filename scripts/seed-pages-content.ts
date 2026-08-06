@@ -682,27 +682,11 @@ await writeSingletonEntry("siteSettings", {
   copyrightText: "© 2026 Mai Anh Quyền. Nội dung chỉ mang tính chất tham khảo, không thay thế tư vấn y tế chuyên môn.",
 });
 
-// --- The `seoDefaults` singleton - fallback SEO metadata for any page/entry
-// that doesn't set its own. Named "seoDefaults" rather than "seo" - that
-// name is already taken by the built-in `seo` COMPONENT type this singleton
-// itself embeds via `features.seo` (type names are unique across every
-// kind, not just within one kind). No custom fields of its own - `features:
-// { seo: true }` alone synthesizes the `seo.metaTitle`/`seo.description`/
-// `seo.image` fields every other `features.seo` type already gets (see
-// `system-fields.ts`). Not yet wired to actually render `<title>`/`<meta>`
-// tags anywhere - `server/app-router/render.ts` sends the document `<head>`
-// before any `dry()` call resolves, so per-page/default meta injection is a
-// separate, not-yet-built framework feature; this only seeds the DATA side.
-await upsertContentType({
-  id: "app-seo-defaults",
-  kind: "singleton",
-  name: "seoDefaults",
-  label: "SEO Defaults",
-  description: "Fallback SEO metadata for pages/entries that don't set their own.",
-  features: { seo: true },
-  fields: [],
-});
-
+// --- The `seoDefaults` singleton's actual content ---
+//
+// `seoDefaults` is now one of the built-in types every drycms app gets from
+// first boot (see `content-types/seed.ts`) - this script only seeds its
+// DATA, not its schema, unlike the component/singleton types above.
 await writeSingletonEntry("seoDefaults", {
   seo: {
     metaTitle: "Mai Anh Quyền - Tiếp cận viên cộng đồng, phòng chống HIV/AIDS",

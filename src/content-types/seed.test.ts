@@ -5,6 +5,7 @@ import {
   pendingSeedStatements,
   resolveDefaultContentTypeDefinitions,
 } from "./seed.js";
+import { SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
 import { resolveTableTree } from "./tree.js";
 import type { ContentTypeDefinition } from "./types.js";
 
@@ -12,13 +13,14 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, and role", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role (collections), and seoDefaults (singleton)", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
       "menu",
       "menuItem",
       "role",
       "seo",
+      "seoDefaults",
       "user",
     ]);
     expect(byName("menuItem").kind).toBe("component");
@@ -27,31 +29,42 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("menu").kind).toBe("collection");
     expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
+    expect(byName("seoDefaults").kind).toBe("singleton");
   });
 
-  it("hides role/aiKey/seo from the generic content-type UI, but leaves user/menu/menuItem visible", () => {
+  it("hides role/aiKey/seo from the generic content-type UI, but leaves user/menu/menuItem/seoDefaults visible", () => {
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
     expect(byName("user").hidden).toBeFalsy();
     expect(byName("menu").hidden).toBeFalsy();
     expect(byName("menuItem").hidden).toBeFalsy();
+    expect(byName("seoDefaults").hidden).toBeFalsy();
   });
 
-  it("freezes role/aiKey's schema entirely, but leaves seo's and user's editable", () => {
+  it("freezes role/aiKey's schema entirely, but leaves seo's, user's, and seoDefaults' editable", () => {
     expect(byName("role").frozen).toBe(true);
     expect(byName("aiKey").frozen).toBe(true);
     expect(byName("seo").frozen).toBeFalsy();
     expect(byName("user").frozen).toBeFalsy();
+    expect(byName("seoDefaults").frozen).toBeFalsy();
   });
 
-  it("locks user/seo/role/aiKey's tables against deletion, but leaves menu/menuItem deletable", () => {
+  it("locks user/seo/role/aiKey/seoDefaults' tables against deletion, but leaves menu/menuItem deletable", () => {
     expect(byName("user").locked).toBe(true);
     expect(byName("seo").locked).toBe(true);
     expect(byName("role").locked).toBe(true);
     expect(byName("aiKey").locked).toBe(true);
+    expect(byName("seoDefaults").locked).toBe(true);
     expect(byName("menu").locked).toBeFalsy();
     expect(byName("menuItem").locked).toBeFalsy();
+  });
+
+  it("seoDefaults is recognized by its fixed id, has features.seo on, and no custom fields", () => {
+    const seoDefaults = byName("seoDefaults");
+    expect(seoDefaults.id).toBe(SEO_DEFAULTS_TYPE_ID);
+    expect(seoDefaults.features?.seo).toBe(true);
+    expect(seoDefaults.fields).toEqual([]);
   });
 
   it("protects user's email/password/roles fields specifically, and nothing else", () => {
@@ -209,7 +222,7 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("resolveDefaultContentTypeDefinitions", () => {
-  it("falls back to the 6 built-in defaults when no packaged seed is given", () => {
+  it("falls back to the 7 built-in defaults when no packaged seed is given", () => {
     const resolved = resolveDefaultContentTypeDefinitions(undefined);
     expect(resolved.map((t) => t.name).sort()).toEqual(
       defaultContentTypeDefinitions().map((t) => t.name).sort(),
@@ -234,7 +247,7 @@ describe("resolveDefaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKey/role/user_roles tables plus 6 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/user_roles/seoDefaults tables plus 7 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
@@ -243,13 +256,14 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
     expect(sql).toContain('CREATE TABLE "user_roles"');
+    expect(sql).toContain('CREATE TABLE "seoDefaults"');
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(6);
+    expect(metadataInserts).toHaveLength(7);
   });
 
   it("seeds nothing once every default name is already present", () => {
@@ -261,6 +275,7 @@ describe("pendingSeedStatements", () => {
         "seo",
         "aikey",
         "role",
+        "seodefaults",
       ]),
     );
     expect(statements).toEqual([]);
@@ -274,10 +289,11 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
+    expect(sql).toContain('CREATE TABLE "seoDefaults"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(5);
+    expect(metadataInserts).toHaveLength(6);
   });
 });

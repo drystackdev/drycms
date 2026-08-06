@@ -63,12 +63,6 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
       description:
         "Adds Title, Description, and Image fields for search engines and social previews.",
     },
-    {
-      key: "seoDefault",
-      label: "SEO Default",
-      description:
-        "Site-wide fallback SEO - other pages use this singleton's SEO fields when they don't set their own.",
-    },
   ],
   component: [],
 };

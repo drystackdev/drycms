@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { planMigration, type Statement } from "./migration.js";
-import { SYSTEM_COMPONENT_IDS } from "./system-fields.js";
+import { SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 export interface PackagedSeed {
@@ -71,19 +71,23 @@ const IDS = {
  * collection (a named group of links), the `menuItem` component `menu.refs`
  * repeats, an `seo` component any collection/singleton can flatten in via
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
- * (credentials for third-party AI providers), and
- * collection (role-based access control).
+ * (credentials for third-party AI providers), a `role` collection
+ * (role-based access control), and a `seoDefaults` singleton (the one
+ * site-wide fallback SEO source - see `dry-seo.ts`'s `seoTierFor`).
  * `menuItem`/`user`/`menu` are plain, ordinary content types the admin can
  * freely rename, edit, or delete, indistinguishable from anything created by
- * hand - EXCEPT `user` itself, which carries `locked: true` (its table can't
- * be deleted - see `types.ts`) and `protectedFieldIds` over its
- * `email`/`password`/`roles` fields (needed for login/permissions, so they
- * can't be edited or removed either, even though the rest of `user`'s fields
- * are as free as any other type's). `seo`, `aiKey`, and `role`
- * carry real restrictions too (`hidden`/`locked`/`frozen` - see `types.ts`'s
- * doc comments), because the role schema is consumed by the auth layer and
- * `system-fields.ts` hardcodes `seo`'s id - reshaping
- * any of them through the generic schema editor would silently break that.
+ * hand - EXCEPT `user`/`seoDefaults`, which carry `locked: true` (their
+ * table can't be deleted - see `types.ts`) - `user` also has
+ * `protectedFieldIds` over its `email`/`password`/`roles` fields (needed for
+ * login/permissions, so they can't be edited or removed either, even though
+ * the rest of `user`'s fields are as free as any other type's). `seo`,
+ * `aiKey`, and `role` carry real restrictions too (`hidden`/`locked`/
+ * `frozen` - see `types.ts`'s doc comments), because the role schema is
+ * consumed by the auth layer and `system-fields.ts` hardcodes `seo`'s id -
+ * reshaping any of them through the generic schema editor would silently
+ * break that. `seoDefaults` is recognized by its fixed id
+ * (`SEO_DEFAULTS_TYPE_ID`), not by name, so renaming it (still allowed,
+ * unlike `role`/`aiKey`) doesn't break the SEO cascade.
  * Note that `pendingSeedStatements` re-seeds a missing default by NAME on the
  * next boot (it has no other way to tell "missing" apart from "renamed") -
  * so deleting one of these just gets it silently re-created fresh next boot,
@@ -391,12 +395,30 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  return [menuItem, seo, user, menu, aiKey, role];
+  const seoDefaults: ContentTypeDefinition = {
+    id: SEO_DEFAULTS_TYPE_ID,
+    kind: "singleton",
+    name: "seoDefaults",
+    label: "SEO Defaults",
+    description: "Site-wide fallback SEO, used by any page that doesn't set its own.",
+    // Not `hidden` - it's ordinary user-facing content (the actual meta
+    // title/description/image an admin fills in), just reached through the
+    // generic singleton editor like `homepage`/`about` rather than a
+    // dedicated page. `locked` only - deleting the table would silently
+    // break the SEO cascade's "Default" layer (`dry-seo.ts`), but nothing
+    // else needs its schema frozen the way `role`/`aiKey`'s do.
+    locked: true,
+    features: { seo: true },
+    fields: [],
+    version: 0,
+  };
+
+  return [menuItem, seo, user, menu, aiKey, role, seoDefaults];
 }
 
 /**
  * The list `pendingSeedStatements` treats as "must exist" - an app's own
- * `dry.seed.json` takes over COMPLETELY when present, in place of the 6
+ * `dry.seed.json` takes over COMPLETELY when present, in place of the 7
  * built-in defaults, not alongside them (`seed:sync`, which produces that
  * file, snapshots the FULL content-type list of a real dev DB, so it already
  * includes copies of `user`/`role`/etc. - see `plans/content-type-seed.md`).
@@ -425,7 +447,7 @@ export function resolveDefaultContentTypeDefinitions(
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
  * component from it even on a run where `menuItem` itself isn't being
  * (re-)created. "Default" here means `resolveDefaultContentTypeDefinitions()`
- * - the packaged app seed when one exists, otherwise the 6 built-in types.
+ * - the packaged app seed when one exists, otherwise the 7 built-in types.
  */
 export function pendingSeedStatements(
   existingNamesLowercase: ReadonlySet<string>,

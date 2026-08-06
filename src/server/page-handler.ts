@@ -5,6 +5,7 @@ import type { DryRequestContext, DryVeiContext } from "../content-types/dry-cont
 import type { DrySeoLayers, DrySeoValue } from "../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { SEO_DEFAULTS_TYPE_ID } from "../content-types/system-fields.js";
 import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
 import { discoverRoutes } from "./app-router/route-tree.js";
@@ -74,9 +75,10 @@ export async function handlePageRequest(
   // Seeds the SEO cascade's "Default" layer once per request - the one
   // layer no page/layout ever fetches on its own (see `dry-seo.ts`'s
   // `seoTierFor`), so it has to be done here rather than as a side effect
-  // of some `dry()` call. Driven by `features.seoDefault`, not a hardcoded
-  // type name, so this stays generic across drycms projects.
-  const seoDefaultsType = allTypes.find((t) => t.kind === "singleton" && t.features?.seoDefault);
+  // of some `dry()` call. `seoDefaults` is a built-in type (see `seed.ts`),
+  // so it's always present in `allTypes` - looked up by its fixed id, not
+  // name, since the name/label stay freely editable.
+  const seoDefaultsType = allTypes.find((t) => t.id === SEO_DEFAULTS_TYPE_ID);
   if (seoDefaultsType) {
     const row = await entries.getSingletonEntry(seoDefaultsType, allTypes);
     const value = row?.value.seo;

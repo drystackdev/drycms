@@ -65,6 +65,13 @@ export const SYSTEM_COMPONENT_IDS = {
   seo: "system-seo",
 } as const;
 
+/** Fixed id for the built-in "SEO Defaults" singleton (see `seed.ts`) - the
+ * one site-wide fallback SEO source. `dry-seo.ts`'s `seoTierFor` and
+ * `page-handler.ts` recognize it by this id, not by name/label - both of
+ * which stay freely editable (only `locked` against deletion, like `user`),
+ * so an id-based check is the only stable way to always find it again. */
+export const SEO_DEFAULTS_TYPE_ID = "system-seo-defaults";
+
 /** The synthetic fields implied by `type.features` - in front of `type.fields`
  * for the real DB column order (`tree.ts`'s `resolveTableTree`), but AFTER
  * `type.fields` for on-screen display order (`entry-tree.ts`'s

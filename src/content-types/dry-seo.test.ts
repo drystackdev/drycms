@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mergeSeoLayers, seoTierFor } from "./dry-seo.js";
+import { SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 function contentType(overrides: Partial<ContentTypeDefinition>): ContentTypeDefinition {
@@ -24,12 +25,19 @@ describe("seoTierFor", () => {
     expect(seoTierFor(contentType({ kind: "collection", features: { seo: true } }))).toBe("entry");
   });
 
-  it("is 'singleton' for a singleton with features.seo but no seoDefault", () => {
+  it("is 'singleton' for any other SEO-enabled singleton", () => {
     expect(seoTierFor(contentType({ kind: "singleton", features: { seo: true } }))).toBe("singleton");
   });
 
-  it("is 'default' for a singleton with both features.seo and features.seoDefault", () => {
-    expect(seoTierFor(contentType({ kind: "singleton", features: { seo: true, seoDefault: true } }))).toBe("default");
+  it("is 'default' for the built-in seoDefaults singleton specifically (matched by id, not name)", () => {
+    expect(
+      seoTierFor(contentType({ id: SEO_DEFAULTS_TYPE_ID, kind: "singleton", features: { seo: true } })),
+    ).toBe("default");
+    // Renaming it (still allowed - only `locked`, not `frozen`, see `seed.ts`)
+    // doesn't break the cascade, since the id is what's checked.
+    expect(
+      seoTierFor(contentType({ id: SEO_DEFAULTS_TYPE_ID, name: "renamedSeoDefaults", kind: "singleton", features: { seo: true } })),
+    ).toBe("default");
   });
 
   it("is null for a component, even with features.seo somehow set", () => {

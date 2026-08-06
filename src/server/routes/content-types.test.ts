@@ -127,6 +127,7 @@ describe("GET /dry/api/content-types", () => {
       "menuItem",
       "role",
       "seo",
+      "seoDefaults",
       "user",
     ]);
     const byName = (name: string) =>

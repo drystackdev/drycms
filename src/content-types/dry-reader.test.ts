@@ -248,17 +248,12 @@ describe("dry()", () => {
       await schema.applySave(page, await schema.planSave(page));
       await entries.ensureSingletonEntry(page, await schema.listContentTypes());
 
-      const siteDefaults: ContentTypeDefinition = {
-        id: "custom-site-defaults",
-        kind: "singleton",
-        name: "siteDefaults",
-        label: "Site Defaults",
-        features: { seo: true, seoDefault: true },
-        fields: [],
-        version: 0,
-      };
-      await schema.applySave(siteDefaults, await schema.planSave(siteDefaults));
-      await entries.ensureSingletonEntry(siteDefaults, await schema.listContentTypes());
+      // `seoDefaults` itself is one of the built-in types `pendingSeedStatements`
+      // already auto-seeded above (see `seed.ts`) - no need to declare it by
+      // hand, just create its initial (empty) entry row like `page`'s.
+      const preTypes = await schema.listContentTypes();
+      const seoDefaultsType = preTypes.find((t) => t.name === "seoDefaults")!;
+      await entries.ensureSingletonEntry(seoDefaultsType, preTypes);
 
       const allTypes = await schema.listContentTypes();
       return { dir, entries, allTypes };
@@ -282,7 +277,7 @@ describe("dry()", () => {
       expect(seo.singleton).toBeUndefined();
     });
 
-    it("singleton().get() records the 'singleton' layer for an SEO singleton without seoDefault", async () => {
+    it("singleton().get() records the 'singleton' layer for an SEO singleton that isn't the built-in seoDefaults", async () => {
       const { dir, entries, allTypes } = await freshSeoSetup();
       dirs.push(dir);
       const pageType = allTypes.find((t) => t.name === "page")!;
@@ -296,14 +291,14 @@ describe("dry()", () => {
       expect(seo.entry).toBeUndefined();
     });
 
-    it("singleton().get() records the 'default' layer when features.seoDefault is set", async () => {
+    it("singleton().get() records the 'default' layer for the built-in seoDefaults singleton", async () => {
       const { dir, entries, allTypes } = await freshSeoSetup();
       dirs.push(dir);
-      const defaultsType = allTypes.find((t) => t.name === "siteDefaults")!;
+      const defaultsType = allTypes.find((t) => t.name === "seoDefaults")!;
       await entries.saveSingletonEntry(defaultsType, allTypes, { seo: { metaTitle: "Site default title" } });
       const seo: DrySeoLayers = {};
       await runWithDryContext({ entries, allTypes, seo }, async () => {
-        await dry().singleton("siteDefaults").get();
+        await dry().singleton("seoDefaults").get();
       });
       expect(seo.default).toMatchObject({ metaTitle: "Site default title" });
       expect(seo.singleton).toBeUndefined();

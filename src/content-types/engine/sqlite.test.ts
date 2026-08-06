@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe("createSqliteContentEngineAdapter", () => {
-  it("seeds the built-in user/menu/menuItem/aiKey/role defaults on first boot", async () => {
+  it("seeds the built-in user/menu/menuItem/aiKey/role/seoDefaults defaults on first boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -56,6 +56,7 @@ describe("createSqliteContentEngineAdapter", () => {
       "menuItem",
       "role",
       "seo",
+      "seoDefaults",
       "user",
     ]);
     const byName = (name: string) => types.find((t) => t.name === name)!;

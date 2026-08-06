@@ -1,3 +1,4 @@
+import { SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 /** Shape of the `seo` component's flattened fields (see `seed.ts`) as it
@@ -28,15 +29,16 @@ export interface DrySeoLayers {
 }
 
 /** Which `DrySeoLayers` slot a `get()` result for `type` belongs in, or
- * `null` if `type` doesn't carry SEO at all (`features.seo` off). A
- * `singleton` with `features.seoDefault` is the one site-wide fallback
- * source (`default`); every other SEO-enabled `singleton` is a page's own
- * override (`singleton`); a `collection` entry's own SEO is the highest
- * priority (`entry`). */
+ * `null` if `type` doesn't carry SEO at all (`features.seo` off). The
+ * built-in `seoDefaults` singleton (recognized by its fixed
+ * `SEO_DEFAULTS_TYPE_ID`, not by name - see `seed.ts`) is the one site-wide
+ * fallback source (`default`); every other SEO-enabled `singleton` is a
+ * page's own override (`singleton`); a `collection` entry's own SEO is the
+ * highest priority (`entry`). */
 export function seoTierFor(type: ContentTypeDefinition): keyof DrySeoLayers | null {
   if (!type.features?.seo) return null;
   if (type.kind === "collection") return "entry";
-  if (type.kind === "singleton") return type.features.seoDefault ? "default" : "singleton";
+  if (type.kind === "singleton") return type.id === SEO_DEFAULTS_TYPE_ID ? "default" : "singleton";
   return null;
 }
 
