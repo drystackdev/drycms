@@ -635,6 +635,18 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
      `setMagicWriteOpenToken(t => t+1)`.
    - Typecheck sạch + 873 test pass. Chỉ sửa client, không cần restart dev
      server.
+5. **"Clear all" cho entry mới** — user: "ở entry new có nút clear all để
+   xoá tất cả" (dùng để dọn sạch field sau khi thử Magic Write trên 1 entry
+   chưa lưu). Phát hiện: `EntryPreviewDialog`'s "Reset all" vốn chỉ mở được
+   qua nút Preview, mà Preview lại bị ẩn khi `isNew` (không có gì để diff) -
+   nên entry mới trước đây KHÔNG có cách nào xoá sạch field đã thử/gõ.
+   Không phải tính năng mới từ đầu - tái dùng ĐÚNG state/handler có sẵn
+   (`showResetAllConfirm`/`handleResetAll`; với entry mới `originalValue`
+   vốn đã là giá trị rỗng tính lúc mount, nên `handleResetAll` xoá sạch y
+   hệt "Clear all" cần) chỉ thêm 1 nút kích hoạt trực tiếp (bỏ qua
+   Preview) ở cả 2 vị trí header (topbar + VEI dialog), và đổi chữ trong
+   `ConfirmDialog` cho đúng ngữ cảnh entry mới ("Clear all fields?" thay vì
+   "Reset all changes?"). Typecheck sạch + 873 test pass.
 
 ## Speed
 

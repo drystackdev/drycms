@@ -6,6 +6,7 @@ import SlugField from "../components/fields/SlugField.js";
 import { toast } from "../components/Toast.js";
 import {
   ArrowLeftIcon,
+  EraserIcon,
   PreviewIcon,
   TrashIcon,
 } from "../components/icons/index.js";
@@ -417,6 +418,24 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             <span class="badge sm secondary">{previewDiffs.length}</span>
           </button>
         )}
+        {isNew && isDirty && (
+          // A new, not-yet-saved entry has no "last saved value" for
+          // `EntryPreviewDialog`'s diff to compare against (and that
+          // dialog is unreachable here anyway - the Preview button right
+          // above is hidden for `isNew`) - this reuses the SAME
+          // `showResetAllConfirm`/`handleResetAll` plumbing that dialog's
+          // own "Reset all" button drives, just from a standalone trigger
+          // instead. `originalValue` is already the blank value computed
+          // at mount for a new entry, so `handleResetAll` clears every
+          // field back to empty, same effect a "Clear all" needs.
+          <button
+            type="button"
+            class="outline"
+            onClick={() => setShowResetAllConfirm(true)}
+          >
+            <EraserIcon /> Clear all
+          </button>
+        )}
         {canEdit && aiMode === "server" && (
           <button
             type="button"
@@ -756,6 +775,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 <span class="badge sm secondary">{previewDiffs.length}</span>
               </button>
             )}
+            {isNew && isDirty && (
+              <button
+                type="button"
+                class="outline"
+                onClick={() => setShowResetAllConfirm(true)}
+              >
+                <EraserIcon /> Clear all
+              </button>
+            )}
             {canEdit && aiMode === "server" && (
               <button
                 type="button"
@@ -858,14 +886,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
 
       <ConfirmDialog
         open={showResetAllConfirm}
-        title="Reset all changes?"
+        title={isNew ? "Clear all fields?" : "Reset all changes?"}
         message={
           <p>
-            This reverts every field back to the last saved value. Unsaved edits
-            will be lost.
+            {isNew
+              ? "This clears every field back to empty. Everything you've typed will be lost."
+              : "This reverts every field back to the last saved value. Unsaved edits will be lost."}
           </p>
         }
-        confirmLabel="Reset all"
+        confirmLabel={isNew ? "Clear all" : "Reset all"}
         destructive
         onConfirm={handleResetAll}
         onCancel={() => setShowResetAllConfirm(false)}
