@@ -7,6 +7,10 @@
     "Media": "solar:gallery-wide-bold-duotone",
     "IconManagement": "solar:widget-5-bold-duotone",
     "Users": "solar:users-group-rounded-bold-duotone",
+    "Roles": "solar:shield-user-bold-duotone",
+    "KeyValue": "solar:database-bold-duotone",
+    "AiKey": "solar:key-bold-duotone",
+    "Redirect": "solar:routing-2-bold-duotone",
     "Settings": "solar:settings-bold-duotone",
     "Brand": "solar:layers-minimalistic-bold-duotone",
 
