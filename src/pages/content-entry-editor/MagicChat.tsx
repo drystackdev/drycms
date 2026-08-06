@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
-import { CloseIcon, PlusIcon } from "../../components/icons/index.js";
+import { CloseIcon, EraserIcon, PlusIcon } from "../../components/icons/index.js";
 import FileManager from "../../components/FileManager/FileManager.js";
 import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
@@ -495,7 +495,10 @@ export default function MagicChat({
     abortRef.current?.abort();
   }
 
-  function endSessionNow() {
+  /** Resets the conversation back to empty - stays open (unlike the old
+   * bare "✕", this is the ONLY reset control now, per user feedback: no
+   * separate close/end action, "Clear all" doubles as it). */
+  function clearAllNow() {
     abortRef.current?.abort();
     historyRef.current = [];
     sessionImagePathsRef.current = [];
@@ -505,15 +508,14 @@ export default function MagicChat({
     setSending(false);
     setStreaming(null);
     setShowEndConfirm(false);
-    setOpen(false);
   }
 
-  function handleEndSession() {
+  function handleClearAll() {
     if (sending) {
       setShowEndConfirm(true);
       return;
     }
-    endSessionNow();
+    clearAllNow();
   }
 
   function handleComposerKeyDown(event: KeyboardEvent) {
@@ -522,14 +524,6 @@ export default function MagicChat({
       void handleComposerSubmit();
     }
   }
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [prompt]);
 
   if (!canEdit) return null;
 
@@ -545,11 +539,11 @@ export default function MagicChat({
               <SparkleIcon /> Magic
             </h3>
             <div class="row align-center" style={{ gap: "0.25rem" }}>
+              <button type="button" class="ghost sm" onClick={handleClearAll} disabled={messages.length === 0}>
+                <EraserIcon /> Clear all
+              </button>
               <button type="button" class="ghost icon sm" aria-label="Minimize" onClick={() => setOpen(false)}>
                 —
-              </button>
-              <button type="button" class="ghost icon sm" aria-label="End conversation" onClick={handleEndSession}>
-                <CloseIcon />
               </button>
             </div>
           </header>
@@ -616,7 +610,6 @@ export default function MagicChat({
               <PlusIcon />
             </button>
             <textarea
-              ref={textareaRef}
               class="magic-chat-input"
               placeholder="Message Magic…"
               value={prompt}
@@ -659,11 +652,11 @@ export default function MagicChat({
 
       <ConfirmDialog
         open={showEndConfirm}
-        title="End this conversation?"
-        message={<p>Magic is still replying. Ending now stops it and clears the conversation.</p>}
-        confirmLabel="End conversation"
+        title="Clear this conversation?"
+        message={<p>Magic is still replying. Clearing now stops it and erases the conversation.</p>}
+        confirmLabel="Clear all"
         destructive
-        onConfirm={endSessionNow}
+        onConfirm={clearAllNow}
         onCancel={() => setShowEndConfirm(false)}
       />
     </div>
