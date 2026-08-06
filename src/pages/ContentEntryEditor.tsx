@@ -10,8 +10,7 @@ import {
   PreviewIcon,
   TrashIcon,
 } from "../components/icons/index.js";
-import { SparkleIcon } from "../components/AiSparkleIcon.js";
-import MagicWriteDialog from "./content-entry-editor/MagicWriteDialog.js";
+import MagicChat from "./content-entry-editor/MagicChat.js";
 import { createHttpFileSource } from "../storage/http-source.js";
 import {
   ContentEntriesApiError,
@@ -180,7 +179,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     () => createContentTypesApi(`${path}/api/content-types`),
     [],
   );
-  const magicWriteImageSource = useMemo(
+  const magicChatImageSource = useMemo(
     () => createHttpFileSource(`${path}/api/storage`),
     [],
   );
@@ -197,11 +196,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showResetAllConfirm, setShowResetAllConfirm] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  // Bumped on every "Magic Write" button click - see `MagicWriteDialog.tsx`'s
-  // own `openToken` prop doc for why this is a counter, not a boolean.
-  const [magicWriteOpenToken, setMagicWriteOpenToken] = useState(0);
-  // Magic Write (status/magic-write.md): the top-level field name currently
-  // being streamed into, or `null` when no Magic Write run is active -
+  // Magic (status/magic-chat.md, formerly Magic Write): the top-level field
+  // name currently being streamed into, or `null` when no run is active -
   // `renderFieldNodes` disables that one field's `<fieldset>` while it's set.
   const [streamingFieldName, setStreamingFieldName] = useState<string | null>(
     null,
@@ -430,28 +426,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           >
             <EraserIcon /> Clear all
           </button>
-        )}
-        {canEdit && aiMode === "server" && (
-          streamingFieldName ? (
-            // Magic Write's own dialog is hidden while it streams (see
-            // `MagicWriteDialog.tsx`'s own doc comment) - the per-field "AI
-            // is writing…" banner is the primary signal, but this topbar is
-            // the only ALWAYS-visible spot (unlike that dialog) to also show
-            // it, rather than the "Magic Write" button just sitting there
-            // looking idle while a run is actually active.
-            <span class="row align-center hint" style={{ gap: "0.375rem" }}>
-              <span class="spinner" />
-              Writing "{editableNodes.find((n) => n.fieldName === streamingFieldName)?.label ?? streamingFieldName}"…
-            </span>
-          ) : (
-            <button
-              type="button"
-              class="outline"
-              onClick={() => setMagicWriteOpenToken((token) => token + 1)}
-            >
-              <SparkleIcon /> Magic Write
-            </button>
-          )
         )}
         {canEdit && (
           <button
@@ -749,22 +723,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 <EraserIcon /> Clear all
               </button>
             )}
-            {canEdit && aiMode === "server" && (
-              streamingFieldName ? (
-                <span class="row align-center hint" style={{ gap: "0.375rem" }}>
-                  <span class="spinner" />
-                  Writing "{editableNodes.find((n) => n.fieldName === streamingFieldName)?.label ?? streamingFieldName}"…
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  class="outline"
-                  onClick={() => setMagicWriteOpenToken((token) => token + 1)}
-                >
-                  <SparkleIcon /> Magic Write
-                </button>
-              )
-            )}
             {/* Redundant inside the VEI dialog - the overlay's own dock Save
              * button drives this entry's `handleSave` too (via `dry:entry-save`,
              * `listenForEntrySave` above), but scoped across every marked entry
@@ -867,15 +825,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       />
 
       {aiMode === "server" && (
-        <MagicWriteDialog
-          openToken={magicWriteOpenToken}
+        <MagicChat
           typeSlug={typeSlug}
           entryId={entryId}
           nodes={editableNodes}
           value={value}
           updateFieldValue={updateFieldValue}
           onStreamingFieldChange={setStreamingFieldName}
-          source={magicWriteImageSource}
+          source={magicChatImageSource}
+          canEdit={canEdit}
+          veiFrame={veiFrame}
         />
       )}
     </>

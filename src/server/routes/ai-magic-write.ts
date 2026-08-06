@@ -29,16 +29,28 @@ interface MagicWriteHttpRequest {
   entryId?: string;
   currentValue?: unknown;
   prompt?: string;
-  /** Prior turns of this same Magic Write conversation - only non-empty when
-   * this is a follow-up request after the model asked a clarifying question
-   * (`kind: question`) and the admin answered it. Same shape/role as
-   * `ai-wizard-protocol.ts`'s wizard history; validated the same way. */
+  /** Prior turns of this same Magic (chat) conversation - every follow-up
+   * request after the first carries the whole conversation so far. Same
+   * shape/role as `ai-wizard-protocol.ts`'s wizard history; validated the
+   * same way. */
   history?: unknown;
-  /** Context images (status/magic-write.md decision #3) - the client resends
-   * the SAME picked set on every request of one Magic Write session
-   * (initial and any follow-up after a clarifying question), since each
-   * server call rebuilds its own provider request from scratch. */
+  /** Context images attached to THIS turn only (`status/magic-chat.md`
+   * decision C) - base64, already client-resized. Unlike the original Magic
+   * Write (`status/magic-write.md` decision #3), these are NOT resent on
+   * every subsequent request of the session; only this turn's own message
+   * carries their pixels to the model. See `sessionImagePaths` below for how
+   * an EARLIER turn's image stays usable as a write target later on. */
   images?: unknown;
+  /** Every image path attached anywhere in this session so far (including
+   * this turn's own `images`, by path) - text only, no base64. Verified the
+   * same way as `images` (`storage.stat()`) and unioned into
+   * `allowedImageSrcs`, so the model can still set an `image` field or a
+   * RichText `<img src>` to a photo it saw several turns ago even though it
+   * can no longer "see" that turn's pixels again (`status/magic-chat.md`
+   * decision C - the model describes an image in its own reply when it
+   * first sees it, and that description is what carries the reference
+   * forward across turns, not a resent image). */
+  sessionImagePaths?: unknown;
   aiKeyName?: string;
   /** Which of `aiKeyName`'s own configured models to use for this run - see
    * `ai.ts`'s `WizardHttpRequest.aiModel` doc comment, same shape/pairing. */
@@ -57,13 +69,13 @@ interface MagicWriteImageInput {
 const ALLOWED_MAGIC_WRITE_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MAX_MAGIC_WRITE_IMAGES = 6;
 /** ~1.5 MiB decoded per image - generous headroom over the ~240px-resized
- * images `MagicWriteDialog.tsx` actually sends (typically a few KB each). */
+ * images `MagicChat.tsx` actually sends (typically a few KB each). */
 const MAX_MAGIC_WRITE_IMAGE_BASE64_CHARS = 2_000_000;
 
 function validateMagicWriteImages(value: unknown): MagicWriteImageInput[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > MAX_MAGIC_WRITE_IMAGES) {
-    throw new Error(`Magic Write accepts at most ${MAX_MAGIC_WRITE_IMAGES} context images.`);
+    throw new Error(`Magic accepts at most ${MAX_MAGIC_WRITE_IMAGES} context images per turn.`);
   }
   return value.map((raw, index) => {
     const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -71,9 +83,28 @@ function validateMagicWriteImages(value: unknown): MagicWriteImageInput[] {
     const mimeType = typeof record.mimeType === "string" ? record.mimeType.toLowerCase() : "";
     const base64 = typeof record.base64 === "string" ? record.base64 : "";
     if (!path || !ALLOWED_MAGIC_WRITE_IMAGE_MIME_TYPES.has(mimeType) || !base64 || base64.length > MAX_MAGIC_WRITE_IMAGE_BASE64_CHARS) {
-      throw new Error(`Magic Write image ${index} is invalid.`);
+      throw new Error(`Magic image ${index} is invalid.`);
     }
     return { path, mimeType, base64 };
+  });
+}
+
+const MAX_MAGIC_WRITE_SESSION_IMAGE_PATHS = 40;
+
+/** Text-only companion to `validateMagicWriteImages` - every image path ever
+ * attached in this session, not just this turn's (`status/magic-chat.md`
+ * decision C). No mimeType/base64 to check, just plain strings; the higher
+ * cap (vs. `MAX_MAGIC_WRITE_IMAGES`' per-turn 6) reflects that a long chat
+ * can accumulate attachments across many turns without resending any of
+ * their bytes. */
+function validateMagicWriteSessionImagePaths(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_MAGIC_WRITE_SESSION_IMAGE_PATHS) {
+    throw new Error(`Magic accepts at most ${MAX_MAGIC_WRITE_SESSION_IMAGE_PATHS} attached images per session.`);
+  }
+  return value.map((raw, index) => {
+    if (typeof raw !== "string" || !raw.trim()) throw new Error(`Magic session image path ${index} is invalid.`);
+    return raw.trim();
   });
 }
 
@@ -83,6 +114,7 @@ interface MagicWriteValidatedRequest {
   prompt: string;
   history: ChatMessage[];
   images: MagicWriteImageInput[];
+  sessionImagePaths: string[];
   aiKeyName: string | undefined;
   aiModel: string | undefined;
 }
@@ -110,23 +142,29 @@ function validateMagicWriteHistory(value: unknown): ChatMessage[] {
 
 function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValidatedRequest {
   const typeSlug = typeof body.typeSlug === "string" ? body.typeSlug.trim() : "";
-  if (!typeSlug) throw new Error("Magic Write requires a content type.");
+  if (!typeSlug) throw new Error("Magic requires a content type.");
 
   const history = validateMagicWriteHistory(body.history);
 
+  // `status/magic-chat.md` (the "Magic" chat upgrade) - unlike the original
+  // one-shot Magic Write, `prompt` is THIS turn's own message on every call,
+  // not just the first (a follow-up used to fold its text into `history`
+  // and send an empty `prompt` instead - see this file's git history for
+  // that shape). `history` is now strictly PRIOR turns.
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
-  if (history.length === 0 && !prompt) throw new Error("Describe what you want Magic Write to do first.");
-  if (prompt.length > 4_000) throw new Error("That prompt is too long.");
+  if (!prompt) throw new Error("Say something to Magic first.");
+  if (prompt.length > 4_000) throw new Error("That message is too long.");
 
   const currentValue: EntryValue = body.currentValue && typeof body.currentValue === "object" && !Array.isArray(body.currentValue)
     ? (body.currentValue as EntryValue)
     : {};
 
   const images = validateMagicWriteImages(body.images);
+  const sessionImagePaths = validateMagicWriteSessionImagePaths(body.sessionImagePaths);
 
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
-  if (ai.mode === "server" && !aiKeyName) throw new Error("Choose an AI Key before running Magic Write.");
+  if (ai.mode === "server" && !aiKeyName) throw new Error("Choose an AI Key before running Magic.");
 
   return {
     typeSlug,
@@ -134,6 +172,7 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     prompt,
     history,
     images,
+    sessionImagePaths,
     aiKeyName,
     aiModel,
   };
@@ -211,6 +250,11 @@ interface MagicWriteQuestionTurnEvent {
   allowOther?: boolean;
 }
 
+interface MagicWriteChatTurnEvent {
+  kind: "chat";
+  text: string;
+}
+
 function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidatedRequest): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -224,7 +268,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const denied = await checkAccess(context, entries, allTypes, type, type.kind === "singleton" ? "setting" : "update");
           if (denied) {
             const body = await denied.json().catch(() => ({})) as { message?: string };
-            throw new Error(body.message || "You don't have permission to use Magic Write on this content type.");
+            throw new Error(body.message || "You don't have permission to use Magic on this content type.");
           }
 
           // Never trust a client-claimed path outright - re-verify each one is
@@ -242,8 +286,24 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
               }),
             )
           ).filter((image): image is MagicWriteImageInput => image !== null);
-          const allowedImageSrcs = new Set(verifiedImages.map((image) => image.path));
           const chatImages = verifiedImages.map(({ mimeType, base64 }) => ({ mimeType, base64 }));
+
+          // `status/magic-chat.md` decision C - `allowedImageSrcs` (which
+          // paths the model may reference as an `image` field value or a
+          // RichText `<img src>`) is the union of THIS turn's images and
+          // every earlier turn's, verified the same way. This turn's own
+          // pixels (`chatImages` above) are only ever attached to this
+          // turn's own message below - an earlier turn's path stays a valid
+          // write target without its bytes ever being resent.
+          const verifiedSessionPaths = (
+            await Promise.all(
+              request.sessionImagePaths.map(async (path) => {
+                const stat = await storageAdapter.stat(path).catch(() => null);
+                return stat && stat.kind === "file" ? path : null;
+              }),
+            )
+          ).filter((path): path is string => path !== null);
+          const allowedImageSrcs = new Set([...verifiedImages.map((image) => image.path), ...verifiedSessionPaths]);
 
           const nodes = buildEntryFieldTree(type, allTypes);
           const fieldsDescription = describeFieldsForPrompt(nodes, request.currentValue);
@@ -256,17 +316,19 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
             relationContext,
           });
 
-          // The admin's own prompt is folded into the priming message only on
-          // the very first turn (`history` empty) - a follow-up request (the
-          // model asked a clarifying question, the admin answered) carries
-          // that exchange forward in `history` instead, same pattern as
-          // `ai.ts`'s `streamWizard`/`goal`. The context images are attached
-          // to this SAME message on every call regardless (each server call
-          // rebuilds its own independent provider request, so the model needs
-          // to see them again on a follow-up turn too).
-          const kickoff = request.history.length === 0 ? `\n\nWhat the admin wants: "${request.prompt}"` : "";
-          const priming: ChatMessage = { role: "user", text: `${systemPrompt}${kickoff}`, images: chatImages };
-          let messages: ChatMessage[] = [priming, ...request.history];
+          // `status/magic-chat.md` decision C - the system prompt is its own
+          // leading message, never carrying images. `history` is strictly
+          // PRIOR turns (text only, see `validateMagicWriteHistory`); this
+          // turn's own admin message is appended last, with THIS turn's
+          // images attached to it alone - the only place in the whole
+          // rebuilt request their bytes appear (each server call still
+          // rebuilds its own independent provider request from scratch,
+          // same as before, but an earlier turn's images are deliberately
+          // NOT resent - see `sessionImagePaths` above for how the model
+          // keeps a usable reference to them anyway).
+          const priming: ChatMessage = { role: "user", text: systemPrompt };
+          const currentTurn: ChatMessage = { role: "user", text: request.prompt, images: chatImages };
+          let messages: ChatMessage[] = [priming, ...request.history, currentTurn];
           let lastError = "";
           for (let attempt = 0; attempt < MAGIC_WRITE_MAX_ATTEMPTS; attempt++) {
             if (attempt > 0) controller.enqueue(streamEvent({ retry: true }));
@@ -276,8 +338,10 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
             const validation = parseMagicWriteYaml(extractMagicWriteYaml(result.text));
             if (validation.ok) {
               const turn = validation.turn;
-              let event: MagicWriteFieldsTurnEvent | MagicWriteQuestionTurnEvent;
+              let event: MagicWriteFieldsTurnEvent | MagicWriteQuestionTurnEvent | MagicWriteChatTurnEvent;
               if (turn.kind === "question") {
+                event = turn;
+              } else if (turn.kind === "chat") {
                 event = turn;
               } else {
                 const applied = applyMagicWriteFields(nodes, turn.fields, allowedImageSrcs);

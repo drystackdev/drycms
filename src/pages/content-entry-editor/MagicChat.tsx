@@ -1,0 +1,830 @@
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import ConfirmDialog from "../../components/ConfirmDialog.js";
+import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
+import { SparkleIcon } from "../../components/AiSparkleIcon.js";
+import { CloseIcon, PlusIcon } from "../../components/icons/index.js";
+import FileManager from "../../components/FileManager/FileManager.js";
+import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
+import { resolveImageSrc } from "../../storage/http-source.js";
+import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
+import type { EntryFieldNode } from "../../content-types/engine/entry-tree.js";
+import type { EntryValue } from "../../content-types/engine/entry-codec.js";
+import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
+import type { MagicWriteChoice, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
+import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES } from "../../content-types/ai-magic-write-fields.js";
+import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
+import { scrollToField } from "./field-events.js";
+
+const { path } = window.__DRY_CONFIG__;
+
+/**
+ * "Magic" - the chat upgrade of what was Magic Write (`status/magic-write.md`
+ * -> `status/magic-chat.md`). This file REPLACES `MagicWriteDialog.tsx`
+ * outright (not alongside it): the one-shot "prompt + up to 2 multiple-choice
+ * questions" dialog is gone, replaced by an ongoing chat the admin can attach
+ * images to, get asked follow-up questions in, and keep refining after a
+ * `fields` turn writes something - see `status/magic-chat.md` for the full
+ * design trail (3 rounds of back-and-forth) this component implements.
+ *
+ * Biggest structural change from the old dialog: this is NOT a modal. A
+ * small floating bubble (bottom-right, `popover="manual"` - same top-layer
+ * trick `Toast.tsx` uses to float above an open `<dialog>` without a z-index
+ * scale) expands into a chat panel that sits ALONGSIDE the entry form - the
+ * admin can type in a real field while Magic is open, unlike the old dialog
+ * which had to hide itself the moment a `fields` turn started streaming.
+ */
+
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+
+interface MagicChatEncodedImage {
+  path: string;
+  mimeType: string;
+  base64: string;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(",");
+      resolve(comma === -1 ? result : result.slice(comma + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Fetches an already-uploaded storage image's bytes, resizes it down to a
+ * small (240px) context-only copy, and base64-encodes it - see
+ * `status/magic-write.md` decision #3 for why 240px specifically (vision API
+ * token cost scales with pixel count, not quality/file size). Run once per
+ * turn, right before that turn's request goes out. */
+async function encodeContextImage(imagePath: string): Promise<MagicChatEncodedImage> {
+  const response = await fetch(resolveImageSrc(imagePath));
+  if (!response.ok) throw new Error(`Could not load "${imagePath}".`);
+  const blob = await response.blob();
+  const original = new File([blob], imagePath.split("/").pop() || imagePath, { type: blob.type });
+  const optimized = await optimizeUploadImage(original, { maxWidth: 240 });
+  const base64 = await fileToBase64(optimized);
+  return { path: imagePath, mimeType: optimized.type, base64 };
+}
+
+interface MagicChatFieldsResult {
+  kind: "fields";
+  summary: string;
+  fields: EntryValue;
+  writtenFieldNames: string[];
+}
+
+interface MagicChatQuestionResult {
+  kind: "question";
+  topic: string;
+  question: string;
+  choices: MagicWriteChoice[];
+  multi: boolean;
+  allowOther?: boolean;
+}
+
+interface MagicChatChatResult {
+  kind: "chat";
+  text: string;
+}
+
+type MagicChatTurnResult = MagicChatFieldsResult | MagicChatQuestionResult | MagicChatChatResult;
+
+interface MagicChatHistoryMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+interface MagicChatStreamEvent {
+  delta?: string;
+  retry?: boolean;
+  turn?: MagicChatTurnResult;
+  aiLabel?: string;
+  error?: string;
+}
+
+/** Reads the `/api/ai/magic-write` SSE stream, forwarding raw `{delta}` text
+ * as it arrives (for `onDelta`'s live incremental rendering) and resolving
+ * once a `{turn}` (or `{error}`) event closes the stream. Same shape as the
+ * old `MagicWriteDialog.tsx`'s own version of this function - unchanged by
+ * the chat upgrade, the wire protocol underneath is the same SSE stream. */
+async function requestMagicTurn(
+  payload: Record<string, unknown>,
+  onDelta: (delta: string) => void,
+  onRetry: () => void,
+  signal: AbortSignal,
+): Promise<{ turn: MagicChatTurnResult; aiLabel: string }> {
+  const response = await fetch(`${path}/api/ai/magic-write`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.message === "string" ? body.message : "AI request failed.");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      let event: MagicChatStreamEvent;
+      try {
+        event = JSON.parse(line.slice(5).trim());
+      } catch {
+        continue;
+      }
+      if (event.error) throw new Error(event.error);
+      if (event.turn) return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
+      if (event.retry) onRetry();
+      else if (event.delta) onDelta(event.delta);
+    }
+  }
+  throw new Error("AI connection closed unexpectedly.");
+}
+
+/** A top-level field Magic can offer to write - relation/relation-mirror/
+ * password/secretkey are never candidates (see `status/magic-write.md`
+ * decision #2). */
+function isMagicChatCandidate(node: EntryFieldNode): boolean {
+  if (node.kind === "column") return WRITABLE_COLUMN_TYPES.has(node.fieldType);
+  if (node.kind === "flatten") return node.children.some(isMagicChatCandidate);
+  if (node.kind === "component-repeat") return node.itemFields.some(isMagicChatCandidate);
+  return false;
+}
+
+type ChatBubble =
+  | { id: string; role: "user"; text: string; imagePaths: string[] }
+  | { id: string; role: "assistant"; text: string; streaming: boolean }
+  | { id: string; role: "question"; question: string; choices: MagicWriteChoice[]; multi: boolean; allowOther?: boolean; answer?: string }
+  | { id: string; role: "status"; text: string }
+  | { id: string; role: "error"; text: string; retryText: string; retryImages: MagicChatEncodedImage[] };
+
+const SUGGESTIONS = [
+  "Viết một bài giới thiệu ngắn",
+  "Rút gọn nội dung hiện có",
+  "Đặt lại tiêu đề cho chuẩn SEO",
+];
+
+export interface MagicChatProps {
+  typeSlug: string;
+  entryId: string | null;
+  /** The entry's top-level editable `EntryFieldNode[]` (same list
+   * `ContentEntryEditor.tsx` renders fields from). */
+  nodes: EntryFieldNode[];
+  value: EntryValue;
+  updateFieldValue: (fieldName: string, fieldValue: unknown) => void;
+  /** Mirrors the field currently being streamed into up to
+   * `ContentEntryEditor.tsx`, which disables that field's `<fieldset>` while
+   * it's set (see `status/magic-write.md` decision #4). `null` when nothing
+   * is streaming. */
+  onStreamingFieldChange: (fieldName: string | null) => void;
+  /** Where the context-image picker's `FileManager` reads its files from. */
+  source: FileManagerSource;
+  canEdit: boolean;
+  /** The Visual Editing Interface's dialog iframe skips `DryLayout` (see
+   * `VeiFrame.tsx`) and shifts `Toaster` to `bottom-start` to avoid its own
+   * dock - the bubble/panel mirror that same shift so they don't collide. */
+  veiFrame?: boolean;
+}
+
+export default function MagicChat({
+  typeSlug,
+  entryId,
+  nodes,
+  value,
+  updateFieldValue,
+  onStreamingFieldChange,
+  source,
+  canEdit,
+  veiFrame = false,
+}: MagicChatProps) {
+  const writableNodes = useMemo(() => nodes.filter(isMagicChatCandidate), [nodes]);
+  const fieldLabel = (name: string) => writableNodes.find((candidate) => candidate.fieldName === name)?.label ?? name;
+
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [everOpened, setEverOpened] = useState(false);
+  const [messages, setMessages] = useState<ChatBubble[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const [attachedPaths, setAttachedPaths] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [streamingFieldName, setStreamingFieldName] = useState<string | null>(null);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showNewMessagesChip, setShowNewMessagesChip] = useState(false);
+
+  const aiKey = useAiKeySelection(everOpened);
+
+  const historyRef = useRef<MagicChatHistoryMessage[]>([]);
+  const sessionImagePathsRef = useRef<string[]>([]);
+  const rawTextRef = useRef("");
+  const committedRef = useRef<Set<string>>(new Set());
+  const streamingNameRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const stopReasonRef = useRef<"stop" | null>(null);
+  const idRef = useRef(0);
+  const mountedRef = useRef(true);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (open) setEverOpened(true);
+  }, [open]);
+
+  // Floats the whole widget in the browser's top layer, same mechanism
+  // `Toast.tsx` uses - see this file's own doc comment above.
+  useEffect(() => {
+    const el = widgetRef.current;
+    if (!el) return;
+    el.setAttribute("popover", "manual");
+    el.showPopover?.();
+  }, []);
+
+  const { ref: messagesRef, scrollToBottom, isNearBottom, viewport } = useOverlayScrollbars<HTMLDivElement>([open]);
+  const wasNearBottomRef = useRef(true);
+
+  // Notices the reader scrolling away from the bottom themselves, so a new
+  // message doesn't yank them back down mid-read (`status/magic-chat.md`'s
+  // "auto-scroll dính đáy"). The OverlayScrollbars instance (and its
+  // `.os-viewport`) only exists once the panel has actually opened at least
+  // once - re-runs on `open` to attach right after that first mount.
+  useEffect(() => {
+    if (!open) return;
+    const viewportEl = viewport();
+    if (!viewportEl) return;
+    const handleScroll = () => {
+      wasNearBottomRef.current = isNearBottom();
+    };
+    viewportEl.addEventListener("scroll", handleScroll, { passive: true });
+    return () => viewportEl.removeEventListener("scroll", handleScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    if (wasNearBottomRef.current) {
+      scrollToBottom();
+      setShowNewMessagesChip(false);
+    } else {
+      setShowNewMessagesChip(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
+
+  const prevStreamingRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (streamingFieldName && streamingFieldName !== prevStreamingRef.current) scrollToField(streamingFieldName);
+    prevStreamingRef.current = streamingFieldName;
+  }, [streamingFieldName]);
+
+  function setStreaming(name: string | null) {
+    if (streamingNameRef.current === name) return;
+    streamingNameRef.current = name;
+    setStreamingFieldName(name);
+    onStreamingFieldChange(name);
+  }
+
+  function newId(): string {
+    idRef.current += 1;
+    return `magic-${idRef.current}`;
+  }
+
+  function updateBubble(id: string, updater: (bubble: ChatBubble) => ChatBubble) {
+    setMessages((current) => current.map((bubble) => (bubble.id === id ? updater(bubble) : bubble)));
+  }
+
+  function commitField(name: string, raw: MagicWriteRawValue) {
+    if (committedRef.current.has(name)) return;
+    committedRef.current.add(name);
+    const node = writableNodes.find((candidate) => candidate.fieldName === name);
+    if (!node) return;
+    const applied = applyMagicWriteFields([node], { [name]: raw });
+    if (applied.writtenFieldNames.includes(name)) updateFieldValue(name, applied.value[name]);
+  }
+
+  function statusLine(closedNames: string[], streamingName: string | undefined): string {
+    const parts = [...closedNames.map((name) => `${fieldLabel(name)} ✓`), streamingName ? `${fieldLabel(streamingName)}…` : null].filter(
+      (part): part is string => !!part,
+    );
+    return parts.length > 0 ? parts.join(" · ") : "Writing…";
+  }
+
+  function handleDelta(assistantBubbleId: string, delta: string) {
+    rawTextRef.current += delta;
+    const partial = parsePartialMagicWriteYaml(rawTextRef.current);
+
+    if (partial.kind === "fields") {
+      for (const [name, raw] of Object.entries(partial.closedFields)) commitField(name, raw);
+      const streaming = partial.streamingField;
+      if (streaming && !committedRef.current.has(streaming.name)) {
+        setStreaming(streaming.name);
+        const node = writableNodes.find((candidate) => candidate.fieldName === streaming.name);
+        // "text"/"richtext" get their still-growing value fed live into the
+        // real form field, same as the old dialog - everything else stays
+        // disabled-but-inert until it fully closes (no safe partial value to
+        // coerce mid-stream). `richtext` goes through the pure-regex
+        // sanitizer on every tick (no DOMParser, so it never fails on a
+        // still-open tag), so any transient mis-render self-heals on the
+        // next tick.
+        if (node?.kind === "column" && typeof streaming.value === "string") {
+          if (node.fieldType === "text") updateFieldValue(streaming.name, streaming.value);
+          else if (node.fieldType === "richtext") updateFieldValue(streaming.name, sanitizeAiRichTextHtml(streaming.value, new Set(sessionImagePathsRef.current)));
+        }
+      }
+      updateBubble(assistantBubbleId, (bubble) => ({ ...bubble, role: "status", text: statusLine(Object.keys(partial.closedFields), streaming?.name) }) as ChatBubble);
+      return;
+    }
+
+    if (partial.kind === "question") {
+      updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: partial.question ?? "" } : bubble));
+      return;
+    }
+
+    // "chat", or not yet known (still nothing but a growing `kind:` line) -
+    // both render as a plain growing assistant bubble; an unrecognized/
+    // missing `kind` resolves as chat too (see `parseMagicWriteYaml`'s own
+    // doc comment), so there's no separate branch needed for that case.
+    updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: partial.text ?? "" } : bubble));
+  }
+
+  async function runAssistant(userText: string, images: MagicChatEncodedImage[], assistantBubbleId: string) {
+    setSending(true);
+    stopReasonRef.current = null;
+    rawTextRef.current = "";
+    committedRef.current = new Set();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const historyForThisTurn = historyRef.current;
+    try {
+      const result = await requestMagicTurn(
+        {
+          typeSlug,
+          entryId: entryId ?? undefined,
+          currentValue: valueRef.current,
+          prompt: userText,
+          history: historyForThisTurn,
+          images,
+          sessionImagePaths: sessionImagePathsRef.current,
+          aiKeyName: aiKey.keyName,
+          aiModel: aiKey.model,
+        },
+        (delta) => handleDelta(assistantBubbleId, delta),
+        () => {
+          rawTextRef.current = "";
+        },
+        controller.signal,
+      );
+      if (!mountedRef.current) return;
+
+      let assistantHistoryText: string;
+      if (result.turn.kind === "chat") {
+        const turn = result.turn;
+        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "assistant", text: turn.text, streaming: false }));
+        assistantHistoryText = turn.text;
+      } else if (result.turn.kind === "question") {
+        const turn = result.turn;
+        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "question", question: turn.question, choices: turn.choices, multi: turn.multi, allowOther: turn.allowOther }));
+        assistantHistoryText = turn.question;
+      } else {
+        const turn = result.turn;
+        for (const name of turn.writtenFieldNames) updateFieldValue(name, turn.fields[name]);
+        const names = turn.writtenFieldNames.map(fieldLabel);
+        assistantHistoryText = names.length > 0 ? `Wrote: ${names.join(", ")}${turn.summary ? ` — ${turn.summary}` : ""}` : `Nothing needed writing.${turn.summary ? ` — ${turn.summary}` : ""}`;
+        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: assistantHistoryText }));
+      }
+      historyRef.current = [...historyForThisTurn, { role: "user", text: userText }, { role: "assistant", text: assistantHistoryText }];
+      sessionImagePathsRef.current = [...new Set([...sessionImagePathsRef.current, ...images.map((image) => image.path)])];
+      setStreaming(null);
+      setSending(false);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      if (controller.signal.aborted) {
+        setStreaming(null);
+        setSending(false);
+        if (stopReasonRef.current === "stop") {
+          updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: "Stopped." }));
+          // The partial reply is discarded (not worth confusing a later turn
+          // with) - only the admin's own message stays in history, per
+          // `status/magic-chat.md` decision B.
+          historyRef.current = [...historyForThisTurn, { role: "user", text: userText }];
+        }
+        return;
+      }
+      setStreaming(null);
+      setSending(false);
+      const message = error instanceof Error ? error.message : "AI request failed.";
+      updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "error", text: message, retryText: userText, retryImages: images }));
+    }
+  }
+
+  function pushAssistantPlaceholder(): string {
+    const id = newId();
+    setMessages((current) => [...current, { id, role: "assistant", text: "", streaming: true }]);
+    return id;
+  }
+
+  function sendTurn(userText: string, images: MagicChatEncodedImage[]) {
+    const userBubbleId = newId();
+    setMessages((current) => [...current, { id: userBubbleId, role: "user", text: userText, imagePaths: images.map((image) => image.path) }]);
+    wasNearBottomRef.current = true;
+    const assistantBubbleId = pushAssistantPlaceholder();
+    void runAssistant(userText, images, assistantBubbleId);
+  }
+
+  async function handleComposerSubmit() {
+    const text = prompt.trim();
+    if (!text || sending) return;
+    setPrompt("");
+    const paths = attachedPaths;
+    setAttachedPaths([]);
+    setOpen(true);
+    let images: MagicChatEncodedImage[] = [];
+    try {
+      images = await Promise.all(paths.map(encodeContextImage));
+    } catch (error) {
+      setMessages((current) => [...current, { id: newId(), role: "error", text: error instanceof Error ? error.message : "Could not attach an image.", retryText: text, retryImages: [] }]);
+      return;
+    }
+    sendTurn(text, images);
+  }
+
+  function handleSuggestion(text: string) {
+    setPrompt(text);
+  }
+
+  function handleAnswerQuestion(bubbleId: string, choices: MagicWriteChoice[], chosenIds: Set<string>, other: string) {
+    const labels = choices.filter((choice) => chosenIds.has(choice.id)).map((choice) => `"${choice.label}"`);
+    const parts: string[] = [];
+    if (labels.length) parts.push(`Selected: ${labels.join(", ")}`);
+    if (other.trim()) parts.push(`Other: "${other.trim()}"`);
+    const answerText = parts.join(". ") || "No selection.";
+    updateBubble(bubbleId, (bubble) => (bubble.role === "question" ? { ...bubble, answer: answerText } : bubble));
+    const assistantBubbleId = pushAssistantPlaceholder();
+    void runAssistant(answerText, [], assistantBubbleId);
+  }
+
+  function handleRetry(bubbleId: string, text: string, images: MagicChatEncodedImage[]) {
+    setMessages((current) => current.filter((bubble) => bubble.id !== bubbleId));
+    const assistantBubbleId = pushAssistantPlaceholder();
+    void runAssistant(text, images, assistantBubbleId);
+  }
+
+  function handleStop() {
+    stopReasonRef.current = "stop";
+    abortRef.current?.abort();
+  }
+
+  function endSessionNow() {
+    abortRef.current?.abort();
+    historyRef.current = [];
+    sessionImagePathsRef.current = [];
+    setMessages([]);
+    setPrompt("");
+    setAttachedPaths([]);
+    setSending(false);
+    setStreaming(null);
+    setShowEndConfirm(false);
+    setOpen(false);
+  }
+
+  function handleEndSession() {
+    if (sending) {
+      setShowEndConfirm(true);
+      return;
+    }
+    endSessionNow();
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleComposerSubmit();
+    }
+  }
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [prompt]);
+
+  if (!canEdit) return null;
+
+  const badgeSpinning = sending;
+  const bubbleTooltip = streamingFieldName ? `Writing "${fieldLabel(streamingFieldName)}"…` : sending ? "Magic is replying…" : messages.length > 0 ? "Magic - conversation open" : "Magic";
+
+  return (
+    <div ref={widgetRef} class={`magic-chat-widget${veiFrame ? " vei" : ""}`}>
+      {open && (
+        <div class="magic-chat-panel">
+          <header class="row justify-between align-center">
+            <h3>
+              <SparkleIcon /> Magic
+            </h3>
+            <div class="row align-center" style={{ gap: "0.25rem" }}>
+              <button type="button" class="ghost icon sm" aria-label="Minimize" onClick={() => setOpen(false)}>
+                —
+              </button>
+              <button type="button" class="ghost icon sm" aria-label="End conversation" onClick={handleEndSession}>
+                <CloseIcon />
+              </button>
+            </div>
+          </header>
+
+          <div class="magic-chat-messages" ref={messagesRef}>
+            {messages.length === 0 && (
+              <div class="magic-chat-empty">
+                <p class="hint">Ask Magic to write, revise, or discuss this entry's content.</p>
+                <div class="row magic-chat-suggestions">
+                  {SUGGESTIONS.map((suggestion) => (
+                    <button key={suggestion} type="button" class="sm outline" onClick={() => handleSuggestion(suggestion)}>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+                <AiKeyPicker selection={aiKey} />
+              </div>
+            )}
+            {messages.map((bubble) => (
+              <MagicChatBubbleView
+                key={bubble.id}
+                bubble={bubble}
+                onAnswerQuestion={(chosenIds, other) => {
+                  if (bubble.role !== "question") return;
+                  handleAnswerQuestion(bubble.id, bubble.choices, chosenIds, other);
+                }}
+                onRetry={() => {
+                  if (bubble.role !== "error") return;
+                  handleRetry(bubble.id, bubble.retryText, bubble.retryImages);
+                }}
+              />
+            ))}
+          </div>
+
+          {showNewMessagesChip && (
+            <button
+              type="button"
+              class="sm outline magic-chat-jump"
+              onClick={() => {
+                wasNearBottomRef.current = true;
+                scrollToBottom({ behavior: "smooth" });
+                setShowNewMessagesChip(false);
+              }}
+            >
+              ↓ New messages
+            </button>
+          )}
+
+          {attachedPaths.length > 0 && (
+            <div class="row magic-chat-attach-strip">
+              {attachedPaths.map((imagePath) => (
+                <div key={imagePath} class="magic-chat-attach-thumb">
+                  <img src={resolveImageSrc(imagePath)} alt="" />
+                  <button type="button" class="ghost icon sm" aria-label="Remove" onClick={() => setAttachedPaths((current) => current.filter((p) => p !== imagePath))}>
+                    <CloseIcon />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <footer class="magic-chat-composer">
+            <button type="button" class="ghost icon" aria-label="Attach images" onClick={() => setPickerOpen(true)} disabled={sending}>
+              <PlusIcon />
+            </button>
+            <textarea
+              ref={textareaRef}
+              class="magic-chat-input"
+              placeholder="Message Magic…"
+              value={prompt}
+              onInput={(event) => setPrompt((event.target as HTMLTextAreaElement).value)}
+              onKeyDown={handleComposerKeyDown}
+              rows={1}
+            />
+            {sending ? (
+              <button type="button" class="icon magic-chat-stop" aria-label="Stop" onClick={handleStop}>
+                <span class="magic-chat-stop-square" />
+              </button>
+            ) : (
+              <button type="button" class="icon" aria-label="Send" disabled={!prompt.trim()} onClick={() => void handleComposerSubmit()}>
+                <SparkleIcon />
+              </button>
+            )}
+          </footer>
+        </div>
+      )}
+
+      <button
+        type="button"
+        class={`magic-chat-bubble${badgeSpinning ? " busy" : ""}`}
+        data-tooltip={bubbleTooltip}
+        aria-label="Magic"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <SparkleIcon />
+        {badgeSpinning && <span class="magic-chat-bubble-spinner" />}
+        {!badgeSpinning && messages.length > 0 && <span class="magic-chat-bubble-dot" />}
+      </button>
+
+      <MagicChatImagePicker
+        source={source}
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onAttach={(picked) => setAttachedPaths((current) => [...new Set([...current, ...picked])])}
+      />
+
+      <ConfirmDialog
+        open={showEndConfirm}
+        title="End this conversation?"
+        message={<p>Magic is still replying. Ending now stops it and clears the conversation.</p>}
+        confirmLabel="End conversation"
+        destructive
+        onConfirm={endSessionNow}
+        onCancel={() => setShowEndConfirm(false)}
+      />
+    </div>
+  );
+}
+
+function MagicChatBubbleView({
+  bubble,
+  onAnswerQuestion,
+  onRetry,
+}: {
+  bubble: ChatBubble;
+  onAnswerQuestion: (chosenIds: Set<string>, other: string) => void;
+  onRetry: () => void;
+}) {
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [other, setOther] = useState("");
+
+  if (bubble.role === "user") {
+    return (
+      <div class="magic-chat-row user">
+        <div class="magic-chat-bubble-msg user">
+          {bubble.imagePaths.length > 0 && (
+            <div class="row magic-chat-bubble-images">
+              {bubble.imagePaths.map((imagePath) => (
+                <img key={imagePath} src={resolveImageSrc(imagePath)} alt="" />
+              ))}
+            </div>
+          )}
+          <p>{bubble.text}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (bubble.role === "assistant") {
+    return (
+      <div class="magic-chat-row assistant">
+        <div class="magic-chat-bubble-msg assistant">
+          {bubble.text ? <p>{bubble.text}</p> : <span class="magic-chat-typing" aria-label="Magic is typing" />}
+        </div>
+      </div>
+    );
+  }
+
+  if (bubble.role === "status") {
+    return (
+      <div class="magic-chat-row status">
+        <span class="magic-chat-status-line hint">{bubble.text}</span>
+      </div>
+    );
+  }
+
+  if (bubble.role === "error") {
+    return (
+      <div class="magic-chat-row status">
+        <div class="alert destructive magic-chat-error">
+          <span>{bubble.text}</span>
+          <button type="button" class="sm outline" onClick={onRetry}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // "question"
+  return (
+    <div class="magic-chat-row assistant">
+      <div class="magic-chat-bubble-msg assistant ai-wizard-question">
+        <p class="ai-wizard-question-text">{bubble.question}</p>
+        <div class="row ai-wizard-choices" role="group" aria-label={bubble.question}>
+          {bubble.choices.map((choice) => (
+            <button
+              key={choice.id}
+              type="button"
+              class="sm outline ai-wizard-choice"
+              disabled={!!bubble.answer}
+              aria-pressed={chosen.has(choice.id)}
+              onClick={() =>
+                setChosen((current) => {
+                  if (bubble.multi) {
+                    const next = new Set(current);
+                    if (next.has(choice.id)) next.delete(choice.id);
+                    else next.add(choice.id);
+                    return next;
+                  }
+                  return new Set([choice.id]);
+                })
+              }
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+        {bubble.allowOther && !bubble.answer && (
+          <input type="text" placeholder="Type your own answer…" value={other} onInput={(event) => setOther((event.currentTarget as HTMLInputElement).value)} />
+        )}
+        {!bubble.answer && (
+          <button type="button" class="sm" disabled={chosen.size === 0 && !(bubble.allowOther && other.trim())} onClick={() => onAnswerQuestion(chosen, other)}>
+            Continue
+          </button>
+        )}
+        {bubble.answer && <p class="hint magic-chat-question-answer">{bubble.answer}</p>}
+      </div>
+    </div>
+  );
+}
+
+/** A trimmed picker for attaching images to one chat turn - single (File)
+ * tab of `ImageField.tsx`'s own picker dialog, reusing the same
+ * `.image-picker-dialog` CSS and `FileManager` it's built on rather than the
+ * full field (which also renders a persistent 4:3 frame/reorderable list
+ * that doesn't fit an ephemeral chat attachment). */
+function MagicChatImagePicker({
+  source,
+  open,
+  onClose,
+  onAttach,
+}: {
+  source: FileManagerSource;
+  open: boolean;
+  onClose: () => void;
+  onAttach: (paths: string[]) => void;
+}) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const dialogRef = useDialogSync(open, onClose);
+  const { ref: bodyRef } = useOverlayScrollbars<HTMLDivElement>([open]);
+
+  useEffect(() => {
+    if (open) setPicked([]);
+  }, [open]);
+
+  return (
+    <dialog ref={dialogRef} class="file-dialog image-picker-dialog" aria-label="Attach images">
+      {open && (
+        <>
+          <header>
+            <h3>Attach images</h3>
+          </header>
+          <div class="image-picker-body" ref={bodyRef}>
+            <FileManager source={source} value={picked} onChange={(next) => setPicked(Array.isArray(next) ? next : [next])} multiple accept={IMAGE_EXTENSIONS} syncUrl={false} />
+          </div>
+          <footer>
+            <button type="button" class="outline" onClick={onClose}>
+              Cancel
+            </button>
+            <span class="spacer" />
+            <button
+              type="button"
+              disabled={picked.length === 0}
+              onClick={() => {
+                onAttach(picked);
+                onClose();
+              }}
+            >
+              Attach{picked.length > 0 ? ` (${picked.length})` : ""}
+            </button>
+          </footer>
+        </>
+      )}
+    </dialog>
+  );
+}

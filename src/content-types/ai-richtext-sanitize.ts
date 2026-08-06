@@ -7,7 +7,7 @@
  * something a first pass of Magic Write needs to author, see
  * `status/magic-write.md`). Pure string/regex, no DOM - this module runs on
  * BOTH the server (`ai-magic-write.ts`'s schema-driven validation) and the
- * client (`MagicWriteDialog.tsx`, right before committing a streamed
+ * client (`MagicChat.tsx`, right before committing a streamed
  * richtext field), and a DOM parser isn't available on the server without a
  * new dependency (`feedback_prefer_api_over_library.md`).
  *

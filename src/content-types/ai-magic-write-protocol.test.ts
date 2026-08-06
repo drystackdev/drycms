@@ -92,8 +92,41 @@ describe("parseMagicWriteYaml - fields turn", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("rejects an unknown kind", () => {
+});
+
+describe("parseMagicWriteYaml - lenient chat fallback", () => {
+  it("treats an unrecognized kind as chat, using the raw reply as the text", () => {
     const result = parseMagicWriteYaml("kind: bogus\n");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "chat", text: "kind: bogus" });
+  });
+
+  it("treats a reply with no kind: line at all as chat", () => {
+    const result = parseMagicWriteYaml("Sure, happy to help with that!");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "chat", text: "Sure, happy to help with that!" });
+  });
+
+  it("parses an explicit kind: chat using its own text: block literal", () => {
+    const doc = ["kind: chat", "text: |", "  Sure, what tone would you like?"].join("\n");
+    const result = parseMagicWriteYaml(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "chat", text: "Sure, what tone would you like?" });
+  });
+
+  it("still asks for a retry when kind: fields is missing a required key", () => {
+    // A real attempt at structured output gone wrong stays retry-worthy -
+    // only an unrecognized/missing kind falls back to chat.
+    const result = parseMagicWriteYaml("kind: fields\nfields:\n  title: |\n    x");
+    expect(result.ok).toBe(false);
+  });
+
+  it("still asks for a retry when kind: question has no choices", () => {
+    const doc = ["kind: question", "topic: t", "question: |", "  q?", "multi: false"].join("\n");
+    const result = parseMagicWriteYaml(doc);
     expect(result.ok).toBe(false);
   });
 });
@@ -170,5 +203,19 @@ describe("parsePartialMagicWriteYaml", () => {
   it("handles a completely empty or garbage document without throwing", () => {
     expect(parsePartialMagicWriteYaml("").closedFields).toEqual({});
     expect(parsePartialMagicWriteYaml("not yaml at all { }").closedFields).toEqual({});
+  });
+
+  it("grows a chat reply's text: block live, for the chat bubble to render mid-stream", () => {
+    const first = parsePartialMagicWriteYaml("kind: chat\ntext: |\n  Sure, what to");
+    expect(first.kind).toBe("chat");
+    expect(first.text).toBe("Sure, what to");
+    const second = parsePartialMagicWriteYaml("kind: chat\ntext: |\n  Sure, what tone would you like?");
+    expect(second.text).toBe("Sure, what tone would you like?");
+  });
+
+  it("grows a question turn's question: block live", () => {
+    const state = parsePartialMagicWriteYaml("kind: question\ntopic: tone\nquestion: |\n  Which tone should");
+    expect(state.kind).toBe("question");
+    expect(state.question).toBe("Which tone should");
   });
 });

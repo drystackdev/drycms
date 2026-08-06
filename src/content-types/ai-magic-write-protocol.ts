@@ -9,6 +9,18 @@
  * the rationale and the exact dialect rules the system prompt teaches the
  * model. Deliberately independent of `ai-wizard-protocol.ts` (JSON, kept
  * unchanged) - no shared parsing code between the two.
+ *
+ * `status/magic-chat.md` decision #1/#2 (the "Magic" chat upgrade) added a
+ * third top-level shape, `kind: chat` - plain conversational text, no field
+ * write. Its own block literal (`text: |`) reuses the exact same streaming
+ * mechanism `summary`/field values already use, so a chat reply renders
+ * live too. Decision #2 also made the whole parser lenient: a reply that
+ * doesn't recognize as `question`/`fields` (missing `kind:`, or a `kind`
+ * value that isn't one of the three) is treated as `chat` using the raw
+ * text, rather than a hard parse error - only a malformed `question`/
+ * `fields` body (a real attempt at structured output gone wrong) still asks
+ * the model to retry, since silently swallowing THAT would corrupt what
+ * gets written to a field.
  */
 
 export interface MagicWriteChoice {
@@ -23,6 +35,15 @@ export interface MagicWriteQuestionTurn {
   choices: MagicWriteChoice[];
   multi: boolean;
   allowOther?: boolean;
+}
+
+/** A plain conversational reply - no field write, no question. Covers small
+ * talk, clarifying remarks that don't need a structured `question`, capability
+ * explanations, and (via the lenient fallback in `parseMagicWriteYaml` below)
+ * any reply that didn't follow the `kind:` dialect at all. */
+export interface MagicWriteChatTurn {
+  kind: "chat";
+  text: string;
 }
 
 /** A field's parsed-but-not-yet-schema-validated value - a bare string for
@@ -43,7 +64,7 @@ export interface MagicWriteFieldsTurn {
   fields: MagicWriteRawFields;
 }
 
-export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn;
+export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn;
 
 export type MagicWriteValidationResult =
   | { ok: true; turn: MagicWriteTurn }
@@ -248,21 +269,38 @@ function validateFieldsTurn(top: MagicWriteRawFields): MagicWriteValidationResul
   return { ok: true, turn: { kind: "fields", summary: summary.trim(), fields } };
 }
 
+/** `kind: chat` reads its `text:` block literal like any other prose value;
+ * falls back to the full raw reply when that's missing/empty (covers both
+ * an explicit-but-malformed `kind: chat` and - via `parseMagicWriteYaml`
+ * calling this for ANY unrecognized/missing `kind` - a reply that ignored
+ * the dialect entirely and just talked. Never fails: chat is never worth
+ * bouncing back to the model for a retry. */
+function coerceChatTurn(top: MagicWriteRawFields, rawText: string): MagicWriteValidationResult {
+  const text = isRawString(top.text) && top.text.trim() ? top.text : rawText;
+  return { ok: true, turn: { kind: "chat", text: text.trim() } };
+}
+
 /** Full, validated parse - only meaningful once the whole reply has been
- * received (the terminal turn). Never throws; a malformed document comes
- * back as `{ ok: false }` so the server's retry loop (mirroring
- * `ai-wizard-protocol.ts`'s `parseWizardTurn` usage) can ask the model to
- * resend instead of crashing the stream. */
+ * received (the terminal turn). Never throws, and only ever fails (`{ ok:
+ * false }`) for a `question`/`fields` reply whose body doesn't match its own
+ * declared shape - a real, worth-retrying dialect violation (mirroring
+ * `ai-wizard-protocol.ts`'s `parseWizardTurn` usage, the server's retry loop
+ * asks the model to resend instead of crashing the stream). Anything else -
+ * `kind: chat`, an unrecognized/missing `kind`, or even an unparseable
+ * document - resolves as a `chat` turn instead (see this file's own doc
+ * comment and `status/magic-chat.md` decision #2): silently mangling a field
+ * write is worth guarding against, but bouncing an admin's ordinary
+ * conversational reply back as an error is not. */
 export function parseMagicWriteYaml(text: string): MagicWriteValidationResult {
   let top: MagicWriteRawFields;
   try {
     top = parseMapping(toRawLines(text), 0, 0).fields;
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Could not parse the AI's response." };
+  } catch {
+    return { ok: true, turn: { kind: "chat", text: text.trim() } };
   }
   if (top.kind === "question") return validateQuestionTurn(top);
   if (top.kind === "fields") return validateFieldsTurn(top);
-  return { ok: false, error: `Unknown or missing "kind": ${JSON.stringify(top.kind)}.` };
+  return coerceChatTurn(top, text);
 }
 
 export interface MagicWritePartialState {
@@ -270,13 +308,22 @@ export interface MagicWritePartialState {
   /** Only meaningful once `kind === "fields"` - whatever of the summary
    * block has streamed in so far. */
   summary?: string;
+  /** Only meaningful once `kind === "chat"` (or the lenient no-`kind`
+   * fallback that also resolves as chat, see `parseMagicWriteYaml`) -
+   * whatever of the `text:` block has streamed in so far. Growing live the
+   * same way `summary` does, so a chat bubble can render token-by-token. */
+  text?: string;
+  /** Only meaningful once `kind === "question"` - whatever of the
+   * `question:` block has streamed in so far (the `choices` list itself
+   * only becomes available on the terminal, fully-parsed turn). */
+  question?: string;
   /** Top-level `fields` children fully closed so far (a following sibling
    * key confirmed the model moved past them) - in the order the model wrote
    * them. */
   closedFields: MagicWriteRawFields;
   /** The `fields` child currently being written, if any - whatever of its
-   * value has streamed in so far. `MagicWriteDialog` decides how to use
-   * this per the field's real type (looked up from the content type's own
+   * value has streamed in so far. `MagicChat` decides how to use this per
+   * the field's real type (looked up from the content type's own
    * `EntryFieldNode[]`, not from this protocol layer): fed live into
    * `updateFieldValue` for a scalar field, ignored (shown as a generic
    * "writing…" skeleton) for richtext/flatten/component-repeat until the
@@ -338,7 +385,9 @@ export function parsePartialMagicWriteYaml(text: string): MagicWritePartialState
   const top = parseMapping(lines, 0, 0).fields;
   const kind = isRawString(top.kind) ? top.kind : undefined;
   const summary = isRawString(top.summary) ? top.summary : undefined;
-  if (kind !== "fields") return { kind, summary, closedFields: {} };
+  const chatText = isRawString(top.text) ? top.text : undefined;
+  const question = isRawString(top.question) ? top.question : undefined;
+  if (kind !== "fields") return { kind, summary, text: chatText, question, closedFields: {} };
 
   const fieldsLineIndex = findTopLevelKeyLine(lines, "fields");
   if (fieldsLineIndex === null) return { kind, summary, closedFields: {} };

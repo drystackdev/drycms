@@ -124,7 +124,7 @@ export interface ApplyMagicWriteFieldsResult {
  * current value and decides for itself what needs (or doesn't need)
  * changing, rather than the admin pre-selecting a fixed set through the UI.
  * Shared between the server route (`ai-magic-write.ts`'s authoritative
- * terminal validation) and the client (`MagicWriteDialog.tsx`'s live
+ * terminal validation) and the client (`MagicChat.tsx`'s live
  * per-field commit as each one closes while streaming) - both need the
  * exact same rules, so this stays framework/runtime-agnostic (no
  * server-only or DOM-only imports).

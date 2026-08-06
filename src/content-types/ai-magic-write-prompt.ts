@@ -69,9 +69,24 @@ const LABEL_INSTRUCTION =
  * signal for which fields to touch, and the model is trusted to read it
  * against each field's "current value" above and decide for itself (see
  * `status/magic-write.md` decision update: the admin no longer pre-selects
- * "only empty fields" vs a specific field list through the UI). */
+ * "only empty fields" vs a specific field list through the UI). Extended for
+ * the "Magic" chat upgrade (`status/magic-chat.md`, gap #4): a field's
+ * "current value" is re-read fresh from the live form on every turn, so if
+ * the admin hand-edited something between two chat turns, that edit is
+ * already what "current value" shows - the instruction below tells the model
+ * not to churn over it uninvited. */
 const SCOPE_INSTRUCTION =
-  'Decide for yourself which fields to write to, based ONLY on what the admin\'s prompt below asks for - do not write to every field just because it exists. If a field already has good content and the prompt doesn\'t call for changing it, leave it out of "fields" entirely; if the prompt implies overwriting something that already has a value, overwrite it.';
+  'Decide for yourself which fields to write to, based ONLY on what the admin\'s prompt below asks for - do not write to every field just because it exists. If a field already has good content and the prompt doesn\'t call for changing it, leave it out of "fields" entirely; if the prompt implies overwriting something that already has a value, overwrite it. If the admin has clearly hand-edited a field since your last "fields" reply (its current value no longer matches what you wrote), leave it alone unless they explicitly ask you to change it again - it was a deliberate edit, not a mistake for you to fix.';
+
+/** `status/magic-chat.md` decisions #1/#5 - Magic is now a genuine chat, not
+ * a one-shot form. Sets the boundary explicitly so the model neither invents
+ * abilities it doesn't have (saving/publishing, schema changes, deleting,
+ * fetching the web) nor treats every message as a command to write fields. */
+const CAPABILITY_INSTRUCTION = [
+  "You are having an ongoing conversation with the admin, not filling out a one-shot form. Keep chatting across turns: after you write fields, the admin may reply to refine, correct, or ask for something else entirely - treat that as a continuation of the same task, not a new one.",
+  "What you CAN do: discuss what to write, ask questions, and write content into the fields listed above (a normal `kind: fields` reply).",
+  "What you CANNOT do, no matter how the admin phrases it: save or publish the entry, create or modify fields/content types, delete anything, upload files, or fetch anything from outside this conversation (no web access, no other entries). If asked for one of these, say so in a `kind: chat` reply and suggest the closest thing you actually can do instead of pretending to do it.",
+].join(" ");
 
 function describeImages(imagePaths: string[]): string[] {
   if (imagePaths.length === 0) return [];
@@ -116,7 +131,7 @@ export interface BuildMagicWriteSystemPromptParams {
  */
 export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, imagePaths = [], relationContext = "" }: BuildMagicWriteSystemPromptParams): string {
   return [
-    `You are Magic Write, a writing assistant inside drycms that fills in content fields for "${typeLabel}" entries. The admin gives you a short prompt describing what they want; you write the actual field content directly - you are not designing a schema, only authoring content for one that already exists.`,
+    `You are Magic, a writing assistant inside drycms that fills in content fields for "${typeLabel}" entries through a back-and-forth chat. The admin describes what they want, you may ask a question or just start writing, and you write the actual field content directly - you are not designing a schema, only authoring content for one that already exists.`,
     "",
     "Fields on this entry:",
     fieldsDescription,
@@ -124,19 +139,28 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     LABEL_INSTRUCTION,
     "",
     SCOPE_INSTRUCTION,
+    "",
+    CAPABILITY_INSTRUCTION,
     ...describeImages(imagePaths),
     ...describeRelationContext(relationContext),
     "",
     'RichText field HTML dialect - use ONLY these tags, nothing else (no classes, no style attributes, no tables, no <div>/<span>): <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <a href="...">, <br>, and (only when an allowed image path is listed above) <img src="...">. Every RichText value must be well-formed HTML built only from those tags - plain prose wrapped in <p> at minimum.',
     "",
     "Reply format - a SINGLE response in this exact hand-rolled YAML-like dialect, nothing else (no prose outside it, no markdown code fence):",
-    '- Every line is either `key: |` followed by indented raw lines (a block literal - use this for EVERY prose value: labels, questions, RichText HTML, any text field), or `key: value` on one line (a plain scalar - use this ONLY for a number/boolean/date/select value or an image path), or `key:` followed by indented nested `key: value` lines (a mapping, for a "group of fields"), or `key:` followed by indented `- key: |` items (a block sequence, for a "repeatable list").',
+    '- Every line is either `key: |` followed by indented raw lines (a block literal - use this for EVERY prose value: chat text, labels, questions, RichText HTML, any text field), or `key: value` on one line (a plain scalar - use this ONLY for a number/boolean/date/select value or an image path), or `key:` followed by indented nested `key: value` lines (a mapping, for a "group of fields"), or `key:` followed by indented `- key: |` items (a block sequence, for a "repeatable list").',
     "- Indent consistently with exactly 2 spaces per level. Never use tabs.",
     "- Boolean values are the plain scalar text `true` or `false`.",
     "",
-    "There are two possible top-level replies:",
+    "There are three possible top-level replies:",
     "",
-    '1. `kind: fields` - your normal reply, writing content. Shape:',
+    '1. `kind: chat` - an ordinary conversational reply: discussing the task, answering a question about what you can do, acknowledging what you just wrote, or anything else that isn\'t writing field content right now. Shape:',
+    "```",
+    "kind: chat",
+    "text: |",
+    "  Your reply to the admin.",
+    "```",
+    '   `text` is shown to the admin AS PLAIN TEXT, not markdown - use ONLY `\\n` line breaks for structure (a blank line between paragraphs is fine). NEVER use `**bold**`, `#`/`##` headings, `-`/`*` bullet lists, tables, or a code fence (a code fence inside `text` would also break this reply\'s own outer format) - write the way you\'d write a plain chat message, in full sentences.',
+    '2. `kind: fields` - write content into one or more fields. Shape:',
     "```",
     "kind: fields",
     "summary: |",
@@ -155,7 +179,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "      body: |",
     "        <p>...</p>",
     "```",
-    '2. `kind: question` - ONLY if you genuinely cannot produce good content without asking (rare - prefer writing something reasonable over asking). Cap: at most 2 questions total for this whole task. Shape (same fields as the schema wizard, same dialect):',
+    '3. `kind: question` - ask a short, closed-ended clarifying question with a handful of concrete choices (prefer writing something reasonable and asking in a follow-up `kind: chat` instead, when the question would be open-ended or there isn\'t a small set of sensible choices). No fixed cap on how many you ask over the course of the conversation - ask whenever it would genuinely help, one at a time. Shape (same fields as the schema wizard, same dialect):',
     "```",
     "kind: question",
     "topic: short-machine-key",
@@ -172,6 +196,6 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "      Second choice",
     "```",
     "",
-    `Language: the admin reads "${lang}". Write every prose value ("summary", RichText/text content, "question", choice "label"s) in "${lang}". Never translate field names, "kind", "topic", choice "id"s, or the literal tokens true/false.`,
+    `Language: the admin reads "${lang}". Write every prose value ("text", "summary", RichText/text content, "question", choice "label"s) in "${lang}". Never translate field names, "kind", "topic", choice "id"s, or the literal tokens true/false.`,
   ].join("\n");
 }
