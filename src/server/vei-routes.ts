@@ -1,4 +1,7 @@
 import { path as adminPath } from "./config.js";
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "./csrf.js";
+import { handleApiRequest } from "./handler.js";
+import { readCookie, SESSION_COOKIE_NAME } from "./session.js";
 import { clearVeiCookieHeader, mintVeiToken, veiCookieHeader, VEI_MAX_AGE_SECONDS } from "./vei-session.js";
 
 /**
@@ -41,11 +44,53 @@ function safeReturnTo(raw: string | null): string {
   return raw;
 }
 
-function redirect(request: Request, to: string, cookie: string): Response {
-  return new Response(null, {
-    status: 303,
-    headers: { Location: new URL(to, request.url).toString(), "Set-Cookie": cookie, "Cache-Control": "no-store" },
+function redirect(request: Request, to: string, cookies: string[]): Response {
+  const headers = new Headers({ Location: new URL(to, request.url).toString(), "Cache-Control": "no-store" });
+  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+  return new Response(null, { status: 303, headers });
+}
+
+/**
+ * `mintVeiToken` derives from the admin's own 15-minute access cookie, which
+ * nothing rotates while browsing the public site (only the admin SPA's
+ * `csrf-fetch.ts` does that, and it isn't open) - so it routinely expires out
+ * from under a visitor mid-browse even though their 30-day refresh cookie is
+ * still perfectly good. Rather than bouncing straight to `/login` for that
+ * alone, this replays the exact rotation `POST /api/auth/refresh`
+ * (`routes/auth.ts`) already does, server-side, off this request's own
+ * cookies - the top-level navigation `handleVeiRoute` already requires IS the
+ * trust boundary that check exists for, so satisfying its CSRF double-submit
+ * from a value this same request already carries isn't a new exposure.
+ */
+async function refreshedVeiToken(
+  request: Request,
+  env: Record<string, unknown>,
+): Promise<{ token: string; sessionCookies: string[] } | null> {
+  const cookieHeader = request.headers.get("Cookie");
+  const csrfValue = readCookie(request, CSRF_COOKIE_NAME);
+  if (!cookieHeader || !csrfValue) return null;
+
+  const refreshResponse = await handleApiRequest(
+    new Request(new URL(`${adminPath}/api/auth/refresh`, request.url), {
+      method: "POST",
+      headers: { Cookie: cookieHeader, [CSRF_HEADER_NAME]: csrfValue },
+    }),
+    env,
+  );
+  if (!refreshResponse.ok) return null;
+
+  const sessionCookies =
+    (refreshResponse.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+  const newSessionCookie = sessionCookies.find((cookie) => cookie.startsWith(`${SESSION_COOKIE_NAME}=`));
+  if (!newSessionCookie) return null;
+
+  // `mintVeiToken` only needs the fresh session cookie to derive from - not
+  // the rest of this request's headers/cookies.
+  const refreshedRequest = new Request(request.url, {
+    headers: { Cookie: newSessionCookie.split(";", 1)[0]! },
   });
+  const token = await mintVeiToken(refreshedRequest, env);
+  return token ? { token, sessionCookies } : null;
 }
 
 export async function handleVeiRoute(request: Request, env: Record<string, unknown> = {}): Promise<Response | null> {
@@ -55,17 +100,25 @@ export async function handleVeiRoute(request: Request, env: Record<string, unkno
   if (!isTopLevelNavigation(request)) return new Response("Forbidden", { status: 403 });
 
   const to = safeReturnTo(url.searchParams.get("to"));
-  if (url.pathname === EXIT_PATH) return redirect(request, to, clearVeiCookieHeader(url));
+  if (url.pathname === EXIT_PATH) return redirect(request, to, [clearVeiCookieHeader(url)]);
 
-  const token = await mintVeiToken(request, env);
-  // No admin session to derive edit rights from - send them through the
-  // normal login, same destination `page-guard.ts` uses for a protected
-  // admin page.
+  let token = await mintVeiToken(request, env);
+  let sessionCookies: string[] = [];
+  if (!token) {
+    const refreshed = await refreshedVeiToken(request, env);
+    if (refreshed) {
+      token = refreshed.token;
+      sessionCookies = refreshed.sessionCookies;
+    }
+  }
+  // No admin session to derive edit rights from, even after trying to
+  // refresh - send them through the normal login, same destination
+  // `page-guard.ts` uses for a protected admin page.
   if (!token) {
     return new Response(null, {
       status: 303,
       headers: { Location: new URL(`${adminPath}/login`, request.url).toString(), "Cache-Control": "no-store" },
     });
   }
-  return redirect(request, to, veiCookieHeader(url, token, VEI_MAX_AGE_SECONDS));
+  return redirect(request, to, [...sessionCookies, veiCookieHeader(url, token, VEI_MAX_AGE_SECONDS)]);
 }

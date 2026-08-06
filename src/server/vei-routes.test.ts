@@ -1,10 +1,102 @@
-import { describe, expect, it } from "vitest";
-import { path as adminPath } from "./config.js";
-import { handleVeiRoute } from "./vei-routes.js";
-import { VEI_COOKIE_NAME } from "./vei-session.js";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const tempDirBox = vi.hoisted(() => ({ path: "" }));
+const ORIGINAL_SECRET = process.env.DRYCMS_SECRET_KEY;
+const ORIGINAL_BOOTSTRAP = process.env.DRYCMS_BOOTSTRAP_TOKEN;
+
+// Mirrors `routes/auth.test.ts`'s own scaffold - a real content engine
+// backed by a throwaway temp dir, needed because `handleVeiRoute`'s refresh
+// fallback (below) round-trips through the real `POST /api/auth/refresh`
+// route, which reads the "user" collection.
+vi.mock("./config.js", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { resolveOptions } = await import("./options.js");
+  tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-vei-routes-"));
+  const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
+  // Mirrors every export the real `config.ts` derives from `resolved` -
+  // `handler.ts` (routed through by `handleVeiRoute`'s refresh fallback)
+  // touches several of these (`kv` in particular), not just `path`/`content`.
+  return {
+    ...resolved,
+    resolved,
+    componentsStorage: resolved.components.storage,
+    pageComponentsStorage: resolved.pageComponents.storage,
+    pagesCacheStorage: resolved.pagesCache.storage,
+    typesCacheStorage: resolved.typesCache.storage,
+  };
+});
+
+const { path: adminPath } = await import("./config.js");
+const { handleVeiRoute } = await import("./vei-routes.js");
+const { VEI_COOKIE_NAME } = await import("./vei-session.js");
+const { POST: authPost } = await import("./routes/auth.js");
+const { SESSION_COOKIE_NAME } = await import("./session.js");
+const { CSRF_COOKIE_NAME } = await import("./csrf.js");
+
+beforeEach(() => {
+  process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
+  process.env.DRYCMS_BOOTSTRAP_TOKEN = "test-bootstrap-token-do-not-use-in-prod-1234567890";
+});
+
+afterEach(() => {
+  if (ORIGINAL_SECRET === undefined) delete process.env.DRYCMS_SECRET_KEY;
+  else process.env.DRYCMS_SECRET_KEY = ORIGINAL_SECRET;
+  if (ORIGINAL_BOOTSTRAP === undefined) delete process.env.DRYCMS_BOOTSTRAP_TOKEN;
+  else process.env.DRYCMS_BOOTSTRAP_TOKEN = ORIGINAL_BOOTSTRAP;
+});
+
+afterAll(async () => {
+  const { rm } = await import("node:fs/promises");
+  await rm(tempDirBox.path, { recursive: true, force: true });
+});
 
 const ENTER = `http://localhost${adminPath}/vei/enter`;
 const EXIT = `http://localhost${adminPath}/vei/exit`;
+
+/** Every cookie pair (`name=value`, no attributes) set across ALL of a
+ * response's `Set-Cookie` headers - a real browser stores each separately,
+ * this reassembles them into one `Cookie` header for the next request the
+ * same way. */
+function cookiesFrom(response: Response): string {
+  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
+  return (headers.getSetCookie?.() ?? []).map((cookie) => cookie.split(";", 1)[0]).join("; ");
+}
+
+/** Registers the one Super Admin account these tests share, or - since the
+ * same temp-dir content engine persists across every test in this file -
+ * logs in with the same credentials once a prior test already created it. */
+async function adminSessionCookie(): Promise<string> {
+  const registerUrl = new URL(`http://localhost${adminPath}/api/auth/register-first-admin`);
+  const registerResponse = await authPost({
+    params: { slug: "register-first-admin" },
+    request: new Request(registerUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-DryCMS-Bootstrap-Token": process.env.DRYCMS_BOOTSTRAP_TOKEN ?? "" },
+      body: JSON.stringify({ name: "Ada Lovelace", email: "ada@example.com", password: "hunter2-long-password" }),
+    }),
+    url: registerUrl,
+    env: {},
+    session: null,
+  });
+  if (registerResponse.status === 201) return cookiesFrom(registerResponse);
+
+  const loginUrl = new URL(`http://localhost${adminPath}/api/auth/login`);
+  const loginResponse = await authPost({
+    params: { slug: "login" },
+    request: new Request(loginUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "ada@example.com", password: "hunter2-long-password" }),
+    }),
+    url: loginUrl,
+    env: {},
+    session: null,
+  });
+  expect(loginResponse.status).toBe(200);
+  return cookiesFrom(loginResponse);
+}
 
 /** A real browser navigation - the only shape these routes accept. */
 function navigation(url: string, headers: Record<string, string> = {}): Request {
@@ -57,5 +149,42 @@ describe("handleVeiRoute", () => {
     expect(response?.status).toBe(303);
     expect(response?.headers.get("Location")).toBe(`http://localhost${adminPath}/login`);
     expect(response?.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("grants edit mode via a session refresh when only the short-lived access cookie is missing", async () => {
+    const fullCookie = await adminSessionCookie();
+    // The 15-minute `drycms_session` cookie is the one that goes stale while
+    // browsing the public site (nothing there rotates it) - simulate exactly
+    // that by dropping it and keeping only the 30-day refresh + CSRF cookies
+    // a real browser would still be holding.
+    const staleCookie = fullCookie
+      .split("; ")
+      .filter((pair) => !pair.startsWith(`${SESSION_COOKIE_NAME}=`))
+      .join("; ");
+    expect(staleCookie).not.toContain(SESSION_COOKIE_NAME);
+
+    const response = await handleVeiRoute(navigation(`${ENTER}?to=%2Fblogs%2Fhello`, { Cookie: staleCookie }));
+    expect(response?.status).toBe(303);
+    // Lands back on the page it was trying to edit, never the admin login.
+    expect(response?.headers.get("Location")).toBe("http://localhost/blogs/hello");
+
+    const headers = response?.headers as (Headers & { getSetCookie?: () => string[] }) | undefined;
+    const setCookies = headers?.getSetCookie?.() ?? [];
+    expect(setCookies.some((cookie) => cookie.startsWith(`${VEI_COOKIE_NAME}=`))).toBe(true);
+    // The refresh also re-issues a fresh short-lived access cookie, so the
+    // browser doesn't immediately go stale again on the very next click.
+    expect(setCookies.some((cookie) => cookie.startsWith(`${SESSION_COOKIE_NAME}=`))).toBe(true);
+  });
+
+  it("still sends to sign-in when even the refresh cookie is gone (a genuine logout)", async () => {
+    const fullCookie = await adminSessionCookie();
+    const csrfOnly = fullCookie
+      .split("; ")
+      .filter((pair) => pair.startsWith(`${CSRF_COOKIE_NAME}=`))
+      .join("; ");
+
+    const response = await handleVeiRoute(navigation(`${ENTER}?to=%2F`, { Cookie: csrfOnly }));
+    expect(response?.status).toBe(303);
+    expect(response?.headers.get("Location")).toBe(`http://localhost${adminPath}/login`);
   });
 });
