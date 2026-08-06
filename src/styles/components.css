@@ -6089,8 +6089,8 @@
   button.magic-chat-bubble {
     position: relative;
     flex: none;
-    width: 3rem;
-    height: 3rem;
+    width: 2.75rem;
+    height: 2.75rem;
     aspect-ratio: 1;
     /* The base `button` rule (Button section, above) sets `padding: 0
      * 0.75rem` - fine for a text/icon-pair button, but left uncentered a
@@ -6183,13 +6183,24 @@
     }
   }
 
+  /* Non-scrolling OverlayScrollbars host (`MagicChat.tsx`'s `messagesRef`) -
+   * scroll/overflow is managed on `.magic-chat-messages-viewport` below via
+   * the hook's `viewportRef` opt-in, not on this element (matches
+   * `.sidebar-scroll`'s split: `flex`/`min-height`/padding stay on the host,
+   * OverlayScrollbars owns overflow on the real viewport). */
   .magic-chat-messages {
     flex: 1 1 auto;
     min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    scrollbar-gutter: stable;
     padding: 0.75rem 1rem;
+  }
+
+  /* The real scrolling element AND the direct flex parent of
+   * `.magic-chat-row` - kept a genuine DOM node the library doesn't relocate
+   * children out of (see `useOverlayScrollbars`'s `viewportRef` doc comment);
+   * `display: flex` here MUST stay directly on the element OverlayScrollbars
+   * manages scroll on, not on `.magic-chat-messages`, or rows go back to
+   * rendering squeezed/misaligned. */
+  .magic-chat-messages-viewport {
     display: flex;
     flex-direction: column;
     gap: 0.625rem;

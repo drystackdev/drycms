@@ -9,6 +9,8 @@ import type { FileManagerSource } from "../../storage/entry-types.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
+import { discardMagicChatSession, loadMagicChatSession, saveMagicChatSession } from "./magic-chat-store.js";
+import type { ChatBubble, MagicChatEncodedImage, MagicChatHistoryMessage } from "./magic-chat-store.js";
 import type { EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
@@ -37,12 +39,6 @@ const { path } = window.__DRY_CONFIG__;
  */
 
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
-
-interface MagicChatEncodedImage {
-  path: string;
-  mimeType: string;
-  base64: string;
-}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -94,11 +90,6 @@ interface MagicChatChatResult {
 }
 
 type MagicChatTurnResult = MagicChatFieldsResult | MagicChatQuestionResult | MagicChatChatResult;
-
-interface MagicChatHistoryMessage {
-  role: "user" | "assistant";
-  text: string;
-}
 
 interface MagicChatStreamEvent {
   delta?: string;
@@ -164,13 +155,6 @@ function isMagicChatCandidate(node: EntryFieldNode): boolean {
   if (node.kind === "component-repeat") return node.itemFields.some(isMagicChatCandidate);
   return false;
 }
-
-type ChatBubble =
-  | { id: string; role: "user"; text: string; imagePaths: string[] }
-  | { id: string; role: "assistant"; text: string; streaming: boolean }
-  | { id: string; role: "question"; question: string; choices: MagicWriteChoice[]; multi: boolean; allowOther?: boolean; answer?: string }
-  | { id: string; role: "status"; text: string }
-  | { id: string; role: "error"; text: string; retryText: string; retryImages: MagicChatEncodedImage[] };
 
 const SUGGESTIONS = [
   "Viết một bài giới thiệu ngắn",
@@ -261,37 +245,82 @@ export default function MagicChat({
     el.showPopover?.();
   }, []);
 
-  // Plain native scroll on the ref itself - deliberately NOT
-  // `useOverlayScrollbars` here (unlike the image picker body below). That
-  // hook moves an element's real children into a generated `.os-viewport`
-  // child (see the hook's own doc comment), which silently broke this
-  // container's `display: flex; flex-direction: column` (the styling stayed
-  // on the outer host, but the `.magic-chat-row` children it was meant for
-  // had already been relocated one level down) - messages rendered
-  // squeezed/misaligned instead of stacking. `.ai-wizard-body` (the schema
-  // wizard's own analogous scrollable turn list) hits the same shape of
-  // problem and already settled on plain native `overflow-y: auto` for
-  // exactly this reason - matched here rather than fighting the hook.
-  const messagesRef = useRef<HTMLDivElement>(null);
+  // Restores a persisted conversation (IndexedDB, see `magic-chat-store.ts`)
+  // so a reload/navigate-away-and-back doesn't lose it - reset first, THEN
+  // load, so switching to a different entry (same mounted instance, `id`
+  // just changed) clears the previous entry's messages before the new one's
+  // arrive rather than showing them briefly. Stays closed either way (`open`
+  // untouched) - the bubble's existing "has messages" dot is signal enough,
+  // popping the panel open on every reload would be pushy. A bubble still
+  // `streaming: true` belongs to a request that died with the old page - no
+  // controller survives a reload to ever resolve it. If it has any text,
+  // freeze it (spinner off, partial text kept); if it never got as far as a
+  // first delta, `MagicChatBubbleView` shows the typing indicator for ANY
+  // empty-text assistant bubble regardless of `streaming` - freezing it
+  // as-is would leave a permanently "typing" ghost, so it becomes an
+  // "Interrupted." status line instead, same convention `handleStop` already
+  // uses for a live abort ("Stopped.").
+  useEffect(() => {
+    setMessages([]);
+    historyRef.current = [];
+    sessionImagePathsRef.current = [];
+    idRef.current = 0;
+    let cancelled = false;
+    void (async () => {
+      const saved = await loadMagicChatSession(typeSlug, entryId);
+      if (cancelled || !saved) return;
+      setMessages(
+        saved.messages.map((bubble) => {
+          if (bubble.role !== "assistant" || !bubble.streaming) return bubble;
+          return bubble.text ? { ...bubble, streaming: false } : { id: bubble.id, role: "status", text: "Interrupted." };
+        }),
+      );
+      historyRef.current = saved.history;
+      sessionImagePathsRef.current = saved.sessionImagePaths;
+      idRef.current = saved.nextId;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [typeSlug, entryId]);
+
+  // Persists on every message-list change (debounced inside
+  // `saveMagicChatSession`) - guarded on non-empty so the reset at the top of
+  // the effect above never overwrites a real session with a blank one before
+  // its own load resolves; `clearAllNow` below discards explicitly instead.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    saveMagicChatSession(typeSlug, entryId, {
+      messages,
+      history: historyRef.current,
+      sessionImagePaths: sessionImagePathsRef.current,
+      nextId: idRef.current,
+    });
+  }, [messages, typeSlug, entryId]);
+
+  // `useOverlayScrollbars` via its opt-in `viewportRef`: `.magic-chat-messages`
+  // (host, ref) stays a plain non-scrolling wrapper, while
+  // `.magic-chat-messages-viewport` (viewportRef) is the real `display: flex;
+  // flex-direction: column` list of rows AND the element OverlayScrollbars is
+  // told to manage scroll on directly (`elements: { viewport, content: false
+  // }`, see the hook's doc comment) - it stays a real DOM node the library
+  // doesn't relocate our children out of, unlike the default (fully
+  // library-generated) viewport that broke this exact layout before.
+  // `[open]` re-runs the mount effect once the panel's conditionally-rendered
+  // DOM exists (both refs are null before first open).
+  const {
+    ref: messagesRef,
+    viewportRef: messagesViewportRef,
+    scrollToBottom,
+    isNearBottom,
+  } = useOverlayScrollbars<HTMLDivElement>([open]);
   const wasNearBottomRef = useRef(true);
-
-  function isNearBottom(px = 48): boolean {
-    const el = messagesRef.current;
-    if (!el) return false;
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= px;
-  }
-
-  function scrollToBottom(options?: { behavior?: ScrollBehavior }) {
-    const el = messagesRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: options?.behavior ?? "auto" });
-  }
 
   // Notices the reader scrolling away from the bottom themselves, so a new
   // message doesn't yank them back down mid-read (`status/magic-chat.md`'s
   // "auto-scroll dính đáy").
   useEffect(() => {
-    const el = messagesRef.current;
+    const el = messagesViewportRef.current;
     if (!el) return;
     const handleScroll = () => {
       wasNearBottomRef.current = isNearBottom();
@@ -527,6 +556,7 @@ export default function MagicChat({
     setSending(false);
     setStreaming(null);
     setShowEndConfirm(false);
+    void discardMagicChatSession(typeSlug, entryId);
   }
 
   function handleClearAll() {
@@ -568,33 +598,35 @@ export default function MagicChat({
           </header>
 
           <div class="magic-chat-messages" ref={messagesRef}>
-            {messages.length === 0 && (
-              <div class="magic-chat-empty">
-                <p class="hint">Ask Magic to write, revise, or discuss this entry's content.</p>
-                <div class="row magic-chat-suggestions">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <button key={suggestion} type="button" class="sm outline" onClick={() => handleSuggestion(suggestion)}>
-                      {suggestion}
-                    </button>
-                  ))}
+            <div class="magic-chat-messages-viewport" ref={messagesViewportRef}>
+              {messages.length === 0 && (
+                <div class="magic-chat-empty">
+                  <p class="hint">Ask Magic to write, revise, or discuss this entry's content.</p>
+                  <div class="row magic-chat-suggestions">
+                    {SUGGESTIONS.map((suggestion) => (
+                      <button key={suggestion} type="button" class="sm outline" onClick={() => handleSuggestion(suggestion)}>
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                  <AiKeyPicker selection={aiKey} />
                 </div>
-                <AiKeyPicker selection={aiKey} />
-              </div>
-            )}
-            {messages.map((bubble) => (
-              <MagicChatBubbleView
-                key={bubble.id}
-                bubble={bubble}
-                onAnswerQuestion={(chosenIds, other) => {
-                  if (bubble.role !== "question") return;
-                  handleAnswerQuestion(bubble.id, bubble.choices, chosenIds, other);
-                }}
-                onRetry={() => {
-                  if (bubble.role !== "error") return;
-                  handleRetry(bubble.id, bubble.retryText, bubble.retryImages);
-                }}
-              />
-            ))}
+              )}
+              {messages.map((bubble) => (
+                <MagicChatBubbleView
+                  key={bubble.id}
+                  bubble={bubble}
+                  onAnswerQuestion={(chosenIds, other) => {
+                    if (bubble.role !== "question") return;
+                    handleAnswerQuestion(bubble.id, bubble.choices, chosenIds, other);
+                  }}
+                  onRetry={() => {
+                    if (bubble.role !== "error") return;
+                    handleRetry(bubble.id, bubble.retryText, bubble.retryImages);
+                  }}
+                />
+              ))}
+            </div>
           </div>
 
           {showNewMessagesChip && (

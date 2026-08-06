@@ -402,3 +402,94 @@ tĩnh (đọc code) không thấy ra:
   + squircle chỉ lộ ra khi NHÌN THẤY ảnh chụp thật - nhắc lại đúng giới hạn
   đã ghi trong "Việc CHƯA làm" #1: không có browser tool thì rủi ro bỏ sót
   loại bug này là thật, không phải lý thuyết.
+
+## Fix (2026-08-07): quay lại dùng OverlayScrollbars cho `.magic-chat-messages`
+
+User chốt: `.magic-chat-messages` vẫn phải dùng scrollbar theo thư viện (đồng
+bộ với app-wide rule, xem `feedback_scrollbar_full_coverage` memory), kèm
+cảnh báo đúng trọng tâm bug lần trước - thư viện "dựng lại cấu trúc HTML".
+Thay vì bỏ cuộc như lần trước, sửa đúng gốc rễ bằng cơ chế chính thức của
+OverlayScrollbars (đọc thẳng `node_modules/overlayscrollbars` - source +
+README, không đoán): `elements: { viewport: <phần tử tự tạo>, content:
+false }`. Khi đó thư viện dùng ĐÚNG phần tử mình cung cấp làm viewport thật
+(gắn `data-overlayscrollbars-viewport`, tự quản overflow/scroll) thay vì tạo
+`padding`/`viewport`/`content` mới rồi dời con thật xuống 2-3 cấp - gốc rễ
+bug cũ.
+
+- **`hooks/overlayscrollbars.ts`**: `useOverlayScrollbars` có thêm
+  `viewportRef` (opt-in, mặc định không dùng ai bị ảnh hưởng - 20 call site
+  khác trong app giữ nguyên hành vi cũ). Ref này vào một phần tử con thật sự
+  nằm trong `ref` (host) TRƯỚC khi effect mount chạy; hook thấy nó liền gọi
+  `OverlayScrollbars({ target, elements: { viewport, content: false } },
+  ...)` thay vì `OverlayScrollbars(target, ...)`. Thêm lại `isNearBottom`
+  (như bản nháp cũ đã bỏ) nhưng KHÔNG thêm `viewport()` getter như bản nháp
+  cũ từng làm - không cần nữa, vì giờ caller đã tự giữ `viewportRef` sẵn, gắn
+  listener `scroll` thẳng lên đó được.
+- **`MagicChat.tsx`**: `.magic-chat-messages` (ref, host - không còn tự
+  scroll) bọc `.magic-chat-messages-viewport` (viewportRef - viewport thật +
+  `display:flex;flex-direction:column`, cha trực tiếp của `.magic-chat-row`).
+  `isNearBottom`/`scrollToBottom` lấy thẳng từ hook, listener "user tự cuộn
+  lên" gắn trên `viewportRef.current`.
+- **CSS**: `.magic-chat-messages` chỉ còn `flex/min-height/padding` (không
+  `overflow-y`/`overscroll-behavior`/`scrollbar-gutter` nữa - thư viện tự lo,
+  đúng tiền lệ `.sidebar-scroll`). `.magic-chat-messages-viewport` là class
+  mới, giữ `display:flex;flex-direction:column;gap`.
+- **Verify thật trong browser** (Playwright chạy tay qua `bun`, không phải
+  MCP browser tool - không có sẵn phiên này): login thật bằng
+  `project_drycms_dev_admin_credentials`, mở `/content/blog/new`, đọc DOM
+  sau khi mở panel - xác nhận `viewportHasOsViewportAttr: true`,
+  `viewportIsDirectChildOfHost: true`, `emptyStateIsDirectChildOfViewport:
+  true` (không bị dời cấp). Gửi 1 tin nhắn thật, đo `getBoundingClientRect`
+  2 row: row 2 `top` = row 1 `top` + `height` + gap - xếp chồng dọc đúng,
+  không phải bug cũ (chữ bị bóp/word-wrap từng ký tự). Screenshot xác nhận
+  lại bằng mắt.
+- ⚠️ Lưu ý cho phiên sau nếu định làm tương tự cho `.ai-wizard-body` (cùng
+  cảnh ngộ, xem `status/magic-write.md`/comment cũ) - CHƯA đụng tới, ngoài
+  phạm vi yêu cầu lần này (user chỉ nói "ô chat magic").
+- Typecheck sạch + build sạch + 900 test pass.
+
+## Fix (2026-08-07): lưu lịch sử chat vào IndexedDB, sống sót qua reload
+
+User chốt: mất khung chat khi reload trang là không chấp nhận được nữa
+(khác với risk #8 gốc "v1 chấp nhận mất" - v1 chỉ né localStorage vì
+`entry-draft` chiếm chỗ đó, nhưng bản thân entry-draft giờ đã tự chuyển sang
+IndexedDB từ trước rồi, xem `entry-draft-db.ts` - lý do gốc để KHÔNG làm coi
+như không còn, dùng thẳng IndexedDB, DB riêng để không đụng `entry-draft`).
+
+- **File mới `magic-chat-store.ts`** (cạnh `MagicChat.tsx`, không phải
+  `content-types/` - đây là state phiên chat của UI, không phải dữ liệu
+  entry): rập khuôn đúng phong cách `content-types/entry-draft-db.ts`
+  ("degrade-safely-on-any-failure" - mọi thao tác nuốt lỗi, best-effort) -
+  DB `drycms-magic-chat` riêng, KHÔNG có `BroadcastChannel` đồng bộ liên-tab
+  như entry-draft (không ai ngoài 1 instance `MagicChat` cần biết phiên đổi).
+  Key `magicChatKey` = `${typeSlug}:${entryId ?? "__new__"}`, y hệt quy ước
+  `__new__` của `draftKey`.
+  - Cũng là nơi giữ type `ChatBubble`/`MagicChatHistoryMessage`/
+    `MagicChatEncodedImage` luôn (dời từ `MagicChat.tsx` sang) - module lưu
+    trữ là nơi hợp lý nhất để định nghĩa "một phiên lưu được gồm những gì".
+- **`MagicChat.tsx`**: 2 effect mới.
+  1. Nạp lại khi mount/đổi `[typeSlug, entryId]` - reset state trắng TRƯỚC
+     (tránh lóe lịch sử của entry cũ khi chuyển entry mà component không bị
+     unmount), rồi load async. KHÔNG tự mở panel (`open` giữ nguyên) - chấm
+     đỏ có sẵn trên bong bóng đã đủ báo hiệu, tự bung panel mỗi lần reload
+     sẽ phiền.
+  2. Lưu lại mỗi khi `messages` đổi (debounce 300ms trong store, giống
+     `saveEntryDraft`), guard `messages.length === 0` để không tự ghi đè
+     phiên thật bằng mảng rỗng lúc effect #1 mới reset xong, chưa load kịp.
+  - `idRef` (bộ đếm `magic-${n}`) lưu kèm thành `nextId` - thiếu cái này thì
+    tin nhắn mới sau khi phục hồi dễ trùng `id` với tin nhắn cũ, vỡ React key.
+  - **Bẫy phát hiện qua Playwright, không phải suy luận tĩnh**: bong bóng
+    assistant còn `streaming:true` lúc reload xảy ra (request chết theo
+    trang, không gì resolve nó nữa) - nếu chỉ đổi `streaming:false` thì CHƯA
+    đủ: `MagicChatBubbleView` hiện chấm "đang gõ" dựa trên `text` RỖNG hay
+    không, không dựa trên `streaming` - đóng băng một bong bóng rỗng vẫn hiện
+    "đang gõ" MÃI MÃI. Sửa: rỗng → đổi hẳn thành dòng trạng thái
+    "Interrupted." (cùng quy ước "Stopped." của nút Dừng có sẵn); có chữ rồi
+    → giữ nguyên chữ, chỉ tắt `streaming`.
+  - `clearAllNow()` gọi thêm `discardMagicChatSession` - "Clear all" xoá cả
+    IndexedDB, không chỉ state trong RAM.
+- **Verify thật qua Playwright** (login thật, gửi 1 tin nhắn, đợi qua
+  debounce, `page.reload()`): 2 row phục hồi đúng nội dung, panel KHÔNG tự
+  mở, chấm đỏ có hiện, không còn "đang gõ" bị kẹt. "Clear all" rồi reload →
+  0 row, xác nhận discard xuyên suốt.
+- Typecheck sạch + build sạch + 900 test pass.
