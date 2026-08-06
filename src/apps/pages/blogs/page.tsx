@@ -1,5 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import type { Blog, Category } from "../../dry.generated.js";
+import { imageSrc } from "../lib/image-url.js";
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -68,7 +69,11 @@ function BlogsFilterSection({ posts, categories }: { posts: Blog[]; categories: 
               style={visible ? undefined : { display: "none" }}
               class="overflow-hidden rounded-2xl border border-slate-200 bg-white"
             >
-              <div class="h-40 bg-slate-200" />
+              {post.image ? (
+                <img src={imageSrc(post.image)} alt={post.title} class="h-40 w-full object-cover" />
+              ) : (
+                <div class="h-40 bg-slate-200" />
+              )}
               <div class="space-y-2 p-5">
                 <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
                   {post.category !== null ? categoryNameById.get(post.category) : null}

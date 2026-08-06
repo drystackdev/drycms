@@ -140,7 +140,11 @@ export default async function HomePage() {
                 href={`/blogs/${post.slug}`}
                 class="overflow-hidden rounded-2xl border border-slate-200 bg-white"
               >
-                <div class="h-36 bg-slate-200" />
+                {post.image ? (
+                  <img src={imageSrc(post.image)} alt={post.title} class="h-36 w-full object-cover" />
+                ) : (
+                  <div class="h-36 bg-slate-200" />
+                )}
                 <div class="space-y-2 p-5">
                   <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
                     {post.category !== null ? categoryNameById.get(post.category) : null}
@@ -175,7 +179,15 @@ export default async function HomePage() {
               rel="noreferrer"
               class="group flex items-start gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
             >
-              <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
+              {item.image ? (
+                <img
+                  src={imageSrc(item.image)}
+                  alt={item.outlet}
+                  class="h-12 w-12 shrink-0 rounded-lg object-cover"
+                />
+              ) : (
+                <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
+              )}
               <div class="flex-1">
                 <p class="text-xs font-semibold uppercase tracking-wide text-red-900">
                   {item.outlet}

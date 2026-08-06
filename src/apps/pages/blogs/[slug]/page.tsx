@@ -1,3 +1,5 @@
+import { imageSrc } from "../../lib/image-url.js";
+
 function formatDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", {
     day: "2-digit",
@@ -69,7 +71,15 @@ export default async function BlogDetailPage({
         <p class="mt-2 text-sm text-slate-500">{formatDate(post.date)}</p>
       </div>
 
-      <div class="mt-8 h-64 rounded-2xl bg-slate-200 sm:h-96" />
+      {post.image ? (
+        <img
+          src={imageSrc(post.image)}
+          alt={post.title}
+          class="mt-8 h-64 w-full rounded-2xl object-cover sm:h-96"
+        />
+      ) : (
+        <div class="mt-8 h-64 rounded-2xl bg-slate-200 sm:h-96" />
+      )}
 
       {/* `content` is a `richtext` field - HTML authored through the CMS's own
           RichText editor by an authenticated, permissioned admin, not public
@@ -116,7 +126,15 @@ export default async function BlogDetailPage({
                 href={`/blogs/${relatedPost.slug}`}
                 class="block overflow-hidden rounded-2xl border border-slate-200 hover:border-red-300"
               >
-                <div class="h-32 bg-slate-200" />
+                {relatedPost.image ? (
+                  <img
+                    src={imageSrc(relatedPost.image)}
+                    alt={relatedPost.title}
+                    class="h-32 w-full object-cover"
+                  />
+                ) : (
+                  <div class="h-32 bg-slate-200" />
+                )}
                 <div class="space-y-1 p-4">
                   <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
                     {category?.title}

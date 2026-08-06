@@ -77,7 +77,11 @@ export default async function AboutPage() {
               rel="noreferrer"
               class="group flex items-start gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
             >
-              <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
+              {item.image ? (
+                <img src={imageSrc(item.image)} alt={item.outlet} class="h-12 w-12 shrink-0 rounded-lg object-cover" />
+              ) : (
+                <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
+              )}
               <div class="flex-1">
                 <p class="text-xs font-semibold uppercase tracking-wide text-red-900">{item.outlet}</p>
                 <p class="mt-1 text-sm font-semibold text-slate-900 group-hover:text-red-900">{item.headline}</p>

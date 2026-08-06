@@ -121,6 +121,7 @@ const pressMention = await upsertContentType({
     field("app-press-mention-headline", "headline", "Title", "text", {}, { required: true }),
     field("app-press-mention-date", "date", "Date", "text", {}, { required: true }),
     field("app-press-mention-href", "href", "Link", "text"),
+    field("app-press-mention-image", "image", "Image", "image", { multiple: false }),
   ]),
 });
 
@@ -266,6 +267,7 @@ await upsertContentType({
     field("app-blog-category", "category", "Category", "relation", { target: category.id, cardinality: "manyToOne" }, { required: true }),
     field("app-blog-excerpt", "excerpt", "Excerpt", "text", { multiline: true }, { required: true }),
     field("app-blog-date", "date", "Date", "date", {}, { required: true }),
+    field("app-blog-image", "image", "Cover Image", "image", { multiple: false }),
     field(
       "app-blog-content",
       "content",

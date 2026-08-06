@@ -54,6 +54,7 @@ export interface Blog {
   category: number | null; // relation -> category
   excerpt: string;
   date: Date;
+  image?: string;
   content: string;
   title: string;
   slug: string;
@@ -177,6 +178,7 @@ export interface PressMention {
   headline: string;
   date: string;
   href?: string;
+  image?: string;
 }
 
 export interface BottomCta {
