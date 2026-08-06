@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-const { path, aiMode } = window.__DRY_CONFIG__;
+const { path } = window.__DRY_CONFIG__;
 
-import Combobox from "../../components/Combobox.js";
+import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
 import { toast } from "../../components/Toast.js";
 import { ArrowRightIcon, XIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
-import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import { normalizeFieldOrder } from "../../content-types/naming.js";
 import { saveDraft, drafts, getDraft } from "../../content-types/draft-store.js";
 import { mapWizardTables } from "../../content-types/ai-wizard-map.js";
@@ -34,16 +33,6 @@ export interface AiSchemaWizardPanelProps {
 }
 
 type Stage = "start" | "loading" | "turn" | "error";
-
-const aiKeyApi = createContentEntriesApi(`${path}/api/content`, "aiKey");
-
-/** `model` used to be a single-value `text` field (a bare string in the DB) -
- * see `AiKeyEditor.tsx`'s own `readModelList` doc comment for why an older
- * row can still deserialize as a plain string instead of an array. */
-function readModelList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((model): model is string => typeof model === "string" && model.length > 0);
-  return typeof value === "string" && value.trim() ? [value.trim()] : [];
-}
 
 function mergedAllTypes(allDefinitions: ContentTypeDefinition[]): ContentTypeDefinition[] {
   const merged = allDefinitions.map((type) => getDraft(type.id)?.definition ?? type);
@@ -112,7 +101,7 @@ async function requestWizardTurn(
   throw new Error("AI connection closed unexpectedly.");
 }
 
-function StartStep({ onStart }: { onStart: (goal: string) => void }) {
+function StartStep({ onStart, canStart }: { onStart: (goal: string) => void; canStart: boolean }) {
   const [goal, setGoal] = useState("");
 
   return (
@@ -125,10 +114,10 @@ function StartStep({ onStart }: { onStart: (goal: string) => void }) {
         onInput={(event) => setGoal((event.currentTarget as HTMLTextAreaElement).value)}
       />
       <footer class="row justify-between">
-        <button type="button" class="ghost" onClick={() => onStart("")}>
+        <button type="button" class="ghost" disabled={!canStart} onClick={() => onStart("")}>
           Skip, let AI ask
         </button>
-        <button type="button" onClick={() => onStart(goal)}>
+        <button type="button" disabled={!canStart} onClick={() => onStart(goal)}>
           Start <ArrowRightIcon />
         </button>
       </footer>
@@ -281,20 +270,9 @@ export default function AiSchemaWizardPanel({
   const [history, setHistory] = useState<WizardHistoryMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
-  const [aiKeyOptions, setAiKeyOptions] = useState<{ value: string; label: string }[]>([]);
-  const [aiKeyModels, setAiKeyModels] = useState<Record<string, string[]>>({});
-  const [aiKeyName, setAiKeyName] = useState<string | undefined>(undefined);
-  const [aiModel, setAiModel] = useState<string | undefined>(undefined);
   const [lastGoal, setLastGoal] = useState<string | undefined>(undefined);
   const partialTurn = useMemo(() => parsePartialWizardTurn(streamingText), [streamingText]);
-
-  // With exactly one configured key there's nothing to pick between, so the
-  // "AI Key" combobox itself stays hidden (below) - but that key can still
-  // have more than one model, so it's still the effective key the Model
-  // combobox reads its options from and the request resolves against.
-  const effectiveAiKeyName = aiKeyOptions.length > 1 ? aiKeyName : aiKeyOptions[0]?.value;
-  const effectiveAiKeyModels = effectiveAiKeyName ? aiKeyModels[effectiveAiKeyName] ?? [] : [];
-  const effectiveAiModel = aiModel ?? effectiveAiKeyModels[0];
+  const aiKey = useAiKeySelection(open);
 
   useEffect(() => {
     if (!open) return;
@@ -302,33 +280,7 @@ export default function AiSchemaWizardPanel({
     setTurn(null);
     setHistory([]);
     setError(null);
-    setAiKeyName(undefined);
-    setAiModel(undefined);
     setLastGoal(undefined);
-    if (aiMode === "server") {
-      void aiKeyApi
-        .list({ page: 0, pageSize: 100 })
-        .then((result) => {
-          setAiKeyOptions(
-            result.rows.map((row) => ({
-              value: String(row.value.name ?? ""),
-              label: `${String(row.value.name ?? "Unnamed")} (${String(row.value.provider ?? "")})`,
-            })).filter((option) => option.value),
-          );
-          setAiKeyModels(
-            Object.fromEntries(
-              result.rows
-                .map((row): [string, string[]] => [String(row.value.name ?? ""), readModelList(row.value.model)])
-                .filter(([name]) => name),
-            ),
-          );
-        })
-        .catch(() => {
-          setAiKeyOptions([]);
-          setAiKeyModels({});
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-runs on open/close, deliberately not on aiKeyName (that's read at request time, not at reset time).
   }, [open]);
 
   /** Stages every proposed table as a draft directly - client-side, no AI
@@ -392,7 +344,7 @@ export default function AiSchemaWizardPanel({
 
   function start(goal: string) {
     setLastGoal(goal || undefined);
-    void advance([], effectiveAiKeyName, effectiveAiModel, goal || undefined);
+    void advance([], aiKey.keyName, aiKey.model, goal || undefined);
   }
 
   function answer(text: string) {
@@ -402,39 +354,18 @@ export default function AiSchemaWizardPanel({
       { role: "assistant", text: JSON.stringify(turn) },
       { role: "user", text },
     ];
-    void advance(nextHistory, effectiveAiKeyName, effectiveAiModel);
+    void advance(nextHistory, aiKey.keyName, aiKey.model);
   }
 
   return (
     <div id="ai-wizard-panel" class={`ai-wizard-panel${open ? " open" : ""}`} aria-hidden={!open}>
       {open && (
         <>
-          {aiMode === "server" && aiKeyOptions.length > 0 && (
-            <div class="row align-center ai-wizard-key-picker" style={{ gap: "0.5rem" }}>
-              <small class="hint">AI Key</small>
-              <Combobox
-                options={[{ value: "", label: "Automatic" }, ...aiKeyOptions]}
-                value={aiKeyName ?? ""}
-                onChange={(value) => {
-                  setAiKeyName(value || undefined);
-                  setAiModel(undefined);
-                }}
-                placeholder="Automatic"
-              />
-              {effectiveAiKeyModels.length > 0 && (
-                <>
-                  <small class="hint">Model</small>
-                  <Combobox
-                    options={effectiveAiKeyModels.map((model) => ({ value: model, label: model }))}
-                    value={effectiveAiModel ?? ""}
-                    onChange={(value) => setAiModel(value || undefined)}
-                  />
-                </>
-              )}
-            </div>
-          )}
+          <div class="ai-wizard-key-picker">
+            <AiKeyPicker selection={aiKey} />
+          </div>
           <div class="ai-wizard-body">
-            {stage === "start" && <StartStep onStart={start} />}
+            {stage === "start" && <StartStep onStart={start} canStart={aiKey.ready} />}
             {stage === "loading" && (
               <div class="stack ai-wizard-loading">
                 <div class="row align-center" style={{ gap: "0.5rem" }}>
@@ -447,7 +378,7 @@ export default function AiSchemaWizardPanel({
               <div class="stack">
                 <div class="alert destructive">{error}</div>
                 <footer>
-                  <button type="button" onClick={() => void advance(history, effectiveAiKeyName, effectiveAiModel, history.length === 0 ? lastGoal : undefined)}>Try again</button>
+                  <button type="button" disabled={!aiKey.ready} onClick={() => void advance(history, aiKey.keyName, aiKey.model, history.length === 0 ? lastGoal : undefined)}>Try again</button>
                 </footer>
               </div>
             )}

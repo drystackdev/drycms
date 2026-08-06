@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { toast } from "../../components/Toast.js";
-import Combobox from "../../components/Combobox.js";
+import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
 import { ArrowRightIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import TextField from "../../components/fields/TextField.js";
@@ -9,7 +9,6 @@ import ImageField from "../../components/fields/ImageField.js";
 import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
-import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
@@ -17,24 +16,7 @@ import type { MagicWriteChoice, MagicWriteRawValue } from "../../content-types/a
 import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES } from "../../content-types/ai-magic-write-fields.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 
-const { path, aiMode } = window.__DRY_CONFIG__;
-
-/** Same "aiKey" system collection the schema wizard's own AI Key combobox
- * (`AiSchemaWizardPanel.tsx`) already reads - lets the admin pick a
- * SPECIFIC configured provider/model/key for this Magic Write run instead
- * of the server's default fallback order (`ai.ts`'s `readServerCredentials`
- * always resolves against this same collection either way; this is only
- * about letting the admin override which row wins, e.g. to route around a
- * provider that's temporarily overloaded). */
-const aiKeyApi = createContentEntriesApi(`${path}/api/content`, "aiKey");
-
-/** `model` used to be a single-value `text` field (a bare string in the DB) -
- * see `AiKeyEditor.tsx`'s own `readModelList` doc comment for why an older
- * row can still deserialize as a plain string instead of an array. */
-function readModelList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((model): model is string => typeof model === "string" && model.length > 0);
-  return typeof value === "string" && value.trim() ? [value.trim()] : [];
-}
+const { path } = window.__DRY_CONFIG__;
 
 interface MagicWriteEncodedImage {
   path: string;
@@ -215,18 +197,9 @@ export default function MagicWriteDialog({
   const [questionChoice, setQuestionChoice] = useState<Set<string>>(new Set());
   const [questionOther, setQuestionOther] = useState("");
   const [selectedImagePaths, setSelectedImagePaths] = useState<string[]>([]);
-  const [aiKeyName, setAiKeyName] = useState<string | undefined>(undefined);
-  const [aiKeyOptions, setAiKeyOptions] = useState<{ value: string; label: string }[]>([]);
-  const [aiKeyModels, setAiKeyModels] = useState<Record<string, string[]>>({});
-  const [aiModel, setAiModel] = useState<string | undefined>(undefined);
-
-  // With exactly one configured key there's nothing to pick between, so the
-  // "AI Key" combobox itself stays hidden (below) - but that key can still
-  // have more than one model, so it's still the effective key the Model
-  // combobox reads its options from and the request resolves against.
-  const effectiveAiKeyName = aiKeyOptions.length > 1 ? aiKeyName : aiKeyOptions[0]?.value;
-  const effectiveAiKeyModels = effectiveAiKeyName ? aiKeyModels[effectiveAiKeyName] ?? [] : [];
-  const effectiveAiModel = aiModel ?? effectiveAiKeyModels[0];
+  // Loads once per Magic Write session: `stage` only ever returns to "start"
+  // when the `openToken` effect below begins a brand new one.
+  const aiKey = useAiKeySelection(dialogVisible && stage === "start");
 
   const ref = useDialogSync(dialogVisible, () => handleCancel());
 
@@ -260,39 +233,12 @@ export default function MagicWriteDialog({
     setQuestionChoice(new Set());
     setQuestionOther("");
     setSelectedImagePaths([]);
-    setAiKeyName(undefined);
-    setAiModel(undefined);
     setRawText("");
     rawTextRef.current = "";
     committedRef.current = new Set();
     streamingNameRef.current = null;
     historyRef.current = [];
     setDialogVisible(true);
-    if (aiMode === "server") {
-      void aiKeyApi
-        .list({ page: 0, pageSize: 100 })
-        .then((result) => {
-          setAiKeyOptions(
-            result.rows
-              .map((row) => ({
-                value: String(row.value.name ?? ""),
-                label: `${String(row.value.name ?? "Unnamed")} (${String(row.value.provider ?? "")})`,
-              }))
-              .filter((option) => option.value),
-          );
-          setAiKeyModels(
-            Object.fromEntries(
-              result.rows
-                .map((row): [string, string[]] => [String(row.value.name ?? ""), readModelList(row.value.model)])
-                .filter(([name]) => name),
-            ),
-          );
-        })
-        .catch(() => {
-          setAiKeyOptions([]);
-          setAiKeyModels({});
-        });
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires only on a real button click (openToken change), never on the reveal-only branch above
   }, [openToken]);
 
@@ -361,8 +307,8 @@ export default function MagicWriteDialog({
           prompt: promptForThisTurn,
           history: historyForThisTurn,
           images,
-          aiKeyName: effectiveAiKeyName,
-          aiModel: effectiveAiModel,
+          aiKeyName: aiKey.keyName,
+          aiModel: aiKey.model,
         },
         handleDelta,
         () => {
@@ -457,30 +403,7 @@ export default function MagicWriteDialog({
           <div class="stack">
             {stage === "start" && (
               <div class="stack">
-                {aiMode === "server" && aiKeyOptions.length > 0 && (
-                  <div class="row align-center" style={{ gap: "0.5rem" }}>
-                    <small class="hint">AI Key</small>
-                    <Combobox
-                      options={[{ value: "", label: "Automatic" }, ...aiKeyOptions]}
-                      value={aiKeyName ?? ""}
-                      onChange={(value) => {
-                        setAiKeyName(value || undefined);
-                        setAiModel(undefined);
-                      }}
-                      placeholder="Automatic"
-                    />
-                    {effectiveAiKeyModels.length > 0 && (
-                      <>
-                        <small class="hint">Model</small>
-                        <Combobox
-                          options={effectiveAiKeyModels.map((model) => ({ value: model, label: model }))}
-                          value={effectiveAiModel ?? ""}
-                          onChange={(value) => setAiModel(value || undefined)}
-                        />
-                      </>
-                    )}
-                  </div>
-                )}
+                <AiKeyPicker selection={aiKey} />
                 <TextField
                   label="What should Magic Write do?"
                   multiline
@@ -545,7 +468,7 @@ export default function MagicWriteDialog({
             </button>
             <span class="spacer" />
             {stage === "start" && (
-              <button type="button" disabled={!prompt.trim()} onClick={handleStart}>
+              <button type="button" disabled={!prompt.trim() || !aiKey.ready} onClick={handleStart}>
                 Write <ArrowRightIcon />
               </button>
             )}

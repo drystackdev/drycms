@@ -75,7 +75,6 @@ function renderFieldNodes(
   fieldErrors: Record<string, string>,
   onFieldChange: (fieldName: string, fieldValue: unknown) => void,
   allTypes: ContentTypeDefinition[],
-  checkSecretKey?: FieldRendererProps["checkSecretKey"],
   revealPath?: string[],
   /** Magic Write (status/magic-write.md decision #4): the field currently
    * being streamed into locks its own `<fieldset>` (native `disabled`
@@ -165,11 +164,6 @@ function renderFieldNodes(
           onChange={(fieldValue) => onFieldChange(node.fieldName, fieldValue)}
           error={fieldErrors[node.fieldName]}
           allTypes={allTypes}
-          checkSecretKey={
-            node.kind === "column" && node.fieldName === "key"
-              ? checkSecretKey
-              : undefined
-          }
           revealPath={
             revealPath?.[0] === node.fieldName ? revealPath : undefined
           }
@@ -203,10 +197,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showResetAllConfirm, setShowResetAllConfirm] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [checkingAiKey, setCheckingAiKey] = useState(false);
-  const [aiKeyCheck, setAiKeyCheck] = useState<
-    { ok: boolean; message: string } | undefined
-  >();
   // Bumped on every "Magic Write" button click - see `MagicWriteDialog.tsx`'s
   // own `openToken` prop doc for why this is a counter, not a boolean.
   const [magicWriteOpenToken, setMagicWriteOpenToken] = useState(0);
@@ -478,7 +468,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   );
 
   function updateFieldValue(fieldName: string, fieldValue: unknown) {
-    if (typeSlug === "aiKey" && fieldName === "key") setAiKeyCheck(undefined);
     setValue((current) =>
       current ? { ...current, [fieldName]: fieldValue } : current,
     );
@@ -489,48 +478,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     // `dry:field-set` listener below) - a listener can't tell those apart,
     // same as it can't for a real user's own edit.
     dispatchFieldInput(fieldName, fieldValue, { typeSlug, entryId });
-  }
-
-  async function handleCheckAiKey() {
-    if (typeSlug !== "aiKey" || !value) return;
-    const key = typeof value.key === "string" ? value.key.trim() : "";
-    const provider = typeof value.provider === "string" ? value.provider : "";
-    const model = typeof value.model === "string" ? value.model.trim() : "";
-    const url = typeof value.url === "string" ? value.url.trim() : "";
-    if (!key || !provider || !model) {
-      setAiKeyCheck({
-        ok: false,
-        message: "Enter provider, model, and key first.",
-      });
-      return;
-    }
-    setCheckingAiKey(true);
-    setAiKeyCheck(undefined);
-    try {
-      const response = await fetch(`${path}/api/ai/check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, key, model, url }),
-      });
-      const body = (await response.json()) as {
-        ok?: boolean;
-        message?: string;
-      };
-      setAiKeyCheck({
-        ok: response.ok && body.ok === true,
-        message:
-          body.message ??
-          (response.ok ? "AI key is valid." : "AI key check failed."),
-      });
-    } catch (error) {
-      setAiKeyCheck({
-        ok: false,
-        message:
-          error instanceof Error ? error.message : "AI key check failed.",
-      });
-    } finally {
-      setCheckingAiKey(false);
-    }
   }
 
   // The other direction - an outside listener drives this form by
@@ -845,13 +792,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               fieldErrors,
               updateFieldValue,
               allTypes,
-              typeSlug === "aiKey" && isNew
-                ? {
-                    onCheck: handleCheckAiKey,
-                    loading: checkingAiKey,
-                    result: aiKeyCheck,
-                  }
-                : undefined,
               revealPath,
               streamingFieldName,
             )}
@@ -864,13 +804,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               fieldErrors,
               updateFieldValue,
               allTypes,
-              typeSlug === "aiKey" && isNew
-                ? {
-                    onCheck: handleCheckAiKey,
-                    loading: checkingAiKey,
-                    result: aiKeyCheck,
-                  }
-                : undefined,
               revealPath,
               streamingFieldName,
             )}

@@ -26,11 +26,6 @@ export interface FieldRendererProps {
   onChange: (value: unknown) => void;
   error?: string;
   allTypes: ContentTypeDefinition[];
-  checkSecretKey?: {
-    onCheck: () => void;
-    loading?: boolean;
-    result?: { ok: boolean; message: string };
-  };
   /** The Visual Editing Interface's `?_path=` deep link (`overlay.ts`),
    * already confirmed to start at THIS node (`revealPath[0] === node.fieldName`
    * - `ContentEntryEditor.tsx`'s `renderFieldNodes` only passes it down that
@@ -67,7 +62,6 @@ export default function FieldRenderer({
   onChange,
   error,
   allTypes,
-  checkSecretKey,
   revealPath,
   pathPrefix,
 }: FieldRendererProps) {
@@ -78,7 +72,6 @@ export default function FieldRenderer({
         value={value}
         onChange={onChange}
         error={error}
-        checkSecretKey={checkSecretKey}
       />
     );
   }

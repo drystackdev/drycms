@@ -32,15 +32,8 @@ interface ChatRequest {
   messages?: ChatMessage[];
   message?: string;
   conversationId?: string;
-}
-
-interface CheckKeyRequest {
-  provider?: string;
-  key?: string;
-  model?: string;
-  url?: string;
-  entryId?: string;
-  entryName?: string;
+  aiKeyName?: string;
+  aiModel?: string;
 }
 
 interface ModelsRequest {
@@ -125,7 +118,13 @@ function readModelList(value: unknown): string[] {
   return typeof value === "string" && value.trim() ? [value.trim()] : [];
 }
 
-async function readServerCredentials(context: DryRouteContext, preferredName?: string, preferredModel?: string): Promise<ServerCredential[]> {
+/**
+ * Resolves the ONE key/model pair the admin picked in the UI - there is no
+ * automatic choice and no fallback to another key: an AI request runs on
+ * exactly what was selected, and any provider failure goes straight back to
+ * the admin who picked it (see `status/ai-key-manual-selection.md`).
+ */
+async function readServerCredential(context: DryRouteContext, keyName: string, model: string | undefined): Promise<ServerCredential> {
   const serverAi = ai;
   if (serverAi.mode !== "server") throw new Error("Server AI mode is not configured.");
   const { schema, entries } = getContentAdapters(context);
@@ -133,94 +132,36 @@ async function readServerCredentials(context: DryRouteContext, preferredName?: s
   const type = allTypes.find((candidate) => candidate.name === "aiKey");
   if (!type) throw new Error('The system collection "aiKey" is not available.');
   const page = await entries.listEntries(type, allTypes, { page: 0, pageSize: 10_000 });
-  // An explicit per-request override (the wizard's AI Key combobox) restricts
-  // to exactly that one key, with no fallback to the others - the admin
-  // picked it on purpose. Absent an override, fall back to `ai.keyName`'s
-  // preferred-first-then-fallback ordering, same as before.
-  if (preferredName) {
-    // Trimmed on both sides: `handleWizard`/`ai-magic-write.ts` already trim
-    // the INCOMING override before it gets here, but a stored `aiKey.name`
-    // itself can carry accidental leading/trailing whitespace (a typo when
-    // the admin created the row) - comparing untrimmed-vs-trimmed would
-    // silently never match that row again from its own combobox, which
-    // sends back exactly the untrimmed stored name.
-    const match = page.rows.find((row) => String(row.value.name ?? "").trim() === preferredName.trim());
-    if (!match) throw new Error(`AI Key "${preferredName}" was not found.`);
-    // `preferredModel` (the dialog's own model picker, shown once a specific
-    // key is chosen) only ever makes sense paired with a `preferredName` - an
-    // "Automatic" run can land on any configured key, so there is no single
-    // model list to validate against. Checked here, against THIS key's own
-    // `model` list, rather than left to fall through silently below.
-    if (preferredModel) {
-      const entryModels = readModelList(match.value.model);
-      if (!entryModels.includes(preferredModel)) {
-        throw new Error(`Model "${preferredModel}" is not configured for AI Key "${preferredName}".`);
-      }
-    }
-    page.rows = [match];
+  // Trimmed on both sides: the callers already trim the INCOMING name, but a
+  // stored `aiKey.name` itself can carry accidental leading/trailing
+  // whitespace (a typo when the admin created the row) - comparing
+  // untrimmed-vs-trimmed would silently never match that row again from its
+  // own combobox, which sends back exactly the untrimmed stored name.
+  const row = page.rows.find((candidate) => String(candidate.value.name ?? "").trim() === keyName.trim());
+  if (!row) throw new Error(`AI Key "${keyName}" was not found.`);
+  const entryModels = readModelList(row.value.model);
+  if (model && !entryModels.includes(model)) {
+    throw new Error(`Model "${model}" is not configured for AI Key "${keyName}".`);
   }
-  const orderedRows = !preferredName && serverAi.keyName
-    ? [...page.rows].sort((left, right) => {
-        const leftPreferred = String(left.value.name ?? "") === serverAi.keyName;
-        const rightPreferred = String(right.value.name ?? "") === serverAi.keyName;
-        return Number(rightPreferred) - Number(leftPreferred);
-      })
-    : page.rows;
-  if (!preferredName && serverAi.keyName && !orderedRows.some((row) => String(row.value.name ?? "") === serverAi.keyName)) {
-    throw new Error(`AI Key "${serverAi.keyName}" was not found.`);
-  }
-
-  const credentials: ServerCredential[] = [];
-  const skippedKeys: string[] = [];
-  for (const row of orderedRows) {
-    const name = String(row.value.name ?? "Unnamed AI Key");
-    const raw = await entries.getRawEntry(type, row.id);
-    if (!raw || typeof raw.key !== "string") {
-      skippedKeys.push(`${name}: no stored secret`);
-      continue;
-    }
-    try {
-      const providerEntry = providerFromEntry(row.value.provider);
-      const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
-      const baseUrl = await validateOutboundUrlForRequest(typeof row.value.url === "string" && row.value.url.trim()
-        ? row.value.url.trim()
-        : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl, "AI provider URL");
-      const entryModels = readModelList(row.value.model);
-      const entryModel = preferredModel && entryModels.includes(preferredModel) ? preferredModel : entryModels[0];
-      credentials.push({ name, provider, apiKey: await decryptSecret(raw.key), baseUrl, model: entryModel || serverAi.model });
-    } catch (error) {
-      // A malformed or undecryptable key must not prevent later configured keys from being tried.
-      skippedKeys.push(`${name}: ${error instanceof Error ? error.message : "invalid configuration"}`);
-    }
-  }
-  if (credentials.length === 0) {
-    throw new Error(`No usable AI API keys are configured.${skippedKeys.length ? ` ${skippedKeys.join("; ")}` : ""}`);
-  }
-  return credentials;
-}
-
-function isAiKeyFallbackError(error: unknown): boolean {
-  if (!(error instanceof AiProviderError)) return false;
-  if (error.status === 401 || error.status === 403 || error.status === 408 || error.status === 429) return true;
-  return /quota|rate\s*limit|too many requests|insufficient[_ -]?quota|billing|credit|balance|exceeded/i.test(error.message);
-}
-
-function allAiKeysFailed(errors: Error[]): Error {
-  const last = errors.at(-1);
-  return new Error(
-    `All configured AI API keys are exhausted or unavailable.${last ? ` Last provider error: ${last.message}` : ""}`,
-  );
+  const raw = await entries.getRawEntry(type, row.id);
+  if (!raw || typeof raw.key !== "string") throw new Error(`AI Key "${keyName}" has no stored secret.`);
+  const providerEntry = providerFromEntry(row.value.provider);
+  const provider = providerEntry === "custom" ? serverAi.provider : providerEntry;
+  const baseUrl = await validateOutboundUrlForRequest(typeof row.value.url === "string" && row.value.url.trim()
+    ? row.value.url.trim()
+    : provider === "google" ? "https://generativelanguage.googleapis.com" : serverAi.baseUrl, "AI provider URL");
+  return {
+    name: String(row.value.name ?? keyName),
+    provider,
+    apiKey: await decryptSecret(raw.key),
+    baseUrl,
+    model: model || entryModels[0] || serverAi.model,
+  };
 }
 
 function errorResponse(error: unknown, status = 500): Response {
   if (error instanceof RequestBodyLimitError) return jsonResponse({ error: "request_too_large", message: "Request body is too large." }, 413);
-  const message = error instanceof AiProviderError
-    ? "AI provider request failed."
-    : safeAiMessage(error);
-  return jsonResponse(
-    { error: "ai_error", message },
-    status,
-  );
+  return jsonResponse({ error: "ai_error", message: safeAiMessage(error) }, status);
 }
 
 export function safeAiMessage(error: unknown): string {
@@ -819,8 +760,8 @@ export async function createChatStream(
   context: DryRouteContext,
   messages: ChatMessage[],
   onDelta: (delta: string) => void,
-  preferredKeyName?: string,
-  preferredModel?: string,
+  aiKeyName?: string,
+  aiModel?: string,
   maxOutputTokens?: number,
   timeoutMs?: number,
 ): Promise<ChatStreamResult> {
@@ -830,20 +771,12 @@ export async function createChatStream(
       aiLabel: `${aiProviderLabel(ai.provider)} (local)`,
     };
   }
-  const credentials = await readServerCredentials(context, preferredKeyName, preferredModel);
-  const errors: Error[] = [];
-  for (const credential of credentials) {
-    try {
-      return {
-        stream: await streamServerAiWithCredential(messages, credential, onDelta, maxOutputTokens, timeoutMs),
-        aiLabel: `${aiProviderLabel(credential.provider)} · ${credential.model}`,
-      };
-    } catch (error) {
-      if (!isAiKeyFallbackError(error)) throw error;
-      errors.push(error instanceof Error ? error : new Error("AI provider request failed."));
-    }
-  }
-  throw allAiKeysFailed(errors);
+  if (!aiKeyName) throw new Error("Choose an AI Key before running this request.");
+  const credential = await readServerCredential(context, aiKeyName, aiModel);
+  return {
+    stream: await streamServerAiWithCredential(messages, credential, onDelta, maxOutputTokens, timeoutMs),
+    aiLabel: `${aiProviderLabel(credential.provider)} · ${credential.model}`,
+  };
 }
 
 async function readStoredAiKey(context: DryRouteContext, entryIdValue?: string, entryName?: string): Promise<string> {
@@ -866,70 +799,6 @@ async function readStoredAiKey(context: DryRouteContext, entryIdValue?: string, 
     return await decryptSecret(raw.key);
   } catch {
     throw new Error("The stored AI Key cannot be decrypted with the current DRYCMS_SECRET_KEY. Enter the key again and save this entry.");
-  }
-}
-
-async function checkAiKey(context: DryRouteContext, body: CheckKeyRequest): Promise<void> {
-  const rawProvider = String(body.provider ?? "").trim();
-  let apiKey = String(body.key ?? "").trim();
-  const model = String(body.model ?? "").trim();
-  if (!apiKey && (body.entryId || body.entryName)) apiKey = await readStoredAiKey(context, body.entryId, body.entryName);
-  if (!apiKey) throw new Error("No API key is available. Enter an API key and save this entry first.");
-  if (!model) throw new Error("A model is required before checking the API key.");
-  if (rawProvider.toLowerCase() === "google") {
-    const baseUrl = await validateOutboundUrlForRequest(String(body.url ?? "").trim() || "https://generativelanguage.googleapis.com", "AI provider URL");
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
-    try {
-      const response = await fetch(`${baseUrl}/v1beta/models/${encodeURIComponent(model)}`, {
-        headers: { "x-goog-api-key": apiKey },
-        signal: controller.signal,
-        redirect: "error",
-      });
-      if (!response.ok) throw new Error(`Google returned HTTP ${response.status}.`);
-      return;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  const selectedProvider = providerFromEntry(rawProvider);
-  const provider = selectedProvider === "custom" ? ai.provider : selectedProvider;
-  if (provider !== "openai" && provider !== "anthropic") {
-    throw new Error(`Provider "${rawProvider}" is not supported by the AI key checker.`);
-  }
-  const configuredBaseUrl = ai.mode === "server"
-    ? ai.baseUrl
-    : provider === "anthropic"
-      ? "https://api.anthropic.com"
-      : "https://api.openai.com";
-  const baseUrl = await validateOutboundUrlForRequest(String(body.url ?? "").trim() || configuredBaseUrl, "AI provider URL");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
-  try {
-    if (provider === "openai") {
-      const response = await fetch(`${baseUrl}/v1/models/${encodeURIComponent(model)}`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-        redirect: "error",
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-        throw new Error(body.error?.message || `OpenAI returned HTTP ${response.status}.`);
-      }
-      return;
-    }
-
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-      body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }),
-      signal: controller.signal,
-      redirect: "error",
-    });
-    const responseBody = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    if (!response.ok) throw new Error(responseBody.error?.message || `Anthropic returned HTTP ${response.status}.`);
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -1201,6 +1070,9 @@ function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Respon
   const history = validateWizardHistory(body.history);
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
+  if (ai.mode === "server" && !aiKeyName) {
+    return jsonResponse({ error: "invalid_request", message: "Choose an AI Key before running this request." }, 400);
+  }
   const goal = history.length === 0 && typeof body.goal === "string" && body.goal.trim()
     ? body.goal.trim().slice(0, 2000)
     : undefined;
@@ -1225,6 +1097,9 @@ interface RewriteSelectionRequest {
   passage?: string;
   instruction?: string;
   aiKeyName?: string;
+  /** Which of `aiKeyName`'s own configured models to use for this run - see
+   * `WizardHttpRequest.aiModel`, same shape/pairing. */
+  aiModel?: string;
   /** Whether the client's own selection sat entirely inside ONE existing
    * textblock (`ai-rewrite-button.tsx`'s `isInlineSelection` - mid-heading,
    * mid-paragraph, mid-list-item), as opposed to spanning whole blocks. The
@@ -1258,7 +1133,7 @@ function extractHtmlFragment(raw: string): string {
  * mid-stream provider error" helper, nothing wizard-specific about its
  * mechanics) rather than writing a third near-identical copy.
  */
-function streamRewriteSelection(context: DryRouteContext, passage: string, instruction: string, inline: boolean, aiKeyName: string | undefined): ReadableStream<Uint8Array> {
+function streamRewriteSelection(context: DryRouteContext, passage: string, instruction: string, inline: boolean, aiKeyName: string | undefined, aiModel: string | undefined): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       void (async () => {
@@ -1269,7 +1144,7 @@ function streamRewriteSelection(context: DryRouteContext, passage: string, instr
               text: `${buildRewriteSelectionSystemPrompt(ai.lang, inline)}\n\nCurrent passage:\n${passage}\n\nInstruction: ${instruction}`,
             },
           ];
-          const result = await runWizardTurn(context, messages, aiKeyName, undefined, (delta) => {
+          const result = await runWizardTurn(context, messages, aiKeyName, aiModel, (delta) => {
             controller.enqueue(streamEvent({ delta }));
           });
           const html = sanitizeAiRichTextHtml(extractHtmlFragment(result.text));
@@ -1292,12 +1167,16 @@ function handleRewriteSelection(context: DryRouteContext, body: RewriteSelection
   if (!instruction) return jsonResponse({ error: "invalid_request", message: "Describe how to rewrite this passage first." }, 400);
   if (instruction.length > 2_000) return jsonResponse({ error: "invalid_request", message: "That instruction is too long." }, 400);
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
+  const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
+  if (ai.mode === "server" && !aiKeyName) {
+    return jsonResponse({ error: "invalid_request", message: "Choose an AI Key before running this request." }, 400);
+  }
   const inline = body.inline === true;
 
   if (!acquireAiStreamSlot()) {
     return jsonResponse({ error: "rate_limited", message: "Too many AI requests are active. Try again shortly." }, 429);
   }
-  const stream = streamRewriteSelection(context, passage, instruction, inline, aiKeyName);
+  const stream = streamRewriteSelection(context, passage, instruction, inline, aiKeyName, aiModel);
   return new Response(trackAiStream(stream, releaseAiStreamSlot), {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -1328,10 +1207,6 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
     }
     const denied = await requireSuperAdmin(context, "Only Super Admin can use AI chat.");
     if (denied) return denied;
-    if (context.params.slug === "check") {
-      await checkAiKey(context, await context.request.json() as CheckKeyRequest);
-      return jsonResponse({ ok: true, message: "AI key is valid for this model." });
-    }
     if (context.params.slug === "models") {
       const models = await listAiModels(context, await context.request.json() as ModelsRequest);
       return jsonResponse({ models });
@@ -1351,7 +1226,7 @@ export const POST: DryRouteHandler = async (context: DryRouteContext) => {
     try {
       const result = await createChatStream(context, conversation.messages, (delta) => {
         assistant.text += delta;
-      });
+      }, typeof body.aiKeyName === "string" ? body.aiKeyName.trim() : undefined, typeof body.aiModel === "string" ? body.aiModel.trim() : undefined);
       stream = result.stream;
       aiLabel = result.aiLabel;
     } catch (error) {

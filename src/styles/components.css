@@ -3526,6 +3526,20 @@
       padding: 0.5rem 0;
     }
 
+    /* Key + Model pickers shown before every AI run - two `.field`s side by
+       side, stacking one per line in a container too narrow for both (the
+       Ask AI side panel). */
+    .ai-key-picker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+
+      & > .field {
+        flex: 1 1 12rem;
+        min-width: 0;
+      }
+    }
+
     .ai-wizard-body {
       display: flex;
       flex-direction: column;

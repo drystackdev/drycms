@@ -83,8 +83,8 @@ interface MagicWriteValidatedRequest {
   prompt: string;
   history: ChatMessage[];
   images: MagicWriteImageInput[];
-  aiKeyName?: string;
-  aiModel?: string;
+  aiKeyName: string | undefined;
+  aiModel: string | undefined;
 }
 
 function validateMagicWriteHistory(value: unknown): ChatMessage[] {
@@ -126,6 +126,7 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
 
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
+  if (ai.mode === "server" && !aiKeyName) throw new Error("Choose an AI Key before running Magic Write.");
 
   return {
     typeSlug,

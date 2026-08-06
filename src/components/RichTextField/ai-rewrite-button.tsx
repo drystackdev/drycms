@@ -1,6 +1,7 @@
 import { useRef, useState } from "preact/hooks";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { SparkleIcon } from "../AiSparkleIcon.js";
+import AiKeyPicker, { useAiKeySelection } from "../AiKeyPicker.js";
 import TextField from "../fields/TextField.js";
 import { exportFragmentHtml } from "./html.js";
 import { isInlineSelection, replaceSelectionWithHtml, runCommand } from "./commands.js";
@@ -30,13 +31,15 @@ async function requestRewrite(
   passage: string,
   instruction: string,
   inline: boolean,
+  aiKeyName: string | undefined,
+  aiModel: string | undefined,
   onDelta: (delta: string) => void,
   signal: AbortSignal,
 ): Promise<string> {
   const response = await fetch(`${path}/api/ai/rewrite-selection`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passage, instruction, inline }),
+    body: JSON.stringify({ passage, instruction, inline, aiKeyName, aiModel }),
     signal,
   });
   if (!response.ok || !response.body) {
@@ -91,6 +94,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
   const abortRef = useRef<AbortController | null>(null);
   const passageRef = useRef("");
   const inlineRef = useRef(false);
+  const aiKey = useAiKeySelection(open);
 
   if (aiMode !== "server") return <></>;
 
@@ -117,7 +121,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const html = await requestRewrite(passageRef.current, instruction.trim(), inlineRef.current, (delta) => {
+      const html = await requestRewrite(passageRef.current, instruction.trim(), inlineRef.current, aiKey.keyName, aiKey.model, (delta) => {
         setPreview((current) => current + delta);
       }, controller.signal);
       setFinalHtml(html);
@@ -164,6 +168,9 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
               </h3>
             </header>
             <div class="stack">
+              {stage === "prompt" && (
+                <AiKeyPicker selection={aiKey} />
+              )}
               {stage === "prompt" && (
                 <TextField
                   label="Instruction"
@@ -215,13 +222,13 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
                 Cancel
               </button>
               {stage === "prompt" && (
-                <button type="button" disabled={!instruction.trim()} onClick={() => void generate()}>
+                <button type="button" disabled={!instruction.trim() || !aiKey.ready} onClick={() => void generate()}>
                   Generate
                 </button>
               )}
               {stage === "preview" && (
                 <>
-                  <button type="button" class="outline" onClick={() => void generate()}>
+                  <button type="button" class="outline" disabled={!aiKey.ready} onClick={() => void generate()}>
                     Regenerate
                   </button>
                   <button type="button" onClick={apply}>
@@ -230,7 +237,7 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
                 </>
               )}
               {stage === "error" && (
-                <button type="button" onClick={() => void generate()}>
+                <button type="button" disabled={!aiKey.ready} onClick={() => void generate()}>
                   Try again
                 </button>
               )}

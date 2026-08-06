@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import MultiSelect from "../components/MultiSelect.js";
@@ -25,11 +25,6 @@ interface AiKeyValue extends Record<string, unknown> {
   model: string[];
   key: string;
   url: string;
-}
-
-interface CheckResult {
-  ok: boolean;
-  message: string;
 }
 
 const PROVIDERS = ["Google", "Anthropic", "ChatGPT", "Custom"];
@@ -60,13 +55,10 @@ export default function AiKeyEditor({ id }: Props) {
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | undefined>();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [checkResult, setCheckResult] = useState<CheckResult | undefined>();
-  const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const previousModels = useRef<string[] | undefined>();
 
   const provider = value?.provider ?? "";
   const isCustom = provider === "Custom";
@@ -170,7 +162,6 @@ export default function AiKeyEditor({ id }: Props) {
   function update(field: keyof AiKeyValue, next: string) {
     setValue((current) => current ? { ...current, [field]: next } : current);
     setFieldErrors((current) => ({ ...current, [field]: "" }));
-    if (field === "key") setCheckResult(undefined);
     if (field === "provider") {
       setModels([]);
       setModelError(undefined);
@@ -182,46 +173,6 @@ export default function AiKeyEditor({ id }: Props) {
     setValue((current) => current ? { ...current, model: next } : current);
     setFieldErrors((current) => ({ ...current, model: "" }));
   }
-
-  // A model is checked against the provider the moment it's added to the
-  // selection - there is no separate "Check API key" button (see this
-  // component's header comment); each newly-added model gets its own check
-  // since a key can be valid for one model and not another.
-  async function checkKey(model: string) {
-    if (!value) return;
-    setChecking(true);
-    setCheckResult(undefined);
-    try {
-      const response = await fetch(`${path}/api/ai/check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ ...value, model, entryId, entryName: value.name }),
-      });
-      const body = await response.json() as { ok?: boolean; message?: string };
-      setCheckResult({ ok: response.ok && body.ok === true, message: body.message ?? "AI key check failed." });
-    } catch (error) {
-      setCheckResult({ ok: false, message: error instanceof Error ? error.message : "AI key check failed." });
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  useEffect(() => {
-    const storedEntryId = entryId ?? (!isNew ? id : undefined);
-    const models = value?.model ?? [];
-    if (previousModels.current === undefined) {
-      previousModels.current = models;
-      return;
-    }
-    const previous = previousModels.current;
-    previousModels.current = models;
-    const added = models.find((model) => !previous.includes(model));
-    if (models.length === 0) setCheckResult(undefined);
-    if (!added || !provider || (!value?.key.trim() && !storedEntryId) || (isCustom && !value?.url.trim())) return;
-    const timer = window.setTimeout(() => void checkKey(added), 400);
-    return () => window.clearTimeout(timer);
-  }, [entryId, id, isCustom, isNew, provider, value?.key, value?.model, value?.url]);
 
   async function save() {
     if (!value || !type) return;
@@ -332,8 +283,6 @@ export default function AiKeyEditor({ id }: Props) {
               </div>
               {fieldErrors.model && <span class="error">{fieldErrors.model}</span>}
               {!fieldErrors.model && (loadingModels ? <span class="hint">Loading models from provider…</span> : modelError && <span class="error">{modelError}</span>)}
-              {checking && <span class="hint">Checking API key…</span>}
-              {!checking && checkResult && <span class={checkResult.ok ? "hint" : "error"}>{checkResult.message}</span>}
             </div>
           </div>
             </div>

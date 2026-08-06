@@ -35,7 +35,7 @@ export interface AiKey {
   name: string;
   description?: string;
   provider: "Google" | "Anthropic" | "ChatGPT" | "Custom";
-  model: string;
+  model: string[];
   url?: string;
   sortIndex?: number;
 }

@@ -20,11 +20,6 @@ interface Props {
   value: unknown;
   onChange: (value: unknown) => void;
   error?: string;
-  checkSecretKey?: {
-    onCheck: () => void;
-    loading?: boolean;
-    result?: { ok: boolean; message: string };
-  };
 }
 
 function isMaskedValue(value: unknown): value is MaskedValue {
@@ -39,7 +34,7 @@ function isMaskedValue(value: unknown): value is MaskedValue {
  * only there); this builds a small bespoke masked input for it instead,
  * following `SecretKeyField`'s "blank means keep the current value" pattern.
  */
-export default function ScalarField({ node, value, onChange, error, checkSecretKey }: Props) {
+export default function ScalarField({ node, value, onChange, error }: Props) {
   const { fieldType, label, description, validation } = node;
   const config = (node.fieldConfig ?? {}) as Record<string, unknown>;
   // Called unconditionally (rules of hooks) even though only the `image`

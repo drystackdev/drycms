@@ -62,8 +62,6 @@ export interface DryAiOption {
   command?: string;
   /** Extra CLI arguments. Use `{prompt}` to control where the prompt is inserted. */
   args?: string[];
-  /** Optional preferred `aiKey.name`; remaining configured keys are fallbacks. */
-  keyName?: string;
   /** Server provider model. */
   model?: string;
   /** Server provider base URL override. */
@@ -205,7 +203,6 @@ export interface ResolvedLocalAiOption {
 export interface ResolvedServerAiOption {
   mode: "server";
   provider: "openai" | "anthropic";
-  keyName?: string;
   model: string;
   baseUrl: string;
   timeoutMs: number;
@@ -456,10 +453,7 @@ function resolveAiOption(kind: "local" | "cloudflare", option: DryAiOption = {})
   const baseUrl = option.baseUrl ?? (provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com");
   if (typeof model !== "string" || !model.trim()) throw new TypeError('[drycms] `ai.model` must be a non-empty string.');
   if (typeof baseUrl !== "string" || !/^https?:\/\//.test(baseUrl)) throw new TypeError('[drycms] `ai.baseUrl` must be an http(s) URL.');
-  if (option.keyName !== undefined && (typeof option.keyName !== "string" || !option.keyName.trim())) {
-    throw new TypeError('[drycms] `ai.keyName` must be a non-empty string when provided.');
-  }
-  return { mode, provider, keyName: option.keyName?.trim(), model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs, lang: lang.trim() };
+  return { mode, provider, model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs, lang: lang.trim() };
 }
 
 /**
