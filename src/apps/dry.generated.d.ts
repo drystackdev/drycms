@@ -67,6 +67,12 @@ export interface Category {
   blog?: number[]; // relationmirror -> blog, read-only
 }
 
+export interface Redirect {
+  id: number;
+  from: string;
+  to: string;
+}
+
 export interface Homepage {
   id: number;
   hero: HeroSection;
@@ -253,6 +259,8 @@ export interface CategoryRelations {
   blog: Blog[];
 }
 
+export interface RedirectRelations {}
+
 export interface HomepageRelations {}
 
 export interface AboutRelations {}
@@ -265,7 +273,7 @@ export interface SeoDefaultsRelations {}
 
 export interface BlogsPageRelations {}
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category";
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category" | "redirect";
 export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage";
 
 export interface DryCollectionMap {
@@ -275,6 +283,7 @@ export interface DryCollectionMap {
   "role": Role;
   "blog": Blog;
   "category": Category;
+  "redirect": Redirect;
 }
 
 export interface DrySingletonMap {
@@ -293,6 +302,7 @@ export interface DryCollectionRelationsMap {
   "role": RoleRelations;
   "blog": BlogRelations;
   "category": CategoryRelations;
+  "redirect": RedirectRelations;
 }
 
 export interface DrySingletonRelationsMap {

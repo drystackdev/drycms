@@ -1,5 +1,6 @@
 import type { DryRouteContext } from "../context.js";
 import type { SessionPayload } from "../../lib/session-token.js";
+import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { encodeEntryId } from "../../lib/id-hash.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { vi } from "vitest";
@@ -192,6 +193,38 @@ describe("content-entries route - PATCH (reorder)", () => {
 
     const rejected = await patch("role", { updates: [] });
     expect(rejected.status).toBe(501);
+  });
+});
+
+describe("content-entries route - slug-change redirects", () => {
+  it("creates a redirect row when a features.slug entry's slug changes on PUT, and leaves it alone when the slug doesn't change", async () => {
+    const schema = createContentEngineAdapter(content);
+    const post_: ContentTypeDefinition = {
+      id: "custom-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      features: { slug: true },
+      fields: [],
+      version: 0,
+    };
+    await schema.applySave(post_, await schema.planSave(post_));
+
+    const created = (await post("post", { title: "Hello", slug: "hello" })).json.entry;
+
+    const unchanged = await put(`post/${created.id}`, { title: "Hello again", slug: "hello" });
+    expect(unchanged.status).toBe(200);
+
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const redirectType = allTypes.find((t) => t.name === "redirect")!;
+    expect(await entries.findEntry(redirectType, allTypes, [{ field: "from", op: "eq", value: "hello" }])).toBeNull();
+
+    const renamed = await put(`post/${created.id}`, { title: "Hello", slug: "hello-world" });
+    expect(renamed.status).toBe(200);
+
+    const redirect = await entries.findEntry(redirectType, allTypes, [{ field: "from", op: "eq", value: "hello" }]);
+    expect(redirect?.value.to).toBe("hello-world");
   });
 });
 

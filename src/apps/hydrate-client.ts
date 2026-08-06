@@ -30,8 +30,17 @@ async function main(): Promise<void> {
   // it's safe to touch the DOM (see `hydrated-event.ts`), and it must not
   // wait forever just because there was nothing to hydrate.
   try {
-    const match = matchRoute(discoverRoutes(), window.location.pathname);
-    if (!match) return; // The server already 404'd for this URL - nothing to hydrate.
+    const match = matchRoute(discoverRoutes().root, window.location.pathname);
+    // A route miss here also covers the server having rendered the
+    // `404.tsx`/redirect fallback (`page-handler.ts`) for this URL - neither
+    // is addressable through the normal segment tree, so there's nothing
+    // for this client bundle to independently re-derive and hydrate. A
+    // static `404.tsx` (no interactive islands) needs nothing more; one
+    // that added its own `useState`/etc. would stay inert - a known,
+    // accepted gap of this MPA hydration model rather than something worth
+    // teaching the client bundle the server's own redirect/404 resolution
+    // for.
+    if (!match) return;
 
     const logElement = document.getElementById("dry-replay-data");
     setReplayLog(logElement?.textContent ? decodeCallLog(logElement.textContent) : []);

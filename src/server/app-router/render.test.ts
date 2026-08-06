@@ -1,8 +1,8 @@
 import { h } from "preact";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { DryRequestContext } from "../../content-types/dry-context.js";
 import type { RouteMatch } from "./match.js";
-import { renderPage } from "./render.js";
+import { renderErrorHtml, renderPage } from "./render.js";
 
 /** Never actually read by these tests - nothing here calls `dry()`. */
 const fakeDryContext = { entries: {} as never, allTypes: [] } as DryRequestContext;
@@ -126,5 +126,76 @@ describe("renderPage", () => {
     expect(html).toContain(
       '<section class="root"><section class="blog"><article>slug:hello</article></section></section>',
     );
+  });
+
+  it("uses options.status for the response - e.g. 404 when rendering the notFound fallback", async () => {
+    const match: RouteMatch = {
+      page: () => Promise.resolve({ default: (async () => h("p", null, "not found")) as never }),
+      layouts: [],
+      params: {},
+    };
+    const response = renderPage(match, fakeDryContext, { status: 404 });
+    expect(response.status).toBe(404);
+    expect(await response.text()).toContain("not found");
+  });
+
+  it("defaults to status 200 when options.status is omitted", async () => {
+    const match: RouteMatch = {
+      page: () => Promise.resolve({ default: (async () => h("p", null, "ok")) as never }),
+      layouts: [],
+      params: {},
+    };
+    expect(renderPage(match, fakeDryContext).status).toBe(200);
+  });
+
+  it("falls back to onRenderError's markup when resolving the match throws before <head> is sent, but keeps the response's original status", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const match: RouteMatch = {
+      page: () =>
+        Promise.resolve({
+          default: (async () => {
+            throw new Error("boom");
+          }) as never,
+        }),
+      layouts: [],
+      params: {},
+    };
+    const response = renderPage(match, fakeDryContext, {
+      onRenderError: async () => "<!DOCTYPE html><html><body>fallback page</body></html>",
+    });
+    expect(response.status).toBe(200); // fixed at construction, before the failure was even known
+    expect(await response.text()).toBe("<!DOCTYPE html><html><body>fallback page</body></html>");
+    spy.mockRestore();
+  });
+
+  it("errors the stream (no clean recovery) when onRenderError is absent", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const match: RouteMatch = {
+      page: () =>
+        Promise.resolve({
+          default: (async () => {
+            throw new Error("boom");
+          }) as never,
+        }),
+      layouts: [],
+      params: {},
+    };
+    await expect(renderPage(match, fakeDryContext).text()).rejects.toThrow();
+    spy.mockRestore();
+  });
+});
+
+describe("renderErrorHtml", () => {
+  it("renders a standalone document (CSS link + the component's markup) with no dry() context involved", async () => {
+    const html = await renderErrorHtml(() =>
+      Promise.resolve({ default: (() => h("p", null, "Something went wrong")) as never }),
+    );
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain('<link rel="stylesheet"');
+    expect(html).toContain("<p>Something went wrong</p>");
+    // None of the normal page machinery - no hydrate script, no replay data, no VEI config.
+    expect(html).not.toContain("hydrate-client");
+    expect(html).not.toContain("dry-replay-data");
+    expect(html).not.toContain("dry-vei-config");
   });
 });

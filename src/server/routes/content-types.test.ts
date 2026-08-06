@@ -125,6 +125,7 @@ describe("GET /dry/api/content-types", () => {
       "aiKey",
       "menu",
       "menuItem",
+      "redirect",
       "role",
       "seo",
       "seoDefaults",
@@ -134,6 +135,7 @@ describe("GET /dry/api/content-types", () => {
       (json.definitions as ContentTypeDefinition[]).find((t) => t.name === name)!;
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("redirect").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
     expect(byName("user").hidden).toBeFalsy();
   });

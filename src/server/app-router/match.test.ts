@@ -26,7 +26,7 @@ describe("matchRoute", () => {
       },
       ROOT,
     );
-    const match = matchRoute(tree, "/");
+    const match = matchRoute(tree.root, "/");
     expect(match).not.toBeNull();
     expect(id(match!.page)).toBe("root-page");
     expect(match!.layouts.map(id)).toEqual(["root-layout"]);
@@ -41,11 +41,11 @@ describe("matchRoute", () => {
       },
       ROOT,
     );
-    const staticMatch = matchRoute(tree, "/blog/new");
+    const staticMatch = matchRoute(tree.root, "/blog/new");
     expect(id(staticMatch!.page)).toBe("blog-new");
     expect(staticMatch!.params).toEqual({});
 
-    const dynamicMatch = matchRoute(tree, "/blog/hello-world");
+    const dynamicMatch = matchRoute(tree.root, "/blog/hello-world");
     expect(id(dynamicMatch!.page)).toBe("blog-slug");
     expect(dynamicMatch!.params).toEqual({ slug: "hello-world" });
   });
@@ -57,7 +57,7 @@ describe("matchRoute", () => {
       },
       ROOT,
     );
-    const match = matchRoute(tree, "/docs/a/b/c");
+    const match = matchRoute(tree.root, "/docs/a/b/c");
     expect(id(match!.page)).toBe("docs-catch-all");
     expect(match!.params).toEqual({ path: ["a", "b", "c"] });
   });
@@ -70,7 +70,7 @@ describe("matchRoute", () => {
       },
       ROOT,
     );
-    const match = matchRoute(tree, "/docs/one");
+    const match = matchRoute(tree.root, "/docs/one");
     expect(id(match!.page)).toBe("docs-slug");
     expect(match!.params).toEqual({ slug: "one" });
   });
@@ -84,7 +84,7 @@ describe("matchRoute", () => {
       },
       ROOT,
     );
-    const match = matchRoute(tree, "/blog/hello");
+    const match = matchRoute(tree.root, "/blog/hello");
     expect(match!.layouts.map(id)).toEqual(["root-layout", "blog-slug-layout"]);
   });
 
@@ -96,8 +96,8 @@ describe("matchRoute", () => {
       },
       ROOT,
     );
-    expect(matchRoute(tree, "/blog")).toBeNull();
-    expect(matchRoute(tree, "/blog/hello")).not.toBeNull();
+    expect(matchRoute(tree.root, "/blog")).toBeNull();
+    expect(matchRoute(tree.root, "/blog/hello")).not.toBeNull();
   });
 
   it("returns null when no segment matches at all", () => {
@@ -105,6 +105,44 @@ describe("matchRoute", () => {
       { [`${ROOT}/page.tsx`]: loader("root-page") },
       ROOT,
     );
-    expect(matchRoute(tree, "/nope")).toBeNull();
+    expect(matchRoute(tree.root, "/nope")).toBeNull();
+  });
+});
+
+describe("buildRouteTree - 404.tsx/500.tsx fallbacks", () => {
+  it("pulls a pages-root 404.tsx/500.tsx out as notFound/serverError instead of the segment tree", () => {
+    const tree = buildRouteTree(
+      {
+        [`${ROOT}/page.tsx`]: loader("root-page"),
+        [`${ROOT}/404.tsx`]: loader("not-found"),
+        [`${ROOT}/500.tsx`]: loader("server-error"),
+      },
+      ROOT,
+    );
+    expect(id(tree.notFound!)).toBe("not-found");
+    expect(id(tree.serverError!)).toBe("server-error");
+    expect(tree.root.children.has("404.tsx")).toBe(false);
+    expect(tree.root.children.has("500.tsx")).toBe(false);
+    // Not addressable as a normal route - only reached as a fallback.
+    expect(matchRoute(tree.root, "/404")).toBeNull();
+  });
+
+  it("leaves notFound/serverError undefined when the app has no 404.tsx/500.tsx", () => {
+    const tree = buildRouteTree(
+      { [`${ROOT}/page.tsx`]: loader("root-page") },
+      ROOT,
+    );
+    expect(tree.notFound).toBeUndefined();
+    expect(tree.serverError).toBeUndefined();
+  });
+
+  it("does not treat a nested 404.tsx/500.tsx (not at the pages root) as a fallback", () => {
+    const tree = buildRouteTree(
+      { [`${ROOT}/errors/404.tsx`]: loader("nested-404") },
+      ROOT,
+    );
+    expect(tree.notFound).toBeUndefined();
+    // Not `page.tsx`/`layout.tsx` either, so it's just ignored entirely.
+    expect(tree.root.children.get("errors")?.page).toBeUndefined();
   });
 });

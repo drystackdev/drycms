@@ -81,7 +81,12 @@ export default function SlugField({
   class: className,
   style,
 }: SlugFieldProps) {
-  const [slugTouched, setSlugTouched] = useState(false);
+  // An entry loaded with an already-set slug starts "touched" - editing its
+  // title must not silently rewrite a live URL, only typing directly into
+  // Slug or clicking the regenerate button below should. A brand-new entry
+  // starts with an empty slug, so this preserves the usual "derive while
+  // typing the title" behavior for creation.
+  const [slugTouched, setSlugTouched] = useState(() => slug.trim() !== "");
   const reactId = useId();
   const slugFieldId = id ?? `slug-field-${reactId}`;
 

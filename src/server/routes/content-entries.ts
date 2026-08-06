@@ -5,6 +5,7 @@ import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/en
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { PermissionAction } from "../../content-types/permissions.js";
+import { recordSlugRedirect } from "../../content-types/redirects.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { decodeEntryId, encodeEntryId } from "../../lib/id-hash.js";
 import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
@@ -431,7 +432,14 @@ export const PUT: DryRouteHandler = async (context) => {
       const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "update", undefined, value);
       if (systemDenied) return systemDenied;
       await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
+      // `features.slug` can be on for a singleton too (`system-fields.ts`) -
+      // fetched ahead of the save (not after) since `saveSingletonEntry`
+      // overwrites in place, leaving nothing to diff against afterward.
+      const existingSlug = type.features?.slug ? (await entryAdapter.getSingletonEntry(type, allTypes))?.value.slug : undefined;
       const row = await entryAdapter.saveSingletonEntry(type, allTypes, value);
+      if (typeof existingSlug === "string" && typeof value.slug === "string") {
+        await recordSlugRedirect(entryAdapter, allTypes, existingSlug, value.slug);
+      }
       return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
     }
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to update.");
@@ -441,6 +449,9 @@ export const PUT: DryRouteHandler = async (context) => {
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
     const row = await entryAdapter.updateEntry(type, allTypes, entryId, value);
+    if (type.features?.slug && typeof existing?.value.slug === "string" && typeof value.slug === "string") {
+      await recordSlugRedirect(entryAdapter, allTypes, existing.value.slug, value.slug);
+    }
     return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
   } catch (error) {
     return errorResponse(error);

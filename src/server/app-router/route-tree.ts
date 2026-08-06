@@ -21,26 +21,54 @@ export interface RouteTreeNode {
   layout?: ModuleLoader;
 }
 
+/**
+ * `notFound`/`serverError` are the pages-root `404.tsx`/`500.tsx` fallback
+ * templates (`page-handler.ts`'s doc comment) - kept separate from `root`'s
+ * own segment tree since they're rendered as a FALLBACK for a path that
+ * didn't match anything (or whose render threw), never reached by
+ * `match.ts`'s normal segment-by-segment walk.
+ */
+export interface RouteTree {
+  root: RouteTreeNode;
+  notFound?: ModuleLoader;
+  serverError?: ModuleLoader;
+}
+
 function createNode(): RouteTreeNode {
   return { children: new Map() };
 }
 
 /**
  * `modules` is shaped exactly like `import.meta.glob(...)`'s return value:
- * `{ "<rootPrefix>/blog/[slug]/page.tsx": () => import(...), ... }`. Any
- * key not starting with `rootPrefix`, or not ending in `page.tsx`/
- * `layout.tsx`, is ignored.
+ * `{ "<rootPrefix>/blog/[slug]/page.tsx": () => import(...), ... }`. Any key
+ * not starting with `rootPrefix` is ignored. A key resolving (after stripping
+ * `rootPrefix`) to exactly `404.tsx`/`500.tsx` at the pages ROOT (no
+ * directory segments) is pulled out as `notFound`/`serverError` instead of
+ * being inserted into the segment tree; everything else must end in
+ * `page.tsx`/`layout.tsx` or is ignored.
  */
 export function buildRouteTree(
   modules: Record<string, ModuleLoader>,
   rootPrefix: string,
-): RouteTreeNode {
+): RouteTree {
   const root = createNode();
+  let notFound: ModuleLoader | undefined;
+  let serverError: ModuleLoader | undefined;
+
   for (const [path, loader] of Object.entries(modules)) {
     if (!path.startsWith(rootPrefix)) continue;
     const rest = path.slice(rootPrefix.length).replace(/^\/+/, "");
     const parts = rest.split("/");
     const fileName = parts.pop();
+
+    if (parts.length === 0 && fileName === "404.tsx") {
+      notFound = loader;
+      continue;
+    }
+    if (parts.length === 0 && fileName === "500.tsx") {
+      serverError = loader;
+      continue;
+    }
     if (fileName !== "page.tsx" && fileName !== "layout.tsx") continue;
 
     let node = root;
@@ -56,17 +84,22 @@ export function buildRouteTree(
     if (fileName === "page.tsx") node.page = loader;
     else node.layout = loader;
   }
-  return root;
+  return { root, notFound, serverError };
 }
 
 const PAGES_ROOT_PREFIX = "/src/apps/pages";
 
 /** Real discovery entry point - lazy (`import.meta.glob` without `eager`),
  * so a route's module only loads when a matching request actually renders
- * it, not on every dev-server/build startup. */
-export function discoverRoutes(): RouteTreeNode {
-  const modules = import.meta.glob<RouteModule>(
+ * it, not on every dev-server/build startup. Two separate globs (Vite's
+ * `import.meta.glob` needs a literal string, not a runtime-built pattern)
+ * merged into one modules map before `buildRouteTree` sorts them out. */
+export function discoverRoutes(): RouteTree {
+  const pageModules = import.meta.glob<RouteModule>(
     "/src/apps/pages/**/{page,layout}.tsx",
   );
-  return buildRouteTree(modules, PAGES_ROOT_PREFIX);
+  const fallbackModules = import.meta.glob<RouteModule>(
+    "/src/apps/pages/{404,500}.tsx",
+  );
+  return buildRouteTree({ ...pageModules, ...fallbackModules }, PAGES_ROOT_PREFIX);
 }

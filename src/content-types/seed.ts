@@ -63,6 +63,9 @@ const IDS = {
   roleName: "system-role-name",
   roleDescription: "system-role-description",
   roleIsSuperAdmin: "system-role-is-super-admin",
+  redirect: "system-redirect",
+  redirectFrom: "system-redirect-from",
+  redirectTo: "system-redirect-to",
 } as const;
 
 /**
@@ -72,7 +75,9 @@ const IDS = {
  * repeats, an `seo` component any collection/singleton can flatten in via
  * `features.seo` (see `system-fields.ts`), an `aiKey` collection
  * (credentials for third-party AI providers), a `role` collection
- * (role-based access control), and a `seoDefaults` singleton (the one
+ * (role-based access control), a `redirect` collection (301 targets, auto-
+ * populated whenever a slugged entry's slug changes - see
+ * `content-types/redirects.ts`), and a `seoDefaults` singleton (the one
  * site-wide fallback SEO source - see `dry-seo.ts`'s `seoTierFor`).
  * `menuItem`/`user`/`menu` are plain, ordinary content types the admin can
  * freely rename, edit, or delete, indistinguishable from anything created by
@@ -81,10 +86,10 @@ const IDS = {
  * `protectedFieldIds` over its `email`/`password`/`roles` fields (needed for
  * login/permissions, so they can't be edited or removed either, even though
  * the rest of `user`'s fields are as free as any other type's). `seo`,
- * `aiKey`, and `role` carry real restrictions too (`hidden`/`locked`/
- * `frozen` - see `types.ts`'s doc comments), because the role schema is
- * consumed by the auth layer and `system-fields.ts` hardcodes `seo`'s id -
- * reshaping any of them through the generic schema editor would silently
+ * `aiKey`, `role`, and `redirect` carry real restrictions too (`hidden`/
+ * `locked`/`frozen` - see `types.ts`'s doc comments), because the role
+ * schema is consumed by the auth layer and `system-fields.ts` hardcodes
+ * `seo`'s id - reshaping any of them through the generic schema editor would silently
  * break that. `seoDefaults` is recognized by its fixed id
  * (`SEO_DEFAULTS_TYPE_ID`), not by name, so renaming it (still allowed,
  * unlike `role`/`aiKey`) doesn't break the SEO cascade.
@@ -395,6 +400,43 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
+  const redirect: ContentTypeDefinition = {
+    id: IDS.redirect,
+    kind: "collection",
+    name: "redirect",
+    label: "Redirect",
+    description: "Automatic 301 redirects, created when a slugged entry's slug changes.",
+    // Managed via its own "Redirects" nav entry (`DryLayout.tsx`) instead of the
+    // generic content-type picker - see `aiKey`'s comment above for what these three
+    // flags mean. Rows themselves are still ordinary entries, freely readable/
+    // writable through the normal content-entries API by anyone with `redirect`
+    // permission - only the SCHEMA (this definition) is frozen.
+    hidden: true,
+    locked: true,
+    frozen: true,
+    fields: [
+      {
+        id: IDS.redirectFrom,
+        name: "from",
+        label: "From",
+        type: "text",
+        config: {},
+        validation: { required: true, unique: true },
+        order: 0,
+      },
+      {
+        id: IDS.redirectTo,
+        name: "to",
+        label: "To",
+        type: "text",
+        config: {},
+        validation: { required: true },
+        order: 1,
+      },
+    ],
+    version: 0,
+  };
+
   const seoDefaults: ContentTypeDefinition = {
     id: SEO_DEFAULTS_TYPE_ID,
     kind: "singleton",
@@ -413,7 +455,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  return [menuItem, seo, user, menu, aiKey, role, seoDefaults];
+  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults];
 }
 
 /**
@@ -447,7 +489,7 @@ export function resolveDefaultContentTypeDefinitions(
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
  * component from it even on a run where `menuItem` itself isn't being
  * (re-)created. "Default" here means `resolveDefaultContentTypeDefinitions()`
- * - the packaged app seed when one exists, otherwise the 7 built-in types.
+ * - the packaged app seed when one exists, otherwise the 8 built-in types.
  */
 export function pendingSeedStatements(
   existingNamesLowercase: ReadonlySet<string>,

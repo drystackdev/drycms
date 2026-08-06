@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 describe("createSqliteContentEngineAdapter", () => {
-  it("seeds the built-in user/menu/menuItem/aiKey/role/seoDefaults defaults on first boot", async () => {
+  it("seeds the built-in user/menu/menuItem/aiKey/role/redirect/seoDefaults defaults on first boot", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
@@ -54,6 +54,7 @@ describe("createSqliteContentEngineAdapter", () => {
       "aiKey",
       "menu",
       "menuItem",
+      "redirect",
       "role",
       "seo",
       "seoDefaults",
@@ -62,6 +63,7 @@ describe("createSqliteContentEngineAdapter", () => {
     const byName = (name: string) => types.find((t) => t.name === name)!;
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("redirect").hidden).toBe(true);
     expect(byName("user").hidden).toBeFalsy();
   });
 

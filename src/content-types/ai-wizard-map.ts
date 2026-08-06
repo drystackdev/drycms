@@ -106,6 +106,8 @@ function buildExtendedDefinition(
 
   return {
     ...existing,
+    label: table.label?.trim() || existing.label,
+    description: table.description?.trim() || existing.description,
     fields: [...existing.fields, ...newFields],
     deletedFieldIds,
     features: mergeFeatures(existing.features, table.features),

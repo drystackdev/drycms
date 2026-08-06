@@ -13,11 +13,12 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role (collections), and seoDefaults (singleton)", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect (collections), and seoDefaults (singleton)", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
       "menu",
       "menuItem",
+      "redirect",
       "role",
       "seo",
       "seoDefaults",
@@ -29,12 +30,14 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("menu").kind).toBe("collection");
     expect(byName("aiKey").kind).toBe("collection");
     expect(byName("role").kind).toBe("collection");
+    expect(byName("redirect").kind).toBe("collection");
     expect(byName("seoDefaults").kind).toBe("singleton");
   });
 
-  it("hides role/aiKey/seo from the generic content-type UI, but leaves user/menu/menuItem/seoDefaults visible", () => {
+  it("hides role/aiKey/redirect/seo from the generic content-type UI, but leaves user/menu/menuItem/seoDefaults visible", () => {
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
+    expect(byName("redirect").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
     expect(byName("user").hidden).toBeFalsy();
     expect(byName("menu").hidden).toBeFalsy();
@@ -42,19 +45,21 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("seoDefaults").hidden).toBeFalsy();
   });
 
-  it("freezes role/aiKey's schema entirely, but leaves seo's, user's, and seoDefaults' editable", () => {
+  it("freezes role/aiKey/redirect's schema entirely, but leaves seo's, user's, and seoDefaults' editable", () => {
     expect(byName("role").frozen).toBe(true);
     expect(byName("aiKey").frozen).toBe(true);
+    expect(byName("redirect").frozen).toBe(true);
     expect(byName("seo").frozen).toBeFalsy();
     expect(byName("user").frozen).toBeFalsy();
     expect(byName("seoDefaults").frozen).toBeFalsy();
   });
 
-  it("locks user/seo/role/aiKey/seoDefaults' tables against deletion, but leaves menu/menuItem deletable", () => {
+  it("locks user/seo/role/aiKey/redirect/seoDefaults' tables against deletion, but leaves menu/menuItem deletable", () => {
     expect(byName("user").locked).toBe(true);
     expect(byName("seo").locked).toBe(true);
     expect(byName("role").locked).toBe(true);
     expect(byName("aiKey").locked).toBe(true);
+    expect(byName("redirect").locked).toBe(true);
     expect(byName("seoDefaults").locked).toBe(true);
     expect(byName("menu").locked).toBeFalsy();
     expect(byName("menuItem").locked).toBeFalsy();
@@ -179,6 +184,16 @@ describe("defaultContentTypeDefinitions", () => {
     expect(url.validation.required).toBeFalsy();
   });
 
+  it("redirect: unique+required from, required to", () => {
+    const redirect = byName("redirect");
+    const from = redirect.fields.find((f) => f.name === "from")!;
+    expect(from.type).toBe("text");
+    expect(from.validation).toMatchObject({ required: true, unique: true });
+    const to = redirect.fields.find((f) => f.name === "to")!;
+    expect(to.type).toBe("text");
+    expect(to.validation).toMatchObject({ required: true });
+  });
+
   it("resolves to a 'menu_refs' child table carrying menuItem's fields", () => {
     const menu = byName("menu");
     const tree = resolveTableTree(menu, defs);
@@ -222,7 +237,7 @@ describe("defaultContentTypeDefinitions", () => {
 });
 
 describe("resolveDefaultContentTypeDefinitions", () => {
-  it("falls back to the 7 built-in defaults when no packaged seed is given", () => {
+  it("falls back to the 8 built-in defaults when no packaged seed is given", () => {
     const resolved = resolveDefaultContentTypeDefinitions(undefined);
     expect(resolved.map((t) => t.name).sort()).toEqual(
       defaultContentTypeDefinitions().map((t) => t.name).sort(),
@@ -247,7 +262,7 @@ describe("resolveDefaultContentTypeDefinitions", () => {
 });
 
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKey/role/user_roles/seoDefaults tables plus 7 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/seoDefaults tables plus 8 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
@@ -255,6 +270,7 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
+    expect(sql).toContain('CREATE TABLE "redirect"');
     expect(sql).toContain('CREATE TABLE "user_roles"');
     expect(sql).toContain('CREATE TABLE "seoDefaults"');
     // `seo`, like `menuItem`, is a component - no table of its own.
@@ -263,7 +279,7 @@ describe("pendingSeedStatements", () => {
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(7);
+    expect(metadataInserts).toHaveLength(8);
   });
 
   it("seeds nothing once every default name is already present", () => {
@@ -275,6 +291,7 @@ describe("pendingSeedStatements", () => {
         "seo",
         "aikey",
         "role",
+        "redirect",
         "seodefaults",
       ]),
     );
@@ -289,11 +306,12 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "menu_refs"');
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
+    expect(sql).toContain('CREATE TABLE "redirect"');
     expect(sql).toContain('CREATE TABLE "seoDefaults"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(6);
+    expect(metadataInserts).toHaveLength(7);
   });
 });

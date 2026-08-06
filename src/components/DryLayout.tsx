@@ -155,6 +155,15 @@ const NAV: {
     superAdminOnly: true,
   },
   {
+    key: "redirects",
+    label: "Redirects",
+    href: `${path}/content/redirect`,
+    icon: "Settings",
+    ready: true,
+    section: "System",
+    permissionName: "redirect",
+  },
+  {
     key: "settings",
     label: "Settings",
     href: `${path}/settings`,

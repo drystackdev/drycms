@@ -178,6 +178,50 @@ describe("mapWizardTables", () => {
     if (result!.ok) expect(result.definition.features).toEqual({ seo: true, slug: true });
   });
 
+  it("applies a proposed description onto an existing table", () => {
+    const table: WizardProposedTable = {
+      name: "category",
+      label: "Category",
+      kind: "collection",
+      isNew: false,
+      description: "Danh mục bài viết trên blog.",
+      fields: [],
+    };
+    const [result] = mapWizardTables([table], [existingCategory]);
+    expect(result!.ok).toBe(true);
+    if (result!.ok) expect(result.definition.description).toBe("Danh mục bài viết trên blog.");
+  });
+
+  it("keeps the existing description when the proposal omits one", () => {
+    const existingWithDescription: ContentTypeDefinition = { ...existingCategory, description: "Mô tả cũ." };
+    const table: WizardProposedTable = {
+      name: "category",
+      label: "Category",
+      kind: "collection",
+      isNew: false,
+      fields: [],
+    };
+    const [result] = mapWizardTables([table], [existingWithDescription]);
+    expect(result!.ok).toBe(true);
+    if (result!.ok) expect(result.definition.description).toBe("Mô tả cũ.");
+  });
+
+  it("applies a proposed label onto an existing table", () => {
+    const table: WizardProposedTable = {
+      name: "category",
+      label: "Danh mục",
+      kind: "collection",
+      isNew: false,
+      fields: [],
+    };
+    const [result] = mapWizardTables([table], [existingCategory]);
+    expect(result!.ok).toBe(true);
+    if (result!.ok) {
+      expect(result.definition.label).toBe("Danh mục");
+      expect(result.definition.name).toBe("category"); // machine name never changes on an extend
+    }
+  });
+
   it("never disables an existing feature even if the proposal sends false", () => {
     const existingWithFeature: ContentTypeDefinition = { ...existingCategory, features: { seo: true } };
     const table: WizardProposedTable = {

@@ -7,6 +7,7 @@ import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { resolveMatchToVNode } from "./resolve-match.js";
+import type { ModuleLoader } from "./route-tree.js";
 import { installVeiMarkerHook } from "./vei-marker-hook.js";
 
 installVeiMarkerHook();
@@ -105,6 +106,25 @@ export interface RenderPageOptions {
    * the cache write, and without `render.ts` needing to know caching
    * exists at all. */
   onDocumentReady?: (fullHtml: string) => void;
+  /** HTTP status for the response `renderPage` returns - e.g. `404` when
+   * `page-handler.ts` renders the `404.tsx` fallback through this same
+   * pipeline for a route miss. Fixed at the synchronous `new Response(...)`
+   * call below, same as `headers` - unrelated to `onRenderError`, whose
+   * fallback (see its own doc comment) can never change this. @default 200 */
+  status?: number;
+  /**
+   * Renders a fallback document when resolving/rendering `match` throws -
+   * `page-handler.ts` passes one that renders `500.tsx`. Only takes effect
+   * if the failure happens before `<head>` has been enqueued: this
+   * function already returned a `Response` with `status`/200 baked in
+   * before any of this runs, so a fallback can still deliver a real error
+   * page's MARKUP into the body, but can never correct the status code -
+   * the same limitation every streaming-SSR framework has once bytes are in
+   * flight. Once `<head>` IS already out, there's no clean recovery left at
+   * all (real content bytes already sent) - the stream errors exactly as it
+   * did before this option existed. Absent, or itself throwing, is the same
+   * "stream errors" fallback too. */
+  onRenderError?: (error: unknown) => Promise<string>;
 }
 
 /**
@@ -129,12 +149,14 @@ export function renderPage(
   options: RenderPageOptions = {},
 ): Response {
   const encoder = new TextEncoder();
+  let headSent = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         const vnode = await runWithDryContext(dryContext, () => resolveMatchToVNode(match));
         const head = DOC_HEAD_PREFIX + buildSeoTags(mergeSeoLayers(dryContext.seo)) + DOC_BODY_OPEN;
         controller.enqueue(encoder.encode(head));
+        headSent = true;
         // Inside the context too, not just `resolveMatchToVNode`: nested
         // components render HERE, and a `dry()` call from one of them would
         // otherwise land outside the request it belongs to.
@@ -145,13 +167,47 @@ export function renderPage(
         controller.close();
         options.onDocumentReady?.(head + rest);
       } catch (error) {
+        console.error("[drycms] page render failed:", error);
+        if (!headSent && options.onRenderError) {
+          try {
+            controller.enqueue(encoder.encode(await options.onRenderError(error)));
+            controller.close();
+            return;
+          } catch {
+            // Fall through - the fallback itself failed, nothing left to do
+            // but error the stream below.
+          }
+        }
         controller.error(error);
       }
     },
   });
   return new Response(stream, {
+    status: options.status ?? 200,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
+}
+
+/**
+ * A minimal, standalone HTML document for `loader` (typically the
+ * `500.tsx`/`404.tsx` fallback) - no `dry()` context, no hydrate script, no
+ * replay log, no VEI config, no layouts, just the site's CSS + a synchronous
+ * `renderToString`. Used both as `page-handler.ts`'s `RenderPageOptions.
+ * onRenderError` (the mid-stream fallback above) and directly for a failure
+ * caught before `renderPage` was ever called (e.g. the content layer itself
+ * failing to list its schema) - see that module's own doc comment. Kept
+ * maximally independent of the content/DB layer deliberately: it must stay
+ * renderable even when that's exactly what's broken.
+ */
+export async function renderErrorHtml(loader: ModuleLoader): Promise<string> {
+  const { default: Component } = await loader();
+  const vnode = await Component({ params: {} } as never);
+  const body = renderToString(vnode as never);
+  return (
+    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}"></head><body>${body}</body></html>`
+  );
 }
 
 /** Exported for `render.test.ts`/callers that want a synchronous render of

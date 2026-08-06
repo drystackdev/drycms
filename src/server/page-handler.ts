@@ -9,8 +9,8 @@ import { SEO_DEFAULTS_TYPE_ID } from "../content-types/system-fields.js";
 import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
 import { discoverRoutes } from "./app-router/route-tree.js";
-import { matchRoute } from "./app-router/match.js";
-import { renderPage } from "./app-router/render.js";
+import { matchRoute, type RouteMatch } from "./app-router/match.js";
+import { renderErrorHtml, renderPage } from "./app-router/render.js";
 import { readPageCache, writePageCache } from "./app-router/pages-cache.js";
 
 /**
@@ -19,9 +19,24 @@ import { readPageCache, writePageCache } from "./app-router/pages-cache.js";
  * for a pathname OUTSIDE the admin's own `path` - symmetric to
  * `routers/App.tsx`'s `AuthGate`, which renders nothing (a blank page) for
  * exactly this space today; this fills that space with the site's own
- * content instead. `null` return = no matching route - caller (dev-server/
- * entry-node) decides what a real 404 response looks like, this function
- * never invents one itself.
+ * content instead.
+ *
+ * A route MISS is no longer automatically a 404: it first checks the
+ * built-in `redirect` collection (`content-types/redirects.ts` populates it
+ * whenever a slugged entry's slug changes) by the URL's LAST path segment -
+ * a hit 301s to the same URL with that segment swapped for the redirect's
+ * `to`. Only once that also misses does it fall back to rendering the
+ * pages-root `404.tsx` (if the app has one, through the exact same
+ * `renderPage` pipeline as a real match - full layout/SEO/hydration, not a
+ * stripped-down page) - `null` only when there's truly nothing to render
+ * (no `404.tsx` either), same contract as before: the caller (dev-server/
+ * entry-node/entry-worker) decides what a bare-bones 404 response looks
+ * like in that case.
+ *
+ * A failure anywhere in this function's own setup (schema/content adapters,
+ * SEO defaults, VEI session) is caught below and rendered through the
+ * pages-root `500.tsx` (if present) instead of propagating - see that
+ * catch's own comment for what it does and doesn't cover.
  *
  * `discoverRoutes()` is called fresh per request (not cached at module
  * scope) so a page/layout added while the dev server is running is picked
@@ -42,58 +57,138 @@ export async function handlePageRequest(
   }
 
   const routeTree = discoverRoutes();
-  const match = matchRoute(routeTree, url.pathname);
-  if (!match) return null;
+  const match = matchRoute(routeTree.root, url.pathname);
 
   // Session support (preview/draft mode) is deferred to Giai đoạn 4 -
   // `null` unconditionally for now rather than parsing a cookie nothing
   // reads yet.
   const routeContext: DryRouteContext = { request, url, params: {}, env, session: null };
-  const { schema, entries } = getContentAdapters(routeContext);
-  const allTypes = await schema.listContentTypes();
 
-  const vei = await resolveVeiContext(request, env, entries, allTypes);
+  try {
+    const { schema, entries } = getContentAdapters(routeContext);
+    const allTypes = await schema.listContentTypes();
 
-  // pages-cache only runs in production - a version-based cache has no way
-  // to detect a `page.tsx`/`layout.tsx` CODE edit (only content changes),
-  // which would make dev's "live preview qua vite" show stale output after
-  // editing a page - see `plans/app-router.md`'s "Chỉ bật ở production".
-  // An edit-mode render is excluded on BOTH sides: its markup carries
-  // per-viewer editing metadata, so serving it from - or writing it into -
-  // a cache shared with anonymous visitors would be wrong in both
-  // directions.
-  if (!import.meta.env.DEV && !vei) {
-    const cached = await readPageCache(routeContext, url.pathname, entries, allTypes);
-    if (cached !== null) {
-      return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    // Checked BEFORE routing, and unconditionally - not only when `match` is
+    // null. A dynamic `[slug]` route (e.g. `/blogs/[slug]`) matches ANY slug
+    // syntactically, valid or not; the "this specific post doesn't exist"
+    // case only surfaces once the page's own `dry()` lookup comes up empty,
+    // which `page-handler.ts` has no visibility into (the page renders its
+    // own "not found" markup at a normal 200 status - see
+    // `blogs/[slug]/page.tsx`). Running this check first, always, is what
+    // actually catches a renamed slug's old URL - a genuine route miss
+    // reaches the same check with the same result (usually no match, falls
+    // through below), just via a different path. Known trade-off (accepted
+    // when this matching strategy was chosen over a per-content-type URL
+    // prefix): ANY path's last segment - including a static page's, like
+    // `/about` - could theoretically collide with an unrelated stale
+    // redirect and get 301'd instead of rendering normally.
+    const redirectResponse = await findRedirectResponse(url, entries, allTypes);
+    if (redirectResponse) return redirectResponse;
+
+    if (!match && !routeTree.notFound) return null;
+    // A route miss with a `404.tsx` renders through the SAME pipeline as a
+    // real match below, wrapped by the root layout only (a nested layout
+    // has no meaning for a path that didn't resolve to anywhere under it).
+    const resolvedMatch: RouteMatch = match ?? {
+      page: routeTree.notFound!,
+      layouts: routeTree.root.layout ? [routeTree.root.layout] : [],
+      params: {},
+    };
+    const status = match ? 200 : 404;
+
+    const vei = await resolveVeiContext(request, env, entries, allTypes);
+
+    // pages-cache only runs in production, and only for a real match - a
+    // version-based cache has no way to detect a `page.tsx`/`layout.tsx`
+    // CODE edit (only content changes), which would make dev's "live
+    // preview qua vite" show stale output after editing a page - see
+    // `plans/app-router.md`'s "Chỉ bật ở production". An edit-mode render is
+    // excluded on BOTH sides: its markup carries per-viewer editing
+    // metadata, so serving it from - or writing it into - a cache shared
+    // with anonymous visitors would be wrong in both directions.
+    if (match && !import.meta.env.DEV && !vei) {
+      const cached = await readPageCache(routeContext, url.pathname, entries, allTypes);
+      if (cached !== null) {
+        return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
     }
-  }
 
-  const touchedTypes = new Set<string>();
-  const callLog: DryRequestContext["callLog"] = [];
-  const seo: DrySeoLayers = {};
-  // Seeds the SEO cascade's "Default" layer once per request - the one
-  // layer no page/layout ever fetches on its own (see `dry-seo.ts`'s
-  // `seoTierFor`), so it has to be done here rather than as a side effect
-  // of some `dry()` call. `seoDefaults` is a built-in type (see `seed.ts`),
-  // so it's always present in `allTypes` - looked up by its fixed id, not
-  // name, since the name/label stay freely editable.
-  const seoDefaultsType = allTypes.find((t) => t.id === SEO_DEFAULTS_TYPE_ID);
-  if (seoDefaultsType) {
-    const row = await entries.getSingletonEntry(seoDefaultsType, allTypes);
-    const value = row?.value.seo;
-    if (value && typeof value === "object") seo.default = value as DrySeoValue;
-  }
-  const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo, params: match.params, vei };
+    const touchedTypes = new Set<string>();
+    const callLog: DryRequestContext["callLog"] = [];
+    const seo: DrySeoLayers = {};
+    // Seeds the SEO cascade's "Default" layer once per request - the one
+    // layer no page/layout ever fetches on its own (see `dry-seo.ts`'s
+    // `seoTierFor`), so it has to be done here rather than as a side effect
+    // of some `dry()` call. `seoDefaults` is a built-in type (see `seed.ts`),
+    // so it's always present in `allTypes` - looked up by its fixed id, not
+    // name, since the name/label stay freely editable.
+    const seoDefaultsType = allTypes.find((t) => t.id === SEO_DEFAULTS_TYPE_ID);
+    if (seoDefaultsType) {
+      const row = await entries.getSingletonEntry(seoDefaultsType, allTypes);
+      const value = row?.value.seo;
+      if (value && typeof value === "object") seo.default = value as DrySeoValue;
+    }
+    const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo, params: resolvedMatch.params, vei };
 
-  const response = renderPage(match, dryContext, {
-    onDocumentReady: (fullHtml) => {
-      if (import.meta.env.DEV || vei) return;
-      void writePageCache(routeContext, url.pathname, fullHtml, touchedTypes, entries, allTypes);
-    },
-  });
-  if (vei) response.headers.set("Cache-Control", "no-store");
-  return response;
+    const response = renderPage(resolvedMatch, dryContext, {
+      status,
+      onDocumentReady: (fullHtml) => {
+        if (!match || import.meta.env.DEV || vei) return;
+        void writePageCache(routeContext, url.pathname, fullHtml, touchedTypes, entries, allTypes);
+      },
+      // `render.ts` already logs the error before calling this - only
+      // building the fallback document is left to do here.
+      onRenderError: routeTree.serverError ? () => renderErrorHtml(routeTree.serverError!) : undefined,
+    });
+    if (vei) response.headers.set("Cache-Control", "no-store");
+    return response;
+  } catch (error) {
+    // Covers failures in THIS function's own setup (schema/content adapters,
+    // SEO defaults, VEI session) - anything before `renderPage` was called.
+    // A failure inside `renderPage` itself (a specific page's own render)
+    // is a separate, later moment this `catch` can't observe - see that
+    // function's `onRenderError` option above and its own doc comment for
+    // why a page miss there is only fixable up to a point.
+    if (!routeTree.serverError) throw error;
+    console.error("[drycms] page render setup failed:", error);
+    const html = await renderErrorHtml(routeTree.serverError);
+    return new Response(html, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
+}
+
+/** Swaps `pathname`'s last non-empty segment for `replacement` - e.g.
+ * `/blogs/old-post` + `new-post` -> `/blogs/new-post`. A trailing slash is
+ * dropped in the process (same normalization `match.ts`'s own
+ * `pathname.split("/").filter(Boolean)` already applies). */
+function replaceLastSegment(pathname: string, replacement: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  segments[segments.length - 1] = replacement;
+  return `/${segments.join("/")}`;
+}
+
+/**
+ * The redirect side of `content-types/redirects.ts` - matches purely by the
+ * URL's last path segment (no per-content-type URL-prefix config needed),
+ * so it works for `/blogs/[slug]` today and any future `[slug]` route
+ * without extra setup. `null` when there's no matching `redirect` row (or
+ * the app's content types don't include one at all).
+ */
+async function findRedirectResponse(
+  url: URL,
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+): Promise<Response | null> {
+  const segments = url.pathname.split("/").filter(Boolean);
+  const oldSlug = segments[segments.length - 1];
+  if (!oldSlug) return null;
+  const redirectType = allTypes.find((t) => t.name === "redirect" && t.kind === "collection");
+  if (!redirectType) return null;
+
+  const row = await entries.findEntry(redirectType, allTypes, [{ field: "from", op: "eq", value: oldSlug }]);
+  if (!row || typeof row.value.to !== "string") return null;
+
+  const target = new URL(replaceLastSegment(url.pathname, row.value.to) + url.search, url);
+  return new Response(null, { status: 301, headers: { Location: target.toString() } });
 }
 
 /**
