@@ -437,13 +437,26 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           </button>
         )}
         {canEdit && aiMode === "server" && (
-          <button
-            type="button"
-            class="outline"
-            onClick={() => setMagicWriteOpenToken((token) => token + 1)}
-          >
-            <SparkleIcon /> Magic Write
-          </button>
+          streamingFieldName ? (
+            // Magic Write's own dialog is hidden while it streams (see
+            // `MagicWriteDialog.tsx`'s own doc comment) - the per-field "AI
+            // is writing…" banner is the primary signal, but this topbar is
+            // the only ALWAYS-visible spot (unlike that dialog) to also show
+            // it, rather than the "Magic Write" button just sitting there
+            // looking idle while a run is actually active.
+            <span class="row align-center hint" style={{ gap: "0.375rem" }}>
+              <span class="spinner" />
+              Writing "{editableNodes.find((n) => n.fieldName === streamingFieldName)?.label ?? streamingFieldName}"…
+            </span>
+          ) : (
+            <button
+              type="button"
+              class="outline"
+              onClick={() => setMagicWriteOpenToken((token) => token + 1)}
+            >
+              <SparkleIcon /> Magic Write
+            </button>
+          )
         )}
         {canEdit && (
           <button
@@ -785,13 +798,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               </button>
             )}
             {canEdit && aiMode === "server" && (
-              <button
-                type="button"
-                class="outline"
-                onClick={() => setMagicWriteOpenToken((token) => token + 1)}
-              >
-                <SparkleIcon /> Magic Write
-              </button>
+              streamingFieldName ? (
+                <span class="row align-center hint" style={{ gap: "0.375rem" }}>
+                  <span class="spinner" />
+                  Writing "{editableNodes.find((n) => n.fieldName === streamingFieldName)?.label ?? streamingFieldName}"…
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  class="outline"
+                  onClick={() => setMagicWriteOpenToken((token) => token + 1)}
+                >
+                  <SparkleIcon /> Magic Write
+                </button>
+              )
             )}
             {/* Redundant inside the VEI dialog - the overlay's own dock Save
              * button drives this entry's `handleSave` too (via `dry:entry-save`,

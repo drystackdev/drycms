@@ -704,6 +704,19 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
    spinner khi `stage==="loading"` (chỉ render khi dialog được mở lại chủ
    động - trường hợp bình thường dialog vẫn ẩn hoàn toàn, không đổi hành vi
    mục 4). Typecheck sạch + 873 test pass.
+10. **"header" thật ra là topbar trang, không phải header của dialog** —
+    user: "ở header chưa có status nhưng trên richtext lại có!". Hiểu lại
+    đúng ý: dialog's header (mục 9) chỉ hiện khi user CHỦ ĐỘNG mở lại giữa
+    chừng - còn TOPBAR của trang (nơi có nút "Magic Write", luôn hiện,
+    không bị ẩn theo dialog) thì không có gì trong lúc chạy, trong khi field
+    RichText đã hiện đúng tiến trình. Fix: `ContentEntryEditor.tsx` - khi
+    `streamingFieldName` khác null, thay hẳn nút "Magic Write" ở CẢ 2 vị
+    trí topbar (chính + VEI dialog header) bằng dòng trạng thái spinner +
+    `Writing "{label field đang stream}"…` - tái dùng đúng
+    `streamingFieldName` đã có sẵn (callback `onStreamingFieldChange` từ
+    `MagicWriteDialog`), không cần lift thêm state phức tạp nào từ dialog
+    lên. Typecheck sạch + 873 test pass (1 lần fail `build-component-
+    bundle.test.ts` do flaky/timeout tải hệ thống, chạy lại pass).
 
 ## Speed
 
