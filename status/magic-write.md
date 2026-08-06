@@ -717,6 +717,40 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
     `MagicWriteDialog`), không cần lift thêm state phức tạp nào từ dialog
     lên. Typecheck sạch + 873 test pass (1 lần fail `build-component-
     bundle.test.ts` do flaky/timeout tải hệ thống, chạy lại pass).
+11. **Bỏ hẳn "Only fill in empty fields" / "Choose fields to overwrite"** —
+    user: "sẽ không có lựa chọn `Only fill in empty fields` vì xét đến yêu
+    cầu của người dùng AI sẽ tự quyết định có thay đổi hay không". Trước
+    đây admin chọn 1 trong 2 mode (radio) trước khi viết: "empty" (AI chỉ
+    được ghi field đang trống) hoặc "selected" (admin tick checkbox chọn
+    field, AI ghi đè bất kể trống hay không). Giờ bỏ HẲN khái niệm scope -
+    AI tự quyết định field nào cần ghi chỉ dựa vào nội dung prompt của
+    admin + "current value" của từng field (đã có sẵn trong system prompt),
+    không còn giới hạn cứng nào từ UI nữa.
+    - `ai-magic-write-fields.ts`: xoá `MagicWriteScope`/`isNodeEmpty`/
+      `isNodeInScope`; `applyMagicWriteFields(nodes, raw, allowedImageSrcs?)`
+      giờ chỉ 2-3 tham số (bỏ hẳn `currentValue` + `scope`) - ghi MỌI field
+      model đưa vào `fields`, không lọc theo trạng thái trống/không trống.
+    - `ai-magic-write-prompt.ts`: bỏ `describeScope(scope)`, thay bằng 1
+      câu hướng dẫn cố định (`SCOPE_INSTRUCTION`) nói rõ: tự quyết định dựa
+      trên prompt, field đã tốt thì bỏ qua, nếu prompt ngụ ý ghi đè thì cứ
+      ghi đè.
+    - `src/server/routes/ai-magic-write.ts`: bỏ `mode`/`targetFields` khỏi
+      request type + validate + lời gọi `applyMagicWriteFields`.
+    - `MagicWriteDialog.tsx`: bỏ state `mode`/`selectedFields`, ref
+      `scopeRef`, hàm `toggleField`, cả khối radio-group + checkbox-list
+      trong stage "start"; nút "Write" chỉ còn disable khi prompt trống.
+    - `ai-magic-write-fields.test.ts`: viết lại toàn bộ theo signature mới
+      (872 test, giảm 1 so với 873 vì bỏ 1 test riêng cho "mode: selected"
+      không còn ý nghĩa khi hành vi ghi đè giờ là mặc định).
+    - Typecheck sạch. Smoke test thật qua curl (restart dev server trước,
+      login super-admin lấy cookie + CSRF header): request `blog` với
+      `currentValue.excerpt` đã có sẵn, prompt chỉ yêu cầu sửa excerpt,
+      KHÔNG gửi `mode`/`targetFields` - AI tự quyết định chỉ ghi
+      `excerpt`, không đụng field khác, đúng thiết kế mới. (Ghi nhận
+      riêng, không thuộc phạm vi lần sửa này: lượt smoke test đó lộ ra 1 ca
+      model tự format sai indent block-literal khiến `excerpt` ghi ra rỗng
+      - lỗi thuộc protocol parser có sẵn từ trước, không liên quan gì đến
+      việc bỏ mode/scope; để lại cho phiên sau nếu cần điều tra thêm.)
 
 ## Speed
 
