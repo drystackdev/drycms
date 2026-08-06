@@ -18,9 +18,12 @@ export interface SystemSettingsThemeInput {
   successColor?: unknown;
   warningColor?: unknown;
   errorColor?: unknown;
-  backgroundColor?: unknown;
-  cardColor?: unknown;
-  textColor?: unknown;
+  backgroundColorLight?: unknown;
+  backgroundColorDark?: unknown;
+  cardColorLight?: unknown;
+  cardColorDark?: unknown;
+  textColorLight?: unknown;
+  textColorDark?: unknown;
   fontFamily?: unknown;
   baseFontSize?: unknown;
   radius?: unknown;
@@ -44,13 +47,24 @@ const COLOR_INTENTS: { field: keyof SystemSettingsThemeInput; baseToken: string;
   { field: "errorColor", baseToken: "--dry-error", foregroundToken: "--dry-error-foreground" },
 ];
 
-/** `-card-foreground`/`-popover`/`-popover-foreground`/`-sidebar` are plain
- * `var(--dry-card)`/`var(--dry-foreground)` aliases in `tokens.css` now, so
- * overriding just these two covers all six surface tokens. */
-const SURFACE_TOKENS: { field: keyof SystemSettingsThemeInput; token: string }[] = [
-  { field: "backgroundColor", token: "--dry-background" },
-  { field: "cardColor", token: "--dry-card" },
-  { field: "textColor", token: "--dry-foreground" },
+/** Unlike the intents above, a surface color is meaningless without BOTH a
+ * light and a dark value - `--dry-background` etc are `light-dark(...)`
+ * pairs in `tokens.css` precisely because the same flat color can't work
+ * for both modes (a light grey background reads fine in light mode, wrong
+ * in dark). Emitting only ONE color here regardless of theme is exactly the
+ * bug this replaced: it silently broke dark mode across the whole admin the
+ * moment `Settings.tsx` was saved even once, since it always writes every
+ * field (see `status/system-memory-and-settings.md`). Both fields must be
+ * valid for either to apply - a lone valid one with its pair missing/invalid
+ * would otherwise flatten `light-dark()` to a single color again by
+ * accident. `-card-foreground`/`-popover`/`-popover-foreground`/`-sidebar`
+ * are plain `var(--dry-card)`/`var(--dry-foreground)` aliases in
+ * `tokens.css`, so overriding just these two covers all six surface
+ * tokens. */
+const SURFACE_TOKENS: { lightField: keyof SystemSettingsThemeInput; darkField: keyof SystemSettingsThemeInput; token: string }[] = [
+  { lightField: "backgroundColorLight", darkField: "backgroundColorDark", token: "--dry-background" },
+  { lightField: "cardColorLight", darkField: "cardColorDark", token: "--dry-card" },
+  { lightField: "textColorLight", darkField: "textColorDark", token: "--dry-foreground" },
 ];
 
 /** Guards against a `systemSettings` row edited directly through the
@@ -77,9 +91,12 @@ export function systemSettingsThemeVars(value: SystemSettingsThemeInput): Record
     }
   }
 
-  for (const { field, token } of SURFACE_TOKENS) {
-    const raw = value[field];
-    if (typeof raw === "string" && isValidHexColor(raw)) vars[token] = raw;
+  for (const { lightField, darkField, token } of SURFACE_TOKENS) {
+    const light = value[lightField];
+    const dark = value[darkField];
+    if (typeof light === "string" && isValidHexColor(light) && typeof dark === "string" && isValidHexColor(dark)) {
+      vars[token] = `light-dark(${light}, ${dark})`;
+    }
   }
 
   const fontFamily = value.fontFamily;
@@ -104,4 +121,20 @@ export function systemSettingsThemeVars(value: SystemSettingsThemeInput): Record
   }
 
   return vars;
+}
+
+/** `systemSettings.data` is one JSON-serialized blob (`content-types/
+ * seed.ts` - no per-field columns, nothing here is ever queried/filtered),
+ * so both the server route and the client form need to parse it before
+ * calling `systemSettingsThemeVars`. `{}` for anything that isn't valid
+ * JSON or isn't an object - same "just fall back to shipped defaults, don't
+ * throw" spirit as `routes/memory.ts`'s own `parseData`. */
+export function parseSystemSettingsData(raw: unknown): SystemSettingsThemeInput {
+  if (typeof raw !== "string" || !raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as SystemSettingsThemeInput) : {};
+  } catch {
+    return {};
+  }
 }

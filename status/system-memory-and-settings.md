@@ -275,6 +275,45 @@ yêu cầu (screenshot). Đã reset toàn bộ giá trị test về default sau 
 
 `bun run typecheck`/`test` (933/933)/`build` đều xanh sau round này.
 
+## Round 3: fix dark mode sai màu, đổi surface color sang cặp light/dark, layout sticky preview, systemSettings gộp về 1 JSON field
+
+**Bug**: dark mode nền vẫn trắng (user báo kèm screenshot). Nguyên nhân: 3
+field `backgroundColor`/`cardColor`/`textColor` round trước chỉ nhận 1 giá
+trị áp dụng chung cho cả light/dark - và vì `Settings.tsx` luôn ghi ĐỦ mọi
+field mỗi lần Save (kể cả field admin chưa từng sờ tới), ngay khi bấm Save
+1 lần là `--dry-background` bị pin cứng về giá trị light mãi mãi, đè luôn
+`light-dark()` gốc trong `tokens.css` - phá dark mode toàn app.
+
+**Fix**: `backgroundColor`/`cardColor`/`textColor` tách thành 6 field (mỗi
+field 1 cặp Light+Dark: `backgroundColorLight/Dark`, `cardColorLight/Dark`,
+`textColorLight/Dark`). `system-settings-theme.ts` chỉ emit override khi
+CẢ HAI giá trị của 1 cặp hợp lệ, và emit dạng `light-dark(light, dark)` chứ
+không phải hex phẳng - override giờ tự theo theme đúng như `tokens.css`
+gốc. Settings.tsx: mỗi surface color hiện 2 input (Light/Dark) dưới 1
+label chung.
+
+**Thêm luôn**: Preview panel sticky trên desktop (`position: sticky; top:
+calc(var(--dry-topbar-height) + 1rem)` - `.settings-preview-sticky` class
+mới trong `components.css`, cùng breakpoint `64rem` với
+`.content-entry-editor-grid`), tắt dưới mobile để khỏi chặn form.
+
+**Đơn giản hoá triệt để theo yêu cầu user** ("chỉ cần lưu json, không cần
+chia cột vì không search"): `systemSettings` từ 12+ field/column dồn về
+ĐÚNG 1 field `data` (text, JSON blob) - y hệt pattern `memory.data`. Thêm
+`frozen: true` (không còn lý do cho ai sửa schema qua generic editor nữa).
+`lib/system-settings-theme.ts` thêm `parseSystemSettingsData()` dùng chung
+bởi server route và `Settings.tsx`. Đã migrate schema + DATA thật trên DB
+dev sống qua API (bắt được giá trị `primaryColor` thật user đã tự đổi
+"#2ec2d6" ngoài đời qua UI thật - không phải giá trị mặc định của tôi -
+giữ nguyên khi migrate, không mất).
+
+Verify qua Playwright thật: bật Dark theme → `getComputedStyle(body)
+.backgroundColor` = `rgb(20, 26, 33)` = `#141a21` (đúng giá trị dark) thay
+vì trắng như bug report; screenshot xác nhận toàn bộ trang (sidebar, card,
+Preview, text) đổi màu tối đúng, không còn mảng trắng nào sót lại.
+
+`typecheck`/`test` (933/933)/`build` xanh sau round này.
+
 ## Speed
 
 Hoàn thành trong 1 lượt làm việc liên tục, từ khảo sát tới verify qua dev

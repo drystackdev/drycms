@@ -58,15 +58,15 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("menuItem").hidden).toBeFalsy();
   });
 
-  it("freezes role/aiKey/redirect/memory's schema entirely, but leaves seo's, user's, seoDefaults', and systemSettings' editable", () => {
+  it("freezes role/aiKey/redirect/memory/systemSettings' schema entirely, but leaves seo's, user's, and seoDefaults' editable", () => {
     expect(byName("role").frozen).toBe(true);
     expect(byName("aiKey").frozen).toBe(true);
     expect(byName("redirect").frozen).toBe(true);
     expect(byName("memory").frozen).toBe(true);
+    expect(byName("systemSettings").frozen).toBe(true);
     expect(byName("seo").frozen).toBeFalsy();
     expect(byName("user").frozen).toBeFalsy();
     expect(byName("seoDefaults").frozen).toBeFalsy();
-    expect(byName("systemSettings").frozen).toBeFalsy();
   });
 
   it("locks user/seo/role/aiKey/redirect/memory/seoDefaults/systemSettings' tables against deletion, but leaves menu/menuItem deletable", () => {
@@ -97,34 +97,12 @@ describe("defaultContentTypeDefinitions", () => {
     expect(version.default).toBe(0);
   });
 
-  it("systemSettings: 9 hex-validated color fields (6 intents + background/card/text), a required font family select, required base font size and radius", () => {
+  it("systemSettings: one JSON blob field, not per-setting columns (nothing here is ever queried/filtered - same reasoning memory.data uses)", () => {
     const systemSettings = byName("systemSettings");
-    const colorFields = [
-      "primaryColor",
-      "secondaryColor",
-      "infoColor",
-      "successColor",
-      "warningColor",
-      "errorColor",
-      "backgroundColor",
-      "cardColor",
-      "textColor",
-    ];
-    for (const name of colorFields) {
-      const field = systemSettings.fields.find((f) => f.name === name)!;
-      expect(field.type).toBe("text");
-      expect(field.validation.regex).toBe("^#[0-9a-fA-F]{6}$");
-      expect(typeof field.default).toBe("string");
-    }
-    const fontFamily = systemSettings.fields.find((f) => f.name === "fontFamily")!;
-    expect(fontFamily.type).toBe("select");
-    expect(fontFamily.validation.required).toBe(true);
-    const baseFontSize = systemSettings.fields.find((f) => f.name === "baseFontSize")!;
-    expect(baseFontSize.type).toBe("number");
-    expect(baseFontSize.validation).toMatchObject({ required: true, min: 12, max: 20 });
-    const radius = systemSettings.fields.find((f) => f.name === "radius")!;
-    expect(radius.type).toBe("number");
-    expect(radius.validation).toMatchObject({ required: true, min: 0, max: 24 });
+    expect(systemSettings.fields).toHaveLength(1);
+    const data = systemSettings.fields[0]!;
+    expect(data.name).toBe("data");
+    expect(data.type).toBe("text");
   });
 
   it("seoDefaults is recognized by its fixed id, has features.seo on, and no custom fields", () => {

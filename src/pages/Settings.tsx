@@ -10,6 +10,7 @@ import ThemeToggle from "../components/ThemeToggle.js";
 import { toast } from "../components/Toast.js";
 import { canAccess } from "../store/auth.js";
 import { reapplySystemTheme } from "../lib/apply-system-theme.js";
+import { parseSystemSettingsData } from "../lib/system-settings-theme.js";
 import ThemePreview from "./settings/ThemePreview.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -20,9 +21,12 @@ interface SystemSettingsValue extends Record<string, unknown> {
   successColor: string;
   warningColor: string;
   errorColor: string;
-  backgroundColor: string;
-  cardColor: string;
-  textColor: string;
+  backgroundColorLight: string;
+  backgroundColorDark: string;
+  cardColorLight: string;
+  cardColorDark: string;
+  textColorLight: string;
+  textColorDark: string;
   fontFamily: string;
   baseFontSize: number;
   radius: number;
@@ -49,13 +53,22 @@ const INTENT_COLOR_FIELDS: { key: keyof SystemSettingsValue; label: string; fall
   { key: "errorColor", label: "Error", fallback: "#ff5630" },
 ];
 
-const SURFACE_COLOR_FIELDS: { key: keyof SystemSettingsValue; label: string; fallback: string }[] = [
-  { key: "backgroundColor", label: "Page background", fallback: "#f9fafb" },
-  { key: "cardColor", label: "Card background", fallback: "#ffffff" },
-  { key: "textColor", label: "Text", fallback: "#1c252e" },
+/** Unlike the 6 intents above, a surface color needs a light AND a dark
+ * value - a single flat override broke dark mode across the whole admin the
+ * moment this page was saved even once (`Settings.tsx` always writes every
+ * field, so the moment ANY save happened, `--dry-background` etc got pinned
+ * to their light-mode default forever - see `status/
+ * system-memory-and-settings.md`'s "dark mode sai màu" entry). */
+const SURFACE_COLOR_PAIRS: { label: string; lightKey: keyof SystemSettingsValue; darkKey: keyof SystemSettingsValue; lightFallback: string; darkFallback: string }[] = [
+  { label: "Page background", lightKey: "backgroundColorLight", darkKey: "backgroundColorDark", lightFallback: "#f9fafb", darkFallback: "#141a21" },
+  { label: "Card background", lightKey: "cardColorLight", darkKey: "cardColorDark", lightFallback: "#ffffff", darkFallback: "#1c252e" },
+  { label: "Text", lightKey: "textColorLight", darkKey: "textColorDark", lightFallback: "#1c252e", darkFallback: "#ffffff" },
 ];
 
-const ALL_COLOR_FIELDS = [...INTENT_COLOR_FIELDS, ...SURFACE_COLOR_FIELDS];
+const ALL_COLOR_KEYS: (keyof SystemSettingsValue)[] = [
+  ...INTENT_COLOR_FIELDS.map((f) => f.key),
+  ...SURFACE_COLOR_PAIRS.flatMap((p) => [p.lightKey, p.darkKey]),
+];
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -64,14 +77,12 @@ function readColor(raw: unknown, fallback: string): string {
 }
 
 function ColorField({
-  colorKey,
   label,
   fallback,
   value,
   error,
   onChange,
 }: {
-  colorKey: keyof SystemSettingsValue;
   label: string;
   fallback: string;
   value: string;
@@ -100,6 +111,38 @@ function ColorField({
   );
 }
 
+function SurfaceColorPairField({
+  pair,
+  value,
+  fieldErrors,
+  onChange,
+}: {
+  pair: (typeof SURFACE_COLOR_PAIRS)[number];
+  value: SystemSettingsValue;
+  fieldErrors: Record<string, string>;
+  onChange: <K extends keyof SystemSettingsValue>(key: K, next: SystemSettingsValue[K]) => void;
+}) {
+  return (
+    <div class="stack" style={{ gap: "0.5rem" }}>
+      <strong>{pair.label}</strong>
+      <ColorField
+        label="Light"
+        fallback={pair.lightFallback}
+        value={value[pair.lightKey] as string}
+        error={fieldErrors[pair.lightKey]}
+        onChange={(next) => onChange(pair.lightKey, next)}
+      />
+      <ColorField
+        label="Dark"
+        fallback={pair.darkFallback}
+        value={value[pair.darkKey] as string}
+        error={fieldErrors[pair.darkKey]}
+        onChange={(next) => onChange(pair.darkKey, next)}
+      />
+    </div>
+  );
+}
+
 /**
  * Super Admin-only admin UI theme editor - a custom color-picker/live-preview
  * form (not the generic singleton field-loop editor `seoDefaults`/`about`
@@ -112,10 +155,12 @@ function ColorField({
  * `lib/apply-system-theme.ts`; `reapplySystemTheme()` below refreshes THIS
  * tab immediately after a successful save.
  *
- * `ThemePreview` (right column) reflects the CURRENT form `value`, not the
- * saved one - every keystroke here repaints it live, before Save ever runs,
- * via CSS custom properties alone (see that component's own doc comment for
- * why nothing here needs to touch the network to preview a color).
+ * `ThemePreview` (left column, `.settings-preview-sticky` - sticks below the
+ * topbar on desktop, see `components.css`) reflects the CURRENT form
+ * `value`, not the saved one - every keystroke here repaints it live,
+ * before Save ever runs, via CSS custom properties alone (see that
+ * component's own doc comment for why nothing here needs to touch the
+ * network to preview a color).
  */
 export default function Settings() {
   useDocumentTitle("Settings");
@@ -149,19 +194,28 @@ export default function Settings() {
     void (async () => {
       try {
         const entry = await entriesApi.getSingleton();
+        // `systemSettings.data` is one JSON blob (`content-types/seed.ts`),
+        // not per-field columns - nothing here is ever queried/filtered, so
+        // splitting it into 12+ real columns would only have added
+        // schema-editor noise for every new setting (same reasoning
+        // `memory.data` already uses).
+        const stored = parseSystemSettingsData(entry?.value.data);
         const loaded: SystemSettingsValue = {
-          primaryColor: readColor(entry?.value.primaryColor, "#00a76f"),
-          secondaryColor: readColor(entry?.value.secondaryColor, "#8e33ff"),
-          infoColor: readColor(entry?.value.infoColor, "#00b8d9"),
-          successColor: readColor(entry?.value.successColor, "#22c55e"),
-          warningColor: readColor(entry?.value.warningColor, "#ffab00"),
-          errorColor: readColor(entry?.value.errorColor, "#ff5630"),
-          backgroundColor: readColor(entry?.value.backgroundColor, "#f9fafb"),
-          cardColor: readColor(entry?.value.cardColor, "#ffffff"),
-          textColor: readColor(entry?.value.textColor, "#1c252e"),
-          fontFamily: typeof entry?.value.fontFamily === "string" && entry.value.fontFamily ? (entry.value.fontFamily as string) : FONT_OPTIONS[0]!,
-          baseFontSize: typeof entry?.value.baseFontSize === "number" ? (entry.value.baseFontSize as number) : 16,
-          radius: typeof entry?.value.radius === "number" ? (entry.value.radius as number) : 8,
+          primaryColor: readColor(stored.primaryColor, "#00a76f"),
+          secondaryColor: readColor(stored.secondaryColor, "#8e33ff"),
+          infoColor: readColor(stored.infoColor, "#00b8d9"),
+          successColor: readColor(stored.successColor, "#22c55e"),
+          warningColor: readColor(stored.warningColor, "#ffab00"),
+          errorColor: readColor(stored.errorColor, "#ff5630"),
+          backgroundColorLight: readColor(stored.backgroundColorLight, "#f9fafb"),
+          backgroundColorDark: readColor(stored.backgroundColorDark, "#141a21"),
+          cardColorLight: readColor(stored.cardColorLight, "#ffffff"),
+          cardColorDark: readColor(stored.cardColorDark, "#1c252e"),
+          textColorLight: readColor(stored.textColorLight, "#1c252e"),
+          textColorDark: readColor(stored.textColorDark, "#ffffff"),
+          fontFamily: typeof stored.fontFamily === "string" && stored.fontFamily ? stored.fontFamily : FONT_OPTIONS[0]!,
+          baseFontSize: typeof stored.baseFontSize === "number" ? stored.baseFontSize : 16,
+          radius: typeof stored.radius === "number" ? stored.radius : 8,
         };
         setValue(loaded);
         setInitialSnapshot(JSON.stringify(loaded));
@@ -179,14 +233,14 @@ export default function Settings() {
   async function save() {
     if (!value) return;
     const errors: Record<string, string> = {};
-    for (const { key, label } of ALL_COLOR_FIELDS) {
-      if (!HEX_RE.test(value[key] as string)) errors[key] = `${label} must be a hex color like #00a76f.`;
+    for (const key of ALL_COLOR_KEYS) {
+      if (!HEX_RE.test(value[key] as string)) errors[key] = "Must be a hex color like #00a76f.";
     }
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     setSaving(true);
     try {
-      await entriesApi.saveSingleton(value);
+      await entriesApi.saveSingleton({ data: JSON.stringify(value) });
       setInitialSnapshot(JSON.stringify(value));
       // The rendered stylesheet (`routes/system-settings.ts`) only refetches
       // on its own at the next full page load - without this, THIS tab
@@ -234,7 +288,7 @@ export default function Settings() {
       </section>
 
       <div class="content-entry-editor-grid">
-        <section class="card">
+        <section class="card settings-preview-sticky">
           <header>
             <h2>Preview</h2>
             <p>Updates live as you edit - nothing here is saved until you click Save.</p>
@@ -254,7 +308,6 @@ export default function Settings() {
               {INTENT_COLOR_FIELDS.map(({ key, label, fallback }) => (
                 <ColorField
                   key={key}
-                  colorKey={key}
                   label={label}
                   fallback={fallback}
                   value={value[key] as string}
@@ -268,19 +321,11 @@ export default function Settings() {
           <section class="card">
             <header>
               <h2>Surface colors</h2>
-              <p>Page background, card background, and body text - applied the same in light and dark mode once set.</p>
+              <p>Page background, card background, and body text - a light AND a dark value each, so dark mode stays correct.</p>
             </header>
             <div class="under stack">
-              {SURFACE_COLOR_FIELDS.map(({ key, label, fallback }) => (
-                <ColorField
-                  key={key}
-                  colorKey={key}
-                  label={label}
-                  fallback={fallback}
-                  value={value[key] as string}
-                  error={fieldErrors[key]}
-                  onChange={(next) => update(key, next)}
-                />
+              {SURFACE_COLOR_PAIRS.map((pair) => (
+                <SurfaceColorPairField key={pair.label} pair={pair} value={value} fieldErrors={fieldErrors} onChange={update} />
               ))}
             </div>
           </section>

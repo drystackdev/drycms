@@ -146,6 +146,9 @@ export interface SystemSettings {
   successColor?: string;
   warningColor?: string;
   errorColor?: string;
+  backgroundColor?: string;
+  cardColor?: string;
+  textColor?: string;
   fontFamily: "DM Sans Variable, DM Sans, ui-sans-serif, system-ui, sans-serif" | "Inter, ui-sans-serif, system-ui, sans-serif" | "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" | "ui-serif, Georgia, Cambria, Times New Roman, serif" | "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace";
   baseFontSize: number;
   radius: number;

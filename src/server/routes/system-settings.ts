@@ -1,12 +1,12 @@
 import type { DryRouteHandler } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
-import { systemSettingsThemeVars } from "../../lib/system-settings-theme.js";
+import { parseSystemSettingsData, systemSettingsThemeVars } from "../../lib/system-settings-theme.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 
 async function renderThemeCss(entries: ContentEntryEngineAdapter, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): Promise<string> {
   const entry = await entries.getSingletonEntry(type, allTypes);
-  const vars = systemSettingsThemeVars(entry?.value ?? {});
+  const vars = systemSettingsThemeVars(parseSystemSettingsData(entry?.value.data));
   const declarations = Object.entries(vars).map(([token, value]) => `  ${token}: ${value};`);
   if (declarations.length === 0) return "";
   // Deliberately NOT wrapped in `@layer` (unlike `tokens.css`'s own

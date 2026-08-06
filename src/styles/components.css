@@ -3039,6 +3039,20 @@
       }
     }
 
+    /* `pages/Settings.tsx`'s live preview - sticks just below the topbar
+     * (itself `position: sticky; top: 0` - see `.topbar` above, both share
+     * `.main`'s scroll context) while the taller color-fields column
+     * scrolls past it. Only past the same `64rem` breakpoint
+     * `.content-entry-editor-grid` itself collapses at - pinning it on a
+     * single-column mobile layout would block the very form beneath it
+     * instead of sitting helpfully alongside it. */
+    .settings-preview-sticky {
+      @media (width >= 64rem) {
+        position: sticky;
+        top: calc(var(--dry-topbar-height) + 1rem);
+      }
+    }
+
     /* --- Role editor (pages/RoleEditor.tsx) - one resource per row, using
      * the same bare `<details>`/`<summary>` accordion already styled above
      * (hover, chevron, animated reveal) rather than a parallel class - only
