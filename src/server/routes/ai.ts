@@ -582,9 +582,13 @@ async function streamServerAiWithCredential(
    * Magic Write's replies (a whole entry's worth of fields) can run well
    * past the 2048-token default chat/wizard replies fit comfortably under. */
   maxOutputTokens?: number,
+  /** Passed straight through to the Google branch - see that function's own
+   * doc comment. OpenAI/Anthropic already use the full `ai.timeoutMs` below
+   * (never the Google-only 30s default), so nothing to override for them. */
+  timeoutMs?: number,
 ): Promise<ReadableStream<Uint8Array>> {
   if (credential.provider === "google") {
-    return streamGoogleAiWithCredential(messages, credential, onDelta);
+    return streamGoogleAiWithCredential(messages, credential, onDelta, timeoutMs);
   }
 
   const controller = new AbortController();
@@ -658,15 +662,39 @@ async function streamServerAiWithCredential(
   });
 }
 
+/** Google's own wording for "this is a capacity spike, not a real failure" -
+ * distinct from `isAiKeyFallbackError`'s quota/billing/rate-limit patterns
+ * (those mean "this credential is bad/exhausted, try another"; this means
+ * "this credential is fine, the model is momentarily overloaded, retry the
+ * SAME request shortly" - see `streamGoogleAiWithCredential`'s own retry
+ * loop below). */
+function isTransientProviderErrorMessage(message: string): boolean {
+  return /overloaded|high demand|temporarily unavailable|service unavailable|try again/i.test(message);
+}
+
+const GOOGLE_TRANSIENT_RETRY_DELAYS_MS = [1_000, 2_000];
+
+async function readGoogleErrorMessage(response: Response): Promise<{ message: string; status: number }> {
+  const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
+  return { message: body.error?.message || `Google returned HTTP ${response.status}.`, status: response.status };
+}
+
 async function streamGoogleAiWithCredential(
   messages: ChatMessage[],
   credential: ServerCredential,
   onDelta: (delta: string) => void,
+  /** Overrides the 30s default below - Magic Write's requests (images +
+   * a whole entry's worth of fields) routinely take longer than 30s for
+   * Google to even start streaming back, which was otherwise surfacing as
+   * a misleading "This operation was aborted" / "all AI keys exhausted"
+   * error (the abort turns into an `AiProviderError` with status 408,
+   * which `isAiKeyFallbackError` treats as a real per-key failure). */
+  timeoutMs?: number,
 ): Promise<ReadableStream<Uint8Array>> {
   const model = credential.model.replace(/^models\//, "");
   const modelUrl = `${credential.baseUrl}/v1beta/models/${encodeURIComponent(model)}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.min(ai.timeoutMs, 30_000));
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? Math.min(ai.timeoutMs, 30_000));
   const contents = messages.map((message) => ({
     role: message.role === "assistant" ? "model" : "user",
     parts: [
@@ -687,16 +715,27 @@ async function streamGoogleAiWithCredential(
 
     let response = await request("streamGenerateContent?alt=sse");
     let streaming = true;
+    // A "this model is currently experiencing high demand, try again
+    // later"-style response is Google's own signal that this exact request
+    // is worth retrying as-is (not a reason to give up on this credential -
+    // see `isTransientProviderErrorMessage`'s own doc comment) - short,
+    // capped retries here before falling through to the existing
+    // streaming-unsupported fallback/error handling below.
+    for (let attempt = 0; !response.ok && attempt < GOOGLE_TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
+      const { message, status } = await readGoogleErrorMessage(response.clone());
+      if (status !== 503 && !isTransientProviderErrorMessage(message)) break;
+      await new Promise((resolve) => setTimeout(resolve, GOOGLE_TRANSIENT_RETRY_DELAYS_MS[attempt]));
+      response = await request("streamGenerateContent?alt=sse");
+    }
     if (!response.ok) {
-      const body = await response.json().catch(() => ({})) as { error?: { message?: string } };
-      const message = body.error?.message || `Google returned HTTP ${response.status}.`;
-      const streamUnsupported = response.status === 404 || /stream(?:ing)?|not supported|not found/i.test(message);
-      if (!streamUnsupported) throw new AiProviderError(message, response.status);
+      const { message, status } = await readGoogleErrorMessage(response);
+      const streamUnsupported = status === 404 || /stream(?:ing)?|not supported|not found/i.test(message);
+      if (!streamUnsupported) throw new AiProviderError(message, status);
       response = await request("generateContent");
       streaming = false;
       if (!response.ok) {
-        const fallbackBody = await response.json().catch(() => ({})) as { error?: { message?: string } };
-        throw new AiProviderError(fallbackBody.error?.message || `Google returned HTTP ${response.status}.`, response.status);
+        const fallback = await readGoogleErrorMessage(response);
+        throw new AiProviderError(fallback.message, fallback.status);
       }
     }
 
@@ -762,6 +801,7 @@ export async function createChatStream(
   onDelta: (delta: string) => void,
   preferredKeyName?: string,
   maxOutputTokens?: number,
+  timeoutMs?: number,
 ): Promise<ChatStreamResult> {
   if (ai.mode === "local") {
     return {
@@ -774,7 +814,7 @@ export async function createChatStream(
   for (const credential of credentials) {
     try {
       return {
-        stream: await streamServerAiWithCredential(messages, credential, onDelta, maxOutputTokens),
+        stream: await streamServerAiWithCredential(messages, credential, onDelta, maxOutputTokens, timeoutMs),
         aiLabel: `${aiProviderLabel(credential.provider)} · ${credential.model}`,
       };
     } catch (error) {

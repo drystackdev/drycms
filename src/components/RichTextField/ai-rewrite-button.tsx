@@ -189,6 +189,11 @@ export default function AiRewriteButton({ viewRef, state, disabled = false, icon
               {stage === "error" && <div class="alert destructive">{error}</div>}
             </div>
             <footer>
+              {stage === "loading" && (
+                <span class="row align-center hint" style={{ gap: "0.375rem" }}>
+                  <span class="spinner" /> Writing…
+                </span>
+              )}
               <button type="button" class="outline" onClick={handleCancel}>
                 Cancel
               </button>

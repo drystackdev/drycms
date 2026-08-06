@@ -154,6 +154,17 @@ export function useRichTextEditor({
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  /** The last HTML this hook itself produced (either the initial seed, or
+   * `dispatchTransaction`'s own `onChange` echo) - lets the sync effect
+   * below tell "the parent just reflected back what we told it" (a no-op,
+   * must NOT touch the live doc/cursor) apart from "the parent changed
+   * `value` out from under us" (Magic Write's own live per-field commit,
+   * or a plain "Reset all"/"Clear all" - both need the visible editor to
+   * actually update, which nothing did before this ref existed: the mount
+   * effect right below only ever seeds `value` ONCE, by design, for normal
+   * typing - see its own doc comment - which silently ate every OTHER
+   * source of an external value change too). */
+  const lastSyncedValueRef = useRef<string | null>(null);
   // Read inside `dispatchTransaction` below via `.current`, same reason
   // `onChangeRef` is - that closure is built once, inside the mount effect
   // that only ever runs on `[]` (see its own doc comment), so a later
@@ -258,6 +269,7 @@ export function useRichTextEditor({
       }
     }
     doc = withTrailingParagraph(doc);
+    lastSyncedValueRef.current = value;
 
     const editorState = EditorState.create({
       schema,
@@ -357,7 +369,9 @@ export function useRichTextEditor({
         setState(readToolbarState(newState));
         setEmpty(isDocEmpty(newState));
         if (tr.docChanged) {
-          onChangeRef.current(exportCleanHtml(newState.doc, { inline: inlineRef.current }));
+          const html = exportCleanHtml(newState.doc, { inline: inlineRef.current });
+          lastSyncedValueRef.current = html;
+          onChangeRef.current(html);
         }
         const reorderActive = isReorderActive(newState);
         htmlReorderSurface?.setActive(
@@ -411,6 +425,30 @@ export function useRichTextEditor({
       attributes: (state) => buildAttributes(state, disabled, label),
     });
   }, [disabled, label]);
+
+  // Re-syncs the live doc when `value` changes for a reason OTHER than this
+  // hook's own `dispatchTransaction` echoing it straight back (normal
+  // typing) - Magic Write's live per-field commit and a plain "Reset all"/
+  // "Clear all" both just assign a new `value` prop from outside, same as
+  // any other field, and until this effect existed nothing ever pulled that
+  // back into the already-mounted `EditorView` (see the mount effect's own
+  // doc comment: `value` there only ever seeds the INITIAL document).
+  // Replaces the whole doc rather than diffing - simple, and the only two
+  // real callers here (a full AI rewrite of the field, a full reset to the
+  // saved/blank value) are already whole-value replacements themselves, not
+  // incremental edits a naive full-replace would make janky.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || value === lastSyncedValueRef.current) return;
+    lastSyncedValueRef.current = value;
+    try {
+      const nextDoc = withTrailingParagraph(value ? importCleanHtml(value) : createEmptyDoc());
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, nextDoc.content));
+    } catch (err) {
+      console.error("[drycms] Failed to sync external RichTextField value", err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only `value` should trigger a resync; `loading` isn't in scope to gate on and `viewRef` is a ref
+  }, [value]);
 
   return { contentRef, viewRef, state, empty, loading };
 }

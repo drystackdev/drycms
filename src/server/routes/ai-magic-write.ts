@@ -158,7 +158,7 @@ async function runMagicWriteTurn(
   const { stream, aiLabel } = await createChatStream(context, messages, (delta) => {
     text += delta;
     onDelta(delta);
-  }, aiKeyName, MAGIC_WRITE_MAX_OUTPUT_TOKENS);
+  }, aiKeyName, MAGIC_WRITE_MAX_OUTPUT_TOKENS, MAGIC_WRITE_TIMEOUT_MS);
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -190,6 +190,14 @@ const MAGIC_WRITE_MAX_ATTEMPTS = 3;
  * see that function's own doc comment. Only affects Anthropic (OpenAI/Google
  * already have no such cap in this codebase). */
 const MAGIC_WRITE_MAX_OUTPUT_TOKENS = 8192;
+/** Google's own branch otherwise caps every request at 30s regardless of
+ * `ai.timeoutMs` - Magic Write's requests (images + a full entry's worth of
+ * fields) routinely need longer than that just to start streaming back, and
+ * the resulting client-side abort was surfacing as a misleading "all AI
+ * keys exhausted" error. Anthropic/OpenAI already use the full
+ * `ai.timeoutMs` (120s default) with no separate cap, so this only changes
+ * Google's behavior. */
+const MAGIC_WRITE_TIMEOUT_MS = 90_000;
 
 interface MagicWriteFieldsTurnEvent {
   kind: "fields";

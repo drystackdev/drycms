@@ -647,6 +647,42 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
    Preview) ở cả 2 vị trí header (topbar + VEI dialog), và đổi chữ trong
    `ConfirmDialog` cho đúng ngữ cảnh entry mới ("Clear all fields?" thay vì
    "Reset all changes?"). Typecheck sạch + 873 test pass.
+6. **Timeout Google 30s cứng** — user paste lỗi thật "All configured AI API
+   keys are exhausted... This operation was aborted". Root cause: nhánh
+   Google trong `ai.ts` (`streamGoogleAiWithCredential`) giới hạn cứng
+   `Math.min(ai.timeoutMs, 30_000)` bất kể config — Magic Write giờ gửi
+   request nặng hơn nhiều (ảnh + max_tokens 8192) nên dễ vượt 30s hơn hẳn
+   wizard/chat gốc mà cap này được tune cho. Timeout tự abort phía client
+   bị bọc thành `AiProviderError` status 408 (`isAiKeyFallbackError` coi
+   408 là lỗi có thể fallback) → hết key ngay vì dev DB chỉ có 1 key →
+   hiện nhầm thành "exhausted". Đã thread thêm optional `timeoutMs` xuyên
+   `createChatStream` → `streamServerAiWithCredential` →
+   `streamGoogleAiWithCredential` (KHÔNG đổi hành vi wizard/chat — chỉ
+   truyền override khi gọi thật, mặc định giữ nguyên `Math.min(...,
+   30_000)`), Magic Write dùng `MAGIC_WRITE_TIMEOUT_MS = 90_000`. Anthropic/
+   OpenAI vốn đã dùng đủ `ai.timeoutMs` (120s), không bị ảnh hưởng. Verify:
+   sau restart, 2 lần gọi thật đều về trong <30s nhưng nhận lỗi THẬT từ
+   Google ("model đang quá tải") - vấn đề tạm thời phía provider lúc test,
+   không phải bug code.
+7. **BUG THẬT quan trọng phát hiện qua feedback**: "RichText không hiện Dữ
+   liệu khi AI nhập vào" + "Cancel All richText cũng không biến mất" - 2
+   triệu chứng CÙNG 1 gốc, và gốc đó KHÔNG PHẢI do Magic Write mà là lỗ
+   hổng có sẵn từ trước trong `useRichTextEditor.ts`: hook này chỉ đọc
+   prop `value` để seed doc MỘT LẦN lúc mount (`useEffect(..., [])`, cố ý,
+   để không phá con trỏ khi gõ bình thường) - KHÔNG có cơ chế nào đồng bộ
+   lại khi `value` đổi từ BÊN NGOÀI sau đó. Nghĩa là không chỉ Magic
+   Write's live-feed bị im lặng bỏ qua, mà "Reset all"/"Clear all" (mục 5)
+   cũng chưa từng thực sự xoá được nội dung RichText đã hiển thị - chỉ đổi
+   state React, ProseMirror doc đang mount không hề hay biết.
+   **Fix tại `useRichTextEditor.ts`** (không phải ở Magic Write): thêm
+   `lastSyncedValueRef` theo dõi giá trị hook TỰ báo ra gần nhất (qua
+   `onChange`) - effect mới `useEffect(..., [value])` so `value` mới với
+   ref này: KHÁC (đổi từ bên ngoài thật) → `replaceWith` toàn bộ doc bằng
+   `importCleanHtml(value)`; TRÙNG (chỉ là echo từ chính lần gõ vừa rồi) →
+   bỏ qua, không đụng con trỏ. Đây là fix tận gốc, tự động sửa cho MỌI nơi
+   set `value` từ ngoài (Magic Write, Reset all, Clear all, VEI field-set
+   event...), không phải patch riêng cho Magic Write.
+   Typecheck sạch + 873 test pass (chỉ sửa client, không cần restart).
 
 ## Speed
 
