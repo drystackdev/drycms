@@ -593,7 +593,7 @@ function main(): void {
       ?.platform ?? navigator.userAgent;
   const EDIT_HINT = `Click to edit · ${
     /mac|iphone|ipad|ipod/i.test(platform) ? "⌘" : "Ctrl"
-  }+click to open the full editor in a new tab`;
+  }+click to open the full editor in a new tab · Shift+click to run it normally`;
   let hintedTitle: string | null = null;
 
   function applyHint(el: Element): void {
@@ -820,6 +820,11 @@ function main(): void {
   // away mid-edit.
   const intercept = (event: MouseEvent) => {
     if (sheet.isConnected) return;
+    // Shift+click is the escape hatch back to the page's OWN behavior - a
+    // marked `<a>` navigates, a marked element's own `onClick` fires, exactly
+    // as if edit mode weren't installed at all. Checked before even looking
+    // up the marked element so neither mousedown nor click gets touched.
+    if (event.shiftKey) return;
     const marked = markedElementFor(event);
     if (!marked) return;
     event.preventDefault();

@@ -16,6 +16,7 @@
     "deploy": "bun run build:worker && wrangler deploy",
     "build:icons": "node scripts/build-icons.mjs",
     "dry:generate": "bun scripts/dry-generate.ts",
+    "new:project": "bun scripts/new-project.ts",
     "seed:sync": "bun scripts/seed-sync.ts",
     "seed:pages": "bun scripts/seed-pages-content.ts",
     "build:schema": "bun scripts/build-schema.ts",
