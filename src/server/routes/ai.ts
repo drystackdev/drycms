@@ -130,7 +130,13 @@ async function readServerCredentials(context: DryRouteContext, preferredName?: s
   // picked it on purpose. Absent an override, fall back to `ai.keyName`'s
   // preferred-first-then-fallback ordering, same as before.
   if (preferredName) {
-    const match = page.rows.find((row) => String(row.value.name ?? "") === preferredName);
+    // Trimmed on both sides: `handleWizard`/`ai-magic-write.ts` already trim
+    // the INCOMING override before it gets here, but a stored `aiKey.name`
+    // itself can carry accidental leading/trailing whitespace (a typo when
+    // the admin created the row) - comparing untrimmed-vs-trimmed would
+    // silently never match that row again from its own combobox, which
+    // sends back exactly the untrimmed stored name.
+    const match = page.rows.find((row) => String(row.value.name ?? "").trim() === preferredName.trim());
     if (!match) throw new Error(`AI Key "${preferredName}" was not found.`);
     page.rows = [match];
   }

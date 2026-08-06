@@ -556,6 +556,39 @@ question/start/loading/error) trước khi coi Phase 1 là "done" tuyệt đối
   đúng vị trí selection) — không có browser tool trong phiên này, cần
   Playwright hoặc user tự bấm thử.
 
+### Sau khi báo cáo "xong" — 2 fix từ phản hồi user thật (đang dùng UI)
+
+1. **AI Key selector** — user hỏi "AI cần lấy theo model và key dựa trên AI
+   key collection". Xác nhận: server VỐN ĐÃ lấy model/key từ collection
+   `aiKey` thật (không phải từ `dry.config.ts` tĩnh) — `aiLabel` trả về ở
+   mọi smoke test đều là `"Google AI · gemini-3.5-flash"` (đúng row thật
+   trong DB), không phải default nào của config. Cái thiếu là UI: MagicWrite
+   Dialog chưa có ô chọn key CỤ THỂ như wizard đã có. Đã thêm y hệt pattern
+   wizard's Combobox (`aiKeyApi.list()` → hiện khi >1 key, "Automatic" mặc
+   định).
+   - **Bug phát hiện khi test tính năng vừa thêm**: gọi với
+     `aiKeyName: "Test API "` (tên thật trong DB, có dấu cách cuối) trả về
+     "not found" dù đúng tên — do `handleWizard`/`ai-magic-write.ts` đều
+     `.trim()` giá trị client gửi trước khi so khớp, trong khi tên lưu
+     trong DB giữ nguyên dấu cách. Fix tại ĐÚNG 1 chỗ dùng chung
+     (`readServerCredentials` trong `ai.ts`, dòng so khớp `preferredName`)
+     — trim CẢ 2 phía khi so sánh, không sửa 3 chỗ gọi riêng lẻ. Bug này
+     tồn tại sẵn ở wizard's Combobox từ trước (chưa ai từng chọn 1 key cụ
+     thể có khoảng trắng để lộ ra), fix chung cho cả 2 tính năng vì cùng
+     1 hàm.
+2. **Tái dùng UI field có sẵn** — user: "Magic Write cần tận dụng lại UI đã
+   có sẵn: TextField multiline, ImageField multi". Đã refactor
+   `MagicWriteDialog.tsx`: bỏ `<textarea>` thô → `<TextField multiline>`;
+   bỏ hẳn custom image picker (state `pickedImages`/`imagePickerOpen`/
+   `imagePickerSelection`/dialog `FileManager` lồng riêng, ~60 dòng) →
+   `<ImageField multiple>` (component có sẵn, tự quản lý picker dialog +
+   thumbnail list + reorder). Ảnh giờ chỉ giữ `selectedImagePaths: string[]`
+   (path thô); việc fetch+resize 240px+base64 (`encodeContextImage`) chuyển
+   từ "encode ngay lúc chọn" sang "encode ngay trước khi gửi request" trong
+   `run()` — đơn giản hơn, đúng 1 chỗ, không mất tính năng nào.
+   Typecheck sạch + 873 test pass sau refactor (không có test nào phụ
+   thuộc cấu trúc UI cũ).
+
 ## Speed
 
 - Research + Plan agent + tách ai.mode/kind: xong trước đó.

@@ -1,31 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { toast } from "../../components/Toast.js";
-import { ArrowRightIcon, CloseIcon, MediaIcon } from "../../components/icons/index.js";
+import Combobox from "../../components/Combobox.js";
+import { ArrowRightIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
-import FileManager from "../../components/FileManager/FileManager.js";
+import TextField from "../../components/fields/TextField.js";
+import ImageField from "../../components/fields/ImageField.js";
 import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
+import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
 import type { MagicWriteChoice, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
 import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES, type MagicWriteScope } from "../../content-types/ai-magic-write-fields.js";
 
-const { path } = window.__DRY_CONFIG__;
+const { path, aiMode } = window.__DRY_CONFIG__;
 
-/** Only extensions `optimizeUploadImage` can actually resize (see
- * `file-manager-image-optimize.ts`'s `canOptimizeUploadImage`) - unlike
- * `ImageField`'s own picker, Magic Write's context images always need a real
- * resize (240px, for vision-token cost, see `status/magic-write.md`
- * decision #3), so gif/svg (never optimizable) are excluded from the picker
- * itself rather than handled as a fallback path. */
-const MAGIC_WRITE_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+/** Same "aiKey" system collection the schema wizard's own AI Key combobox
+ * (`AiSchemaWizardPanel.tsx`) already reads - lets the admin pick a
+ * SPECIFIC configured provider/model/key for this Magic Write run instead
+ * of the server's default fallback order (`ai.ts`'s `readServerCredentials`
+ * always resolves against this same collection either way; this is only
+ * about letting the admin override which row wins, e.g. to route around a
+ * provider that's temporarily overloaded). */
+const aiKeyApi = createContentEntriesApi(`${path}/api/content`, "aiKey");
 
-interface MagicWritePickedImage {
+interface MagicWriteEncodedImage {
   path: string;
-  name: string;
   mimeType: string;
   base64: string;
 }
@@ -46,16 +49,18 @@ function fileToBase64(file: File): Promise<string> {
 /** Fetches an already-uploaded storage image's bytes, resizes it down to a
  * small (240px) context-only copy, and base64-encodes it - see
  * `status/magic-write.md` decision #3 for why 240px specifically (vision API
- * token cost scales with pixel count, not quality/file size). */
-async function encodeContextImage(imagePath: string): Promise<MagicWritePickedImage> {
+ * token cost scales with pixel count, not quality/file size). Run once per
+ * `run()` call, right before the request goes out - `selectedImagePaths`
+ * itself is driven by the reused `ImageField` picker below, same as any
+ * other image field in this app. */
+async function encodeContextImage(imagePath: string): Promise<MagicWriteEncodedImage> {
   const response = await fetch(resolveImageSrc(imagePath));
   if (!response.ok) throw new Error(`Could not load "${imagePath}".`);
   const blob = await response.blob();
-  const name = imagePath.split("/").pop() || imagePath;
-  const original = new File([blob], name, { type: blob.type });
+  const original = new File([blob], imagePath.split("/").pop() || imagePath, { type: blob.type });
   const optimized = await optimizeUploadImage(original, { maxWidth: 240 });
   const base64 = await fileToBase64(optimized);
-  return { path: imagePath, name, mimeType: optimized.type, base64 };
+  return { path: imagePath, mimeType: optimized.type, base64 };
 }
 
 interface MagicWriteFieldsResult {
@@ -162,7 +167,7 @@ export interface MagicWriteDialogProps {
    * it's set (see `status/magic-write.md` decision #4). `null` when nothing
    * is streaming. */
   onStreamingFieldChange: (fieldName: string | null) => void;
-  /** Where the context-image picker's `FileManager` reads its files from
+  /** Where the context-image `ImageField`'s picker reads its files from
    * (Phase 2, `status/magic-write.md` decision #3). */
   source: FileManagerSource;
 }
@@ -190,11 +195,9 @@ export default function MagicWriteDialog({
   const [question, setQuestion] = useState<MagicWriteQuestionResult | null>(null);
   const [questionChoice, setQuestionChoice] = useState<Set<string>>(new Set());
   const [questionOther, setQuestionOther] = useState("");
-  const [pickedImages, setPickedImages] = useState<MagicWritePickedImage[]>([]);
-  const [imagePickerOpen, setImagePickerOpen] = useState(false);
-  const [imagePickerSelection, setImagePickerSelection] = useState<string[]>([]);
-  const [encodingImages, setEncodingImages] = useState(false);
-  const imagePickerRef = useDialogSync(imagePickerOpen, () => setImagePickerOpen(false));
+  const [selectedImagePaths, setSelectedImagePaths] = useState<string[]>([]);
+  const [aiKeyName, setAiKeyName] = useState<string | undefined>(undefined);
+  const [aiKeyOptions, setAiKeyOptions] = useState<{ value: string; label: string }[]>([]);
 
   const rawTextRef = useRef("");
   const committedRef = useRef<Set<string>>(new Set());
@@ -215,14 +218,27 @@ export default function MagicWriteDialog({
     setQuestion(null);
     setQuestionChoice(new Set());
     setQuestionOther("");
-    setPickedImages([]);
-    setImagePickerOpen(false);
-    setImagePickerSelection([]);
-    setEncodingImages(false);
+    setSelectedImagePaths([]);
+    setAiKeyName(undefined);
     rawTextRef.current = "";
     committedRef.current = new Set();
     streamingNameRef.current = null;
     historyRef.current = [];
+    if (aiMode === "server") {
+      void aiKeyApi
+        .list({ page: 0, pageSize: 100 })
+        .then((result) => {
+          setAiKeyOptions(
+            result.rows
+              .map((row) => ({
+                value: String(row.value.name ?? ""),
+                label: `${String(row.value.name ?? "Unnamed")} (${String(row.value.provider ?? "")})`,
+              }))
+              .filter((option) => option.value),
+          );
+        })
+        .catch(() => setAiKeyOptions([]));
+    }
   }, [open]);
 
   function setStreaming(name: string | null) {
@@ -271,6 +287,8 @@ export default function MagicWriteDialog({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      const images = await Promise.all(selectedImagePaths.map(encodeContextImage));
+      if (controller.signal.aborted) return;
       const result = await requestMagicWriteTurn(
         {
           typeSlug,
@@ -280,7 +298,8 @@ export default function MagicWriteDialog({
           mode: scopeRef.current.mode,
           targetFields: scopeRef.current.mode === "selected" ? scopeRef.current.targetFields : undefined,
           history: historyForThisTurn,
-          images: pickedImages.map(({ path: imagePath, mimeType, base64 }) => ({ path: imagePath, mimeType, base64 })),
+          images,
+          aiKeyName,
         },
         handleDelta,
         () => {
@@ -346,35 +365,6 @@ export default function MagicWriteDialog({
     });
   }
 
-  function openImagePicker() {
-    setImagePickerSelection(pickedImages.map((image) => image.path));
-    setImagePickerOpen(true);
-  }
-
-  async function confirmImagePicker() {
-    setImagePickerOpen(false);
-    const alreadyEncoded = new Map(pickedImages.map((image) => [image.path, image]));
-    const newPaths = imagePickerSelection.filter((imagePath) => !alreadyEncoded.has(imagePath));
-    if (newPaths.length === 0) {
-      setPickedImages(imagePickerSelection.map((imagePath) => alreadyEncoded.get(imagePath)!));
-      return;
-    }
-    setEncodingImages(true);
-    try {
-      const encoded = await Promise.all(newPaths.map(encodeContextImage));
-      const byPath = new Map([...alreadyEncoded, ...encoded.map((image): [string, MagicWritePickedImage] => [image.path, image])]);
-      setPickedImages(imagePickerSelection.map((imagePath) => byPath.get(imagePath)!).filter(Boolean));
-    } catch (err) {
-      toast.add({ type: "error", title: "Could not load an image", description: err instanceof Error ? err.message : undefined });
-    } finally {
-      setEncodingImages(false);
-    }
-  }
-
-  function removeImage(imagePath: string) {
-    setPickedImages((current) => current.filter((image) => image.path !== imagePath));
-  }
-
   const progress = stage === "loading" ? parsePartialMagicWriteYaml(rawText) : null;
 
   return (
@@ -390,15 +380,24 @@ export default function MagicWriteDialog({
           <div class="stack">
             {stage === "start" && (
               <div class="stack">
-                <label>
-                  What should Magic Write do?
-                  <textarea
-                    rows={3}
-                    placeholder="VD: Viết một bài giới thiệu ngắn về cà phê Việt Nam"
-                    value={prompt}
-                    onInput={(event) => setPrompt((event.currentTarget as HTMLTextAreaElement).value)}
-                  />
-                </label>
+                {aiMode === "server" && aiKeyOptions.length > 1 && (
+                  <div class="row align-center" style={{ gap: "0.5rem" }}>
+                    <small class="hint">AI Key</small>
+                    <Combobox
+                      options={[{ value: "", label: "Automatic" }, ...aiKeyOptions]}
+                      value={aiKeyName ?? ""}
+                      onChange={(value) => setAiKeyName(value || undefined)}
+                      placeholder="Automatic"
+                    />
+                  </div>
+                )}
+                <TextField
+                  label="What should Magic Write do?"
+                  multiline
+                  value={prompt}
+                  onChange={setPrompt}
+                  placeholder="VD: Viết một bài giới thiệu ngắn về cà phê Việt Nam"
+                />
                 <div class="stack" role="radiogroup" aria-label="Which fields to write">
                   <label class="row align-center" style={{ gap: "0.5rem" }}>
                     <input type="radio" name="magic-write-mode" checked={mode === "empty"} onChange={() => setMode("empty")} />
@@ -423,24 +422,14 @@ export default function MagicWriteDialog({
                     ))}
                   </div>
                 )}
-                <div class="stack">
-                  <small class="hint">
-                    Images (optional) - shown to Magic Write as context, not written to any field unless you ask.
-                  </small>
-                  <div class="row" style={{ gap: "0.5rem", flexWrap: "wrap" }}>
-                    {pickedImages.map((image) => (
-                      <span key={image.path} class="row align-center" style={{ gap: "0.25rem" }}>
-                        <img src={resolveImageSrc(image.path)} alt="" width={40} height={40} style={{ objectFit: "cover", borderRadius: "var(--dry-radius-md)" }} />
-                        <button type="button" class="ghost icon sm" aria-label={`Remove ${image.name}`} onClick={() => removeImage(image.path)}>
-                          <CloseIcon />
-                        </button>
-                      </span>
-                    ))}
-                    <button type="button" class="outline sm" aria-busy={encodingImages} disabled={encodingImages} onClick={openImagePicker}>
-                      <MediaIcon /> Add images
-                    </button>
-                  </div>
-                </div>
+                <ImageField
+                  label="Images (optional)"
+                  description="Shown to Magic Write as context, not written to any field unless you ask."
+                  source={source}
+                  value={selectedImagePaths}
+                  onChange={(next) => setSelectedImagePaths(Array.isArray(next) ? next : [next])}
+                  multiple
+                />
               </div>
             )}
 
@@ -534,34 +523,6 @@ export default function MagicWriteDialog({
           </footer>
         </>
       )}
-
-      <dialog ref={imagePickerRef} class="lg" aria-label="Choose images">
-        {imagePickerOpen && (
-          <>
-            <header>
-              <h3>Choose images</h3>
-            </header>
-            <div class="under">
-              <FileManager
-                source={source}
-                value={imagePickerSelection}
-                onChange={(next) => setImagePickerSelection(Array.isArray(next) ? next : [next])}
-                multiple
-                accept={MAGIC_WRITE_IMAGE_EXTENSIONS}
-                syncUrl={false}
-              />
-            </div>
-            <footer>
-              <button type="button" class="outline" onClick={() => setImagePickerOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" onClick={() => void confirmImagePicker()}>
-                Select
-              </button>
-            </footer>
-          </>
-        )}
-      </dialog>
     </dialog>
   );
 }
