@@ -192,19 +192,6 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // only after the admin has opened the Magic Chat bubble at least once.
   const aiKey = useAiKeySelection(aiMode === "server");
   const rewriteFnRef = useRef<RichTextRewriteFn | null>(null);
-  const rewriteApi = useMemo(
-    () =>
-      aiMode === "server"
-        ? {
-            ready: aiKey.ready,
-            requestRewrite: ((passage, instruction, inline, onDelta, signal) => {
-              if (!rewriteFnRef.current) return Promise.reject(new Error("Magic is not ready yet."));
-              return rewriteFnRef.current(passage, instruction, inline, onDelta, signal);
-            }) as RichTextRewriteFn,
-          }
-        : null,
-    [aiKey.ready],
-  );
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
@@ -304,6 +291,25 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // Deliberately not folded into `canEdit` itself - that would also gate the
   // Save button/field editability. See `status/role-system-permissions.md`.
   const canUseMagic = !!type && canAccess(type.id, "magic");
+  // The RichText "Rewrite selection" button is a second entry point into
+  // Magic, separate from the `<MagicChat>` bubble below - same `magic` grant
+  // gates both, so `ready` (read by `AiRewriteButton` wherever it renders)
+  // requires it too, not just a configured/reachable AI key. Declared here
+  // (rather than up next to `aiKey`/`rewriteFnRef`) because it needs
+  // `canUseMagic`, which needs `type` - see `status/role-system-permissions.md`.
+  const rewriteApi = useMemo(
+    () =>
+      aiMode === "server"
+        ? {
+            ready: aiKey.ready && canUseMagic,
+            requestRewrite: ((passage, instruction, inline, onDelta, signal) => {
+              if (!rewriteFnRef.current) return Promise.reject(new Error("Magic is not ready yet."));
+              return rewriteFnRef.current(passage, instruction, inline, onDelta, signal);
+            }) as RichTextRewriteFn,
+          }
+        : null,
+    [aiKey.ready, canUseMagic],
+  );
   const canDelete =
     !!type && !isSingleton && !isNew && canAccess(type.id, "delete");
   const showLoading = useDelayedLoading(!type || value === null);

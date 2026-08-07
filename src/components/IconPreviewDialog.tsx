@@ -1,21 +1,46 @@
 import { useMemo, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
-const { path } = window.__DRY_CONFIG__;
-import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
-import CodeBlock from "./CodeBlock.js";
-import ConfirmDialog from "./ConfirmDialog.js";
 import IconGlyph from "./IconGlyph.js";
-import { CloseIcon, RenameIcon, TrashIcon, XIcon } from "./icons/index.js";
+import { XIcon } from "./icons/index.js";
+import { toast } from "./Toast.js";
 import { useDialogSync } from "../hooks/list-nav.js";
 
 interface Props {
-  entry: IconEntry;
+  /** `"prefix:name"` - the Iconify search result this dialog previews. */
+  id: string;
+  /** Already-fetched (server-sanitized) SVG source - same preview map the
+   * search grid uses, since every clickable tile already has its preview
+   * loaded. */
+  svg: string;
+  adding: boolean;
+  onAdd: () => void;
   onClose: () => void;
-  onDeleted: () => void;
 }
 
-function maskSnippet(entry: IconEntry): string {
-  const url = entry.url;
+/** The app's 5 semantic color tokens - swapped behind the preview icon so
+ * it can be checked against each before importing it. */
+const PREVIEW_COLORS = [
+  { label: "Primary", value: "var(--dry-primary)" },
+  { label: "Info", value: "var(--dry-info)" },
+  { label: "Success", value: "var(--dry-success)" },
+  { label: "Warning", value: "var(--dry-warning)" },
+  { label: "Error", value: "var(--dry-error)" },
+];
+
+function splitId(id: string): [prefix: string, name: string] {
+  const colon = id.indexOf(":");
+  return [id.slice(0, colon), id.slice(colon + 1)];
+}
+
+function svgToDataUri(svg: string): string {
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+/** Same CSS-mask `<i>` technique used everywhere else this app copy-pastes
+ * an icon, pointing at Iconify's own hosted API - this icon hasn't been
+ * imported yet, so there's no local storage URL to reference instead. */
+function maskSnippet(id: string): string {
+  const [prefix, name] = splitId(id);
+  const url = `https://api.iconify.design/${prefix}/${name}.svg`;
   return [
     "<i",
     ` style="display:inline-block;width:1em;height:1em;background-color:currentColor;`,
@@ -25,112 +50,73 @@ function maskSnippet(entry: IconEntry): string {
   ].join("");
 }
 
+function copyToClipboard(text: string, label: string) {
+  navigator.clipboard.writeText(text).then(
+    () => toast.add({ type: "success", title: `${label} copied to clipboard.` }),
+    () => toast.add({ type: "error", title: "Could not copy to clipboard." }),
+  );
+}
+
 /**
- * Clicking an icon in `IconManagement`'s grid opens this: a larger preview,
- * an edit action (-> the manual add/edit form, prefilled), a destructive
- * delete (behind the same `ConfirmDialog` every other destructive action in
- * this codebase uses), and a copy-pasteable `<i>` snippet using Iconify's own
- * CSS-mask technique against this icon's own storage URL. Renders its own
- * preview via `IconGlyph` (the same mask technique, live) rather than
- * `dangerouslySetInnerHTML` - the bytes behind that URL are sanitized on
- * write, but this stays on the safe rendering path regardless.
- *
- * Note: the mask-image technique only reproduces monochrome icons correctly
- * (multi-color/duotone icons collapse to a solid `currentColor` shape) - an
- * inherent limitation of `mask`, not a bug here.
+ * Opened by clicking an icon on `IconSearchAdd`'s grid - a large preview
+ * checkable against the app's semantic colors, plus copy-pasteable
+ * SVG/HTML snippets and a one-click import into the local icon library.
+ * Replaces the old multi-select "Copy"/"Add" toolbar: every action here
+ * applies to just this one icon.
  */
-export default function IconPreviewDialog({
-  entry,
-  onClose,
-  onDeleted,
-}: Props) {
-  const { route } = useLocation();
+export default function IconPreviewDialog({ id, svg, adding, onAdd, onClose }: Props) {
   const ref = useDialogSync(true, onClose);
-  const iconsApi = useMemo(() => createIconsApi(`${path}/api/icons`), []);
-
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const displayName = entry.name.replace(/\.svg$/, "");
-
-  const handleDelete = () => {
-    setBusy(true);
-    iconsApi
-      .remove(entry.name)
-      .then(() => onDeleted())
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to delete icon.");
-        setBusy(false);
-        setConfirmingDelete(false);
-      });
-  };
+  const [color, setColor] = useState(PREVIEW_COLORS[0]!.value);
+  const name = splitId(id)[1];
+  const dataUri = useMemo(() => svgToDataUri(svg), [svg]);
 
   return (
-    <>
-      <dialog
-        ref={ref}
-        class="md icon-preview-dialog"
-        aria-label={`Preview: ${displayName}`}
-      >
-        <header class="row justify-between">
-          <h3>{displayName}</h3>
-          <button onClick={onClose} class="icon ghost">
-            <XIcon />
-          </button>
-        </header>
+    <dialog ref={ref} class="sm icon-preview-dialog" aria-label={`Preview: ${name}`}>
+      <header class="row justify-between">
+        <h3>{name}</h3>
+        <button onClick={onClose} class="icon ghost">
+          <XIcon />
+        </button>
+      </header>
 
-        {error && <span class="error">{error}</span>}
-        <div class="row" style={{alignItems: 'flex-start'}}>
-          <div class="icon-preview-body center">
-            <IconGlyph src={entry.url} size={48} />
-          </div>
-
-          <CodeBlock
-            maxHeight="min(80vh, 20rem)"
-            code={maskSnippet(entry)}
-            wrap
-            copyable
-            formatHtml
-            style={{flex: 1}}
-          />
+      <div class="icon-preview-stage">
+        <div class="icon-preview-body lg center" style={{ color }}>
+          <IconGlyph src={dataUri} size={64} />
         </div>
+        <div class="color-swatch-grid" role="group" aria-label="Preview color">
+          {PREVIEW_COLORS.map((swatch) => (
+            <button
+              type="button"
+              key={swatch.value}
+              class="color-swatch"
+              style={`background: ${swatch.value}`}
+              aria-label={swatch.label}
+              aria-pressed={color === swatch.value}
+              onClick={() => setColor(swatch.value)}
+            />
+          ))}
+        </div>
+      </div>
 
-        <footer>
-          <button
-            type="button"
-            class="destructive"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <TrashIcon /> Delete
-          </button>
-          <button
-            type="button"
-            class="outline"
-            onClick={() =>
-              route(
-                `${path}/icon-management/manual/${encodeURIComponent(entry.name)}`,
-              )
-            }
-          >
-            <RenameIcon /> Edit
-          </button>
-          <button type="button" onClick={onClose}>
-            Close
-          </button>
-        </footer>
-      </dialog>
-
-      <ConfirmDialog
-        open={confirmingDelete}
-        title="Delete icon?"
-        message={`"${displayName}" will be permanently removed.`}
-        confirmLabel="Delete"
-        destructive
-        busy={busy}
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmingDelete(false)}
-      />
-    </>
+      <footer>
+        <button
+          type="button"
+          class="outline"
+          onClick={() => copyToClipboard(svg.trim(), "SVG")}
+        >
+          Copy SVG
+        </button>
+        <button
+          type="button"
+          class="outline"
+          onClick={() => copyToClipboard(maskSnippet(id), "HTML")}
+        >
+          Copy HTML
+        </button>
+        <button type="button" disabled={adding} aria-busy={adding} onClick={onAdd}>
+          Add
+        </button>
+      </footer>
+    </dialog>
   );
 }

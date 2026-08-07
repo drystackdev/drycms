@@ -30,9 +30,7 @@ const AiKeyEditor = lazy(() => import("../pages/AiKeyEditor.js"));
 const Profile = lazy(() => import("../pages/Profile.js"));
 const Roles = lazy(() => import("../pages/Roles.js"));
 const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
-const IconManagement = lazy(() => import("../pages/IconManagement.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
-const IconManualForm = lazy(() => import("../pages/IconManualForm.js"));
 const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
 const PageComponents = lazy(() => import("../pages/PageComponents.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
@@ -147,19 +145,7 @@ function AuthenticatedApp() {
               <Route path={`${path}/media`} component={Media} />
               <Route
                 path={`${path}/icon-management`}
-                component={IconManagement}
-              />
-              <Route
-                path={`${path}/icon-management/add`}
                 component={IconSearchAdd}
-              />
-              <Route
-                path={`${path}/icon-management/manual`}
-                component={IconManualForm}
-              />
-              <Route
-                path={`${path}/icon-management/manual/:name`}
-                component={IconManualForm}
               />
               <Route
                 path={`${path}/richtext-components`}

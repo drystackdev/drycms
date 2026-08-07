@@ -3934,53 +3934,22 @@
       width: fit-content;
       margin-bottom: 1rem;
 
-      /* Compact variant for `IconCopyDialog`'s per-row preview, where the
-       * full-size padding/margin (sized for a single centered icon) would
-       * blow out list-row height. */
-      &.sm {
-        padding: 0.625rem;
+      /* `IconPreviewDialog`'s single-icon preview - a fixed 120x120 stage
+       * regardless of the icon's own viewBox, so every icon previews at the
+       * same size. */
+      &.lg {
+        width: 7.5rem;
+        height: 7.5rem;
         margin-bottom: 0;
       }
     }
 
-    /* IconCopyDialog: header/switch/footer stay put while the icon list (the
-     * only part with unbounded content) scrolls - same fixed-header/
-     * scrolling-body shape as `.field-dialog[open]` above, otherwise the
-     * dialog just keeps growing past the viewport and the window scrolls
-     * instead. */
-    .icon-copy-dialog[open] {
+    .icon-preview-stage {
       display: flex;
       flex-direction: column;
-      max-height: min(44rem, calc(100vh - 4rem));
-
-      & header,
-      & footer {
-        flex: none;
-      }
-    }
-
-    /* One row per selected icon, its preview beside a copy-pasteable `<i>`
-     * snippet. */
-    .icon-copy-list {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 0.75rem;
-    }
-
-    .icon-copy-row {
       align-items: center;
-
-      & .code-block {
-        flex: 1;
-        min-width: 0;
-      }
-    }
-
-    .icon-copy-code {
-      flex: 1;
-      min-width: 0;
-      display: grid;
-      gap: 0.25rem;
+      gap: 1rem;
+      margin-bottom: 1rem;
     }
 
     .icon-cell {
@@ -3996,14 +3965,6 @@
 
       &:hover {
         background-color: var(--dry-accent);
-      }
-
-      /* Toggled-selected state for the Icon Management "Add icon" search
-       * grid - distinct from `:hover` so a selection stays visible once the
-       * pointer moves off. */
-      &.selected {
-        background-color: var(--dry-accent) !important;
-        outline: 1px solid var(--dry-border);
       }
 
       & small {

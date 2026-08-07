@@ -141,8 +141,12 @@ All 5 phases implemented and verified (2026-08-07):
      writes through it); gating the route would break unrelated content
      editing. Client-side guard only (nav + page). This is a real gap - a
      role denied System:Media can still hit `/api/storage` directly and
-     upload/delete - accepted as out of scope for this pass, documented in
-     `permissions.ts`'s `MEDIA_RESOURCE_ID` doc comment.
+     upload/delete - documented in `permissions.ts`'s `MEDIA_RESOURCE_ID`
+     doc comment. **Resolved 2026-08-07 (later same day): user decided not
+     needed** — closing the gap properly would mean splitting "browse the
+     Media library" from "use storage via a File/Image field," a bigger
+     redesign than a quick patch; not worth it unless a role genuinely needs
+     to be hard-blocked from all file access, which isn't the current need.
 4. **Nav + page guards** — `DryLayout.tsx` NAV updated; client guards added
    to Media, IconManagement, IconSearchAdd, IconManualForm,
    RichtextComponents, BuilderContentType, KeyValue (KeyValue's existing
@@ -161,11 +165,13 @@ tests passed, nothing broken.
 **Not done, by explicit user decision**: JWT-embedded role/permissions
 (dropped after tradeoff discussion — see "Explicitly dropped" above).
 
-**Open item nobody has confirmed yet**: whether granting a new `system-*`
+**Resolved 2026-08-07 (later same day)**: whether granting a new `system-*`
 permission should also require super-admin, per `protectSystemMutation`'s
-existing elevation guard (content-entries.ts:127-136). Shipped as-is
-(unchanged/not extended) per the plan's stated default assumption — revisit
-if that assumption is wrong.
+existing elevation guard (content-entries.ts:127-136) — user decided **not
+needed**. These are lower-stakes operational toggles than role/user/aiKey,
+and whoever can already edit a Role is a trusted admin. Elevation guard's
+protected set stays as-is (role/user/aiKey/system-permission only) —
+closed, not just deferred.
 
 ## Speed
 
@@ -203,16 +209,17 @@ resources - none of those have a Magic feature).
   turns and RichText "Rewrite selection" (same endpoint).
 - `permissions.test.ts` updated for the new expected action lists.
 
-**Known gap, not closed**: the RichText "Rewrite selection" inline button
-(`AiRewriteButton`, via `rewriteApi.ready` in `ContentEntryEditor.tsx`) is
-still gated only on `aiKey.ready`, not `canUseMagic` - so it can render
-enabled for a role without the `magic` grant. Clicking it still hits the
-same server endpoint and gets rejected there (`checkAccess(..., "magic")`),
-so this is a UX inconsistency (button visible, then fails on click), not a
-permission bypass. Left alone to avoid a hook-reordering refactor
-(`rewriteApi`'s `useMemo` sits before `type`/`canUseMagic` are computed in
-the component) beyond what was asked. Revisit if the button-visible/
-API-rejects mismatch is confusing in practice.
+**Closed 2026-08-07 (later same day)**: the RichText "Rewrite selection"
+inline button (`AiRewriteButton`, via `rewriteApi.ready` in
+`ContentEntryEditor.tsx`) was gated only on `aiKey.ready`, not
+`canUseMagic`. Fixed - `rewriteApi`'s `useMemo` (and the doc comment
+explaining it) moved down to right after `canUseMagic` is computed (it
+needs `type`, declared later in the component than the useMemo's old
+position, hence the move rather than a same-spot edit); `ready` is now
+`aiKey.ready && canUseMagic`, deps `[aiKey.ready, canUseMagic]`. Both Magic
+entry points (the chat bubble and Rewrite-selection) now render
+consistently with the same `magic` grant. `bun run typecheck` clean,
+88 files / 933 tests still pass.
 
 ## Addendum: Key Value removed entirely (2026-08-07, same day)
 

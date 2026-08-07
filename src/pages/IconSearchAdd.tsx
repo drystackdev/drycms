@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import CheckField from "../components/fields/CheckField.js";
 import Combobox, { type ComboboxOption } from "../components/Combobox.js";
-import { ArrowLeftIcon, ArrowRightIcon, CopyIcon } from "../components/icons/index.js";
-import IconCopyDialog from "../components/IconCopyDialog.js";
+import { ArrowLeftIcon, ArrowRightIcon } from "../components/icons/index.js";
 import IconGlyph from "../components/IconGlyph.js";
-import TextField from "../components/fields/TextField.js";
+import IconPreviewDialog from "../components/IconPreviewDialog.js";
 import { toast } from "../components/Toast.js";
 import {
   createIconifyApi,
@@ -20,8 +18,6 @@ import { useDocumentTitle } from "./page-common.js";
 const DEFAULT_PREFIX = "solar";
 const SEARCH_LIMIT = 64;
 const SEARCH_DEBOUNCE_MS = 300;
-/** Matches `IconManagement`'s own grid page size, for a consistent pager
- * feel between "browse a saved icon" and "browse a category to import from". */
 const BROWSE_PAGE_SIZE = 48;
 
 /** A percent-encoded (not base64) SVG data URI - simpler and more robust
@@ -40,7 +36,6 @@ function splitId(id: string): [prefix: string, name: string] {
 
 export default function IconSearchAdd() {
   useDocumentTitle("Add icon");
-  const { route } = useLocation();
   const iconifyApi = useMemo(() => createIconifyApi(`${path}/api/iconify`), []);
   const iconsApi = useMemo(() => createIconsApi(`${path}/api/icons`), []);
 
@@ -50,11 +45,13 @@ export default function IconSearchAdd() {
   const [query, setQuery] = useState("");
   const [resultIds, setResultIds] = useState<string[]>([]);
   const [previews, setPreviews] = useState<Record<string, string>>({});
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [searching, setSearching] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copying, setCopying] = useState(false);
+
+  // The icon currently open in `IconPreviewDialog`, and whether its "Add" is
+  // in flight.
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // Browsing: the full (flattened/de-duped) name list for `category`, shown
   // page by page when there's no query yet instead of an empty grid -
@@ -181,44 +178,27 @@ export default function IconSearchAdd() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `previews` intentionally excluded, see comment above.
   }, [displayIds, iconifyApi]);
 
-  const toggleSelect = (id: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   const handleAdd = () => {
-    setImporting(true);
-    setError(null);
-    const namesByPrefix = new Map<string, string[]>();
-    for (const id of selected) {
-      const [prefix, name] = splitId(id);
-      const names = namesByPrefix.get(prefix);
-      if (names) names.push(name);
-      else namesByPrefix.set(prefix, [name]);
-    }
-
-    Promise.all(
-      [...namesByPrefix.entries()].map(([prefix, names]) =>
-        iconsApi.importFromIconify({ prefix, names }),
-      ),
-    )
-      .then((results) => {
-        const created = results.reduce((sum, r) => sum + r.created.length, 0);
-        const skipped = results.reduce((sum, r) => sum + r.skipped.length, 0);
+    if (!previewId) return;
+    const [prefix, name] = splitId(previewId);
+    setAdding(true);
+    iconsApi
+      .importFromIconify({ prefix, names: [name] })
+      .then((result) => {
+        const added = result.created.length > 0;
         toast.add({
-          type: skipped > 0 && created === 0 ? "warning" : "success",
-          title: `Added ${created} icon${created === 1 ? "" : "s"}${skipped > 0 ? `, skipped ${skipped}` : ""}.`,
+          type: added ? "success" : "warning",
+          title: added ? `Added "${name}".` : `"${name}" already exists.`,
         });
-        route(`${path}/icon-management`);
+        setPreviewId(null);
       })
       .catch((err) => {
-        setImporting(false);
-        setError(err instanceof Error ? err.message : "Failed to add icons.");
-      });
+        toast.add({
+          type: "error",
+          title: err instanceof Error ? err.message : "Failed to add icon.",
+        });
+      })
+      .finally(() => setAdding(false));
   };
 
   if (!canAccess(ICON_MANAGEMENT_RESOURCE_ID, "setting")) {
@@ -231,6 +211,17 @@ export default function IconSearchAdd() {
         <div style={{ flex: 1 }}>
           <h1>Add icon</h1>
           <p>Search Iconify and add icons to your library.</p>
+        </div>
+        <div>
+          {error && <span class="error">{error}</span>}
+          {searching && <span class="hint">Searching...</span>}
+          {!searching && query.trim() && resultIds.length === 0 && (
+            <span class="hint">No results.</span>
+          )}
+          {isBrowsing && browseLoading && <span class="hint">Loading...</span>}
+          {isBrowsing && !browseLoading && browseNames.length === 0 && (
+            <span class="hint">No icons in this set.</span>
+          )}
         </div>
       </div>
 
@@ -256,59 +247,15 @@ export default function IconSearchAdd() {
         />
       </div>
 
-      <div class="row">
-        <div>
-          {error && <span class="error">{error}</span>}
-          {searching && <span class="hint">Searching...</span>}
-          {!searching && query.trim() && resultIds.length === 0 && (
-            <span class="hint">No results.</span>
-          )}
-          {isBrowsing && browseLoading && <span class="hint">Loading...</span>}
-          {isBrowsing && !browseLoading && browseNames.length === 0 && (
-            <span class="hint">No icons in this set.</span>
-          )}
-        </div>
-
-        <span class="spacer" />
-
-        <div class="row">
-          <button
-            type="button"
-            class="outline"
-            onClick={() => route(`${path}/icon-management`)}
-          >
-            Cancel
-          </button>
-          {selected.size > 0 && (
-            <button
-              type="button"
-              class="outline"
-              onClick={() => setCopying(true)}
-            >
-              <CopyIcon /> Copy
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={selected.size === 0 || importing}
-            onClick={handleAdd}
-          >
-            Add <small class="badge secondary">{selected.size}</small>
-          </button>
-        </div>
-      </div>
-
       <div class="under" style={{minHeight: 545}}>
         <div class="icon-grid">
           {displayIds.map((id) => (
             <button
               type="button"
               key={id}
-              class={
-                "ghost " +
-                (selected.has(id) ? "icon-cell selected" : "icon-cell")
-              }
-              onClick={() => toggleSelect(id)}
+              class="ghost icon-cell"
+              disabled={!previews[id]}
+              onClick={() => setPreviewId(id)}
               style={{
                 height: "unset",
               }}
@@ -352,11 +299,13 @@ export default function IconSearchAdd() {
         </div>
       )}
 
-      {copying && (
-        <IconCopyDialog
-          ids={[...selected]}
-          previews={previews}
-          onClose={() => setCopying(false)}
+      {previewId && previews[previewId] && (
+        <IconPreviewDialog
+          id={previewId}
+          svg={previews[previewId]}
+          adding={adding}
+          onAdd={handleAdd}
+          onClose={() => setPreviewId(null)}
         />
       )}
     </div>
