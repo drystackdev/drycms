@@ -53,8 +53,11 @@ Files:
 - `src/content-types/dry-populate.ts` - `markRecord(..., unboxedKeys)`.
 - `src/content-types/dry-reader.ts` - `DrySelect`/`DrySelected` types, the
   `list` overload, `selectTransforms`/`applyTransforms`.
-- `src/apps/pages/page.tsx`, `blogs/page.tsx`, `blogs/[slug]/page.tsx` - the
-  four site `list()` calls now select.
+- `src/apps/pages/layout.tsx`, `page.tsx`, `blogs/page.tsx`,
+  `blogs/[slug]/page.tsx` - ALL five site `list()` calls now select. The
+  layout's `menu.list` matters most (it renders on every page); it keeps
+  `refs: true` rather than a `map` transform so the nav labels stay
+  VEI-editable.
 - `docs/APP-ROUTER.md` - the page-author-facing docs.
 
 ## Status
@@ -71,16 +74,29 @@ Done, verified.
   a transform's return type replaces the stored one, an unselected field is a
   compile error, no-`select` still yields the full generated interface.
 - Live dev server, before/after on the same DB: the rendered markup is
-  BYTE-IDENTICAL, only the replay log shrank.
-  - `/blogs`: blog rows 2176 -> 1647 bytes (dropped `content: null` + the
-    all-null `seo` block), category rows 334 -> 170 (dropped `slug` and the
-    `blog` mirror array + its per-row query).
-  - `/`: blog rows 1131 -> 579, category 334 -> 170.
-  - `/blogs/<slug>`: related-posts list 184 bytes for 4 fields.
+  BYTE-IDENTICAL, only the replay log shrank. Per `dry()` call, in bytes:
+
+  | call | `/` | `/blogs` |
+  | --- | --- | --- |
+  | `blog.list` | 1131 -> 579 | 2176 -> 1647 |
+  | `category.list` | 334 -> 170 | 334 -> 170 |
+  | `menu.list` (root layout, every page) | 431 -> 286 | 431 -> 286 |
+  | singletons (no `select` possible) | unchanged | unchanged |
+  | **total replay** | **4518 -> 3657** | **3901 -> 3063** |
+
+  What went away: `content: null` and the all-null `seo` block on blog rows;
+  `slug` + the `blog` relationmirror array (and its per-row query) on category
+  rows; `name`/`createdAt`/`updatedAt` on the menu row. `/blogs/<slug>`'s
+  related-posts list is now 184 bytes for 4 fields.
 - Hydration re-checked in a real headless browser (the MCP browser was busy):
   `/blogs` search filters 6 cards -> 1, category chip filters -> 1, the mobile
   menu on `/` still opens, zero console errors/warnings (no hydration
   mismatch).
+- VEI edit mode re-checked on the live dev server (signed in as the dev super
+  admin, through `/dry/vei/enter`): `/blogs` still emits all 54 `data-dry`
+  markers, including `c:menu:1:refs.0.label` and `c:blog:37:excerpt` - a
+  `select: { x: true }` field keeps its inline editability. Only a
+  function-transformed field loses it, by design.
 
 ## Speed
 

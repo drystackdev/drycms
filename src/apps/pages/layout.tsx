@@ -56,7 +56,15 @@ function MobileNavToggle({ navLinks }: { navLinks: NavLink[] }) {
 
 export default async function RootLayout({ children }: { children?: unknown }) {
   const site = await dry().singleton("siteSettings").get();
-  const { rows: menus } = await dry().collection("menu").list({ where: [{ field: "name", op: "eq", value: "Main Navigation" }] });
+  // This layout renders on EVERY page, so its replay-log cost is paid site-
+  // wide - `select` keeps `name`/`createdAt`/`updatedAt` out of it. `refs`
+  // stays `true` rather than a `(refs) => refs.map(...)` transform on
+  // purpose: a transformed value is no longer VEI-editable, and the nav
+  // labels below should stay editable in place. `where` still filters on
+  // `name` even though it isn't selected.
+  const { rows: menus } = await dry()
+    .collection("menu")
+    .list({ select: { refs: true }, where: [{ field: "name", op: "eq", value: "Main Navigation" }] });
   const navLinks: NavLink[] = menus[0]?.refs.map((ref) => ({ href: ref.href, label: ref.label })) ?? [];
   if (!site) return null;
 
