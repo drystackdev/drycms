@@ -101,6 +101,54 @@ button.ghost:hover {
   background: var(--dry-accent);
 }
 
+button.icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  flex: none;
+}
+
+button.round {
+  border-radius: 32px;
+}
+
+button.icon.sm {
+  width: 28px;
+  height: 28px;
+}
+
+/* The dialog/panel toggle (Dock.tsx's ModeToggle) - same
+ * inline-flex-pill-with-a-highlighted-pressed-button shape as
+ * FileManager.tsx's ".file-view-toggle" (components.css), re-declared here
+ * rather than shared since this shadow root never loads components.css. */
+.mode-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--dry-radius-md);
+  background: var(--dry-secondary);
+}
+
+.mode-toggle button {
+  background: transparent;
+  color: var(--dry-muted-foreground);
+  &.icon {
+    border-radius: var(--dry-radius-sm);
+  }
+}
+
+.mode-toggle button:hover {
+  background: var(--dry-accent);
+}
+
+.mode-toggle button[aria-pressed="true"] {
+  background: var(--dry-popover);
+  color: var(--dry-foreground);
+  box-shadow: var(--dry-shadow-xs);
+}
+
 /* Preview-count badge on the "Preview all" button - .badge/.sm/.secondary
  * mirror components.css's own rules for the identical admin classes
  * (overlay.ts sets exactly these on previewCount), scaled down to what this
@@ -136,7 +184,7 @@ button.ghost:hover {
   align-items: center;
   gap: 8px;
   padding: 8px;
-  border-radius: 12px;
+  border-radius: 32px;
   background: var(--dry-popover);
   border: 1px solid var(--dry-border);
   box-shadow: var(--dry-shadow-lg);
@@ -227,6 +275,53 @@ iframe.agent {
   background: var(--dry-popover);
 }
 
+/* Panel mode (overlay.ts's mode variable, toggled by Dock.tsx's ModeToggle):
+ * .sheet keeps its own full-viewport backdrop/click-outside-to-close - only
+ * .panel's own position/size/entrance changes, from a centered card to a
+ * right-docked, full-height one. */
+.sheet.docked {
+  justify-content: flex-end;
+}
+
+.sheet.docked .panel {
+  margin: 0;
+  width: 480px;
+  height: 100dvh;
+  max-width: 90vw;
+  border-radius: 16px 0 0 16px;
+  animation: vei-panel-dock-in 160ms ease;
+}
+
+@keyframes vei-panel-dock-in {
+  from {
+    translate: 100% 0;
+  }
+}
+
+/* Drag-to-resize the docked panel's width - overlay.ts's own pointerdown/
+ * pointermove wiring, following the same vanilla drag-resize shape
+ * RichTextField's table-column-resize.ts uses. Hidden entirely outside
+ * panel mode (dialog mode has nothing to resize). */
+.panel-resize-handle {
+  display: none;
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 3px;
+}
+
+.panel-resize-handle:hover {
+  background: var(--dry-primary);
+}
+
+.sheet.docked .panel-resize-handle {
+  display: block;
+}
+
 /* Covers the iframe (still loading its own JS bundle underneath, so
  * otherwise a blank white rectangle) until the bridge announces
  * vei:ready - see overlay.ts's openDialog. */
@@ -242,6 +337,40 @@ iframe.agent {
 
 .sheet .panel.loading .panel-loading {
   display: flex;
+}
+
+/* Below the app-wide mobile breakpoint (48rem/768px - components.css's
+ * Select/DatePicker/Sidebar all use this same literal; there's no
+ * breakpoint token in tokens.css to var() into), the docked panel becomes a
+ * fixed-height bottom drawer instead of a resizable right sidebar - same
+ * treatment those components already give their own popups. No resize
+ * handle here: the user only asked for resize on the desktop right panel. */
+@media (width < 48rem) {
+  /* Taken out of .sheet's flex layout entirely (fixed, not relative) so
+   * .sheet.docked's own flex-end/right-docking has no say here - same
+   * "position: fixed, override the desktop layout" move
+   * components.css's .select-popup/.datepicker-popup mobile query makes. */
+  .sheet.docked .panel {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    max-width: 100%;
+    height: 50vh;
+    border-radius: 16px 16px 0 0;
+    animation: vei-panel-dock-in-mobile 160ms ease;
+  }
+
+  .sheet.docked .panel-resize-handle {
+    display: none;
+  }
+}
+
+@keyframes vei-panel-dock-in-mobile {
+  from {
+    translate: 0 100%;
+  }
 }
 
 /* The hover highlight around whatever marked field is under the pointer -

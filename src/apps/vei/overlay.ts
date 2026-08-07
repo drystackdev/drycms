@@ -1,3 +1,4 @@
+import { h, render } from "preact";
 import { decodeRefs, type DryRef } from "../../content-types/dry-vei-ref.js";
 import {
   getAllEntryDraftRecords,
@@ -6,6 +7,7 @@ import {
 } from "../../content-types/entry-draft-db.js";
 import { encodeEntryId } from "../../lib/id-hash.js";
 import { HYDRATED_EVENT } from "../hydrated-event.js";
+import { EditButtonDock, EditingDock, type EditingDockHandle, type EditorMode } from "./Dock.js";
 import { MARKER_STYLES, OVERLAY_STYLES } from "./overlay-styles.js";
 
 /**
@@ -61,6 +63,19 @@ function storeScrollPosition(): void {
     SCROLL_STORAGE_KEY,
     JSON.stringify({ x: window.scrollX, y: window.scrollY }),
   );
+}
+
+/** The field editor's dialog-vs-panel choice (`Dock.tsx`'s `ModeToggle`) -
+ * `localStorage`, not `sessionStorage`, so it's a real standing preference
+ * rather than something a scroll-position-style enter/exit round trip would
+ * reset. A dedicated key, not the admin's shared `drycms:store`
+ * (`src/hooks/useStore.tsx`) - that's an admin-app concern this public-site
+ * file has no business pulling in, same reasoning `draftKeyFor`'s doc
+ * comment gives for skipping `entry-draft-store.ts`. */
+const MODE_STORAGE_KEY = "dry-vei-mode";
+
+function readStoredMode(): EditorMode {
+  return localStorage.getItem(MODE_STORAGE_KEY) === "panel" ? "panel" : "dialog";
 }
 
 /** Restores whatever `storeScrollPosition` saved before the enter/exit
@@ -321,136 +336,57 @@ function main(): void {
    * through a genuine `Set-Cookie` round trip, and the markers this whole
    * overlay depends on only exist in a fresh server render - see
    * `status/vei.md`'s writeup of why this can't be done client-side). That
-   * round trip isn't instant, so swapping the clicked button to a spinner
-   * BEFORE kicking off the navigation gives it something to show for that
-   * gap instead of just sitting there until the browser starts unloading -
-   * same idea as `setSaving()` below, just for a real page transition
-   * instead of `saveAll()`'s own async work.
+   * round trip isn't instant, so the dock switches whichever button was
+   * clicked to a spinner (`Dock.tsx`'s own local state) BEFORE this runs -
+   * deferred by one task so that Preact re-render actually gets a paint in
+   * before the browser starts tearing the page down for the new navigation,
+   * the same reasoning `openInNewTab` above uses a `setTimeout` for.
    */
-  function navigateWithSpinner(
-    button: HTMLButtonElement,
-    label: string,
-    url: string,
-  ): void {
+  function navigateTo(url: string): void {
     storeScrollPosition();
-    button.disabled = true;
-    button.replaceChildren(
-      element("span", { className: "vei-spinner" }),
-      document.createTextNode(label),
-    );
-    window.location.href = url;
+    setTimeout(() => {
+      window.location.href = url;
+    }, 0);
   }
 
   if (!config.edit) {
-    const button = element("button", {
-      type: "button",
-      textContent: "Edit content",
-    });
-    button.addEventListener("click", () =>
-      navigateWithSpinner(
-        button,
-        "Opening editor",
-        `${config.path}/vei/enter?to=${encodeURIComponent(currentLocation())}`,
-      ),
+    render(
+      h(EditButtonDock, {
+        onOpenEditor: () =>
+          navigateTo(`${config.path}/vei/enter?to=${encodeURIComponent(currentLocation())}`),
+      }),
+      scope,
     );
-    scope.append(element("div", { className: "dock" }, [button]));
     return;
   }
 
   document.head.append(element("style", { textContent: MARKER_STYLES }));
   document.documentElement.classList.add(EDITING_CLASS);
 
-  const exitButton = element("button", {
-    type: "button",
-    className: "ghost",
-    textContent: "Exit",
-  });
-  exitButton.addEventListener("click", () =>
-    navigateWithSpinner(
-      exitButton,
-      "Exiting",
-      `${config.path}/vei/exit?to=${encodeURIComponent(currentLocation())}`,
-    ),
+  // The dialog/panel choice - read once at boot, updated only by the dock's
+  // own toggle. Kept as a plain outer variable (not Preact state) because
+  // `openFrame`/the resize handle below are vanilla DOM and need to read the
+  // CURRENT value at click/drag time, not be re-rendered when it changes.
+  let mode: EditorMode = readStoredMode();
+
+  let dock!: EditingDockHandle;
+  render(
+    h(EditingDock, {
+      initialMode: mode,
+      onModeChange: (next) => {
+        mode = next;
+        localStorage.setItem(MODE_STORAGE_KEY, next);
+      },
+      onExit: () =>
+        navigateTo(`${config.path}/vei/exit?to=${encodeURIComponent(currentLocation())}`),
+      onPreviewAll: () => openFrame(`${config.path}/vei/changes?_vei=1`),
+      onSave: () => void saveAll(),
+      onReady: (handle) => {
+        dock = handle;
+      },
+    }),
+    scope,
   );
-  const previewCount = element("span", { className: "badge sm secondary" });
-  const previewButton = element(
-    "button",
-    { type: "button", className: "ghost" },
-    [document.createTextNode("Preview all"), previewCount],
-  );
-  const saveButton = element("button", { type: "button" }, [
-    document.createTextNode("Save"),
-  ]);
-  const status = element("span", {
-    className: "label",
-    textContent: "Edit mode",
-  });
-  const dock = element("div", { className: "dock" }, [
-    status,
-    previewButton,
-    saveButton,
-    exitButton,
-  ]);
-  scope.append(dock);
-
-  /**
-   * Runs `mutate` (a status-text or Save-button content change) and animates
-   * the dock's width between its size before and after, instead of the box
-   * snapping to its new size instantly. CSS alone can't do this - a
-   * `transition` on `width` never animates to/from "auto" (the dock's
-   * resting state, sized by its content), so this measures a real pixel
-   * value on both sides and lets the CSS transition (`.dock`'s own,
-   * `overlay-styles.ts`) interpolate between them.
-   *
-   * The `requestAnimationFrame` mirrors `Toast.tsx`'s own `mounted` dance
-   * for the identical reason its comment gives: the "before" width has to
-   * actually commit to a rendered frame before setting the "after" width
-   * counts as a change to transition FROM, rather than both writes
-   * collapsing into one with nothing to animate.
-   *
-   * The "after" width is measured with the explicit width released back to
-   * "auto" rather than read straight off `scrollWidth` - `scrollWidth` on an
-   * element that's still pinned to `before`px can only ever report a value
-   * >= that (it measures overflow past the current box, not the content's
-   * own natural size), so it correctly grows a mutation that adds content
-   * but can't shrink one that removes it (e.g. "Preview all" going
-   * `display: none` entirely, not just its badge). "auto" always yields the
-   * true content-fit size in either direction.
-   */
-  function animateDockWidth(mutate: () => void): void {
-    const before = dock.getBoundingClientRect().width;
-    dock.style.width = `${before}px`;
-    mutate();
-    dock.style.width = "auto";
-    const after = dock.getBoundingClientRect().width;
-    dock.style.width = `${before}px`;
-    requestAnimationFrame(() => {
-      dock.style.width = `${after}px`;
-    });
-  }
-
-  function setStatus(text: string): void {
-    animateDockWidth(() => {
-      status.textContent = text;
-    });
-  }
-
-  /** Toggles the Save button between its idle label and a spinner + "Saving"
-   * while `saveAll()` runs - `status` already carries the granular
-   * per-entry progress, this is just the button's own busy affordance. */
-  function setSaving(saving: boolean): void {
-    animateDockWidth(() => {
-      saveButton.disabled = saving;
-      saveButton.replaceChildren(
-        ...(saving
-          ? [
-              element("span", { className: "vei-spinner" }),
-              document.createTextNode("Saving"),
-            ]
-          : [document.createTextNode("Save")]),
-      );
-    });
-  }
 
   /** The dock's "Preview all" badge - every distinct entry/singleton with a
    * pending draft ANYWHERE on the site, not just this page (unlike
@@ -461,12 +397,7 @@ function main(): void {
    * on every keystroke just for a badge count. */
   async function refreshPreviewCount(): Promise<void> {
     const records = await getAllEntryDraftRecords();
-    animateDockWidth(() => {
-      previewCount.textContent = String(records.length);
-      // Nothing to preview yet - the whole button goes away rather than
-      // sitting there disabled or pointing at an empty page.
-      previewButton.style.display = records.length > 0 ? "" : "none";
-    });
+    dock.setPreviewCount(records.length);
   }
   void refreshPreviewCount();
 
@@ -726,18 +657,18 @@ function main(): void {
   async function saveAll(): Promise<void> {
     const targets = await pendingTargets();
     if (targets.length === 0) {
-      setStatus("No changes to save");
+      dock.setStatus("No changes to save");
       return;
     }
-    setSaving(true);
+    dock.setSaving(true);
     let failed = 0;
     for (const [index, target] of targets.entries()) {
-      setStatus(`Saving ${target.type} (${index + 1}/${targets.length})`);
+      dock.setStatus(`Saving ${target.type} (${index + 1}/${targets.length})`);
       if (!(await saveTarget(target))) failed += 1;
     }
     if (failed > 0) {
-      setStatus(`${failed}/${targets.length} entries failed to save`);
-      setSaving(false);
+      dock.setStatus(`${failed}/${targets.length} entries failed to save`);
+      dock.setSaving(false);
       // The entries that DID succeed had their drafts discarded already
       // (inside `ContentEntryEditor`'s own `handleSave`) - only the reload
       // path below skips this because it's about to throw the whole badge
@@ -751,8 +682,6 @@ function main(): void {
     window.location.reload();
   }
 
-  saveButton.addEventListener("click", () => void saveAll());
-
   // No close control of its own beyond the backdrop/Escape below - a title
   // or a Cancel button here would duplicate what the admin page framed
   // inside `frame` already shows (its own `<h1>`, and a Cancel button next
@@ -763,10 +692,47 @@ function main(): void {
   const panelLoading = element("div", { className: "panel-loading" }, [
     element("span", { className: "vei-spinner lg" }),
   ]);
-  const panel = element("div", { className: "panel" }, [frame, panelLoading]);
+  const panelResizeHandle = element("div", { className: "panel-resize-handle" });
+  const panel = element("div", { className: "panel" }, [frame, panelLoading, panelResizeHandle]);
   sheet.append(panel);
   sheet.addEventListener("click", (event) => {
     if (event.target === sheet) closeDialog();
+  });
+
+  // Panel mode's width bounds - matches `useResizablePanel.ts`'s own
+  // min/max-clamp shape (`src/lib/useResizablePanel.ts`), the Preact
+  // equivalent of this drag used elsewhere (`PageComponents.tsx`'s sidebar).
+  const PANEL_MIN_WIDTH = 320;
+  const PANEL_MAX_WIDTH = 900;
+
+  function clampPanelWidth(width: number): number {
+    return Math.min(Math.max(width, PANEL_MIN_WIDTH), Math.min(PANEL_MAX_WIDTH, window.innerWidth * 0.9));
+  }
+
+  /**
+   * Drag-to-resize for panel mode's left edge - same window-level
+   * `pointermove`/`pointerup` shape `table-column-resize.ts`'s `startDrag`
+   * uses (no `setPointerCapture`), the one other place in this codebase
+   * doing a vanilla (non-Preact) drag-resize. The handle is hidden by CSS
+   * outside panel mode, so a stray `pointerdown` there is already a no-op;
+   * `mode` is still checked explicitly for clarity.
+   */
+  panelResizeHandle.addEventListener("pointerdown", (event) => {
+    if (mode !== "panel") return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panel.getBoundingClientRect().width;
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      // The handle sits on the LEFT edge of a right-docked panel, so
+      // dragging left (negative delta) is what WIDENS it.
+      panel.style.width = `${clampPanelWidth(startWidth - (moveEvent.clientX - startX))}px`;
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener(
+      "pointerup",
+      () => window.removeEventListener("pointermove", onPointerMove),
+      { once: true },
+    );
   });
 
   let dialogLoadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -777,6 +743,10 @@ function main(): void {
   function openFrame(url: string): void {
     hideHighlight();
     lockBodyScroll();
+    sheet.classList.toggle("docked", mode === "panel");
+    // A resize from an earlier panel-mode visit must not leak into dialog
+    // mode's own CSS-driven centered size.
+    if (mode === "dialog") panel.style.width = "";
     panel.classList.add("loading");
     frame.src = url;
     scope.append(sheet);
@@ -794,10 +764,6 @@ function main(): void {
   function openDialog(ref: DryRef): void {
     openFrame(editorUrl(config as VeiConfig, ref, ref.path));
   }
-
-  previewButton.addEventListener("click", () =>
-    openFrame(`${config.path}/vei/changes?_vei=1`),
-  );
 
   function closeDialog(): void {
     clearTimeout(dialogLoadTimer);
