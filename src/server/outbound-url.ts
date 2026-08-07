@@ -45,6 +45,22 @@ export async function validateOutboundUrlForRequest(raw: string, label = "URL"):
   return value;
 }
 
+/** Fetch without ever following a redirect, treating a redirect response the
+ * same as a hard failure. Workers (workerd) fetch only implements
+ * `redirect: "follow"` or `"manual"` - `"error"` throws "Invalid redirect
+ * value" at request time - so a redirect has to be rejected by inspecting
+ * the response instead. This is what actually enforces
+ * `validateOutboundUrlForRequest`'s checks end-to-end: that function only
+ * sees the URL the caller entered, not a redirect target the upstream could
+ * point at afterward. */
+export async function fetchNoRedirect(url: string, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(url, { ...init, redirect: "manual" });
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    throw new Error("Server refused to follow a redirect from the upstream URL.");
+  }
+  return response;
+}
+
 function isPrivateIpv4(hostname: string): boolean {
   if (/^\d+$/.test(hostname)) return true;
   const parts = hostname.split(".");

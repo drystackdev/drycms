@@ -5,7 +5,7 @@ import { decodeEntryId } from "../../lib/id-hash.js";
 import { jsonResponse } from "../route-helpers.js";
 import { requireSuperAdmin } from "../admin-access.js";
 import { getContentAdapters } from "../content-adapters.js";
-import { validateOutboundUrlForRequest } from "../outbound-url.js";
+import { validateOutboundUrlForRequest, fetchNoRedirect } from "../outbound-url.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import {
@@ -347,7 +347,7 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
   try {
     if (credential.provider === "openai") {
-      const response = await fetch(`${credential.baseUrl}/v1/responses`, {
+      const response = await fetchNoRedirect(`${credential.baseUrl}/v1/responses`, {
         method: "POST",
         headers: { Authorization: `Bearer ${credential.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -355,7 +355,6 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
           input: messages.map((message) => ({ role: message.role, content: message.text })),
         }),
         signal: controller.signal,
-        redirect: "error",
       });
       const body = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; error?: { message?: string } };
       if (!response.ok) throw new Error(body.error?.message || `OpenAI returned HTTP ${response.status}.`);
@@ -364,7 +363,7 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
       return text;
     }
 
-    const response = await fetch(`${credential.baseUrl}/v1/messages`, {
+    const response = await fetchNoRedirect(`${credential.baseUrl}/v1/messages`, {
       method: "POST",
       headers: { "x-api-key": credential.apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -373,7 +372,6 @@ async function requestServerAiWithCredential(messages: ChatMessage[], credential
         messages: messages.map((message) => ({ role: message.role, content: message.text })),
       }),
       signal: controller.signal,
-      redirect: "error",
     });
     const body = await response.json() as { content?: Array<{ type?: string; text?: string }>; error?: { message?: string } };
     if (!response.ok) throw new Error(body.error?.message || `Anthropic returned HTTP ${response.status}.`);
@@ -553,7 +551,7 @@ async function streamServerAiWithCredential(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
-  const response = await fetch(
+  const response = await fetchNoRedirect(
     credential.provider === "openai"
       ? `${credential.baseUrl}/v1/responses`
       : `${credential.baseUrl}/v1/messages`,
@@ -577,7 +575,6 @@ async function streamServerAiWithCredential(
             messages: messages.map((message) => ({ role: message.role, content: anthropicContentFor(message) })),
           }),
       signal: controller.signal,
-      redirect: "error",
     },
   );
   if (!response.ok) {
@@ -664,12 +661,11 @@ async function streamGoogleAiWithCredential(
   }));
   try {
     const request = (endpoint: string) => {
-      return fetch(`${modelUrl}:${endpoint}`, {
+      return fetchNoRedirect(`${modelUrl}:${endpoint}`, {
         method: "POST",
         headers: { "x-goog-api-key": credential.apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({ contents }),
         signal: controller.signal,
-        redirect: "error",
       });
     };
 
@@ -809,10 +805,9 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
     const url = await validateOutboundUrlForRequest(String(body.url ?? "").trim(), "AI provider URL");
     if (!url) throw new Error("URL is required for Custom provider.");
     if (!apiKey) throw new Error("API key is required to load models.");
-    const response = await fetch(url, {
+    const response = await fetchNoRedirect(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(ai.timeoutMs),
-      redirect: "error",
     });
     const responseBody = await response.json().catch(() => ({})) as {
       data?: Array<{ id?: unknown; name?: unknown }>;
@@ -837,10 +832,9 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
   if (!url) throw new Error(`Unsupported AI Key provider "${String(body.provider)}".`);
 
   if (provider === "google") {
-    const response = await fetch(`${url}/v1beta/models`, {
+    const response = await fetchNoRedirect(`${url}/v1beta/models`, {
       headers: { "x-goog-api-key": key },
       signal: AbortSignal.timeout(ai.timeoutMs),
-      redirect: "error",
     });
     const responseBody = await response.json().catch(() => ({})) as {
       models?: Array<{ name?: unknown; supportedGenerationMethods?: unknown }>;
@@ -853,12 +847,11 @@ async function listAiModels(context: DryRouteContext, body: ModelsRequest): Prom
       .filter(Boolean))];
   }
 
-  const response = await fetch(`${url}/v1/models`, {
+  const response = await fetchNoRedirect(`${url}/v1/models`, {
     headers: provider === "anthropic"
       ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
       : { Authorization: `Bearer ${key}` },
     signal: AbortSignal.timeout(ai.timeoutMs),
-    redirect: "error",
   });
   const responseBody = await response.json().catch(() => ({})) as {
     data?: Array<{ id?: unknown; name?: unknown }>;
