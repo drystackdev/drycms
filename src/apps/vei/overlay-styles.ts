@@ -276,14 +276,25 @@ iframe.agent {
 }
 
 /* Panel mode (overlay.ts's mode variable, toggled by Dock.tsx's ModeToggle):
- * .sheet keeps its own full-viewport backdrop/click-outside-to-close - only
- * .panel's own position/size/entrance changes, from a centered card to a
- * right-docked, full-height one. */
+ * on desktop this is a genuine non-modal SIDE panel, not another dialog -
+ * no dimming/blur, and .sheet itself lets every click straight through to
+ * the live page underneath (only .panel stays interactive) so the page is
+ * fully visible and usable while editing. overlay.ts's setPagePush()
+ * shrinks the page's own layout (a margin on <html>) to match, so the panel
+ * sits BESIDE the page instead of on top of it. The mobile bottom drawer
+ * overrides this back to a normal modal below (<48rem query) - nothing
+ * pushes on that narrow a viewport, and a dimmed half-sheet is the ordinary
+ * mobile pattern anyway. */
 .sheet.docked {
   justify-content: flex-end;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
 }
 
 .sheet.docked .panel {
+  pointer-events: auto;
   margin: 0;
   width: 480px;
   height: 100dvh;
@@ -346,6 +357,17 @@ iframe.agent {
  * treatment those components already give their own popups. No resize
  * handle here: the user only asked for resize on the desktop right panel. */
 @media (width < 48rem) {
+  /* Restores the normal modal treatment the desktop rules above strip out -
+   * a dimmed, click-catching backdrop behind a bottom drawer is the
+   * ordinary mobile pattern, and there's no page to push aside on a
+   * viewport this narrow. */
+  .sheet.docked {
+    background: var(--dry-backdrop);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    pointer-events: auto;
+  }
+
   /* Taken out of .sheet's flex layout entirely (fixed, not relative) so
    * .sheet.docked's own flex-end/right-docking has no say here - same
    * "position: fixed, override the desktop layout" move

@@ -702,37 +702,88 @@ function main(): void {
   // Panel mode's width bounds - matches `useResizablePanel.ts`'s own
   // min/max-clamp shape (`src/lib/useResizablePanel.ts`), the Preact
   // equivalent of this drag used elsewhere (`PageComponents.tsx`'s sidebar).
+  // DEFAULT matches `.sheet.docked .panel`'s own CSS default width.
   const PANEL_MIN_WIDTH = 320;
   const PANEL_MAX_WIDTH = 900;
+  const PANEL_DEFAULT_WIDTH = 480;
 
   function clampPanelWidth(width: number): number {
     return Math.min(Math.max(width, PANEL_MIN_WIDTH), Math.min(PANEL_MAX_WIDTH, window.innerWidth * 0.9));
   }
 
+  /** True once the docked panel is showing as a genuine right-hand SIDE
+   * panel (desktop-width) rather than the mobile bottom drawer, which stays
+   * a modal overlay - `SidebarToggle.tsx`'s own `matchMedia` query, same
+   * `48rem` breakpoint `overlay-styles.ts`'s own `@media` block uses. */
+  function isDesktopPanel(): boolean {
+    return sheet.classList.contains("docked") && window.matchMedia("(width >= 48rem)").matches;
+  }
+
   /**
-   * Drag-to-resize for panel mode's left edge - same window-level
-   * `pointermove`/`pointerup` shape `table-column-resize.ts`'s `startDrag`
-   * uses (no `setPointerCapture`), the one other place in this codebase
-   * doing a vanilla (non-Preact) drag-resize. The handle is hidden by CSS
-   * outside panel mode, so a stray `pointerdown` there is already a no-op;
-   * `mode` is still checked explicitly for clarity.
+   * Shrinks the live page itself (a plain `margin-right` on `<html>`, not a
+   * wrapper - this script has no business restructuring the page's own DOM)
+   * while the desktop panel is open, so the panel sits BESIDE the page
+   * instead of covering it - the whole point of panel over dialog mode.
+   * Fixed-position elements on the page are unaffected by a margin on
+   * `<html>` either way, which is an accepted v1 gap.
+   */
+  function setPagePush(px: number | null, animate: boolean): void {
+    document.documentElement.style.transition = animate ? "margin-right 160ms ease" : "";
+    document.documentElement.style.marginRight = px === null ? "" : `${px}px`;
+  }
+
+  /** Re-derives the docked panel's push/width from the CURRENT viewport -
+   * called on open and on every `resize` while a panel is showing, since
+   * crossing the 48rem breakpoint mid-session (desktop panel <-> mobile
+   * drawer) must not leave a stale inline `panel.style.width` fighting the
+   * drawer's own 100%-width CSS, nor a stale page-push after the panel
+   * stops being a side panel. */
+  function syncDockedLayout(animate: boolean): void {
+    if (isDesktopPanel()) {
+      setPagePush(parseFloat(panel.style.width) || PANEL_DEFAULT_WIDTH, animate);
+    } else {
+      if (sheet.classList.contains("docked")) panel.style.width = "";
+      setPagePush(null, false);
+    }
+  }
+
+  window.addEventListener("resize", () => {
+    if (sheet.isConnected) syncDockedLayout(false);
+  });
+
+  /**
+   * Drag-to-resize for the desktop panel's left edge, via `setPointerCapture`
+   * on the handle itself - unlike `table-column-resize.ts`'s window-level
+   * `pointermove`/`pointerup` (this codebase's other vanilla drag-resize),
+   * capture keeps EVERY subsequent pointer event targeted at the handle even
+   * once the cursor outruns it during a fast drag, which a plain window
+   * listener can lose the `pointerup` for entirely (leaving the drag stuck
+   * "on" until the next unrelated click). `user-select: none` on `<html>`
+   * for the drag's duration guards the same fast-drag case from instead
+   * kicking off a text selection on the page underneath.
    */
   panelResizeHandle.addEventListener("pointerdown", (event) => {
-    if (mode !== "panel") return;
+    if (!isDesktopPanel()) return;
     event.preventDefault();
+    panelResizeHandle.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const startWidth = panel.getBoundingClientRect().width;
+    const previousUserSelect = document.documentElement.style.userSelect;
+    document.documentElement.style.userSelect = "none";
     const onPointerMove = (moveEvent: PointerEvent) => {
       // The handle sits on the LEFT edge of a right-docked panel, so
       // dragging left (negative delta) is what WIDENS it.
-      panel.style.width = `${clampPanelWidth(startWidth - (moveEvent.clientX - startX))}px`;
+      const next = clampPanelWidth(startWidth - (moveEvent.clientX - startX));
+      panel.style.width = `${next}px`;
+      setPagePush(next, false);
     };
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener(
-      "pointerup",
-      () => window.removeEventListener("pointermove", onPointerMove),
-      { once: true },
-    );
+    const onPointerUp = () => {
+      panelResizeHandle.removeEventListener("pointermove", onPointerMove);
+      document.documentElement.style.userSelect = previousUserSelect;
+    };
+    panelResizeHandle.addEventListener("pointermove", onPointerMove);
+    panelResizeHandle.addEventListener("pointerup", onPointerUp, { once: true });
+    panelResizeHandle.addEventListener("pointercancel", onPointerUp, { once: true });
   });
 
   let dialogLoadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -742,11 +793,12 @@ function main(): void {
    * (`openDialog` below), but "Preview all" has no single entry to aim at. */
   function openFrame(url: string): void {
     hideHighlight();
-    lockBodyScroll();
     sheet.classList.toggle("docked", mode === "panel");
-    // A resize from an earlier panel-mode visit must not leak into dialog
-    // mode's own CSS-driven centered size.
-    if (mode === "dialog") panel.style.width = "";
+    syncDockedLayout(true);
+    // The desktop panel is a non-modal side panel by design (see
+    // syncDockedLayout/setPagePush) - only dialog mode and the mobile
+    // bottom drawer stay modal and need the page's own scroll locked.
+    if (!isDesktopPanel()) lockBodyScroll();
     panel.classList.add("loading");
     frame.src = url;
     scope.append(sheet);
@@ -768,6 +820,7 @@ function main(): void {
   function closeDialog(): void {
     clearTimeout(dialogLoadTimer);
     unlockBodyScroll();
+    setPagePush(null, true);
     sheet.remove();
     frame.removeAttribute("src");
     // Whatever ran in that frame - an edit, a Reset all from its own Preview
