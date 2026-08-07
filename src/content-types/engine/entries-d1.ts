@@ -4,7 +4,7 @@ import type { ContentTypeDefinition } from "../types.js";
 import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
-import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, listSelectColumnNames, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
+import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 
@@ -314,7 +314,11 @@ export function createD1ContentEntryEngineAdapter(
 
     const pageSize = Math.max(1, query.pageSize);
     const offset = Math.max(0, query.page) * pageSize;
-    const selectColumns = ["id", ...listSelectColumnNames(nodes, new Set(query.include ?? []))].map(quoteIdent).join(", ");
+    // `nodes` stays the full tree above (where/sort/search resolve against
+    // every column, selected or not); only the READ below is narrowed.
+    const selected = query.select ? selectFieldNodes(nodes, new Set(query.select)) : nodes;
+    const forceInclude = new Set([...(query.include ?? []), ...(query.select ?? [])]);
+    const selectColumns = ["id", ...listSelectColumnNames(selected, forceInclude)].map(quoteIdent).join(", ");
     const rows = await dbAll<Record<string, unknown>>(
       db,
       `SELECT ${selectColumns} FROM ${tableName}${whereSql}${orderSql} LIMIT ? OFFSET ?;`,
@@ -324,8 +328,8 @@ export function createD1ContentEntryEngineAdapter(
     const result: EntryRow[] = [];
     for (const row of rows) {
       const id = Number(row.id);
-      const value = rowToValue(nodes, row);
-      await populateChildFields(db, nodes, id, value);
+      const value = rowToValue(selected, row);
+      await populateChildFields(db, selected, id, value);
       result.push({ id, value });
     }
     return { total, rows: result };

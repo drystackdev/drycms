@@ -45,6 +45,10 @@ export default async function BlogDetailPage({
       ? await dry()
           .collection("blog")
           .list({
+            // Only what the cards below render - `select` keeps everything
+            // else out of the query AND out of the replay log this page
+            // embeds for hydration (see `dry-reader.ts`'s `DrySelect`).
+            select: { slug: true, title: true, image: true, date: true },
             where: [
               { field: "category", op: "eq", value: category.id },
               { field: "id", op: "ne", value: post.id },

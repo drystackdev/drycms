@@ -46,6 +46,21 @@ export interface EntryQuery {
    * they'd normally be excluded (currently only non-inline `richtext`
    * fields) - see `entry-tree.ts`'s `listSelectColumnNames`. */
   include?: string[];
+  /**
+   * Restricts the whole read to these top-level field names (`id` always
+   * survives) - the projection behind `dry-reader.ts`'s `DryListOptions.
+   * select`. Absent (the admin UI, every pre-existing caller) means "every
+   * field", exactly as before this existed.
+   *
+   * Applied through `entry-tree.ts`'s `selectFieldNodes`, so it shapes the
+   * SELECT column list, the row decode AND the per-row child-table queries
+   * at once. An unselected field is ABSENT from the resulting
+   * `EntryRow.value`, not `null` - unlike an `include`-excluded `richtext`
+   * column, which is fetched-as-null because its node is still in the tree.
+   * A selected field is fetched even if it's one of those otherwise-excluded
+   * `richtext` columns: naming it is a stronger signal than the default.
+   */
+  select?: string[];
 }
 
 export interface EntryRow {

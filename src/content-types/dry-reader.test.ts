@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteContentEngineAdapter } from "./engine/sqlite.js";
 import { createSqliteContentEntryEngineAdapter } from "./engine/entries-sqlite.js";
-import { getDryContext, runWithDryContext } from "./dry-context.js";
+import { getDryContext, runWithDryContext, type DryCallLogEntry } from "./dry-context.js";
 import { dry } from "./dry-reader.js";
+import { refOf } from "./dry-vei.js";
 import type { DrySeoLayers } from "./dry-seo.js";
 import type { ContentTypeDefinition } from "./types.js";
 
@@ -127,6 +128,93 @@ describe("dry()", () => {
       const settings = await dry().singleton("settings").get();
       expect(settings).not.toBeNull();
       expect(settings).toHaveProperty("siteTitle");
+    });
+  });
+
+  describe("list({ select })", () => {
+    it("returns only the named fields (plus id), leaving the rest out of the row entirely", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const created = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", views: 3 });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const { rows } = await dry().collection("post").list({ select: { title: true } });
+        expect(rows).toEqual([{ id: created.id, title: "Hello" }]);
+      });
+    });
+
+    it("runs a field's function on its stored value and returns that instead", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      await entries.createEntry(postType, allTypes, { title: "Xin chào thế giới", slug: "hello", views: 3 });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const { rows } = await dry()
+          .collection("post")
+          .list({ select: { title: (value) => value.slice(0, 7), views: (value) => (value ?? 0) * 2 } });
+        expect(rows[0]?.title).toBe("Xin chà");
+        expect(rows[0]?.views).toBe(6);
+      });
+    });
+
+    it("no select at all still returns every field - existing callers unaffected", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      const created = await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", views: 3 });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const { rows } = await dry().collection("post").list();
+        expect(rows[0]).toEqual({ id: created.id, title: "Hello", slug: "hello", views: 3, draft: null });
+      });
+    });
+
+    it("filters/sorts on a field it doesn't select", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      await entries.createEntry(postType, allTypes, { title: "A", slug: "a", views: 5 });
+      await entries.createEntry(postType, allTypes, { title: "B", slug: "b", views: 15 });
+
+      await runWithDryContext({ entries, allTypes }, async () => {
+        const { rows, total } = await dry()
+          .collection("post")
+          .list({ select: { title: true }, where: [{ field: "views", op: "gte", value: 10 }], sort: { field: "views", dir: "asc" } });
+        expect(total).toBe(1);
+        expect(rows).toEqual([{ id: expect.any(Number), title: "B" }]);
+      });
+    });
+
+    it("logs the already-projected rows for hydration replay, not the full ones", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      await entries.createEntry(postType, allTypes, { title: "Hello", slug: "hello", views: 3 });
+      const callLog: DryCallLogEntry[] = [];
+
+      await runWithDryContext({ entries, allTypes, callLog }, async () => {
+        await dry().collection("post").list({ select: { title: (value) => value.toUpperCase() } });
+      });
+      expect(callLog[0]?.result).toEqual({ rows: [{ id: expect.any(Number), title: "HELLO" }], total: 1 });
+    });
+
+    it("hands a transform the plain stored value even in an edit-mode render, and leaves its result unboxed", async () => {
+      const { dir, entries, allTypes } = await freshDrySetup();
+      dirs.push(dir);
+      const postType = allTypes.find((t) => t.name === "post")!;
+      await entries.createEntry(postType, allTypes, { title: "Xin chào", slug: "hello", views: 1 });
+      const vei = { canUpdate: () => true };
+
+      await runWithDryContext({ entries, allTypes, vei }, async () => {
+        const { rows } = await dry().collection("post").list({ select: { title: (value) => typeof value, slug: true } });
+        // The transform saw a real string, not a boxed `String` object...
+        expect(rows[0]?.title).toBe("string");
+        // ...its result carries no editing ref, while a plain `true` field still does.
+        expect(refOf(rows[0]?.title)).toBeNull();
+        expect(refOf(rows[0]?.slug)).not.toBeNull();
+      });
     });
   });
 

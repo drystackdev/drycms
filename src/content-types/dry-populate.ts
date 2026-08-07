@@ -25,11 +25,15 @@ export function toRecord(row: EntryRow): Record<string, unknown> {
  * and during client hydration too - leaving `$` off would make it throw for
  * every anonymous visitor, which is exactly the failure this shape exists
  * to prevent. An inert `$` costs one non-enumerable property.
+ *
+ * `unboxedKeys` passes straight through to `boxRecordStrings` - see there
+ * for why a `select` transform's derived value must not be boxed.
  */
 export function markRecord(
   context: DryRequestContext,
   type: ContentTypeDefinition,
   record: Record<string, unknown>,
+  unboxedKeys?: ReadonlySet<string>,
 ): Record<string, unknown> {
   const id = record.id;
   if (!context.vei?.canUpdate(type) || typeof id !== "number") {
@@ -42,7 +46,7 @@ export function markRecord(
     allTypes: context.allTypes,
     id,
   };
-  return attachRefs(boxRecordStrings(record, target), target);
+  return attachRefs(boxRecordStrings(record, target, unboxedKeys), target);
 }
 
 /** Same "an untouched draft/schedule counts as published" rule `dry-reader.ts`'s

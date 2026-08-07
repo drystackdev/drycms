@@ -4,11 +4,15 @@ function formatDate(date: Date): string {
 
 export default async function HomePage() {
   const home = await dry().singleton("homepage").get();
+  // `select` narrows each row to the fields these cards actually render -
+  // everything else stays out of the SQL read and out of the replay log this
+  // page embeds for hydration (see `dry-reader.ts`'s `DrySelect`).
   const { rows: latestPosts } = await dry().collection("blog").list({
+    select: { slug: true, title: true, image: true, date: true, category: true },
     sort: { field: "date", dir: "desc" },
     pageSize: 3,
   });
-  const { rows: categories } = await dry().collection("category").list();
+  const { rows: categories } = await dry().collection("category").list({ select: { title: true } });
   const categoryNameById = new Map(categories.map((c) => [c.id, c.title]));
 
   if (!home) return null;

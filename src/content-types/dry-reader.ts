@@ -26,6 +26,37 @@ export interface DryListOptions<T> {
   include?: (keyof T & string)[];
 }
 
+/**
+ * `list({ select })`'s shape: one entry per field to KEEP, either `true`
+ * (return it as stored) or a function that receives that field's stored
+ * value and returns whatever the page actually wants
+ * (`{ excerpt: (v) => v.slice(0, 120) }`). A field not named here is never
+ * fetched, never decoded, and never reaches the page - so it also never
+ * reaches the embedded replay log every visitor downloads
+ * (`app-router/dry-replay-codec.ts`), which is the point: a listing page
+ * that renders 4 fields shouldn't ship 20.
+ *
+ * Two things the projection is deliberately NOT: it doesn't affect `where`/
+ * `sort` (those resolve against real columns in SQL, selected or not), and
+ * it isn't recursive - naming a component field keeps that component whole.
+ *
+ * A transform runs ONCE, server-side, on the plain stored value (before any
+ * VEI boxing), and its RESULT is what gets logged for hydration - so it must
+ * return something JSON-serializable (`Date` included - the codec preserves
+ * it). Returning a VNode/Map/function would break client replay.
+ */
+export type DrySelect<T> = {
+  [K in keyof T & string]?: true | ((value: T[K]) => unknown);
+};
+
+/** The row shape `select` leaves behind: only the named fields, with a
+ * transform's return type in place of the stored one, plus `id` - which
+ * survives every projection (the adapters always SELECT it, and
+ * `dry-populate.ts`'s `markRecord` needs it to give the row a real `$`). */
+export type DrySelected<T, S extends DrySelect<T>> = { id: number } & {
+  [K in keyof S & keyof T]: S[K] extends (value: never) => infer R ? R : T[K];
+};
+
 /** Which relation/relationmirror fields to resolve from a raw id/id array
  * into the target collection's full published row, instead of leaving them
  * as-is - see `dry-populate.ts`. `R` is the type's generated `<Type>Relations`
@@ -46,6 +77,11 @@ export interface DryCollectionReader<T, R extends Record<string, unknown> = Reco
    * reach for by accident. */
   get(idOrSlug: number | string): Promise<DryEntry<T> | null>;
   get<K extends keyof R & string>(idOrSlug: number | string, options: DryGetOptions<K>): Promise<DryEntry<Omit<T, K> & Pick<R, K>> | null>;
+  /** With `select`: only the named fields come back (see `DrySelect`), typed
+   * to match. Without it - `list()`, `list({ sort })`, anything that doesn't
+   * mention `select` at all - every field comes back, exactly as before this
+   * option existed. */
+  list<S extends DrySelect<T>>(options: DryListOptions<T> & { select: S }): Promise<{ rows: DryEntry<DrySelected<T, S>>[]; total: number }>;
   list(options?: DryListOptions<T>): Promise<{ rows: DryEntry<T>[]; total: number }>;
 }
 
@@ -108,6 +144,42 @@ function recordSeoLayer(context: DryRequestContext, type: ContentTypeDefinition,
   }
 }
 
+interface SelectTransforms {
+  /** Field name -> the function `select` gave it. Empty for a plain
+   * `{ title: true }` selection, and for no `select` at all. */
+  byField: Map<string, (value: unknown) => unknown>;
+  /** The same names as a set, for `markRecord`'s "don't box these" list. */
+  keys: ReadonlySet<string>;
+}
+
+function selectTransforms(select: DrySelect<Record<string, unknown>> | undefined): SelectTransforms {
+  const byField = new Map<string, (value: unknown) => unknown>();
+  for (const [field, value] of Object.entries(select ?? {})) {
+    if (typeof value === "function") byField.set(field, value as (value: unknown) => unknown);
+  }
+  return { byField, keys: new Set(byField.keys()) };
+}
+
+/**
+ * Replaces each transformed field's stored value with what its function
+ * returns, in place, on the plain record - BEFORE `markRecord`, so a
+ * transform always sees a real `string`/`Date`/`number` and never a
+ * VEI-boxed `String` (which only exists during an edit-mode render, and
+ * would make the same page code behave differently there - see
+ * `dry-vei.ts`'s `boxRecordStrings`).
+ *
+ * A field the engine didn't return (selected, but `null`/absent in this row)
+ * still goes through its transform, with `undefined`/`null` as the input -
+ * the function is the page's own code and is the right place to decide what
+ * an empty field renders as.
+ */
+function applyTransforms(record: Record<string, unknown>, transforms: SelectTransforms): Record<string, unknown> {
+  for (const [field, transform] of transforms.byField) {
+    record[field] = transform(record[field]);
+  }
+  return record;
+}
+
 async function getCollectionEntry(
   context: DryRequestContext,
   type: ContentTypeDefinition,
@@ -140,7 +212,7 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
       context.callLog?.push({ kind: "collection", name, method: "get", result });
       return result;
     },
-    async list(options = {}) {
+    async list(options: DryListOptions<Record<string, unknown>> & { select?: DrySelect<Record<string, unknown>> } = {}) {
       const context = getDryContext();
       const { entries, allTypes } = context;
       const type = mustFindType(allTypes, name, "collection");
@@ -153,8 +225,14 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
         where: options.where,
         publishedOnly: !options.includeDraft,
         include: options.include,
+        // No `select` at all -> no projection: every field, as before.
+        select: options.select && Object.keys(options.select),
       });
-      const result = { rows: page.rows.map((row) => markRecord(context, type, toRecord(row))), total: page.total };
+      const transforms = selectTransforms(options.select);
+      const result = {
+        rows: page.rows.map((row) => markRecord(context, type, applyTransforms(toRecord(row), transforms), transforms.keys)),
+        total: page.total,
+      };
       context.callLog?.push({ kind: "collection", name, method: "list", result });
       return result;
     },

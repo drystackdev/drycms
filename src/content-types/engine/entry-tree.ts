@@ -501,6 +501,26 @@ export const ID_WHERE_COLUMN: QueryableColumn = {
   validation: {},
 };
 
+/**
+ * Narrows a field tree to just the top-level fields named in `select` -
+ * `dry-reader.ts`'s `DryListOptions.select`, resolved down to the node level
+ * so ONE filtered tree shapes all three things a `list()` row costs: the
+ * `SELECT` column list (`listSelectColumnNames` below), the row decode
+ * (`entry-codec.ts`'s `rowToValue`), and the per-row child-table queries
+ * (`entries-sqlite.ts`/`entries-d1.ts`'s `populateChildFields`) - so an
+ * unselected repeatable component or multi-valued relation costs no query at
+ * all, not just fewer bytes.
+ *
+ * Matching is by top-level `fieldName` only (every node kind has one), never
+ * a dotted path: selecting a component field keeps its whole subtree. `id`
+ * isn't in `nodes` at all (it's added directly by the adapters' SELECT), so
+ * it survives any selection - which `dry-populate.ts`'s `markRecord` relies
+ * on to give a row a real `$`.
+ */
+export function selectFieldNodes(nodes: EntryFieldNode[], select: ReadonlySet<string>): EntryFieldNode[] {
+  return nodes.filter((node) => select.has(node.fieldName));
+}
+
 /** A non-inline `richtext` field's authored HTML can be large enough to slow
  * down a plain `list()` query if fetched for every row by default - `inline`
  * richtext (short, text-like) has no such concern, so only non-inline is

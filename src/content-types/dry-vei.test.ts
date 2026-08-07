@@ -181,6 +181,14 @@ describe("boxRecordStrings", () => {
     expect(typeof record.unknownField).toBe("string");
   });
 
+  it("skips a key named in skipKeys, so a select transform's derived value is never offered for inline editing", () => {
+    // `title` IS an editable field here (the case right above boxes it) - it
+    // stays a plain string only because the caller asked for it to.
+    const record = boxRecordStrings({ id: 7, title: "Tóm tắt..." }, target, new Set(["title"]));
+    expect(refOf(record.title)).toBeNull();
+    expect(typeof record.title).toBe("string");
+  });
+
   it("leaves non-string values untouched, including dates", () => {
     const date = new Date("2026-08-05");
     const record = boxRecordStrings({ id: 7, date, views: 3, featured: false }, target);

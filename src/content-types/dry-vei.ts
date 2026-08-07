@@ -189,10 +189,22 @@ function boxDeep(value: unknown, path: string, target: DryRefTarget): unknown {
  * where a `String`/`Number` object reaches a SQL bind and throws. It's a
  * number today, so the type check below already excludes it - the explicit
  * skip is there so that stays true if an id ever becomes a string.
+ *
+ * `skipKeys` names top-level fields that must NOT be boxed even though their
+ * type says they're editable - `dry-reader.ts`'s `select` transforms
+ * (`{ excerpt: (v) => v.slice(0, 120) }`) put a DERIVED value under a real
+ * field's name, and boxing that would offer the truncated text for inline
+ * editing while the entry editor holds the full one. `$` still resolves for
+ * those fields (path-based, unaffected), so a page that genuinely wants the
+ * marker can still `dryBind(post.$.excerpt)` deliberately.
  */
-export function boxRecordStrings(record: Record<string, unknown>, target: DryRefTarget): Record<string, unknown> {
+export function boxRecordStrings(
+  record: Record<string, unknown>,
+  target: DryRefTarget,
+  skipKeys?: ReadonlySet<string>,
+): Record<string, unknown> {
   for (const [key, value] of Object.entries(record)) {
-    if (key === "id") continue;
+    if (key === "id" || skipKeys?.has(key)) continue;
     record[key] = boxDeep(value, key, target);
   }
   return record;

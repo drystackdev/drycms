@@ -56,6 +56,43 @@ intentional, not a bug to work around. **Check
 names and field shapes before writing a `dry()` call - it's generated from
 the live schema, don't guess field names.
 
+### `list({ select })` - ask for the fields you render, and nothing else
+
+Every `dry()` result is ALSO embedded in the page's HTML (the replay log
+`src/apps/hydrate-client.ts` re-runs this page against - that's what makes
+hydration work without a second round trip). So a listing page that fetches
+20 fields per row and renders 4 makes every visitor download the other 16.
+`select` is how you stop that:
+
+```tsx
+const { rows } = await dry().collection("blog").list({
+  sort: { field: "date", dir: "desc" },
+  select: {
+    title: true,                            // as stored
+    slug: true,
+    excerpt: (value) => value.slice(0, 120), // or transformed
+  },
+});
+// rows[0] is { id, title, slug, excerpt } - typed to exactly that, so
+// touching rows[0].content is a compile error, not a silent undefined.
+```
+
+- **Omit `select` entirely and you get every field, exactly as before** - it
+  is purely opt-in; no existing call changes behavior.
+- `id` always comes back.
+- A `true` field is returned as stored. A function receives that field's
+  stored value and returns whatever you want in its place - it runs once,
+  server-side, and its **result** is what ships, so it must return something
+  JSON-serializable (`Date` is fine). Don't return a VNode.
+- Unselected fields are never fetched: no column in the `SELECT`, and no
+  child-table query for an unselected repeatable component or multi-valued
+  relation (those cost one query per row).
+- `where`/`sort` still work on fields you didn't select - they're resolved
+  in SQL, not from the returned row.
+- One caveat for [VEI](../plans/vei.md) inline editing: a field you
+  transformed is not inline-editable (the rendered text isn't what's in the
+  DB). Use `true` for fields an admin should be able to edit in place.
+
 ## The one rule that matters: `async` = data, `sync` = interactive
 
 **A component using `useState`/`useEffect`/any hook must NOT be `async`.**

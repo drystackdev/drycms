@@ -5,8 +5,14 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+/** Exactly the fields `BlogsPage`'s `list({ select })` asks for - written as
+ * `Pick`s of the generated interfaces so a schema change still flows through
+ * to this component instead of drifting behind a hand-written shape. */
+type PostCard = Pick<Blog, "id" | "slug" | "title" | "excerpt" | "image" | "date" | "category">;
+type CategoryChip = Pick<Category, "id" | "title">;
+
 /** Plain sync component - hooks work here (see APP-ROUTER.md's async/sync rule). */
-function BlogsFilterSection({ posts, categories }: { posts: Blog[]; categories: Category[] }) {
+function BlogsFilterSection({ posts, categories }: { posts: PostCard[]; categories: CategoryChip[] }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<number | null>(null);
   const categoryNameById = useMemo(() => new Map(categories.map((c) => [c.id, c.title])), [categories]);
@@ -75,7 +81,7 @@ function BlogsFilterSection({ posts, categories }: { posts: Blog[]; categories: 
               )}
               <div class="space-y-2 p-5">
                 <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
-                  {post.category !== null ? categoryNameById.get(post.category) : null}
+                  {post.category != null ? categoryNameById.get(post.category) : null}
                 </span>
                 <h3 class="text-base font-semibold text-slate-900">
                   {post.title}
@@ -95,8 +101,14 @@ function BlogsFilterSection({ posts, categories }: { posts: Blog[]; categories: 
 
 export default async function BlogsPage() {
   const blogsPage = await dry().singleton("blogsPage").get();
-  const { rows: posts } = await dry().collection("blog").list({ sort: { field: "date", dir: "desc" } });
-  const { rows: categories } = await dry().collection("category").list();
+  // `select` narrows each row to the fields the cards below render -
+  // everything else stays out of the SQL read and out of the replay log this
+  // page embeds for hydration (see `dry-reader.ts`'s `DrySelect`).
+  const { rows: posts } = await dry().collection("blog").list({
+    select: { slug: true, title: true, excerpt: true, image: true, date: true, category: true },
+    sort: { field: "date", dir: "desc" },
+  });
+  const { rows: categories } = await dry().collection("category").list({ select: { title: true } });
 
   if (!blogsPage) return null;
   const { header } = blogsPage;

@@ -738,6 +738,73 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     const fetched = await entries.getEntry(articleType, allTypes, created.id);
     expect(fetched?.value.body).toBe("<p>Full body</p>");
   });
+
+  it("listEntries' select narrows the row to the named fields, fetches an otherwise-excluded richtext when named, and still sorts/filters on unselected columns", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const article: ContentTypeDefinition = {
+      id: "custom-article",
+      kind: "collection",
+      name: "article",
+      label: "Article",
+      features: {},
+      fields: [
+        { id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 },
+        { id: "f-views", name: "views", label: "Views", type: "number", config: {}, validation: {}, order: 1 },
+        { id: "f-body", name: "body", label: "Body", type: "richtext", config: { inline: false }, validation: {}, order: 2 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(article, await schema.planSave(article));
+    const allTypes = await schema.listContentTypes();
+    const articleType = allTypes.find((t) => t.id === "custom-article")!;
+
+    await entries.createEntry(articleType, allTypes, { title: "Low", views: 1, body: "<p>a</p>" });
+    await entries.createEntry(articleType, allTypes, { title: "High", views: 9, body: "<p>b</p>" });
+
+    // An unselected field is ABSENT, not null - unlike the `include` case above.
+    const titles = await entries.listEntries(articleType, allTypes, { page: 0, pageSize: 10, select: ["title"] });
+    expect(titles.rows.map((r) => r.value)).toEqual([{ title: "High" }, { title: "Low" }]);
+    expect(titles.rows[0]!.id).toBeGreaterThan(0);
+
+    // `where`/`sort` still resolve against columns that aren't selected.
+    const filtered = await entries.listEntries(articleType, allTypes, {
+      page: 0,
+      pageSize: 10,
+      select: ["title"],
+      where: [{ field: "views", op: "gte", value: 5 }],
+      sortField: "views",
+      sortDir: "asc",
+    });
+    expect(filtered.total).toBe(1);
+    expect(filtered.rows[0]?.value).toEqual({ title: "High" });
+
+    // Naming the non-inline richtext explicitly beats the default exclusion.
+    const withBody = await entries.listEntries(articleType, allTypes, { page: 0, pageSize: 10, select: ["body"] });
+    expect(withBody.rows.map((r) => r.value.body)).toEqual(["<p>b</p>", "<p>a</p>"]);
+  });
+
+  it("listEntries' select skips the child-table queries a repeatable component/multi-relation row would otherwise cost", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+    const allTypes0 = await schema.listContentTypes();
+    const role = allTypes0.find((t) => t.name === "role")!;
+    const user = allTypes0.find((t) => t.name === "user")!;
+    const editorRole = await entries.createEntry(role, allTypes0, { name: "Editor", isSuperAdmin: false, permissions: [] });
+    await entries.createEntry(user, allTypes0, {
+      name: "Ada",
+      email: "ada@example.com",
+      password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
+      roles: [editorRole.id],
+    });
+
+    const full = await entries.listEntries(user, allTypes0, { page: 0, pageSize: 10 });
+    expect(full.rows[0]?.value.roles).toEqual([editorRole.id]);
+
+    const narrowed = await entries.listEntries(user, allTypes0, { page: 0, pageSize: 10, select: ["name"] });
+    expect(narrowed.rows[0]?.value).toEqual({ name: "Ada" });
+    expect(narrowed.rows[0]?.value).not.toHaveProperty("roles");
+  });
 });
 
 async function rawQuery<T = unknown>(dir: string, sql: string): Promise<T[]> {

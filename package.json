@@ -1,29 +1,6 @@
 {
   "name": "drycms",
-  "type": "module",
-  "private": true,
   "version": "0.0.1",
-  "description": "A self-hosted Preact CMS admin UI, served via a pluggable server adapter (Node or Cloudflare Workers; Bun planned).",
-  "engines": {
-    "node": ">=22.12.0"
-  },
-  "scripts": {
-    "dev": "node scripts/dev-server.mjs",
-    "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server && bun scripts/build-seed-assets.ts",
-    "start": "node dist/server/entry-node.js",
-    "build:worker": "vite build --outDir dist/client && DRYCMS_WORKER_BUILD=1 vite build --ssr src/server/entry-worker.ts --outDir dist/server",
-    "deploy": "bun run build:worker && wrangler deploy",
-    "dev:worker": "bun run build:worker && wrangler dev",
-    "r2:sync": "bun scripts/r2-sync-assets.ts",
-    "build:icons": "node scripts/build-icons.mjs",
-    "dry:generate": "bun scripts/dry-generate.ts",
-    "new:project": "bun scripts/new-project.ts",
-    "seed:sync": "bun scripts/seed-sync.ts",
-    "seed:pages": "bun scripts/seed-pages-content.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:e2e": "playwright test"
-  },
   "dependencies": {
     "@preact/signals": "^2.10.0",
     "dayjs": "^1.11.21",
@@ -48,9 +25,6 @@
     "sucrase": "^3.35.1",
     "tailwindcss": "^4.3.3"
   },
-  "optionalDependencies": {
-    "better-sqlite3": "^11.0.0"
-  },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.119",
     "@iconify-json/solar": "^1.2.5",
@@ -66,8 +40,31 @@
     "vitest": "^3.2.0",
     "wrangler": "^4.118.0"
   },
+  "description": "A self-hosted Preact CMS admin UI, served via a pluggable server adapter (Node or Cloudflare Workers; Bun planned).",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "overrides": {
     "rollup": "^4.62.2",
     "vite": "^8.0.13"
-  }
+  },
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "build": "vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server && bun scripts/build-seed-assets.ts",
+    "start": "node dist/server/entry-node.js",
+    "build:worker": "vite build --outDir dist/client && DRYCMS_WORKER_BUILD=1 vite build --ssr src/server/entry-worker.ts --outDir dist/server",
+    "deploy": "bun run build:worker && wrangler deploy",
+    "dev:worker": "bun run build:worker && wrangler dev",
+    "r2:sync": "bun scripts/r2-sync-assets.ts",
+    "build:icons": "node scripts/build-icons.mjs",
+    "dry:generate": "bun scripts/dry-generate.ts",
+    "new:project": "bun scripts/new-project.ts",
+    "seed:sync": "bun scripts/seed-sync.ts",
+    "seed:pages": "bun scripts/seed-pages-content.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "type": "module"
 }
