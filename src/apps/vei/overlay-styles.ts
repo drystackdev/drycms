@@ -190,13 +190,15 @@ button.icon.sm {
   box-shadow: var(--dry-shadow-lg);
   color: var(--dry-foreground);
   font-size: 14px;
-  /* Width goes from unset (fit-content) to an explicit px value the first
-   * time overlay.ts's animateDockWidth() runs, and stays explicit from then
-   * on - transitioning "auto" itself isn't animatable, which is why that
-   * function measures a real pixel width on both sides of every content
-   * change instead of relying on this alone. overflow/flex-shrink below
-   * keep mid-transition frames (a narrower box than the content's natural
-   * size, for one frame) from visibly compressing the label/buttons. */
+  /* Width goes from unset (fit-content) to an explicit px value while
+   * Dock.tsx's useDockWidthAnimation() is animating a content change, then
+   * back to unset once that transition ends - transitioning "auto" itself
+   * isn't animatable, which is why that hook measures a real pixel width on
+   * both sides of every content change instead of relying on this alone,
+   * but the resting state (before/after any animation) stays content-fit.
+   * overflow/flex-shrink below keep mid-transition frames (a narrower box
+   * than the content's natural size, for one frame) from visibly
+   * compressing the label/buttons. */
   transition: width 220ms ease;
   overflow: hidden;
 }

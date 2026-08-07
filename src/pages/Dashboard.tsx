@@ -214,7 +214,8 @@ export default function Dashboard() {
 		},
 		{
 			key: 'id',
-			label: '',
+			label: 'Revert',
+			sortable: false,
 			render: (_value, row) => (
 				<button
 					type="button"

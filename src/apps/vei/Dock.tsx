@@ -81,6 +81,16 @@ function useDockWidthAnimation(deps: readonly unknown[]) {
       el.style.width = `${after}px`;
     });
     widthRef.current = after;
+    // Release the explicit px back to "auto" once the transition finishes,
+    // so the dock's resting state stays content-fit (not pinned to whatever
+    // pixel width the last animation landed on) - e.g. a viewport resize
+    // that reflows the label shouldn't leave the box stale until the next
+    // `deps` change happens to fire another animation.
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.propertyName === "width") el.style.width = "auto";
+    };
+    el.addEventListener("transitionend", handleTransitionEnd);
+    return () => el.removeEventListener("transitionend", handleTransitionEnd);
     // `deps` drives WHEN this runs; the body itself only ever reads the DOM.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
