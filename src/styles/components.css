@@ -2475,6 +2475,16 @@
     .content-entry-editor-form {
       border: none;
       padding: 0;
+
+      /* Same "a lone column reads cramped full-width on a wide screen"
+       * reasoning as `.ai-key-editor-card` below, but left-aligned (no
+       * `margin-inline: auto`) rather than centered - only kicks in once the
+       * grid itself has actually collapsed to one column (`.single-column`,
+       * set by `ContentEntryEditor.tsx` when there's no side content), so a
+       * real 2-column entry still gets the page's full width. */
+      &:has(> .content-entry-editor-grid.single-column) {
+        max-width: min(56rem, 100%);
+      }
     }
 
     /* Magic Write (status/magic-write.md): each top-level field is its own
