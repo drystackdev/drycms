@@ -81,7 +81,7 @@ const videoSection = await upsertContentType({
   name: "videoSection",
   label: "Video CTA Section",
   fields: withOrder([
-    field("app-video-url", "videoUrl", "Video URL", "text", {}, { required: true }),
+    field("app-video-url", "videoUrl", "Video", "file", { accept: "mp4" }, { required: true }),
     field("app-video-heading", "heading", "Heading", "text", {}, { required: true }),
     field("app-video-description", "description", "Description", "text", { multiline: true }),
     field("app-video-cta-label", "ctaLabel", "CTA Label", "text"),
@@ -205,7 +205,7 @@ await writeSingletonEntry("homepage", {
     },
   ],
   videoSection: {
-    videoUrl: "/video_16x9_480_noaudio_trimmed.mp4",
+    videoUrl: "video_16x9_480_noaudio_trimmed.mp4",
     heading: "Lorem ipsum dolor sit amet consectetur adipiscing elit",
     description: "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud.",
     ctaLabel: "Xem bài viết",
@@ -423,9 +423,13 @@ await upsertContentType({
   kind: "singleton",
   name: "blogsPage",
   label: "Blogs Page",
-  description: "Content for /blogs.",
+  description: "Content for /blogs and /blogs/[slug].",
   fields: withOrder([
     field("app-blogs-page-header", "header", "Header", "component", { componentId: blogsHeader.id, repeatable: false }),
+    field("app-blogs-page-bottom-cta", "bottomCta", "Bottom CTA", "component", {
+      componentId: bottomCta.id,
+      repeatable: false,
+    }),
   ]),
 });
 
@@ -434,6 +438,12 @@ await writeSingletonEntry("blogsPage", {
     eyebrow: "Blog",
     headline: "Kiến thức HIV & ARV",
     description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+  },
+  bottomCta: {
+    heading: "Bạn cần được tư vấn riêng tư?",
+    description: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.",
+    ctaLabel: "Liên hệ ngay",
+    ctaHref: "/contact",
   },
 });
 

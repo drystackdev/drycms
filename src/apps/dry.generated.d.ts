@@ -136,6 +136,7 @@ export interface SeoDefaults {
 export interface BlogsPage {
   id: number;
   header: BlogsHeader;
+  bottomCta: BottomCta;
   seo: Seo;
 }
 

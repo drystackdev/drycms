@@ -673,3 +673,61 @@ này chỉ fetch 1 lần lúc overlay khởi động, đủ cho yêu cầu "màu
 Settings"; refetch lúc đang mở sẽ cần thêm tín hiệu cross-tab (không có sẵn
 cho `systemSettings`, khác `drycms:store`'s `localStorage`/`storage` event
 dùng cho theme sáng/tối).
+
+### Bổ sung: highlight màu theo Settings + focus giờ khớp CHÍNH XÁC 1 field + solid dày hơn (2026-08-07)
+
+**Màu marker/highlight theo Settings, fallback xám**: `.field-highlight`
+(hover box) và `MARKER_STYLES`'s dashed/solid outline trước đó không nhất
+quán - box hover đã dùng `var(--dry-primary)` (nên tự động ăn theo Settings
+sau bản sửa "màu token" ở trên), còn outline dashed/solid trên CHÍNH field
+lại hardcode `rgba(0, 167, 111, 0.6)` (xanh lá, không bao giờ đổi). Lý do
+không đơn giản dùng `var(--dry-primary)` cho cả 2: `MARKER_STYLES` inject
+vào DOCUMENT thật (light DOM, nhắm `[data-dry]` - phần tử CỦA TRANG), còn
+`--dry-primary`/`tokensCss` chỉ tồn tại BÊN TRONG shadow root
+(`OVERLAY_STYLES`) - 2 cây DOM tách biệt, custom property không với tới
+được dù có kế thừa qua shadow boundary (giá trị kế thừa từ `:root` ngoài vẫn
+thua giá trị `tokensCss` đã khai thẳng trên `scope`).
+
+Sửa: thêm biến `--dry-vei-highlight`, mọi nơi dùng `var(--dry-vei-highlight,
+#919eab)` (xám literal khi chưa từng set - `#919eab` lấy đúng từ
+`--dry-muted-foreground`/`--dry-disabled-foreground` của `tokens.css`, không
+phải số tự bịa). `overlay.ts`'s theme-fetch (bản sửa trước) giờ regex lấy
+thẳng hex từ response (`--dry-primary:\s*([^;]+);`) - CHỈ khi Settings thật
+sự có `primaryColor` hợp lệ - rồi set `--dry-vei-highlight` bằng
+`.style.setProperty` trên CẢ 2 gốc: `scope` (cho `.field-highlight` trong
+shadow root) và `document.documentElement` (cho `MARKER_STYLES` ở light
+DOM). Không set gì khi Settings chưa từng chỉnh màu → tự rơi về fallback
+xám `#919eab` nhờ default trong `var()`, không cần code riêng cho case này.
+
+**Focus giờ khớp CHÍNH XÁC 1 field, không sáng cả Component**: bản đầu
+(cùng ngày) cố ý cắt về top-level (`"hero.headline"` → `"hero"`) để khớp
+logic top-level-only mà `dry:field-input`/`applyPreview` đã dùng cho việc
+GHI giá trị - nhưng với HIGHLIGHT thì không cần ghi gì, chỉ cần so khớp
+`ref.path`, nên giữ nguyên path đầy đủ so khớp CHÍNH XÁC là đúng và làm
+được luôn (marker's `ref.path` và `data-field-name` composite của
+`FieldRenderer.tsx`'s `flatten` branch vốn CÙNG format dotted path, ví dụ
+"hero.headline"). Sửa 3 chỗ: `ContentEntryEditor.tsx`'s `fieldNameFor` bỏ
+`.split(".")[0]`, dispatch nguyên path; `FieldFocusEventDetail.name`'s doc
+comment cập nhật; `overlay.ts`'s `elementsForFocus` đổi
+`ref.path.split(".")[0] !== name` thành `ref.path !== name` (so khớp toàn
+bộ). Biết trước 1 khoảng trống KHÔNG sửa: field bên trong dialog riêng của
+1 component-repeat item (`FieldRenderer.tsx`'s `renderItem`) đặt
+`data-field-name` KHÔNG có prefix/index (chỉ "caption" trơn, không phải
+"gallery.0.caption") nên không so khớp được - đúng ranh giới "known
+limitation" mà `?_path=` deep link cũ đã tự nhận, không phải lỗi mới.
+
+**Solid dày hơn để rõ hơn**: `.dry-vei-focused` thêm `outline-width: 3px`
+(trước chỉ đổi `outline-style`, vẫn giữ 1px như baseline dashed).
+
+Verify Playwright (panel mode, 1440x1200): focus input đầu tiên trong field
+"hero" → CHỈ 1 phần tử `.dry-vei-focused` (SPAN eyebrow, đúng field đang gõ),
+không còn sáng cả 5 marker của `hero.*` như bản trước; `outlineWidth: 3px`,
+`outlineStyle: solid` trên phần tử đó, so với marker khác `1px dashed`. Màu:
+`--dry-vei-highlight` trên `<html>` = `#2ec2d6` (khớp Settings đã lưu sẵn
+trên dev server), outline-color của marker dashed = color-mix từ đúng hex
+đó, `.field-highlight` hover box cũng `rgb(46, 194, 214)`.
+
+Sửa `overlay.ts`, `overlay-styles.ts`, `ContentEntryEditor.tsx`,
+`field-events.ts`. `bun run typecheck` sạch (lỗi `blogs/page.tsx:78` có sẵn
+từ trước). `bun run test`: vẫn 958 pass/16 fail như các bản sửa VEI trước
+(fail có sẵn, không liên quan các file này).

@@ -11,9 +11,10 @@ export default async function BlogDetailPage({
 }: {
   params: { slug: string };
 }) {
-  const post = await dry()
-    .collection("blog")
-    .get(params.slug, { populate: ["category"] });
+  const [post, blogsPage] = await Promise.all([
+    dry().collection("blog").get(params.slug, { populate: ["category"] }),
+    dry().singleton("blogsPage").get(),
+  ]);
 
   if (!post) {
     return (
@@ -100,15 +101,22 @@ export default async function BlogDetailPage({
         </a>
       </div>
 
-      <div class="mt-8 flex flex-col items-center gap-3 rounded-2xl bg-red-800 px-8 py-10 text-center text-white">
-        <h2 class="text-xl font-bold">Bạn cần được tư vấn riêng tư?</h2>
-        <a
-          href="/contact"
-          class="rounded-full bg-white px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50"
-        >
-          Liên hệ ngay
-        </a>
-      </div>
+      {blogsPage ? (
+        <div class="mt-8 flex flex-col items-center gap-3 rounded-2xl bg-red-800 px-8 py-10 text-center text-white">
+          <h2 class="text-xl font-bold">{blogsPage.bottomCta.heading}</h2>
+          {blogsPage.bottomCta.description ? (
+            <p class="max-w-xl text-sm leading-relaxed text-red-50">
+              {blogsPage.bottomCta.description}
+            </p>
+          ) : null}
+          <a
+            href={blogsPage.bottomCta.ctaHref ?? "/contact"}
+            class="rounded-full bg-white px-6 py-3 text-sm font-semibold text-red-900 hover:bg-red-50"
+          >
+            {blogsPage.bottomCta.ctaLabel}
+          </a>
+        </div>
+      ) : null}
 
       {related.length > 0 ? (
         <div class="mt-12">

@@ -413,10 +413,13 @@ iframe.agent {
    * modifier key (if any) is currently held - Shift/Ctrl/Cmd change what a
    * click on the hovered field will do, so the highlight itself previews
    * which via color instead of only being discoverable through the title
-   * hint (EDIT_HINT) or by actually clicking. */
-  outline: 3px solid var(--dry-highlight-color, var(--dry-primary));
+   * hint (EDIT_HINT) or by actually clicking. Falls through to
+   * --dry-vei-highlight (Settings' brand color if customised, a literal
+   * gray otherwise - see MARKER_STYLES/overlay.ts's own doc comment) for
+   * the plain-click case, same color the marker outlines below use. */
+  outline: 3px solid var(--dry-highlight-color, var(--dry-vei-highlight, #919eab));
   outline-offset: -1px;
-  background: color-mix(in srgb, var(--dry-highlight-color, var(--dry-primary)) 8%, transparent);
+  background: color-mix(in srgb, var(--dry-highlight-color, var(--dry-vei-highlight, #919eab)) 8%, transparent);
   transition: left 100ms ease, top 100ms ease, width 100ms ease, height 100ms ease,
     outline-color 100ms ease, background-color 100ms ease;
 }
@@ -431,17 +434,26 @@ export const MARKER_STYLES = `
 html.dry-vei-editing [data-dry],
 html.dry-vei-editing [data-dry-src],
 html.dry-vei-editing [data-dry-html] {
-  outline: 1px dashed rgba(0, 167, 111, 0.6);
+  /* --dry-vei-highlight is set on <html> by overlay.ts, straight from the
+   * Settings brand color - the site's own light-DOM elements marked here
+   * have no way to reach --dry-primary itself, which only ever exists
+   * inside OVERLAY_STYLES' shadow root. Falls back to a literal gray
+   * (never customised, or the fetch hasn't resolved yet) rather than the
+   * old hardcoded green, so a site that never touched Settings gets a
+   * neutral marker instead of implying a brand color that was never
+   * actually chosen. */
+  outline: 1px dashed color-mix(in srgb, var(--dry-vei-highlight, #919eab) 60%, transparent);
   cursor: pointer;
 }
 
 /* The field currently focused inside the panel/dialog's own form
  * (overlay.ts's "vei:focus" handling, relayed from ContentEntryEditor.tsx
- * via bridge.ts) - same outline, just solid instead of dashed, so it reads
- * as "this one, specifically" against every other marked field's baseline
- * dashed outline. Same specificity as the rule above; wins on source order
- * since it's declared after it. */
+ * via bridge.ts) - solid instead of dashed AND thicker (3px vs the baseline
+ * 1px) so it reads as "this one, specifically" against every other marked
+ * field's baseline dashed outline. Same specificity as the rule above; wins
+ * on source order since it's declared after it. */
 html.dry-vei-editing .dry-vei-focused {
   outline-style: solid;
+  outline-width: 3px;
 }
 `;

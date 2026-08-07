@@ -3,6 +3,7 @@ import {
   componentFieldType,
   selectFieldType,
   fieldTypes,
+  fileFieldType,
   numberFieldType,
   passwordFieldType,
   relationFieldType,
@@ -112,6 +113,25 @@ describe("selectFieldType", () => {
 
     const multi = resolveValidationFields(selectFieldType, { options: [], multiple: true });
     expect(multi.map((d) => d.key)).toEqual(["required", "min", "max"]);
+  });
+});
+
+describe("fileFieldType", () => {
+  it("is registered under the 'file' key, resolves to a TEXT column", () => {
+    expect(fieldTypes.file).toBe(fileFieldType);
+    expect(fileFieldType.shape).toBe("column");
+    expect(fileFieldType.sqlType?.({})).toBe("TEXT");
+  });
+
+  it("declares 'multiple' as a boolean toggle and 'accept' as a text extension allowlist", () => {
+    const byKey = (key: string) => fileFieldType.configFields?.find((d) => d.key === key);
+    expect(byKey("multiple")).toMatchObject({ widget: "boolean" });
+    expect(byKey("accept")).toMatchObject({ widget: "text" });
+  });
+
+  it("only offers min/max item count once 'multiple' is on", () => {
+    expect(resolveValidationFields(fileFieldType, { multiple: false }).map((d) => d.key)).toEqual(["required"]);
+    expect(resolveValidationFields(fileFieldType, { multiple: true }).map((d) => d.key)).toEqual(["required", "min", "max"]);
   });
 });
 

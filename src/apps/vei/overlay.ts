@@ -308,9 +308,14 @@ function applyPreview(
 }
 
 /**
- * Every element marked for exactly the top-level field `name` on the entry
- * identified by `typeSlug`/`entryId` - the same per-marker match
- * `applyPreview` makes above, minus the value write. Backs the `vei:focus`
+ * Every element marked for EXACTLY the field `name` (the full dotted path,
+ * e.g. `"hero.headline"` - see `FieldFocusEventDetail`'s own doc comment) on
+ * the entry identified by `typeSlug`/`entryId`. Unlike `applyPreview`'s own
+ * per-marker match above (which only ever compares the TOP-LEVEL segment,
+ * since a value write can't address deeper without threading the rest of
+ * `EntryValue`'s shape through), this compares `ref.path` in full - focusing
+ * one field inside a `flatten` component highlights that field alone, not
+ * every marker under the same top-level group. Backs the `vei:focus`
  * handler's scroll-to-and-solid-outline below.
  */
 function elementsForFocus(name: string, typeSlug: string, entryId: string | null): Element[] {
@@ -322,7 +327,7 @@ function elementsForFocus(name: string, typeSlug: string, entryId: string | null
       for (const ref of decodeRefs(node.getAttribute(attribute))) {
         if (ref.type !== typeSlug) continue;
         if (entryId !== null && encodeEntryId(ref.id) !== entryId) continue;
-        if (ref.path.split(".")[0] !== name) continue;
+        if (ref.path !== name) continue;
         matches.push(node);
       }
     }
@@ -448,7 +453,25 @@ function main(): void {
   fetch(`${config.path}/api/system-settings/theme.css`)
     .then((response) => (response.ok ? response.text() : ""))
     .then((css) => {
-      if (css) root.append(element("style", { textContent: css }));
+      if (!css) return;
+      root.append(element("style", { textContent: css }));
+      // The field highlight (`.field-highlight`, `MARKER_STYLES`'s dashed/
+      // solid marker outlines) intentionally does NOT just fall through to
+      // `--dry-primary` the way the dock/backdrop/panel chrome above does:
+      // the marker outlines paint directly on the SITE's own elements in
+      // light DOM, a completely separate DOM subtree this fetched override
+      // (appended into the shadow root above) never reaches. So this pulls
+      // the resolved hex straight out of the response text instead, and
+      // republishes it as `--dry-vei-highlight` on BOTH roots - only when
+      // Settings actually customised the primary color; every use of that
+      // var carries its own literal gray fallback for the "never
+      // customised" case (`overlay-styles.ts`), so there's nothing to set
+      // when this doesn't match.
+      const primary = /--dry-primary:\s*([^;]+);/.exec(css)?.[1]?.trim();
+      if (primary) {
+        scope.style.setProperty("--dry-vei-highlight", primary);
+        document.documentElement.style.setProperty("--dry-vei-highlight", primary);
+      }
     })
     .catch(() => {});
 

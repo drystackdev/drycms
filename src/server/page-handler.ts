@@ -1,6 +1,7 @@
 import { path as adminPath } from "./config.js";
 import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
+import { tryServeGoogleVerificationFile } from "./google-verification.js";
 import type { DryRequestContext, DryVeiContext } from "../content-types/dry-context.js";
 import { loadSeoDefaults, type DrySeoLayers } from "../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
@@ -61,6 +62,9 @@ export async function handlePageRequest(
   // `null` unconditionally for now rather than parsing a cookie nothing
   // reads yet.
   const routeContext: DryRouteContext = { request, url, params: {}, env, session: null };
+
+  const verificationResponse = await tryServeGoogleVerificationFile(request, routeContext);
+  if (verificationResponse) return verificationResponse;
 
   // Not real `page.tsx` routes (XML/plain text, not HTML) - handled here,
   // before routing, with their own try/catch rather than the big one below:

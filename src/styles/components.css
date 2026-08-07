@@ -3150,6 +3150,14 @@
       @media (width < 64rem) {
         grid-template-columns: minmax(0, 1fr);
       }
+
+      /* Set on `ContentEntryEditor.tsx` when there's no side column to show
+       * (no side-assigned fields, no danger zone) - without this the `1.25fr`
+       * track still reserves its width empty, cramming every field into the
+       * left ~60% of the page instead of using the full width. */
+      &.single-column {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     /* `pages/Settings.tsx`'s live preview - sticks just below the topbar

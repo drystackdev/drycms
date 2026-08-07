@@ -514,10 +514,13 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         // Google's HTML verification method requires the file at the exact
         // domain root (`https://example.com/google<id>.html`), not nested
         // under a subfolder - upload it to the Media picker's top-level
-        // (root) folder, never into a subfolder, since the local storage
-        // backend's root IS the app's own `public/` (`options.ts`'s
-        // `resolveStorageOption`), which Vite/the Node adapter already
-        // serves at the site root as a static asset.
+        // (root) folder, never into a subfolder. Reachable there regardless
+        // of `storage.kind`: the local backend's root IS the app's own
+        // `public/` (`options.ts`'s `resolveStorageOption`), served as a
+        // static asset; `page-handler.ts`'s `tryServeGoogleVerificationFile`
+        // additionally root-serves it live through the storage adapter (so
+        // `kind: "r2"`, whose objects live under a `storage/` prefix with no
+        // bare-root HTTP access of its own, still works).
         description:
           "Upload the .html file Google Search Console gives you for domain-ownership verification. Pick the TOP-LEVEL (root) folder in the file picker so it's served at https://yourdomain.com/<filename>.html, not nested under a subfolder.",
         config: {},

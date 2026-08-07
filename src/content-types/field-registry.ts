@@ -372,6 +372,9 @@ export interface FileFieldConfig {
    * of a bare id (see `serialize`/`deserialize` below) - same convention as
    * `image`. */
   multiple?: boolean;
+  /** Comma-separated, no-dot extension allowlist (e.g. `"mp4,mov"`) passed
+   * through to `FileField`'s own `accept` prop - unset allows any file. */
+  accept?: string;
 }
 
 /**
@@ -397,7 +400,10 @@ export const fileFieldType: FieldTypeDefinition<string | string[]> = {
     if (typeof raw !== "string" || !raw.includes(",")) return raw as string;
     return raw.split(",");
   },
-  configFields: [{ key: "multiple", label: "Allow multiple files", widget: "boolean" }],
+  configFields: [
+    { key: "multiple", label: "Allow multiple files", widget: "boolean" },
+    { key: "accept", label: "Allowed extensions (comma-separated, e.g. mp4,mov)", widget: "text" },
+  ],
   defaultConfig: { multiple: false },
   // Min/max item count only means anything once `multiple` is on - same as
   // `image`'s identical branch above.

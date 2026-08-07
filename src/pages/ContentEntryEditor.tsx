@@ -536,8 +536,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `applyFieldSet` isn't memoized; typeSlug/entryId are its only free variables that matter here
   useEffect(() => listenForFieldSet(applyFieldSet), [typeSlug, entryId]);
 
-  // Broadcasts which top-level field currently has focus - the Visual
-  // Editing Interface (`overlay.ts`'s `vei:focus` handling) scrolls the
+  // Broadcasts the EXACT field currently focused - the Visual Editing
+  // Interface (`overlay.ts`'s `vei:focus` handling) scrolls the
   // corresponding marked element on the public page into view and swaps its
   // baseline dashed outline for a solid one while it's the one actually
   // being worked on. `focusin`/`focusout` bubble (unlike `focus`/`blur`), so
@@ -547,12 +547,15 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     const fieldNameFor = (target: EventTarget | null): string | null => {
       if (!(target instanceof Element)) return null;
       const anchor = target.closest(`[${FIELD_ANCHOR_ATTR}]`);
-      const raw = anchor?.getAttribute(FIELD_ANCHOR_ATTR);
-      // A nested component/repeatable field's own dialog anchors itself
-      // with a composite path ("hero.title", `FieldRenderer.tsx`'s
-      // `pathPrefix`) - only the top-level segment means anything to a
-      // marker's `ref.path` (same trim `applyFieldSet` above already does).
-      return raw ? raw.split(".", 1)[0]! : null;
+      // The FULL composite path, unlike `dry:field-input`/`applyFieldSet`
+      // above (which only ever report the top-level segment, since that's
+      // all a VALUE write can address without also threading the rest of
+      // `EntryValue`'s shape through). A nested `flatten` field's own
+      // composite path ("hero.title", `FieldRenderer.tsx`'s `pathPrefix`)
+      // matches a marker's `ref.path` exactly, so keeping it whole lets
+      // `overlay.ts` highlight the ONE field actually focused instead of
+      // every marker under the same top-level component.
+      return anchor?.getAttribute(FIELD_ANCHOR_ATTR) ?? null;
     };
     const onFocusIn = (event: FocusEvent) => {
       const name = fieldNameFor(event.target);
@@ -782,6 +785,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // zone aside) empty rather than the reverse.
   const mainFields = leftFields.length > 0 ? leftFields : rightFields;
   const sideFields = leftFields.length > 0 ? rightFields : [];
+  // Nothing to show on the right (no side fields, and no danger zone since
+  // that's singleton/permission-gated) - drop the second column entirely
+  // rather than reserving its width for an empty panel, which would cram
+  // `mainFields` into the left ~60% of the page for no reason.
+  const hasSideColumn = sideFields.length > 0 || canDelete;
 
   return (
     <RichTextRewriteContext.Provider value={rewriteApi}>
@@ -859,7 +867,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       )}
 
       <fieldset disabled={!canEdit} class="content-entry-editor-form">
-        <div class="content-entry-editor-grid">
+        <div
+          class={`content-entry-editor-grid${hasSideColumn ? "" : " single-column"}`}
+        >
           <div class="stack">
             {renderFieldNodes(
               mainFields,
@@ -872,35 +882,37 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
             )}
           </div>
 
-          <div class="stack">
-            {renderFieldNodes(
-              sideFields,
-              value,
-              fieldErrors,
-              updateFieldValue,
-              allTypes,
-              revealPath,
-              streamingFieldName,
-            )}
+          {hasSideColumn && (
+            <div class="stack">
+              {renderFieldNodes(
+                sideFields,
+                value,
+                fieldErrors,
+                updateFieldValue,
+                allTypes,
+                revealPath,
+                streamingFieldName,
+              )}
 
-            {canDelete && (
-              <div class="content-type-editor-danger">
-                <div>
-                  <h2>Danger zone</h2>
-                  <p>Delete this entry. This cannot be undone.</p>
+              {canDelete && (
+                <div class="content-type-editor-danger">
+                  <div>
+                    <h2>Danger zone</h2>
+                    <p>Delete this entry. This cannot be undone.</p>
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      class="destructive"
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      <TrashIcon /> Delete entry
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <button
-                    type="button"
-                    class="destructive"
-                    onClick={() => setShowDeleteConfirm(true)}
-                  >
-                    <TrashIcon /> Delete entry
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </fieldset>
 

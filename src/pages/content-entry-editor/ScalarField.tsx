@@ -204,6 +204,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         }
         onChange={onChange}
         source={imageSource}
+        accept={fileConfig.accept ? fileConfig.accept.split(",").map((s) => s.trim()).filter(Boolean) : undefined}
         multiple={multiple ? { min: validation.min as number | undefined, max: validation.max as number | undefined } : false}
         required={!!validation.required}
         error={!!error}

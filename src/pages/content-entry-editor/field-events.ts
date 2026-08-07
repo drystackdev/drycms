@@ -37,13 +37,20 @@ export interface FieldInputEventDetail {
 }
 
 export interface FieldFocusEventDetail {
-  /** The top-level field name that gained focus, or `null` once focus
-   * leaves every field (`focusout` finding no `[data-field-name]` ancestor
-   * on whatever's next). Always the TOP-LEVEL name even for a field nested
-   * inside a component/repeatable item's own dialog - same reporting
-   * granularity `dry:field-input` already settled on (see `applyFieldSet`'s
-   * own doc comment), since that's what a marker's `ref.path` is matched
-   * against on the other end (`overlay.ts`'s `valueAtPath`). */
+  /** The EXACT field that gained focus (the full `[data-field-name]`
+   * anchor, e.g. `"hero.headline"` for a `flatten`-nested field), or `null`
+   * once focus leaves every field (`focusout` finding no `[data-field-name]`
+   * ancestor on whatever's next). Unlike `dry:field-input` (always the
+   * top-level name only, since that's all a value write can address without
+   * threading the rest of `EntryValue`'s shape through - see
+   * `applyFieldSet`'s own doc comment), this is matched EXACTLY against a
+   * marker's `ref.path` on the other end (`overlay.ts`'s `elementsForFocus`)
+   * so only the one field actually focused highlights, not every marker
+   * under the same top-level component. A field nested inside a
+   * `component-repeat` item's own dialog is a known gap: that dialog names
+   * its fields with no outer prefix at all (`FieldRenderer.tsx`'s
+   * `renderItem`), so it can't be matched this way - same boundary
+   * `?_path=`'s own deep link already stops at. */
   name: string | null;
   typeSlug: string;
   entryId: string | null;
