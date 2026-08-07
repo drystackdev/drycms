@@ -75,8 +75,38 @@ thủ thuật gì thêm.
 
 ## Status
 
-Chưa bắt đầu - đang chờ xác nhận kế hoạch.
+Hoàn thành, đã QA. Tất cả 5 bước code + migrate DB live đã xong:
+
+1. `seoDefaults.googleSiteVerificationFile` đã gỡ (seed.ts + live DB qua
+   `planSave`/`applySave`, `bun run dry:generate` lại).
+2. Singleton `googleVerification` (`GOOGLE_VERIFICATION_TYPE_ID`) đã tạo, 2
+   field text `name`/`content`, `hidden+locked+frozen`.
+3. `google-verification.ts` viết lại hoàn toàn - không còn đụng storage
+   adapter, chỉ đọc singleton + trả `content` làm response body,
+   `Content-Type: text/html` cứng (không qua `mimeType()` dùng chung vì bảng
+   đó cố tình không map `.html`).
+4. `DryLayout.tsx`: `ContentNavGroup` tổng quát hoá thành `SidebarNavGroup`
+   (item generic `{id,label,href,badge}`), entry "Settings" phẳng cũ thay
+   bằng nhóm "Settings" 2 sub-item (Color schema / Google Verification),
+   mỗi sub-item tự gate quyền qua `permissionName` tương ứng
+   (`systemSettings`/`googleVerification`).
+5. Route: `/dry/settings` redirect -> `/dry/settings/color-schema`;
+   `/dry/settings/google-verification` -> `GoogleVerificationSettings.tsx`
+   (trang mới, form Name/Content + Save, cùng pattern load/save singleton
+   `Settings.tsx` đang dùng).
+
+QA: `bun run typecheck` sạch (chỉ còn 1 lỗi pre-existing không liên quan ở
+`blogs/page.tsx`); `bun run test` về đúng baseline 16 fail sẵn có (không
+tăng); qua API - login, xác nhận `seoDefaults.fields = []`,
+`googleVerification.fields = [name, content]`, PUT một entry test rồi GET
+`/google1234567890abcdef.html` trả đúng `content` với `Content-Type:
+text/html`; 3 route `/dry/settings`, `/dry/settings/color-schema`,
+`/dry/settings/google-verification` đều 200. Playwright bị khoá bởi phiên
+khác suốt buổi nên chưa xác nhận trực quan (nav/form) - còn 1 entry test
+(`google1234567890abcdef.html`) đang nằm trong DB live, cần admin thay bằng
+token thật của Google Search Console qua trang Settings > Google
+Verification.
 
 ## Speed
 
-N/A - lên kế hoạch xong, chưa code.
+Xong trong 1 phiên, theo đúng kế hoạch ban đầu không lệch bước nào.

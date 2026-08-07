@@ -1,7 +1,6 @@
 import type { DryRouteContext } from "./context.js";
 import { getContentAdapters } from "./content-adapters.js";
 import { GOOGLE_VERIFICATION_TYPE_ID } from "../content-types/system-fields.js";
-import { mimeType } from "./route-helpers.js";
 
 /**
  * Serves the `googleVerification` singleton's `content` at the exact
@@ -37,8 +36,14 @@ export async function tryServeGoogleVerificationFile(
     return null;
   }
 
+  // Always `text/html`, not `route-helpers.ts`'s shared `mimeType()` lookup
+  // (which has no "html" entry on purpose - the generic storage/icon routes
+  // deliberately never auto-serve an arbitrary uploaded file as `text/html`).
+  // This route is different: `content` is a fixed, admin-only field value
+  // with exactly one purpose, and Google's HTML verification method expects
+  // `text/html` regardless of what extension `name` happens to use.
   return new Response(content, {
     status: 200,
-    headers: { "Content-Type": mimeType(name) },
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 }
