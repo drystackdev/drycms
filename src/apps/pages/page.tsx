@@ -145,7 +145,7 @@ export default async function HomePage() {
                 )}
                 <div class="space-y-2 p-5">
                   <span class="text-xs font-semibold uppercase tracking-wide text-red-900">
-                    {post.category !== null ? categoryNameById.get(post.category) : null}
+                    {post.category !== null ? categoryNameById.get(post.category!) : null}
                   </span>
                   <h3 class="text-base font-semibold text-slate-900">
                     {post.title}

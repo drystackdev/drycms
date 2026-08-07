@@ -48,6 +48,7 @@ import {
   listenForEntrySave,
   listenForFieldSet,
   scrollToField,
+  takeEntrySaveRequest,
 } from "./content-entry-editor/field-events.js";
 import { closeVeiDialog, isVeiFrame } from "./vei/bridge.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
@@ -196,6 +197,9 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The entry AND its pending draft are both in `value` - not just "the
+   * fetch resolved". Only read by `saveIfRequested` below. */
+  const [entryLoaded, setEntryLoaded] = useState(false);
 
   const [value, setValue] = useState<EntryValue | null>(null);
   const [entryId, setEntryId] = useState<string | null>(null);
@@ -374,6 +378,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           type.kind === "singleton" ? null : (id ?? null),
         );
         if (draft) setValue(draft);
+        // Set only here, after the draft has had its say - `value` is
+        // briefly the server's own row in the render between the two
+        // `setValue` calls above, and a VEI save that fired in that window
+        // would faithfully save the pre-draft value and then discard the
+        // draft that was about to replace it. See `saveIfRequested`.
+        setEntryLoaded(true);
       } catch (error) {
         setLoadError(
           error instanceof Error ? error.message : "Failed to load entry.",
@@ -574,6 +584,11 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     if (Object.keys(passwordErrors).length > 0) {
       setFieldErrors(passwordErrors);
       toast.add({ type: "error", title: "Fix the highlighted fields." });
+      // Reported, not just returned: an outside driver (the VEI dock, via
+      // `bridge.ts`) is waiting on `dry:entry-saved` to learn the outcome,
+      // and a bare `return` here would leave it hanging until its own
+      // 30s timeout instead of failing immediately.
+      dispatchEntrySaved(false);
       return;
     }
 
@@ -620,12 +635,38 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     }
   }
 
-  // Lets the Visual Editing Interface run this editor's own Save from
-  // outside the frame (`plans/vei.md`). No dependency array on purpose:
-  // `handleSave` closes over `value`/`entryId`/`type`, so re-subscribing
-  // each render is what keeps the handler from saving a stale snapshot.
+  /**
+   * Lets the Visual Editing Interface run this editor's own Save from
+   * outside the frame (`plans/vei.md`). No dependency array on purpose:
+   * `handleSave` closes over `value`/`entryId`/`type`, so re-subscribing
+   * each render is what keeps the handler from saving a stale snapshot.
+   *
+   * The request routinely arrives BEFORE this component exists at all: the
+   * overlay answers `vei:ready` the instant it sees it, and that comes from
+   * `App.tsx`'s own mount effect, some 40ms before this route-split editor
+   * has mounted and fetched its entry. So the gate is
+   * `takeEntrySaveRequest()` (`field-events.ts`) rather than the event
+   * alone - the same latch is checked on every render, which is what lets a
+   * request that arrived too early still get carried out once there's
+   * something to save, instead of vanishing and leaving the dock stuck on
+   * "Saving ..." until its own 30s timeout.
+   */
+  function saveIfRequested(): void {
+    // A load that failed will never become saveable, so answer the request
+    // now rather than letting the caller wait out its own timeout.
+    if (loadError) {
+      if (takeEntrySaveRequest()) dispatchEntrySaved(false);
+      return;
+    }
+    if (!entryLoaded || !type || !entriesApi || !value) return;
+    if (!takeEntrySaveRequest()) return;
+    void handleSave();
+  }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: the latest closure is the point
-  useEffect(() => listenForEntrySave(() => void handleSave()));
+  useEffect(() => {
+    saveIfRequested();
+    return listenForEntrySave(saveIfRequested);
+  });
 
   // Both reset actions live inside the Preview dialog (`EntryPreviewDialog`),
   // not on the field rows themselves - see `status/entry-drafts.md`.

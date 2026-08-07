@@ -1,5 +1,5 @@
 import {
-  ENTRY_SAVE_EVENT,
+  dispatchEntrySave,
   listenForEntrySaved,
   listenForFieldInput,
   type FieldInputEventDetail,
@@ -73,8 +73,13 @@ export function startVeiBridge(): () => void {
   const stopSaved = listenForEntrySaved(({ ok }) => post({ type: "vei:saved", ok }));
   const onMessage = (event: MessageEvent) => {
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
+    // `dispatchEntrySave` rather than a raw event: this message routinely
+    // arrives before `ContentEntryEditor` has mounted (the overlay answers
+    // `vei:ready` immediately, and `vei:ready` comes from `App.tsx`'s own
+    // mount effect), and only the latch inside it keeps the request alive
+    // until an editor can act on it - see `field-events.ts`.
     if ((event.data as { type?: string } | null)?.type === "vei:save") {
-      window.dispatchEvent(new CustomEvent(ENTRY_SAVE_EVENT));
+      dispatchEntrySave();
     }
   };
   // Escape inside the frame can't reach the hosting page's own listener, so

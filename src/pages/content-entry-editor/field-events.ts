@@ -106,6 +106,37 @@ export function listenForFieldSet(onSet: (name: string, value: unknown) => void)
   return () => window.removeEventListener(FIELD_SET_EVENT, handler);
 }
 
+/**
+ * A save request that nobody has carried out yet.
+ *
+ * `ENTRY_SAVE_EVENT` is a plain CustomEvent, so a request dispatched while
+ * no editor is mounted - or while the mounted one is still fetching its
+ * entry - simply vanishes. That is the normal case, not an edge one: the
+ * Visual Editing Interface drives a save through `pages/vei/bridge.ts` as
+ * soon as the frame announces itself (`App.tsx`'s mount effect), which is
+ * milliseconds before the route-split `ContentEntryEditor` has mounted, let
+ * alone loaded anything to save. This latch is what makes the request
+ * survive that gap: it stays set until an editor that can actually act on
+ * it takes it (`takeEntrySaveRequest`).
+ */
+let entrySaveRequested = false;
+
+/** The dispatching half - use this rather than dispatching
+ * `ENTRY_SAVE_EVENT` by hand, so the latch above is always set with it. */
+export function dispatchEntrySave(): void {
+  entrySaveRequested = true;
+  window.dispatchEvent(new CustomEvent(ENTRY_SAVE_EVENT));
+}
+
+/** Claims a pending save request, if there is one - returns `true` at most
+ * once per `dispatchEntrySave()`, so an editor can gate on it from both its
+ * live listener and its post-load re-check without saving twice. */
+export function takeEntrySaveRequest(): boolean {
+  const requested = entrySaveRequested;
+  entrySaveRequested = false;
+  return requested;
+}
+
 export function listenForEntrySave(onSave: () => void): () => void {
   const handler = () => onSave();
   window.addEventListener(ENTRY_SAVE_EVENT, handler);
