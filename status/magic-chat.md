@@ -1,4 +1,4 @@
-# Magic (khung chat) — nâng cấp từ Magic Write
+# Magic (khung chat) - nâng cấp từ Magic Write
 
 Tiếp nối `status/magic-write.md` (tính năng Magic Write đã chạy thật, 12 vòng
 phản hồi). Tài liệu này chỉ ghi phần **thay đổi**: đổi tên thành "Magic",
@@ -9,20 +9,20 @@ AI chủ động hỏi lại và tự quyết định khi nào đủ thông tin 
 
 ### Hạ tầng đã có (không phải xây lại)
 
-- `MagicWriteTurn = question | fields` + `history: ChatMessage[]` (cap 20) —
+- `MagicWriteTurn = question | fields` + `history: ChatMessage[]` (cap 20) -
   protocol vốn đã nhiều lượt.
 - System prompt bơm sẵn mỗi lượt: field tree + **giá trị hiện tại từng field**
-  + label + relation context 1 cấp + danh sách path ảnh.
+  - label + relation context 1 cấp + danh sách path ảnh.
 - Stream SSE `{delta}/{retry}/{turn}/{error}`, retry 3 lần khi sai dialect,
   permission theo `checkAccess`, rate-limit `acquireAiStreamSlot`,
   timeout riêng 90s, Google 503 auto-retry.
 - Live-feed vào field thật + `fieldset disabled` + status ở topbar.
 - `/api/ai/chat` (conversation store server-side) vẫn còn nhưng **không client
-  nào dùng** — UI chat của Builder đã bị gỡ. Không tái dùng, chỉ ghi nhận.
+  nào dùng** - UI chat của Builder đã bị gỡ. Không tái dùng, chỉ ghi nhận.
 
 ### Quyết định
 
-1. **`kind: chat` — lượt nói chuyện thường.** Wire format giữ nguyên dialect
+1. **`kind: chat` - lượt nói chuyện thường.** Wire format giữ nguyên dialect
    YAML-subset; `text: |` là block literal nên `\n` đi thẳng qua, không escape.
    - Render **plain text** với `white-space: pre-wrap`. KHÔNG markdown parser,
      KHÔNG `dangerouslySetInnerHTML`.
@@ -32,19 +32,19 @@ AI chủ động hỏi lại và tự quyết định khi nào đủ thông tin 
 2. **Khoan dung khi sai dialect**: parse không ra `kind:` nào ⇒ coi TOÀN BỘ
    câu trả lời là chat text, không lỗi, không retry. Xoá được ngõ cụt
    "AI could not produce a valid reply after 3 attempts" trong pha chat.
-3. **Giữ `kind: question`** — render thành bong bóng có chip chọn ngay trong
+3. **Giữ `kind: question`** - render thành bong bóng có chip chọn ngay trong
    luồng chat (dùng lại CSS `ai-wizard-question`/`ai-wizard-choices`). Luật
    prompt: đáp án thuộc tập đóng nhỏ → `question`; còn lại → `chat`. **Bỏ**
    luật "tối đa 2 câu hỏi".
 4. **`kind: fields` KHÔNG còn là lượt cuối.** Viết xong → đẩy 1 dòng trạng
-   thái vào luồng chat ("Đã viết: Tiêu đề, Nội dung — {summary}") và chat
+   thái vào luồng chat ("Đã viết: Tiêu đề, Nội dung - {summary}") và chat
    tiếp được để chỉnh sửa.
    - History chỉ giữ **lời nói**, TUYỆT ĐỐI không nhét lại khối YAML đã viết
-     (hiện `MagicWriteDialog.tsx:325` nhét cả `rawTextRef.current` — vô hại
+     (hiện `MagicWriteDialog.tsx:325` nhét cả `rawTextRef.current` - vô hại
      với lượt `question`, nhân đôi token với lượt `fields`).
    - Không cần: nội dung vừa viết đã quay lại qua `currentValue` ở lượt sau
      (server dựng lại `fieldsDescription` từ giá trị form sống mỗi request).
-5. **`kind: fetch` (Phase B)** — AI chủ động lấy dữ liệu NGOÀI entry hiện tại.
+5. **`kind: fetch` (Phase B)** - AI chủ động lấy dữ liệu NGOÀI entry hiện tại.
    Vòng lặp chạy hoàn toàn server-side trong `streamMagicWrite`, KHÔNG dùng
    tool-calling gốc của provider (3 nhánh stream tay cho Anthropic/OpenAI/
    Google là dự án riêng).
@@ -53,53 +53,55 @@ AI chủ động hỏi lại và tự quyết định khi nào đủ thông tin 
    - Mỗi query chạy lại `checkAccess` cho ĐÚNG type được hỏi (không mượn
      quyền của entry đang mở). `password`/`secretkey` không bao giờ ra kết quả.
    - Cap 3 hop/lượt. Client hiện dòng trạng thái "Đang xem 5 bài blog gần đây…".
-6. **Không ép dùng UI hệ thống** (user chốt 2026-08-07) — tận dụng cái phù hợp,
+6. **Không ép dùng UI hệ thống** (user chốt 2026-08-07) - tận dụng cái phù hợp,
    còn lại viết mới:
    - Dùng lại: `FileManager` + CSS `.image-picker-dialog`, `Popover`/
      `ContextMenu`, `useOverlayScrollbars`, CSS `ai-wizard-*`, `thumbnailUrl`.
    - Viết mới: composer `<textarea>` riêng (không label, Enter gửi /
-     Shift+Enter xuống dòng, auto-grow — `TextField` không có cả ba), thanh
+     Shift+Enter xuống dòng, auto-grow - `TextField` không có cả ba), thanh
      đính kèm ảnh, bong bóng tin nhắn.
 
-### UI — bong bóng nổi, KHÔNG phải modal (user chốt 2026-08-07)
+### UI - bong bóng nổi, KHÔNG phải modal (user chốt 2026-08-07)
 
 Yêu cầu gốc: "người dùng thấy được UI thay đổi và vẫn chat được với UI, có
-thể dễ dàng đóng mở". Modal `<dialog>` không đáp ứng được — backdrop chặn hết
+thể dễ dàng đóng mở". Modal `<dialog>` không đáp ứng được - backdrop chặn hết
 tương tác với form. Nên bỏ hẳn khung dialog xl, thay bằng **bong bóng chat
 kiểu widget**: nút tròn nổi góc dưới-phải, bấm mở panel, panel KHÔNG chặn
 trang, form vẫn bấm/gõ/cuộn được bình thường trong lúc chat.
 
 **Cơ chế nổi lên trên: Popover API, đã có tiền lệ trong repo.**
 `Toast.tsx:351` dùng `popover="manual"` + `showPopover()` để nổi trên cả
-`<dialog>` đang mở mà không cần thang z-index — dùng đúng cơ chế đó cho bong
+`<dialog>` đang mở mà không cần thang z-index - dùng đúng cơ chế đó cho bong
 bóng + panel.
+
 - `manual` (không phải `auto`) là bắt buộc: `auto` sẽ light-dismiss/Esc-close
-  ngay khi user bấm vào một field trong form — đúng thứ tính năng này cần cho
+  ngay khi user bấm vào một field trong form - đúng thứ tính năng này cần cho
   phép.
 - ⚠️ **Top layer xếp theo "cái nào `show` sau thì nằm trên"**
   (`Toast.tsx:374`). Panel mở picker ảnh (`<dialog showModal()>`) thì picker
-  nằm trên panel — đúng mong muốn. Nhưng nếu có `<dialog>` nào mở SAU khi
+  nằm trên panel - đúng mong muốn. Nhưng nếu có `<dialog>` nào mở SAU khi
   panel đã `showPopover()`, panel sẽ bị chôn: cần re-promote
   (`hidePopover()`/`showPopover()`) đúng như Toaster đang làm.
 
 **Va chạm với Toast**: `.toast-viewport` mặc định `bottom-end`, inset 1.5rem,
-rộng 22rem (`components.css:1816`) — trùng đúng chỗ panel. VEI frame đã tự
+rộng 22rem (`components.css:1816`) - trùng đúng chỗ panel. VEI frame đã tự
 đổi sang `bottom-start` (`VeiFrame.tsx:31`). Cách rẻ nhất: panel set một CSS
 var khi mở, `.toast-viewport` đọc
-`inset-inline-end: calc(1.5rem + var(--dry-toast-shift, 0px))` — một var, một
+`inset-inline-end: calc(1.5rem + var(--dry-toast-shift, 0px))` - một var, một
 rule, nhánh `.start` (VEI) không bị ảnh hưởng.
 
 **Cái này xoá bỏ, không phải hoãn:**
-- Toàn bộ logic ẩn/hiện theo loại lượt (`kind === "fields"` thì ẩn) — panel
+
+- Toàn bộ logic ẩn/hiện theo loại lượt (`kind === "fields"` thì ẩn) - panel
   cứ mở suốt, người dùng nhìn field chạy phía sau. Đây vốn là phần rối nhất.
-- `openToken`/`dialogVisible`/`activeRef` — quay lại `open` boolean bình
+- `openToken`/`dialogVisible`/`activeRef` - quay lại `open` boolean bình
   thường, panel tự giữ trạng thái.
 - Ý "thu nhỏ về nút topbar": bong bóng CHÍNH LÀ trạng thái thu nhỏ.
 - `useDialogSync`, CSS `.magic-chat-dialog[open]`, và cả bẫy "phải scope
   `[open]`".
 
 **Thêm được nhờ non-modal**: khi một field bắt đầu được viết, cuộn nó vào tầm
-nhìn — form đã có sẵn `data-field-name` trên mỗi fieldset top-level
+nhìn - form đã có sẵn `data-field-name` trên mỗi fieldset top-level
 (`ContentEntryEditor.tsx`), nên chỉ là `scrollIntoView({block:"center"})`.
 Đúng tinh thần "thấy được UI thay đổi".
 
@@ -108,7 +110,7 @@ cho nội dung dài. Mobile: bong bóng giữ nguyên, panel thành sheet toàn 
 
 ```
    form thật vẫn bấm/gõ được       ┌──────────────────────────┐
-   ┌───────────────┐               │ ✨ Magic  [key ▾] ⤢  —  ✕│ flex:none
+   ┌───────────────┐               │ ✨ Magic  [key ▾] ⤢  -  ✕│ flex:none
    │ Tiêu đề       │               ├──────────────────────────┤
    │ [đang viết…]  │ ← nhìn thấy   │ ┌──────────────────┐     │
    └───────────────┘   ngay        │ │ assistant        │     │ ← vùng DUY
@@ -125,16 +127,16 @@ cho nội dung dài. Mobile: bong bóng giữ nguyên, panel thành sheet toàn 
                                                                   khi đóng
 ```
 
-`—` thu gọn về bong bóng · `✕` kết thúc phiên · `⤢` mở rộng panel.
+`-` thu gọn về bong bóng · `✕` kết thúc phiên · `⤢` mở rộng panel.
 
 - Lượt `fetch` + lượt viết xong = dòng trạng thái giữa khung, không bong bóng
-  — phân biệt "AI nói" với "AI làm".
+  - phân biệt "AI nói" với "AI làm".
 - Nút (+) mở menu → "Chọn ảnh" mở picker `FileManager` dạng `<dialog
-  showModal()>`; mở sau panel nên nằm trên panel (đúng luật "show sau nằm
+showModal()>`; mở sau panel nên nằm trên panel (đúng luật "show sau nằm
   trên"), đóng xong panel lộ lại nguyên trạng. Về sau thêm "Đính kèm bài viết
   khác…" cho `fetch` mà không đổi layout.
 - Empty state: chip gợi ý ("Viết bài về…", "Rút gọn mở bài", "Đặt lại tiêu đề
-  chuẩn SEO") — lái hành vi rẻ hơn mọi lời giải thích.
+  chuẩn SEO") - lái hành vi rẻ hơn mọi lời giải thích.
 
 **Auto-scroll "dính đáy"**: trước mỗi lần render nội dung mới, đo viewport có
 trong ~48px cuối không. Ở đáy → kéo xuống; user đã cuộn lên → không đụng, hiện
@@ -144,37 +146,37 @@ thì, không animation.
 ⚠️ OverlayScrollbars chuyển scroll sang `.os-viewport` bên trong, phần tử được
 ref KHÔNG tự cuộn. Cần bổ sung vào `hooks/overlayscrollbars.ts` (tương thích
 ngược): `isNearBottom(px = 48)` + `scrollToBottom` nhận `behavior`.
-`scrollToBottom` hiện chưa nơi nào dùng — đây là chỗ dùng đầu tiên.
+`scrollToBottom` hiện chưa nơi nào dùng - đây là chỗ dùng đầu tiên.
 
 ### Rủi ro + cách xử lý
 
-| # | Rủi ro | Cách xử lý |
-|---|---|---|
-| 1 | ~~Dialog xl che mất UX "xem AI viết vào field thật"~~ | **Không còn tồn tại**: panel non-modal (Popover API) nên form không bị che/khoá. Bỏ luôn logic ẩn-hiện theo loại lượt và chỗ giật ở `MagicWriteDialog.tsx:291` |
-| 2 | "AI chủ động lấy thông tin" cần tool-calling | `kind: fetch` + vòng lặp server + allow-list (quyết định #5) |
-| 3 | `fields` hết terminal ⇒ history phình | History chỉ giữ lời nói; nội dung quay lại qua `currentValue` (quyết định #4) |
-| 4 | Token phình theo độ dài chat | (a) không nhân đôi nội dung; (b) ảnh chỉ gửi kèm ở lượt được đính kèm, lượt sau chỉ còn path + mô tả model tự viết; (c) thêm cap TỔNG ký tự cuộc trò chuyện (hiện chỉ có cap 20 message + 100k ký tự/message), vượt thì cắt lượt cũ nhất và báo "đã rút gọn"; (d) `cache_control` cho nhánh Anthropic — system prompt đang nằm đầu message user đầu tiên, đúng vị trí (Phase C, tuỳ chọn) |
-| 5 | Chat mở ra kỳ vọng vượt khả năng ("lưu bài giúp tôi") | Capability contract trong prompt: liệt kê làm được gì / KHÔNG làm được gì (lưu-publish entry, tạo-sửa field, xoá, upload, truy cập web); ngoài phạm vi → `kind: chat` giải thích + đề xuất cái gần nhất. Cộng chip gợi ý ở empty state |
-| 6 | Hai giao diện rời (chat vs trắc nghiệm) | `question` render thành bong bóng có chip (quyết định #3) |
-| 7 | Không có e2e nào cho Magic Write | (a) unit cho `chat`/`fetch` trong `ai-magic-write-protocol.test.ts` + bất biến "lượt chat KHÔNG BAO GIỜ commit field"; (b) cờ dev-only (VD `DRY_AI_FAKE=1`) cho `/api/ai/magic-write` phát lại kịch bản SSE đóng hộp → Playwright chạy toàn luồng, xác định, miễn phí, tiện cả lúc dev tay; (c) smoke test curl như cũ (nhớ restart dev server) |
-| 8 | Mất cuộc trò chuyện khi rời trang | v1 chấp nhận + `ConfirmDialog` khi đang có phiên chạy. KHÔNG đẩy localStorage (entry-draft đã dùng chỗ đó, dễ đá nhau) |
+| #   | Rủi ro                                                | Cách xử lý                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | ~~Dialog xl che mất UX "xem AI viết vào field thật"~~ | **Không còn tồn tại**: panel non-modal (Popover API) nên form không bị che/khoá. Bỏ luôn logic ẩn-hiện theo loại lượt và chỗ giật ở `MagicWriteDialog.tsx:291`                                                                                                                                                                                                                            |
+| 2   | "AI chủ động lấy thông tin" cần tool-calling          | `kind: fetch` + vòng lặp server + allow-list (quyết định #5)                                                                                                                                                                                                                                                                                                                              |
+| 3   | `fields` hết terminal ⇒ history phình                 | History chỉ giữ lời nói; nội dung quay lại qua `currentValue` (quyết định #4)                                                                                                                                                                                                                                                                                                             |
+| 4   | Token phình theo độ dài chat                          | (a) không nhân đôi nội dung; (b) ảnh chỉ gửi kèm ở lượt được đính kèm, lượt sau chỉ còn path + mô tả model tự viết; (c) thêm cap TỔNG ký tự cuộc trò chuyện (hiện chỉ có cap 20 message + 100k ký tự/message), vượt thì cắt lượt cũ nhất và báo "đã rút gọn"; (d) `cache_control` cho nhánh Anthropic - system prompt đang nằm đầu message user đầu tiên, đúng vị trí (Phase C, tuỳ chọn) |
+| 5   | Chat mở ra kỳ vọng vượt khả năng ("lưu bài giúp tôi") | Capability contract trong prompt: liệt kê làm được gì / KHÔNG làm được gì (lưu-publish entry, tạo-sửa field, xoá, upload, truy cập web); ngoài phạm vi → `kind: chat` giải thích + đề xuất cái gần nhất. Cộng chip gợi ý ở empty state                                                                                                                                                    |
+| 6   | Hai giao diện rời (chat vs trắc nghiệm)               | `question` render thành bong bóng có chip (quyết định #3)                                                                                                                                                                                                                                                                                                                                 |
+| 7   | Không có e2e nào cho Magic Write                      | (a) unit cho `chat`/`fetch` trong `ai-magic-write-protocol.test.ts` + bất biến "lượt chat KHÔNG BAO GIỜ commit field"; (b) cờ dev-only (VD `DRY_AI_FAKE=1`) cho `/api/ai/magic-write` phát lại kịch bản SSE đóng hộp → Playwright chạy toàn luồng, xác định, miễn phí, tiện cả lúc dev tay; (c) smoke test curl như cũ (nhớ restart dev server)                                           |
+| 8   | Mất cuộc trò chuyện khi rời trang                     | v1 chấp nhận + `ConfirmDialog` khi đang có phiên chạy. KHÔNG đẩy localStorage (entry-draft đã dùng chỗ đó, dễ đá nhau)                                                                                                                                                                                                                                                                    |
 
 ### Phân kỳ
 
-| Phase | Nội dung | Ghi chú |
-|---|---|---|
-| A | `kind: chat` + khung chat + `fields` không còn terminal | Ăn ~80% giá trị, đổi ít protocol |
-| B | `kind: fetch` + allow-list + phân quyền theo từng type | Phần "chủ động lấy thông tin" thật |
-| C | Quản lý ngữ cảnh: cap tổng, tóm tắt, ảnh theo lượt, prompt caching | Khi chat dài thành thói quen |
+| Phase | Nội dung                                                           | Ghi chú                            |
+| ----- | ------------------------------------------------------------------ | ---------------------------------- |
+| A     | `kind: chat` + khung chat + `fields` không còn terminal            | Ăn ~80% giá trị, đổi ít protocol   |
+| B     | `kind: fetch` + allow-list + phân quyền theo từng type             | Phần "chủ động lấy thông tin" thật |
+| C     | Quản lý ngữ cảnh: cap tổng, tóm tắt, ảnh theo lượt, prompt caching | Khi chat dài thành thói quen       |
 
 ### Chốt 3 điểm chặn (2026-08-07)
 
 **A. ~~Thu nhỏ về nút topbar~~ → THAY BẰNG bong bóng nổi** (user chốt cùng
-ngày, xem mục "UI — bong bóng nổi" ở trên). Không còn modal nên không còn
+ngày, xem mục "UI - bong bóng nổi" ở trên). Không còn modal nên không còn
 khái niệm "ẩn khi đang viết": panel mở suốt, form chạy phía sau.
 **Sửa lại phát sinh**: bong bóng luôn hiện diện (giống widget chat thường
 thấy) nên nút "Magic" ở 2 vị trí topbar (chính + VEI header) không còn giữ
-vai trò "chỉ báo phiên" nữa — chỉ còn là lối gọi phụ, bấm vào thì mở đúng
+vai trò "chỉ báo phiên" nữa - chỉ còn là lối gọi phụ, bấm vào thì mở đúng
 panel y hệt bấm bong bóng, không có logic "reveal session" riêng. Trạng thái
 (spinner/"Đang viết…") hiện thẳng TRÊN bong bóng (badge nhỏ), không cần đồng
 bộ 2 nơi hiện trạng thái nữa.
@@ -184,11 +186,11 @@ vẫn cần `streamingField` để disable fieldset + `scrollIntoView`.
 
 **B. Ba hành động tách bạch, không thao tác nào lỡ tay giết chat.**
 
-| Hành động | Kích hoạt | Tác dụng |
-|---|---|---|
-| **Thu gọn** | `—`, bấm lại bong bóng | Panel về bong bóng. Phiên sống, history nguyên vẹn. KHÔNG dùng `popover="auto"` (light-dismiss/Esc sẽ đóng panel ngay khi user bấm vào field — đúng thứ phải cho phép) |
-| **Dừng** | ⏹ (nút gửi đổi hình khi đang stream) | `abort()` lượt đang chạy, **giữ** phiên/history/composer. Field đã commit KHÔNG rollback (revert qua `EntryPreviewDialog` như mọi thay đổi khác). Đẩy 1 dòng "Đã dừng." vào luồng chat |
-| **Kết thúc phiên** | `✕` | Xoá history + reset. `ConfirmDialog` nếu đang stream |
+| Hành động          | Kích hoạt                            | Tác dụng                                                                                                                                                                               |
+| ------------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Thu gọn**        | `-`, bấm lại bong bóng               | Panel về bong bóng. Phiên sống, history nguyên vẹn. KHÔNG dùng `popover="auto"` (light-dismiss/Esc sẽ đóng panel ngay khi user bấm vào field - đúng thứ phải cho phép)                 |
+| **Dừng**           | ⏹ (nút gửi đổi hình khi đang stream) | `abort()` lượt đang chạy, **giữ** phiên/history/composer. Field đã commit KHÔNG rollback (revert qua `EntryPreviewDialog` như mọi thay đổi khác). Đẩy 1 dòng "Đã dừng." vào luồng chat |
+| **Kết thúc phiên** | `✕`                                  | Xoá history + reset. `ConfirmDialog` nếu đang stream                                                                                                                                   |
 
 Chi tiết cần đúng: `run()` hiện `return` im lặng khi `signal.aborted`, nên
 không phân biệt được dừng với huỷ → thêm `stopReasonRef: "stop" | "cancel" |
@@ -198,6 +200,7 @@ vài field thì ghi vào history đúng một dòng "Đã viết: X, Y (bị d�
 chừng)" để lượt sau AI biết hiện trạng.
 
 **C. `images` theo lượt, nhưng `allowedImageSrcs` theo cả phiên.**
+
 - Client: ảnh đính kèm ở composer → gắn vào message của lượt đó rồi clear
   strip; bong bóng user hiển thị lại thumbnail của lượt đó.
 - Request: `images` (có base64) = **ảnh của lượt này**; thêm
@@ -213,38 +216,38 @@ chừng)" để lượt sau AI biết hiện trạng.
 - Model không "nhìn" lại được ảnh lượt cũ (API stateless, không còn base64
   trong request): prompt yêu cầu model mô tả ngắn mỗi ảnh ngay lượt nhận;
   client giữ mô tả đó, đính vào danh sách path ở các lượt sau
-  (`photos/cover.jpg — ảnh bình minh trên núi`). Cần nhìn kỹ lại thì bong
+  (`photos/cover.jpg - ảnh bình minh trên núi`). Cần nhìn kỹ lại thì bong
   bóng có nút "gửi lại ảnh này".
 - Kết quả: mỗi ảnh trả token vision **đúng một lần** thay vì mọi lượt.
 
 ### Khoảng trống còn lại (rà soát 2026-08-07)
 
-Có đề xuất mặc định cho từng cái — chỉ cần duyệt hoặc bác:
+Có đề xuất mặc định cho từng cái - chỉ cần duyệt hoặc bác:
 
 1. **AI key chọn lúc nào?** `useAiKeySelection(dialogVisible && stage ===
-   "start")` gắn vào state modal cũ, không còn áp dụng. → *đề xuất: load 1
-   lần khi panel mở lần đầu trong phiên, khoá lại sau tin nhắn đầu tiên.*
-2. **Lỗi giữa cuộc chat** → *đề xuất: thành 1 dòng trong luồng chat + nút
+"start")` gắn vào state modal cũ, không còn áp dụng. → _đề xuất: load 1
+   lần khi panel mở lần đầu trong phiên, khoá lại sau tin nhắn đầu tiên._
+2. **Lỗi giữa cuộc chat** → _đề xuất: thành 1 dòng trong luồng chat + nút
    "Thử lại" tại chỗ, giữ nguyên text user đã gõ; bỏ hẳn `stage: "error"`
-   toàn màn.* Gồm cả 429, timeout 90s, mất mạng giữa stream.
-3. **Hoàn tác một lượt viết** → *đề xuất v1: giữ nguyên `EntryPreviewDialog`
+   toàn màn._ Gồm cả 429, timeout 90s, mất mạng giữa stream.
+3. **Hoàn tác một lượt viết** → _đề xuất v1: giữ nguyên `EntryPreviewDialog`
    (diff + Reset) như hiện tại, dòng trạng thái liệt kê field đã viết để biết
-   revert cái gì.* Không xây undo per-turn.
-4. **User sửa tay rồi chat tiếp** → *đề xuất: thêm luật prompt "không viết
-   lại field admin vừa sửa trừ khi được yêu cầu rõ".* Rẻ, tránh ghi đè bực mình.
+   revert cái gì._ Không xây undo per-turn.
+4. **User sửa tay rồi chat tiếp** → _đề xuất: thêm luật prompt "không viết
+   lại field admin vừa sửa trừ khi được yêu cầu rõ"._ Rẻ, tránh ghi đè bực mình.
 5. **Trạng thái "đang soạn"**: bong bóng rỗng + spinner trước delta đầu tiên
-   (có ảnh thì chờ vài giây). → *đề xuất: có.*
+   (có ảnh thì chờ vài giây). → _đề xuất: có._
 6. **Ngôn ngữ UI**: admin app đang tiếng Anh ("Magic Write", "Cancel",
-   "Write") nhưng placeholder ví dụ tiếng Việt và `ai.lang: "vi"`. → *đề xuất:
-   chuỗi UI tiếng Anh cho nhất quán, nội dung AI theo `ai.lang`.*
+   "Write") nhưng placeholder ví dụ tiếng Việt và `ai.lang: "vi"`. → _đề xuất:
+   chuỗi UI tiếng Anh cho nhất quán, nội dung AI theo `ai.lang`._
 7. **Mobile**: panel 24rem → full-screen sheet, composer tránh bàn phím ảo,
-   strip ảnh cuộn ngang. → *đề xuất: làm ngay ở Phase A, rẻ hơn nhiều so với
-   vá sau.*
+   strip ảnh cuộn ngang. → _đề xuất: làm ngay ở Phase A, rẻ hơn nhiều so với
+   vá sau._
 8. **A11y**: `role="log"` cho danh sách, `aria-live="polite"` CHỈ cho dòng
    trạng thái (không đọc từng delta), bong bóng đang stream để `aria-busy`,
    focus trả về composer sau khi gửi.
 9. **"Cuộc trò chuyện mới"**: nút xoá lịch sử để bắt đầu lại mà không phải
-   đóng/mở trang. → *đề xuất: có, trong header* (cũng là hành động "kết thúc
+   đóng/mở trang. → _đề xuất: có, trong header_ (cũng là hành động "kết thúc
    phiên" ở bảng B).
 
 ## Status
@@ -259,7 +262,7 @@ mặc định, chỉ chờ user bác nếu không đồng ý.
   → khung chat + composer + scroll → luật ẩn/thu nhỏ + nút topbar trạng thái
   → dừng/đóng/phiên mới → ảnh theo lượt → mobile/a11y.
 
-## Phase A — ĐÃ XONG CODE (2026-08-07)
+## Phase A - ĐÃ XONG CODE (2026-08-07)
 
 Làm trong 1 phiên liên tục theo đúng thứ tự đề xuất ở trên. Typecheck sạch +
 **900 test pass** (87 file, +7 test mới cho protocol) + `bun run build`
@@ -273,6 +276,7 @@ CHỈ sửa đúng `excerpt` được yêu cầu, không đụng title/slug, xá
 `SCOPE_INSTRUCTION` hoạt động đúng qua nhiều lượt thật.
 
 ### Quyết định lệch khỏi plan gốc (đưa ra trong lúc code, không hỏi lại vì đều
+
 là chi tiết triển khai, không đổi UX đã chốt với user)
 
 1. **Bỏ hẳn 2 nút "Magic Write" ở topbar (chính + VEI header), không giữ lại
@@ -304,7 +308,7 @@ là chi tiết triển khai, không đổi UX đã chốt với user)
    không hợp với một nút đính kèm ephemeral trong composer.
 6. **Toast tránh bong bóng bằng CSS `:has()` thuần, không cần JS/CSS-var từ
    component.** `body:has(.magic-chat-bubble):has(.magic-chat-widget:not(.vei))
-   .toast-viewport:not(.start)` (và cặp `.vei`/`.start` ngược lại) - 2 rule
+.toast-viewport:not(.start)` (và cặp `.vei`/`.start` ngược lại) - 2 rule
    CSS, không cần state/effect nào để đồng bộ giữa 2 component không có quan
    hệ cha-con.
 7. **`hooks/overlayscrollbars.ts` thêm `viewport()`** (trả về phần tử
@@ -337,7 +341,7 @@ là chi tiết triển khai, không đổi UX đã chốt với user)
 - **2 xung đột CSS thật phát hiện khi rà soát theo yêu cầu user**: (a)
   `MagicChat.tsx` tự viết `useEffect` set `el.style.height` cho textarea
   composer, trong khi `forms.css:84` đã có `:where(textarea) { field-sizing:
-  content }` auto-grow thuần CSS cho MỌI textarea trong app - inline style
+content }` auto-grow thuần CSS cho MỌI textarea trong app - inline style
   từ JS luôn thắng, đá nhau mỗi lần gõ. Xoá hẳn effect + ref, chỉ giữ
   `min-height`/`max-height` để giới hạn. (b) `.magic-chat-bubble` là
   `<button>` trơn nên vẫn dính `padding: 0 0.75rem` từ base `button` rule
@@ -348,7 +352,7 @@ là chi tiết triển khai, không đổi UX đã chốt với user)
      đúng convention `<EraserIcon /> Clear all` đã dùng ở
      `ContentEntryEditor.tsx`), disable khi `messages.length === 0`. Khác
      hành vi cũ: KHÔNG đóng panel nữa, chỉ xoá sạch history/messages/ảnh
-     đính kèm - về lại empty state ngay trong panel đang mở. `—` (thu gọn)
+     đính kèm - về lại empty state ngay trong panel đang mở. `-` (thu gọn)
      giữ nguyên, không đổi.
   2. Bong bóng Magic to hơn: `3.25rem` → `4rem`, `font-size` icon
      `1.375rem` → `1.625rem` theo tỉ lệ. Spinner ring/dot badge giữ nguyên
@@ -356,7 +360,7 @@ là chi tiết triển khai, không đổi UX đã chốt với user)
   3. Bỏ box-shadow ở ô nhập composer - hoá ra không phải chỉ thiếu ở
      `:focus` (đã có `box-shadow:none` sẵn ở đó), mà còn thiếu ở trạng thái
      nghỉ: `:where(input,select,textarea)` gán `box-shadow:
-     var(--dry-shadow-xs)` mặc định, `:where()` specificity 0 nên property
+var(--dry-shadow-xs)` mặc định, `:where()` specificity 0 nên property
      nào `.magic-chat-input` không tự set thì vẫn lọt qua - thêm
      `box-shadow: none` ở cấp base rule.
 - Typecheck sạch + build sạch + 900 test pass sau cả 2 vòng sửa. Vẫn CHƯA
@@ -372,7 +376,7 @@ tĩnh (đọc code) không thấy ra:
    `useOverlayScrollbars` (hook OverlayScrollbars) - hook này DI CHUYỂN các
    con thật của phần tử vào một `.os-viewport` được sinh ra bên trong (đúng
    như doc comment gốc của chính hook đã cảnh báo), nên `display:flex;
-   flex-direction:column` tôi gán trên `.magic-chat-messages` không còn áp
+flex-direction:column` tôi gán trên `.magic-chat-messages` không còn áp
    dụng đúng chỗ các `.magic-chat-row` nữa - chúng đã bị chuyển xuống 1 cấp.
    `.ai-wizard-body` (list lượt hội thoại tương tự của AI Schema Wizard) đã
    từng gặp đúng dạng vấn đề này và chọn `overflow-y:auto` thuần (không dùng
@@ -395,13 +399,14 @@ tĩnh (đọc code) không thấy ra:
    nên mới lộ ra. Thêm `appearance:none` + `-webkit-appearance:none`, kèm
    `aspect-ratio:1` phòng hờ.
 3. **UX**: bong bóng nổi không còn hiện khi panel đang mở (`{!open && (...
-   bubble ...)}`) - panel tự nó đã là "chỗ Magic đang ở", hiện cả 2 cùng lúc
-   là thừa; nút "—" trong panel đã là đường quay lại trạng thái bong bóng.
+bubble ...)}`) - panel tự nó đã là "chỗ Magic đang ở", hiện cả 2 cùng lúc
+   là thừa; nút "-" trong panel đã là đường quay lại trạng thái bong bóng.
+
 - Typecheck sạch + build sạch + 900 test pass. Bài học: rà soát CSS tĩnh
   (đọc code, specificity) bắt được 2 lỗi ở vòng trước, nhưng bug OverlayScrollbars
-  + squircle chỉ lộ ra khi NHÌN THẤY ảnh chụp thật - nhắc lại đúng giới hạn
-  đã ghi trong "Việc CHƯA làm" #1: không có browser tool thì rủi ro bỏ sót
-  loại bug này là thật, không phải lý thuyết.
+  - squircle chỉ lộ ra khi NHÌN THẤY ảnh chụp thật - nhắc lại đúng giới hạn
+    đã ghi trong "Việc CHƯA làm" #1: không có browser tool thì rủi ro bỏ sót
+    loại bug này là thật, không phải lý thuyết.
 
 ## Fix (2026-08-07): quay lại dùng OverlayScrollbars cho `.magic-chat-messages`
 
@@ -421,7 +426,7 @@ bug cũ.
   khác trong app giữ nguyên hành vi cũ). Ref này vào một phần tử con thật sự
   nằm trong `ref` (host) TRƯỚC khi effect mount chạy; hook thấy nó liền gọi
   `OverlayScrollbars({ target, elements: { viewport, content: false } },
-  ...)` thay vì `OverlayScrollbars(target, ...)`. Thêm lại `isNearBottom`
+...)` thay vì `OverlayScrollbars(target, ...)`. Thêm lại `isNearBottom`
   (như bản nháp cũ đã bỏ) nhưng KHÔNG thêm `viewport()` getter như bản nháp
   cũ từng làm - không cần nữa, vì giờ caller đã tự giữ `viewportRef` sẵn, gắn
   listener `scroll` thẳng lên đó được.
@@ -439,7 +444,7 @@ bug cũ.
   `project_drycms_dev_admin_credentials`, mở `/content/blog/new`, đọc DOM
   sau khi mở panel - xác nhận `viewportHasOsViewportAttr: true`,
   `viewportIsDirectChildOfHost: true`, `emptyStateIsDirectChildOfViewport:
-  true` (không bị dời cấp). Gửi 1 tin nhắn thật, đo `getBoundingClientRect`
+true` (không bị dời cấp). Gửi 1 tin nhắn thật, đo `getBoundingClientRect`
   2 row: row 2 `top` = row 1 `top` + `height` + gap - xếp chồng dọc đúng,
   không phải bug cũ (chữ bị bóp/word-wrap từng ký tự). Screenshot xác nhận
   lại bằng mắt.
@@ -494,7 +499,7 @@ như không còn, dùng thẳng IndexedDB, DB riêng để không đụng `entry
   0 row, xác nhận discard xuyên suốt.
 - Typecheck sạch + build sạch + 900 test pass.
 
-## Phase B: `kind: fetch` + AI có thể chọn ref/refs (relation) — 2026-08-06/07
+## Phase B: `kind: fetch` + AI có thể chọn ref/refs (relation) - 2026-08-06/07
 
 User yêu cầu code thẳng `kind: fetch` (đã thiết kế sẵn ở quyết định #5, chưa
 làm) **cộng thêm** khả năng AI tự chọn giá trị cho field `relation`
@@ -503,10 +508,10 @@ làm) **cộng thêm** khả năng AI tự chọn giá trị cho field `relation
 toàn để AI biết ID nào hợp lệ. `kind: fetch` gỡ đúng nút thắt đó: AI tra cứu
 được danh sách entry thật trước khi chọn.
 
-### `kind: fetch` — tra cứu dữ liệu NỘI BỘ drycms (không phải internet)
+### `kind: fetch` - tra cứu dữ liệu NỘI BỘ drycms (không phải internet)
 
 - **`ai-magic-write-protocol.ts`**: thêm `MagicWriteFetchTurn` (`source:
-  "entries"|"entry"|"media"|"types"` + `typeSlug`/`id`/`search`/`path`, toàn
+"entries"|"entry"|"media"|"types"` + `typeSlug`/`id`/`search`/`path`, toàn
   scalar phẳng - không cần đổi parser YAML-subset chung, `parseMapping` vốn
   đã đọc được `key: value` bất kỳ). `validateFetchTurn` theo đúng khuôn
   `validateQuestionTurn`. Đây là turn KHÔNG BAO GIỜ terminal.
@@ -537,7 +542,7 @@ toàn để AI biết ID nào hợp lệ. `kind: fetch` gỡ đúng nút thắt 
   `rawTextRef` như `onRetry`, cộng thêm đẩy 1 bong bóng `role:"status"` hiện
   `label`).
 
-### AI chọn "ref"/"refs" (relation) — mở khoá nhờ `kind: fetch`
+### AI chọn "ref"/"refs" (relation) - mở khoá nhờ `kind: fetch`
 
 - **`isMagicChatCandidate`**: bỏ loại `relation` (giữ nguyên loại
   `relation-mirror` - mirror vẫn read-only, ghi qua nó cần cơ chế
@@ -590,6 +595,7 @@ toàn để AI biết ID nào hợp lệ. `kind: fetch` gỡ đúng nút thắt 
    tĩnh (kể cả đọc rất kỹ, đã trace đúng luồng `rowToValue`) không bắt được
    loại lỗi "hai tầng dùng hai quy ước biểu diễn khác nhau cho cùng 1 khái
    niệm" - phải bấm/gọi thật mới lộ ra.
+
 - Typecheck sạch + build sạch + 927 test pass (thêm test cho cả 2 file mới/
   sửa, gồm test riêng xác nhận giá trị trả về là `encodeEntryId(...)` chứ
   không phải number thô).

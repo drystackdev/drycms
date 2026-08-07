@@ -58,6 +58,17 @@ export interface ContentTypeDefinition {
    * entry editor will eventually open for a live preview. `collection`/
    * `singleton` only - a `component` has no page of its own to preview. */
   livePreviewUrl?: string;
+  /** Root-relative URL pattern (e.g. `/blogs/{slug}`) this collection's
+   * published, `features.seo` + `features.slug`-enabled entries are
+   * reachable at - `sitemap.ts` substitutes `{slug}` with each entry's real
+   * slug to build its `<loc>`. `collection` only, same flat/unvalidated
+   * shape as `livePreviewUrl` above (no `{slug}`-templating precedent to
+   * build on there - this is its own, narrower convention). Unset (empty)
+   * means this collection's entries are silently left out of
+   * `sitemap.xml` - there's no formal collection->route mapping elsewhere
+   * in the codebase to fall back on (see `page-handler.ts`'s
+   * `findRedirectResponse` doc comment). */
+  seoUrlPattern?: string;
   features?: ContentTypeFeatures;
   fields: FieldDefinition[];
   /** Display order for the unified system+custom fields list (the schema

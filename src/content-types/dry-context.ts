@@ -72,6 +72,22 @@ export interface DryRequestContext {
    * route match at all) just gets `{}` back from `params()`.
    * `page-handler.ts` seeds this from `match.params` before rendering. */
   params?: Record<string, string | string[]>;
+  /** This request's resolved site origin (`https://example.com`, no trailing
+   * slash) - `render.ts` uses it to build the canonical/`og:url` tags and
+   * JSON-LD `@id`s. Optional same as the fields above; `page-handler.ts`
+   * seeds it via `site-origin.ts`'s `resolveSiteOrigin`. */
+  origin?: string;
+  /** This request's pathname (`url.pathname`, e.g. `/blogs/my-post`) - paired
+   * with `origin` above for the same canonical/`og:url` tags. */
+  pathname?: string;
+  /** `createdAt`/`updatedAt` off whichever seo-enabled COLLECTION entry this
+   * render's `entry` SEO tier came from (only set when that type also has
+   * `features.timestamps` on) - `dry-reader.ts`'s `recordSeoLayer` populates
+   * it as a side effect of the same `get()` call that filled `seo.entry`,
+   * purely for `render.ts`'s JSON-LD `Article.datePublished`/`dateModified`.
+   * Never fabricated: absent whenever the entry type has no real timestamp
+   * columns to report. */
+  seoEntryDates?: { createdAt?: string; updatedAt?: string };
 }
 
 const storage = new AsyncLocalStorage<DryRequestContext>();

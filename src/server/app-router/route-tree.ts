@@ -87,6 +87,25 @@ export function buildRouteTree(
   return { root, notFound, serverError };
 }
 
+/** Every STATIC (no `[slug]`/`[...path]` segment anywhere in its path)
+ * `page.tsx`'s route, for `sitemap.ts` - a dynamic segment can't be
+ * enumerated from the tree alone (it needs a real DB row, see `sitemap.ts`'s
+ * own collection-entry loop), so this only ever walks the static branches.
+ * Depth-first, order not meaningful to callers. Includes `"/"` when the root
+ * node itself has a `page` loader. */
+export function staticPagePaths(tree: RouteTree): string[] {
+  const paths: string[] = [];
+  function walk(node: RouteTreeNode, segments: string[]): void {
+    if (node.page) paths.push(segments.length === 0 ? "/" : `/${segments.join("/")}`);
+    for (const [segment, child] of node.children) {
+      if (segment.startsWith("[")) continue;
+      walk(child, [...segments, segment]);
+    }
+  }
+  walk(tree.root, []);
+  return paths;
+}
+
 const PAGES_ROOT_PREFIX = "/src/apps/pages";
 
 /** Real discovery entry point - lazy (`import.meta.glob` without `eager`),

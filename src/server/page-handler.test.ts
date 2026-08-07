@@ -7,7 +7,7 @@ vi.mock("./config.js", async () => {
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-page-handler-test-"));
-  return { path: "/dry", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  return { path: "/dry", lang: "en", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
 });
 
 const { path: adminPath } = await import("./config.js");

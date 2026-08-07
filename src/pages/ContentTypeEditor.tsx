@@ -852,6 +852,20 @@ export default function ContentTypeEditor({
               />
             )}
 
+            {definition.kind === "collection" &&
+              effectiveFeatures(definition).seo &&
+              effectiveFeatures(definition).slug && (
+                <TextField
+                  label="Sitemap URL pattern"
+                  placeholder="/blogs/{slug}"
+                  value={definition.seoUrlPattern ?? ""}
+                  onChange={(v) =>
+                    setDefinition((d) => (d ? { ...d, seoUrlPattern: v } : d))
+                  }
+                  helperText="Root-relative URL entries live at, e.g. /blogs/{slug} - used to build sitemap.xml. Leave blank to leave this collection out of the sitemap."
+                />
+              )}
+
             <FeaturesFieldset
               kind={definition.kind}
               features={effectiveFeatures(definition)}

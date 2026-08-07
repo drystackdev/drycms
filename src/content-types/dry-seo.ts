@@ -1,13 +1,16 @@
 import { SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
+import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 /** Shape of the `seo` component's flattened fields (see `seed.ts`) as it
  * comes back nested on an entry via `features.seo` - `metaTitle`/
- * `description`/`image` match `Seo` in the generated `.d.ts` (`codegen.ts`). */
+ * `description`/`image`/`noIndex` match `Seo` in the generated `.d.ts`
+ * (`codegen.ts`). */
 export interface DrySeoValue {
   metaTitle?: string;
   description?: string;
   image?: string;
+  noIndex?: boolean;
 }
 
 /** 3 independent slots, one per cascade tier - each `dry()` call that reads
@@ -43,18 +46,29 @@ export function seoTierFor(type: ContentTypeDefinition): keyof DrySeoLayers | nu
 }
 
 const SEO_KEYS = ["metaTitle", "description", "image"] as const;
+const SEO_BOOLEAN_KEYS = ["noIndex"] as const;
 
 /** An unset `seo` component field round-trips as an explicit `null` (see
  * `entry-codec.ts`'s `rowToValue`), not an absent key - a blind object
  * spread would let a layer's untouched `null` fields blank out a lower
  * layer's real values. Only a non-empty string counts as "this layer set
- * it". */
+ * it". `noIndex` (a `boolean` field) uses the same "unset round-trips as
+ * `null`" fact but a different test - `false` IS a meaningful, explicit
+ * value for a boolean (unlike an empty string), so any layer whose value is
+ * actually `typeof "boolean"` participates, letting a more specific layer's
+ * explicit `false` correctly override a less specific layer's `true` (e.g.
+ * a site-wide `seoDefaults.noIndex = true` on a staging deploy, opted back
+ * into by one entry explicitly setting it `false`). */
 function applyLayer(base: DrySeoValue, layer: DrySeoValue | undefined): DrySeoValue {
   if (!layer) return base;
   const result = { ...base };
   for (const key of SEO_KEYS) {
     const value = layer[key];
     if (typeof value === "string" && value.length > 0) result[key] = value;
+  }
+  for (const key of SEO_BOOLEAN_KEYS) {
+    const value = layer[key];
+    if (typeof value === "boolean") result[key] = value;
   }
   return result;
 }
@@ -65,4 +79,23 @@ function applyLayer(base: DrySeoValue, layer: DrySeoValue | undefined): DrySeoVa
  * only exists here. */
 export function mergeSeoLayers(layers: DrySeoLayers | undefined): DrySeoValue {
   return applyLayer(applyLayer(applyLayer(applyLayer({}, layers?.default), layers?.singleton), layers?.entry), layers?.page);
+}
+
+/** Looks up the built-in `seoDefaults` singleton (by its fixed
+ * `SEO_DEFAULTS_TYPE_ID`, same as `seoTierFor`) and returns its `seo`
+ * component value, or `undefined` if the type is missing (shouldn't happen
+ * for a real app, but this stays a lookup, not an assert) or has never been
+ * saved. Shared by `page-handler.ts` (seeds `dryContext.seo.default` for a
+ * normal page render) and `sitemap.ts` (needs the same site-wide value to
+ * decide whether the whole sitemap should be empty) - written once here
+ * rather than duplicated at both call sites. */
+export async function loadSeoDefaults(
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+): Promise<DrySeoValue | undefined> {
+  const seoDefaultsType = allTypes.find((t) => t.id === SEO_DEFAULTS_TYPE_ID);
+  if (!seoDefaultsType) return undefined;
+  const row = await entries.getSingletonEntry(seoDefaultsType, allTypes);
+  const value = row?.value.seo;
+  return value && typeof value === "object" ? (value as DrySeoValue) : undefined;
 }

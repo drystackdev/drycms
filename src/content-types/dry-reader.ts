@@ -93,6 +93,19 @@ function recordSeoLayer(context: DryRequestContext, type: ContentTypeDefinition,
   if (!tier || !context.seo || !result) return;
   const seo = result.seo;
   if (seo && typeof seo === "object") context.seo[tier] = seo as DrySeoValue;
+  // JSON-LD `Article.datePublished`/`dateModified` (`render.ts`'s
+  // `buildStructuredData`) - only ever off the highest-priority `entry`
+  // tier's own real timestamp columns, never fabricated for a type that
+  // doesn't have `features.timestamps` on. `createdAt`/`updatedAt` come back
+  // as real `Date` instances (`field-registry.ts`'s `dateFieldType.
+  // deserialize`), not strings - converted to ISO here since that's the only
+  // shape `seoEntryDates` needs to carry.
+  if (tier === "entry" && type.features?.timestamps) {
+    context.seoEntryDates = {
+      createdAt: result.createdAt instanceof Date ? result.createdAt.toISOString() : undefined,
+      updatedAt: result.updatedAt instanceof Date ? result.updatedAt.toISOString() : undefined,
+    };
+  }
 }
 
 async function getCollectionEntry(

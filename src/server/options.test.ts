@@ -44,6 +44,7 @@ describe('resolveOptions', () => {
 				flushDebounceMs: 100, flushBatchSize: 100, durability: 'async',
 				defaultTtlMs: undefined, idleTtlMs: undefined,
 			},
+			lang: 'en',
 		};
 		expect(resolveOptions()).toEqual(expected);
 		expect(resolveOptions({})).toEqual(expected);
@@ -155,5 +156,16 @@ describe('resolveOptions', () => {
 	it('rejects an empty ai.lang', () => {
 		expect(() => resolveOptions({ ai: { lang: '' } })).toThrow(/ai\.lang/);
 		expect(() => resolveOptions({ ai: { lang: '   ' } })).toThrow(/ai\.lang/);
+	});
+
+	it('defaults the top-level lang (<html lang>) to "en" and accepts an override, independent of ai.lang', () => {
+		expect(resolveOptions().lang).toBe('en');
+		expect(resolveOptions({ lang: 'vi' }).lang).toBe('vi');
+		expect(resolveOptions({ lang: 'vi', ai: { lang: 'en' } })).toMatchObject({ lang: 'vi', ai: { lang: 'en' } });
+	});
+
+	it('rejects an empty top-level lang', () => {
+		expect(() => resolveOptions({ lang: '' })).toThrow(/`lang`/);
+		expect(() => resolveOptions({ lang: '   ' })).toThrow(/`lang`/);
 	});
 });

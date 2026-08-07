@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 const { path } = window.__DRY_CONFIG__;
+import ConfirmDialog from '../components/ConfirmDialog.js';
 import DataTable, { type DataTableColumn } from '../components/DataTable.js';
+import { TrashIcon } from '../components/icons/index.js';
+import { toast } from '../components/Toast.js';
 import { createContentEntriesApi } from '../content-types/entries-http-api.js';
-import { entryDraftIndex } from '../content-types/entry-draft-store.js';
+import { discardEntryDraft, entryDraftIndex } from '../content-types/entry-draft-store.js';
 import { createContentTypesApi } from '../content-types/http-api.js';
 import { permissionActionsFor, type PermissionAction } from '../content-types/permissions.js';
 import type { ContentTypeDefinition } from '../content-types/types.js';
@@ -133,6 +136,22 @@ export default function Dashboard() {
 		[entryDraftIndex.value, typesByName],
 	);
 
+	// Row pending discard confirmation - `null` when the dialog is closed.
+	const [draftToDiscard, setDraftToDiscard] = useState<DraftRow | null>(null);
+	const [discarding, setDiscarding] = useState(false);
+
+	async function handleDiscardDraft() {
+		if (!draftToDiscard) return;
+		setDiscarding(true);
+		try {
+			await discardEntryDraft(draftToDiscard.typeSlug, draftToDiscard.entryId);
+			toast.add({ type: 'success', title: `Discarded draft for "${draftToDiscard.typeLabel}".` });
+			setDraftToDiscard(null);
+		} finally {
+			setDiscarding(false);
+		}
+	}
+
 	const totalEntries = collections.reduce((sum, type) => sum + (entryCounts[type.id] ?? 0), 0);
 
 	const stats = [
@@ -192,6 +211,26 @@ export default function Dashboard() {
 			label: 'Last edited',
 			sortable: true,
 			render: (value) => <>{new Date(value as number).toLocaleString()}</>,
+		},
+		{
+			key: 'id',
+			label: '',
+			render: (_value, row) => (
+				<button
+					type="button"
+					class="ghost icon sm"
+					aria-label={`Discard draft for "${row.typeLabel}"`}
+					data-tooltip="Discard"
+					// Otherwise this would also trigger the row's own `onRowClick`
+					// (navigate to the editor) - see `DataTable.tsx`'s guidance.
+					onClick={(event) => {
+						event.stopPropagation();
+						setDraftToDiscard(row);
+					}}
+				>
+					<TrashIcon />
+				</button>
+			),
 		},
 	];
 
@@ -326,6 +365,22 @@ export default function Dashboard() {
 					</div>
 				)}
 			</section>
+
+			<ConfirmDialog
+				open={draftToDiscard !== null}
+				title="Discard this draft?"
+				message={
+					<p>
+						This discards the unsaved local draft for "{draftToDiscard?.typeLabel}"
+						{draftToDiscard?.entryLabel ? ` (${draftToDiscard.entryLabel})` : ''}. This cannot be undone.
+					</p>
+				}
+				confirmLabel="Discard"
+				destructive
+				busy={discarding}
+				onConfirm={handleDiscardDraft}
+				onCancel={() => setDraftToDiscard(null)}
+			/>
 		</>
 	);
 }

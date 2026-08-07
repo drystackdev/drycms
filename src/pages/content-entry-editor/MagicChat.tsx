@@ -5,20 +5,38 @@ import AiKeyPicker from "../../components/AiKeyPicker.js";
 import type { AiKeySelection } from "../../components/AiKeyPicker.js";
 import type { RichTextRewriteFn } from "../../components/RichTextField/ai-rewrite-context.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
-import { CloseIcon, EraserIcon, PlusIcon } from "../../components/icons/index.js";
+import {
+  CloseIcon,
+  EraserIcon,
+  PlusIcon,
+} from "../../components/icons/index.js";
 import FileManager from "../../components/FileManager/FileManager.js";
 import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
-import { discardMagicChatSession, loadMagicChatSession, saveMagicChatSession } from "./magic-chat-store.js";
-import type { ChatBubble, MagicChatEncodedImage, MagicChatHistoryMessage } from "./magic-chat-store.js";
+import {
+  discardMagicChatSession,
+  loadMagicChatSession,
+  saveMagicChatSession,
+} from "./magic-chat-store.js";
+import type {
+  ChatBubble,
+  MagicChatEncodedImage,
+  MagicChatHistoryMessage,
+} from "./magic-chat-store.js";
 import type { EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { parsePartialMagicWriteYaml } from "../../content-types/ai-magic-write-protocol.js";
-import type { MagicWriteChoice, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
-import { applyMagicWriteFields, WRITABLE_COLUMN_TYPES } from "../../content-types/ai-magic-write-fields.js";
+import type {
+  MagicWriteChoice,
+  MagicWriteRawValue,
+} from "../../content-types/ai-magic-write-protocol.js";
+import {
+  applyMagicWriteFields,
+  WRITABLE_COLUMN_TYPES,
+} from "../../content-types/ai-magic-write-fields.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { scrollToField } from "./field-events.js";
 
@@ -51,7 +69,8 @@ function fileToBase64(file: File): Promise<string> {
       const comma = result.indexOf(",");
       resolve(comma === -1 ? result : result.slice(comma + 1));
     };
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read image."));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not read image."));
     reader.readAsDataURL(file);
   });
 }
@@ -61,11 +80,15 @@ function fileToBase64(file: File): Promise<string> {
  * `status/magic-write.md` decision #3 for why 240px specifically (vision API
  * token cost scales with pixel count, not quality/file size). Run once per
  * turn, right before that turn's request goes out. */
-async function encodeContextImage(imagePath: string): Promise<MagicChatEncodedImage> {
+async function encodeContextImage(
+  imagePath: string,
+): Promise<MagicChatEncodedImage> {
   const response = await fetch(resolveImageSrc(imagePath));
   if (!response.ok) throw new Error(`Could not load "${imagePath}".`);
   const blob = await response.blob();
-  const original = new File([blob], imagePath.split("/").pop() || imagePath, { type: blob.type });
+  const original = new File([blob], imagePath.split("/").pop() || imagePath, {
+    type: blob.type,
+  });
   const optimized = await optimizeUploadImage(original, { maxWidth: 240 });
   const base64 = await fileToBase64(optimized);
   return { path: imagePath, mimeType: optimized.type, base64 };
@@ -102,7 +125,11 @@ interface MagicChatRewriteResult {
   html: string;
 }
 
-type MagicChatTurnResult = MagicChatFieldsResult | MagicChatQuestionResult | MagicChatChatResult | MagicChatRewriteResult;
+type MagicChatTurnResult =
+  | MagicChatFieldsResult
+  | MagicChatQuestionResult
+  | MagicChatChatResult
+  | MagicChatRewriteResult;
 
 interface MagicChatStreamEvent {
   delta?: string;
@@ -137,7 +164,9 @@ async function requestMagicTurn(
   });
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(typeof body.message === "string" ? body.message : "AI request failed.");
+    throw new Error(
+      typeof body.message === "string" ? body.message : "AI request failed.",
+    );
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -157,7 +186,8 @@ async function requestMagicTurn(
         continue;
       }
       if (event.error) throw new Error(event.error);
-      if (event.turn) return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
+      if (event.turn)
+        return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
       if (event.retry) onRetry();
       else if (event.fetching) onFetching(event.fetching);
       else if (event.delta) onDelta(event.delta);
@@ -175,7 +205,8 @@ async function requestMagicTurn(
 function isMagicChatCandidate(node: EntryFieldNode): boolean {
   if (node.kind === "column") return WRITABLE_COLUMN_TYPES.has(node.fieldType);
   if (node.kind === "flatten") return node.children.some(isMagicChatCandidate);
-  if (node.kind === "component-repeat") return node.itemFields.some(isMagicChatCandidate);
+  if (node.kind === "component-repeat")
+    return node.itemFields.some(isMagicChatCandidate);
   if (node.kind === "relation") return true;
   return false;
 }
@@ -237,8 +268,13 @@ export default function MagicChat({
   aiKey,
   rewriteFnRef,
 }: MagicChatProps) {
-  const writableNodes = useMemo(() => nodes.filter(isMagicChatCandidate), [nodes]);
-  const fieldLabel = (name: string) => writableNodes.find((candidate) => candidate.fieldName === name)?.label ?? name;
+  const writableNodes = useMemo(
+    () => nodes.filter(isMagicChatCandidate),
+    [nodes],
+  );
+  const fieldLabel = (name: string) =>
+    writableNodes.find((candidate) => candidate.fieldName === name)?.label ??
+    name;
 
   const widgetRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -247,7 +283,9 @@ export default function MagicChat({
   const [attachedPaths, setAttachedPaths] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
-  const [streamingFieldName, setStreamingFieldName] = useState<string | null>(null);
+  const [streamingFieldName, setStreamingFieldName] = useState<string | null>(
+    null,
+  );
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showNewMessagesChip, setShowNewMessagesChip] = useState(false);
 
@@ -307,7 +345,9 @@ export default function MagicChat({
       setMessages(
         saved.messages.map((bubble) => {
           if (bubble.role !== "assistant" || !bubble.streaming) return bubble;
-          return bubble.text ? { ...bubble, streaming: false } : { id: bubble.id, role: "status", text: "Interrupted." };
+          return bubble.text
+            ? { ...bubble, streaming: false }
+            : { id: bubble.id, role: "status", text: "Interrupted." };
         }),
       );
       historyRef.current = saved.history;
@@ -377,7 +417,8 @@ export default function MagicChat({
 
   const prevStreamingRef = useRef<string | null>(null);
   useEffect(() => {
-    if (streamingFieldName && streamingFieldName !== prevStreamingRef.current) scrollToField(streamingFieldName);
+    if (streamingFieldName && streamingFieldName !== prevStreamingRef.current)
+      scrollToField(streamingFieldName);
     prevStreamingRef.current = streamingFieldName;
   }, [streamingFieldName]);
 
@@ -393,23 +434,35 @@ export default function MagicChat({
     return `magic-${idRef.current}`;
   }
 
-  function updateBubble(id: string, updater: (bubble: ChatBubble) => ChatBubble) {
-    setMessages((current) => current.map((bubble) => (bubble.id === id ? updater(bubble) : bubble)));
+  function updateBubble(
+    id: string,
+    updater: (bubble: ChatBubble) => ChatBubble,
+  ) {
+    setMessages((current) =>
+      current.map((bubble) => (bubble.id === id ? updater(bubble) : bubble)),
+    );
   }
 
   function commitField(name: string, raw: MagicWriteRawValue) {
     if (committedRef.current.has(name)) return;
     committedRef.current.add(name);
-    const node = writableNodes.find((candidate) => candidate.fieldName === name);
+    const node = writableNodes.find(
+      (candidate) => candidate.fieldName === name,
+    );
     if (!node) return;
     const applied = applyMagicWriteFields([node], { [name]: raw });
-    if (applied.writtenFieldNames.includes(name)) updateFieldValue(name, applied.value[name]);
+    if (applied.writtenFieldNames.includes(name))
+      updateFieldValue(name, applied.value[name]);
   }
 
-  function statusLine(closedNames: string[], streamingName: string | undefined): string {
-    const parts = [...closedNames.map((name) => `${fieldLabel(name)} ✓`), streamingName ? `${fieldLabel(streamingName)}…` : null].filter(
-      (part): part is string => !!part,
-    );
+  function statusLine(
+    closedNames: string[],
+    streamingName: string | undefined,
+  ): string {
+    const parts = [
+      ...closedNames.map((name) => `${fieldLabel(name)} ✓`),
+      streamingName ? `${fieldLabel(streamingName)}…` : null,
+    ].filter((part): part is string => !!part);
     return parts.length > 0 ? parts.join(" · ") : "Writing…";
   }
 
@@ -418,11 +471,14 @@ export default function MagicChat({
     const partial = parsePartialMagicWriteYaml(rawTextRef.current);
 
     if (partial.kind === "fields") {
-      for (const [name, raw] of Object.entries(partial.closedFields)) commitField(name, raw);
+      for (const [name, raw] of Object.entries(partial.closedFields))
+        commitField(name, raw);
       const streaming = partial.streamingField;
       if (streaming && !committedRef.current.has(streaming.name)) {
         setStreaming(streaming.name);
-        const node = writableNodes.find((candidate) => candidate.fieldName === streaming.name);
+        const node = writableNodes.find(
+          (candidate) => candidate.fieldName === streaming.name,
+        );
         // "text"/"richtext" get their still-growing value fed live into the
         // real form field, same as the old dialog - everything else stays
         // disabled-but-inert until it fully closes (no safe partial value to
@@ -431,16 +487,39 @@ export default function MagicChat({
         // still-open tag), so any transient mis-render self-heals on the
         // next tick.
         if (node?.kind === "column" && typeof streaming.value === "string") {
-          if (node.fieldType === "text") updateFieldValue(streaming.name, streaming.value);
-          else if (node.fieldType === "richtext") updateFieldValue(streaming.name, sanitizeAiRichTextHtml(streaming.value, new Set(sessionImagePathsRef.current)));
+          if (node.fieldType === "text")
+            updateFieldValue(streaming.name, streaming.value);
+          else if (node.fieldType === "richtext")
+            updateFieldValue(
+              streaming.name,
+              sanitizeAiRichTextHtml(
+                streaming.value,
+                new Set(sessionImagePathsRef.current),
+              ),
+            );
         }
       }
-      updateBubble(assistantBubbleId, (bubble) => ({ ...bubble, role: "status", text: statusLine(Object.keys(partial.closedFields), streaming?.name) }) as ChatBubble);
+      updateBubble(
+        assistantBubbleId,
+        (bubble) =>
+          ({
+            ...bubble,
+            role: "status",
+            text: statusLine(
+              Object.keys(partial.closedFields),
+              streaming?.name,
+            ),
+          }) as ChatBubble,
+      );
       return;
     }
 
     if (partial.kind === "question") {
-      updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: partial.question ?? "" } : bubble));
+      updateBubble(assistantBubbleId, (bubble) =>
+        bubble.role === "assistant"
+          ? { ...bubble, text: partial.question ?? "" }
+          : bubble,
+      );
       return;
     }
 
@@ -448,7 +527,11 @@ export default function MagicChat({
       // The growing `html:` block itself is deliberately not shown here (raw,
       // unsanitized, mid-tag HTML reads as garbled text) - `AiRewriteButton`
       // gets its own live preview via `rewriteRequest.onDelta` below instead.
-      updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: "Rewriting the passage…" } : bubble));
+      updateBubble(assistantBubbleId, (bubble) =>
+        bubble.role === "assistant"
+          ? { ...bubble, text: "Rewriting the passage…" }
+          : bubble,
+      );
       return;
     }
 
@@ -456,7 +539,11 @@ export default function MagicChat({
     // both render as a plain growing assistant bubble; an unrecognized/
     // missing `kind` resolves as chat too (see `parseMagicWriteYaml`'s own
     // doc comment), so there's no separate branch needed for that case.
-    updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: partial.text ?? "" } : bubble));
+    updateBubble(assistantBubbleId, (bubble) =>
+      bubble.role === "assistant"
+        ? { ...bubble, text: partial.text ?? "" }
+        : bubble,
+    );
   }
 
   /** Distinguishes a `requestRewrite` (below) call from every other
@@ -470,7 +557,12 @@ export default function MagicChat({
     reject: (error: Error) => void;
   }
 
-  async function runAssistant(userText: string, images: MagicChatEncodedImage[], assistantBubbleId: string, rewriteRequest?: RewriteRequest) {
+  async function runAssistant(
+    userText: string,
+    images: MagicChatEncodedImage[],
+    assistantBubbleId: string,
+    rewriteRequest?: RewriteRequest,
+  ) {
     setSending(true);
     stopReasonRef.current = null;
     rawTextRef.current = "";
@@ -490,7 +582,12 @@ export default function MagicChat({
           sessionImagePaths: sessionImagePathsRef.current,
           aiKeyName: aiKey.keyName,
           aiModel: aiKey.model,
-          ...(rewriteRequest ? { rewritePassage: rewriteRequest.passage, rewriteInline: rewriteRequest.inline } : {}),
+          ...(rewriteRequest
+            ? {
+                rewritePassage: rewriteRequest.passage,
+                rewriteInline: rewriteRequest.inline,
+              }
+            : {}),
         },
         (delta) => {
           handleDelta(assistantBubbleId, delta);
@@ -507,7 +604,10 @@ export default function MagicChat({
           // bubble ("Looking up 5 blog posts…") so the admin sees Magic is
           // actively doing something, not just slow.
           rawTextRef.current = "";
-          setMessages((current) => [...current, { id: newId(), role: "status", text: label }]);
+          setMessages((current) => [
+            ...current,
+            { id: newId(), role: "status", text: label },
+          ]);
         },
         controller.signal,
       );
@@ -516,29 +616,74 @@ export default function MagicChat({
       let assistantHistoryText: string;
       if (result.turn.kind === "chat") {
         const turn = result.turn;
-        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "assistant", text: turn.text, streaming: false }));
+        updateBubble(assistantBubbleId, () => ({
+          id: assistantBubbleId,
+          role: "assistant",
+          text: turn.text,
+          streaming: false,
+        }));
         assistantHistoryText = turn.text;
-        rewriteRequest?.reject(new Error("Magic replied without a rewrite - see its message in the chat panel."));
+        rewriteRequest?.reject(
+          new Error(
+            "Magic replied without a rewrite - see its message in the chat panel.",
+          ),
+        );
       } else if (result.turn.kind === "question") {
         const turn = result.turn;
-        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "question", question: turn.question, choices: turn.choices, multi: turn.multi, allowOther: turn.allowOther }));
+        updateBubble(assistantBubbleId, () => ({
+          id: assistantBubbleId,
+          role: "question",
+          question: turn.question,
+          choices: turn.choices,
+          multi: turn.multi,
+          allowOther: turn.allowOther,
+        }));
         assistantHistoryText = turn.question;
-        rewriteRequest?.reject(new Error("Magic asked a question instead of rewriting - answer it in the chat panel, then try Rewrite again."));
+        rewriteRequest?.reject(
+          new Error(
+            "Magic asked a question instead of rewriting - answer it in the chat panel, then try Rewrite again.",
+          ),
+        );
       } else if (result.turn.kind === "rewrite") {
         const turn = result.turn;
         assistantHistoryText = "Rewrote the passage.";
-        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: assistantHistoryText }));
+        updateBubble(assistantBubbleId, () => ({
+          id: assistantBubbleId,
+          role: "status",
+          text: assistantHistoryText,
+        }));
         rewriteRequest?.resolve(turn.html);
       } else {
         const turn = result.turn;
-        for (const name of turn.writtenFieldNames) updateFieldValue(name, turn.fields[name]);
+        for (const name of turn.writtenFieldNames)
+          updateFieldValue(name, turn.fields[name]);
         const names = turn.writtenFieldNames.map(fieldLabel);
-        assistantHistoryText = names.length > 0 ? `Wrote: ${names.join(", ")}${turn.summary ? ` — ${turn.summary}` : ""}` : `Nothing needed writing.${turn.summary ? ` — ${turn.summary}` : ""}`;
-        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: assistantHistoryText }));
-        rewriteRequest?.reject(new Error("Magic wrote fields instead of a rewrite - see the chat panel."));
+        assistantHistoryText =
+          names.length > 0
+            ? `Wrote: ${names.join(", ")}${turn.summary ? ` - ${turn.summary}` : ""}`
+            : `Nothing needed writing.${turn.summary ? ` - ${turn.summary}` : ""}`;
+        updateBubble(assistantBubbleId, () => ({
+          id: assistantBubbleId,
+          role: "status",
+          text: assistantHistoryText,
+        }));
+        rewriteRequest?.reject(
+          new Error(
+            "Magic wrote fields instead of a rewrite - see the chat panel.",
+          ),
+        );
       }
-      historyRef.current = [...historyForThisTurn, { role: "user", text: userText }, { role: "assistant", text: assistantHistoryText }];
-      sessionImagePathsRef.current = [...new Set([...sessionImagePathsRef.current, ...images.map((image) => image.path)])];
+      historyRef.current = [
+        ...historyForThisTurn,
+        { role: "user", text: userText },
+        { role: "assistant", text: assistantHistoryText },
+      ];
+      sessionImagePathsRef.current = [
+        ...new Set([
+          ...sessionImagePathsRef.current,
+          ...images.map((image) => image.path),
+        ]),
+      ];
       setStreaming(null);
       setSending(false);
     } catch (error) {
@@ -547,32 +692,57 @@ export default function MagicChat({
         setStreaming(null);
         setSending(false);
         if (stopReasonRef.current === "stop") {
-          updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: "Stopped." }));
+          updateBubble(assistantBubbleId, () => ({
+            id: assistantBubbleId,
+            role: "status",
+            text: "Stopped.",
+          }));
           // The partial reply is discarded (not worth confusing a later turn
           // with) - only the admin's own message stays in history, per
           // `status/magic-chat.md` decision B.
-          historyRef.current = [...historyForThisTurn, { role: "user", text: userText }];
+          historyRef.current = [
+            ...historyForThisTurn,
+            { role: "user", text: userText },
+          ];
         }
         rewriteRequest?.reject(new Error("Stopped."));
         return;
       }
       setStreaming(null);
       setSending(false);
-      const message = error instanceof Error ? error.message : "AI request failed.";
-      updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "error", text: message, retryText: userText, retryImages: images }));
+      const message =
+        error instanceof Error ? error.message : "AI request failed.";
+      updateBubble(assistantBubbleId, () => ({
+        id: assistantBubbleId,
+        role: "error",
+        text: message,
+        retryText: userText,
+        retryImages: images,
+      }));
       rewriteRequest?.reject(new Error(message));
     }
   }
 
   function pushAssistantPlaceholder(): string {
     const id = newId();
-    setMessages((current) => [...current, { id, role: "assistant", text: "", streaming: true }]);
+    setMessages((current) => [
+      ...current,
+      { id, role: "assistant", text: "", streaming: true },
+    ]);
     return id;
   }
 
   function sendTurn(userText: string, images: MagicChatEncodedImage[]) {
     const userBubbleId = newId();
-    setMessages((current) => [...current, { id: userBubbleId, role: "user", text: userText, imagePaths: images.map((image) => image.path) }]);
+    setMessages((current) => [
+      ...current,
+      {
+        id: userBubbleId,
+        role: "user",
+        text: userText,
+        imagePaths: images.map((image) => image.path),
+      },
+    ]);
     wasNearBottomRef.current = true;
     const assistantBubbleId = pushAssistantPlaceholder();
     void runAssistant(userText, images, assistantBubbleId);
@@ -586,20 +756,40 @@ export default function MagicChat({
    * one turn (composer OR rewrite) can run at a time - `abortRef`/`sending`
    * are shared singleton state, same as every other entry point into
    * `runAssistant`. */
-  function requestRewrite(passage: string, instruction: string, inline: boolean, onDelta: (delta: string) => void, signal: AbortSignal): Promise<string> {
-    if (sending) return Promise.reject(new Error("Magic is busy with another request - try again shortly."));
+  function requestRewrite(
+    passage: string,
+    instruction: string,
+    inline: boolean,
+    onDelta: (delta: string) => void,
+    signal: AbortSignal,
+  ): Promise<string> {
+    if (sending)
+      return Promise.reject(
+        new Error("Magic is busy with another request - try again shortly."),
+      );
     setOpen(true);
     const displayText = `Rewrite selection: "${instruction}"`;
     return new Promise<string>((resolve, reject) => {
       const userBubbleId = newId();
-      setMessages((current) => [...current, { id: userBubbleId, role: "user", text: displayText, imagePaths: [] }]);
+      setMessages((current) => [
+        ...current,
+        { id: userBubbleId, role: "user", text: displayText, imagePaths: [] },
+      ]);
       wasNearBottomRef.current = true;
       const assistantBubbleId = pushAssistantPlaceholder();
-      void runAssistant(displayText, [], assistantBubbleId, { passage, inline, onDelta, resolve, reject });
+      void runAssistant(displayText, [], assistantBubbleId, {
+        passage,
+        inline,
+        onDelta,
+        resolve,
+        reject,
+      });
       // `runAssistant` sets `abortRef.current` synchronously before its first
       // `await`, so it's already populated by the time this listener is
       // attached right after the (fire-and-forget) call above returns.
-      signal.addEventListener("abort", () => abortRef.current?.abort(), { once: true });
+      signal.addEventListener("abort", () => abortRef.current?.abort(), {
+        once: true,
+      });
     });
   }
 
@@ -622,7 +812,19 @@ export default function MagicChat({
     try {
       images = await Promise.all(paths.map(encodeContextImage));
     } catch (error) {
-      setMessages((current) => [...current, { id: newId(), role: "error", text: error instanceof Error ? error.message : "Could not attach an image.", retryText: text, retryImages: [] }]);
+      setMessages((current) => [
+        ...current,
+        {
+          id: newId(),
+          role: "error",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Could not attach an image.",
+          retryText: text,
+          retryImages: [],
+        },
+      ]);
       return;
     }
     sendTurn(text, images);
@@ -632,19 +834,34 @@ export default function MagicChat({
     setPrompt(text);
   }
 
-  function handleAnswerQuestion(bubbleId: string, choices: MagicWriteChoice[], chosenIds: Set<string>, other: string) {
-    const labels = choices.filter((choice) => chosenIds.has(choice.id)).map((choice) => `"${choice.label}"`);
+  function handleAnswerQuestion(
+    bubbleId: string,
+    choices: MagicWriteChoice[],
+    chosenIds: Set<string>,
+    other: string,
+  ) {
+    const labels = choices
+      .filter((choice) => chosenIds.has(choice.id))
+      .map((choice) => `"${choice.label}"`);
     const parts: string[] = [];
     if (labels.length) parts.push(`Selected: ${labels.join(", ")}`);
     if (other.trim()) parts.push(`Other: "${other.trim()}"`);
     const answerText = parts.join(". ") || "No selection.";
-    updateBubble(bubbleId, (bubble) => (bubble.role === "question" ? { ...bubble, answer: answerText } : bubble));
+    updateBubble(bubbleId, (bubble) =>
+      bubble.role === "question" ? { ...bubble, answer: answerText } : bubble,
+    );
     const assistantBubbleId = pushAssistantPlaceholder();
     void runAssistant(answerText, [], assistantBubbleId);
   }
 
-  function handleRetry(bubbleId: string, text: string, images: MagicChatEncodedImage[]) {
-    setMessages((current) => current.filter((bubble) => bubble.id !== bubbleId));
+  function handleRetry(
+    bubbleId: string,
+    text: string,
+    images: MagicChatEncodedImage[],
+  ) {
+    setMessages((current) =>
+      current.filter((bubble) => bubble.id !== bubbleId),
+    );
     const assistantBubbleId = pushAssistantPlaceholder();
     void runAssistant(text, images, assistantBubbleId);
   }
@@ -688,7 +905,13 @@ export default function MagicChat({
   if (!canUse) return null;
 
   const badgeSpinning = sending;
-  const bubbleTooltip = streamingFieldName ? `Writing "${fieldLabel(streamingFieldName)}"…` : sending ? "Magic is replying…" : messages.length > 0 ? "Magic - conversation open" : "Magic";
+  const bubbleTooltip = streamingFieldName
+    ? `Writing "${fieldLabel(streamingFieldName)}"…`
+    : sending
+      ? "Magic is replying…"
+      : messages.length > 0
+        ? "Magic - conversation open"
+        : "Magic";
 
   return (
     <div ref={widgetRef} class={`magic-chat-widget${veiFrame ? " vei" : ""}`}>
@@ -699,11 +922,21 @@ export default function MagicChat({
               <SparkleIcon /> Magic
             </h3>
             <div class="row align-center" style={{ gap: "0.25rem" }}>
-              <button type="button" class="ghost sm" onClick={handleClearAll} disabled={messages.length === 0}>
+              <button
+                type="button"
+                class="ghost sm"
+                onClick={handleClearAll}
+                disabled={messages.length === 0}
+              >
                 <EraserIcon /> Clear all
               </button>
-              <button type="button" class="ghost icon sm" aria-label="Minimize" onClick={() => setOpen(false)}>
-                —
+              <button
+                type="button"
+                class="ghost icon sm"
+                aria-label="Minimize"
+                onClick={() => setOpen(false)}
+              >
+                -
               </button>
             </div>
           </header>
@@ -712,10 +945,17 @@ export default function MagicChat({
             <div class="magic-chat-messages-viewport" ref={messagesViewportRef}>
               {messages.length === 0 && (
                 <div class="magic-chat-empty">
-                  <p class="hint">Ask Magic to write, revise, or discuss this entry's content.</p>
+                  <p class="hint">
+                    Ask Magic to write, revise, or discuss this entry's content.
+                  </p>
                   <div class="row magic-chat-suggestions">
                     {SUGGESTIONS.map((suggestion) => (
-                      <button key={suggestion} type="button" class="sm outline" onClick={() => handleSuggestion(suggestion)}>
+                      <button
+                        key={suggestion}
+                        type="button"
+                        class="sm outline"
+                        onClick={() => handleSuggestion(suggestion)}
+                      >
                         {suggestion}
                       </button>
                     ))}
@@ -729,11 +969,20 @@ export default function MagicChat({
                   bubble={bubble}
                   onAnswerQuestion={(chosenIds, other) => {
                     if (bubble.role !== "question") return;
-                    handleAnswerQuestion(bubble.id, bubble.choices, chosenIds, other);
+                    handleAnswerQuestion(
+                      bubble.id,
+                      bubble.choices,
+                      chosenIds,
+                      other,
+                    );
                   }}
                   onRetry={() => {
                     if (bubble.role !== "error") return;
-                    handleRetry(bubble.id, bubble.retryText, bubble.retryImages);
+                    handleRetry(
+                      bubble.id,
+                      bubble.retryText,
+                      bubble.retryImages,
+                    );
                   }}
                 />
               ))}
@@ -759,7 +1008,16 @@ export default function MagicChat({
               {attachedPaths.map((imagePath) => (
                 <div key={imagePath} class="magic-chat-attach-thumb">
                   <img src={resolveImageSrc(imagePath)} alt="" />
-                  <button type="button" class="ghost icon sm" aria-label="Remove" onClick={() => setAttachedPaths((current) => current.filter((p) => p !== imagePath))}>
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    aria-label="Remove"
+                    onClick={() =>
+                      setAttachedPaths((current) =>
+                        current.filter((p) => p !== imagePath),
+                      )
+                    }
+                  >
                     <CloseIcon />
                   </button>
                 </div>
@@ -768,23 +1026,42 @@ export default function MagicChat({
           )}
 
           <footer class="magic-chat-composer">
-            <button type="button" class="ghost icon" aria-label="Attach images" onClick={() => setPickerOpen(true)} disabled={sending}>
+            <button
+              type="button"
+              class="ghost icon"
+              aria-label="Attach images"
+              onClick={() => setPickerOpen(true)}
+              disabled={sending}
+            >
               <PlusIcon />
             </button>
             <textarea
               class="magic-chat-input"
               placeholder="Message Magic…"
               value={prompt}
-              onInput={(event) => setPrompt((event.target as HTMLTextAreaElement).value)}
+              onInput={(event) =>
+                setPrompt((event.target as HTMLTextAreaElement).value)
+              }
               onKeyDown={handleComposerKeyDown}
               rows={1}
             />
             {sending ? (
-              <button type="button" class="icon magic-chat-stop" aria-label="Stop" onClick={handleStop}>
+              <button
+                type="button"
+                class="icon magic-chat-stop"
+                aria-label="Stop"
+                onClick={handleStop}
+              >
                 <span class="magic-chat-stop-square" />
               </button>
             ) : (
-              <button type="button" class="icon" aria-label="Send" disabled={!prompt.trim()} onClick={() => void handleComposerSubmit()}>
+              <button
+                type="button"
+                class="icon"
+                aria-label="Send"
+                disabled={!prompt.trim()}
+                onClick={() => void handleComposerSubmit()}
+              >
                 <SparkleIcon />
               </button>
             )}
@@ -793,7 +1070,7 @@ export default function MagicChat({
       )}
 
       {/* Hidden while the panel itself is open - the panel already IS the
-       * "chat is here" surface (its own "—" gets back to bubble-only), so
+       * "chat is here" surface (its own "-" gets back to bubble-only), so
        * showing both at once just duplicated the same affordance. */}
       {!open && (
         <button
@@ -806,7 +1083,9 @@ export default function MagicChat({
         >
           <SparkleIcon />
           {badgeSpinning && <span class="magic-chat-bubble-spinner" />}
-          {!badgeSpinning && messages.length > 0 && <span class="magic-chat-bubble-dot" />}
+          {!badgeSpinning && messages.length > 0 && (
+            <span class="magic-chat-bubble-dot" />
+          )}
         </button>
       )}
 
@@ -814,13 +1093,20 @@ export default function MagicChat({
         source={source}
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onAttach={(picked) => setAttachedPaths((current) => [...new Set([...current, ...picked])])}
+        onAttach={(picked) =>
+          setAttachedPaths((current) => [...new Set([...current, ...picked])])
+        }
       />
 
       <ConfirmDialog
         open={showEndConfirm}
         title="Clear this conversation?"
-        message={<p>Magic is still replying. Clearing now stops it and erases the conversation.</p>}
+        message={
+          <p>
+            Magic is still replying. Clearing now stops it and erases the
+            conversation.
+          </p>
+        }
         confirmLabel="Clear all"
         destructive
         onConfirm={clearAllNow}
@@ -863,7 +1149,11 @@ function MagicChatBubbleView({
     return (
       <div class="magic-chat-row assistant">
         <div class="magic-chat-bubble-msg assistant">
-          {bubble.text ? <p>{bubble.text}</p> : <span class="magic-chat-typing" aria-label="Magic is typing" />}
+          {bubble.text ? (
+            <p>{bubble.text}</p>
+          ) : (
+            <span class="magic-chat-typing" aria-label="Magic is typing" />
+          )}
         </div>
       </div>
     );
@@ -895,7 +1185,11 @@ function MagicChatBubbleView({
     <div class="magic-chat-row assistant">
       <div class="magic-chat-bubble-msg assistant ai-wizard-question">
         <p class="ai-wizard-question-text">{bubble.question}</p>
-        <div class="row ai-wizard-choices" role="group" aria-label={bubble.question}>
+        <div
+          class="row ai-wizard-choices"
+          role="group"
+          aria-label={bubble.question}
+        >
           {bubble.choices.map((choice) => (
             <button
               key={choice.id}
@@ -920,14 +1214,28 @@ function MagicChatBubbleView({
           ))}
         </div>
         {bubble.allowOther && !bubble.answer && (
-          <input type="text" placeholder="Type your own answer…" value={other} onInput={(event) => setOther((event.currentTarget as HTMLInputElement).value)} />
+          <input
+            type="text"
+            placeholder="Type your own answer…"
+            value={other}
+            onInput={(event) =>
+              setOther((event.currentTarget as HTMLInputElement).value)
+            }
+          />
         )}
         {!bubble.answer && (
-          <button type="button" class="sm" disabled={chosen.size === 0 && !(bubble.allowOther && other.trim())} onClick={() => onAnswerQuestion(chosen, other)}>
+          <button
+            type="button"
+            class="sm"
+            disabled={chosen.size === 0 && !(bubble.allowOther && other.trim())}
+            onClick={() => onAnswerQuestion(chosen, other)}
+          >
             Continue
           </button>
         )}
-        {bubble.answer && <p class="hint magic-chat-question-answer">{bubble.answer}</p>}
+        {bubble.answer && (
+          <p class="hint magic-chat-question-answer">{bubble.answer}</p>
+        )}
       </div>
     </div>
   );
@@ -958,14 +1266,27 @@ function MagicChatImagePicker({
   }, [open]);
 
   return (
-    <dialog ref={dialogRef} class="file-dialog image-picker-dialog" aria-label="Attach images">
+    <dialog
+      ref={dialogRef}
+      class="file-dialog image-picker-dialog"
+      aria-label="Attach images"
+    >
       {open && (
         <>
           <header>
             <h3>Attach images</h3>
           </header>
           <div class="image-picker-body" ref={bodyRef}>
-            <FileManager source={source} value={picked} onChange={(next) => setPicked(Array.isArray(next) ? next : [next])} multiple accept={IMAGE_EXTENSIONS} syncUrl={false} />
+            <FileManager
+              source={source}
+              value={picked}
+              onChange={(next) =>
+                setPicked(Array.isArray(next) ? next : [next])
+              }
+              multiple
+              accept={IMAGE_EXTENSIONS}
+              syncUrl={false}
+            />
           </div>
           <footer>
             <button type="button" class="outline" onClick={onClose}>

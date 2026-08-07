@@ -1,8 +1,8 @@
 import renderToString, { renderToStringAsync } from "preact-render-to-string";
 import { runWithDryContext, type DryRequestContext } from "../../content-types/dry-context.js";
-import { mergeSeoLayers, type DrySeoValue } from "../../content-types/dry-seo.js";
+import { mergeSeoLayers, type DrySeoLayers } from "../../content-types/dry-seo.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
-import { path as adminPath } from "../config.js";
+import { path as adminPath, lang as siteLang } from "../config.js";
 import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
@@ -38,8 +38,12 @@ export type { PageProps, LayoutProps } from "./render-types.js";
  * `HYDRATE_ENTRY_HREF`'s `<script type="module">` runs in BOTH dev and
  * prod, unlike `/@vite/client` - it's `hydrate-client.ts` (Giai đoạn 2),
  * not a dev-only debugging aid. */
+// `lang` is a resolved process-wide constant (`options.ts`'s `resolveOptions`,
+// `config.ts`), not per-request - so `<html lang>` bakes into this prefix the
+// same way charset/viewport/css do, rather than being threaded through
+// `buildSeoTags` alongside the per-request `origin`/`pathname`.
 const DOC_HEAD_PREFIX =
-  '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+  `<!DOCTYPE html><html lang="${siteLang}"><head><meta charset="utf-8">` +
   '<meta name="viewport" content="width=device-width, initial-scale=1">' +
   `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}">` +
   (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
@@ -56,27 +60,123 @@ function escapeAttr(text: string): string {
   return escapeHtml(text).replace(/"/g, "&quot;");
 }
 
+/** `resolveImageSrc` (`storage/http-source.ts`) returns either an already-
+ * absolute `http(s)://` URL or a root-relative path (`/api/storage/...` or a
+ * raw value that already started with `/`) - Open Graph/Twitter/JSON-LD
+ * image URLs must be absolute per spec, so a relative result gets `origin`
+ * prefixed here. `origin` itself can be `""` (no request context, e.g. a
+ * unit test) - in that case this deliberately still returns the bare
+ * relative path rather than fabricating a fake origin. */
+function absoluteUrl(origin: string, urlOrPath: string): string {
+  return /^https?:\/\//i.test(urlOrPath) ? urlOrPath : `${origin}${urlOrPath}`;
+}
+
 /** Turns the SEO cascade's final merged value (`dry-seo.ts`'s
- * `mergeSeoLayers`, already Default < Singleton < Entry priority applied)
- * into real `<head>` tags. A field unset at every layer emits nothing - a
+ * `mergeSeoLayers`, already Default < Singleton < Entry < Page priority
+ * applied) into real `<head>` tags: `<title>`/description/Open Graph/
+ * Twitter Card (as before), plus canonical, `robots`, and `og:url`/
+ * `og:type`/`og:site_name`. A field unset at every layer emits nothing - a
  * page with no SEO configured anywhere renders exactly like before this
  * feature existed (no `<title>` tag at all). `image` goes through
  * `resolveImageSrc` (`storage/http-source.ts`) for the same stored-id vs.
- * raw-URL resolution any other `image` field's `<img src>` already gets. */
-function buildSeoTags(seo: DrySeoValue): string {
+ * raw-URL resolution any other `image` field's `<img src>` already gets,
+ * then `absoluteUrl` above for Open Graph/Twitter's absolute-URL
+ * requirement. `origin`/`pathname` are this request's own
+ * (`dryContext.origin`/`.pathname`, seeded by `page-handler.ts` via
+ * `site-origin.ts`'s `resolveSiteOrigin`) - canonical/`og:url` are only
+ * emitted when both are present, same "unset emits nothing" convention as
+ * every other tag here (a unit test with no real request context just gets
+ * `""` for both and skips them, rather than emitting a broken empty href). */
+function buildSeoTags(layers: DrySeoLayers, origin: string, pathname: string): string {
+  const seo = mergeSeoLayers(layers);
   let html = "";
   if (seo.metaTitle) {
     html += `<title>${escapeHtml(seo.metaTitle)}</title>`;
     html += `<meta property="og:title" content="${escapeAttr(seo.metaTitle)}">`;
+    html += `<meta name="twitter:title" content="${escapeAttr(seo.metaTitle)}">`;
   }
   if (seo.description) {
     html += `<meta name="description" content="${escapeAttr(seo.description)}">`;
     html += `<meta property="og:description" content="${escapeAttr(seo.description)}">`;
+    html += `<meta name="twitter:description" content="${escapeAttr(seo.description)}">`;
   }
   if (seo.image) {
-    html += `<meta property="og:image" content="${escapeAttr(resolveImageSrc(seo.image))}">`;
+    const absoluteImage = absoluteUrl(origin, resolveImageSrc(seo.image));
+    html += `<meta property="og:image" content="${escapeAttr(absoluteImage)}">`;
+    html += `<meta name="twitter:image" content="${escapeAttr(absoluteImage)}">`;
+  }
+  if (seo.noIndex === true) {
+    html += '<meta name="robots" content="noindex">';
+  }
+  if (origin && pathname) {
+    const canonical = `${origin}${pathname}`;
+    html += `<link rel="canonical" href="${escapeAttr(canonical)}">`;
+    html += `<meta property="og:url" content="${escapeAttr(canonical)}">`;
+  }
+  // `og:type`/`twitter:card`/`og:site_name` describe THIS page as a social
+  // object - skipped entirely on a page with no SEO data at all (nothing
+  // above set `seo.metaTitle`/`description`/`image`), same as everything
+  // else in this function.
+  if (seo.metaTitle || seo.description || seo.image) {
+    html += `<meta property="og:type" content="${layers.entry ? "article" : "website"}">`;
+    html += `<meta name="twitter:card" content="${seo.image ? "summary_large_image" : "summary"}">`;
+    // Reuses the SEO Defaults singleton's own Title field as the site name
+    // (`layers.default.metaTitle`) rather than adding a dedicated "site
+    // name" field - see `status/seo-standard.md`.
+    if (layers.default?.metaTitle) {
+      html += `<meta property="og:site_name" content="${escapeAttr(layers.default.metaTitle)}">`;
+    }
   }
   return html;
+}
+
+/** JSON-LD structured data: a `WebSite`/`Organization` pair whenever there's
+ * a real site origin to anchor them to (from `layers.default`, the SEO
+ * Defaults singleton - reusing `metaTitle`/`image` as `name`/`logo` rather
+ * than adding dedicated fields), plus an `Article` object when this render's
+ * `entry` tier is set (i.e. the page is a seo-enabled collection entry) -
+ * `headline`/`description`/`image` off the same merged `seo`, `datePublished`/
+ * `dateModified` off `entryDates` (`dry-context.ts`'s `seoEntryDates`, only
+ * ever populated from a real `features.timestamps` column - never
+ * fabricated). Escapes `<` in the serialized JSON so a title/description
+ * containing `</script>` can't break out of the tag. */
+function buildStructuredData(
+  layers: DrySeoLayers,
+  origin: string,
+  pathname: string,
+  entryDates: DryRequestContext["seoEntryDates"],
+): string {
+  const seo = mergeSeoLayers(layers);
+  const graph: Record<string, unknown>[] = [];
+
+  if (origin) {
+    const siteName = layers.default?.metaTitle;
+    const website: Record<string, unknown> = { "@type": "WebSite", url: origin };
+    if (siteName) website.name = siteName;
+    graph.push(website);
+
+    const organization: Record<string, unknown> = { "@type": "Organization", url: origin };
+    if (siteName) organization.name = siteName;
+    if (layers.default?.image) organization.logo = absoluteUrl(origin, resolveImageSrc(layers.default.image));
+    graph.push(organization);
+  }
+
+  if (layers.entry) {
+    const article: Record<string, unknown> = { "@type": "Article" };
+    if (seo.metaTitle) article.headline = seo.metaTitle;
+    if (seo.description) article.description = seo.description;
+    if (seo.image) article.image = absoluteUrl(origin, resolveImageSrc(seo.image));
+    if (entryDates?.createdAt) article.datePublished = entryDates.createdAt;
+    if (entryDates?.updatedAt) article.dateModified = entryDates.updatedAt;
+    if (origin && pathname) article.url = `${origin}${pathname}`;
+    // Only a bare `{ "@type": "Article" }` (nothing real to report) is
+    // skipped - same "no real data, no tag" rule as everything above.
+    if (Object.keys(article).length > 1) graph.push(article);
+  }
+
+  if (graph.length === 0) return "";
+  const json = JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replace(/</g, "\\u003c");
+  return `<script type="application/ld+json">${json}</script>`;
 }
 
 /** Must be the LAST node inside `<body>` - `preact-iso/hydrate`'s own
@@ -154,7 +254,14 @@ export function renderPage(
     async start(controller) {
       try {
         const vnode = await runWithDryContext(dryContext, () => resolveMatchToVNode(match));
-        const head = DOC_HEAD_PREFIX + buildSeoTags(mergeSeoLayers(dryContext.seo)) + DOC_BODY_OPEN;
+        const seoLayers = dryContext.seo ?? {};
+        const origin = dryContext.origin ?? "";
+        const pathname = dryContext.pathname ?? "";
+        const head =
+          DOC_HEAD_PREFIX +
+          buildSeoTags(seoLayers, origin, pathname) +
+          buildStructuredData(seoLayers, origin, pathname, dryContext.seoEntryDates) +
+          DOC_BODY_OPEN;
         controller.enqueue(encoder.encode(head));
         headSent = true;
         // Inside the context too, not just `resolveMatchToVNode`: nested

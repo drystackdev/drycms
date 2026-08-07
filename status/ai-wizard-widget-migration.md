@@ -24,11 +24,12 @@ by the one floating bubble (visible at every width).
 ## Status
 
 Done.
+
 - `AiSchemaWizardPanel.tsx`: `open` is now internal state (was a prop) -
   `popover="manual"` + `showPopover()` on mount, bubble/panel mutually
   exclusive render (same pattern as `MagicChat.tsx`), new `<header>` with a
-  "—" minimize button, busy-spinner badge on the bubble while `stage ===
-  "loading"` (mirrors `.magic-chat-bubble.busy`). Internal stage machine
+  "-" minimize button, busy-spinner badge on the bubble while `stage ===
+"loading"` (mirrors `.magic-chat-bubble.busy`). Internal stage machine
   (start/loading/error/turn) and `applyProposal`'s "reset to start, don't
   close" behavior are unchanged.
 - `BuilderContentType.tsx`: removed `aiWizardOpen` state, the header

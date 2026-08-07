@@ -2,10 +2,9 @@ import { path as adminPath } from "./config.js";
 import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
 import type { DryRequestContext, DryVeiContext } from "../content-types/dry-context.js";
-import type { DrySeoLayers, DrySeoValue } from "../content-types/dry-seo.js";
+import { loadSeoDefaults, type DrySeoLayers } from "../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { SEO_DEFAULTS_TYPE_ID } from "../content-types/system-fields.js";
 import { VEI_RESOURCE_ID } from "../content-types/permissions.js";
 import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
@@ -13,6 +12,8 @@ import { discoverRoutes } from "./app-router/route-tree.js";
 import { matchRoute, type RouteMatch } from "./app-router/match.js";
 import { renderErrorHtml, renderPage } from "./app-router/render.js";
 import { readPageCache, writePageCache } from "./app-router/pages-cache.js";
+import { resolveSiteOrigin } from "./app-router/site-origin.js";
+import { buildRobotsResponse, buildSitemapResponse } from "./app-router/sitemap.js";
 
 /**
  * Renders `src/apps/pages/**` (see `plans/app-router.md`) - the "real
@@ -57,13 +58,29 @@ export async function handlePageRequest(
     return null;
   }
 
-  const routeTree = discoverRoutes();
-  const match = matchRoute(routeTree.root, url.pathname);
-
   // Session support (preview/draft mode) is deferred to Giai đoạn 4 -
   // `null` unconditionally for now rather than parsing a cookie nothing
   // reads yet.
   const routeContext: DryRouteContext = { request, url, params: {}, env, session: null };
+
+  // Not real `page.tsx` routes (XML/plain text, not HTML) - handled here,
+  // before routing, with their own try/catch rather than the big one below:
+  // a failure building either shouldn't render `500.tsx` (an HTML fallback
+  // makes no sense for a feed a crawler is fetching).
+  if (url.pathname === "/sitemap.xml") {
+    try {
+      return await buildSitemapResponse(url, routeContext);
+    } catch (error) {
+      console.error("[drycms] sitemap.xml render failed:", error);
+      return new Response("", { status: 500 });
+    }
+  }
+  if (url.pathname === "/robots.txt") {
+    return buildRobotsResponse(url);
+  }
+
+  const routeTree = discoverRoutes();
+  const match = matchRoute(routeTree.root, url.pathname);
 
   try {
     const { schema, entries } = getContentAdapters(routeContext);
@@ -116,20 +133,23 @@ export async function handlePageRequest(
 
     const touchedTypes = new Set<string>();
     const callLog: DryRequestContext["callLog"] = [];
-    const seo: DrySeoLayers = {};
     // Seeds the SEO cascade's "Default" layer once per request - the one
     // layer no page/layout ever fetches on its own (see `dry-seo.ts`'s
     // `seoTierFor`), so it has to be done here rather than as a side effect
-    // of some `dry()` call. `seoDefaults` is a built-in type (see `seed.ts`),
-    // so it's always present in `allTypes` - looked up by its fixed id, not
-    // name, since the name/label stay freely editable.
-    const seoDefaultsType = allTypes.find((t) => t.id === SEO_DEFAULTS_TYPE_ID);
-    if (seoDefaultsType) {
-      const row = await entries.getSingletonEntry(seoDefaultsType, allTypes);
-      const value = row?.value.seo;
-      if (value && typeof value === "object") seo.default = value as DrySeoValue;
-    }
-    const dryContext: DryRequestContext = { entries, allTypes, touchedTypes, callLog, seo, params: resolvedMatch.params, vei };
+    // of some `dry()` call. `loadSeoDefaults` is shared with `sitemap.ts`,
+    // which needs the exact same site-wide lookup.
+    const seo: DrySeoLayers = { default: await loadSeoDefaults(entries, allTypes) };
+    const dryContext: DryRequestContext = {
+      entries,
+      allTypes,
+      touchedTypes,
+      callLog,
+      seo,
+      params: resolvedMatch.params,
+      vei,
+      origin: resolveSiteOrigin(url),
+      pathname: url.pathname,
+    };
 
     const response = renderPage(resolvedMatch, dryContext, {
       status,

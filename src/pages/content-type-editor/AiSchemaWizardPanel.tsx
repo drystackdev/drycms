@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 
-import AiKeyPicker, { useAiKeySelection } from "../../components/AiKeyPicker.js";
+import AiKeyPicker, {
+  useAiKeySelection,
+} from "../../components/AiKeyPicker.js";
 import { toast } from "../../components/Toast.js";
 import { ArrowRightIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { normalizeFieldOrder } from "../../content-types/naming.js";
-import { saveDraft, drafts, getDraft } from "../../content-types/draft-store.js";
+import {
+  saveDraft,
+  drafts,
+  getDraft,
+} from "../../content-types/draft-store.js";
 import { mapWizardTables } from "../../content-types/ai-wizard-map.js";
-import { parsePartialWizardTurn, type PartialWizardTurn } from "../../content-types/ai-wizard-protocol.js";
+import {
+  parsePartialWizardTurn,
+  type PartialWizardTurn,
+} from "../../content-types/ai-wizard-protocol.js";
 import type {
   WizardChoice,
   WizardProposalTurn,
@@ -31,10 +40,15 @@ export interface AiSchemaWizardPanelProps {
 
 type Stage = "start" | "loading" | "turn" | "error";
 
-function mergedAllTypes(allDefinitions: ContentTypeDefinition[]): ContentTypeDefinition[] {
-  const merged = allDefinitions.map((type) => getDraft(type.id)?.definition ?? type);
+function mergedAllTypes(
+  allDefinitions: ContentTypeDefinition[],
+): ContentTypeDefinition[] {
+  const merged = allDefinitions.map(
+    (type) => getDraft(type.id)?.definition ?? type,
+  );
   for (const entry of Object.values(drafts.value)) {
-    if (!merged.some((type) => type.id === entry.definition.id)) merged.push(entry.definition);
+    if (!merged.some((type) => type.id === entry.definition.id))
+      merged.push(entry.definition);
   }
   return merged;
 }
@@ -70,7 +84,9 @@ async function requestWizardTurn(
   });
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(typeof body.message === "string" ? body.message : "AI request failed.");
+    throw new Error(
+      typeof body.message === "string" ? body.message : "AI request failed.",
+    );
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -98,7 +114,13 @@ async function requestWizardTurn(
   throw new Error("AI connection closed unexpectedly.");
 }
 
-function StartStep({ onStart, canStart }: { onStart: (goal: string) => void; canStart: boolean }) {
+function StartStep({
+  onStart,
+  canStart,
+}: {
+  onStart: (goal: string) => void;
+  canStart: boolean;
+}) {
   const [goal, setGoal] = useState("");
 
   return (
@@ -108,13 +130,24 @@ function StartStep({ onStart, canStart }: { onStart: (goal: string) => void; can
         rows={3}
         placeholder="VD: Quản lý bài viết blog, có tiêu đề, nội dung, ảnh đại diện, tác giả và danh mục"
         value={goal}
-        onInput={(event) => setGoal((event.currentTarget as HTMLTextAreaElement).value)}
+        onInput={(event) =>
+          setGoal((event.currentTarget as HTMLTextAreaElement).value)
+        }
       />
       <footer class="row justify-between">
-        <button type="button" class="ghost" disabled={!canStart} onClick={() => onStart("")}>
+        <button
+          type="button"
+          class="ghost"
+          disabled={!canStart}
+          onClick={() => onStart("")}
+        >
           Skip, let AI ask
         </button>
-        <button type="button" disabled={!canStart} onClick={() => onStart(goal)}>
+        <button
+          type="button"
+          disabled={!canStart}
+          onClick={() => onStart(goal)}
+        >
           Start <ArrowRightIcon />
         </button>
       </footer>
@@ -152,19 +185,26 @@ function QuestionStep({
   }
 
   function submit() {
-    const labels = turn.choices.filter((choice) => selected.has(choice.id)).map((choice) => `"${choice.label}"`);
+    const labels = turn.choices
+      .filter((choice) => selected.has(choice.id))
+      .map((choice) => `"${choice.label}"`);
     const parts: string[] = [];
     if (labels.length) parts.push(`Selected: ${labels.join(", ")}`);
     if (turn.allowOther && other.trim()) parts.push(`Other: "${other.trim()}"`);
     onAnswer(parts.join(". ") || "No selection.");
   }
 
-  const canSubmit = selected.size > 0 || (turn.allowOther && other.trim().length > 0);
+  const canSubmit =
+    selected.size > 0 || (turn.allowOther && other.trim().length > 0);
 
   return (
     <div class="stack ai-wizard-question">
       <p class="ai-wizard-question-text">{turn.question}</p>
-      <div class="row ai-wizard-choices" role="group" aria-label={turn.question}>
+      <div
+        class="row ai-wizard-choices"
+        role="group"
+        aria-label={turn.question}
+      >
         {turn.choices.map((choice) => (
           <button
             key={choice.id}
@@ -184,11 +224,18 @@ function QuestionStep({
           placeholder="Type your own answer…"
           value={other}
           disabled={busy}
-          onInput={(event) => setOther((event.currentTarget as HTMLInputElement).value)}
+          onInput={(event) =>
+            setOther((event.currentTarget as HTMLInputElement).value)
+          }
         />
       )}
       <footer>
-        <button type="button" aria-busy={busy} disabled={busy || !canSubmit} onClick={submit}>
+        <button
+          type="button"
+          aria-busy={busy}
+          disabled={busy || !canSubmit}
+          onClick={submit}
+        >
           Continue <ArrowRightIcon />
         </button>
       </footer>
@@ -205,7 +252,11 @@ function QuestionStep({
  * even reaches this preview's "tables" branch for long: it's applied and
  * the panel closes the moment it validates (see `applyProposal` below).
  */
-function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined }) {
+function PartialPreview({
+  partial,
+}: {
+  partial: PartialWizardTurn | undefined;
+}) {
   if (!partial) return null;
   const text = partial.question;
   const hasChoices = !!partial.choices?.length;
@@ -218,7 +269,10 @@ function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined })
       {hasChoices && (
         <div class="row ai-wizard-choices">
           {partial.choices!.map((choice, index) => (
-            <span key={choice.id ?? index} class="sm outline ai-wizard-choice ai-wizard-preview-pulse">
+            <span
+              key={choice.id ?? index}
+              class="sm outline ai-wizard-choice ai-wizard-preview-pulse"
+            >
               {choice.label}
             </span>
           ))}
@@ -227,14 +281,21 @@ function PartialPreview({ partial }: { partial: PartialWizardTurn | undefined })
       {hasTables && (
         <ul class="content-type-list">
           {partial.tables!.map((table, index) => (
-            <li key={table.name ?? index} class="content-type-list-item row justify-between ai-wizard-preview-pulse">
+            <li
+              key={table.name ?? index}
+              class="content-type-list-item row justify-between ai-wizard-preview-pulse"
+            >
               <span class="row align-center" style={{ gap: "0.375rem" }}>
                 {table.label ?? table.name}
                 {table.isNew !== undefined && (
-                  <span class="badge sm outline">{table.isNew ? "New" : "Extend"}</span>
+                  <span class="badge sm outline">
+                    {table.isNew ? "New" : "Extend"}
+                  </span>
                 )}
               </span>
-              <small class="hint">{table.fieldCount} field{table.fieldCount === 1 ? "" : "s"}</small>
+              <small class="hint">
+                {table.fieldCount} field{table.fieldCount === 1 ? "" : "s"}
+              </small>
             </li>
           ))}
         </ul>
@@ -274,7 +335,10 @@ export default function AiSchemaWizardPanel({
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
   const [lastGoal, setLastGoal] = useState<string | undefined>(undefined);
-  const partialTurn = useMemo(() => parsePartialWizardTurn(streamingText), [streamingText]);
+  const partialTurn = useMemo(
+    () => parsePartialWizardTurn(streamingText),
+    [streamingText],
+  );
   const aiKey = useAiKeySelection(open);
 
   // Floats the whole widget in the browser's top layer - same mechanism
@@ -304,14 +368,22 @@ export default function AiSchemaWizardPanel({
    * list underneath - matches `MagicChat.tsx`'s own "stay open, keep
    * chatting" behavior after a `fields` write turn. */
   function applyProposal(proposal: WizardProposalTurn) {
-    const mapped = mapWizardTables(proposal.tables, mergedAllTypes(allDefinitions));
+    const mapped = mapWizardTables(
+      proposal.tables,
+      mergedAllTypes(allDefinitions),
+    );
     const succeeded = mapped.filter((result) => result.ok);
     const failed = mapped.filter((result) => !result.ok);
     for (const result of succeeded) {
-      if (result.ok) saveDraft(normalizeFieldOrder(result.definition), result.isNew);
+      if (result.ok)
+        saveDraft(normalizeFieldOrder(result.definition), result.isNew);
     }
     if (succeeded.length === 0) {
-      setError(failed.map((result) => `${result.name}: ${!result.ok ? result.error : ""}`).join("; "));
+      setError(
+        failed
+          .map((result) => `${result.name}: ${!result.ok ? result.error : ""}`)
+          .join("; "),
+      );
       setStage("error");
       return;
     }
@@ -328,7 +400,12 @@ export default function AiSchemaWizardPanel({
     setLastGoal(undefined);
   }
 
-  async function advance(nextHistory: WizardHistoryMessage[], keyName: string | undefined, model: string | undefined, goal?: string) {
+  async function advance(
+    nextHistory: WizardHistoryMessage[],
+    keyName: string | undefined,
+    model: string | undefined,
+    goal?: string,
+  ) {
     setStage("loading");
     setError(null);
     setStreamingText("");
@@ -377,15 +454,22 @@ export default function AiSchemaWizardPanel({
             <h3>
               <SparkleIcon /> Ask AI
             </h3>
-            <button type="button" class="ghost icon sm" aria-label="Minimize" onClick={() => setOpen(false)}>
-              —
+            <button
+              type="button"
+              class="ghost icon sm"
+              aria-label="Minimize"
+              onClick={() => setOpen(false)}
+            >
+              -
             </button>
           </header>
           <div class="ai-wizard-key-picker">
             <AiKeyPicker selection={aiKey} />
           </div>
           <div class="ai-wizard-body">
-            {stage === "start" && <StartStep onStart={start} canStart={aiKey.ready} />}
+            {stage === "start" && (
+              <StartStep onStart={start} canStart={aiKey.ready} />
+            )}
             {stage === "loading" && (
               <div class="stack ai-wizard-loading">
                 <div class="row align-center" style={{ gap: "0.5rem" }}>
@@ -398,7 +482,20 @@ export default function AiSchemaWizardPanel({
               <div class="stack">
                 <div class="alert destructive">{error}</div>
                 <footer>
-                  <button type="button" disabled={!aiKey.ready} onClick={() => void advance(history, aiKey.keyName, aiKey.model, history.length === 0 ? lastGoal : undefined)}>Try again</button>
+                  <button
+                    type="button"
+                    disabled={!aiKey.ready}
+                    onClick={() =>
+                      void advance(
+                        history,
+                        aiKey.keyName,
+                        aiKey.model,
+                        history.length === 0 ? lastGoal : undefined,
+                      )
+                    }
+                  >
+                    Try again
+                  </button>
                 </footer>
               </div>
             )}

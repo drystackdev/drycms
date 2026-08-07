@@ -10,7 +10,7 @@ import { resolveOptions } from "./options.js";
  */
 export const resolved = resolveOptions(userOptions);
 
-export const { path, storage, icons, content, ai, kv } = resolved;
+export const { path, storage, icons, content, ai, kv, lang } = resolved;
 
 // Hands the base path to the one module that needs it on BOTH sides -
 // see `storage/admin-path.ts` for why it can't just import this file.

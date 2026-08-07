@@ -98,4 +98,24 @@ describe("mergeSeoLayers", () => {
     // Only the field the page layer actually set is overridden.
     expect(merged.description).toBe("Default description");
   });
+
+  it("noIndex: an unset layer (null, per entry-codec.ts's rowToValue) doesn't blank out a lower layer's true", () => {
+    const merged = mergeSeoLayers({
+      default: { noIndex: true },
+      entry: { noIndex: null as never },
+    });
+    expect(merged.noIndex).toBe(true);
+  });
+
+  it("noIndex: a more specific layer's explicit false overrides a less specific layer's true", () => {
+    const merged = mergeSeoLayers({
+      default: { noIndex: true },
+      entry: { noIndex: false },
+    });
+    expect(merged.noIndex).toBe(false);
+  });
+
+  it("noIndex: is undefined when no layer ever set it", () => {
+    expect(mergeSeoLayers({ default: { metaTitle: "Default title" } }).noIndex).toBeUndefined();
+  });
 });

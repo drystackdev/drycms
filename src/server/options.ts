@@ -130,6 +130,12 @@ export interface DryOption {
   kind?: "local" | "cloudflare";
   ai?: DryAiOption;
   kv?: DryKvTuningOption;
+  /** The public site's `<html lang>` (`render.ts`'s `DOC_HEAD_PREFIX`) - a
+   * real per-deployment constant, unlike `ai.lang` (a separate, optional
+   * setting for AI-generated text specifically, not every app configures
+   * `ai` at all) - kept independent rather than derived from it.
+   * @default "en" */
+  lang?: string;
 }
 
 /**
@@ -249,6 +255,7 @@ export interface ResolvedDryOption {
   typesCache: ResolvedTypesCacheOption;
   ai: ResolvedAiOption;
   kv: ResolvedKvOption;
+  lang: string;
 }
 
 export const DEFAULT_PATH = "/dry";
@@ -499,6 +506,11 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
 
   const storage = resolveStorageOption(kind, overrides);
 
+  const lang = options.lang ?? "en";
+  if (typeof lang !== "string" || !lang.trim()) {
+    throw new TypeError('[drycms] `lang` must be a non-empty string.');
+  }
+
   return {
     path,
     kind,
@@ -511,5 +523,6 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
     typesCache: { storage: resolveStorageBackedOption(kind, TYPES_CACHE_STORAGE_DIR_NAME, overrides) },
     ai: resolveAiOption(kind, options.ai),
     kv: resolveKvOption(kind, options.kv, overrides),
+    lang: lang.trim(),
   };
 }
