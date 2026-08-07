@@ -577,3 +577,58 @@ Sửa `components.css`, `Dock.tsx`, `overlay.ts`. `bun run typecheck` sạch
 (lỗi `blogs/page.tsx:78` có sẵn từ trước). `bun run test`: vẫn 958 pass/16
 fail như trước 2 bản sửa VEI gần nhất (fail có sẵn, không liên quan file
 này).
+
+### Bổ sung: focus field trong panel VEI → tự scroll + đổi border solid trên trang (2026-08-07)
+
+Tính năng mới, chưa từng có: focus 1 field trong form của panel/dialog VEI
+giờ tự scroll trang public đến field tương ứng (nếu field đó CÓ marker trên
+trang hiện tại) và đổi outline dashed baseline (`MARKER_STYLES`) sang solid
+cho riêng field đang focus.
+
+Cơ chế - 3 chặng, đi đúng đường dây `field-events.ts` đã có sẵn cho
+`dry:field-input`/`dry:field-set` (module tự nhận là điểm nối cho "AI
+feature, browser extension, plugin ngoài bundle"):
+
+1. **`ContentEntryEditor.tsx`** (chạy trong iframe): 1 cặp listener
+   `focusin`/`focusout` mức `document` (bubble, không cần gắn từng field) -
+   `focusin` tìm `[data-field-name]` gần nhất từ `event.target`, cắt về top-
+   level (`split(".")[0]`, cùng cách `applyFieldSet` đã cắt cho path lồng
+   component), dispatch `dry:field-focus` (`field-events.ts`, mới thêm) kèm
+   `typeSlug`/`entryId` hiện tại. `focusout` chỉ dispatch `null` khi
+   `relatedTarget` (phần tử SẮP nhận focus) không nằm trong field nào - tab
+   giữa 2 control CÙNG field không bắn `null` giữa chừng.
+2. **`bridge.ts`**: relay `dry:field-focus` → `postMessage({ type:
+   "vei:focus", detail })` ra ngoài, y hệt cách `vei:input` đã relay
+   `dry:field-input`.
+3. **`overlay.ts`**: `elementsForFocus(name, typeSlug, entryId)` - match y
+   hệt logic per-marker của `applyPreview` (so `ref.type`/`encodeEntryId`/
+   segment đầu của `ref.path`), không ghi giá trị, chỉ trả về element.
+   `applyFieldFocus()` xoá class cũ (`clearFieldFocus`), nếu `name` không
+   null thì gán class `dry-vei-focused` cho mọi marker khớp +
+   `scrollIntoView({behavior:"smooth", block:"center"})` phần tử đầu tiên.
+   Gọi từ nhánh `vei:focus` mới trong message listener của dialog/panel
+   iframe; `clearFieldFocus()` cũng gọi trong `closeDialog()` để không để
+   sót outline solid sau khi đóng.
+
+Granularity CHỈ ở cấp top-level field (giống toàn bộ hệ thống marker hiện
+tại) - focus vào 1 sub-field bên trong 1 component/group (`hero.headline`)
+sẽ sáng SOLID hết mọi marker thuộc `hero.*` trên trang, không riêng
+`headline` - đúng cách `dry:field-input`/`applyPreview` đã hoạt động cho
+input/preview, không phải giới hạn riêng của tính năng này.
+
+CSS: `MARKER_STYLES` thêm rule `html.dry-vei-editing .dry-vei-focused {
+outline-style: solid; }` - cùng độ đặc hiệu với rule baseline, thắng nhờ thứ
+tự khai báo sau.
+
+Verify Playwright (panel mode, 1440x1200, trang chủ dev server thật): click
+field "hero" (H1) mở panel trỏ `/dry/content/homepage?...&_field=hero`,
+focus input đầu tiên trong panel → 5 marker thuộc `hero.*` trên trang (span
+eyebrow, h1, 2 p, img) đều `outlineStyle: solid`; click ra ngoài field (h1
+trong iframe, không có `data-field-name`) → về 0 phần tử `.dry-vei-focused`.
+
+Sửa `field-events.ts` (thêm `FIELD_FOCUS_EVENT`/dispatch/listen),
+`ContentEntryEditor.tsx` (effect focusin/focusout), `bridge.ts` (relay
+`vei:focus`), `overlay.ts` (`elementsForFocus`/`applyFieldFocus`/wiring),
+`overlay-styles.ts` (`.dry-vei-focused`). `bun run typecheck` sạch (lỗi
+`blogs/page.tsx:78` có sẵn từ trước). `bun run test`: vẫn 958 pass/16 fail
+như các bản sửa VEI trước (fail có sẵn, không liên quan các file này).

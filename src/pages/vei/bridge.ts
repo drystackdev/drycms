@@ -1,7 +1,9 @@
 import {
   dispatchEntrySave,
   listenForEntrySaved,
+  listenForFieldFocus,
   listenForFieldInput,
+  type FieldFocusEventDetail,
   type FieldInputEventDetail,
 } from "../content-entry-editor/field-events.js";
 
@@ -24,6 +26,11 @@ export interface VeiInputMessage {
   detail: FieldInputEventDetail;
 }
 
+export interface VeiFocusMessage {
+  type: "vei:focus";
+  detail: FieldFocusEventDetail;
+}
+
 export interface VeiReadyMessage {
   type: "vei:ready";
 }
@@ -37,7 +44,12 @@ export interface VeiCloseMessage {
   type: "vei:close";
 }
 
-export type VeiMessage = VeiInputMessage | VeiReadyMessage | VeiSavedMessage | VeiCloseMessage;
+export type VeiMessage =
+  | VeiInputMessage
+  | VeiFocusMessage
+  | VeiReadyMessage
+  | VeiSavedMessage
+  | VeiCloseMessage;
 
 /** True when this document is the VEI dialog - `?_vei=1` AND actually
  * framed. Both, not either: the flag alone would let a normal tab lose its
@@ -70,6 +82,7 @@ export function closeVeiDialog(): void {
 
 export function startVeiBridge(): () => void {
   const stopInput = listenForFieldInput((detail) => post({ type: "vei:input", detail }));
+  const stopFocus = listenForFieldFocus((detail) => post({ type: "vei:focus", detail }));
   const stopSaved = listenForEntrySaved(({ ok }) => post({ type: "vei:saved", ok }));
   const onMessage = (event: MessageEvent) => {
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
@@ -92,6 +105,7 @@ export function startVeiBridge(): () => void {
   post({ type: "vei:ready" });
   return () => {
     stopInput();
+    stopFocus();
     stopSaved();
     window.removeEventListener("message", onMessage);
     window.removeEventListener("keydown", onKeyDown);

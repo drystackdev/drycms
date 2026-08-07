@@ -43,6 +43,7 @@ import {
 import EntryPreviewDialog from "./content-entry-editor/EntryPreviewDialog.js";
 import {
   dispatchEntrySaved,
+  dispatchFieldFocus,
   dispatchFieldInput,
   FIELD_ANCHOR_ATTR,
   listenForEntrySave,
@@ -534,6 +535,44 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // `entryId` (e.g. right after a new entry's first save).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `applyFieldSet` isn't memoized; typeSlug/entryId are its only free variables that matter here
   useEffect(() => listenForFieldSet(applyFieldSet), [typeSlug, entryId]);
+
+  // Broadcasts which top-level field currently has focus - the Visual
+  // Editing Interface (`overlay.ts`'s `vei:focus` handling) scrolls the
+  // corresponding marked element on the public page into view and swaps its
+  // baseline dashed outline for a solid one while it's the one actually
+  // being worked on. `focusin`/`focusout` bubble (unlike `focus`/`blur`), so
+  // one document-level pair covers every field without threading a handler
+  // through each one.
+  useEffect(() => {
+    const fieldNameFor = (target: EventTarget | null): string | null => {
+      if (!(target instanceof Element)) return null;
+      const anchor = target.closest(`[${FIELD_ANCHOR_ATTR}]`);
+      const raw = anchor?.getAttribute(FIELD_ANCHOR_ATTR);
+      // A nested component/repeatable field's own dialog anchors itself
+      // with a composite path ("hero.title", `FieldRenderer.tsx`'s
+      // `pathPrefix`) - only the top-level segment means anything to a
+      // marker's `ref.path` (same trim `applyFieldSet` above already does).
+      return raw ? raw.split(".", 1)[0]! : null;
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      const name = fieldNameFor(event.target);
+      if (name) dispatchFieldFocus(name, { typeSlug, entryId });
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      // `relatedTarget` is what's ABOUT to gain focus - still inside the
+      // SAME field (tabbing between two of its own controls) means nothing
+      // changed; a `focusin` for a genuinely different field fires its own
+      // event right after, so only report "nothing focused" when the next
+      // stop isn't a field at all.
+      if (fieldNameFor(event.relatedTarget) === null) dispatchFieldFocus(null, { typeSlug, entryId });
+    };
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, [typeSlug, entryId]);
 
   // `?_field=` deep link - once the fields have actually rendered
   // (`value !== null`), scroll straight to the one named in the URL and

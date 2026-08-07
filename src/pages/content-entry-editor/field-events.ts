@@ -11,6 +11,7 @@ export { FIELD_ANCHOR_ATTR };
 
 export const FIELD_INPUT_EVENT = "dry:field-input";
 export const FIELD_SET_EVENT = "dry:field-set";
+export const FIELD_FOCUS_EVENT = "dry:field-focus";
 /** Whole-entry counterparts of the two field events: ask the open editor to
  * run its own Save (`dry:entry-save`), and hear back how it went
  * (`dry:entry-saved`). The Visual Editing Interface (`plans/vei.md`) saves
@@ -32,6 +33,19 @@ export interface FieldInputEventDetail {
   value: unknown;
   typeSlug: string;
   /** `null` for a not-yet-saved new entry. */
+  entryId: string | null;
+}
+
+export interface FieldFocusEventDetail {
+  /** The top-level field name that gained focus, or `null` once focus
+   * leaves every field (`focusout` finding no `[data-field-name]` ancestor
+   * on whatever's next). Always the TOP-LEVEL name even for a field nested
+   * inside a component/repeatable item's own dialog - same reporting
+   * granularity `dry:field-input` already settled on (see `applyFieldSet`'s
+   * own doc comment), since that's what a marker's `ref.path` is matched
+   * against on the other end (`overlay.ts`'s `valueAtPath`). */
+  name: string | null;
+  typeSlug: string;
   entryId: string | null;
 }
 
@@ -87,6 +101,35 @@ export function listenForFieldInput(onInput: (detail: FieldInputEventDetail) => 
   };
   window.addEventListener(FIELD_INPUT_EVENT, handler);
   return () => window.removeEventListener(FIELD_INPUT_EVENT, handler);
+}
+
+/**
+ * Emits `dry:field-focus` on `window` whenever a top-level field gains or
+ * loses focus - the Visual Editing Interface (`overlay.ts`) uses this to
+ * scroll the corresponding marked element into view and swap its baseline
+ * dashed outline for a solid one while the admin is actually working on it.
+ * Undebounced (unlike `dispatchFieldInput`): a focus change is already one
+ * discrete event, not a stream of keystrokes to coalesce.
+ */
+export function dispatchFieldFocus(
+  name: string | null,
+  context: { typeSlug: string; entryId: string | null },
+): void {
+  window.dispatchEvent(
+    new CustomEvent<FieldFocusEventDetail>(FIELD_FOCUS_EVENT, {
+      detail: { name, typeSlug: context.typeSlug, entryId: context.entryId },
+    }),
+  );
+}
+
+export function listenForFieldFocus(onFocus: (detail: FieldFocusEventDetail) => void): () => void {
+  const handler = (event: Event) => {
+    const detail = (event as CustomEvent<FieldFocusEventDetail>).detail;
+    if (!detail) return;
+    onFocus(detail);
+  };
+  window.addEventListener(FIELD_FOCUS_EVENT, handler);
+  return () => window.removeEventListener(FIELD_FOCUS_EVENT, handler);
 }
 
 /**

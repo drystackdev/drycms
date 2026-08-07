@@ -6,6 +6,9 @@ import {
   type EntryDraftRecord,
 } from "../../content-types/entry-draft-db.js";
 import { encodeEntryId } from "../../lib/id-hash.js";
+// Type-only - erased at build time, so this doesn't pull `field-events.ts`
+// (a `pages/` module) or anything it imports into the public site's bundle.
+import type { FieldFocusEventDetail } from "../../pages/content-entry-editor/field-events.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
 import { HYDRATED_EVENT } from "../hydrated-event.js";
 import { EditButtonDock, EditingDock, type EditingDockHandle, type EditorMode } from "./Dock.js";
@@ -302,6 +305,29 @@ function applyPreview(
       }
     }
   }
+}
+
+/**
+ * Every element marked for exactly the top-level field `name` on the entry
+ * identified by `typeSlug`/`entryId` - the same per-marker match
+ * `applyPreview` makes above, minus the value write. Backs the `vei:focus`
+ * handler's scroll-to-and-solid-outline below.
+ */
+function elementsForFocus(name: string, typeSlug: string, entryId: string | null): Element[] {
+  const matches: Element[] = [];
+  for (const node of document.querySelectorAll("*")) {
+    for (const attribute of node.getAttributeNames()) {
+      if (attribute !== "data-dry" && !attribute.startsWith("data-dry-"))
+        continue;
+      for (const ref of decodeRefs(node.getAttribute(attribute))) {
+        if (ref.type !== typeSlug) continue;
+        if (entryId !== null && encodeEntryId(ref.id) !== entryId) continue;
+        if (ref.path.split(".")[0] !== name) continue;
+        matches.push(node);
+      }
+    }
+  }
+  return matches;
 }
 
 interface EditTarget {
@@ -918,12 +944,38 @@ function main(): void {
     unlockBodyScroll();
     setPagePush(null, true);
     dock.setSheetOpen(false);
+    clearFieldFocus();
     sheet.remove();
     frame.removeAttribute("src");
     // Whatever ran in that frame - an edit, a Reset all from its own Preview
     // dialog, a visit to `/vei/changes` itself - may have changed the set of
     // pending drafts, so the badge could be stale the moment this closes.
     void refreshPreviewCount();
+  }
+
+  const FOCUSED_FIELD_CLASS = "dry-vei-focused";
+  let focusedElements: Element[] = [];
+
+  function clearFieldFocus(): void {
+    for (const el of focusedElements) el.classList.remove(FOCUSED_FIELD_CLASS);
+    focusedElements = [];
+  }
+
+  /**
+   * `vei:focus` handler - scrolls whatever field just gained focus INSIDE
+   * the panel/dialog's own form into view on the public page behind/beside
+   * it, and swaps its baseline dashed outline for a solid one
+   * (`MARKER_STYLES`'s `.dry-vei-focused`) for as long as it stays focused.
+   * Most useful in panel mode (the page stays visible beside the form), but
+   * runs unconditionally - in dialog mode the effect just isn't visible
+   * until the admin switches, which is harmless.
+   */
+  function applyFieldFocus(detail: FieldFocusEventDetail): void {
+    clearFieldFocus();
+    if (detail.name === null) return;
+    focusedElements = elementsForFocus(detail.name, detail.typeSlug, detail.entryId);
+    focusedElements[0]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    for (const el of focusedElements) el.classList.add(FOCUSED_FIELD_CLASS);
   }
 
   document.addEventListener("keydown", (event) => {
@@ -939,16 +991,15 @@ function main(): void {
       event.source !== frame.contentWindow
     )
       return;
-    const message = event.data as {
-      type?: string;
-      detail?: Parameters<typeof applyPreview>[0];
-    };
+    const message = event.data as { type?: string; detail?: unknown };
     if (message?.type === "vei:ready") {
       clearTimeout(dialogLoadTimer);
       panel.classList.remove("loading");
     } else if (message?.type === "vei:input" && message.detail) {
-      applyPreview(message.detail, basePath);
+      applyPreview(message.detail as Parameters<typeof applyPreview>[0], basePath);
       schedulePreviewCountRefresh();
+    } else if (message?.type === "vei:focus" && message.detail) {
+      applyFieldFocus(message.detail as FieldFocusEventDetail);
     }
     // Escape pressed with focus inside the frame never reaches this
     // document's own keydown listener - the bridge forwards it.

@@ -434,4 +434,14 @@ html.dry-vei-editing [data-dry-html] {
   outline: 1px dashed rgba(0, 167, 111, 0.6);
   cursor: pointer;
 }
+
+/* The field currently focused inside the panel/dialog's own form
+ * (overlay.ts's "vei:focus" handling, relayed from ContentEntryEditor.tsx
+ * via bridge.ts) - same outline, just solid instead of dashed, so it reads
+ * as "this one, specifically" against every other marked field's baseline
+ * dashed outline. Same specificity as the rule above; wins on source order
+ * since it's declared after it. */
+html.dry-vei-editing .dry-vei-focused {
+  outline-style: solid;
+}
 `;
