@@ -14,6 +14,7 @@ import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
 import { clearVeiCookieHeader, clearVeiHintCookieHeader, veiHintCookieHeader } from "../vei-session.js";
+import { VEI_RESOURCE_ID, permissionKeyFor } from "../../content-types/permissions.js";
 import { clearLoginFailures, isLoginRateLimited, recordLoginFailure } from "../rate-limit.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 import { readEnvVar } from "../options.js";
@@ -185,11 +186,19 @@ function sessionCookieHeader(context: DryRouteContext, value: string, maxAgeSeco
 
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // refresh session lifetime
 
-function withSessionCookies(response: Response, context: DryRouteContext, token: string, refreshToken: string): Response {
+function withSessionCookies(response: Response, context: DryRouteContext, token: string, refreshToken: string, user: ClientSessionUser): Response {
   response.headers.append("Set-Cookie", sessionCookieHeader(context, token, 15 * 60));
   response.headers.append("Set-Cookie", sessionCookieHeader(context, refreshToken, SESSION_MAX_AGE_SECONDS, REFRESH_COOKIE_NAME));
   response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
-  response.headers.append("Set-Cookie", veiHintCookieHeader(context.url, SESSION_MAX_AGE_SECONDS));
+  // Only offer the public-site "Edit" overlay to a user who actually holds
+  // the VEI permission - see `permissions.ts`'s `VEI_RESOURCE_ID` doc
+  // comment. A demoted user (still holding an old, longer-lived hint cookie)
+  // gets it cleared here too, on their very next session refresh.
+  const hasVeiAccess = user.isSuperAdmin || user.permissions.includes(permissionKeyFor(VEI_RESOURCE_ID, "setting"));
+  response.headers.append(
+    "Set-Cookie",
+    hasVeiAccess ? veiHintCookieHeader(context.url, SESSION_MAX_AGE_SECONDS) : clearVeiHintCookieHeader(context.url),
+  );
   return response;
 }
 
@@ -301,7 +310,7 @@ export const POST: DryRouteHandler = async (context) => {
         const authSession = await createAuthSession(created.id, context.env);
         const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
         const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
-        return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken);
+        return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken, user);
       });
     }
 
@@ -341,7 +350,7 @@ export const POST: DryRouteHandler = async (context) => {
       const entry = await entryAdapter.getEntry(userType, allTypes, found.id);
       const user = entry ? await resolveClientUser(entryAdapter, allTypes, roleType, entry, sessionUser) : null;
       if (!user) throw invalid();
-      return withSessionCookies(jsonResponse({ user }), context, token, authSession.refreshToken);
+      return withSessionCookies(jsonResponse({ user }), context, token, authSession.refreshToken, user);
     }
 
     if (endpoint === "refresh") {
@@ -360,7 +369,7 @@ export const POST: DryRouteHandler = async (context) => {
       };
       const token = await signSession(sessionUser, { sessionId: rotated.session.sessionId });
       const user = await resolveClientUser(entryAdapter, allTypes, roleType, entry, sessionUser);
-      return withSessionCookies(jsonResponse({ user }), context, token, rotated.refreshToken);
+      return withSessionCookies(jsonResponse({ user }), context, token, rotated.refreshToken, user);
     }
 
     if (endpoint === "update-profile") {
@@ -442,7 +451,7 @@ export const POST: DryRouteHandler = async (context) => {
       const token = await signSession(sessionUser, { sessionId: authSessionId });
       if (!refreshToken) refreshToken = context.refreshToken ?? "";
       const user = await resolveClientUser(entryAdapter, allTypes, roleType, updated, sessionUser);
-      return withSessionCookies(jsonResponse({ user }), context, token, refreshToken);
+      return withSessionCookies(jsonResponse({ user }), context, token, refreshToken, user);
     }
 
     if (endpoint === "logout") {

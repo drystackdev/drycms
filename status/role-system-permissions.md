@@ -253,3 +253,38 @@ untouched and still passes.
 Verification: `bun run typecheck` clean; `bun run test` - all files/tests
 still passing after removal (see below for the exact count at time of
 verification).
+
+## Addendum: `system-vei` permission for the Visual Editing Interface (2026-08-07, same day)
+
+VEI (`status/vei.md`) had no permission gate at all - any signed-in admin,
+regardless of role, could enter edit mode on the public site (per-content-type
+`update`/`setting` grants already limited what they could then actually
+*edit*, via `resolveVeiContext.canUpdate`, but not whether they could open the
+overlay in the first place). Added a 7th `SYSTEM_RESOURCES` entry, same
+synthetic-singleton pattern as the others:
+
+- `permissions.ts` - `VEI_RESOURCE_ID = "system-vei"`.
+- `RoleEditor.tsx` - `VEI_RESOURCE` ("Visual Editing"), pushed onto
+  `SYSTEM_RESOURCES`; renders as the same flat `setting` toggle the System
+  fieldset already gives every other entry, no new UI code.
+- `vei-routes.ts`'s `handleVeiRoute` - real server-side gate: after minting
+  the `drycms_vei` token (or refreshing an expired access cookie to get one),
+  decodes it back to the admin's `id`/`name`/`email` and calls
+  `resolveAccess(...).can(VEI_RESOURCE_ID, "setting")` before ever setting the
+  cookie; a `false` result 403s instead of granting edit mode. This is the
+  one enforcement point that actually matters, since it's the boundary that
+  issues the capability.
+- `routes/auth.ts`'s `withSessionCookies` (all 4 call sites: register-first-
+  admin, login, refresh, update-profile) now only sets the public
+  `drycms_admin` hint cookie when `user.isSuperAdmin ||
+  user.permissions.includes(permissionKeyFor(VEI_RESOURCE_ID, "setting"))` -
+  otherwise it explicitly clears it. This is UI-only (the cookie is
+  non-`HttpOnly`, readable/forgeable by the visitor's own browser), but it's
+  what keeps `apps/vei/overlay.ts`'s "Edit" button from ever being offered to
+  someone who'd just get a 403 from the real gate above.
+
+New tests in `vei-routes.test.ts`: a non-super-admin role with no `system-vei`
+grant gets 403 on `/vei/enter` (no `Set-Cookie` at all); the same role with
+the grant added gets the normal 303 + `drycms_vei` cookie. `bun run
+typecheck` clean, `bun run test` - 88 files / 935 tests pass (2 new), `bun
+run build` (client + SSR) passes.

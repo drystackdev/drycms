@@ -16,10 +16,10 @@ interface Props {
   onClose: () => void;
 }
 
-/** The app's 5 semantic color tokens - swapped behind the preview icon so
- * it can be checked against each before importing it. */
+/** The app's default text color plus its 4 semantic tokens - swapped behind
+ * the preview icon so it can be checked against each before importing it. */
 const PREVIEW_COLORS = [
-  { label: "Primary", value: "var(--dry-primary)" },
+  { label: "Text", value: "var(--dry-foreground)" },
   { label: "Info", value: "var(--dry-info)" },
   { label: "Success", value: "var(--dry-success)" },
   { label: "Warning", value: "var(--dry-warning)" },
@@ -81,7 +81,7 @@ export default function IconPreviewDialog({ id, svg, adding, onAdd, onClose }: P
 
       <div class="icon-preview-stage">
         <div class="icon-preview-body lg center" style={{ color }}>
-          <IconGlyph src={dataUri} size={64} />
+          <IconGlyph src={dataUri} size={92} />
         </div>
         <div class="color-swatch-grid" role="group" aria-label="Preview color">
           {PREVIEW_COLORS.map((swatch) => (

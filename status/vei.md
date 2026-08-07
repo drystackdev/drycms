@@ -427,3 +427,16 @@ dock không co lại.**
 
 Không có file mới, chỉ sửa `overlay.ts` + `overlay-styles.ts`. `bun run
 typecheck`/`test` (804 pass)/`build` xanh.
+
+### Bổ sung: permission `system-vei` (2026-08-07)
+
+Trước bản này VEI không có gate quyền nào - bất kỳ admin đăng nhập nào cũng
+vào được edit mode (quyền `update`/`setting` theo từng content type vẫn giới
+hạn SỬA được gì qua `resolveVeiContext.canUpdate`, nhưng không giới hạn ai
+được MỞ overlay). Đã thêm resource System thứ 7, gate thật ở
+`vei-routes.ts`'s `handleVeiRoute` (403 nếu role không có
+`system-vei:setting`, trước khi set cookie `drycms_vei`) + đồng bộ cookie
+hint `drycms_admin` (`routes/auth.ts`) theo đúng quyền đó. Chi tiết đầy đủ ở
+`status/role-system-permissions.md`'s addendum cùng ngày. `bun run
+typecheck` sạch, `bun run test` 88 file/935 test pass (2 test mới), `bun run
+build` xanh.

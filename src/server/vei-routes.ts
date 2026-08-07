@@ -1,3 +1,7 @@
+import { resolveAccess } from "../content-types/access.js";
+import { VEI_RESOURCE_ID } from "../content-types/permissions.js";
+import { verifySessionClaims, type SessionPayload } from "../lib/session-token.js";
+import { getContentAdapters } from "./content-adapters.js";
 import { path as adminPath } from "./config.js";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "./csrf.js";
 import { handleApiRequest } from "./handler.js";
@@ -93,6 +97,20 @@ async function refreshedVeiToken(
   return token ? { token, sessionCookies } : null;
 }
 
+/** Whether `session`'s user holds the `system-vei` permission (see
+ * `permissions.ts`'s `VEI_RESOURCE_ID` doc comment) - the real server-side
+ * gate for entering edit mode. `routes/auth.ts` also keeps the public
+ * `drycms_admin` hint cookie in sync with the same check so the overlay
+ * button never offers itself to someone who'd just get a 403 here, but that
+ * cookie is client-readable/forgeable, so this is the check that actually
+ * matters. */
+async function hasVeiAccess(session: SessionPayload, request: Request, env: Record<string, unknown>): Promise<boolean> {
+  const { schema, entries } = getContentAdapters({ request, url: new URL(request.url), params: {}, env, session });
+  const allTypes = await schema.listContentTypes();
+  const access = await resolveAccess(entries, allTypes, session);
+  return access?.can(VEI_RESOURCE_ID, "setting") === true;
+}
+
 export async function handleVeiRoute(request: Request, env: Record<string, unknown> = {}): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== ENTER_PATH && url.pathname !== EXIT_PATH) return null;
@@ -120,5 +138,15 @@ export async function handleVeiRoute(request: Request, env: Record<string, unkno
       headers: { Location: new URL(`${adminPath}/login`, request.url).toString(), "Cache-Control": "no-store" },
     });
   }
+
+  // `token` is a freshly-signed VEI session token either way above - decoding
+  // it back (signature/expiry only, no session-store round trip) is cheaper
+  // than threading the admin session through both branches above separately.
+  const claims = await verifySessionClaims(token);
+  const session: SessionPayload | null = claims ? { id: claims.id, name: claims.name, email: claims.email } : null;
+  if (!session || !(await hasVeiAccess(session, request, env))) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
   return redirect(request, to, [...sessionCookies, veiCookieHeader(url, token, VEI_MAX_AGE_SECONDS)]);
 }

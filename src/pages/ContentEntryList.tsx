@@ -10,7 +10,6 @@ import DataTable, {
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
 import { encodePath } from "../storage/http-source.js";
 import {
-  ArrowDownIcon,
   ArrowLeftIcon,
   ComponentIcon,
   EyeIcon,
@@ -226,9 +225,12 @@ function renderCell(
   if (column.fieldType === "select") {
     const values = Array.isArray(value) ? value : [value];
     return (
-      <span class="badge outline lg">
-        {values.join(", ")}
-        <ArrowDownIcon />
+      <span class="row" style={{ gap: "0.375rem" }}>
+        {values.map((v) => (
+          <span class="badge outline lg" key={String(v)}>
+            {String(v)}
+          </span>
+        ))}
       </span>
     );
   }

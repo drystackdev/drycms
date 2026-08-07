@@ -3925,6 +3925,16 @@
       & > * {
         flex: 1;
       }
+
+      /* Below the usual mobile breakpoint, the search input claims its own
+       * full-width row (`.row`'s own `flex-wrap: wrap` then pushes the icon
+       * set picker and "search all" toggle onto a shared second row, each
+       * still `flex: 1`) instead of 3 evenly-cramped columns. */
+      @media (width < 48rem) {
+        & > input {
+          flex-basis: 100%;
+        }
+      }
     }
 
     .icon-preview-body {
@@ -3940,6 +3950,7 @@
       &.lg {
         width: 7.5rem;
         height: 7.5rem;
+        padding: 0.75rem;
         margin-bottom: 0;
       }
     }

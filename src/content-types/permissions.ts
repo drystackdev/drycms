@@ -53,6 +53,18 @@ export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
 
+/** Same synthetic-resource pattern, but for the Visual Editing Interface
+ * (`plans/vei.md`) rather than an admin SPA page - gates whether a signed-in
+ * admin can enter edit mode on the public site at all. Enforced in two
+ * places: `vei-routes.ts`'s `handleVeiRoute` checks it server-side before
+ * ever minting the `drycms_vei` cookie for `GET /vei/enter` (a 403 for
+ * anyone lacking it, same as a real route gate), and `routes/auth.ts` only
+ * sets the public, non-`HttpOnly` `drycms_admin` hint cookie
+ * (`vei-session.ts`) for a user who holds this permission, so the "Edit"
+ * overlay button (`apps/vei/overlay.ts`) never even offers itself to anyone
+ * without it. */
+export const VEI_RESOURCE_ID = "system-vei";
+
 /** The exact actions the Role editor and request authorization expose for a
  * content type. Pure and safe to import from client code. */
 export function permissionActionsFor(target: ContentTypeDefinition): PermissionAction[] {

@@ -34,6 +34,8 @@ const { VEI_COOKIE_NAME } = await import("./vei-session.js");
 const { POST: authPost } = await import("./routes/auth.js");
 const { SESSION_COOKIE_NAME } = await import("./session.js");
 const { CSRF_COOKIE_NAME } = await import("./csrf.js");
+const { getContentAdapters } = await import("./content-adapters.js");
+const { permissionKeyFor, VEI_RESOURCE_ID } = await import("../content-types/permissions.js");
 
 beforeEach(() => {
   process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
@@ -101,6 +103,50 @@ async function adminSessionCookie(): Promise<string> {
 /** A real browser navigation - the only shape these routes accept. */
 function navigation(url: string, headers: Record<string, string> = {}): Request {
   return new Request(url, { headers: { "Sec-Fetch-Dest": "document", "Sec-Fetch-Site": "same-origin", ...headers } });
+}
+
+const PASSWORD = "hunter2-long-password";
+
+/** A non-super-admin user on a role granting exactly `permissions` (e.g. `[]`
+ * to test the deny path, or `[permissionKeyFor(VEI_RESOURCE_ID, "setting")]`
+ * for the grant path) - direct against the same content engine the
+ * register/login routes above use, since there's no admin UI in this test
+ * file to create one through. */
+async function createRestrictedUser(email: string, permissions: string[]): Promise<void> {
+  const context = { request: new Request("http://localhost"), url: new URL("http://localhost"), params: {}, env: {}, session: null };
+  const { schema, entries } = getContentAdapters(context);
+  const allTypes = await schema.listContentTypes();
+  const userType = allTypes.find((t) => t.name === "user")!;
+  const roleType = allTypes.find((t) => t.name === "role")!;
+  const role = await entries.createEntry(roleType, allTypes, {
+    name: `restricted-${Math.random()}`,
+    description: "",
+    isSuperAdmin: false,
+    permissions,
+  });
+  await entries.createEntry(userType, allTypes, {
+    name: "Restricted User",
+    email,
+    password: { hasExisting: false, new: PASSWORD },
+    roles: [role.id],
+  });
+}
+
+async function loginAs(email: string): Promise<string> {
+  const loginUrl = new URL(`http://localhost${adminPath}/api/auth/login`);
+  const loginResponse = await authPost({
+    params: { slug: "login" },
+    request: new Request(loginUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password: PASSWORD }),
+    }),
+    url: loginUrl,
+    env: {},
+    session: null,
+  });
+  expect(loginResponse.status).toBe(200);
+  return cookiesFrom(loginResponse);
 }
 
 describe("handleVeiRoute", () => {
@@ -186,5 +232,25 @@ describe("handleVeiRoute", () => {
     const response = await handleVeiRoute(navigation(`${ENTER}?to=%2F`, { Cookie: csrfOnly }));
     expect(response?.status).toBe(303);
     expect(response?.headers.get("Location")).toBe(`http://localhost${adminPath}/login`);
+  });
+
+  it("forbids a signed-in admin whose role doesn't grant the system-vei permission", async () => {
+    await createRestrictedUser("no-vei@example.com", []);
+    const cookie = await loginAs("no-vei@example.com");
+
+    const response = await handleVeiRoute(navigation(`${ENTER}?to=%2F`, { Cookie: cookie }));
+    expect(response?.status).toBe(403);
+    expect(response?.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  it("grants edit mode once the user's role holds the system-vei permission", async () => {
+    await createRestrictedUser("has-vei@example.com", [permissionKeyFor(VEI_RESOURCE_ID, "setting")]);
+    const cookie = await loginAs("has-vei@example.com");
+
+    const response = await handleVeiRoute(navigation(`${ENTER}?to=%2F`, { Cookie: cookie }));
+    expect(response?.status).toBe(303);
+    const headers = response?.headers as (Headers & { getSetCookie?: () => string[] }) | undefined;
+    const setCookies = headers?.getSetCookie?.() ?? [];
+    expect(setCookies.some((cookie) => cookie.startsWith(`${VEI_COOKIE_NAME}=`))).toBe(true);
   });
 });

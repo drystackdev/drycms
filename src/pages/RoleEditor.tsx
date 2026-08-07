@@ -23,6 +23,7 @@ import {
   permissionActionsFor,
   permissionKeyFor,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
+  VEI_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -133,6 +134,16 @@ const CONTENT_TYPES_RESOURCE: ContentTypeDefinition = {
   version: 0,
 };
 
+const VEI_RESOURCE: ContentTypeDefinition = {
+  id: VEI_RESOURCE_ID,
+  kind: "singleton",
+  name: "vei",
+  label: "Visual Editing",
+  description: "Can enter Visual Editing mode on the public site.",
+  fields: [],
+  version: 0,
+};
+
 /** Every non-content-type admin page, rendered together as flat toggle rows
  * in the "System" fieldset - see `status/role-system-permissions.md`. AI
  * Keys deliberately has no entry here: `protectSystemMutation`
@@ -148,6 +159,7 @@ const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
   ICON_MANAGEMENT_RESOURCE,
   RICHTEXT_COMPONENTS_RESOURCE,
   CONTENT_TYPES_RESOURCE,
+  VEI_RESOURCE,
 ];
 
 /**
