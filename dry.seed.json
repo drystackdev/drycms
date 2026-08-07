@@ -1990,5 +1990,34 @@
       "name": "google1234567890abcdef.html",
       "content": "Nội dung"
     }
-  }
+  },
+  "menuData": [
+    {
+      "name": "Main Navigation",
+      "createdAt": "2026-08-05T08:43:45.822Z",
+      "updatedAt": "2026-08-05T09:52:46.635Z",
+      "refs": [
+        {
+          "label": "Trang chủ",
+          "description": null,
+          "href": "/"
+        },
+        {
+          "label": "Giới thiệu",
+          "description": null,
+          "href": "/about"
+        },
+        {
+          "label": "Blog",
+          "description": null,
+          "href": "/blogs"
+        },
+        {
+          "label": "Liên hệ",
+          "description": null,
+          "href": "/contact"
+        }
+      ]
+    }
+  ]
 }

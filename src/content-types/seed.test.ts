@@ -3,8 +3,10 @@ import type { EntryValue } from "./engine/entry-codec.js";
 import type { ContentEntryEngineAdapter, EntryRow } from "./engine/entries-types.js";
 import { validateContentTypeDefinition } from "./naming.js";
 import {
+  applyPackagedMenuData,
   applyPackagedSingletonData,
   defaultContentTypeDefinitions,
+  MENU_TYPE_ID,
   pendingSeedStatements,
   resolveDefaultContentTypeDefinitions,
 } from "./seed.js";
@@ -479,5 +481,72 @@ describe("applyPackagedSingletonData", () => {
     });
 
     expect(saveCalled).toBe(false);
+  });
+});
+
+describe("applyPackagedMenuData", () => {
+  const menuType: ContentTypeDefinition = {
+    id: MENU_TYPE_ID,
+    kind: "collection",
+    name: "menu",
+    label: "Menu",
+    fields: [],
+    version: 0,
+  };
+  const otherCollection: ContentTypeDefinition = {
+    id: "app-post",
+    kind: "collection",
+    name: "post",
+    label: "Post",
+    fields: [],
+    version: 0,
+  };
+  const allTypes = [menuType, otherCollection];
+
+  const mainNav: EntryValue = { name: "Main Navigation", refs: [{ label: "Home", href: "/" }] };
+
+  function adapterSpy(existingRows: EntryRow[]) {
+    const created: EntryValue[] = [];
+    const listedTypes: string[] = [];
+    const adapter = {
+      listEntries: async (type: ContentTypeDefinition) => {
+        listedTypes.push(type.id);
+        return { rows: existingRows, total: existingRows.length };
+      },
+      createEntry: async (_type: ContentTypeDefinition, _all: ContentTypeDefinition[], value: EntryValue) => {
+        created.push(value);
+        return { id: created.length, value } as EntryRow;
+      },
+    } as unknown as ContentEntryEngineAdapter;
+    return { adapter, created, listedTypes };
+  }
+
+  it("no-ops when the packaged seed has no menuData", async () => {
+    const { adapter, created, listedTypes } = adapterSpy([]);
+    await applyPackagedMenuData(adapter, allTypes, { contentTypes: allTypes });
+    expect(created).toEqual([]);
+    // Not even a read - absence is decided before touching the adapter.
+    expect(listedTypes).toEqual([]);
+  });
+
+  it("seeds every packaged menu row when the collection is empty", async () => {
+    const second: EntryValue = { name: "Footer", refs: [] };
+    const { adapter, created, listedTypes } = adapterSpy([]);
+    await applyPackagedMenuData(adapter, allTypes, { contentTypes: allTypes, menuData: [mainNav, second] });
+    expect(created).toEqual([mainNav, second]);
+    // Only `menu` is ever read or written - never another collection.
+    expect(listedTypes).toEqual([MENU_TYPE_ID]);
+  });
+
+  it("seeds nothing when the menu collection already has a row", async () => {
+    const { adapter, created } = adapterSpy([{ id: 1, value: { name: "Edited by hand" } } as EntryRow]);
+    await applyPackagedMenuData(adapter, allTypes, { contentTypes: allTypes, menuData: [mainNav] });
+    expect(created).toEqual([]);
+  });
+
+  it("no-ops when the app's own seed dropped the menu content type entirely", async () => {
+    const { adapter, created } = adapterSpy([]);
+    await applyPackagedMenuData(adapter, [otherCollection], { contentTypes: [otherCollection], menuData: [mainNav] });
+    expect(created).toEqual([]);
   });
 });

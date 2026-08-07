@@ -25,9 +25,12 @@ pnpm-debug.log*
 /.dry/
 
 # Local `storage` root (uploaded media + dry-icons/ - see resolveStorageOption()
-# in server/options.ts). `bun run build:schema` packages this into
-# `public.zip` at the repo root instead - that's the artifact meant to be
-# committed/pushed for deploy; extract it back to `public/` before `vite build`.
+# in server/options.ts). Deliberately NOT carried through git: media reaches a
+# deployment via `bun run r2:sync`, which uploads this directory straight into
+# the R2 bucket the deployed Worker reads from (`scripts/r2-sync-assets.ts`).
+# That makes R2 the durable copy for anything deployed - this directory is only
+# the local working copy, so a fresh clone starts with no media until someone
+# uploads some (or pulls it down from the bucket).
 /public/
 
 # Legacy root-level local data (kept ignored for upgrades from older defaults)

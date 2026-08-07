@@ -8,7 +8,7 @@ import type { ContentTypeDefinition } from "./types.js";
 export interface PackagedSeed {
   contentTypes: ContentTypeDefinition[];
   /**
-   * A singleton's actual row value at the time `bun run build:schema` last
+   * A singleton's actual row value at the time `bun run seed:sync` last
    * ran, keyed by content-type `id` (stable across renames, same identity
    * `contentTypes` itself keeps) - see `scripts/lib/schema-sync.ts`'s
    * `writeContentTypeSeedFile`. Deliberately singleton-only, not a general
@@ -18,6 +18,21 @@ export interface PackagedSeed {
    * Applied by `applyPackagedSingletonData` below.
    */
   singletonData?: Record<string, EntryValue>;
+  /**
+   * The `menu` collection's rows at the time `bun run seed:sync` last ran.
+   * A deliberate, narrow exception to `singletonData`'s singleton-only rule
+   * above (`plans/content-type-seed.md` decision #1, which keeps a
+   * collection's rows out of the seed because they're real user content):
+   * `menu` is the one collection the APP itself depends on structurally -
+   * `apps/pages/layout.tsx` looks up a row named "Main Navigation" by hand,
+   * so a fresh deployment with no menu row renders every page with no
+   * navigation at all. That makes it app-owned config in everything but
+   * storage kind. Still scoped to `menu` alone rather than a general
+   * `collectionData`, so `blog`/`category`/... stay user content.
+   *
+   * Applied by `applyPackagedMenuData` below.
+   */
+  menuData?: EntryValue[];
 }
 
 /**
@@ -711,6 +726,43 @@ export async function applyPackagedSingletonData(
     const existing = await entryAdapter.getSingletonEntry(type, allTypes);
     if (existing) continue;
     await entryAdapter.saveSingletonEntry(type, allTypes, value);
+  }
+}
+
+/** The `menu` content type's fixed id - exported so `scripts/lib/schema-sync.ts`
+ * can find the same type when snapshotting `menuData` without re-typing the
+ * literal. */
+export const MENU_TYPE_ID = IDS.menu;
+
+/**
+ * Seeds `dry.seed.json`'s optional `menuData` into the `menu` collection,
+ * from the same one-time point as `applyPackagedSingletonData` above
+ * (`routes/auth.ts`'s `register-first-admin`, gated on `hasAnyUser ===
+ * false`) - so there is never live user data here to clobber.
+ *
+ * ALL-OR-NOTHING on the collection being empty, rather than
+ * `applyPackagedSingletonData`'s per-row check: a menu is an ordered list
+ * whose rows only make sense together, and the emptiness test is what makes
+ * re-running this harmless. Identified by the fixed `system-menu` id rather
+ * than the name "menu", the same rename-proof identity `singletonData`'s own
+ * keys use.
+ */
+export async function applyPackagedMenuData(
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  packagedSeed: PackagedSeed | undefined = realPackagedSeed,
+): Promise<void> {
+  const rows = packagedSeed?.menuData;
+  if (!rows || rows.length === 0) return;
+
+  const menuType = allTypes.find((type) => type.id === MENU_TYPE_ID);
+  if (!menuType || menuType.kind !== "collection") return;
+
+  const existing = await entryAdapter.listEntries(menuType, allTypes, { page: 0, pageSize: 1 });
+  if (existing.rows.length > 0) return;
+
+  for (const value of rows) {
+    await entryAdapter.createEntry(menuType, allTypes, value);
   }
 }
 

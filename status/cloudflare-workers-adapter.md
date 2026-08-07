@@ -345,3 +345,135 @@ tables seeded (incl. `about`/`blog`/`contact`), `/` `/about` `/blogs`
 Test suite: 16 failures before and after, all pre-existing (`seed.test.ts`
 and friends expect 10 built-in types while `dry.seed.json` now carries 35) -
 979 passing, up 2 from the new password-hash cases.
+
+## Follow-up 5: `public/` no longer copied into the build (2026-08-08)
+
+`public/` is the File Manager's own root under `kind: "local"`
+(`options.ts`'s `resolveStorageOption`), i.e. user-uploaded media - not a
+static-asset folder. Vite's default `publicDir` behaviour copied all 6.7MB of
+it into BOTH `dist/client` and `dist/server` on every build, and
+`wrangler deploy` then uploaded those bytes as Workers assets, where the same
+files already live in R2.
+
+Pure waste, and safe to drop: stored media is addressed by BARE ID
+(`"hero.jpg"` in `dry.seed.json`, see `apps/vei/overlay.ts:259`'s comment)
+and resolved to `/dry/api/storage/<id>` by `routes/storage.ts`'s
+`withPreview` - it is never fetched as a plain `/<name>.ext` static file on
+any runtime. On Node the server reads `public/` off disk at runtime, not out
+of `dist/`.
+
+`vite.config.ts` now sets `publicDir: command === "build" ? false : "public"`
+- off for both builds, ON in dev, where Vite's static serving of `public/` is
+what `resolveStorageOption`'s comment relies on for a freshly-uploaded file
+to be reachable immediately.
+
+`dist/client` 16MB → 8.6MB; `dist/server` keeps only `entry-*.js` (plus
+`seed-assets.zip` on the Node build, which `scripts/build-seed-assets.ts`
+still writes from `public/` directly - unaffected).
+
+Caveat worth remembering: this app now has NO home for genuinely static,
+deploy-time files (favicon, robots.txt). `public/` is the media root; such
+files would need their own directory wired up separately.
+
+Verified on `wrangler dev --local`: `/` `/about` `/blogs` `/contact` 200 with
+no `500.tsx`, `/dry` 200, `/assets/*` 200, unknown path 404. `bun run build`
+still emits `seed-assets.zip` (7.1MB). Typecheck and tests unchanged (16
+pre-existing failures, 979 passing).
+
+Also added `"dev:worker": "bun run build:worker && wrangler dev"`: both SSR
+builds write to `dist/server` and Vite empties it first, so `bun run build`
+deletes `entry-worker.js` and a bare `wrangler dev` then fails with "The
+entry-point file at dist/server/entry-worker.js was not found". The new
+script always rebuilds first.
+
+## Follow-up 6: media into R2 + `menu` in the seed (2026-08-08)
+
+Two gaps a fresh Workers deployment hit right after the first admin was
+created: the Media page was empty, and the site rendered with no navigation.
+
+**Media never reaches R2, and no existing path could get it there.**
+`seed-assets.ts`'s `extractPackagedSeedAssets` only unzips into LOCAL
+directories (`prefixToDirFor` filters to `kind === "local"`), so under
+`kind: "cloudflare"` it correctly does nothing. Nor could it be made to: the
+Worker has no filesystem to read `dist/server/seed-assets.zip` from,
+`build:worker` never produces that zip, and inlining ~7MB of media into the
+script would blow the Workers size limit. Compounding it, `public/` is
+GITIGNORED - `public.zip` (written by `scripts/build-schema.ts`) is the
+committed artifact - so Cloudflare's build machine has neither `public/` nor
+any step that extracts the zip.
+
+New `scripts/r2-sync-assets.ts` (`bun run r2:sync`, `--local` for
+miniflare) uploads the local roots to the bucket, pairing each local root
+with its R2 prefix by calling `resolveOptions` once per `kind`:
+
+| root | local | R2 key prefix |
+|---|---|---|
+| storage | `public/` | `storage` |
+| components | `.dry/richtext-components` | `richtext-components` |
+| pageComponents | `.dry/components` | `components` |
+
+`icons` is deliberately NOT listed: its local root (`public/dry-icons`) nests
+inside `storage`'s and its prefix (`storage/dry-icons`) nests identically, so
+walking `storage` recursively already lands every icon on the right key -
+listing it again would upload each icon twice. When `public/` is absent (a
+fresh clone / CI), the script extracts `public.zip` to a temp dir and syncs
+from that instead, so it behaves the same on a dev machine and in CI. It
+shells out to `wrangler r2 object put` rather than talking to the R2 API, so
+it reuses the credentials `wrangler deploy` already has.
+
+**`menu` rows now ship in the seed.** `apps/pages/layout.tsx:59` looks up a
+menu row named "Main Navigation" by hand, so a fresh instance with no menu
+row renders every page with no nav. `PackagedSeed.menuData` carries that one
+collection's rows, applied by `applyPackagedMenuData` from the same one-time
+point as `applyPackagedSingletonData` (`register-first-admin`, gated on
+`hasAnyUser === false`). Chosen over a general `collectionData` on the user's
+call: `menu` is app-owned config in everything but storage kind, while
+`blog`/`category`/... stay real user content, which is what
+`plans/content-type-seed.md` decision #1 protects. All-or-nothing on the
+collection being empty (rather than `singletonData`'s per-row check) because
+a menu is an ordered list whose rows only make sense together - that
+emptiness test is what makes re-running harmless. `scripts/lib/schema-sync.ts`
+snapshots the rows; `MENU_TYPE_ID` is exported so it matches on the fixed
+`system-menu` id rather than a re-typed literal.
+
+Verified: `r2:sync --local` uploads 11 files; the same objects read back at
+`storage/hero.jpg`, `storage/dry-icons/*.svg`, `richtext-components/*`. The
+`public.zip` fallback verified by moving `public/` aside first. `bun run
+build:schema` regenerated `dry.seed.json` with a clean +30/-1 diff (menuData
+only, contentTypes untouched) carrying the real 4-item "Main Navigation".
+4 new `applyPackagedMenuData` tests pass; suite at 983 passing, still the
+same 16 pre-existing failures.
+
+Loose end noticed, not touched: `schema-sync.ts` writes a `$schema` pointing
+at `dry.seed.schema.json`, which does not exist in the repo.
+
+## Follow-up 7: `public.zip` mechanism removed (2026-08-08)
+
+With `bun run r2:sync` carrying media to the bucket, the `public.zip`
+artifact had no job left, so it is gone at the user's request:
+
+- `public.zip` (tracked, 6.7MB) deleted via `git rm` - recoverable from git
+  history if ever needed.
+- `scripts/build-schema.ts` deleted along with the `build:schema` npm script.
+  Stripping its `public.zip` block left it byte-for-byte equivalent to
+  `scripts/seed-sync.ts`, so keeping both would have been two names for one
+  job. `seed:sync` is now the single snapshot command; every comment naming
+  `build:schema` was updated.
+- `r2-sync-assets.ts` lost its `public.zip` fallback (extract-to-temp-dir),
+  which existed only so the script could run on a fresh clone. Dead once the
+  zip is gone - the script now runs from a machine that has the real
+  `public/`, which is the intended workflow. Empty/missing roots log and skip
+  instead of silently syncing nothing.
+- `.gitignore`'s `/public/` note rewritten: media no longer travels through
+  git at all.
+
+CONSEQUENCE, deliberate and worth knowing: media is now OUT of version
+control entirely. The durable copy of anything deployed is the R2 bucket;
+`public/` is only a local working copy. A fresh clone starts with no media
+until someone uploads some or pulls it down from the bucket - there is no
+"download from R2" counterpart to `r2:sync` today.
+
+Verified: `bun run seed:sync` still writes all 35 content types + 8
+singletons + `menuData`; `bun run r2:sync --local` still uploads all 11
+files; typecheck unchanged; 983 passing with the same 16 pre-existing
+failures.

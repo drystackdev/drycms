@@ -9,7 +9,7 @@ import { signSession } from "../../lib/session-token.js";
 import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { extractPackagedSeedAssets } from "../../content-types/seed-assets.js";
-import { applyPackagedSingletonData } from "../../content-types/seed.js";
+import { applyPackagedMenuData, applyPackagedSingletonData } from "../../content-types/seed.js";
 import { resolved } from "../config.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
@@ -278,6 +278,9 @@ export const POST: DryRouteHandler = async (context) => {
         // asset zip.
         await extractPackagedSeedAssets(resolved);
         await applyPackagedSingletonData(entryAdapter, allTypes);
+        // Same one-time window, same reasoning - see `applyPackagedMenuData`
+        // for why `menu` is the one collection whose rows the seed carries.
+        await applyPackagedMenuData(entryAdapter, allTypes);
 
         const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
         const name = typeof body.name === "string" ? body.name.trim() : "";

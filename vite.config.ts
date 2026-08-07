@@ -9,7 +9,28 @@ import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js"
 // the two need different chunking (see `inlineDynamicImports` below).
 const isWorkerBuild = process.env.DRYCMS_WORKER_BUILD === "1";
 
-export default defineConfig(({ isSsrBuild }) => ({
+export default defineConfig(({ isSsrBuild, command }) => ({
+  /**
+   * `public/` is NOT a static-asset folder here - `options.ts`'s
+   * `resolveStorageOption` makes it the File Manager's own root under
+   * `kind: "local"`, so it holds user-uploaded media (see that function's
+   * doc comment). Vite's default behaviour would copy every byte of it into
+   * `dist/client` AND `dist/server` on each build, which is pure waste:
+   * stored media is always addressed by bare id and served through
+   * `/dry/api/storage/<id>` off the storage adapter (`routes/storage.ts`'s
+   * `withPreview`), never as a plain `/<name>.ext` static file. On
+   * `kind: "cloudflare"` that adapter is R2, so shipping the same bytes as
+   * Workers assets duplicates them; on Node the server reads `public/` off
+   * disk at runtime, not out of `dist/`. Either way the copy is dead weight.
+   *
+   * Kept ON in dev (`command === "serve"`), where Vite's static serving of
+   * `public/` is what makes a freshly-uploaded file reachable immediately -
+   * the behaviour `resolveStorageOption`'s comment describes. If this app
+   * ever needs genuinely static, deploy-time files (favicon, robots.txt),
+   * they need their own directory rather than `public/`, which is now the
+   * media root.
+   */
+  publicDir: command === "build" ? false : "public",
   // `appRouterPlugin` (`enforce: "pre"`) injects `dry()`'s import for
   // `src/apps/pages/**` before Preact's own JSX transform runs (a
   // server-real or client-replay version depending on

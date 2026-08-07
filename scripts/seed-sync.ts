@@ -2,9 +2,14 @@
  * Snapshots the CURRENT dev content-type DB's full list into `dry.seed.json`
  * at the repo root - the "separate seed script" from `plans/
  * content-type-seed.md`: overwrites the file wholesale each run (a
- * snapshot, not a merge). See `scripts/lib/schema-sync.ts` for the shared
- * implementation (`bun run build:schema` uses the same one, alongside
- * `public.zip`).
+ * snapshot, not a merge). See `scripts/lib/schema-sync.ts` for the
+ * implementation.
+ *
+ * The only snapshot command - `bun run build:schema` used to be a second
+ * entry point that did this plus package `public.zip`; with that media
+ * artifact gone (media goes to R2 via `bun run r2:sync` now) it was left
+ * doing exactly what this script does, so it was removed rather than kept
+ * as a duplicate name for one job.
  *
  * Run with: bun run seed:sync
  */
