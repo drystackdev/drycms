@@ -163,7 +163,7 @@ function SurfaceColorPairField({
  * network to preview a color).
  */
 export default function Settings() {
-  useDocumentTitle("Settings");
+  useDocumentTitle("Color schema");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "systemSettings"), []);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
@@ -265,7 +265,7 @@ export default function Settings() {
     <>
       <div class="page-header">
         <div style={{ flex: 1 }}>
-          <h1>Settings</h1>
+          <h1>Color schema</h1>
           <p>Admin UI theme - colors and typography, shared by every user.</p>
         </div>
         <div class="row">

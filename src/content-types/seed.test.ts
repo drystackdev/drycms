@@ -8,7 +8,7 @@ import {
   pendingSeedStatements,
   resolveDefaultContentTypeDefinitions,
 } from "./seed.js";
-import { SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
+import { GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
 import { resolveTableTree } from "./tree.js";
 import type { ContentTypeDefinition } from "./types.js";
 
@@ -16,9 +16,10 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect, memory (collections), and seoDefaults, systemSettings (singletons)", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect, memory (collections), and seoDefaults, systemSettings, googleVerification (singletons)", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
+      "googleVerification",
       "memory",
       "menu",
       "menuItem",
@@ -39,6 +40,7 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("memory").kind).toBe("collection");
     expect(byName("seoDefaults").kind).toBe("singleton");
     expect(byName("systemSettings").kind).toBe("singleton");
+    expect(byName("googleVerification").kind).toBe("singleton");
   });
 
   it("hides role/aiKey/redirect/seo/user/seoDefaults/memory/systemSettings from the generic content-type UI, but leaves menu/menuItem visible", () => {
@@ -57,6 +59,7 @@ describe("defaultContentTypeDefinitions", () => {
     // inaccessible.
     expect(byName("memory").hidden).toBe(true);
     expect(byName("systemSettings").hidden).toBe(true);
+    expect(byName("googleVerification").hidden).toBe(true);
     expect(byName("menu").hidden).toBeFalsy();
     expect(byName("menuItem").hidden).toBeFalsy();
   });
@@ -108,11 +111,20 @@ describe("defaultContentTypeDefinitions", () => {
     expect(data.type).toBe("text");
   });
 
-  it("seoDefaults is recognized by its fixed id, has features.seo on, and only the built-in Google site-verification file field", () => {
+  it("seoDefaults is recognized by its fixed id, has features.seo on, and no custom fields", () => {
     const seoDefaults = byName("seoDefaults");
     expect(seoDefaults.id).toBe(SEO_DEFAULTS_TYPE_ID);
     expect(seoDefaults.features?.seo).toBe(true);
-    expect(seoDefaults.fields.map((f) => f.name)).toEqual(["googleSiteVerificationFile"]);
+    expect(seoDefaults.fields).toEqual([]);
+  });
+
+  it("googleVerification is recognized by its fixed id, hidden+locked+frozen, and has the name/content fields", () => {
+    const googleVerification = byName("googleVerification");
+    expect(googleVerification.id).toBe(GOOGLE_VERIFICATION_TYPE_ID);
+    expect(googleVerification.hidden).toBe(true);
+    expect(googleVerification.locked).toBe(true);
+    expect(googleVerification.frozen).toBe(true);
+    expect(googleVerification.fields.map((f) => f.name)).toEqual(["name", "content"]);
   });
 
   it("protects user's email/password/roles fields specifically, and nothing else", () => {

@@ -72,6 +72,13 @@ export const SYSTEM_COMPONENT_IDS = {
  * so an id-based check is the only stable way to always find it again. */
 export const SEO_DEFAULTS_TYPE_ID = "system-seo-defaults";
 
+/** Fixed id for the built-in "Google Verification" singleton (see `seed.ts`) -
+ * a `name`/`content` pair `google-verification.ts` root-serves at
+ * `/<name>` with `content` as the raw response body, for Google's HTML
+ * site-verification method. Recognized by this fixed id, not by name/label,
+ * same reasoning as `SEO_DEFAULTS_TYPE_ID` above. */
+export const GOOGLE_VERIFICATION_TYPE_ID = "system-google-verification";
+
 /** The synthetic fields implied by `type.features` - in front of `type.fields`
  * for the real DB column order (`tree.ts`'s `resolveTableTree`), but AFTER
  * `type.fields` for on-screen display order (`entry-tree.ts`'s

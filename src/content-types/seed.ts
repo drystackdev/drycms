@@ -3,7 +3,7 @@ import { resolve as resolvePath } from "node:path";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import { planMigration, type Statement } from "./migration.js";
-import { SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
+import { GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 export interface PackagedSeed {
@@ -86,7 +86,9 @@ const IDS = {
   memoryVersion: "system-memory-version",
   systemSettings: "system-settings",
   systemSettingsData: "system-settings-data",
-  seoDefaultsGoogleSiteVerificationFile: "system-seo-defaults-google-site-verification-file",
+  googleVerification: "system-google-verification-singleton",
+  googleVerificationName: "system-google-verification-name",
+  googleVerificationContent: "system-google-verification-content",
 } as const;
 
 /**
@@ -505,29 +507,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     hidden: true,
     locked: true,
     features: { seo: true },
-    fields: [
-      {
-        id: IDS.seoDefaultsGoogleSiteVerificationFile,
-        name: "googleSiteVerificationFile",
-        label: "Google Site Verification File",
-        type: "file",
-        // Google's HTML verification method requires the file at the exact
-        // domain root (`https://example.com/google<id>.html`), not nested
-        // under a subfolder - upload it to the Media picker's top-level
-        // (root) folder, never into a subfolder. Reachable there regardless
-        // of `storage.kind`: the local backend's root IS the app's own
-        // `public/` (`options.ts`'s `resolveStorageOption`), served as a
-        // static asset; `page-handler.ts`'s `tryServeGoogleVerificationFile`
-        // additionally root-serves it live through the storage adapter (so
-        // `kind: "r2"`, whose objects live under a `storage/` prefix with no
-        // bare-root HTTP access of its own, still works).
-        description:
-          "Upload the .html file Google Search Console gives you for domain-ownership verification. Pick the TOP-LEVEL (root) folder in the file picker so it's served at https://yourdomain.com/<filename>.html, not nested under a subfolder.",
-        config: {},
-        validation: {},
-        order: 0,
-      },
-    ],
+    fields: [],
     version: 0,
   };
 
@@ -631,7 +611,49 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings];
+  const googleVerification: ContentTypeDefinition = {
+    id: GOOGLE_VERIFICATION_TYPE_ID,
+    kind: "singleton",
+    name: "googleVerification",
+    label: "Google Verification",
+    description: "Serves Google's site-ownership verification content at the exact domain root, without an uploaded file.",
+    // Reached via its own "Google Verification" sub-item under the "Settings"
+    // nav group (`DryLayout.tsx`), same treatment as `systemSettings`/
+    // `seoDefaults` above - a dedicated 2-field page (`GoogleVerificationSettings.tsx`)
+    // replaces the generic singleton editor.
+    hidden: true,
+    locked: true,
+    frozen: true,
+    fields: [
+      {
+        id: IDS.googleVerificationName,
+        name: "name",
+        label: "Name",
+        type: "text",
+        // `google-verification.ts`'s `tryServeGoogleVerificationFile` matches
+        // this verbatim against the request path (`/<name>`) - Google's own
+        // instructions give you this filename (e.g.
+        // "google1234567890abcdef.html") alongside `content` below.
+        description: "The exact filename Google Search Console gives you, e.g. google1234567890abcdef.html - served at https://yourdomain.com/<name>.",
+        config: { placeholder: "google1234567890abcdef.html" },
+        validation: { required: true },
+        order: 0,
+      },
+      {
+        id: IDS.googleVerificationContent,
+        name: "content",
+        label: "Content",
+        type: "text",
+        description: "The exact file content Google gives you alongside the filename above - served verbatim as the response body.",
+        config: { multiline: true, placeholder: "google-site-verification: google1234567890abcdef.html" },
+        validation: { required: true },
+        order: 1,
+      },
+    ],
+    version: 0,
+  };
+
+  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings, googleVerification];
 }
 
 /**

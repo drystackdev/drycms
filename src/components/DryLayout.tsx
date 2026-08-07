@@ -32,7 +32,12 @@ import {
   type PermissionAction,
 } from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
-import { countEntryDrafts, hasEntryDraft, hydrateEntryDraftIndex, watchEntryDraftIndex } from "../content-types/entry-draft-store.js";
+import {
+  countEntryDrafts,
+  hasEntryDraft,
+  hydrateEntryDraftIndex,
+  watchEntryDraftIndex,
+} from "../content-types/entry-draft-store.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -161,20 +166,10 @@ const NAV: {
     section: "System",
     permissionName: "redirect",
   },
-  {
-    key: "settings",
-    label: "Settings",
-    href: `${path}/settings`,
-    icon: "Settings",
-    ready: true,
-    section: "System",
-    // `systemSettings` is a real (hidden) singleton content type - same
-    // permissionName/permissionAction mechanism `seo-defaults` above uses,
-    // not a synthetic System resource (Settings.tsx already enforces
-    // `canAccess(type.id, "setting")` itself).
-    permissionName: "systemSettings",
-    permissionAction: "setting",
-  },
+  // No flat "settings" entry here - it's rendered as its own expandable
+  // `SidebarNavGroup` (2 static sub-items: Color schema/Google Verification)
+  // right after this array's own `sectionItems`, same special-casing the
+  // Content section already does for Collection/Singleton below.
 ];
 
 const NAV_SECTIONS = ["Overview", "Content", "System"] as const;
@@ -208,22 +203,38 @@ function isActiveNavItem(url: string, href: string): boolean {
   return url === href || url.startsWith(`${href}/`);
 }
 
-interface ContentNavGroupProps {
+/** One expandable sidebar group's sub-item - either a real content type
+ * (Collection/Singleton groups, `href`/`badge` computed from it at the call
+ * site) or a static destination (the Settings group below) - `SidebarNavGroup`
+ * itself no longer needs to know which. */
+interface SidebarNavGroupItem {
+  id: string;
+  label: string;
+  href: string;
+  /** Unsaved-draft indicator (a dot for a singleton, a count badge for a
+   * collection) - see `entry-draft-store.ts` and `status/entry-drafts.md`.
+   * Omitted (not just falsy) for a group with nothing to indicate. */
+  badge?: ComponentChildren;
+}
+
+interface SidebarNavGroupProps {
   id: string;
   label: string;
   icon: IconName;
-  items: ContentTypeDefinition[];
+  items: SidebarNavGroupItem[];
   open: boolean;
   url: string;
   collapsed: boolean;
   onToggle: () => void;
-  /** Unsaved-draft indicator (a dot for a singleton, a count badge for a
-   * collection) next to each item's label - see `entry-draft-store.ts` and
-   * `status/entry-drafts.md`. `null` renders nothing for that item. */
-  renderBadge?: (type: ContentTypeDefinition) => ComponentChildren;
 }
 
-function ContentNavGroup({
+/** An expandable sidebar parent with a fixed set of link sub-items - popover
+ * menu when the sidebar is collapsed, an inline expand/collapse list
+ * otherwise. Originally built for the Collection/Singleton content-type
+ * groups (still their `items` source, mapped to `SidebarNavGroupItem` at the
+ * call site); the Settings group below reuses the same component for its 2
+ * static destinations instead of a bespoke nav pattern. */
+function SidebarNavGroup({
   id,
   label,
   icon,
@@ -232,21 +243,21 @@ function ContentNavGroup({
   url,
   collapsed,
   onToggle,
-  renderBadge,
-}: ContentNavGroupProps) {
+}: SidebarNavGroupProps) {
   const popupItems = (
     <>
-      {items.map((type) => {
-        const href = `${path}/content/${type.name}`;
-        return (
-          <li key={type.id} class="sidebar-nav-popup-item">
-            <a role="menuitem" href={href} aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
-              {type.label}
-              {renderBadge?.(type)}
-            </a>
-          </li>
-        );
-      })}
+      {items.map((item) => (
+        <li key={item.id} class="sidebar-nav-popup-item">
+          <a
+            role="menuitem"
+            href={item.href}
+            aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
+          >
+            {item.label}
+            {item.badge}
+          </a>
+        </li>
+      ))}
     </>
   );
 
@@ -299,15 +310,17 @@ function ContentNavGroup({
           aria-hidden={!open}
         >
           <div class="nav-subitems">
-            {items.map((type) => {
-              const href = `${path}/content/${type.name}`;
-              return (
-                <a key={type.id} href={href} class="nav-subitem" aria-current={isActiveNavItem(url, href) ? "page" : undefined}>
-                  <span>{type.label}</span>
-                  {renderBadge?.(type)}
-                </a>
-              );
-            })}
+            {items.map((item) => (
+              <a
+                key={item.id}
+                href={item.href}
+                class="nav-subitem"
+                aria-current={isActiveNavItem(url, item.href) ? "page" : undefined}
+              >
+                <span>{item.label}</span>
+                {item.badge}
+              </a>
+            ))}
           </div>
         </div>
       )}
@@ -340,6 +353,10 @@ export default function DryLayout({ children }: Props) {
     "singletonSubmenuOpen",
     true,
   );
+  const [settingsMenuOpen, setSettingsMenuOpen] = useStore(
+    "settingsSubmenuOpen",
+    true,
+  );
   const contentTypesApi = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
     [],
@@ -369,13 +386,37 @@ export default function DryLayout({ children }: Props) {
   // `hidden` types (role/aiKey) are reached through their own
   // dedicated page instead - see `types.ts`'s doc comment.
   const collectionNavItems = useMemo(
-    () => (contentTypes ?? []).filter((t) => t.kind === "collection" && !t.hidden && canAccess(t.id, "view")),
+    () =>
+      (contentTypes ?? []).filter(
+        (t) => t.kind === "collection" && !t.hidden && canAccess(t.id, "view"),
+      ),
     [contentTypes],
   );
   const singletonNavItems = useMemo(
-    () => (contentTypes ?? []).filter((t) => t.kind === "singleton" && !t.hidden && canAccess(t.id, "setting")),
+    () =>
+      (contentTypes ?? []).filter(
+        (t) =>
+          t.kind === "singleton" && !t.hidden && canAccess(t.id, "setting"),
+      ),
     [contentTypes],
   );
+  // Settings group's 2 static destinations - each gated on its own hidden
+  // system singleton the same way `seo-defaults`/`ai-keys` above are (a
+  // `permissionName` lookup + `canAccess(..., "setting")`), just done here
+  // instead of through the flat `NAV` array since these render as a
+  // `SidebarNavGroup`, not a plain link.
+  const settingsNavItems = useMemo(() => {
+    const items: SidebarNavGroupItem[] = [];
+    const colorSchemaType = contentTypes?.find((t) => t.name === "systemSettings");
+    if (colorSchemaType && canAccess(colorSchemaType.id, "setting")) {
+      items.push({ id: "color-schema", label: "Color schema", href: `${path}/settings/color-schema` });
+    }
+    const googleVerificationType = contentTypes?.find((t) => t.name === "googleVerification");
+    if (googleVerificationType && canAccess(googleVerificationType.id, "setting")) {
+      items.push({ id: "google-verification", label: "Google Verification", href: `${path}/settings/google-verification` });
+    }
+    return items;
+  }, [contentTypes]);
 
   // `.main`, not `window`, is the actual scrolling element (`.shell` is
   // pinned to `100dvh`) - preact-iso's own scroll-to-top-on-navigation
@@ -417,7 +458,7 @@ export default function DryLayout({ children }: Props) {
     <div class={shellClass}>
       <aside class="sidebar">
         <div class="sidebar-head">
-          <a class="brand" href={`${path}/dashboard`}>
+          <a class="brand" href="/">
             <Icon name="Brand" />
             <span>DRYCMS</span>
           </a>
@@ -441,79 +482,115 @@ export default function DryLayout({ children }: Props) {
                 (item) =>
                   item.section === section &&
                   !HIDDEN_NAV_KEYS.has(item.key) &&
-                  (!item.superAdminOnly || authState.value.user?.isSuperAdmin) &&
-                  (!item.permissionName || (() => {
-                    const type = contentTypes?.find((candidate) => candidate.name === item.permissionName);
-                    return !!type && canAccess(type.id, item.permissionAction ?? "view");
-                  })()) &&
-                  (!item.permissionResourceId || canAccess(item.permissionResourceId, "setting")),
+                  (!item.superAdminOnly ||
+                    authState.value.user?.isSuperAdmin) &&
+                  (!item.permissionName ||
+                    (() => {
+                      const type = contentTypes?.find(
+                        (candidate) => candidate.name === item.permissionName,
+                      );
+                      return (
+                        !!type &&
+                        canAccess(type.id, item.permissionAction ?? "view")
+                      );
+                    })()) &&
+                  (!item.permissionResourceId ||
+                    canAccess(item.permissionResourceId, "setting")),
               );
               if (sectionItems.length === 0) return null;
               return (
                 <div key={section} class="nav-section">
-                  {!collapsed.value && <span class="nav-section-label">{section}</span>}
+                  {!collapsed.value && (
+                    <span class="nav-section-label">{section}</span>
+                  )}
                   {section === "Content" && (
                     <>
                       {collectionNavItems.length > 0 && (
-                        <ContentNavGroup
+                        <SidebarNavGroup
                           id="collection-nav-subitems"
                           label="Collection"
                           icon="Collection"
-                          items={collectionNavItems}
+                          items={collectionNavItems.map((type) => {
+                            const count = countEntryDrafts(type.name);
+                            return {
+                              id: type.id,
+                              label: type.label,
+                              href: `${path}/content/${type.name}`,
+                              badge: count > 0 ? <span class="badge sm secondary">{count}</span> : undefined,
+                            };
+                          })}
                           open={collectionMenuOpen}
                           url={url}
                           collapsed={collapsed.value}
-                          onToggle={() => setCollectionMenuOpen(!collectionMenuOpen)}
-                          renderBadge={(type) => {
-                            const count = countEntryDrafts(type.name);
-                            return count > 0 ? <span class="badge sm secondary">{count}</span> : null;
-                          }}
+                          onToggle={() =>
+                            setCollectionMenuOpen(!collectionMenuOpen)
+                          }
                         />
                       )}
                       {singletonNavItems.length > 0 && (
-                        <ContentNavGroup
+                        <SidebarNavGroup
                           id="singleton-nav-subitems"
                           label="Singleton"
                           icon="Singleton"
-                          items={singletonNavItems}
+                          items={singletonNavItems.map((type) => ({
+                            id: type.id,
+                            label: type.label,
+                            href: `${path}/content/${type.name}`,
+                            badge: hasEntryDraft(type.name, null) ? (
+                              <span class="nav-draft-dot" aria-label="Unsaved changes" />
+                            ) : undefined,
+                          }))}
                           open={singletonMenuOpen}
                           url={url}
                           collapsed={collapsed.value}
-                          onToggle={() => setSingletonMenuOpen(!singletonMenuOpen)}
-                          renderBadge={(type) =>
-                            hasEntryDraft(type.name, null) ? <span class="nav-draft-dot" aria-label="Unsaved changes" /> : null
+                          onToggle={() =>
+                            setSingletonMenuOpen(!singletonMenuOpen)
                           }
                         />
                       )}
                     </>
                   )}
-                  {sectionItems.map((item) => item.ready ? (
-                <a
-                  key={item.key}
-                  href={item.href}
-                  aria-current={
-                    isActiveNavItem(url, item.href) ? "page" : undefined
-                  }
-                  data-tooltip={collapsed.value ? item.label : undefined}
-                  data-tooltip-placement="right"
-                >
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                </a>
-              ) : (
-                <a
-                  key={item.key}
-                  aria-disabled="true"
-                  style="pointer-events: none; opacity: 0.55"
-                  data-tooltip={collapsed.value ? item.label : undefined}
-                  data-tooltip-placement="right"
-                >
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                  <span class="spacer" />
-                  <span class="badge outline">Soon</span>
-                </a>
-              ))}
+                  {section === "System" && settingsNavItems.length > 0 && (
+                    <SidebarNavGroup
+                      id="settings-nav-subitems"
+                      label="Settings"
+                      icon="Settings"
+                      items={settingsNavItems}
+                      open={settingsMenuOpen}
+                      url={url}
+                      collapsed={collapsed.value}
+                      onToggle={() => setSettingsMenuOpen(!settingsMenuOpen)}
+                    />
+                  )}
+                  {sectionItems.map((item) =>
+                    item.ready ? (
+                      <a
+                        key={item.key}
+                        href={item.href}
+                        aria-current={
+                          isActiveNavItem(url, item.href) ? "page" : undefined
+                        }
+                        data-tooltip={collapsed.value ? item.label : undefined}
+                        data-tooltip-placement="right"
+                      >
+                        <Icon name={item.icon} />
+                        <span>{item.label}</span>
+                      </a>
+                    ) : (
+                      <a
+                        key={item.key}
+                        aria-disabled="true"
+                        style="pointer-events: none; opacity: 0.55"
+                        data-tooltip={collapsed.value ? item.label : undefined}
+                        data-tooltip-placement="right"
+                      >
+                        <Icon name={item.icon} />
+                        <span>{item.label}</span>
+                        <span class="spacer" />
+                        <span class="badge outline">Soon</span>
+                      </a>
+                    ),
+                  )}
                 </div>
               );
             })}
@@ -563,12 +640,21 @@ export default function DryLayout({ children }: Props) {
                * change occasionally, not something worth a permanent slot in
                * a menu opened constantly for Profile/Logout. */}
               <li role="none">
-                <button type="button" role="menuitem" onClick={() => route(`${path}/profile`)}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => route(`${path}/profile`)}
+                >
                   <UserIcon /> Profile
                 </button>
               </li>
               <li role="none">
-                <button type="button" role="menuitem" class="popover-menu-danger" onClick={() => void logout()}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="popover-menu-danger"
+                  onClick={() => void logout()}
+                >
                   <LogOutIcon /> Logout
                 </button>
               </li>

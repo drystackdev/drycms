@@ -1280,6 +1280,7 @@
 
       &:hover:not(:disabled) {
         text-decoration: underline;
+        background-color: unset;
       }
 
       &:disabled {

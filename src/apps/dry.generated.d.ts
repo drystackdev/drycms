@@ -129,7 +129,6 @@ export interface SiteSettings {
 
 export interface SeoDefaults {
   id: number;
-  googleSiteVerificationFile?: string;
   seo: Seo;
 }
 
@@ -143,6 +142,12 @@ export interface BlogsPage {
 export interface SystemSettings {
   id: number;
   data?: string;
+}
+
+export interface GoogleVerification {
+  id: number;
+  name: string;
+  content: string;
 }
 
 export interface MenuItem {
@@ -297,8 +302,10 @@ export interface BlogsPageRelations {}
 
 export interface SystemSettingsRelations {}
 
+export interface GoogleVerificationRelations {}
+
 export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category" | "redirect" | "memory";
-export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage" | "systemSettings";
+export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage" | "systemSettings" | "googleVerification";
 
 export interface DryCollectionMap {
   "user": User;
@@ -319,6 +326,7 @@ export interface DrySingletonMap {
   "seoDefaults": SeoDefaults;
   "blogsPage": BlogsPage;
   "systemSettings": SystemSettings;
+  "googleVerification": GoogleVerification;
 }
 
 export interface DryCollectionRelationsMap {
@@ -340,6 +348,7 @@ export interface DrySingletonRelationsMap {
   "seoDefaults": SeoDefaultsRelations;
   "blogsPage": BlogsPageRelations;
   "systemSettings": SystemSettingsRelations;
+  "googleVerification": GoogleVerificationRelations;
 }
 
 declare global {

@@ -34,6 +34,7 @@ const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
 const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
 const PageComponents = lazy(() => import("../pages/PageComponents.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
+const GoogleVerificationSettings = lazy(() => import("../pages/GoogleVerificationSettings.js"));
 const VeiChangesPreview = lazy(() => import("../pages/vei/ChangesPreview.js"));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
@@ -183,7 +184,21 @@ function AuthenticatedApp() {
               <Route path={`${path}/vei/changes`} component={VeiChangesPreview} />
               <Route path={`${path}/profile`} component={Profile} />
               <Route path={`${path}/roles`} component={Roles} />
-              <Route path={`${path}/settings`} component={Settings} />
+              {/* Bare `/settings` -> the default sub-page, so an old
+                  bookmark/link to the flat pre-sub-nav URL still lands
+                  somewhere real instead of 404ing. */}
+              <Route
+                path={`${path}/settings`}
+                component={() => <Redirect to={`${path}/settings/color-schema`} />}
+              />
+              <Route
+                path={`${path}/settings/color-schema`}
+                component={Settings}
+              />
+              <Route
+                path={`${path}/settings/google-verification`}
+                component={GoogleVerificationSettings}
+              />
               {/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}
               <Route
                 path={`${path}/roles/new`}
