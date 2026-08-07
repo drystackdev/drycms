@@ -3,7 +3,6 @@
   "type": "module",
   "private": true,
   "version": "0.0.1",
-  "workspaces": ["packages/*"],
   "description": "A self-hosted Preact CMS admin UI, served via a pluggable server adapter (Node or Cloudflare Workers; Bun planned).",
   "engines": {
     "node": ">=22.12.0"
