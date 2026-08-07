@@ -54,7 +54,7 @@ export default async function AboutPage() {
           <ol class="mt-6 space-y-6 border-l border-slate-200 pl-6">
             {experienceItems.map((item) => (
               <li key={item.year} class="relative">
-                <span class="absolute -left-[29px] top-1 h-3 w-3 rounded-full bg-red-800" />
+                <span class="absolute -left-7.25 top-1 h-3 w-3 rounded-full bg-red-800" />
                 <p class="text-sm font-semibold text-red-900">{item.year}</p>
                 <p class="mt-1 text-sm leading-relaxed text-slate-600">{item.description}</p>
               </li>
