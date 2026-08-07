@@ -137,18 +137,23 @@ export interface EditingDockHandle {
   setSheetOpen(open: boolean): void;
 }
 
-/** The full dock shown once edit mode is on - status text, "Preview all"
- * (with its pending-changes badge), Save, and Exit. */
+/** The full dock shown once edit mode is on - a "Dashboard" button (in place
+ * of the old permanent "Edit mode" label), transient status text (save
+ * progress/result, `EditingDockHandle.setStatus` - empty otherwise, so
+ * nothing renders there most of the time), "Preview all" (with its
+ * pending-changes badge), Save, and Exit. */
 export function EditingDock(props: {
   initialMode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
   onExit: () => void;
+  onDashboard: () => void;
   onPreviewAll: () => void;
   onSave: () => void;
   onReady: (handle: EditingDockHandle) => void;
 }) {
   const [exiting, setExiting] = useState(false);
-  const [status, setStatus] = useState("Edit mode");
+  const [navigatingToDashboard, setNavigatingToDashboard] = useState(false);
+  const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   // null until refreshPreviewCount's first read comes back - not 0, so a
   // real "zero pending drafts" answer doesn't animate the width twice.
@@ -176,7 +181,25 @@ export function EditingDock(props: {
 
   return (
     <div className="dock" ref={ref}>
-      <span className="label">{status}</span>
+      <button
+        type="button"
+        className="ghost round"
+        disabled={navigatingToDashboard}
+        onClick={() => {
+          setNavigatingToDashboard(true);
+          props.onDashboard();
+        }}
+      >
+        {navigatingToDashboard ? (
+          <>
+            <span className="vei-spinner" />
+            Opening dashboard
+          </>
+        ) : (
+          "Dashboard"
+        )}
+      </button>
+      {status && <span className="label">{status}</span>}
       {!sheetOpen && (
         <ModeToggle
           mode={mode}

@@ -523,6 +523,7 @@ function main(): void {
       },
       onExit: () =>
         navigateTo(`${config.path}/vei/exit?to=${encodeURIComponent(currentLocation())}`),
+      onDashboard: () => navigateTo(`${config.path}/dashboard`),
       onPreviewAll: () => openFrame(`${config.path}/vei/changes?_vei=1`),
       onSave: () => void saveAll(),
       onReady: (handle) => {
