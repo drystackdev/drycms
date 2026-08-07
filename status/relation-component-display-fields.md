@@ -172,3 +172,16 @@ tới).
 
 ## Speed
 Xong trong 1 phiên làm việc liên tục, không blocker.
+
+## Follow-up (cùng ngày)
+User hỏi nên ẩn "Display fields" khi Component không Repeatable/Relation
+không phải multi. Cân nhắc lại: **chỉ gate theo `repeatable` cho Component**
+(field render qua `flatten` khi tắt Repeatable, không đi qua `ComponentField`
+nữa → control chết, đúng nên ẩn). **Không gate Relation/Relation Mirror theo
+cardinality** - kể cả `manyToOne` vẫn render qua `RelationField` và vẫn hiện
+card tóm tắt cho item đã chọn (đã verify trực tiếp: `blog.category` là
+manyToOne, "Title: … / Slug: …" vẫn hiện đúng và hữu ích) - ẩn đi sẽ mất
+tính năng đang chạy tốt. Đã sửa `DisplayFieldsInput` trong `FieldDialog.tsx`
++ verify live trên dev server (tắt Repeatable → Display fields + Validation
+group biến mất ngay; Cancel không lưu gì). Test suite liên quan (74 test,
+4 file) vẫn pass.

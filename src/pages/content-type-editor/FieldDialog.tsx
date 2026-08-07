@@ -530,8 +530,10 @@ function selectOptionsInvalid(config: Record<string, unknown>): boolean {
  * like that using THAT field's own `displayFields`, not anything configured
  * here). Not rendered before a target/component is actually chosen - there's
  * nothing to list yet - nor when that choice resolves to zero candidate
- * fields. Leaving the picker empty keeps the pre-existing "first field"
- * fallback (`RelationFieldConfig.displayFields`'s own doc comment). */
+ * fields, nor for a non-repeatable `component` (dead control - see the
+ * `repeatable` check below). Leaving the picker empty keeps the pre-existing
+ * "first field" fallback (`RelationFieldConfig.displayFields`'s own doc
+ * comment). */
 function DisplayFieldsInput({
   draftType,
   config,
@@ -547,6 +549,15 @@ function DisplayFieldsInput({
 }) {
   if (draftType !== "relation" && draftType !== "component" && draftType !== "relationmirror")
     return null;
+  // A non-repeatable component renders as `flatten` - its fields inline
+  // directly into the form, never through `ComponentField`/`renderSummary` -
+  // so this control would be dead with nothing to affect. A `relation`
+  // (any cardinality, including `manyToOne`) and a `relationmirror` always
+  // render through `RelationField`, which shows a summary card even for a
+  // single picked item - so those stay available regardless of cardinality.
+  if (draftType === "component" && !(config as ComponentFieldConfig).repeatable) {
+    return null;
+  }
   const targetTypeId =
     draftType === "relation"
       ? (config.target as RelationFieldConfig["target"] | undefined)

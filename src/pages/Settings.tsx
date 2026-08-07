@@ -293,7 +293,7 @@ export default function Settings() {
             <h2>Preview</h2>
             <p>Updates live as you edit - nothing here is saved until you click Save.</p>
           </header>
-          <div class="under">
+          <div>
             <ThemePreview value={value} />
           </div>
         </section>

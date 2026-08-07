@@ -3033,9 +3033,6 @@
 
       @media (width < 64rem) {
         grid-template-columns: minmax(0, 1fr);
-        & > *:first-child {
-          padding: 0;
-        }
       }
     }
 
