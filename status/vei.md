@@ -440,3 +440,55 @@ hint `drycms_admin` (`routes/auth.ts`) theo đúng quyền đó. Chi tiết đ�
 `status/role-system-permissions.md`'s addendum cùng ngày. `bun run
 typecheck` sạch, `bun run test` 88 file/935 test pass (2 test mới), `bun run
 build` xanh.
+
+### Bổ sung: panel mode giữ overlay sống, click field khác đổi URL panel (2026-08-07)
+
+Yêu cầu: khi bật panel mode (side panel bên phải), trang public vẫn phải
+hiện overlay để click vào field khác được, và panel đổi URL theo field vừa
+click.
+
+Trước bản này panel mode chỉ *nhìn* như non-modal: CSS đã cho click xuyên
+qua (`.sheet.docked { pointer-events: none }`), page đã bị đẩy bằng
+`margin-right`, scroll không bị khoá - nhưng 2 chỗ JS trong `overlay.ts` vẫn
+chặn cứng bằng `if (sheet.isConnected) return`:
+
+- listener `mousemove` → không còn hover highlight khi panel mở
+- `intercept` (mousedown/click capture) → click vào field không mở editor
+  nữa, mà còn tệ hơn: link/button thật của trang chạy default action, tức là
+  điều hướng đi mất trong lúc panel đang mở dở.
+
+Sửa: thêm `isModalSheetOpen()` = `sheet.isConnected && !isDesktopPanel()` và
+dùng nó cho cả 2 chỗ trên - chỉ dialog mode và drawer mobile mới là modal
+thật. `openFrame()` sửa thêm 3 điểm để chịu được việc bị gọi lại lúc panel
+ĐANG mở:
+
+- cùng URL → return sớm (không reload iframe, tránh mất draft đang gõ dở vì
+  `saveEntryDraft` debounce 300ms)
+- `scope.append(sheet)` chỉ chạy khi chưa mở (append lại node cũ =
+  remove+insert, sẽ chạy lại animation `vei-panel-dock-in` mỗi lần click
+  field)
+- `hideHighlight()` + `lockBodyScroll()` chuyển vào nhánh `!isDesktopPanel()`
+  - side panel giữ luôn highlight để thấy field nào đang được sửa.
+
+Verify Playwright (script tạm, không thêm vào `e2e/`), viewport 1440x900,
+trang chủ dev server thật:
+
+- panel mode: click field 1 → `.sheet.docked`, `marginRight: 480px`,
+  `pointer-events: none`, src = `/dry/content/siteSettings?_vei=1&_field=brandName`
+- hover field khác lúc panel đang mở → `.field-highlight` display `block`
+- click field khác → src đổi sang
+  `/dry/content/menu/2mBGhT?_vei=1&_field=refs&_path=refs.0.href`, sheet
+  không bị đóng/mở lại, `location.href` vẫn ở `/` (link `<a>` không điều
+  hướng đi)
+- click lại đúng field đó → src giữ nguyên, `.panel` không vào lại trạng
+  thái `loading`
+- regression dialog mode: `htmlOverflow: hidden`, không push page, highlight
+  `none`, click field khác KHÔNG đổi src, Escape đóng + trả lại overflow
+- regression mobile (420px, panel mode): vẫn `docked` nhưng modal
+  (`htmlOverflow: hidden`, không push page)
+
+Chỉ sửa `src/apps/vei/overlay.ts`. `bun run typecheck` sạch (lỗi
+`blogs/page.tsx:78` là có sẵn từ trước, không liên quan). `bun run test`:
+16 fail có sẵn ở `seed/sqlite/dry-reader/entries-sqlite` - do live DB đã
+lệch seed (xem `status/`-note về seed vs live DB), không file nào trong đó
+import `overlay.ts`.

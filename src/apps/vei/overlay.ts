@@ -594,7 +594,7 @@ function main(): void {
   document.addEventListener(
     "mousemove",
     (event) => {
-      if (sheet.isConnected) return;
+      if (isModalSheetOpen()) return;
       const marked = markedElementFor(event);
       if (!marked) {
         hideHighlight();
@@ -743,6 +743,20 @@ function main(): void {
   }
 
   /**
+   * True only while the sheet is up as a MODAL - dialog mode, or the mobile
+   * bottom drawer. The desktop side panel deliberately isn't one: it leaves
+   * the page visible, clickable (`.sheet.docked` is `pointer-events: none`,
+   * `overlay-styles.ts`) and unscrolled-locked, so the hover highlight and
+   * the click interception below have to keep running while it's open -
+   * clicking another field then just re-points the panel at that field
+   * (`openFrame`), instead of the page's own link/button behaviour firing
+   * behind an editor that stays put.
+   */
+  function isModalSheetOpen(): boolean {
+    return sheet.isConnected && !isDesktopPanel();
+  }
+
+  /**
    * Shrinks the live page itself (a plain `margin-right` on `<html>`, not a
    * wrapper - this script has no business restructuring the page's own DOM)
    * while the desktop panel is open, so the panel sits BESIDE the page
@@ -815,16 +829,28 @@ function main(): void {
    * this overlay otherwise only ever points at one entry's editor
    * (`openDialog` below), but "Preview all" has no single entry to aim at. */
   function openFrame(url: string): void {
-    hideHighlight();
+    // Re-pointing an OPEN panel at another field is the normal case in panel
+    // mode (see `isModalSheetOpen`), so the same URL twice must be a no-op
+    // rather than a reload that throws away whatever is being typed in there
+    // right now (draft writes are debounced 300ms - `saveEntryDraft`).
+    const alreadyOpen = sheet.isConnected;
+    if (alreadyOpen && frame.src === new URL(url, window.location.href).href) return;
     sheet.classList.toggle("docked", mode === "panel");
-    syncDockedLayout(true);
+    syncDockedLayout(!alreadyOpen);
     // The desktop panel is a non-modal side panel by design (see
     // syncDockedLayout/setPagePush) - only dialog mode and the mobile
-    // bottom drawer stay modal and need the page's own scroll locked.
-    if (!isDesktopPanel()) lockBodyScroll();
+    // bottom drawer stay modal, need the page's own scroll locked, and hide
+    // the hover highlight (which the side panel keeps, so the field it's
+    // editing stays outlined on the page beside it).
+    if (!isDesktopPanel()) {
+      hideHighlight();
+      lockBodyScroll();
+    }
     panel.classList.add("loading");
     frame.src = url;
-    scope.append(sheet);
+    // Re-appending a node it already holds would remove-and-reinsert `sheet`,
+    // replaying `vei-panel-dock-in` on every field click.
+    if (!alreadyOpen) scope.append(sheet);
     // The panel-loading spinner covers the iframe until its bridge announces
     // `vei:ready` (below) - a frame that never gets that far (a stalled
     // request, an unexpected redirect out of the SPA) must not leave it
@@ -888,7 +914,7 @@ function main(): void {
     // Only ever guards a REAL user gesture - the synthetic click replayed
     // below (Shift+click) must never re-enter this same listener.
     if (!event.isTrusted) return;
-    if (sheet.isConnected) return;
+    if (isModalSheetOpen()) return;
     const marked = markedElementFor(event);
     if (!marked) return;
     if (event.shiftKey) {
