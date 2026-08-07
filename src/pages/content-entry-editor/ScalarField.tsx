@@ -1,8 +1,9 @@
-import { useMemo } from "preact/hooks";
+import { useContext, useMemo } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import CheckField from "../../components/fields/CheckField.js";
 import DatePickerField, { type DatePickerMode } from "../../components/fields/DatePickerField.js";
 import { createHttpFileSource } from "../../storage/http-source.js";
+import { scopeFileSource } from "../../storage/scoped-source.js";
 import FileField from "../../components/fields/FileField.js";
 import ImageField from "../../components/fields/ImageField.js";
 import NumberField from "../../components/fields/NumberField.js";
@@ -11,10 +12,13 @@ import SelectField from "../../components/fields/SelectField.js";
 import TextField from "../../components/fields/TextField.js";
 import type { MaskedValue } from "../../content-types/engine/entry-codec.js";
 import type { EntryColumnNode } from "../../content-types/engine/entry-tree.js";
+import { entryMediaFolderPath, tempEntryMediaFolderPath } from "../../content-types/entry-media-paths.js";
 import type { FileFieldConfig, ImageFieldConfig, SelectFieldConfig } from "../../content-types/field-registry.js";
 import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
 import RichTextField from "../../components/RichTextField.js";
 import PasswordChangeField from "./PasswordChangeField.js";
+import { EntryMediaContext } from "./entry-media-context.js";
+import { authState } from "../../store/auth.js";
 
 interface Props {
   node: EntryColumnNode;
@@ -38,9 +42,21 @@ function isMaskedValue(value: unknown): value is MaskedValue {
 export default function ScalarField({ node, value, onChange, error }: Props) {
   const { fieldType, label, description, validation } = node;
   const config = (node.fieldConfig ?? {}) as Record<string, unknown>;
-  // Called unconditionally (rules of hooks) even though only the `image`
-  // branch below actually uses it.
+  // Called unconditionally (rules of hooks) even though only the
+  // `image`/`file`/`richtext` branches below actually use them.
   const imageSource = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
+  const entryMedia = useContext(EntryMediaContext);
+  const entryFolderPath = !entryMedia
+    ? null
+    : entryMedia.isNew
+      ? tempEntryMediaFolderPath(entryMedia.collectionName, authState.value.user?.email ?? "")
+      : entryMedia.slug
+        ? entryMediaFolderPath(entryMedia.slug)
+        : null;
+  const entrySource = useMemo(
+    () => (entryFolderPath ? scopeFileSource(imageSource, entryFolderPath) : undefined),
+    [imageSource, entryFolderPath],
+  );
 
   if (fieldType === "password") {
     const masked: MaskedValue = isMaskedValue(value) ? value : { hasExisting: false };
@@ -101,6 +117,8 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         required={!!validation.required}
         error={!!error}
         helperText={error}
+        source={imageSource}
+        entrySource={entrySource}
       />
     );
   }
@@ -176,6 +194,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         }
         onChange={onChange}
         source={imageSource}
+        entrySource={entrySource}
         multiple={multiple ? { min: validation.min as number | undefined, max: validation.max as number | undefined } : false}
         required={!!validation.required}
         error={!!error}
@@ -204,6 +223,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         }
         onChange={onChange}
         source={imageSource}
+        entrySource={entrySource}
         accept={fileConfig.accept ? fileConfig.accept.split(",").map((s) => s.trim()).filter(Boolean) : undefined}
         multiple={multiple ? { min: validation.min as number | undefined, max: validation.max as number | undefined } : false}
         required={!!validation.required}

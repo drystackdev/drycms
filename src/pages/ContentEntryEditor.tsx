@@ -14,6 +14,7 @@ import MagicChat from "./content-entry-editor/MagicChat.js";
 import { useAiKeySelection } from "../components/AiKeyPicker.js";
 import { RichTextRewriteContext } from "../components/RichTextField/ai-rewrite-context.js";
 import type { RichTextRewriteFn } from "../components/RichTextField/ai-rewrite-context.js";
+import { EntryMediaContext } from "./content-entry-editor/entry-media-context.js";
 import { createHttpFileSource } from "../storage/http-source.js";
 import {
   ContentEntriesApiError,
@@ -791,8 +792,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // `mainFields` into the left ~60% of the page for no reason.
   const hasSideColumn = sideFields.length > 0 || canDelete;
 
+  const entryMediaValue = type.features?.slug
+    ? { collectionName: type.name, slug: typeof value.slug === "string" ? value.slug : null, isNew }
+    : null;
+
   return (
     <RichTextRewriteContext.Provider value={rewriteApi}>
+    <EntryMediaContext.Provider value={entryMediaValue}>
       {/* Outside the dialog, this same title/Cancel/Preview/Save row is
        * handed to DryLayout's topbar instead (`usePageHeaderActions` above)
        * - `VeiFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
@@ -968,6 +974,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           rewriteFnRef={rewriteFnRef}
         />
       )}
+    </EntryMediaContext.Provider>
     </RichTextRewriteContext.Provider>
   );
 }

@@ -106,6 +106,10 @@ export interface ToolbarCustomProps {
    * only that item reads this; every other custom item ignores it. Absent
    * entirely hides that button (see `requiresSource` in `toolbar-buttons.ts`). */
   source?: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - shows a first
+   * "Entry" tab in the "Insert image" button's picker dialog when present.
+   * Same "only that item reads this" scoping as `source`. */
+  entrySource?: FileManagerSource;
   /** Applied to this item's own trigger button (`class="ghost icon
    * <iconSize>"`), same as every plain `ToolbarButton` - `toolbar.tsx`
    * always resolves and passes this down, so custom items never need their

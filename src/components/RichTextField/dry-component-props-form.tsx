@@ -21,6 +21,9 @@ export interface DryComponentPropsFormProps {
    * `DryComponentMenu`). Absent, an `image` field falls back to a plain URL
    * `TextField` instead of a real picker. */
   source?: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - forwarded to every
+   * `image`/`images` prop's `ImageField` alongside `source`. */
+  entrySource?: FileManagerSource;
 }
 
 function labelize(key: string): string {
@@ -136,6 +139,7 @@ interface DryComponentPropsArrayFieldProps {
   field: PlainFieldDef;
   items: unknown[];
   source?: FileManagerSource;
+  entrySource?: FileManagerSource;
   onChange: (next: unknown[]) => void;
 }
 
@@ -158,6 +162,7 @@ function DryComponentPropsArrayField({
   field,
   items,
   source,
+  entrySource,
   onChange,
 }: DryComponentPropsArrayFieldProps) {
   if (field.inner!.kind === "image" && source) {
@@ -178,6 +183,7 @@ function DryComponentPropsArrayField({
           resolveFileUrls(source, picked).then(onChange);
         }}
         source={source}
+        entrySource={entrySource}
         multiple={{ min: field.minCount, max: field.maxCount }}
       />
     );
@@ -188,6 +194,7 @@ function DryComponentPropsArrayField({
       field={field}
       items={items}
       source={source}
+      entrySource={entrySource}
       onChange={onChange}
     />
   );
@@ -205,6 +212,7 @@ function DryComponentPropsGenericArrayField({
   field,
   items,
   source,
+  entrySource,
   onChange,
 }: DryComponentPropsArrayFieldProps) {
   const inner = field.inner!;
@@ -335,6 +343,7 @@ function DryComponentPropsGenericArrayField({
                 value={{ item: draft }}
                 onChange={(next) => setDraft(next.item)}
                 source={source}
+                entrySource={entrySource}
               />
             </div>
             <footer>
@@ -372,6 +381,7 @@ export default function DryComponentPropsForm({
   value,
   onChange,
   source,
+  entrySource,
 }: DryComponentPropsFormProps) {
   const set = (key: string, next: unknown) =>
     onChange({ ...value, [key]: next });
@@ -409,6 +419,7 @@ export default function DryComponentPropsForm({
                 );
               }}
               source={source}
+              entrySource={entrySource}
               multiple={false}
             />
           );
@@ -501,6 +512,7 @@ export default function DryComponentPropsForm({
                 }
                 onChange={(next) => set(key, next)}
                 source={source}
+                entrySource={entrySource}
               />
             </fieldset>
           );
@@ -515,6 +527,7 @@ export default function DryComponentPropsForm({
               field={field}
               items={items}
               source={source}
+              entrySource={entrySource}
               onChange={(next) => set(key, next)}
             />
           );

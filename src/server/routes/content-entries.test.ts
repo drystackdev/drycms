@@ -5,14 +5,18 @@ import { encodeEntryId } from "../../lib/id-hash.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
-const tempDirBox = vi.hoisted(() => ({ path: "" }));
+const tempDirBox = vi.hoisted(() => ({ path: "", storageRoot: "" }));
 
 vi.mock("../config.js", async () => {
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-content-entries-route-"));
-  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  tempDirBox.storageRoot = mkdtempSync(join(tmpdir(), "drycms-content-entries-route-storage-"));
+  return {
+    content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    storage: { kind: "local", root: tempDirBox.storageRoot },
+  };
 });
 
 const { GET, POST, PUT, PATCH } = await import("./content-entries.js");
@@ -22,6 +26,7 @@ const { content } = await import("../config.js");
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
   await rm(tempDirBox.path, { recursive: true, force: true });
+  await rm(tempDirBox.storageRoot, { recursive: true, force: true });
 });
 
 /** Every existing test in this file assumes "this succeeds" - now that

@@ -9,6 +9,7 @@ import {
   CloseIcon,
   EraserIcon,
   PlusIcon,
+  XIcon,
 } from "../../components/icons/index.js";
 import FileManager from "../../components/FileManager/FileManager.js";
 import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
@@ -936,7 +937,7 @@ export default function MagicChat({
                 aria-label="Close"
                 onClick={() => setOpen(false)}
               >
-                <CloseIcon />
+                <XIcon />
               </button>
             </div>
           </header>

@@ -26,6 +26,9 @@ export interface DryComponentMenuProps {
    * through that type since this isn't a `TOOLBAR_GROUPS` custom item
    * (`toolbar.tsx` renders it directly, passing `source` the same way). */
   source?: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - forwarded to every
+   * `image`/`images` prop's `ImageField` the same way `source` is. */
+  entrySource?: FileManagerSource;
   iconSize?: ToolbarIconSize;
 }
 
@@ -159,7 +162,7 @@ function ComponentTreeNode({ record, records, trail, selectable, onSelect }: Com
  * for a props-less block component, previously leaving it with no way to
  * remove one once inserted).
  */
-export default function DryComponentMenu({ viewRef, disabled = false, source, iconSize = "md" }: DryComponentMenuProps) {
+export default function DryComponentMenu({ viewRef, disabled = false, source, entrySource, iconSize = "md" }: DryComponentMenuProps) {
   const [records, setRecords] = useState<DryComponentRecord[]>([]);
   const [open, setOpen] = useState(false);
   const [treeOpen, setTreeOpen] = useState(false);
@@ -577,7 +580,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
               <h3>{record.label}</h3>
             </header>
             <div class="stack">
-              <DryComponentPropsForm schema={record.props} value={draft} onChange={setDraft} source={source} />
+              <DryComponentPropsForm schema={record.props} value={draft} onChange={setDraft} source={source} entrySource={entrySource} />
             </div>
             <footer>
               <button type="button" class="outline" onClick={() => setOpen(false)}>
@@ -628,6 +631,7 @@ export default function DryComponentMenu({ viewRef, disabled = false, source, ic
                 value={refDraft}
                 onChange={setRefDraft}
                 source={source}
+                entrySource={entrySource}
               />
             </div>
             <footer>

@@ -22,6 +22,14 @@ import {
  * natively. Always excluded from `list()` output. */
 const MARKER_FILE = ".dir";
 
+/** Also hides `.tmp.<collection>.<user>` entry-media staging folders
+ * (`content-types/entry-media-paths.ts`) from every listing - they're an
+ * implementation detail of the not-yet-saved-entry upload flow, never meant
+ * to be Media-browsable. */
+function isHiddenName(name: string): boolean {
+  return name === MARKER_FILE || name.startsWith(".tmp.");
+}
+
 function isErrno(error: unknown, code: string): boolean {
   return (
     typeof error === "object" &&
@@ -64,7 +72,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     let size = 0;
     let fileCount = 0;
     for (const child of children) {
-      if (child.name === MARKER_FILE) continue;
+      if (isHiddenName(child.name)) continue;
       fileCount += 1;
       const childStats = await statOrNull(join(absPath, child.name));
       if (childStats && !childStats.isDirectory()) size += childStats.size;
@@ -97,7 +105,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
 
     const entries: StorageStatEntry[] = [];
     for (const dirent of dirents) {
-      if (dirent.name === MARKER_FILE) continue;
+      if (isHiddenName(dirent.name)) continue;
       const childRelPath = joinStoragePath(relPath, dirent.name);
       entries.push(await statEntry(join(dir, dirent.name), childRelPath, dirent.name));
     }
@@ -123,7 +131,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
       throw error;
     }
     return dirents
-      .filter((dirent) => dirent.name !== MARKER_FILE)
+      .filter((dirent) => !isHiddenName(dirent.name))
       .map((dirent) => ({ name: dirent.name, kind: dirent.isDirectory() ? ("folder" as const) : ("file" as const) }));
   }
 
@@ -136,7 +144,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     async function walk(absDir: string, relDir: string): Promise<void> {
       const dirents = await fs.readdir(absDir, { withFileTypes: true });
       for (const dirent of dirents) {
-        if (dirent.name === MARKER_FILE) continue;
+        if (isHiddenName(dirent.name)) continue;
         const relPath = joinStoragePath(relDir, dirent.name);
         const absPath = join(absDir, dirent.name);
         results.push(await statEntry(absPath, relPath, dirent.name));

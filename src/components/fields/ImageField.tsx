@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import FileManager from "../FileManager/FileManager.js";
+import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
 import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
 import { parentFolderOf, thumbnailUrl } from "../../storage/entry-utils.js";
 import { AddIcon, CloseIcon, DragHandleIcon, MediaIcon, TrashIcon, UploadIcon } from "../icons/index.js";
@@ -31,6 +31,11 @@ export interface ImageFieldMultipleConfig {
 export interface ImageFieldProps extends FieldProps<string | string[]> {
   /** Where the picker dialog's `FileManager` reads its files from. */
   source: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - shows a first
+   * "Entry" tab inside the picker's File panel when present
+   * (`EntryScopedPicker`). Omitted entirely outside a slug-enabled entry
+   * form. */
+  entrySource?: FileManagerSource;
   /** Pick more than one image. `true` for no count limit, or `{ min, max }`
    * to require/cap a count (enforced by disabling the picker dialog's Select
    * button, same as the single-value min-1 `required` case below). Selected
@@ -62,6 +67,7 @@ const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
  */
 export default function ImageField({
   source,
+  entrySource,
   value,
   onChange,
   label,
@@ -363,8 +369,9 @@ export default function ImageField({
                 </button>
               </div>
               <div role="tabpanel" id={`${fieldId}-tab-file`} hidden={activeTab !== "file"}>
-                <FileManager
-                  source={source}
+                <EntryScopedPicker
+                  fullSource={source}
+                  entrySource={entrySource}
                   value={pending}
                   onChange={handleFileChange}
                   multiple={isMultiple}

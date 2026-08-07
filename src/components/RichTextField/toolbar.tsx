@@ -63,6 +63,9 @@ export interface RichTextToolbarProps {
    * only `ImageInsertButton` reads it. Absent hides that button (see
    * `requiresSource` in `toolbar-buttons.ts`). */
   source?: FileManagerSource;
+  /** Passed through to `ImageInsertButton`/`DryComponentMenu`, same as
+   * `source` - see their own `entrySource` doc comments. */
+  entrySource?: FileManagerSource;
   /** Applied to every button's own icon-only sizing class (`class="ghost
    * icon <iconSize>"`), both the plain toolbar buttons and each custom
    * item's own trigger button. @default "md" */
@@ -92,6 +95,7 @@ export default function RichTextToolbar({
   contentRef,
   inline = false,
   source,
+  entrySource,
   iconSize = "md",
   fullscreen,
   onToggleFullscreen,
@@ -162,6 +166,7 @@ export default function RichTextToolbar({
                 state={state}
                 disabled={disabled || state.reorderModeActive || !!item.isDisabled?.(state)}
                 source={source}
+                entrySource={entrySource}
                 iconSize={iconSize}
                 shortcut={item.shortcut ? displayShortcut(item.shortcut) : undefined}
                 fullscreen={fullscreen}
@@ -197,6 +202,7 @@ export default function RichTextToolbar({
           state={state}
           disabled={disabled || state.reorderModeActive}
           source={source}
+          entrySource={entrySource}
           iconSize={iconSize}
         />
       )}

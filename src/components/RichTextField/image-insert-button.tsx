@@ -1,7 +1,7 @@
 import { useRef, useState } from "preact/hooks";
 import { useEffect } from "preact/hooks";
 import type { EditorView } from "prosemirror-view";
-import FileManager from "../FileManager/FileManager.js";
+import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
 import type { FileEntry } from "../../storage/entry-types.js";
 import { parentFolderOf } from "../../storage/entry-utils.js";
 import { MediaIcon } from "../icons/index.js";
@@ -23,7 +23,7 @@ const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
  * before "Insert" is clicked; if it's out of range (or was never available),
  * the image is inserted at the end of the document instead.
  */
-export default function ImageInsertButton({ viewRef, disabled = false, source, iconSize, shortcut }: ToolbarCustomProps) {
+export default function ImageInsertButton({ viewRef, disabled = false, source, entrySource, iconSize, shortcut }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState("");
   const anchorPosRef = useRef<number | null>(null);
@@ -89,8 +89,9 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, i
               <h3>Insert image</h3>
             </header>
             <div class="image-picker-body" ref={pickerBody}>
-              <FileManager
-                source={source}
+              <EntryScopedPicker
+                fullSource={source}
+                entrySource={entrySource}
                 value={pending}
                 onChange={(next) => setPending(next as string)}
                 multiple={false}

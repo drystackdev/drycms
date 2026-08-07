@@ -31,6 +31,7 @@ export default function DryComponentInsertButton({
   viewRef,
   disabled = false,
   source,
+  entrySource,
   iconSize,
 }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
@@ -347,6 +348,7 @@ export default function DryComponentInsertButton({
                 value={propsDraft}
                 onChange={setPropsDraft}
                 source={source}
+                entrySource={entrySource}
               />
             </div>
             <footer>

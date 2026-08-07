@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import FileManager from "../FileManager/FileManager.js";
+import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
 import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
 import { parentFolderOf, thumbnailUrl } from "../../storage/entry-utils.js";
 import { CloseIcon, ContentIcon, DragHandleIcon } from "../icons/index.js";
@@ -16,6 +16,10 @@ export interface FileFieldMultipleConfig {
 export interface FileFieldProps extends FieldProps<string | string[]> {
   /** Where the picker dialog's `FileManager` reads its files from. */
   source: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - shows a first
+   * "Entry" tab in the picker dialog when present (`EntryScopedPicker`).
+   * Omitted entirely outside a slug-enabled entry form. */
+  entrySource?: FileManagerSource;
   /** Extensions (no dot) a file must match to be selectable. Omit to allow any file type. */
   accept?: string[];
   /** Pick more than one file. `true` for no count limit, or `{ min, max }` to
@@ -42,6 +46,7 @@ export interface FileFieldProps extends FieldProps<string | string[]> {
  */
 export default function FileField({
   source,
+  entrySource,
   value,
   onChange,
   label,
@@ -237,8 +242,9 @@ export default function FileField({
               <h3>{isMultiple ? "Choose files" : "Choose file"}</h3>
             </header>
             <div class="image-picker-body" ref={pickerBody}>
-              <FileManager
-                source={source}
+              <EntryScopedPicker
+                fullSource={source}
+                entrySource={entrySource}
                 value={pending}
                 onChange={setPending}
                 multiple={isMultiple}

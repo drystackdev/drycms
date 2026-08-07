@@ -2,7 +2,7 @@ import { useRef, useState } from "preact/hooks";
 import type { RefObject } from "preact";
 import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
-import FileManager from "../FileManager/FileManager.js";
+import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
 import FloatingPanel from "../FloatingPanel.js";
 import NumberField from "../fields/NumberField.js";
 import Select, { type SelectOption } from "../Select.js";
@@ -47,6 +47,9 @@ export interface ImageMenuProps {
    * image" (the toolbar button, and the edit dialog's own shortcut into the
    * same flow) - nothing else here needs a file source. */
   source?: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - shows a first
+   * "Entry" tab in the Replace-image dialog when present. */
+  entrySource?: FileManagerSource;
   iconSize?: ToolbarIconSize;
 }
 
@@ -60,7 +63,7 @@ export interface ImageMenuProps {
  * "follow an arbitrary element" mechanism that component's own docstring
  * already calls out this feature as its intended use for.
  */
-export default function ImageMenu({ viewRef, state, disabled = false, source, iconSize = "md" }: ImageMenuProps) {
+export default function ImageMenu({ viewRef, state, disabled = false, source, entrySource, iconSize = "md" }: ImageMenuProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState("");
   const dialogRef = useDialogSync(open, () => setOpen(false));
@@ -304,8 +307,9 @@ export default function ImageMenu({ viewRef, state, disabled = false, source, ic
                 <h3>Replace image</h3>
               </header>
               <div class="image-picker-body" ref={pickerBody}>
-                <FileManager
-                  source={source}
+                <EntryScopedPicker
+                  fullSource={source}
+                  entrySource={entrySource}
                   value={pending}
                   onChange={(next) => setPending(next as string)}
                   multiple={false}

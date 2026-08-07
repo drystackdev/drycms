@@ -7,6 +7,13 @@ import { StorageError, type StorageAdapter, type StorageReadResult, type Storage
  * "directory" either - see that file's own comment). */
 const MARKER_FILE = ".dir";
 
+/** Also hides `.tmp.<collection>.<user>` entry-media staging folders
+ * (`content-types/entry-media-paths.ts`) from every listing - see
+ * `local.ts`'s identical helper for why. */
+function isHiddenName(name: string): boolean {
+  return name === MARKER_FILE || name.startsWith(".tmp.");
+}
+
 export interface R2ObjectLike {
   key: string;
   size: number;
@@ -68,7 +75,7 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
       const page = await bucket.list({ prefix: listPrefix, delimiter: "/", cursor, limit: 1000 });
       for (const object of page.objects) {
         const name = entryName(object.key, listPrefix);
-        if (name === MARKER_FILE) continue;
+        if (isHiddenName(name)) continue;
         files.push({
           path: relPath ? `${relPath}/${name}` : name,
           name,
@@ -80,7 +87,7 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
       }
       for (const delimited of page.delimitedPrefixes) {
         const name = entryName(delimited, listPrefix).replace(/\/$/, "");
-        if (name) folders.push(name);
+        if (name && !isHiddenName(name)) folders.push(name);
       }
       if (!page.truncated || !page.cursor) break;
       cursor = page.cursor;

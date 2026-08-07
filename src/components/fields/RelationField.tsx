@@ -4,6 +4,7 @@ import DataTable, { type DataTableColumn, type SortState } from "../DataTable.js
 import EntrySummaryLines from "../EntrySummaryLines.js";
 import { DragHandleIcon, EditIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import type { SummaryLine } from "../../content-types/engine/entry-summary.js";
 
@@ -23,6 +24,11 @@ export interface RelationFieldSource<Row extends { id: string }> {
   /** Columns shown in the picker's table, target-specific - a select
    * (radio/checkbox) column is injected automatically, don't include one. */
   columns: DataTableColumn<Row>[];
+  /** Lets the picker's table offer a "Columns" toggle (same feature
+   * `ContentEntryList.tsx`'s own List page table has) so a target with many
+   * queryable columns doesn't cram all of them into this compact dialog by
+   * default - omit to always show every column in `columns` above. */
+  columnToggle?: { storageKey: string; defaultVisible: string[] };
   fetchRows(query: RelationFieldQuery): Promise<{ rows: Row[]; total: number }>;
   /** Resolves ids to display labels for the trigger card's chip list -
    * batched, called whenever a not-yet-resolved id shows up in `value`. Only
@@ -104,6 +110,7 @@ export default function RelationField({
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [summaries, setSummaries] = useState<Record<string, SummaryLine[]>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
+  const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([open]);
 
   const [draftSelected, setDraftSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
@@ -193,22 +200,9 @@ export default function RelationField({
     });
   }
 
-  const columns: DataTableColumn<{ id: string }>[] = [
-    {
-      key: "id",
-      label: "",
-      sortable: false,
-      render: (_value, row) => (
-        <input
-          type={multiple ? "checkbox" : "radio"}
-          checked={draftSelected.has(row.id)}
-          onClick={(event) => event.stopPropagation()}
-          onChange={() => toggle(row.id)}
-        />
-      ),
-    },
-    ...source.columns,
-  ];
+  // A pinned `leadingColumn` (see `DataTable.tsx`'s own doc comment) rather
+  // than folded into `columns` below - unlike `source.columns`, the select
+  // control should never be hideable via that table's own `columnToggle`.
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
@@ -277,9 +271,20 @@ export default function RelationField({
             <header>
               <h3>{pickerTitle}</h3>
             </header>
-            <div class="ref-picker-body">
+            <div class="ref-picker-body" ref={bodyScroll}>
               <DataTable
-                columns={columns}
+                columns={source.columns}
+                columnToggle={source.columnToggle}
+                leadingColumn={{
+                  render: (row) => (
+                    <input
+                      type={multiple ? "checkbox" : "radio"}
+                      checked={draftSelected.has(row.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => toggle(row.id)}
+                    />
+                  ),
+                }}
                 rows={rows}
                 rowKey={(row) => row.id}
                 onRowClick={(row) => toggle(row.id)}

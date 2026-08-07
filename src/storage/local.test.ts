@@ -50,6 +50,16 @@ describe("createLocalStorageAdapter", () => {
     await expect(adapter.mkdir("docs")).rejects.toMatchObject({ code: "already_exists" });
   });
 
+  it("hides .tmp.* entry-media staging folders from list/listNames/listAll, same as the .dir marker", async () => {
+    await adapter.mkdir(".tmp.blog.person-example-com");
+    await adapter.write(".tmp.blog.person-example-com/hero.jpg", new Uint8Array([1]));
+    await adapter.mkdir("docs");
+
+    expect((await adapter.list("")).map((e) => e.name)).toEqual(["docs"]);
+    expect(await adapter.listNames!("")).toEqual([{ name: "docs", kind: "folder" }]);
+    expect((await adapter.listAll!()).some((e) => e.path.startsWith(".tmp."))).toBe(false);
+  });
+
   it("write creates a file and reports its size", async () => {
     const entry = await adapter.write("notes.txt", new TextEncoder().encode("hello"));
     expect(entry).toMatchObject({ path: "notes.txt", kind: "file", size: 5 });

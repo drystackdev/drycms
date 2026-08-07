@@ -54,6 +54,9 @@ export interface RichTextFieldProps extends FieldProps<string> {
   required?: boolean;
   description?: string;
   source?: FileManagerSource;
+  /** Sandboxed to the current entry's own media folder - see
+   * `ImageMenu`/`DryComponentMenu`'s own `entrySource` doc comments. */
+  entrySource?: FileManagerSource;
   inline?: boolean;
   iconSize?: ToolbarIconSize;
   features?: RichTextFieldConfig;
@@ -71,6 +74,7 @@ export default function RichTextField({
   description,
   inline = false,
   source,
+  entrySource,
   iconSize = "sm",
   features,
   class: className,
@@ -139,6 +143,7 @@ export default function RichTextField({
           inline={inline}
           features={features}
           source={source}
+          entrySource={entrySource}
           iconSize={iconSize}
           fullscreen={fullscreen}
           onToggleFullscreen={() => setFullscreen((current) => !current)}
@@ -165,7 +170,7 @@ export default function RichTextField({
             <div class="richtext-placeholder" aria-hidden="true">Loading...</div>
           </div>
         )}
-        <ImageMenu viewRef={viewRef} state={state} disabled={disabled || loading} source={source} iconSize={iconSize} />
+        <ImageMenu viewRef={viewRef} state={state} disabled={disabled || loading} source={source} entrySource={entrySource} iconSize={iconSize} />
         <DryComponentMention viewRef={viewRef} ready={!loading} disabled={disabled} />
         <DryRichTextSlash viewRef={viewRef} ready={!loading} disabled={disabled} state={state} source={source} />
       </div>

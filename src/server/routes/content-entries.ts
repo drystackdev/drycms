@@ -6,10 +6,13 @@ import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content
 import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { PermissionAction } from "../../content-types/permissions.js";
 import { recordSlugRedirect } from "../../content-types/redirects.js";
+import { removeEntryMediaFolder, syncEntryMediaFolder } from "../../content-types/entry-media.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { decodeEntryId, encodeEntryId } from "../../lib/id-hash.js";
 import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { getContentAdapters } from "../content-adapters.js";
+import { getStorageAdapter } from "../storage-adapters.js";
+import { storage } from "../config.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
@@ -412,6 +415,13 @@ export const POST: DryRouteHandler = async (context) => {
       type.kind === "singleton"
         ? await entryAdapter.saveSingletonEntry(type, allTypes, value)
         : await entryAdapter.createEntry(type, allTypes, value);
+    if (type.features?.slug && typeof value.slug === "string" && context.session) {
+      await syncEntryMediaFolder(getStorageAdapter(storage, context), {
+        collectionName: type.name,
+        userEmail: context.session.email,
+        toSlug: value.slug,
+      });
+    }
     return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } }, 201);
   } catch (error) {
     return errorResponse(error);
@@ -440,6 +450,14 @@ export const PUT: DryRouteHandler = async (context) => {
       if (typeof existingSlug === "string" && typeof value.slug === "string") {
         await recordSlugRedirect(entryAdapter, allTypes, existingSlug, value.slug);
       }
+      if (type.features?.slug && typeof value.slug === "string" && context.session) {
+        await syncEntryMediaFolder(getStorageAdapter(storage, context), {
+          collectionName: type.name,
+          userEmail: context.session.email,
+          fromSlug: typeof existingSlug === "string" ? existingSlug : undefined,
+          toSlug: value.slug,
+        });
+      }
       return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
     }
     if (!hashedId) throw new ContentEntryError("not_found", "An entry id is required to update.");
@@ -451,6 +469,14 @@ export const PUT: DryRouteHandler = async (context) => {
     const row = await entryAdapter.updateEntry(type, allTypes, entryId, value);
     if (type.features?.slug && typeof existing?.value.slug === "string" && typeof value.slug === "string") {
       await recordSlugRedirect(entryAdapter, allTypes, existing.value.slug, value.slug);
+    }
+    if (type.features?.slug && typeof value.slug === "string" && context.session) {
+      await syncEntryMediaFolder(getStorageAdapter(storage, context), {
+        collectionName: type.name,
+        userEmail: context.session.email,
+        fromSlug: typeof existing?.value.slug === "string" ? existing.value.slug : undefined,
+        toSlug: value.slug,
+      });
     }
     return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
   } catch (error) {
@@ -505,7 +531,11 @@ export const DELETE: DryRouteHandler = async (context) => {
     const entryId = decodeIdOrThrow(hashedId);
     const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "delete", entryId);
     if (systemDenied) return systemDenied;
+    const existing = type.features?.slug ? await entryAdapter.getEntry(type, allTypes, entryId) : null;
     await entryAdapter.deleteEntry(type, allTypes, entryId);
+    if (typeof existing?.value.slug === "string") {
+      await removeEntryMediaFolder(getStorageAdapter(storage, context), existing.value.slug);
+    }
     return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);

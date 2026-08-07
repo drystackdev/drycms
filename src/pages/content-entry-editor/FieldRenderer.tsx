@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import type { JSX } from "preact/jsx-runtime";
 const { path } = window.__DRY_CONFIG__;
 import ComponentField from "../../components/fields/ComponentField.js";
+import { renderEntryCellValue } from "../../components/EntryCellValue.js";
 import EntrySummaryLines from "../../components/EntrySummaryLines.js";
 import RelationField, {
   type RelationFieldSource,
 } from "../../components/fields/RelationField.js";
+import RichTextPreviewDialog from "../../components/RichTextPreviewDialog.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { buildEntrySummary, type ResolveRelation, type SummaryLine } from "../../content-types/engine/entry-summary.js";
@@ -178,19 +181,35 @@ function useResolveRelation(allTypes: ContentTypeDefinition[]): ResolveRelation 
  * `RelationFieldConfig.displayFields` (absent for a mirror - see
  * `EntryRelationMirrorNode`'s doc comment, mirrors have no config surface of
  * their own), threaded into `resolveSummaries` below. */
+interface RelationFieldSourceResult {
+  source: RelationFieldSource<{ id: string } & Record<string, unknown>> | null;
+  /** Mount this alongside the `<RelationField>` that renders `source` - a
+   * block-level richtext column (`EntryCellValue.tsx`'s "View HTML" button)
+   * opens it instead of dumping raw HTML into the picker table's cell. */
+  previewDialog: JSX.Element;
+}
+
 function useRelationFieldSource(
   type: ContentTypeDefinition | undefined,
   allTypes: ContentTypeDefinition[],
   displayFields: string[] | undefined,
-): RelationFieldSource<{ id: string } & Record<string, unknown>> | null {
+): RelationFieldSourceResult {
+  const [richTextPreview, setRichTextPreview] = useState<{
+    label: string;
+    html: string;
+  } | null>(null);
   const entriesApi = useMemo(
     () =>
       type ? createContentEntriesApi(`${path}/api/content`, type.name) : null,
     [type],
   );
+  // ALL of the target's queryable columns, not just a handful - `columnToggle`
+  // below (mirroring `ContentEntryList.tsx`'s own List page table) is what
+  // keeps the picker compact by default, while still letting a user reveal
+  // whichever of these actually matters for the type they're picking from.
   const queryableColumns = useMemo(() => {
     const columns = type
-      ? flattenQueryableColumns(buildEntryFieldTree(type, allTypes)).slice(0, 3)
+      ? flattenQueryableColumns(buildEntryFieldTree(type, allTypes))
       : [];
     return type?.name === "role"
       ? columns.filter((column) => column.fieldName !== SUPER_ADMIN_FIELD_NAME)
@@ -202,21 +221,29 @@ function useRelationFieldSource(
   );
   const resolveRelation = useResolveRelation(allTypes);
 
-  return useMemo(() => {
+  const source = useMemo<
+    RelationFieldSource<{ id: string } & Record<string, unknown>> | null
+  >(() => {
     if (!type || !entriesApi) return null;
     const labelField = queryableColumns[0]?.fieldName;
     return {
       columns: queryableColumns.map((column) => ({
         key: column.fieldName,
         label: column.label,
-        render: (cellValue: unknown) => (
-          <>
-            {cellValue === null || cellValue === undefined || cellValue === ""
-              ? "-"
-              : String(cellValue)}
-          </>
-        ),
+        render: (cellValue: unknown) =>
+          renderEntryCellValue(column, cellValue, (label, html) =>
+            setRichTextPreview({ label, html }),
+          ),
       })),
+      // Same idea as `ContentEntryList.tsx`'s own `columnToggle`, scoped to
+      // this picker rather than shared with the List page's own preference -
+      // the two show different column sets (this one never has relation
+      // columns), so a shared key would let a hidden-there choice hide a
+      // column that isn't even offered here, or vice versa.
+      columnToggle: {
+        storageKey: `refPicker:${type.name}:columns`,
+        defaultVisible: queryableColumns.slice(0, 3).map((c) => c.fieldName),
+      },
       fetchRows: async (query) => {
         const result = await entriesApi.list({
           page: query.page,
@@ -268,6 +295,16 @@ function useRelationFieldSource(
       },
     };
   }, [type, entriesApi, queryableColumns, targetFieldNodes, displayFields, allTypes, resolveRelation]);
+
+  return {
+    source,
+    previewDialog: (
+      <RichTextPreviewDialog
+        preview={richTextPreview}
+        onClose={() => setRichTextPreview(null)}
+      />
+    ),
+  };
 }
 
 /** Adapts `RelationField`'s `""`/`string[]` "empty" convention to the
@@ -288,7 +325,7 @@ function RelationFieldAdapter({
 }) {
   const targetType = allTypes.find((t) => t.id === node.targetTypeId);
   const multiple = node.cardinality !== "manyToOne";
-  const source = useRelationFieldSource(targetType, allTypes, node.displayFields);
+  const { source, previewDialog } = useRelationFieldSource(targetType, allTypes, node.displayFields);
 
   if (!targetType || !source) {
     return (
@@ -300,28 +337,31 @@ function RelationFieldAdapter({
   }
 
   return (
-    <RelationField
-      label={node.label}
-      description={node.description}
-      value={
-        multiple
-          ? Array.isArray(value)
-            ? (value as string[])
-            : []
-          : typeof value === "string"
-            ? value
-            : ""
-      }
-      onChange={(next) =>
-        onChange(multiple ? next : (next as string) === "" ? null : next)
-      }
-      multiple={multiple}
-      sortable={node.sortable}
-      source={source}
-      pickerTitle={`Choose ${targetType.label}`}
-      error={!!error}
-      helperText={error}
-    />
+    <>
+      <RelationField
+        label={node.label}
+        description={node.description}
+        value={
+          multiple
+            ? Array.isArray(value)
+              ? (value as string[])
+              : []
+            : typeof value === "string"
+              ? value
+              : ""
+        }
+        onChange={(next) =>
+          onChange(multiple ? next : (next as string) === "" ? null : next)
+        }
+        multiple={multiple}
+        sortable={node.sortable}
+        source={source}
+        pickerTitle={`Choose ${targetType.label}`}
+        error={!!error}
+        helperText={error}
+      />
+      {previewDialog}
+    </>
   );
 }
 
@@ -353,7 +393,7 @@ function RelationMirrorFieldAdapter({
   // sourced from `ContentTypeDefinition.fieldDisplayFields` instead (see
   // that map's doc comment), already resolved onto `node.displayFields` by
   // `entry-tree.ts`'s `buildRelationMirrorNode`.
-  const source = useRelationFieldSource(
+  const { source, previewDialog } = useRelationFieldSource(
     sourceType,
     allTypes,
     node.resolved ? node.displayFields : undefined,
@@ -369,27 +409,30 @@ function RelationMirrorFieldAdapter({
   }
 
   return (
-    <RelationField
-      label={node.label}
-      description={node.description}
-      value={
-        multiple
-          ? Array.isArray(value)
-            ? (value as string[])
-            : []
-          : typeof value === "string"
-            ? value
-            : ""
-      }
-      onChange={(next) =>
-        onChange(multiple ? next : (next as string) === "" ? null : next)
-      }
-      multiple={multiple}
-      source={source}
-      pickerTitle={`Choose ${sourceType.label}`}
-      error={!!error}
-      helperText={error}
-    />
+    <>
+      <RelationField
+        label={node.label}
+        description={node.description}
+        value={
+          multiple
+            ? Array.isArray(value)
+              ? (value as string[])
+              : []
+            : typeof value === "string"
+              ? value
+              : ""
+        }
+        onChange={(next) =>
+          onChange(multiple ? next : (next as string) === "" ? null : next)
+        }
+        multiple={multiple}
+        source={source}
+        pickerTitle={`Choose ${sourceType.label}`}
+        error={!!error}
+        helperText={error}
+      />
+      {previewDialog}
+    </>
   );
 }
 
