@@ -60,10 +60,11 @@ Two engines implement both, selected by `content.engine` in `dry.config.ts`
 
 Both are SQL, so a content-engine feature almost always needs implementing
 symmetrically in each pair of modules - the two files stay deliberately
-parallel. A third `file` engine (one JSON file per record, no DDL) existed
-until 2026-08-04 and was removed: it only earned its keep while the storage
-layer still had `github`/`gitlab` backends that made content git-diffable,
-and those are gone (see `plans/remove-file-engine.md`).
+parallel. A third `file` engine existed until 2026-08-04 (one JSON file per
+record, no DDL) - removed because it only served the storage layer's
+now-defunct `github`/`gitlab` backends, which made content git-diffable; when
+those adapters were removed from storage, the `file` engine's sole purpose
+vanished (see `plans/remove-file-engine.md` for the details).
 
 ## Content-type / field model
 
@@ -188,24 +189,27 @@ toggles through `RoleEditor.tsx`, which deliberately excludes the field.
 enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
 `role`'s `isSuperAdmin` flag bypasses every check unconditionally.
 
-## Storage: one adapter interface, one backend, icons nested inside storage
+## Storage: one adapter interface, two backends, icons nested inside storage
 
-`src/storage/` implements one adapter interface (`types.ts`) through the local
-filesystem adapter, constructed via `createStorageAdapter()` from a
-`ResolvedStorageOption`.
+`src/storage/` implements one adapter interface (`types.ts`) via two backends,
+selected by `kind` in `dry.config.ts`:
+
+| kind | adapter | storage root |
+| :-- | :-- | :-- |
+| `"local"` (default) | Node's `fs` module | project's `.dry/` directory |
+| `"cloudflare"` | Cloudflare R2 | R2 bucket with key-prefix per option |
 
 `storage` (user-uploaded media) is the independent root: under `kind:
-"local"` it resolves straight to the project's `public/` directory (not
-`.dry/`), so an upload is reachable at its plain `/name.ext` URL through
-Vite's normal static-asset serving. `icons` (Icon Management's own SVGs) is
-never independent - it always resolves to a `dry-icons` subfolder of
-`storage`'s own resolved root (`public/dry-icons/` by default), under both
-`kind`s, since an icon is just an image file. `content` (the `file` content
-engine's JSON store) and `components.storage` (confirmed RichText component
-bundles) remain their own roots under `.dry/`, sharing the same adapter
-mechanism without sharing a directory. Remote Git hosting is intentionally
-not a storage or KV backend: it would add network round trips, rate limits,
-retry/concurrency behavior and failure modes to ordinary runtime requests.
+"local"` it resolves straight to `.dry/storage/`, so an upload is stored and
+served through the API at `/${basePath}/api/storage/<id>`; under `kind:
+"cloudflare"` it resolves to a key-prefix `storage/` in the configured R2
+bucket. `icons` (Icon Management's own SVGs) is never independent - it always
+resolves to a `dry-icons/` subfolder of `storage`'s own resolved root under
+both `kind`s, since an icon is just an image file. `components.storage`
+(confirmed RichText component bundles) remains its own root (`.dry/components/`
+locally, `components/` prefix in R2), sharing the same adapter mechanism
+without sharing a directory. See `status/cloudflare-workers-adapter.md` for
+the full R2 backend design and deployment setup.
 
 An `image` field stores a bare storage id (`"hero.jpg"`), never a URL -
 `resolveImageSrc()` (`storage/http-source.ts`) turns one into a servable

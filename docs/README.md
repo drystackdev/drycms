@@ -26,10 +26,13 @@ to reproduce the same mistakes.
   changes get made in this codebase (dependencies, comments, validation UX,
   testing/QA method, config-resolution timing, concurrent-editing hazards).
   Read before making any non-trivial change.
+- [DEPLOYMENT.md](DEPLOYMENT.md) - how to run drycms in production on Node or
+  Cloudflare Workers. Covers configuration, build steps, and runtime setup for
+  both platforms. Read before deploying.
 
 For the project layout and dev/build/test commands, see
 [`AGENTS.md`](../AGENTS.md) at the repo root (`CLAUDE.md` is a symlink to it).
 For narrower, point-in-time write-ups of specific past features, see
 `status/*.md` - those are historical working notes, not standing reference
-docs; the three files above are the durable ones and take precedence if they
+docs; the files above are the durable ones and take precedence if they
 ever disagree.
