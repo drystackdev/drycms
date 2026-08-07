@@ -119,6 +119,7 @@ export default function GoogleVerificationSettings() {
         <div class="under stack">
           <TextField
             label="Name"
+            required
             placeholder="google1234567890abcdef.html"
             value={value.name}
             error={!!fieldErrors.name}
@@ -127,6 +128,7 @@ export default function GoogleVerificationSettings() {
           />
           <TextField
             label="Content"
+            required
             multiline
             placeholder="google-site-verification: google1234567890abcdef.html"
             value={value.content}

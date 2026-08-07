@@ -933,10 +933,10 @@ export default function MagicChat({
               <button
                 type="button"
                 class="ghost icon sm"
-                aria-label="Minimize"
+                aria-label="Close"
                 onClick={() => setOpen(false)}
               >
-                -
+                <CloseIcon />
               </button>
             </div>
           </header>

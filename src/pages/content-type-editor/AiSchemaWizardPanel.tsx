@@ -5,7 +5,7 @@ import AiKeyPicker, {
   useAiKeySelection,
 } from "../../components/AiKeyPicker.js";
 import { toast } from "../../components/Toast.js";
-import { ArrowRightIcon } from "../../components/icons/index.js";
+import { ArrowRightIcon, CloseIcon } from "../../components/icons/index.js";
 import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { normalizeFieldOrder } from "../../content-types/naming.js";
 import {
@@ -457,10 +457,10 @@ export default function AiSchemaWizardPanel({
             <button
               type="button"
               class="ghost icon sm"
-              aria-label="Minimize"
+              aria-label="Close"
               onClick={() => setOpen(false)}
             >
-              -
+              <CloseIcon />
             </button>
           </header>
           <div class="ai-wizard-key-picker">
