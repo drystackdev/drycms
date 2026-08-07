@@ -41,19 +41,29 @@ export async function applyPackagedSeedAssets(zipBuffer: Uint8Array | null, reso
   await unzipToDirectories(zipBuffer, prefixToDirFor(resolved));
 }
 
-const SEED_ASSETS_ZIP_URL = new URL("./seed-assets.zip", import.meta.url);
-
 /**
  * Real entry point - locates `seed-assets.zip` next to this module's own
  * compiled location (works no matter what `cwd` `node dist/server/
  * entry-node.js` is launched from) and extracts it. No-ops if the file
  * doesn't exist: a fresh `drycms` clone that never ran `seed:sync`/never had
  * any local storage to package, or one not using this feature at all.
+ *
+ * The zip's location is resolved HERE rather than at module scope on
+ * purpose: `import.meta.url` is not a resolvable base URL in workerd, so a
+ * module-scope `new URL(..., import.meta.url)` throws while Cloudflare is
+ * merely validating the uploaded script - before any request runs. Under
+ * `kind: "cloudflare"` the `prefixToDirFor` guard below returns first
+ * anyway, so neither the URL nor `node:fs` is ever reached there.
  */
 export async function extractPackagedSeedAssets(resolved: ResolvedDryOption): Promise<void> {
+  // Every asset root R2-backed (a Workers deployment) - no local directory
+  // to extract into, same "skipped rather than erroring" rule
+  // `prefixToDirFor` documents.
+  if (Object.keys(prefixToDirFor(resolved)).length === 0) return;
+
   let zipBuffer: Uint8Array;
   try {
-    zipBuffer = await readFile(fileURLToPath(SEED_ASSETS_ZIP_URL));
+    zipBuffer = await readFile(fileURLToPath(new URL("./seed-assets.zip", import.meta.url)));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;

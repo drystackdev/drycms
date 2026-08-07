@@ -3,7 +3,7 @@ import { bufferOf } from "../../storage/util.js";
 import { pagesCacheStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import type { DryRouteContext } from "../context.js";
-import { BUILD_ID } from "./build-id.js";
+import { buildId } from "./build-id.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 
@@ -42,7 +42,7 @@ export async function readPageCache(
     throw error;
   }
 
-  if (envelope.buildId !== BUILD_ID) return null;
+  if (envelope.buildId !== buildId()) return null;
 
   for (const [typeName, cachedVersion] of Object.entries(envelope.versions)) {
     const type = allTypes.find((t) => t.name === typeName);
@@ -84,7 +84,7 @@ export async function writePageCache(
     const envelope: PageCacheEnvelope = {
       html,
       versions,
-      buildId: BUILD_ID,
+      buildId: buildId(),
       renderedAt: new Date().toISOString(),
     };
     await getStorageAdapter(pagesCacheStorage, context).write(cacheKeyFor(pathname), Buffer.from(JSON.stringify(envelope), "utf8"));

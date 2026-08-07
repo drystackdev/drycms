@@ -15,7 +15,7 @@ vi.mock("../config.js", async () => {
 });
 
 const { readPageCache, writePageCache } = await import("./pages-cache.js");
-const { BUILD_ID } = await import("./build-id.js");
+const { buildId } = await import("./build-id.js");
 const { createSqliteContentEngineAdapter } = await import("../../content-types/engine/sqlite.js");
 const { createSqliteContentEntryEngineAdapter } = await import("../../content-types/engine/entries-sqlite.js");
 
@@ -81,7 +81,7 @@ describe("pages-cache", () => {
     await writePageCache(context, "/blog/hello", "<html>old-build</html>", new Set(["post"]), entries, allTypes);
     const path = cacheFilePath("/blog/hello");
     const envelope = JSON.parse(readFileSync(path, "utf8"));
-    expect(envelope.buildId).toBe(BUILD_ID);
+    expect(envelope.buildId).toBe(buildId());
     envelope.buildId = "a-previous-deploy";
     writeFileSync(path, JSON.stringify(envelope));
 

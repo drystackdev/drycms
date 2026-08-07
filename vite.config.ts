@@ -4,6 +4,11 @@ import { defineConfig } from "vite";
 import { appRouterPlugin } from "./src/server/app-router/app-router-plugin.js";
 import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js";
 
+// Set by `bun run build:worker` only - `isSsrBuild` alone can't tell the
+// Workers build apart from the Node one (both are `vite build --ssr`), and
+// the two need different chunking (see `inlineDynamicImports` below).
+const isWorkerBuild = process.env.DRYCMS_WORKER_BUILD === "1";
+
 export default defineConfig(({ isSsrBuild }) => ({
   // `appRouterPlugin` (`enforce: "pre"`) injects `dry()`'s import for
   // `src/apps/pages/**` before Preact's own JSX transform runs (a
@@ -27,16 +32,38 @@ export default defineConfig(({ isSsrBuild }) => ({
     // warning threshold above that deliberate bundle while retaining the
     // default warning for normal chunks.
     chunkSizeWarningLimit: 1024,
-    // `isSsrBuild` only (never) applies to `vite build --ssr entry-node.ts`
-    // - CLI `--ssr <entry>` makes `<entry>` the sole rollup input for that
-    // build regardless of `rollupOptions.input` here, so this block only
-    // ever affects the plain client build (`vite build --outDir dist/client`).
-    // `appsGlobals`/`appsHydrate` are App Router's Tailwind output + client
-    // hydration bootstrap, built+hashed like any other asset - see
-    // `app-router/assets.ts`, which reads the resulting `manifest.json` to
-    // find them at runtime (`plans/app-router.md`'s Giai đoạn 3/2).
+    // Three shapes, one config: the Workers SSR build needs a single
+    // inlined bundle (see below), the Node SSR build takes Vite's defaults,
+    // and only the plain client build (`vite build --outDir dist/client`)
+    // gets the multi-input block - CLI `--ssr <entry>` makes `<entry>` the
+    // sole rollup input for either SSR build regardless of
+    // `rollupOptions.input` here, so that `input` map would be ignored
+    // there anyway. `appsGlobals`/`appsHydrate` are App Router's Tailwind
+    // output + client hydration bootstrap, built+hashed like any other
+    // asset - see `app-router/assets.ts`, which reads the resulting
+    // `manifest.json` to find them at runtime (`plans/app-router.md`'s
+    // Giai đoạn 3/2).
     ...(isSsrBuild
-      ? {}
+      ? isWorkerBuild
+        ? {
+            rollupOptions: {
+              output: {
+                // One self-contained bundle, no shared chunks. With
+                // splitting on, the `src/apps/pages/**` chunks import
+                // shared modules that rollup hoisted INTO the entry chunk,
+                // so the entry re-exports all of them (`export { ...,
+                // REF_SYMBOL as o, ... }`) - and workerd validates every
+                // export of the entry as a handler, failing the upload with
+                // "Incorrect type for map entry 'o': the provided value is
+                // not of type 'function or ExportedHandler'". Inlining
+                // leaves `export default { fetch }` as the only export.
+                // Costs nothing on Workers: `wrangler deploy` concatenates
+                // the whole graph into a single script either way.
+                inlineDynamicImports: true,
+              },
+            },
+          }
+        : {}
       : {
           rollupOptions: {
             input: {
