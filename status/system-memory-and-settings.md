@@ -314,6 +314,45 @@ Preview, text) đổi màu tối đúng, không còn mảng trắng nào sót l�
 
 `typecheck`/`test` (933/933)/`build` xanh sau round này.
 
+## Round 4: hiệu ứng vòng tròn khi đổi theme + debounce memory dài hơn
+
+**Circular reveal khi đổi theme**: `lib/native/theme.ts` thêm
+`applyThemeTransition(theme, origin)` dùng View Transitions API
+(`document.startViewTransition`) - progressive enhancement thật sự: browser
+không hỗ trợ hoặc `prefers-reduced-motion: reduce` thì rơi thẳng về
+`applyTheme` cũ (tức thời, không animation, không lỗi). Origin lấy từ tâm
+NÚT bấm (`elementCenter`, qua `getBoundingClientRect`) chứ không phải toạ độ
+con trỏ - nhất quán dù bấm chuột, chạm, hay bàn phím. Bán kính vòng tròn
+tính bằng khoảng cách xa nhất tới 1 trong 4 góc màn hình từ origin (phủ hết
+viewport). CSS animation (`base.css`, ngoài `.dry` vì `::view-transition-*`
+render ở root document, không phải con của `.dry`) dùng `clip-path: circle()`
+0 → bán kính tính được, 500ms ease-in-out. Áp dụng cho cả `ThemeToggle.tsx`
+(Settings) và `[data-theme-toggle]` framework-free handler trong
+`theme.ts`. Verify qua Playwright thật: `startViewTransition` được gọi
+đúng, origin khớp chính xác tâm nút bấm, bán kính hợp lý, theme đổi đúng,
+không lỗi console.
+
+**Debounce memory kéo dài**: `hooks/useStore.tsx`'s `PUSH_DEBOUNCE_MS` từ
+800ms → 8000ms (8s) theo yêu cầu user (đề xuất 5-10s) - hợp lý vì đây là
+đồng bộ nền, không phải cái user chờ, và nhiều key trong `drycms:store` hay
+đổi dồn dập (thu gọn sidebar + mở submenu + ẩn cột...) nên gộp lại thành 1
+request thay vì nhiều request liên tiếp.
+
+`typecheck`/`test` (933/933)/`build` xanh sau round này.
+
+## Round 5: hiệu ứng vòng tròn phải theo đúng vị trí click, không phải tâm nút
+
+User chỉnh lại: vòng tròn phải phóng ra từ ĐÚNG điểm click (chuột/chạm),
+không phải tâm nút bấm như round 4. `theme.ts`: đổi `elementCenter` (export)
+thành `clickOrigin(event, fallback)` (không export `elementCenter` nữa) -
+dùng `event.clientX`/`clientY` thật khi có (khác `0,0`), chỉ fallback về
+tâm phần tử khi kích hoạt bằng bàn phím (click giả lập từ Enter/Space luôn
+có `clientX/clientY = 0`, không phải toạ độ thật). `ThemeToggle.tsx` gọi
+`clickOrigin(event, event.currentTarget)` thay vì `elementCenter`.
+
+Verify Playwright: click lệch góc nút (không phải tâm) - origin CSS set
+đúng bằng toạ độ click thật (499,310), không phải tâm nút (558,296).
+
 ## Speed
 
 Hoàn thành trong 1 lượt làm việc liên tục, từ khảo sát tới verify qua dev

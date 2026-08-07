@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { MonitorIcon, MoonIcon, SunIcon, type IconProps } from "./icons/index.js";
 import { theme as themeSignal } from "../store/theme.js";
-import { applyTheme, type DryTheme } from "../lib/native/theme.js";
+import { applyThemeTransition, clickOrigin, type DryTheme } from "../lib/native/theme.js";
 
 const ORDER: DryTheme[] = ["system", "light", "dark"];
 
@@ -25,8 +25,10 @@ const ICONS: Record<DryTheme, (props: IconProps) => JSX.Element> = {
  * changes occasionally didn't deserve a permanent slot in a menu opened
  * constantly for Profile/Logout). Selection is persisted via `useStore`
  * (`drycms:store.theme` in `localStorage`) and applied via `theme.ts`'s
- * `applyTheme` - the same DOM logic a framework-free `[data-theme-toggle]`
- * button uses, so a page mixing both stays in sync either way. The
+ * `applyThemeTransition` - the same DOM logic a framework-free
+ * `[data-theme-toggle]` button uses, so a page mixing both stays in sync
+ * either way, including the circular-reveal transition (View Transitions
+ * API, progressively enhanced - see `theme.ts`'s own doc comment). The
  * pre-mount flash is avoided separately, by `index.html`'s own inline
  * script reading the same storage before first paint.
  *
@@ -37,9 +39,9 @@ const ICONS: Record<DryTheme, (props: IconProps) => JSX.Element> = {
 export default function ThemeToggle() {
   const theme = themeSignal.value;
 
-  const choose = (value: DryTheme) => {
+  const choose = (value: DryTheme, event: MouseEvent) => {
     themeSignal.value = value;
-    applyTheme(value);
+    applyThemeTransition(value, clickOrigin(event, event.currentTarget as Element));
   };
 
   return (
@@ -52,7 +54,7 @@ export default function ThemeToggle() {
             type="button"
             class="ghost"
             aria-pressed={theme === value}
-            onClick={() => choose(value)}
+            onClick={(event) => choose(value, event)}
           >
             <Icon />
             {LABELS[value]}

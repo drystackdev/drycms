@@ -295,6 +295,20 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const canEdit =
     !!type &&
     canAccess(type.id, isSingleton ? "setting" : isNew ? "create" : "update");
+  // Magic's own gate, separate from `canEdit` above: a collection role needs
+  // BOTH create and update (it can both draft a brand-new entry and revise
+  // an existing one through the same conversation), a singleton needs just
+  // its one `setting` action - stricter than `canEdit`, which only ever
+  // requires the ONE action the current mode (new vs. existing) calls for.
+  // Deliberately not folded into `canEdit` itself - that would also gate the
+  // Save button/field editability, blocking a create-only or update-only
+  // role from ordinary (non-Magic) editing. See
+  // `status/role-system-permissions.md`.
+  const canUseMagic =
+    !!type &&
+    (isSingleton
+      ? canAccess(type.id, "setting")
+      : canAccess(type.id, "create") && canAccess(type.id, "update"));
   const canDelete =
     !!type && !isSingleton && !isNew && canAccess(type.id, "delete");
   const showLoading = useDelayedLoading(!type || value === null);
@@ -855,7 +869,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
           updateFieldValue={updateFieldValue}
           onStreamingFieldChange={setStreamingFieldName}
           source={magicChatImageSource}
-          canEdit={canEdit}
+          canUse={canUseMagic}
           veiFrame={veiFrame}
           aiKey={aiKey}
           rewriteFnRef={rewriteFnRef}

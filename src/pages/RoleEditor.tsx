@@ -16,9 +16,14 @@ import {
 } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import {
+  CONTENT_TYPES_RESOURCE_ID,
+  ICON_MANAGEMENT_RESOURCE_ID,
+  KEY_VALUE_RESOURCE_ID,
+  MEDIA_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   permissionActionsFor,
   permissionKeyFor,
+  RICHTEXT_COMPONENTS_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -39,6 +44,7 @@ const ACTION_LABELS: Record<PermissionAction, string> = {
   update: "Update",
   delete: "Delete",
   setting: "Setting",
+  magic: "Magic",
 };
 
 const ACTION_DESCRIPTIONS: Record<PermissionAction, string> = {
@@ -47,13 +53,30 @@ const ACTION_DESCRIPTIONS: Record<PermissionAction, string> = {
   update: "Can edit existing entries in this collection.",
   delete: "Can delete entries from this collection.",
   setting: "Can view and edit this singleton's settings.",
+  magic: "Can use Magic (AI) to write entries here.",
 };
 
-/** Permission management no longer has a content table, but remains a
- * grantable system resource in the role editor. */
+/** Action -> the other action(s) that must be granted first (OR semantics -
+ * any ONE of them is enough) before this one can be turned on. `[]` means no
+ * prerequisite - a base gate like `view`/`setting`. Generalizes the
+ * long-standing "View gates Create/Update/Delete" rule so `magic` can depend
+ * on "Create OR Update" (collection) / "Setting" (singleton) the same way -
+ * `magic` is only ever meaningful once the role can actually touch the
+ * resource some other way. */
+function permissionPrerequisites(resource: ContentTypeDefinition, action: PermissionAction): PermissionAction[] {
+  if (action === "magic") return resource.kind === "singleton" ? ["setting"] : ["create", "update"];
+  if (resource.kind !== "singleton" && action !== "view") return ["view"];
+  return [];
+}
+
+/** None of the resources below have a real content table - each is a single
+ * grantable "can use this page" toggle (`kind: "singleton"` gives it exactly
+ * one `setting` action via `permissionActionsFor`), rendered together in the
+ * "System" fieldset below rather than mixed into the real Collections/
+ * Singletons lists. */
 const PERMISSION_RESOURCE: ContentTypeDefinition = {
   id: "system-permission",
-  kind: "collection",
+  kind: "singleton",
   name: "permission",
   label: "Permission",
   description: "Manage permission assignments for roles.",
@@ -61,9 +84,6 @@ const PERMISSION_RESOURCE: ContentTypeDefinition = {
   version: 0,
 };
 
-/** Component Builder isn't a content type either - a single grantable
- * toggle, same treatment as `PERMISSION_RESOURCE` above, rendered alongside
- * real singletons since it's an all-or-nothing "can use this page" grant. */
 const PAGE_COMPONENTS_RESOURCE: ContentTypeDefinition = {
   id: PAGE_COMPONENTS_RESOURCE_ID,
   kind: "singleton",
@@ -73,6 +93,72 @@ const PAGE_COMPONENTS_RESOURCE: ContentTypeDefinition = {
   fields: [],
   version: 0,
 };
+
+const MEDIA_RESOURCE: ContentTypeDefinition = {
+  id: MEDIA_RESOURCE_ID,
+  kind: "singleton",
+  name: "media",
+  label: "Media",
+  description: "Browse and manage the Media library.",
+  fields: [],
+  version: 0,
+};
+
+const ICON_MANAGEMENT_RESOURCE: ContentTypeDefinition = {
+  id: ICON_MANAGEMENT_RESOURCE_ID,
+  kind: "singleton",
+  name: "iconManagement",
+  label: "Icon Management",
+  description: "Add, edit, and remove icons in the icon library.",
+  fields: [],
+  version: 0,
+};
+
+const RICHTEXT_COMPONENTS_RESOURCE: ContentTypeDefinition = {
+  id: RICHTEXT_COMPONENTS_RESOURCE_ID,
+  kind: "singleton",
+  name: "richtextComponents",
+  label: "Custom Components",
+  description: "Build and manage RichText custom components.",
+  fields: [],
+  version: 0,
+};
+
+const CONTENT_TYPES_RESOURCE: ContentTypeDefinition = {
+  id: CONTENT_TYPES_RESOURCE_ID,
+  kind: "singleton",
+  name: "contentTypes",
+  label: "Content Types",
+  description: "Edit content type schemas in the Content-Type Builder.",
+  fields: [],
+  version: 0,
+};
+
+const KEY_VALUE_RESOURCE: ContentTypeDefinition = {
+  id: KEY_VALUE_RESOURCE_ID,
+  kind: "singleton",
+  name: "keyValue",
+  label: "Key Value",
+  description: "Manage the Key Value store.",
+  fields: [],
+  version: 0,
+};
+
+/** Every non-content-type admin page, rendered together as flat toggle rows
+ * in the "System" fieldset - see `status/role-system-permissions.md`. AI
+ * Keys deliberately has no entry here: `protectSystemMutation`
+ * (`server/routes/content-entries.ts`) already hard-blocks non-super-admins
+ * from mutating `aiKey` rows unconditionally, so a toggle here would grant a
+ * nav link that still 403s on every write. */
+const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
+  PERMISSION_RESOURCE,
+  PAGE_COMPONENTS_RESOURCE,
+  MEDIA_RESOURCE,
+  ICON_MANAGEMENT_RESOURCE,
+  RICHTEXT_COMPONENTS_RESOURCE,
+  CONTENT_TYPES_RESOURCE,
+  KEY_VALUE_RESOURCE,
+];
 
 /**
  * Bespoke Role editor (not the generic `ContentEntryEditor`/`FieldRenderer`
@@ -193,27 +279,44 @@ export default function RoleEditor({ id }: Props) {
     action: PermissionAction,
     checked: boolean,
   ) {
-    const permId = permissionIdFor(resource, action);
     setValue((current) => {
       if (!current) return current;
       const ids = Array.isArray(current.permissions)
         ? ([...current.permissions] as string[])
         : [];
-      const remove = (id: string) => {
+      const has = (a: PermissionAction) => ids.includes(permissionIdFor(resource, a));
+      const remove = (a: PermissionAction) => {
+        const id = permissionIdFor(resource, a);
         const idx = ids.indexOf(id);
         if (idx !== -1) ids.splice(idx, 1);
       };
-      if (action === "view" && !checked) {
-        // Turning View off disables every other action for this resource too.
+      const add = (a: PermissionAction) => {
+        const id = permissionIdFor(resource, a);
+        if (!ids.includes(id)) ids.push(id);
+      };
+
+      if (checked) add(action);
+      else remove(action);
+
+      // Cascade: once any action changes, drop every OTHER granted action on
+      // this resource whose prerequisite(s) are no longer satisfied (e.g.
+      // turning off View used to hand-roll "clear everything else"; turning
+      // off both Create and Update now also drops Magic). Repeated to a
+      // fixed point - prerequisite depth here is only ever 1, but this stays
+      // correct even if that changes.
+      let changed = true;
+      while (changed) {
+        changed = false;
         for (const a of permissionActionsFor(resource)) {
-          const otherId = permissionIdFor(resource, a);
-          if (otherId) remove(otherId);
+          if (!has(a)) continue;
+          const prereqs = permissionPrerequisites(resource, a);
+          if (prereqs.length > 0 && !prereqs.some(has)) {
+            remove(a);
+            changed = true;
+          }
         }
-      } else if (checked) {
-        if (!ids.includes(permId)) ids.push(permId);
-      } else {
-        remove(permId);
       }
+
       return { ...current, permissions: ids };
     });
   }
@@ -279,17 +382,66 @@ export default function RoleEditor({ id }: Props) {
 
   const resources = allTypes
     .filter((t) => t.kind === "collection")
-    .concat(PERMISSION_RESOURCE)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const singletons = allTypes
     .filter((t) => t.kind === "singleton")
-    .concat(PAGE_COMPONENTS_RESOURCE)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
+  const systemResources = SYSTEM_RESOURCES.slice().sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
   const grantedIds = new Set(
     Array.isArray(value.permissions) ? (value.permissions as string[]) : [],
   );
+
+  /** Shared by the Collections and Singletons fieldsets below - a
+   * collapsible per-resource row with a summary dot per action and a
+   * switches panel underneath. A singleton's `expected` is always
+   * `["setting"]` (one dot, one switch), so this reads identically to the
+   * old flat single-CheckField layout it replaces, just wrapped in the same
+   * `<details>` shell Collections already uses. */
+  function renderPermissionResource(resource: ContentTypeDefinition) {
+    const expected = permissionActionsFor(resource);
+    const isGranted = (action: PermissionAction) => {
+      const permId = permissionIdFor(resource, action);
+      return !!permId && grantedIds.has(permId);
+    };
+    const viewGranted = expected.includes("view") ? isGranted("view") : true;
+    return (
+      <details key={resource.id}>
+        <summary>
+          <span class="stack" style={{ gap: "0.25rem" }}>
+            <strong>{resource.label}</strong>
+            <span class="hint">{resource.description}</span>
+          </span>
+          <div class="spacer" />
+          <span class="role-permission-dots">
+            {expected.map((action) => (
+              <span
+                key={action}
+                class={`role-permission-dot${isGranted(action) ? " on" : ""}`}
+                title={ACTION_LABELS[action]}
+              />
+            ))}
+          </span>
+        </summary>
+        <div class="role-permission-switches">
+          {expected.map((action) => (
+            <CheckField
+              key={action}
+              role="switch"
+              label={ACTION_LABELS[action]}
+              description={ACTION_DESCRIPTIONS[action]}
+              value={isGranted(action)}
+              disabled={action !== "view" && !viewGranted}
+              onChange={(checked) => togglePermission(resource, action, checked)}
+            />
+          ))}
+        </div>
+      </details>
+    );
+  }
 
   return (
     <>
@@ -341,83 +493,45 @@ export default function RoleEditor({ id }: Props) {
             <fieldset>
               <legend>Permissions</legend>
               <div class="permission-view-card">
-                {resources.map((resource) => {
-                  const expected = permissionActionsFor(resource);
-                  const isGranted = (action: PermissionAction) => {
-                    const permId = permissionIdFor(resource, action);
-                    return !!permId && grantedIds.has(permId);
-                  };
-                  const viewGranted = expected.includes("view")
-                    ? isGranted("view")
-                    : true;
-                  return (
-                    <details key={resource.id}>
-                      <summary>
-                        <span class="stack" style={{ gap: "0.25rem" }}>
-                          <strong>{resource.label}</strong>
-                          <span class="hint">{resource.description}</span>
-                        </span>
-                        <div class="spacer" />
-                        <span class="role-permission-dots">
-                          {expected.map((action) => (
-                            <span
-                              key={action}
-                              class={`role-permission-dot${isGranted(action) ? " on" : ""}`}
-                              title={ACTION_LABELS[action]}
-                            />
-                          ))}
-                        </span>
-                      </summary>
-                      <div class="role-permission-switches">
-                        {expected.map((action) => (
-                          <CheckField
-                            key={action}
-                            role="switch"
-                            label={ACTION_LABELS[action]}
-                            description={ACTION_DESCRIPTIONS[action]}
-                            value={isGranted(action)}
-                            disabled={action !== "view" && !viewGranted}
-                            onChange={(checked) =>
-                              togglePermission(resource, action, checked)
-                            }
-                          />
-                        ))}
-                      </div>
-                    </details>
-                  );
-                })}
+                {resources.map(renderPermissionResource)}
               </div>
             </fieldset>
 
             {singletons.length > 0 && (
               <fieldset>
                 <legend>Singletons</legend>
-                <div
-                  class="stack"
-                  style={{ marginBottom: "0.5rem", gap: "1rem" }}
-                >
-                  {singletons.map((singleton) => {
-                    const permissionId = permissionIdFor(singleton, "setting");
-                    return (
-                      <div key={singleton.id}>
-                        <CheckField
-                          role="switch"
-                          label={singleton.label}
-                          description={
-                            singleton.description ??
-                            "Manage this singleton's settings."
-                          }
-                          value={!!permissionId && grantedIds.has(permissionId)}
-                          onChange={(checked) =>
-                            togglePermission(singleton, "setting", checked)
-                          }
-                        />
-                      </div>
-                    );
-                  })}
+                <div class="permission-view-card">
+                  {singletons.map(renderPermissionResource)}
                 </div>
               </fieldset>
             )}
+
+            <fieldset>
+              <legend>System</legend>
+              <div
+                class="stack"
+                style={{ marginBottom: "0.5rem", gap: "1rem" }}
+              >
+                {systemResources.map((resource) => {
+                  const permissionId = permissionIdFor(resource, "setting");
+                  return (
+                    <div key={resource.id}>
+                      <CheckField
+                        role="switch"
+                        label={resource.label}
+                        description={
+                          resource.description ?? "Grant access to this page."
+                        }
+                        value={!!permissionId && grantedIds.has(permissionId)}
+                        onChange={(checked) =>
+                          togglePermission(resource, "setting", checked)
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </fieldset>
 
             {canDeleteRole && !value.isSuperAdmin && (
               <div class="content-type-editor-danger">

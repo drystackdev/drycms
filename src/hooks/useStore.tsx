@@ -83,7 +83,12 @@ export function useStore<T>(key: string, initialValue?: T | (() => T)) {
 // ---------------------------------------------------------------------------
 
 const SYNC_VERSION_KEY = "drycms:store:syncVersion";
-const PUSH_DEBOUNCE_MS = 800;
+// Deliberately generous (not the usual ~500-800ms UI debounce) - this is a
+// background account-sync push, not something a user waits on, and several
+// `drycms:store` keys change together in quick bursts during normal use
+// (sidebar collapse + submenu toggle + column visibility...); a long window
+// coalesces those into one request instead of one per key.
+const PUSH_DEBOUNCE_MS = 8_000;
 
 function readSyncVersion(): number {
   try {

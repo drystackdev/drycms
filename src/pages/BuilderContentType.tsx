@@ -26,6 +26,8 @@ import { PlusIcon, UploadIcon } from "../components/icons/index.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { useParam } from "../hooks/useParam.js";
 import { contentTypesVersion } from "../store/content-types.js";
+import { CONTENT_TYPES_RESOURCE_ID } from "../content-types/permissions.js";
+import { canAccess } from "../store/auth.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
 import AiSchemaWizardPanel from "./content-type-editor/AiSchemaWizardPanel.js";
@@ -392,6 +394,10 @@ export default function BuilderContentType() {
   function openApplyDialog(id: string | null) {
     setApplyBuilderId(id);
     setApplyDialogOpen(true);
+  }
+
+  if (!canAccess(CONTENT_TYPES_RESOURCE_ID, "setting")) {
+    return <span class="error">You don't have permission to access Content Types.</span>;
   }
 
   return (

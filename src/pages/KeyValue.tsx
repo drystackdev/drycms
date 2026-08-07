@@ -6,11 +6,12 @@ import {
   useState,
 } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
-import { authState, loadSession } from "../store/auth.js";
+import { authState, canAccess, loadSession } from "../store/auth.js";
 import Icon from "../components/Icon.js";
 import { ReplaceIcon } from "../components/icons/index.js";
 import Combobox from "../components/Combobox.js";
 import DataTable from "../components/DataTable.js";
+import { KEY_VALUE_RESOURCE_ID } from "../content-types/permissions.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface KvMeta {
@@ -56,8 +57,7 @@ function LoginRedirect() {
 export default function KeyValue() {
   useDocumentTitle("Key Value");
   const isAuthenticated = authState.value.status === "authenticated";
-  const isSuperAdmin =
-    authState.value.user?.roles.includes("Super Admin") ?? false;
+  const canManage = canAccess(KEY_VALUE_RESOURCE_ID, "setting");
   const [namespace, setNamespace] = useState("content");
   const [data, setData] = useState<KvListResponse | null>(null);
   const [selected, setSelected] = useState<KvMeta | null>(null);
@@ -72,7 +72,7 @@ export default function KeyValue() {
 
   const load = useCallback(
     async (force = false, background = false) => {
-      if (!isSuperAdmin || !namespace.trim()) return;
+      if (!canManage || !namespace.trim()) return;
       if (requestInFlight.current) return;
       requestInFlight.current = true;
       if (!background) setBusy(true);
@@ -114,7 +114,7 @@ export default function KeyValue() {
         requestInFlight.current = false;
       }
     },
-    [baseUrl, isSuperAdmin, namespace],
+    [baseUrl, canManage, namespace],
   );
 
   useEffect(() => {
@@ -217,12 +217,12 @@ export default function KeyValue() {
     return <LoginRedirect />;
   }
 
-  if (!isSuperAdmin) {
+  if (!canManage) {
     return (
       <div class="empty">
         <Icon name="Lock" size="2rem" />
-        <strong>Super Admin only</strong>
-        <small>Key Value is restricted to Super Admin accounts.</small>
+        <strong>No access</strong>
+        <small>You don't have permission to access Key Value.</small>
       </div>
     );
   }

@@ -2,9 +2,14 @@ import type { Statement } from "./migration.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 /** The actions a role can be granted on a resource. A collection gets
- * View/Create/Update/Delete; a singleton gets the single Setting action;
- * components get none. */
-export const PERMISSION_ACTIONS = ["view", "create", "update", "delete", "setting"] as const;
+ * View/Create/Update/Delete/Magic; a singleton gets Setting/Magic;
+ * components get none. `magic` is the explicit, stored grant for using
+ * Magic (AI) on a resource's entries - checked directly server-side
+ * (`ai-magic-write.ts`), never derived from create/update/setting at
+ * request time. The Role editor only lets it be TURNED ON once one of those
+ * is already granted (see `RoleEditor.tsx`'s `permissionPrerequisites`),
+ * but the grant itself is what's actually checked. */
+export const PERMISSION_ACTIONS = ["view", "create", "update", "delete", "setting", "magic"] as const;
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
 /** Stable value stored in `role.permissions`; it references content-type
@@ -25,12 +30,30 @@ export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
  * than each side hard-coding its own copy. */
 export const PAGE_COMPONENTS_RESOURCE_ID = "system-page-components";
 
+/** Same synthetic-resource pattern as `PAGE_COMPONENTS_RESOURCE_ID` above,
+ * one id per admin page that isn't backed by a real `ContentTypeDefinition`
+ * - grouped together in `RoleEditor.tsx`'s "System" fieldset, checked at the
+ * matching route (`handler.ts`/`content-types.ts`/`key-value.ts`) with
+ * `requirePermission(context, id, "setting")`, same as Page Components.
+ *
+ * `system-media` is the one exception: the `storage` API it would gate is
+ * shared cross-cutting infrastructure (every File/Image field on every
+ * content type reads/writes through it, not just the standalone Media
+ * page), so gating the route itself would block unrelated content editing.
+ * It's wired up client-side only (nav + page guard) - see
+ * `status/role-system-permissions.md`. */
+export const MEDIA_RESOURCE_ID = "system-media";
+export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
+export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
+export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
+export const KEY_VALUE_RESOURCE_ID = "system-key-value";
+
 /** The exact actions the Role editor and request authorization expose for a
  * content type. Pure and safe to import from client code. */
 export function permissionActionsFor(target: ContentTypeDefinition): PermissionAction[] {
   if (target.kind === "component") return [];
-  if (target.kind === "singleton") return ["setting"];
-  return ["view", "create", "update", "delete"];
+  if (target.kind === "singleton") return ["setting", "magic"];
+  return ["view", "create", "update", "delete", "magic"];
 }
 
 /** `isSuperAdmin` is a bypass switch, not an ordinary role attribute - it's

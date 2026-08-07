@@ -201,7 +201,11 @@ export interface MagicChatProps {
   onStreamingFieldChange: (fieldName: string | null) => void;
   /** Where the context-image picker's `FileManager` reads its files from. */
   source: FileManagerSource;
-  canEdit: boolean;
+  /** Magic's own gate - stricter than the entry form's general edit
+   * permission for a collection (needs create AND update, not just
+   * whichever action the current new-vs-existing mode calls for). See
+   * `ContentEntryEditor.tsx`'s `canUseMagic`. */
+  canUse: boolean;
   /** The Visual Editing Interface's dialog iframe skips `DryLayout` (see
    * `VeiFrame.tsx`) and shifts `Toaster` to `bottom-start` to avoid its own
    * dock - the bubble/panel mirror that same shift so they don't collide. */
@@ -228,7 +232,7 @@ export default function MagicChat({
   updateFieldValue,
   onStreamingFieldChange,
   source,
-  canEdit,
+  canUse,
   veiFrame = false,
   aiKey,
   rewriteFnRef,
@@ -681,7 +685,7 @@ export default function MagicChat({
     }
   }
 
-  if (!canEdit) return null;
+  if (!canUse) return null;
 
   const badgeSpinning = sending;
   const bubbleTooltip = streamingFieldName ? `Writing "${fieldLabel(streamingFieldName)}"…` : sending ? "Magic is replying…" : messages.length > 0 ? "Magic - conversation open" : "Magic";

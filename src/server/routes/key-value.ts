@@ -4,7 +4,8 @@ import { KeyValueStore } from "../../kv/memory.js";
 import { createKeyValueAdapter, createRequestKeyValueAdapter } from "../../kv/factory.js";
 import { KeyValueError } from "../../kv/types.js";
 import { jsonResponse } from "../route-helpers.js";
-import { requireSuperAdmin } from "../admin-access.js";
+import { requirePermission } from "../admin-access.js";
+import { KEY_VALUE_RESOURCE_ID } from "../../content-types/permissions.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 const moduleStore = kv.kind !== "D1" && kv.kind !== "KV"
@@ -67,7 +68,7 @@ function etag(revision: number): string {
 }
 
 export const GET: DryRouteHandler = async (context) => {
-  const denied = await requireSuperAdmin(context, "Only Super Admin can access Key Value.");
+  const denied = await requirePermission(context, KEY_VALUE_RESOURCE_ID, "setting", "You don't have permission to access Key Value.");
   if (denied) return denied;
   try {
     const parts = pathParts(context);
@@ -100,7 +101,7 @@ export const GET: DryRouteHandler = async (context) => {
 };
 
 export const PUT: DryRouteHandler = async (context) => {
-  const denied = await requireSuperAdmin(context, "Only Super Admin can access Key Value.");
+  const denied = await requirePermission(context, KEY_VALUE_RESOURCE_ID, "setting", "You don't have permission to access Key Value.");
   if (denied) return denied;
   try {
     const parts = pathParts(context);
@@ -119,7 +120,7 @@ export const PUT: DryRouteHandler = async (context) => {
 };
 
 export const DELETE: DryRouteHandler = async (context) => {
-  const denied = await requireSuperAdmin(context, "Only Super Admin can access Key Value.");
+  const denied = await requirePermission(context, KEY_VALUE_RESOURCE_ID, "setting", "You don't have permission to access Key Value.");
   if (denied) return denied;
   try {
     const parts = pathParts(context);

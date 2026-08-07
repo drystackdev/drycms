@@ -288,4 +288,40 @@
       white-space: nowrap;
     }
   }
+
+  /*
+   * Theme-switch circular reveal ("vòng tròn phóng ra" - `lib/native/
+   * theme.ts`'s `applyThemeTransition`). `::view-transition-*` pseudo-
+   * elements render at the document ROOT, outside `.dry` entirely (there's
+   * no real element to nest them under - the browser generates these
+   * itself) - the one exception in this file to "everything nested under
+   * `.dry`". Pure progressive enhancement: `applyThemeTransition` only ever
+   * sets the `--dry-theme-transition-*` variables these read (and only
+   * calls `startViewTransition` at all) in a supporting browser without
+   * `prefers-reduced-motion: reduce` - everywhere else, `applyTheme` still
+   * runs, just instantly, exactly as before this existed.
+   */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+
+  ::view-transition-old(root) {
+    z-index: 1;
+  }
+
+  ::view-transition-new(root) {
+    z-index: 2;
+    animation: dry-theme-reveal 500ms ease-in-out;
+  }
+
+  @keyframes dry-theme-reveal {
+    from {
+      clip-path: circle(0 at var(--dry-theme-transition-x, 50%) var(--dry-theme-transition-y, 50%));
+    }
+    to {
+      clip-path: circle(var(--dry-theme-transition-radius, 150%) at var(--dry-theme-transition-x, 50%) var(--dry-theme-transition-y, 50%));
+    }
+  }
 }

@@ -24,7 +24,15 @@ import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
-import { PAGE_COMPONENTS_RESOURCE_ID, type PermissionAction } from "../content-types/permissions.js";
+import {
+  CONTENT_TYPES_RESOURCE_ID,
+  ICON_MANAGEMENT_RESOURCE_ID,
+  KEY_VALUE_RESOURCE_ID,
+  MEDIA_RESOURCE_ID,
+  PAGE_COMPONENTS_RESOURCE_ID,
+  RICHTEXT_COMPONENTS_RESOURCE_ID,
+  type PermissionAction,
+} from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
 import { countEntryDrafts, hasEntryDraft, hydrateEntryDraftIndex, watchEntryDraftIndex } from "../content-types/entry-draft-store.js";
 
@@ -68,7 +76,7 @@ const NAV: {
     icon: "Content",
     ready: true,
     section: "Content",
-    superAdminOnly: true,
+    permissionResourceId: CONTENT_TYPES_RESOURCE_ID,
   },
   {
     key: "media",
@@ -77,6 +85,7 @@ const NAV: {
     icon: "Media",
     ready: true,
     section: "Content",
+    permissionResourceId: MEDIA_RESOURCE_ID,
   },
   {
     key: "icon-management",
@@ -85,7 +94,7 @@ const NAV: {
     icon: "IconManagement",
     ready: true,
     section: "System",
-    superAdminOnly: true,
+    permissionResourceId: ICON_MANAGEMENT_RESOURCE_ID,
   },
   {
     key: "richtext-components",
@@ -94,7 +103,7 @@ const NAV: {
     icon: "Content",
     ready: true,
     section: "Content",
-    superAdminOnly: true,
+    permissionResourceId: RICHTEXT_COMPONENTS_RESOURCE_ID,
   },
   {
     key: "page-components",
@@ -140,7 +149,7 @@ const NAV: {
     icon: "KeyValue",
     ready: true,
     section: "System",
-    superAdminOnly: true,
+    permissionResourceId: KEY_VALUE_RESOURCE_ID,
   },
   {
     key: "ai-keys",
@@ -149,6 +158,10 @@ const NAV: {
     icon: "AiKey",
     ready: true,
     section: "System",
+    // Deliberately still `superAdminOnly`, not a grantable System toggle -
+    // `protectSystemMutation` (server/routes/content-entries.ts) hard-blocks
+    // non-super-admins from mutating `aiKey` rows unconditionally, so a
+    // toggle here would grant a nav link that still 403s on every write.
     superAdminOnly: true,
   },
   {
@@ -167,7 +180,12 @@ const NAV: {
     icon: "Settings",
     ready: true,
     section: "System",
-    superAdminOnly: true,
+    // `systemSettings` is a real (hidden) singleton content type - same
+    // permissionName/permissionAction mechanism `seo-defaults` above uses,
+    // not a synthetic System resource (Settings.tsx already enforces
+    // `canAccess(type.id, "setting")` itself).
+    permissionName: "systemSettings",
+    permissionAction: "setting",
   },
 ];
 

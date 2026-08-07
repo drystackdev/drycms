@@ -15,8 +15,12 @@ import * as keyValueRoute from "./routes/key-value.js";
 import * as aiRoute from "./routes/ai.js";
 import * as memoryRoute from "./routes/memory.js";
 import * as systemSettingsRoute from "./routes/system-settings.js";
-import { requirePermission, requireSuperAdmin } from "./admin-access.js";
-import { PAGE_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
+import { requirePermission } from "./admin-access.js";
+import {
+  ICON_MANAGEMENT_RESOURCE_ID,
+  PAGE_COMPONENTS_RESOURCE_ID,
+  RICHTEXT_COMPONENTS_RESOURCE_ID,
+} from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD";
@@ -141,8 +145,18 @@ export async function handleApiRequest(
 
   const boundedRequest = limitRequestBody(request, segment, request.method, slug);
   const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
-  if ((segment === "icons" || segment === "richtext-components") && request.method !== "GET") {
-    const denied = await requireSuperAdmin(context);
+  // GET stays open to any authenticated session either way - an icon/
+  // component's rendered output is read broadly across the app (nav icons,
+  // RichText component blocks in arbitrary content), not just from these
+  // features' own admin pages. Only the mutating methods need the
+  // System-fieldset grant (`RoleEditor.tsx`'s Icon Management/Custom
+  // Components toggles).
+  if (segment === "icons" && request.method !== "GET") {
+    const denied = await requirePermission(context, ICON_MANAGEMENT_RESOURCE_ID, "setting");
+    if (denied) return secureResponse(denied, request);
+  }
+  if (segment === "richtext-components" && request.method !== "GET") {
+    const denied = await requirePermission(context, RICHTEXT_COMPONENTS_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   // Every method, including `GET` - Component Builder has no separate

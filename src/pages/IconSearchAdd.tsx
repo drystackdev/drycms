@@ -13,6 +13,8 @@ import {
   type IconifyCollection,
 } from "../icons/iconify-http-api.js";
 import { createIconsApi } from "../icons/icons-http-api.js";
+import { ICON_MANAGEMENT_RESOURCE_ID } from "../content-types/permissions.js";
+import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
 const DEFAULT_PREFIX = "solar";
@@ -218,6 +220,10 @@ export default function IconSearchAdd() {
         setError(err instanceof Error ? err.message : "Failed to add icons.");
       });
   };
+
+  if (!canAccess(ICON_MANAGEMENT_RESOURCE_ID, "setting")) {
+    return <span class="error">You don't have permission to access Icon Management.</span>;
+  }
 
   return (
     <div class="card">

@@ -14,7 +14,8 @@ import { collectTableNames, resolveTableTree } from "../../content-types/tree.js
 import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
 import { randomUUID } from "../../lib/uuid.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
-import { requireSuperAdmin } from "../admin-access.js";
+import { requirePermission } from "../admin-access.js";
+import { CONTENT_TYPES_RESOURCE_ID } from "../../content-types/permissions.js";
 import { RequestBodyLimitError } from "../request-limits.js";
 
 const STATUS_BY_CODE: Record<string, number> = {
@@ -238,7 +239,7 @@ export const GET: DryRouteHandler = async (context) => {
 export const POST: DryRouteHandler = async (context) => {
   try {
     const { schema: adapter, entries: entryAdapter } = getContentAdapters(context);
-    const denied = await requireSuperAdmin(context, "Only Super Admin can edit content type schemas.");
+    const denied = await requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting", "You don't have permission to edit content type schemas.");
     if (denied) return denied;
 
     const raw = (await context.request.json()) as Partial<SaveRequestBody> & {
@@ -271,7 +272,7 @@ export const POST: DryRouteHandler = async (context) => {
 export const PUT: DryRouteHandler = async (context) => {
   try {
     const { schema: adapter, entries: entryAdapter } = getContentAdapters(context);
-    const denied = await requireSuperAdmin(context, "Only Super Admin can edit content type schemas.");
+    const denied = await requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting", "You don't have permission to edit content type schemas.");
     if (denied) return denied;
 
     const id = readId(context);
@@ -293,7 +294,7 @@ export const PUT: DryRouteHandler = async (context) => {
 export const DELETE: DryRouteHandler = async (context) => {
   try {
     const { schema: adapter, entries: entryAdapter } = getContentAdapters(context);
-    const denied = await requireSuperAdmin(context, "Only Super Admin can edit content type schemas.");
+    const denied = await requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting", "You don't have permission to edit content type schemas.");
     if (denied) return denied;
 
     const id = readId(context);

@@ -4,6 +4,8 @@ const { path } = window.__DRY_CONFIG__;
 import IconGlyph from "../components/IconGlyph.js";
 import TextField from "../components/fields/TextField.js";
 import { createIconsApi } from "../icons/icons-http-api.js";
+import { ICON_MANAGEMENT_RESOURCE_ID } from "../content-types/permissions.js";
+import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
 interface Props {
@@ -105,6 +107,9 @@ export default function IconManualForm({ name }: Props) {
   };
 
   if (loading) return <span class="hint">Loading…</span>;
+  if (!canAccess(ICON_MANAGEMENT_RESOURCE_ID, "setting")) {
+    return <span class="error">You don't have permission to access Icon Management.</span>;
+  }
 
   return (
     <div class="card" style={{ maxWidth: "64rem" }}>

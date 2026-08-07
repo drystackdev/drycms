@@ -59,6 +59,56 @@ export function applyTheme(theme: DryTheme) {
 	if (theme !== 'system') root.classList.add(theme);
 }
 
+/** Same effect as `applyTheme`, wrapped in the View Transitions API for a
+ * circular-reveal transition ("vòng tròn phóng ra") growing from `origin` -
+ * the actual click/tap point (see `clickOrigin` below), so the circle
+ * starts exactly where the user's finger/cursor was, not just somewhere on
+ * the toggle - see `base.css`'s `::view-transition-*` rules for the actual
+ * animation, `--dry-theme-transition-*` here is just the geometry those
+ * read. Pure progressive enhancement: unsupported browsers (no Chromium)
+ * and a `prefers-reduced-motion: reduce` visitor both fall straight through
+ * to the instant `applyTheme`, exactly like before this existed - the
+ * circle is a bonus, never a requirement for the theme to actually
+ * change. */
+export function applyThemeTransition(theme: DryTheme, origin: { x: number; y: number }) {
+	const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	if (!document.startViewTransition || reducedMotion) {
+		applyTheme(theme);
+		return;
+	}
+
+	const radius = Math.hypot(
+		Math.max(origin.x, window.innerWidth - origin.x),
+		Math.max(origin.y, window.innerHeight - origin.y),
+	);
+	const root = document.documentElement;
+	root.style.setProperty('--dry-theme-transition-x', `${origin.x}px`);
+	root.style.setProperty('--dry-theme-transition-y', `${origin.y}px`);
+	root.style.setProperty('--dry-theme-transition-radius', `${radius}px`);
+
+	document.startViewTransition(() => {
+		applyTheme(theme);
+	});
+}
+
+/** Center of `element`'s own box - fallback origin for a keyboard-activated
+ * click (Enter/Space on a focused button), whose synthetic `MouseEvent`
+ * carries `clientX`/`clientY` both `0` rather than a real pointer
+ * position. */
+function elementCenter(element: Element): { x: number; y: number } {
+	const rect = element.getBoundingClientRect();
+	return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+/** The real click/tap point from `event`, or `elementCenter(fallback)` for
+ * a keyboard activation (see that function's own doc comment) - `0, 0` is
+ * never a legitimate click position for a control that isn't already
+ * pinned to the viewport's top-left corner. */
+export function clickOrigin(event: MouseEvent, fallback: Element): { x: number; y: number } {
+	if (event.clientX !== 0 || event.clientY !== 0) return { x: event.clientX, y: event.clientY };
+	return elementCenter(fallback);
+}
+
 function initThemeToggle() {
 	if (document.body.dataset.dryThemeInit) return;
 	document.body.dataset.dryThemeInit = 'true';
@@ -68,7 +118,7 @@ function initThemeToggle() {
 		if (!trigger) return;
 		const next = ORDER[(ORDER.indexOf(readStoredTheme()) + 1) % ORDER.length] as DryTheme;
 		writeStoredTheme(next);
-		applyTheme(next);
+		applyThemeTransition(next, clickOrigin(event, trigger));
 	};
 
 	document.addEventListener('click', onClick);

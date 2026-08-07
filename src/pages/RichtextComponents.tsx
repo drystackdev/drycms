@@ -16,6 +16,8 @@ import {
 import { useDialogSync } from "../hooks/list-nav.js";
 import { ReplaceIcon, SettingsIcon } from "../components/icons/index.js";
 import DryComponentIcon from "../components/RichTextField/dry-component-icon.js";
+import { RICHTEXT_COMPONENTS_RESOURCE_ID } from "../content-types/permissions.js";
+import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -186,6 +188,10 @@ export default function RichtextComponents() {
     setPreviewOverrides((prev) => ({ ...prev, [configuring.def.name]: propsDraft }));
     setConfiguring(null);
   };
+
+  if (!canAccess(RICHTEXT_COMPONENTS_RESOURCE_ID, "setting")) {
+    return <span class="error">You don't have permission to access Custom Components.</span>;
+  }
 
   return (
     <div class="card">

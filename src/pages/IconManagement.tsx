@@ -9,6 +9,8 @@ import {
 } from "../components/icons/index.js";
 import IconPreviewDialog from "../components/IconPreviewDialog.js";
 import { createIconsApi, type IconEntry } from "../icons/icons-http-api.js";
+import { ICON_MANAGEMENT_RESOURCE_ID } from "../content-types/permissions.js";
+import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
 const PAGE_SIZE = 48;
@@ -64,6 +66,10 @@ export default function IconManagement() {
   }, [iconsApi, page, search]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  if (!canAccess(ICON_MANAGEMENT_RESOURCE_ID, "setting")) {
+    return <span class="error">You don't have permission to access Icon Management.</span>;
+  }
 
   return (
     <div class="card">
