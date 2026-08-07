@@ -225,13 +225,18 @@
           "config": {
             "componentId": "system-menu-item",
             "repeatable": true,
-            "sortable": true
+            "sortable": true,
+            "displayFields": [
+              "label",
+              "description"
+            ]
           },
           "validation": {},
           "order": 1
         }
       ],
-      "version": 5
+      "version": 6,
+      "deletedFieldIds": []
     },
     {
       "id": "system-ai-key-management",
@@ -491,9 +496,11 @@
         {
           "id": "app-video-url",
           "name": "videoUrl",
-          "label": "Video URL",
-          "type": "text",
-          "config": {},
+          "label": "Video",
+          "type": "file",
+          "config": {
+            "accept": "mp4"
+          },
           "validation": {
             "required": true
           },
@@ -540,7 +547,7 @@
           "order": 4
         }
       ],
-      "version": 8
+      "version": 10
     },
     {
       "id": "app-latest-posts-section",
@@ -805,7 +812,7 @@
           "order": 6
         }
       ],
-      "version": 59,
+      "version": 61,
       "features": {
         "seo": true
       }
@@ -827,11 +834,13 @@
           "type": "relation",
           "config": {
             "target": "app-category",
-            "cardinality": "manyToOne"
+            "cardinality": "manyToOne",
+            "displayFields": [
+              "title",
+              "slug"
+            ]
           },
-          "validation": {
-            "required": true
-          },
+          "validation": {},
           "order": 0
         },
         {
@@ -897,9 +906,10 @@
           "order": 4
         }
       ],
-      "version": 9,
+      "version": 11,
       "fieldSides": {
-        "app-blog-content": "left"
+        "app-blog-content": "left",
+        "app-blog-category": "right"
       },
       "deletedFieldIds": []
     },
@@ -1472,7 +1482,19 @@
         "slug": true
       },
       "fields": [],
-      "version": 4
+      "version": 5,
+      "fieldSides": {
+        "__mirror_app-blog_app-blog-category": "right"
+      },
+      "fieldDescriptions": {
+        "__mirror_app-blog_app-blog-category": ""
+      },
+      "fieldDisplayFields": {
+        "__mirror_app-blog_app-blog-category": [
+          "image",
+          "title"
+        ]
+      }
     },
     {
       "id": "system-seo-defaults",
@@ -1484,9 +1506,13 @@
         "seo": true
       },
       "fields": [],
-      "version": 6,
+      "version": 10,
       "locked": true,
-      "hidden": true
+      "hidden": true,
+      "fieldSides": {
+        "system-seo-defaults-google-site-verification-file": "left",
+        "__system_seo": "left"
+      }
     },
     {
       "id": "app-blogs-header",
@@ -1548,9 +1574,21 @@
           },
           "validation": {},
           "order": 0
+        },
+        {
+          "id": "app-blogs-page-bottom-cta",
+          "name": "bottomCta",
+          "label": "Bottom CTA",
+          "type": "component",
+          "config": {
+            "componentId": "app-bottom-cta",
+            "repeatable": false
+          },
+          "validation": {},
+          "order": 1
         }
       ],
-      "version": 2,
+      "version": 3,
       "features": {
         "seo": true
       }
@@ -1666,6 +1704,48 @@
         }
       ],
       "version": 3
+    },
+    {
+      "id": "system-google-verification",
+      "kind": "singleton",
+      "name": "googleVerification",
+      "label": "Google Verification",
+      "description": "Serves Google's site-ownership verification content at the exact domain root, without an uploaded file.",
+      "hidden": true,
+      "locked": true,
+      "frozen": true,
+      "fields": [
+        {
+          "id": "system-google-verification-name",
+          "name": "name",
+          "label": "Name",
+          "type": "text",
+          "description": "The exact filename Google Search Console gives you, e.g. google1234567890abcdef.html - served at https://yourdomain.com/<name>.",
+          "config": {
+            "placeholder": "google1234567890abcdef.html"
+          },
+          "validation": {
+            "required": true
+          },
+          "order": 0
+        },
+        {
+          "id": "system-google-verification-content",
+          "name": "content",
+          "label": "Content",
+          "type": "text",
+          "description": "The exact file content Google gives you alongside the filename above - served verbatim as the response body.",
+          "config": {
+            "multiline": true,
+            "placeholder": "google-site-verification: google1234567890abcdef.html"
+          },
+          "validation": {
+            "required": true
+          },
+          "order": 1
+        }
+      ],
+      "version": 1
     }
   ],
   "singletonData": {
@@ -1678,7 +1758,7 @@
         "image": "hero.jpg"
       },
       "videoSection": {
-        "videoUrl": "/video_16x9_480_noaudio_trimmed.mp4",
+        "videoUrl": "video_16x9_480_noaudio_trimmed.mp4",
         "heading": "Lorem ipsum dolor sit amet consectetur adipiscing elit",
         "description": "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud.",
         "ctaLabel": "Xem bài viết",
@@ -1891,6 +1971,12 @@
         "headline": "Kiến thức HIV & ARV",
         "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
       },
+      "bottomCta": {
+        "heading": "Bạn cần được tư vấn riêng tư?",
+        "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.",
+        "ctaLabel": "Liên hệ ngay",
+        "ctaHref": "/contact"
+      },
       "seo": {
         "metaTitle": null,
         "description": null,
@@ -1899,6 +1985,10 @@
     },
     "system-settings": {
       "data": "{\"primaryColor\":\"#2ec2d6\",\"secondaryColor\":\"#8e33ff\",\"infoColor\":\"#00b8d9\",\"successColor\":\"#22c55e\",\"warningColor\":\"#ffab00\",\"errorColor\":\"#ff5630\",\"backgroundColorLight\":\"#f9fafb\",\"backgroundColorDark\":\"#141a21\",\"cardColorLight\":\"#ffffff\",\"cardColorDark\":\"#1c252e\",\"textColorLight\":\"#1c252e\",\"textColorDark\":\"#ffffff\",\"fontFamily\":\"DM Sans Variable, DM Sans, ui-sans-serif, system-ui, sans-serif\",\"baseFontSize\":16,\"radius\":6}"
+    },
+    "system-google-verification": {
+      "name": "google1234567890abcdef.html",
+      "content": "Nội dung"
     }
   }
 }
