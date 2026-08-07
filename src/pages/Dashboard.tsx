@@ -333,7 +333,7 @@ export default function Dashboard() {
 				<div class="field">
 					<label>Roles</label>
 					<div class="row" style={{ flexWrap: 'wrap', gap: '0.375rem' }}>
-						{user?.isSuperAdmin && <span class="badge sm success">Super Admin — full access</span>}
+						{user?.isSuperAdmin && <span class="badge sm success">Super Admin - full access</span>}
 						{!user?.isSuperAdmin &&
 							(!user || user.roles.length === 0 ? (
 								<span class="hint">No roles assigned.</span>
