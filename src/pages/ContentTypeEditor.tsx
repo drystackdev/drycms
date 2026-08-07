@@ -750,11 +750,11 @@ export default function ContentTypeEditor({
           <ArrowLeftIcon />
         </button>
         <div style={{ flex: 1 }}>
-          <h1>
+          <h3>
             {isNew
               ? `New ${KIND_LABELS[definition.kind]}`
               : definition.label || definition.name}
-          </h1>
+          </h3>
           <p>
             {definition.kind === "component"
               ? "Reusable field group, embeddable in other content types."

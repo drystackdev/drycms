@@ -52,7 +52,7 @@ export interface Role {
 
 export interface Blog {
   id: number;
-  category: number | null; // relation -> category
+  category?: number | null; // relation -> category
   excerpt: string;
   date: Date;
   image?: string;

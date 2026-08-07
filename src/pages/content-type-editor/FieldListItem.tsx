@@ -78,7 +78,7 @@ export default function FieldListItem({
           </span> */}
           {system ? (
             <span class="badge sm outline">
-              System
+              Feature
             </span>
           ) : isProtected ? (
             <span class="badge sm outline">

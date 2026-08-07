@@ -204,3 +204,20 @@ hiện icon. Đã verify trực tiếp: card Category giờ hiện 1 icon tím, 
 trong `field-type-icons.ts` (dùng chung với `relation`) nên không cần thêm gì
 ở đó. Typecheck sạch, `bun run test` vẫn 951/967 pass (16 fail còn lại vẫn là
 lỗi `dry.seed.json` có sẵn, không liên quan).
+
+## Follow-up 3 (cùng ngày): badge "System" → "Feature" cho field theo feature
+User báo: các row như "Title & Slug" trong `FieldsList` (schema editor) đang
+gắn badge "System" nhưng thực ra chúng đến từ toggle ở nhóm Features (Slug/
+SEO/Draft/Schedule/Timestamps - `systemFieldsForUi` trong `ContentTypeEditor.tsx`),
+không phải "system" theo nghĩa khác. Sửa 1 chỗ duy nhất: `FieldListItem.tsx`
+badge text "System" → "Feature" (prop `system`/class nội bộ giữ nguyên tên,
+chỉ đổi chữ hiển thị). Verify: mở Category, "Title & Slug" giờ hiện badge
+"Feature" đúng; "Blog Post" (relationmirror row) vẫn không có badge (không
+đổi, đúng như trước - mirror không thuộc case này).
+
+Lưu ý QA: `bun run test` sau đó dao động 16→17→18 fail giữa các lần chạy -
+đã xác nhận đây là nhiễu có sẵn từ cụm test `seed.test.ts`/`sqlite.test.ts`
+(đụng bảng trùng tên do `dry.seed.json`, xem Status ở trên), không phải do
+thay đổi hôm nay: chạy riêng 4 file test liên quan tới các thay đổi trong
+ngày (`entry-summary`/`entry-tree`/`system-fields`/`field-registry`, 74 test)
+2 lần liên tiếp đều pass ổn định 100%.
