@@ -492,3 +492,88 @@ Chỉ sửa `src/apps/vei/overlay.ts`. `bun run typecheck` sạch (lỗi
 16 fail có sẵn ở `seed/sqlite/dry-reader/entries-sqlite` - do live DB đã
 lệch seed (xem `status/`-note về seed vs live DB), không file nào trong đó
 import `overlay.ts`.
+
+### Bổ sung: overlay chrome (dock/backdrop/panel) không theo theme admin đã ghim (2026-08-07)
+
+Bug: `--dry-*` token đã inline đúng qua `tokensCss` từ lâu, nhưng khi admin
+CHỌN HẲN light/dark (không phải "system") ở `ThemeToggle`, overlay's `.dry`
+scope không nhận `light`/`dark` class - chỉ `light-dark()` fallback theo OS.
+Trong khi entry editor mở trong `frame`/`agent` là 1 trang `/dry` thật, được
+`index.html`'s inline script + `lib/native/theme.ts` gắn class đúng - nên
+dock/backdrop/panel của overlay lệch theme so với chính editor nó đang mở.
+
+Sửa: thêm `currentTheme()`/`applyOverlayTheme()` trong `overlay.ts`, đọc
+cùng key `drycms:store` (không import `lib/native/theme.ts` - module đó gắn
+thêm global `[data-theme-toggle]` click listener, việc của trang admin,
+không phải file public-site này). Gọi 1 lần lúc tạo `scope`, và lắng thêm
+`storage` event trên `window` để đồng bộ SỐNG khi ThemeToggle chạy bên trong
+iframe đổi theme lúc panel/dialog đang mở (`storage` không tự bắn ở chính
+document vừa ghi, chỉ bắn ở các document cùng origin KHÁC - iframe là 1
+window khác nên đúng cơ chế này).
+
+Verify Playwright: ghim `theme: "dark"` trước khi tải trang → `scope`
+classList có `dark`, `.dock` background = `rgb(28, 37, 46)` (đúng
+`--dry-popover` dark). Bắn `storage` event đổi sang `light` → classList cập
+nhật sống thành `light`, không cần reload.
+
+Chỉ sửa `src/apps/vei/overlay.ts`. `bun run typecheck` sạch (lỗi
+`blogs/page.tsx:78` có sẵn từ trước).
+
+### Bổ sung: field-highlight bị lệch lúc panel slide-in (2026-08-07)
+
+Bug: bản panel-mode ở trên cố tình GIỮ `.field-highlight` khi mở side panel
+(để thấy field nào đang sửa), nhưng `syncDockedLayout`/`setPagePush` đẩy
+`<html>` bằng `margin-right` có animate (160ms) - làm cả trang reflow, field
+vừa click dịch chuyển ra khỏi vị trí `.field-highlight` đã đo TRƯỚC lúc đẩy.
+Kết quả: khung highlight bị "lệch" khỏi field trong lúc slide chạy.
+
+Sửa: `hideHighlight()` gọi VÔ ĐIỀU KIỆN ngay đầu `openFrame()`, trước cả
+`syncDockedLayout` - không còn chờ tới nhánh `!isDesktopPanel()` nữa. Ẩn
+ngay tại thời điểm click, không cố re-measure giữa lúc transition đang chạy.
+`mousemove` thật tiếp theo (di chuột) sẽ tự re-mark + định vị lại đúng theo
+layout đã ổn định - cùng cách file này đã xử lý case `scroll` (comment cũ:
+"the next mousemove... re-marks whatever ends up under the pointer").
+
+Verify Playwright (panel mode, viewport 1440x900): hover field → highlight
+`block`; click → NGAY LẬP TỨC (trước khi đợi animation) → `none`; giữ `none`
+sau 1.5s không di chuột; di chuột sang field khác sau khi trang đã ổn định →
+`block` lại, toạ độ khớp `getBoundingClientRect()` của field đó (đúng, do đo
+SAU push chứ không phải trước).
+
+Chỉ sửa `src/apps/vei/overlay.ts`. `bun run typecheck` sạch (lỗi
+`blogs/page.tsx:78` có sẵn từ trước).
+
+### Bổ sung: nút Magic chat lệch trái trong VEI + mode-toggle vẫn hiện lúc panel mở (2026-08-07)
+
+**Magic chat sang trái trong VEI**: `components.css`'s `.magic-chat-widget.vei`
+(2 chỗ - desktop `&.vei`, mobile `@media (width<48rem) &.vei`) tự lật bong
+bóng sang `inset-inline-start` (trái) bên trong iframe dialog VEI, "mirror"
+theo `VeiFrame.tsx`'s `<Toaster position="bottom-start" />`. Lý do gốc (comment
+cũ) không còn khớp thiết kế hiện tại - kết quả nhìn thấy được: nút Magic nằm
+bên TRÁI trong VEI thay vì bên phải như trang admin bình thường. Xoá cả 2
+block `&.vei` (desktop+mobile) - bong bóng giờ luôn `bottom-end` (phải) bất
+kể trong VEI hay không, khớp yêu cầu "giống admin". Toast vẫn giữ nguyên
+`bottom-start` trong VEI (đủ tránh va chạm vì giờ 2 bên đối diện nhau, không
+cần shift nữa) - gộp 2 rule `:has()` cũ (1 cho non-vei, 1 cho vei) thành 1
+rule chung, xoá rule dành riêng cho `.toast-viewport.start` (không còn cần
+shift khi bong bóng không còn ở cùng phía). `veiFrame`/class `vei` trong
+`MagicChat.tsx` giữ nguyên (không xoá) - vô hại, có thể cần lại sau.
+
+**`.mode-toggle` (dialog/panel switch) vẫn hiện dù sheet đang mở**: đổi mode
+lúc sheet ĐÃ mở không có tác dụng gì thấy được - `openFrame()` chỉ áp
+`mode` vào `.sheet`'s class `docked` lúc MỞ (nhánh `!alreadyOpen`), không áp
+lại cho sheet đang mở sẵn - nên bấm nút chỉ im lặng không làm gì, gây khó
+hiểu. Thêm `EditingDockHandle.setSheetOpen(open)` (`Dock.tsx`) + state
+`sheetOpen`, `ModeToggle` chỉ render khi `!sheetOpen` (ẩn hẳn, không disable -
+disable vẫn mời bấm vào thứ không làm gì). `overlay.ts` gọi
+`dock.setSheetOpen(true)` đầu `openFrame()`, `dock.setSheetOpen(false)` đầu
+`closeDialog()`.
+
+Verify Playwright (panel mode, viewport 1440x900): `.mode-toggle` có mặt
+trước khi mở field nào; mất hẳn ngay khi panel mở (`sheetConnected: true`);
+Escape đóng panel → `.mode-toggle` xuất hiện lại, `sheetConnected: false`.
+
+Sửa `components.css`, `Dock.tsx`, `overlay.ts`. `bun run typecheck` sạch
+(lỗi `blogs/page.tsx:78` có sẵn từ trước). `bun run test`: vẫn 958 pass/16
+fail như trước 2 bản sửa VEI gần nhất (fail có sẵn, không liên quan file
+này).

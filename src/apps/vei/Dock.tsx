@@ -134,6 +134,7 @@ export interface EditingDockHandle {
   setStatus(text: string): void;
   setSaving(saving: boolean): void;
   setPreviewCount(count: number): void;
+  setSheetOpen(open: boolean): void;
 }
 
 /** The full dock shown once edit mode is on - status text, "Preview all"
@@ -156,11 +157,18 @@ export function EditingDock(props: {
   // changes it. overlay.ts keeps its own copy (updated via onModeChange)
   // for openFrame() to read, since it drives the sheet outside Preact.
   const [mode, setMode] = useState<EditorMode>(props.initialMode);
+  // Set by overlay.ts's openFrame()/closeDialog() - switching mode while a
+  // dialog/panel is ALREADY open has no visible effect (`openFrame` only
+  // applies `mode` to the `.sheet`'s `docked` class on the open it's
+  // currently doing, not retroactively to one already open), so the toggle
+  // would silently do nothing if left up. Hidden instead of disabled: a
+  // disabled control still invites the click that won't do anything.
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  const ref = useDockWidthAnimation([status, saving, previewCount]);
+  const ref = useDockWidthAnimation([status, saving, previewCount, sheetOpen]);
 
   useLayoutEffect(() => {
-    props.onReady({ setStatus, setSaving, setPreviewCount });
+    props.onReady({ setStatus, setSaving, setPreviewCount, setSheetOpen });
     // Handed back once, on mount - overlay.ts's own callers are all async
     // (a save loop, a draft subscription), so they never run before this does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,13 +177,15 @@ export function EditingDock(props: {
   return (
     <div className="dock" ref={ref}>
       <span className="label">{status}</span>
-      <ModeToggle
-        mode={mode}
-        onChange={(next) => {
-          setMode(next);
-          props.onModeChange(next);
-        }}
-      />
+      {!sheetOpen && (
+        <ModeToggle
+          mode={mode}
+          onChange={(next) => {
+            setMode(next);
+            props.onModeChange(next);
+          }}
+        />
+      )}
       {previewCount !== null && previewCount > 0 && (
         <button type="button" className="ghost" onClick={props.onPreviewAll}>
           Preview all

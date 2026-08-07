@@ -299,7 +299,7 @@ iframe.agent {
   width: 480px;
   height: 100dvh;
   max-width: 90vw;
-  border-radius: 16px 0 0 16px;
+  border-radius: 0;
   animation: vei-panel-dock-in 160ms ease;
 }
 

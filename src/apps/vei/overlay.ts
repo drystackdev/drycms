@@ -79,6 +79,37 @@ function readStoredMode(): EditorMode {
   return localStorage.getItem(MODE_STORAGE_KEY) === "panel" ? "panel" : "dialog";
 }
 
+/**
+ * Mirrors `lib/native/theme.ts`'s `readStoredTheme`/`applyTheme` - not
+ * imported from there, since that module also wires up a global
+ * `[data-theme-toggle]` click delegation, an admin-page concern this
+ * public-site file has no business pulling in (same reasoning
+ * `draftKeyFor`'s doc comment gives for skipping `entry-draft-store.ts`).
+ * Without this, the overlay's own `.dry` scope only ever follows OS
+ * `prefers-color-scheme` (`light-dark()`, `tokens.css`), diverging from an
+ * admin who has explicitly pinned light or dark rather than "system" - the
+ * dock/backdrop/panel chrome would show one theme while the entry editor
+ * framed inside them (a real `/dry` page, themed by that same script) shows
+ * another.
+ */
+const THEME_STORAGE_KEY = "drycms:store";
+
+function currentTheme(): "light" | "dark" | null {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    const value = raw ? (JSON.parse(raw) as { theme?: unknown }).theme : undefined;
+    return value === "light" || value === "dark" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyOverlayTheme(scope: HTMLElement): void {
+  scope.classList.remove("light", "dark");
+  const theme = currentTheme();
+  if (theme) scope.classList.add(theme);
+}
+
 /** Restores whatever `storeScrollPosition` saved before the enter/exit
  * navigation, then discards it - a stale value must not resurrect itself on
  * some later, unrelated reload. Applied twice: once immediately, and once
@@ -351,8 +382,20 @@ function main(): void {
   // bundle itself scopes them - `scope` is the one element inside this
   // shadow tree that actually carries that class for them to match.
   const scope = element("div", { className: "dry" });
+  applyOverlayTheme(scope);
   root.append(scope);
   document.body.append(host);
+
+  // The entry editor's own ThemeToggle runs inside `frame`/`agent` - a
+  // DIFFERENT window from this one, even though it's visually nested here -
+  // so its write to this same `localStorage` key fires a `storage` event on
+  // THIS window rather than updating anything here directly (`storage`
+  // never fires on the document that made the change, only other same-
+  // origin ones). Re-applying on it keeps the overlay's own chrome in sync
+  // with a theme change made from inside the panel/dialog while it's open.
+  window.addEventListener("storage", (event) => {
+    if (event.key === null || event.key === THEME_STORAGE_KEY) applyOverlayTheme(scope);
+  });
 
   /**
    * `/vei/enter`/`/vei/exit` are real navigations (a cookie only takes effect
@@ -835,17 +878,21 @@ function main(): void {
     // right now (draft writes are debounced 300ms - `saveEntryDraft`).
     const alreadyOpen = sheet.isConnected;
     if (alreadyOpen && frame.src === new URL(url, window.location.href).href) return;
+    // Hidden unconditionally, and BEFORE the push below - `setPagePush`
+    // animates a `margin-right` onto `<html>` in panel mode, which reflows
+    // the whole page and moves the just-clicked field out from under the
+    // highlight box mid-slide (it was positioned for the PRE-push layout).
+    // Rather than re-measure mid-transition, just drop it here; the next
+    // real `mousemove` re-marks and repositions it against the settled
+    // layout, same as the scroll case above already does.
+    hideHighlight();
+    dock.setSheetOpen(true);
     sheet.classList.toggle("docked", mode === "panel");
     syncDockedLayout(!alreadyOpen);
     // The desktop panel is a non-modal side panel by design (see
     // syncDockedLayout/setPagePush) - only dialog mode and the mobile
-    // bottom drawer stay modal, need the page's own scroll locked, and hide
-    // the hover highlight (which the side panel keeps, so the field it's
-    // editing stays outlined on the page beside it).
-    if (!isDesktopPanel()) {
-      hideHighlight();
-      lockBodyScroll();
-    }
+    // bottom drawer stay modal and need the page's own scroll locked.
+    if (!isDesktopPanel()) lockBodyScroll();
     panel.classList.add("loading");
     frame.src = url;
     // Re-appending a node it already holds would remove-and-reinsert `sheet`,
@@ -870,6 +917,7 @@ function main(): void {
     clearTimeout(dialogLoadTimer);
     unlockBodyScroll();
     setPagePush(null, true);
+    dock.setSheetOpen(false);
     sheet.remove();
     frame.removeAttribute("src");
     // Whatever ran in that frame - an edit, a Reset all from its own Preview

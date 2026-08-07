@@ -4528,7 +4528,7 @@
     .file-table {
       border-collapse: separate;
       border-spacing: 0 0.5rem;
-      min-width: 300px;
+      min-width: 600px;
 
       & .file-table-check,
       & .file-table-more {
@@ -6155,31 +6155,18 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 0.75rem;
-
-    /* Mirrors `Toaster`'s own `position="bottom-start"` override inside the
-     * Visual Editing Interface's bare-chrome dialog iframe (`VeiFrame.tsx`) -
-     * same corner swap, so the bubble doesn't collide with whatever that
-     * dialog docks at bottom-end. */
-    &.vei {
-      inset-inline-start: 1.5rem;
-      inset-inline-end: auto;
-      align-items: flex-start;
-    }
   }
 
   /* Shifts the toast stack aside instead of letting it sit under the bubble/
    * panel - only when a Magic chat widget actually exists somewhere on the
    * page (`:has()` avoids needing to thread a class down from JS just for
-   * this). Two rules because either side can be in play: the default
-   * bottom-end pairing (`.toast-viewport` without `.start`, the widget
-   * without `.vei`) and the VEI bottom-start pairing (`.toast-viewport.start`,
-   * `.magic-chat-widget.vei`) shift the opposite inset each. */
-  body:has(.magic-chat-bubble):has(.magic-chat-widget:not(.vei))
+   * this). The Visual Editing Interface's bare-chrome dialog iframe
+   * (`VeiFrame.tsx`) still renders `<Toaster position="bottom-start" />` -
+   * the bubble sits bottom-end same as everywhere else, so that pairing
+   * already lands on opposite corners with nothing to shift. */
+  body:has(.magic-chat-bubble):has(.magic-chat-widget)
     .toast-viewport:not(.start) {
     inset-inline-end: calc(1.5rem + 4.25rem);
-  }
-  body:has(.magic-chat-widget.vei) .toast-viewport.start {
-    inset-inline-start: calc(1.5rem + 4.25rem);
   }
 
   button.magic-chat-bubble {
@@ -6516,10 +6503,6 @@
     .magic-chat-widget {
       inset-block-end: 1rem;
       inset-inline-end: 1rem;
-
-      &.vei {
-        inset-inline-start: 1rem;
-      }
     }
   }
 
