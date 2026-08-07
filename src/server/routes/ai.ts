@@ -1094,10 +1094,10 @@ function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Respon
 
 export const POST: DryRouteHandler = async (context: DryRouteContext) => {
   try {
-    // Magic Write is scoped by the entry's own edit/setting permission (see
-    // `ai-magic-write.ts`'s own `checkAccess` call), not the Super-Admin-only
-    // gate every other AI route below uses - dispatched before that gate so
-    // a non-Super-Admin editor with real content-entry permissions isn't
+    // Magic Write is scoped by the entry's own explicit `magic` permission
+    // (see `ai-magic-write.ts`'s own `checkAccess` call), not the
+    // Super-Admin-only gate every other AI route below uses - dispatched
+    // before that gate so a non-Super-Admin editor granted `magic` isn't
     // rejected before ever reaching it.
     if (context.params.slug === "magic-write") {
       return handleMagicWrite(context, await context.request.json());

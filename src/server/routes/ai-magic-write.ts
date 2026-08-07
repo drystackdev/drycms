@@ -305,7 +305,13 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const type = allTypes.find((candidate) => candidate.name === request.typeSlug && candidate.kind !== "component");
           if (!type) throw new Error(`Content type "${request.typeSlug}" was not found.`);
 
-          const denied = await checkAccess(context, entries, allTypes, type, type.kind === "singleton" ? "setting" : "update");
+          // The explicit, stored `magic` grant is the authoritative check -
+          // not derived from create/update/setting here (the Role editor
+          // only lets `magic` be turned on once one of those is already
+          // granted, but this route trusts the grant itself, same as every
+          // other `checkAccess` call in this codebase). See
+          // `content-types/permissions.ts` and `status/role-system-permissions.md`.
+          const denied = await checkAccess(context, entries, allTypes, type, "magic");
           if (denied) {
             const body = await denied.json().catch(() => ({})) as { message?: string };
             throw new Error(body.message || "You don't have permission to use Magic on this content type.");

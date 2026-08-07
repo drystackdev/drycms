@@ -1,5 +1,23 @@
 # Key Value system
 
+## 2026-08-07 update
+
+The admin **UI page + API route** documented below (`/key-value`,
+`server/routes/key-value.ts`, `src/pages/KeyValue.tsx`, its nav entry, and
+its `system-key-value` Role-editor permission) were **removed** at the
+user's request ("tôi thấy nó không cần thiết") - see
+`status/role-system-permissions.md`'s addendum for the removal details.
+
+**Everything else this file documents is still live and unaffected**: the
+`src/kv/` store engine itself (memory store, local/SQLite/D1/KV/GitHub/
+GitLab adapters), the `kv` config option, and - most importantly - the
+auth-security work that was built in the same effort (`server/auth-security.ts`'s
+session blacklist/revocation on logout and password change, the JWT
+session-token format, rate limiting) all still depend on `src/kv/` directly
+and remain in production use. Only the standalone *browse/edit raw KV
+records* admin page is gone; nothing else in this file's history was
+touched.
+
 ## Plan
 
 - Rà soát kiến trúc hiện tại và các adapter liên quan.

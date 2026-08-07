@@ -1,7 +1,11 @@
 import { path } from "./config.js";
 import { resolveSession, SESSION_COOKIE_NAME } from "./session.js";
 
-const AUTHENTICATED_PAGES = new Set([`${path}/key-value`]);
+// No pages currently need a pre-emptive server-side redirect - every admin
+// page's own client-side `AuthGate`/`canAccess` guard is enough. Add a path
+// here (like `${path}/key-value` used to be) for a page that needs the
+// unauthenticated visitor redirected before it ever receives the SPA shell.
+const AUTHENTICATED_PAGES = new Set<string>([]);
 
 /** Protects pages that otherwise fall through to the SPA shell. API routes
  * already have their own authorization path; this prevents an unauthenticated

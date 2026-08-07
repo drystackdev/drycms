@@ -14,14 +14,15 @@ const type = (kind: ContentTypeDefinition["kind"], features?: ContentTypeDefinit
 
 describe("permission metadata", () => {
   it("derives collection and singleton actions from metadata", () => {
-    expect(permissionActionsFor(type("collection"))).toEqual(["view", "create", "update", "delete"]);
+    expect(permissionActionsFor(type("collection"))).toEqual(["view", "create", "update", "delete", "magic"]);
     expect(permissionActionsFor(type("collection", { draft: true }))).toEqual([
       "view",
       "create",
       "update",
       "delete",
+      "magic",
     ]);
-    expect(permissionActionsFor(type("singleton"))).toEqual(["setting"]);
+    expect(permissionActionsFor(type("singleton"))).toEqual(["setting", "magic"]);
     expect(permissionActionsFor(type("component"))).toEqual([]);
   });
 

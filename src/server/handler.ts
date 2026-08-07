@@ -11,7 +11,6 @@ import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as pageComponentsRoute from "./routes/page-components.js";
 import * as authRoute from "./routes/auth.js";
-import * as keyValueRoute from "./routes/key-value.js";
 import * as aiRoute from "./routes/ai.js";
 import * as memoryRoute from "./routes/memory.js";
 import * as systemSettingsRoute from "./routes/system-settings.js";
@@ -61,7 +60,6 @@ const API_ROUTES: Record<string, RouteModule> = {
   "richtext-components": richtextComponentsRoute,
   "page-components": pageComponentsRoute,
   auth: authRoute,
-  "key-value": keyValueRoute,
   ai: aiRoute,
   memory: memoryRoute,
   "system-settings": systemSettingsRoute,

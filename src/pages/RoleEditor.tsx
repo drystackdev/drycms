@@ -18,7 +18,6 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
-  KEY_VALUE_RESOURCE_ID,
   MEDIA_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   permissionActionsFor,
@@ -70,10 +69,10 @@ function permissionPrerequisites(resource: ContentTypeDefinition, action: Permis
 }
 
 /** None of the resources below have a real content table - each is a single
- * grantable "can use this page" toggle (`kind: "singleton"` gives it exactly
- * one `setting` action via `permissionActionsFor`), rendered together in the
- * "System" fieldset below rather than mixed into the real Collections/
- * Singletons lists. */
+ * grantable "can use this page" toggle, rendered as a flat `setting` row in
+ * the "System" fieldset below (never through `renderPermissionResource`/
+ * `permissionActionsFor`, so their `magic` action - real singletons also get
+ * one now - never applies here; none of these pages have a Magic feature). */
 const PERMISSION_RESOURCE: ContentTypeDefinition = {
   id: "system-permission",
   kind: "singleton",
@@ -134,22 +133,14 @@ const CONTENT_TYPES_RESOURCE: ContentTypeDefinition = {
   version: 0,
 };
 
-const KEY_VALUE_RESOURCE: ContentTypeDefinition = {
-  id: KEY_VALUE_RESOURCE_ID,
-  kind: "singleton",
-  name: "keyValue",
-  label: "Key Value",
-  description: "Manage the Key Value store.",
-  fields: [],
-  version: 0,
-};
-
 /** Every non-content-type admin page, rendered together as flat toggle rows
  * in the "System" fieldset - see `status/role-system-permissions.md`. AI
  * Keys deliberately has no entry here: `protectSystemMutation`
  * (`server/routes/content-entries.ts`) already hard-blocks non-super-admins
  * from mutating `aiKey` rows unconditionally, so a toggle here would grant a
- * nav link that still 403s on every write. */
+ * nav link that still 403s on every write. (Key Value used to have an entry
+ * here too - removed 2026-08-07 along with the whole admin page/route, see
+ * `status/key-value-system.md`.) */
 const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
   PERMISSION_RESOURCE,
   PAGE_COMPONENTS_RESOURCE,
@@ -157,7 +148,6 @@ const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
   ICON_MANAGEMENT_RESOURCE,
   RICHTEXT_COMPONENTS_RESOURCE,
   CONTENT_TYPES_RESOURCE,
-  KEY_VALUE_RESOURCE,
 ];
 
 /**
@@ -397,17 +387,20 @@ export default function RoleEditor({ id }: Props) {
 
   /** Shared by the Collections and Singletons fieldsets below - a
    * collapsible per-resource row with a summary dot per action and a
-   * switches panel underneath. A singleton's `expected` is always
-   * `["setting"]` (one dot, one switch), so this reads identically to the
-   * old flat single-CheckField layout it replaces, just wrapped in the same
-   * `<details>` shell Collections already uses. */
+   * switches panel underneath. A singleton's `expected` is `["setting",
+   * "magic"]` (two dots, two switches) - `renderPermissionResource` doesn't
+   * care about the exact list, `isEnabled`/`permissionPrerequisites` handle
+   * whatever `permissionActionsFor` returns for either kind. */
   function renderPermissionResource(resource: ContentTypeDefinition) {
     const expected = permissionActionsFor(resource);
     const isGranted = (action: PermissionAction) => {
       const permId = permissionIdFor(resource, action);
       return !!permId && grantedIds.has(permId);
     };
-    const viewGranted = expected.includes("view") ? isGranted("view") : true;
+    const isEnabled = (action: PermissionAction) => {
+      const prereqs = permissionPrerequisites(resource, action);
+      return prereqs.length === 0 || prereqs.some(isGranted);
+    };
     return (
       <details key={resource.id}>
         <summary>
@@ -434,7 +427,7 @@ export default function RoleEditor({ id }: Props) {
               label={ACTION_LABELS[action]}
               description={ACTION_DESCRIPTIONS[action]}
               value={isGranted(action)}
-              disabled={action !== "view" && !viewGranted}
+              disabled={!isEnabled(action)}
               onChange={(checked) => togglePermission(resource, action, checked)}
             />
           ))}

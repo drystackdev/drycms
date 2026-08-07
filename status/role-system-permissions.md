@@ -170,3 +170,79 @@ if that assumption is wrong.
 ## Speed
 
 Planned and fully implemented in one session (2026-08-07).
+
+## Addendum: explicit `magic` permission (2026-08-07, same day)
+
+Follow-up request: Magic shouldn't be a *derived* gate (create&&update /
+setting) - it needed to be its own explicit, stored per-resource grant, for
+every collection AND every real singleton (not the synthetic System
+resources - none of those have a Magic feature).
+
+- `content-types/permissions.ts` - `PERMISSION_ACTIONS` gained `"magic"`;
+  `permissionActionsFor` now appends it for both collection and singleton
+  (still `[]` for component). System resources never call
+  `permissionActionsFor` (their System-fieldset rendering hardcodes
+  `"setting"` directly), so they don't sprout a Magic toggle.
+- `RoleEditor.tsx` - generalized the old hardcoded "View gates
+  Create/Update/Delete" rule into `permissionPrerequisites(resource,
+  action)`: returns which OTHER action(s) must be granted first (OR
+  semantics). `magic`'s prerequisite is `["create","update"]` for a
+  collection, `["setting"]` for a singleton - the switch renders disabled
+  until satisfied. `togglePermission` replaced its one-off "turning off View
+  clears everything" branch with a general fixed-point cascade: after any
+  toggle, repeatedly drop any granted action whose prerequisite no longer
+  holds (so turning off both Create and Update also drops Magic, same as
+  turning off View already dropped everything).
+- `ContentEntryEditor.tsx` - `canUseMagic` simplified to
+  `canAccess(type.id, "magic")` directly (previously derived from
+  create&&update/setting - now that derivation only decides whether the
+  Role editor lets `magic` be turned ON, not whether it's granted).
+- `ai-magic-write.ts` - the server-side `checkAccess` call (line ~314,
+  `streamMagicWrite`) now checks `"magic"` instead of `update`/`setting` -
+  this is the authoritative enforcement point, covering both regular Magic
+  turns and RichText "Rewrite selection" (same endpoint).
+- `permissions.test.ts` updated for the new expected action lists.
+
+**Known gap, not closed**: the RichText "Rewrite selection" inline button
+(`AiRewriteButton`, via `rewriteApi.ready` in `ContentEntryEditor.tsx`) is
+still gated only on `aiKey.ready`, not `canUseMagic` - so it can render
+enabled for a role without the `magic` grant. Clicking it still hits the
+same server endpoint and gets rejected there (`checkAccess(..., "magic")`),
+so this is a UX inconsistency (button visible, then fails on click), not a
+permission bypass. Left alone to avoid a hook-reordering refactor
+(`rewriteApi`'s `useMemo` sits before `type`/`canUseMagic` are computed in
+the component) beyond what was asked. Revisit if the button-visible/
+API-rejects mismatch is confusing in practice.
+
+## Addendum: Key Value removed entirely (2026-08-07, same day)
+
+User call: the whole Key Value admin feature ("UI và code liên quan") was
+unnecessary - removed rather than kept as a System permission. Deleted:
+
+- `src/pages/KeyValue.tsx`, `src/server/routes/key-value.ts` (whole files)
+- Its `App.tsx` route + lazy import, `DryLayout.tsx` NAV entry,
+  `handler.ts`'s `API_ROUTES` registration
+- `KEY_VALUE_RESOURCE_ID` (`permissions.ts`) and `KEY_VALUE_RESOURCE`
+  (`RoleEditor.tsx`'s `SYSTEM_RESOURCES` - now 6 entries, not 7)
+- Its `/key-value` entry in `page-guard.ts`'s `AUTHENTICATED_PAGES` (now
+  empty - `guardPageRequest`/its 3 call sites in `entry-node.ts`/
+  `entry-worker.ts`/`dev-server.mjs` were left in place as reusable
+  general-purpose infrastructure, not deleted just because their one
+  configured path went away)
+- The `KeyValue` icon - removed at its actual source (`icons.config.json`),
+  then regenerated via `bun run build:icons` rather than hand-editing the
+  generated `components/icons/index.tsx`
+
+**Deliberately NOT touched**: `src/kv/*` (the underlying store engine) and
+everything in `server/auth-security.ts` that depends on it (session
+revocation/blacklist, login rate limiting) - confirmed via
+`codegraph_explore` that `auth-security.ts` builds its own `KeyValueStore`
+independently of `routes/key-value.ts`, so it was never affected by this
+route's existence and isn't affected by its removal. See
+`status/key-value-system.md`'s own 2026-08-07 update for the fuller
+rationale. `kv/kv.test.ts` (tests the engine, not the removed route) is
+untouched and still passes.
+
+Verification: `bun run typecheck` clean; `bun run test` - all files/tests
+still passing after removal (see below for the exact count at time of
+verification).

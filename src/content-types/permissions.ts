@@ -33,7 +33,7 @@ export const PAGE_COMPONENTS_RESOURCE_ID = "system-page-components";
 /** Same synthetic-resource pattern as `PAGE_COMPONENTS_RESOURCE_ID` above,
  * one id per admin page that isn't backed by a real `ContentTypeDefinition`
  * - grouped together in `RoleEditor.tsx`'s "System" fieldset, checked at the
- * matching route (`handler.ts`/`content-types.ts`/`key-value.ts`) with
+ * matching route (`handler.ts`/`content-types.ts`) with
  * `requirePermission(context, id, "setting")`, same as Page Components.
  *
  * `system-media` is the one exception: the `storage` API it would gate is
@@ -41,12 +41,17 @@ export const PAGE_COMPONENTS_RESOURCE_ID = "system-page-components";
  * content type reads/writes through it, not just the standalone Media
  * page), so gating the route itself would block unrelated content editing.
  * It's wired up client-side only (nav + page guard) - see
- * `status/role-system-permissions.md`. */
+ * `status/role-system-permissions.md`.
+ *
+ * (There used to be a `system-key-value` entry here too, for the admin
+ * Key Value browser - removed 2026-08-07 along with that whole page/route,
+ * see `status/key-value-system.md`. The underlying `kv/` store engine it
+ * browsed is unrelated infrastructure - unaffected, still used by
+ * `server/auth-security.ts` for session revocation/rate-limiting.) */
 export const MEDIA_RESOURCE_ID = "system-media";
 export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
-export const KEY_VALUE_RESOURCE_ID = "system-key-value";
 
 /** The exact actions the Role editor and request authorization expose for a
  * content type. Pure and safe to import from client code. */
