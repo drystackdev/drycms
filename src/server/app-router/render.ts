@@ -6,11 +6,16 @@ import { path as adminPath, lang as siteLang } from "../config.js";
 import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
+import { installMediaSrcHook } from "./media-src-hook.js";
 import { resolveMatchToVNode } from "./resolve-match.js";
 import type { ModuleLoader } from "./route-tree.js";
 import { installVeiMarkerHook } from "./vei-marker-hook.js";
 
 installVeiMarkerHook();
+// Also installed client-side (`apps/hydrate-client.ts`) - unlike the marker
+// hook, whose attributes hydration never rewrites, a `src` that isn't
+// resolved on both sides reverts to its raw storage id on any re-render.
+installMediaSrcHook();
 
 export type { PageProps, LayoutProps } from "./render-types.js";
 

@@ -39,10 +39,16 @@ export function encodePath(path: string): string {
  * Lives here (not `src/apps/pages/lib`, its original home) so server-side
  * framework code (`app-router/render.ts`'s SEO tags) can use it too without
  * importing project page code.
+ *
+ * `basePath` defaults to `adminPath()` and exists for the one caller that
+ * can't use it: the VEI overlay ships in the PUBLIC site bundle, where
+ * `window.__DRY_CONFIG__` is never injected (only the admin app gets it, see
+ * `server/client-config.ts`) - it reads the admin path out of its own
+ * `#dry-vei-config` script instead and passes it in here.
  */
-export function resolveImageSrc(value: string): string {
+export function resolveImageSrc(value: string, basePath: string = adminPath()): string {
   const resolved =
-    /^https?:\/\//i.test(value) || value.startsWith("/") ? String(value) : `${adminPath()}/api/storage/${encodePath(value)}`;
+    /^https?:\/\//i.test(value) || value.startsWith("/") ? String(value) : `${basePath}/api/storage/${encodePath(value)}`;
   // Carries the Visual Editing Interface's provenance across the rewrite, so
   // `<img src={imageUrl(post.hero)} />` still marks itself (`plans/vei.md`).
   // A `String.prototype` method would have dropped it - this is the one

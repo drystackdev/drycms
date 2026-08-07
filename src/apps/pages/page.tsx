@@ -1,5 +1,3 @@
-import { imageSrc } from "./lib/image-url.js";
-
 function formatDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -50,7 +48,7 @@ export default async function HomePage() {
           </div>
           <div class="-mx-4 mt-8 aspect-4/3 sm:mx-0 sm:mt-0 sm:w-1/2">
             <img
-              src={imageSrc(hero.image)}
+              src={hero.image}
               alt="Mai Anh Quyền tại lễ trao giải Báo chí toàn quốc về phòng, chống HIV/AIDS"
               class="h-full w-full object-cover"
               style={{
@@ -141,7 +139,7 @@ export default async function HomePage() {
                 class="overflow-hidden rounded-2xl border border-slate-200 bg-white"
               >
                 {post.image ? (
-                  <img src={imageSrc(post.image)} alt={post.title} class="h-36 w-full object-cover" />
+                  <img src={post.image} alt={post.title} class="h-36 w-full object-cover" />
                 ) : (
                   <div class="h-36 bg-slate-200" />
                 )}
@@ -181,7 +179,7 @@ export default async function HomePage() {
             >
               {item.image ? (
                 <img
-                  src={imageSrc(item.image)}
+                  src={item.image}
                   alt={item.outlet}
                   class="h-12 w-12 shrink-0 rounded-lg object-cover"
                 />

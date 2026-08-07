@@ -207,6 +207,22 @@ mechanism without sharing a directory. Remote Git hosting is intentionally
 not a storage or KV backend: it would add network round trips, rate limits,
 retry/concurrency behavior and failure modes to ordinary runtime requests.
 
+An `image` field stores a bare storage id (`"hero.jpg"`), never a URL -
+`resolveImageSrc()` (`storage/http-source.ts`) turns one into a servable
+`/<path>/api/storage/<id>`, passing an already-absolute or root-relative
+value (the picker's "Link" tab) through untouched. Page code does NOT call
+it: `media-src-hook.ts` installs a Preact `options.vnode` hook that resolves
+`src`/`poster` on `img`/`video`/`audio`/`source`/`track` as each vnode is
+created, so `<img src={post.image} />` just works. It's installed on BOTH
+sides - `app-router/render.ts` for SSR and `apps/hydrate-client.ts` for the
+browser (which also seeds `setAdminPath()` from `#dry-vei-config`, since
+`window.__DRY_CONFIG__` exists only in the admin app) - because a `src`
+resolved on only one side reverts to its raw storage id on any re-render.
+Two callers still resolve explicitly, both outside JSX: `render.ts`'s
+`og:image`/JSON-LD tags, and the VEI overlay's DOM preview patch, which
+writes attributes with `setAttribute` and so never passes through Preact at
+all.
+
 ## RichText
 
 A hand-built rich text editor (`src/components/RichTextField/`, ProseMirror-

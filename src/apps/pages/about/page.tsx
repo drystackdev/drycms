@@ -1,5 +1,3 @@
-import { imageSrc } from "../lib/image-url.js";
-
 export default async function AboutPage() {
   const about = await dry().singleton("about").get();
   if (!about) return null;
@@ -11,7 +9,7 @@ export default async function AboutPage() {
       <section class="mx-auto max-w-6xl px-4 py-16">
         <div class="grid items-center gap-10 sm:grid-cols-2">
           <img
-            src={imageSrc(intro.image)}
+            src={intro.image}
             alt={intro.headline}
             class="aspect-square w-full rounded-2xl object-cover object-bottom"
           />
@@ -78,7 +76,7 @@ export default async function AboutPage() {
               class="group flex items-start gap-4 rounded-2xl border border-slate-200 p-5 hover:border-red-300 hover:bg-red-50"
             >
               {item.image ? (
-                <img src={imageSrc(item.image)} alt={item.outlet} class="h-12 w-12 shrink-0 rounded-lg object-cover" />
+                <img src={item.image} alt={item.outlet} class="h-12 w-12 shrink-0 rounded-lg object-cover" />
               ) : (
                 <div class="h-12 w-12 shrink-0 rounded-lg bg-slate-200" />
               )}

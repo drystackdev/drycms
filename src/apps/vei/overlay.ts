@@ -6,6 +6,7 @@ import {
   type EntryDraftRecord,
 } from "../../content-types/entry-draft-db.js";
 import { encodeEntryId } from "../../lib/id-hash.js";
+import { resolveImageSrc } from "../../storage/http-source.js";
 import { HYDRATED_EVENT } from "../hydrated-event.js";
 import { EditButtonDock, EditingDock, type EditingDockHandle, type EditorMode } from "./Dock.js";
 import { MARKER_STYLES, OVERLAY_STYLES } from "./overlay-styles.js";
@@ -220,18 +221,37 @@ function valueAtPath(value: unknown, path: string, fromField: string): unknown {
 }
 
 /**
+ * What the marked ATTRIBUTE should hold for a new field value. Only `image`
+ * needs the translation: it stores a bare storage id ("hero.jpg"), and the
+ * page put it in `src` through `resolveImageSrc` - writing the raw draft
+ * value back would resolve it relative to the current page
+ * (`/blogs/<slug>/hero.jpg`) and 404. Every other boxable field type already
+ * IS what the attribute holds.
+ */
+function attributeValue(ref: DryRef, value: unknown, basePath: string): string {
+  const text = value === null ? "" : String(value);
+  // A cleared image is the one case with nothing to resolve - `resolveImageSrc("")`
+  // would build a `/api/storage/` URL pointing at no file at all.
+  if (ref.fieldType !== "image" || text === "") return text;
+  return resolveImageSrc(text, basePath);
+}
+
+/**
  * Applies one in-flight edit straight to the DOM - the whole of "preview"
  * (`plans/vei.md`'s decision #6). Cheap because the markers already say
  * which node owns which field. It does mean the DOM and Preact's vnode tree
  * diverge, which is fine for a page that never re-renders after hydration:
  * this is an MPA, and edit mode adds no client router.
  */
-function applyPreview(detail: {
-  name: string;
-  value: unknown;
-  typeSlug: string;
-  entryId: string | null;
-}): void {
+function applyPreview(
+  detail: {
+    name: string;
+    value: unknown;
+    typeSlug: string;
+    entryId: string | null;
+  },
+  basePath: string,
+): void {
   for (const node of document.querySelectorAll("*")) {
     for (const attribute of node.getAttributeNames()) {
       if (attribute !== "data-dry" && !attribute.startsWith("data-dry-"))
@@ -247,7 +267,7 @@ function applyPreview(detail: {
         const target = attribute.slice("data-dry-".length);
         if (attribute === "data-dry") node.textContent = String(next);
         else if (target === "html") node.innerHTML = String(next);
-        else node.setAttribute(target, String(next));
+        else node.setAttribute(target, attributeValue(ref, next, basePath));
       }
     }
   }
@@ -316,6 +336,9 @@ function main(): void {
   const config = readConfig();
   if (!config) return;
   if (!config.edit && !hasAdminHint()) return;
+  // Read out once so the closures below don't each have to re-narrow `config`
+  // (which is why the rest of this function says `config as VeiConfig`).
+  const basePath = config.path;
 
   const host = document.createElement("div");
   host.id = "dry-vei-overlay";
@@ -436,7 +459,7 @@ function main(): void {
   function applyDraftRecord(target: EditTarget, draft: EntryDraftRecord): void {
     const entryId = target.kind === "singleton" ? null : encodeEntryId(target.id);
     for (const [name, value] of Object.entries(draft.value)) {
-      applyPreview({ name, value, typeSlug: target.type, entryId });
+      applyPreview({ name, value, typeSlug: target.type, entryId }, basePath);
     }
   }
 
@@ -850,7 +873,7 @@ function main(): void {
       clearTimeout(dialogLoadTimer);
       panel.classList.remove("loading");
     } else if (message?.type === "vei:input" && message.detail) {
-      applyPreview(message.detail);
+      applyPreview(message.detail, basePath);
       schedulePreviewCountRefresh();
     }
     // Escape pressed with focus inside the frame never reaches this

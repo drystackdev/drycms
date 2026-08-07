@@ -3,9 +3,42 @@ import { setReplayLog } from "../content-types/dry-reader-client.js";
 import { setCurrentParams } from "../content-types/params-reader-client.js";
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import { matchRoute } from "../server/app-router/match.js";
+import { installMediaSrcHook } from "../server/app-router/media-src-hook.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { discoverRoutes } from "../server/app-router/route-tree.js";
+import { setAdminPath } from "../storage/admin-path.js";
 import { HYDRATED_EVENT } from "./hydrated-event.js";
+
+/**
+ * `resolveImageSrc` (through `media-src-hook.ts` below) needs the admin base
+ * path, and `admin-path.ts` reads it from `window.__DRY_CONFIG__` - which
+ * only the ADMIN app injects (`server/client-config.ts`), never a public
+ * page. Without this, a project whose `dry.config.ts` sets `path` to
+ * anything but the default would resolve every `src` against `/dry` here
+ * while the server resolved it correctly, i.e. a hydration mismatch that
+ * only shows up on a re-render. `#dry-vei-config` carries the real value on
+ * every page, cached and anonymous ones included (see `render.ts`'s
+ * `veiConfigScript`), and this module script runs after the document is
+ * parsed, so the element is always there by now.
+ */
+function seedAdminPath(): void {
+  const element = document.getElementById("dry-vei-config");
+  if (!element?.textContent) return;
+  try {
+    const { path } = JSON.parse(element.textContent) as { path?: string };
+    if (typeof path === "string") setAdminPath(path);
+  } catch {
+    // Falls back to `admin-path.ts`'s own default - the same thing that
+    // happened before this existed.
+  }
+}
+seedAdminPath();
+
+// The same hook `render.ts` installs server-side, so a `src` this bundle
+// re-renders resolves identically to the one already in the served HTML
+// (`media-src-hook.ts`). Installed at module scope, before `main()` builds
+// any vnode.
+installMediaSrcHook();
 
 /**
  * Client bootstrap for `src/apps/pages/**` (`plans/app-router.md`'s Giai
