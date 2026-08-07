@@ -1,11 +1,24 @@
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
+import type { EntryValue } from "./engine/entry-codec.js";
+import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import { planMigration, type Statement } from "./migration.js";
 import { SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 export interface PackagedSeed {
   contentTypes: ContentTypeDefinition[];
+  /**
+   * A singleton's actual row value at the time `bun run build:schema` last
+   * ran, keyed by content-type `id` (stable across renames, same identity
+   * `contentTypes` itself keeps) - see `scripts/lib/schema-sync.ts`'s
+   * `writeContentTypeSeedFile`. Deliberately singleton-only, not a general
+   * entries/rows seed (that stays out of scope - `plans/content-type-seed.md`
+   * decision #1): a singleton is app-owned config (e.g. site-wide SEO
+   * defaults), unlike a collection's rows, which are real user content.
+   * Applied by `applyPackagedSingletonData` below.
+   */
+  singletonData?: Record<string, EntryValue>;
 }
 
 /**
@@ -605,6 +618,41 @@ export function resolveDefaultContentTypeDefinitions(
   packagedSeed: PackagedSeed | undefined = realPackagedSeed,
 ): ContentTypeDefinition[] {
   return packagedSeed?.contentTypes ?? defaultContentTypeDefinitions();
+}
+
+/**
+ * Seeds `dry.seed.json`'s optional `singletonData` into any singleton that
+ * doesn't have a row yet. Called exactly once, from the SAME place
+ * `seed-assets.ts`'s `extractPackagedSeedAssets` already runs
+ * (`routes/auth.ts`'s `register-first-admin`, gated on `hasAnyUser ===
+ * false`) - that's the only moment a fresh instance is guaranteed to have no
+ * admin-made edits yet, so there's no live data this could ever clobber.
+ * `pendingSeedStatements` only creates a singleton's TABLE, never a row (see
+ * `plans/content-type-seed.md`), so every packaged singleton is still
+ * rowless by the time this runs - the `getSingletonEntry` check per type is
+ * just cheap insurance, not a real race in practice.
+ *
+ * `password`/`secretkey` fields never round-trip through this: a captured
+ * row's value for one is the masked `{hasExisting: true}` marker
+ * (`entry-codec.ts`'s `rowToValue`), which `valueToRow` writes nothing for on
+ * insert - a singleton seeded this way gets every OTHER field populated, but
+ * that one column stays empty until the admin sets it by hand.
+ */
+export async function applyPackagedSingletonData(
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  packagedSeed: PackagedSeed | undefined = realPackagedSeed,
+): Promise<void> {
+  const data = packagedSeed?.singletonData;
+  if (!data) return;
+  for (const type of allTypes) {
+    if (type.kind !== "singleton") continue;
+    const value = data[type.id];
+    if (!value) continue;
+    const existing = await entryAdapter.getSingletonEntry(type, allTypes);
+    if (existing) continue;
+    await entryAdapter.saveSingletonEntry(type, allTypes, value);
+  }
 }
 
 /**

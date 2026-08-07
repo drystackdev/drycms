@@ -9,6 +9,7 @@ import { signSession } from "../../lib/session-token.js";
 import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { extractPackagedSeedAssets } from "../../content-types/seed-assets.js";
+import { applyPackagedSingletonData } from "../../content-types/seed.js";
 import { resolved } from "../config.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
@@ -277,8 +278,13 @@ export const POST: DryRouteHandler = async (context) => {
         // `plans/content-type-seed.md`). Content-type schema itself doesn't
         // need anything here - `content-types/seed.ts`'s every-boot seeding
         // already applies an app's own `dry.seed.json` (if any) before any
-        // request is served.
+        // request is served. `dry.seed.json`'s optional `singletonData`
+        // DOES need a call here though - unlike schema, a singleton's ROW
+        // only ever gets seeded at this one-time point (see
+        // `applyPackagedSingletonData`'s doc comment), same reasoning as the
+        // asset zip.
         await extractPackagedSeedAssets(resolved);
+        await applyPackagedSingletonData(entryAdapter, allTypes);
 
         const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
         const name = typeof body.name === "string" ? body.name.trim() : "";

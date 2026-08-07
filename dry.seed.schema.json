@@ -9,6 +9,11 @@
     "contentTypes": {
       "type": "array",
       "items": { "$ref": "#/$defs/ContentTypeDefinition" }
+    },
+    "singletonData": {
+      "type": "object",
+      "description": "A singleton's row value at the time `bun run build:schema`/`seed:sync` last ran, keyed by the matching entry's `contentTypes[].id`. Deliberately untyped per entry (same reasoning as FieldDefinition's `config`/`default`) - shape is whatever that content type's fields produce. Applied once, at first-admin-registration time (see src/content-types/seed.ts's applyPackagedSingletonData) - never for `collection`/`component` types.",
+      "additionalProperties": { "type": "object" }
     }
   },
   "required": ["contentTypes"],

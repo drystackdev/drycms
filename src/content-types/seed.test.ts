@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { EntryValue } from "./engine/entry-codec.js";
+import type { ContentEntryEngineAdapter, EntryRow } from "./engine/entries-types.js";
 import { validateContentTypeDefinition } from "./naming.js";
 import {
+  applyPackagedSingletonData,
   defaultContentTypeDefinitions,
   pendingSeedStatements,
   resolveDefaultContentTypeDefinitions,
@@ -359,5 +362,107 @@ describe("pendingSeedStatements", () => {
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
     expect(metadataInserts).toHaveLength(9);
+  });
+});
+
+describe("applyPackagedSingletonData", () => {
+  const singleton: ContentTypeDefinition = {
+    id: "app-settings",
+    kind: "singleton",
+    name: "settings",
+    label: "Settings",
+    fields: [],
+    version: 0,
+  };
+  const collection: ContentTypeDefinition = {
+    id: "app-post",
+    kind: "collection",
+    name: "post",
+    label: "Post",
+    fields: [],
+    version: 0,
+  };
+  const allTypes = [singleton, collection];
+
+  function fakeAdapter(overrides: Partial<ContentEntryEngineAdapter>): ContentEntryEngineAdapter {
+    const notImplemented = () => {
+      throw new Error("not implemented in this fake");
+    };
+    return {
+      listEntries: notImplemented,
+      getEntry: notImplemented,
+      findEntry: notImplemented,
+      getRawEntry: notImplemented,
+      createEntry: notImplemented,
+      updateEntry: notImplemented,
+      deleteEntry: notImplemented,
+      reorderEntries: notImplemented,
+      getSingletonEntry: notImplemented,
+      saveSingletonEntry: notImplemented,
+      ensureSingletonEntry: notImplemented,
+      getResourceVersion: notImplemented,
+      ...overrides,
+    } as ContentEntryEngineAdapter;
+  }
+
+  it("no-ops when the packaged seed has no singletonData", async () => {
+    const adapter = fakeAdapter({});
+    await expect(
+      applyPackagedSingletonData(adapter, allTypes, { contentTypes: allTypes }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("saves a singleton's packaged value when it has no row yet", async () => {
+    const saved: { type: ContentTypeDefinition; value: EntryValue }[] = [];
+    const adapter = fakeAdapter({
+      getSingletonEntry: async () => null,
+      saveSingletonEntry: async (type, _allTypes, value) => {
+        saved.push({ type, value });
+        return { id: 1, value } satisfies EntryRow;
+      },
+    });
+
+    await applyPackagedSingletonData(adapter, allTypes, {
+      contentTypes: allTypes,
+      singletonData: { "app-settings": { siteName: "Acme" } },
+    });
+
+    expect(saved).toEqual([{ type: singleton, value: { siteName: "Acme" } }]);
+  });
+
+  it("skips a singleton that already has a row, even though it's in singletonData", async () => {
+    let saveCalled = false;
+    const adapter = fakeAdapter({
+      getSingletonEntry: async () => ({ id: 1, value: { siteName: "Existing" } }),
+      saveSingletonEntry: async () => {
+        saveCalled = true;
+        throw new Error("should not be called");
+      },
+    });
+
+    await applyPackagedSingletonData(adapter, allTypes, {
+      contentTypes: allTypes,
+      singletonData: { "app-settings": { siteName: "Acme" } },
+    });
+
+    expect(saveCalled).toBe(false);
+  });
+
+  it("ignores collection/component types even if singletonData somehow carries their id", async () => {
+    let saveCalled = false;
+    const adapter = fakeAdapter({
+      getSingletonEntry: async () => null,
+      saveSingletonEntry: async () => {
+        saveCalled = true;
+        throw new Error("should not be called for a collection");
+      },
+    });
+
+    await applyPackagedSingletonData(adapter, allTypes, {
+      contentTypes: allTypes,
+      singletonData: { "app-post": { title: "Hello" } },
+    });
+
+    expect(saveCalled).toBe(false);
   });
 });

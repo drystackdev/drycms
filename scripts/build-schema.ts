@@ -1,8 +1,11 @@
 /**
  * Freezes the current dev DB's schema + media into two git-committable
  * artifacts, without running a full `bun run build`:
- *   - `dry.seed.json` (repo root) - every content type's definition, same
- *     as `bun run seed:sync` (`scripts/lib/schema-sync.ts`).
+ *   - `dry.seed.json` (repo root) - every content type's definition, plus
+ *     each singleton's actual row value (`PackagedSeed.singletonData`,
+ *     applied once at first-admin-registration time by
+ *     `content-types/seed.ts`'s `applyPackagedSingletonData`) - same as
+ *     `bun run seed:sync` (`scripts/lib/schema-sync.ts`).
  *   - `public.zip` (repo root) - the whole `public/` directory (uploaded
  *     media + `dry-icons/`, see `resolveStorageOption()` in
  *     `server/options.ts` - local `storage` resolves straight to `public/`)
@@ -23,7 +26,7 @@ import { resolved } from "../src/server/config.js";
 import { writeContentTypeSeedFile } from "./lib/schema-sync.js";
 
 const schemaResult = await writeContentTypeSeedFile();
-if (schemaResult) console.log(`[drycms] wrote ${schemaResult.count} content type(s) -> ${schemaResult.target}`);
+if (schemaResult) console.log(`[drycms] wrote ${schemaResult.count} content type(s) (${schemaResult.singletonCount} with singleton data) -> ${schemaResult.target}`);
 
 if (resolved.storage.kind !== "local") {
   console.log(`[drycms] storage.kind is "${resolved.storage.kind}" - public.zip only makes sense for local storage. Skipping.`);

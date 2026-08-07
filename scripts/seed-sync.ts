@@ -11,4 +11,4 @@
 import { writeContentTypeSeedFile } from "./lib/schema-sync.js";
 
 const result = await writeContentTypeSeedFile();
-if (result) console.log(`[drycms] seed:sync wrote ${result.count} content type(s) -> ${result.target}`);
+if (result) console.log(`[drycms] seed:sync wrote ${result.count} content type(s) (${result.singletonCount} with singleton data) -> ${result.target}`);
