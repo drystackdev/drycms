@@ -237,3 +237,66 @@ is `local`/`server`" in its error messages. `resolveAiOption()` takes
 Single-session implementation, all 4 phases + two `dry.config.ts`
 simplification follow-ups completed and verified 2026-08-05. No open
 blockers.
+
+## Follow-up 3: first real deploy - 4 runtime blockers (2026-08-08)
+
+The adapter had never actually been deployed until now. `wrangler deploy`
+against a real account surfaced four distinct failures, three of which
+Cloudflare hits while merely VALIDATING the uploaded script (it runs the
+module's global scope before any request), so they failed the upload
+outright rather than showing up as a bad response:
+
+1. `content-types/seed-assets.ts` computed
+   `new URL("./seed-assets.zip", import.meta.url)` at module scope.
+   `import.meta.url` is not a resolvable base URL in workerd →
+   `Uncaught TypeError: Invalid URL string`. Moved inside
+   `extractPackagedSeedAssets`, plus an early return when no asset root is
+   local (always the case under `kind: "cloudflare"`), so neither the URL
+   nor `node:fs` is reached there at all.
+2. `app-router/build-id.ts` called `crypto.randomUUID()` at module scope →
+   `Disallowed operation called within global scope. ... generating random
+   values are not allowed within global scope`. `BUILD_ID` (a const) became
+   `buildId()` (memoized on first call). Both call sites in `pages-cache.ts`
+   are request-time, so the value is as stable as the const was. The old doc
+   comment's claim that this "works unchanged on a Workers isolate" was
+   simply wrong.
+3. The SSR bundle's entry chunk re-exported every shared module the
+   `src/apps/pages/**` chunks also used (`export { ..., REF_SYMBOL as o,
+   ... }`) - normal rollup code-splitting. workerd validates EVERY export of
+   the entry as a handler → `Incorrect type for map entry 'o': the provided
+   value is not of type 'function or ExportedHandler'`. Fixed with
+   `inlineDynamicImports: true` for the worker build only, gated on a new
+   `DRYCMS_WORKER_BUILD=1` env var set in `build:worker` (`isSsrBuild` alone
+   can't tell the Node and Workers SSR builds apart). Costs nothing:
+   `wrangler deploy` concatenates the whole graph into one script anyway.
+   The Node build still code-splits as before.
+4. Runtime, after the script finally booted: registering the first admin
+   500'd with `NotSupportedError: Pbkdf2 failed: iteration counts above
+   100000 are not supported (requested 210000)`. Workers caps PBKDF2 at
+   100,000 and offers no scrypt/argon2 to trade up to, so
+   `lib/password-hash.ts`'s OWASP-minimum 210,000 is unreachable there.
+   Since the old `v1:` format stored only `salt:hash` (count implied by a
+   constant), lowering the constant would have invalidated every existing
+   hash - so a `v2:<iterations>:<salt>:<hash>` format now carries the count,
+   `v1:` still verifies at 210,000 (works on Node; unverifiable on Workers,
+   where `verifyPassword`'s new try/catch returns `false` instead of
+   throwing a 500), and new hashes are written at the 100,000 cap.
+
+Debugging note: `wrangler dev --local` reproduces 1-3 exactly (same workerd
+validation), which is far faster than round-tripping through a Cloudflare
+build. `wrangler tail --format json` caught #4, whose detail
+`routes/auth.ts`'s `errorResponse` deliberately hides from the client
+(`{"error":"internal"}`). `wrangler tail` needs shell job control
+(`nohup ... &` + `disown`); it produced no output under the agent harness's
+own background-process mechanism.
+
+Deployment also needs three secrets set on the Worker - `DRYCMS_SECRET_KEY`,
+`DRYCMS_JWT_ACTIVE_KID`, `DRYCMS_BOOTSTRAP_TOKEN` (>=32 chars, gates
+`register-first-admin`). Set them with an interactive `wrangler secret put`,
+never `echo x | wrangler secret put`: the trailing newline `echo` adds
+passes the length check but can never match what the form sends, because
+`Headers` strips whitespace on the client side while an env var is compared
+raw - a silent, permanent "The bootstrap token is invalid."
+
+Verified end-to-end on `wrangler dev --local`: register-first-admin → 201
+with the Super Admin role attached, login → 200, wrong password → 401.
