@@ -185,3 +185,22 @@ tính năng đang chạy tốt. Đã sửa `DisplayFieldsInput` trong `FieldDial
 + verify live trên dev server (tắt Repeatable → Display fields + Validation
 group biến mất ngay; Cancel không lưu gì). Test suite liên quan (74 test,
 4 file) vẫn pass.
+
+## Follow-up 2 (cùng ngày): card ở trang Content Types thiếu Relation Mirror
+User báo: `Category` có field Relation Mirror ("Blog Post") nhưng
+`.builder-collection-card` ở `/dry/content-types` không hiện icon nào, chỉ
+ghi "No custom fields yet". Nguyên nhân: `CollectionCard`
+(`BuilderContentType.tsx`) chỉ lặp qua `definition.fields` (field thật) - field
+mirror là synthetic, không nằm trong `fields[]`, nên chưa từng hiện ở đây kể
+cả trước khi có tính năng displayFields (không phải do phiên này gây ra, chỉ
+là gap có sẵn giờ mới lộ ra rõ khi user để ý tới mirror).
+
+Sửa: `CollectionCard` nhận thêm prop `allTypes` (draft-overlaid, do
+`BuilderCollectionList` build sẵn - cùng kiểu merge "draft thắng + new draft
+chưa live" mà `ContentTypeEditor.tsx` đã dùng), gọi
+`relationMirrorFieldsFor(definition, allTypes)` rồi nối vào danh sách field
+hiện icon. Đã verify trực tiếp: card Category giờ hiện 1 icon tím, tooltip
+"Blog Post · Relation Mirror" đúng. `relationmirror` đã có sẵn icon+màu riêng
+trong `field-type-icons.ts` (dùng chung với `relation`) nên không cần thêm gì
+ở đó. Typecheck sạch, `bun run test` vẫn 951/967 pass (16 fail còn lại vẫn là
+lỗi `dry.seed.json` có sẵn, không liên quan).

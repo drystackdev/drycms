@@ -555,7 +555,7 @@ function DisplayFieldsInput({
   // (any cardinality, including `manyToOne`) and a `relationmirror` always
   // render through `RelationField`, which shows a summary card even for a
   // single picked item - so those stay available regardless of cardinality.
-  if (draftType === "component" && !(config as ComponentFieldConfig).repeatable) {
+  if (draftType === "component" && !(config.repeatable as ComponentFieldConfig["repeatable"] | undefined)) {
     return null;
   }
   const targetTypeId =

@@ -14,6 +14,7 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import { diffContentType } from "../content-types/draft-diff.js";
 import { drafts as draftsSignal } from "../content-types/draft-store.js";
 import { fieldTypes } from "../content-types/field-registry.js";
+import { relationMirrorFieldsFor } from "../content-types/system-fields.js";
 import type {
   ContentTypeDefinition,
   ContentTypeKind,
@@ -57,20 +58,33 @@ function highlightOrPlain(
 
 function CollectionCard({
   definition,
+  allTypes,
   status,
   highlights,
   onOpen,
   onApply,
 }: {
   definition: ContentTypeDefinition;
+  /** Every OTHER content type (draft-overlaid, same as `ContentTypeEditor.tsx`'s
+   * own `allTypes`) - needed to compute this type's auto-generated
+   * `relationmirror` fields (`system-fields.ts`'s `relationMirrorFieldsFor`),
+   * which never live in `definition.fields` themselves. */
+  allTypes: ContentTypeDefinition[];
   status: { isNew: boolean; editedCount: number } | null;
   highlights: CardHighlights | null;
   onOpen: (id: string) => void;
   onApply: (id: string) => void;
 }) {
-  const fields = definition.fields.filter(
-    (field) => !(definition.deletedFieldIds ?? []).includes(field.id),
-  );
+  // Mirror fields appended after the real ones, same relative order the
+  // schema editor's own Fields list uses (`ContentTypeEditor.tsx`'s
+  // `systemFieldsForUi`) - a type with nothing but an incoming mirror still
+  // has something to show here, not "No custom fields yet".
+  const fields = [
+    ...definition.fields.filter(
+      (field) => !(definition.deletedFieldIds ?? []).includes(field.id),
+    ),
+    ...relationMirrorFieldsFor(definition, allTypes),
+  ];
   const featureCount = Object.values(definition.features ?? {}).filter(
     Boolean,
   ).length;
@@ -186,6 +200,24 @@ function BuilderCollectionList({
   const liveDefinitions = (definitions ?? []).filter(
     (definition) => definition.kind === kind && !definition.hidden,
   );
+  // Every type (every kind, draft-overlaid), for `CollectionCard`'s mirror-
+  // field computation - a relation field whose mirror shows up here can live
+  // on any OTHER type, not just this `kind`'s own list, so this deliberately
+  // doesn't reuse `liveDefinitions`' narrower filter. Same "draft wins, plus
+  // not-yet-live new drafts" merge `ContentTypeEditor.tsx`'s own `allTypes`
+  // load effect uses.
+  const allTypesWithDrafts = [
+    ...(definitions ?? []).map(
+      (definition) => pendingDrafts[definition.id]?.definition ?? definition,
+    ),
+    ...Object.values(pendingDrafts)
+      .filter(
+        (draft) =>
+          draft.isNew &&
+          !(definitions ?? []).some((d) => d.id === draft.definition.id),
+      )
+      .map((draft) => draft.definition),
+  ];
   const collections = [
     ...liveDefinitions.map((definition) => {
       const draft = pendingDrafts[definition.id];
@@ -283,6 +315,7 @@ function BuilderCollectionList({
         <CollectionCard
           key={definition.definition.id}
           definition={definition.definition}
+          allTypes={allTypesWithDrafts}
           status={definition.status}
           highlights={definition.highlights}
           onOpen={onOpen}
