@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { verifyPassword } from "../../lib/password-hash.js";
 import { defaultContentTypeDefinitions } from "../seed.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "./entry-tree.js";
@@ -66,7 +67,10 @@ describe("valueToRow", () => {
       password: { hasExisting: false, new: "hunter2" } satisfies MaskedValue,
       roles: [],
     });
-    expect(row.password).toMatch(/^v1:/);
+    // Asserted through `verifyPassword` rather than a version prefix: the
+    // point is that the column holds a real hash of what was typed, which
+    // stays true across `password-hash.ts`'s own format versions.
+    expect(await verifyPassword("hunter2", row.password as string)).toBe(true);
     expect(row.password).not.toBe("hunter2");
     expect(row.name).toBe("Ada");
   });
@@ -86,7 +90,8 @@ describe("valueToRow", () => {
       email: "ada@example.com",
       password: { hasExisting: true, new: "hunter2", confirm: "something-else" } satisfies MaskedValue,
     });
-    expect(row.password).toMatch(/^v1:/);
+    expect(await verifyPassword("hunter2", row.password as string)).toBe(true);
+    expect(await verifyPassword("something-else", row.password as string)).toBe(false);
   });
 
   it("writes a manyToOne relation's numeric id to its column", async () => {

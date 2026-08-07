@@ -23,7 +23,18 @@
   // static files and the admin shell's `index.html`.
   "assets": {
     "directory": "dist/client",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Cloudflare's asset layer answers a matching request BEFORE the Worker
+    // ever runs, and `/` matches `dist/client/index.html` - which is the
+    // ADMIN shell, not a site page. Without this, the site's own root page
+    // (`src/apps/pages/page.tsx`) is unreachable in production and `/`
+    // serves the admin SPA instead. `entry-worker.ts` already excludes
+    // `pathname === "/"` from its own asset branch for exactly this reason
+    // (mirroring `entry-node.ts`'s `tryServeStaticAsset`), but that code
+    // never got a chance to run. Scoped to `/` alone so every real asset
+    // (`/assets/*`, images, ...) still comes straight off the asset layer
+    // without spending a Worker invocation.
+    "run_worker_first": ["/"]
   },
 
   // `dry.config.ts`'s `kind: "cloudflare"` uses this for content (Node-only

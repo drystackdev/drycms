@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import packagedSeedJson from "../../dry.seed.json";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import { planMigration, type Statement } from "./migration.js";
@@ -23,25 +22,29 @@ export interface PackagedSeed {
 
 /**
  * `dry.seed.json` (repo root, alongside `dry.config.ts`) is an app's own
- * packaged content-type seed - see `plans/content-type-seed.md`. Read with
- * plain `node:fs`, synchronously, tolerating absence - the exact same idiom
- * `server/options.ts`'s `readDotEnv` already uses for `.env`. Deliberately
- * NOT Vite's `import.meta.glob` (which would also tolerate absence): this
- * module is reached from plain `bun scripts/*.ts` runs too (`seed-sync.ts`,
- * `dry-generate.ts`, both import the content engine, which imports this
- * file) - those never go through Vite at all, so `import.meta.glob` isn't a
- * real function there and throws the moment this module loads. `node:fs`
- * works identically under bun, Node, and Vite's SSR module graph.
+ * packaged content-type seed - see `plans/content-type-seed.md`. A PLAIN
+ * STATIC IMPORT, which is the only form that satisfies both runtimes this
+ * module has to load under:
+ *
+ * - Vite's SSR build for Cloudflare Workers, which has no filesystem at all.
+ *   The previous `readFileSync(process.cwd() + "/dry.seed.json")` didn't
+ *   error there, it did something worse: its absence-tolerating `catch`
+ *   swallowed the failure and returned `undefined`, so a deployed Worker
+ *   silently seeded only `defaultContentTypeDefinitions()` and every page
+ *   reading an app content type 500'd with "no content type named X exists".
+ * - Plain `bun scripts/*.ts` runs (`seed-sync.ts`, `dry-generate.ts`, both
+ *   import the content engine, which imports this file) - those never go
+ *   through Vite, which is why `import.meta.glob` is still not an option
+ *   here: it isn't a real function there and throws on module load.
+ *
+ * Both bun and Vite resolve a static JSON import to a parsed object and
+ * inline it into the bundle, so the value is present with no I/O on any
+ * runtime. The trade-off versus the old read: absence is now a BUILD error
+ * rather than a silent fallback to the built-in defaults - deliberate, since
+ * silence is exactly what hid the Workers bug. `dry.seed.json` is committed
+ * at the repo root; `scripts/seed-sync.ts` regenerates it.
  */
-function loadPackagedSeed(): PackagedSeed | undefined {
-  try {
-    return JSON.parse(readFileSync(resolvePath(process.cwd(), "dry.seed.json"), "utf8")) as PackagedSeed;
-  } catch {
-    return undefined;
-  }
-}
-
-const realPackagedSeed = loadPackagedSeed();
+const realPackagedSeed = packagedSeedJson as unknown as PackagedSeed;
 
 /** Fixed ids for the built-in default content types/fields, so re-running
  * `pendingSeedStatements` on every boot (see the engine adapters) always

@@ -300,3 +300,48 @@ raw - a silent, permanent "The bootstrap token is invalid."
 
 Verified end-to-end on `wrangler dev --local`: register-first-admin → 201
 with the Super Admin role attached, login → 200, wrong password → 401.
+
+## Follow-up 4: the public site (`src/apps/pages/**`) on Workers (2026-08-08)
+
+With the Worker finally booting, the App Router pages were still broken in
+production - two unrelated causes, neither of which the other's fix touches:
+
+5. `content-types/seed.ts`'s `loadPackagedSeed()` read `dry.seed.json` with
+   `readFileSync(process.cwd() + ...)`. Workers has no filesystem, and the
+   read's absence-tolerating `catch` turned that into SILENCE: the deployed
+   instance seeded only `defaultContentTypeDefinitions()` (10 built-ins,
+   confirmed against the real D1 - no `about`/`blog`/`contact` tables), so
+   every page reading an app content type 500'd with
+   `dry().singleton("about") - no content type named "about" exists` and
+   rendered `500.tsx`. Now a plain static `import ... from
+   "../../dry.seed.json"` - the one form that works BOTH under Vite (bundled,
+   no I/O) and under plain `bun scripts/*.ts` (which is why the original
+   comment ruled out `import.meta.glob`, correctly, but then picked an
+   equally runtime-specific alternative). Needs `resolveJsonModule` in
+   `tsconfig.json`. Absence is now a build error rather than a silent
+   fallback - deliberate: silence is what hid this.
+6. `/` never reached the Worker at all. Cloudflare's asset layer answers
+   before the Worker runs, and `/` matches `dist/client/index.html` - the
+   ADMIN shell - so the site's root page was unreachable and `/` served the
+   admin SPA. `entry-worker.ts` already excludes `pathname === "/"` from its
+   own asset branch for exactly this reason, but that code never ran. Fixed
+   with `assets.run_worker_first: ["/"]` in `wrangler.jsonc`, scoped to `/`
+   alone so real assets still skip the Worker entirely.
+
+Proof for #6 (worth repeating for any future "is my route reaching the
+Worker?" question): request `/?probe=root` and `/contact?probe=yes` while
+`wrangler tail` runs - only `/contact` appears in the log.
+
+Two `entry-codec.test.ts` assertions had hard-coded `/^v1:/` on the password
+column; they now assert through `verifyPassword` instead, which tests the
+actual intent ("the column holds a hash of what was typed") without coupling
+to `password-hash.ts`'s format version. The "ignores `.confirm`" case got
+strictly stronger: it now also asserts `confirm`'s value does NOT verify.
+
+Verified on `wrangler dev --local` against a wiped `.wrangler/state`: 28
+tables seeded (incl. `about`/`blog`/`contact`), `/` `/about` `/blogs`
+`/contact` all render real pages (no `500.tsx`, no admin shell), unknown path
+404s, `/dry` still serves the admin shell, `/assets/*` still served directly.
+Test suite: 16 failures before and after, all pre-existing (`seed.test.ts`
+and friends expect 10 built-in types while `dry.seed.json` now carries 35) -
+979 passing, up 2 from the new password-hash cases.

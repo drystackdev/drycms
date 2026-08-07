@@ -9,6 +9,9 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
+    // `content-types/seed.ts` imports `dry.seed.json` directly - see its own
+    // doc comment for why that has to be a static import rather than a read.
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["vite/client", "@types/bun"],
     "noEmit": true
