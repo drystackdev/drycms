@@ -35,7 +35,6 @@ const { POST: authPost } = await import("./routes/auth.js");
 const { SESSION_COOKIE_NAME } = await import("./session.js");
 const { CSRF_COOKIE_NAME } = await import("./csrf.js");
 const { getContentAdapters } = await import("./content-adapters.js");
-const { permissionKeyFor, VEI_RESOURCE_ID } = await import("../content-types/permissions.js");
 
 beforeEach(() => {
   process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
@@ -107,11 +106,10 @@ function navigation(url: string, headers: Record<string, string> = {}): Request 
 
 const PASSWORD = "hunter2-long-password";
 
-/** A non-super-admin user on a role granting exactly `permissions` (e.g. `[]`
- * to test the deny path, or `[permissionKeyFor(VEI_RESOURCE_ID, "setting")]`
- * for the grant path) - direct against the same content engine the
- * register/login routes above use, since there's no admin UI in this test
- * file to create one through. */
+/** A non-super-admin user on a role granting exactly `permissions` (e.g.
+ * `[]` for a plain restricted user) - direct against the same content
+ * engine the register/login routes above use, since there's no admin UI in
+ * this test file to create one through. */
 async function createRestrictedUser(email: string, permissions: string[]): Promise<void> {
   const context = { request: new Request("http://localhost"), url: new URL("http://localhost"), params: {}, env: {}, session: null };
   const { schema, entries } = getContentAdapters(context);
@@ -234,18 +232,9 @@ describe("handleVeiRoute", () => {
     expect(response?.headers.get("Location")).toBe(`http://localhost${adminPath}/login`);
   });
 
-  it("forbids a signed-in admin whose role doesn't grant the system-vei permission", async () => {
-    await createRestrictedUser("no-vei@example.com", []);
-    const cookie = await loginAs("no-vei@example.com");
-
-    const response = await handleVeiRoute(navigation(`${ENTER}?to=%2F`, { Cookie: cookie }));
-    expect(response?.status).toBe(403);
-    expect(response?.headers.get("Set-Cookie")).toBeNull();
-  });
-
-  it("grants edit mode once the user's role holds the system-vei permission", async () => {
-    await createRestrictedUser("has-vei@example.com", [permissionKeyFor(VEI_RESOURCE_ID, "setting")]);
-    const cookie = await loginAs("has-vei@example.com");
+  it("grants edit mode to any signed-in admin, regardless of their role's grants", async () => {
+    await createRestrictedUser("restricted@example.com", []);
+    const cookie = await loginAs("restricted@example.com");
 
     const response = await handleVeiRoute(navigation(`${ENTER}?to=%2F`, { Cookie: cookie }));
     expect(response?.status).toBe(303);

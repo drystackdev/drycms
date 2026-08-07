@@ -1,9 +1,11 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import DataTable, { type DataTableColumn, type SortState } from "../DataTable.js";
+import EntrySummaryLines from "../EntrySummaryLines.js";
 import { DragHandleIcon, EditIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
+import type { SummaryLine } from "../../content-types/engine/entry-summary.js";
 
 export interface RelationFieldQuery {
   page: number;
@@ -23,8 +25,16 @@ export interface RelationFieldSource<Row extends { id: string }> {
   columns: DataTableColumn<Row>[];
   fetchRows(query: RelationFieldQuery): Promise<{ rows: Row[]; total: number }>;
   /** Resolves ids to display labels for the trigger card's chip list -
-   * batched, called whenever a not-yet-resolved id shows up in `value`. */
+   * batched, called whenever a not-yet-resolved id shows up in `value`. Only
+   * still used as the accessible name once `resolveSummaries` below is
+   * provided - see its own doc comment. */
   resolveLabels(ids: string[]): Promise<Record<string, string>>;
+  /** Richer, possibly multi-line summary for the trigger card's chosen-item
+   * list (typically `EntrySummaryLines.tsx` fed by `entry-summary.ts`'s
+   * `buildEntrySummary`) - rendered INSTEAD of `resolveLabels`' plain string
+   * when provided. Optional so a caller with nothing richer than a single
+   * label field can skip it entirely. */
+  resolveSummaries?(ids: string[]): Promise<Record<string, SummaryLine[]>>;
 }
 
 export interface RelationFieldProps extends FieldProps<string | string[]> {
@@ -92,6 +102,7 @@ export default function RelationField({
 
   const [open, setOpen] = useState(false);
   const [labels, setLabels] = useState<Record<string, string>>({});
+  const [summaries, setSummaries] = useState<Record<string, SummaryLine[]>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
 
   const [draftSelected, setDraftSelected] = useState<Set<string>>(new Set());
@@ -110,6 +121,23 @@ export default function RelationField({
     let cancelled = false;
     source.resolveLabels(missing).then((resolved) => {
       if (!cancelled) setLabels((current) => ({ ...current, ...resolved }));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, selectedIds.join(",")]);
+
+  // Same "resolve whatever's newly missing" shape as the `labels` effect
+  // above, just for the richer multi-line summary - only runs at all once
+  // `source.resolveSummaries` exists (see its doc comment).
+  useEffect(() => {
+    if (!source.resolveSummaries) return;
+    const missing = selectedIds.filter((sid) => !(sid in summaries));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    source.resolveSummaries(missing).then((resolved) => {
+      if (!cancelled) setSummaries((current) => ({ ...current, ...resolved }));
     });
     return () => {
       cancelled = true;
@@ -224,7 +252,15 @@ export default function RelationField({
                     <DragHandleIcon />
                   </button>
                 )}
-                <span>{labels[sid] ?? "…"}</span>
+                {source.resolveSummaries ? (
+                  summaries[sid] ? (
+                    <EntrySummaryLines lines={summaries[sid]} />
+                  ) : (
+                    <span class="hint">…</span>
+                  )
+                ) : (
+                  <span>{labels[sid] ?? "…"}</span>
+                )}
               </li>
             ))}
           </ul>

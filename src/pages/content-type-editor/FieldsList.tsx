@@ -32,6 +32,11 @@ export interface SystemFieldEntry {
    * their own `FieldDefinition.description` instead, threaded through
    * `fieldListItemProps`. */
   description?: string;
+  /** Only for a system row with no `displayFields` of its own (i.e. a
+   * `relationmirror` row, same reasoning/scope as `description` right
+   * above) - which of the mirror's source type's own fields a picked item's
+   * summary shows (`RelationFieldConfig.displayFields`'s doc comment). */
+  displayFields?: string[];
   /** Set only for an auto-generated `relationmirror` row (see
    * `system-fields.ts`'s `relationMirrorFieldsFor`) - unlike every other
    * system row, these ARE clickable (opens the same `FieldDialog` as a real

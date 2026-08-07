@@ -242,12 +242,18 @@ export function relationMirrorFieldsFor(
 
   return matches.map(({ source, field }, index) => {
     const disambiguate = (countBySource.get(source.id) ?? 0) > 1;
+    const id = mirrorFieldId(source.id, field.id);
     return {
-      id: mirrorFieldId(source.id, field.id),
+      id,
       name: disambiguate ? `${source.name}${field.name.charAt(0).toUpperCase()}${field.name.slice(1)}` : source.name,
       label: disambiguate ? `${source.label} (${field.label})` : source.label,
       type: "relationmirror",
-      config: { sourceTypeId: source.id, sourceFieldId: field.id } satisfies RelationMirrorFieldConfig,
+      // `displayFields` has no config field of its own to persist to (a
+      // mirror isn't a real entry in `fields[]`) - sourced from `type`'s own
+      // `fieldDisplayFields` overlay instead, same "cosmetic per-id map"
+      // shape `fieldSides`/`fieldDescriptions` already use for this exact
+      // situation (see `types.ts`'s doc comment on that map).
+      config: { sourceTypeId: source.id, sourceFieldId: field.id, displayFields: type.fieldDisplayFields?.[id] } satisfies RelationMirrorFieldConfig,
       validation: {},
       order: index,
     };

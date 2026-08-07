@@ -13,8 +13,16 @@ export interface ComponentFieldProps<
 > extends FieldProps<T[]> {
   /** Used in the Add button and dialog titles, e.g. "Add SEO block". */
   itemLabel: string;
-  /** One-line summary shown in the item list, e.g. the item's title field. */
+  /** One-line summary shown in the item list, e.g. the item's title field -
+   * also doubles as the accessible name when `renderSummary` below renders
+   * something screen readers can't linearize as well as plain text. */
   summaryOf: (item: T, index: number) => string;
+  /** Richer, possibly multi-line summary for the item list (typically
+   * `EntrySummaryLines.tsx` fed by `entry-summary.ts`'s `buildEntrySummary`)
+   * - rendered INSTEAD of `summaryOf`'s plain text when provided. Optional
+   * so a caller with nothing richer than a single title field can skip it
+   * entirely. */
+  renderSummary?: (item: T, index: number) => ComponentChildren;
   /** Starting value for a brand-new item. */
   blankItem: () => T;
   /** Renders the item's own fields inside the add/edit dialog - the actual
@@ -68,6 +76,7 @@ export default function ComponentField<T = Record<string, unknown>>({
   error = false,
   itemLabel,
   summaryOf,
+  renderSummary,
   blankItem,
   renderItem,
   validateItem,
@@ -215,11 +224,12 @@ export default function ComponentField<T = Record<string, unknown>>({
               )}
               <button
                 type="button"
-                class="link"
+                class={renderSummary ? "link multiline" : "link"}
                 disabled={disabled}
+                aria-label={renderSummary ? summaryOf(item, index) || `Item ${index + 1}` : undefined}
                 onClick={() => openEdit(index)}
               >
-                {summaryOf(item, index) || `Item ${index + 1}`}
+                {renderSummary ? renderSummary(item, index) : summaryOf(item, index) || `Item ${index + 1}`}
               </button>
               <span class="spacer" />
               <button

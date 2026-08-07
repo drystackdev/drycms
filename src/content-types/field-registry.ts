@@ -486,6 +486,15 @@ export interface RelationFieldConfig {
    * and `oneToMany`'s reverse mirror read isn't order-scoped per the forward
    * side the way this option would imply. */
   sortable?: boolean;
+  /** Which of the TARGET type's own fields a picked item's summary shows,
+   * one per line, in this order (`entry-tree.ts`'s `SummaryFieldCandidate`
+   * names) - set via `FieldDialog.tsx`'s "Display fields" picker. Empty/
+   * undefined falls back to the target's first displayable field, the
+   * behavior this option replaces (see `entry-summary.ts`'s
+   * `buildEntrySummary`). A picked field that is itself a `relation`/
+   * `component-repeat` recurses into a nested, indented list using THAT
+   * field's own `displayFields`. */
+  displayFields?: string[];
 }
 
 export const relationFieldType: FieldTypeDefinition = {
@@ -551,6 +560,14 @@ export interface ComponentFieldConfig {
    * Meaningless (and kept disabled/cleared - see `FieldDialog.tsx`) on a
    * non-repeatable component, which only ever has the one inline instance. */
   sortable?: boolean;
+  /** Which of this component's OWN fields (`itemFields`, by `fieldName`) an
+   * item's summary shows, one per line, in this order - set via
+   * `FieldDialog.tsx`'s "Display fields" picker. Empty/undefined falls back
+   * to the first displayable field, the behavior this option replaces (see
+   * `entry-summary.ts`'s `buildEntrySummary`). A picked field that is itself
+   * a `relation`/`component-repeat` recurses into a nested, indented list
+   * using THAT field's own `displayFields`. */
+  displayFields?: string[];
 }
 
 export const componentFieldType: FieldTypeDefinition = {
@@ -590,6 +607,13 @@ export interface RelationMirrorFieldConfig {
    * (always "whichever type this mirror field lives on"), unlike
    * `RelationFieldConfig`, which declares `target` explicitly. */
   sourceFieldId: string;
+  /** Which of `sourceTypeId`'s own fields a picked item's summary shows -
+   * same meaning as `RelationFieldConfig.displayFields`, just sourced from
+   * `ContentTypeDefinition.fieldDisplayFields` (this mirror has no config of
+   * its own to persist to - see that map's doc comment) rather than set
+   * directly here; `system-fields.ts`'s `relationMirrorFieldsFor` is what
+   * actually fills this in on the synthesized mirror field. */
+  displayFields?: string[];
 }
 
 /**

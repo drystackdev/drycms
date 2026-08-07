@@ -5,7 +5,6 @@ import type { DryRequestContext, DryVeiContext } from "../content-types/dry-cont
 import { loadSeoDefaults, type DrySeoLayers } from "../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { VEI_RESOURCE_ID } from "../content-types/permissions.js";
 import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
 import { discoverRoutes } from "./app-router/route-tree.js";
@@ -214,13 +213,11 @@ async function findRedirectResponse(
 
 /**
  * The viewer's editing rights for this render, or `undefined` for the
- * ordinary anonymous case (no `drycms_vei` cookie, an expired/revoked one, a
- * signed-in user whose roles grant no content permission at all, or one
- * whose `system-vei` grant (`permissions.ts`) was revoked after the cookie
- * was minted - re-checked here every render so edit mode/highlighting drops
- * out the next page load rather than staying live for the cookie's full
- * `VEI_MAX_AGE_SECONDS`, same check `vei-routes.ts`'s `hasVeiAccess` does at
- * mint time.
+ * ordinary anonymous case (no `drycms_vei` cookie, or an expired/revoked
+ * one) - any signed-in admin session gets edit rights, no separate
+ * permission to hold. Per-type editability is still resolved from the
+ * viewer's actual role grants below, so `canUpdate` only opens up fields the
+ * viewer could otherwise save through the admin.
  * Permissions are resolved once per request and closed over, so marking a
  * value costs a map lookup rather than a role query per field.
  */
@@ -234,7 +231,6 @@ async function resolveVeiContext(
   if (!session) return undefined;
   const access = await resolveAccess(entries, allTypes, session);
   if (!access) return undefined;
-  if (!access.can(VEI_RESOURCE_ID, "setting")) return undefined;
   const editable = new Map<string, boolean>();
   return {
     canUpdate(type) {

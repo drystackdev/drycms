@@ -56,6 +56,11 @@ export interface EntryComponentRepeatNode {
    * conditional `validationFields` (shown only when `repeatable` is on) and
    * `entry-validate.ts`'s count check that enforces them. */
   validation: FieldValidation;
+  /** From `ComponentFieldConfig.displayFields` - which of this component's
+   * OWN fields (`itemFields`, by `fieldName`) an item summary shows, one per
+   * line, in this order. Empty/undefined falls back to the first displayable
+   * field - see `entry-summary.ts`'s `buildEntrySummary`. */
+  displayFields?: string[];
 }
 
 /** A `relation` field, either cardinality. `manyToOne` stores a single
@@ -80,6 +85,11 @@ export interface EntryRelationNode {
    * multi-valued) and `entry-validate.ts`'s count check that enforces them.
    * Meaningless on a `manyToOne` node (single target, nothing to count). */
   validation: FieldValidation;
+  /** From `RelationFieldConfig.displayFields` - which of the TARGET type's
+   * fields a picked item's summary shows, one per line, in this order.
+   * Empty/undefined falls back to the first displayable field - see
+   * `entry-summary.ts`'s `buildEntrySummary`. */
+  displayFields?: string[];
 }
 
 /**
@@ -123,6 +133,11 @@ export type EntryRelationMirrorNode =
        * (source was `oneToMany`/`manyToMany`) - the source's own relation
        * child table. */
       sourceChildTableName?: string;
+      /** From `RelationMirrorFieldConfig.displayFields` (itself sourced from
+       * `ContentTypeDefinition.fieldDisplayFields` - see that map's doc
+       * comment) - which of `sourceTypeId`'s own fields a picked item's
+       * summary shows. */
+      displayFields?: string[];
     }
   | {
       kind: "relation-mirror";
@@ -194,6 +209,7 @@ function buildRelationMirrorNode(field: FieldDefinition, allTypes: ContentTypeDe
       sourceFieldId: sourceField.id,
       sourceTableName: sourceTree.tableName,
       sourceColumnName: column.name,
+      displayFields: config.displayFields,
     };
   }
   const childRef = sourceTree.children.find((c) => leafId(c.localIdPath) === sourceField.id);
@@ -206,6 +222,7 @@ function buildRelationMirrorNode(field: FieldDefinition, allTypes: ContentTypeDe
     sourceFieldId: sourceField.id,
     sourceTableName: sourceTree.tableName,
     sourceChildTableName: childRef.tableName,
+    displayFields: config.displayFields,
   };
 }
 
@@ -242,6 +259,7 @@ function buildNodes(
           columnName: column.name,
           sortable: false,
           validation: field.validation,
+          displayFields: config.displayFields,
         };
       }
       const childRef = childrenByLeaf.get(field.id)!;
@@ -256,6 +274,7 @@ function buildNodes(
         tableName: childRef.tableName,
         sortable: config.cardinality === "manyToMany" && !!config.sortable,
         validation: field.validation,
+        displayFields: config.displayFields,
       };
     }
 
@@ -277,6 +296,7 @@ function buildNodes(
           itemFields: buildNodes(component.fields, childRef.node, componentsById, allTypes),
           sortable: !!config.sortable,
           validation: field.validation,
+          displayFields: config.displayFields,
         };
       }
       return {
@@ -366,6 +386,49 @@ export function flattenDisplayColumns(nodes: EntryFieldNode[], pathPrefix = "", 
     } else if (node.kind === "flatten") {
       const label = labelPrefix ? `${labelPrefix} / ${node.label}` : node.label;
       out.push(...flattenDisplayColumns(node.children, fieldName, label));
+    }
+  }
+  return out;
+}
+
+/** One pick-able entry in a `RelationFieldConfig.displayFields`/
+ * `ComponentFieldConfig.displayFields` picker (see `entry-summary.ts`'s
+ * `buildEntrySummary`, which resolves the chosen `fieldName`s back against
+ * this same list at render time). Widens `flattenDisplayColumns` with the two
+ * kinds that function deliberately excludes - `relation`/`component-repeat` -
+ * since showing a NESTED list (recursively summarized via ITS OWN
+ * `displayFields`) is exactly the point of this picker. Unlike
+ * `flattenDisplayColumns`, this does NOT recurse into a `relation`'s target
+ * or a `component-repeat`'s items - those are picked as one atomic "nested
+ * list" line, not flattened field-by-field. */
+export type SummaryFieldCandidate =
+  | { kind: "column"; fieldName: string; label: string; fieldType: string; fieldConfig: unknown }
+  | { kind: "relation"; fieldName: string; label: string; targetTypeId: string; cardinality: RelationCardinality; displayFields?: string[] }
+  | { kind: "component-repeat"; fieldName: string; label: string; itemFields: EntryFieldNode[]; displayFields?: string[] };
+
+/** `relation-mirror` nodes are deliberately excluded - they're a read-only
+ * reverse view with no config surface of their own (see
+ * `EntryRelationMirrorNode`'s doc comment), so there's nowhere to store a
+ * pick for them; a mirror field's own item summary always falls back to the
+ * first displayable field. A `relation`/`component-repeat` field NESTED
+ * inside a `flatten` component is also excluded (recursion only descends
+ * into plain `flatten` groups, same as `flattenDisplayColumns`) - a rare
+ * enough shape that surfacing it isn't worth the extra dotted-path plumbing
+ * this function's simpler top-level-only handling avoids. */
+export function flattenSummaryCandidates(nodes: EntryFieldNode[], pathPrefix = "", labelPrefix = ""): SummaryFieldCandidate[] {
+  const out: SummaryFieldCandidate[] = [];
+  for (const node of nodes) {
+    const fieldName = pathPrefix ? `${pathPrefix}.${node.fieldName}` : node.fieldName;
+    const label = labelPrefix ? `${labelPrefix} / ${node.label}` : node.label;
+    if (node.kind === "column") {
+      if (UNDISPLAYABLE_FIELD_TYPES.has(node.fieldType)) continue;
+      out.push({ kind: "column", fieldName, label, fieldType: node.fieldType, fieldConfig: node.fieldConfig });
+    } else if (node.kind === "flatten") {
+      out.push(...flattenSummaryCandidates(node.children, fieldName, label));
+    } else if (node.kind === "relation") {
+      out.push({ kind: "relation", fieldName, label, targetTypeId: node.targetTypeId, cardinality: node.cardinality, displayFields: node.displayFields });
+    } else if (node.kind === "component-repeat") {
+      out.push({ kind: "component-repeat", fieldName, label, itemFields: node.itemFields, displayFields: node.displayFields });
     }
   }
   return out;

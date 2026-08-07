@@ -151,6 +151,7 @@ function systemFieldsForUi(
       typeLabel: "Relation Mirror",
       type: "relationmirror",
       description: definition.fieldDescriptions?.[mirror.id],
+      displayFields: config.displayFields,
       mirror:
         sourceType && sourceField
           ? {
@@ -516,10 +517,10 @@ export default function ContentTypeEditor({
     setDefinition((d) => {
       if (!d) return d;
       // A mirror row isn't a real field - `FieldDialog` only ever lets its
-      // Description/Display side change (Label/Name/Type are locked, see
-      // `FieldDialog.tsx`'s `isMirror`), so only persist those, through the
-      // same self-healing per-id maps `fieldSides` already uses - never add
-      // it to `fields[]`.
+      // Description/Display fields/Display side change (Label/Name/Type are
+      // locked, see `FieldDialog.tsx`'s `isMirror`), so only persist those,
+      // through the same self-healing per-id maps `fieldSides` already uses -
+      // never add it to `fields[]`.
       if (field.type === "relationmirror") {
         return {
           ...d,
@@ -527,6 +528,10 @@ export default function ContentTypeEditor({
           fieldDescriptions: {
             ...d.fieldDescriptions,
             [field.id]: field.description ?? "",
+          },
+          fieldDisplayFields: {
+            ...d.fieldDisplayFields,
+            [field.id]: (field.config as RelationMirrorFieldConfig).displayFields ?? [],
           },
         };
       }
@@ -556,8 +561,9 @@ export default function ContentTypeEditor({
   /** Synthesizes a `FieldDefinition`-shaped draft for a mirror row so it can
    * open through the SAME `FieldDialog` a real field uses (not a separate,
    * bespoke UI) - `FieldDialog` locks Label/Name/Type for it (`isMirror`)
-   * since none of those are real/editable, but Description and Display side
-   * both round-trip through `handleFieldSave` above like any other field. */
+   * since none of those are real/editable, but Description, Display fields,
+   * and Display side all round-trip through `handleFieldSave` above like any
+   * other field. */
   function mirrorEntryToFieldDefinition(
     entry: SystemFieldEntry,
   ): FieldDefinition {
@@ -571,6 +577,7 @@ export default function ContentTypeEditor({
       config: {
         sourceTypeId: mirror.sourceTypeId,
         sourceFieldId: mirror.sourceFieldId,
+        displayFields: entry.displayFields,
       } satisfies RelationMirrorFieldConfig,
       validation: {},
       order: 0,
@@ -923,6 +930,7 @@ export default function ContentTypeEditor({
           !!definition.protectedFieldIds?.includes(editingField.id)
         }
         dynamicOptions={dynamicOptions}
+        allTypes={allTypes}
         fieldSides={definition.fieldSides}
         archivedFields={definition.fields.filter((f) =>
           definition.deletedFieldIds?.includes(f.id),

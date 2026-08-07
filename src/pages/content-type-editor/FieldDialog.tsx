@@ -16,18 +16,22 @@ import {
   fieldTypes,
   resolveFieldShape,
   resolveValidationFields,
+  type ComponentFieldConfig,
   type FieldTypeDefinition,
+  type RelationFieldConfig,
   type RichTextFieldConfig,
   type SelectFieldConfig,
   type SettingDescriptor,
   type SettingOption,
 } from "../../content-types/field-registry.js";
+import { buildEntryFieldTree, flattenSummaryCandidates } from "../../content-types/engine/entry-tree.js";
 import {
   defaultFieldSide,
   resolveFieldSide,
   type FieldSide,
 } from "../../content-types/system-fields.js";
 import type {
+  ContentTypeDefinition,
   FieldDefinition,
   FieldValidation,
 } from "../../content-types/types.js";
@@ -95,6 +99,11 @@ export interface FieldDialogProps {
    * could actually persist. */
   readOnly?: boolean;
   dynamicOptions: { collections: SettingOption[]; components: SettingOption[] };
+  /** Every content type, `relation`'s target/`component`'s componentId
+   * resolve against - needed to list the TARGET type's/component's own
+   * fields for the "Display fields" picker (`DisplayFieldsInput` below),
+   * which `dynamicOptions` (just id/label pairs) doesn't carry. */
+  allTypes: ContentTypeDefinition[];
   /** Persisted per-field display side (see `types.ts`'s
    * `ContentTypeDefinition.fieldSides`) - seeds the Display side control
    * below when editing an existing field; ignored when adding one (no id
@@ -511,11 +520,74 @@ function selectOptionsInvalid(config: Record<string, unknown>): boolean {
   return new Set(trimmedOptions).size !== trimmedOptions.length;
 }
 
+/** Lets the admin pick which of the TARGET type's (`relation`) or
+ * component's OWN (`component`) fields a picked/added item's summary shows,
+ * one per line, in schema order (`entry-tree.ts`'s
+ * `flattenSummaryCandidates`, which - unlike `flattenDisplayColumns` -
+ * offers `relation`/`component-repeat` fields too, each one an atomic
+ * "nested list" pick rather than something to flatten further; see
+ * `entry-summary.ts`'s `buildEntrySummary`, which resolves a nested pick
+ * like that using THAT field's own `displayFields`, not anything configured
+ * here). Not rendered before a target/component is actually chosen - there's
+ * nothing to list yet - nor when that choice resolves to zero candidate
+ * fields. Leaving the picker empty keeps the pre-existing "first field"
+ * fallback (`RelationFieldConfig.displayFields`'s own doc comment). */
+function DisplayFieldsInput({
+  draftType,
+  config,
+  allTypes,
+  onChange,
+  disabled = false,
+}: {
+  draftType: string;
+  config: Record<string, unknown>;
+  allTypes: ContentTypeDefinition[];
+  onChange: (value: string[]) => void;
+  disabled?: boolean;
+}) {
+  if (draftType !== "relation" && draftType !== "component" && draftType !== "relationmirror")
+    return null;
+  const targetTypeId =
+    draftType === "relation"
+      ? (config.target as RelationFieldConfig["target"] | undefined)
+      : draftType === "component"
+        ? (config.componentId as ComponentFieldConfig["componentId"] | undefined)
+        // A mirror has no `target` of its own - it picks FROM the source
+        // relation's own type (`RelationMirrorFieldConfig.sourceTypeId`),
+        // same "which type's fields are the candidates" question either way.
+        : (config.sourceTypeId as string | undefined);
+  const targetType = allTypes.find((t) => t.id === targetTypeId);
+  if (!targetType) return null;
+
+  const candidates = flattenSummaryCandidates(buildEntryFieldTree(targetType, allTypes));
+  if (candidates.length === 0) return null;
+
+  const value = Array.isArray(config.displayFields) ? (config.displayFields as string[]) : [];
+  return (
+    <div class="field">
+      <label>Display fields</label>
+      <small>
+        Shown one per line wherever a picked/added item's summary appears
+        (the entry editor's item list, the List page's column). Leaves just
+        the first field when none are picked.
+      </small>
+      <MultiSelect
+        options={candidates.map((c) => ({ value: c.fieldName, label: c.label }))}
+        value={value}
+        disabled={disabled}
+        onChange={onChange}
+        placeholder="e.g. Title, Image"
+      />
+    </div>
+  );
+}
+
 export default function FieldDialog({
   open,
   editingField,
   readOnly = false,
   dynamicOptions,
+  allTypes,
   fieldSides,
   archivedFields = [],
   showSideToggle,
@@ -944,6 +1016,17 @@ export default function FieldDialog({
                             disabledKeys={configDisabledKeys}
                             showErrors={saveAttempted}
                             outline
+                          />
+                        )}
+                        {(draftType === "relation" ||
+                          draftType === "component" ||
+                          draftType === "relationmirror") && (
+                          <DisplayFieldsInput
+                            draftType={draftType}
+                            config={draftConfig}
+                            allTypes={allTypes}
+                            disabled={readOnly}
+                            onChange={(value) => handleConfigChange("displayFields", value)}
                           />
                         )}
                       </div>

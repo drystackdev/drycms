@@ -251,15 +251,18 @@ describe("defaultContentTypeDefinitions", () => {
     );
   });
 
-  it("seo: Title/Description/Image, none required (a page can opt out of any of them)", () => {
+  it("seo: Title/Description/Image/noIndex, none required (a page can opt out of any of them)", () => {
     const seo = byName("seo");
     expect(seo.fields.map((f) => f.name).sort()).toEqual([
       "description",
       "image",
       "metaTitle",
+      "noIndex",
     ]);
     const image = seo.fields.find((f) => f.name === "image")!;
     expect(image.type).toBe("image");
+    const noIndex = seo.fields.find((f) => f.name === "noIndex")!;
+    expect(noIndex.type).toBe("boolean");
   });
 
   it("a collection with features.seo on flattens seo's fields as seo_*", () => {

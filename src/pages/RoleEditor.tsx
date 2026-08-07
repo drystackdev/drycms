@@ -18,12 +18,10 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
-  MEDIA_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   permissionActionsFor,
   permissionKeyFor,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
-  VEI_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -74,32 +72,12 @@ function permissionPrerequisites(resource: ContentTypeDefinition, action: Permis
  * the "System" fieldset below (never through `renderPermissionResource`/
  * `permissionActionsFor`, so their `magic` action - real singletons also get
  * one now - never applies here; none of these pages have a Magic feature). */
-const PERMISSION_RESOURCE: ContentTypeDefinition = {
-  id: "system-permission",
-  kind: "singleton",
-  name: "permission",
-  label: "Permission",
-  description: "Manage permission assignments for roles.",
-  fields: [],
-  version: 0,
-};
-
 const PAGE_COMPONENTS_RESOURCE: ContentTypeDefinition = {
   id: PAGE_COMPONENTS_RESOURCE_ID,
   kind: "singleton",
   name: "pageComponents",
   label: "Page Components",
   description: "Build and manage saved page-builder components.",
-  fields: [],
-  version: 0,
-};
-
-const MEDIA_RESOURCE: ContentTypeDefinition = {
-  id: MEDIA_RESOURCE_ID,
-  kind: "singleton",
-  name: "media",
-  label: "Media",
-  description: "Browse and manage the Media library.",
   fields: [],
   version: 0,
 };
@@ -134,16 +112,6 @@ const CONTENT_TYPES_RESOURCE: ContentTypeDefinition = {
   version: 0,
 };
 
-const VEI_RESOURCE: ContentTypeDefinition = {
-  id: VEI_RESOURCE_ID,
-  kind: "singleton",
-  name: "vei",
-  label: "Visual Editing",
-  description: "Can enter Visual Editing mode on the public site.",
-  fields: [],
-  version: 0,
-};
-
 /** Every non-content-type admin page, rendered together as flat toggle rows
  * in the "System" fieldset - see `status/role-system-permissions.md`. AI
  * Keys deliberately has no entry here: `protectSystemMutation`
@@ -151,15 +119,17 @@ const VEI_RESOURCE: ContentTypeDefinition = {
  * from mutating `aiKey` rows unconditionally, so a toggle here would grant a
  * nav link that still 403s on every write. (Key Value used to have an entry
  * here too - removed 2026-08-07 along with the whole admin page/route, see
- * `status/key-value-system.md`.) */
+ * `status/key-value-system.md`. Media and Visual Editing also used to have
+ * entries here - removed 2026-08-07, both are now open to any authenticated
+ * user rather than a grantable permission, see `Media.tsx` and
+ * `vei-routes.ts`'s `handleVeiRoute`. Permission also had an entry - removed
+ * 2026-08-07, managing role permission assignments is already gated by the
+ * `role` collection's own permissions, not a separate System toggle.) */
 const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
-  PERMISSION_RESOURCE,
   PAGE_COMPONENTS_RESOURCE,
-  MEDIA_RESOURCE,
   ICON_MANAGEMENT_RESOURCE,
   RICHTEXT_COMPONENTS_RESOURCE,
   CONTENT_TYPES_RESOURCE,
-  VEI_RESOURCE,
 ];
 
 /**

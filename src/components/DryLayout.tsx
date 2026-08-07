@@ -27,7 +27,6 @@ import { authState, canAccess, logout } from "../store/auth.js";
 import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
-  MEDIA_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
   type PermissionAction,
@@ -84,7 +83,6 @@ const NAV: {
     icon: "Media",
     ready: true,
     section: "Content",
-    permissionResourceId: MEDIA_RESOURCE_ID,
   },
   {
     key: "icon-management",

@@ -102,6 +102,17 @@ export interface ContentTypeDefinition {
    * a stale id (the relation it described no longer exists) is simply never
    * looked up again. */
   fieldDescriptions?: Record<string, string>;
+  /** Per-id `RelationFieldConfig.displayFields`/`ComponentFieldConfig.displayFields`
+   * override, same self-healing shape and same "mirror-only" scope as
+   * `fieldDescriptions` right above - a real `relation`/`component` field's
+   * `displayFields` lives directly in its own `FieldDefinition.config`
+   * instead (it has one of its own to hold it), never touching this map.
+   * Unlike `fieldDescriptions`, this DOES reach the real entry tree: threaded
+   * through `system-fields.ts`'s `relationMirrorFieldsFor` into each
+   * synthesized mirror `FieldDefinition`'s own `config.displayFields`, so
+   * `entry-tree.ts`'s `buildRelationMirrorNode` picks it up like any other
+   * field config, not read separately at the UI layer. */
+  fieldDisplayFields?: Record<string, string[]>;
   /** Ids (from `fields[]`) sent to the trash by the schema editor's Remove
    * button - the `FieldDefinition` itself deliberately stays in `fields[]`,
    * untouched, so `tree.ts`/`migration.ts` keep generating its column exactly

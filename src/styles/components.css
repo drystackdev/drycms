@@ -3173,6 +3173,18 @@
         overflow: hidden;
         text-overflow: ellipsis;
         justify-content: flex-start;
+
+        /* `ComponentField.tsx`'s `renderSummary` (`EntrySummaryLines.tsx`,
+         * possibly several lines) needs the opposite of the single-line
+         * ellipsis truncation above. */
+        &.multiline {
+          display: block;
+          overflow: visible;
+          text-overflow: clip;
+          white-space: normal;
+          text-align: left;
+          padding-block: 0.125rem;
+        }
       }
 
       & li {
@@ -3181,6 +3193,72 @@
         & + li {
           border-top: 1px solid var(--dry-border);
         }
+      }
+    }
+
+    /* `EntrySummaryLines.tsx` - the shared "Label: value" summary shown by a
+     * relation/component-repeat field's chosen/added items, and by the List
+     * page's relation column (see `entry-summary.ts`'s `buildEntrySummary`,
+     * `RelationFieldConfig.displayFields`/`ComponentFieldConfig.displayFields`). */
+    .entry-summary-lines {
+      display: grid;
+      gap: 0.125rem;
+      font-size: var(--dry-text-sm);
+      min-width: 0;
+    }
+
+    .entry-summary-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.25rem;
+      min-width: 0;
+
+      & > strong {
+        color: var(--dry-muted-foreground);
+        font-weight: 500;
+      }
+    }
+
+    /* A `list-items` line's nested items - indents further at every
+     * recursion level purely through normal DOM nesting (this rule applies
+     * identically at every depth; each level's `<ul>` sits inside the
+     * previous level's `<li>`, which is already shifted). */
+    .entry-summary-nested {
+      list-style: none;
+      margin: 0.25rem 0 0;
+      padding-left: 0.75rem;
+      border-left: 1px solid var(--dry-border);
+      display: grid;
+      gap: 0.375rem;
+      grid-template-columns: minmax(0, 1fr);
+
+      & > li {
+        margin: 0;
+        padding: 0;
+      }
+    }
+
+    /* `ContentEntryList.tsx`'s `renderRelationCell` - one linked entry's
+     * `EntrySummaryLines` per `.entry-summary-relation-item`, stacked
+     * (instead of the single-label badge row this replaced) since a
+     * multi-field summary needs its own block, not an inline chip. */
+    .entry-summary-relation-cell {
+      display: grid;
+      gap: 0.5rem;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .entry-summary-relation-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.375rem;
+      min-width: 0;
+
+      & > svg {
+        flex: none;
+        margin-top: 0.1875rem;
+        color: var(--dry-muted-foreground);
       }
     }
 

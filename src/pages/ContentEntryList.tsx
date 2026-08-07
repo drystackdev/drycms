@@ -8,6 +8,7 @@ import DataTable, {
   type SortState,
 } from "../components/DataTable.js";
 import { pinnedContentTypeSlugs } from "../components/DryLayout.js";
+import EntrySummaryLines from "../components/EntrySummaryLines.js";
 import { encodePath } from "../storage/http-source.js";
 import {
   ArrowLeftIcon,
@@ -25,6 +26,7 @@ import {
   type EntryFieldNode,
   type QueryableColumn,
 } from "../content-types/engine/entry-tree.js";
+import { buildEntrySummary, type ResolveRelation, type SummaryLine } from "../content-types/engine/entry-summary.js";
 import {
   createContentEntriesApi,
   type EntryListResult,
@@ -32,7 +34,6 @@ import {
 import type { RelationCardinality } from "../content-types/field-registry.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { hasEntryDraft } from "../content-types/entry-draft-store.js";
-import { SUPER_ADMIN_FIELD_NAME } from "../content-types/permissions.js";
 import { canAccess } from "../store/auth.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
@@ -287,6 +288,10 @@ interface RelationColumn {
   label: string;
   targetTypeId: string;
   cardinality: RelationCardinality;
+  /** From `RelationFieldConfig.displayFields` - see `entry-summary.ts`'s
+   * `buildEntrySummary`, which resolves this (falling back to the target's
+   * first displayable field when unset) for each linked entry's summary. */
+  displayFields?: string[];
 }
 
 type ListCell =
@@ -344,6 +349,7 @@ function collectListCells(
           label,
           targetTypeId: node.targetTypeId,
           cardinality: node.cardinality,
+          displayFields: node.displayFields,
         },
       });
     }
@@ -358,36 +364,35 @@ function collectListCells(
  * instead (`listEntries` doesn't run the child-table query a paginated List
  * page would need) - `ids` is `undefined` while that fetch is still in
  * flight, so this can tell "not loaded yet" apart from "genuinely none".
- * No icon in `icons.tsx` reads as "relation" specifically - `ComponentIcon`
- * (already used for the schema editor's Component field type) doubles as a
- * generic "structured/linked data" marker here too.
+ * Each linked entry renders via `EntrySummaryLines` (`entry-summary.ts`'s
+ * `buildEntrySummary` output, one "Label: value" line per configured
+ * `RelationFieldConfig.displayFields`) instead of a single-label badge -
+ * still capped to the first 2 (`shown`) + a "+N more" remainder so a
+ * multi-valued cell with several display lines each can't blow up the row's
+ * height.
  */
 function renderRelationCell(
   ids: string[] | undefined,
-  lookupLabel: (id: string) => string | undefined,
+  lookupSummary: (id: string) => SummaryLine[] | undefined,
   multiple: boolean,
 ): JSX.Element {
   if (ids === undefined) return <>…</>;
   if (ids.length === 0) return <>-</>;
-  if (!multiple) {
-    return (
-      <span class="badge lg info">
-        <ComponentIcon />
-        {ids.map((id) => lookupLabel(id) ?? "…").join(", ")}
-      </span>
-    );
-  }
-  const shown = ids.slice(0, 2);
+  const shown = multiple ? ids.slice(0, 2) : ids;
   const remaining = ids.length - shown.length;
   return (
-    <span style={{ display: "inline-flex", gap: "0.25rem", flexWrap: "wrap" }}>
-      {shown.map((id) => (
-        <span key={id} class="badge sm info">
-          {lookupLabel(id) ?? "…"}
-        </span>
-      ))}
+    <div class="entry-summary-relation-cell">
+      {shown.map((id) => {
+        const lines = lookupSummary(id);
+        return (
+          <div key={id} class="entry-summary-relation-item">
+            <ComponentIcon />
+            {lines ? <EntrySummaryLines lines={lines} /> : <span class="hint">…</span>}
+          </div>
+        );
+      })}
       {remaining > 0 && <span class="badge sm outline">+{remaining}</span>}
-    </span>
+    </div>
   );
 }
 
@@ -502,37 +507,48 @@ function ContentEntryListCollection({
     () => listCells.slice(0, 5).map((c) => c.column.fieldName),
     [listCells],
   );
-  // One `entriesApi`/label field per relation column's target type - reused
-  // across every row instead of rebuilt per cell.
+  // One `entriesApi`/field tree per relation column's target type - reused
+  // across every row instead of rebuilt per cell. The field tree feeds
+  // `buildEntrySummary` (resolving `column.displayFields` against it).
   const relationTargets = useMemo(() => {
     const map = new Map<
       string,
       {
         entriesApi: ReturnType<typeof createContentEntriesApi>;
-        labelField?: string;
+        targetFieldNodes: EntryFieldNode[];
       }
     >();
     for (const column of relationColumns) {
       const targetType = allTypes.find((t) => t.id === column.targetTypeId);
       if (!targetType) continue;
-      const visibleTargetColumns = flattenQueryableColumns(
-        buildEntryFieldTree(targetType, allTypes),
-      ).filter(
-        (c) =>
-          !(
-            targetType.name === "role" && c.fieldName === SUPER_ADMIN_FIELD_NAME
-          ),
-      );
       map.set(column.fieldName, {
         entriesApi: createContentEntriesApi(
           `${path}/api/content`,
           targetType.name,
         ),
-        labelField: visibleTargetColumns[0]?.fieldName,
+        targetFieldNodes: buildEntryFieldTree(targetType, allTypes),
       });
     }
     return map;
   }, [relationColumns, allTypes]);
+
+  // Fetches one related entry's own value by target type id - the injected
+  // `resolveRelation` `buildEntrySummary` uses to recurse into a chosen
+  // `displayFields` entry that is itself a nested `relation` (same pattern
+  // `FieldRenderer.tsx`'s `useResolveRelation` uses for the entry editor).
+  const resolveRelation: ResolveRelation = useCallback(
+    async (targetTypeId, id) => {
+      const targetType = allTypes.find((t) => t.id === targetTypeId);
+      if (!targetType) return undefined;
+      try {
+        const entry = await createContentEntriesApi(`${path}/api/content`, targetType.name).get(id);
+        return entry.value;
+      } catch {
+        return undefined;
+      }
+    },
+    [allTypes],
+  );
 
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -635,11 +651,12 @@ function ContentEntryListCollection({
     }
   }
 
-  // fieldName -> target id -> resolved label. Only fetched for relation
-  // columns the user actually has visible (`visibleKeys`) - `entriesApi.get`
-  // is one request per distinct id, not worth paying for a hidden column.
-  const [relationLabels, setRelationLabels] = useState<
-    Record<string, Record<string, string>>
+  // fieldName -> target id -> resolved summary lines. Only fetched for
+  // relation columns the user actually has visible (`visibleKeys`) -
+  // `entriesApi.get` is one request per distinct id, not worth paying for a
+  // hidden column.
+  const [relationSummaries, setRelationSummaries] = useState<
+    Record<string, Record<string, SummaryLine[]>>
   >({});
   // row id -> fieldName -> resolved target ids, for `oneToMany`/`manyToMany`
   // relation columns only - `manyToOne`'s id is already on the row itself,
@@ -720,7 +737,7 @@ function ContentEntryListCollection({
       if (!visibleKeys.includes(column.fieldName)) continue;
       const target = relationTargets.get(column.fieldName);
       if (!target) continue;
-      const known = relationLabels[column.fieldName] ?? {};
+      const known = relationSummaries[column.fieldName] ?? {};
       const ids = [
         ...new Set(
           rows
@@ -730,20 +747,27 @@ function ContentEntryListCollection({
       ];
       if (ids.length === 0) continue;
       Promise.all(
-        ids.map((id) =>
-          target.entriesApi
-            .get(id)
-            .then((entry): [string, string] => [
-              id,
-              target.labelField
-                ? String(entry.value[target.labelField] ?? id)
-                : id,
-            ])
-            .catch((): [string, string] => [id, id]),
+        ids.map(
+          async (id): Promise<[string, SummaryLine[]]> => {
+            const entryValue = await resolveRelation(column.targetTypeId, id);
+            if (!entryValue) {
+              return [id, [{ fieldName: "id", label: "ID", kind: "text", text: id }]];
+            }
+            const lines = await buildEntrySummary(
+              column.displayFields,
+              target.targetFieldNodes,
+              entryValue,
+              allTypes,
+              resolveRelation,
+              0,
+              new Set([column.targetTypeId]),
+            );
+            return [id, lines];
+          },
         ),
       ).then((pairs) => {
         if (cancelled) return;
-        setRelationLabels((current) => ({
+        setRelationSummaries((current) => ({
           ...current,
           [column.fieldName]: {
             ...current[column.fieldName],
@@ -755,8 +779,8 @@ function ContentEntryListCollection({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `relationLabels` deliberately excluded: it's read to skip refetching, not to retrigger this effect (that update comes back through `rows`/`rowRelationValues`/`visibleKeys` instead).
-  }, [rows, relationColumns, relationTargets, visibleKeys, rowRelationValues]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `relationSummaries` deliberately excluded: it's read to skip refetching, not to retrigger this effect (that update comes back through `rows`/`rowRelationValues`/`visibleKeys` instead).
+  }, [rows, relationColumns, relationTargets, visibleKeys, rowRelationValues, allTypes, resolveRelation]);
 
   const isPinned = pinnedContentTypeSlugs.has(type.name);
 
@@ -793,7 +817,7 @@ function ContentEntryListCollection({
               : rowRelationValues[row.id]?.[column.fieldName];
           return renderRelationCell(
             ids,
-            (id) => relationLabels[column.fieldName]?.[id],
+            (id) => relationSummaries[column.fieldName]?.[id],
             column.cardinality !== "manyToOne",
           );
         },

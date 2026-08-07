@@ -1,11 +1,13 @@
-import { useMemo } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import ComponentField from "../../components/fields/ComponentField.js";
+import EntrySummaryLines from "../../components/EntrySummaryLines.js";
 import RelationField, {
   type RelationFieldSource,
 } from "../../components/fields/RelationField.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
+import { buildEntrySummary, type ResolveRelation, type SummaryLine } from "../../content-types/engine/entry-summary.js";
 import { validateEntryValue } from "../../content-types/engine/entry-validate.js";
 import {
   buildEntryFieldTree,
@@ -143,16 +145,43 @@ export default function FieldRenderer({
   );
 }
 
+/** Fetches one related/mirrored entry's own value (child relation/component
+ * arrays already populated, same shape `entriesApi.get()` returns) by target
+ * type id - `entry-summary.ts`'s `buildEntrySummary` takes this as its
+ * injected `resolveRelation`, so every "list component" summary in the entry
+ * editor (`RelationField`'s chosen-item chips, `ComponentField`'s item list)
+ * shares the exact same fetch path. A missing/unreadable id degrades to
+ * `undefined` (bare-id fallback), same as a dangling relation elsewhere. */
+function useResolveRelation(allTypes: ContentTypeDefinition[]): ResolveRelation {
+  return useCallback(
+    async (targetTypeId, id) => {
+      const targetType = allTypes.find((t) => t.id === targetTypeId);
+      if (!targetType) return undefined;
+      try {
+        const entry = await createContentEntriesApi(`${path}/api/content`, targetType.name).get(id);
+        return entry.value;
+      } catch {
+        return undefined;
+      }
+    },
+    [allTypes],
+  );
+}
+
 /** Builds a `RelationFieldSource` from an arbitrary `ContentTypeDefinition`
  * (its first 3 queryable columns for the picker table, `createContentEntriesApi`
  * for fetching/resolving) - shared by `RelationFieldAdapter` (picking rows
  * from a `relation` field's own target type) and `RelationMirrorFieldAdapter`
  * (picking rows from a `relationmirror` field's SOURCE type instead), since
  * neither depends on cardinality/direction, only on which type's rows are
- * being picked. */
+ * being picked. `displayFields` is the picking field's own
+ * `RelationFieldConfig.displayFields` (absent for a mirror - see
+ * `EntryRelationMirrorNode`'s doc comment, mirrors have no config surface of
+ * their own), threaded into `resolveSummaries` below. */
 function useRelationFieldSource(
   type: ContentTypeDefinition | undefined,
   allTypes: ContentTypeDefinition[],
+  displayFields: string[] | undefined,
 ): RelationFieldSource<{ id: string } & Record<string, unknown>> | null {
   const entriesApi = useMemo(
     () =>
@@ -167,6 +196,11 @@ function useRelationFieldSource(
       ? columns.filter((column) => column.fieldName !== SUPER_ADMIN_FIELD_NAME)
       : columns;
   }, [type, allTypes]);
+  const targetFieldNodes = useMemo(
+    () => (type ? buildEntryFieldTree(type, allTypes) : []),
+    [type, allTypes],
+  );
+  const resolveRelation = useResolveRelation(allTypes);
 
   return useMemo(() => {
     if (!type || !entriesApi) return null;
@@ -211,8 +245,29 @@ function useRelationFieldSource(
         );
         return Object.fromEntries(pairs);
       },
+      resolveSummaries: async (ids) => {
+        const pairs = await Promise.all(
+          ids.map(async (id): Promise<[string, SummaryLine[]]> => {
+            const targetValue = await resolveRelation(type.id, id);
+            if (!targetValue) {
+              return [id, [{ fieldName: "id", label: "ID", kind: "text", text: id }]];
+            }
+            const lines = await buildEntrySummary(
+              displayFields,
+              targetFieldNodes,
+              targetValue,
+              allTypes,
+              resolveRelation,
+              0,
+              new Set([type.id]),
+            );
+            return [id, lines];
+          }),
+        );
+        return Object.fromEntries(pairs);
+      },
     };
-  }, [type, entriesApi, queryableColumns]);
+  }, [type, entriesApi, queryableColumns, targetFieldNodes, displayFields, allTypes, resolveRelation]);
 }
 
 /** Adapts `RelationField`'s `""`/`string[]` "empty" convention to the
@@ -233,7 +288,7 @@ function RelationFieldAdapter({
 }) {
   const targetType = allTypes.find((t) => t.id === node.targetTypeId);
   const multiple = node.cardinality !== "manyToOne";
-  const source = useRelationFieldSource(targetType, allTypes);
+  const source = useRelationFieldSource(targetType, allTypes, node.displayFields);
 
   if (!targetType || !source) {
     return (
@@ -294,7 +349,15 @@ function RelationMirrorFieldAdapter({
     ? allTypes.find((t) => t.id === node.sourceTypeId)
     : undefined;
   const multiple = node.resolved && node.reverseCardinality !== "manyToOne";
-  const source = useRelationFieldSource(sourceType, allTypes);
+  // A mirror's `displayFields` has no config field of its own to live in -
+  // sourced from `ContentTypeDefinition.fieldDisplayFields` instead (see
+  // that map's doc comment), already resolved onto `node.displayFields` by
+  // `entry-tree.ts`'s `buildRelationMirrorNode`.
+  const source = useRelationFieldSource(
+    sourceType,
+    allTypes,
+    node.resolved ? node.displayFields : undefined,
+  );
 
   if (!node.resolved || !sourceType || !source) {
     return (
@@ -352,6 +415,27 @@ function ComponentRepeatFieldAdapter({
     (f) => f.kind === "column",
   )?.fieldName;
 
+  // Richer, possibly multi-line summary per item (`ComponentField.tsx`'s
+  // `renderSummary`) - component values are already fully inline (no fetch
+  // for the item's OWN fields), but a chosen `displayFields` entry can still
+  // be a nested `relation`, which needs `resolveRelation` to fetch its
+  // target - hence the async effect rather than computing this inline.
+  const resolveRelation = useResolveRelation(allTypes);
+  const [summaries, setSummaries] = useState<SummaryLine[][]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      value.map((item) =>
+        buildEntrySummary(node.displayFields, node.itemFields, item, allTypes, resolveRelation),
+      ),
+    ).then((results) => {
+      if (!cancelled) setSummaries(results);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [value, node.itemFields, node.displayFields, allTypes, resolveRelation]);
+
   // `revealPath` here is `[node.fieldName, <item index>, <item's own field
   // name>, ...]` (`field-path.ts`'s own dotted/indexed convention) - the
   // deeper segments, if any, are the same "known limitation" `applyFieldSet`
@@ -379,6 +463,9 @@ function ComponentRepeatFieldAdapter({
       itemLabel={node.label}
       summaryOf={(item) =>
         summaryField ? String(item[summaryField] ?? "") : ""
+      }
+      renderSummary={(_item, index) =>
+        summaries[index] ? <EntrySummaryLines lines={summaries[index]!} /> : <span class="hint">…</span>
       }
       blankItem={() => blankEntryValue(node.itemFields)}
       validateItem={(item) => validateEntryValue(node.itemFields, item)}
