@@ -54,3 +54,4 @@ drystack
 #mcp
 .playwright-mcp
 .codegraph
+bun.lock
