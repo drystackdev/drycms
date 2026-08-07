@@ -141,14 +141,19 @@ export default function ComponentField<T = Record<string, unknown>>({
   // the one `revealField` names - `requestAnimationFrame` waits for the
   // frame the JSX below actually commits in, the same "has this appeared
   // yet" wait `ContentEntryEditor.tsx`'s own `?_field=` effect does for the
-  // top-level form.
+  // top-level form. Deps deliberately exclude `draft`: `openEdit`/`openAdd`
+  // set `open` and `draft` together in the same batch, so `open` flipping is
+  // enough to catch the reveal - depending on `draft` too would re-trigger
+  // (and re-scroll) on every keystroke, since `renderItem`'s `onChange`
+  // above replaces `draft` wholesale on each one.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
   useEffect(() => {
     if (!open || draft === null || !revealField) return;
     const frame = requestAnimationFrame(() => {
       if (bodyScroll.current) highlightAnchor(bodyScroll.current, revealField);
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, draft, revealField]);
+  }, [open, revealField]);
 
   function removeItem(index: number) {
     onChange(value.filter((_, i) => i !== index));

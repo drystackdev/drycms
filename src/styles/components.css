@@ -1846,8 +1846,8 @@
 
       &::backdrop {
         background-color: var(--dry-backdrop);
-        backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
+        backdrop-filter: blur(5px);
         animation: dry-dialog-backdrop-in 120ms ease;
       }
 
@@ -2951,8 +2951,8 @@
       justify-content: space-between;
       gap: 1rem;
       flex-wrap: wrap;
-      backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
 
       & h1 {
         font-size: 1.5rem;
@@ -3911,8 +3911,8 @@
         inset: 0;
         z-index: 30;
         background-color: var(--dry-backdrop);
-        backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
+        backdrop-filter: blur(5px);
       }
 
       /* Fixed-height + centered content is fine for a single-line title, but
@@ -4865,8 +4865,8 @@
       padding: 1rem;
       border-radius: inherit;
       background-color: var(--dry-glass);
-      backdrop-filter: blur(1px);
       -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
       color: var(--dry-card-foreground);
       opacity: 0;
       transition: opacity 160ms ease;
@@ -5348,8 +5348,8 @@
       /* Glass, not a solid card - the point of a full-screen preview is to
        * stay grounded in the page it floats over. */
       background-color: var(--dry-glass-strong);
-      backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
+      backdrop-filter: blur(24px);
     }
 
     header.file-preview-header {
@@ -5552,8 +5552,8 @@
         inset: 0;
         z-index: 48;
         background-color: var(--dry-backdrop);
-        backdrop-filter: blur(5px);
         -webkit-backdrop-filter: blur(5px);
+        backdrop-filter: blur(5px);
       }
     }
 
