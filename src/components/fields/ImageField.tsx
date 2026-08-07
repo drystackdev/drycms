@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
+import FileManager from "../FileManager/FileManager.js";
 import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
 import { parentFolderOf, thumbnailUrl } from "../../storage/entry-utils.js";
 import { AddIcon, CloseIcon, DragHandleIcon, MediaIcon, TrashIcon, UploadIcon } from "../icons/index.js";
@@ -31,10 +31,9 @@ export interface ImageFieldMultipleConfig {
 export interface ImageFieldProps extends FieldProps<string | string[]> {
   /** Where the picker dialog's `FileManager` reads its files from. */
   source: FileManagerSource;
-  /** Sandboxed to the current entry's own media folder - shows a first
-   * "Entry" tab inside the picker's File panel when present
-   * (`EntryScopedPicker`). Omitted entirely outside a slug-enabled entry
-   * form. */
+  /** Sandboxed to the current entry's own media folder - adds a first
+   * "Entry" tab, flat alongside "File"/"Link" (not nested inside either).
+   * Omitted entirely outside a slug-enabled entry form. */
   entrySource?: FileManagerSource;
   /** Pick more than one image. `true` for no count limit, or `{ min, max }`
    * to require/cap a count (enforced by disabling the picker dialog's Select
@@ -103,7 +102,7 @@ export default function ImageField({
    * lists share one combined count/footer and both feed the same `onChange`
    * on confirm, so picks made in either tab survive switching to the other. */
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<"file" | "link">("file");
+  const [activeTab, setActiveTab] = useState<"entry" | "file" | "link">(entrySource ? "entry" : "file");
   const [entriesById, setEntriesById] = useState<Record<string, FileEntry>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
   // Deps include `open`: the body only mounts once the dialog opens, so the
@@ -180,7 +179,13 @@ export default function ImageField({
     const linkIds = selectedIds.filter(isLinkValue);
     setPending(isMultiple ? fileIds : (fileIds[0] ?? ""));
     setPendingLinks(linkIds);
-    setActiveTab(fileIds.length === 0 && linkIds.length > 0 ? "link" : "file");
+    setActiveTab(
+      fileIds.length === 0 && linkIds.length > 0
+        ? "link"
+        : fileIds.length === 0 && entrySource
+          ? "entry"
+          : "file",
+    );
     setOpen(true);
   };
 
@@ -349,6 +354,17 @@ export default function ImageField({
             </header>
             <div class="image-picker-body" ref={pickerBody}>
               <div role="tablist">
+                {entrySource && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "entry"}
+                    aria-controls={`${fieldId}-tab-entry`}
+                    onClick={() => setActiveTab("entry")}
+                  >
+                    Entry
+                  </button>
+                )}
                 <button
                   type="button"
                   role="tab"
@@ -368,19 +384,34 @@ export default function ImageField({
                   Link
                 </button>
               </div>
+              {entrySource && (
+                <div role="tabpanel" id={`${fieldId}-tab-entry`} hidden={activeTab !== "entry"}>
+                  {activeTab === "entry" && (
+                    <FileManager
+                      source={entrySource}
+                      value={pending}
+                      onChange={handleFileChange}
+                      multiple={isMultiple}
+                      accept={IMAGE_EXTENSIONS}
+                      syncUrl={false}
+                    />
+                  )}
+                </div>
+              )}
               <div role="tabpanel" id={`${fieldId}-tab-file`} hidden={activeTab !== "file"}>
-                <EntryScopedPicker
-                  fullSource={source}
-                  entrySource={entrySource}
-                  value={pending}
-                  onChange={handleFileChange}
-                  multiple={isMultiple}
-                  accept={IMAGE_EXTENSIONS}
-                  initialFolderId={
-                    firstSelectedFileId ? parentFolderOf(firstSelectedFileId) : undefined
-                  }
-                  syncUrl={false}
-                />
+                {activeTab === "file" && (
+                  <FileManager
+                    source={source}
+                    value={pending}
+                    onChange={handleFileChange}
+                    multiple={isMultiple}
+                    accept={IMAGE_EXTENSIONS}
+                    initialFolderId={
+                      firstSelectedFileId ? parentFolderOf(firstSelectedFileId) : undefined
+                    }
+                    syncUrl={false}
+                  />
+                )}
               </div>
               <div role="tabpanel" id={`${fieldId}-tab-link`} hidden={activeTab !== "link"}>
                 <ul class="image-field-link-list">

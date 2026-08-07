@@ -77,6 +77,19 @@ Verification:
   session) serves `/dry` (200) and `/dry/api/storage` (expected
   auth-gated JSON) without a 500 from the new `content-entries.ts` imports.
 
+## Follow-up fix (2026-08-08)
+
+User feedback: the Entry tab shouldn't nest inside ImageField's File tab -
+it should sit flat alongside File/Link as one tab row. Fixed in
+`ImageField.tsx`: dropped the `EntryScopedPicker` wrapper there, restored a
+plain `FileManager`, and added "Entry" as a third top-level tab
+(`activeTab: "entry" | "file" | "link"`) shown first when `entrySource` is
+present, each tabpanel's `FileManager` only mounted while active (avoids
+double `list()` fetch). `EntryScopedPicker` (Entry/Media flat two-tab) is
+still used as-is in `FileField.tsx` and RichText's Replace/Insert-image
+dialogs - those never had a second tab level to nest under, so they were
+already flat.
+
 ## Speed
 
 Implementation + unit tests + typecheck/test verification done in one

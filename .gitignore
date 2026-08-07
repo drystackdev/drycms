@@ -50,3 +50,7 @@ drystack
 .qa-tmp3
 .codegraph
 /kv/
+
+#mcp
+.playwright-mcp
+.codegraph
