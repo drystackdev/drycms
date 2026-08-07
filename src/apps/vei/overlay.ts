@@ -424,6 +424,35 @@ function main(): void {
   });
 
   /**
+   * The Super Admin's shared brand palette (`routes/system-settings.ts`'s
+   * rendered `.dry { --dry-*: ...; }` override - same public, no-auth
+   * endpoint `lib/apply-system-theme.ts` links into every ADMIN page load).
+   * `OVERLAY_STYLES` only ever inlines `tokens.css`'s SHIPPED defaults
+   * (`?raw`, baked in at build time), so without this the dock/backdrop/
+   * panel chrome would keep showing those defaults even after Settings
+   * customises the palette - a build-time import can't see a value that
+   * only exists in the database.
+   *
+   * Fetched into THIS shadow root (`root`), not `document.head`: `.dry`
+   * here is `scope`, which lives INSIDE the shadow root, so a light-DOM
+   * `<style>` targeting `.dry` would never match it - and `--dry-*`
+   * inherited from a light-DOM `:root` would still lose to `tokensCss`'s
+   * own already-specified `.dry` declaration on `scope` (a directly
+   * specified value always beats an inherited one, regardless of layer).
+   * The response itself is unlayered CSS (see that route's own doc
+   * comment), so appending it anywhere in this shadow root always wins over
+   * `tokensCss`'s layered defaults - no ordering to get right. A failed
+   * fetch (offline, or Settings has never been saved) just leaves the
+   * shipped defaults in place.
+   */
+  fetch(`${config.path}/api/system-settings/theme.css`)
+    .then((response) => (response.ok ? response.text() : ""))
+    .then((css) => {
+      if (css) root.append(element("style", { textContent: css }));
+    })
+    .catch(() => {});
+
+  /**
    * `/vei/enter`/`/vei/exit` are real navigations (a cookie only takes effect
    * through a genuine `Set-Cookie` round trip, and the markers this whole
    * overlay depends on only exist in a fresh server render - see

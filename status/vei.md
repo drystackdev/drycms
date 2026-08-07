@@ -632,3 +632,44 @@ Sửa `field-events.ts` (thêm `FIELD_FOCUS_EVENT`/dispatch/listen),
 `overlay-styles.ts` (`.dry-vei-focused`). `bun run typecheck` sạch (lỗi
 `blogs/page.tsx:78` có sẵn từ trước). `bun run test`: vẫn 958 pass/16 fail
 như các bản sửa VEI trước (fail có sẵn, không liên quan các file này).
+
+### Bổ sung: màu token CSS của overlay chưa theo màu tuỳ chỉnh trong Settings (2026-08-07)
+
+Bug: `OVERLAY_STYLES` chỉ inline `tokens.css` (`?raw`, giá trị SHIPPED mặc
+định, đóng cứng lúc build) - không có gì đọc override thật sự Super Admin đã
+lưu trong Settings (`systemSettings` singleton → `routes/system-settings.ts`
+render thành `.dry { --dry-*: ...; }`, admin load qua
+`lib/apply-system-theme.ts`'s `<link>`). Kết quả: dock/backdrop/panel của
+VEI luôn hiện màu primary MẶC ĐỊNH (`#00a76f` xanh lá) dù Settings đã đổi
+sang màu khác (test thực tế trên dev server: đã lưu sẵn `#2ec2d6` - xanh
+cyan).
+
+Sửa: `overlay.ts`'s `main()` fetch thêm cùng endpoint public/không cần auth
+`${config.path}/api/system-settings/theme.css` (đã public từ trước -
+`handler.ts`'s `isPublicThemeCss`), append response TEXT làm 1 `<style>`
+nữa vào chính SHADOW ROOT (`root`), không phải `document.head` - vì `.dry`
+ở đây là `scope`, nằm TRONG shadow root; `<style>` ở light DOM nhắm `.dry`
+sẽ không khớp được `scope`, và dù `--dry-*` có kế thừa qua ranh giới shadow
+DOM, giá trị KẾ THỪA từ `:root` bên ngoài vẫn thua giá trị `tokensCss` đã tự
+khai báo THẲNG trên `scope` (declared trực tiếp luôn thắng inherited, không
+liên quan tới layer). Response vốn không bọc `@layer` (theo comment sẵn có
+của route đó), nên append vào bất kỳ đâu trong shadow root cũng thắng default
+có layer của `tokensCss` - không cần quan tâm thứ tự. Fetch fail (offline,
+Settings chưa từng lưu) → im lặng giữ nguyên default, không throw.
+
+Verify Playwright: `curl theme.css` xác nhận `--dry-primary: #2ec2d6` (đã
+lưu sẵn trên dev server, mặc định `tokens.css` là `#00a76f`). Cả 2 nút -
+`EditButtonDock` (trước khi vào edit mode) và `EditingDock`'s Save (sau khi
+vào) - đều `background-color: rgb(46, 194, 214)` = `#2ec2d6`, khớp đúng
+Settings, không phải default.
+
+Chỉ sửa `src/apps/vei/overlay.ts`. `bun run typecheck` sạch (lỗi
+`blogs/page.tsx:78` có sẵn từ trước). `bun run test`: vẫn 958 pass/16 fail
+như các bản sửa VEI trước (fail có sẵn, không liên quan file này).
+
+Chưa làm (ngoài phạm vi yêu cầu): đồng bộ SỐNG khi Settings được lưu ở 1 tab
+khác trong lúc VEI đang mở (`reapplySystemTheme`'s cơ chế bên admin) - bản
+này chỉ fetch 1 lần lúc overlay khởi động, đủ cho yêu cầu "màu chưa theo
+Settings"; refetch lúc đang mở sẽ cần thêm tín hiệu cross-tab (không có sẵn
+cho `systemSettings`, khác `drycms:store`'s `localStorage`/`storage` event
+dùng cho theme sáng/tối).

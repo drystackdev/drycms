@@ -100,7 +100,7 @@ export function EditButtonDock(props: { onOpenEditor: () => void }) {
     <div className="dock">
       <button
         type="button"
-        className={opening ? undefined : "icon"}
+        className={opening ? "ghost round" : "icon"}
         title="Edit content"
         aria-label="Edit content"
         disabled={opening}

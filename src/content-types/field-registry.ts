@@ -1,6 +1,7 @@
 import type { ComponentType } from "preact";
 import CheckField from "../components/fields/CheckField.js";
 import DatePickerField from "../components/fields/DatePickerField.js";
+import FileField from "../components/fields/FileField.js";
 import ImageField from "../components/fields/ImageField.js";
 import NumberField from "../components/fields/NumberField.js";
 import SecretKeyField from "../components/fields/SecretKeyField.js";
@@ -365,6 +366,47 @@ export const imageFieldType: FieldTypeDefinition<string | string[]> = {
   ],
 };
 
+export interface FileFieldConfig {
+  /** @default false - a single file; `true` lets `FileField`'s own
+   * `multiple` mode pick several, stored as a comma-joined id list instead
+   * of a bare id (see `serialize`/`deserialize` below) - same convention as
+   * `image`. */
+  multiple?: boolean;
+}
+
+/**
+ * A generic uploaded file - same storage-backed picker mechanism as `image`
+ * (`FileManagerSource`), just without the image-only extension restriction/
+ * thumbnail preview `ImageField` carries (an extension icon stands in via
+ * `thumbnailUrl` instead). Stores a bare relative storage id (or a comma-
+ * joined list in `multiple` mode), same convention as `image` - see
+ * `FileField`'s own doc comment for the UI. Used for things like a Google
+ * Search Console site-verification file uploaded to the storage root, where
+ * the local `kind: "local"` backend's root IS the app's `public/` (see
+ * `options.ts`'s `resolveStorageOption`) - so a file picked at the top level
+ * is already served at the domain root, no separate "static" folder needed.
+ */
+export const fileFieldType: FieldTypeDefinition<string | string[]> = {
+  key: "file",
+  label: "File",
+  shape: "column",
+  Editor: FileField,
+  sqlType: () => "TEXT",
+  serialize: (value) => (Array.isArray(value) ? value.join(",") : value),
+  deserialize: (raw) => {
+    if (typeof raw !== "string" || !raw.includes(",")) return raw as string;
+    return raw.split(",");
+  },
+  configFields: [{ key: "multiple", label: "Allow multiple files", widget: "boolean" }],
+  defaultConfig: { multiple: false },
+  // Min/max item count only means anything once `multiple` is on - same as
+  // `image`'s identical branch above.
+  validationFields: (config) => [
+    { key: "required", label: "Required", widget: "boolean" },
+    ...((config as FileFieldConfig).multiple ? ITEM_COUNT_VALIDATION : []),
+  ],
+};
+
 export interface SelectFieldConfig {
   /** Fixed value set defined when the field itself is created - not editable
    * per-entry, only here in the schema. Each option is a single bare string,
@@ -662,6 +704,7 @@ export const FIELD_TYPE_TS_TYPE: Record<string, string> = {
   date: "Date",
   image: "string",
   select: "string",
+  file: "string",
 };
 
 export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
@@ -671,6 +714,7 @@ export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [booleanFieldType.key]: booleanFieldType,
   [dateFieldType.key]: dateFieldType,
   [imageFieldType.key]: imageFieldType,
+  [fileFieldType.key]: fileFieldType,
   [selectFieldType.key]: selectFieldType,
   [passwordFieldType.key]: passwordFieldType,
   [secretKeyFieldType.key]: secretKeyFieldType,

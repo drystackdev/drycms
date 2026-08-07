@@ -18,6 +18,7 @@ import {
   SelectFieldTypeIcon,
   DatePickerFieldTypeIcon,
   ImageFieldTypeIcon,
+  ContentIcon,
   RelationFieldTypeIcon,
   ComponentFieldTypeIcon,
 } from "../icons/index.js";
@@ -45,6 +46,11 @@ export const fieldTypeIcons: Record<string, ComponentType<IconProps>> = {
   date: DatePickerFieldTypeIcon,
   "image-field": ImageFieldTypeIcon,
   image: ImageFieldTypeIcon,
+  // No dedicated icon (only `*FieldType` Iconify picks in `icons.config.json`
+  // have one) - borrows `ContentIcon` (a generic documents glyph), same
+  // "reuse the closest existing icon" precedent as `relationmirror` below.
+  "file-field": ContentIcon,
+  file: ContentIcon,
   "relation-field": RelationFieldTypeIcon,
   relation: RelationFieldTypeIcon,
   "component-field": ComponentFieldTypeIcon,
@@ -85,6 +91,8 @@ export const fieldTypeColors: Record<string, string> = {
   date: "#14b8a6",
   "image-field": "#ec4899",
   image: "#ec4899",
+  "file-field": "#f97316",
+  file: "#f97316",
   "relation-field": "#6366f1",
   relation: "#6366f1",
   "component-field": "#eab308",

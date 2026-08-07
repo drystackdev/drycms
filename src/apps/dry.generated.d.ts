@@ -129,6 +129,7 @@ export interface SiteSettings {
 
 export interface SeoDefaults {
   id: number;
+  googleSiteVerificationFile?: string;
   seo: Seo;
 }
 

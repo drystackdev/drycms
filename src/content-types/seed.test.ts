@@ -108,11 +108,11 @@ describe("defaultContentTypeDefinitions", () => {
     expect(data.type).toBe("text");
   });
 
-  it("seoDefaults is recognized by its fixed id, has features.seo on, and no custom fields", () => {
+  it("seoDefaults is recognized by its fixed id, has features.seo on, and only the built-in Google site-verification file field", () => {
     const seoDefaults = byName("seoDefaults");
     expect(seoDefaults.id).toBe(SEO_DEFAULTS_TYPE_ID);
     expect(seoDefaults.features?.seo).toBe(true);
-    expect(seoDefaults.fields).toEqual([]);
+    expect(seoDefaults.fields.map((f) => f.name)).toEqual(["googleSiteVerificationFile"]);
   });
 
   it("protects user's email/password/roles fields specifically, and nothing else", () => {

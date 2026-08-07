@@ -1,4 +1,4 @@
-import { FIELD_TYPE_TS_TYPE, flipCardinality, type ComponentFieldConfig, type ImageFieldConfig, type RelationCardinality, type RelationFieldConfig, type RelationMirrorFieldConfig, type SelectFieldConfig } from "./field-registry.js";
+import { FIELD_TYPE_TS_TYPE, flipCardinality, type ComponentFieldConfig, type FileFieldConfig, type ImageFieldConfig, type RelationCardinality, type RelationFieldConfig, type RelationMirrorFieldConfig, type SelectFieldConfig } from "./field-registry.js";
 import { activeFields, activeSystemFieldsFor, applyFieldOrder, relationMirrorFieldsFor } from "./system-fields.js";
 import type { ContentTypeDefinition, FieldDefinition } from "./types.js";
 
@@ -80,8 +80,9 @@ function fieldLine(field: FieldDefinition, allTypes: ContentTypeDefinition[], co
     case "select":
       return `  ${field.name}${optionalMark}: ${selectTsType(field.config as SelectFieldConfig)};`;
 
-    case "image": {
-      const config = field.config as ImageFieldConfig;
+    case "image":
+    case "file": {
+      const config = field.config as ImageFieldConfig | FileFieldConfig;
       return `  ${field.name}${optionalMark}: ${config.multiple ? "string[]" : "string"};`;
     }
 

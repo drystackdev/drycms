@@ -86,6 +86,7 @@ const IDS = {
   memoryVersion: "system-memory-version",
   systemSettings: "system-settings",
   systemSettingsData: "system-settings-data",
+  seoDefaultsGoogleSiteVerificationFile: "system-seo-defaults-google-site-verification-file",
 } as const;
 
 /**
@@ -504,7 +505,26 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     hidden: true,
     locked: true,
     features: { seo: true },
-    fields: [],
+    fields: [
+      {
+        id: IDS.seoDefaultsGoogleSiteVerificationFile,
+        name: "googleSiteVerificationFile",
+        label: "Google Site Verification File",
+        type: "file",
+        // Google's HTML verification method requires the file at the exact
+        // domain root (`https://example.com/google<id>.html`), not nested
+        // under a subfolder - upload it to the Media picker's top-level
+        // (root) folder, never into a subfolder, since the local storage
+        // backend's root IS the app's own `public/` (`options.ts`'s
+        // `resolveStorageOption`), which Vite/the Node adapter already
+        // serves at the site root as a static asset.
+        description:
+          "Upload the .html file Google Search Console gives you for domain-ownership verification. Pick the TOP-LEVEL (root) folder in the file picker so it's served at https://yourdomain.com/<filename>.html, not nested under a subfolder.",
+        config: {},
+        validation: {},
+        order: 0,
+      },
+    ],
     version: 0,
   };
 
