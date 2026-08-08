@@ -213,6 +213,10 @@ function assertValid(nodes: EntryFieldNode[], value: EntryValue): void {
   }
 }
 
+/** See `ensureVersionsTable` below - module-scoped so the memo survives the
+ * per-request adapter `content-adapters.ts` builds. */
+const versionsTableByBinding = new WeakMap<D1Database, Promise<void>>();
+
 /** D1 counterpart to `entries-sqlite.ts` - see that file's doc comments for
  * the shared algorithm (child-table population/write/delete, unique-violation
  * translation). Structured as its own full implementation rather than a
@@ -234,20 +238,27 @@ export function createD1ContentEntryEngineAdapter(
 
   // Same `_versions` table/shape as `entries-sqlite.ts`, bootstrapped lazily
   // on first use rather than eagerly (mirrors `d1.ts`'s own
-  // `ensureBootstrap`, since a D1 binding is only resolvable per-request).
-  let versionsBootstrapped: Promise<void> | undefined;
+  // `ensureBootstrap`, since a D1 binding is only resolvable per-request) -
+  // and memoized against the BINDING, not this adapter, for the same reason
+  // `d1.ts`'s `bootstrapByBinding` is (a per-adapter memo means one wasted
+  // CREATE TABLE per request; see `status/worker-request-cost.md`).
   async function ensureVersionsTable(): Promise<void> {
-    versionsBootstrapped ??= db
-      .prepare(
-        `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
-          `  "resource" TEXT PRIMARY KEY,\n` +
-          `  "version" INTEGER NOT NULL,\n` +
-          `  "updated_at" INTEGER NOT NULL\n` +
-          `);`,
-      )
-      .run()
-      .then(() => undefined);
-    return versionsBootstrapped;
+    let bootstrapped = versionsTableByBinding.get(db);
+    if (!bootstrapped) {
+      bootstrapped = db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+            `  "resource" TEXT PRIMARY KEY,\n` +
+            `  "version" INTEGER NOT NULL,\n` +
+            `  "updated_at" INTEGER NOT NULL\n` +
+            `);`,
+        )
+        .run()
+        .then(() => undefined);
+      versionsTableByBinding.set(db, bootstrapped);
+      bootstrapped.catch(() => versionsTableByBinding.delete(db));
+    }
+    return bootstrapped;
   }
 
   /** `resource`'s current data version (see `status/build-cache.md`) - `0`
@@ -516,5 +527,19 @@ export function createD1ContentEntryEngineAdapter(
     saveSingletonEntry,
     ensureSingletonEntry,
     getResourceVersion: (type) => getResourceVersionValue(type.name),
+    getResourceVersions: async (types) => {
+      const versions: Record<string, number> = {};
+      if (types.length === 0) return versions;
+      await ensureVersionsTable();
+      const names = types.map((type) => type.name);
+      for (const name of names) versions[name] = 0;
+      const rows = await dbAll<{ resource: string; version: number }>(
+        db,
+        `SELECT "resource", "version" FROM "_versions" WHERE "resource" IN (${names.map(() => "?").join(",")});`,
+        names,
+      );
+      for (const row of rows) versions[row.resource] = row.version;
+      return versions;
+    },
   };
 }

@@ -29,6 +29,7 @@ describe('resolveOptions', () => {
 			},
 			pagesCache: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/pages-cache') },
+				edgeTtl: 60,
 			},
 			typesCache: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/types-cache') },
@@ -76,6 +77,17 @@ describe('resolveOptions', () => {
 		expect(resolveOptions({ kind: 'cloudflare', kv: { maxEntries: 5 } }).kv).toMatchObject({
 			kind: 'KV', binding: 'KV', maxEntries: 5,
 		});
+	});
+
+	it('takes pagesCache.edgeTtl as given, including 0 to disable the edge cache', () => {
+		expect(resolveOptions({ pagesCache: { edgeTtl: 300 } }).pagesCache.edgeTtl).toBe(300);
+		expect(resolveOptions({ pagesCache: { edgeTtl: 0 } }).pagesCache.edgeTtl).toBe(0);
+	});
+
+	it('rejects an invalid pagesCache.edgeTtl', () => {
+		expect(() => resolveOptions({ pagesCache: { edgeTtl: -1 } })).toThrow(/pagesCache\.edgeTtl/);
+		expect(() => resolveOptions({ pagesCache: { edgeTtl: 1.5 } })).toThrow(/pagesCache\.edgeTtl/);
+		expect(() => resolveOptions({ pagesCache: { edgeTtl: '60' as unknown as number } })).toThrow(/pagesCache\.edgeTtl/);
 	});
 
 	it('rejects invalid kv tuning values', () => {

@@ -89,34 +89,6 @@ export async function handlePageRequest(
     const { schema, entries } = getContentAdapters(routeContext);
     const allTypes = await schema.listContentTypes();
 
-    // Checked BEFORE routing, and unconditionally - not only when `match` is
-    // null. A dynamic `[slug]` route (e.g. `/blogs/[slug]`) matches ANY slug
-    // syntactically, valid or not; the "this specific post doesn't exist"
-    // case only surfaces once the page's own `dry()` lookup comes up empty,
-    // which `page-handler.ts` has no visibility into (the page renders its
-    // own "not found" markup at a normal 200 status - see
-    // `blogs/[slug]/page.tsx`). Running this check first, always, is what
-    // actually catches a renamed slug's old URL - a genuine route miss
-    // reaches the same check with the same result (usually no match, falls
-    // through below), just via a different path. Known trade-off (accepted
-    // when this matching strategy was chosen over a per-content-type URL
-    // prefix): ANY path's last segment - including a static page's, like
-    // `/about` - could theoretically collide with an unrelated stale
-    // redirect and get 301'd instead of rendering normally.
-    const redirectResponse = await findRedirectResponse(url, entries, allTypes);
-    if (redirectResponse) return redirectResponse;
-
-    if (!match && !routeTree.notFound) return null;
-    // A route miss with a `404.tsx` renders through the SAME pipeline as a
-    // real match below, wrapped by the root layout only (a nested layout
-    // has no meaning for a path that didn't resolve to anywhere under it).
-    const resolvedMatch: RouteMatch = match ?? {
-      page: routeTree.notFound!,
-      layouts: routeTree.root.layout ? [routeTree.root.layout] : [],
-      params: {},
-    };
-    const status = match ? 200 : 404;
-
     const vei = await resolveVeiContext(request, env, entries, allTypes);
 
     // pages-cache only runs in production, and only for a real match - a
@@ -133,6 +105,35 @@ export async function handlePageRequest(
         return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
     }
+
+    // Deliberately AFTER the cache read, not before it. A dynamic `[slug]`
+    // route (e.g. `/blogs/[slug]`) matches ANY slug syntactically, valid or
+    // not; the "this specific post doesn't exist" case only surfaces once the
+    // page's own `dry()` lookup comes up empty, which `page-handler.ts` has no
+    // visibility into (the page renders its own "not found" markup at a normal
+    // 200 status - see `blogs/[slug]/page.tsx`). So this still has to run for
+    // a syntactic match, not only a route miss - but a LIVE cache entry is
+    // already proof that this exact path rendered as a real page, and renaming
+    // a slug bumps its type's version, which invalidates that entry and brings
+    // the request back through here. Checking after the cache read therefore
+    // costs nothing in coverage and saves a D1 round trip on every cached page
+    // view (see `status/worker-request-cost.md`); it also
+    // narrows - without closing - the known trade-off of matching on the last
+    // path segment alone: an unrelated stale redirect can no longer hijack a
+    // path whose own cached render is still valid.
+    const redirectResponse = await findRedirectResponse(url, entries, allTypes);
+    if (redirectResponse) return redirectResponse;
+
+    if (!match && !routeTree.notFound) return null;
+    // A route miss with a `404.tsx` renders through the SAME pipeline as a
+    // real match below, wrapped by the root layout only (a nested layout
+    // has no meaning for a path that didn't resolve to anywhere under it).
+    const resolvedMatch: RouteMatch = match ?? {
+      page: routeTree.notFound!,
+      layouts: routeTree.root.layout ? [routeTree.root.layout] : [],
+      params: {},
+    };
+    const status = match ? 200 : 404;
 
     const touchedTypes = new Set<string>();
     const callLog: DryRequestContext["callLog"] = [];

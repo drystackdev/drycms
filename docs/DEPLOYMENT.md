@@ -107,6 +107,31 @@ wrangler deploy --dry-run
 
 **After first deploy**, visit your Worker's URL to register the first Super Admin account (one-time). The registration form requires a `DRYCMS_BOOTSTRAP_TOKEN` env var (set via `wrangler secret put` or `.env.production`).
 
+### Public-page caching (and what a page view actually costs)
+
+A public page view goes through two caches, in this order:
+
+1. **Edge cache** (`src/server/app-router/edge-cache.ts`) - Cloudflare's Cache
+   API, keyed by URL, TTL from `pagesCache.edgeTtl` in `dry.config.ts`
+   (default `60` seconds, `0` disables). A hit costs no D1 and no R2 at all.
+   Only anonymous `GET`s are stored or served: a request carrying an admin
+   session or VEI cookie bypasses it in both directions, so an editor always
+   sees their own change immediately while an anonymous visitor sees it at
+   most `edgeTtl` seconds later. **The Cache API is disabled on
+   `*.workers.dev`** - the Worker must be served through a custom
+   domain/route for this layer to do anything (it degrades to a miss, never
+   an error).
+2. **pages-cache** (`src/server/app-router/pages-cache.ts`) - rendered HTML in
+   R2, validated against every touched content type's data version, so it is
+   never stale. Costs one R2 read plus one batched D1 version query per view.
+
+Both are production-only (`import.meta.env.DEV` skips them) and both are
+skipped for a VEI edit-mode render.
+
+`status/worker-request-cost.md` has the per-request cost breakdown these
+layers exist to cut, and why D1 throughput - not any quota - is the real
+ceiling on a busy site.
+
 ### Known limitations on Workers
 
 - **AI local mode** (`ai.mode: "local"`) is not supported - requires Node's `child_process`. Set `kind: "cloudflare"` and provide an AI key (Anthropic, Google, OpenAI, etc.) via `DryOption.ai`.

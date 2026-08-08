@@ -14,6 +14,18 @@ import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
  * object through). Unlike the sqlite engine, this can't be resolved once at
  * module scope: the binding only exists per-request.
  */
+/**
+ * Keyed by the live binding rather than held in the adapter's own closure:
+ * `content-adapters.ts` builds a NEW adapter per request (a D1 binding is
+ * only resolvable per-request), so a per-adapter memo made `ensureBootstrap`
+ * re-run its DDL + seed check on every single request - 6 wasted D1 round
+ * trips per page view (see `status/worker-request-cost.md`). The binding
+ * object itself is stable for the isolate, so this memoizes for exactly as
+ * long as it's safe to. A rejected bootstrap is evicted so the next request
+ * retries instead of inheriting a permanently failed promise.
+ */
+const bootstrapByBinding = new WeakMap<D1Database, Promise<void>>();
+
 export function createD1ContentEngineAdapter(
   option: ResolvedD1ContentOption,
   runtimeEnv: Record<string, unknown> | undefined,
@@ -58,8 +70,8 @@ export function createD1ContentEngineAdapter(
       .run();
   }
 
-  let bootstrapped: Promise<void> | undefined;
   async function ensureBootstrap(): Promise<void> {
+    let bootstrapped = bootstrapByBinding.get(db);
     if (!bootstrapped) {
       bootstrapped = (async () => {
         await db
@@ -93,6 +105,8 @@ export function createD1ContentEngineAdapter(
         await db.prepare(superAdmin.sql).bind(...(superAdmin.params ?? [])).run();
 
       })();
+      bootstrapByBinding.set(db, bootstrapped);
+      bootstrapped.catch(() => bootstrapByBinding.delete(db));
     }
     return bootstrapped;
   }

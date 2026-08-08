@@ -44,14 +44,22 @@ export async function readPageCache(
 
   if (envelope.buildId !== buildId()) return null;
 
-  for (const [typeName, cachedVersion] of Object.entries(envelope.versions)) {
+  const cachedNames = Object.keys(envelope.versions);
+  const types: ContentTypeDefinition[] = [];
+  for (const typeName of cachedNames) {
     const type = allTypes.find((t) => t.name === typeName);
     // A type that no longer exists can't be re-checked - treat the entry
     // as stale rather than trusting a cache built against a type that's
     // since been deleted.
     if (!type) return null;
-    const currentVersion = await entries.getResourceVersion(type);
-    if (currentVersion !== cachedVersion) return null;
+    types.push(type);
+  }
+  // One batched lookup rather than one per type: this runs on EVERY request
+  // that hits the cache, and on D1 each version read is a round trip to a
+  // single-threaded database (see `status/worker-request-cost.md`).
+  const current = await entries.getResourceVersions(types);
+  for (const [typeName, cachedVersion] of Object.entries(envelope.versions)) {
+    if (current[typeName] !== cachedVersion) return null;
   }
 
   return envelope.html;
@@ -75,12 +83,12 @@ export async function writePageCache(
   allTypes: ContentTypeDefinition[],
 ): Promise<void> {
   try {
-    const versions: Record<string, number> = {};
+    const types: ContentTypeDefinition[] = [];
     for (const typeName of touchedTypes) {
       const type = allTypes.find((t) => t.name === typeName);
-      if (!type) continue;
-      versions[typeName] = await entries.getResourceVersion(type);
+      if (type) types.push(type);
     }
+    const versions = await entries.getResourceVersions(types);
     const envelope: PageCacheEnvelope = {
       html,
       versions,

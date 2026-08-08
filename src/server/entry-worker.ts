@@ -1,6 +1,7 @@
 import { handleApiRequest, isApiRequest } from "./handler.js";
 import { injectClientConfig } from "./client-config.js";
 import { path as adminPath } from "./config.js";
+import { isEdgeCacheable, readEdgeCache, storeEdgeCache } from "./app-router/edge-cache.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
 import { handleVeiRoute } from "./vei-routes.js";
@@ -73,7 +74,7 @@ async function serveAdminShell(env: WorkerEnv, request: Request): Promise<Respon
 }
 
 export default {
-  async fetch(request: Request, env: WorkerEnv, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (isApiRequest(url.pathname)) {
@@ -93,6 +94,18 @@ export default {
       return withSecurityHeaders(new Response("Bad request", { status: 400 }));
     }
 
+    const isAdminPath = pathname === adminPath || pathname.startsWith(`${adminPath}/`);
+
+    // Ahead of the asset branch, not just the page branch: only the App
+    // Router below ever stores an entry, so a hit here is by construction a
+    // page - and answering from it skips the `env.ASSETS.fetch` miss that
+    // every non-asset URL would otherwise pay on the way to `handlePageRequest`.
+    const cacheable = !isAdminPath && isEdgeCacheable(request);
+    if (cacheable) {
+      const hit = await readEdgeCache(request);
+      if (hit) return hit;
+    }
+
     // Real static assets (`/assets/main-abc123.js`, images, ...) first -
     // `pathname === "/"` is excluded the same way `entry-node.ts`'s
     // `tryServeStaticAsset` excludes it: the built `dist/client/index.html`
@@ -103,9 +116,14 @@ export default {
       if (assetResponse.status !== 404) return withSecurityHeaders(assetResponse);
     }
 
-    if (pathname !== adminPath && !pathname.startsWith(`${adminPath}/`)) {
+    if (!isAdminPath) {
       const pageResponse = await handlePageRequest(request, env);
-      if (pageResponse) return withSecurityHeaders(pageResponse);
+      if (pageResponse) {
+        // Stored AFTER the security headers are on, so a later cache hit
+        // carries the exact bytes and headers this render would have sent.
+        const secured = withSecurityHeaders(pageResponse);
+        return cacheable ? storeEdgeCache(request, secured, ctx) : secured;
+      }
       return withSecurityHeaders(
         new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } }),
       );

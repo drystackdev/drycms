@@ -31,6 +31,11 @@ const PAGES_CACHE_STORAGE_DIR_NAME = "pages-cache";
 const TYPES_CACHE_STORAGE_DIR_NAME = "types-cache";
 const KV_DIR_NAME = "kv";
 
+/** Long enough that a hot page's repeat views stop reaching the Worker's
+ * D1/R2 work at all, short enough that an editor's change is live without
+ * anyone purging anything (see `status/worker-request-cost.md`). */
+const DEFAULT_PAGES_CACHE_EDGE_TTL_SECONDS = 60;
+
 const LOCAL_DATA_ROOT_DIR = ".dry";
 const E2E_DATA_ROOT_DIR = "test-results/e2e-data";
 
@@ -95,6 +100,26 @@ export interface DryKvTuningOption {
   durability?: "memory" | "async" | "sync";
 }
 
+export interface DryPagesCacheOption {
+  /**
+   * How many seconds Cloudflare's edge cache may serve a rendered public
+   * page for, before the Worker runs again for that URL. Only anonymous
+   * `GET`s are ever stored (a request carrying an admin/VEI cookie bypasses
+   * the layer in both directions), so an editor always sees their own change
+   * immediately; an anonymous visitor sees it at most `edgeTtl` seconds
+   * later. `0` turns the layer off, leaving only the version-checked
+   * pages-cache in storage, which is never stale but costs a D1 round trip
+   * per view (see `status/worker-request-cost.md`).
+   *
+   * Workers-only: the Cache API does not exist under the Node adapter, and
+   * Cloudflare disables it on `*.workers.dev` - a Worker has to be served
+   * through a custom domain/route for this to do anything.
+   *
+   * @default 60
+   */
+  edgeTtl?: number;
+}
+
 export interface DryOption {
   /**
    * Base path the drycms admin UI is mounted on.
@@ -130,6 +155,7 @@ export interface DryOption {
   kind?: "local" | "cloudflare";
   ai?: DryAiOption;
   kv?: DryKvTuningOption;
+  pagesCache?: DryPagesCacheOption;
   /** The public site's `<html lang>` (`render.ts`'s `DOC_HEAD_PREFIX`) - a
    * real per-deployment constant, unlike `ai.lang` (a separate, optional
    * setting for AI-generated text specifically, not every app configures
@@ -190,6 +216,10 @@ export interface ResolvedPageComponentsOption {
 
 export interface ResolvedPagesCacheOption {
   storage: ResolvedStorageOption;
+  /** Seconds a rendered public page may be held in the Cloudflare edge cache
+   * (`app-router/edge-cache.ts`). `0` disables that layer entirely, leaving
+   * only the version-checked `storage` cache. */
+  edgeTtl: number;
 }
 
 export interface ResolvedTypesCacheOption {
@@ -330,6 +360,14 @@ export interface ResolveOptionsOverrides {
 function localBaseDir(overrides: ResolveOptionsOverrides): string {
   if (overrides.localDataRoot !== undefined) return overrides.localDataRoot;
   return readEnvVar("DRYCMS_E2E") === "1" ? E2E_DATA_ROOT_DIR : LOCAL_DATA_ROOT_DIR;
+}
+
+function resolvePagesCacheEdgeTtl(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_PAGES_CACHE_EDGE_TTL_SECONDS;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new TypeError('[drycms] `pagesCache.edgeTtl` must be a non-negative integer number of seconds (0 disables the edge cache).');
+  }
+  return value;
 }
 
 function resolveStorageBackedOption(
@@ -519,7 +557,10 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
     content: resolveContentOption(kind, overrides),
     components: { storage: resolveStorageBackedOption(kind, COMPONENTS_STORAGE_DIR_NAME, overrides) },
     pageComponents: { storage: resolveStorageBackedOption(kind, PAGE_COMPONENTS_STORAGE_DIR_NAME, overrides) },
-    pagesCache: { storage: resolveStorageBackedOption(kind, PAGES_CACHE_STORAGE_DIR_NAME, overrides) },
+    pagesCache: {
+      storage: resolveStorageBackedOption(kind, PAGES_CACHE_STORAGE_DIR_NAME, overrides),
+      edgeTtl: resolvePagesCacheEdgeTtl(options.pagesCache?.edgeTtl),
+    },
     typesCache: { storage: resolveStorageBackedOption(kind, TYPES_CACHE_STORAGE_DIR_NAME, overrides) },
     ai: resolveAiOption(kind, options.ai),
     kv: resolveKvOption(kind, options.kv, overrides),
