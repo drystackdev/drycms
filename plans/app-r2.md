@@ -535,12 +535,17 @@ thiết).
    `PageCacheEnvelope` **cho nhánh mới** (namespace `built/` riêng, không
    đụng cache cũ). **Chưa nối vào đường serve thật** - xem quyết định #8 mới
    bên dưới.
-2. **✅ Route manifest + bảng + route động (2026-08-09).**
+2. **✅ Route manifest + bảng + route động, ĐỦ cả mục 4 (2026-08-09).**
    mục 1 (`route-manifest.ts`, tái dùng `buildRouteTree`/`matchRoute` không
-   đổi), mục 5 (`_pages`/`_page_deps`, dual engine), mục 4 CHƯA làm (liệt kê
-   param cho route động). Route manifest xây xong nhưng **chưa có gì đổ dữ
-   liệu thật vào `pagesSourceStorage`** ngoài `scripts/sync-pages-r2.ts`
-   (mục 13, cũng xong).
+   đổi), mục 5 (`_pages`/`_page_deps`, dual engine), mục 4
+   (`dynamic-routes.ts` - khớp template `[param]` với `seoUrlPattern` của
+   content type, kiểu `generateStaticParams`; không thêm field config mới,
+   dùng lại đúng field đã có). Đã chạy thật dưới `wrangler dev`: tạo content
+   type `blogPost` (feature slug + `seoUrlPattern:"/blogs/{slug}"`) + 1
+   entry qua API thật, `/blogs/[slug]` tự hiện thành `/blogs/hello-world`
+   trong UI Build, bấm Build ra đúng nội dung (`params().slug` đúng, layout
+   chain đúng) - xem `status/app-r2-build.md`. Route catch-all (`[...rest]`)
+   vẫn đúng như quyết định gốc: bỏ qua, không build.
 3. **🟡 CSS + hydration - kiến trúc CSS đã xác nhận + xây xong, hydration
    chưa.** Ẩn số chặn (mục 6) đã giải quyết 2026-08-09 - xem mục 6 ở
    "Kết quả spike" phía trên. `tailwind-build.ts` (build/render qua iframe

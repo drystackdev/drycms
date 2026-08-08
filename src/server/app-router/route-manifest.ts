@@ -1,4 +1,4 @@
-import { buildRouteTree, staticPagePaths, type ModuleLoader, type RouteTree } from "./route-tree.js";
+import { buildRouteTree, staticPagePaths, type ModuleLoader, type RouteTree, type RouteTreeNode } from "./route-tree.js";
 import { matchRoute } from "./match.js";
 
 /**
@@ -86,3 +86,56 @@ export function matchSourceRoute(tree: RouteTree, pathname: string): SourceRoute
  * `RouteTree` regardless of what its loaders do) so callers of this module
  * don't also need to import from `route-tree.ts` directly. */
 export { staticPagePaths };
+
+const DYNAMIC_SEGMENT = /^\[([^.[\]]+)\]$/;
+
+export interface DynamicPageTemplate {
+  /** e.g. `"/blogs/[slug]"` - the route's own pathname, bracket segment
+   * literal (not yet resolved to a real value). */
+  pathnameTemplate: string;
+  paramName: string;
+  entryPath: string;
+  /** Root-to-leaf, INCLUDING the dynamic segment's own layout if it has
+   * one - same convention `SourceRouteMatch.layoutPaths` uses. */
+  layoutPaths: string[];
+}
+
+/**
+ * Every single-level `[param]` page template in the tree (mục 4) - the
+ * dynamic-route counterpart to `staticPagePaths`. Catch-all (`[...rest]`)
+ * segments are silently skipped, same "khai báo tay hoặc chấp nhận không
+ * build" decision `plans/app-r2.md` mục 4 already made - `DYNAMIC_SEGMENT`
+ * (copied from `match.ts`'s own regex) simply never matches one, so there's
+ * nothing further to special-case here.
+ *
+ * Does NOT recurse past a matched `[param]` node into ITS children - v1
+ * scope is one dynamic segment per branch. A real site nesting a second
+ * dynamic segment under the first (`/blogs/[slug]/comments/[id]`) isn't
+ * enumerable this way without already knowing the parent's concrete value,
+ * which is exactly what `dynamic-routes.ts`'s caller resolves ONE level at
+ * a time - deeper nesting is a real, currently-unhandled limitation, not
+ * silently wrong.
+ */
+export function listDynamicPageTemplates(tree: RouteTree): DynamicPageTemplate[] {
+  const templates: DynamicPageTemplate[] = [];
+  function walk(node: RouteTreeNode, segments: string[], layoutPaths: string[]): void {
+    for (const [segment, child] of node.children) {
+      const childLayoutPaths = child.layout ? [...layoutPaths, sourcePathOf(child.layout)] : layoutPaths;
+      const match = DYNAMIC_SEGMENT.exec(segment);
+      if (match) {
+        if (child.page) {
+          templates.push({
+            pathnameTemplate: `/${[...segments, segment].join("/")}`,
+            paramName: match[1]!,
+            entryPath: sourcePathOf(child.page),
+            layoutPaths: childLayoutPaths,
+          });
+        }
+        continue;
+      }
+      walk(child, [...segments, segment], childLayoutPaths);
+    }
+  }
+  walk(tree.root, [], tree.root.layout ? [sourcePathOf(tree.root.layout)] : []);
+  return templates;
+}

@@ -276,6 +276,47 @@ storage):
 nothing further). `.wrangler/`'s local D1/R2/KV state and `dist/`'s build
 output are both gitignored - confirmed, left in place, no cleanup needed.
 
+## Update 2026-08-09, part 3: mục 4 (dynamic route params)
+
+Built the last unfinished piece of Giai đoạn 2: `route-manifest.ts`'s
+`listDynamicPageTemplates` (finds every single-level `[param]` page
+template in the tree, skips catch-alls entirely, same "khai báo tay hoặc
+chấp nhận không build" decision as before) + new
+`page-components/dynamic-routes.ts`'s `resolveDynamicPages` (matches a
+template to a content type via `seoUrlPattern` - the SAME, only, existing
+collection->route association this codebase has, per `sitemap.ts`'s own
+doc comment - no new config field added; fetches every published slug via
+paginated `dry-http` calls, 500/page, mirroring `sitemap.ts`'s server-side
+`publishedEntries` loop but through the HTTP layer). Wired into
+`PageBuild.tsx`: dynamic pages now appear in the same table as static ones,
+and a template with no matching content type shows as a explicit
+"Unresolved dynamic routes" warning instead of being silently dropped.
+
+**Verified live, both the negative and positive path**, under a fresh
+`wrangler dev` restart:
+
+- Pushed a `blogs/[slug]/page.tsx` with NO matching content type yet -
+  correctly rendered the "Unresolved dynamic routes" warning
+  (`/blogs/[slug]`), zero console errors, no crash (this is exactly the
+  code path most likely to have had an untested assumption, given the
+  `.id`/`.path` bug found earlier the same day).
+- Created a real `blogPost` content type (`features.slug`, `seoUrlPattern:
+  "/blogs/{slug}"`) and one entry (`slug: "hello-world"`) through the real
+  content-types/content-entries API (found the entries POST body is the
+  raw `EntryValue` directly, not `{value: {...}}` - a wrong first guess,
+  fixed before it went anywhere). Reloaded `/dry/page-build`: the template
+  resolved to `/blogs/hello-world` automatically. Clicked Build: status
+  went "Not built" -> "Live". Fetched the result back:
+  `params().slug` rendered correctly ("Blog post: hello-world") AND the
+  layout chain applied correctly (`class="blog-shell"` present) - proves
+  the whole chain (template detection -> type matching -> slug fetch ->
+  per-page params -> build -> publish) end to end, not just its parts in
+  isolation.
+
+9 tests added (2 in `route-manifest.test.ts`, 3 in `dynamic-routes.test.ts`,
+covering pagination past 500 rows and the no-match case) - full suite still
+0 new failures, same 13 pre-existing ones.
+
 ## Speed
 
 Single long session, 2026-08-09. Typecheck (`bun run typecheck`) and the

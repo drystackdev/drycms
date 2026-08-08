@@ -8,18 +8,18 @@ import { canAccess } from "../store/auth.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
-import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import { resolveDynamicPages } from "../page-components/dynamic-routes.js";
 import { buildPage, publishBuiltPage, PageBuildError } from "../page-components/page-build.js";
 
 /**
  * Minimal admin "Build" page (`plans/app-r2.md` mục 11 - a first, real cut,
  * not the full status/stale/progress/resume UI that mục envisions). Lists
- * every STATIC page found under `pagesSourceStorage` (via `route-manifest.ts`,
- * mục 1) next to its current `_pages` status, with a Build button per row
- * that runs the REAL pipeline (`page-build.ts`) client-side and publishes
- * the result. Dynamic (`[slug]`) routes are out of scope here - mục 4
- * (`generateStaticParams`-equivalent) isn't built yet, see
- * `status/app-r2-build.md`.
+ * every page found under `pagesSourceStorage` (via `route-manifest.ts`,
+ * mục 1 - static AND dynamic `[slug]` pages, resolved through mục 4's
+ * `dynamic-routes.ts`) next to its current `_pages` status, with a Build
+ * button per row that runs the REAL pipeline (`page-build.ts`) client-side
+ * and publishes the result.
  */
 
 // Deliberately NOT named `FileEntry` (that's `storage/entry-types.ts`'s real
@@ -51,6 +51,26 @@ interface Row extends Record<string, unknown> {
   status: "not-built" | "stale" | "scheduled" | "live";
   builtAt: number | null;
   staleResource: string | null;
+}
+
+/** One buildable page, static or dynamic - what `buildOne` actually needs.
+ * For a dynamic page these come from `dynamic-routes.ts`'s real resolved
+ * slug, NOT re-derivable from the pathname alone the way a static page's
+ * `entryPath`/`layoutPaths` are (`matchSourceRoute` has no way to turn
+ * `/blogs/hello-world` back into `blogs/[slug]/page.tsx` without already
+ * knowing which template it came from). */
+interface PageTarget {
+  pathname: string;
+  entryPath: string;
+  layoutPaths: string[];
+  params: Record<string, string | string[]>;
+}
+
+/** A `[param]` template whose route exists but no content type's
+ * `seoUrlPattern` matches it - shown as a warning, not silently dropped
+ * (`dynamic-routes.ts`'s own `DynamicTemplateResolution.type: null`). */
+interface UnmatchedTemplate {
+  pathnameTemplate: string;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -93,6 +113,8 @@ export default function PageBuild() {
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [sourceByPath, setSourceByPath] = useState<Record<string, string> | null>(null);
+  const [targets, setTargets] = useState<Map<string, PageTarget>>(new Map());
+  const [unmatchedTemplates, setUnmatchedTemplates] = useState<UnmatchedTemplate[]>([]);
   const [statusByPath, setStatusByPath] = useState<Map<string, PageStatusRow>>(new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [building, setBuilding] = useState<Set<string>>(new Set());
@@ -123,6 +145,27 @@ export default function PageBuild() {
         );
         setSourceByPath(sources);
 
+        const manifest = buildManifestRouteTree(Object.keys(sources));
+        const nextTargets = new Map<string, PageTarget>();
+        for (const pathname of staticPagePaths(manifest)) {
+          const match = matchSourceRoute(manifest, pathname);
+          if (match) nextTargets.set(pathname, { pathname, ...match });
+        }
+        const dynamicTemplates = listDynamicPageTemplates(manifest);
+        if (dynamicTemplates.length > 0) {
+          const resolutions = await resolveDynamicPages(dynamicTemplates, types, `${path}/api/dry-http`);
+          const unmatched: UnmatchedTemplate[] = [];
+          for (const resolution of resolutions) {
+            if (!resolution.type) {
+              unmatched.push({ pathnameTemplate: resolution.template.pathnameTemplate });
+              continue;
+            }
+            for (const page of resolution.pages) nextTargets.set(page.pathname, page);
+          }
+          setUnmatchedTemplates(unmatched);
+        }
+        setTargets(nextTargets);
+
         await reloadStatus();
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Failed to load pages.");
@@ -131,19 +174,17 @@ export default function PageBuild() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canBuild]);
 
-  const manifestTree = useMemo(() => (sourceByPath ? buildManifestRouteTree(Object.keys(sourceByPath)) : null), [sourceByPath]);
   const pathnames = useMemo(() => {
-    if (!manifestTree) return [];
-    const fromManifest = staticPagePaths(manifestTree);
+    const fromTargets = [...targets.keys()];
     const fromRegistry = [...statusByPath.keys()];
-    return [...new Set([...fromManifest, ...fromRegistry])].sort();
-  }, [manifestTree, statusByPath]);
+    return [...new Set([...fromTargets, ...fromRegistry])].sort();
+  }, [targets, statusByPath]);
 
   async function buildOne(pathname: string) {
-    if (!manifestTree || !sourceByPath || !allTypes) return;
-    const match = matchSourceRoute(manifestTree, pathname);
-    if (!match) {
-      toast.add({ type: "error", title: `"${pathname}" no longer has a page.tsx`, description: "Its source was removed - build skipped." });
+    if (!sourceByPath || !allTypes) return;
+    const target = targets.get(pathname);
+    if (!target) {
+      toast.add({ type: "error", title: `"${pathname}" no longer has a page.tsx`, description: "Its source was removed (or a dynamic entry's slug was deleted) - build skipped." });
       return;
     }
     setBuilding((current) => new Set(current).add(pathname));
@@ -159,9 +200,9 @@ export default function PageBuild() {
         dryHttpEndpoint: `${path}/api/dry-http`,
         allTypes,
         sourceByPath,
-        entryPath: match.entryPath,
-        layoutPaths: match.layoutPaths,
-        params: match.params,
+        entryPath: target.entryPath,
+        layoutPaths: target.layoutPaths,
+        params: target.params,
       });
       await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname });
       toast.add({ type: "success", title: `Built "${pathname}"` });
@@ -248,11 +289,25 @@ export default function PageBuild() {
         </div>
       </section>
 
+      {unmatchedTemplates.length > 0 && (
+        <section class="card">
+          <header>
+            <h2>Unresolved dynamic routes</h2>
+            <p>No content type's `seoUrlPattern` matches these - nothing tells the build which slugs to enumerate (`plans/app-r2.md` mục 4).</p>
+          </header>
+          <div class="under stack">
+            {unmatchedTemplates.map((t) => (
+              <span key={t.pathnameTemplate} class="error">{t.pathnameTemplate}</span>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section class="card">
         <header>
           <h2>Pages</h2>
           <p>
-            {pathnames.length} static {pathnames.length === 1 ? "page" : "pages"}
+            {pathnames.length} {pathnames.length === 1 ? "page" : "pages"} (static + resolved dynamic)
           </p>
         </header>
         <div class="under stack">

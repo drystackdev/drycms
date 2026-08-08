@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "./route-manifest.js";
+import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "./route-manifest.js";
 
 const PATHS = [
   "page.tsx",
@@ -11,6 +11,9 @@ const PATHS = [
   "blogs/page.tsx",
   "blogs/[slug]/page.tsx",
   "blogs/[slug]/layout.tsx",
+  // A catch-all - mục 4's "khai báo tay hoặc chấp nhận không build":
+  // must never appear in listDynamicPageTemplates's output.
+  "docs/[...path]/page.tsx",
   // Non-route files a real storage listing would also contain - must be
   // ignored, not mistaken for a page/layout.
   "Greeting.tsx",
@@ -62,5 +65,28 @@ describe("buildManifestRouteTree + matchSourceRoute", () => {
     const match = matchSourceRoute(tree, "/blogs/utils");
     expect(match?.entryPath).toBe("blogs/[slug]/page.tsx");
     expect(match?.params).toEqual({ slug: "utils" });
+  });
+});
+
+describe("listDynamicPageTemplates", () => {
+  it("finds the single-level [slug] template with its full layout chain, and skips the catch-all entirely", () => {
+    const tree = buildManifestRouteTree(PATHS);
+    const templates = listDynamicPageTemplates(tree);
+    expect(templates).toEqual([
+      {
+        pathnameTemplate: "/blogs/[slug]",
+        paramName: "slug",
+        entryPath: "blogs/[slug]/page.tsx",
+        layoutPaths: ["layout.tsx", "blogs/layout.tsx", "blogs/[slug]/layout.tsx"],
+      },
+    ]);
+    // docs/[...path]/page.tsx must never appear - catch-all, mục 4's
+    // "khai báo tay hoặc chấp nhận không build".
+    expect(templates.some((t) => t.pathnameTemplate.includes("..."))).toBe(false);
+  });
+
+  it("returns nothing for a tree with no dynamic segments at all", () => {
+    const tree = buildManifestRouteTree(["page.tsx", "layout.tsx", "about/page.tsx"]);
+    expect(listDynamicPageTemplates(tree)).toEqual([]);
   });
 });
