@@ -25,6 +25,7 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import {
+  CODE_EDITOR_RESOURCE_ID,
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
@@ -125,6 +126,15 @@ const NAV: {
     ready: true,
     section: "System",
     permissionResourceId: SYSTEM_BUILD_RESOURCE_ID,
+  },
+  {
+    key: "page-editor",
+    label: "Page Code Editor",
+    href: `${path}/page-editor`,
+    icon: "Content",
+    ready: true,
+    section: "System",
+    permissionResourceId: CODE_EDITOR_RESOURCE_ID,
   },
   {
     key: "roles",

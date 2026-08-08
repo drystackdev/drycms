@@ -584,10 +584,11 @@ thiết).
    `/dry/api/pages-build?path=`, load trong Playwright thật, bấm nút 3
    lần → "Count: 0" → "1" → "2" đúng, `window.dryHydrated===true`, 0 lỗi
    console. Trang test + source đã dọn sạch sau khi xác nhận.
-4. **🟡 Sitemap + schedule - schedule (mục 9) giờ đã ĐỦ cả setting, sitemap
-   (mục 8) vẫn dark.** mục 8 xong nhưng dark
-   (`buildSitemapResponseFromRegistry`, chưa thay `page-handler.ts`'s
-   handler thật). mục 9 (2026-08-09): thêm nốt setting
+4. **✅ Sitemap + schedule - CẢ HAI xong và đã cutover thật (2026-08-09).**
+   mục 8 (`buildSitemapResponseFromRegistry`) giờ ĐÃ thay
+   `page-handler.ts`'s `/sitemap.xml` handler thật ở prod - đi CÙNG LÚC với
+   mục 12's cutover bên dưới (bắt buộc phải đi cùng nhau, xem lý do ở đó).
+   mục 9 (2026-08-09): thêm nốt setting
    `scheduleFlipIntervalMinutes` (quyết định #11) - `lib/
    schedule-flip-setting.ts` (pure, share được cả server lẫn client, tránh
    lặp lại bẫy "module server kéo theo client build" đã gặp ở mục 7) đọc
@@ -631,21 +632,125 @@ thiết).
    all hiện tuần tự từng trang), route động ([slug]) chưa liệt kê được (mục
    4 vẫn chưa làm nên không hiện trong danh sách). VEI save→build→reload
    hoàn toàn chưa đụng tới.
-6. **🟡 Sửa code trong browser - hạ tầng lưu trữ xong, editor chưa.**
-   `pagesSourceStorage` option + `routes/pages-source.ts` (GET-only) +
-   `scripts/sync-pages-r2.ts` (push/pull, không ghi đè, push local đã chạy
-   thật) đều xong. `types-cache` cho `dry.generated.d.ts` (mục 10) xong đầy
-   đủ - đã tách khỏi `node:fs` module-scope, có trigger sau mọi lần apply
-   schema, có route đọc. Editer + cây thư mục UI + quyền `system-code` (đã
-   có permission, chưa có route để gate) - chưa làm.
+6. **✅ Giai đoạn 6 - Sửa code trong browser - ĐỦ (2026-08-09).**
+   `pagesSourceStorage` option + `scripts/sync-pages-r2.ts` (push/pull,
+   không ghi đè) + `types-cache` cho `dry.generated.d.ts` (mục 10) đều đã
+   xong từ trước. Phần còn thiếu - editor thật - đã xây xong:
+   `routes/pages-source.ts` thêm POST/PUT/PATCH/DELETE (mirror gần như y
+   hệt `routes/page-components.ts`), gate bằng `system-code` trong
+   `handler.ts` (GET vẫn mở, vì `system-build`'s build flow cũng cần đọc);
+   `PageEditor.tsx` (nav "System" → "Page Code Editor") - gần như bản sao
+   cấu trúc của `PageComponents.tsx` (tái dùng nguyên `ComponentTreePanel`,
+   không sửa gì), cộng thêm MỘT thứ mới: **panel preview qua iframe, theo
+   từng trang, chạy CHÍNH `buildPage()` (hàm `PageBuild.tsx`'s nút Build
+   gọi) trên source ĐANG SỬA (chưa lưu)**, `srcdoc` + `<base href>` để
+   asset root-relative resolve đúng - không bao giờ gọi `publishBuiltPage`,
+   nên không đụng `built/live/*`/`_pages`. Chỉ khả dụng khi file đang chọn
+   CHÍNH LÀ `page.tsx` khớp 1 route tĩnh thật - resolve "layout/component
+   dùng chung ảnh hưởng trang nào" chưa làm.
+   **2 bug thật tìm thấy khi chạy sống (không phải lúc review code):**
+   (1) race condition - 2 edit đủ gần nhau (trong lúc `buildPage()` VẪN
+   ĐANG CHẠY, không chỉ trong cửa sổ debounce) khởi động 2 lần
+   `refreshPreview()` chồng nhau, và không có gì đảm bảo cái NÀO XONG
+   TRƯỚC thắng - sửa bằng token thứ tự (`previewSeqRef`), đúng mẫu
+   `Editer.tsx`'s `sigSeq` đã dùng cho chính vấn đề này. (2) **nghiêm
+   trọng hơn** - preview build ra HTML đúng, nhưng script hydrate nhúng
+   sẵn trong đó (`#dry-hydrate-manifest`) trỏ `hydrate-built.ts` vào
+   `${builtAssetsBaseUrl}/page.js` - tức bản đã PUBLISH THẬT qua Page
+   Build trước đó, KHÔNG PHẢI bản đang sửa dở chưa lưu - nên ngay khi
+   hydrate chạy xong, nó ÂM THẦM GHI ĐÈ preview đúng vừa render bằng bản
+   cũ đã publish. Sửa: strip 2 script `dry-hydrate-manifest`/
+   `dry-hydrate-params` khỏi HTML preview trước khi gán `srcdoc` -
+   `hydrate-built.ts` đã tự no-op đúng khi không có manifest (case "trang
+   tĩnh, không island" mục 7 vốn đã lo), nên preview thành bản TĨNH đúng,
+   chỉ mất phần hydrate/tương tác - làm preview tương tác thật là việc
+   riêng, chưa làm. **Xác nhận sống đầy đủ dưới `wrangler dev` thật**: mở
+   tree thật (file thật từ các phiên trước), sửa `page.tsx` gốc, preview
+   cập nhật đúng (xác nhận qua DOM, không chỉ suy luận từ ảnh chụp màn
+   hình - ảnh chụp ban đầu GÂY HIỂU LẦM vì iframe preview bị cắt do chiều
+   cao panel, không phải bug); tạo file MỚI hoàn toàn qua nút "New
+   component" (`editor-test/page.tsx`), sửa nội dung, preview đúng, Save,
+   sang Page Build thấy đúng "Not built", bấm Build, fetch `/editor-test`
+   thật - ra ĐÚNG HTML đã soạn trong Page Editor, chứng minh trọn vòng
+   "sửa trong browser → build → lên trang thật". Dọn sạch sau khi xác nhận
+   (xoá cả file nguồn lẫn bản đã build).
+7. **✅ mục 12 - CUTOVER THẬT, `page-handler.ts` không còn SSR sống ở prod
+   nữa (2026-08-09).** Quyết định mới #8 (dưới đây) đã được HOÀN THÀNH, không
+   còn "chờ" - `sivelap` (site đang chạy thật trong phiên này) giờ phục vụ
+   TOÀN BỘ traffic ẩn danh từ `built/live/*`, không render gì cả.
+   - Prod (`!isDev`), không có VEI session: đọc thẳng `readBuiltPage`
+     (`built-pages-storage.ts`, hạ tầng mục 7 đã xây) theo pathname, không
+     đọc `object_key` mỗi request (đúng thiết kế gốc). Miss → check
+     `redirect` collection (như cũ) → 404 trần (`"Not found"`, không phải
+     `404.tsx` styled). KHÔNG so version - trang cũ hơn nội dung thật (stale)
+     vẫn tiếp tục phục vụ đến khi ai đó bấm Build lại; staleness hiện ở
+     admin (`_pages.staleResource`), không hiện cho khách - đúng yêu cầu gốc
+     "trang cũ tốt hơn trang mất", đạt được MIỄN PHÍ nhờ bỏ hẳn cơ chế so
+     version cũ, không phải thêm logic mới.
+   - `/sitemap.xml` cũng rẽ theo `isDev`: prod dùng
+     `buildSitemapResponseFromRegistry` (mục 8), dev vẫn dùng
+     `buildSitemapResponse` (query D1 trực tiếp) - bắt buộc đi cùng
+     `page-handler.ts`'s cutover vì lý do ngược lại: nếu sitemap liệt kê
+     một entry CHƯA từng build, URL đó sẽ 404 ngay khi search engine bấm
+     vào - hai thứ phải phản ánh ĐÚNG CÙNG MỘT tập hợp "cái gì đang thật sự
+     được serve".
+   - **Dev (luôn luôn) VÀ một session VEI thật (cả dev lẫn prod) đi qua
+     pipeline SSR sống y hệt trước mục 12, không đổi một dòng hành vi.**
+     Đây là một sai lệch CÓ CHỦ ĐÍCH khỏi câu chữ gốc của mục 12 ("VEI chạy
+     trên HTML tĩnh") - tìm ra khi ĐANG THIẾT KẾ (không phải khi build):
+     `page-build.ts`'s pipeline render mọi `dryBind()` thành ref TRƠ (không
+     có `data-dry-ref`, xem chính comment trong test của nó) - nghĩa là HTML
+     tĩnh hiện tại không mang marker nào để overlay client-side bám vào cho
+     trải nghiệm edit-từng-field (hover highlight, click-to-edit). Làm việc
+     đó đúng nghĩa "VEI chạy trên HTML tĩnh" cần sửa thêm `page-build.ts` để
+     GIỮ LẠI marker thay vì strip - **việc riêng, CHƯA làm, chưa lên kế
+     hoạch cụ thể** - carve-out VEI là quyết định AN TOÀN để không phá vỡ
+     tính năng edit đang chạy thật trong lúc chờ việc đó.
+   - `pages-cache.ts`/`build-id.ts` (cơ chế `PageCacheEnvelope` cũ, đọc R2 +
+     `JSON.parse` + so version D1 mỗi request) đã **xoá hẳn**, không giữ lại
+     dù không dùng - không còn ai gọi tới sau cutover.
+   - `sitemapEdgeCacheTtlSeconds` (mục 14) cũng được nối thật vào
+     `entry-worker.ts` trong lượt này - `/sitemap.xml` giờ có TTL riêng, cap
+     theo `_pages`'s lần publish kế tiếp thay vì phẳng 24h, tách khỏi cờ bật
+     tắt cache trang thường.
+   - **Bẫy thật tìm thấy khi VIẾT TEST (không phải khi build code):**
+     Vitest's `mode` là `"test"`, và Vite định nghĩa `DEV` = `mode !==
+     "production"` - nghĩa là `import.meta.env.DEV` đọc `true` dưới Vitest,
+     y hệt dev server thật, KHÔNG CÓ CÁCH nào quan sát nhánh prod mới từ
+     biến này. Test đầu tiên viết ra ÂM THẦM chạy sai nhánh (luôn luôn SSR
+     sống) và fail với lỗi khó hiểu. Sửa bằng cách thêm tham số thứ 3
+     `isDev` cho `handlePageRequest` (mặc định = `import.meta.env.DEV` thật
+     - 3 call site thật KHÔNG đổi gì, chỉ test truyền tay `isDev` để chọn
+     nhánh muốn kiểm).
+   - **Xác nhận sống đầy đủ dưới `wrangler dev` thật** (D1+R2 thật, dùng lại
+     2 trang đã build từ sớm trong phiên `/` + `/blogs/hello-world`): fetch
+     ẩn danh `/` và `/blogs/hello-world` → 200, đúng byte HTML tĩnh (Tailwind
+     đã inline sẵn, KHÔNG có `/@vite/client` hay đường dẫn dev source nào);
+     fetch 1 path chưa từng build → 404 trần đúng "Not found"; `/sitemap.xml`
+     đúng 2 URL kèm `<lastmod>` (dấu hiệu riêng của bản registry - bản D1
+     trực tiếp cũ KHÔNG có `<lastmod>`). Quan trọng nhất: dùng Playwright
+     bấm "Edit content" thật (qua `/dry/vei/enter`, cookie `drycms_vei`
+     thật) rồi tải lại `/` - `dry-vei-config` script tag đổi đúng thành
+     `{"edit":true}`, script src đổi từ `appsHydrateBuilt-*.js` (bootstrap
+     riêng cho trang build tĩnh) sang `appsHydrate-*.js` (bootstrap SSR sống
+     thường) - bằng chứng trực tiếp là carve-out ĐANG THẬT SỰ hoạt động,
+     không phải suy luận từ code. Bấm Exit → quay lại đúng `edit:false` +
+     `appsHydrateBuilt-*.js`. 0 lỗi console suốt toàn bộ chuỗi thao tác.
+   - 6 test trong `page-handler.test.ts` (viết lại hoàn toàn, gồm cả sửa 1
+     test CÓ SẴN TỪ TRƯỚC vốn đã sai ngay từ đầu - `/blogs/[slug]/page.tsx`
+     chưa từng thật sự tồn tại trong repo, chỉ từng được push thẳng lên R2
+     test ở phiên trước, xác nhận bằng cách chạy lại đúng test đó trên code
+     GỐC trước khi sửa gì - baseline cũng fail y hệt). Suite đầy đủ: 0 fail
+     mới, cùng nhóm fail cũ không liên quan (giảm từ 13 xuống 12 vì
+     `pages-cache.test.ts` bị xoá cùng file).
 
 **Quyết định mới #8 (chốt trong lúc build, không có trong bản plan gốc):**
-mọi capability trên được xây **additive và dark** - không flip hành vi serve
-đang chạy thật (`page-handler.ts`, `sitemap.ts` live handler,
-`discoverRoutes()`) cho tới khi có ít nhất 1 lần build thật chạy qua UI Build
-(mục 5). Lý do: site `sivelap` đang chạy thật - flip sớm khi `_pages` còn
-rỗng sẽ làm site 404/sitemap rỗng ngay khi deploy. Chi tiết đầy đủ trong
-`status/app-r2-build.md`.
+mọi capability trên được xây **additive và dark** cho tới khi có ít nhất 1
+lần build thật chạy qua UI Build (mục 5) - **điều kiện đó đã đạt được**
+(2026-08-09, xem mục 7 ở trên), nên cutover đã được thực hiện đúng như quyết
+định này dự tính, không phải bỏ qua nó. Lý do gốc: site `sivelap` đang chạy
+thật - flip sớm khi `_pages` còn rỗng sẽ làm site 404/sitemap rỗng ngay khi
+deploy. Chi tiết đầy đủ trong `status/app-r2-build.md`.
 
 ## Câu hỏi còn mở
 

@@ -7,18 +7,44 @@ vi.mock("./config.js", async () => {
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-page-handler-test-"));
-  return { path: "/dry", lang: "en", content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  return {
+    path: "/dry",
+    lang: "en",
+    content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    // `readBuiltPage`/`writeBuiltPage` (mục 12) need this too, unlike the
+    // old `PageCacheEnvelope` scheme this replaced - `kind: "local"` under
+    // its own subdirectory, same shape `options.ts`'s `resolveStorageOption`
+    // produces for a real local dev instance.
+    pagesCacheStorage: { kind: "local", root: join(tempDirBox.path, "pages-cache") },
+  };
 });
 
 const { path: adminPath } = await import("./config.js");
 const { handlePageRequest } = await import("./page-handler.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../content-types/engine/index.js");
 const { content } = await import("./config.js");
+const { writeBuiltPage } = await import("./app-router/built-pages-storage.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
   await rm(tempDirBox.path, { recursive: true, force: true });
 });
+
+/**
+ * `handlePageRequest`'s 3rd `isDev` param exists ONLY for this file - found
+ * live writing these tests: Vitest's own `mode` is `"test"`, and Vite
+ * defines `DEV` as `mode !== "production"`, so a plain `import.meta.env.DEV`
+ * read is `true` under Vitest, same as a real dev server, with NO way to
+ * reach mục 12's prod-only branch from that alone (confirmed by first
+ * writing these tests against the ambient value, which silently exercised
+ * the DEV branch throughout and made "serves a built page" fail with a
+ * confusing 404 - the request never even got as far as `readBuiltPage`).
+ * A real production build (`entry-node.ts`/`entry-worker.ts`, both built via
+ * `vite build --ssr ...`) never has this ambiguity - a build command's
+ * `mode` defaults to `"production"` regardless of Vitest - so passing
+ * `isDev` explicitly below changes nothing about what ships, only what
+ * this file can observe.
+ */
 
 describe("handlePageRequest", () => {
   it("returns null for the admin's own path (exact and nested)", async () => {
@@ -26,39 +52,85 @@ describe("handlePageRequest", () => {
     expect(await handlePageRequest(new Request(`http://localhost${adminPath}/dashboard`))).toBeNull();
   });
 
-  it("301s to the redirect's `to` slug when the URL's last segment matches a redirect row's `from` - checked BEFORE routing, so it also catches a still-syntactically-matching dynamic route (e.g. a renamed /blogs/[slug])", async () => {
+  it("301s to the redirect's `to` slug when the URL's last segment matches a redirect row's `from` - checked BEFORE routing, so it also catches a still-syntactically-matching dynamic route (e.g. a renamed /blogs/[slug]) - true in both prod and dev", async () => {
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
     const redirectType = allTypes.find((t) => t.name === "redirect")!;
     await entries.createEntry(redirectType, allTypes, { from: "old-post", to: "new-post" });
 
-    const response = await handlePageRequest(new Request("http://localhost/blogs/old-post?ref=x"));
-    expect(response).not.toBeNull();
-    expect(response!.status).toBe(301);
-    expect(response!.headers.get("Location")).toBe("http://localhost/blogs/new-post?ref=x");
+    for (const isDev of [false, true]) {
+      const response = await handlePageRequest(new Request("http://localhost/blogs/old-post?ref=x"), {}, isDev);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(301);
+      expect(response!.headers.get("Location")).toBe("http://localhost/blogs/new-post?ref=x");
+    }
   });
 
-  it("renders the pages-root 404.tsx at status 404 when the path matches no route and no redirect applies", async () => {
-    // The real `404.tsx`/root `layout.tsx` call the ambient `dry()` global,
-    // which only resolves under the real Vite pipeline's `app-router-
-    // plugin.ts` transform (not part of `vitest.config.ts`) - expected to
-    // throw here and fall back to `500.tsx`'s markup, same as it would for
-    // any other render failure. The status code is fixed independently of
-    // that (see `render.ts`'s `RenderPageOptions.status` doc comment), so
-    // it's still the one thing worth asserting in this environment.
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const response = await handlePageRequest(new Request("http://localhost/this-route-does-not-exist-anywhere"));
-    expect(response).not.toBeNull();
-    expect(response!.status).toBe(404);
-    spy.mockRestore();
+  describe("prod (isDev: false)", () => {
+    it("serves a built page's HTML verbatim when one exists at built/live/* (mục 12)", async () => {
+      const ctx = { env: {} };
+      await writeBuiltPage(ctx, "/promo", "build-1", "<html><body>promo v3</body></html>", { publishNow: true });
+
+      const response = await handlePageRequest(new Request("http://localhost/promo"), {}, false);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+      expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+      expect(await response!.text()).toBe("<html><body>promo v3</body></html>");
+    });
+
+    it("returns a bare 404 - not an attempted render of the pages-root 404.tsx - when nothing is built for this path and no redirect applies (prod never renders live)", async () => {
+      // Neither path has ever been through `writeBuiltPage` above, nor
+      // matches a `redirect` row - one is a totally bogus path, the other
+      // LOOKS like it could be a dynamic `[slug]` route (it isn't: this
+      // project's own `src/apps/pages/` has no `blogs/` directory at all).
+      // Both now take the exact same branch and get the exact same bare
+      // fallback - `page-handler.ts` never even calls `discoverRoutes()`'s
+      // `matchRoute` result to decide this, on purpose (see its own doc
+      // comment on why prod stopped rendering anything live).
+      for (const path of ["/this-route-does-not-exist-anywhere", "/blogs/some-slug-with-no-redirect"]) {
+        const response = await handlePageRequest(new Request(`http://localhost${path}`), {}, false);
+        expect(response).not.toBeNull();
+        expect(response!.status).toBe(404);
+        expect(response!.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+        expect(await response!.text()).toBe("Not found");
+      }
+    });
   });
 
-  it("leaves an ordinary route match at status 200 - a page's own 'not found' state (e.g. an unknown slug) is that page's responsibility, not the router's", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const response = await handlePageRequest(new Request("http://localhost/blogs/some-slug-with-no-redirect"));
-    expect(response).not.toBeNull();
-    expect(response!.status).toBe(200);
-    spy.mockRestore();
+  describe("dev (isDev: true) - unchanged from before mục 12", () => {
+    it("renders the pages-root 404.tsx live (full SSR) at status 404 for a path with no built page, no route match, and no redirect", async () => {
+      // The real `404.tsx`/root `layout.tsx` call the ambient `dry()`
+      // global, which only resolves under the real Vite pipeline's
+      // `app-router-plugin.ts` transform (not part of `vitest.config.ts`) -
+      // expected to throw here and fall back to `500.tsx`'s markup, same as
+      // it would for any other render failure. The status code is fixed
+      // independently of that (see `render.ts`'s `RenderPageOptions.status`
+      // doc comment); a real hydration/VEI script tag IS still meaningfully
+      // assertable here though - that's what actually distinguishes this
+      // from prod's bare fallback above, not the exact body markup.
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const response = await handlePageRequest(new Request("http://localhost/this-route-does-not-exist-anywhere"), {}, true);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(404);
+      const html = await response!.text();
+      expect(html).toContain("hydrate-client.ts");
+      expect(html).toContain("vei/overlay.ts");
+      spy.mockRestore();
+    });
+
+    it("never even looks at built/live/* - a built page is ignored in favor of a live re-render", async () => {
+      const ctx = { env: {} };
+      await writeBuiltPage(ctx, "/dev-check", "build-1", "<html><body>STALE BUILT COPY</body></html>", { publishNow: true });
+
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const response = await handlePageRequest(new Request("http://localhost/dev-check"), {}, true);
+      expect(response).not.toBeNull();
+      // Not the built copy's exact bytes - a route miss still 404s via live
+      // SSR, same as the test above, proving `readBuiltPage` was never
+      // consulted at all on this branch.
+      expect(await response!.text()).not.toContain("STALE BUILT COPY");
+      spy.mockRestore();
+    });
   });
 });

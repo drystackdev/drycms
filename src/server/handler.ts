@@ -22,6 +22,7 @@ import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import { requirePermission } from "./admin-access.js";
 import {
+  CODE_EDITOR_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
@@ -196,6 +197,16 @@ export async function handleApiRequest(
   // GET already get.
   if (segment === "dry-http" || segment === "pages-build") {
     const denied = await requirePermission(context, SYSTEM_BUILD_RESOURCE_ID, "setting");
+    if (denied) return secureResponse(denied, request);
+  }
+  // `pages-source`'s own GET stays open the same "broadly read" way as
+  // `icons`/`richtext-components` (needed by the BUILD flow, gated on
+  // `system-build` above, not just the code editor) - only the write
+  // methods (`PageEditor.tsx`'s save/create/move/delete) are gated here, on
+  // `system-code` specifically: a role that can rebuild pages shouldn't
+  // automatically be able to change what code runs (quyết định #12).
+  if (segment === "pages-source" && request.method !== "GET") {
+    const denied = await requirePermission(context, CODE_EDITOR_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   return secureResponse(await handler(context), request);

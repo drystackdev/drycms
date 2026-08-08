@@ -2,6 +2,7 @@ import { handleApiRequest, isApiRequest } from "./handler.js";
 import { injectClientConfig } from "./client-config.js";
 import { path as adminPath, content } from "./config.js";
 import { isEdgeCacheable, readEdgeCache, storeEdgeCache } from "./app-router/edge-cache.js";
+import { sitemapEdgeCacheTtlSeconds } from "./app-router/sitemap.js";
 import { parseScheduleFlipIntervalMinutes, recordScheduledFlipRun, runScheduledFlip, shouldRunScheduledFlip } from "./app-router/schedule-flip.js";
 import { createContentEngineAdapter, createContentEntryEngineAdapter, createPagesRegistryAdapter } from "../content-types/engine/index.js";
 import { guardPageRequest } from "./page-guard.js";
@@ -106,12 +107,21 @@ export default {
     }
 
     const isAdminPath = pathname === adminPath || pathname.startsWith(`${adminPath}/`);
+    // Mục 14 (`plans/app-r2.md`): `sitemap.xml` gets its OWN TTL, decoupled
+    // from `pagesCacheEdgeTtl`'s own on/off toggle - turning page caching
+    // off was never meant to reach it. `1` here is a cheap sentinel, not the
+    // real value: `isEdgeCacheable` only needs to know "positive" to decide
+    // caching is enabled AT ALL, and the real value
+    // (`sitemapEdgeCacheTtlSeconds`, a D1 query) is only computed below, on
+    // an actual cache MISS - paying for it on every hit would undercut the
+    // whole point of caching this route in the first place.
+    const isSitemap = !isAdminPath && pathname === "/sitemap.xml";
 
     // Ahead of the asset branch, not just the page branch: only the App
     // Router below ever stores an entry, so a hit here is by construction a
     // page - and answering from it skips the `env.ASSETS.fetch` miss that
     // every non-asset URL would otherwise pay on the way to `handlePageRequest`.
-    const cacheable = !isAdminPath && isEdgeCacheable(request);
+    const cacheable = !isAdminPath && isEdgeCacheable(request, isSitemap ? 1 : undefined);
     if (cacheable) {
       const hit = await readEdgeCache(request);
       if (hit) return hit;
@@ -133,7 +143,11 @@ export default {
         // Stored AFTER the security headers are on, so a later cache hit
         // carries the exact bytes and headers this render would have sent.
         const secured = withSecurityHeaders(pageResponse);
-        return cacheable ? storeEdgeCache(request, secured, ctx) : secured;
+        if (!cacheable) return secured;
+        const ttlSeconds = isSitemap
+          ? await sitemapEdgeCacheTtlSeconds(createPagesRegistryAdapter(content, env), Date.now())
+          : undefined;
+        return storeEdgeCache(request, secured, ctx, ttlSeconds);
       }
       return withSecurityHeaders(
         new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } }),

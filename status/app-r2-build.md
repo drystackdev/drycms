@@ -1,4 +1,4 @@
-# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4 core + mục 7/9/10/13
+# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4/6 core + mục 7/8/9/10/12/13/14 - LIVE CUTOVER DONE, code editor DONE
 
 ## Plan
 
@@ -20,6 +20,11 @@ sitemap.ts to read `_pages` before ANY page has been built through the new
 pipeline would 404/empty the live site the moment it's deployed. Every new
 piece below is additive and dark until a human deliberately wires it in,
 same as the spike's own harness was dark.
+
+**This principle's own exit condition was reached the same session** (a
+real build ran through the real UI for `/` and `/blogs/hello-world`) - see
+"Update 2026-08-09, part 6" below for the actual cutover, done deliberately
+per this principle, not in spite of it.
 
 ## Status: DONE (this pass) - see per-item detail below
 
@@ -471,6 +476,159 @@ adapter is one module-level in-memory store shared across every test in
 the file, not scoped by the `env` object passed in). Full suite: 0 new
 failures, same 13 pre-existing ones.
 
+## Update 2026-08-09, part 6: THE cutover - mục 8 + mục 12 + mục 14
+
+The big one: this file's own "Working principle" (never flip live-serving
+behavior until a real build has run through a real UI) has now been
+satisfied - `/` and `/blogs/hello-world` were built and published earlier
+this same session - so `page-handler.ts` was flipped for real. Prod
+(`!isDev`, no VEI session) now serves ONLY from `built/live/*`
+(`readBuiltPage`) or 404s - zero live rendering for anonymous traffic.
+`/sitemap.xml` moved to `buildSitemapResponseFromRegistry` (mục 8) in the
+same pass, deliberately coupled to the page-serving cutover: the two have
+to agree on "what's actually reachable," or the sitemap would advertise
+URLs that immediately 404 crawlers. `sitemapEdgeCacheTtlSeconds` (mục 14)
+got wired into `entry-worker.ts` too, decoupled from the page cache's own
+on/off toggle. Deleted `pages-cache.ts`/`build-id.ts` (the old
+`PageCacheEnvelope` scheme this replaces) entirely, not left as dead code.
+
+**Deliberate, documented deviation from mục 12's own text**: a VEI session
+(dev or prod) is carved OUT of the static-only branch and keeps getting the
+exact same live SSR-with-edit-markers render it already had - found while
+DESIGNING this, before writing any code: `page-build.ts`'s pipeline renders
+every `dryBind()` as an inert, marker-free ref (confirmed in its own test's
+doc comment), so a built page's HTML has nothing for the client-side
+overlay to hook per-field editing onto. Making mục 12's literal "VEI runs on
+static HTML" text real needs `page-build.ts` to stop stripping those
+markers - a separate, not-yet-scoped follow-up, not something to improvise
+mid-cutover. The carve-out keeps the shipping, working editing experience
+intact while that's pending.
+
+**Real bug found while WRITING TESTS, not while building the code**:
+Vitest's own `mode` is `"test"`, and Vite defines `DEV` as `mode !==
+"production"` - so a plain `import.meta.env.DEV` read is `true` under
+Vitest, identical to a real dev server, with no way to observe the new prod
+branch at all from that alone. The first test written against it silently
+ran the wrong branch and failed confusingly (a `readBuiltPage` write/read
+round-trip appeared broken, when the request was actually never reaching
+that code at all - full live SSR ran instead and happened to also produce
+a 404 for the same made-up pathname, for an unrelated reason). Fixed by
+giving `handlePageRequest` a 3rd `isDev` parameter, defaulting to the real
+`import.meta.env.DEV` - none of its 3 real call sites (`entry-node.ts`,
+`entry-worker.ts`, `scripts/dev-server.mjs`) pass it explicitly, so nothing
+about a real build changes; only tests pass it to pick a branch on purpose.
+Also found and fixed, independently: `page-handler.test.ts` already had
+ONE test ("leaves an ordinary route match at status 200") that was failing
+before any of today's changes - confirmed by running it against the
+pre-session baseline code directly (swapped files back temporarily, not
+`git stash`, to avoid any risk to concurrent work) - `/blogs/[slug]/page.tsx`
+was never actually committed to this project, only ever pushed straight to
+a test R2 bucket in an earlier session's live verification. Rewrote it
+to reflect what's actually true instead of just deleting it.
+
+**Verified live end-to-end under a real `wrangler dev`** (D1+R2 real, not
+simulated): anonymous `GET /` and `GET /blogs/hello-world` both 200,
+byte-identical static HTML (real inlined Tailwind, zero dev-source script
+tags). A never-built path 404s with a bare `"Not found"` body.
+`/sitemap.xml` lists exactly those 2 URLs with `<lastmod>` (the registry
+version's own signature - the old direct-D1 version never had `<lastmod>`
+at all). Most important: drove a REAL VEI session through Playwright
+(clicked "Edit content" -> real `/dry/vei/enter` round trip -> real
+`drycms_vei` cookie) and reloaded `/` - the embedded `dry-vei-config`
+correctly flipped to `{"edit":true}` and the loaded script switched from
+`appsHydrateBuilt-*.js` (the static build's own bootstrap) to
+`appsHydrate-*.js` (the live-SSR one) - direct proof the carve-out is
+really live-rendering, not inferred from reading the code. Clicking Exit
+correctly reverted both. Zero console errors through the whole sequence.
+One red herring chased down first: an initial check right after a rebuild
+showed stale (empty) asset hrefs in the served HTML - NOT a real bug, a
+`ctx.waitUntil`-backed edge-cache write racing a same-second re-request;
+waiting a moment and re-checking showed correct, fresh content with a
+genuine cache MISS.
+
+`page-handler.test.ts` rewritten (6 tests: admin-path passthrough,
+redirect-wins-in-both-branches, prod serves-a-built-page, prod bare-404,
+dev live-404-with-hydration-script, dev ignores-built-page-entirely). Full
+suite: 0 new failures; 12 pre-existing ones now (was 13 - one of them lived
+in the now-deleted `pages-cache.test.ts`).
+
+## Update 2026-08-09, part 7: Giai đoạn 6 - in-browser code editor
+
+The last unbuilt piece of app-r2's original vision - "cây thư mục tham
+chiếu... khi thay đổi 1 file .tsx... sẽ build lại trang" (the plan's own
+"Ý tưởng gốc"). The storage plumbing already existed (`pagesSourceStorage`,
+`sync-pages-r2.ts`, `types-cache`); what was missing was the editor itself.
+
+Added `routes/pages-source.ts`'s POST/PUT/PATCH/DELETE (a close mirror of
+`routes/page-components.ts`'s own, same `.tsx`/`.ts`-only validation), gated
+on `system-code` in `handler.ts` (GET stays open - the build flow, gated on
+`system-build`, needs to read it too). `PageEditor.tsx` (nav "Page Code
+Editor") turned out to be almost entirely REUSE: `ComponentTreePanel` needed
+zero changes, `Editer`'s wiring and the create/delete/move flow are a close
+copy of `PageComponents.tsx`'s own. The one real addition, per an explicit
+user ask mid-session ("thực hiện luôn UI code editer panel kèm phần preview
+trên iframe theo từng trang"): a live preview pane that runs `buildPage()`
+(the exact function `PageBuild.tsx`'s "Build" button calls) against the
+CURRENTLY EDITED, not-yet-saved source, rendering the result into an iframe
+via `srcdoc` - never `publishBuiltPage`, so it can never touch `built/
+live/*`/`_pages` no matter how much someone free-types. Only available when
+the selected file is itself a `page.tsx` matching a real static route -
+resolving "which page(s) does this shared layout/component affect" is a
+follow-up, not solved here.
+
+**2 real bugs found live, chasing down why the preview kept showing stale
+content - neither would have surfaced from reading the code:**
+
+1. **Race condition.** Two edits close enough together - inside
+   `buildPage()`'s own in-flight time, not just inside the debounce window -
+   start two overlapping `refreshPreview()` calls, and nothing guaranteed
+   the one that STARTED last also FINISHED last. An older, slower build
+   could silently overwrite a newer one's correct result. Fixed with a
+   sequence token (`previewSeqRef`) discarding any resolution that isn't
+   the most-recently-started call - the exact same pattern `Editer.tsx`'s
+   own `checkSignatureHelp` already uses (`sigSeq`) for the identical race,
+   found independently rather than copied consciously at first.
+2. **The real one.** Even with #1 fixed, a FRESH, single, non-overlapping
+   preview build still showed stale content. Root cause: `buildPage()`'s
+   returned HTML embeds a hydrate manifest
+   (`#dry-hydrate-manifest`) unconditionally, pointing `hydrate-built.ts` at
+   `${builtAssetsBaseUrl}/page.js` - which is whatever a REAL "Build" click
+   on Page Build last PUBLISHED, not this preview's own fresher, unsaved
+   compile. The iframe's first paint was correct (fresh SSR), but the
+   instant hydration finished, it silently overwrote that correct DOM with
+   the stale published version - the exact same "hydration reconciles
+   against a stale tree" hazard `hydrate-client.ts`'s own doc comment
+   already documents for a different trigger (pre-hydration DOM edits), hit
+   here from a new angle. Fixed by stripping the
+   `dry-hydrate-manifest`/`dry-hydrate-params` script tags from the preview
+   HTML before setting `srcdoc` - `hydrate-built.ts` already no-ops
+   gracefully with no manifest present (mục 7's own "static page, no
+   islands" case), so the preview correctly falls back to an accurate
+   STATIC render. Making interactive islands work in the preview too is a
+   follow-up, not solved by this pass - noted alongside mục 12's own
+   VEI-marker follow-up as a second, related gap in the same area.
+
+**Verified live end-to-end under a real `wrangler dev`**: opened the real
+pages-source tree (files pushed in earlier sessions), edited the real root
+`page.tsx`, confirmed the preview updates correctly - via direct DOM
+inspection (`iframe.contentDocument.querySelector('h1').textContent`), not
+just a screenshot (a first screenshot attempt was misleading: the iframe's
+limited panel height cut off the very content that would have shown the fix
+already working, momentarily looking like a still-open bug). Restored the
+real homepage's original content via a direct API call afterward. Then, the
+full loop: created a brand new file (`editor-test/page.tsx`) through the
+"New component" button, wrote real content, watched the preview pick up the
+new route (`/editor-test`) automatically, saved, switched to Page Build,
+saw it correctly listed "Not built", clicked Build, then fetched
+`/editor-test` on the real public URL - byte-correct HTML matching exactly
+what was written in Page Editor, proving the whole chain (edit in browser →
+save → build → real public URL) end to end. Cleaned up both the built
+artifact and the source file afterward.
+
+New test file `routes/pages-source.test.ts` (13 tests, mirroring
+`page-components.test.ts`'s own structure almost exactly). Full suite: 0 new
+failures, same 12 pre-existing ones.
+
 ## Speed
 
 Single long session, 2026-08-09 (spanning a context-window compaction
@@ -478,17 +636,22 @@ partway through mục 7 - work continued seamlessly from the saved summary).
 Typecheck (`bun run typecheck`) and the full test suite (`bun run test`)
 run repeatedly throughout, not just at the end - every new/changed file
 confirmed against a clean-tree baseline before moving on. Final state: 0
-typecheck errors; 1058 passed / 13 failed (the same 13 pre-existing
-failures confirmed unrelated to this work via `git stash` before starting,
-see `status/app-r2-spike.md`) / 0 new failures across the whole session.
+typecheck errors; 1069 passed / 12 failed (pre-existing, unrelated - see
+`status/app-r2-spike.md` for the original `git stash`-confirmed baseline)
+/ 0 new failures across the whole session.
 
-Giai đoạn 1-4 (route manifest, build core, dynamic params, CSS+hydration)
-are now done and each independently live-verified under a real `wrangler
-dev`, not just unit-tested. mục 9 (schedule) is now fully done, setting
-included. Giai đoạn 5's remaining piece is mục 8 (sitemap still reading D1
-directly instead of `_pages`, dark either way) and Giai đoạn 3's UI Build
-is done at the core but missing progress/resume + batch-upload polish (see
-the 🟡 markers in `plans/app-r2.md`'s "Giai đoạn" section). Not yet started:
-Giai đoạn 6's in-browser code editor, and the live cutover of
-`page-handler.ts`/`sitemap.ts`/`discoverRoutes()` - deliberately still
-deferred, per this file's own "Working principle" above.
+Giai đoạn 1-4 and 6 (route manifest, build core, dynamic params,
+CSS+hydration, in-browser code editor) are all done and independently
+live-verified under a real `wrangler dev`, not just unit-tested. mục
+8/9/12/14 (sitemap, schedule, THE cutover, sitemap TTL) likewise.
+`sivelap` (the real site running in this session) now serves anonymous
+traffic entirely from `built/live/*`, AND its pages can be authored,
+previewed, saved, and published without leaving the browser - app-r2 is
+live and usable end to end, not just built. Giai đoạn 3's UI Build is done
+at the core but missing progress/resume + batch-upload polish (see the 🟡
+marker in `plans/app-r2.md`'s "Giai đoạn" section - the only one left).
+Two related, deliberately deferred follow-ups, both about the same
+underlying gap: `page-build.ts` strips VEI's `dryBind()` markers from
+built output, so neither a built page's live VEI editing (mục 12's
+carve-out) nor Page Editor's preview (this update's mục 6) can be truly
+interactive yet - fixing that one thing would unlock both.

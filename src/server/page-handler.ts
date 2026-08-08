@@ -11,9 +11,9 @@ import { resolveVeiSession } from "./vei-session.js";
 import { discoverRoutes } from "./app-router/route-tree.js";
 import { matchRoute, type RouteMatch } from "./app-router/match.js";
 import { renderErrorHtml, renderPage } from "./app-router/render.js";
-import { readPageCache, writePageCache } from "./app-router/pages-cache.js";
+import { readBuiltPage } from "./app-router/built-pages-storage.js";
 import { resolveSiteOrigin } from "./app-router/site-origin.js";
-import { buildRobotsResponse, buildSitemapResponse } from "./app-router/sitemap.js";
+import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegistry } from "./app-router/sitemap.js";
 
 /**
  * Renders `src/apps/pages/**` (see `plans/app-router.md`) - the "real
@@ -23,17 +23,27 @@ import { buildRobotsResponse, buildSitemapResponse } from "./app-router/sitemap.
  * exactly this space today; this fills that space with the site's own
  * content instead.
  *
- * A route MISS is no longer automatically a 404: it first checks the
- * built-in `redirect` collection (`content-types/redirects.ts` populates it
- * whenever a slugged entry's slug changes) by the URL's LAST path segment -
- * a hit 301s to the same URL with that segment swapped for the redirect's
- * `to`. Only once that also misses does it fall back to rendering the
- * pages-root `404.tsx` (if the app has one, through the exact same
- * `renderPage` pipeline as a real match - full layout/SEO/hydration, not a
- * stripped-down page) - `null` only when there's truly nothing to render
- * (no `404.tsx` either), same contract as before: the caller (dev-server/
- * entry-node/entry-worker) decides what a bare-bones 404 response looks
- * like in that case.
+ * Two entirely different code paths, chosen once per request (mục 12,
+ * `plans/app-r2.md`):
+ * - **Prod, no VEI session**: static-only. Reads `built/live/*`
+ *   (`readBuiltPage` - whatever `/dry/page-build` last published for this
+ *   pathname) and serves it as-is, or 404s - no `page.tsx`/`layout.tsx`
+ *   code ever executes for this request at all. A page that was never
+ *   built through the admin simply 404s; that's by design, not a bug -
+ *   see this function's own body for why.
+ * - **Dev (always), or a VEI-authenticated session (dev + prod)**: the
+ *   ORIGINAL live SSR pipeline below, byte-for-byte the same behavior
+ *   this function had before mục 12 - a route MISS first checks the
+ *   built-in `redirect` collection (`content-types/redirects.ts` populates
+ *   it whenever a slugged entry's slug changes) by the URL's LAST path
+ *   segment - a hit 301s to the same URL with that segment swapped for the
+ *   redirect's `to`. Only once that also misses does it fall back to
+ *   rendering the pages-root `404.tsx` (if the app has one, through the
+ *   exact same `renderPage` pipeline as a real match - full layout/SEO/
+ *   hydration, not a stripped-down page) - `null` only when there's truly
+ *   nothing to render (no `404.tsx` either), same contract as before: the
+ *   caller (dev-server/entry-node/entry-worker) decides what a bare-bones
+ *   404 response looks like in that case.
  *
  * A failure anywhere in this function's own setup (schema/content adapters,
  * SEO defaults, VEI session) is caught below and rendered through the
@@ -52,6 +62,18 @@ import { buildRobotsResponse, buildSitemapResponse } from "./app-router/sitemap.
 export async function handlePageRequest(
   request: Request,
   env: Record<string, unknown> = {},
+  // Defaults to the real Vite-define value every real caller (`entry-node.ts`,
+  // `entry-worker.ts`, `scripts/dev-server.mjs`) already relies on implicitly -
+  // none of them pass this explicitly, so none of them change behavior.
+  // Exists as its own parameter ONLY for `page-handler.test.ts`: Vitest's own
+  // `mode` is `"test"`, and Vite defines `DEV` as `mode !== "production"` -
+  // found live, this makes `import.meta.env.DEV` read `true` under Vitest,
+  // same as a real dev server, with no way to observe mục 12's prod-only
+  // branch from a plain `import.meta.env.DEV` read at all. A REAL production
+  // build (`vite build --ssr ...`, what `entry-node.ts`/`entry-worker.ts`
+  // actually ship) has never had this ambiguity - `mode` defaults to
+  // `"production"` for a build command regardless of Vitest.
+  isDev: boolean = import.meta.env.DEV,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname === adminPath || url.pathname.startsWith(`${adminPath}/`)) {
@@ -72,7 +94,15 @@ export async function handlePageRequest(
   // makes no sense for a feed a crawler is fetching).
   if (url.pathname === "/sitemap.xml") {
     try {
-      return await buildSitemapResponse(url, routeContext);
+      // Mục 8 (`plans/app-r2.md`): prod only ever serves what's actually
+      // built (`_pages`, below) - listing a collection's live-queried
+      // published entries there too would advertise URLs to search
+      // engines that 404 the moment `!isDev` reads them back (see this
+      // function's own prod branch below). Dev keeps the original
+      // direct-D1 version: `_pages` only has rows for whatever's been
+      // explicitly built through `/dry/page-build`, which a dev instance
+      // mid-development usually hasn't done for most pages.
+      return await (isDev ? buildSitemapResponse(url, routeContext) : buildSitemapResponseFromRegistry(url, routeContext));
     } catch (error) {
       console.error("[drycms] sitemap.xml render failed:", error);
       return new Response("", { status: 500 });
@@ -91,36 +121,42 @@ export async function handlePageRequest(
 
     const vei = await resolveVeiContext(request, env, entries, allTypes);
 
-    // pages-cache only runs in production, and only for a real match - a
-    // version-based cache has no way to detect a `page.tsx`/`layout.tsx`
-    // CODE edit (only content changes), which would make dev's "live
-    // preview qua vite" show stale output after editing a page - see
-    // `plans/app-router.md`'s "Chỉ bật ở production". An edit-mode render is
-    // excluded on BOTH sides: its markup carries per-viewer editing
-    // metadata, so serving it from - or writing it into - a cache shared
-    // with anonymous visitors would be wrong in both directions.
-    if (match && !import.meta.env.DEV && !vei) {
-      const cached = await readPageCache(routeContext, url.pathname, entries, allTypes);
+    // Mục 12 (`plans/app-r2.md`): prod (`!isDev`) never
+    // renders a page live anymore - it ONLY serves whatever's already sitting
+    // in `built/live/*` (`readBuiltPage`, mục 7's build pipeline output,
+    // published from `/dry/page-build`), or 404s. No version comparison
+    // (unlike the old `pages-cache.ts`'s `PageCacheEnvelope`, now deleted): a
+    // page whose content changed since it was last built keeps serving its
+    // last-built HTML until someone rebuilds it - a stale page beats a
+    // missing one, and staleness is surfaced to the ADMIN (`_pages`'s
+    // `staleResource`, `PageBuild.tsx`'s status column), not the visitor.
+    //
+    // VEI is carved out of this branch, in BOTH dev and prod: a built page's
+    // HTML never carries edit markers (`page-build.ts` renders every
+    // `dryBind()` as an inert, marker-free ref - see its own test's doc
+    // comment), so the full click-to-edit experience (hover highlight,
+    // per-field editing) genuinely cannot work purely against static output
+    // yet. Until that's addressed (a separate, not-yet-scoped follow-up -
+    // see `status/app-r2-build.md`), a VEI session keeps getting the exact
+    // same live SSR-with-edit-markers render it already gets today, in prod
+    // as well as dev - a deliberate, documented deviation from mục 12's
+    // literal text ("VEI chạy trên HTML tĩnh"), not an oversight.
+    if (!isDev && !vei) {
+      const cached = await readBuiltPage(routeContext, url.pathname);
       if (cached !== null) {
         return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
+      // Same reasoning `findRedirectResponse`'s own doc comment already
+      // gives for running this AFTER a cache check rather than before -
+      // still applies unchanged, just against `readBuiltPage` instead of
+      // the old `readPageCache`.
+      const redirectResponse = await findRedirectResponse(url, entries, allTypes);
+      if (redirectResponse) return redirectResponse;
+      return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
 
-    // Deliberately AFTER the cache read, not before it. A dynamic `[slug]`
-    // route (e.g. `/blogs/[slug]`) matches ANY slug syntactically, valid or
-    // not; the "this specific post doesn't exist" case only surfaces once the
-    // page's own `dry()` lookup comes up empty, which `page-handler.ts` has no
-    // visibility into (the page renders its own "not found" markup at a normal
-    // 200 status - see `blogs/[slug]/page.tsx`). So this still has to run for
-    // a syntactic match, not only a route miss - but a LIVE cache entry is
-    // already proof that this exact path rendered as a real page, and renaming
-    // a slug bumps its type's version, which invalidates that entry and brings
-    // the request back through here. Checking after the cache read therefore
-    // costs nothing in coverage and saves a D1 round trip on every cached page
-    // view (see `status/worker-request-cost.md`); it also
-    // narrows - without closing - the known trade-off of matching on the last
-    // path segment alone: an unrelated stale redirect can no longer hijack a
-    // path whose own cached render is still valid.
+    // Dev (always) and a VEI session (dev + prod) reach here - the ORIGINAL
+    // live SSR pipeline, unchanged from before mục 12.
     const redirectResponse = await findRedirectResponse(url, entries, allTypes);
     if (redirectResponse) return redirectResponse;
 
@@ -155,12 +191,14 @@ export async function handlePageRequest(
       pathname: url.pathname,
     };
 
+    // No `onDocumentReady` - that was `writePageCache`'s hook into the old
+    // implicit per-request cache-on-render-miss scheme (`pages-cache.ts`,
+    // deleted). This branch only ever runs for dev or a VEI session now,
+    // and neither one EVER wrote to that cache even before mục 12 (see the
+    // git history of this file) - there is no longer a caller left who
+    // needs this hook at all.
     const response = renderPage(resolvedMatch, dryContext, {
       status,
-      onDocumentReady: (fullHtml) => {
-        if (!match || import.meta.env.DEV || vei) return;
-        void writePageCache(routeContext, url.pathname, fullHtml, touchedTypes, entries, allTypes);
-      },
       // `render.ts` already logs the error before calling this - only
       // building the fallback document is left to do here.
       onRenderError: routeTree.serverError ? () => renderErrorHtml(routeTree.serverError!) : undefined,
