@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 const { path, aiMode } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
@@ -34,6 +34,7 @@ import {
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { useParam } from "../hooks/useParam.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useFetch } from "../hooks/useFetch.js";
 import { blankEntryValue } from "./content-entry-editor/blank-value.js";
 import { diffEntryValue } from "../content-types/entry-draft-diff.js";
 import {
@@ -196,7 +197,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const aiKey = useAiKeySelection(aiMode === "server");
   const rewriteFnRef = useRef<RichTextRewriteFn | null>(null);
 
-  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
+  const listFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) =>
+      typesApi.listVersioned(ifVersion, signal),
+    [typesApi],
+  );
+  // Same cache key `DryLayout`/`BuilderContentType`/`ContentEntryList` use -
+  // a warm IndexedDB entry from any of those shows up here instantly instead
+  // of refetching the whole schema on every navigation into this route.
+  const { data: allTypes, error: typesFetchError } = useFetch<
+    ContentTypeDefinition[]
+  >("content-types:list", listFetcher);
+  const typesList = allTypes ?? [];
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   /** The entry AND its pending draft are both in `value` - not just "the
@@ -236,8 +248,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     [type],
   );
   const nodes: EntryFieldNode[] = useMemo(
-    () => (type ? buildEntryFieldTree(type, allTypes) : []),
-    [type, allTypes],
+    () => (type ? buildEntryFieldTree(type, typesList) : []),
+    [type, typesList],
   );
   // `createdAt`/`updatedAt` are server-stamped on every save (see
   // `entry-codec.ts`'s `applyTimestamps`) regardless of what's submitted for
@@ -321,27 +333,25 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const showLoading = useDelayedLoading(!type || value === null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const types = await typesApi.list();
-        setAllTypes(types);
-        const found = types.find(
-          (t) => t.name === typeSlug && t.kind !== "component",
-        );
-        if (!found) {
-          setLoadError(`Content type "${typeSlug}" not found.`);
-          return;
-        }
-        setType(found);
-      } catch (error) {
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load content type.",
-        );
-      }
-    })();
-  }, [typeSlug]);
+    if (allTypes === undefined) return;
+    const found = allTypes.find(
+      (t) => t.name === typeSlug && t.kind !== "component",
+    );
+    if (!found) {
+      setLoadError(`Content type "${typeSlug}" not found.`);
+      return;
+    }
+    setType(found);
+  }, [allTypes, typeSlug]);
+
+  useEffect(() => {
+    if (!typesFetchError) return;
+    setLoadError(
+      typesFetchError instanceof Error
+        ? typesFetchError.message
+        : "Failed to load content type.",
+    );
+  }, [typesFetchError]);
 
   useEffect(() => {
     if (
@@ -353,7 +363,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       return;
     (async () => {
       try {
-        const builtNodes = buildEntryFieldTree(type, allTypes);
+        const builtNodes = buildEntryFieldTree(type, typesList);
         if (type.kind === "singleton") {
           const entry = await entriesApi.getSingleton();
           const loadedValue = entry?.value ?? blankEntryValue(builtNodes);
@@ -392,7 +402,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         );
       }
     })();
-    // `allTypes` deliberately excluded - it's only needed to resolve
+    // `typesList` deliberately excluded - it's only needed to resolve
     // `type` itself, re-fetching the ENTRY every time the (much larger)
     // schema list happens to get a new array identity would be wasteful.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -882,7 +892,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               value,
               fieldErrors,
               updateFieldValue,
-              allTypes,
+              typesList,
               revealPath,
               streamingFieldName,
             )}
@@ -895,7 +905,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 value,
                 fieldErrors,
                 updateFieldValue,
-                allTypes,
+                typesList,
                 revealPath,
                 streamingFieldName,
               )}

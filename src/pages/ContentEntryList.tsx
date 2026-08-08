@@ -215,33 +215,34 @@ export default function ContentEntryList({ typeSlug }: Props) {
     [],
   );
 
-  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(
-    null,
+  const listFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) =>
+      typesApi.listVersioned(ifVersion, signal),
+    [typesApi],
   );
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    typesApi
-      .list()
-      .then(setAllTypes)
-      .catch((error) =>
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load content types.",
-        ),
-      );
-  }, [typesApi]);
+  // Same cache key `DryLayout`/`BuilderContentType` use - a warm IndexedDB
+  // entry from either shows up here instantly instead of refetching the
+  // whole schema on every navigation into this route.
+  const {
+    data: allTypes,
+    loading: typesLoading,
+    error: typesError,
+  } = useFetch<ContentTypeDefinition[]>("content-types:list", listFetcher);
+  const loadError = typesError
+    ? typesError instanceof Error
+      ? typesError.message
+      : "Failed to load content types."
+    : null;
 
   const type = allTypes?.find(
     (t) => t.name === typeSlug && t.kind !== "component",
   );
-  const showTypeLoading = useDelayedLoading(allTypes === null);
+  const showTypeLoading = useDelayedLoading(typesLoading);
 
   useDocumentTitle(type ? `${type.label} entries` : "Content");
 
   if (loadError) return <span class="error">{loadError}</span>;
-  if (allTypes === null)
+  if (allTypes === undefined)
     return showTypeLoading ? <span class="hint">Loading…</span> : null;
   if (!type)
     return <span class="error">Content type "{typeSlug}" not found.</span>;

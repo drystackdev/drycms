@@ -1,5 +1,12 @@
+import { getCacheEntry, setCacheEntry } from "../lib/idb-cache.js";
 import type { DestructiveChange } from "./migration.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "./types.js";
+
+/** Same IndexedDB key `useFetch("content-types:list", ...)` callers
+ * (`DryLayout`, `BuilderContentType`, `ContentEntryList`, `ContentEntryEditor`)
+ * share - keeping this identical lets `listCached()` below warm-start from
+ * (and refresh) the very same cache entry those pages read. */
+const CONTENT_TYPES_CACHE_KEY = "content-types:list";
 
 export interface SaveResponse {
   requiresConfirm?: true;
@@ -128,3 +135,21 @@ export function createContentTypesApi(baseUrl: string) {
 }
 
 export type ContentTypesApi = ReturnType<typeof createContentTypesApi>;
+
+/** Cache-aware counterpart to `api.list()` for one-shot call sites that
+ * can't use the reactive `useFetch()` hook (e.g. a load effect that also
+ * resolves a single id/draft and would risk clobbering in-progress,
+ * not-yet-autosaved form edits if it re-ran on a background cache
+ * revalidation). Still issues one request like `list()` did, but - reusing
+ * `useFetch`'s own `content-types:list` IndexedDB entry - sends it as a
+ * conditional `listVersioned()` check, so a response where nothing changed
+ * comes back version-only instead of the full schema array. */
+export async function listCached(api: ContentTypesApi): Promise<ContentTypeDefinition[]> {
+  const cached = await getCacheEntry<ContentTypeDefinition[]>(CONTENT_TYPES_CACHE_KEY);
+  const result = await api.listVersioned(cached?.version);
+  if (result.changed) {
+    await setCacheEntry(CONTENT_TYPES_CACHE_KEY, result.data!, result.version);
+    return result.data!;
+  }
+  return cached!.data;
+}

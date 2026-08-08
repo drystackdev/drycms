@@ -14,7 +14,7 @@ import {
   buildEntryFieldTree,
   type EntryFieldNode,
 } from "../content-types/engine/entry-tree.js";
-import { createContentTypesApi } from "../content-types/http-api.js";
+import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
@@ -187,7 +187,12 @@ export default function RoleEditor({ id }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const types = await typesApi.list();
+        // Cache-aware, not `typesApi.list()` - shares the same IndexedDB
+        // entry `DryLayout`/`BuilderContentType` keep warm via `useFetch`.
+        // A plain `useFetch()` isn't used here since `value` below has no
+        // autosave - a background revalidation re-running the load effect
+        // mid-edit could silently discard unsaved permission changes.
+        const types = await listCached(typesApi);
         setAllTypes(types);
       } catch (error) {
         setLoadError(

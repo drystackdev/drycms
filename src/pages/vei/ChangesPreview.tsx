@@ -9,7 +9,7 @@ import { diffEntryValue, formatDiffValue, type EntryFieldDiff } from "../../cont
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { buildEntryFieldTree, flattenQueryableColumns, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import { createContentEntriesApi } from "../../content-types/entries-http-api.js";
-import { createContentTypesApi } from "../../content-types/http-api.js";
+import { createContentTypesApi, listCached } from "../../content-types/http-api.js";
 import { SYSTEM_FIELD_IDS } from "../../content-types/system-fields.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { canAccess } from "../../store/auth.js";
@@ -81,7 +81,11 @@ export default function ChangesPreview() {
     (async () => {
       try {
         const typesApi = createContentTypesApi(`${path}/api/content-types`);
-        const [allTypes, records] = await Promise.all([typesApi.list(), getAllEntryDraftRecords()]);
+        // Cache-aware, not `typesApi.list()` - shares the same IndexedDB
+        // entry `DryLayout`/`BuilderContentType` keep warm via `useFetch`,
+        // so opening this from the VEI dock doesn't re-download the full
+        // schema on top of whatever the page underneath already fetched.
+        const [allTypes, records] = await Promise.all([listCached(typesApi), getAllEntryDraftRecords()]);
         const typeByName = new Map(allTypes.map((t) => [t.name, t] as const));
 
         const results = await Promise.all(

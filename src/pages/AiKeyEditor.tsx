@@ -9,7 +9,7 @@ import TextField from "../components/fields/TextField.js";
 import { ArrowLeftIcon, ReplaceIcon, TrashIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import { ContentEntriesApiError, createContentEntriesApi } from "../content-types/entries-http-api.js";
-import { createContentTypesApi } from "../content-types/http-api.js";
+import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -71,7 +71,13 @@ export default function AiKeyEditor({ id }: Props) {
   useEffect(() => {
     void (async () => {
       try {
-        const definitions = await typesApi.list();
+        // Cache-aware, not `typesApi.list()` - shares the same IndexedDB
+        // entry `DryLayout`/`BuilderContentType` keep warm via `useFetch`.
+        // A plain `useFetch()` isn't used here since `value` below (which
+        // can hold a freshly-typed API key) has no autosave - a background
+        // revalidation re-running the load effect mid-edit could silently
+        // discard it.
+        const definitions = await listCached(typesApi);
         const found = definitions.find((candidate) => candidate.name === "aiKey");
         if (!found) throw new Error('The system collection "aiKey" is not available.');
         setAllTypes(definitions);

@@ -5,7 +5,7 @@ import ConfirmDialog from "../components/ConfirmDialog.js";
 import SlugField from "../components/fields/SlugField.js";
 import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
-import { createContentTypesApi } from "../content-types/http-api.js";
+import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { bumpContentTypesVersion } from "../store/content-types.js";
 import {
   discardDraft,
@@ -243,7 +243,15 @@ export default function ContentTypeEditor({
   useEffect(() => {
     (async () => {
       try {
-        const types = await api.list();
+        // Cache-aware, not `api.list()` directly - shares the same
+        // IndexedDB entry `DryLayout`/`BuilderContentType` keep warm via
+        // `useFetch`, so editing several content types back-to-back only
+        // pays for a full schema download the first time, not on every
+        // `id` change. A plain `useFetch()` isn't used here instead because
+        // this effect's `definition` has no autosave - a background
+        // revalidation re-running it mid-edit could silently discard
+        // unsaved changes, so it stays a one-shot resolved fetch.
+        const types = await listCached(api);
         let liveType: ContentTypeDefinition | undefined;
         let loaded: ContentTypeDefinition;
 
