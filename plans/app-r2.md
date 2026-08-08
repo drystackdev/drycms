@@ -1,5 +1,9 @@
 # App R2 - trang public build sẵn, server không SSR
 
+Plan này **đã gộp `plans/page-builder.md`** vào (page builder là giai đoạn
+cuối của chính cơ chế này, không phải tính năng riêng). File kia giữ lại
+nguyên văn ý tưởng gốc, không còn là plan độc lập.
+
 ## Ý tưởng gốc (giữ nguyên văn)
 
 - Các trang chính là nằm trong src/apps/pages
@@ -20,10 +24,19 @@ Nghiên cứu ý tưởng trên production
 
 kết quả là server sẽ có cache tương ứng chỉ có HTML, js server không cần ssr
 
+### Từ `page-builder.md` (giữ nguyên văn)
+
+- cơ chế ở MVP1 là dạng edit code ở tại trang admin
+- có bên trái là cây thư mục tham chiếu cho /src/apps/**/**
+- tát cả các file trong src/apps/ là lưu trong R2
+- Khi thay đổi 1 file .tsx, 1 singletone hay 1 entry collection sẽ build lại trang kèm tailwincss riêng cho từng trang (không build dư)
+- drycms bản chat là server file nhỏ các dịch vụ xây quay xây dụng ra file html js css, phục vụ một số chức năng thực sự cần thiết ví dụ như schudule (cơ chế riêng)
+- môi trang build sẽ build luôn 1 đoạn xml riêng khi gọi sitemap.xml sẽ lấy all về và build thành xml chung cho goole
+
 ## Quyết định user đã chốt
 
 1. **Admin là builder duy nhất.** Trang chưa build thì chưa tồn tại. Không
-   có fallback SSR ở server, không cron, không queue nền.
+   có fallback SSR ở server, không cron render, không queue nền.
 2. **Server không SSR gì cả** - chỉ đọc file đã build ra và trả về. Đây là
    thứ gỡ bỏ blocker `eval`/`new Function` trên workerd (xem "Vì sao không
    SSR ở server" bên dưới).
@@ -35,6 +48,30 @@ kết quả là server sẽ có cache tương ứng chỉ có HTML, js server kh
    trong iframe ẩn (`vei:save`/`vei:saved` postMessage - `overlay.ts`'s
    `saveTarget`), nên nó chạy được đúng pipeline build đó. Save → build →
    reload.
+5. **Phạm vi đẩy lên R2 là `src/apps/pages/**`, KHÔNG phải cả `src/apps/`.**
+   `hydrate-client.ts`, `globals.css`, `vei/overlay.ts` là rollup input
+   (`vite.config.ts` dòng 92-94) - phải ở lại đĩa và build bằng Vite như cũ.
+   `dry.generated.d.ts` có đường riêng (mục 10).
+6. **Git vẫn giữ `pages/**`; sync lên R2 bằng script, không ghi đè.** Script
+   chỉ upload file **chưa có** trên R2; file đã có thì bỏ qua. Nghĩa là repo
+   là seed cho lần khởi tạo, còn sau đó R2 thắng - và deploy lại không bao
+   giờ xoá thứ user sửa trong browser (mục 13).
+7. **Object bất biến + con trỏ, ngay từ v1** (không phải "ghi đè tại chỗ cho
+   v1" như bản plan trước đề xuất). Lý do đổi: bảng `_pages` ở quyết định 8
+   *đã chính là* chỗ chứa con trỏ, nên phương án này gần như miễn phí; và nó
+   là điều kiện cần cho `schedule` (mục 9) lẫn rollback (mục 12).
+8. **Metadata build nằm trong bảng D1/SQLite, không phải manifest KV.** Một
+   bảng `_pages` + `_page_deps` thay cho: index ngược `content-type → pages`,
+   `PageCacheEnvelope.versions`, và trạng thái stale của UI Build (mục 5).
+9. **CSS build theo từng trang, không phải 1 file global.** (mục 6)
+10. **Component Builder giữ nguyên, không đụng tới trong đợt này.**
+    `.dry/components` + option `pageComponents` để nguyên; sẽ dọn sau.
+11. **Cron flip mặc định 60 phút, chỉnh được trong Settings.** Bài viết
+    không đổi liên tục và không phải bài nào cũng cần hẹn giờ - 60 phút là
+    mặc định đúng. Dự án nào cần nhanh thì hạ xuống trong setting (mục 9).
+12. **Tách 2 permission**: `system-code` (sửa `.tsx`) và `system-build`
+    (bấm Build/Rebuild). Biên tập viên nội dung build lại trang được mà không
+    đụng được vào code - đúng ranh giới rủi ro thật, vì sửa code = chạy code.
 
 Hệ quả trực tiếp của (1): mọi thay đổi data phải đi qua browser có phiên
 admin. Ghi bằng seed script/HTTP API trực tiếp sẽ KHÔNG tự lên trang - xem
@@ -61,18 +98,23 @@ không cần lối nào cả**. Đây là lý do bản kế hoạch này đơn g
 sửa .tsx  ─┐
 data đổi  ─┼─► admin/VEI iframe ─► compile (sucrase) ─► render (preact-render-to-string)
            │                                    │
-           │                                    ├─► HTML  ─┐
-           │                                    ├─► page.js ├─► storage API ─► R2 / đĩa local
-           │                                    └─► CSS    ─┘
+           │                                    ├─► HTML ─────► R2  pages/<buildHash>/<path>.html
+           │                                    ├─► page.js ──► R2                (bất biến)
+           │                                    └─► page.css ─► R2                     │
+           │                                                                           ▼
+           └───────────────────────────────────────────────► D1 _pages/_page_deps  + copy sang
+                                                              (con trỏ + deps)      key "live"
 ```
 
 ### Đường serve (worker/node)
 
 ```
-GET /about ─► pages-cache đọc R2 ─► trả HTML ─► browser tải page.js + CSS ─► hydrate
+GET /about ─► R2 GET pages/live/about.html ─► trả HTML ─► browser tải page.js + page.css ─► hydrate
 ```
 
-Không D1 query, không render, không compile. Miss = 404 thật.
+**Không D1 query, không JSON parse, không render.** Key R2 suy ra thẳng từ
+pathname (đúng như `pages-cache.ts`'s `cacheKeyFor` đang làm) - con trỏ nằm ở
+tầng build/cron, không nằm ở tầng serve (xem mục 12). Miss = 404 thật.
 
 ### Dev - không đổi gì
 
@@ -96,16 +138,21 @@ tĩnh + patch DOM phía client. Bug loại này chỉ lộ ở `dev:worker`/prod
 
 | Việc | Đã có ở |
 |---|---|
-| Compile TSX→JS trong browser + mini module system | [`src/page-components/sucrase-eval.ts`](../src/page-components/sucrase-eval.ts) |
+| Compile TSX→JS trong browser + mini module system (⚠️ phải mở rộng, xem dưới) | [`src/page-components/sucrase-eval.ts`](../src/page-components/sucrase-eval.ts) |
+| Bằng chứng `new Function` chạy được trong browser admin | [`sucrase-eval.ts:67`](../src/page-components/sucrase-eval.ts#L67) - đang chạy thật trong Component Builder |
 | Rewrite import specifier | [`src/page-components/import-rewrite.ts`](../src/page-components/import-rewrite.ts) |
 | Editor code + typecheck TS trong browser | [`src/components/Editer/`](../src/components/Editer/) |
+| Cây file + CRUD qua storage adapter (mẫu để copy) | [`routes/page-components.ts`](../src/server/routes/page-components.ts), [`src/page-components/tree.ts`](../src/page-components/tree.ts) |
 | Resolve route → vnode (dùng chung server/client) | [`resolve-match.ts`](../src/server/app-router/resolve-match.ts) |
 | Match path → route + params | [`match.ts`](../src/server/app-router/match.ts), [`route-tree.ts`](../src/server/app-router/route-tree.ts) |
 | Lưu/đọc HTML theo pathname trên R2 | [`pages-cache.ts`](../src/server/app-router/pages-cache.ts) |
 | Serve từ cache | [`page-handler.ts:102`](../src/server/page-handler.ts#L102) |
-| Theo dõi phụ thuộc `page → content-type` | `touchedTypes` trong `page-handler.ts`, `versions` trong `PageCacheEnvelope` |
-| So version để biết stale | `entries.getResourceVersions(types)` |
+| Theo dõi phụ thuộc `page → content-type` | `touchedTypes` trong `page-handler.ts` |
+| So version để biết stale | `entries.getResourceVersions(types)`, bảng `_versions` |
+| Bảng hệ thống prefix `_` (mẫu để copy) | [`entries-d1.ts:245`](../src/content-types/engine/entries-d1.ts#L245) `ensureVersionsTable` |
 | Ghi file qua HTTP + adapter local/R2 | [`routes/storage.ts`](../src/server/routes/storage.ts), [`storage-adapters.ts`](../src/server/storage-adapters.ts) |
+| Root `types-cache` + ghi `dry.generated.d.ts` vào storage | [`types-cache.ts`](../src/content-types/types-cache.ts), [`options.ts:31`](../src/server/options.ts#L31) |
+| Edge cache (Cache API) | [`edge-cache.ts`](../src/server/app-router/edge-cache.ts), gọi ở [`entry-worker.ts:103`](../src/server/entry-worker.ts#L103) |
 
 Nói cách khác: **nửa "serve" của kế hoạch này gần như đã xong**. Việc chính
 là đảo chiều người đổ đầy cache - từ pull (server SSR khi miss) sang push
@@ -113,7 +160,26 @@ là đảo chiều người đổ đầy cache - từ pull (server SSR khi miss)
 
 ## Phải xây
 
-### 1. `buildDocument()` - tách phần dựng `<head>`/`<body>` ra khỏi stream
+### 1. Route manifest thay `import.meta.glob` ⚠️ chưa plan nào nhắc tới
+
+[`route-tree.ts:117`](../src/server/app-router/route-tree.ts#L117) khám phá
+route bằng `import.meta.glob("/src/apps/pages/**/{page,layout}.tsx")` -
+**compile-time**. File `.tsx` nằm trên R2 thì glob chỉ thấy những gì có trên
+đĩa lúc build client. Tạo `/pricing/page.tsx` trong browser sẽ **không sinh
+ra route nào**: `staticPagePaths()` không thấy, builder không biết layout nào
+bọc nó.
+
+`buildRouteTree` vốn đã pure (nhận vào một modules map) nên không phải đụng.
+Việc cần làm là `discoverRoutes()` có 2 nguồn:
+
+- dev: `import.meta.glob` như cũ;
+- prod/builder: dựng modules map từ **file list trên R2** (một manifest sinh
+  ra mỗi lần lưu file, hoặc `listAll()` của storage adapter).
+
+Đây là **điều kiện tiên quyết** cho gần hết các mục dưới, phải nằm ở giai
+đoạn 2 chứ không phải giai đoạn 5.
+
+### 2. `buildDocument()` - tách phần dựng `<head>`/`<body>` ra khỏi stream
 
 `render.ts` hiện trộn "dựng document" với "stream response". Tách ra một hàm
 thuần `buildDocument(vnode, ctx) → string` để cả server (nếu còn cần) lẫn
@@ -122,7 +188,7 @@ chạy ở tab admin (`localhost:5173`) trong khi site là `https://…`, mà
 `canonical`/`og:url`/`resolveImageSrc` đều phụ thuộc origin. Không được lấy
 `window.location`.
 
-### 2. `dry()` bản thứ ba: đọc qua HTTP
+### 3. `dry()` bản thứ ba: đọc qua HTTP
 
 Hiện có `dry-reader.ts` (server/D1) và `dry-reader-client.ts` (replay). Build
 trong browser cần bản đọc qua HTTP API.
@@ -135,38 +201,78 @@ thẳng vào HTML public trên R2. `isPublished()` (`dry-populate.ts:56`) là
 Bản này vẫn phải sinh `callLog` y như bản server để nhúng replay data cho
 hydration (`dry-replay-codec.ts`).
 
-### 3. Liệt kê param cho route động
+### 4. Liệt kê param cho route động
 
 `/blogs/[slug]/page.tsx` muốn build sẵn thì phải biết hết slug. Query danh
 sách slug từ collection tương ứng lúc build (kiểu `generateStaticParams`).
-Route catch-all `[...rest]` thì không liệt kê được - phải khai báo tay hoặc
-chấp nhận không build.
+Route catch-all `[...rest]` **v1 không hỗ trợ** - khai báo path tay để sau.
 
-### 4. Index ngược `content-type → pages`
+### 5. Bảng `_pages` + `_page_deps`
 
-`touchedTypes` đã được tính sẵn khi render, chỉ thiếu chiều ngược lại. Build
-xong một trang thì ghi luôn vào một manifest trong KV:
+Thay hoàn toàn manifest KV của bản plan trước. Theo đúng tiền lệ `_versions`
+([`entries-d1.ts:245`](../src/content-types/engine/entries-d1.ts#L245)):
+bảng hệ thống prefix `_`, `CREATE TABLE IF NOT EXISTS`, bootstrap lười +
+memo theo binding. **Không** làm nó thành content type - đây là metadata
+build, không được hiện trong danh sách content của admin.
 
+```sql
+CREATE TABLE IF NOT EXISTS "_pages" (
+  "path"       TEXT PRIMARY KEY,   -- "/blogs/abc"
+  "object_key" TEXT NOT NULL,      -- build bất biến đang live: "pages/<hash>/blogs/abc.html"
+  "build_id"   TEXT NOT NULL,
+  "built_at"   INTEGER NOT NULL,   -- dùng luôn làm <lastmod>
+  "in_sitemap" INTEGER NOT NULL,   -- 0 khi noIndex / 404 / 500
+  "publish_at" INTEGER             -- NULL = live ngay; tương lai = chờ cron (mục 9)
+);
+
+CREATE TABLE IF NOT EXISTS "_page_deps" (
+  "path"     TEXT NOT NULL,
+  "resource" TEXT NOT NULL,        -- tên content type, khớp _versions.resource
+  "version"  INTEGER NOT NULL,
+  PRIMARY KEY ("path", "resource")
+);
 ```
-{ "blog": ["/", "/blogs", "/blogs/abc", …], "settings": ["/", …] }
-```
 
-Sửa 1 entry `blog` → tra manifest → biết chính xác cần build lại trang nào.
+Ba câu query, mỗi cái 1 lần:
 
-### 5. Tailwind build trong browser
+- sitemap: `SELECT path, built_at FROM _pages WHERE in_sitemap = 1 AND (publish_at IS NULL OR publish_at <= ?)`
+- build lại gì khi sửa entry `blog`: `SELECT path FROM _page_deps WHERE resource = 'blog'`
+- danh sách stale cho admin: JOIN `_page_deps` với `_versions` chỗ version
+  lệch - **1 query, thay cho việc list R2 rồi parse N envelope**
+
+Vì sao bảng chứ không phải KV blob: 2 admin build cùng lúc thì rewrite blob
+là last-writer-wins (mất row), còn bảng thì mỗi trang 1 row upsert độc lập;
+xoá trang là `DELETE` 1 row; và sitemap > 50k URL phân trang bằng
+`LIMIT/OFFSET` thay vì tự shard tay (KV value cap 25MB).
+
+**Phải dọn row khi xoá.** Xoá entry / xoá `page.tsx` mà quên `DELETE` là
+sitemap trỏ thẳng vào 404. Nối vào cả đường xoá entry lẫn đường xoá file,
+không chỉ đường build.
+
+### 6. Tailwind build trong browser, CSS riêng từng trang
 
 `globals.css` hiện build lúc build-time bằng cách scan source. User thêm
 class mới trong browser thì không có CSS tương ứng. Dùng `@tailwindcss/browser`
-(v4) ngay trong bước build: scan toàn bộ `.tsx` trong tree → sinh CSS →
-content-hash → lưu R2. HTML phải trỏ đúng phiên bản CSS đó (`assets.ts`'s
-`GLOBALS_CSS_HREF` hiện là hằng số bake lúc build client - cần thành giá trị
-đọc từ manifest build).
+(v4) ngay trong bước build.
 
-### 6. Hydration từ `.js` động
+**Vì sao per-page chứ không phải 1 file global:**
+[`assets.ts:22`](../src/server/app-router/assets.ts#L22) bake
+`GLOBALS_CSS_HREF` (content-hash) vào HTML mỗi trang. Giữ 1 CSS chung có hash
+thì thêm 1 class ở bất kỳ trang nào cũng đổi hash → **phải build lại HTML tất
+cả các trang**. Đúng cái "build dư" cần tránh, và làm "chỉ build 1 trang" bất
+khả thi.
+
+Tập file cần scan **rơi ra miễn phí** từ bước build: `sucrase-eval.ts` đã
+resolve import graph nên biết chính xác trang đó chạm những `.tsx` nào.
+
+Đánh đổi: utility lặp lại giữa các trang, không cache chung. Với site content
+(khách vào từ Google, xem 1 trang) thì lãi.
+
+### 7. Hydration từ `.js` động
 
 `hydrate-client.ts` đang dò route bằng `import.meta.glob` trong bundle. Đổi
-sang: đọc manifest route + `import("/…/page.js")` động. Phía browser chạy ESM
-động **không cần eval**, nên phần này dễ. Nhưng import trong page
+sang: đọc manifest route (mục 1) + `import("/…/page.js")` động. Phía browser
+chạy ESM động **không cần eval**, nên phần này dễ. Nhưng import trong page
 (`preact/hooks`, `../../dry.generated.js`) phải resolve được → import map
 trong `<head>`, hoặc rewrite specifier lúc compile (`import-rewrite.ts` đã
 làm việc tương tự).
@@ -174,86 +280,252 @@ làm việc tương tự).
 Tối ưu đáng làm: trang không có island tương tác thì bỏ hẳn hydration - gắn
 cờ per-page lúc build.
 
-### 7. UI Build trong admin
+### 8. `sitemap.xml` đọc từ bảng, không query D1 kiểu cũ
 
-- Danh sách trang + trạng thái: đã build / stale / chưa build. Stale phát
-  hiện bằng cách so `versions` trong `PageCacheEnvelope` với
-  `getResourceVersions()` - máy móc đã có sẵn.
+[`sitemap.ts:57`](../src/server/app-router/sitemap.ts#L57) hiện query D1
+trực tiếp và loop `publishedEntries` 500 row/lần - **mâu thuẫn thẳng với
+quyết định #2**. Đổi sang 1 câu `SELECT` từ `_pages` (mục 5).
+
+Được thêm miễn phí: [`sitemap.ts:51-55`](../src/server/app-router/sitemap.ts#L51-L55)
+ghi rõ `noIndex` của một trang TĨNH không được phản ánh "vì kiểm tra thì phải
+render thật" - với mô hình mới trang **được render thật lúc build**, nên chỉ
+việc ghi kết quả `mergeSeoLayers` vào `in_sitemap`. Hạn chế đó biến mất.
+
+**Giữ live query đúng 1 thứ:** `siteNoIndex`
+([`sitemap.ts:63`](../src/server/app-router/sitemap.ts#L63)) là setting
+runtime đọc từ `seoDefaults`. Bật lên thì toàn bộ `in_sitemap` trong bảng
+sai. Đọc live 1 lần (1 singleton, rẻ) rồi trả sitemap rỗng - đừng rebuild
+10k row.
+
+### 9. `schedule` - build sẵn 2 bản, cron đảo con trỏ
+
+Feature `schedule` (`system-fields.ts:150`, opt-in per content-type) publish
+bài bằng *thời gian trôi qua*, không có sự kiện ghi nào để bắt. Cron cũng
+không cứu được bằng cách render, vì cron vẫn là workerd (vẫn cấm `eval`).
+
+Cách giữ nguyên "server không render":
+
+- Lúc build, nếu entry có `publishAt` tương lai thì **build luôn cả 2 bản**:
+  bản hiện tại và bản sau khi bài lên. Cả hai lưu bất biến ở
+  `pages/<buildHash>/…`, bản tương lai kèm `publish_at` trong `_pages`.
+- Cron (Cloudflare Cron Trigger) chạy định kỳ: `SELECT` các row có
+  `publish_at <= now` chưa flip → copy object đó đè lên key "live" → cập nhật
+  `object_key`, xoá `publish_at`. **Không render gì cả.**
+- Lưu ý: R2 binding không có copy phía server - "copy" là `get()` + `put()`
+  chảy qua worker. Với HTML cỡ vài chục KB thì không sao, nhưng chi phí cron
+  tỉ lệ với số trang flip cùng một phút.
+
+**Tần suất (quyết định #11): mặc định 60 phút, chỉnh trong Settings.** Có một
+ràng buộc phải nói rõ: **lịch Cron Trigger nằm trong `wrangler.jsonc`, tức là
+deploy-time** - một setting runtime không thể làm cron chạy *nhanh hơn* nhịp
+đã khai báo. Nên:
+
+- `wrangler.jsonc` khai báo nhịp mịn nhất từng cần (đề xuất `*/15 * * * *`);
+- handler đọc setting `scheduleFlipIntervalMinutes` (mặc định 60) từ singleton
+  `systemSettings` (đã có sẵn - `routes/system-settings.ts`) và **bỏ qua** nếu
+  chưa đủ khoảng cách kể từ lần chạy trước;
+- muốn nhanh hơn 15 phút thì phải sửa `wrangler.jsonc` + deploy lại. Ghi rõ
+  điều này ngay cạnh ô setting, đừng để user tưởng chỉnh xuống 1 phút là chạy.
+
+Lần chạy rỗng gần như miễn phí: cùng đúng câu `SELECT MIN(publish_at)` mà mục
+14 vốn đã cần cho việc cap TTL sitemap - không có gì tới hạn thì thoát ngay.
+
+Đây là thứ `page-builder.md` gọi là "schedule (cơ chế riêng)", và là lý do
+quyết định #7 chọn con trỏ thay vì ghi đè tại chỗ.
+
+### 10. `dry.generated.d.ts` qua `types-cache`
+
+Đã xây sẵn ~70%: [`types-cache.ts:20`](../src/content-types/types-cache.ts#L20)
+`writeGeneratedDryTypes()` **đã ghi cả 2 nơi** (đĩa + storage adapter), root
+`types-cache` đã tồn tại ([`options.ts:31`](../src/server/options.ts#L31)),
+và adapter đó đã chạy R2 được (`options.test.ts:64`). Comment trong file nói
+thẳng: *"prep for a future browser-based code editor to read this over an API
+instead of the filesystem, not built yet."*
+
+Còn thiếu đúng 3 việc:
+
+1. **Trigger.** Hiện chỉ có 2 trigger, cả hai đều là Node: dev-server startup
+   (`dev-server.mjs:69`) và `bun run dry:generate`. **Không cái nào chạy khi
+   save metadata** → trên prod file types đóng băng ở trạng thái lúc deploy.
+   Móc vào đường apply schema ở
+   [`routes/content-types.ts`](../src/server/routes/content-types.ts) (sau khi
+   migration chạy xong) - phải server-side.
+2. **`writeGeneratedDryTypes` sẽ nổ trên Workers.**
+   [`types-cache.ts:1`](../src/content-types/types-cache.ts#L1) import
+   `node:fs/promises` và gọi `mkdir`/`writeFile`. Hôm nay an toàn vì chỉ script
+   Node gọi; khi trigger vào request path thì nó chạy trên worker. Tách: ghi
+   storage **luôn luôn**, ghi đĩa **chỉ khi có filesystem**. Giữ nhánh ghi đĩa
+   lại - `tsc`/IDE local vẫn cần.
+3. **Route đọc.** Chưa có endpoint nào serve `types-cache`. Editer cần nó làm
+   `extraFiles` cho TS Language Service. Theo mẫu `routes/page-components.ts`.
+
+Rủi ro thấp nhất trong cả plan: `.d.ts` bị xoá lúc compile và Sucrase strip
+type **không type-check**, nên file này **không nằm trên đường build**. Stale
+thì hỏng autocomplete, không hỏng site. Ghi đè thẳng, không cần version/rollback.
+
+Lưu ý khi nối vào Editer: khối `declare global` cuối file khai báo
+`dry()`/`params()`/`setTitle()`/`dryBind()`. File có `import type` ở đầu nên
+nó là *module* - `declare global` vẫn chạy, nhưng file phải được **đưa vào TS
+program**, không chỉ resolve được.
+
+### 11. UI Build trong admin
+
+- Danh sách trang + trạng thái: đã build / stale / chưa build. Stale = JOIN
+  `_page_deps` với `_versions` (mục 5), 1 query.
 - Nút "Build lại trang này" / "Build tất cả".
 - Progress + resume được (sửa `layout.tsx` gốc = build lại mọi trang; đóng
   tab giữa chừng là chuyện sẽ xảy ra).
 - Batch PUT lên storage, đừng 500 request rời rạc.
+- Hiện cả ở dev (ghi xuống đĩa local; xem kết quả qua `dev:worker`).
 
-### 8. Sửa `page-handler.ts`
+### 12. Sửa `page-handler.ts` + bỏ `PageCacheEnvelope`
 
+Hiện [`pages-cache.ts:38-63`](../src/server/app-router/pages-cache.ts#L38-L63)
+làm 3 việc trên **mỗi request**: R2 GET envelope (HTML nhét trong JSON) →
+`JSON.parse` → thêm 1 round trip D1 `getResourceVersions()` → so version. Mà
+prod **vẫn trả HTML cũ khi stale** (dưới đây) - nên toàn bộ phép so version đó
+ở prod là công vô ích.
+
+- Metadata sang bảng (mục 5) → R2 chứa **HTML thô**. Serve = 1 lần R2 GET,
+  không parse JSON, không chạm D1. Nhanh hơn hiện tại.
+- Key R2 suy ra từ pathname (như `cacheKeyFor` đang làm), **không** đọc
+  `object_key` mỗi request - con trỏ chỉ dùng cho admin/rollback/cron.
+  Build ghi bất biến `pages/<buildHash>/<path>.html` rồi copy sang key live.
 - Prod (`!import.meta.env.DEV`): chỉ đọc cache, bỏ nhánh render. Miss = 404.
   Dev đi tiếp nhánh SSR hiện tại, không đụng vào.
-- **Ở prod, VEI không còn bypass cache được** (không còn SSR để bypass
-  sang). VEI chạy trên HTML tĩnh + overlay patch DOM phía client -
+- **Ở prod, VEI không còn bypass cache được** (không còn SSR để bypass sang).
+  VEI chạy trên HTML tĩnh + overlay patch DOM phía client -
   `applyPendingDrafts()` đã làm đúng việc đó rồi. Sau `saveAll()` thì chạy
   build cho trang hiện tại + trang phụ thuộc, xong mới
   `window.location.reload()`. Ở dev, VEI vẫn bypass + SSR như cũ.
 - Stale (version lệch) thì **vẫn trả HTML cũ**, không 404. Trang cũ tốt hơn
   trang mất. Staleness báo trong admin, không báo cho khách.
+- Rollback = copy một object bất biến cũ đè lên key live + cập nhật
+  `object_key`. Cũng là cách chữa trường hợp build dở giữa chừng làm site nửa
+  mới nửa cũ.
 
-### 9. Version + rollback
+### 13. Script sync git → R2 (quyết định #6)
 
-R2 không có versioning mặc định. Hai admin cùng build sẽ ghi đè nhau kiểu
-last-writer-wins.
+- Upload `src/apps/pages/**` từ repo lên R2, **bỏ qua file đã tồn tại**.
+  Không có cờ `--force` trong v1: một lần lỡ tay là mất hết code user sửa
+  trong browser.
+- Chạy tay, không nối vào `bun run build`/deploy.
+- **Chiều ngược (pull R2 → đĩa) làm cùng đợt, không để sau.** Không có nó thì
+  code user sửa trong browser không bao giờ về git - mất lịch sử, mất blame,
+  mất code review. Cùng nguyên tắc: không ghi đè file đã có.
 
-- v1: ghi đè tại chỗ (build do admin chủ động, hiếm, chấp nhận được).
-- Khi cần: ghi vào `pages/<buildHash>/…` bất biến + một con trỏ trong KV.
-  Đổi con trỏ = switch nguyên tử, và được rollback tức thì miễn phí. Cũng là
-  cách chữa trường hợp build dở giữa chừng làm site nửa mới nửa cũ.
+### 14. Edge cache: TTL riêng cho sitemap
+
+Sitemap đã đi qua edge cache sẵn (`entry-worker.ts:103` bọc mọi response,
+`storeEdgeCache` cho phép content-type `xml`). Vấn đề là TTL:
+
+- [`edge-cache.ts:101`](../src/server/app-router/edge-cache.ts#L101) **ghi đè
+  vô điều kiện** `Cache-Control` bằng `s-maxage=${pagesCacheEdgeTtl}` (mặc
+  định 60s) → header 24h mà sitemap tự set sẽ bị xoá. `storeEdgeCache` phải
+  nhận TTL theo từng response.
+- [`edge-cache.ts:65`](../src/server/app-router/edge-cache.ts#L65)
+  `isEdgeCacheable` trả `false` khi `pagesCacheEdgeTtl <= 0` - tắt cache
+  trang sẽ tắt luôn cache sitemap. Tách 2 cờ ra.
+- **Cap TTL theo lần publish kế tiếp.** TTL 24h phẳng có lỗ: bài hẹn 09:00 mà
+  cache nạp lúc 08:59 thì mất tăm khỏi sitemap gần 24h. Lúc build response
+  (chỉ chạy khi miss, tức ~1 lần/ngày) query thêm
+  `SELECT MIN(publish_at) FROM _pages WHERE publish_at > ?` rồi đặt
+  `s-maxage = min(86400, next - now)`. Không có gì hẹn giờ thì tự khắc là 24h.
 
 ## Rủi ro đã chấp nhận (hệ quả của quyết định #1)
 
 - **Ghi không qua browser thì không lên trang.** `bun run seed:pages`, HTTP
   API, tích hợp ngoài, admin khác... đều làm site stale âm thầm. Giảm nhẹ
-  bằng mục 7 (hiện trạng thái stale trong admin) - biến "sai âm thầm" thành
+  bằng mục 11 (hiện trạng thái stale trong admin) - biến "sai âm thầm" thành
   "sai nhìn thấy được".
-- **`schedule` không tự lên bài.** Feature `schedule` (`system-fields.ts:150`,
-  opt-in per content-type) publish bài bằng *thời gian trôi qua*, không có
-  sự kiện ghi nào để bắt. Không ai build lúc 9h sáng thì bài không lên.
-  Schema hiện tại chưa type nào bật `schedule` nên hôm nay là moot; nếu bật
-  sau này thì phải nói rõ trong UI rằng `schedule` chỉ có tác dụng khi có
-  build sau thời điểm đó.
+- **Code prod không nằm trong git** (trừ khi user chủ động pull về, mục 13).
+  Không lịch sử, không blame, không rollback bằng git - chỉ có rollback bằng
+  object bất biến (mục 12).
 - **Mất typecheck/test trên code prod.** Code sửa trong browser không qua
   `tsc`/`vitest`/e2e. `Editer/ts-worker.ts` đỡ được phần typecheck, phần còn
   lại thì không.
 - **Ai sửa được page = chạy được code** (trong browser admin, không phải trên
-  server - nhẹ hơn nhiều so với bản SSR). Vẫn nên gate bằng permission riêng
-  kiểu `system-code`, theo mẫu `system-vei`.
+  server - nhẹ hơn nhiều so với bản SSR). Gate bằng `system-code`, tách khỏi
+  `system-build` (quyết định #12), cả hai theo mẫu `system-vei`.
 - **`.tsx` là source of truth, `.js` chỉ là cache.** Không tin `.js` client
   gửi lên như thứ độc lập - phải luôn compile lại được từ `.tsx`.
+- **Sitemap trễ tối đa 24h** khi không có gì hẹn giờ (mục 14). Google crawl
+  sitemap theo lịch riêng của nó nên mức này nằm trong nhiễu bình thường.
+
+~~`schedule` không tự lên bài~~ → đã giải bằng mục 9.
 
 ## Giai đoạn
 
 **Spike trước (nửa buổi, chưa cam kết gì):** dựng 1 trang tĩnh đơn giản
 (`/about`) đi hết đường: compile `.tsx` bằng sucrase trong browser →
 `resolveMatchToVNode` → `renderToStringAsync` → PUT HTML lên storage → worker
-serve. Chứng minh được hoặc chết ở đây. Đo luôn thời gian build 1 trang.
+serve. Chứng minh được hoặc chết ở đây.
+
+`sucrase` và `preact-render-to-string` đều đã nằm trong `dependencies` (tức
+đã ship được xuống browser), và `new Function` đã chạy thật trong Component
+Builder - nên tiền đề "browser eval được, server không" **không còn là giả
+thiết**. 4 thứ còn lại thì chưa ai xác minh, và spike phải trả lời hết:
+
+1. **`sucrase-eval.ts` KHÔNG dùng lại nguyên trạng được.**
+   [`resolveModulePath` (dòng 20-24)](../src/page-components/sucrase-eval.ts#L20-L24)
+   **throw với mọi bare specifier** - đúng chủ ý của Component Builder ("chỉ
+   import file"). Nhưng page thật thì import `preact/hooks`, và
+   `app-router-plugin.ts` còn tự inject import cho `dry`/`params`/`setTitle`.
+   Phải thêm allowlist các module được cung cấp sẵn. Đây là **mở rộng**, không
+   phải tái dùng.
+2. **Một nguồn, hai định dạng output.** File đó dùng
+   `transforms: ["imports"]` → sinh CommonJS, hợp cho eval lúc build. Nhưng
+   mục 7 cần **ESM** cho `page.js` + `import()` động ở client. Phải compile 2
+   lần với 2 cấu hình, hoặc bỏ transform `imports` cho nhánh ESM.
+3. **`@tailwindcss/browser` chưa có trong `package.json`** (mới chỉ có
+   `tailwindcss` core + `@tailwindcss/vite`). Chưa xác minh nó chạy được với
+   input là **chuỗi `.tsx` trong bộ nhớ**, không phải file trên đĩa. Hỏng thì
+   mục 6 sập → phải quay về CSS global và chấp nhận rebuild toàn site mỗi lần
+   đổi class.
+4. **Chưa đo gì cả**: thời gian build 1 trang, và bundle admin phình bao nhiêu
+   sau khi nhét sucrase + preact-render-to-string + tailwind browser.
 
 1. **Build core** - `buildDocument()` tách ra, `dry()` HTTP published-only,
    build 1 trang tĩnh, ghi qua storage adapter. Serve từ cache, miss = 404.
-2. **Route động + manifest** - liệt kê param, index ngược
-   `content-type → pages`, build theo phụ thuộc.
-3. **CSS + hydration** - Tailwind browser build, `page.js` động + import map,
-   cờ bỏ hydration cho trang tĩnh.
-4. **UI Build + VEI** - trang Build trong admin (trạng thái/stale/progress/
+   Bỏ `PageCacheEnvelope`, R2 chứa HTML thô.
+2. **Route manifest + bảng + route động** - mục 1 (bỏ `import.meta.glob`),
+   mục 5 (`_pages`/`_page_deps`), mục 4 (liệt kê param), build theo phụ thuộc.
+3. **CSS + hydration** - Tailwind browser build per-page, `page.js` động +
+   import map, cờ bỏ hydration cho trang tĩnh.
+4. **Sitemap + schedule** - mục 8, 9, 14. Cron flip con trỏ.
+5. **UI Build + VEI** - trang Build trong admin (trạng thái/stale/progress/
    resume), VEI save → build → reload.
-5. **Sửa code trong browser** - editor cho `src/**/*.tsx`, lưu R2, build lại
-   trang liên quan. (Đây là mục tiêu cuối, nhưng là phần *dễ nhất* một khi
-   1-4 xong - nó chỉ là thêm một nguồn trigger build.)
+6. **Sửa code trong browser** (nội dung `page-builder.md`) - cây thư mục
+   `src/apps/pages/**` + Editer, lưu R2, build lại trang liên quan, script
+   sync (mục 13), `types-cache` cho `dry.generated.d.ts` (mục 10). Đây là mục
+   tiêu cuối, nhưng là phần *dễ nhất* một khi 1-5 xong - nó chỉ là thêm một
+   nguồn trigger build.
+
+Mục 10 (`types-cache`) có thể tách ra làm sớm bất cứ lúc nào - nó độc lập với
+mọi thứ còn lại.
 
 ## Câu hỏi còn mở
 
-- Full rebuild dùng ghi đè tại chỗ hay thư mục bất biến + con trỏ KV? (mục 9
-  - đề xuất: tại chỗ cho v1)
-- Route `[...rest]` xử lý sao - khai báo path tay, hay không hỗ trợ?
-- Trang Build trong admin có hiện ở dev không? (build được nhưng dev không
-  đọc cache nên không thấy kết quả - đề xuất: vẫn hiện, ghi xuống đĩa local,
-  xem kết quả qua `dev:worker`)
+Không còn câu nào chặn việc bắt đầu. Câu duy nhất còn lại là **contingent, chỉ
+trả lời sau spike**: nếu `@tailwindcss/browser` không chạy được với input trong
+bộ nhớ (ẩn số #3 của spike) thì fallback là gì - CSS global href cố định +
+ETag (không hash, không phải rebuild HTML), hay CSS global có hash và chấp
+nhận rebuild toàn site mỗi lần đổi class?
+
+~~Cron flip mỗi bao lâu?~~ → **Đã chốt: mặc định 60 phút, chỉnh trong
+Settings** (quyết định #11).
+
+~~Chiều pull R2 → git có làm ngay không?~~ → **Đã chốt: làm cùng giai đoạn 6.**
+
+~~Permission tách hay gộp?~~ → **Đã chốt: tách `system-code` +
+`system-build`** (quyết định #12).
+
+~~Full rebuild ghi đè tại chỗ hay bất biến + con trỏ?~~ → **Đã chốt: bất biến
++ con trỏ, ngay từ v1** (quyết định #7).
+
+~~Route `[...rest]`?~~ → **Đã chốt: v1 không hỗ trợ.**
+
+~~Trang Build có hiện ở dev không?~~ → **Đã chốt: có, ghi xuống đĩa local.**
 
 ~~Có giữ live preview Vite ở dev không?~~ → **Đã chốt: dev giữ nguyên hoàn
 toàn, cơ chế này chỉ bật ở server thật.**
