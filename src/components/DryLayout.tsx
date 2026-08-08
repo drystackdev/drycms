@@ -29,6 +29,7 @@ import {
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
+  SYSTEM_BUILD_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
@@ -115,6 +116,15 @@ const NAV: {
     ready: true,
     section: "Content",
     permissionResourceId: PAGE_COMPONENTS_RESOURCE_ID,
+  },
+  {
+    key: "page-build",
+    label: "Page Build",
+    href: `${path}/page-build`,
+    icon: "Export",
+    ready: true,
+    section: "System",
+    permissionResourceId: SYSTEM_BUILD_RESOURCE_ID,
   },
   {
     key: "roles",

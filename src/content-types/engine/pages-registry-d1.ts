@@ -117,6 +117,12 @@ export function createD1PagesRegistryAdapter(
       ]);
     },
 
+    async listAllPages() {
+      await ensureBootstrap();
+      const result = await db.prepare('SELECT * FROM "_pages" ORDER BY "path" ASC;').all<PageRow>();
+      return (result.results ?? []).map(toPageRecord);
+    },
+
     async listPathsByResource(resource) {
       await ensureBootstrap();
       const result = await db.prepare('SELECT DISTINCT "path" FROM "_page_deps" WHERE "resource" = ?;').bind(resource).all<{ path: string }>();

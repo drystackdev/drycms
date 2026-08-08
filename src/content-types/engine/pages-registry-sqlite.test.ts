@@ -44,6 +44,19 @@ describe("createSqlitePagesRegistryAdapter", () => {
     expect(entries).toEqual([{ path: "/blogs/abc", builtAt: 1000 }]);
   });
 
+  it("listAllPages returns every row regardless of sitemap/publish state, sorted by path", async () => {
+    const { adapter, dir } = freshAdapter();
+    dirs.push(dir);
+
+    await adapter.recordBuild(page({ path: "/z-last", inSitemap: false }), []);
+    await adapter.recordBuild(page({ path: "/a-first", publishAt: Date.now() + 100_000 }), []);
+
+    const all = await adapter.listAllPages();
+    expect(all.map((p) => p.path)).toEqual(["/a-first", "/z-last"]);
+    expect(all[0]).toMatchObject({ path: "/a-first", inSitemap: true, publishAt: expect.any(Number) });
+    expect(all[1]).toMatchObject({ path: "/z-last", inSitemap: false, publishAt: null });
+  });
+
   it("excludes noIndex/not-yet-published pages from the sitemap", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);

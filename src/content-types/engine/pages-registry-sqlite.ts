@@ -101,6 +101,12 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       }
     },
 
+    async listAllPages() {
+      const handle = await getHandle();
+      const rows = handle.all<PageRow>('SELECT * FROM "_pages" ORDER BY "path" ASC;');
+      return rows.map(toPageRecord);
+    },
+
     async listPathsByResource(resource) {
       const handle = await getHandle();
       const rows = handle.all<{ path: string }>('SELECT DISTINCT "path" FROM "_page_deps" WHERE "resource" = ?;', [resource]);

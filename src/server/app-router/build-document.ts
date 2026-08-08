@@ -2,7 +2,6 @@ import { renderToStringAsync } from "preact-render-to-string";
 import type { DryCallLogEntry, DryRequestContext } from "../../content-types/dry-context.js";
 import { mergeSeoLayers, type DrySeoLayers } from "../../content-types/dry-seo.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
-import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import { installMediaSrcHook } from "./media-src-hook.js";
 import { installVeiMarkerHook } from "./vei-marker-hook.js";
@@ -19,15 +18,17 @@ import { installVeiMarkerHook } from "./vei-marker-hook.js";
  * browser tab; this file adds the document-shell assembly around them
  * without reintroducing anything that doesn't.
  *
- * `GLOBALS_CSS_HREF`/`HYDRATE_ENTRY_HREF`/`VEI_OVERLAY_HREF` (`./assets.js`)
- * ARE safe here - that module resolves to plain, already-baked strings
- * (`import.meta.env.DEV` picks between a dev source path and a generated,
- * build-time-baked constant; neither branch touches `config.ts`).
- * `adminPath`/`siteLang` are NOT imported the same way - `config.ts` DOES
- * pull `node:fs`/`node:path` - so `buildHeadPrefix` takes them as plain
- * arguments instead, same "explicit, not read from ambient state"
- * discipline `BuildDocumentContext.origin`'s own doc comment below applies
- * to the site origin.
+ * `GLOBALS_CSS_HREF`/`HYDRATE_ENTRY_HREF`/`VEI_OVERLAY_HREF` do NOT come from
+ * `./assets.js` here (an earlier version of this file imported them from
+ * there, on the assumption that module was safe - WRONG, caught live: that
+ * module RE-EXPORTS from `resolve-asset-href.ts`, which imports `node:fs`
+ * at module scope; a static `export {...} from` pulls in the whole module
+ * graph regardless of which names are actually used, so ANY import from
+ * `assets.js` transitively breaks in a real browser build - confirmed via
+ * Playwright, `status/app-r2-build.md`). `buildHeadPrefix` takes all 3 as
+ * plain arguments instead, same "explicit, not read from ambient state"
+ * discipline `BuildDocumentContext.origin`'s own doc comment below already
+ * applies to the site origin and to `adminPath`/`siteLang`.
  */
 
 installVeiMarkerHook();
@@ -143,11 +144,17 @@ function veiConfigScript(adminPath: string, editMode: boolean): string {
 export const DOC_BODY_OPEN = "</head><body>";
 export const BODY_AND_HTML_CLOSE = "</body></html>";
 
-/** The static, non-SEO part of `<head>` - `adminPath`/`siteLang` passed in
- * explicitly rather than imported from `config.ts` (see this file's own doc
- * comment for why). Identical bytes to what `render.ts` built inline before
- * this file existed. */
-export function buildHeadPrefix(adminPath: string, siteLang: string): string {
+export interface AssetHrefs {
+  globalsCssHref: string;
+  hydrateEntryHref: string;
+  veiOverlayHref: string;
+}
+
+/** The static, non-SEO part of `<head>` - `adminPath`/`siteLang`/asset hrefs
+ * all passed in explicitly rather than imported from `config.ts`/`assets.ts`
+ * (see this file's own doc comment for why). Identical bytes to what
+ * `render.ts` built inline before this file existed. */
+export function buildHeadPrefix(adminPath: string, siteLang: string, assets: AssetHrefs): string {
   const faviconIcoHref = `${adminPath}/api/storage/favicon.ico`;
   const faviconPngHref = `${adminPath}/api/storage/favicon.png`;
   return (
@@ -155,10 +162,10 @@ export function buildHeadPrefix(adminPath: string, siteLang: string): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     `<link rel="icon" href="${faviconIcoHref}">` +
     `<link rel="icon" type="image/png" href="${faviconPngHref}">` +
-    `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}">` +
+    `<link rel="stylesheet" href="${assets.globalsCssHref}">` +
     (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
-    `<script type="module" src="${HYDRATE_ENTRY_HREF}"></script>` +
-    `<script type="module" src="${VEI_OVERLAY_HREF}"></script>`
+    `<script type="module" src="${assets.hydrateEntryHref}"></script>` +
+    `<script type="module" src="${assets.veiOverlayHref}"></script>`
   );
 }
 
@@ -179,6 +186,7 @@ export interface BuildDocumentContext {
   pathname: string;
   adminPath: string;
   siteLang: string;
+  assets: AssetHrefs;
   seoEntryDates?: DryRequestContext["seoEntryDates"];
   callLog?: DryCallLogEntry[];
   /** Whether this render carries VEI edit markers - `false`/absent for
@@ -207,7 +215,7 @@ export interface BuildDocumentContext {
 export async function buildDocument(vnode: unknown, ctx: BuildDocumentContext): Promise<string> {
   const seoLayers = ctx.seo ?? {};
   const head =
-    buildHeadPrefix(ctx.adminPath, ctx.siteLang) +
+    buildHeadPrefix(ctx.adminPath, ctx.siteLang, ctx.assets) +
     buildSeoTags(seoLayers, ctx.origin, ctx.pathname) +
     buildStructuredData(seoLayers, ctx.origin, ctx.pathname, ctx.seoEntryDates) +
     DOC_BODY_OPEN;

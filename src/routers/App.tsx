@@ -33,6 +33,7 @@ const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
 const RichtextComponents = lazy(() => import("../pages/RichtextComponents.js"));
 const PageComponents = lazy(() => import("../pages/PageComponents.js"));
+const PageBuild = lazy(() => import("../pages/PageBuild.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
 const GoogleVerificationSettings = lazy(() => import("../pages/GoogleVerificationSettings.js"));
 const VeiChangesPreview = lazy(() => import("../pages/vei/ChangesPreview.js"));
@@ -163,6 +164,10 @@ function AuthenticatedApp() {
               <Route
                 path={`${path}/page-components`}
                 component={PageComponents}
+              />
+              <Route
+                path={`${path}/page-build`}
+                component={PageBuild}
               />
               <Route
                 path={`${path}/content-types`}

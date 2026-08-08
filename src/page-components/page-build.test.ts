@@ -3,6 +3,8 @@ import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { buildPage, publishBuiltPage, PageBuildError } from "./page-build.js";
 
+const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
+
 const SITE_SETTINGS_TYPE: ContentTypeDefinition = {
   id: "site-settings-id",
   kind: "singleton",
@@ -88,6 +90,7 @@ describe("buildPage", () => {
       origin: "https://example.com",
       adminPath: "/dry",
       siteLang: "en",
+      assets: TEST_ASSETS,
       dryHttpEndpoint: "/dry/api/dry-http",
       allTypes: [SITE_SETTINGS_TYPE, SEO_DEFAULTS_TYPE],
       sourceByPath: {
@@ -136,6 +139,7 @@ describe("buildPage", () => {
         origin: "https://example.com",
         adminPath: "/dry",
         siteLang: "en",
+        assets: TEST_ASSETS,
         dryHttpEndpoint: "/dry/api/dry-http",
         allTypes: [],
         sourceByPath: {
@@ -161,6 +165,7 @@ describe("buildPage", () => {
       origin: "https://example.com",
       adminPath: "/dry",
       siteLang: "en",
+      assets: TEST_ASSETS,
       dryHttpEndpoint: "/dry/api/dry-http",
       allTypes: [SEO_DEFAULTS_TYPE],
       sourceByPath: {

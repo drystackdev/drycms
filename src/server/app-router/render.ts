@@ -10,7 +10,7 @@ import {
   buildStructuredData,
   veiConfigScript,
 } from "./build-document.js";
-import { GLOBALS_CSS_HREF } from "./assets.js";
+import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { resolveMatchToVNode } from "./resolve-match.js";
@@ -55,7 +55,7 @@ export function renderPage(
         const origin = dryContext.origin ?? "";
         const pathname = dryContext.pathname ?? "";
         const head =
-          buildHeadPrefix(adminPath, siteLang) +
+          buildHeadPrefix(adminPath, siteLang, { globalsCssHref: GLOBALS_CSS_HREF, hydrateEntryHref: HYDRATE_ENTRY_HREF, veiOverlayHref: VEI_OVERLAY_HREF }) +
           buildSeoTags(seoLayers, origin, pathname) +
           buildStructuredData(seoLayers, origin, pathname, dryContext.seoEntryDates) +
           DOC_BODY_OPEN;

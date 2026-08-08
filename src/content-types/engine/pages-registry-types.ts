@@ -64,6 +64,10 @@ export interface PagesRegistryAdapter {
   /** Sitemap source of truth (mục 8): every in-sitemap page whose
    * `publishAt` is null or already past `asOfMs`. */
   listSitemapEntries(asOfMs: number): Promise<{ path: string; builtAt: number }[]>;
+  /** Every row regardless of state - the admin "Build" page's status list
+   * (mục 11). Unlike every other `list*` method above, not filtered by
+   * sitemap/publish/staleness - the UI decides what each row means. */
+  listAllPages(): Promise<PageRecord[]>;
   /** Admin "stale" list (mục 11): paths whose recorded dependency version no
    * longer matches `_versions`' current value for that resource. */
   listStalePaths(): Promise<StalePageInfo[]>;

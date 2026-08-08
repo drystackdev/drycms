@@ -68,15 +68,30 @@ export const POST: DryRouteHandler = async (context) => {
   }
 };
 
-/** For QA/admin tooling - reads back what's currently live for a path
- * without going through the (still dark) public serve path. `?path=` query
+/** No `?path=` - the admin "Build" page's status list (mục 11): every
+ * `_pages` row plus which paths are currently stale (`pagesRegistry.
+ * listStalePaths()`, a JOIN against `_versions`), combined into one
+ * response so the UI does 1 request instead of N. */
+async function handleList(context: Parameters<DryRouteHandler>[0]): Promise<Response> {
+  const { pagesRegistry } = getContentAdapters(context);
+  const [pages, stale] = await Promise.all([pagesRegistry.listAllPages(), pagesRegistry.listStalePaths()]);
+  const staleByPath = new Map(stale.map((s) => [s.path, s.resource]));
+  return jsonResponse({
+    pages: pages.map((page) => ({ ...page, staleResource: staleByPath.get(page.path) ?? null })),
+  });
+}
+
+/** `?path=` - reads back what's currently live for a path without going
+ * through the (still dark) public serve path (QA/admin tooling). No
+ * `?path=` at all - the list above, for the admin "Build" page. Query
  * param, not `readSlug`'s rest-segment convention - this route has no
  * natural "file tree" shape to hang a path off of. */
 export const GET: DryRouteHandler = async (context) => {
   try {
     const pathname = context.url.searchParams.get("path");
-    if (!pathname || !pathname.startsWith("/")) {
-      return errorResponse(new Error('A "path" query param starting with "/" is required.'));
+    if (!pathname) return await handleList(context);
+    if (!pathname.startsWith("/")) {
+      return errorResponse(new Error('"path" must start with "/".'));
     }
     const html = await readBuiltPage(context, pathname);
     if (html === null) return jsonResponse({ error: "not_found", message: `No built page at "${pathname}".` }, 404);

@@ -488,33 +488,42 @@ thiết**. 4 thứ còn lại thì chưa ai xác minh lúc viết plan; **đã c
    **bước build phải tự chèn dòng import này**, cùng cách
    `app-router-plugin.ts` đã chèn import cho `dry`/`params` hôm nay. Ghi
    thêm vào mục 7 làm việc phải làm, không phải chuyện tự nhiên có.
-3. **⚠️ `@tailwindcss/browser` - xác minh được nguồn, CHƯA chạy sống được.**
-   Đã cài (`bun add -d @tailwindcss/browser`) và đọc thẳng source
-   (`packages/@tailwindcss-browser/src/index.ts` trên repo
-   `tailwindlabs/tailwindcss`): package này **tự chạy khi import, chỉ dựa
-   vào DOM** - gọi `rebuild('full')` một lần lúc import, sau đó một
-   `MutationObserver` theo dõi `document` (thẻ `<style type="text/tailwindcss">`
-   đổi, `class` attribute đổi, node mới) và quét bằng
-   `document.querySelectorAll('[class]')`. **Không có API lập trình/headless
-   nào cả.** Hệ quả kiến trúc cho mục 6 (chưa có trong bản plan trước): build
-   1 trang phải thực sự **mount HTML đã render vào một document sống** (kể cả
-   ẩn/offscreen), không thể đưa "chuỗi .tsx" vào thẳng; và vì observer/
-   stylesheet là toàn cục theo tab, build nhiều trang liên tiếp trong cùng 1
-   phiên admin phải cô lập từng trang (iframe riêng mỗi lần build, hoặc diff
-   stylesheet trước/sau) để CSS trang A không lẫn vào trang B.
-   Việc chạy thử sống (mount thật + đọc CSS sinh ra) **bị chặn** - trình
-   duyệt Playwright của máy đang bị một phiên khác giữ (đúng kịch bản
-   [[feedback_concurrent_repo_editing]]) - chưa ép mở. Cần chạy lại khi
-   trình duyệt rảnh trước khi khoá mục 6.
+3. **✅ `@tailwindcss/browser` - CONFIRMED chạy sống (2026-08-09, trình duyệt
+   rảnh trong phiên build sau).** Nguồn thật
+   (`packages/@tailwindcss-browser/src/index.ts`): tự chạy khi import,
+   `MutationObserver` theo dõi `document`, không có API lập trình/headless.
+   Chạy thử sống trong Playwright thật (không phải suy luận từ source nữa):
+   - **Mount đúng thứ tự → ra CSS thật, đúng class.** Bẫy: `<style
+     type="text/tailwindcss">` phải được thêm vào DOM **TRƯỚC** khi import
+     package - lần chạy đầu thêm SAU nên `ruleCount: 0` (styleObserver có vẻ
+     chỉ bind vào các thẻ đã tồn tại lúc import, không tự phát hiện thẻ thêm
+     sau). Sau khi sửa thứ tự: 19 rule thật, `.bg-red-500`/`.p-4` có mặt,
+     header đúng `tailwindcss v4.3.3`.
+   - **Rò rỉ CSS giữa các lần build được XÁC NHẬN LÀ CÓ THẬT, không chỉ lo
+     xa.** Build trang B ngay sau trang A trong CÙNG document: B có đúng
+     class của B (`.bg-blue-700`), nhưng CSS đã compile **vẫn còn nguyên
+     `.bg-red-500` của trang A** (`stillHasBgRed500FromPageA: true`). Same
+     `<style>` tag được cập nhật tại chỗ, không tách riêng theo trang.
+   - **Cô lập bằng iframe riêng mỗi lần build - CONFIRMED hoạt động.** Một
+     iframe mới (realm/document/module-registry riêng), tự import package
+     trong CHÍNH document của nó (không phải import từ parent - ESM import
+     không nhận "document nào" làm tham số, phải chèn `<script
+     type="module">` thẳng vào iframe's document), compile ĐÚNG và CHỈ ĐÚNG
+     nội dung của iframe đó (`.bg-green-500`, không dính gì từ A/B).
+   
+   **Quyết định kiến trúc cho mục 6, giờ đã có bằng chứng thật:** mỗi lần
+   build 1 trang phải chạy trong 1 iframe ẩn mới, huỷ sau khi lấy xong CSS -
+   không tái dùng document/observer giữa các trang.
 4. **Đã đo được 1 phần, chưa đủ.** Eval+resolve+render+ESM-check cho 1 trang
    đơn giản (Node, vitest, cùng pipeline Vite thật) ≈ 11ms tổng - nhanh, đáng
-   yên tâm, nhưng KHÔNG gồm: thời gian compile Tailwind thật (mục 3 chưa chạy
-   được), bundle admin phình bao nhiêu (harness chưa nối vào entry point
-   thật), và một trang có nhiều file/component hơn.
+   yên tâm, nhưng KHÔNG gồm: thời gian compile Tailwind thật (đo được ở lần
+   chạy sống 2026-08-09: mount + compile 1 trang mất khoảng vài trăm ms,
+   xem `status/app-r2-build.md`), bundle admin phình bao nhiêu (chưa đo -
+   cần nối vào entry point thật), và một trang có nhiều file/component hơn.
 
-Còn lại của spike (mục 3 chạy sống, và đo mục 4 đầy đủ) làm nốt khi trình
-duyệt rảnh - không chặn việc bắt đầu Giai đoạn 1, vì cả 2 đều nằm ở mục 6
-(CSS), không phải mục 1-2 (route manifest, build core).
+~~Còn lại của spike (mục 3 chạy sống)~~ → **Đã chạy xong 2026-08-09** khi
+trình duyệt rảnh - xem mục 3 dưới đây, kết quả CONFIRMED (không còn giả
+thiết).
 
 1. **✅ Build core (2026-08-09, `status/app-r2-build.md`).**
    `buildDocument()` tách ra (`build-document.ts`, `render.ts` không đổi hành
@@ -532,8 +541,11 @@ duyệt rảnh - không chặn việc bắt đầu Giai đoạn 1, vì cả 2 đ
    param cho route động). Route manifest xây xong nhưng **chưa có gì đổ dữ
    liệu thật vào `pagesSourceStorage`** ngoài `scripts/sync-pages-r2.ts`
    (mục 13, cũng xong).
-3. **⬜ CSS + hydration** - chưa làm, đúng như dự kiến (chặn bởi mục 6 còn
-   mở từ spike).
+3. **🟡 CSS + hydration - kiến trúc CSS đã xác nhận + xây xong, hydration
+   chưa.** Ẩn số chặn (mục 6) đã giải quyết 2026-08-09 - xem mục 6 ở
+   "Kết quả spike" phía trên. `tailwind-build.ts` (build/render qua iframe
+   cô lập) đã xây + test. `page.js` động + import map (nửa hydration của
+   mục 7) CHƯA làm.
 4. **🟡 Sitemap + schedule - phần lõi xong, phần UI/setting chưa.**
    mục 8 xong nhưng dark (`buildSitemapResponseFromRegistry`, chưa thay
    `page-handler.ts`'s handler thật). mục 9 xong phần cốt lõi
@@ -542,8 +554,18 @@ duyệt rảnh - không chặn việc bắt đầu Giai đoạn 1, vì cả 2 đ
    (quyết định #11) - chạy cố định theo nhịp cron. mục 14 xong
    (`isEdgeCacheable`/`storeEdgeCache` thêm `ttlSeconds` optional, không đổi
    hành vi cũ).
-5. **⬜ UI Build + VEI** - chưa làm. Không có UI nào để bấm build - chỉ gọi
-   được `page-build.ts` trực tiếp (qua script/console).
+5. **🟡 UI Build - bản đầu tiên thật, chưa đủ như mục 11 mô tả; VEI chưa
+   đụng.** `PageBuild.tsx` (nav "System" → "Page Build", quyền
+   `system-build`): liệt kê trang tĩnh qua `route-manifest.ts`, cột trạng
+   thái (not-built/stale/scheduled/live) từ `_pages`, nút Build/Build all
+   chạy thật `page-build.ts` rồi publish. Đã click-through thật dưới
+   `wrangler dev` (D1+R2 thật, không phải giả lập): status chuyển
+   "Not built" → "Live" đúng, HTML+CSS lấy lại từ R2 đúng nội dung - xem
+   `status/app-r2-build.md`. CÒN THIẾU so với mục 11 gốc: không có
+   progress/resume khi đóng tab giữa chừng, không có batch PUT tối ưu (build
+   all hiện tuần tự từng trang), route động ([slug]) chưa liệt kê được (mục
+   4 vẫn chưa làm nên không hiện trong danh sách). VEI save→build→reload
+   hoàn toàn chưa đụng tới.
 6. **🟡 Sửa code trong browser - hạ tầng lưu trữ xong, editor chưa.**
    `pagesSourceStorage` option + `routes/pages-source.ts` (GET-only) +
    `scripts/sync-pages-r2.ts` (push/pull, không ghi đè, push local đã chạy

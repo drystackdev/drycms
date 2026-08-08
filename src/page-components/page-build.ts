@@ -11,6 +11,7 @@ import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { buildDocument } from "../server/app-router/build-document.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { compileTailwindCss } from "./tailwind-build.js";
 
 /**
  * The browser build orchestrator (`plans/app-r2.md` mục 7's "một nguồn
@@ -136,6 +137,15 @@ export interface PageBuildInput {
   origin: string;
   adminPath: string;
   siteLang: string;
+  /** `globals.css`/`hydrate-client.ts`/`vei/overlay.ts` hrefs
+   * (`build-document.ts`'s `AssetHrefs`) - PLACEHOLDER until mục 7
+   * (`page.js` động + import map) exists: a built page's own JS/CSS
+   * asset story isn't solved yet (this build's OWN per-page CSS is
+   * inlined separately - see `inlinePageCss` below - but the SHELL
+   * scripts/global stylesheet a built page's `<head>` still references
+   * are not). Caller-supplied, not defaulted, so nobody mistakes a
+   * placeholder for a real answer. */
+  assets: { globalsCssHref: string; hydrateEntryHref: string; veiOverlayHref: string };
   /** `${adminPath}/api/dry-http` */
   dryHttpEndpoint: string;
   allTypes: ContentTypeDefinition[];
@@ -220,20 +230,48 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
   const titleLayer = readHttpTitleLayer();
   if (titleLayer) seo.page = { ...seo.page, ...titleLayer };
 
-  const html = await buildDocument(vnode, {
+  const rawHtml = await buildDocument(vnode, {
     seo,
     origin: input.origin,
     pathname: input.pathname,
     adminPath: input.adminPath,
     siteLang: input.siteLang,
+    assets: input.assets,
     seoEntryDates: dryConfig.seoEntryDates,
     callLog: dryConfig.callLog,
     editMode: false,
   });
+  const html = await inlinePageCss(rawHtml);
 
   const deps = dedupeDeps(defaultsDep ? [...dryConfig.deps, defaultsDep] : dryConfig.deps);
   const inSitemap = mergeSeoLayers(seo).noIndex !== true;
   return { html, deps, inSitemap };
+}
+
+/**
+ * Compiles this page's OWN Tailwind CSS (mục 6, `tailwind-build.ts`) and
+ * inlines it as a `<style>` tag - simpler than a separate cached asset
+ * (mục 6's original text envisioned a content-hashed file), and still
+ * strictly per-page (only the classes this page actually uses, no global
+ * stylesheet, no "build dư" for an unrelated page's class change). A
+ * separate asset is a reasonable future upgrade if inline size ever
+ * matters; not built now (YAGNI - nothing has measured a real page's size
+ * yet).
+ *
+ * `typeof document === "undefined"` guard: `compileTailwindCss` needs a
+ * real browser (a hidden iframe, confirmed live - `status/app-r2-build.md`)
+ * - under vitest's default Node environment there's no DOM at all, so this
+ * degrades to "no CSS inlined" rather than crashing every test that calls
+ * `buildPage`. Real usage (the browser build pipeline) always has a
+ * `document`.
+ */
+async function inlinePageCss(html: string): Promise<string> {
+  if (typeof document === "undefined") return html;
+  const bodyMatch = /<body>([\s\S]*)<\/body>/.exec(html);
+  if (!bodyMatch) return html;
+  const css = await compileTailwindCss(bodyMatch[1]!);
+  if (!css) return html;
+  return html.replace("</head>", `<style>${css}</style></head>`);
 }
 
 export interface PublishOptions {
