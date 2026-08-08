@@ -52,7 +52,7 @@ export interface Role {
 
 export interface Blog {
   id: number;
-  category: number | null; // relation -> category
+  category?: number | null; // relation -> category
   excerpt: string;
   date: Date;
   image?: string;
@@ -91,6 +91,7 @@ export interface Homepage {
   pressSection: PressSection;
   pressMentions: PressMention[];
   bottomCta: BottomCta;
+  seo: Seo;
 }
 
 export interface About {
@@ -104,12 +105,14 @@ export interface About {
   pressSection: AboutPressSection;
   pressMentions: PressMention[];
   bottomCta: BottomCta;
+  seo: Seo;
 }
 
 export interface Contact {
   id: number;
   header: ContactHeader;
   channels: ContactChannel[];
+  seo: Seo;
 }
 
 export interface SiteSettings {
@@ -133,6 +136,7 @@ export interface BlogsPage {
   id: number;
   header: BlogsHeader;
   bottomCta: BottomCta;
+  seo: Seo;
 }
 
 export interface SystemSettings {
