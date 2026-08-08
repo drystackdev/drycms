@@ -120,8 +120,16 @@ function AuthenticatedApp() {
   // later in-app navigations - so this bar is the one loading indicator for
   // both cases described in the comment above.
   const [routeLoading, setRouteLoading] = useState(false);
+  const { route } = useLocation();
 
-  useEffect(() => (isVeiFrame() ? startVeiBridge() : undefined), []);
+  // `route` is intentionally left out of the deps: it's a fresh closure every
+  // render, but always dispatches through the same stable `useReducer`
+  // handle underneath (`preact-iso`'s `LocationProvider`), so the one
+  // captured at mount still navigates correctly later - re-running this
+  // effect on every route change would tear down and re-register the whole
+  // bridge (including its `vei:ready` announcement) for no reason.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => (isVeiFrame() ? startVeiBridge(route) : undefined), []);
 
   return (
     <>

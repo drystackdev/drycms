@@ -80,19 +80,29 @@ export function closeVeiDialog(): void {
   post({ type: "vei:close" });
 }
 
-export function startVeiBridge(): () => void {
+export function startVeiBridge(navigate: (url: string) => void): () => void {
   const stopInput = listenForFieldInput((detail) => post({ type: "vei:input", detail }));
   const stopFocus = listenForFieldFocus((detail) => post({ type: "vei:focus", detail }));
   const stopSaved = listenForEntrySaved(({ ok }) => post({ type: "vei:saved", ok }));
   const onMessage = (event: MessageEvent) => {
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
+    const data = event.data as { type?: string; url?: string } | null;
     // `dispatchEntrySave` rather than a raw event: this message routinely
     // arrives before `ContentEntryEditor` has mounted (the overlay answers
     // `vei:ready` immediately, and `vei:ready` comes from `App.tsx`'s own
     // mount effect), and only the latch inside it keeps the request alive
     // until an editor can act on it - see `field-events.ts`.
-    if ((event.data as { type?: string } | null)?.type === "vei:save") {
+    if (data?.type === "vei:save") {
       dispatchEntrySave();
+    } else if (data?.type === "vei:navigate" && typeof data.url === "string") {
+      // The overlay re-points an already-open panel/dialog at a different
+      // admin route by sending this instead of reassigning `iframe.src` -
+      // this frame is already running the same Preact SPA a hard load would
+      // boot, so it retargets its OWN client-side router (`preact-iso`)
+      // rather than tearing the whole document down and re-parsing/
+      // re-hydrating the bundle for every field click (`overlay.ts`'s
+      // `openFrame`).
+      navigate(data.url);
     }
   };
   // Escape inside the frame can't reach the hosting page's own listener, so

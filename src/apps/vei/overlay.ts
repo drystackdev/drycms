@@ -834,6 +834,13 @@ function main(): void {
   // below via `postMessage` through `pages/vei/bridge.ts`).
   const sheet = element("div", { className: "sheet" });
   const frame = element("iframe");
+  // True once `frame`'s own document has confirmed its bridge is up
+  // (`vei:ready` below) - not merely truthy `frame.src`, since a hard
+  // navigation leaves it stale until the NEW document announces itself.
+  // `openFrame` only skips a full reload in favor of `vei:navigate` while
+  // this is true, so a frame still mid-load never gets a client-side
+  // navigate command it has no bridge listening for yet.
+  let frameReady = false;
   const panelLoading = element("div", { className: "panel-loading" }, [
     element("span", { className: "vei-spinner lg" }),
   ]);
@@ -972,11 +979,30 @@ function main(): void {
     // syncDockedLayout/setPagePush) - only dialog mode and the mobile
     // bottom drawer stay modal and need the page's own scroll locked.
     if (!isDesktopPanel()) lockBodyScroll();
-    panel.classList.add("loading");
-    frame.src = url;
     // Re-appending a node it already holds would remove-and-reinsert `sheet`,
     // replaying `vei-panel-dock-in` on every field click.
     if (!alreadyOpen) scope.append(sheet);
+
+    // Re-pointing an ALREADY-LOADED frame at a different admin route (panel
+    // mode's normal case - see `isModalSheetOpen`'s doc comment) is an
+    // in-session route change, not a fresh visit: that frame is running the
+    // very same Preact SPA a hard load boots (`App.tsx`), so it can retarget
+    // its own client-side router instead of tearing the whole document down
+    // and re-parsing/re-hydrating the bundle on every single field click.
+    // Skipped entirely for the first open (nothing loaded yet to message)
+    // and for a frame that hasn't confirmed its bridge is up, which still
+    // gets the hard-navigation path below.
+    if (alreadyOpen && frameReady && frame.contentWindow) {
+      frame.contentWindow.postMessage(
+        { type: "vei:navigate", url },
+        window.location.origin,
+      );
+      return;
+    }
+
+    frameReady = false;
+    panel.classList.add("loading");
+    frame.src = url;
     // The panel-loading spinner covers the iframe until its bridge announces
     // `vei:ready` (below) - a frame that never gets that far (a stalled
     // request, an unexpected redirect out of the SPA) must not leave it
@@ -1000,6 +1026,7 @@ function main(): void {
     clearFieldFocus();
     sheet.remove();
     frame.removeAttribute("src");
+    frameReady = false;
     // Whatever ran in that frame - an edit, a Reset all from its own Preview
     // dialog, a visit to `/vei/changes` itself - may have changed the set of
     // pending drafts, so the badge could be stale the moment this closes.
@@ -1046,6 +1073,7 @@ function main(): void {
       return;
     const message = event.data as { type?: string; detail?: unknown };
     if (message?.type === "vei:ready") {
+      frameReady = true;
       clearTimeout(dialogLoadTimer);
       panel.classList.remove("loading");
     } else if (message?.type === "vei:input" && message.detail) {
