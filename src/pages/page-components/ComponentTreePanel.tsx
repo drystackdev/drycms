@@ -2,7 +2,6 @@ import { useMemo, useState } from "preact/hooks";
 import ContextMenu from "../../components/ContextMenu.js";
 import type { FileEntry } from "../../storage/entry-types.js";
 import {
-  AddFolderIcon,
   CodeFieldTypeIcon,
   FolderIcon,
   PlusIcon,
@@ -24,9 +23,10 @@ interface ComponentTreePanelProps {
   onCreateFolder: (path: string) => void;
   onDelete: (entry: FileEntry) => void;
   onMove: (from: string, to: string) => void;
+  /** Small unsaved-changes dot on a file row - optional, a consumer with no
+   * such concept (none needed it before `PageEditor.tsx`) just omits it. */
+  isDirty?: (path: string) => boolean;
 }
-
-type Creating = "file" | "folder" | null;
 
 function parentOf(path: string): string {
   const index = path.lastIndexOf("/");
@@ -45,16 +45,32 @@ export default function ComponentTreePanel({
   onCreateFolder,
   onDelete,
   onMove,
+  isDirty,
 }: ComponentTreePanelProps) {
   const [query, setQuery] = useState("");
   // Folders default OPEN (matches the shadcn tree reference) - this tracks
   // only the ones a user explicitly collapsed, not every open one.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [creating, setCreating] = useState<Creating>(null);
+  const [creating, setCreating] = useState(false);
   const [creatingName, setCreatingName] = useState("");
+  /** Captured once, when "New" is clicked - the folder the create-form
+   * itself renders inside (and the prefix `submitCreate` uses), decoupled
+   * from `activeFolder` so a stray click elsewhere while the input is open
+   * can't move the form out from under what's being typed. `""` (not
+   * `null`) means the tree ROOT - joining onto it is a no-op either way
+   * (`joinPath`), but a distinct empty-string sentinel keeps the "which
+   * folder's child list renders this" comparison below unambiguous against
+   * "not creating at all" (`creatingParent === null` when `!creating`). */
+  const [creatingParent, setCreatingParent] = useState<string | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  /** Explicit folder selection ("chọn folder" - new items target this).
+   * `null` = no explicit pick; `effectiveFolder` below then falls back to
+   * whatever file is currently open, which is friendlier than always
+   * defaulting all the way back to root. */
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const effectiveFolder = activeFolder ?? (selectedPath ? parentOf(selectedPath) : "");
 
   const tree = useMemo(() => buildComponentTree(entries), [entries]);
   const { nodes: filteredTree, matchedFolderIds } = useMemo(
@@ -73,19 +89,62 @@ export default function ComponentTreePanel({
     });
   }
 
-  function startCreating(kind: "file" | "folder") {
-    setCreating(kind);
+  function selectFolder(id: string) {
+    setActiveFolder(id);
+    setCollapsed((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function selectFile(path: string) {
+    // Clears an explicit folder pin - `effectiveFolder` then falls back to
+    // this file's own parent, so "New" after browsing to a different file
+    // targets where the user is actually looking, not a stale earlier pick.
+    setActiveFolder(null);
+    onSelect(path);
+  }
+
+  function startCreating() {
+    setCreating(true);
+    setCreatingName("");
+    setCreatingParent(effectiveFolder);
+    // The parent folder has to be visibly open for the inline input (a
+    // child of it) to render at all.
+    if (effectiveFolder) {
+      setCollapsed((prev) => {
+        if (!prev.has(effectiveFolder)) return prev;
+        const next = new Set(prev);
+        next.delete(effectiveFolder);
+        return next;
+      });
+    }
+  }
+
+  function cancelCreating() {
+    setCreating(false);
     setCreatingName("");
   }
 
+  /** A trailing `/` makes a folder instead of a file - same "type where it
+   * appears" flow either way, just a different endpoint. A name that
+   * ITSELF contains `/` (`"blogs/new-post/page.tsx"`) already reaches
+   * multiple nesting levels in one go - `onCreateFile`/`onCreateFolder`'s
+   * own storage-layer writers already auto-create missing intermediate
+   * folders, nothing extra needed here for that part. */
   function submitCreate(event: Event) {
     event.preventDefault();
-    const name = creatingName.trim();
-    if (!name) return;
-    if (creating === "file") onCreateFile(name);
-    else if (creating === "folder") onCreateFolder(name);
-    setCreating(null);
-    setCreatingName("");
+    const typed = creatingName.trim();
+    if (!typed) return cancelCreating();
+    const isFolder = typed.endsWith("/");
+    const name = isFolder ? typed.slice(0, -1) : typed;
+    if (!name) return cancelCreating();
+    const fullPath = joinPath(creatingParent ?? "", name);
+    if (isFolder) onCreateFolder(fullPath);
+    else onCreateFile(fullPath);
+    cancelCreating();
   }
 
   function startRename(entry: FileEntry) {
@@ -128,49 +187,21 @@ export default function ComponentTreePanel({
         <button
           type="button"
           class="ghost icon sm"
-          aria-label="New component"
-          onClick={() => startCreating("file")}
+          aria-label="New (type a name ending in / for a folder)"
+          onClick={startCreating}
         >
           <PlusIcon />
         </button>
-        <button
-          type="button"
-          class="ghost icon sm"
-          aria-label="New folder"
-          onClick={() => startCreating("folder")}
-        >
-          <AddFolderIcon />
-        </button>
       </div>
-
-      {creating && (
-        <form
-          class="page-components-tree-row page-components-tree-create"
-          onSubmit={submitCreate}
-        >
-          {creating === "folder" ? <FolderIcon /> : <CodeFieldTypeIcon />}
-          <input
-            autoFocus
-            class="page-components-tree-input"
-            value={creatingName}
-            placeholder={
-              creating === "folder"
-                ? "e.g. layout or layout/blocks"
-                : "e.g. Button.tsx or layout/Header.tsx"
-            }
-            onInput={(event) =>
-              setCreatingName((event.target as HTMLInputElement).value)
-            }
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setCreating(null);
-            }}
-            onBlur={() => setCreating(null)}
-          />
-        </form>
-      )}
 
       <div
         class="page-components-tree scroll"
+        onClick={(event) => {
+          // Only the container's own background, not a bubbled row click -
+          // clicking empty space deselects the active folder (new items
+          // fall back to whatever file is open, or root).
+          if (event.target === event.currentTarget) setActiveFolder(null);
+        }}
         onDragOver={(event) => {
           event.preventDefault();
           setDragOverPath("");
@@ -180,17 +211,29 @@ export default function ComponentTreePanel({
         }
         onDrop={handleRootDrop}
       >
-        {filteredTree.length === 0 ? (
+        {creating && creatingParent === "" && (
+          <CreateRow
+            value={creatingName}
+            onChange={setCreatingName}
+            onSubmit={submitCreate}
+            onCancel={cancelCreating}
+          />
+        )}
+        {filteredTree.length === 0 && !(creating && creatingParent === "") ? (
           <p class="hint">
             {query.trim() ? "No matches." : "No components yet."}
           </p>
         ) : (
           <ComponentTreeList
             nodes={filteredTree}
+            folderId=""
             selectedPath={selectedPath}
+            activeFolder={effectiveFolder}
             isOpen={isOpen}
+            isDirty={isDirty}
             onToggleFolder={toggleFolder}
-            onSelect={onSelect}
+            onSelectFolder={selectFolder}
+            onSelectFile={selectFile}
             onDelete={onDelete}
             onStartRename={startRename}
             renamingPath={renamingPath}
@@ -201,6 +244,12 @@ export default function ComponentTreePanel({
             onMove={onMove}
             dragOverPath={dragOverPath}
             onDragOverPath={setDragOverPath}
+            creating={creating}
+            creatingParent={creatingParent}
+            creatingName={creatingName}
+            onCreatingNameChange={setCreatingName}
+            onSubmitCreate={submitCreate}
+            onCancelCreate={cancelCreating}
           />
         )}
         {dragOverPath === "" && (
@@ -211,12 +260,49 @@ export default function ComponentTreePanel({
   );
 }
 
+interface CreateRowProps {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: (event: Event) => void;
+  onCancel: () => void;
+}
+
+function CreateRow({ value, onChange, onSubmit, onCancel }: CreateRowProps) {
+  const isFolder = value.trim().endsWith("/");
+  return (
+    <form
+      class="page-components-tree-row page-components-tree-create"
+      onSubmit={onSubmit}
+    >
+      {isFolder ? <FolderIcon /> : <CodeFieldTypeIcon />}
+      <input
+        autoFocus
+        class="page-components-tree-input"
+        value={value}
+        placeholder="e.g. Button.tsx, or folder/ for a folder"
+        onInput={(event) => onChange((event.target as HTMLInputElement).value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+        }}
+        onBlur={onCancel}
+      />
+    </form>
+  );
+}
+
 interface ComponentTreeListProps {
   nodes: ComponentTreeNode[];
+  /** The id of the folder whose CHILDREN this particular list renders -
+   * `""` for the root-level list. Compared against `creatingParent` to
+   * decide whether the create-form belongs inside THIS list. */
+  folderId: string;
   selectedPath: string | null;
+  activeFolder: string;
   isOpen: (id: string) => boolean;
+  isDirty?: (path: string) => boolean;
   onToggleFolder: (id: string) => void;
-  onSelect: (path: string) => void;
+  onSelectFolder: (id: string) => void;
+  onSelectFile: (path: string) => void;
   onDelete: (entry: FileEntry) => void;
   onStartRename: (entry: FileEntry) => void;
   renamingPath: string | null;
@@ -227,15 +313,25 @@ interface ComponentTreeListProps {
   onMove: (from: string, to: string) => void;
   dragOverPath: string | null;
   onDragOverPath: (path: string | null) => void;
+  creating: boolean;
+  creatingParent: string | null;
+  creatingName: string;
+  onCreatingNameChange: (value: string) => void;
+  onSubmitCreate: (event: Event) => void;
+  onCancelCreate: () => void;
 }
 
 function ComponentTreeList(props: ComponentTreeListProps) {
   const {
     nodes,
+    folderId,
     selectedPath,
+    activeFolder,
     isOpen,
+    isDirty,
     onToggleFolder,
-    onSelect,
+    onSelectFolder,
+    onSelectFile,
     onDelete,
     onStartRename,
     renamingPath,
@@ -246,10 +342,24 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     onMove,
     dragOverPath,
     onDragOverPath,
+    creating,
+    creatingParent,
+    creatingName,
+    onCreatingNameChange,
+    onSubmitCreate,
+    onCancelCreate,
   } = props;
 
   return (
     <>
+      {creating && creatingParent === folderId && (
+        <CreateRow
+          value={creatingName}
+          onChange={onCreatingNameChange}
+          onSubmit={onSubmitCreate}
+          onCancel={onCancelCreate}
+        />
+      )}
       {nodes.map((node) => {
         const entry = node.entry;
         const renaming = renamingPath === entry.id;
@@ -277,7 +387,8 @@ function ComponentTreeList(props: ComponentTreeListProps) {
           <div
             class={[
               "page-components-tree-row",
-              selectedPath === entry.id && "selected",
+              entry.kind === "file" && selectedPath === entry.id && "selected",
+              entry.kind === "folder" && activeFolder === entry.id && "folder-active",
               dragOverPath === entry.id && "drop-target",
             ]
               .filter(Boolean)
@@ -329,7 +440,10 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                 aria-label={
                   open ? `Collapse ${entry.name}` : `Expand ${entry.name}`
                 }
-                onClick={() => onToggleFolder(entry.id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleFolder(entry.id);
+                }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                   <path
@@ -367,15 +481,18 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               <button
                 type="button"
                 class="page-components-tree-item"
-                onClick={() => onSelect(entry.id)}
+                onClick={() => onSelectFile(entry.id)}
               >
                 <span>{entry.name}</span>
+                {isDirty?.(entry.id) && (
+                  <span class="page-components-tree-dirty-dot" title="Unsaved changes" />
+                )}
               </button>
             ) : (
               <button
                 type="button"
                 class="page-components-tree-item"
-                onClick={() => onToggleFolder(entry.id)}
+                onClick={() => onSelectFolder(entry.id)}
               >
                 <span>{entry.name}</span>
               </button>
@@ -395,11 +512,13 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                 {row}
               </ContextMenu>
             )}
-            {entry.kind === "folder" && open && node.children.length > 0 && (
-              <div class="page-components-tree-children">
-                <ComponentTreeList {...props} nodes={node.children} />
-              </div>
-            )}
+            {entry.kind === "folder" &&
+              (open || (creating && creatingParent === entry.id)) &&
+              (node.children.length > 0 || (creating && creatingParent === entry.id)) && (
+                <div class="page-components-tree-children">
+                  <ComponentTreeList {...props} nodes={node.children} folderId={entry.id} />
+                </div>
+              )}
           </div>
         );
       })}

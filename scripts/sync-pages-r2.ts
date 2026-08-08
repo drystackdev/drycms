@@ -23,19 +23,18 @@ import { dirname, join, relative } from "node:path";
 import { resolveOptions } from "../src/server/options.js";
 
 const args = process.argv.slice(2);
-const mode = args.includes("--push") ? "push" : args.includes("--pull") ? "pull" : null;
-if (!mode) {
-  console.error(
-    "[drycms] usage: bun run pages:sync --push|--pull [--remote|--local]\n" +
-      "  (no flag = plain local disk root, kind \"local\" deployments;\n" +
-      "   --remote = real R2 bucket; --local = miniflare local R2, for wrangler dev)",
-  );
-  process.exit(1);
-}
 // 3-way, not a boolean: no flag = target the plain local-disk root (`kind:
 // "local"` deployments never touch R2 at all); `--remote`/`--local` both
 // target R2 (real vs. miniflare), same distinction `r2-sync-assets.ts`'s
-// own `--local` flag makes.
+// own `--local` flag makes. Read from `process.argv` unconditionally (not
+// just inside the CLI guard at the bottom) so `push`/`pull` below close over
+// the right target REGARDLESS of caller - both the CLI entry point and
+// `dev-server.mjs`'s own auto-sync-on-startup hook (`plans/app-r2.md`,
+// "pull/push tự động ở dev") import this same module and expect `push`/
+// `pull` to behave like a plain `bun run pages:sync --push` with no extra
+// flags would: the dev server's own `process.argv` never has `--remote`/
+// `--local` either, so this already resolves to the right (local-disk)
+// target for that caller with no separate code path needed.
 const targetsR2 = args.includes("--remote") || args.includes("--local");
 const useLocalR2 = args.includes("--local");
 
@@ -100,7 +99,7 @@ async function existsInR2(bucket: string, key: string): Promise<boolean> {
   return proc.exitCode === 0;
 }
 
-async function push(): Promise<void> {
+export async function push(): Promise<void> {
   const files = await filesUnder(GIT_PAGES_ROOT);
   if (files.length === 0) {
     console.log(`[drycms] "${GIT_PAGES_ROOT}" is empty - nothing to push.`);
@@ -139,7 +138,7 @@ async function push(): Promise<void> {
   console.log(`[drycms] pushed ${written} file(s), skipped ${skipped} already-present (never overwritten).`);
 }
 
-async function pull(): Promise<void> {
+export async function pull(): Promise<void> {
   let written = 0;
   let skipped = 0;
   if (isR2) {
@@ -190,5 +189,24 @@ async function pull(): Promise<void> {
   console.log(`[drycms] pulled ${written} file(s), skipped ${skipped} already-present (never overwritten).`);
 }
 
-if (mode === "push") await push();
-else await pull();
+/**
+ * CLI entry point - only when this file is run directly (`bun run
+ * pages:sync`/`bun scripts/sync-pages-r2.ts`), never when `push`/`pull` are
+ * imported instead (`dev-server.mjs`'s auto-sync-on-startup hook). Guards
+ * the `--push`/`--pull` requirement here specifically: an IMPORTING caller
+ * has no reason to pass either flag (it calls the function it wants
+ * directly), so that validation would incorrectly reject a normal import.
+ */
+if (import.meta.main) {
+  const mode = args.includes("--push") ? "push" : args.includes("--pull") ? "pull" : null;
+  if (!mode) {
+    console.error(
+      "[drycms] usage: bun run pages:sync --push|--pull [--remote|--local]\n" +
+        "  (no flag = plain local disk root, kind \"local\" deployments;\n" +
+        "   --remote = real R2 bucket; --local = miniflare local R2, for wrangler dev)",
+    );
+    process.exit(1);
+  }
+  if (mode === "push") await push();
+  else await pull();
+}

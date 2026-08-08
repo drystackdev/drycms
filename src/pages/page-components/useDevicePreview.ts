@@ -23,20 +23,34 @@ export interface UseDevicePreviewResult {
   reset: () => void;
 }
 
-/** Device-width state + auto-scale-to-fit, split out from the rendering
- * (`ComponentPreview.tsx`) so the picker controls can live in the page's
- * top toolbar while the frame itself renders in the preview panel below -
- * two different DOM locations sharing one state. `zoom` (not `transform:
- * scale`, applied by the caller using `scale`) does the shrink-to-fit - it
- * reflows layout at the scaled size, so the viewport's own height tracks
- * the *scaled* content height with no leftover whitespace `transform:
- * scale` would leave behind. */
-export function useDevicePreview(): UseDevicePreviewResult {
-  const [device, setDevice] = useState<Device>("desktop");
+export interface UseScaledPreviewResult<K extends string> {
+  key: K;
+  widthOverride: number | null;
+  width: number;
+  scale: number;
+  viewportRef: RefObject<HTMLDivElement>;
+  select: (next: K) => void;
+  widen: () => void;
+  narrow: () => void;
+  reset: () => void;
+}
+
+/** Width-table-agnostic core of `useDevicePreview` below - split out so
+ * `PageEditor.tsx`'s own viewport preview (5 presets - xs/sm/md/lg/xl - not
+ * this module's 3-device set, and no reason the two features should share a
+ * literal key type) can reuse the exact same "zoom to fit" mechanism without
+ * this module needing to know Component Builder's own preset names, or
+ * `PageEditor.tsx` needing to duplicate the `ResizeObserver` plumbing.
+ * `zoom` (not `transform: scale`, applied by the caller using `scale`) does
+ * the shrink-to-fit - it reflows layout at the scaled size, so the
+ * viewport's own height tracks the *scaled* content height with no leftover
+ * whitespace `transform: scale` would leave behind. */
+export function useScaledPreview<K extends string>(widths: Record<K, number>, initialKey: K): UseScaledPreviewResult<K> {
+  const [key, setKey] = useState<K>(initialKey);
   const [widthOverride, setWidthOverride] = useState<number | null>(null);
   const [scale, setScale] = useState(1);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const width = widthOverride ?? DEVICE_WIDTHS[device];
+  const width = widthOverride ?? widths[key];
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -52,17 +66,36 @@ export function useDevicePreview(): UseDevicePreviewResult {
   }, [width]);
 
   return {
-    device,
+    key,
     widthOverride,
     width,
     scale,
     viewportRef,
-    selectDevice: (next) => {
-      setDevice(next);
+    select: (next) => {
+      setKey(next);
       setWidthOverride(null);
     },
     widen: () => setWidthOverride(width + WIDTH_STEP),
     narrow: () => setWidthOverride(Math.max(MIN_WIDTH, width - WIDTH_STEP)),
     reset: () => setWidthOverride(null),
+  };
+}
+
+/** Device-width state + auto-scale-to-fit, split out from the rendering
+ * (`ComponentPreview.tsx`) so the picker controls can live in the page's
+ * top toolbar while the frame itself renders in the preview panel below -
+ * two different DOM locations sharing one state. */
+export function useDevicePreview(): UseDevicePreviewResult {
+  const scaled = useScaledPreview<Device>(DEVICE_WIDTHS, "desktop");
+  return {
+    device: scaled.key,
+    widthOverride: scaled.widthOverride,
+    width: scaled.width,
+    scale: scaled.scale,
+    viewportRef: scaled.viewportRef,
+    selectDevice: scaled.select,
+    widen: scaled.widen,
+    narrow: scaled.narrow,
+    reset: scaled.reset,
   };
 }

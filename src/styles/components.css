@@ -5610,6 +5610,35 @@
       border-bottom: 1px solid var(--dry-border);
     }
 
+    /* One per body column (`PageEditor.tsx`'s 3-column layout: file tree,
+       preview, code) - held to that column's own current width so the
+       toolbar visibly lines up with what it controls. `min-width: 0` lets
+       the LAST section's own contents (the file path label) ellipsis
+       instead of forcing the toolbar wider than the shell. */
+    .page-editor-toolbar-section {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    /* Matches `.page-components-resize-handle`'s own width exactly, so a
+       toolbar section lines up with its column below despite the real
+       (draggable) handle only existing in the body row, not the toolbar. */
+    .page-editor-toolbar-spacer {
+      flex: 0 0 4px;
+    }
+
+    .page-editor-preview-label {
+      flex: 0 0 auto;
+      padding: 0.375rem 0.5rem;
+      border-bottom: 1px solid var(--dry-border);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .page-components-body {
       display: flex;
       flex: 1;
@@ -5747,16 +5776,38 @@
       box-sizing: border-box;
       display: flex;
       align-items: center;
+      gap: 0.375rem;
       flex: 1;
       min-width: 0;
       cursor: pointer;
       color: inherit;
 
-      & span {
+      & span:first-of-type {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+    }
+
+    /* Unsaved-changes marker on a file row (`ComponentTreePanel.tsx`'s
+       `isDirty` prop) - same dot-not-asterisk convention editors like VS
+       Code use, so it reads as a status indicator rather than more text. */
+    .page-components-tree-dirty-dot {
+      flex: 0 0 auto;
+      width: 0.375rem;
+      height: 0.375rem;
+      border-radius: 50%;
+      background-color: var(--dry-primary);
+    }
+
+    /* The folder new files/folders currently get created into - distinct
+       from `.selected` (which marks the file open in the editor, never a
+       folder) so both states can be visible on screen at once without
+       looking like the same thing. */
+    .page-components-tree-row.folder-active {
+      background-color: var(--dry-accent);
+      outline: 1px solid var(--dry-border);
+      outline-offset: -1px;
     }
 
     .page-components-tree-input {

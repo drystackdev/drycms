@@ -813,6 +813,89 @@ Full suite after this part: 0 typecheck errors; 1075 passed / 12 failed
 (same pre-existing, unrelated group - +3 vs. part 8's count, entirely this
 part's new batch tests).
 
+## Update 2026-08-09, part 10: PageEditor UX - user-directed, outside the original mục list
+
+A dense, multi-part request from the user (not a numbered plan item - direct
+UX direction), all landed in one pass: dev-environment auto-sync, real
+`dry()` types/completion in the editor, a `ComponentTreePanel.tsx` UX
+overhaul (folder select, unified inline create, dirty dots), a reordered
+3-column layout with a matching 3-part toolbar, preview support for
+`layout.tsx`/`404.tsx`/`500.tsx` (not just `page.tsx`), and a responsive
+xs/sm/md/lg/xl scaled preview. Plus one small separate fix mid-session: hide
+VEI's "Edit content" button inside the preview iframe (it rendered because
+the built HTML always embeds the overlay script and the admin's own session
+cookie satisfies `hasAdminHint()`, but clicking it inside a detached
+`srcdoc` iframe does nothing useful).
+
+Full writeup lives in `plans/app-r2.md`'s Giai đoạn item 10 (kept there since
+it's genuinely a plan-tracked deliverable now, not a footnote) - this entry
+covers the session-log angle: what was found live, and how it was verified.
+
+**Real find, not a bug in the new code:** wiring `dry()` typing surfaced
+that `typesCacheStorage` (`dry.generated.d.ts`'s cache) was completely empty
+in this session's `wrangler dev` instance - nobody had ever run a Content
+Types "Apply and build" against it, and the OTHER 2 regen paths
+(`dev-server.mjs`'s Node-only startup hook, `scripts/dry-generate.ts`) both
+explicitly can't reach a `kind: "cloudflare"` D1 binding standalone. Proven
+via the actual mechanism (not guessed): typed `dry()`/`params()`/
+`setTitle()`/`dryBind()` directly, read each one's REAL hover diagnostic
+text off the DOM (`"Cannot find name '...'."`, all 4), then confirmed the
+MERGE logic itself is correct by monkey-patching `window.fetch` to answer
+`/api/types-cache` with a real `.d.ts` sample. This is a pre-existing
+environment-state gap the new wiring correctly degrades around (empty
+string in, empty contribution, no crash), not something this pass needed to
+fix.
+
+**Verified live, this part specifically:**
+- `page.tsx`/`layout.tsx`/`404.tsx` preview: correct label, correct
+  content, "No problems" status for all 3 - `layout.tsx` showed its real
+  header/footer chrome wrapping the orange placeholder div; `404.tsx`
+  rendered standalone with no layout, matching `renderErrorHtml`'s own
+  no-layout behavior at serve time.
+- Viewport scaling: XL (1280px, wider than the ~480px default preview
+  column) produced `zoom: 0.35`; XS (375px, narrower than the column)
+  produced `zoom: 1` (already fits, no shrink needed) - `frame.style.width`/
+  `.zoom` read directly off the DOM, not inferred.
+- `ComponentTreePanel`: selecting "blogs" applied `.folder-active`
+  (confirmed via `className` read, not just the accessibility tree);
+  clicking "New" rendered the input INLINE as the first child inside
+  "blogs", not at a fixed top-of-list spot; submitting "test-scoped.tsx"
+  created it at "blogs/test-scoped.tsx" (toast confirmed); submitting
+  "test-subfolder/" created a folder at "blogs/test-subfolder" (trailing
+  slash → folder, confirmed via toast); selecting the just-created file and
+  clicking "New" again correctly fell back to "blogs" (its parent) with no
+  folder explicitly re-clicked, proving the `activeFolder ?? parentOf(
+  selectedPath)` fallback. Both test items deleted afterward via the
+  existing right-click → Delete → confirm flow, tree confirmed back to its
+  original shape.
+- Dev auto-sync: started a real `bun run dev` (Node, port 5173) alongside
+  the session's `wrangler dev` (port 8787, no conflict) and read its own
+  startup log directly - `pulled 1 file(s)`, naming `about/page.tsx`, a real
+  file that existed only in local `pagesSourceStorage` from an earlier
+  session and had never reached git. Left untracked (not auto-committed or
+  deleted - could be the user's real content) rather than assumed to be
+  disposable.
+- Shared-component risk: `PageComponents.tsx` (the OTHER consumer of
+  `ComponentTreePanel.tsx`) still typechecks against the changed props
+  (`isDirty` is optional, nothing else changed shape); its own tree UI
+  couldn't be click-tested live this session (`pageComponentsStorage` under
+  `kind: "cloudflare"` doesn't support `?tree` listing and this component,
+  unlike `PageEditor.tsx`, has no recursive fallback for that case - a
+  pre-existing gap, not something this pass touched or introduced).
+
+`useDevicePreview.ts` split into a width-table-agnostic `useScaledPreview`
+(the real `zoom`-based mechanism) plus a thin 3-preset wrapper preserving
+the exact original `useDevicePreview()` behavior/signature for Component
+Builder - `PageEditor.tsx` calls the new export directly with its own
+5-preset table, so neither feature's preset set leaks into the other's.
+
+0 new unit tests this part - the surface here is almost entirely
+interactive UI, verified live via Playwright (DOM reads, not just
+accessibility-tree text) rather than added as unit tests, consistent with
+how the rest of `PageEditor.tsx` has been tested all session. 0 typecheck
+errors; full suite unchanged at 1075 passed / 12 failed (same pre-existing,
+unrelated group).
+
 ## Speed
 
 Single long session, 2026-08-09 (spanning a context-window compaction
@@ -833,11 +916,13 @@ resume, THE cutover incl. rebuild-on-save, sitemap TTL) likewise. `sivelap`
 (the real site running in this session) now serves anonymous traffic
 entirely from `built/live/*`, that output stays current automatically after
 a VEI save, its pages can be authored/previewed/saved/published without
-leaving the browser, "Build all" survives an interrupted tab and doesn't
-hammer storage with one request per page, and a built page's client bundle
-hydrates cleanly (no console errors) instead of throwing on `dry()`/
-`params()`. app-r2 is live, usable, and complete end to end relative to the
-plan's own numbered list.
+leaving the browser (now with a 3-column layout, folder-scoped creation,
+responsive device preview, and real `dry()` typing), "Build all" survives an
+interrupted tab and doesn't hammer storage with one request per page, a
+built page's client bundle hydrates cleanly instead of throwing on `dry()`/
+`params()`, and a local dev checkout keeps `src/apps/pages/**` and
+`pagesSourceStorage` from silently diverging. app-r2 is live, usable, and
+complete end to end relative to the plan's own numbered list.
 
 One deliberately deferred follow-up remains, not part of the numbered plan
 items and explicitly out of scope for this session (needs its own design

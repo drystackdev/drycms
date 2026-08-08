@@ -5,6 +5,7 @@ import Editer from "../components/Editer.js";
 import type { EditerResult } from "../components/Editer/types.js";
 import { MenuIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
+import { useScaledPreview } from "./page-components/useDevicePreview.js";
 import { useResizablePanel } from "../lib/useResizablePanel.js";
 import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
@@ -46,6 +47,22 @@ const DEFAULT_PAGE_SOURCE = `export default function Page() {
 }
 `;
 
+/** Never a real file - a key `refreshPreview` injects into its own LOCAL
+ * copy of `sourceByPath` (never the state, never storage) when previewing a
+ * `layout.tsx` directly, standing in for "whatever page would actually
+ * render inside this layout" so the layout's own chrome (nav/footer/
+ * wrapping structure) is visible without needing a real page to anchor the
+ * preview to. */
+const LAYOUT_PLACEHOLDER_PATH = "__dry-preview-layout-placeholder.tsx";
+const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() {
+  return (
+    <div style="padding:3rem 1.5rem;margin:1rem;text-align:center;background:#fef3c7;border:2px dashed #d97706;border-radius:0.5rem;color:#92400e;font:600 14px/1.5 system-ui,sans-serif;">
+      Page content renders here
+    </div>
+  );
+}
+`;
+
 /** `routes/asset-hrefs.ts`'s response shape - same as `PageBuild.tsx`'s own
  * local copy (not shared - both are small, page-local types). */
 interface AssetHrefs {
@@ -84,6 +101,14 @@ async function listAllFileEntriesRecursive(folder: string): Promise<FileEntry[]>
 const SIDEBAR_WIDTH = { initial: 280, min: 200, max: 480 };
 const PREVIEW_WIDTH = { initial: 480, min: 280, max: 900 };
 
+/** Viewport presets for the preview column's responsive toolbar - `sm`/`md`/
+ * `lg`/`xl` match Tailwind's own default breakpoints (meaningful for
+ * previewing THIS site's own Tailwind classes), `xs` added below them for a
+ * small-phone width Tailwind itself has no named breakpoint for. */
+type ViewportKey = "xs" | "sm" | "md" | "lg" | "xl";
+const VIEWPORT_WIDTHS: Record<ViewportKey, number> = { xs: 375, sm: 640, md: 768, lg: 1024, xl: 1280 };
+const VIEWPORT_KEYS: ViewportKey[] = ["xs", "sm", "md", "lg", "xl"];
+
 export default function PageEditor() {
   useDocumentTitle("Page Code Editor");
   const canEdit = canAccess(CODE_EDITOR_RESOURCE_ID, "setting");
@@ -103,10 +128,12 @@ export default function PageEditor() {
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
+  const [dryTypes, setDryTypes] = useState<string | null>(null);
   const [origin] = useState(() => window.location.origin);
 
   const sidebar = useResizablePanel({ ...SIDEBAR_WIDTH, axis: "x" });
   const previewSplit = useResizablePanel({ ...PREVIEW_WIDTH, axis: "x" });
+  const viewport = useScaledPreview<ViewportKey>(VIEWPORT_WIDTHS, "lg");
 
   async function loadTree() {
     try {
@@ -142,20 +169,42 @@ export default function PageEditor() {
         setLoadError(error instanceof Error ? error.message : "Failed to load build context.");
       }
     })();
+    // Best-effort, separate from the block above: a missing/failed
+    // `dry.generated.d.ts` fetch shouldn't block loading the tree or the
+    // build context that preview actually needs - it only means `dry()`
+    // shows as an untyped/unrecognized global until it resolves, same
+    // degraded-but-usable spirit as `dev-server.mjs`'s own "never fatal"
+    // codegen step.
+    void fetch(`${path}/api/types-cache`, { credentials: "same-origin" })
+      .then((response) => (response.ok ? response.text() : null))
+      .then((text) => setDryTypes(text))
+      .catch(() => setDryTypes(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canEdit]);
 
   const code = selectedPath ? (sourceByPath[selectedPath] ?? "") : "";
   const dirty = !!selectedPath && sourceByPath[selectedPath] !== savedByPath[selectedPath];
 
-  /** Every OTHER loaded file - `Editer`'s ambient reference set for
-   * cross-file TS resolution (same role as `PageComponents.tsx`'s own). */
+  /** Every OTHER loaded file, PLUS `dry.generated.d.ts` (`routes/types-cache.ts`
+   * - already built for exactly this, in an earlier session, but never
+   * actually wired up until now) - `Editer`'s ambient reference set for
+   * cross-file TS resolution (same role as `PageComponents.tsx`'s own).
+   * `dry`/`params`/`setTitle`/`dryBind` are ambient GLOBALS
+   * (`dry.generated.d.ts`'s own `declare global` block, never imported by
+   * real page/layout source - see `page-build.ts`'s `evalModule` doc
+   * comment), so simply being part of the TS program here (any key works,
+   * nothing ever imports it BY that key) is enough for the language service
+   * to recognize them - real type errors on every `dry()`/`params()` call
+   * disappear, and typing `dry().collection("` now offers the site's actual
+   * collection names, both through the SAME `tsCompletionSource` pipeline
+   * every other completion already goes through, no bespoke completion
+   * source needed. */
   const extraFiles = useMemo(() => {
-    if (!selectedPath) return sourceByPath;
     const rest = { ...sourceByPath };
-    delete rest[selectedPath];
+    if (selectedPath) delete rest[selectedPath];
+    if (dryTypes) rest["dry.generated.d.ts"] = dryTypes;
     return rest;
-  }, [sourceByPath, selectedPath]);
+  }, [sourceByPath, selectedPath, dryTypes]);
 
   function handleChange(result: EditerResult) {
     if (!selectedPath) return;
@@ -238,7 +287,7 @@ export default function PageEditor() {
 
   // --- Live preview: real pipeline, never published (`plans/app-r2.md`) ---
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [previewPathname, setPreviewPathname] = useState<string | null>(null);
+  const [previewLabel, setPreviewLabel] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   /** Guards against out-of-order resolution - found LIVE (not in review): 2
@@ -252,19 +301,81 @@ export default function PageEditor() {
   const previewSeqRef = useRef(0);
 
   const manifest = useMemo(() => buildManifestRouteTree(Object.keys(sourceByPath)), [sourceByPath]);
+
+  interface PreviewTarget {
+    /** Shown in the preview header - a real pathname for a page, a
+     * descriptive label for anything else. */
+    label: string;
+    /** Canonical-URL input to `buildPage()` - real for a page, a harmless
+     * placeholder for the other 3 kinds (never surfaced to a visitor
+     * either way - this build is never published). */
+    pathname: string;
+    entryPath: string;
+    layoutPaths: string[];
+    params: Record<string, string | string[]>;
+    /** A synthetic, in-memory-only page source `refreshPreview` merges
+     * into its OWN copy of `sourceByPath` before calling `buildPage` -
+     * never written to `sourceByPath` state, `extraFiles`, or storage.
+     * Only set when previewing a `layout.tsx` directly (see
+     * `LAYOUT_PLACEHOLDER_PATH`'s doc comment). */
+    extraSource?: { path: string; source: string };
+  }
+
+  /** Every `layout.tsx` from the tree root down to (and including) the one
+   * at `layoutPath` - `route-manifest.ts`'s tree has no parent pointers to
+   * walk "up" from a folder, so this re-derives the chain from the path
+   * string itself: for each prefix of `layoutPath`'s own folder segments
+   * (root first), keep it if a `layout.tsx` actually exists there. Always
+   * ends with `layoutPath` itself (it exists by construction - the caller
+   * just selected it). */
+  function ancestorLayoutChain(layoutPath: string, source: Record<string, string>): string[] {
+    const folder = layoutPath.slice(0, layoutPath.length - "layout.tsx".length).replace(/\/$/, "");
+    const segments = folder ? folder.split("/") : [];
+    const chain: string[] = [];
+    for (let i = 0; i <= segments.length; i++) {
+      const prefix = segments.slice(0, i).join("/");
+      const candidate = prefix ? `${prefix}/layout.tsx` : "layout.tsx";
+      if (source[candidate] !== undefined) chain.push(candidate);
+    }
+    return chain;
+  }
+
   /** Only when the SELECTED file is itself a `page.tsx` matching a real
    * static route - see this file's own doc comment for why a shared
-   * `layout.tsx`/component isn't resolved to "whichever pages use it" yet. */
-  const previewTarget = useMemo(() => {
-    if (!selectedPath || !/(^|\/)page\.tsx$/.test(selectedPath)) return null;
-    for (const pathname of staticPagePaths(manifest)) {
-      const match = matchSourceRoute(manifest, pathname);
-      if (match && match.entryPath === selectedPath) {
-        return { pathname, entryPath: match.entryPath, layoutPaths: match.layoutPaths, params: {} as Record<string, string | string[]> };
+   * component isn't resolved to "whichever pages use it". A `layout.tsx`
+   * previews wrapped around a placeholder child (there's no single "the"
+   * page it belongs to); `404.tsx`/`500.tsx` preview standalone, same "no
+   * layouts" shape `render.ts`'s own `renderErrorHtml` fallback uses for
+   * them at request time. */
+  const previewTarget = useMemo<PreviewTarget | null>(() => {
+    if (!selectedPath) return null;
+    if (/(^|\/)page\.tsx$/.test(selectedPath)) {
+      for (const pathname of staticPagePaths(manifest)) {
+        const match = matchSourceRoute(manifest, pathname);
+        if (match && match.entryPath === selectedPath) {
+          return { label: pathname, pathname, entryPath: match.entryPath, layoutPaths: match.layoutPaths, params: {} };
+        }
       }
+      return null;
+    }
+    if (/(^|\/)layout\.tsx$/.test(selectedPath)) {
+      return {
+        label: `${selectedPath} (placeholder page content)`,
+        pathname: "/__dry-preview-layout",
+        entryPath: LAYOUT_PLACEHOLDER_PATH,
+        layoutPaths: ancestorLayoutChain(selectedPath, sourceByPath),
+        params: {},
+        extraSource: { path: LAYOUT_PLACEHOLDER_PATH, source: LAYOUT_PLACEHOLDER_SOURCE },
+      };
+    }
+    if (selectedPath === "404.tsx") {
+      return { label: "404.tsx", pathname: "/__dry-preview-404", entryPath: "404.tsx", layoutPaths: [], params: {} };
+    }
+    if (selectedPath === "500.tsx") {
+      return { label: "500.tsx", pathname: "/__dry-preview-500", entryPath: "500.tsx", layoutPaths: [], params: {} };
     }
     return null;
-  }, [manifest, selectedPath]);
+  }, [manifest, selectedPath, sourceByPath]);
 
   async function refreshPreview() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
@@ -272,6 +383,11 @@ export default function PageEditor() {
     setPreviewLoading(true);
     setPreviewError(null);
     try {
+      // Merged locally, never into `sourceByPath` state - see
+      // `LAYOUT_PLACEHOLDER_PATH`'s doc comment.
+      const buildSourceByPath = previewTarget.extraSource
+        ? { ...sourceByPath, [previewTarget.extraSource.path]: previewTarget.extraSource.source }
+        : sourceByPath;
       const result = await buildPage({
         pathname: previewTarget.pathname,
         origin,
@@ -286,7 +402,7 @@ export default function PageEditor() {
         builtAssetsBaseUrl: `${path}/api/built-assets`,
         dryHttpEndpoint: `${path}/api/dry-http`,
         allTypes,
-        sourceByPath,
+        sourceByPath: buildSourceByPath,
         entryPath: previewTarget.entryPath,
         layoutPaths: previewTarget.layoutPaths,
         params: previewTarget.params,
@@ -310,9 +426,20 @@ export default function PageEditor() {
       // making interactive islands work in the preview too is a follow-up
       // (`status/app-r2-build.md`), not solved by this pass.
       const withoutHydration = result.html.replace(/<script type="application\/json" id="dry-hydrate-(?:manifest|params)">[\s\S]*?<\/script>/g, "");
-      const withBase = withoutHydration.replace("<head>", `<head><base href="${origin}/">`);
+      // The VEI overlay script (`assets.veiOverlayHref`, embedded by
+      // `buildDocument` on every page unconditionally) checks the admin's
+      // OWN `drycms_admin` hint cookie and, since whoever is using this
+      // editor is signed in, renders its "Edit content" button here too -
+      // but clicking it inside a detached `srcdoc` preview (no real route,
+      // no server round trip possible) does nothing useful. Stripped by its
+      // known href rather than a generic pattern - `assetHrefs` already has
+      // the exact URL this build just used.
+      const withoutVei = assetHrefs
+        ? withoutHydration.replace(`<script type="module" src="${assetHrefs.veiOverlayHref}"></script>`, "")
+        : withoutHydration;
+      const withBase = withoutVei.replace("<head>", `<head><base href="${origin}/">`);
       if (iframeRef.current) iframeRef.current.srcdoc = withBase;
-      setPreviewPathname(previewTarget.pathname);
+      setPreviewLabel(previewTarget.label);
     } catch (error) {
       if (seq !== previewSeqRef.current) return;
       setPreviewError(error instanceof PageBuildError || error instanceof Error ? error.message : "Preview failed.");
@@ -329,35 +456,60 @@ export default function PageEditor() {
   // typing.
   useEffect(() => {
     if (!previewTarget) {
-      setPreviewPathname(null);
+      setPreviewLabel(null);
       return;
     }
     const timer = setTimeout(() => void refreshPreview(), 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewTarget?.pathname, sourceByPath, allTypes, assetHrefs, origin]);
+  }, [previewTarget?.label, sourceByPath, allTypes, assetHrefs, origin]);
 
   if (!canEdit) return <span class="error">You don't have permission to edit page source.</span>;
   if (loadError) return <span class="error">{loadError}</span>;
   if (entries === null) return <span class="hint">Loading…</span>;
 
+  const PREVIEW_FRAME_HEIGHT = 900;
+
   return (
     <div class="page-components-shell">
+      {/* 3 sections, one per body column below - each held to that column's
+       * OWN current width (`sidebar.size`/`previewSplit.size`, the same
+       * reactive values the body itself renders at) so the toolbar visibly
+       * lines up with what it controls, resize included. */}
       <div class="page-components-toolbar">
-        <button type="button" class="ghost icon sm" aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarOpen} onClick={() => setSidebarOpen((v) => !v)}>
-          <MenuIcon />
-        </button>
-        <div class="spacer" />
-        {previewTarget && (
+        <div class="page-editor-toolbar-section" style={sidebarOpen ? { width: `${sidebar.size}px` } : undefined}>
+          <button type="button" class="ghost icon sm" aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarOpen} onClick={() => setSidebarOpen((v) => !v)}>
+            <MenuIcon />
+          </button>
+        </div>
+        {sidebarOpen && <div class="page-editor-toolbar-spacer" />}
+
+        <div class="page-editor-toolbar-section" style={previewOpen ? { width: `${previewSplit.size}px` } : undefined}>
           <button type="button" class="ghost sm" aria-pressed={previewOpen} onClick={() => setPreviewOpen((v) => !v)}>
             {previewOpen ? "Hide preview" : "Show preview"}
           </button>
-        )}
-        {selectedPath && (
-          <button type="button" class="sm" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
-            Save
-          </button>
-        )}
+          {previewOpen && (
+            <div class="button-group">
+              {VIEWPORT_KEYS.map((key) => (
+                <button key={key} type="button" class="sm" aria-pressed={viewport.key === key} title={`${VIEWPORT_WIDTHS[key]}px`} onClick={() => viewport.select(key)}>
+                  {key.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
+          {previewLoading && <span class="hint">Building…</span>}
+        </div>
+        {previewOpen && <div class="page-editor-toolbar-spacer" />}
+
+        <div class="page-editor-toolbar-section" style={{ flex: 1 }}>
+          <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedPath ?? ""}</span>
+          <div class="spacer" />
+          {selectedPath && (
+            <button type="button" class="sm" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
+              Save
+            </button>
+          )}
+        </div>
       </div>
 
       <div class="page-components-body">
@@ -372,9 +524,38 @@ export default function PageEditor() {
                 onCreateFolder={handleCreateFolder}
                 onDelete={setPendingDelete}
                 onMove={handleMove}
+                isDirty={(p) => sourceByPath[p] !== savedByPath[p]}
               />
             </div>
             <div class={`page-components-resize-handle${sidebar.dragging ? " dragging" : ""}`} {...sidebar.handleProps} />
+          </>
+        )}
+
+        {previewOpen && (
+          <>
+            <div style={{ width: `${previewSplit.size}px`, display: "flex", flexDirection: "column" }}>
+              {previewTarget && (
+                <div class="page-editor-preview-label hint">
+                  {previewLabel ?? previewTarget.label} · {viewport.width}px
+                </div>
+              )}
+              {previewTarget ? (
+                previewError ? (
+                  <span class="error" style={{ padding: "0.5rem" }}>{previewError}</span>
+                ) : (
+                  <div class="page-components-preview-viewport" ref={viewport.viewportRef}>
+                    <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${PREVIEW_FRAME_HEIGHT}px`, zoom: viewport.scale }}>
+                      <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+                    </div>
+                  </div>
+                )
+              ) : (
+                <p class="hint" style={{ padding: "1rem" }}>
+                  Select a page.tsx, layout.tsx, 404.tsx, or 500.tsx to preview it.
+                </p>
+              )}
+            </div>
+            <div class={`page-components-resize-handle${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />
           </>
         )}
 
@@ -386,23 +567,6 @@ export default function PageEditor() {
               <p class="hint">Select or create a page/layout/component on the left to edit it.</p>
             )}
           </div>
-
-          {previewOpen && previewTarget && (
-            <>
-              <div class={`page-components-resize-handle${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />
-              <div style={{ width: `${previewSplit.size}px`, display: "flex", flexDirection: "column" }}>
-                <div class="row" style={{ padding: "0.5rem", gap: "0.5rem", alignItems: "center" }}>
-                  <strong>Preview: {previewPathname ?? previewTarget.pathname}</strong>
-                  {previewLoading && <span class="hint">Building…</span>}
-                </div>
-                {previewError ? (
-                  <span class="error" style={{ padding: "0.5rem" }}>{previewError}</span>
-                ) : (
-                  <iframe ref={iframeRef} title="Page preview" style={{ flex: 1, border: "none", background: "#fff" }} />
-                )}
-              </div>
-            </>
-          )}
         </div>
       </div>
 

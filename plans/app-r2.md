@@ -864,6 +864,101 @@ thiết).
      `typeof window.dry/params/setTitle/dryBind === "function"` xác nhận
      trực tiếp qua `browser_evaluate`.
 
+10. **✅ `PageEditor.tsx` UX - loạt yêu cầu mới, ngoài danh sách mục gốc
+    (2026-08-09), người dùng chỉ định trực tiếp, không nằm trong bản plan
+    ban đầu.**
+    - **Tự động pull/push `src/apps/pages/**` ↔ `pagesSourceStorage` ở dev.**
+      `scripts/sync-pages-r2.ts`'s `push`/`pull` (đã có từ mục 13) giờ export
+      được thay vì chỉ chạy CLI - guard dispatch CLI sau `import.meta.main`.
+      `dev-server.mjs` gọi cả 2 (theo thứ tự push rồi pull) mỗi lần khởi động,
+      giống hệt cách nó đã tự regenerate `dry.generated.d.ts` - không cờ mới,
+      không đổi hành vi CLI cũ. Chỉ áp dụng cho `kind: "local"` (đúng như
+      "để fix với sqlite" người dùng nói) - dưới `wrangler dev`
+      (`kind: "cloudflare"`) `process.argv` của dev server không có
+      `--remote`/`--local` nên tự nhiên rơi về nhánh local-disk, nhưng
+      `pagesSourceStorage` lúc đó là R2 mô phỏng, không phải đĩa thật - script
+      này chỉ thật sự có tác dụng dưới `bun run dev`. Xác nhận sống: khởi
+      động `bun run dev` thật (song song `wrangler dev`, khác port, không
+      đụng nhau) → log in ra `pulled 1 file(s)` - kéo về được đúng 1 file
+      (`about/page.tsx`) tồn tại sẵn trong `pagesSourceStorage` cục bộ từ một
+      phiên trước nhưng chưa từng vào git, y hệt tình huống tính năng này
+      sinh ra để giải quyết. Để lại file đó dạng chưa track (không tự
+      `git add`/xoá - có thể là nội dung thật của người dùng).
+    - **`dry()` có type + completion thật trong Editer.** Hạ tầng
+      `routes/types-cache.ts` (mục 10 cũ) vốn đã ghi rõ trong doc comment
+      của chính nó là để dành cho việc này nhưng chưa ai gọi tới -
+      `PageEditor.tsx` giờ fetch `${path}/api/types-cache`, gộp vào
+      `extraFiles` dưới key `"dry.generated.d.ts"`. `dry`/`params`/
+      `setTitle`/`dryBind` là ambient global thật (`declare global` trong
+      chính file đó) nên chỉ cần có mặt trong TS program của Editer (key gì
+      cũng được, không ai import nó) là đủ - completion cho tên collection/
+      singleton đi qua ĐÚNG `tsCompletionSource` có sẵn, không cần
+      completion source riêng. **Bẫy tìm thấy khi live-test:** môi trường
+      `wrangler dev` test phiên này chưa từng có ai bấm "Apply and build"
+      nên `typesCacheStorage` rỗng thật (fetch trả `""`) - xác nhận đúng
+      nguyên nhân bằng cách gõ `dry()`/`params()`/`setTitle()`/`dryBind()`
+      trực tiếp và đọc message hover thật ("Cannot find name...") cho cả 4,
+      rồi xác nhận cơ chế MERGE đúng bằng cách giả lập `window.fetch` trả về
+      nội dung `.d.ts` mẫu. Đây là khoảng trống CÓ SẴN (kích hoạt regen chỉ
+      qua Node dev-server startup hoặc Content Types apply, KHÔNG qua
+      `wrangler dev`/`scripts/dry-generate.ts` khi `content.engine==="D1"`),
+      không phải bug của thay đổi này.
+    - **`ComponentTreePanel.tsx` (dùng chung với `PageComponents.tsx`):**
+      chọn được folder (click vào label folder, không phải chevron - chevron
+      vẫn chỉ đóng/mở), có class `.folder-active` riêng biệt `.selected`.
+      Gộp nút "New component"/"New folder" thành 1 nút "New" - tên gõ vào
+      kết thúc bằng `/` thì tạo folder, không thì tạo file; đường dẫn cuối
+      cùng = folder đang active (hoặc thư mục cha của file đang chọn, nếu
+      không có folder nào được pin) + tên gõ. Input tạo mới render INLINE
+      đúng vị trí sẽ xuất hiện trong cây (bên trong children của folder
+      active), không còn ở 1 chỗ cố định đầu danh sách. Dot nhỏ
+      (`isDirty` prop, optional) đánh dấu file có thay đổi chưa lưu.
+    - **Layout 3 cột (file · preview · code) + toolbar 3 phần tương ứng.**
+      Đổi thứ tự cột cũ (file, code, preview) sang đúng thứ tự người dùng
+      chỉ định; cả 3 cột đều resize được (`useResizablePanel`, cột file/
+      preview) hoặc chiếm phần còn lại (code, `flex: 1`). Toolbar
+      `.page-components-toolbar` chia 3 `.page-editor-toolbar-section`,
+      MỖI section giữ đúng width cột tương ứng (`sidebar.size`/
+      `previewSplit.size`) nên luôn thẳng hàng kể cả khi kéo resize.
+    - **Preview cho `layout.tsx`/`404.tsx`/`500.tsx`, không chỉ `page.tsx`.**
+      `layout.tsx` preview bằng cách build với 1 trang PLACEHOLDER tổng hợp
+      (không phải file thật, chỉ tồn tại trong bộ nhớ lúc build, không bao
+      giờ ghi vào `sourceByPath` state hay storage) làm `entryPath`, và
+      `layoutPaths` = chuỗi layout tổ tiên tính lại từ chính đường dẫn
+      `layout.tsx` (cây route không có con trỏ "lên cha" nên phải suy ra từ
+      chuỗi thư mục) - đúng layout hiện ra với div màu cam viền đứt "Page
+      content renders here" thế chỗ children thật. `404.tsx`/`500.tsx`
+      preview KHÔNG bọc layout nào - giống hệt `render.ts`'s
+      `renderErrorHtml` xử lý 2 trang này lúc phục vụ thật.
+    - **Preview responsive xs/sm/md/lg/xl có scale.** `useDevicePreview.ts`
+      (vốn phục vụ Component Builder, 3 preset mobile/tablet/desktop) tách
+      phần lõi width-table-agnostic thành `useScaledPreview` (dùng `zoom`
+      CSS, không phải `transform: scale` - tự reflow đúng chiều cao, không
+      chừa khoảng trắng thừa) - `useDevicePreview` cũ gọi lại hàm này,
+      HÀNH VI KHÔNG ĐỔI. `PageEditor.tsx` gọi `useScaledPreview` riêng với
+      bảng 5 preset (xs=375, sm=640, md=768, lg=1024, xl=1280 - 4 preset sau
+      khớp breakpoint mặc định của chính Tailwind). Xác nhận sống: chọn XL
+      (1280px, rộng hơn cột preview mặc định ~480px) → `zoom: 0.35` đúng
+      công thức shrink-to-fit; chọn XS → `zoom: 1` (đã vừa khung, không cần
+      thu nhỏ).
+    - **VEI "Edit content" ẩn khỏi preview** (yêu cầu riêng, phát sinh giữa
+      phiên): nút này vốn hiện trong preview vì HTML build LUÔN nhúng
+      script overlay + admin đang đăng nhập nên `hasAdminHint()` đúng - bấm
+      vào không làm gì có ích trong `srcdoc` iframe tách biệt (không route
+      thật, không round-trip server được). Strip bằng đúng href
+      `assetHrefs.veiOverlayHref` build đó vừa dùng, cùng cách đã strip
+      script hydrate-manifest trước đó.
+    - Xác nhận sống ĐẦY ĐỦ dưới `wrangler dev` thật cho từng phần: preview
+      `page.tsx`/`layout.tsx`/`404.tsx` (label + nội dung + "No problems"
+      đúng cho cả 3), chọn folder + tạo file/folder scoped đúng vị trí +
+      đúng chỗ trong cây (tạo rồi XOÁ dọn sạch sau khi xác nhận), dirty-dot,
+      viewport switch + scale, dev auto-sync (kéo được 1 file thật). Console
+      sạch (0 lỗi thật) suốt toàn bộ chuỗi thao tác.
+    - 0 lỗi typecheck; suite đầy đủ không đổi só với trước phần này (1075
+      pass / 12 fail, cùng nhóm cũ không liên quan) - phần lớn thay đổi ở
+      đây là UI/tương tác, xác nhận qua Playwright sống thay vì unit test
+      mới, giống cách tiếp cận `PageEditor.tsx` đã dùng từ đầu.
+
 **Quyết định mới #8 (chốt trong lúc build, không có trong bản plan gốc):**
 mọi capability trên được xây **additive và dark** cho tới khi có ít nhất 1
 lần build thật chạy qua UI Build (mục 5) - **điều kiện đó đã đạt được**
