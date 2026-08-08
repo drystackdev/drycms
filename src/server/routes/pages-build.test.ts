@@ -10,10 +10,11 @@ vi.mock("../config.js", async () => {
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-pages-build-route-"));
   return {
     content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") },
+    pagesCacheStorage: { kind: "local", root: join(tempDirBox.path, "pages-cache") },
   };
 });
 
-const { GET } = await import("./pages-build.js");
+const { GET, POST } = await import("./pages-build.js");
 const { createPagesRegistryAdapter } = await import("../../content-types/engine/index.js");
 const { content } = await import("../config.js");
 
@@ -26,6 +27,23 @@ function context(query: Record<string, string> = {}): DryRouteContext {
   const url = new URL("http://localhost/dry/api/pages-build");
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   return { params: {}, request: new Request(url), url, env: {}, session: null };
+}
+
+function postContext(body: unknown): DryRouteContext {
+  const url = new URL("http://localhost/dry/api/pages-build");
+  const request = new Request(url, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+  return { params: {}, request, url, env: {}, session: null };
+}
+
+function onePage(pathname: string) {
+  return {
+    pathname,
+    html: `<html><body>${pathname}</body></html>`,
+    jsAssets: [{ jsPath: `${pathname.replace(/^\//, "") || "index"}.js`, source: "export default function(){}" }],
+    buildId: crypto.randomUUID(),
+    deps: [],
+    inSitemap: true,
+  };
 }
 
 describe("GET /dry/api/pages-build?byResource=", () => {
@@ -59,5 +77,37 @@ describe("GET /dry/api/pages-build?byResource=", () => {
     const response = await GET(context({ byResource: "homepage,aboutPage" }));
     const body = (await response.json()) as { paths: string[] };
     expect(new Set(body.paths)).toEqual(new Set(["/", "/about"]));
+  });
+});
+
+describe("POST /dry/api/pages-build { pages: [...] } (batch)", () => {
+  it("publishes every page in one call and each is readable back individually", async () => {
+    const response = await POST(postContext({ pages: [onePage("/batch-a"), onePage("/batch-b"), onePage("/batch-c")] }));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { records: { path: string }[]; errors: unknown[] };
+    expect(body.errors).toEqual([]);
+    expect(body.records.map((r) => r.path).sort()).toEqual(["/batch-a", "/batch-b", "/batch-c"]);
+
+    for (const pathname of ["/batch-a", "/batch-b", "/batch-c"]) {
+      const get = await GET(context({ path: pathname }));
+      expect(get.status).toBe(200);
+      expect(await get.text()).toContain(pathname);
+    }
+  });
+
+  it("reports a per-page error without failing the pages that ARE valid", async () => {
+    const response = await POST(postContext({ pages: [onePage("/batch-ok"), { pathname: "/batch-bad" }] }));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { records: { path: string }[]; errors: { pathname: string }[] };
+    expect(body.records.map((r) => r.path)).toEqual(["/batch-ok"]);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0]?.pathname).toBe("/batch-bad");
+  });
+
+  it("still accepts the original single-page body shape unchanged", async () => {
+    const response = await POST(postContext(onePage("/single-page")));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { record: { path: string } };
+    expect(body.record.path).toBe("/single-page");
   });
 });

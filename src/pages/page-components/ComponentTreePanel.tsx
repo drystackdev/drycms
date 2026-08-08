@@ -1,8 +1,20 @@
 import { useMemo, useState } from "preact/hooks";
 import ContextMenu from "../../components/ContextMenu.js";
 import type { FileEntry } from "../../storage/entry-types.js";
-import { AddFolderIcon, CodeFieldTypeIcon, FolderIcon, PlusIcon, RenameIcon, SearchIcon, TrashIcon } from "../../components/icons/index.js";
-import { buildComponentTree, filterComponentTree, type ComponentTreeNode } from "../../page-components/tree.js";
+import {
+  AddFolderIcon,
+  CodeFieldTypeIcon,
+  FolderIcon,
+  PlusIcon,
+  RenameIcon,
+  SearchIcon,
+  TrashIcon,
+} from "../../components/icons/index.js";
+import {
+  buildComponentTree,
+  filterComponentTree,
+  type ComponentTreeNode,
+} from "../../page-components/tree.js";
 
 interface ComponentTreePanelProps {
   entries: FileEntry[];
@@ -25,7 +37,15 @@ function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
 
-export default function ComponentTreePanel({ entries, selectedPath, onSelect, onCreateFile, onCreateFolder, onDelete, onMove }: ComponentTreePanelProps) {
+export default function ComponentTreePanel({
+  entries,
+  selectedPath,
+  onSelect,
+  onCreateFile,
+  onCreateFolder,
+  onDelete,
+  onMove,
+}: ComponentTreePanelProps) {
   const [query, setQuery] = useState("");
   // Folders default OPEN (matches the shadcn tree reference) - this tracks
   // only the ones a user explicitly collapsed, not every open one.
@@ -37,8 +57,12 @@ export default function ComponentTreePanel({ entries, selectedPath, onSelect, on
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
 
   const tree = useMemo(() => buildComponentTree(entries), [entries]);
-  const { nodes: filteredTree, matchedFolderIds } = useMemo(() => filterComponentTree(tree, query), [tree, query]);
-  const isOpen = (id: string) => (query.trim() && matchedFolderIds.has(id)) || !collapsed.has(id);
+  const { nodes: filteredTree, matchedFolderIds } = useMemo(
+    () => filterComponentTree(tree, query),
+    [tree, query],
+  );
+  const isOpen = (id: string) =>
+    (query.trim() && matchedFolderIds.has(id)) || !collapsed.has(id);
 
   function toggleFolder(id: string) {
     setCollapsed((prev) => {
@@ -81,7 +105,9 @@ export default function ComponentTreePanel({ entries, selectedPath, onSelect, on
     setDragOverPath(null);
     const from = event.dataTransfer?.getData("text/drycms-page-component-path");
     if (!from) return;
-    const name = from.includes("/") ? from.slice(from.lastIndexOf("/") + 1) : from;
+    const name = from.includes("/")
+      ? from.slice(from.lastIndexOf("/") + 1)
+      : from;
     if (parentOf(from) !== "") onMove(from, name);
   }
 
@@ -94,26 +120,47 @@ export default function ComponentTreePanel({ entries, selectedPath, onSelect, on
             type="text"
             placeholder="Search…"
             value={query}
-            onInput={(event) => setQuery((event.target as HTMLInputElement).value)}
+            onInput={(event) =>
+              setQuery((event.target as HTMLInputElement).value)
+            }
           />
         </div>
-        <button type="button" class="ghost icon sm" aria-label="New component" onClick={() => startCreating("file")}>
+        <button
+          type="button"
+          class="ghost icon sm"
+          aria-label="New component"
+          onClick={() => startCreating("file")}
+        >
           <PlusIcon />
         </button>
-        <button type="button" class="ghost icon sm" aria-label="New folder" onClick={() => startCreating("folder")}>
+        <button
+          type="button"
+          class="ghost icon sm"
+          aria-label="New folder"
+          onClick={() => startCreating("folder")}
+        >
           <AddFolderIcon />
         </button>
       </div>
 
       {creating && (
-        <form class="page-components-tree-row page-components-tree-create" onSubmit={submitCreate}>
+        <form
+          class="page-components-tree-row page-components-tree-create"
+          onSubmit={submitCreate}
+        >
           {creating === "folder" ? <FolderIcon /> : <CodeFieldTypeIcon />}
           <input
             autoFocus
             class="page-components-tree-input"
             value={creatingName}
-            placeholder={creating === "folder" ? "e.g. layout or layout/blocks" : "e.g. Button.tsx or layout/Header.tsx"}
-            onInput={(event) => setCreatingName((event.target as HTMLInputElement).value)}
+            placeholder={
+              creating === "folder"
+                ? "e.g. layout or layout/blocks"
+                : "e.g. Button.tsx or layout/Header.tsx"
+            }
+            onInput={(event) =>
+              setCreatingName((event.target as HTMLInputElement).value)
+            }
             onKeyDown={(event) => {
               if (event.key === "Escape") setCreating(null);
             }}
@@ -128,11 +175,15 @@ export default function ComponentTreePanel({ entries, selectedPath, onSelect, on
           event.preventDefault();
           setDragOverPath("");
         }}
-        onDragLeave={() => setDragOverPath((prev) => (prev === "" ? null : prev))}
+        onDragLeave={() =>
+          setDragOverPath((prev) => (prev === "" ? null : prev))
+        }
         onDrop={handleRootDrop}
       >
         {filteredTree.length === 0 ? (
-          <p class="hint">{query.trim() ? "No matches." : "No components yet."}</p>
+          <p class="hint">
+            {query.trim() ? "No matches." : "No components yet."}
+          </p>
         ) : (
           <ComponentTreeList
             nodes={filteredTree}
@@ -152,7 +203,9 @@ export default function ComponentTreePanel({ entries, selectedPath, onSelect, on
             onDragOverPath={setDragOverPath}
           />
         )}
-        {dragOverPath === "" && <div class="page-components-tree-drop-root-hint" />}
+        {dragOverPath === "" && (
+          <div class="page-components-tree-drop-root-hint" />
+        )}
       </div>
     </div>
   );
@@ -178,9 +231,21 @@ interface ComponentTreeListProps {
 
 function ComponentTreeList(props: ComponentTreeListProps) {
   const {
-    nodes, selectedPath, isOpen, onToggleFolder, onSelect, onDelete,
-    onStartRename, renamingPath, renamingValue, onRenamingValueChange, onCommitRename, onCancelRename,
-    onMove, dragOverPath, onDragOverPath,
+    nodes,
+    selectedPath,
+    isOpen,
+    onToggleFolder,
+    onSelect,
+    onDelete,
+    onStartRename,
+    renamingPath,
+    renamingValue,
+    onRenamingValueChange,
+    onCommitRename,
+    onCancelRename,
+    onMove,
+    dragOverPath,
+    onDragOverPath,
   } = props;
 
   return (
@@ -192,9 +257,20 @@ function ComponentTreeList(props: ComponentTreeListProps) {
         const menuItems = renaming
           ? []
           : [
-              { type: "item" as const, label: "Rename", icon: <RenameIcon />, onClick: () => onStartRename(entry) },
+              {
+                type: "item" as const,
+                label: "Rename",
+                icon: <RenameIcon />,
+                onClick: () => onStartRename(entry),
+              },
               { type: "separator" as const },
-              { type: "item" as const, label: "Delete", icon: <TrashIcon />, danger: true, onClick: () => onDelete(entry) },
+              {
+                type: "item" as const,
+                label: "Delete",
+                icon: <TrashIcon />,
+                danger: true,
+                onClick: () => onDelete(entry),
+              },
             ];
 
         const row = (
@@ -203,11 +279,16 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               "page-components-tree-row",
               selectedPath === entry.id && "selected",
               dragOverPath === entry.id && "drop-target",
-            ].filter(Boolean).join(" ")}
+            ]
+              .filter(Boolean)
+              .join(" ")}
             draggable={!renaming}
             onDragStart={(event) => {
               if (!event.dataTransfer) return;
-              event.dataTransfer.setData("text/drycms-page-component-path", entry.id);
+              event.dataTransfer.setData(
+                "text/drycms-page-component-path",
+                entry.id,
+              );
               event.dataTransfer.effectAllowed = "move";
             }}
             onDragOver={(event) => {
@@ -229,17 +310,36 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               if (entry.kind !== "folder") return;
               event.preventDefault();
               onDragOverPath(null);
-              const from = event.dataTransfer?.getData("text/drycms-page-component-path");
+              const from = event.dataTransfer?.getData(
+                "text/drycms-page-component-path",
+              );
               if (!from || from === entry.id) return;
-              const name = from.includes("/") ? from.slice(from.lastIndexOf("/") + 1) : from;
+              const name = from.includes("/")
+                ? from.slice(from.lastIndexOf("/") + 1)
+                : from;
               const to = entry.id ? `${entry.id}/${name}` : name;
               if (to !== from) onMove(from, to);
             }}
           >
             {entry.kind === "folder" ? (
-              <button type="button" class="page-components-tree-chevron" aria-expanded={open} aria-label={open ? `Collapse ${entry.name}` : `Expand ${entry.name}`} onClick={() => onToggleFolder(entry.id)}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-                  <path d="M2.5 1.5 L7 5 L2.5 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              <button
+                type="button"
+                class="page-components-tree-chevron"
+                aria-expanded={open}
+                aria-label={
+                  open ? `Collapse ${entry.name}` : `Expand ${entry.name}`
+                }
+                onClick={() => onToggleFolder(entry.id)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9.343 6.343L15 12l-5.657 5.657"
+                  />
                 </svg>
               </button>
             ) : (
@@ -251,7 +351,11 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                 autoFocus
                 class="page-components-tree-input"
                 value={renamingValue}
-                onInput={(event) => onRenamingValueChange((event.target as HTMLInputElement).value)}
+                onInput={(event) =>
+                  onRenamingValueChange(
+                    (event.target as HTMLInputElement).value,
+                  )
+                }
                 onClick={(event) => event.stopPropagation()}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") onCommitRename(entry);
@@ -260,11 +364,19 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                 onBlur={() => onCommitRename(entry)}
               />
             ) : entry.kind === "file" ? (
-              <button type="button" class="page-components-tree-item" onClick={() => onSelect(entry.id)}>
+              <button
+                type="button"
+                class="page-components-tree-item"
+                onClick={() => onSelect(entry.id)}
+              >
                 <span>{entry.name}</span>
               </button>
             ) : (
-              <button type="button" class="page-components-tree-item" onClick={() => onToggleFolder(entry.id)}>
+              <button
+                type="button"
+                class="page-components-tree-item"
+                onClick={() => onToggleFolder(entry.id)}
+              >
                 <span>{entry.name}</span>
               </button>
             )}
@@ -273,8 +385,13 @@ function ComponentTreeList(props: ComponentTreeListProps) {
 
         return (
           <div key={entry.id}>
-            {renaming || menuItems.length === 0 ? row : (
-              <ContextMenu label={`Actions for ${entry.name}`} items={menuItems}>
+            {renaming || menuItems.length === 0 ? (
+              row
+            ) : (
+              <ContextMenu
+                label={`Actions for ${entry.name}`}
+                items={menuItems}
+              >
                 {row}
               </ContextMenu>
             )}

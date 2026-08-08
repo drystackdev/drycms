@@ -1,5 +1,7 @@
-import { setReplayLog } from "../content-types/dry-reader-client.js";
-import { setCurrentParams } from "../content-types/params-reader-client.js";
+import { dry, setReplayLog } from "../content-types/dry-reader-client.js";
+import { params, setCurrentParams } from "../content-types/params-reader-client.js";
+import { setTitle } from "../content-types/dry-title-client.js";
+import { dryBind } from "../content-types/dry-vei.js";
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import { installMediaSrcHook } from "../server/app-router/media-src-hook.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
@@ -83,13 +85,31 @@ async function main(): Promise<void> {
     setReplayLog(logElement?.textContent ? decodeCallLog(logElement.textContent) : []);
 
     const paramsElement = document.getElementById("dry-hydrate-params");
-    const params = (paramsElement?.textContent ? JSON.parse(paramsElement.textContent) : {}) as Record<string, string | string[]>;
-    setCurrentParams(params);
+    const routeParams = (paramsElement?.textContent ? JSON.parse(paramsElement.textContent) : {}) as Record<string, string | string[]>;
+    setCurrentParams(routeParams);
+
+    // `page.js`/`layout.js` (`page-build.ts`'s `compileEsmAsset` output) call
+    // `dry`/`params`/`setTitle`/`dryBind` as bare, undeclared identifiers -
+    // real page/layout source never imports them (`dry.generated.d.ts`'s
+    // `declare global`), and unlike the OTHER 2 consumers of that same
+    // ambient-global contract (`app-router-plugin.ts`'s Vite-time import
+    // injection for server SSR/`hydrate-client.ts`; `page-build.ts`'s own
+    // `evalModule` passing them as `new Function` parameters for the
+    // in-browser BUILD render), `compileEsmAsset`'s output is a real,
+    // standalone ES module with no build step of its own to inject an import
+    // into. A bare identifier reference inside any module still falls
+    // through to the global scope when nothing shadows it, so assigning
+    // these here - before the dynamic `import()`s below ever run the
+    // page/layout code that calls them - is enough. Found live: without
+    // this, hydrating any page that uses these throws
+    // `ReferenceError: dry/params is not defined` (console-only; doesn't
+    // affect the already-rendered static HTML or VEI markers).
+    Object.assign(window as unknown as Record<string, unknown>, { dry, params, setTitle, dryBind });
 
     const match: RouteMatch = {
       page: async () => ({ default: await importDefault(manifest.entryUrl) }),
       layouts: manifest.layoutUrls.map((url) => async () => ({ default: await importDefault(url) })),
-      params,
+      params: routeParams,
     };
 
     const vnode = await resolveMatchToVNode(match);

@@ -426,6 +426,18 @@ export interface PublishOptions {
   publishAt?: number | null;
 }
 
+function toWireBody(result: PageBuildResult, options: PublishOptions): Record<string, unknown> {
+  return {
+    pathname: options.pathname,
+    html: result.html,
+    jsAssets: result.jsAssets,
+    buildId: options.buildId ?? crypto.randomUUID(),
+    deps: result.deps,
+    inSitemap: result.inSitemap,
+    publishAt: options.publishAt ?? null,
+  };
+}
+
 /** POSTs a `buildPage` result to `routes/pages-build.ts` - the network half
  * kept separate from `buildPage` itself so a caller can build without
  * necessarily publishing (e.g. a future preview feature). */
@@ -434,17 +446,37 @@ export async function publishBuiltPage(result: PageBuildResult, options: Publish
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      pathname: options.pathname,
-      html: result.html,
-      jsAssets: result.jsAssets,
-      buildId: options.buildId ?? crypto.randomUUID(),
-      deps: result.deps,
-      inSitemap: result.inSitemap,
-      publishAt: options.publishAt ?? null,
-    }),
+    body: JSON.stringify(toWireBody(result, options)),
   });
   if (!response.ok) {
     throw new PageBuildError(`Publishing "${options.pathname}" failed: HTTP ${response.status}.`);
+  }
+}
+
+/** Batch counterpart of `publishBuiltPage` (`plans/app-r2.md` mục 11's
+ * "Batch PUT lên storage, đừng 500 request rời rạc") - several pages' worth
+ * of already-built results in ONE POST, for `PageBuild.tsx`'s "Build all"
+ * (a one-off single-page "Build" click still uses `publishBuiltPage` above -
+ * batching a single page would just add overhead). Throws with every
+ * per-page failure message joined together if the server reports ANY -
+ * `PageBuild.tsx` decides what to do with a partial batch failure (some
+ * pages published, some didn't) by re-checking `_pages` status afterward,
+ * not from this function's return value. */
+export async function publishBuiltPages(
+  entries: { result: PageBuildResult; options: PublishOptions }[],
+  pagesBuildEndpoint: string,
+): Promise<void> {
+  const response = await fetch(pagesBuildEndpoint, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pages: entries.map(({ result, options }) => toWireBody(result, options)) }),
+  });
+  if (!response.ok) {
+    throw new PageBuildError(`Publishing ${entries.length} pages failed: HTTP ${response.status}.`);
+  }
+  const body = (await response.json()) as { errors?: { pathname: string; message: string }[] };
+  if (body.errors && body.errors.length > 0) {
+    throw new PageBuildError(body.errors.map((e) => `"${e.pathname}": ${e.message}`).join("; "));
   }
 }

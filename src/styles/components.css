@@ -5671,8 +5671,9 @@
       align-items: center;
       gap: 0.5rem;
       border-radius: var(--dry-radius-md);
-      padding-block: 0.375rem;
+      padding-block: 0.25rem;
       padding-inline-end: 0.5rem;
+      transition: background-color .1s ease-in;
 
       & svg {
         width: 1.125rem;
@@ -5680,17 +5681,16 @@
         flex: none;
       }
 
-      &:hover {
+      &.selected {
         background-color: var(--dry-muted);
+        font-weight: 600;
+      }
+
+      &:hover {
+        background-color: var(--dry-accent);
         & button {
           background-color: transparent;
         }
-      }
-
-
-      &.selected {
-        background-color: var(--dry-accent);
-        font-weight: 600;
       }
 
       &.drop-target {
@@ -5723,12 +5723,18 @@
       justify-content: center;
       flex: 0 0 1.125rem;
       height: 1.125rem;
+      padding-left: .25rem;
       color: var(--dry-muted-foreground);
       cursor: pointer;
       transition: transform 120ms ease;
 
       &[aria-expanded="true"] {
         transform: rotate(90deg);
+      }
+
+      &>svg:first-child {
+        height: 1rem;
+        width: 1rem;
       }
     }
 

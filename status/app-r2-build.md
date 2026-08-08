@@ -1,4 +1,4 @@
-# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4/6 core + mục 7/8/9/10/12/13/14 - LIVE CUTOVER DONE (read+write), code editor DONE
+# app-r2 build (plans/app-r2.md) - ALL Giai đoạn + mục items ✅ DONE, live-verified end to end (2026-08-09)
 
 ## Plan
 
@@ -700,16 +700,118 @@ static site silently stale until someone remembered to click Build.
   against a real SQLite `PagesRegistryAdapter`, no mocking). Full suite:
   1072 passed / 12 failed (same pre-existing, unrelated group - +3 vs. part
   7's count, entirely the new tests), 0 typecheck errors.
-- **Found but NOT fixed (out of scope for this piece):** any page whose
-  `page.tsx` uses the `dry()`/`params()` ambient globals throws
+- **Found, NOT fixed in this piece, FIXED in part 9 below:** any page whose
+  `page.tsx` uses the `dry()`/`params()` ambient globals threw
   `ReferenceError: dry/params is not defined` during CLIENT hydration of a
-  BUILT page (`hydrate-built.ts`'s compiled bundle doesn't expose them) -
-  reproduced on both `/` and `/blogs/[slug]`. Console-only, doesn't block
-  SSR, VEI, or the rebuild-on-save path above (hydration failing doesn't
-  affect already-rendered static content or marker-based click-to-edit),
-  but it's a real gap for anyone relying on client-side interactivity on a
-  built page. Whoever next touches `hydrate-built.ts`/`compileEsmAsset`
-  should know about it.
+  BUILT page.
+
+## Update 2026-08-09, part 9: hydration globals fix + UI Build's remaining polish
+
+Picked up the 2 loose ends explicitly left open at the end of part 8: the
+hydration `ReferenceError` (found but out of scope there) and Giai đoạn 3's
+last 🟡 marker (progress/resume + batch PUT for "Build all").
+
+**Hydration fix.** Root cause, traced through `app-router-plugin.ts`/
+`page-build.ts`/`hydrate-built.ts` together: `dry`/`params`/`setTitle`/
+`dryBind` are real ambient globals only by TypeScript convention
+(`dry.generated.d.ts`'s `declare global`) - 3 different runtime contexts
+each have to make that true their OWN way. Server SSR and the OLD
+`hydrate-client.ts` get it from `app-router-plugin.ts`, a Vite plugin that
+AST-injects a real `import` per consumer at build time. `page-build.ts`'s
+own `evalModule` (the CJS/`new Function` path that renders a page ONCE,
+client-side, inside the admin tab during a build) passes all 4 as
+`new Function` parameters. `compileEsmAsset` - the OTHER half of the same
+file, producing the REAL standalone `page.js`/`layout.js` a visitor's
+browser `import()`s to hydrate - does neither: no Vite pass to inject an
+import, and it emits genuine ESM (not an eval), so there's no parameter
+list to smuggle them through either. The 4 identifiers reach a visitor's
+browser completely unbound.
+
+Fixed in `hydrate-built.ts` only, not `compileEsmAsset`: that file already
+read `#dry-replay-data`/`#dry-hydrate-params` and called
+`setReplayLog`/`setCurrentParams` (the exact replay plumbing
+`dry-reader-client.ts`/`hydrate-client.ts` already used - `buildDocument()`
+is shared, so an app-r2 build already embeds the same `#dry-replay-data`
+script the old pipeline does) - it just never exposed the 4 functions
+anywhere the dynamically-imported page/layout code could reach them. Added
+`Object.assign(window, { dry, params, setTitle, dryBind })` right before the
+`import()`s that load the compiled modules: an unqualified identifier
+reference in ANY module, including a real ES module, still falls through to
+the global scope when nothing else binds it - standard JS scoping, not a
+workaround. `dryBind` needed no special client variant: a replayed value
+always carries an inert ref (`createInertRefProxy`), exactly like the
+original build-time render (never VEI edit mode), so it returns `{}` both
+times - no hydration mismatch introduced.
+
+Verified live under `wrangler dev`: before the fix, `/` and
+`/blogs/hello-world` both threw the exact reported error on load. After
+rebuilding: 0 console errors on either, `window.dryHydrated === true`, and
+`typeof window.dry/params/setTitle/dryBind === "function"` confirmed
+directly via `browser_evaluate`.
+
+**UI Build polish (mục 11's last 2 gaps).**
+
+- *Batch PUT.* `POST /api/pages-build` now also accepts `{ pages: [...] }`
+  (`isValidBatchBody`) alongside the original single-page body, unchanged
+  for backward compatibility - `buildOne`/the VEI `?autoBuild=` rebuild path
+  still use it directly (batching a single page is pure overhead). Server
+  loops `publishOne` (extracted from the old POST handler body) over each
+  entry SEQUENTIALLY, not `Promise.all` - `kind: "local"` shares one SQLite
+  handle, so concurrent writers would just serialize anyway, and this keeps
+  behavior identical across engines. Returns `{ records, errors }`; a
+  per-page validation/write failure is reported without failing the pages
+  that DID succeed. `PageBuild.tsx`'s `buildAll()` still compiles one page at
+  a time (CPU-bound work in one tab, nothing to gain batching that part) but
+  now flushes every 5 compiled results through ONE `publishBuiltPages` call
+  instead of one `publishBuiltPage` per page.
+- *Progress/resume.* `buildAll()` persists `{ total, remaining }` to
+  `localStorage` after every CONFIRMED outcome - a batch that actually
+  published, or a single page that failed to build/had no target and won't
+  be retried - never optimistically before that. A batch publish failure
+  mid-flush therefore leaves exactly the unconfirmed pages in the persisted
+  queue, not silently drops them. On load, an existing queue surfaces as an
+  "Interrupted build" card (Resume/Discard). A FRESH "Build all" always
+  queues the FULL page list again, not just what's currently "Stale" - the
+  scenario mục 11 itself names (editing a shared root `layout.tsx`) is a
+  CODE change, which `_page_deps` staleness tracking (content-driven) can't
+  see at all, so skipping "already Live" pages would silently under-build.
+
+  **Real bug hit restarting `wrangler dev` for this round's testing, unrelated
+  to the code itself:** 3 full generations of leftover `wrangler dev`/
+  `workerd` process trees from earlier restarts this session were all still
+  running (port-only `lsof -ti:8787 | kill` had only ever killed the
+  outermost process in each tree, not the whole tree), and the newest one's
+  `workerd` crashed on startup with `SQLITE_BUSY (extended:
+  SQLITE_BUSY_RECOVERY)` - multiple processes holding the same local D1
+  SQLite file open. Fixed by killing every `wrangler`/`workerd` PID matching
+  the project path individually (verified each with `kill -0`) before
+  starting one clean instance.
+
+  Verified live under `wrangler dev`: "Build all" on the real 2-page site
+  produced exactly 1 `POST /api/pages-build` (`browser_network_requests`),
+  not 2 - batching confirmed. Resume/Discard tested by seeding
+  `localStorage`'s `dry-page-build-queue` directly with a partial queue
+  (simulating a closed-mid-build tab, since actually killing a Playwright
+  tab mid-network-call isn't reliably reproducible): reloading showed the
+  correct "N of M pages" banner; Resume built exactly the remaining pages
+  and cleared the queue; a second seeded queue was correctly cleared by
+  Discard without building anything. Both `/` and `/blogs/hello-world`
+  confirmed still showing their original starter content afterward (no
+  test-data leakage from this round).
+- 3 new tests in `routes/pages-build.test.ts` for the batch branch (publishes
+  several pages in one call; a bad entry doesn't fail the valid ones in the
+  same batch; the original single-page body still works unchanged).
+
+Also discovered mid-session: the user committed part 8's work themselves
+(commit `a0a71b1`, their own git identity, own IDE) shortly before this
+part started - explains why an early `git status` check in this part showed
+fewer modified files than expected. Not an error; just a concurrent-editing
+note for the record, same category as `components.css`'s untouched
+unrelated edit noted in part 8.
+
+Full suite after this part: 0 typecheck errors; 1075 passed / 12 failed
+(same pre-existing, unrelated group - +3 vs. part 8's count, entirely this
+part's new batch tests).
 
 ## Speed
 
@@ -718,26 +820,29 @@ partway through mục 7 - work continued seamlessly from the saved summary).
 Typecheck (`bun run typecheck`) and the full test suite (`bun run test`)
 run repeatedly throughout, not just at the end - every new/changed file
 confirmed against a clean-tree baseline before moving on. Final state: 0
-typecheck errors; 1072 passed / 12 failed (pre-existing, unrelated - see
+typecheck errors; 1075 passed / 12 failed (pre-existing, unrelated - see
 `status/app-r2-spike.md` for the original `git stash`-confirmed baseline)
 / 0 new failures across the whole session.
 
-Giai đoạn 1-4 and 6 (route manifest, build core, dynamic params,
-CSS+hydration, in-browser code editor) are all done and independently
-live-verified under a real `wrangler dev`, not just unit-tested. mục
-8/9/12/14 (sitemap, schedule, THE cutover incl. rebuild-on-save, sitemap
-TTL) likewise - mục 12 is now fully done, not just the read-side cutover.
-`sivelap` (the real site running in this session) now serves anonymous
-traffic entirely from `built/live/*`, that output now stays current
-automatically after a VEI save, AND its pages can be authored, previewed,
-saved, and published without leaving the browser - app-r2 is live and
-usable end to end, not just built. Giai đoạn 3's UI Build is done at the
-core but missing progress/resume + batch-upload polish (see the 🟡 marker
-in `plans/app-r2.md`'s "Giai đoạn" section - the only one left). Two
-related, deliberately deferred follow-ups, both about the same underlying
-gap: `page-build.ts` strips VEI's `dryBind()` markers from built output, so
-neither a built page's live VEI editing (mục 12's carve-out) nor Page
-Editor's preview (part 7's mục 6) can be truly interactive yet - fixing
-that one thing would unlock both. Separately, a real (pre-existing,
-newly-found) hydration bug affects any page using `dry()`/`params()` -
-see part 8 above.
+Every numbered mục in `plans/app-r2.md` and every Giai đoạn item is now ✅ -
+no 🟡 markers left. Giai đoạn 1-4 and 6 (route manifest, build core, dynamic
+params, CSS+hydration, in-browser code editor) are all done and
+independently live-verified under a real `wrangler dev`, not just
+unit-tested. mục 8/9/11/12/14 (sitemap, schedule, UI Build incl. batch+
+resume, THE cutover incl. rebuild-on-save, sitemap TTL) likewise. `sivelap`
+(the real site running in this session) now serves anonymous traffic
+entirely from `built/live/*`, that output stays current automatically after
+a VEI save, its pages can be authored/previewed/saved/published without
+leaving the browser, "Build all" survives an interrupted tab and doesn't
+hammer storage with one request per page, and a built page's client bundle
+hydrates cleanly (no console errors) instead of throwing on `dry()`/
+`params()`. app-r2 is live, usable, and complete end to end relative to the
+plan's own numbered list.
+
+One deliberately deferred follow-up remains, not part of the numbered plan
+items and explicitly out of scope for this session (needs its own design
+pass, not just an implementation push): `page-build.ts` strips VEI's
+`dryBind()` markers from built output, so neither a built page's live VEI
+editing (mục 12's carve-out, still bypassing to live SSR instead) nor Page
+Editor's preview (part 7's mục 6) can be truly interactive/marker-aware yet
+- fixing that one root cause would unlock both.

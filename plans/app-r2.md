@@ -622,18 +622,39 @@ thiết).
    được test đơn vị đầy đủ (4 test case, cả 2 nhánh, timestamp giả lập kiểm
    soát được) thay vì chờ thật 45 phút. mục 14 xong (`isEdgeCacheable`/
    `storeEdgeCache` thêm `ttlSeconds` optional, không đổi hành vi cũ).
-5. **🟡 UI Build - bản đầu tiên thật, chưa đủ như mục 11 mô tả; VEI chưa
-   đụng.** `PageBuild.tsx` (nav "System" → "Page Build", quyền
-   `system-build`): liệt kê trang tĩnh qua `route-manifest.ts`, cột trạng
-   thái (not-built/stale/scheduled/live) từ `_pages`, nút Build/Build all
-   chạy thật `page-build.ts` rồi publish. Đã click-through thật dưới
-   `wrangler dev` (D1+R2 thật, không phải giả lập): status chuyển
-   "Not built" → "Live" đúng, HTML+CSS lấy lại từ R2 đúng nội dung - xem
-   `status/app-r2-build.md`. CÒN THIẾU so với mục 11 gốc: không có
-   progress/resume khi đóng tab giữa chừng, không có batch PUT tối ưu (build
-   all hiện tuần tự từng trang), route động ([slug]) chưa liệt kê được (mục
-   4 vẫn chưa làm nên không hiện trong danh sách). VEI save→build→reload
-   hoàn toàn chưa đụng tới.
+5. **✅ UI Build - ĐỦ, khớp mục 11 (2026-08-09).** `PageBuild.tsx` (nav
+   "System" → "Page Build", quyền `system-build`): liệt kê CẢ trang tĩnh lẫn
+   trang động đã resolve qua `route-manifest.ts` + `dynamic-routes.ts` (mục
+   4, xong - ~~route động chưa liệt kê được~~ là nhận định CŨ, viết trước
+   khi mục 4 xong trong CÙNG phiên này, đã lỗi thời: `/blogs/hello-world`
+   liệt kê+build đúng, xác nhận sống lại lần nữa hôm nay khi test mục 8),
+   cột trạng thái (not-built/stale/scheduled/live) từ `_pages`, nút
+   Build/Build all chạy thật `page-build.ts` rồi publish. VEI cũng đã có thể
+   trigger build headless qua trang này (`?autoBuild=`, mục 8).
+   - **Batch PUT**: `POST /api/pages-build` giờ nhận thêm `{ pages: [...] }`
+     (nhiều trang/1 request) bên cạnh body 1-trang cũ (không đổi, vẫn dùng
+     cho `buildOne`/`?autoBuild=` - gộp 1 trang vào batch chỉ thêm overhead).
+     `buildAll()` build tuần tự (compile là việc CPU-bound trong 1 tab, gộp
+     không giúp gì) nhưng publish theo lô 5 trang/request thay vì 1
+     request/trang. Xác nhận sống: build 2 trang qua "Build all" → đúng 1
+     `POST /api/pages-build` (`browser_network_requests`), không phải 2.
+   - **Progress/resume**: `buildAll()` ghi hàng đợi (`{total, remaining}`)
+     vào `localStorage` sau MỖI kết quả đã xác nhận (build lỗi/thiếu target,
+     hoặc một lô publish thật sự thành công) - không bao giờ lạc quan xoá
+     trước khi chắc chắn, nên tab đóng giữa MỘT lô publish để lại đúng
+     những trang CHƯA xác nhận trong hàng đợi cho lần sau, không mất/không
+     lặp. Mở lại trang thấy banner "Interrupted build" (Resume/Discard) nếu
+     hàng đợi cũ còn sót. Bấm Build all mới luôn ghi đè hàng đợi bằng TOÀN
+     BỘ danh sách trang - đúng yêu cầu gốc của mục này ("sửa layout.tsx gốc
+     = build lại mọi trang"): staleness (`_page_deps`) không bắt được thay
+     đổi CODE (chỉ content), nên "Build all" không được phép chỉ build
+     những trang đang "Stale". Xác nhận sống: tự tạo hàng đợi dở dang qua
+     `localStorage` (giả lập tab đóng giữa chừng) → banner hiện đúng "N của
+     M trang" → Resume build nốt đúng các trang còn lại, banner biến mất;
+     tạo lại hàng đợi khác → Discard xoá đúng, không build gì.
+   - 3 test mới cho nhánh batch (`pages-build.test.ts`): publish nhiều trang
+     đúng qua 1 lần gọi, lỗi 1 trang không kéo trang hợp lệ khác fail theo,
+     body 1-trang cũ vẫn hoạt động y hệt.
 6. **✅ Giai đoạn 6 - Sửa code trong browser - ĐỦ (2026-08-09).**
    `pagesSourceStorage` option + `scripts/sync-pages-r2.ts` (push/pull,
    không ghi đè) + `types-cache` cho `dry.generated.d.ts` (mục 10) đều đã
@@ -804,13 +825,44 @@ thiết).
      thật qua `createPagesRegistryAdapter`, không mock). Suite đầy đủ sau
      thay đổi: 1072 pass / 12 fail (cùng nhóm fail cũ không liên quan, tăng 3
      so với trước vì test mới).
-   - **Phát hiện phụ, CHƯA sửa (ngoài phạm vi mục này):** một trang dùng
-     `dry()`/`params()` ở top-level thì bản ĐÃ BUILD hydrate lỗi
-     `ReferenceError: dry/params is not defined` (client bundle không expose
-     2 global đó cho code đã compile) - lỗi console, không chặn SSR/VEI/rebuild
-     (hydration fail không ảnh hưởng gì tới marker/nội dung tĩnh), nhưng là
-     bug thật, tái hiện được trên `/` lẫn `/blogs/[slug]`. Ai động tới
-     `hydrate-built.ts`/`compileEsmAsset` sau này nên biết.
+   - **Phát hiện phụ ở lượt này, SỬA XONG cùng ngày (2026-08-09, xem mục 9
+     bên dưới):** một trang dùng `dry()`/`params()` ở top-level thì bản ĐÃ
+     BUILD hydrate lỗi `ReferenceError: dry/params is not defined` - client
+     bundle không expose 2 global đó cho code đã compile. Lúc phát hiện tưởng
+     là việc riêng ngoài phạm vi (lỗi console, không chặn SSR/VEI/rebuild),
+     nhưng hoá ra chỉ cần sửa đúng 1 file (`hydrate-built.ts`) - xem mục 9.
+
+9. **✅ Sửa bug hydrate `dry`/`params`/`setTitle`/`dryBind` "not defined"
+   (2026-08-09, phát hiện ở mục 7/8 phía trên).** Gốc rễ: `page.tsx`/
+   `layout.tsx` gọi 4 hàm này như ambient global thật (`dry.generated.d.ts`'s
+   `declare global`), và có ĐÚNG 3 nơi phải tự lo việc đó hoạt động đúng
+   theo NGỮ CẢNH thật thi hành - server SSR/`hydrate-client.ts` dựa vào
+   `app-router-plugin.ts` (Vite plugin, tự chèn `import` đúng theo
+   `consumer === "server"|"client"`); `page-build.ts`'s `evalModule` (render
+   TRONG LÚC build, ở tab admin) truyền cả 4 làm PARAMETER của
+   `new Function(...)`. `compileEsmAsset` (biên dịch RIÊNG cho
+   `page.js`/`layout.js` PUBLISH ra ngoài, để trình duyệt KHÁCH hydrate) lại
+   không làm gì cả - không qua Vite (không có bước AST-inject import), không
+   qua `new Function` (là ESM thật, `import()` thẳng) - nên 4 identifier đó
+   cứ thế trơ ra trong output, ai gọi tới là `ReferenceError`.
+   - Sửa ở `hydrate-built.ts`, KHÔNG đụng `compileEsmAsset`: file này vốn đã
+     đọc đúng `#dry-replay-data`/`#dry-hydrate-params` và gọi
+     `setReplayLog`/`setCurrentParams` (cơ chế replay CÙNG cơ chế
+     `dry-reader-client.ts`/`hydrate-client.ts` cũ dùng - `buildDocument()`
+     dùng chung, nên bản build app-r2 CŨNG nhúng đúng `#dry-replay-data`) -
+     chỉ thiếu bước gán 4 hàm đó lên `window` TRƯỚC khi `import()` module
+     page/layout đã biên dịch. Một identifier không khai báo trong BẤT KỲ
+     module nào (kể cả ES module thật) vẫn rơi xuống global scope khi đọc -
+     ngữ nghĩa JS chuẩn, không phải hack. `dryBind` an toàn gán thẳng (không
+     cần biến thể riêng): giá trị replay luôn mang ref TRƠ
+     (`createInertRefProxy`), y hệt lúc build gốc (build không chạy ở VEI
+     edit mode) - nên `dryBind()` trả `{}` cả 2 lần, không có gì lệch giữa
+     SSR gốc và hydrate.
+   - Xác nhận sống dưới `wrangler dev` thật: trước khi sửa, `/` VÀ
+     `/blogs/hello-world` đều lỗi console đúng như mô tả. Sau khi sửa + build
+     lại: 0 lỗi console cả 2 trang, `window.dryHydrated === true`,
+     `typeof window.dry/params/setTitle/dryBind === "function"` xác nhận
+     trực tiếp qua `browser_evaluate`.
 
 **Quyết định mới #8 (chốt trong lúc build, không có trong bản plan gốc):**
 mọi capability trên được xây **additive và dark** cho tới khi có ít nhất 1

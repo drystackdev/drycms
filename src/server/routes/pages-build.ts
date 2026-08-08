@@ -46,31 +46,71 @@ function isValidBody(value: unknown): value is PagesBuildRequestBody {
   );
 }
 
+/** One page's worth of the write side - shared by the single-page and batch
+ * POST bodies below, so a "build all" run and a one-off "Build" click do
+ * exactly the same work per page, just a different number of times per HTTP
+ * request. */
+async function publishOne(context: Parameters<DryRouteHandler>[0], raw: PagesBuildRequestBody): Promise<PageRecord> {
+  const now = Date.now();
+  const publishAt = typeof raw.publishAt === "number" && raw.publishAt > now ? raw.publishAt : null;
+  const { immutableKey, liveKey } = await writeBuiltPage(context, raw.pathname, raw.buildId, raw.html, {
+    publishNow: publishAt === null,
+  });
+  for (const asset of raw.jsAssets ?? []) {
+    await writeBuiltAsset(context, asset.jsPath, asset.source);
+  }
+
+  const record: PageRecord = {
+    path: raw.pathname,
+    objectKey: liveKey ?? immutableKey,
+    buildId: raw.buildId,
+    builtAt: now,
+    inSitemap: raw.inSitemap,
+    publishAt,
+  };
+  const { pagesRegistry } = getContentAdapters(context);
+  await pagesRegistry.recordBuild(record, raw.deps);
+  return record;
+}
+
+/** `{ pages: [...] }` - "Build all"'s batch shape (`plans/app-r2.md` mục 11's
+ * "Batch PUT lên storage, đừng 500 request rời rạc"): several pages'
+ * `publishOne` writes in ONE HTTP round trip instead of one POST per page -
+ * a site with a few hundred pages (e.g. after editing a shared root
+ * `layout.tsx`, which forces rebuilding everything - staleness tracking
+ * doesn't catch a CODE change, only a content one) would otherwise mean a
+ * few hundred sequential requests. Sequential internally (not
+ * `Promise.all`) - `writeBuiltPage`/`recordBuild` share one local-SQLite
+ * handle under `kind: "local"`, and concurrent writers there would just
+ * serialize anyway; this keeps behavior identical across engines and keeps
+ * one page's failure from racing another's partial write. */
+function isValidBatchBody(value: unknown): value is { pages: unknown[] } {
+  if (!value || typeof value !== "object") return false;
+  const body = value as Record<string, unknown>;
+  return Array.isArray(body.pages) && body.pages.length > 0;
+}
+
 export const POST: DryRouteHandler = async (context) => {
   try {
     const raw: unknown = await context.request.json();
-    if (!isValidBody(raw)) return errorResponse(new Error("Invalid pages-build request body."));
-
-    const now = Date.now();
-    const publishAt = typeof raw.publishAt === "number" && raw.publishAt > now ? raw.publishAt : null;
-    const { immutableKey, liveKey } = await writeBuiltPage(context, raw.pathname, raw.buildId, raw.html, {
-      publishNow: publishAt === null,
-    });
-    for (const asset of raw.jsAssets ?? []) {
-      await writeBuiltAsset(context, asset.jsPath, asset.source);
+    if (isValidBatchBody(raw)) {
+      const records: PageRecord[] = [];
+      const errors: { pathname: string; message: string }[] = [];
+      for (const entry of raw.pages) {
+        if (!isValidBody(entry)) {
+          errors.push({ pathname: typeof (entry as { pathname?: unknown })?.pathname === "string" ? (entry as { pathname: string }).pathname : "?", message: "Invalid page entry." });
+          continue;
+        }
+        try {
+          records.push(await publishOne(context, entry));
+        } catch (error) {
+          errors.push({ pathname: entry.pathname, message: error instanceof Error ? error.message : "Publish failed." });
+        }
+      }
+      return jsonResponse({ records, errors }, errors.length > 0 && records.length === 0 ? 500 : 200);
     }
-
-    const record: PageRecord = {
-      path: raw.pathname,
-      objectKey: liveKey ?? immutableKey,
-      buildId: raw.buildId,
-      builtAt: now,
-      inSitemap: raw.inSitemap,
-      publishAt,
-    };
-    const { pagesRegistry } = getContentAdapters(context);
-    await pagesRegistry.recordBuild(record, raw.deps);
-
+    if (!isValidBody(raw)) return errorResponse(new Error("Invalid pages-build request body."));
+    const record = await publishOne(context, raw);
     return jsonResponse({ record }, 200);
   } catch (error) {
     return errorResponse(error);
