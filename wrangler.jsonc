@@ -10,7 +10,7 @@
   // contract; rename them here AND in `options.ts` together if you need
   // different ones for your own account.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "drycms",
+  "name": "mai-anh-quyen",
   "main": "dist/server/entry-worker.js",
   "compatibility_date": "2026-08-01",
   // `node:stream`'s `Readable`/`Buffer` are used throughout `src/server/**`
@@ -42,8 +42,8 @@
   "d1_databases": [
     {
       "binding": "CONTENT_DB",
-      "database_name": "dry-cms",
-      "database_id": "5f46123d-b443-43ef-8da9-0919ed07157f"
+      "database_name": "mai-anh-quyen-db",
+      "database_id": "a17fced9-fa89-4e16-84e2-87e3693614a2"
     }
   ],
 
@@ -54,7 +54,7 @@
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",
-      "bucket_name": "dry-cms-content"
+      "bucket_name": "mai-anh-quyen-content"
     }
   ],
 
@@ -64,7 +64,7 @@
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "556c811545fa4ae6a4cd5970277fb6fa"
+      "id": "637197561a81494ca5486a885024b5bf"
     }
   ]
 }
