@@ -357,12 +357,19 @@ export default function RoleEditor({ id }: Props) {
   if (!canViewRole) return <span class="error">You don't have permission to view roles.</span>;
   if (value === null) return <span class="hint">Loading…</span>;
 
+  // `permissionActionsFor(t).length > 0` is the single gate for "does this
+  // resource belong in the editor at all" (same test `Dashboard.tsx`'s
+  // permission summary uses) - it's how `memory` stays out: nothing on it is
+  // grantable, since its only access path never consults this model. Not a
+  // `hidden` check: `user`/`role`/`aiKey`/`redirect`/`systemSettings`/... are
+  // all `hidden` from the generic nav groups yet still very much need
+  // permissions.
   const resources = allTypes
-    .filter((t) => t.kind === "collection")
+    .filter((t) => t.kind === "collection" && permissionActionsFor(t).length > 0)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const singletons = allTypes
-    .filter((t) => t.kind === "singleton")
+    .filter((t) => t.kind === "singleton" && permissionActionsFor(t).length > 0)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label));
   const systemResources = SYSTEM_RESOURCES.slice().sort((a, b) =>

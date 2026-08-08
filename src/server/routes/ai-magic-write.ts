@@ -14,6 +14,7 @@ import {
 } from "../../content-types/ai-magic-write-protocol.js";
 import { describeFieldsForPrompt, buildMagicWriteSystemPrompt, buildRewriteTurnMessage } from "../../content-types/ai-magic-write-prompt.js";
 import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
+import { supportsMagic } from "../../content-types/permissions.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { executeMagicFetch } from "./ai-magic-write-fetch.js";
 import {
@@ -304,6 +305,14 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const allTypes = await schema.listContentTypes();
           const type = allTypes.find((candidate) => candidate.name === request.typeSlug && candidate.kind !== "component");
           if (!type) throw new Error(`Content type "${request.typeSlug}" was not found.`);
+
+          // Schema-level gate, checked BEFORE the grant: configuration types
+          // (`role`/`user`/`menu`/`redirect`/`aiKey`/the settings singletons)
+          // have no Magic at all, for anyone. It can't be expressed as a
+          // missing grant - `checkAccess` lets a Super Admin through every
+          // grant - so it has to be its own refusal. See
+          // `content-types/permissions.ts`'s `supportsMagic`.
+          if (!supportsMagic(type)) throw new Error(`Magic isn't available for "${type.label}".`);
 
           // The explicit, stored `magic` grant is the authoritative check -
           // not derived from create/update/setting here (the Role editor

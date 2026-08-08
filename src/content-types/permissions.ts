@@ -3,7 +3,9 @@ import type { ContentTypeDefinition } from "./types.js";
 
 /** The actions a role can be granted on a resource. A collection gets
  * View/Create/Update/Delete/Magic; a singleton gets Setting/Magic;
- * components get none. `magic` is the explicit, stored grant for using
+ * components get none, and neither do the configuration resources listed in
+ * `NO_MAGIC_TYPE_NAMES`/`UNGRANTABLE_TYPE_NAMES` below (see
+ * `permissionActionsFor`). `magic` is the explicit, stored grant for using
  * Magic (AI) on a resource's entries - checked directly server-side
  * (`ai-magic-write.ts`), never derived from create/update/setting at
  * request time. The Role editor only lets it be TURNED ON once one of those
@@ -50,12 +52,58 @@ export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
 
+/** Content types no role permission applies to AT ALL - `permissionActionsFor`
+ * returns `[]`, so the Role editor and the Dashboard's permission summary drop
+ * the row entirely (both already filter on "has at least one action", the same
+ * way components are dropped). `memory` is the only one: it's server-managed
+ * per-account state whose ONLY access path is `routes/memory.ts`
+ * (`/api/memory`), which always scopes to the calling session's own user id and
+ * never consults the content-entries permission model - so a grant on it would
+ * control exactly nothing while still asking an admin to reason about it. */
+const UNGRANTABLE_TYPE_NAMES: ReadonlySet<string> = new Set(["memory"]);
+
+/** Content types that never expose Magic (AI) - configuration rather than
+ * editorial content: credentials (`aiKey`), access control (`role`/`user`),
+ * routing/navigation (`redirect`/`menu`), and the settings singletons
+ * (`systemSettings`/`siteSettings`/`googleVerification`). None of them hold
+ * prose a model should be authoring - an API key, a permission set, a redirect
+ * target, or a verification token is either exact or wrong.
+ *
+ * Matched by `name`, not `id`: the seeded system types have fixed ids, but an
+ * app's own settings singleton (`siteSettings`) gets a generated one, so `name`
+ * is the only key both kinds share. Editorial types keep Magic, including
+ * `seoDefaults` (real meta title/description copy). */
+const NO_MAGIC_TYPE_NAMES: ReadonlySet<string> = new Set([
+  "aiKey",
+  "role",
+  "user",
+  "redirect",
+  "menu",
+  "systemSettings",
+  "siteSettings",
+  "googleVerification",
+]);
+
+/** Whether Magic (AI) applies to this content type at all - a property of the
+ * SCHEMA, checked separately from the `magic` grant. Both are needed: dropping
+ * the `magic` switch from the Role editor alone would still leave the Magic UI
+ * live for a Super Admin, who bypasses every grant. Enforced client-side
+ * (`ContentEntryEditor.tsx`, which also feeds RichText's "Rewrite selection")
+ * and server-side (`routes/ai-magic-write.ts`). */
+export function supportsMagic(target: ContentTypeDefinition): boolean {
+  if (target.kind === "component") return false;
+  if (UNGRANTABLE_TYPE_NAMES.has(target.name)) return false;
+  return !NO_MAGIC_TYPE_NAMES.has(target.name);
+}
+
 /** The exact actions the Role editor and request authorization expose for a
  * content type. Pure and safe to import from client code. */
 export function permissionActionsFor(target: ContentTypeDefinition): PermissionAction[] {
   if (target.kind === "component") return [];
-  if (target.kind === "singleton") return ["setting", "magic"];
-  return ["view", "create", "update", "delete", "magic"];
+  if (UNGRANTABLE_TYPE_NAMES.has(target.name)) return [];
+  const magic: PermissionAction[] = supportsMagic(target) ? ["magic"] : [];
+  if (target.kind === "singleton") return ["setting", ...magic];
+  return ["view", "create", "update", "delete", ...magic];
 }
 
 /** `isSuperAdmin` is a bypass switch, not an ordinary role attribute - it's

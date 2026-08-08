@@ -27,6 +27,7 @@ import {
   type EntryFieldNode,
 } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
+import { supportsMagic } from "../content-types/permissions.js";
 import {
   resolveFieldSide,
   SYSTEM_FIELD_IDS,
@@ -308,7 +309,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // here and, authoritatively, server-side in `ai-magic-write.ts`.
   // Deliberately not folded into `canEdit` itself - that would also gate the
   // Save button/field editability. See `status/role-system-permissions.md`.
-  const canUseMagic = !!type && canAccess(type.id, "magic");
+  // `supportsMagic` is the schema-level half of the same gate: configuration
+  // types (`role`/`user`/`menu`/`redirect`/`aiKey`/the settings singletons)
+  // have no Magic at all, and that has to be checked separately from the grant
+  // - a Super Admin bypasses every grant, so the grant check alone would still
+  // show them the bubble there.
+  const canUseMagic = !!type && supportsMagic(type) && canAccess(type.id, "magic");
   // The RichText "Rewrite selection" button is a second entry point into
   // Magic, separate from the `<MagicChat>` bubble below - same `magic` grant
   // gates both, so `ready` (read by `AiRewriteButton` wherever it renders)
