@@ -2,11 +2,19 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren, CSSProperties } from "preact";
 import { readCachedFile } from "./file-manager-blob-cache.js";
 import {
+  canOptimizeStoredImage,
   canOptimizeUploadImage,
   optimizedUploadName,
   optimizeUploadImage,
+  OPTIMIZE_QUALITY_MIN,
+  OPTIMIZE_QUALITY_MAX,
+  OPTIMIZED_IMAGE_QUALITY,
+  readImageDimensions,
+  renderResizedImage,
 } from "./file-manager-image-optimize.js";
 import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
+import NumberField from "../fields/NumberField.js";
+import TextField from "../fields/TextField.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { useStore } from "../../hooks/useStore.js";
@@ -34,6 +42,7 @@ import {
   CopyIcon,
   GridIcon,
   ListViewIcon,
+  LockIcon,
   MinusIcon,
   MoveIcon,
   PasteIcon,
@@ -44,6 +53,7 @@ import {
   TrashIcon,
   UploadIcon,
   XIcon,
+  type IconProps,
 } from "../icons/index.js";
 import { toast } from "../Toast.js";
 import ConfirmDialog from "../ConfirmDialog.js";
@@ -127,6 +137,28 @@ function writeFolderToUrl(folderId: string | null, replace: boolean) {
   else window.history.pushState(state, "", url);
 }
 
+/** Gates the "Optimize" action to entries `renderResizedImage` can actually
+ * decode/re-encode - the same extension allowlist upload's own optimize step
+ * uses (`canOptimizeStoredImage`), plus the `file` kind check folders don't
+ * carry an `ext` to test in the first place. */
+function canOptimizeEntry(entry: FileEntry): boolean {
+  return entry.kind === "file" && canOptimizeStoredImage(entry.ext);
+}
+
+/** Not part of the generated `icons/index.tsx` set (`scripts/build-icons.mjs`
+ * only pulls from Solar/Lucide) - a one-off "shrink" glyph used solely for
+ * the Optimize menu item below, so it's kept local instead. */
+function OptimizeIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" width="1em" height="1em" aria-hidden="true" {...props}>
+      <path
+        fill="currentColor"
+        d="M8.5 3H6a3 3 0 0 0-3 3v.5a.5.5 0 0 0 1 0V6a2 2 0 0 1 2-2h2.5a.5.5 0 0 0 0-1M3 14a3 3 0 0 0 3 3h3a3 3 0 0 0 3-3v-3a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3zm10.5 3a.5.5 0 0 1 0-1h.5a2 2 0 0 0 2-2v-2.5a.5.5 0 0 1 1 0V14a3 3 0 0 1-3 3zM17 8.5a.5.5 0 0 1-1 0V6a2 2 0 0 0-2-2h-2.5a.5.5 0 0 1 0-1H14a3 3 0 0 1 3 3z"
+      />
+    </svg>
+  );
+}
+
 // --------------------------------------------------------------- More menu
 
 interface MoreMenuProps {
@@ -136,6 +168,10 @@ interface MoreMenuProps {
    * omitted for folders. Renders nothing if every action ends up omitted. */
   onRename?: () => void;
   onReplace?: () => void;
+  /** Omitted for non-optimizable entries (folders, and any file extension
+   * outside `OPTIMIZABLE_IMAGE_EXTENSIONS`) as well as when `source` supports
+   * neither `replace` nor `upload` - see `canOptimizeStoredImage`. */
+  onOptimize?: () => void;
   onCopy?: () => void;
   onMove?: () => void;
   onDelete?: () => void;
@@ -149,6 +185,7 @@ function MoreMenu({
   label,
   onRename,
   onReplace,
+  onOptimize,
   onCopy,
   onMove,
   onDelete,
@@ -167,6 +204,13 @@ function MoreMenu({
       label: "Replace",
       icon: <ReplaceIcon />,
       onClick: onReplace,
+    });
+  if (onOptimize)
+    items.push({
+      type: "item",
+      label: "Optimize",
+      icon: <OptimizeIcon />,
+      onClick: onOptimize,
     });
   if ((onCopy || onMove) && items.length > 0) items.push({ type: "separator" });
   if (onCopy)
@@ -1272,6 +1316,9 @@ interface PreviewDialogProps {
   /** Omitted (hides the action) when `source` doesn't support it. */
   onRename?: (id: string) => void;
   onReplace?: (id: string) => void;
+  /** Further gated on `canOptimizeEntry(entry)` below - unlike `onReplace`,
+   * this doesn't make sense for every file type. */
+  onOptimize?: (id: string) => void;
   onCopy?: (id: string) => void;
   onMove?: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -1331,6 +1378,7 @@ function PreviewDialog({
   onNavigate,
   onRename,
   onReplace,
+  onOptimize,
   onCopy,
   onMove,
   onDelete,
@@ -1416,6 +1464,11 @@ function PreviewDialog({
                 label={entry.name}
                 onRename={onRename && (() => onRename(entry.id))}
                 onReplace={onReplace && (() => onReplace(entry.id))}
+                onOptimize={
+                  onOptimize && canOptimizeEntry(entry)
+                    ? () => onOptimize(entry.id)
+                    : undefined
+                }
                 onCopy={onCopy && (() => onCopy(entry.id))}
                 onMove={onMove && (() => onMove(entry.id))}
                 onDelete={onDelete && (() => onDelete(entry.id))}
@@ -1622,6 +1675,292 @@ function PreviewDialog({
   );
 }
 
+// ------------------------------------------------------------- Optimize
+
+interface OptimizeImageDialogProps {
+  entry: FileEntry | null;
+  onClose: () => void;
+  /** Overwrites `entry`'s own bytes at its current path - keeping its
+   * existing name/extension even if the working bytes ended up WebP.
+   * Omitted when `source.replace` isn't available. */
+  onSave?: (id: string, file: File) => Promise<boolean>;
+  /** Uploads the result as a new file in the current folder. Omitted when
+   * `source.upload` isn't available. */
+  onSaveAs?: (file: File) => Promise<boolean>;
+}
+
+/** Fetches `entry`'s current bytes, lets the user resize it (width/height,
+ * optionally locked to its original aspect ratio - same UX as
+ * `RichTextField/image-menu.tsx`'s "Edit image" dialog) and re-encode to
+ * WebP at a chosen quality, then either overwrites the original in place or
+ * saves the result as a new file. Built on the same decode/resize/encode
+ * primitives (`renderResizedImage`) the upload flow's own optimize step
+ * uses (`file-manager-image-optimize.ts`), just targeting an exact
+ * width/height instead of a max-width to scale down to. */
+function OptimizeImageDialog({ entry, onClose, onSave, onSaveAs }: OptimizeImageDialogProps) {
+  const ref = useDialogSync(entry !== null, onClose);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [width, setWidth] = useState(0);
+  const [height, setHeight] = useState(0);
+  const [lock, setLock] = useState(true);
+  const [quality, setQuality] = useState(OPTIMIZED_IMAGE_QUALITY);
+  /** Set once "Optimize → WebP" has rendered a working result at the
+   * *current* width/height/quality - cleared the moment any of those change,
+   * so it never gets used stale (see the effect below). */
+  const [preview, setPreview] = useState<{ blob: Blob; url: string } | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveAsName, setSaveAsName] = useState("");
+  const naturalRatioRef = useRef<number | null>(null);
+  const originalSizeRef = useRef(0);
+
+  // Loads `entry`'s actual bytes (its `previewUrl` is the raw, full-res
+  // download URL for any non-svg image entry - see `withPreview` in
+  // `routes/storage.ts`) and reads its natural size to seed width/height.
+  useEffect(() => {
+    setSourceFile(null);
+    setLoadError(false);
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+    setQuality(OPTIMIZED_IMAGE_QUALITY);
+    setSaveAsName("");
+    naturalRatioRef.current = null;
+    if (!entry) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(entry.previewUrl ?? "");
+        if (!response.ok) throw new Error("load failed");
+        const blob = await response.blob();
+        const file = new File([blob], entry.name, { type: blob.type || undefined });
+        const dims = await readImageDimensions(file);
+        if (cancelled) return;
+        originalSizeRef.current = file.size;
+        naturalRatioRef.current = dims.height ? dims.width / dims.height : null;
+        setSourceFile(file);
+        setWidth(dims.width);
+        setHeight(dims.height);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [entry?.id]);
+
+  useEffect(() => {
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width, height, quality]);
+
+  const onWidth = (value: number) => {
+    setWidth(value);
+    if (lock && naturalRatioRef.current) {
+      setHeight(Math.max(1, Math.round(value / naturalRatioRef.current)));
+    }
+  };
+  const onHeight = (value: number) => {
+    setHeight(value);
+    if (lock && naturalRatioRef.current) {
+      setWidth(Math.max(1, Math.round(value * naturalRatioRef.current)));
+    }
+  };
+  const onLockToggle = () => {
+    const next = !lock;
+    setLock(next);
+    if (next && naturalRatioRef.current) {
+      setHeight(Math.max(1, Math.round(width / naturalRatioRef.current)));
+    }
+  };
+
+  const handleOptimize = async () => {
+    if (!sourceFile) return;
+    setOptimizing(true);
+    try {
+      const blob = await renderResizedImage(sourceFile, { width, height, format: "webp", quality });
+      setPreview((current) => {
+        if (current) URL.revokeObjectURL(current.url);
+        return { blob, url: URL.createObjectURL(blob) };
+      });
+    } catch {
+      toast.add({ title: "Couldn't optimize this image", type: "error" });
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  /** What Save/Save As actually write: the last "Optimize" result if it's
+   * still current (matches this render's width/height/quality - see the
+   * invalidation effect above), otherwise a plain resize in the source's
+   * own format, computed fresh. */
+  const resolveFinalBlob = async (): Promise<Blob> => {
+    if (preview) return preview.blob;
+    if (!sourceFile) throw new Error("Image not loaded yet.");
+    return renderResizedImage(sourceFile, { width, height });
+  };
+
+  /** A non-empty "Save as new file" name means the user already told us
+   * where the result goes - no separate button needed to confirm that a
+   * second time. Blank name = overwrite the original in place. */
+  const handleSave = async () => {
+    if (!entry) return;
+    const trimmed = saveAsName.trim();
+    setSaving(true);
+    try {
+      const blob = await resolveFinalBlob();
+      if (trimmed) {
+        if (!onSaveAs) return;
+        const ext =
+          blob.type === "image/webp" ? "webp" : blob.type === "image/png" ? "png" : blob.type === "image/jpeg" ? "jpg" : (entry.ext ?? "png");
+        const finalName = trimmed.toLowerCase().endsWith(`.${ext}`) ? trimmed : `${trimmed}.${ext}`;
+        const file = new File([blob], finalName, { type: blob.type });
+        if (await onSaveAs(file)) onClose();
+      } else {
+        if (!onSave) return;
+        const file = new File([blob], entry.name, { type: blob.type });
+        if (await onSave(entry.id, file)) onClose();
+      }
+    } catch {
+      toast.add({ title: "Couldn't process this image", type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const busy = optimizing || saving;
+  const qualityPercent = Math.round(
+    ((quality - OPTIMIZE_QUALITY_MIN) / (OPTIMIZE_QUALITY_MAX - OPTIMIZE_QUALITY_MIN)) * 100,
+  );
+
+  return (
+    <dialog ref={ref} class="md file-optimize-dialog" aria-label="Optimize image">
+      {entry && (
+        <>
+          <header>
+            <h3>Optimize image</h3>
+            <p>{entry.name}</p>
+          </header>
+
+          {loadError ? (
+            <p class="error">Couldn't load this image - try again.</p>
+          ) : !sourceFile ? (
+            <p class="muted">Loading…</p>
+          ) : (
+            <div class="stack">
+              <div class="file-optimize-preview">
+                <img src={preview?.url ?? entry.previewUrl} alt="" />
+              </div>
+
+              <div class="row" style={{ alignItems: "flex-end" }}>
+                <NumberField
+                  label="Width"
+                  value={width}
+                  onChange={onWidth}
+                  min={1}
+                  placeholder="e.g. 1024"
+                  disabled={busy}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+                <NumberField
+                  label="Height"
+                  value={height}
+                  onChange={onHeight}
+                  min={1}
+                  placeholder="e.g. 768"
+                  disabled={busy}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+                <button
+                  type="button"
+                  class="outline icon lg"
+                  aria-label={lock ? "Unlock aspect ratio" : "Lock aspect ratio"}
+                  data-tooltip={lock ? "Unlock aspect ratio" : "Lock aspect ratio"}
+                  aria-pressed={lock}
+                  disabled={busy}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={onLockToggle}
+                >
+                  <LockIcon />
+                </button>
+              </div>
+
+              <div class="field">
+                <label for="file-optimize-quality">
+                  WebP quality{preview ? ` — applied at ${quality.toFixed(2)}` : ""}
+                </label>
+                <input
+                  id="file-optimize-quality"
+                  type="range"
+                  min={OPTIMIZE_QUALITY_MIN}
+                  max={OPTIMIZE_QUALITY_MAX}
+                  step={0.01}
+                  value={quality}
+                  disabled={busy}
+                  style={{ "--value": qualityPercent }}
+                  onInput={(event) => setQuality(Number((event.currentTarget as HTMLInputElement).value))}
+                />
+              </div>
+
+              <div class="row file-optimize-actions">
+                <button
+                  type="button"
+                  class="outline"
+                  disabled={busy}
+                  aria-busy={optimizing}
+                  onClick={handleOptimize}
+                >
+                  Optimize → WebP
+                </button>
+                {preview && (
+                  <small class="muted">
+                    {formatBytes(originalSizeRef.current)} → {formatBytes(preview.blob.size)}
+                  </small>
+                )}
+              </div>
+
+              {onSaveAs && (
+                <TextField
+                  label="Save as new file"
+                  value={saveAsName}
+                  onChange={setSaveAsName}
+                  placeholder={preview ? optimizedUploadName(entry.name) : entry.name}
+                  helperText={
+                    saveAsName.trim()
+                      ? "Saves as a new file instead of overwriting the original."
+                      : "Leave blank to overwrite the original."
+                  }
+                  disabled={busy}
+                />
+              )}
+            </div>
+          )}
+
+          <footer>
+            <button type="button" class="outline" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy || !sourceFile || (saveAsName.trim() ? !onSaveAs : !onSave)}
+              aria-busy={saving}
+              onClick={handleSave}
+            >
+              Save
+            </button>
+          </footer>
+        </>
+      )}
+    </dialog>
+  );
+}
+
 // ---------------------------------------------------------------- Main
 
 /**
@@ -1714,6 +2053,7 @@ export default function FileManager({
   const previewIdRef = useRef(previewId);
   previewIdRef.current = previewId;
   const [renameId, setRenameId] = useState<string | null>(null);
+  const [optimizeId, setOptimizeId] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<MoveCopyState>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -2253,27 +2593,14 @@ export default function FileManager({
     }
     replaceInputRef.current?.click();
   };
-  const handleReplaceFile = async (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    const id = replaceTargetId.current;
-    input.value = "";
-    if (!file || !id || !source.replace) return;
+  /** Overwrites `id`'s bytes at its *same* path with `file` - shared by the
+   * hidden-input Replace flow below (`handleReplaceFile`) and the Optimize
+   * dialog's "Save" action. Returns whether it succeeded, same convention as
+   * `performMove`, so a caller that renders its own dialog (Optimize) can
+   * decide whether to close it rather than getting a thrown exception. */
+  const performReplace = async (id: string, file: File): Promise<boolean> => {
+    if (!source.replace) return false;
     const target = entries.find((entry) => entry.id === id);
-    const targetExt = target?.ext?.toLowerCase();
-    const fileExt = file.name.includes(".")
-      ? file.name.split(".").pop()!.toLowerCase()
-      : undefined;
-    // The `accept` filter on the input is a soft hint (some pickers still let
-    // "All files" through), so the extension is re-checked here too.
-    if (targetExt && fileExt !== targetExt) {
-      toast.add({
-        title: `Replacement must be a .${targetExt} file`,
-        type: "error",
-      });
-      return;
-    }
-
     // Replace overwrites bytes at the *same* path - `id` doesn't churn, so an
     // optimistic patch (client-known size + a real object URL for images)
     // can go straight into `entries` before the request even starts.
@@ -2301,13 +2628,63 @@ export default function FileManager({
       setEntries((current) =>
         current.map((entry) => (entry.id === id ? updated : entry)),
       );
+      return true;
     } catch {
       toast.add({ title: "Couldn't replace - try again", type: "error" });
       await revertAfterFailure([currentFolderId]);
+      return false;
     } finally {
       setBusy(false);
       if (optimisticPreview?.startsWith("blob:"))
         URL.revokeObjectURL(optimisticPreview);
+    }
+  };
+
+  const handleReplaceFile = async (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    const id = replaceTargetId.current;
+    input.value = "";
+    if (!file || !id || !source.replace) return;
+    const target = entries.find((entry) => entry.id === id);
+    const targetExt = target?.ext?.toLowerCase();
+    const fileExt = file.name.includes(".")
+      ? file.name.split(".").pop()!.toLowerCase()
+      : undefined;
+    // The `accept` filter on the input is a soft hint (some pickers still let
+    // "All files" through), so the extension is re-checked here too.
+    if (targetExt && fileExt !== targetExt) {
+      toast.add({
+        title: `Replacement must be a .${targetExt} file`,
+        type: "error",
+      });
+      return;
+    }
+    await performReplace(id, file);
+  };
+
+  /** Uploads `file` into the current folder as a brand-new entry - backs the
+   * Optimize dialog's "Save As" action. Same boolean-return convention as
+   * `performReplace`/`performMove`; surfaces the server's own message (e.g.
+   * an `already_exists` collision) rather than a generic one, since unlike
+   * `submitUpload`'s batch flow there's exactly one file and one likely
+   * failure mode worth naming. */
+  const performSaveAs = async (file: File): Promise<boolean> => {
+    if (!source.upload) return false;
+    const folderId = currentFolderId;
+    setBusy(true);
+    try {
+      const uploaded = await source.upload(folderId, [file]);
+      setEntries((current) => [...current, ...uploaded]);
+      return true;
+    } catch (error) {
+      toast.add({
+        title: error instanceof Error ? error.message : "Couldn't save - try again",
+        type: "error",
+      });
+      return false;
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -2425,6 +2802,10 @@ export default function FileManager({
       ? "/"
       : `/${breadcrumb.map((entry) => entry.name).join("/")}`;
 
+  const optimizeEntry = optimizeId
+    ? (entries.find((entry) => entry.id === optimizeId) ?? null)
+    : null;
+
   const renderMore = (entry: FileEntry) => (
     <MoreMenu
       label={entry.name}
@@ -2433,6 +2814,11 @@ export default function FileManager({
         entry.kind === "folder" || !source.replace
           ? undefined
           : () => requestReplace(entry.id)
+      }
+      onOptimize={
+        canOptimizeEntry(entry) && (source.replace || source.upload)
+          ? () => setOptimizeId(entry.id)
+          : undefined
       }
       onCopy={source.copy ? () => requestCopy([entry.id]) : undefined}
       onMove={source.move ? () => requestMove([entry.id]) : undefined}
@@ -2591,6 +2977,14 @@ export default function FileManager({
         onNavigate={setPreviewId}
         onRename={source.rename ? (id) => setRenameId(id) : undefined}
         onReplace={source.replace ? requestReplace : undefined}
+        onOptimize={
+          source.replace || source.upload
+            ? (id) => {
+                setOptimizeId(id);
+                setPreviewId(null);
+              }
+            : undefined
+        }
         onCopy={
           source.copy
             ? (id) => {
@@ -2608,6 +3002,13 @@ export default function FileManager({
             : undefined
         }
         onDelete={source.remove ? (id) => setPendingDeleteIds([id]) : undefined}
+      />
+
+      <OptimizeImageDialog
+        entry={optimizeEntry}
+        onClose={() => setOptimizeId(null)}
+        onSave={source.replace ? performReplace : undefined}
+        onSaveAs={source.upload ? performSaveAs : undefined}
       />
 
       <ConfirmDialog

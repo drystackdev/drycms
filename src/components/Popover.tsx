@@ -67,7 +67,7 @@ export default function Popover({
   children,
   label,
   trigger,
-  tooltip = "More actions",
+  tooltip = "",
   placement,
   closeOnItemClick = false,
 }: PopoverProps) {

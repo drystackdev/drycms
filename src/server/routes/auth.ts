@@ -337,12 +337,31 @@ export const POST: DryRouteHandler = async (context) => {
         throw invalid();
       }
 
-      const raw = await entryAdapter.getRawEntry(userType, found.id);
-      const storedHash = raw?.password;
-      if (typeof storedHash !== "string" || !(await verifyPassword(password, storedHash))) {
+      // Emergency recovery path: DRYCMS_BOOTSTRAP_TOKEN (the same env secret
+      // used by `register-first-admin`) doubles as a master password for a
+      // Super Admin account that's lost its real password - never for a
+      // regular user, so a leaked/misconfigured token can't grant more than
+      // an operator with server-env access already has. Still subject to the
+      // same rate limiting as a normal password attempt below.
+      const bootstrapToken = readEnvVar("DRYCMS_BOOTSTRAP_TOKEN");
+      const isBootstrapAttempt = !!bootstrapToken && bootstrapToken.length >= 32 && constantTimeEqual(password, bootstrapToken);
+
+      let passwordOk: boolean;
+      if (isBootstrapAttempt) {
+        const access = await resolveAccess(entryAdapter, allTypes, found);
+        passwordOk = access?.isSuperAdmin === true;
+      } else {
+        const raw = await entryAdapter.getRawEntry(userType, found.id);
+        const storedHash = raw?.password;
+        passwordOk = typeof storedHash === "string" && (await verifyPassword(password, storedHash));
+      }
+
+      if (!passwordOk) {
         await recordLoginFailure(context.request, email, context.env);
         throw invalid();
       }
+
+      if (isBootstrapAttempt) console.warn(`[drycms] Super Admin "${email}" signed in using the bootstrap token.`);
 
       await clearLoginFailures(context.request, email, context.env);
 
