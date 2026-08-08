@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
@@ -136,6 +136,11 @@ export default function PageBuild() {
   const [unmatchedTemplates, setUnmatchedTemplates] = useState<UnmatchedTemplate[]>([]);
   const [statusByPath, setStatusByPath] = useState<Map<string, PageStatusRow>>(new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Flips once after the load effect below finishes (success OR failure) -
+  // the auto-build effect needs a signal distinct from "sourceByPath/targets
+  // are non-empty", since a project with zero buildable pages would never
+  // otherwise tell "still loading" apart from "loaded, nothing to build".
+  const [ready, setReady] = useState(false);
   const [building, setBuilding] = useState<Set<string>>(new Set());
   const [origin, setOrigin] = useState(() => window.location.origin);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
@@ -226,6 +231,8 @@ export default function PageBuild() {
         await reloadStatus();
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Failed to load pages.");
+      } finally {
+        setReady(true);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,12 +244,16 @@ export default function PageBuild() {
     return [...new Set([...fromTargets, ...fromRegistry])].sort();
   }, [targets, statusByPath]);
 
-  async function buildOne(pathname: string) {
-    if (!sourceByPath || !allTypes || !assetHrefs) return;
+  /** Returns whether the build actually published - the auto-build effect
+   * below needs a real success/failure signal per path (to report back to
+   * whoever asked for the rebuild), not just the toast this already shows a
+   * human for the same outcome. */
+  async function buildOne(pathname: string): Promise<boolean> {
+    if (!sourceByPath || !allTypes || !assetHrefs) return false;
     const target = targets.get(pathname);
     if (!target) {
       toast.add({ type: "error", title: `"${pathname}" no longer has a page.tsx`, description: "Its source was removed (or a dynamic entry's slug was deleted) - build skipped." });
-      return;
+      return false;
     }
     setBuilding((current) => new Set(current).add(pathname));
     try {
@@ -270,9 +281,11 @@ export default function PageBuild() {
       await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname });
       toast.add({ type: "success", title: `Built "${pathname}"` });
       await reloadStatus();
+      return true;
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
       toast.add({ type: "error", title: `Failed to build "${pathname}"`, description: message });
+      return false;
     } finally {
       setBuilding((current) => {
         const next = new Set(current);
@@ -285,6 +298,36 @@ export default function PageBuild() {
   async function buildAll() {
     for (const pathname of pathnames) await buildOne(pathname);
   }
+
+  // Headless rebuild trigger (mục 12's "Sau saveAll() thì chạy build cho
+  // trang hiện tại + trang phụ thuộc") - `overlay.ts`'s `rebuildAffectedPages`
+  // points a hidden iframe at this same page with `?autoBuild=/a,/b` instead
+  // of reimplementing the load-targets-and-compile pipeline a second time
+  // for a public-site bundle that has no business importing Sucrase/Tailwind.
+  // Guarded by `ranAutoBuild` so a later, unrelated re-render (e.g. `origin`
+  // changing) can never replay it.
+  const ranAutoBuild = useRef(false);
+  useEffect(() => {
+    if (!ready || ranAutoBuild.current) return;
+    const requested = new URLSearchParams(window.location.search).get("autoBuild");
+    if (!requested) return;
+    ranAutoBuild.current = true;
+    void (async () => {
+      const built: string[] = [];
+      const failed: string[] = [];
+      for (const pathname of requested.split(",").filter(Boolean)) {
+        if (await buildOne(pathname)) built.push(pathname);
+        else failed.push(pathname);
+      }
+      if (window.parent !== window) {
+        window.parent.postMessage(
+          { type: "vei:build-done", ok: failed.length === 0, built, failed },
+          window.location.origin,
+        );
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   async function saveScheduleInterval() {
     if (scheduleIntervalMinutes === null) return;

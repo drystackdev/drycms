@@ -90,6 +90,25 @@ async function handleList(context: Parameters<DryRouteHandler>[0]): Promise<Resp
   });
 }
 
+/** `?byResource=a,b` - "what needs rebuilding now that these content types
+ * changed" (mục 5's `_page_deps`, `PagesRegistryAdapter.listPathsByResource`).
+ * The VEI overlay's `saveAll()` is the caller (`overlay.ts`'s
+ * `rebuildAffectedPages` - mục 12's "Sau saveAll() thì chạy build cho trang
+ * hiện tại + trang phụ thuộc"): it only knows which content TYPES it just
+ * saved, not which pages read them, and has no business querying `_page_deps`
+ * directly from the public bundle - this is the one HTTP hop that lets it
+ * ask. Comma-joined rather than repeated `?byResource=` params - pathnames
+ * and content-type names can't contain a comma, so splitting is unambiguous. */
+async function handleByResource(context: Parameters<DryRouteHandler>[0], raw: string): Promise<Response> {
+  const { pagesRegistry } = getContentAdapters(context);
+  const resources = [...new Set(raw.split(",").map((r) => r.trim()).filter(Boolean))];
+  const paths = new Set<string>();
+  for (const resource of resources) {
+    for (const p of await pagesRegistry.listPathsByResource(resource)) paths.add(p);
+  }
+  return jsonResponse({ paths: [...paths] });
+}
+
 /** `?path=` - reads back what's currently live for a path without going
  * through the (still dark) public serve path (QA/admin tooling). No
  * `?path=` at all - the list above, for the admin "Build" page. Query
@@ -97,6 +116,8 @@ async function handleList(context: Parameters<DryRouteHandler>[0]): Promise<Resp
  * natural "file tree" shape to hang a path off of. */
 export const GET: DryRouteHandler = async (context) => {
   try {
+    const byResource = context.url.searchParams.get("byResource");
+    if (byResource) return await handleByResource(context, byResource);
     const pathname = context.url.searchParams.get("path");
     if (!pathname) return await handleList(context);
     if (!pathname.startsWith("/")) {

@@ -5682,11 +5682,14 @@
 
       &:hover {
         background-color: var(--dry-muted);
+        & button {
+          background-color: transparent;
+        }
       }
 
+
       &.selected {
-        background-color: var(--dry-primary-lighter);
-        color: var(--dry-primary-darker);
+        background-color: var(--dry-accent);
         font-weight: 600;
       }
 

@@ -397,7 +397,9 @@ prod **vẫn trả HTML cũ khi stale** (dưới đây) - nên toàn bộ phép 
   VEI chạy trên HTML tĩnh + overlay patch DOM phía client -
   `applyPendingDrafts()` đã làm đúng việc đó rồi. Sau `saveAll()` thì chạy
   build cho trang hiện tại + trang phụ thuộc, xong mới
-  `window.location.reload()`. Ở dev, VEI vẫn bypass + SSR như cũ.
+  `window.location.reload()`. Ở dev, VEI vẫn bypass + SSR như cũ. **✅ Làm
+  xong + live-verify 2026-08-09** (mục "Giai đoạn" bên dưới, mục 7 phần
+  cuối) - `overlay.ts`'s `rebuildAffectedPages()`.
 - Stale (version lệch) thì **vẫn trả HTML cũ**, không 404. Trang cũ tốt hơn
   trang mất. Staleness báo trong admin, không báo cho khách.
 - Rollback = copy một object bất biến cũ đè lên key live + cập nhật
@@ -743,6 +745,72 @@ thiết).
      GỐC trước khi sửa gì - baseline cũng fail y hệt). Suite đầy đủ: 0 fail
      mới, cùng nhóm fail cũ không liên quan (giảm từ 13 xuống 12 vì
      `pages-cache.test.ts` bị xoá cùng file).
+
+8. **✅ mục 12 - "Sau `saveAll()` thì chạy build cho trang hiện tại + trang
+   phụ thuộc" (2026-08-09).** Phần còn thiếu của mục 7 ở trên - cutover phía
+   ĐỌC đã xong, nhưng chưa có gì tự động cập nhật trang tĩnh sau một lần VEI
+   save; thiếu nó thì site tĩnh "cũ" mãi cho tới khi ai đó bấm Build tay.
+   - `pages-build.ts` GET thêm nhánh `?byResource=a,b` (dùng lại
+     `PagesRegistryAdapter.listPathsByResource`, đã có sẵn từ mục 5, chưa
+     route nào gọi tới) - trả union các path phụ thuộc vào những resource đó,
+     gate sẵn theo `system-build` (cùng cờ mọi method khác của route này đã
+     có, không cần sửa `handler.ts`).
+   - `PageBuild.tsx` thêm hiệu ứng đọc `?autoBuild=/a,/b` trên URL của chính
+     nó: một khi `sourceByPath`/`allTypes`/`assetHrefs`/`targets` đã sẵn sàng
+     (cờ `ready` mới, tách khỏi suy luận từ dữ liệu rỗng - trang không có gì
+     để build vẫn phải phân biệt được với "đang load"), tự chạy `buildOne()`
+     cho từng path rồi `postMessage({type:"vei:build-done"})` lên
+     `window.parent`. `buildOne` đổi sang trả `Promise<boolean>` (trước đó
+     nuốt lỗi, không có tín hiệu thành/bại cho code gọi nó).
+   - `overlay.ts`'s `saveAll()`: sau vòng lặp `saveTarget` (không đổi), thêm
+     `rebuildAffectedPages(resources)` - fetch `?byResource=`, rồi TRỎ LẠI
+     CHÍNH iframe ẩn `agent` mà `saveTarget` vừa dùng (không tạo iframe mới)
+     sang `page-build?autoBuild=...`, đợi `vei:build-done` (timeout
+     `20s + 15s×số trang`, giống tinh thần timeout 30s có sẵn của
+     `saveTarget`) rồi mới `window.location.reload()`. Không bao giờ throw -
+     thiếu `system-build`, mất mạng, build kẹt đều chỉ khiến hàm này resolve
+     và `saveAll` rơi về hành vi cũ (reload trần, không rebuild).
+   - **Bẫy thật tìm thấy khi LIVE-VERIFY, không phải lúc viết code:** cả 2
+     nửa (`?byResource=`, `?autoBuild=`) đều đúng khi gọi tay/mở thẳng URL,
+     nhưng gọi từ trong `saveAll()` thì trang reload gần như ngay lập tức -
+     quá nhanh để một build thật (compile + render + Tailwind trong iframe
+     cô lập) kịp chạy xong. Nguyên nhân: `saveTarget`'s save-qua-iframe-ẩn
+     khiến `ContentEntryEditor.handleSave` xoá draft khỏi `entry-draft-db`,
+     và việc xoá đó phát `BroadcastChannel` "delete" - CHÍNH overlay này
+     cũng đang lắng nghe kênh đó (`subscribeEntryDraftChanges`, để đồng bộ
+     multi-tab) và trước giờ vẫn `window.location.reload()` ngay khi thấy
+     draft của 1 target đang hiện bị xoá, KHÔNG phân biệt được "xoá vì tab
+     khác save" với "xoá vì CHÍNH `saveAll()` này đang chạy". Trước mục 12
+     race này vô hại (`saveAll()` cũ cũng reload ngay sau vòng lặp, kết quả
+     giống nhau) - mục 8 mới làm lộ ra vì giờ có việc Ý NGHĨA cần chạy giữa
+     lúc save xong và lúc reload. Sửa bằng cờ `saveAllInFlight` (đặt `true`
+     trước vòng lặp save, `false` sau khi `rebuildAffectedPages` xong hoặc
+     khi có target lỗi) - listener bỏ qua reload-của-chính-nó trong lúc cờ
+     bật, các cross-tab case thật (tab khác save/discard) không đổi gì.
+   - **Xác nhận sống dưới `wrangler dev` thật:** viết thêm 1 field `dry()`-
+     bound thật (`dryBind(post.$.title)`) vào `page.tsx` gốc (cả bản trong
+     git lẫn bản trong `pagesSourceStorage`, 2 nơi tách biệt hoàn toàn - xem
+     mục 13/quyết định #6; VEI's SSR sống đọc `import.meta.glob` ở git, build
+     tĩnh đọc `pagesSourceStorage`, KHÔNG có gì tự động đồng bộ 2 nơi này)
+     rồi build lại worker để VEI thấy marker thật. Bấm "Edit content" →
+     sửa Title qua dialog thật → Cancel (không mất draft) → bấm Save ở dock →
+     đợi (build thật mất ~8-12s do Tailwind compile trong iframe cô lập, lúc
+     đầu tưởng nhầm là fail vì kiểm tra sớm quá) → `curl` ẩn danh trang `/`
+     thấy ĐÚNG title vừa sửa, không cần bấm Build tay. Dọn dẹp: revert cả 2
+     bản `page.tsx` (git `checkout --`, Page Editor ghi lại nguyên văn), sửa
+     lại title blogPost về `"Hello World"`, Build all lại để trang tĩnh khớp
+     nguyên trạng, rebuild worker lần cuối cho khớp git.
+   - 3 test mới `pages-build.test.ts` (route `?byResource=`, SQLite registry
+     thật qua `createPagesRegistryAdapter`, không mock). Suite đầy đủ sau
+     thay đổi: 1072 pass / 12 fail (cùng nhóm fail cũ không liên quan, tăng 3
+     so với trước vì test mới).
+   - **Phát hiện phụ, CHƯA sửa (ngoài phạm vi mục này):** một trang dùng
+     `dry()`/`params()` ở top-level thì bản ĐÃ BUILD hydrate lỗi
+     `ReferenceError: dry/params is not defined` (client bundle không expose
+     2 global đó cho code đã compile) - lỗi console, không chặn SSR/VEI/rebuild
+     (hydration fail không ảnh hưởng gì tới marker/nội dung tĩnh), nhưng là
+     bug thật, tái hiện được trên `/` lẫn `/blogs/[slug]`. Ai động tới
+     `hydrate-built.ts`/`compileEsmAsset` sau này nên biết.
 
 **Quyết định mới #8 (chốt trong lúc build, không có trong bản plan gốc):**
 mọi capability trên được xây **additive và dark** cho tới khi có ít nhất 1

@@ -513,6 +513,12 @@ function main(): void {
   // CURRENT value at click/drag time, not be re-rendered when it changes.
   let mode: EditorMode = readStoredMode();
 
+  // Guards the cross-tab listener below from racing `saveAll()`'s own
+  // sequencing (see that listener's doc comment for why the race exists at
+  // all - `saveTarget`'s own successful saves discard drafts through the
+  // very same BroadcastChannel this overlay itself listens on).
+  let saveAllInFlight = false;
+
   let dock!: EditingDockHandle;
   render(
     h(EditingDock, {
@@ -611,6 +617,15 @@ function main(): void {
    * Never torn down: this overlay runs for the page's whole lifetime (an
    * MPA - there's no unmount to clean it up on), same as every other
    * `window.addEventListener` in this file.
+   *
+   * `saveAllInFlight` guards a real race, found live testing the rebuild
+   * step below: `saveTarget` replays each save through the SAME
+   * `entry-draft-db` a genuinely different tab would use, so THIS overlay's
+   * own `saveAll()` loop discarding a draft broadcasts a "delete" that this
+   * very listener also receives - and would otherwise reload immediately,
+   * mid-loop, well before `saveAll` ever reaches `rebuildAffectedPages`.
+   * Skipping the reload here while `saveAll` is running is safe: `saveAll`
+   * unconditionally reloads itself once it (and the rebuild) finish.
    */
   subscribeEntryDraftChanges((message) => {
     void refreshPreviewCount();
@@ -618,7 +633,7 @@ function main(): void {
     if (message.type === "put") {
       const target = targets.find((candidate) => draftKeyFor(candidate) === message.record.key);
       if (target) applyDraftRecord(target, message.record);
-    } else if (targets.some((candidate) => draftKeyFor(candidate) === message.key)) {
+    } else if (!saveAllInFlight && targets.some((candidate) => draftKeyFor(candidate) === message.key)) {
       window.location.reload();
     }
   });
@@ -799,6 +814,65 @@ function main(): void {
     });
   }
 
+  /**
+   * `plans/app-r2.md` mục 12: "Sau saveAll() thì chạy build cho trang hiện
+   * tại + trang phụ thuộc, xong mới window.location.reload()." Prod no
+   * longer renders live (mục 12's cutover), so a save that stops here would
+   * publish correctly to the database yet leave every static page that reads
+   * it showing the OLD content until someone remembers to click Build.
+   *
+   * Reuses `agent` - the same hidden frame `saveTarget` just finished with -
+   * pointed at Page Build's own pipeline instead of the entry editor.
+   * Nothing here re-implements compiling/rendering/Tailwind for the public
+   * bundle to carry: that whole pipeline already runs, tested, inside the
+   * admin route this loads (`PageBuild.tsx`'s `?autoBuild=` effect), which is
+   * a separate lazy chunk that only ever loads inside this hidden iframe.
+   *
+   * Never throws and never blocks the reload on more than a bounded wait:
+   * missing `system-build` (403 on the lookup below), an offline network, a
+   * stuck build - every failure just resolves, and `saveAll` falls back to
+   * its pre-existing plain-reload behavior either way.
+   */
+  async function rebuildAffectedPages(resources: string[]): Promise<void> {
+    if (resources.length === 0) return;
+    let paths: string[];
+    try {
+      const response = await fetch(
+        `${(config as VeiConfig).path}/api/pages-build?byResource=${encodeURIComponent(resources.join(","))}`,
+        { credentials: "same-origin" },
+      );
+      if (!response.ok) return;
+      const body = (await response.json()) as { paths?: string[] };
+      paths = body.paths ?? [];
+    } catch {
+      return;
+    }
+    if (paths.length === 0) return;
+
+    dock.setStatus(`Publishing ${paths.length} ${paths.length === 1 ? "page" : "pages"}…`);
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        window.removeEventListener("message", onMessage);
+        clearTimeout(timer);
+        resolve();
+      };
+      const onMessage = (event: MessageEvent) => {
+        if (
+          event.origin !== window.location.origin ||
+          event.source !== agent.contentWindow
+        )
+          return;
+        const message = event.data as { type?: string } | null;
+        if (message?.type === "vei:build-done") done();
+      };
+      // Several pages, each compiling Tailwind in its own isolated iframe -
+      // budget more than saveTarget's single-entry 30s, scaled by count.
+      const timer = setTimeout(done, 20000 + paths.length * 15000);
+      window.addEventListener("message", onMessage);
+      agent.src = `${(config as VeiConfig).path}/page-build?autoBuild=${encodeURIComponent(paths.join(","))}`;
+    });
+  }
+
   async function saveAll(): Promise<void> {
     const targets = await pendingTargets();
     if (targets.length === 0) {
@@ -806,12 +880,14 @@ function main(): void {
       return;
     }
     dock.setSaving(true);
+    saveAllInFlight = true;
     let failed = 0;
     for (const [index, target] of targets.entries()) {
       dock.setStatus(`Saving ${target.type} (${index + 1}/${targets.length})`);
       if (!(await saveTarget(target))) failed += 1;
     }
     if (failed > 0) {
+      saveAllInFlight = false;
       dock.setStatus(`${failed}/${targets.length} entries failed to save`);
       dock.setSaving(false);
       // The entries that DID succeed had their drafts discarded already
@@ -821,6 +897,8 @@ function main(): void {
       void refreshPreviewCount();
       return;
     }
+    await rebuildAffectedPages([...new Set(targets.map((target) => target.type))]);
+    saveAllInFlight = false;
     // The page has to come back from the server: `pages-cache` has already
     // expired itself (every touched type's `getResourceVersion` moved), and
     // the preview patches are DOM-only.

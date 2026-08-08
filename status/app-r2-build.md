@@ -1,4 +1,4 @@
-# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4/6 core + mục 7/8/9/10/12/13/14 - LIVE CUTOVER DONE, code editor DONE
+# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4/6 core + mục 7/8/9/10/12/13/14 - LIVE CUTOVER DONE (read+write), code editor DONE
 
 ## Plan
 
@@ -629,6 +629,88 @@ New test file `routes/pages-source.test.ts` (13 tests, mirroring
 `page-components.test.ts`'s own structure almost exactly). Full suite: 0 new
 failures, same 12 pre-existing ones.
 
+## Update 2026-08-09, part 8: mục 12's remaining piece - rebuild-on-save
+
+The one explicit gap left in mục 12's own wording after part 6's cutover:
+"Sau `saveAll()` thì chạy build cho trang hiện tại + trang phụ thuộc, xong
+mới `window.location.reload()`." Part 6 shipped the READ side (prod serves
+`built/live/*`) but never wired anything to make a VEI save actually refresh
+what anonymous visitors see - without this, every content edit made the
+static site silently stale until someone remembered to click Build.
+
+- `routes/pages-build.ts` GET gained a `?byResource=a,b` branch - unions
+  `PagesRegistryAdapter.listPathsByResource(resource)` (already existed
+  since mục 5, never had a caller) across the given resource names.
+  Inherits the route's existing blanket `system-build` gate for free (no
+  `handler.ts` change needed).
+- `PageBuild.tsx` gained a headless `?autoBuild=/a,/b` mode: once its normal
+  load effect finishes (new `ready` flag, set in a `finally` - needed
+  because "no pages to build" and "still loading" both look like an empty
+  `targets` map otherwise), it runs `buildOne()` for just those paths and
+  `postMessage`s `{type:"vei:build-done", ok, built, failed}` to
+  `window.parent`. `buildOne` now returns `Promise<boolean>` instead of
+  swallowing its own success/failure silently.
+- `overlay.ts`'s `saveAll()`: after the existing `saveTarget` loop, a new
+  `rebuildAffectedPages(resources)` fetches `?byResource=`, then reuses the
+  SAME hidden `agent` iframe `saveTarget` just finished with (no new iframe)
+  to load `page-build?autoBuild=...`, awaits `vei:build-done` (timeout
+  `20s + 15s per page`), THEN reloads. Every failure mode (no
+  `system-build`, offline, a stuck build) just resolves instead of
+  throwing, so `saveAll` falls back to its exact pre-existing plain-reload
+  behavior - the new step can only add a rebuild, never break a save.
+- **Real bug found live, not while writing the code:** both halves worked
+  correctly when exercised directly (manual fetch, opening
+  `page-build?autoBuild=` as a top-level page), but calling them from
+  inside `saveAll()` reloaded almost instantly - far too fast for a real
+  build (Sucrase compile + render + an isolated-iframe Tailwind pass) to
+  have run. Root cause: `saveTarget` saves through the SAME hidden iframe
+  by driving the real `ContentEntryEditor`, whose successful save discards
+  the entry's draft from `entry-draft-db` - and that discard broadcasts a
+  `BroadcastChannel` "delete" that THIS SAME overlay's own
+  `subscribeEntryDraftChanges` cross-tab listener also receives, reloading
+  immediately with no awareness that `saveAll()` itself is still mid-flight.
+  Harmless before this update (the old `saveAll()` also reloaded right after
+  its save loop, same outcome either way) - only became a real bug once
+  something MEANINGFUL needed to happen between the save loop and the
+  reload. Fixed with a `saveAllInFlight` guard flag (true for the duration
+  of `saveAll()`, including the rebuild step) that the cross-tab listener
+  now checks before reloading - genuine cross-tab saves/discards (a
+  DIFFERENT tab or session) are completely unaffected.
+- **Verified live end-to-end under `wrangler dev`:** added one real
+  `dry()`-bound field (`dryBind(post.$.title)`) to the root page in BOTH
+  places that need it - the repo's `src/apps/pages/page.tsx` (what
+  `import.meta.glob` bundles into the worker for VEI's live-SSR pipeline)
+  and `pagesSourceStorage` via Page Editor (what the browser build pipeline
+  reads) - these are two genuinely separate stores (quyết định #6/mục 13),
+  confirmed live: editing only the `pagesSourceStorage` copy left VEI
+  rendering the OLD bundled page with zero markers, since a `wrangler dev`
+  worker bundle freezes `import.meta.glob` at build time. After rebuilding
+  the worker with both copies aligned: entered VEI, edited the blog post's
+  title through the real field dialog, Cancelled (kept the draft), clicked
+  the dock's Save, waited (~8-12s for the real rebuild - checking too early
+  twice in a row is what surfaced the race above), then `curl`'d the page
+  with NO cookies at all and got the new title back, byte-correct, with no
+  manual Build click. Cleaned up afterward: reverted both `page.tsx` copies
+  (`git checkout --` for the repo file, retyped verbatim through Page Editor
+  for the storage copy), reset the blog post's title back to "Hello World",
+  rebuilt both pages once more so the static output matches the reverted
+  source, and did a final worker rebuild so the running `wrangler dev`
+  matches git exactly.
+- 3 new tests in `routes/pages-build.test.ts` (the `?byResource=` branch,
+  against a real SQLite `PagesRegistryAdapter`, no mocking). Full suite:
+  1072 passed / 12 failed (same pre-existing, unrelated group - +3 vs. part
+  7's count, entirely the new tests), 0 typecheck errors.
+- **Found but NOT fixed (out of scope for this piece):** any page whose
+  `page.tsx` uses the `dry()`/`params()` ambient globals throws
+  `ReferenceError: dry/params is not defined` during CLIENT hydration of a
+  BUILT page (`hydrate-built.ts`'s compiled bundle doesn't expose them) -
+  reproduced on both `/` and `/blogs/[slug]`. Console-only, doesn't block
+  SSR, VEI, or the rebuild-on-save path above (hydration failing doesn't
+  affect already-rendered static content or marker-based click-to-edit),
+  but it's a real gap for anyone relying on client-side interactivity on a
+  built page. Whoever next touches `hydrate-built.ts`/`compileEsmAsset`
+  should know about it.
+
 ## Speed
 
 Single long session, 2026-08-09 (spanning a context-window compaction
@@ -636,22 +718,26 @@ partway through mục 7 - work continued seamlessly from the saved summary).
 Typecheck (`bun run typecheck`) and the full test suite (`bun run test`)
 run repeatedly throughout, not just at the end - every new/changed file
 confirmed against a clean-tree baseline before moving on. Final state: 0
-typecheck errors; 1069 passed / 12 failed (pre-existing, unrelated - see
+typecheck errors; 1072 passed / 12 failed (pre-existing, unrelated - see
 `status/app-r2-spike.md` for the original `git stash`-confirmed baseline)
 / 0 new failures across the whole session.
 
 Giai đoạn 1-4 and 6 (route manifest, build core, dynamic params,
 CSS+hydration, in-browser code editor) are all done and independently
 live-verified under a real `wrangler dev`, not just unit-tested. mục
-8/9/12/14 (sitemap, schedule, THE cutover, sitemap TTL) likewise.
+8/9/12/14 (sitemap, schedule, THE cutover incl. rebuild-on-save, sitemap
+TTL) likewise - mục 12 is now fully done, not just the read-side cutover.
 `sivelap` (the real site running in this session) now serves anonymous
-traffic entirely from `built/live/*`, AND its pages can be authored,
-previewed, saved, and published without leaving the browser - app-r2 is
-live and usable end to end, not just built. Giai đoạn 3's UI Build is done
-at the core but missing progress/resume + batch-upload polish (see the 🟡
-marker in `plans/app-r2.md`'s "Giai đoạn" section - the only one left).
-Two related, deliberately deferred follow-ups, both about the same
-underlying gap: `page-build.ts` strips VEI's `dryBind()` markers from
-built output, so neither a built page's live VEI editing (mục 12's
-carve-out) nor Page Editor's preview (this update's mục 6) can be truly
-interactive yet - fixing that one thing would unlock both.
+traffic entirely from `built/live/*`, that output now stays current
+automatically after a VEI save, AND its pages can be authored, previewed,
+saved, and published without leaving the browser - app-r2 is live and
+usable end to end, not just built. Giai đoạn 3's UI Build is done at the
+core but missing progress/resume + batch-upload polish (see the 🟡 marker
+in `plans/app-r2.md`'s "Giai đoạn" section - the only one left). Two
+related, deliberately deferred follow-ups, both about the same underlying
+gap: `page-build.ts` strips VEI's `dryBind()` markers from built output, so
+neither a built page's live VEI editing (mục 12's carve-out) nor Page
+Editor's preview (part 7's mục 6) can be truly interactive yet - fixing
+that one thing would unlock both. Separately, a real (pre-existing,
+newly-found) hydration bug affects any page using `dry()`/`params()` -
+see part 8 above.
