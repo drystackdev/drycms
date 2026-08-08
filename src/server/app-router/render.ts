@@ -3,7 +3,7 @@ import { runWithDryContext, type DryRequestContext } from "../../content-types/d
 import { mergeSeoLayers, type DrySeoLayers } from "../../content-types/dry-seo.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
 import { path as adminPath, lang as siteLang } from "../config.js";
-import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
+import { FAVICON_HREF, GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { installMediaSrcHook } from "./media-src-hook.js";
@@ -50,6 +50,7 @@ export type { PageProps, LayoutProps } from "./render-types.js";
 const DOC_HEAD_PREFIX =
   `<!DOCTYPE html><html lang="${siteLang}"><head><meta charset="utf-8">` +
   '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+  `<link rel="icon" type="image/svg+xml" href="${FAVICON_HREF}">` +
   `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}">` +
   (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
   `<script type="module" src="${HYDRATE_ENTRY_HREF}"></script>` +

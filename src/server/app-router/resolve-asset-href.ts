@@ -61,3 +61,10 @@ export function resolveVeiOverlayHref(
 ): string {
   return resolveBuiltAssetHref(dev, "src/apps/vei/overlay.ts", manifestPath);
 }
+
+export function resolveFaviconHref(
+  dev: boolean,
+  manifestPath: string = join(process.cwd(), "dist/client/.vite/manifest.json"),
+): string {
+  return resolveBuiltAssetHref(dev, "src/assets/favicon.svg", manifestPath);
+}
