@@ -464,26 +464,57 @@ serve. Chứng minh được hoặc chết ở đây.
 `sucrase` và `preact-render-to-string` đều đã nằm trong `dependencies` (tức
 đã ship được xuống browser), và `new Function` đã chạy thật trong Component
 Builder - nên tiền đề "browser eval được, server không" **không còn là giả
-thiết**. 4 thứ còn lại thì chưa ai xác minh, và spike phải trả lời hết:
+thiết**. 4 thứ còn lại thì chưa ai xác minh lúc viết plan; **đã chạy spike
+2026-08-09** (harness throwaway, xoá sau khi ghi nhận - chi tiết
+`status/app-r2-spike.md`), kết quả:
 
-1. **`sucrase-eval.ts` KHÔNG dùng lại nguyên trạng được.**
-   [`resolveModulePath` (dòng 20-24)](../src/page-components/sucrase-eval.ts#L20-L24)
-   **throw với mọi bare specifier** - đúng chủ ý của Component Builder ("chỉ
-   import file"). Nhưng page thật thì import `preact/hooks`, và
-   `app-router-plugin.ts` còn tự inject import cho `dry`/`params`/`setTitle`.
-   Phải thêm allowlist các module được cung cấp sẵn. Đây là **mở rộng**, không
-   phải tái dùng.
-2. **Một nguồn, hai định dạng output.** File đó dùng
-   `transforms: ["imports"]` → sinh CommonJS, hợp cho eval lúc build. Nhưng
-   mục 7 cần **ESM** cho `page.js` + `import()` động ở client. Phải compile 2
-   lần với 2 cấu hình, hoặc bỏ transform `imports` cho nhánh ESM.
-3. **`@tailwindcss/browser` chưa có trong `package.json`** (mới chỉ có
-   `tailwindcss` core + `@tailwindcss/vite`). Chưa xác minh nó chạy được với
-   input là **chuỗi `.tsx` trong bộ nhớ**, không phải file trên đĩa. Hỏng thì
-   mục 6 sập → phải quay về CSS global và chấp nhận rebuild toàn site mỗi lần
-   đổi class.
-4. **Chưa đo gì cả**: thời gian build 1 trang, và bundle admin phình bao nhiêu
-   sau khi nhét sucrase + preact-render-to-string + tailwind browser.
+1. **✅ Allowlist bare specifier - CONFIRMED chạy được.** Mở rộng
+   `resolveModulePath` (vốn throw với mọi bare specifier - đúng chủ ý
+   Component Builder "chỉ import file") bằng một allowlist (`preact`,
+   `preact/hooks` trỏ vào chính instance đang chạy) là đủ. Chạy full pipeline
+   THẬT (không stub): eval qua allowlist → `resolveMatchToVNode` (nguyên hàm
+   thật) → `renderToStringAsync` (nguyên hàm thật) trên chính
+   `src/apps/pages/page.tsx` + `layout.tsx` hiện tại → ra HTML đúng byte-for-
+   byte với cấu trúc layout lồng page. ~6ms eval+resolve, <1ms render (trang
+   đơn giản, không có island). Đây vẫn là **mở rộng**, không phải tái dùng
+   nguyên trạng - `sucrase-eval.ts` gốc không đổi.
+2. **✅ ESM output - CONFIRMED chạy được, nhưng có một cái bẫy mới phát
+   hiện.** Bỏ transform `imports` (giữ `jsx`+`typescript`) ra đúng ESM hợp lệ
+   - nhưng **sucrase's classic JSX pragma (`jsxPragma:"h"`) không tự inject
+   `import { h, Fragment } from "preact"`**, khác với "automatic" JSX
+   runtime. Nhánh CJS che được lỗ này bằng cách truyền `h`/`Fragment` làm
+   tham số cho `new Function(...)` (đúng mẹo `sucrase-eval.ts` đang dùng);
+   nhánh ESM thật (`<script type=module>` load `page.js`) không có mẹo đó -
+   **bước build phải tự chèn dòng import này**, cùng cách
+   `app-router-plugin.ts` đã chèn import cho `dry`/`params` hôm nay. Ghi
+   thêm vào mục 7 làm việc phải làm, không phải chuyện tự nhiên có.
+3. **⚠️ `@tailwindcss/browser` - xác minh được nguồn, CHƯA chạy sống được.**
+   Đã cài (`bun add -d @tailwindcss/browser`) và đọc thẳng source
+   (`packages/@tailwindcss-browser/src/index.ts` trên repo
+   `tailwindlabs/tailwindcss`): package này **tự chạy khi import, chỉ dựa
+   vào DOM** - gọi `rebuild('full')` một lần lúc import, sau đó một
+   `MutationObserver` theo dõi `document` (thẻ `<style type="text/tailwindcss">`
+   đổi, `class` attribute đổi, node mới) và quét bằng
+   `document.querySelectorAll('[class]')`. **Không có API lập trình/headless
+   nào cả.** Hệ quả kiến trúc cho mục 6 (chưa có trong bản plan trước): build
+   1 trang phải thực sự **mount HTML đã render vào một document sống** (kể cả
+   ẩn/offscreen), không thể đưa "chuỗi .tsx" vào thẳng; và vì observer/
+   stylesheet là toàn cục theo tab, build nhiều trang liên tiếp trong cùng 1
+   phiên admin phải cô lập từng trang (iframe riêng mỗi lần build, hoặc diff
+   stylesheet trước/sau) để CSS trang A không lẫn vào trang B.
+   Việc chạy thử sống (mount thật + đọc CSS sinh ra) **bị chặn** - trình
+   duyệt Playwright của máy đang bị một phiên khác giữ (đúng kịch bản
+   [[feedback_concurrent_repo_editing]]) - chưa ép mở. Cần chạy lại khi
+   trình duyệt rảnh trước khi khoá mục 6.
+4. **Đã đo được 1 phần, chưa đủ.** Eval+resolve+render+ESM-check cho 1 trang
+   đơn giản (Node, vitest, cùng pipeline Vite thật) ≈ 11ms tổng - nhanh, đáng
+   yên tâm, nhưng KHÔNG gồm: thời gian compile Tailwind thật (mục 3 chưa chạy
+   được), bundle admin phình bao nhiêu (harness chưa nối vào entry point
+   thật), và một trang có nhiều file/component hơn.
+
+Còn lại của spike (mục 3 chạy sống, và đo mục 4 đầy đủ) làm nốt khi trình
+duyệt rảnh - không chặn việc bắt đầu Giai đoạn 1, vì cả 2 đều nằm ở mục 6
+(CSS), không phải mục 1-2 (route manifest, build core).
 
 1. **Build core** - `buildDocument()` tách ra, `dry()` HTTP published-only,
    build 1 trang tĩnh, ghi qua storage adapter. Serve từ cache, miss = 404.
