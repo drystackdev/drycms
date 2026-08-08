@@ -1,4 +1,4 @@
-# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4 core + mục 10/13
+# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4 core + mục 7/10/13
 
 ## Plan
 
@@ -317,17 +317,120 @@ and a template with no matching content type shows as a explicit
 covering pagination past 500 rows and the no-match case) - full suite still
 0 new failures, same 13 pre-existing ones.
 
+## Update 2026-08-09, part 4: mục 7 (hydration from dynamic `.js`)
+
+Built the last unfinished piece of Giai đoạn 3: `page-build.ts`'s
+`compileEsmAsset` now compiles the WHOLE reachable closure (entry + every
+layout + anything THEY import) to real ESM, rewrites relative imports to
+public `built-assets` URLs, and embeds a `#dry-hydrate-manifest`/
+`#dry-hydrate-params` pair in the built HTML. `hydrate-built.ts` (new
+bootstrap, separate from `hydrate-client.ts` - reads that manifest instead
+of `import.meta.glob`) `import()`s the entry/layout chain and calls
+`resolveMatchToVNode` + `hydrate`, same as the existing SSR hydration path.
+
+**Two real bugs found only by actually building and running this, not by
+reading the code:**
+
+1. **`preact-runtime.ts` (the shared `h`/`Fragment`/hooks/`hydrate`
+   re-export a built page's compiled JS needs to import from at runtime)
+   cannot be a normal `vite.config.ts` `rollupOptions.input`.** Built it as
+   one anyway first, since that's what every other app-r2 client asset
+   (`appsHydrate`, `appsVeiOverlay`) already is. `bun run build:worker`
+   produced a chunk with almost every export silently gone - only
+   `hydrate` survived (the one name something else in the SAME build,
+   `hydrate-built.ts`, genuinely imports). Root cause: this file's real
+   reader is a built page's own compiled JS, generated LATER, entirely
+   outside this Vite build, by Sucrase, in a visitor's browser - Rollup can
+   never see that usage, so from its own graph's point of view every other
+   export is dead code, and it prunes them. Tried and confirmed to have
+   **zero effect**, in this order: `preserveEntrySignatures:"strict"`,
+   `treeshake:false`, local `const` rebindings instead of `export {...}
+   from`, even a forced `globalThis` write referencing every binding (that
+   last one kept the underlying VALUES alive but Rollup still dropped the
+   `export` keyword on all but `hydrate`). This is exactly the shape of
+   problem Vite/Rollup **library mode** exists for - its whole contract is
+   "every declared export survives, because something outside this build
+   is going to import it by name." Found the precedent already solving
+   this in this exact codebase: `RichTextField/build-component-bundle.ts`'s
+   `buildSharedPreactBundle`, a nested `vite.build({build:{lib:...}})` for
+   its own (differently-shaped) Preact vendor bundle. Mirrored it:
+   `build-preact-runtime-bundle.ts`'s `buildPreactRuntimeBundle()`, called
+   lazily by `ensurePreactRuntimeAsset` (`built-pages-storage.ts`) and
+   cached in `built-assets` storage under a fixed key
+   (`__dry/preact-runtime.js`) - build once, serve forever, no
+   invalidation needed since the content never changes per-project.
+2. **Even with a correct standalone bundle, `hydrate-built.ts` statically
+   importing it would have been a SECOND bug**, subtler and never visible
+   as a build error: Vite would bundle that static import into the ADMIN
+   app's own deduped Preact chunk - a different module instance than the
+   one a built page's own `page.js` loads at its public URL. Two Preact
+   instances in one render tree silently breaks hooks (state tracking
+   lives in module-scope closures). Fixed by having `hydrate-built.ts`
+   `import()` `hydrate` DYNAMICALLY from the manifest's own
+   `preactRuntimeUrl` field (added alongside `entryUrl`/`layoutUrls`) - the
+   browser's ES module cache (one instance per absolute URL) is what
+   actually guarantees the two line up, not anything Vite does at build
+   time. (`resolveMatchToVNode` itself never calls `h()`/`Fragment()` -
+   confirmed by reading it - so this was the only place that mattered.)
+
+**Also found while wiring the lazy build:** gated
+`ensurePreactRuntimeAsset`'s build-if-missing branch on
+`import.meta.env.DEV` first (mirroring `buildAndStore`'s existing dev-only
+gate for richtext components) - wrong signal, found live under a real
+`wrangler dev` run: that always executes the compiled PRODUCTION worker
+bundle, so `import.meta.env.DEV` is `false` there too, meaning the bundle
+could never self-bootstrap under Workers AT ALL, not even for local
+testing. The real constraint is narrower than dev-vs-prod: a nested
+`vite.build()` needs live Vite/esbuild tooling, which only Node can run
+(dev OR prod) - workerd never can, dev or deployed. Switched to the same
+`process.versions.node` check `types-cache.ts`'s `writeGeneratedDryTypes`
+already uses to tell the two runtimes apart.
+
+**Verified live end-to-end under a real `wrangler dev` (real D1+R2, not
+Vite dev's Node-side stand-ins):** rebuilt (`bun run build:worker`) and
+confirmed `appsPreactRuntime` is gone from `dist/client/assets` entirely
+(no longer a rollup input) and `appsHydrateBuilt`'s compiled chunk has zero
+static Preact imports of its own. Bootstrapped `preact-runtime.js` once via
+a throwaway Node script + `wrangler r2 object put` (same manual-push
+pattern already used once before for pages-source files) since this
+particular `wrangler dev` session has no Node process sharing its R2
+backend. Pushed a `/hydrate-test` page with a real `useState` counter
+island (not in `src/apps/pages/` - written straight to local R2 to avoid
+touching the real project tree, deleted afterward), built it through the
+real admin UI, then loaded the built HTML directly
+(`/dry/api/pages-build?path=/hydrate-test` - `page-handler.ts`'s live serve
+path still deliberately doesn't read from `built/live/*`, so the page
+itself still correctly 404s at its real URL) in a real Playwright browser
+tab: layout chain rendered correctly, button read "Count: 0", three real
+clicks took it to "Count: 1" → "2", `window.dryHydrated === true`, zero
+console errors or warnings through the entire load+interact sequence. Test
+page, its two source files, and its build/registry row were all deleted
+after confirming.
+
+`page-build.test.ts`'s 5 tests updated with real new assertions (not just
+passing field plumbing) on the compiled ESM output - `jsAssets` paths,
+rewritten import specifiers landing on the public `built-assets` URL not
+the bare relative one, hooks import rewritten to the same runtime URL as
+`h`/`Fragment` - and on the embedded manifest's exact JSON, including the
+new `preactRuntimeUrl` field. Full suite still 0 new failures, same 13
+pre-existing ones.
+
 ## Speed
 
-Single long session, 2026-08-09. Typecheck (`bun run typecheck`) and the
-full test suite (`bun run test`) run repeatedly throughout, not just at the
-end - every new/changed file confirmed against a clean-tree baseline before
-moving on. Final state: 0 typecheck errors; 1044 passed / 13 failed (the
-same 13 pre-existing failures confirmed unrelated to this work via
-`git stash` before starting, see `status/app-r2-spike.md`) / 0 new
-failures across the whole session.
+Single long session, 2026-08-09 (spanning a context-window compaction
+partway through mục 7 - work continued seamlessly from the saved summary).
+Typecheck (`bun run typecheck`) and the full test suite (`bun run test`)
+run repeatedly throughout, not just at the end - every new/changed file
+confirmed against a clean-tree baseline before moving on. Final state: 0
+typecheck errors; 1050 passed / 13 failed (the same 13 pre-existing
+failures confirmed unrelated to this work via `git stash` before starting,
+see `status/app-r2-spike.md`) / 0 new failures across the whole session.
 
-Not a claim of "feature complete" - see the NOT-done list above. What
-exists now is a tested, additive foundation the remaining phases (CSS,
-hydration, UI, editor, cutover) build on, not yet a working public-facing
-feature.
+Giai đoạn 1-4 (route manifest, build core, dynamic params, CSS+hydration)
+are now done and each independently live-verified under a real `wrangler
+dev`, not just unit-tested. Giai đoạn 5 (sitemap/schedule) and Giai đoạn 3's
+UI Build are done at the core but missing setting/UI polish (see the 🟡
+markers in `plans/app-r2.md`'s "Giai đoạn" section). Not yet started:
+Giai đoạn 6's in-browser code editor, and the live cutover of
+`page-handler.ts`/`sitemap.ts`/`discoverRoutes()` - deliberately still
+deferred, per this file's own "Working principle" above.

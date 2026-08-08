@@ -76,6 +76,110 @@ function resolveModulePath(
 }
 
 const CJS_OPTIONS: SucraseOptions = { transforms: ["jsx", "typescript", "imports"], jsxPragma: "h", jsxFragmentPragma: "Fragment", production: true };
+const ESM_OPTIONS: SucraseOptions = { transforms: ["jsx", "typescript"], jsxPragma: "h", jsxFragmentPragma: "Fragment", production: true };
+
+/** `"blogs/[slug]/page.tsx"` -> `"blogs/[slug]/page.js"` - the public JS
+ * asset key (mục 7) a SOURCE file compiles to, regardless of which page
+ * references it (`built-pages-storage.ts`'s `liveAssetKeyFor` doc
+ * comment). */
+function toJsAssetPath(sourcePath: string): string {
+  return sourcePath.replace(/\.tsx?$/, ".js");
+}
+
+function toBuiltAssetUrl(builtAssetsBaseUrl: string, sourcePath: string): string {
+  return `${builtAssetsBaseUrl}/${toJsAssetPath(sourcePath).split("/").map(encodeURIComponent).join("/")}`;
+}
+
+const IMPORT_FROM_RE = /\bfrom\s*(["'])((?:\.[^"']*)|preact(?:\/hooks)?)\1/g;
+
+/** Every relative-import specifier in `source`, resolved to real tree
+ * paths - shared by `transitiveDependencies` (which needs to know what to
+ * visit next) and `rewriteEsmImports` (which needs to know what URL to
+ * point at) so the 2 never drift apart on what counts as "this file's own
+ * dependencies". */
+function localImportsOf(path: string, source: string, sourceByPath: Record<string, string>): string[] {
+  const found: string[] = [];
+  for (const match of source.matchAll(IMPORT_FROM_RE)) {
+    const specifier = match[2]!;
+    if (specifier === "preact" || specifier === "preact/hooks") continue;
+    const resolved = resolveModulePath(path, specifier, sourceByPath);
+    if (resolved.kind === "local") found.push(resolved.path);
+  }
+  return found;
+}
+
+/** Every file reachable from `roots` by following relative imports,
+ * `roots` included - mục 7's ESM output needs ALL of them compiled+
+ * uploaded (a visitor's browser resolves `page.js`'s own `import
+ * "./Greeting.js"` natively, so that URL has to actually exist), unlike
+ * the CJS eval path above, which resolves the same closure lazily/on
+ * demand via `require()`'s cache instead. */
+function transitiveDependencies(roots: string[], sourceByPath: Record<string, string>): Set<string> {
+  const visited = new Set<string>();
+  function visit(path: string): void {
+    if (visited.has(path)) return;
+    visited.add(path);
+    const source = sourceByPath[path];
+    if (source === undefined) return;
+    for (const dep of localImportsOf(path, source, sourceByPath)) visit(dep);
+  }
+  for (const root of roots) visit(root);
+  return visited;
+}
+
+/** Rewrites a compiled ESM module's bare `"preact"`/`"preact/hooks"`
+ * imports to point at the shared runtime chunk, and its relative imports to
+ * point at sibling files' own public JS asset URLs - real `import`
+ * statements a VISITOR's browser resolves natively (no eval, unlike the
+ * CJS/`new Function` path this module also builds). */
+function rewriteEsmImports(
+  source: string,
+  fromPath: string,
+  sourceByPath: Record<string, string>,
+  preactRuntimeHref: string,
+  builtAssetsBaseUrl: string,
+): string {
+  return source.replace(IMPORT_FROM_RE, (whole, quote: string, specifier: string) => {
+    if (specifier === "preact" || specifier === "preact/hooks") {
+      return `from ${quote}${preactRuntimeHref}${quote}`;
+    }
+    const resolved = resolveModulePath(fromPath, specifier, sourceByPath);
+    if (resolved.kind !== "local") return whole;
+    return `from ${quote}${toBuiltAssetUrl(builtAssetsBaseUrl, resolved.path)}${quote}`;
+  });
+}
+
+/**
+ * Compiles one file to real, standalone ESM (mục 7) - the `page.js`/
+ * `layout.js` a VISITOR's browser `import()`s directly to hydrate, as
+ * opposed to `evalModule` below (CJS + `new Function`, used to RENDER the
+ * page once, client-side, in the admin tab only).
+ *
+ * sucrase's CLASSIC jsx pragma (`jsxPragma:"h"`) never auto-injects an
+ * `h`/`Fragment` import (confirmed live, the app-r2 spike) - prepended
+ * unconditionally here. Real page/layout source in this codebase never
+ * explicitly imports `"preact"` itself (classic-pragma-only convention, no
+ * exception found while building this) - a page that DID would collide
+ * with this prepended import (`h`/`Fragment` declared twice); a real
+ * limitation, not exercised by anything in this codebase today.
+ */
+function compileEsmAsset(
+  path: string,
+  sourceByPath: Record<string, string>,
+  preactRuntimeHref: string,
+  builtAssetsBaseUrl: string,
+): string {
+  const source = sourceByPath[path];
+  if (source === undefined) throw new PageBuildError(`"${path}" is not loaded.`);
+  let esm: string;
+  try {
+    esm = transform(source, ESM_OPTIONS).code;
+  } catch (error) {
+    throw new PageBuildError(`Failed to compile "${path}" (ESM): ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const rewritten = rewriteEsmImports(esm, path, sourceByPath, preactRuntimeHref, builtAssetsBaseUrl);
+  return `import { h, Fragment } from ${JSON.stringify(preactRuntimeHref)};\n${rewritten}`;
+}
 
 /**
  * Evaluates one `.tsx`/`.ts` module, resolving its relative imports against
@@ -137,15 +241,24 @@ export interface PageBuildInput {
   origin: string;
   adminPath: string;
   siteLang: string;
-  /** `globals.css`/`hydrate-client.ts`/`vei/overlay.ts` hrefs
-   * (`build-document.ts`'s `AssetHrefs`) - PLACEHOLDER until mục 7
-   * (`page.js` động + import map) exists: a built page's own JS/CSS
-   * asset story isn't solved yet (this build's OWN per-page CSS is
-   * inlined separately - see `inlinePageCss` below - but the SHELL
-   * scripts/global stylesheet a built page's `<head>` still references
-   * are not). Caller-supplied, not defaulted, so nobody mistakes a
-   * placeholder for a real answer. */
+  /** `globals.css`/`hydrate-built.ts`/`vei/overlay.ts` hrefs
+   * (`build-document.ts`'s `AssetHrefs`) - fetch real values from
+   * `GET <adminPath>/api/asset-hrefs` (`routes/asset-hrefs.ts`), NOT
+   * `assets.ts` directly (that module transitively imports `node:fs` via a
+   * re-export - breaks in a real browser build, `status/app-r2-build.md`).
+   * `hydrateEntryHref` here should be that response's `hydrateBuiltHref`
+   * (mục 7's dedicated bootstrap for a browser-compiled page), NOT
+   * `hydrateEntryHref` (that one does `import.meta.glob`, meaningless for a
+   * page Vite never saw). */
   assets: { globalsCssHref: string; hydrateEntryHref: string; veiOverlayHref: string };
+  /** Same `GET /api/asset-hrefs` response's `preactRuntimeHref` - what
+   * `page.js`/`layout.js`'s compiled `"preact"`/`"preact/hooks"` imports get
+   * rewritten to point at (mục 7). */
+  preactRuntimeHref: string;
+  /** `${adminPath}/api/built-assets` - where compiled JS assets are
+   * published to and where a visitor's browser fetches them from
+   * (`routes/built-assets.ts`, public GET). */
+  builtAssetsBaseUrl: string;
   /** `${adminPath}/api/dry-http` */
   dryHttpEndpoint: string;
   allTypes: ContentTypeDefinition[];
@@ -161,6 +274,10 @@ export interface PageBuildInput {
 
 export interface PageBuildResult {
   html: string;
+  /** ESM `page.js`/`layout.js`/every transitively-imported component -
+   * mục 7. `publishBuiltPage` uploads each; `html` already references their
+   * URLs via the embedded `#dry-hydrate-manifest` (`buildPage` below). */
+  jsAssets: { jsPath: string; source: string }[];
   /** Deduped, keep-latest-version per resource - a page that calls
    * `dry().collection("blog").get(1)` twice shouldn't produce 2 `_page_deps`
    * rows for `"blog"`. */
@@ -241,11 +358,37 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     callLog: dryConfig.callLog,
     editMode: false,
   });
-  const html = await inlinePageCss(rawHtml);
+  const withCss = await inlinePageCss(rawHtml);
+
+  // mục 7: compile the WHOLE reachable closure (entry + layouts + anything
+  // THEY import) to real ESM, and embed a manifest telling
+  // `hydrate-built.ts` which uploaded URLs are the entry/layout chain -
+  // everything else in the closure is reached by the browser's OWN native
+  // `import` resolution once hydration starts, not listed here directly.
+  const roots = [input.entryPath, ...input.layoutPaths];
+  const closure = transitiveDependencies(roots, input.sourceByPath);
+  const jsAssets = [...closure].map((path) => ({
+    jsPath: toJsAssetPath(path),
+    source: compileEsmAsset(path, input.sourceByPath, input.preactRuntimeHref, input.builtAssetsBaseUrl),
+  }));
+  const hydrateManifest = {
+    entryUrl: toBuiltAssetUrl(input.builtAssetsBaseUrl, input.entryPath),
+    layoutUrls: input.layoutPaths.map((p) => toBuiltAssetUrl(input.builtAssetsBaseUrl, p)),
+    // Same URL every compiled asset's own `h`/`Fragment`/hooks imports got
+    // rewritten to above (`compileEsmAsset`) - `hydrate-built.ts` needs it
+    // too, to `import()` `hydrate` from that exact same Preact module
+    // instance rather than bundling its own copy (see that file's doc
+    // comment for why the two must match).
+    preactRuntimeUrl: input.preactRuntimeHref,
+  };
+  const manifestScripts =
+    `<script type="application/json" id="dry-hydrate-manifest">${JSON.stringify(hydrateManifest).replace(/</g, "\\u003c")}</script>` +
+    `<script type="application/json" id="dry-hydrate-params">${JSON.stringify(input.params).replace(/</g, "\\u003c")}</script>`;
+  const html = withCss.replace("</body>", `${manifestScripts}</body>`);
 
   const deps = dedupeDeps(defaultsDep ? [...dryConfig.deps, defaultsDep] : dryConfig.deps);
   const inSitemap = mergeSeoLayers(seo).noIndex !== true;
-  return { html, deps, inSitemap };
+  return { html, jsAssets, deps, inSitemap };
 }
 
 /**
@@ -294,6 +437,7 @@ export async function publishBuiltPage(result: PageBuildResult, options: Publish
     body: JSON.stringify({
       pathname: options.pathname,
       html: result.html,
+      jsAssets: result.jsAssets,
       buildId: options.buildId ?? crypto.randomUUID(),
       deps: result.deps,
       inSitemap: result.inSitemap,

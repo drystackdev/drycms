@@ -43,7 +43,10 @@ function dryComponentFilenamePlugin() {
  */
 let productionBuildsInFlight = 0;
 let originalNodeEnv: string | undefined;
-async function withProductionNodeEnv<T>(fn: () => Promise<T>): Promise<T> {
+/** Exported for `build-preact-runtime-bundle.ts` (`plans/app-r2.md` mục 7) -
+ * its own nested lib build has the exact same "inherits the dev server's
+ * `NODE_ENV=development` unless forced" problem this was written for. */
+export async function withProductionNodeEnv<T>(fn: () => Promise<T>): Promise<T> {
   if (productionBuildsInFlight === 0) originalNodeEnv = process.env.NODE_ENV;
   productionBuildsInFlight++;
   process.env.NODE_ENV = "production";

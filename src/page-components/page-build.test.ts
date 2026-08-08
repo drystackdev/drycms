@@ -4,6 +4,8 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import { buildPage, publishBuiltPage, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
+const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
+const TEST_BUILT_ASSETS_BASE_URL = "/dry/api/built-assets";
 
 const SITE_SETTINGS_TYPE: ContentTypeDefinition = {
   id: "site-settings-id",
@@ -91,6 +93,8 @@ describe("buildPage", () => {
       adminPath: "/dry",
       siteLang: "en",
       assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
       dryHttpEndpoint: "/dry/api/dry-http",
       allTypes: [SITE_SETTINGS_TYPE, SEO_DEFAULTS_TYPE],
       sourceByPath: {
@@ -123,6 +127,43 @@ describe("buildPage", () => {
       { resource: "siteSettings", version: 7 },
     ]);
     expect(result.inSitemap).toBe(true);
+
+    // mục 7 - the whole reachable closure (entry + layout + the layout's
+    // OWN import) got compiled to real ESM, not just the entry.
+    const jsPaths = result.jsAssets.map((a) => a.jsPath).sort();
+    expect(jsPaths).toEqual(["Greeting.js", "layout.tsx".replace(".tsx", ".js"), "page.js"]);
+
+    const pageJs = result.jsAssets.find((a) => a.jsPath === "page.js")!.source;
+    // sucrase's classic pragma never auto-injects h/Fragment - buildPage
+    // must prepend it itself (found live in the app-r2 spike).
+    expect(pageJs).toContain(`import { h, Fragment } from "${TEST_PREACT_RUNTIME_HREF}"`);
+    // The page's own relative import rewritten to Greeting's PUBLIC asset
+    // URL, not left as a bare "./Greeting.js" a visitor's browser could
+    // never resolve.
+    expect(pageJs).toContain(`from "${TEST_BUILT_ASSETS_BASE_URL}/Greeting.js"`);
+    expect(pageJs).not.toContain('"./Greeting.js"');
+
+    const greetingJs = result.jsAssets.find((a) => a.jsPath === "Greeting.js")!.source;
+    // The explicit `import { useState } from "preact/hooks"` rewritten to
+    // the SAME runtime URL as the prepended h/Fragment import (one shared
+    // chunk, one Preact instance - hooks only work correctly that way).
+    expect(greetingJs).toContain(`from "${TEST_PREACT_RUNTIME_HREF}"`);
+    expect(greetingJs).not.toContain('"preact/hooks"');
+
+    // The embedded manifest `hydrate-built.ts` reads client-side - real
+    // entry/layout URLs, real params, escaped safely for inline <script>.
+    const manifestMatch = /<script type="application\/json" id="dry-hydrate-manifest">([\s\S]*?)<\/script>/.exec(result.html);
+    expect(JSON.parse(manifestMatch![1]!)).toEqual({
+      entryUrl: `${TEST_BUILT_ASSETS_BASE_URL}/page.js`,
+      layoutUrls: [`${TEST_BUILT_ASSETS_BASE_URL}/layout.js`],
+      // `hydrate-built.ts` dynamically `import()`s `hydrate` from this same
+      // URL (not a normal bundled import) so it shares ONE Preact module
+      // instance with the page/layout assets above - see that file's doc
+      // comment.
+      preactRuntimeUrl: TEST_PREACT_RUNTIME_HREF,
+    });
+    const paramsMatch = /<script type="application\/json" id="dry-hydrate-params">([\s\S]*?)<\/script>/.exec(result.html);
+    expect(JSON.parse(paramsMatch![1]!)).toEqual({ slug: "about" });
   });
 
   it("rejects a bare npm import outside the preact/preact-hooks allowlist", async () => {
@@ -140,6 +181,8 @@ describe("buildPage", () => {
         adminPath: "/dry",
         siteLang: "en",
         assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
         dryHttpEndpoint: "/dry/api/dry-http",
         allTypes: [],
         sourceByPath: {
@@ -166,6 +209,8 @@ describe("buildPage", () => {
       adminPath: "/dry",
       siteLang: "en",
       assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
       dryHttpEndpoint: "/dry/api/dry-http",
       allTypes: [SEO_DEFAULTS_TYPE],
       sourceByPath: {
@@ -187,7 +232,7 @@ describe("publishBuiltPage", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await publishBuiltPage(
-      { html: "<html></html>", deps: [{ resource: "blog", version: 2 }], inSitemap: true },
+      { html: "<html></html>", jsAssets: [{ jsPath: "page.js", source: "export default function(){}" }], deps: [{ resource: "blog", version: 2 }], inSitemap: true },
       { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", buildId: "build-1", publishAt: null },
     );
 
@@ -197,6 +242,7 @@ describe("publishBuiltPage", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       pathname: "/blogs/abc",
       html: "<html></html>",
+      jsAssets: [{ jsPath: "page.js", source: "export default function(){}" }],
       buildId: "build-1",
       deps: [{ resource: "blog", version: 2 }],
       inSitemap: true,
@@ -209,7 +255,7 @@ describe("publishBuiltPage", () => {
   it("throws PageBuildError on a non-OK response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
     await expect(
-      publishBuiltPage({ html: "", deps: [], inSitemap: true }, { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x" }),
+      publishBuiltPage({ html: "", jsAssets: [], deps: [], inSitemap: true }, { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x" }),
     ).rejects.toThrow(PageBuildError);
     vi.unstubAllGlobals();
   });

@@ -546,11 +546,44 @@ thiết).
    trong UI Build, bấm Build ra đúng nội dung (`params().slug` đúng, layout
    chain đúng) - xem `status/app-r2-build.md`. Route catch-all (`[...rest]`)
    vẫn đúng như quyết định gốc: bỏ qua, không build.
-3. **🟡 CSS + hydration - kiến trúc CSS đã xác nhận + xây xong, hydration
-   chưa.** Ẩn số chặn (mục 6) đã giải quyết 2026-08-09 - xem mục 6 ở
-   "Kết quả spike" phía trên. `tailwind-build.ts` (build/render qua iframe
-   cô lập) đã xây + test. `page.js` động + import map (nửa hydration của
-   mục 7) CHƯA làm.
+3. **✅ CSS + hydration - CẢ HAI xong, chạy sống dưới `wrangler dev`
+   (2026-08-09).** Ẩn số chặn (mục 6) đã giải quyết - xem mục 6 ở "Kết quả
+   spike" phía trên. `tailwind-build.ts` (build/render qua iframe cô lập)
+   đã xây + test. mục 7 (hydration): `page-build.ts`'s `compileEsmAsset`
+   compile TOÀN BỘ closure (entry + layout + mọi import cục bộ chúng kéo
+   theo) ra ESM thật, viết lại import tương đối thành URL public
+   (`built-assets`), chèn manifest (`#dry-hydrate-manifest`/
+   `#dry-hydrate-params`) vào HTML; `hydrate-built.ts` (bootstrap riêng,
+   không qua `import.meta.glob`) đọc manifest, `import()` entry/layout +
+   `hydrate` động lúc chạy.
+   **Bẫy thật tìm thấy khi build+chạy sống (không phải suy luận):**
+   `preact-runtime.ts` KHÔNG thể là `rollupOptions.input` bình thường -
+   build ra thật (`bun run build:worker`) cho thấy Rollup coi barrel
+   thuần `export {...} from "preact"` là pass-through vô dụng và loại bỏ
+   gần hết export (`preserveEntrySignatures:"strict"` VÀ `treeshake:false`
+   đều thử, cả hai KHÔNG có tác dụng) - lý do: consumer THẬT của các tên
+   này (`h`/`Fragment`/hooks) là JS đã compile của 1 trang, sinh ra SAU,
+   ngoài build này hoàn toàn, nên Rollup không bao giờ thấy chúng "được
+   dùng". Nếu để `hydrate-built.ts` import tĩnh `hydrate` từ file này
+   (đã thử) thì NÓ bị Vite bundle chung với instance Preact riêng của
+   admin app - khác instance với `page.js` load lúc chạy, hook sẽ hỏng.
+   **Sửa đúng:** build `preact-runtime.ts` qua Vite **library mode**
+   (nested `vite.build({build:{lib:...}})`, mirror
+   `RichTextField/build-component-bundle.ts`'s `buildSharedPreactBundle` -
+   lib mode giữ NGUYÊN mọi export bất kể build có "thấy dùng" hay không),
+   lưu 1 lần vào `built-assets` storage (`ensurePreactRuntimeAsset`, key
+   cố định `__dry/preact-runtime.js`), phục vụ qua route đã có sẵn;
+   `hydrate-built.ts` `import()` ĐỘNG `hydrate` từ CHÍNH URL đó (không
+   import tĩnh) để browser's module cache đảm bảo cùng 1 instance với
+   `page.js`. Gate build-once dùng `process.versions.node` (Node có thể
+   chạy Vite tooling, cả dev lẫn prod) chứ KHÔNG phải `import.meta.env.DEV`
+   (thử trước, sai: `wrangler dev` luôn chạy bundle PRODUCTION nên
+   `DEV` luôn false ở đó, sẽ never bootstrap được kể cả lúc test local).
+   **Xác nhận sống:** build 1 trang test có `useState` counter dưới
+   `wrangler dev` thật (D1+R2 thật), fetch HTML build xong qua
+   `/dry/api/pages-build?path=`, load trong Playwright thật, bấm nút 3
+   lần → "Count: 0" → "1" → "2" đúng, `window.dryHydrated===true`, 0 lỗi
+   console. Trang test + source đã dọn sạch sau khi xác nhận.
 4. **🟡 Sitemap + schedule - phần lõi xong, phần UI/setting chưa.**
    mục 8 xong nhưng dark (`buildSitemapResponseFromRegistry`, chưa thay
    `page-handler.ts`'s handler thật). mục 9 xong phần cốt lõi

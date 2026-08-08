@@ -107,3 +107,95 @@ export async function removeBuiltPage(context: Pick<DryRouteContext, "env">, pat
     if (!(error instanceof StorageError && error.code === "not_found")) throw error;
   });
 }
+
+/**
+ * Compiled JS ASSET storage (mục 7's `page.js`/`layout.js`) - keyed by
+ * SOURCE path, not by pathname: a shared `layout.tsx` compiles to the same
+ * bytes regardless of which page references it, so one upload serves every
+ * page that imports it (unlike `liveKeyFor`, which is per-PAGE). No
+ * immutable/live split here - a JS asset has no `schedule` concept of its
+ * own (the HTML that references it does); overwriting in place on every
+ * build is correct - a visitor loading it always wants whatever the source
+ * currently compiles to. Public, unauthenticated read
+ * (`routes/built-assets.ts`) - same treatment `GLOBALS_CSS_HREF`/favicon
+ * already get, nothing here is more sensitive than site source that was
+ * ALREADY compiled client-side to produce the page a visitor is looking at.
+ */
+/** `jsPath` is already `.js`-suffixed (the CALLER's job to convert from a
+ * `.tsx`/`.ts` source path - `page-build.ts`'s `toJsAssetPath` - so this
+ * function, and the public read route that shares it, never have to guess
+ * whether a given slug still needs converting). */
+export function liveAssetKeyFor(jsPath: string): string {
+  return `built/live-assets/${jsPath}`;
+}
+
+export async function writeBuiltAsset(context: Pick<DryRouteContext, "env">, jsPath: string, jsSource: string): Promise<string> {
+  const adapter = getStorageAdapter(pagesCacheStorage, context);
+  const key = liveAssetKeyFor(jsPath);
+  await adapter.write(key, Buffer.from(jsSource, "utf8"));
+  return key;
+}
+
+export async function readBuiltAsset(context: Pick<DryRouteContext, "env">, jsPath: string): Promise<string | null> {
+  const adapter = getStorageAdapter(pagesCacheStorage, context);
+  try {
+    const file = await adapter.read(liveAssetKeyFor(jsPath));
+    return (await bufferOf(file.stream)).toString("utf8");
+  } catch (error) {
+    if (error instanceof StorageError && error.code === "not_found") return null;
+    throw error;
+  }
+}
+
+/** Fixed key, not derived from any page - one shared Preact runtime, not a
+ * per-page asset (`build-preact-runtime-bundle.ts`'s doc comment has the
+ * full story on why this can't be a normal Vite build asset). `__dry/`
+ * keeps it out of the way of a real page's own asset keys, which are bare
+ * filenames straight off `sourceByPath` (e.g. `Greeting.js`) - never
+ * nested, so this can never collide with one. */
+const PREACT_RUNTIME_ASSET_PATH = "__dry/preact-runtime.js";
+
+/**
+ * Builds `preact-runtime.js` into `built-assets` storage the first time
+ * anything asks for it, then leaves it alone - `stat` (not a full `read`)
+ * is enough to tell whether that's already happened, same "build once,
+ * reuse forever" contract `build-component-bundle.ts`'s
+ * `ensureSharedPreactBundle` already established for its own Preact vendor
+ * bundle. Its content never changes per-project, so the SAME already-built
+ * copy is correct for every page a build ever produces - no cache
+ * invalidation of any kind needed.
+ *
+ * Gated on the NODE runtime specifically, not `import.meta.env.DEV` (tried
+ * first, wrong signal - found live under `wrangler dev`: that always runs
+ * the compiled PRODUCTION worker bundle, so `import.meta.env.DEV` is
+ * `false` there too, meaning this could never self-bootstrap under
+ * Workers at all, not even in local testing). The real constraint is
+ * narrower than dev-vs-prod: `buildPreactRuntimeBundle`'s nested
+ * `vite.build()` needs live Vite/esbuild tooling, which only Node can run
+ * (dev OR prod) - workerd never can, dev OR deployed, `nodejs_compat` or
+ * not. Same `process.versions.node` check `types-cache.ts`'s
+ * `writeGeneratedDryTypes` already uses to tell the two apart. A Workers
+ * deployment can still SERVE an already-built copy fine
+ * (`routes/built-assets.ts` is a plain storage read, runtime-agnostic) -
+ * it just needs a Node run against its storage backend (`bun run dev`
+ * pointed at the same storage, or a Node deployment of this same project)
+ * to have produced one first.
+ */
+/** Returns the `jsPath` (not the storage key) - `routes/built-assets.ts`
+ * takes the same shape `page-build.ts`'s own `jsAssets` do, so the caller
+ * can build a public URL as `${path}/api/built-assets/${jsPath}` either
+ * way. */
+export async function ensurePreactRuntimeAsset(context: Pick<DryRouteContext, "env">): Promise<string> {
+  const adapter = getStorageAdapter(pagesCacheStorage, context);
+  if (await adapter.stat(liveAssetKeyFor(PREACT_RUNTIME_ASSET_PATH))) return PREACT_RUNTIME_ASSET_PATH;
+  if (typeof process === "undefined" || !process.versions?.node) {
+    throw new StorageError(
+      "unsupported",
+      "The Preact runtime bundle hasn't been built yet - run a Node instance of this project (e.g. `bun run dev`) against this storage backend once before using the Workers build.",
+    );
+  }
+  const { buildPreactRuntimeBundle } = await import("../../apps/build-preact-runtime-bundle.js");
+  const code = await buildPreactRuntimeBundle();
+  await writeBuiltAsset(context, PREACT_RUNTIME_ASSET_PATH, code);
+  return PREACT_RUNTIME_ASSET_PATH;
+}

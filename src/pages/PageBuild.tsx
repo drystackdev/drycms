@@ -73,6 +73,15 @@ interface UnmatchedTemplate {
   pathnameTemplate: string;
 }
 
+/** `routes/asset-hrefs.ts`'s response shape (mục 7). */
+interface AssetHrefs {
+  globalsCssHref: string;
+  hydrateEntryHref: string;
+  veiOverlayHref: string;
+  preactRuntimeHref: string;
+  hydrateBuiltHref: string;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, { credentials: "same-origin" });
   if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
@@ -119,6 +128,7 @@ export default function PageBuild() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [building, setBuilding] = useState<Set<string>>(new Set());
   const [origin, setOrigin] = useState(() => window.location.origin);
+  const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
 
   async function reloadStatus() {
     const { pages } = await fetchJson<{ pages: PageStatusRow[] }>(`${path}/api/pages-build`);
@@ -129,11 +139,13 @@ export default function PageBuild() {
     if (!canBuild) return;
     void (async () => {
       try {
-        const [types, tree] = await Promise.all([
+        const [types, tree, hrefs] = await Promise.all([
           listCached(typesApi),
           fetchJson<{ supported: boolean; entries?: TreeEntry[] }>(`${path}/api/pages-source?tree`),
+          fetchJson<AssetHrefs>(`${path}/api/asset-hrefs`),
         ]);
         setAllTypes(types);
+        setAssetHrefs(hrefs);
 
         const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive("");
         const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts)$/.test(e.name));
@@ -181,7 +193,7 @@ export default function PageBuild() {
   }, [targets, statusByPath]);
 
   async function buildOne(pathname: string) {
-    if (!sourceByPath || !allTypes) return;
+    if (!sourceByPath || !allTypes || !assetHrefs) return;
     const target = targets.get(pathname);
     if (!target) {
       toast.add({ type: "error", title: `"${pathname}" no longer has a page.tsx`, description: "Its source was removed (or a dynamic entry's slug was deleted) - build skipped." });
@@ -194,9 +206,15 @@ export default function PageBuild() {
         origin,
         adminPath: path,
         siteLang: "en",
-        // Placeholder until mục 7 (page.js động + import map) exists - see
-        // `page-build.ts`'s `PageBuildInput.assets` doc comment.
-        assets: { globalsCssHref: "", hydrateEntryHref: "", veiOverlayHref: "" },
+        assets: {
+          globalsCssHref: assetHrefs.globalsCssHref,
+          // mục 7's dedicated bootstrap, NOT hydrateEntryHref - see
+          // `page-build.ts`'s `PageBuildInput.assets` doc comment for why.
+          hydrateEntryHref: assetHrefs.hydrateBuiltHref,
+          veiOverlayHref: assetHrefs.veiOverlayHref,
+        },
+        preactRuntimeHref: assetHrefs.preactRuntimeHref,
+        builtAssetsBaseUrl: `${path}/api/built-assets`,
         dryHttpEndpoint: `${path}/api/dry-http`,
         allTypes,
         sourceByPath,

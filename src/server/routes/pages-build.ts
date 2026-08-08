@@ -1,7 +1,7 @@
 import type { DryRouteHandler } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { errorResponse, jsonResponse } from "../route-helpers.js";
-import { readBuiltPage, removeBuiltPage, writeBuiltPage } from "../app-router/built-pages-storage.js";
+import { readBuiltPage, removeBuiltPage, writeBuiltAsset, writeBuiltPage } from "../app-router/built-pages-storage.js";
 import type { PageDependency, PageRecord } from "../../content-types/engine/pages-registry-types.js";
 
 /**
@@ -15,6 +15,11 @@ import type { PageDependency, PageRecord } from "../../content-types/engine/page
 interface PagesBuildRequestBody {
   pathname: string;
   html: string;
+  /** mục 7 - `page.js`/`layout.js`/every transitively-imported component,
+   * already compiled to real ESM client-side (`page-build.ts`'s
+   * `compileEsmAsset`) - this endpoint only writes bytes, same "server
+   * không SSR/compile gì cả" contract the HTML write already has. */
+  jsAssets: { jsPath: string; source: string }[];
   /** Caller-minted per-build id (e.g. `crypto.randomUUID()`) - see
    * `built-pages-storage.ts`'s `immutableKeyFor` doc comment for why this
    * isn't derived server-side. */
@@ -33,6 +38,7 @@ function isValidBody(value: unknown): value is PagesBuildRequestBody {
     typeof body.pathname === "string" &&
     body.pathname.startsWith("/") &&
     typeof body.html === "string" &&
+    (body.jsAssets === undefined || Array.isArray(body.jsAssets)) &&
     typeof body.buildId === "string" &&
     body.buildId.length > 0 &&
     Array.isArray(body.deps) &&
@@ -50,6 +56,9 @@ export const POST: DryRouteHandler = async (context) => {
     const { immutableKey, liveKey } = await writeBuiltPage(context, raw.pathname, raw.buildId, raw.html, {
       publishNow: publishAt === null,
     });
+    for (const asset of raw.jsAssets ?? []) {
+      await writeBuiltAsset(context, asset.jsPath, asset.source);
+    }
 
     const record: PageRecord = {
       path: raw.pathname,

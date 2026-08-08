@@ -92,6 +92,19 @@ export default defineConfig(({ isSsrBuild, command }) => ({
               appsGlobals: "src/apps/globals.css",
               appsHydrate: "src/apps/hydrate-client.ts",
               appsVeiOverlay: "src/apps/vei/overlay.ts",
+              // mục 7 (app-r2 build pipeline hydration) - the client
+              // bootstrap for a page that only exists as browser-compiled
+              // source in `pagesSourceStorage`, which Vite's build never
+              // saw (`appsHydrate` above hydrates a Vite-known SSR route
+              // via `import.meta.glob` instead). Its own `preact-iso/
+              // hydrate` import is dynamic, not this file's static one -
+              // see `hydrate-built.ts`'s doc comment for why: mixing it
+              // into the ADMIN app's own deduped Preact chunk here would
+              // be a SECOND, separate Preact module instance from the one
+              // a built page's own compiled JS loads at runtime
+              // (`build-preact-runtime-bundle.ts`), and hooks silently
+              // break across two instances.
+              appsHydrateBuilt: "src/apps/hydrate-built.ts",
             },
           },
           manifest: true,

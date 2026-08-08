@@ -18,6 +18,8 @@ import * as dryHttpRoute from "./routes/dry-http.js";
 import * as pagesBuildRoute from "./routes/pages-build.js";
 import * as typesCacheRoute from "./routes/types-cache.js";
 import * as pagesSourceRoute from "./routes/pages-source.js";
+import * as builtAssetsRoute from "./routes/built-assets.js";
+import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import { requirePermission } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
@@ -72,6 +74,8 @@ const API_ROUTES: Record<string, RouteModule> = {
   "pages-build": pagesBuildRoute,
   "types-cache": typesCacheRoute,
   "pages-source": pagesSourceRoute,
+  "built-assets": builtAssetsRoute,
+  "asset-hrefs": assetHrefsRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {
@@ -139,11 +143,17 @@ export async function handleApiRequest(
   // sensitive than the colors/fonts a Super Admin already chose to share
   // with every user - same public-GET treatment as `storage` above.
   const isPublicThemeCss = segment === "system-settings" && request.method === "GET";
+  // A built page's compiled JS (mục 7, `routes/built-assets.ts`) - a
+  // visitor's browser fetches this to hydrate, with no session cookie at
+  // all. Same public treatment as `storage`/`system-settings` GET above -
+  // nothing here is more sensitive than site source already compiled
+  // client-side to produce the page a visitor is currently looking at.
+  const isPublicBuiltAsset = segment === "built-assets" && request.method === "GET";
   const sessionToken = readSessionCookie(request);
   const refreshToken = readRefreshCookie(request);
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
   const session = await resolveSession(request, env, claims);
-  if (segment !== "auth" && !isPublicStorageRead && !isPublicThemeCss && !session) {
+  if (segment !== "auth" && !isPublicStorageRead && !isPublicThemeCss && !isPublicBuiltAsset && !session) {
     return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
