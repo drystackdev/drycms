@@ -37,6 +37,7 @@ const EXT_TO_CATEGORY: Record<string, FileThumbCategory> = {
 	jpeg: 'image',
 	png: 'image',
 	gif: 'image',
+	ico: 'image',
 	svg: 'image',
 	webp: 'image',
 	mp4: 'video',

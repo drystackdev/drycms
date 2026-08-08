@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveFaviconHref, resolveGlobalsCssHref, resolveHydrateEntryHref, resolveVeiOverlayHref } from "./assets.js";
+import { resolveGlobalsCssHref, resolveHydrateEntryHref, resolveVeiOverlayHref } from "./assets.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -63,18 +63,5 @@ describe("resolveVeiOverlayHref", () => {
       "src/apps/vei/overlay.ts": { file: "assets/appsVeiOverlay-abc123.js" },
     });
     expect(resolveVeiOverlayHref(false, path)).toBe("/assets/appsVeiOverlay-abc123.js");
-  });
-});
-
-describe("resolveFaviconHref", () => {
-  it("returns the dev source path without touching the filesystem", () => {
-    expect(resolveFaviconHref(true, "/does/not/exist.json")).toBe("/src/assets/favicon.svg");
-  });
-
-  it("reads the built, hashed asset path from the manifest in production", () => {
-    const path = writeManifest({
-      "src/assets/favicon.svg": { file: "assets/favicon-abc123.svg" },
-    });
-    expect(resolveFaviconHref(false, path)).toBe("/assets/favicon-abc123.svg");
   });
 });

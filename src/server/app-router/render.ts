@@ -3,7 +3,7 @@ import { runWithDryContext, type DryRequestContext } from "../../content-types/d
 import { mergeSeoLayers, type DrySeoLayers } from "../../content-types/dry-seo.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
 import { path as adminPath, lang as siteLang } from "../config.js";
-import { FAVICON_HREF, GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
+import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { installMediaSrcHook } from "./media-src-hook.js";
@@ -47,10 +47,24 @@ export type { PageProps, LayoutProps } from "./render-types.js";
 // `config.ts`), not per-request - so `<html lang>` bakes into this prefix the
 // same way charset/viewport/css do, rather than being threaded through
 // `buildSeoTags` alongside the per-request `origin`/`pathname`.
+// Favicon isn't a built asset like `GLOBALS_CSS_HREF` below - it's a plain
+// file an admin manages through the Media page (`system-media` permission,
+// no rebuild needed to change it), served at a fixed, reserved path off the
+// storage root the same way any other stored file is (`routes/storage.ts`).
+// Both extensions are emitted unconditionally rather than checked for
+// existence per request: a per-request `stat()` would either cost a real
+// storage read on every page load, or (if baked into the cached page HTML
+// instead) go stale until every cached page's `pages-cache` entry happens to
+// get invalidated. Whichever one is actually uploaded 200s and the browser
+// uses it; a missing one just 404s silently, same as no favicon configured
+// at all - the neutral fallback this app already had before either existed.
+const FAVICON_ICO_HREF = `${adminPath}/api/storage/favicon.ico`;
+const FAVICON_PNG_HREF = `${adminPath}/api/storage/favicon.png`;
 const DOC_HEAD_PREFIX =
   `<!DOCTYPE html><html lang="${siteLang}"><head><meta charset="utf-8">` +
   '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-  `<link rel="icon" type="image/svg+xml" href="${FAVICON_HREF}">` +
+  `<link rel="icon" href="${FAVICON_ICO_HREF}">` +
+  `<link rel="icon" type="image/png" href="${FAVICON_PNG_HREF}">` +
   `<link rel="stylesheet" href="${GLOBALS_CSS_HREF}">` +
   (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
   `<script type="module" src="${HYDRATE_ENTRY_HREF}"></script>` +

@@ -22,6 +22,7 @@ export const MIME_TYPES: Record<string, string> = {
   jpeg: "image/jpeg",
   png: "image/png",
   gif: "image/gif",
+  ico: "image/x-icon",
   svg: "image/svg+xml",
   webp: "image/webp",
   mp4: "video/mp4",
