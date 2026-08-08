@@ -1,5 +1,5 @@
 {
-  "name": "drycms",
+  "name": "sivelap",
   "version": "0.0.1",
   "dependencies": {
     "@preact/signals": "^2.10.0",
@@ -62,7 +62,6 @@
     "dry:generate": "bun scripts/dry-generate.ts",
     "new:project": "bun scripts/new-project.ts",
     "seed:sync": "bun scripts/seed-sync.ts",
-    "seed:pages": "bun scripts/seed-pages-content.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test"

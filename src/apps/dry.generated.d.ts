@@ -50,25 +50,6 @@ export interface Role {
   user?: number[]; // relationmirror -> user, read-only
 }
 
-export interface Blog {
-  id: number;
-  category?: number | null; // relation -> category
-  excerpt: string;
-  date: Date;
-  image?: string;
-  content: string;
-  title: string;
-  slug: string;
-  seo: Seo;
-}
-
-export interface Category {
-  id: number;
-  title: string;
-  slug: string;
-  blog?: number[]; // relationmirror -> blog, read-only
-}
-
 export interface Redirect {
   id: number;
   from: string;
@@ -82,60 +63,8 @@ export interface Memory {
   version: number;
 }
 
-export interface Homepage {
-  id: number;
-  hero: HeroSection;
-  valueProps: ValueProp[];
-  videoSection: VideoSection;
-  latestPostsSection: LatestPostsSection;
-  pressSection: PressSection;
-  pressMentions: PressMention[];
-  bottomCta: BottomCta;
-  seo: Seo;
-}
-
-export interface About {
-  id: number;
-  intro: AboutIntro;
-  story: AboutStory;
-  missionSection: AboutMissionSection;
-  missionItems: MissionItem[];
-  experienceSection: AboutExperienceSection;
-  experienceItems: ExperienceItem[];
-  pressSection: AboutPressSection;
-  pressMentions: PressMention[];
-  bottomCta: BottomCta;
-  seo: Seo;
-}
-
-export interface Contact {
-  id: number;
-  header: ContactHeader;
-  channels: ContactChannel[];
-  seo: Seo;
-}
-
-export interface SiteSettings {
-  id: number;
-  brandName: string;
-  headerCtaLabel?: string;
-  headerCtaHref?: string;
-  footerDescription?: string;
-  phone?: string;
-  email?: string;
-  fanpageUrl?: string;
-  copyrightText?: string;
-}
-
 export interface SeoDefaults {
   id: number;
-  seo: Seo;
-}
-
-export interface BlogsPage {
-  id: number;
-  header: BlogsHeader;
-  bottomCta: BottomCta;
   seo: Seo;
 }
 
@@ -160,105 +89,7 @@ export interface Seo {
   metaTitle?: string;
   description?: string;
   image?: string;
-}
-
-export interface HeroSection {
-  eyebrow: string;
-  headline: string;
-  subtitle: string;
-  content?: string;
-  image: string;
-}
-
-export interface ValueProp {
-  headline: string;
-  description: string;
-}
-
-export interface VideoSection {
-  videoUrl: string;
-  heading: string;
-  description?: string;
-  ctaLabel?: string;
-  ctaHref?: string;
-}
-
-export interface LatestPostsSection {
-  heading: string;
-  viewAllHref?: string;
-}
-
-export interface PressSection {
-  heading: string;
-  viewAllHref?: string;
-}
-
-export interface PressMention {
-  outlet: string;
-  headline: string;
-  date: string;
-  href?: string;
-  image?: string;
-}
-
-export interface BottomCta {
-  heading: string;
-  description?: string;
-  ctaLabel?: string;
-  ctaHref?: string;
-}
-
-export interface AboutIntro {
-  eyebrow: string;
-  headline: string;
-  description: string;
-  image: string;
-}
-
-export interface AboutStory {
-  heading: string;
-  content: string;
-}
-
-export interface AboutMissionSection {
-  heading: string;
-}
-
-export interface MissionItem {
-  text: string;
-}
-
-export interface AboutExperienceSection {
-  heading: string;
-}
-
-export interface ExperienceItem {
-  year: string;
-  description: string;
-}
-
-export interface AboutPressSection {
-  heading: string;
-  description?: string;
-}
-
-export interface ContactHeader {
-  eyebrow: string;
-  headline: string;
-  description?: string;
-}
-
-export interface ContactChannel {
-  kind: "phone" | "email" | "fanpage";
-  label: string;
-  value: string;
-  href: string;
-}
-
-export interface BlogsHeader {
-  eyebrow: string;
-  headline: string;
-  description?: string;
+  noIndex?: boolean;
 }
 
 export interface UserRelations {
@@ -274,57 +105,32 @@ export interface RoleRelations {
   user: User[];
 }
 
-export interface BlogRelations {
-  category: Category | null;
-}
-
-export interface CategoryRelations {
-  blog: Blog[];
-}
-
 export interface RedirectRelations {}
 
 export interface MemoryRelations {
   user: User | null;
 }
 
-export interface HomepageRelations {}
-
-export interface AboutRelations {}
-
-export interface ContactRelations {}
-
-export interface SiteSettingsRelations {}
-
 export interface SeoDefaultsRelations {}
-
-export interface BlogsPageRelations {}
 
 export interface SystemSettingsRelations {}
 
 export interface GoogleVerificationRelations {}
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category" | "redirect" | "memory";
-export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage" | "systemSettings" | "googleVerification";
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "redirect" | "memory";
+export type DrySingletonName = "seoDefaults" | "systemSettings" | "googleVerification";
 
 export interface DryCollectionMap {
   "user": User;
   "menu": Menu;
   "aiKey": AiKey;
   "role": Role;
-  "blog": Blog;
-  "category": Category;
   "redirect": Redirect;
   "memory": Memory;
 }
 
 export interface DrySingletonMap {
-  "homepage": Homepage;
-  "about": About;
-  "contact": Contact;
-  "siteSettings": SiteSettings;
   "seoDefaults": SeoDefaults;
-  "blogsPage": BlogsPage;
   "systemSettings": SystemSettings;
   "googleVerification": GoogleVerification;
 }
@@ -334,19 +140,12 @@ export interface DryCollectionRelationsMap {
   "menu": MenuRelations;
   "aiKey": AiKeyRelations;
   "role": RoleRelations;
-  "blog": BlogRelations;
-  "category": CategoryRelations;
   "redirect": RedirectRelations;
   "memory": MemoryRelations;
 }
 
 export interface DrySingletonRelationsMap {
-  "homepage": HomepageRelations;
-  "about": AboutRelations;
-  "contact": ContactRelations;
-  "siteSettings": SiteSettingsRelations;
   "seoDefaults": SeoDefaultsRelations;
-  "blogsPage": BlogsPageRelations;
   "systemSettings": SystemSettingsRelations;
   "googleVerification": GoogleVerificationRelations;
 }
