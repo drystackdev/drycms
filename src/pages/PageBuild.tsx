@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
+import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { SYSTEM_BUILD_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { canAccess } from "../store/auth.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
+import NumberField from "../components/fields/NumberField.js";
+import { parseScheduleFlipIntervalMinutes, DEFAULT_SCHEDULE_FLIP_INTERVAL_MINUTES } from "../lib/schedule-flip-setting.js";
 import { useDocumentTitle } from "./page-common.js";
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { resolveDynamicPages } from "../page-components/dynamic-routes.js";
@@ -118,6 +121,13 @@ async function listAllFilesRecursive(folder: string): Promise<TreeEntry[]> {
 export default function PageBuild() {
   useDocumentTitle("Page Build");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
+  // Same singleton `Settings.tsx` edits (`systemSettings`), just a
+  // different field of its `data` blob - `scheduleFlipIntervalMinutes`
+  // isn't a theme value, so it doesn't belong on that page, but it's
+  // still gated by that TYPE's own edit permission, not `system-build`'s
+  // (see `canEditSchedule` below) - `system-build` only covers building/
+  // publishing pages, not editing an unrelated singleton.
+  const systemSettingsApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "systemSettings"), []);
   const canBuild = canAccess(SYSTEM_BUILD_RESOURCE_ID, "setting");
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
@@ -129,6 +139,19 @@ export default function PageBuild() {
   const [building, setBuilding] = useState<Set<string>>(new Set());
   const [origin, setOrigin] = useState(() => window.location.origin);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
+
+  const [scheduleType, setScheduleType] = useState<ContentTypeDefinition | null>(null);
+  const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState<number | null>(null);
+  const [scheduleIntervalInitial, setScheduleIntervalInitial] = useState<number | null>(null);
+  // Everything else already in `systemSettings.data` (Settings.tsx's theme
+  // keys) - saving here spreads onto this rather than replacing `data`
+  // outright, same fix `Settings.tsx`'s own save just got (found while
+  // building this: without it, whichever of these two pages saves LAST
+  // would silently wipe out the other's field).
+  const [scheduleOtherData, setScheduleOtherData] = useState<Record<string, unknown>>({});
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const canEditSchedule = !!scheduleType && canAccess(scheduleType.id, "setting");
+  const scheduleDirty = scheduleIntervalInitial !== null && scheduleIntervalMinutes !== null && scheduleIntervalMinutes !== scheduleIntervalInitial;
 
   async function reloadStatus() {
     const { pages } = await fetchJson<{ pages: PageStatusRow[] }>(`${path}/api/pages-build`);
@@ -146,6 +169,28 @@ export default function PageBuild() {
         ]);
         setAllTypes(types);
         setAssetHrefs(hrefs);
+
+        const settingsType = types.find((t) => t.name === "systemSettings") ?? null;
+        setScheduleType(settingsType);
+        if (settingsType && canAccess(settingsType.id, "setting")) {
+          const entry = await systemSettingsApi.getSingleton();
+          const raw = entry?.value.data;
+          let stored: Record<string, unknown> = {};
+          if (typeof raw === "string" && raw) {
+            try {
+              const parsed: unknown = JSON.parse(raw);
+              if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>;
+            } catch {
+              // Same "fall back to defaults, don't throw" spirit
+              // `parseScheduleFlipIntervalMinutes` uses for the field
+              // itself - a malformed blob shouldn't fail the whole page.
+            }
+          }
+          setScheduleOtherData(stored);
+          const interval = parseScheduleFlipIntervalMinutes(raw);
+          setScheduleIntervalMinutes(interval);
+          setScheduleIntervalInitial(interval);
+        }
 
         const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive("");
         const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts)$/.test(e.name));
@@ -241,6 +286,24 @@ export default function PageBuild() {
     for (const pathname of pathnames) await buildOne(pathname);
   }
 
+  async function saveScheduleInterval() {
+    if (scheduleIntervalMinutes === null) return;
+    setScheduleSaving(true);
+    try {
+      // Spread onto `scheduleOtherData`, not a bare `{scheduleFlipIntervalMinutes}`
+      // - see that state's own doc comment.
+      await systemSettingsApi.saveSingleton({
+        data: JSON.stringify({ ...scheduleOtherData, scheduleFlipIntervalMinutes: scheduleIntervalMinutes }),
+      });
+      setScheduleIntervalInitial(scheduleIntervalMinutes);
+      toast.add({ type: "success", title: "Publish schedule saved." });
+    } catch (error) {
+      toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setScheduleSaving(false);
+    }
+  }
+
   const rows: Row[] = pathnames.map((pathname) => {
     const status = statusByPath.get(pathname);
     let state: Row["status"] = "not-built";
@@ -306,6 +369,32 @@ export default function PageBuild() {
           <TextField label="Origin" placeholder="https://example.com" value={origin} onChange={setOrigin} />
         </div>
       </section>
+
+      {canEditSchedule && scheduleIntervalMinutes !== null && (
+        <section class="card">
+          <header>
+            <h2>Publish schedule</h2>
+            <p>
+              How often a scheduled page (a future publish date, set when it was built) actually goes live. The
+              underlying check runs every 15 minutes no matter what - setting this below 15 has no effect without
+              editing `wrangler.jsonc`'s cron trigger and redeploying.
+            </p>
+          </header>
+          <div class="under stack">
+            <NumberField
+              label={`Interval (minutes) - default ${DEFAULT_SCHEDULE_FLIP_INTERVAL_MINUTES}`}
+              value={scheduleIntervalMinutes}
+              min={15}
+              onChange={setScheduleIntervalMinutes}
+            />
+            {scheduleDirty && (
+              <button type="button" disabled={scheduleSaving} aria-busy={scheduleSaving || undefined} onClick={() => void saveScheduleInterval()}>
+                Save
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {unmatchedTemplates.length > 0 && (
         <section class="card">

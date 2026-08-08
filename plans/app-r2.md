@@ -584,14 +584,41 @@ thiết).
    `/dry/api/pages-build?path=`, load trong Playwright thật, bấm nút 3
    lần → "Count: 0" → "1" → "2" đúng, `window.dryHydrated===true`, 0 lỗi
    console. Trang test + source đã dọn sạch sau khi xác nhận.
-4. **🟡 Sitemap + schedule - phần lõi xong, phần UI/setting chưa.**
-   mục 8 xong nhưng dark (`buildSitemapResponseFromRegistry`, chưa thay
-   `page-handler.ts`'s handler thật). mục 9 xong phần cốt lõi
-   (`schedule-flip.ts` + `entry-worker.ts`'s `scheduled` export +
-   `wrangler.jsonc` cron) nhưng **chưa đọc setting khoảng cách chỉnh được**
-   (quyết định #11) - chạy cố định theo nhịp cron. mục 14 xong
-   (`isEdgeCacheable`/`storeEdgeCache` thêm `ttlSeconds` optional, không đổi
-   hành vi cũ).
+4. **🟡 Sitemap + schedule - schedule (mục 9) giờ đã ĐỦ cả setting, sitemap
+   (mục 8) vẫn dark.** mục 8 xong nhưng dark
+   (`buildSitemapResponseFromRegistry`, chưa thay `page-handler.ts`'s
+   handler thật). mục 9 (2026-08-09): thêm nốt setting
+   `scheduleFlipIntervalMinutes` (quyết định #11) - `lib/
+   schedule-flip-setting.ts` (pure, share được cả server lẫn client, tránh
+   lặp lại bẫy "module server kéo theo client build" đã gặp ở mục 7) đọc
+   field này từ CHÍNH `systemSettings.data` blob Settings.tsx (Color
+   schema) đã dùng cho theme - UI chỉnh nằm ở `PageBuild.tsx` (mục "Publish
+   schedule", gate quyền theo `systemSettings` type chứ không phải
+   `system-build`, vì đây là singleton của type khác). `entry-worker.ts`'s
+   `scheduled` đọc setting này TRƯỚC khi gọi `runScheduledFlip`, bỏ qua
+   sớm (0 D1 nào ngoài đọc chính `systemSettings`) nếu chưa đủ khoảng cách
+   kể từ lần chạy trước - "lần chạy trước" lưu 1 timestamp trong KV
+   (`getAuthSecurityStore`, reuse store đã có cho auth/rate-limit, namespace
+   riêng `"schedule-flip"` - đúng tiền lệ `rate-limit.ts` đã reuse cùng
+   store cho 1 việc "không hẳn auth" khác).
+   **Bug thật tìm thấy khi thiết kế phần này (không phải khi build):**
+   `Settings.tsx`'s save cũ GHI ĐÈ TOÀN BỘ `data` bằng đúng 15 key theme nó
+   biết, nên save 1 màu bất kỳ sẽ ÂM THẦM XOÁ `scheduleFlipIntervalMinutes`
+   (hoặc bất kỳ key nào page khác từng ghi vào cùng blob). Sửa: cả
+   `Settings.tsx` lẫn `PageBuild.tsx`'s save giờ đều merge lên dữ liệu ĐÃ
+   load được (`{...otherStoredData, ...ownKnownFields}`) thay vì ghi đè
+   thẳng `value`. **Xác nhận sống dưới `wrangler dev` thật:** chỉnh
+   interval = 45 ở Page Build, Save; sang Color schema đổi màu Primary,
+   Save; fetch lại `systemSettings` qua API - CẢ HAI đều còn nguyên trong
+   cùng 1 blob (`scheduleFlipIntervalMinutes:45` + `primaryColor:"#123456"`).
+   Gọi `/cdn-cgi/local/scheduled` (endpoint wrangler dev cung cấp để trigger
+   cron tay) 2 lần liên tiếp - cả 2 đều log "skipped (45min interval not
+   yet elapsed)" đúng như kỳ vọng (KV state của lần chạy trước đó vẫn còn
+   từ trước khi set interval, sống sót qua cả việc restart `wrangler dev` -
+   đúng tính chất persist local KV/D1 miniflare). Nhánh "đủ giờ thì chạy"
+   được test đơn vị đầy đủ (4 test case, cả 2 nhánh, timestamp giả lập kiểm
+   soát được) thay vì chờ thật 45 phút. mục 14 xong (`isEdgeCacheable`/
+   `storeEdgeCache` thêm `ttlSeconds` optional, không đổi hành vi cũ).
 5. **🟡 UI Build - bản đầu tiên thật, chưa đủ như mục 11 mô tả; VEI chưa
    đụng.** `PageBuild.tsx` (nav "System" → "Page Build", quyền
    `system-build`): liệt kê trang tĩnh qua `route-manifest.ts`, cột trạng

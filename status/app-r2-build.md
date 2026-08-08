@@ -1,4 +1,4 @@
-# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4 core + mục 7/10/13
+# app-r2 build (plans/app-r2.md) - Giai đoạn 1/2/4 core + mục 7/9/10/13
 
 ## Plan
 
@@ -415,6 +415,62 @@ the bare relative one, hooks import rewritten to the same runtime URL as
 new `preactRuntimeUrl` field. Full suite still 0 new failures, same 13
 pre-existing ones.
 
+## Update 2026-08-09, part 5: mục 9's remaining piece - the schedule interval setting
+
+Last unfinished piece of quyết định #11: `scheduleFlipIntervalMinutes`,
+configurable in Settings, default 60. New `lib/schedule-flip-setting.ts`
+(pure, zero other imports - both the server-only `schedule-flip.ts` and the
+browser-bundled `PageBuild.tsx` import it directly, mirroring how
+`system-settings-theme.ts` is already shared between `routes/
+system-settings.ts` and `Settings.tsx` for the same `systemSettings.data`
+blob - deliberately NOT importing `schedule-flip.ts` itself from
+`PageBuild.tsx`, which would drag D1/KV-backed server adapters into the
+client bundle, the exact class of bug mục 7 already hit once with
+`assets.ts`). `entry-worker.ts`'s `scheduled` export now reads the setting
+and a KV timestamp (`shouldRunScheduledFlip`/`recordScheduledFlipRun`,
+reusing `getAuthSecurityStore` under its own `"schedule-flip"` namespace -
+`rate-limit.ts` already reuses that same store for an equally not-quite-auth
+concern, so this isn't a new pattern) BEFORE calling `runScheduledFlip` -
+a tick that fires too soon now costs one KV read and nothing else, no D1
+round trip at all.
+
+**Real data-loss bug found while designing this, before writing any of the
+new code:** `Settings.tsx`'s save built `data` from ONLY its own 15 known
+theme keys (`JSON.stringify(value)`), so the very next time anyone saved a
+color, it would have silently wiped `scheduleFlipIntervalMinutes` (or
+anything else a different page ever wrote into that same shared blob) right
+back out. Not hypothetical - reproduced live before fixing (see below).
+Fixed both writers (`Settings.tsx` and the new `PageBuild.tsx` section) to
+merge onto the full blob loaded at read time (`{...otherStoredData,
+...ownKnownFields}`) rather than replacing it outright.
+
+**Verified live under a real `wrangler dev`:** set the interval to 45 on
+`PageBuild.tsx`'s new "Publish schedule" card, saved - zero console errors.
+Switched to Color schema, changed the Primary color, saved. Fetched
+`GET /dry/api/content/systemSettings` directly: both `"scheduleFlipIntervalMinutes":45`
+and `"primaryColor":"#123456"` present in the SAME blob - the merge fix
+holds under the exact two-writers scenario that would have broken it.
+Triggered `/cdn-cgi/local/scheduled` (wrangler dev's manual cron-trigger
+endpoint) twice back to back: both logged `skipped (45min interval not yet
+elapsed)` - correct, since miniflare's local D1/KV state persists across a
+`wrangler dev` restart, and an earlier trigger from before the interval was
+even set was still within the (newly lowered) 45-minute window. Confirms
+the whole real chain - setting read, KV timestamp read, comparison, gate -
+actually executes against real bindings, not just mocks. The "should run"
+branch is covered by 4 new unit tests with controlled fake timestamps
+instead (both `schedule-flip.test.ts` and a new colocated
+`schedule-flip-setting.test.ts` for the pure parse function) - waiting 45
+real minutes for the positive case wasn't worth it given the mechanism
+(the exact same KV read+compare) is already exercised live by the skip
+path above.
+
+8 new tests total (4 in `schedule-flip-setting.test.ts`, 4 in
+`schedule-flip.test.ts`'s new `describe` block - the latter needed an
+explicit KV reset in `beforeEach`, since `getAuthSecurityStore`'s fallback
+adapter is one module-level in-memory store shared across every test in
+the file, not scoped by the `env` object passed in). Full suite: 0 new
+failures, same 13 pre-existing ones.
+
 ## Speed
 
 Single long session, 2026-08-09 (spanning a context-window compaction
@@ -422,15 +478,17 @@ partway through mục 7 - work continued seamlessly from the saved summary).
 Typecheck (`bun run typecheck`) and the full test suite (`bun run test`)
 run repeatedly throughout, not just at the end - every new/changed file
 confirmed against a clean-tree baseline before moving on. Final state: 0
-typecheck errors; 1050 passed / 13 failed (the same 13 pre-existing
+typecheck errors; 1058 passed / 13 failed (the same 13 pre-existing
 failures confirmed unrelated to this work via `git stash` before starting,
 see `status/app-r2-spike.md`) / 0 new failures across the whole session.
 
 Giai đoạn 1-4 (route manifest, build core, dynamic params, CSS+hydration)
 are now done and each independently live-verified under a real `wrangler
-dev`, not just unit-tested. Giai đoạn 5 (sitemap/schedule) and Giai đoạn 3's
-UI Build are done at the core but missing setting/UI polish (see the 🟡
-markers in `plans/app-r2.md`'s "Giai đoạn" section). Not yet started:
+dev`, not just unit-tested. mục 9 (schedule) is now fully done, setting
+included. Giai đoạn 5's remaining piece is mục 8 (sitemap still reading D1
+directly instead of `_pages`, dark either way) and Giai đoạn 3's UI Build
+is done at the core but missing progress/resume + batch-upload polish (see
+the 🟡 markers in `plans/app-r2.md`'s "Giai đoạn" section). Not yet started:
 Giai đoạn 6's in-browser code editor, and the live cutover of
 `page-handler.ts`/`sitemap.ts`/`discoverRoutes()` - deliberately still
 deferred, per this file's own "Working principle" above.

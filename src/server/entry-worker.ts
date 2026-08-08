@@ -2,8 +2,8 @@ import { handleApiRequest, isApiRequest } from "./handler.js";
 import { injectClientConfig } from "./client-config.js";
 import { path as adminPath, content } from "./config.js";
 import { isEdgeCacheable, readEdgeCache, storeEdgeCache } from "./app-router/edge-cache.js";
-import { runScheduledFlip } from "./app-router/schedule-flip.js";
-import { createPagesRegistryAdapter } from "../content-types/engine/index.js";
+import { parseScheduleFlipIntervalMinutes, recordScheduledFlipRun, runScheduledFlip, shouldRunScheduledFlip } from "./app-router/schedule-flip.js";
+import { createContentEngineAdapter, createContentEntryEngineAdapter, createPagesRegistryAdapter } from "../content-types/engine/index.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
 import { handleVeiRoute } from "./vei-routes.js";
@@ -149,17 +149,43 @@ export default {
    * infrastructure Cloudflare itself invokes, not a reachable HTTP route.
    * Same D1-per-request-binding shape `getContentAdapters` uses elsewhere -
    * built directly here rather than through that helper, which expects a
-   * `DryRouteContext` this callback doesn't have one of. */
+   * `DryRouteContext` this callback doesn't have one of.
+   *
+   * `wrangler.jsonc`'s cron cadence is the finest this ever runs (deploy-
+   * time, can't be sped up from a setting - see `plans/app-r2.md`
+   * quyết định #11) but most ticks should be no-ops: `shouldRunScheduledFlip`
+   * checks a KV timestamp against `systemSettings`'s configurable
+   * `scheduleFlipIntervalMinutes` (`PageBuild.tsx`'s "Publish schedule"
+   * section) BEFORE touching D1 at all, so a tick that fires too soon costs
+   * one KV read and nothing else. */
   async scheduled(_event: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
-    const pagesRegistry = createPagesRegistryAdapter(content, env);
     ctx.waitUntil(
-      runScheduledFlip({ env }, pagesRegistry, Date.now())
-        .then((flipped) => {
-          if (flipped.length > 0) console.log(`[drycms] schedule flip: published ${flipped.length} page(s): ${flipped.join(", ")}`);
-        })
-        .catch((error: unknown) => {
-          console.error("[drycms] schedule flip failed:", error);
-        }),
+      (async () => {
+        const now = Date.now();
+        const schema = createContentEngineAdapter(content, env);
+        const entries = createContentEntryEngineAdapter(content, env);
+        const allTypes = await schema.listContentTypes();
+        const settingsType = allTypes.find((t) => t.name === "systemSettings");
+        const settingsEntry = settingsType ? await entries.getSingletonEntry(settingsType, allTypes) : null;
+        const intervalMinutes = parseScheduleFlipIntervalMinutes(settingsEntry?.value.data);
+
+        if (!(await shouldRunScheduledFlip(env, intervalMinutes, now))) {
+          // Genuinely useful in real operation, not just a debug leftover -
+          // an operator watching logs for "is my cron actually running"
+          // would otherwise see total silence on every throttled tick
+          // (only a tick that actually flips something logs anything
+          // below).
+          console.log(`[drycms] schedule flip: skipped (${intervalMinutes}min interval not yet elapsed)`);
+          return;
+        }
+
+        const pagesRegistry = createPagesRegistryAdapter(content, env);
+        const flipped = await runScheduledFlip({ env }, pagesRegistry, now);
+        await recordScheduledFlipRun(env, now);
+        if (flipped.length > 0) console.log(`[drycms] schedule flip: published ${flipped.length} page(s): ${flipped.join(", ")}`);
+      })().catch((error: unknown) => {
+        console.error("[drycms] schedule flip failed:", error);
+      }),
     );
   },
 };

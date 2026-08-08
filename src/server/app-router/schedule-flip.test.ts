@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 
@@ -13,10 +13,11 @@ vi.mock("../config.js", async () => {
   };
 });
 
-const { runScheduledFlip } = await import("./schedule-flip.js");
+const { runScheduledFlip, shouldRunScheduledFlip, recordScheduledFlipRun } = await import("./schedule-flip.js");
 const { writeBuiltPage, readBuiltPage } = await import("./built-pages-storage.js");
 const { createPagesRegistryAdapter } = await import("../../content-types/engine/index.js");
 const { content } = await import("../config.js");
+const { getAuthSecurityStore } = await import("../auth-security.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -65,5 +66,39 @@ describe("runScheduledFlip", () => {
     const registry = createPagesRegistryAdapter(content);
     const flipped = await runScheduledFlip(ctx, registry, Date.now() - 10_000_000);
     expect(flipped).toEqual([]);
+  });
+});
+
+describe("shouldRunScheduledFlip / recordScheduledFlipRun", () => {
+  // `getAuthSecurityStore`'s fallback (no `kv` in the mocked config above)
+  // is ONE module-level in-memory store, shared by every test in this
+  // file - not scoped by the `env` object passed in, so a leftover
+  // "last run" from an earlier test would otherwise leak into the next
+  // one. Explicit reset, rather than a fresh `env` per test, is what
+  // actually isolates these.
+  beforeEach(async () => {
+    await getAuthSecurityStore({}).delete("schedule-flip", "last-run-at");
+  });
+
+  it("runs on the very first tick, before anything has ever been recorded", async () => {
+    expect(await shouldRunScheduledFlip({}, 60, Date.now())).toBe(true);
+  });
+
+  it("skips a tick that fires before the configured interval has elapsed", async () => {
+    const now = Date.now();
+    await recordScheduledFlipRun({}, now);
+    expect(await shouldRunScheduledFlip({}, 60, now + 15 * 60_000)).toBe(false);
+  });
+
+  it("runs again once the configured interval has fully elapsed", async () => {
+    const now = Date.now();
+    await recordScheduledFlipRun({}, now);
+    expect(await shouldRunScheduledFlip({}, 60, now + 60 * 60_000)).toBe(true);
+  });
+
+  it("respects a shorter configured interval than the default", async () => {
+    const now = Date.now();
+    await recordScheduledFlipRun({}, now);
+    expect(await shouldRunScheduledFlip({}, 15, now + 15 * 60_000)).toBe(true);
   });
 });

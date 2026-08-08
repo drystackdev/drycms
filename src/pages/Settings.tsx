@@ -168,6 +168,13 @@ export default function Settings() {
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "systemSettings"), []);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
   const [value, setValue] = useState<SystemSettingsValue | null>(null);
+  // Everything else already in `data` (e.g. `PageBuild.tsx`'s
+  // `scheduleFlipIntervalMinutes`) - `save()` below spreads `value` ONTO
+  // this rather than replacing `data` outright, so saving a color can never
+  // silently wipe a setting this page doesn't know about. Captured once at
+  // load time, not re-read on every save, matching this page's existing
+  // "no autosave, in-memory edits only until Save" contract.
+  const [otherStoredData, setOtherStoredData] = useState<Record<string, unknown>>({});
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -205,6 +212,7 @@ export default function Settings() {
         // schema-editor noise for every new setting (same reasoning
         // `memory.data` already uses).
         const stored = parseSystemSettingsData(entry?.value.data);
+        setOtherStoredData(stored as Record<string, unknown>);
         const loaded: SystemSettingsValue = {
           primaryColor: readColor(stored.primaryColor, "#00a76f"),
           secondaryColor: readColor(stored.secondaryColor, "#8e33ff"),
@@ -245,7 +253,11 @@ export default function Settings() {
     if (Object.keys(errors).length > 0) return;
     setSaving(true);
     try {
-      await entriesApi.saveSingleton({ data: JSON.stringify(value) });
+      // Spread onto `otherStoredData`, not `value` alone - see that
+      // state's own doc comment. `value`'s keys always win over whatever
+      // was loaded, since this page IS the source of truth for each of
+      // them.
+      await entriesApi.saveSingleton({ data: JSON.stringify({ ...otherStoredData, ...value }) });
       setInitialSnapshot(JSON.stringify(value));
       // The rendered stylesheet (`routes/system-settings.ts`) only refetches
       // on its own at the next full page load - without this, THIS tab
