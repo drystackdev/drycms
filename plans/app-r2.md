@@ -516,24 +516,49 @@ Còn lại của spike (mục 3 chạy sống, và đo mục 4 đầy đủ) là
 duyệt rảnh - không chặn việc bắt đầu Giai đoạn 1, vì cả 2 đều nằm ở mục 6
 (CSS), không phải mục 1-2 (route manifest, build core).
 
-1. **Build core** - `buildDocument()` tách ra, `dry()` HTTP published-only,
-   build 1 trang tĩnh, ghi qua storage adapter. Serve từ cache, miss = 404.
-   Bỏ `PageCacheEnvelope`, R2 chứa HTML thô.
-2. **Route manifest + bảng + route động** - mục 1 (bỏ `import.meta.glob`),
-   mục 5 (`_pages`/`_page_deps`), mục 4 (liệt kê param), build theo phụ thuộc.
-3. **CSS + hydration** - Tailwind browser build per-page, `page.js` động +
-   import map, cờ bỏ hydration cho trang tĩnh.
-4. **Sitemap + schedule** - mục 8, 9, 14. Cron flip con trỏ.
-5. **UI Build + VEI** - trang Build trong admin (trạng thái/stale/progress/
-   resume), VEI save → build → reload.
-6. **Sửa code trong browser** (nội dung `page-builder.md`) - cây thư mục
-   `src/apps/pages/**` + Editer, lưu R2, build lại trang liên quan, script
-   sync (mục 13), `types-cache` cho `dry.generated.d.ts` (mục 10). Đây là mục
-   tiêu cuối, nhưng là phần *dễ nhất* một khi 1-5 xong - nó chỉ là thêm một
-   nguồn trigger build.
+1. **✅ Build core (2026-08-09, `status/app-r2-build.md`).**
+   `buildDocument()` tách ra (`build-document.ts`, `render.ts` không đổi hành
+   vi), `dry()` HTTP published-only (`dry-reader-http.ts` + `routes/dry-http.ts`),
+   compile+render 1 trang qua `page-build.ts` (spike's allowlist mở rộng,
+   `dry`/`params`/`setTitle`/`dryBind` qua tham số `new Function` - đã kiểm
+   chứng bằng test thật, không phải suy luận), ghi qua storage adapter
+   (`built-pages-storage.ts` + `routes/pages-build.ts`). Bỏ
+   `PageCacheEnvelope` **cho nhánh mới** (namespace `built/` riêng, không
+   đụng cache cũ). **Chưa nối vào đường serve thật** - xem quyết định #8 mới
+   bên dưới.
+2. **✅ Route manifest + bảng + route động (2026-08-09).**
+   mục 1 (`route-manifest.ts`, tái dùng `buildRouteTree`/`matchRoute` không
+   đổi), mục 5 (`_pages`/`_page_deps`, dual engine), mục 4 CHƯA làm (liệt kê
+   param cho route động). Route manifest xây xong nhưng **chưa có gì đổ dữ
+   liệu thật vào `pagesSourceStorage`** ngoài `scripts/sync-pages-r2.ts`
+   (mục 13, cũng xong).
+3. **⬜ CSS + hydration** - chưa làm, đúng như dự kiến (chặn bởi mục 6 còn
+   mở từ spike).
+4. **🟡 Sitemap + schedule - phần lõi xong, phần UI/setting chưa.**
+   mục 8 xong nhưng dark (`buildSitemapResponseFromRegistry`, chưa thay
+   `page-handler.ts`'s handler thật). mục 9 xong phần cốt lõi
+   (`schedule-flip.ts` + `entry-worker.ts`'s `scheduled` export +
+   `wrangler.jsonc` cron) nhưng **chưa đọc setting khoảng cách chỉnh được**
+   (quyết định #11) - chạy cố định theo nhịp cron. mục 14 xong
+   (`isEdgeCacheable`/`storeEdgeCache` thêm `ttlSeconds` optional, không đổi
+   hành vi cũ).
+5. **⬜ UI Build + VEI** - chưa làm. Không có UI nào để bấm build - chỉ gọi
+   được `page-build.ts` trực tiếp (qua script/console).
+6. **🟡 Sửa code trong browser - hạ tầng lưu trữ xong, editor chưa.**
+   `pagesSourceStorage` option + `routes/pages-source.ts` (GET-only) +
+   `scripts/sync-pages-r2.ts` (push/pull, không ghi đè, push local đã chạy
+   thật) đều xong. `types-cache` cho `dry.generated.d.ts` (mục 10) xong đầy
+   đủ - đã tách khỏi `node:fs` module-scope, có trigger sau mọi lần apply
+   schema, có route đọc. Editer + cây thư mục UI + quyền `system-code` (đã
+   có permission, chưa có route để gate) - chưa làm.
 
-Mục 10 (`types-cache`) có thể tách ra làm sớm bất cứ lúc nào - nó độc lập với
-mọi thứ còn lại.
+**Quyết định mới #8 (chốt trong lúc build, không có trong bản plan gốc):**
+mọi capability trên được xây **additive và dark** - không flip hành vi serve
+đang chạy thật (`page-handler.ts`, `sitemap.ts` live handler,
+`discoverRoutes()`) cho tới khi có ít nhất 1 lần build thật chạy qua UI Build
+(mục 5). Lý do: site `sivelap` đang chạy thật - flip sớm khi `_pages` còn
+rỗng sẽ làm site 404/sitemap rỗng ngay khi deploy. Chi tiết đầy đủ trong
+`status/app-r2-build.md`.
 
 ## Câu hỏi còn mở
 

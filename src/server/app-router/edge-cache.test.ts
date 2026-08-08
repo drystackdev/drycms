@@ -139,4 +139,33 @@ describe("readEdgeCache / storeEdgeCache", () => {
     expect(errors).toHaveBeenCalled();
     errors.mockRestore();
   });
+
+  // plans/app-r2.md mục 14 - additive `ttlSeconds` param.
+  it("an explicit ttlSeconds overrides pagesCacheEdgeTtl in the stored Cache-Control", async () => {
+    installCache();
+    const response = storeEdgeCache(new Request("https://site.test/sitemap.xml"), new Response("<urlset/>", { headers: { "Content-Type": "application/xml" } }), ctx, 3600);
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=3600, must-revalidate");
+  });
+
+  it("omitting ttlSeconds keeps the exact original pagesCacheEdgeTtl behavior", async () => {
+    installCache();
+    const response = storeEdgeCache(new Request("https://site.test/about"), pageResponse(), ctx);
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, s-maxage=60, must-revalidate");
+  });
+});
+
+describe("isEdgeCacheable with an explicit ttlSeconds", () => {
+  it("stays cacheable with a positive ttlSeconds even when pagesCacheEdgeTtl is 0", () => {
+    configBox.edgeTtl = 0;
+    expect(isEdgeCacheable(new Request("https://site.test/sitemap.xml"), 3600)).toBe(true);
+  });
+
+  it("a ttlSeconds of 0 is still not cacheable, same as pagesCacheEdgeTtl <= 0", () => {
+    expect(isEdgeCacheable(new Request("https://site.test/sitemap.xml"), 0)).toBe(false);
+  });
+
+  it("omitting ttlSeconds keeps the exact original pagesCacheEdgeTtl gate", () => {
+    configBox.edgeTtl = 0;
+    expect(isEdgeCacheable(new Request("https://site.test/about"))).toBe(false);
+  });
 });

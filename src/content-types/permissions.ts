@@ -51,6 +51,17 @@ export const PAGE_COMPONENTS_RESOURCE_ID = "system-page-components";
 export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
+/** Gates `src/apps/pages/**` code edits (`plans/app-r2.md`'s Giai đoạn 6,
+ * not built yet) - kept separate from `SYSTEM_BUILD_RESOURCE_ID` on purpose:
+ * a role that can trigger a rebuild of already-saved pages shouldn't
+ * automatically be able to change what code runs (`plans/app-r2.md`
+ * quyết định #12, "sửa code = chạy code"). No route checks this yet - added
+ * now so the Role editor's naming is settled before the editor exists. */
+export const CODE_EDITOR_RESOURCE_ID = "system-code";
+/** Gates triggering a page build/rebuild and reading published content over
+ * `dry-http` (`plans/app-r2.md` mục 12, `routes/dry-http.ts`,
+ * `routes/pages-build.ts`) - separate from `CODE_EDITOR_RESOURCE_ID` above. */
+export const SYSTEM_BUILD_RESOURCE_ID = "system-build";
 
 /** Content types no role permission applies to AT ALL - `permissionActionsFor`
  * returns `[]`, so the Role editor and the Dashboard's permission summary drop

@@ -14,11 +14,16 @@ import * as authRoute from "./routes/auth.js";
 import * as aiRoute from "./routes/ai.js";
 import * as memoryRoute from "./routes/memory.js";
 import * as systemSettingsRoute from "./routes/system-settings.js";
+import * as dryHttpRoute from "./routes/dry-http.js";
+import * as pagesBuildRoute from "./routes/pages-build.js";
+import * as typesCacheRoute from "./routes/types-cache.js";
+import * as pagesSourceRoute from "./routes/pages-source.js";
 import { requirePermission } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
+  SYSTEM_BUILD_RESOURCE_ID,
 } from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
@@ -63,6 +68,10 @@ const API_ROUTES: Record<string, RouteModule> = {
   ai: aiRoute,
   memory: memoryRoute,
   "system-settings": systemSettingsRoute,
+  "dry-http": dryHttpRoute,
+  "pages-build": pagesBuildRoute,
+  "types-cache": typesCacheRoute,
+  "pages-source": pagesSourceRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {
@@ -163,6 +172,20 @@ export async function handleApiRequest(
   // real singleton's schema gets in `permissionActionsFor`.
   if (segment === "page-components") {
     const denied = await requirePermission(context, PAGE_COMPONENTS_RESOURCE_ID, "setting");
+    if (denied) return secureResponse(denied, request);
+  }
+  // `dry-http` (published-only content reads for the browser build
+  // pipeline) and `pages-build` (writing a built page + registering it) are
+  // both only meant to be called by the build orchestrator - gated behind
+  // the same `system-build` grant (`plans/app-r2.md` quyết định #12), every
+  // method including GET (same "one all-or-nothing toggle" shape as
+  // Page Components above, not a real content type with separate actions).
+  // `types-cache` stays open to any authenticated session - it only ever
+  // serves the generated `.d.ts` (see `routes/types-cache.ts`), same
+  // "broadly read, narrowly written" treatment `icons`/`richtext-components`
+  // GET already get.
+  if (segment === "dry-http" || segment === "pages-build") {
+    const denied = await requirePermission(context, SYSTEM_BUILD_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   return secureResponse(await handler(context), request);

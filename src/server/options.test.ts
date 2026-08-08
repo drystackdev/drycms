@@ -34,6 +34,9 @@ describe('resolveOptions', () => {
 			typesCache: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/types-cache') },
 			},
+			pagesSource: {
+				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/pages-source') },
+			},
 			ai: {
 				mode: 'local', provider: 'codex', command: 'codex',
 				args: ['exec', '--ephemeral', '--skip-git-repo-check'],
@@ -62,6 +65,7 @@ describe('resolveOptions', () => {
 		expect(resolved.pageComponents.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'components' });
 		expect(resolved.pagesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-cache' });
 		expect(resolved.typesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'types-cache' });
+		expect(resolved.pagesSource.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-source' });
 		expect(resolved.kv).toMatchObject({ kind: 'KV', binding: 'KV' });
 	});
 

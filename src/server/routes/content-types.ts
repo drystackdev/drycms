@@ -3,6 +3,8 @@ import { getContentAdapters } from "../content-adapters.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
 import type { DestructiveChange, SavePlan } from "../../content-types/migration.js";
+import { generateDryTypes } from "../../content-types/codegen.js";
+import { writeGeneratedDryTypes } from "../../content-types/types-cache.js";
 import {
   assertNotFrozen,
   NamingError,
@@ -132,13 +134,33 @@ async function performSave(
 }
 
 /** Shared by POST (create) and PUT (update). */
+/**
+ * Regenerates `dry.generated.d.ts` and pushes it to `types-cache` storage
+ * (`plans/app-r2.md` mục 10) - called after every schema mutation that
+ * actually commits (never after a dry-run/"plan"), so the file the browser
+ * build pipeline's Editer reads as `extraFiles` never drifts far from the
+ * real schema. Errors are logged, not thrown: a stale generated-types file
+ * is a DX papercut (bad autocomplete), not a reason to fail a schema save
+ * that already committed - see `types-cache.ts`'s own "risk" analysis.
+ */
+async function regenerateTypesCache(adapter: ContentEngineAdapter): Promise<void> {
+  try {
+    const allTypes = await adapter.listContentTypes();
+    await writeGeneratedDryTypes(generateDryTypes(allTypes));
+  } catch (error) {
+    console.error("[drycms] failed to regenerate dry.generated.d.ts after a schema change:", error);
+  }
+}
+
 async function handleSave(
   adapter: ContentEngineAdapter,
   entryAdapter: ContentEntryEngineAdapter,
   definition: ContentTypeDefinition,
   confirm: boolean,
 ): Promise<Response> {
-  return jsonResponse(await performSave(adapter, entryAdapter, definition, confirm), 200);
+  const result = await performSave(adapter, entryAdapter, definition, confirm);
+  await regenerateTypesCache(adapter);
+  return jsonResponse(result, 200);
 }
 
 interface BatchDraftInput {
@@ -205,6 +227,7 @@ async function handleBatch(
       if (mode === "apply") break;
     }
   }
+  if (mode === "apply" && results.some((r) => r.ok)) await regenerateTypesCache(adapter);
   return jsonResponse({ mode, results });
 }
 
@@ -307,6 +330,7 @@ export const DELETE: DryRouteHandler = async (context) => {
       );
     }
     await adapter.deleteContentType(id);
+    await regenerateTypesCache(adapter);
     return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);

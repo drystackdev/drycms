@@ -20,3 +20,4 @@ export const pageComponentsStorage = resolved.pageComponents.storage;
 export const pagesCacheStorage = resolved.pagesCache.storage;
 export const pagesCacheEdgeTtl = resolved.pagesCache.edgeTtl;
 export const typesCacheStorage = resolved.typesCache.storage;
+export const pagesSourceStorage = resolved.pagesSource.storage;

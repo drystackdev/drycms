@@ -29,6 +29,14 @@ const COMPONENTS_STORAGE_DIR_NAME = "richtext-components";
 const PAGE_COMPONENTS_STORAGE_DIR_NAME = "components";
 const PAGES_CACHE_STORAGE_DIR_NAME = "pages-cache";
 const TYPES_CACHE_STORAGE_DIR_NAME = "types-cache";
+/** `src/apps/pages/**` source `.tsx`/`.ts` - `plans/app-r2.md` quyết định
+ * #6: git remains the source of truth, this root is what `scripts/sync-pages-r2.ts`
+ * (push, no-overwrite) pushes INTO and the browser build pipeline reads
+ * FROM (mục 1's route manifest, mục 7's per-page compile). Deliberately
+ * separate from `pagesCacheStorage` (built HTML OUTPUT) and
+ * `pageComponentsStorage` (Component Builder's unrelated `.dry/components`
+ * tree, quyết định #10 - left alone). */
+const PAGES_SOURCE_STORAGE_DIR_NAME = "pages-source";
 const KV_DIR_NAME = "kv";
 
 /** Long enough that a hot page's repeat views stop reaching the Worker's
@@ -226,6 +234,10 @@ export interface ResolvedTypesCacheOption {
   storage: ResolvedStorageOption;
 }
 
+export interface ResolvedPagesSourceOption {
+  storage: ResolvedStorageOption;
+}
+
 export interface ResolvedLocalAiOption {
   mode: "local";
   provider: "codex" | "claude";
@@ -283,6 +295,7 @@ export interface ResolvedDryOption {
   pageComponents: ResolvedPageComponentsOption;
   pagesCache: ResolvedPagesCacheOption;
   typesCache: ResolvedTypesCacheOption;
+  pagesSource: ResolvedPagesSourceOption;
   ai: ResolvedAiOption;
   kv: ResolvedKvOption;
   lang: string;
@@ -562,6 +575,7 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
       edgeTtl: resolvePagesCacheEdgeTtl(options.pagesCache?.edgeTtl),
     },
     typesCache: { storage: resolveStorageBackedOption(kind, TYPES_CACHE_STORAGE_DIR_NAME, overrides) },
+    pagesSource: { storage: resolveStorageBackedOption(kind, PAGES_SOURCE_STORAGE_DIR_NAME, overrides) },
     ai: resolveAiOption(kind, options.ai),
     kv: resolveKvOption(kind, options.kv, overrides),
     lang: lang.trim(),

@@ -1,5 +1,6 @@
 import { loadSeoDefaults, mergeSeoLayers, type DrySeoValue } from "../../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
+import type { PagesRegistryAdapter } from "../../content-types/engine/pages-registry-types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { DryRouteContext } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
@@ -92,4 +93,70 @@ export function buildRobotsResponse(url: URL): Response {
   const origin = resolveSiteOrigin(url);
   const body = `User-agent: *\nDisallow: ${adminPath}/\n\nSitemap: ${origin}/sitemap.xml\n`;
   return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+}
+
+const DEFAULT_SITEMAP_EDGE_TTL_SECONDS = 86_400;
+
+/**
+ * `edge-cache.ts`'s `storeEdgeCache`'s `ttlSeconds` for `sitemap.xml` (mục
+ * 14): 24h when nothing is scheduled, capped down to exactly when the next
+ * `schedule`d page goes live otherwise - a bare 24h TTL would otherwise
+ * leave a just-published page missing from a CACHED sitemap for up to a
+ * full day. Cheap on the common "nothing scheduled" path: one `MIN(...)`
+ * query (mục 9's cron sweep needs the identical query for its own fast
+ * empty-case exit, so this is never a new kind of cost, just a second
+ * caller of it).
+ */
+export async function sitemapEdgeCacheTtlSeconds(pagesRegistry: PagesRegistryAdapter, nowMs: number): Promise<number> {
+  const nextPublishAt = await pagesRegistry.nextPublishAt(nowMs);
+  if (nextPublishAt === null) return DEFAULT_SITEMAP_EDGE_TTL_SECONDS;
+  const secondsUntilDue = Math.floor((nextPublishAt - nowMs) / 1000);
+  return Math.max(1, Math.min(DEFAULT_SITEMAP_EDGE_TTL_SECONDS, secondsUntilDue));
+}
+
+/**
+ * Registry-backed sitemap (`plans/app-r2.md` mục 8) - NOT wired in as a
+ * replacement for `buildSitemapResponse` anywhere (`page-handler.ts` still
+ * calls the original, unchanged). Reads `_pages` (`pagesRegistry.
+ * listSitemapEntries`) instead of looping every collection's published
+ * entries directly - the whole point of mục 5's registry: `in_sitemap` and
+ * `lastmod` were already decided for real, at build time, by whichever page
+ * actually rendered (fixes the ORIGINAL `buildSitemapResponse`'s own
+ * documented limitation above: a static page's own `noIndex` isn't
+ * reflected there because checking it would mean actually rendering the
+ * page - here it already WAS rendered, before this function ever runs).
+ *
+ * Flipping `page-handler.ts`'s `/sitemap.xml` branch over to this is
+ * deliberately left undone (see `status/app-r2-build.md`): on a site with
+ * no pages built through the new pipeline yet, `_pages` is empty and this
+ * would return a sitemap with zero URLs, silently breaking the CURRENTLY
+ * WORKING sitemap on first deploy - a decision for whoever has actually run
+ * a real build pass, not a side effect of adding this function.
+ *
+ * `siteNoIndex` is the ONE thing still read live rather than off the
+ * registry (mục 8's own text: "Giữ live query đúng 1 thứ") - a runtime
+ * setting (`seoDefaults.seo.noIndex`) that can flip between builds, and
+ * checking it costs one singleton read, not a scan of every row.
+ */
+export async function buildSitemapResponseFromRegistry(url: URL, routeContext: DryRouteContext): Promise<Response> {
+  const { schema, entries, pagesRegistry } = getContentAdapters(routeContext);
+  const allTypes = await schema.listContentTypes();
+  const origin = resolveSiteOrigin(url);
+
+  const defaultSeo = await loadSeoDefaults(entries, allTypes);
+  const siteNoIndex = mergeSeoLayers({ default: defaultSeo }).noIndex === true;
+
+  const locs: { loc: string; lastmod: string }[] = siteNoIndex
+    ? []
+    : (await pagesRegistry.listSitemapEntries(Date.now())).map((entry) => ({
+        loc: `${origin}${entry.path}`,
+        lastmod: new Date(entry.builtAt).toISOString(),
+      }));
+
+  const body =
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+    locs.map(({ loc, lastmod }) => `<url><loc>${escapeXml(loc)}</loc><lastmod>${lastmod}</lastmod></url>`).join("") +
+    "</urlset>";
+  return new Response(body, { headers: { "Content-Type": "application/xml; charset=utf-8" } });
 }

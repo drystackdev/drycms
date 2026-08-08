@@ -66,5 +66,20 @@
       "binding": "KV",
       "id": "REPLACE_WITH_KV_NAMESPACE_ID"
     }
-  ]
+  ],
+
+  // `schedule` flip (`plans/app-r2.md` mục 9, `entry-worker.ts`'s
+  // `scheduled` export -> `schedule-flip.ts`'s `runScheduledFlip`) - copies
+  // a due `_pages` row's already-built immutable object onto its live key,
+  // never renders anything. `*/15` is the finest cadence anything here
+  // needs (quyết định #11's default is 60 minutes, user-configurable down
+  // to whatever this expression allows - a runtime setting can only make
+  // this SLOWER than the cron expression itself, never faster; the
+  // setting-driven gate isn't wired up yet, see `schedule-flip.ts`'s doc
+  // comment). NOT part of the "already added" `plans/app-r2.md` scope until
+  // `bun run deploy` actually ships this file - editing it here doesn't
+  // deploy anything by itself.
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  }
 }

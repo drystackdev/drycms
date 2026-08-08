@@ -1,12 +1,14 @@
 import { content } from "./config.js";
 import type { DryRouteContext } from "./context.js";
-import { createContentEngineAdapter, createContentEntryEngineAdapter } from "../content-types/engine/index.js";
+import { createContentEngineAdapter, createContentEntryEngineAdapter, createPagesRegistryAdapter } from "../content-types/engine/index.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
 import type { ContentEngineAdapter } from "../content-types/engine/types.js";
+import type { PagesRegistryAdapter } from "../content-types/engine/pages-registry-types.js";
 
 export interface ContentAdapters {
   schema: ContentEngineAdapter;
   entries: ContentEntryEngineAdapter;
+  pagesRegistry: PagesRegistryAdapter;
 }
 
 /**
@@ -19,6 +21,7 @@ const moduleAdapters: ContentAdapters | undefined = content.engine !== "D1"
   ? {
       schema: createContentEngineAdapter(content),
       entries: createContentEntryEngineAdapter(content),
+      pagesRegistry: createPagesRegistryAdapter(content),
     }
   : undefined;
 
@@ -31,6 +34,7 @@ export function getContentAdapters(context: DryRouteContext): ContentAdapters {
   const adapters = {
     schema: createContentEngineAdapter(content, context.env),
     entries: createContentEntryEngineAdapter(content, context.env),
+    pagesRegistry: createPagesRegistryAdapter(content, context.env),
   };
   requestAdapters.set(context, adapters);
   return adapters;

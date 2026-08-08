@@ -1,7 +1,9 @@
 import { handleApiRequest, isApiRequest } from "./handler.js";
 import { injectClientConfig } from "./client-config.js";
-import { path as adminPath } from "./config.js";
+import { path as adminPath, content } from "./config.js";
 import { isEdgeCacheable, readEdgeCache, storeEdgeCache } from "./app-router/edge-cache.js";
+import { runScheduledFlip } from "./app-router/schedule-flip.js";
+import { createPagesRegistryAdapter } from "../content-types/engine/index.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
 import { handleVeiRoute } from "./vei-routes.js";
@@ -73,6 +75,15 @@ async function serveAdminShell(env: WorkerEnv, request: Request): Promise<Respon
   return new Response(injectClientConfig(html), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
+/** Minimal hand-rolled shape for Cloudflare's Cron Trigger callback -
+ * same "small structural type instead of `@cloudflare/workers-types`"
+ * precedent `ExecutionContext` above and `engine/d1-driver.ts`'s
+ * `D1Database` already use. */
+interface ScheduledController {
+  cron: string;
+  scheduledTime: number;
+}
+
 export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -130,5 +141,25 @@ export default {
     }
 
     return withSecurityHeaders(await serveAdminShell(env, request));
+  },
+
+  /** `wrangler.jsonc`'s `triggers.crons` - the `schedule` flip (mục 9). Does
+   * NOT run through `handleApiRequest`/any session or `system-build` gate:
+   * a Cron Trigger invocation has no request/cookie to check, and this is
+   * infrastructure Cloudflare itself invokes, not a reachable HTTP route.
+   * Same D1-per-request-binding shape `getContentAdapters` uses elsewhere -
+   * built directly here rather than through that helper, which expects a
+   * `DryRouteContext` this callback doesn't have one of. */
+  async scheduled(_event: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+    const pagesRegistry = createPagesRegistryAdapter(content, env);
+    ctx.waitUntil(
+      runScheduledFlip({ env }, pagesRegistry, Date.now())
+        .then((flipped) => {
+          if (flipped.length > 0) console.log(`[drycms] schedule flip: published ${flipped.length} page(s): ${flipped.join(", ")}`);
+        })
+        .catch((error: unknown) => {
+          console.error("[drycms] schedule flip failed:", error);
+        }),
+    );
   },
 };

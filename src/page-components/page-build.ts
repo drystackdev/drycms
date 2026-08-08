@@ -1,0 +1,268 @@
+import { h, Fragment } from "preact";
+import * as preactHooks from "preact/hooks";
+import { transform, type Options as SucraseOptions } from "sucrase";
+import { dry, configureHttpDryReader, type HttpDryReaderConfig, type HttpDryReaderDependency } from "../content-types/dry-reader-http.js";
+import { params, setCurrentParams } from "../content-types/params-reader-client.js";
+import { resetHttpTitle, readHttpTitleLayer, setTitle } from "../content-types/dry-title-http.js";
+import { dryBind } from "../content-types/dry-vei.js";
+import { mergeSeoLayers, type DrySeoLayers, type DrySeoValue } from "../content-types/dry-seo.js";
+import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
+import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
+import { buildDocument } from "../server/app-router/build-document.js";
+import type { RouteMatch } from "../server/app-router/match.js";
+import type { ContentTypeDefinition } from "../content-types/types.js";
+
+/**
+ * The browser build orchestrator (`plans/app-r2.md` mục 7's "một nguồn
+ * trigger build", built ahead of the UI that will call it - see
+ * `status/app-r2-build.md`). Ties together every piece built for this plan:
+ * `dry-reader-http.ts` (mục 3), `resolveMatchToVNode`/`buildDocument`
+ * (mục 2, confirmed browser-safe by the spike), and an extended eval that
+ * allowlists `preact`/`preact/hooks` on top of `sucrase-eval.ts`'s existing
+ * "only relative file imports" rule (mục on the spike's unknown #1).
+ *
+ * NOT wired into `routes/pages-build.ts` automatically and not reachable
+ * from any admin UI yet - callers invoke `buildPage`/`publishBuiltPage`
+ * directly. Nothing here runs unless something calls it.
+ */
+
+export class PageBuildError extends Error {}
+
+// Same bare-specifier rule as `sucrase-eval.ts`'s `resolveModulePath`
+// (Component Builder's "only file imports"), extended with exactly the 2
+// npm-style packages a real page/layout can legitimately `import` (as
+// opposed to `dry`/`params`/`setTitle`/`dryBind`, which arrive as ambient
+// globals - see the `new Function` call below, not this allowlist).
+const NPM_ALLOWLIST: Record<string, Record<string, unknown>> = {
+  preact: { h, Fragment },
+  "preact/hooks": preactHooks as unknown as Record<string, unknown>,
+};
+
+function resolveModulePath(
+  fromPath: string,
+  specifier: string,
+  sourceByPath: Record<string, string>,
+): { kind: "external"; value: Record<string, unknown> } | { kind: "local"; path: string } {
+  if (specifier in NPM_ALLOWLIST) return { kind: "external", value: NPM_ALLOWLIST[specifier]! };
+  if (!specifier.startsWith(".")) {
+    throw new PageBuildError(`Cannot import "${specifier}" from "${fromPath}" - only relative file imports and preact/preact-hooks are allowed.`);
+  }
+  const fromDir = fromPath.includes("/") ? fromPath.slice(0, fromPath.lastIndexOf("/")) : "";
+  const segments = (fromDir ? fromDir.split("/") : []).concat(specifier.split("/"));
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") resolved.pop();
+    else resolved.push(segment);
+  }
+  const base = resolved.join("/");
+  // Real page/layout source in this codebase writes explicit `.js`
+  // extensions on relative imports (this project's own NodeNext-style
+  // convention, e.g. `import Foo from "./Foo.js"`) - unlike
+  // `sucrase-eval.ts`'s Component Builder tree, which only ever sees
+  // extensionless specifiers. `base` alone (`Foo.js`) never matches a
+  // `.tsx`/`.ts` source key, so a trailing `.js`/`.jsx` is stripped before
+  // generating candidates too - found by this module's own test suite
+  // using a realistic `.js`-suffixed import, not assumed.
+  const withoutJsExt = base.replace(/\.jsx?$/, "");
+  const candidates = base === withoutJsExt
+    ? [base, `${base}.tsx`, `${base}.ts`]
+    : [base, withoutJsExt, `${withoutJsExt}.tsx`, `${withoutJsExt}.ts`];
+  for (const candidate of candidates) {
+    if (candidate in sourceByPath) return { kind: "local", path: candidate };
+  }
+  throw new PageBuildError(`Cannot find "${specifier}" imported from "${fromPath}".`);
+}
+
+const CJS_OPTIONS: SucraseOptions = { transforms: ["jsx", "typescript", "imports"], jsxPragma: "h", jsxFragmentPragma: "Fragment", production: true };
+
+/**
+ * Evaluates one `.tsx`/`.ts` module, resolving its relative imports against
+ * `sourceByPath` and its `preact`/`preact/hooks` import (if any) against
+ * `NPM_ALLOWLIST`. `dry`/`params`/`setTitle`/`dryBind` are NOT resolved
+ * through `require()` at all - real page/layout source calls them as BARE
+ * ambient globals with no import statement (`dry.generated.d.ts`'s
+ * `declare global`), which sucrase's `imports` transform leaves untouched
+ * (it only rewrites EXISTING import statements into `require()` calls, it
+ * never invents one for an identifier that was never imported). They
+ * resolve instead through plain JS function-parameter scoping - the same
+ * trick this function already uses for `h`/`Fragment` (`sucrase-eval.ts`'s
+ * own precedent), just with 4 more names.
+ */
+function evalModule(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): { exports: any } {
+  const cached = cache.get(path);
+  if (cached) return cached;
+  const moduleObj = { exports: {} as any };
+  cache.set(path, moduleObj);
+
+  const source = sourceByPath[path];
+  if (source === undefined) throw new PageBuildError(`"${path}" is not loaded.`);
+  let transformed: string;
+  try {
+    transformed = transform(source, CJS_OPTIONS).code;
+  } catch (error) {
+    cache.delete(path);
+    throw new PageBuildError(`Failed to compile "${path}": ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const require = (specifier: string) => {
+    const resolved = resolveModulePath(path, specifier, sourceByPath);
+    return resolved.kind === "external" ? resolved.value : evalModule(resolved.path, sourceByPath, cache).exports;
+  };
+
+  try {
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("module", "exports", "require", "h", "Fragment", "dry", "params", "setTitle", "dryBind", transformed);
+    fn(moduleObj, moduleObj.exports, require, h, Fragment, dry, params, setTitle, dryBind);
+  } catch (error) {
+    cache.delete(path);
+    throw error instanceof PageBuildError ? error : new PageBuildError(`Failed to run "${path}": ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return moduleObj;
+}
+
+function moduleDefault(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): (props: never) => unknown {
+  const mod = evalModule(path, sourceByPath, cache);
+  const exported = mod.exports?.default ?? mod.exports;
+  if (typeof exported !== "function") throw new PageBuildError(`"${path}" has no default export function.`);
+  return exported;
+}
+
+export interface PageBuildInput {
+  pathname: string;
+  /** Explicit site origin - NEVER read from `window.location` (the build
+   * runs in the admin tab, not on the site's own domain) - see
+   * `build-document.ts`'s `BuildDocumentContext.origin` doc comment. */
+  origin: string;
+  adminPath: string;
+  siteLang: string;
+  /** `${adminPath}/api/dry-http` */
+  dryHttpEndpoint: string;
+  allTypes: ContentTypeDefinition[];
+  /** Every `.tsx`/`.ts` this page/layout chain (and anything they import)
+   * needs, keyed by path relative to the pages tree root. */
+  sourceByPath: Record<string, string>;
+  entryPath: string;
+  /** Root-to-leaf order - same convention `match.ts`'s `RouteMatch.layouts`
+   * already uses; `resolveMatchToVNode` reverses it internally. */
+  layoutPaths: string[];
+  params: Record<string, string | string[]>;
+}
+
+export interface PageBuildResult {
+  html: string;
+  /** Deduped, keep-latest-version per resource - a page that calls
+   * `dry().collection("blog").get(1)` twice shouldn't produce 2 `_page_deps`
+   * rows for `"blog"`. */
+  deps: HttpDryReaderDependency[];
+  /** Computed from the ACTUAL rendered SEO cascade (`mergeSeoLayers(...).
+   * noIndex !== true`), not a caller-supplied flag - matches how a real
+   * page's `noIndex` is decided everywhere else in this codebase. */
+  inSitemap: boolean;
+}
+
+function dedupeDeps(deps: HttpDryReaderDependency[]): HttpDryReaderDependency[] {
+  const byResource = new Map<string, number>();
+  for (const dep of deps) byResource.set(dep.resource, dep.version);
+  return [...byResource.entries()].map(([resource, version]) => ({ resource, version }));
+}
+
+/** Site-wide SEO defaults (`seoDefaults` singleton), fetched directly -
+ * deliberately NOT through `dry-reader-http.ts`'s tracked `dry()`: that
+ * would append a phantom entry to the page's OWN replay log that its code
+ * never actually called, breaking `dry-reader-client.ts`'s strictly
+ * POSITIONAL hydration replay. Mirrors `page-handler.ts`'s own
+ * `loadSeoDefaults` call, which bypasses `dry()`'s tracking machinery for
+ * exactly the same reason - see that module's call site. Still recorded as
+ * a real `_page_deps` entry (every page implicitly depends on site-wide
+ * defaults), just added to `deps` manually here instead. */
+async function fetchSeoDefaults(dryHttpEndpoint: string): Promise<{ value: DrySeoValue | undefined; dep: HttpDryReaderDependency | null }> {
+  const response = await fetch(dryHttpEndpoint, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "singleton", name: "seoDefaults", method: "get" }),
+  });
+  if (!response.ok) return { value: undefined, dep: null };
+  const [entry] = decodeCallLog(await response.text());
+  const resource = response.headers.get("X-Dry-Resource");
+  const version = Number(response.headers.get("X-Dry-Resource-Version") ?? "0");
+  const seo = (entry?.result as Record<string, unknown> | null)?.seo;
+  return {
+    value: seo && typeof seo === "object" ? (seo as DrySeoValue) : undefined,
+    dep: resource ? { resource, version } : null,
+  };
+}
+
+/**
+ * Compiles + renders one page to a complete HTML document. Does NOT write
+ * anything anywhere - see `publishBuiltPage` for the storage/registry half
+ * (`routes/pages-build.ts`).
+ */
+export async function buildPage(input: PageBuildInput): Promise<PageBuildResult> {
+  setCurrentParams(input.params);
+  resetHttpTitle();
+  const seo: DrySeoLayers = {};
+  const dryConfig: HttpDryReaderConfig = { endpoint: input.dryHttpEndpoint, callLog: [], deps: [], allTypes: input.allTypes, seo };
+  configureHttpDryReader(dryConfig);
+
+  const { value: defaultSeo, dep: defaultsDep } = await fetchSeoDefaults(input.dryHttpEndpoint);
+  seo.default = defaultSeo;
+
+  const cache = new Map<string, { exports: any }>();
+  const match: RouteMatch = {
+    page: async () => ({ default: moduleDefault(input.entryPath, input.sourceByPath, cache) }),
+    layouts: input.layoutPaths.map((path) => async () => ({ default: moduleDefault(path, input.sourceByPath, cache) })),
+    params: input.params,
+  };
+
+  const vnode = await resolveMatchToVNode(match);
+  const titleLayer = readHttpTitleLayer();
+  if (titleLayer) seo.page = { ...seo.page, ...titleLayer };
+
+  const html = await buildDocument(vnode, {
+    seo,
+    origin: input.origin,
+    pathname: input.pathname,
+    adminPath: input.adminPath,
+    siteLang: input.siteLang,
+    seoEntryDates: dryConfig.seoEntryDates,
+    callLog: dryConfig.callLog,
+    editMode: false,
+  });
+
+  const deps = dedupeDeps(defaultsDep ? [...dryConfig.deps, defaultsDep] : dryConfig.deps);
+  const inSitemap = mergeSeoLayers(seo).noIndex !== true;
+  return { html, deps, inSitemap };
+}
+
+export interface PublishOptions {
+  pagesBuildEndpoint: string;
+  pathname: string;
+  buildId?: string;
+  /** Epoch ms in the future = stage for `schedule` instead of publishing
+   * immediately (`plans/app-r2.md` mục 9). */
+  publishAt?: number | null;
+}
+
+/** POSTs a `buildPage` result to `routes/pages-build.ts` - the network half
+ * kept separate from `buildPage` itself so a caller can build without
+ * necessarily publishing (e.g. a future preview feature). */
+export async function publishBuiltPage(result: PageBuildResult, options: PublishOptions): Promise<void> {
+  const response = await fetch(options.pagesBuildEndpoint, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      pathname: options.pathname,
+      html: result.html,
+      buildId: options.buildId ?? crypto.randomUUID(),
+      deps: result.deps,
+      inSitemap: result.inSitemap,
+      publishAt: options.publishAt ?? null,
+    }),
+  });
+  if (!response.ok) {
+    throw new PageBuildError(`Publishing "${options.pathname}" failed: HTTP ${response.status}.`);
+  }
+}
