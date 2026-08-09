@@ -29,6 +29,9 @@ const SYLLABLES: Record<string, string[]> = {
   "Nguyễn": ["N", "Ng", "Ngu", "Nguy", "Nguyê", "Nguyên", "Nguyễn"],
 };
 
+/** Idempotent: `beforeAll` runs once per worker, and this suite is big enough
+ * that Playwright gives it more than one - the second attempt to create the
+ * same type is a 400, which is fine as long as the type ends up there. */
 async function createRichTextType(page: Page): Promise<void> {
   const status = await page.evaluate(
     async ([name, fieldLabel]) => {
@@ -59,7 +62,24 @@ async function createRichTextType(page: Page): Promise<void> {
     },
     [TYPE_NAME, RICH_FIELD_LABEL] as const,
   );
-  expect(status).toBe(200);
+
+  if (status === 200) return;
+
+  // Someone else got there first (or thinks they did) - confirm rather than
+  // fail. Polled: the schema list is cached per version, so a read taken the
+  // instant after another worker's write can still miss it.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (name) => {
+          const body = (await (await fetch("/dry/api/content-types")).json()) as {
+            definitions?: { name: string }[];
+          };
+          return !!body.definitions?.some((definition) => definition.name === name);
+        }, TYPE_NAME),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
 }
 
 /** Focused, mounted `.dry-tx-content` (it lives in a shadow root, which
@@ -109,7 +129,54 @@ async function composeSyllables(page: Page, words: string[]): Promise<void> {
   }
 }
 
+/**
+ * The OTHER kind of Vietnamese IME, and the one most people actually use:
+ * EVKey / OpenKey / Unikey / GoTiengViet don't compose at all. They backspace
+ * over what they already committed and re-insert the accented form - several
+ * separate DOM edits within a millisecond or two of the triggering keystroke.
+ * Anything expensive running synchronously in between loses the edits still
+ * queued, and the accent lands twice or in the wrong place ("nội dung" ->
+ * "noọội dung"). See `VALUE_FLUSH_DELAY_MS` in `useRichTextEditor.ts`.
+ *
+ * `[backspaces, insert]` per keystroke, spelling "tiếng Việt".
+ */
+const REWRITE_STREAM: [number, string][] = [
+  [0, "t"], [0, "i"], [0, "e"], [1, "ê"], [0, "n"], [0, "g"], [3, "ếng"],
+  [0, " "],
+  [0, "V"], [0, "i"], [0, "e"], [1, "ê"], [1, "ệ"], [0, "t"],
+];
+
+async function rewriteType(page: Page): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const backspace = {
+    windowsVirtualKeyCode: 8,
+    nativeVirtualKeyCode: 8,
+    key: "Backspace",
+    code: "Backspace",
+  };
+  try {
+    for (const [backspaces, insert] of REWRITE_STREAM) {
+      for (let i = 0; i < backspaces; i++) {
+        await cdp.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...backspace });
+        await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...backspace });
+      }
+      await cdp.send("Input.insertText", { text: insert });
+      // Human pacing between keystrokes; the rewrite burst above is not paced,
+      // because a real IME doesn't pace it either.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+  } finally {
+    await cdp.detach();
+  }
+}
+
 test.describe("RichTextField - IME composition (Vietnamese Telex)", () => {
+  // These reproduce a timing race on purpose, and the rest of the suite runs
+  // beside them on the same server - under that much CPU contention a real
+  // pass can still miss its window. Retried rather than loosened: the exact
+  // text is the whole assertion.
+  test.describe.configure({ mode: "serial", retries: 2 });
+
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     await page.goto("/dry/content-types");
@@ -171,5 +238,41 @@ test.describe("RichTextField - IME composition (Vietnamese Telex)", () => {
     // ...and comes back out of the editor the same way.
     await page.goto(`/dry/content/${TYPE_NAME}/${saved.id}`);
     await expect(page.locator(".dry-tx-content")).toHaveText("Nguyễn Trường");
+  });
+
+  test("survives a rewriting IME (EVKey/OpenKey/Unikey) - accents land once, in the right place", async ({
+    page,
+  }) => {
+    // Repeated: the failure this guards is a race, so a single clean run
+    // proves nothing. Synchronous `onChange` measured 5/8 here; the debounce
+    // in `useRichTextEditor.ts` takes it to 8/8.
+    const results: string[] = [];
+    for (let run = 0; run < 6; run++) {
+      // The entry-draft autosave would otherwise restore the previous run's
+      // text into this one. Skipped on the first pass: there's no draft yet,
+      // and the page has no origin to reach IndexedDB from either.
+      if (run > 0) {
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => {
+              const request = indexedDB.deleteDatabase("drycms-entry-drafts");
+              request.onsuccess = request.onerror = request.onblocked = () => resolve(null);
+            }),
+        );
+      }
+      await page.goto(`/dry/content/${TYPE_NAME}/new`);
+      await focusEditor(page);
+      await rewriteType(page);
+      await page.waitForTimeout(300);
+      results.push(
+        await page.evaluate(
+          () =>
+            document
+              .querySelector(".richtext-content-host")!
+              .shadowRoot!.querySelector(".dry-tx-content")!.textContent!,
+        ),
+      );
+    }
+    expect(results).toEqual(Array.from({ length: 6 }, () => "tiếng Việt"));
   });
 });

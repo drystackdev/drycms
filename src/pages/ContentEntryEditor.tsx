@@ -217,6 +217,22 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [entryLoaded, setEntryLoaded] = useState(false);
 
   const [value, setValue] = useState<EntryValue | null>(null);
+  /** The same `value`, reachable without going through a render.
+   *
+   * `handleSave` below is re-created on every render, but the Save button
+   * that calls it lives in the shared topbar (`usePageHeaderActions`), which
+   * only receives the new one from an effect - and Preact runs effects after
+   * paint, a frame or so behind the state update. A click landing inside that
+   * window ran the PREVIOUS render's `handleSave`, which had captured the
+   * previous `value` and saved it. Invisible while every field reported every
+   * keystroke, since the last change was then many frames old by the time
+   * anything could be clicked; a `RichTextField` deliberately settles its
+   * value only once typing pauses (`VALUE_FLUSH_DELAY_MS`), which lands
+   * squarely in that window - typing and immediately clicking Save wrote an
+   * empty body. Reading through this ref is unaffected by which render's
+   * closure is running. */
+  const valueRef = useRef<EntryValue | null>(null);
+  valueRef.current = value;
   const [entryId, setEntryId] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -648,14 +664,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }, [scrollField, scrollPath, value === null]);
 
   async function handleSave() {
-    if (!type || !entriesApi || !value) return;
+    // `valueRef`, not the `value` this render closed over - see the ref's own
+    // doc comment: the topbar's Save button can still be holding an earlier
+    // render's `handleSave` when it fires.
+    const current = valueRef.current;
+    if (!type || !entriesApi || !current) return;
     setFieldErrors({});
 
     // Confirm-password mismatches only ever exist client-side - `confirm` never
     // reaches the server - so this is the one pre-submit check the editor runs,
     // ahead of the usual "just submit and surface whatever the server rejects"
     // pattern below.
-    const passwordErrors = findPasswordChangeErrors(nodes, value);
+    const passwordErrors = findPasswordChangeErrors(nodes, current);
     if (Object.keys(passwordErrors).length > 0) {
       setFieldErrors(passwordErrors);
       toast.add({ type: "error", title: "Fix the highlighted fields." });
@@ -671,19 +691,19 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     let saved = false;
     try {
       if (isSingleton) {
-        const entry = await entriesApi.saveSingleton(value);
+        const entry = await entriesApi.saveSingleton(current);
         setValue(entry.value);
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Saved "${type.label}".` });
       } else if (isNew) {
-        await entriesApi.create(value);
+        await entriesApi.create(current);
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Created "${type.label}" entry.` });
         route(`${path}/content/${type.name}`);
       } else if (entryId) {
-        const entry = await entriesApi.update(entryId, value);
+        const entry = await entriesApi.update(entryId, current);
         setValue(entry.value);
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);

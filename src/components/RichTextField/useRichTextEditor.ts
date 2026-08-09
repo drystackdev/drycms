@@ -179,6 +179,34 @@ function isDocEmpty(state: EditorState): boolean {
  * again, indefinitely. */
 const EXTERNAL_SYNC_META = "dryExternalValueSync";
 
+/**
+ * How long typing has to pause before the parent form is handed the new HTML.
+ *
+ * Notifying it is cheap here but expensive there - the entry form re-renders
+ * every field it has - and doing that synchronously, inside the keystroke,
+ * breaks the *rewriting* Vietnamese IMEs (EVKey / OpenKey / Unikey /
+ * GoTiengViet - what most people actually use, and unlike macOS's built-in
+ * Telex these use no composition at all). They don't send one edit per
+ * keystroke: pressing "j" on "nôi" makes the IME backspace over what it
+ * already committed and re-insert "nội", several separate DOM edits within a
+ * millisecond or two. A re-render landing between two of them loses the ones
+ * still queued, and the accent ends up duplicated or misplaced - "nội dung"
+ * comes out "noọội dung".
+ *
+ * Measured over eight runs of the same emulated EVKey key stream, on the
+ * entry editor: 5/8 correct when `onChange` is called synchronously, 8/8 when
+ * it isn't called at all - with the full document serialization still running
+ * either way, so it is the parent's re-render that does the damage, not the
+ * export. Debounced (not throttled): a burst must not be interrupted at all,
+ * so the timer restarts on every edit and only fires once typing settles.
+ *
+ * 150ms is comfortably longer than any IME's own rewrite burst and shorter
+ * than any pause a human leaves between words. Everything that needs the
+ * value sooner flushes explicitly - see `flushValue`'s call sites (blur,
+ * composition end, unmount).
+ */
+const VALUE_FLUSH_DELAY_MS = 150;
+
 /** Swaps the whole live document for `value`'s - shared by the external-value
  * sync effect below and the IME-composition flush that has to defer it (see
  * both call sites). */
@@ -298,6 +326,14 @@ export function useRichTextEditor({
      * composition ends knows it still owes the parent an `onChange`. */
     let pendingCompositionChange = false;
     let compositionFlushTimer = -1;
+    /** Pending debounce timer for `flushValue` below, or -1. */
+    let pendingValueTimer = -1;
+    /** `flushValue` itself, hoisted to this effect's scope (same reason
+     * `view` is) so the synchronous cleanup below can reach a function only
+     * defined once the async body further down has run. */
+    let flushPendingValue: (() => void) | null = null;
+    /** Same, for the document-level listener the cleanup has to remove. */
+    let removeOutsidePressFlush: (() => void) | null = null;
 
     void (async () => {
       const components = await loadRichtextComponents();
@@ -439,15 +475,59 @@ export function useRichTextEditor({
      * parent form holds. Split out of `dispatchTransaction` because a
      * composition (below) has to defer all of it to a single call at the
      * end, rather than run it per keystroke. */
+    /** Hands the current document to the parent form as HTML, now - see
+     * `VALUE_FLUSH_DELAY_MS` for why this is normally debounced instead.
+     * Reads `view.state` rather than a captured document, so a debounced run
+     * always reports the newest one. */
+    const flushValue = () => {
+      if (pendingValueTimer >= 0) {
+        clearTimeout(pendingValueTimer);
+        pendingValueTimer = -1;
+      }
+      if (!view || view.isDestroyed) return;
+      const html = exportCleanHtml(view.state.doc, { inline: inlineRef.current });
+      if (html === lastSyncedValueRef.current) return;
+      lastSyncedValueRef.current = html;
+      onChangeRef.current(html);
+    };
+    flushPendingValue = flushValue;
+
+    const scheduleValueFlush = () => {
+      if (pendingValueTimer >= 0) clearTimeout(pendingValueTimer);
+      pendingValueTimer = window.setTimeout(() => {
+        pendingValueTimer = -1;
+        flushValue();
+      }, VALUE_FLUSH_DELAY_MS);
+    };
+
+    /** Any press anywhere else on the page - the topbar's Save button above
+     * all - settles the debounced value first, in the capture phase, so it is
+     * in the parent's hands a whole task before that button's own click
+     * handler reads it. `blur` alone (below) is later and, for a control that
+     * doesn't take focus, may not come at all. Costs nothing when there's
+     * nothing pending, which is every press that isn't right after typing. */
+    const flushBeforeOutsidePress = () => {
+      if (pendingValueTimer >= 0) flushValue();
+    };
+    document.addEventListener("pointerdown", flushBeforeOutsidePress, true);
+    removeOutsidePressFlush = () =>
+      document.removeEventListener("pointerdown", flushBeforeOutsidePress, true);
+
+    /** Publishes everything OUTSIDE the `EditorView` that a transaction can
+     * affect: the toolbar's live state, the placeholder's emptiness flag,
+     * and - when the document actually changed - the exported HTML the
+     * parent form holds. Split out of `dispatchTransaction` because a
+     * composition (below) has to defer all of it to a single call at the
+     * end, rather than run it per keystroke. The toolbar half stays
+     * synchronous: it only ever re-renders this field (and only when
+     * `toolbarStateEqual` says something actually changed), which measured
+     * clean under the same IME stress the parent re-render fails. */
     const flushEditorState = (state: EditorState, docChanged: boolean) => {
       pendingCompositionChange = false;
       const nextToolbarState = readToolbarState(state);
       setState((current) => (toolbarStateEqual(current, nextToolbarState) ? current : nextToolbarState));
       setEmpty(isDocEmpty(state));
-      if (!docChanged) return;
-      const html = exportCleanHtml(state.doc, { inline: inlineRef.current });
-      lastSyncedValueRef.current = html;
-      onChangeRef.current(html);
+      if (docChanged) scheduleValueFlush();
     };
 
     view = new EditorView(editorHost, {
@@ -461,6 +541,13 @@ export function useRichTextEditor({
         ...dryNodeViews,
       },
       handleDOMEvents: {
+        // Focus leaving the editor is when everything else on the page is
+        // about to read the value - clicking Save in the topbar blurs this
+        // first - so the debounced flush must not still be pending.
+        blur: () => {
+          flushValue();
+          return false;
+        },
         // `compositionend` clears `view.composing` synchronously, but the
         // composition's own final DOM changes only reach
         // `dispatchTransaction` a microtask later (prosemirror-view flushes
@@ -554,6 +641,11 @@ export function useRichTextEditor({
     return () => {
       cancelled = true;
       clearTimeout(compositionFlushTimer);
+      // Before tearing the view down: a debounced value change still pending
+      // when the field unmounts (route change, dialog close) is the user's
+      // last keystrokes, and nothing else is left to report them.
+      flushPendingValue?.();
+      removeOutsidePressFlush?.();
       // Only set if the async work above had already reached
       // `new EditorView(...)` before this ran - a mount cancelled while
       // still awaiting `loadRichtextComponents()` never got that far, and
