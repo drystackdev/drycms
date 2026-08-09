@@ -4,6 +4,7 @@ import {
   PREACT_HOOKS_PATH,
   PREACT_INDEX_PATH,
   PREACT_JSX_RUNTIME_PATH,
+  dryReaderVirtualFiles,
   preactVirtualFiles,
   tsLibFiles,
 } from "./virtual-fs-files.js";
@@ -34,6 +35,10 @@ function setFile(path: string, text: string) {
 
 for (const [path, text] of Object.entries(tsLibFiles)) setFile(path, text);
 for (const [path, text] of Object.entries(preactVirtualFiles)) setFile(path, text);
+// Resolvable-if-imported only (deliberately NOT in `getScriptFileNames` below):
+// nothing pulls them into the program unless a `dry.generated.d.ts` extra file
+// is present and imports `DryReader` from them.
+for (const [path, text] of Object.entries(dryReaderVirtualFiles)) setFile(path, text);
 setFile(MAIN_FILE, "");
 
 let extraFilePaths: string[] = [];
@@ -82,7 +87,17 @@ function resolveModuleName(spec: string, containingFile: string): string | undef
   if (!spec.startsWith(".")) return undefined;
   const containingDir = containingFile.slice(0, containingFile.lastIndexOf("/"));
   const base = normalizePath(`${containingDir}/${spec}`);
-  for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.d.ts`]) {
+  const candidates = [base, `${base}.tsx`, `${base}.ts`, `${base}.d.ts`];
+  // `./foo.js` -> `./foo.ts`, the extension rewrite every TS resolution mode
+  // does for ESM-style specifiers. This repo writes all of its own relative
+  // imports that way, so without it `dry.generated.d.ts`'s
+  // `from "../content-types/dry-reader.js"` (and any page importing a sibling
+  // as `./Card.js`) resolves to nothing at all.
+  if (base.endsWith(".js")) {
+    const stem = base.slice(0, -".js".length);
+    candidates.push(`${stem}.ts`, `${stem}.tsx`, `${stem}.d.ts`);
+  }
+  for (const candidate of candidates) {
     if (files.has(candidate)) return candidate;
   }
   return undefined;

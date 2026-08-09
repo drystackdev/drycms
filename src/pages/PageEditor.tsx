@@ -3,7 +3,7 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
-import { MenuIcon } from "../components/icons/index.js";
+import { CodeFieldTypeIcon, MenuIcon, PreviewIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import { useScaledPreview } from "./page-components/useDevicePreview.js";
 import { useResizablePanel } from "../lib/useResizablePanel.js";
@@ -197,6 +197,7 @@ interface PageEditorUiState {
   selectedPath: string | null;
   sidebarOpen: boolean;
   previewOpen: boolean;
+  codeOpen: boolean;
   diagnosticsOpen: boolean;
   sidebarWidth: number;
   previewWidth: number;
@@ -256,6 +257,11 @@ export default function PageEditor() {
   const [deleting, setDeleting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(initialUiState?.sidebarOpen ?? true);
   const [previewOpen, setPreviewOpen] = useState(initialUiState?.previewOpen ?? true);
+  // The code column (editor + problems panel) hides the same way the sidebar
+  // and preview already do - nothing is lost while it's closed: the edited
+  // source lives in `sourceByPath` (state, not the `Editer` instance), so
+  // reopening remounts `Editer` on the current, still-dirty content.
+  const [codeOpen, setCodeOpen] = useState(initialUiState?.codeOpen ?? true);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(initialUiState?.diagnosticsOpen ?? true);
   // The selected file's own TS diagnostics (`Editer`'s `onChange` already
   // computes these every debounce - see `handleChange` - nothing new to
@@ -344,6 +350,7 @@ export default function PageEditor() {
         selectedPath,
         sidebarOpen,
         previewOpen,
+        codeOpen,
         diagnosticsOpen,
         sidebarWidth: sidebar.size,
         previewWidth: previewSplit.size,
@@ -357,6 +364,7 @@ export default function PageEditor() {
     selectedPath,
     sidebarOpen,
     previewOpen,
+    codeOpen,
     diagnosticsOpen,
     sidebar.size,
     previewSplit.size,
@@ -1018,6 +1026,16 @@ export default function PageEditor() {
   // target on their own.
   const isPageTarget = !!selectedPath && /(^|\/)page\.tsx$/.test(selectedPath) && !!previewTarget;
 
+  // With the code column hidden the preview is the only resizable column
+  // left, so there's nothing to size it AGAINST - it takes the leftover room
+  // (`flex: 1`) instead of `previewSplit.size`, and the code toolbar section
+  // shrinks to just its own buttons so the two rows still line up with the
+  // body columns below. `previewSplit.size` is never overwritten while
+  // hidden, so reopening the code column restores the previous split.
+  const previewFills = previewOpen && !codeOpen;
+  const previewSectionStyle = previewOpen ? (previewFills ? { flex: 1 } : { width: `${previewSplit.size}px` }) : undefined;
+  const codeSectionStyle = previewFills ? undefined : { flex: 1 };
+
   return (
     <div class="page-components-shell">
       {/* 3 sections, one per body column below - each held to that column's
@@ -1026,15 +1044,29 @@ export default function PageEditor() {
        * lines up with what it controls, resize included. */}
       <div class="page-components-toolbar">
         <div class="page-editor-toolbar-section" style={sidebarOpen ? { width: `${sidebar.size}px` } : undefined}>
-          <button type="button" class="ghost icon sm" aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarOpen} onClick={() => setSidebarOpen((v) => !v)}>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-pressed={sidebarOpen}
+            onClick={() => setSidebarOpen((v) => !v)}
+          >
             <MenuIcon />
           </button>
         </div>
         {sidebarOpen && <div class="page-editor-toolbar-spacer" />}
 
-        <div class="page-editor-toolbar-section" style={previewOpen ? { width: `${previewSplit.size}px` } : undefined}>
-          <button type="button" class="ghost sm" aria-pressed={previewOpen} onClick={() => setPreviewOpen((v) => !v)}>
-            {previewOpen ? "Hide preview" : "Show preview"}
+        <div class="page-editor-toolbar-section" style={previewSectionStyle}>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label={previewOpen ? "Hide preview" : "Show preview"}
+            title={previewOpen ? "Hide preview" : "Show preview"}
+            aria-pressed={previewOpen}
+            onClick={() => setPreviewOpen((v) => !v)}
+          >
+            <PreviewIcon />
           </button>
           {previewOpen && (
             <div class="button-group">
@@ -1047,9 +1079,19 @@ export default function PageEditor() {
           )}
           {previewLoading && <span class="hint">Building…</span>}
         </div>
-        {previewOpen && <div class="page-editor-toolbar-spacer" />}
+        {previewOpen && codeOpen && <div class="page-editor-toolbar-spacer" />}
 
-        <div class="page-editor-toolbar-section" style={{ flex: 1 }}>
+        <div class="page-editor-toolbar-section" style={codeSectionStyle}>
+          <button
+            type="button"
+            class="ghost icon sm"
+            aria-label={codeOpen ? "Hide code" : "Show code"}
+            title={codeOpen ? "Hide code" : "Show code"}
+            aria-pressed={codeOpen}
+            onClick={() => setCodeOpen((v) => !v)}
+          >
+            <CodeFieldTypeIcon />
+          </button>
           <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedPath ?? ""}</span>
           <div class="spacer" />
           {selectedPath && (
@@ -1092,7 +1134,7 @@ export default function PageEditor() {
 
         {previewOpen && (
           <>
-            <div style={{ width: `${previewSplit.size}px`, display: "flex", flexDirection: "column" }}>
+            <div style={{ ...(previewFills ? { flex: 1 } : { width: `${previewSplit.size}px` }), minWidth: 0, display: "flex", flexDirection: "column" }}>
               {previewTarget && (
                 <div class="page-editor-preview-label">
                   <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1185,85 +1227,87 @@ export default function PageEditor() {
                 </ol>
               )}
             </div>
-            <div class={`page-components-resize-handle${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />
+            {codeOpen && <div class={`page-components-resize-handle${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />}
           </>
         )}
 
-        <div class="page-components-main">
-          <div class="page-components-editor" style={{ flex: 1 }}>
-            {/* `selectedPath` can be non-null before `loadTree()`'s fetch resolves
-             * (restored from `initialUiState` on mount) - `sourceByPath[selectedPath]`
-             * would then be `undefined` and `code` fall back to `""`. Mounting `Editer`
-             * on that placeholder `""` is not just a visual flash: `Editer` always echoes
-             * its mount-time `value` back through `onChange` ~300ms later (its worker
-             * priming call - see its own doc comment), which `handleChange` below can't
-             * tell apart from a real edit. That schedules an IndexedDB draft write of the
-             * empty string, which `loadTree`'s own draft-overlay then blindly reapplies
-             * on a LATER visit - silently wiping the file until "Reset". Gating on the
-             * real fetch having landed for this path avoids ever handing `Editer` a
-             * placeholder value in the first place. */}
-            {selectedPath && sourceByPath[selectedPath] !== undefined ? (
-              <Editer key={selectedPath} value={code} onChange={handleChange} extraFiles={extraFiles} style={{ height: "100%" }} />
-            ) : selectedPath ? (
-              <p class="hint">Loading…</p>
-            ) : (
-              <p class="hint">Select or create a page/layout/component on the left to edit it.</p>
-            )}
-          </div>
-
-          {diagnosticsOpen && (
-            <div class={`page-components-resize-handle horizontal${diagnosticsSplit.dragging ? " dragging" : ""}`} {...diagnosticsSplit.handleProps} />
-          )}
-
-          <div class="page-editor-diagnostics" style={diagnosticsOpen ? { height: `${diagnosticsSplit.size}px` } : undefined}>
-            <div class="page-editor-diagnostics-header">
-              <button
-                type="button"
-                class="page-editor-diagnostics-toggle"
-                aria-expanded={diagnosticsOpen}
-                aria-label={diagnosticsOpen ? "Collapse problems panel" : "Expand problems panel"}
-                onClick={() => setDiagnosticsOpen((v) => !v)}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.343 6.343L15 12l-5.657 5.657" />
-                </svg>
-              </button>
-              {errorCount === 0 && warningCount === 0 ? (
-                <span class="hint">No problems</span>
+        {codeOpen && (
+          <div class="page-components-main">
+            <div class="page-components-editor" style={{ flex: 1 }}>
+              {/* `selectedPath` can be non-null before `loadTree()`'s fetch resolves
+               * (restored from `initialUiState` on mount) - `sourceByPath[selectedPath]`
+               * would then be `undefined` and `code` fall back to `""`. Mounting `Editer`
+               * on that placeholder `""` is not just a visual flash: `Editer` always echoes
+               * its mount-time `value` back through `onChange` ~300ms later (its worker
+               * priming call - see its own doc comment), which `handleChange` below can't
+               * tell apart from a real edit. That schedules an IndexedDB draft write of the
+               * empty string, which `loadTree`'s own draft-overlay then blindly reapplies
+               * on a LATER visit - silently wiping the file until "Reset". Gating on the
+               * real fetch having landed for this path avoids ever handing `Editer` a
+               * placeholder value in the first place. */}
+              {selectedPath && sourceByPath[selectedPath] !== undefined ? (
+                <Editer key={selectedPath} value={code} onChange={handleChange} extraFiles={extraFiles} style={{ height: "100%" }} />
+              ) : selectedPath ? (
+                <p class="hint">Loading…</p>
               ) : (
-                <>
-                  {errorCount > 0 && (
-                    <span class="badge sm destructive">
-                      {errorCount} error{errorCount === 1 ? "" : "s"}
-                    </span>
-                  )}
-                  {warningCount > 0 && (
-                    <span class="badge sm warning">
-                      {warningCount} warning{warningCount === 1 ? "" : "s"}
-                    </span>
-                  )}
-                </>
+                <p class="hint">Select or create a page/layout/component on the left to edit it.</p>
               )}
             </div>
-            {diagnosticsOpen &&
-              (diagnostics.length > 0 ? (
-                <ul class="page-editor-diagnostics-list">
-                  {diagnostics.map((diagnostic, index) => (
-                    <li key={index} class={diagnostic.source === "syntax" ? "error" : "warning"}>
-                      <span class="page-editor-diagnostics-location">
-                        {diagnostic.line}:{diagnostic.column}
+
+            {diagnosticsOpen && (
+              <div class={`page-components-resize-handle horizontal${diagnosticsSplit.dragging ? " dragging" : ""}`} {...diagnosticsSplit.handleProps} />
+            )}
+
+            <div class="page-editor-diagnostics" style={diagnosticsOpen ? { height: `${diagnosticsSplit.size}px` } : undefined}>
+              <div class="page-editor-diagnostics-header">
+                <button
+                  type="button"
+                  class="page-editor-diagnostics-toggle"
+                  aria-expanded={diagnosticsOpen}
+                  aria-label={diagnosticsOpen ? "Collapse problems panel" : "Expand problems panel"}
+                  onClick={() => setDiagnosticsOpen((v) => !v)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.343 6.343L15 12l-5.657 5.657" />
+                  </svg>
+                </button>
+                {errorCount === 0 && warningCount === 0 ? (
+                  <span class="hint">No problems</span>
+                ) : (
+                  <>
+                    {errorCount > 0 && (
+                      <span class="badge sm destructive">
+                        {errorCount} error{errorCount === 1 ? "" : "s"}
                       </span>
-                      <span>{diagnostic.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p class="hint" style={{ padding: "0.5rem" }}>
-                  No problems detected.
-                </p>
-              ))}
+                    )}
+                    {warningCount > 0 && (
+                      <span class="badge sm warning">
+                        {warningCount} warning{warningCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              {diagnosticsOpen &&
+                (diagnostics.length > 0 ? (
+                  <ul class="page-editor-diagnostics-list">
+                    {diagnostics.map((diagnostic, index) => (
+                      <li key={index} class={diagnostic.source === "syntax" ? "error" : "warning"}>
+                        <span class="page-editor-diagnostics-location">
+                          {diagnostic.line}:{diagnostic.column}
+                        </span>
+                        <span>{diagnostic.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p class="hint" style={{ padding: "0.5rem" }}>
+                    No problems detected.
+                  </p>
+                ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <ConfirmDialog

@@ -136,6 +136,20 @@ function wordStart(before: string): number {
   return i;
 }
 
+/** Whether a while-typing (non-Ctrl+Space) query should fire at all: either the
+ * character just typed is part of an identifier, or the cursor sits inside a
+ * still-open string literal. The string case is the whole reason the opening
+ * quote counts - the completions worth showing in there are closed sets the
+ * caller's own type dictates (a content-type name in `dry().singleton("|")`, a
+ * module specifier in `from "|"`, a JSX attribute's string union), so the list
+ * is short and relevant from the very first keystroke, unlike the unfiltered
+ * global scope any other punctuation would pop open. */
+function isImplicitTriggerPosition(before: string): boolean {
+  if (WORD_CHAR_RE.test(before.slice(-1))) return true;
+  const lineStart = before.lastIndexOf("\n") + 1;
+  return openStringStart(before.slice(lineStart)) !== -1;
+}
+
 /**
  * Bridges `EditerWorkerClient.getCompletions` (async, via `postMessage`) onto
  * `prism-code-editor`'s `CompletionSource`, which must return synchronously:
@@ -177,7 +191,7 @@ function tsCompletionSource(
   context: { pos: number; before: string; explicit: boolean },
   editor: PrismEditor,
 ) {
-  if (!context.explicit && !WORD_CHAR_RE.test(context.before.slice(-1))) return null;
+  if (!context.explicit && !isImplicitTriggerPosition(context.before)) return null;
   const state = instances.get(editor);
   if (!state) return null;
   const { client, cache, pending } = state;

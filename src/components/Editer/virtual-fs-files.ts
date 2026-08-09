@@ -3,6 +3,10 @@ import preactHooksDts from "/node_modules/preact/hooks/src/index.d.ts?raw";
 import preactIndexDts from "/node_modules/preact/src/index.d.ts?raw";
 import preactJsxRuntimeDtsSource from "/node_modules/preact/jsx-runtime/src/index.d.ts?raw";
 import preactJsxDts from "/node_modules/preact/src/jsx.d.ts?raw";
+import dryReaderSource from "../../content-types/dry-reader.ts?raw";
+import dryVeiSource from "../../content-types/dry-vei.ts?raw";
+import dryVeiRefSource from "../../content-types/dry-vei-ref.ts?raw";
+import entryWhereSource from "../../content-types/engine/entry-where.ts?raw";
 
 export const PREACT_INDEX_PATH = "/node_modules/preact/index.d.ts";
 export const PREACT_JSX_PATH = "/node_modules/preact/jsx.d.ts";
@@ -29,6 +33,35 @@ export const preactVirtualFiles: Record<string, string> = {
     "'./jsx'",
   ),
   [PREACT_HOOKS_PATH]: preactHooksDts,
+};
+
+/**
+ * The modules `dry.generated.d.ts` imports from, keyed by where its own
+ * relative specifiers land in this virtual FS (it sits at
+ * `/dry.generated.d.ts`, so `../content-types/dry-reader.js` resolves to
+ * `/content-types/dry-reader.js` - see `resolveModuleName`'s `.js` -> `.ts`
+ * fallback in `ts-worker.ts`).
+ *
+ * Without these, that one import is unresolved, `DryReader` silently
+ * degrades to `any` (`skipLibCheck` hides the error, since the generated
+ * file is a `.d.ts`), and every `dry()` call in a page loses completions
+ * entirely - no `collection`/`singleton`, no content-type names inside the
+ * quotes, no fields on the returned entry. Real sources rather than a
+ * hand-written summary so they can't drift from the reader's actual API.
+ *
+ * Only the modules the PUBLIC reader types reach: `dry-vei` (`DryEntry`,
+ * the `$` refs `dryBind` takes), `dry-vei-ref` (`DryRef`) and
+ * `engine/entry-where` (`list({ where })`). Everything else those files
+ * import (`dry-context`, `dry-populate`, `field-registry`, `entry-tree`...)
+ * is implementation-only - left unresolved on purpose, which costs nothing
+ * a page author can see and keeps the admin bundle from carrying most of
+ * `src/content-types/` as raw text.
+ */
+export const dryReaderVirtualFiles: Record<string, string> = {
+  "/content-types/dry-reader.ts": dryReaderSource,
+  "/content-types/dry-vei.ts": dryVeiSource,
+  "/content-types/dry-vei-ref.ts": dryVeiRefSource,
+  "/content-types/engine/entry-where.ts": entryWhereSource,
 };
 
 const rawLibFiles = import.meta.glob("/node_modules/typescript/lib/lib.*.d.ts", {
