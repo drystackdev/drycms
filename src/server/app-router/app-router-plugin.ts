@@ -1,10 +1,34 @@
 import { dirname, join, relative } from "node:path";
 import type { Plugin } from "vite";
+import { resolveOptions } from "../options.js";
 
 const SOURCE_FILE = /\.(tsx?|jsx?)$/;
 const RELOAD_TRIGGER = /\/src\/apps\/(pages\/|globals\.css$)/;
 
 const CONTENT_TYPES_DIR = join(process.cwd(), "src/content-types");
+
+/** `pagesSourceStorage`'s local root (`.dry/pages-source` by default) - the
+ * dev-only live source `route-tree.ts`'s `DevPagesSource` branch reads from
+ * (see that file's own doc comment). A file loaded from there needs the
+ * SAME ambient-global injection as one under `src/apps/pages` (real page/
+ * layout source calls `dry()`/`params()`/etc with no import statement
+ * either way), so this plugin's path gate below has to recognize both
+ * roots. Resolved directly via `resolveOptions({ kind: "local" })`, NOT
+ * `../config.js` - that module's `resolved` branches on
+ * `import.meta.env.PROD`, unverified/untested territory for something read
+ * while Vite is still loading ITS OWN config/plugins; `resolveOptions`
+ * called explicitly is the same proven-safe pattern `scripts/sync-pages-r2.ts`/
+ * `scripts/r2-sync-assets.ts` already use at their own module scope. `null`
+ * under `kind: "cloudflare"` (R2-backed, no local root to gate on) - fine,
+ * this plugin only ever runs inside a local Vite process anyway. */
+const pagesSourceRoot = (() => {
+  const storage = resolveOptions({ kind: "local" }).pagesSource.storage;
+  return storage.kind === "local" ? storage.root.replace(/\\/g, "/") : null;
+})();
+
+function isPagesSourceFile(file: string): boolean {
+  return !!pagesSourceRoot && (file === pagesSourceRoot || file.startsWith(`${pagesSourceRoot}/`));
+}
 
 /** One ambient global `src/apps/pages/**` can call without importing it
  * itself - `transform` below injects the right import (server vs client
@@ -56,18 +80,21 @@ const AMBIENT_GLOBALS: AmbientGlobal[] = [
 ];
 
 /**
- * Single Vite plugin for everything `src/apps/pages/**` needs that isn't
+ * Single Vite plugin for everything `src/apps/pages/**` needs (and, in dev,
+ * `pagesSourceStorage`'s files too - `isPagesSourceFile`, since
+ * `route-tree.ts`'s `DevPagesSource` branch loads real page/layout modules
+ * from `.dry/pages-source` through this same Vite instance) that isn't
  * covered by Preact/Tailwind's own plugins:
  *
  * - `transform` (`enforce: "pre"`, runs before Preact's JSX transform):
- *   injects `import { <name> } from "..."` into any page module that calls
- *   one of `AMBIENT_GLOBALS` (`dry`/`params`/`setTitle`) without importing
- *   it itself - closes the gap `dry.generated.d.ts`'s header comment flags
- *   ("Calling the ambient global `dry()` ... requires the Vite plugin ...
- *   not implemented yet") that the same file's own `declare global { ... }`
- *   promises. Same shape as `build-component-bundle.ts`'s
- *   `dryComponentFilenamePlugin` - a small, regex-gated hook keyed by file
- *   path, not a full parser.
+ *   injects `import { <name> } from "..."` into any page module (under
+ *   EITHER root) that calls one of `AMBIENT_GLOBALS` (`dry`/`params`/
+ *   `setTitle`) without importing it itself - closes the gap
+ *   `dry.generated.d.ts`'s header comment flags ("Calling the ambient
+ *   global `dry()` ... requires the Vite plugin ... not implemented yet")
+ *   that the same file's own `declare global { ... }` promises. Same shape
+ *   as `build-component-bundle.ts`'s `dryComponentFilenamePlugin` - a small,
+ *   regex-gated hook keyed by file path, not a full parser.
  *
  *   Which module gets injected depends on WHICH build is compiling this
  *   file - `this.environment.config.consumer` (`"server"` for the SSR
@@ -101,7 +128,7 @@ export function appRouterPlugin(): Plugin {
     enforce: "pre" as const,
     transform(code: string, id: string) {
       const file = id.split("?", 1)[0] ?? "";
-      if (!file.includes("/src/apps/pages/")) return null;
+      if (!file.includes("/src/apps/pages/") && !isPagesSourceFile(file)) return null;
       if (!SOURCE_FILE.test(file)) return null;
 
       const isServer = this.environment?.config.consumer === "server";
@@ -124,7 +151,7 @@ export function appRouterPlugin(): Plugin {
       };
     },
     handleHotUpdate({ file, server }) {
-      if (!RELOAD_TRIGGER.test(file)) return;
+      if (!RELOAD_TRIGGER.test(file) && !isPagesSourceFile(file)) return;
       server.ws.send({ type: "full-reload" });
       return [];
     },

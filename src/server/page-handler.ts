@@ -8,7 +8,7 @@ import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
-import { discoverRoutes } from "./app-router/route-tree.js";
+import { discoverRoutes, devSourcePathOf, type DevPagesSource } from "./app-router/route-tree.js";
 import { matchRoute, type RouteMatch } from "./app-router/match.js";
 import { renderErrorHtml, renderPage } from "./app-router/render.js";
 import { readBuiltPage } from "./app-router/built-pages-storage.js";
@@ -54,10 +54,14 @@ import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegi
  * scope) so a page/layout added while the dev server is running is picked
  * up without a restart - unlike most of `src/server/**`, whose modules
  * `scripts/dev-server.mjs` loads once at boot, this module is the one
- * piece whose whole job is to reflect `src/apps/pages/**`'s live state
+ * piece whose whole job is to reflect the live source's current state
  * (`app-router.md`'s "trên dev có thể vào xem trực tiếp live preview qua
  * vite"), so the dev-server wiring loads THIS module fresh on every
- * request too - see the "Nối dev" step in `plans/app-router.md`.
+ * request too - see the "Nối dev" step in `plans/app-router.md`. In dev
+ * that live source is `devPagesSource` (`pagesSourceStorage`, i.e. `.dry/
+ * pages-source`) when the caller supplies one - see `DevPagesSource`'s own
+ * doc comment (`route-tree.ts`) for why. Production never supplies one, so
+ * it keeps reading `src/apps/pages` through the unchanged Vite-glob branch.
  */
 export async function handlePageRequest(
   request: Request,
@@ -74,6 +78,10 @@ export async function handlePageRequest(
   // actually ship) has never had this ambiguity - `mode` defaults to
   // `"production"` for a build command regardless of Vitest.
   isDev: boolean = import.meta.env.DEV,
+  // Only `scripts/dev-server.mjs` ever passes this (see `DevPagesSource`'s
+  // own doc comment) - `entry-node.ts`/`entry-worker.ts` never do, so
+  // production always takes `discoverRoutes()`'s unchanged glob branch.
+  devPagesSource?: DevPagesSource,
 ): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname === adminPath || url.pathname.startsWith(`${adminPath}/`)) {
@@ -102,7 +110,7 @@ export async function handlePageRequest(
       // direct-D1 version: `_pages` only has rows for whatever's been
       // explicitly built through `/dry/page-build`, which a dev instance
       // mid-development usually hasn't done for most pages.
-      return await (isDev ? buildSitemapResponse(url, routeContext) : buildSitemapResponseFromRegistry(url, routeContext));
+      return await (isDev ? buildSitemapResponse(url, routeContext, devPagesSource) : buildSitemapResponseFromRegistry(url, routeContext));
     } catch (error) {
       console.error("[drycms] sitemap.xml render failed:", error);
       return new Response("", { status: 500 });
@@ -112,7 +120,7 @@ export async function handlePageRequest(
     return buildRobotsResponse(url);
   }
 
-  const routeTree = discoverRoutes();
+  const routeTree = await discoverRoutes(isDev ? devPagesSource : undefined);
   const match = matchRoute(routeTree.root, url.pathname);
 
   try {
@@ -197,11 +205,26 @@ export async function handlePageRequest(
     // and neither one EVER wrote to that cache even before mục 12 (see the
     // git history of this file) - there is no longer a caller left who
     // needs this hook at all.
+    // `devSourcePathOf` only returns a real path for a loader THIS branch's
+    // own `discoverRoutes(devPagesSource)` call tagged - i.e. exactly when
+    // `isDev && devPagesSource` above, so this can't misfire for the prod
+    // glob branch. See `DevPagesSource`'s doc comment (`route-tree.ts`) for
+    // why the client needs these URLs at all.
+    const entryDevPath = devPagesSource ? devSourcePathOf(resolvedMatch.page) : undefined;
+    const devHydrateManifest = devPagesSource && entryDevPath
+      ? {
+          entryUrl: devPagesSource.browserUrlFor(entryDevPath),
+          layoutUrls: resolvedMatch.layouts.map((layout) => devPagesSource.browserUrlFor(devSourcePathOf(layout)!)),
+          params: resolvedMatch.params,
+        }
+      : undefined;
+
     const response = renderPage(resolvedMatch, dryContext, {
       status,
       // `render.ts` already logs the error before calling this - only
       // building the fallback document is left to do here.
       onRenderError: routeTree.serverError ? () => renderErrorHtml(routeTree.serverError!) : undefined,
+      devHydrateManifest,
     });
     if (vei) response.headers.set("Cache-Control", "no-store");
     return response;

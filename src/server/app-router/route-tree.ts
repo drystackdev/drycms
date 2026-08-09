@@ -108,12 +108,61 @@ export function staticPagePaths(tree: RouteTree): string[] {
 
 const PAGES_ROOT_PREFIX = "/src/apps/pages";
 
-/** Real discovery entry point - lazy (`import.meta.glob` without `eager`),
- * so a route's module only loads when a matching request actually renders
- * it, not on every dev-server/build startup. Two separate globs (Vite's
- * `import.meta.glob` needs a literal string, not a runtime-built pattern)
- * merged into one modules map before `buildRouteTree` sorts them out. */
-export function discoverRoutes(): RouteTree {
+/** Dev-only alternative to the compile-time Vite glob below - lets
+ * `discoverRoutes()` build its tree from `pagesSourceStorage` (`.dry/
+ * pages-source` under `kind: "local"`) instead of `src/apps/pages`, real
+ * files read/compiled live through Vite's OWN dev pipeline
+ * (`vite.ssrLoadModule`, not `import.meta.glob`'s build-time-known file
+ * set). Only `scripts/dev-server.mjs` constructs one (it's the only place
+ * holding a real Vite dev server instance) and only `page-handler.ts` passes
+ * it through, gated on `isDev` - `entry-node.ts`/`entry-worker.ts` never
+ * pass one, so production's route discovery is completely unaffected. */
+export interface DevPagesSource {
+  /** Every `.tsx`/`.ts` path under the storage root, root-relative
+   * (`"page.tsx"`, `"blogs/[slug]/page.tsx"`) - same shape `listAll()`'s
+   * `StorageStatEntry.path` already returns. */
+  listPaths(): Promise<string[]>;
+  loadModule(relPath: string): Promise<RouteModule>;
+  /** The SAME module's URL as the BROWSER can `import()` it - dev's client
+   * hydration (`hydrate-client.ts`) can't call `discoverRoutes()` itself the
+   * way it does for the prod glob branch (a `.dry/pages-source` file isn't
+   * part of that glob's known file set), so `page-handler.ts` embeds this
+   * URL, per matched entry/layout, into the response instead - see
+   * `devSourcePathOf` below. */
+  browserUrlFor(relPath: string): string;
+}
+
+/** Reads back the root-relative path a `discoverRoutes(devSource)` loader
+ * was tagged with (see below) - `undefined` for a loader from the OTHER
+ * branch (the real Vite glob never tags anything), which is how
+ * `page-handler.ts` tells whether it's safe to build a dev hydrate
+ * manifest for the current request. */
+export function devSourcePathOf(loader: ModuleLoader): string | undefined {
+  return (loader as ModuleLoader & { devSourcePath?: string }).devSourcePath;
+}
+
+/** Real discovery entry point. Given a `devSource`, builds the tree from
+ * ITS file list/loaders instead of the glob below - `buildRouteTree` itself
+ * doesn't care which one fed it, same `RouteTree` shape either way. Lazy in
+ * the glob branch (`import.meta.glob` without `eager`), so a route's module
+ * only loads when a matching request actually renders it, not on every
+ * dev-server/build startup; the `devSource` branch is lazy for the same
+ * reason (`loadModule` is only called when `match.ts` actually resolves to
+ * that path). Two separate globs (Vite's `import.meta.glob` needs a literal
+ * string, not a runtime-built pattern) merged into one modules map before
+ * `buildRouteTree` sorts them out. */
+export async function discoverRoutes(devSource?: DevPagesSource): Promise<RouteTree> {
+  if (devSource) {
+    const paths = await devSource.listPaths();
+    const modules: Record<string, ModuleLoader> = {};
+    for (const path of paths) {
+      if (!/(^|\/)(page|layout|404|500)\.tsx$/.test(path)) continue;
+      const loader: ModuleLoader & { devSourcePath?: string } = () => devSource.loadModule(path);
+      loader.devSourcePath = path;
+      modules[path] = loader;
+    }
+    return buildRouteTree(modules, "");
+  }
   const pageModules = import.meta.glob<RouteModule>(
     "/src/apps/pages/**/{page,layout}.tsx",
   );

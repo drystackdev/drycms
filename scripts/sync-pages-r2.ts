@@ -1,12 +1,16 @@
 /**
- * Syncs `src/apps/pages/**` <-> the `pagesSource` storage root
- * (`plans/app-r2.md` quyết định #6). Git stays the source of truth for the
- * INITIAL state of every page; the browser build pipeline (once it exists)
- * writes further edits straight to storage, never back to disk - so this
- * script is deliberately ONE-DIRECTION-SAFE in both modes: it only ever
- * fills in what the DESTINATION is missing, never overwrites something
- * already there. One lỡ tay running this the wrong way must not erase code
- * a user already edited in the browser (push) or already committed (pull).
+ * Mirrors `src/apps/pages/**` <-> the `pagesSource` storage root
+ * (`.dry/pages-source` locally, R2 under `kind: "cloudflare"`) -
+ * `pagesSourceStorage` is now the live source `discoverRoutes()` reads from
+ * in dev (`route-tree.ts`), and `src/apps/pages` is a gitignored, build-time
+ * artifact `push`/`pull` materializes right before `vite build` (`build`/
+ * `build:worker` in `package.json`). Same unconditional-overwrite semantics
+ * as `r2-sync-assets.ts` (which just `wrangler r2 object put`s every local
+ * file, no existence check) - `push`/`pull` here ALWAYS overwrite whatever's
+ * already at the destination. Neither direction deletes a file that's
+ * missing from the SOURCE but still present at the destination (same
+ * "additive, not a full mirror" precedent `r2-sync-assets.ts` sets - nothing
+ * here walks the destination looking for extras to remove).
  *
  * Run with:
  *   bun run pages:sync --push            # git -> storage, local kind
@@ -14,11 +18,26 @@
  *   bun run pages:sync --push --local    # git -> storage, miniflare local R2
  *   bun run pages:sync --pull [--remote|--local]   # storage -> git
  *
- * Same "shell out to `wrangler r2 object put/get/list`, reuse `wrangler
+ * `build` (the local/Node target) also calls `pull` directly (not through
+ * the CLI) to materialize `src/apps/pages` from the current live source
+ * before Vite's compile-time glob (`discoverRoutes()`'s prod branch) runs.
+ * `build:worker`/`deploy` do NOT - `pull`'s R2 branch shells out to
+ * `wrangler r2 object list`, which does not exist in the currently
+ * installed `wrangler` (only `get`/`put`/`delete` do; confirmed live,
+ * `wrangler r2 object --help`) - so it always fails. Until that's fixed
+ * (a real Cloudflare-API/S3-compatible listing call, not a `wrangler`
+ * subcommand swap), keep R2 in sync by hand before deploying:
+ * `bun run pages:sync --push --remote` after any `src/apps/pages` edit
+ * that should reach production.
+ *
+ * Same "shell out to `wrangler r2 object put/get`, reuse `wrangler
  * deploy`'s own credentials" approach `r2-sync-assets.ts` already
- * established for media - no S3 client, nothing new to authenticate.
+ * established for media - no S3 client, nothing new to authenticate. `get`/
+ * `put` (push, and pull's non-listing half) are real, working `wrangler`
+ * subcommands - only the listing call `pull`'s R2 branch depends on is
+ * currently broken.
  */
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { resolveOptions } from "../src/server/options.js";
 
@@ -75,30 +94,6 @@ async function filesUnder(dir: string): Promise<string[]> {
   return found;
 }
 
-async function existsLocally(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Whether `key` already exists in the real/miniflare R2 bucket - probed by
- * attempting a `get` into a throwaway path rather than a `head`-style
- * subcommand (not confirmed present in every installed `wrangler` version);
- * the probed bytes are discarded either way, `push`/`pull` below re-fetch or
- * re-upload deliberately rather than reusing this call's output. This is
- * the least-exercised part of this script - not run against a real bucket
- * as part of building it (see `status/app-r2-build.md`); verify against a
- * real/miniflare bucket before relying on it. */
-async function existsInR2(bucket: string, key: string): Promise<boolean> {
-  const probePath = join(process.env.TMPDIR ?? "/tmp", `drycms-pages-sync-probe-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "get", `${bucket}/${key}`, "--file", probePath, useLocalR2 ? "--local" : "--remote"]);
-  await Bun.file(probePath).delete().catch(() => undefined);
-  return proc.exitCode === 0;
-}
-
 export async function push(): Promise<void> {
   const files = await filesUnder(GIT_PAGES_ROOT);
   if (files.length === 0) {
@@ -107,15 +102,10 @@ export async function push(): Promise<void> {
   }
   const bucket = isR2 ? await bucketName() : null;
   let written = 0;
-  let skipped = 0;
   for (const file of files) {
     const relPath = relative(GIT_PAGES_ROOT, file).split("\\").join("/");
     if (isR2 && bucket) {
       const key = r2Prefix ? `${r2Prefix}/${relPath}` : relPath;
-      if (await existsInR2(bucket, key)) {
-        skipped += 1;
-        continue;
-      }
       const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, useLocalR2 ? "--local" : "--remote"]);
       if (proc.exitCode !== 0) {
         console.error(`[drycms] failed to push ${key}:\n${new TextDecoder().decode(proc.stderr)}`);
@@ -125,22 +115,17 @@ export async function push(): Promise<void> {
       written += 1;
     } else {
       const destPath = join(storageRoot.kind === "local" ? storageRoot.root : "", relPath);
-      if (await existsLocally(destPath)) {
-        skipped += 1;
-        continue;
-      }
       await mkdir(dirname(destPath), { recursive: true });
       await writeFile(destPath, await readFile(file));
       console.log(`  push ${relPath}`);
       written += 1;
     }
   }
-  console.log(`[drycms] pushed ${written} file(s), skipped ${skipped} already-present (never overwritten).`);
+  console.log(`[drycms] pushed ${written} file(s) (destination overwritten if already present).`);
 }
 
 export async function pull(): Promise<void> {
   let written = 0;
-  let skipped = 0;
   if (isR2) {
     const bucket = await bucketName();
     const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "list", bucket, "--prefix", r2Prefix, useLocalR2 ? "--local" : "--remote", "--json"]);
@@ -149,18 +134,13 @@ export async function pull(): Promise<void> {
       process.exit(1);
     }
     // Best-effort JSON parse - `wrangler`'s exact list output shape hasn't
-    // been verified against a real bucket for this script (see
-    // `existsInR2`'s doc comment); a parse failure surfaces loudly rather
-    // than silently pulling nothing.
+    // been verified against a real bucket for this script; a parse failure
+    // surfaces loudly rather than silently pulling nothing.
     const parsed = JSON.parse(new TextDecoder().decode(proc.stdout)) as { objects?: { key: string }[] } | { key: string }[];
     const objects = Array.isArray(parsed) ? parsed : (parsed.objects ?? []);
     for (const object of objects) {
       const relPath = r2Prefix ? object.key.slice(r2Prefix.length).replace(/^\/+/, "") : object.key;
       const destPath = join(GIT_PAGES_ROOT, relPath);
-      if (await existsLocally(destPath)) {
-        skipped += 1;
-        continue;
-      }
       await mkdir(dirname(destPath), { recursive: true });
       const proc2 = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "get", `${bucket}/${object.key}`, "--file", destPath, useLocalR2 ? "--local" : "--remote"]);
       if (proc2.exitCode !== 0) {
@@ -176,17 +156,13 @@ export async function pull(): Promise<void> {
     for (const file of files) {
       const relPath = relative(storageRoot.root, file).split("\\").join("/");
       const destPath = join(GIT_PAGES_ROOT, relPath);
-      if (await existsLocally(destPath)) {
-        skipped += 1;
-        continue;
-      }
       await mkdir(dirname(destPath), { recursive: true });
       await writeFile(destPath, await readFile(file));
       console.log(`  pull ${relPath}`);
       written += 1;
     }
   }
-  console.log(`[drycms] pulled ${written} file(s), skipped ${skipped} already-present (never overwritten).`);
+  console.log(`[drycms] pulled ${written} file(s) (destination overwritten if already present).`);
 }
 
 /**

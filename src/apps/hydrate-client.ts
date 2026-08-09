@@ -6,6 +6,7 @@ import { matchRoute } from "../server/app-router/match.js";
 import { installMediaSrcHook } from "../server/app-router/media-src-hook.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { discoverRoutes } from "../server/app-router/route-tree.js";
+import type { RouteMatch } from "../server/app-router/match.js";
 import { setAdminPath } from "../storage/admin-path.js";
 import { HYDRATED_EVENT } from "./hydrated-event.js";
 
@@ -41,6 +42,44 @@ seedAdminPath();
 installMediaSrcHook();
 
 /**
+ * Resolves this page's `RouteMatch` for hydration - 2 sources, checked in
+ * order:
+ *
+ * 1. `#dry-dev-hydrate-manifest` (`render.ts`'s `RenderPageOptions.
+ *    devHydrateManifest`, only ever present for a dev request rendered
+ *    through `page-handler.ts`'s `devPagesSource` branch): the server
+ *    already resolved this exact request against `pagesSourceStorage`
+ *    (`.dry/pages-source`) - re-running `discoverRoutes()` client-side
+ *    would resolve against the WRONG source (the compile-time
+ *    `src/apps/pages` glob, which no longer holds dev's live pages - see
+ *    `route-tree.ts`'s `DevPagesSource` doc comment), so this branch
+ *    `import()`s the server-given URLs directly instead of matching a
+ *    route tree at all. Also carries `params` directly (the server already
+ *    resolved them) rather than re-deriving them from a route match that
+ *    doesn't exist client-side for this path.
+ * 2. Otherwise (prod, or a dev request that wasn't `devPagesSource`-backed):
+ *    the original behavior, matching `window.location.pathname` against
+ *    `discoverRoutes()`'s glob-based tree (`src/apps/pages`, real for prod).
+ */
+async function resolveClientMatch(): Promise<RouteMatch | null> {
+  const manifestElement = document.getElementById("dry-dev-hydrate-manifest");
+  if (manifestElement?.textContent) {
+    const manifest = JSON.parse(manifestElement.textContent) as {
+      entryUrl: string;
+      layoutUrls: string[];
+      params: Record<string, string | string[]>;
+    };
+    return {
+      page: () => import(/* @vite-ignore */ manifest.entryUrl),
+      layouts: manifest.layoutUrls.map((url) => () => import(/* @vite-ignore */ url)),
+      params: manifest.params,
+    };
+  }
+  const routeTree = await discoverRoutes();
+  return matchRoute(routeTree.root, window.location.pathname);
+}
+
+/**
  * Client bootstrap for `src/apps/pages/**` (`plans/app-router.md`'s Giai
  * đoạn 2) - loaded via `render.ts`'s `<script type="module">` on every App
  * Router page (MPA - 1 fresh module instance per page load, no client
@@ -63,7 +102,7 @@ async function main(): Promise<void> {
   // it's safe to touch the DOM (see `hydrated-event.ts`), and it must not
   // wait forever just because there was nothing to hydrate.
   try {
-    const match = matchRoute(discoverRoutes().root, window.location.pathname);
+    const match = await resolveClientMatch();
     // A route miss here also covers the server having rendered the
     // `404.tsx`/redirect fallback (`page-handler.ts`) for this URL - neither
     // is addressable through the normal segment tree, so there's nothing

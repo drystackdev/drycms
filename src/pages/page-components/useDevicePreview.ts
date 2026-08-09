@@ -69,7 +69,7 @@ export function useScaledPreview<K extends string>(widths: Record<K, number>, in
   const recompute = useCallback(() => {
     const viewport = elementRef.current;
     if (!viewport) return;
-    const available = viewport.clientWidth - 32; // minus the viewport's own 1rem+1rem padding
+    const available = viewport.clientWidth;
     setScale(available > 0 && widthRef.current > available ? available / widthRef.current : 1);
   }, []);
 

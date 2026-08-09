@@ -5639,7 +5639,6 @@
       flex: 0 0 auto;
       min-width: 0;
       padding: 0.375rem 0.5rem;
-      margin-left: -3px;
       border-bottom: 1px solid var(--dry-border);
     }
 
@@ -5647,6 +5646,9 @@
       display: flex;
       flex: 1;
       min-height: 0;
+      & .page-components-resize-handle:nth-child(2) {
+        margin-right: -3px;
+      }
     }
 
     .page-components-sidebar {

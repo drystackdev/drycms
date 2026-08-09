@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
+import { join, relative, sep } from "node:path";
 import { createServer as createViteServer } from "vite";
 
 /**
@@ -50,8 +51,43 @@ const { applySecurityHeaders, createApiMiddleware, toFetchRequest, sendFetchResp
 const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts");
 const { handleVeiRoute } = await vite.ssrLoadModule("/src/server/vei-routes.ts");
 const { injectClientConfig } = await vite.ssrLoadModule("/src/server/client-config.ts");
-const { path: adminPath, content } = await vite.ssrLoadModule("/src/server/config.ts");
+const { path: adminPath, content, pagesSourceStorage } = await vite.ssrLoadModule("/src/server/config.ts");
 const apiMiddleware = createApiMiddleware();
+
+/**
+ * The dev-only live route source `page-handler.ts`'s `handlePageRequest`
+ * accepts as its 4th param (`DevPagesSource`, `route-tree.ts`) - lets
+ * `discoverRoutes()` build its tree from `pagesSourceStorage` (`.dry/
+ * pages-source`) instead of `src/apps/pages`'s compile-time Vite glob, real
+ * files read/compiled live through THIS Vite instance's own
+ * `ssrLoadModule` (full JSX/TS transform + `app-router-plugin.ts`'s
+ * ambient-global injection, which also gates on this same root - see that
+ * file's own doc comment). `null` under any storage kind other than
+ * `"local"` (R2-backed `pagesSourceStorage` has no local files for
+ * `ssrLoadModule` to read - `bun run dev` is always `kind: "local"` per
+ * `dry.config.ts`, so this is defensive, not a real branch this repo hits).
+ */
+const { createStorageAdapter } = await vite.ssrLoadModule("/src/storage/index.ts");
+const pagesSourceAdapter = pagesSourceStorage.kind === "local" ? createStorageAdapter(pagesSourceStorage) : null;
+// Root-relative URL prefix the BROWSER can fetch these same files through -
+// Vite's dev middleware transforms any real file under the project root on
+// request, dotfolder included (confirmed live), so this needs no dedicated
+// middleware, just the right root-relative path. `relative()` (not a
+// hardcoded "/.dry/pages-source") so a customized `dry.config.ts` local data
+// root still resolves correctly.
+const pagesSourceUrlPrefix = pagesSourceStorage.kind === "local" ? `/${relative(process.cwd(), pagesSourceStorage.root).split(sep).join("/")}` : null;
+const devPagesSource = pagesSourceAdapter && {
+  async listPaths() {
+    const entries = await pagesSourceAdapter.listAll();
+    return entries.filter((entry) => entry.kind === "file").map((entry) => entry.path);
+  },
+  async loadModule(relPath) {
+    return vite.ssrLoadModule(join(pagesSourceStorage.root, relPath));
+  },
+  browserUrlFor(relPath) {
+    return `${pagesSourceUrlPrefix}/${relPath}`;
+  },
+};
 
 /**
  * Regenerates `src/apps/dry.generated.d.ts` (see `plans/reader.md`) once on
@@ -77,37 +113,7 @@ try {
 }
 
 /**
- * Keeps `src/apps/pages/**` (git) and `pagesSourceStorage` (what the
- * app-r2 browser build pipeline/`PageEditor.tsx` actually read from - see
- * `plans/app-r2.md` quyết định #6/mục 13) from silently diverging on a local
- * `kind: "local"` dev checkout - both directions, both never-overwrite (same
- * `scripts/sync-pages-r2.ts` `push`/`pull` a manual `bun run pages:sync`
- * uses), so this can never destroy an edit either side already has. Found
- * worth automating live: without it, a page edited through the browser
- * (storage-only) and the same path's git copy can end up with genuinely
- * different content with no signal that happened - `push` alone (git ->
- * storage) doesn't fix that once both sides already exist, but it does mean
- * a page/layout/component that exists in EXACTLY ONE of the two places
- * (the common case: a fresh checkout with only git-authored pages, or a
- * brand-new file authored only through Page Editor) never has to be synced
- * by hand. `content.engine !== "D1"` isn't the right guard here (this is
- * about `pagesSource`, not content) - `push`/`pull` themselves already
- * resolve to the plain local-disk root regardless, since `process.argv`
- * here never carries `--remote`/`--local` (see that script's own doc
- * comment) - so this always runs, and is cheap (a directory walk + stat
- * checks) even when there's nothing to do. Never fatal, same as the
- * `dry.generated.d.ts` step above.
- */
-try {
-  const { push, pull } = await vite.ssrLoadModule("/scripts/sync-pages-r2.ts");
-  await push();
-  await pull();
-} catch (error) {
-  console.error("[drycms] failed to sync src/apps/pages <-> pagesSourceStorage:", error);
-}
-
-/**
- * `src/apps/pages` (see `plans/app-router.md`) - only for a pathname
+ * The site's own pages (see `plans/app-router.md`) - only for a pathname
  * OUTSIDE the admin's own `path`, symmetric to `routers/App.tsx`'s
  * `AuthGate` (which renders nothing for exactly that space today). Loads
  * `page-handler.ts` fresh via `vite.ssrLoadModule` on EVERY call (not
@@ -116,15 +122,18 @@ try {
  * one module whose whole job is "trên dev có thể vào xem trực tiếp live
  * preview qua vite", unlike the rest of `src/server/**` (see
  * `status/content-type-staged-apply.md`'s note on that restart caveat).
- * Returns `true` if it fully handled the response (matched or a real
- * 404), `false` to fall through to the admin SPA shell.
+ * Passes `devPagesSource` (live `.dry/pages-source`, see this file's own
+ * doc comment above) as the explicit 4th arg, with `isDev` itself left
+ * `undefined` so `handlePageRequest`'s own default (`import.meta.env.DEV`)
+ * still decides that. Returns `true` if it fully handled the response
+ * (matched or a real 404), `false` to fall through to the admin SPA shell.
  */
 async function tryServeAppRouterPage(req, res) {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === adminPath || url.pathname.startsWith(`${adminPath}/`)) return false;
 
   const { handlePageRequest } = await vite.ssrLoadModule("/src/server/page-handler.ts");
-  const response = await handlePageRequest(toFetchRequest(req), {});
+  const response = await handlePageRequest(toFetchRequest(req), {}, undefined, devPagesSource);
   if (!response) {
     applySecurityHeaders(res);
     res.statusCode = 404;

@@ -40,6 +40,17 @@ pnpm-debug.log*
 /components/
 /richtext-components/
 
+# `src/apps/pages` - build-time-only materialized copy of `pagesSourceStorage`
+# (`.dry/pages-source` locally, R2 in prod), NOT hand-edited/committed
+# anymore. `pagesSourceStorage` is the durable source (dev's app router reads
+# it live - `route-tree.ts`'s `DevPagesSource`); `bun run build`/`build:worker`
+# each run `bun scripts/sync-pages-r2.ts --pull [--remote]` to regenerate this
+# directory right before `vite build`'s compile-time glob
+# (`discoverRoutes()`'s prod branch) reads it - same "R2/storage is the
+# durable copy, this is only the local working copy" reasoning `/public/`
+# above already documents for media.
+/src/apps/pages/
+
 # Playwright artifacts (unanchored - a command run from the wrong cwd can
 # create these under a subdirectory instead of the repo root)
 test-results/

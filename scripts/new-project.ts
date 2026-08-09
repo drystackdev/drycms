@@ -15,11 +15,14 @@
  *
  * What it resets, and why each one matters for a project that actually boots:
  *
- * - `src/apps/pages/**` - the demo public site. Replaced by a minimal
- *   starter (`layout.tsx`/`page.tsx`/`404.tsx`/`500.tsx`) that makes NO
- *   `dry()` call, so the site renders on a DB that has nothing modelled in
- *   it yet. Deleting the directory outright (what this script used to do)
- *   leaves every URL a 404 with no hint of where to start.
+ * - `pagesSourceStorage` (`.dry/pages-source` - dev's app router reads
+ *   live from here, `route-tree.ts`'s `DevPagesSource`; `src/apps/pages` is
+ *   just a gitignored, build-time materialized copy of this now, see
+ *   `scripts/sync-pages-r2.ts`) - the demo public site. Replaced by a
+ *   minimal starter (`layout.tsx`/`page.tsx`/`404.tsx`/`500.tsx`) that
+ *   makes NO `dry()` call, so the site renders on a DB that has nothing
+ *   modelled in it yet. Deleting the directory outright (what this script
+ *   used to do) leaves every URL a 404 with no hint of where to start.
  * - `dry.seed.json` - re-snapshotted from the fresh DB. This is the one that
  *   silently undid the whole reset before: `seed.ts`'s
  *   `resolveDefaultContentTypeDefinitions` lets a packaged seed take over
@@ -51,7 +54,13 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { createInterface } from "node:readline/promises";
 import { resolve as resolvePath } from "node:path";
 import { slugify } from "../src/lib/slugify.js";
-import { content, resolved } from "../src/server/config.js";
+import { content, pagesSourceStorage, resolved } from "../src/server/config.js";
+
+if (pagesSourceStorage.kind !== "local") {
+  console.error(`[new:project] pagesSourceStorage is "${pagesSourceStorage.kind}" - this script only supports resetting a local ("kind: local") checkout.`);
+  process.exit(1);
+}
+const pagesSourceRoot = pagesSourceStorage.root;
 
 const root = process.cwd();
 const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -116,9 +125,10 @@ function replaceOrWarn(source: string, file: string, pattern: RegExp, replacemen
 // ---------------------------------------------------------------- preflight
 
 // Uncommitted work in TRACKED files is exactly what would get destroyed
-// below (`src/apps/pages` is real, tracked source) - refuse rather than
-// guess whether it's safe to proceed, same spirit as CODING-PRINCIPLES.md's
-// concurrent-editing-hazards section (never assume, never auto-stash).
+// below (`dry.seed.json`/`wrangler.jsonc`/`package.json` are all rewritten
+// in place) - refuse rather than guess whether it's safe to proceed, same
+// spirit as CODING-PRINCIPLES.md's concurrent-editing-hazards section
+// (never assume, never auto-stash).
 // Untracked files are a warning, not a refusal: they only disappear if they
 // happen to sit inside one of the directories being removed, and refusing
 // on them means a single stray scratch file blocks the script.
@@ -136,7 +146,7 @@ if (trackedChanges.length > 0) {
 }
 
 console.log("This creates a new branch, then permanently resets:");
-console.log("  - src/apps/pages/**   → a minimal blank starter (demo site removed)");
+console.log("  - .dry/pages-source/  → a minimal blank starter (demo site removed, dev's live app-router source)");
 console.log("  - .dry/               → fresh DB: only the built-in system content types, no entries,");
 console.log("                          no users (bun run dev asks for a first-admin registration again)");
 console.log("  - dry.seed.json       → re-snapshotted from that fresh DB (drops the old project's");
@@ -209,11 +219,17 @@ git("checkout", "-b", branch);
 
 // ------------------------------------------------------- the public site
 
-console.log("\nResetting the public site (src/apps/pages)...");
-rmSync(at("src/apps/pages"), { recursive: true, force: true });
-mkdirSync(at("src/apps/pages"), { recursive: true });
+console.log("\nResetting the public site (.dry/pages-source)...");
+rmSync(pagesSourceRoot, { recursive: true, force: true });
+mkdirSync(pagesSourceRoot, { recursive: true });
 writeStarterSite(rawName, resolved.path);
 console.log("  wrote layout.tsx, page.tsx, 404.tsx, 500.tsx (no dry() calls - renders on an empty DB)");
+// `src/apps/pages` (gitignored, build-time-only per Part 3 of
+// `status/pages-source-dev-live.md`) may still hold the OLD project's demo
+// site on disk from a previous `bun run build` - not the live source
+// anymore (dev reads `.dry/pages-source` directly), but stale enough to be
+// worth clearing so it can't be mistaken for current content.
+rmSync(at("src/apps/pages"), { recursive: true, force: true });
 
 // -------------------------------------------------------- local artifacts
 
@@ -331,7 +347,7 @@ console.log("\nReview `git status`, then commit when ready.");
  */
 function writeStarterSite(projectName: string, adminPath: string): void {
   const write = (file: string, source: string) => {
-    writeFileSync(at("src/apps/pages", file), source);
+    writeFileSync(resolvePath(pagesSourceRoot, file), source);
   };
   // The name is free-form user input, so it goes into the generated TSX as a
   // string LITERAL rendered through `{...}`, never inline JSX text - a name
@@ -344,7 +360,7 @@ function writeStarterSite(projectName: string, adminPath: string): void {
     "layout.tsx",
     `/**
  * Root layout for the public site - wraps every page under
- * \`src/apps/pages/**\`, including \`404.tsx\` (see \`docs/APP-ROUTER.md\`).
+ * \`.dry/pages-source/**\`, including \`404.tsx\` (see \`docs/APP-ROUTER.md\`).
  *
  * Plain SYNC component with no data dependency, which is what makes a
  * brand-new project renderable: the demo site's layout read a
@@ -404,7 +420,7 @@ export default function HomePage() {
       <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">drycms</p>
       <h1 class="mt-2 text-4xl font-bold">{SITE_NAME}</h1>
       <p class="mt-4 text-slate-600">
-        Trang này là starter trống. Sửa <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sm">src/apps/pages/page.tsx</code>{" "}
+        Trang này là starter trống. Sửa <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sm">.dry/pages-source/page.tsx</code>{" "}
         để bắt đầu.
       </p>
 

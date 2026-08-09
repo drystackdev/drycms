@@ -66,7 +66,10 @@ export function renderPage(
         // otherwise land outside the request it belongs to.
         const bodyHtml = await runWithDryContext(dryContext, () => renderToStringAsync(vnode as never));
         const replayData = `<script type="application/json" id="dry-replay-data">${encodeCallLog(dryContext.callLog ?? [])}</script>`;
-        const rest = bodyHtml + replayData + veiConfigScript(adminPath, dryContext.vei !== undefined) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
+        const devManifest = options.devHydrateManifest
+          ? `<script type="application/json" id="dry-dev-hydrate-manifest">${JSON.stringify(options.devHydrateManifest).replace(/</g, "\\u003c")}</script>`
+          : "";
+        const rest = bodyHtml + replayData + devManifest + veiConfigScript(adminPath, dryContext.vei !== undefined) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
         controller.enqueue(encoder.encode(rest));
         controller.close();
         options.onDocumentReady?.(head + rest);
@@ -118,6 +121,15 @@ export interface RenderPageOptions {
    * did before this option existed. Absent, or itself throwing, is the same
    * "stream errors" fallback too. */
   onRenderError?: (error: unknown) => Promise<string>;
+  /** Dev-only, from `page-handler.ts`'s `devPagesSource` branch (see
+   * `route-tree.ts`'s `DevPagesSource` doc comment) - `hydrate-client.ts`
+   * `import()`s these URLs directly instead of calling `discoverRoutes()`
+   * itself, since a `.dry/pages-source` file isn't part of the client
+   * bundle's own compile-time glob. Absent for every other case (prod, or a
+   * dev request that isn't `devPagesSource`-backed), in which case
+   * `hydrate-client.ts` falls back to its original glob-based resolution
+   * unchanged. */
+  devHydrateManifest?: { entryUrl: string; layoutUrls: string[]; params: Record<string, string | string[]> };
 }
 
 /**

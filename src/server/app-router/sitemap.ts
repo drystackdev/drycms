@@ -5,7 +5,7 @@ import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { DryRouteContext } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { path as adminPath } from "../config.js";
-import { discoverRoutes, staticPagePaths } from "./route-tree.js";
+import { discoverRoutes, staticPagePaths, type DevPagesSource } from "./route-tree.js";
 import { resolveSiteOrigin } from "./site-origin.js";
 
 function escapeXml(text: string): string {
@@ -55,7 +55,7 @@ async function* publishedEntries(
  * and per-entry values - checking a static page's own SEO would mean
  * actually rendering it.
  */
-export async function buildSitemapResponse(url: URL, routeContext: DryRouteContext): Promise<Response> {
+export async function buildSitemapResponse(url: URL, routeContext: DryRouteContext, devPagesSource?: DevPagesSource): Promise<Response> {
   const { schema, entries } = getContentAdapters(routeContext);
   const allTypes = await schema.listContentTypes();
   const origin = resolveSiteOrigin(url);
@@ -65,7 +65,7 @@ export async function buildSitemapResponse(url: URL, routeContext: DryRouteConte
 
   const locs: string[] = [];
   if (!siteNoIndex) {
-    for (const staticPath of staticPagePaths(discoverRoutes())) {
+    for (const staticPath of staticPagePaths(await discoverRoutes(devPagesSource))) {
       locs.push(`${origin}${staticPath}`);
     }
     for (const type of allTypes) {

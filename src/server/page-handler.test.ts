@@ -1,4 +1,6 @@
+import { h } from "preact";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import type { DevPagesSource } from "./app-router/route-tree.js";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 
@@ -29,6 +31,35 @@ afterAll(async () => {
   const { rm } = await import("node:fs/promises");
   await rm(tempDirBox.path, { recursive: true, force: true });
 });
+
+/** A minimal in-memory `DevPagesSource` (`route-tree.ts`) for the dev-branch
+ * tests below - decouples them from `src/apps/pages`'s real on-disk content
+ * (which is now a gitignored, build-time-materialized copy, not something a
+ * fresh checkout/CI run is guaranteed to have - see
+ * `status/pages-source-dev-live.md`). Plain `h()` vnodes, no `dry()` call
+ * (this repo's real root `layout.tsx`/`404.tsx` don't call it either - a
+ * page/layout module loaded this way never goes through the real Vite
+ * pipeline's `app-router-plugin.ts` ambient-global injection, same
+ * limitation the module-mocked `config.js` above already accepts). */
+function fixtureDevPagesSource(): DevPagesSource {
+  const modules: Record<string, () => Promise<{ default: (props: never) => unknown }>> = {
+    "layout.tsx": async () => ({ default: (({ children }: { children?: unknown }) => h("div", null, children as never)) as never }),
+    "404.tsx": async () => ({ default: (() => h("p", null, "not found")) as never }),
+  };
+  return {
+    async listPaths() {
+      return Object.keys(modules);
+    },
+    async loadModule(relPath) {
+      const loader = modules[relPath];
+      if (!loader) throw new Error(`[test] no fixture module for "${relPath}"`);
+      return loader();
+    },
+    browserUrlFor(relPath) {
+      return `/__test-pages-source/${relPath}`;
+    },
+  };
+}
 
 /**
  * `handlePageRequest`'s 3rd `isDev` param exists ONLY for this file - found
@@ -100,37 +131,30 @@ describe("handlePageRequest", () => {
 
   describe("dev (isDev: true) - unchanged from before mục 12", () => {
     it("renders the pages-root 404.tsx live (full SSR) at status 404 for a path with no built page, no route match, and no redirect", async () => {
-      // The real `404.tsx`/root `layout.tsx` call the ambient `dry()`
-      // global, which only resolves under the real Vite pipeline's
-      // `app-router-plugin.ts` transform (not part of `vitest.config.ts`) -
-      // expected to throw here and fall back to `500.tsx`'s markup, same as
-      // it would for any other render failure. The status code is fixed
-      // independently of that (see `render.ts`'s `RenderPageOptions.status`
-      // doc comment); a real hydration/VEI script tag IS still meaningfully
-      // assertable here though - that's what actually distinguishes this
-      // from prod's bare fallback above, not the exact body markup.
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      const response = await handlePageRequest(new Request("http://localhost/this-route-does-not-exist-anywhere"), {}, true);
+      // `fixtureDevPagesSource()` stands in for `src/apps/pages` here (see
+      // its own doc comment) - the status code is fixed independently of
+      // which source rendered the page (see `render.ts`'s
+      // `RenderPageOptions.status` doc comment); the hydrate/VEI script
+      // tags are what actually distinguish this from prod's bare fallback
+      // above, not the exact body markup.
+      const response = await handlePageRequest(new Request("http://localhost/this-route-does-not-exist-anywhere"), {}, true, fixtureDevPagesSource());
       expect(response).not.toBeNull();
       expect(response!.status).toBe(404);
       const html = await response!.text();
       expect(html).toContain("hydrate-client.ts");
       expect(html).toContain("vei/overlay.ts");
-      spy.mockRestore();
     });
 
     it("never even looks at built/live/* - a built page is ignored in favor of a live re-render", async () => {
       const ctx = { env: {} };
       await writeBuiltPage(ctx, "/dev-check", "build-1", "<html><body>STALE BUILT COPY</body></html>", { publishNow: true });
 
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      const response = await handlePageRequest(new Request("http://localhost/dev-check"), {}, true);
+      const response = await handlePageRequest(new Request("http://localhost/dev-check"), {}, true, fixtureDevPagesSource());
       expect(response).not.toBeNull();
       // Not the built copy's exact bytes - a route miss still 404s via live
       // SSR, same as the test above, proving `readBuiltPage` was never
       // consulted at all on this branch.
       expect(await response!.text()).not.toContain("STALE BUILT COPY");
-      spy.mockRestore();
     });
   });
 });
