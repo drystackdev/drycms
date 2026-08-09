@@ -25,6 +25,7 @@ import {
 } from "../page-components/page-build.js";
 import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
+import { clearDryHttpCache } from "../content-types/dry-http-cache.js";
 import { CODE_EDITOR_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
@@ -64,6 +65,28 @@ function ReloadIcon() {
     </svg>
   );
 }
+
+/** Local one-off, same pattern as `ReloadIcon` above (which reloads the
+ * PREVIEW; this one discards the cached CONTENT it renders) - a database
+ * cylinder with a refresh arrow. */
+function RefreshDataIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 2c4.42 0 8 1.34 8 3v4.34a5.5 5.5 0 0 0-2-1.11V7.6c-1.5.82-3.75 1.23-6 1.23S7.5 8.42 6 7.6V11c0 .55 2.07 1.71 5.13 1.95q-.13.51-.13 1.05v.95C7.06 14.7 4 13.42 4 12V5c0-1.66 3.58-3 8-3m5.5 8a4.5 4.5 0 1 1-3.9 6.75l1.2-.7a3.1 3.1 0 1 0 .28-3.3H16.5l-1.75 1.75L13 12.75L15.75 10z"
+      />
+    </svg>
+  );
+}
+
+/** How long the live preview may reuse a `dry()` response out of IndexedDB
+ * before refetching it (`content-types/dry-http-cache.ts`). Only the preview
+ * caches at all - "Build"/"Build all" here and on Page Build publish real
+ * HTML, so they always read fresh. Content edited in the CMS therefore shows
+ * up in the preview within this window, or immediately via the toolbar's
+ * "Refresh data" button. */
+const PREVIEW_DRY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * In-browser page/layout/component source editor (`plans/app-r2.md` Giai
@@ -928,6 +951,7 @@ export default function PageEditor() {
         // the main thread (benchmarked: sucrase's ESM pass costs about as
         // much as the CJS pass this preview does still need).
         skipJsAssets: true,
+        dryCacheTtlMs: PREVIEW_DRY_CACHE_TTL_MS,
       });
       if (seq !== previewSeqRef.current) return; // a newer edit already started another build - discard this stale result
       // Root-relative asset URLs in `result.html` (`/assets/...`) need a
@@ -971,6 +995,16 @@ export default function PageEditor() {
     } finally {
       if (seq === previewSeqRef.current) setPreviewLoading(false);
     }
+  }
+
+  /** The escape hatch for `PREVIEW_DRY_CACHE_TTL_MS`: drops every cached
+   * `dry()` response, then rebuilds - for the "I just edited that entry in
+   * the CMS and want to see it NOW" case, which the TTL alone would leave
+   * waiting. Separate from the Reload button next to it, which rebuilds the
+   * same (possibly cached) data against the current source. */
+  async function refreshPreviewData() {
+    await clearDryHttpCache();
+    await refreshPreview();
   }
 
   // Receives `PREVIEW_NAVIGATE_MESSAGE` from `buildPreviewNavigationScript`'s
@@ -1143,6 +1177,16 @@ export default function PageEditor() {
                   <div class="spacer" />
                   <button type="button" class="ghost icon sm" aria-label="Reload preview" disabled={previewLoading} onClick={() => void refreshPreview()}>
                     <ReloadIcon />
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    aria-label="Refresh data"
+                    title={`Refresh content data (cached for ${PREVIEW_DRY_CACHE_TTL_MS / 60000} min)`}
+                    disabled={previewLoading}
+                    onClick={() => void refreshPreviewData()}
+                  >
+                    <RefreshDataIcon />
                   </button>
                   <button
                     type="button"

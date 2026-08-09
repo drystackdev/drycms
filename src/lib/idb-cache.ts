@@ -86,6 +86,28 @@ export async function deleteCacheEntry(key: string): Promise<void> {
   }
 }
 
+/** Drops every entry whose key starts with `prefix` - for a cache namespace
+ * that has to be invalidated as a whole rather than per key, because its
+ * keys aren't enumerable from the caller's side (`dry-http-cache.ts`'s
+ * "Refresh data": the keys are whatever queries the last build happened to
+ * make). Uses a key range rather than a cursor over the whole store so an
+ * unrelated namespace's entries are never even read. */
+export async function deleteCacheEntriesByPrefix(prefix: string): Promise<void> {
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      // `￿` is above every character a real key can contain, so the
+      // range covers exactly the keys starting with `prefix`.
+      tx.objectStore(STORE_NAME).delete(IDBKeyRange.bound(prefix, `${prefix}￿`));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // no-op
+  }
+}
+
 /** Reset/debug/migration only - see `deleteCacheEntry`'s doc. */
 export async function clearCache(): Promise<void> {
   try {

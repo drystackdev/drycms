@@ -2,6 +2,7 @@ import { h, Fragment } from "preact";
 import * as preactHooks from "preact/hooks";
 import { transform, type Options as SucraseOptions } from "sucrase";
 import { dry, configureHttpDryReader, type HttpDryReaderConfig, type HttpDryReaderDependency } from "../content-types/dry-reader-http.js";
+import { fetchDryHttp } from "../content-types/dry-http-cache.js";
 import { params, setCurrentParams } from "../content-types/params-reader-client.js";
 import { resetHttpTitle, readHttpTitleLayer, setTitle } from "../content-types/dry-title-http.js";
 import { dryBind } from "../content-types/dry-vei.js";
@@ -282,6 +283,14 @@ export interface PageBuildInput {
    * debounced preview rebuild before this flag existed. `PageBuild.tsx`'s
    * real publish path never sets this, so publishing is unaffected. */
   skipJsAssets?: boolean;
+  /** Reuse `dry()` responses cached in IndexedDB when they're younger than
+   * this, instead of refetching them (see `dry-http-cache.ts`) - the same
+   * "a debounced preview rebuild shouldn't redo work that can't have
+   * changed between two keystrokes" motivation as `skipJsAssets`, applied
+   * to the network side. Set ONLY by `PageEditor`'s live preview; leave it
+   * unset (every publishing caller does) and every `dry()` call fetches
+   * fresh exactly as before. */
+  dryCacheTtlMs?: number;
 }
 
 export interface PageBuildResult {
@@ -315,21 +324,18 @@ function dedupeDeps(deps: HttpDryReaderDependency[]): HttpDryReaderDependency[] 
  * exactly the same reason - see that module's call site. Still recorded as
  * a real `_page_deps` entry (every page implicitly depends on site-wide
  * defaults), just added to `deps` manually here instead. */
-async function fetchSeoDefaults(dryHttpEndpoint: string): Promise<{ value: DrySeoValue | undefined; dep: HttpDryReaderDependency | null }> {
-  const response = await fetch(dryHttpEndpoint, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind: "singleton", name: "seoDefaults", method: "get" }),
-  });
-  if (!response.ok) return { value: undefined, dep: null };
-  const [entry] = decodeCallLog(await response.text());
-  const resource = response.headers.get("X-Dry-Resource");
-  const version = Number(response.headers.get("X-Dry-Resource-Version") ?? "0");
+async function fetchSeoDefaults(dryHttpEndpoint: string, cacheTtlMs: number | undefined): Promise<{ value: DrySeoValue | undefined; dep: HttpDryReaderDependency | null }> {
+  let response;
+  try {
+    response = await fetchDryHttp(dryHttpEndpoint, { kind: "singleton", name: "seoDefaults", method: "get" }, cacheTtlMs);
+  } catch {
+    return { value: undefined, dep: null };
+  }
+  const [entry] = decodeCallLog(response.text);
   const seo = (entry?.result as Record<string, unknown> | null)?.seo;
   return {
     value: seo && typeof seo === "object" ? (seo as DrySeoValue) : undefined,
-    dep: resource ? { resource, version } : null,
+    dep: response.resource ? { resource: response.resource, version: response.version } : null,
   };
 }
 
@@ -342,10 +348,17 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
   setCurrentParams(input.params);
   resetHttpTitle();
   const seo: DrySeoLayers = {};
-  const dryConfig: HttpDryReaderConfig = { endpoint: input.dryHttpEndpoint, callLog: [], deps: [], allTypes: input.allTypes, seo };
+  const dryConfig: HttpDryReaderConfig = {
+    endpoint: input.dryHttpEndpoint,
+    callLog: [],
+    deps: [],
+    allTypes: input.allTypes,
+    seo,
+    cacheTtlMs: input.dryCacheTtlMs,
+  };
   configureHttpDryReader(dryConfig);
 
-  const { value: defaultSeo, dep: defaultsDep } = await fetchSeoDefaults(input.dryHttpEndpoint);
+  const { value: defaultSeo, dep: defaultsDep } = await fetchSeoDefaults(input.dryHttpEndpoint, input.dryCacheTtlMs);
   seo.default = defaultSeo;
 
   const cache = new Map<string, { exports: any }>();

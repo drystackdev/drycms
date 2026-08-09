@@ -1,4 +1,5 @@
 import type { DryCallLogEntry } from "./dry-context.js";
+import { fetchDryHttp } from "./dry-http-cache.js";
 import { createInertRefProxy } from "./dry-vei.js";
 import { seoTierFor, type DrySeoLayers, type DrySeoValue } from "./dry-seo.js";
 import type { ContentTypeDefinition } from "./types.js";
@@ -72,6 +73,10 @@ export interface HttpDryReaderConfig {
    * passes this straight into `BuildDocumentContext.seo` after rendering. */
   seo: DrySeoLayers;
   seoEntryDates?: { createdAt?: string; updatedAt?: string };
+  /** How long a `dry()` response may be reused from IndexedDB instead of
+   * refetched - see `dry-http-cache.ts`. Set ONLY by the page editor's live
+   * preview; every publishing build leaves it unset and fetches fresh. */
+  cacheTtlMs?: number;
 }
 
 let config: HttpDryReaderConfig | null = null;
@@ -145,22 +150,21 @@ function recordSeoLayer(config: HttpDryReaderConfig, name: string, result: Recor
 }
 
 async function callServer(body: WireRequest): Promise<DryCallLogEntry> {
-  const { endpoint, callLog, deps } = activeConfig();
-  const response = await fetch(endpoint, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    throw new Error(`[drycms] dry().${body.kind}("${body.name}").${body.method}() failed: HTTP ${response.status}.`);
+  const { endpoint, callLog, deps, cacheTtlMs } = activeConfig();
+  let response;
+  try {
+    response = await fetchDryHttp(endpoint, body, cacheTtlMs);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`[drycms] dry().${body.kind}("${body.name}").${body.method}() failed: ${reason}.`);
   }
-  const [entry] = decodeCallLog(await response.text());
+  const [entry] = decodeCallLog(response.text);
   if (!entry) throw new Error(`[drycms] dry().${body.kind}("${body.name}").${body.method}() returned no result.`);
   callLog.push(entry);
-  const resource = response.headers.get("X-Dry-Resource");
-  const version = Number(response.headers.get("X-Dry-Resource-Version") ?? "0");
-  if (resource) deps.push({ resource, version });
+  // Pushed for a cache hit too, with the version as of when it was cached -
+  // `_page_deps` stays populated either way, and the only caller that
+  // enables the cache (the live preview) never publishes those deps.
+  if (response.resource) deps.push({ resource: response.resource, version: response.version });
   return entry;
 }
 
