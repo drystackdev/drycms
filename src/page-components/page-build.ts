@@ -270,6 +270,16 @@ export interface PageBuildInput {
    * already uses; `resolveMatchToVNode` reverses it internally. */
   layoutPaths: string[];
   params: Record<string, string | string[]>;
+  /** Skip compiling `jsAssets` (the ESM bundle `publishBuiltPage` uploads) -
+   * for `PageEditor`'s live preview, which only ever reads `result.html`
+   * and deliberately never touches `jsAssets` (see that component's own
+   * comment on `result.jsAssets`). Measured live (2026-08-09): sucrase's
+   * ESM `compileEsmAsset` pass costs roughly as much synchronous,
+   * main-thread-blocking time as the CJS eval pass this function also
+   * does - about half of `buildPage`'s total cost thrown away on every
+   * debounced preview rebuild before this flag existed. `PageBuild.tsx`'s
+   * real publish path never sets this, so publishing is unaffected. */
+  skipJsAssets?: boolean;
 }
 
 export interface PageBuildResult {
@@ -366,11 +376,12 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
   // everything else in the closure is reached by the browser's OWN native
   // `import` resolution once hydration starts, not listed here directly.
   const roots = [input.entryPath, ...input.layoutPaths];
-  const closure = transitiveDependencies(roots, input.sourceByPath);
-  const jsAssets = [...closure].map((path) => ({
-    jsPath: toJsAssetPath(path),
-    source: compileEsmAsset(path, input.sourceByPath, input.preactRuntimeHref, input.builtAssetsBaseUrl),
-  }));
+  const jsAssets = input.skipJsAssets
+    ? []
+    : [...transitiveDependencies(roots, input.sourceByPath)].map((path) => ({
+        jsPath: toJsAssetPath(path),
+        source: compileEsmAsset(path, input.sourceByPath, input.preactRuntimeHref, input.builtAssetsBaseUrl),
+      }));
   const hydrateManifest = {
     entryUrl: toBuiltAssetUrl(input.builtAssetsBaseUrl, input.entryPath),
     layoutUrls: input.layoutPaths.map((p) => toBuiltAssetUrl(input.builtAssetsBaseUrl, p)),

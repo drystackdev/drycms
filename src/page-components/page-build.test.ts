@@ -166,6 +166,46 @@ describe("buildPage", () => {
     expect(JSON.parse(paramsMatch![1]!)).toEqual({ slug: "about" });
   });
 
+  it("skips compiling jsAssets when skipJsAssets is set, still renders html", async () => {
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { kind: string; name: string };
+      if (body.kind === "singleton" && body.name === "siteSettings") {
+        const text = encodeCallLog([{ kind: "singleton", name: "siteSettings", method: "get", result: { id: 1, title: "My Site" } }]);
+        return new Response(text, { status: 200, headers: jsonHeaders("siteSettings", 7) });
+      }
+      if (body.kind === "singleton" && body.name === "seoDefaults") {
+        const text = encodeCallLog([{ kind: "singleton", name: "seoDefaults", method: "get", result: { id: 1, seo: null } }]);
+        return new Response(text, { status: 200, headers: jsonHeaders("seoDefaults", 1) });
+      }
+      throw new Error(`unexpected dry-http call: ${JSON.stringify(body)}`);
+    });
+
+    const result = await buildPage({
+      pathname: "/about",
+      origin: "https://example.com",
+      adminPath: "/dry",
+      siteLang: "en",
+      assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
+      dryHttpEndpoint: "/dry/api/dry-http",
+      allTypes: [SITE_SETTINGS_TYPE, SEO_DEFAULTS_TYPE],
+      sourceByPath: {
+        "page.tsx": REAL_PAGE_SOURCE,
+        "layout.tsx": LAYOUT_SOURCE,
+        "Greeting.tsx": GREETING_SOURCE,
+      },
+      entryPath: "page.tsx",
+      layoutPaths: ["layout.tsx"],
+      params: { slug: "about" },
+      skipJsAssets: true,
+    });
+
+    // html renders exactly like the full build - only jsAssets is affected.
+    expect(result.html).toContain("hello: My Site");
+    expect(result.jsAssets).toEqual([]);
+  });
+
   it("rejects a bare npm import outside the preact/preact-hooks allowlist", async () => {
     fetchMock.mockResolvedValue(
       new Response(encodeCallLog([{ kind: "singleton", name: "seoDefaults", method: "get", result: null }]), {

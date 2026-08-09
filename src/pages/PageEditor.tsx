@@ -609,6 +609,11 @@ export default function PageEditor() {
         entryPath: previewTarget.entryPath,
         layoutPaths: previewTarget.layoutPaths,
         params: previewTarget.params,
+        // result.jsAssets is never used below (see that comment) - skip
+        // compiling it, roughly halving how long each debounced edit blocks
+        // the main thread (benchmarked: sucrase's ESM pass costs about as
+        // much as the CJS pass this preview does still need).
+        skipJsAssets: true,
       });
       if (seq !== previewSeqRef.current) return; // a newer edit already started another build - discard this stale result
       // Root-relative asset URLs in `result.html` (`/assets/...`) need a
