@@ -1,9 +1,8 @@
 /**
- * Snapshots the CURRENT dev content-type DB's full list into
- * `src/apps/dry.seed.json` - the "separate seed script" from `plans/
- * content-type-seed.md`: overwrites the file wholesale each run (a
- * snapshot, not a merge). See `scripts/lib/schema-sync.ts` for the
- * implementation.
+ * Snapshots the CURRENT dev content-type DB's own content types/data (the
+ * built-in system defaults excluded - see `scripts/lib/schema-sync.ts`'s own
+ * doc comment) into `src/apps/schema.json`/`src/apps/seed.json` - overwrites
+ * both wholesale each run (a snapshot, not a merge).
  *
  * The only snapshot command - `bun run build:schema` used to be a second
  * entry point that did this plus package `public.zip`; with that media
@@ -16,4 +15,7 @@
 import { writeContentTypeSeedFile } from "./lib/schema-sync.js";
 
 const result = await writeContentTypeSeedFile();
-if (result) console.log(`[drycms] seed:sync wrote ${result.count} content type(s) (${result.singletonCount} with singleton data) -> ${result.target}`);
+if (result) {
+  console.log(`[drycms] seed:sync wrote ${result.schemaCount} content type(s) -> ${result.schemaTarget}`);
+  console.log(`[drycms] seed:sync wrote ${result.singletonCount} singleton(s) + ${result.menuCount} menu row(s) -> ${result.seedTarget}`);
+}

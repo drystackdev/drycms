@@ -9,7 +9,6 @@ interface PageRow {
   build_id: string;
   built_at: number;
   in_sitemap: number;
-  publish_at: number | null;
 }
 
 function toPageRecord(row: PageRow): PageRecord {
@@ -19,7 +18,6 @@ function toPageRecord(row: PageRow): PageRecord {
     buildId: row.build_id,
     builtAt: row.built_at,
     inSitemap: row.in_sitemap === 1,
-    publishAt: row.publish_at,
   };
 }
 
@@ -44,6 +42,11 @@ export function createD1PagesRegistryAdapter(
     let bootstrapped = bootstrapByBinding.get(db);
     if (!bootstrapped) {
       bootstrapped = (async () => {
+        // `publish_at` used to back a page-level "schedule" build - removed
+        // in favor of the entry-level `features.schedule` gate alone
+        // (`entry-where.ts`'s `buildPublishedOnlyClause`). Not dropped from
+        // any EXISTING D1 database (no migration runs here), just no longer
+        // read/written - a pre-existing column sits unused, harmless.
         await db
           .prepare(
             `CREATE TABLE IF NOT EXISTS "_pages" (\n` +
@@ -51,8 +54,7 @@ export function createD1PagesRegistryAdapter(
               `  "object_key" TEXT NOT NULL,\n` +
               `  "build_id" TEXT NOT NULL,\n` +
               `  "built_at" INTEGER NOT NULL,\n` +
-              `  "in_sitemap" INTEGER NOT NULL,\n` +
-              `  "publish_at" INTEGER\n` +
+              `  "in_sitemap" INTEGER NOT NULL\n` +
               `);`,
           )
           .run();
@@ -95,12 +97,12 @@ export function createD1PagesRegistryAdapter(
       const statements = [
         db
           .prepare(
-            'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap","publish_at") VALUES (?,?,?,?,?,?) ' +
+            'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap") VALUES (?,?,?,?,?) ' +
               'ON CONFLICT("path") DO UPDATE SET ' +
               '"object_key"=excluded."object_key", "build_id"=excluded."build_id", "built_at"=excluded."built_at", ' +
-              '"in_sitemap"=excluded."in_sitemap", "publish_at"=excluded."publish_at";',
+              '"in_sitemap"=excluded."in_sitemap";',
           )
-          .bind(record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0, record.publishAt),
+          .bind(record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0),
         db.prepare('DELETE FROM "_page_deps" WHERE "path" = ?;').bind(record.path),
         ...deps.map((dep) =>
           db.prepare('INSERT INTO "_page_deps" ("path","resource","version") VALUES (?,?,?);').bind(record.path, dep.resource, dep.version),
@@ -119,7 +121,7 @@ export function createD1PagesRegistryAdapter(
 
     async listAllPages() {
       await ensureBootstrap();
-      const result = await db.prepare('SELECT * FROM "_pages" ORDER BY "path" ASC;').all<PageRow>();
+      const result = await db.prepare('SELECT "path","object_key","build_id","built_at","in_sitemap" FROM "_pages" ORDER BY "path" ASC;').all<PageRow>();
       return (result.results ?? []).map(toPageRecord);
     },
 
@@ -129,12 +131,9 @@ export function createD1PagesRegistryAdapter(
       return (result.results ?? []).map((row) => row.path);
     },
 
-    async listSitemapEntries(asOfMs) {
+    async listSitemapEntries() {
       await ensureBootstrap();
-      const result = await db
-        .prepare('SELECT "path", "built_at" FROM "_pages" WHERE "in_sitemap" = 1 AND ("publish_at" IS NULL OR "publish_at" <= ?);')
-        .bind(asOfMs)
-        .all<{ path: string; built_at: number }>();
+      const result = await db.prepare('SELECT "path", "built_at" FROM "_pages" WHERE "in_sitemap" = 1;').all<{ path: string; built_at: number }>();
       return (result.results ?? []).map((row) => ({ path: row.path, builtAt: row.built_at }));
     },
 
@@ -149,36 +148,6 @@ export function createD1PagesRegistryAdapter(
       const byPath = new Map<string, StalePageInfo>();
       for (const row of result.results ?? []) if (!byPath.has(row.path)) byPath.set(row.path, { path: row.path, resource: row.resource });
       return [...byPath.values()];
-    },
-
-    async listDueForPublish(asOfMs) {
-      await ensureBootstrap();
-      const result = await db
-        .prepare('SELECT * FROM "_pages" WHERE "publish_at" IS NOT NULL AND "publish_at" <= ?;')
-        .bind(asOfMs)
-        .all<PageRow>();
-      return (result.results ?? []).map(toPageRecord);
-    },
-
-    async getPage(path) {
-      await ensureBootstrap();
-      const result = await db.prepare('SELECT * FROM "_pages" WHERE "path" = ?;').bind(path).all<PageRow>();
-      const row = result.results?.[0];
-      return row ? toPageRecord(row) : null;
-    },
-
-    async markPublished(path, objectKey) {
-      await ensureBootstrap();
-      await db.prepare('UPDATE "_pages" SET "object_key" = ?, "publish_at" = NULL WHERE "path" = ?;').bind(objectKey, path).run();
-    },
-
-    async nextPublishAt(afterMs) {
-      await ensureBootstrap();
-      const result = await db
-        .prepare('SELECT MIN("publish_at") AS "next" FROM "_pages" WHERE "publish_at" IS NOT NULL AND "publish_at" > ?;')
-        .bind(afterMs)
-        .all<{ next: number | null }>();
-      return result.results?.[0]?.next ?? null;
     },
   };
 }

@@ -273,7 +273,7 @@ describe("publishBuiltPage", () => {
 
     await publishBuiltPage(
       { html: "<html></html>", jsAssets: [{ jsPath: "page.js", source: "export default function(){}" }], deps: [{ resource: "blog", version: 2 }], inSitemap: true },
-      { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", buildId: "build-1", publishAt: null },
+      { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", buildId: "build-1" },
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -286,7 +286,6 @@ describe("publishBuiltPage", () => {
       buildId: "build-1",
       deps: [{ resource: "blog", version: 2 }],
       inSitemap: true,
-      publishAt: null,
     });
 
     vi.unstubAllGlobals();

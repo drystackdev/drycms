@@ -13,9 +13,8 @@ import type { DryRouteContext } from "../context.js";
  * `<encoded-path>.json` at the root; everything here lives under `built/`
  * and ends in `.html`, so the two can never collide.
  *
- * `page-handler.ts` reads `readBuiltPage` on every prod request and
- * `publishImmutableObject` on a live-key miss (lazy `schedule` promotion) -
- * see `status/app-r2-build.md` for the cutover history.
+ * `page-handler.ts` reads `readBuiltPage` on every prod request - see
+ * `status/app-r2-build.md` for the cutover history.
  */
 
 function normalizedPath(pathname: string): string {
@@ -40,48 +39,23 @@ export function immutableKeyFor(pathname: string, buildId: string): string {
 }
 
 /** Writes `html` to `pathname`'s immutable build key AND copies it onto the
- * stable live key in the same call - the common "build now, go live now"
- * case (no `schedule`). Returns both keys so the caller can record
- * `objectKey` in `_pages` (`pages-registry-types.ts`). For a SCHEDULED
- * build (mục 9), write the immutable object only (skip the live copy) and
- * let cron call `publishImmutableObject` once due. */
+ * stable live key in the same call - a build always publishes immediately
+ * (no page-level `schedule`/staged-publish concept anymore - only the
+ * entry-level `features.schedule` gate). Returns both keys so the caller can
+ * record `objectKey` in `_pages` (`pages-registry-types.ts`). */
 export async function writeBuiltPage(
   context: Pick<DryRouteContext, "env">,
   pathname: string,
   buildId: string,
   html: string,
-  options: { publishNow: boolean },
-): Promise<{ immutableKey: string; liveKey: string | null }> {
+): Promise<{ immutableKey: string; liveKey: string }> {
   const adapter = getStorageAdapter(pagesCacheStorage, context);
   const immutableKey = immutableKeyFor(pathname, buildId);
   const bytes = Buffer.from(html, "utf8");
   await adapter.write(immutableKey, bytes);
-  if (!options.publishNow) return { immutableKey, liveKey: null };
   const liveKey = liveKeyFor(pathname);
   await adapter.write(liveKey, bytes);
   return { immutableKey, liveKey };
-}
-
-/** Copies an already-written immutable object onto the live key - the
- * `schedule` flip (mục 9, now done lazily at request time by
- * `page-handler.ts` rather than a cron sweep - see `status/app-r2-build.md`)
- * and admin rollback both funnel through this. Not `adapter.copy()` (its
- * contract requires the destination NOT already exist - `types.ts`'s doc
- * comment - wrong for a key that's overwritten every time a page goes live);
- * read-then-write instead, cheap at HTML-document sizes. Returns the HTML
- * alongside the live key so a request-time caller (`page-handler.ts`) can
- * serve this same response without a redundant `readBuiltPage` round trip. */
-export async function publishImmutableObject(
-  context: Pick<DryRouteContext, "env">,
-  pathname: string,
-  immutableKey: string,
-): Promise<{ liveKey: string; html: string }> {
-  const adapter = getStorageAdapter(pagesCacheStorage, context);
-  const file = await adapter.read(immutableKey);
-  const bytes = await bufferOf(file.stream);
-  const liveKey = liveKeyFor(pathname);
-  await adapter.write(liveKey, bytes);
-  return { liveKey, html: bytes.toString("utf8") };
 }
 
 /** Reads the live HTML for `pathname`, or `null` on a routine miss - same

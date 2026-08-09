@@ -11,22 +11,14 @@ vi.mock("../config.js", async () => {
 });
 
 /**
- * Isolated from `sitemap.test.ts`: this repo's own `dry.seed.json` (an
- * app-specific packaged seed, see `seed.ts`'s
- * `resolveDefaultContentTypeDefinitions`) freezes the shared `seo`
- * component's shape from whenever it was last snapshotted (pre-`noIndex`,
- * on this branch), and `migration.ts`'s `SavePlan.cascaded` doesn't reach a
- * `features.seo`-driven dependent like the built-in `seoDefaults` singleton
- * (that embed is synthetic - added by `system-fields.ts`'s `systemFieldsFor`
- * at resolve time, never a real `fields[]` entry `findDependents` can see) -
- * so there's no way to get a real `seoDefaults` row carrying `noIndex`
- * through the public engine adapter API in this test environment. Mocking
- * `loadSeoDefaults` sidesteps that entirely and tests exactly what
- * `buildSitemapResponse` itself is responsible for: reacting to whatever
- * `loadSeoDefaults` returns. A real end-to-end check (an actual admin
- * setting the SEO Defaults singleton's "Hide from search engines" toggle,
- * on a real dev server) is the appropriate way to verify the full chain,
- * not something a fresh-per-test sqlite file in this repo can do today.
+ * Isolated from `sitemap.test.ts`. Mocking `loadSeoDefaults` sidesteps
+ * actually writing a real `seoDefaults` singleton row through the engine
+ * adapter (`saveSingletonEntry`, reachable in principle but not otherwise
+ * exercised by this suite) and tests exactly what `buildSitemapResponse`
+ * itself is responsible for: reacting to whatever `loadSeoDefaults` returns.
+ * A real end-to-end check (an actual admin setting the SEO Defaults
+ * singleton's "Hide from search engines" toggle, on a real dev server) is
+ * the appropriate way to verify the full chain.
  */
 vi.mock("../../content-types/dry-seo.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../content-types/dry-seo.js")>();

@@ -16,14 +16,13 @@ import {
 } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import {
-  CODE_EDITOR_RESOURCE_ID,
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
+  PAGE_BUILDER_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   permissionActionsFor,
   permissionKeyFor,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
-  SYSTEM_BUILD_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -114,27 +113,15 @@ const CONTENT_TYPES_RESOURCE: ContentTypeDefinition = {
   version: 0,
 };
 
-/** `plans/app-r2.md` quyết định #12 - deliberately 2 separate toggles, not
- * 1: a role that can rebuild pages shouldn't automatically be able to
- * change what code runs. `CODE_EDITOR_RESOURCE` has no route checking it
- * yet (the in-browser code editor is Giai đoạn 6, not built) - listed here
- * now so both toggles land together and the naming is settled. */
-const SYSTEM_BUILD_RESOURCE: ContentTypeDefinition = {
-  id: SYSTEM_BUILD_RESOURCE_ID,
+/** `plans/app-r2.md` quyết định #12 originally split this into 2 separate
+ * toggles (code-editing vs. build/publish) - merged back into 1, since in
+ * practice nobody was ever granted one without the other. */
+const PAGE_BUILDER_RESOURCE: ContentTypeDefinition = {
+  id: PAGE_BUILDER_RESOURCE_ID,
   kind: "singleton",
-  name: "systemBuild",
-  label: "Page Build",
-  description: "Trigger a page build/rebuild for the public site.",
-  fields: [],
-  version: 0,
-};
-
-const CODE_EDITOR_RESOURCE: ContentTypeDefinition = {
-  id: CODE_EDITOR_RESOURCE_ID,
-  kind: "singleton",
-  name: "systemCode",
-  label: "Page Code Editor",
-  description: "Edit src/apps/pages source code directly in the browser.",
+  name: "pageBuilder",
+  label: "Page Builder",
+  description: "Edit src/apps/pages source code and trigger a page build/rebuild for the public site.",
   fields: [],
   version: 0,
 };
@@ -157,8 +144,7 @@ const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
   ICON_MANAGEMENT_RESOURCE,
   RICHTEXT_COMPONENTS_RESOURCE,
   CONTENT_TYPES_RESOURCE,
-  SYSTEM_BUILD_RESOURCE,
-  CODE_EDITOR_RESOURCE,
+  PAGE_BUILDER_RESOURCE,
 ];
 
 /**

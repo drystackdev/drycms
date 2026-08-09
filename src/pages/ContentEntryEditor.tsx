@@ -55,6 +55,7 @@ import {
   takeEntrySaveRequest,
 } from "./content-entry-editor/field-events.js";
 import { closeVeiDialog, isVeiFrame } from "./vei/bridge.js";
+import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import FieldRenderer, {
   type FieldRendererProps,
@@ -727,6 +728,19 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     } finally {
       setSaving(false);
       dispatchEntrySaved(saved);
+      // Background, best-effort: rebuilds whatever already-published static
+      // pages depend on this content type, so an edit made here doesn't sit
+      // stale until someone remembers to visit `/dry/page-build`. Skipped
+      // inside a VEI dialog - `saveAll()` (`apps/vei/overlay.ts`) already
+      // does this itself, batched across every entry it just saved; doing it
+      // here too would rebuild the same pages twice.
+      if (saved && type && !veiFrame) {
+        let toastId: string | undefined;
+        void rebuildAffectedPages(path, type.name, typesList, (message) => {
+          if (toastId) toast.update(toastId, { title: message, type: "default" });
+          else toastId = toast.add({ title: message, type: "loading" });
+        });
+      }
     }
   }
 

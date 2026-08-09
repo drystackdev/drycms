@@ -2,13 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
-import { SYSTEM_BUILD_RESOURCE_ID } from "../content-types/permissions.js";
+import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { canAccess } from "../store/auth.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
-import DatePickerField from "../components/fields/DatePickerField.js";
-import CheckField from "../components/fields/CheckField.js";
 import { useDocumentTitle } from "./page-common.js";
 import {
   buildPage,
@@ -53,15 +51,13 @@ interface PageStatusRow {
   buildId: string;
   builtAt: number;
   inSitemap: boolean;
-  publishAt: number | null;
   staleResource: string | null;
 }
 
 interface Row extends Record<string, unknown> {
   path: string;
-  status: "not-built" | "stale" | "scheduled" | "live";
+  status: "not-built" | "stale" | "live";
   builtAt: number | null;
-  publishAt: number | null;
   staleResource: string | null;
 }
 
@@ -143,7 +139,7 @@ async function listAllFilesRecursive(folder: string): Promise<TreeEntry[]> {
 export default function PageBuild() {
   useDocumentTitle("Page Build");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
-  const canBuild = canAccess(SYSTEM_BUILD_RESOURCE_ID, "setting");
+  const canBuild = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [sourceByPath, setSourceByPath] = useState<Record<string, string> | null>(null);
@@ -166,16 +162,6 @@ export default function PageBuild() {
   // don't overlap in the UI.
   const [resumableQueue, setResumableQueue] = useState<PersistedBuildQueue | null>(null);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
-
-  // `null` = build & publish immediately (the default, unchanged behavior).
-  // A future `Date` here is passed as `PublishOptions.publishAt` to
-  // whichever build action runs next - the page then 404s live until this
-  // moment, at which point `page-handler.ts` promotes it lazily on the
-  // first request that arrives after it's due (`status/app-r2-build.md`,
-  // replacing the old cron sweep). Deliberately NOT cleared after a build -
-  // "Build all" against one shared future date is the common case this
-  // exists for.
-  const [scheduleAt, setScheduleAt] = useState<Date | null>(null);
 
   async function reloadStatus() {
     const { pages } = await fetchJson<{ pages: PageStatusRow[] }>(`${path}/api/pages-build`);
@@ -258,7 +244,7 @@ export default function PageBuild() {
       layoutPaths: target.layoutPaths,
       params: target.params,
     });
-    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, publishAt: scheduleAt ? scheduleAt.getTime() : null } };
+    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname } };
   }
 
   /** Returns whether the build actually published - the auto-build effect
@@ -442,10 +428,9 @@ export default function PageBuild() {
     let state: Row["status"] = "not-built";
     if (status) {
       if (status.staleResource) state = "stale";
-      else if (status.publishAt) state = "scheduled";
       else state = "live";
     }
-    return { path: pathname, status: state, builtAt: status?.builtAt ?? null, publishAt: status?.publishAt ?? null, staleResource: status?.staleResource ?? null };
+    return { path: pathname, status: state, builtAt: status?.builtAt ?? null, staleResource: status?.staleResource ?? null };
   });
 
   const columns: DataTableColumn<Row>[] = [
@@ -455,13 +440,8 @@ export default function PageBuild() {
       label: "Status",
       render: (value, row) => {
         const state = value as Row["status"];
-        const labels: Record<Row["status"], string> = { "not-built": "Not built", stale: "Stale", scheduled: "Scheduled", live: "Live" };
-        const title =
-          state === "stale" && row.staleResource
-            ? `"${row.staleResource}" changed since last build`
-            : state === "scheduled" && row.publishAt
-              ? `Goes live ${new Date(row.publishAt).toLocaleString()}`
-              : undefined;
+        const labels: Record<Row["status"], string> = { "not-built": "Not built", stale: "Stale", live: "Live" };
+        const title = state === "stale" && row.staleResource ? `"${row.staleResource}" changed since last build` : undefined;
         return <span class={`badge ${state}`} title={title}>{labels[state]}</span>;
       },
     },
@@ -521,26 +501,6 @@ export default function PageBuild() {
         </header>
         <div class="under stack">
           <TextField label="Origin" placeholder="https://example.com" value={origin} onChange={setOrigin} />
-        </div>
-      </section>
-
-      <section class="card">
-        <header>
-          <h2>Publish schedule</h2>
-          <p>
-            Off by default - "Build"/"Build all" publish immediately. Turn on to stage the next build(s) for a
-            future date/time instead: the page 404s until then, and goes live on its own the first time someone
-            requests it after that moment (no separate step to flip it live).
-          </p>
-        </header>
-        <div class="under stack">
-          <CheckField
-            role="switch"
-            label="Schedule for later"
-            value={scheduleAt !== null}
-            onChange={(on) => setScheduleAt(on ? new Date(Date.now() + 3_600_000) : null)}
-          />
-          {scheduleAt && <DatePickerField label="Publish at" mode="input" time min={new Date()} value={scheduleAt} onChange={setScheduleAt} />}
         </div>
       </section>
 

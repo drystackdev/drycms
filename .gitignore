@@ -51,6 +51,16 @@ pnpm-debug.log*
 # above already documents for media.
 /src/apps/pages/
 
+# `src/apps/schema.json`/`src/apps/seed.json` - `bun run seed:sync`'s output
+# (an app's own content types + singleton/menu data, built-in system
+# defaults excluded - see `scripts/lib/schema-sync.ts`). Never imported by
+# any runtime code (unlike the old, committed `dry.seed.json` this replaced -
+# a static import of that file meant deleting it 500'd every page): these
+# are plain local export/import artifacts, picked up on demand through the
+# Content Types page's "Upload schema"/"Upload seed data" buttons instead.
+/src/apps/schema.json
+/src/apps/seed.json
+
 # Playwright artifacts (unanchored - a command run from the wrong cwd can
 # create these under a subdirectory instead of the repo root)
 test-results/

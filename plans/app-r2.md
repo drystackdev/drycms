@@ -1119,7 +1119,10 @@ Settings** (quyết định #11).
 ~~Chiều pull R2 → git có làm ngay không?~~ → **Đã chốt: làm cùng giai đoạn 6.**
 
 ~~Permission tách hay gộp?~~ → **Đã chốt: tách `system-code` +
-`system-build`** (quyết định #12).
+`system-build`** (quyết định #12). **[2026-08-09: gộp lại thành 1 permission
+`PAGE_BUILDER_RESOURCE_ID` ("Page Builder", giữ nguyên string id
+`"system-build"`) - trong thực tế không ai được cấp quyền này mà không có
+quyền kia, tách 2 toggle chỉ gây thêm thao tác cho admin.]**
 
 ~~Full rebuild ghi đè tại chỗ hay bất biến + con trỏ?~~ → **Đã chốt: bất biến
 + con trỏ, ngay từ v1** (quyết định #7).

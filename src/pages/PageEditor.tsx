@@ -3,8 +3,11 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
-import { CodeFieldTypeIcon, MenuIcon, PreviewIcon } from "../components/icons/index.js";
+import { CodeFieldTypeIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
+import Popover from "../components/Popover.js";
 import { toast } from "../components/Toast.js";
+import GithubResetDialog from "./page-components/GithubResetDialog.js";
+import GithubHistoryDialog from "./page-components/GithubHistoryDialog.js";
 import { useScaledPreview } from "./page-components/useDevicePreview.js";
 import { useResizablePanel } from "../lib/useResizablePanel.js";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
@@ -26,7 +29,7 @@ import {
 import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { clearDryHttpCache } from "../content-types/dry-http-cache.js";
-import { CODE_EDITOR_RESOURCE_ID } from "../content-types/permissions.js";
+import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
@@ -80,6 +83,21 @@ function RefreshDataIcon() {
   );
 }
 
+/** Local one-off (same "no shared export for a single-use icon" pattern as
+ * `ReloadIcon`/`RefreshDataIcon` above) for the Settings menu's "History"
+ * item - a clock with a counterclockwise arrow, the standard "past states"
+ * glyph. */
+function HistoryIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89l.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3m-1 5v5l4.28 2.54l.72-1.21l-3.5-2.08V8z"
+      />
+    </svg>
+  );
+}
+
 /** How long the live preview may reuse a `dry()` response out of IndexedDB
  * before refetching it (`content-types/dry-http-cache.ts`). Only the preview
  * caches at all - "Build"/"Build all" here and on Page Build publish real
@@ -88,14 +106,42 @@ function RefreshDataIcon() {
  * "Refresh data" button. */
 const PREVIEW_DRY_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/** `unbuiltPaths`'s sessionStorage backing - see that state's own doc
+ * comment for why it needs to survive the reload a Save causes to THIS
+ * same tab. Both directions are best-effort/no-throw, same
+ * degrade-safely-on-any-failure style as `lib/idb-cache.ts`: a private-
+ * browsing tab that blocks storage access, or a corrupt stored value,
+ * should just mean the dot starts empty again, never a broken editor. */
+const UNBUILT_STORAGE_KEY = "drycms-page-editor-unbuilt-paths";
+
+function loadPersistedUnbuiltPaths(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(UNBUILT_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed.filter((p): p is string => typeof p === "string")) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function persistUnbuiltPaths(paths: Set<string>): void {
+  try {
+    sessionStorage.setItem(UNBUILT_STORAGE_KEY, JSON.stringify([...paths]));
+  } catch {
+    // Best-effort - see this constant's own doc comment.
+  }
+}
+
 /**
  * In-browser page/layout/component source editor (`plans/app-r2.md` Giai
  * đoạn 6 - the last unbuilt piece of "sửa code trong browser"; the storage
  * plumbing (`pagesSourceStorage`, `routes/pages-source.ts`'s write methods,
- * `sync-pages-r2.ts`) already existed). Deliberately its own page, gated on
- * `system-code` rather than folded into `PageBuild.tsx` (`system-build`) -
- * quyết định #12: a role that can rebuild pages shouldn't automatically be
- * able to change what code runs.
+ * `sync-pages-r2.ts`) already existed). Deliberately its own page - still a
+ * separate route/nav entry from `PageBuild.tsx` - but both now gated on the
+ * same merged `PAGE_BUILDER_RESOURCE_ID` ("Page Builder") permission;
+ * quyết định #12's original code/build split was merged back into one, see
+ * that constant's own doc comment.
  *
  * Structurally a near-clone of `PageComponents.tsx` (same tree panel, same
  * `Editer` wiring, same create/delete/move flow - `ComponentTreePanel`
@@ -253,7 +299,7 @@ function clampWidth(value: number, range: { min: number; max: number }): number 
 
 export default function PageEditor() {
   useDocumentTitle("Page Code Editor");
-  const canEdit = canAccess(CODE_EDITOR_RESOURCE_ID, "setting");
+  const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const api = useMemo(() => createPagesSourceApi(`${path}/api/pages-source`), []);
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
 
@@ -278,6 +324,8 @@ export default function PageEditor() {
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(initialUiState?.sidebarOpen ?? true);
   const [previewOpen, setPreviewOpen] = useState(initialUiState?.previewOpen ?? true);
   // The code column (editor + problems panel) hides the same way the sidebar
@@ -301,8 +349,26 @@ export default function PageEditor() {
    * starts empty, same as `PageBuild.tsx`'s own build status not tracking
    * code changes - see that page's own doc comment on `staleResource`),
    * not a claim about what's actually live. Drives `ComponentTreePanel`'s
-   * `needsBuild` dot. */
-  const [unbuiltPaths, setUnbuiltPaths] = useState<Set<string>>(new Set());
+   * `needsBuild` dot.
+   *
+   * Persisted to `sessionStorage`, not just `useState` - Save writes the
+   * file to real storage under `.dry/pages-source/**`, which
+   * `app-router-plugin.ts`'s `handleHotUpdate` (its own doc comment: "the
+   * reload broadcast is unscoped") sees and reacts to with an UNSCOPED Vite
+   * `full-reload` WS message - sent to every connected client, including
+   * THIS tab, the instant the save that dot is celebrating lands. Without
+   * this, the dot appears (this component's own `markUnbuilt` call, right
+   * after `api.save` resolves) and then vanishes a moment later (the
+   * self-inflicted reload remounting the component with a fresh, empty
+   * `useState`) - found live, not in review: looks exactly like the dot
+   * lying about the save. `sessionStorage` (cleared on tab close, not
+   * shared with other tabs) is the same "session-local" scope the state
+   * itself already promised, just surviving the ONE dry-reload sees. */
+  const [unbuiltPaths, setUnbuiltPaths] = useState<Set<string>>(() => loadPersistedUnbuiltPaths());
+
+  useEffect(() => {
+    persistUnbuiltPaths(unbuiltPaths);
+  }, [unbuiltPaths]);
 
   function markUnbuilt(paths: Iterable<string>) {
     setUnbuiltPaths((prev) => {
@@ -396,7 +462,13 @@ export default function PageEditor() {
     manualZoom,
   ]);
 
-  async function loadTree() {
+  /** Returns the freshly-fetched SAVED map (no draft overlay) on success, or
+   * `null` on failure - `handleGithubRestoreApplied` below builds directly
+   * from this return value rather than `savedByPath` state, since a state
+   * setter's effect isn't visible to a closure still running in the same
+   * async call (the same staleness `saveAllDirty`'s own doc comment already
+   * calls out for the ordinary Save-then-Build path). */
+  async function loadTree(): Promise<Record<string, string> | null> {
     try {
       const result = await api.listTree();
       const all = result.supported ? result.entries : await listAllFileEntriesRecursive("");
@@ -425,8 +497,10 @@ export default function PageEditor() {
         if (current && withDrafts[current] !== undefined) return current;
         return files.length > 0 ? files[0]!.id : "";
       });
+      return nextSource;
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Failed to load pages source.");
+      return null;
     }
   }
 
@@ -641,21 +715,20 @@ export default function PageEditor() {
     }
   }
 
-  /** Builds + publishes every page on the site (static + resolved dynamic),
-   * same target set `PageBuild.tsx`'s own "Build all" uses
-   * (`resolveAllPageTargets`) - a convenience shortcut, deliberately without
-   * that page's resumable-queue/localStorage machinery (a closed tab losing
-   * progress here just means re-clicking "Build all", same as any other
-   * in-progress admin action elsewhere in this app); `PageBuild.tsx` remains
-   * the place for a large site's resilient, resumable run. Batches publishes
-   * (`publishBuiltPages`) the same way, for the same reason. Compiles from
-   * `savedByPath` - see `handleBuildCurrent`'s doc comment for why. */
-  async function handleBuildAll() {
+  /** The shared core of "Build all" - builds+publishes every page on the
+   * site (static + resolved dynamic) from a GIVEN saved-content map, never
+   * reading `sourceByPath`/`savedByPath` state directly. Split out of
+   * `handleBuildAll` so `handleGithubRestoreApplied` can build from
+   * `loadTree()`'s own return value instead: `savedByPath` state wouldn't
+   * reflect a GitHub pull yet at the point this needs to run (a `useState`
+   * setter's effect isn't visible to a closure still executing in the same
+   * async call), and building from that stale closure would publish the
+   * PRE-pull code right after telling the admin the pull succeeded. */
+  async function buildAllFrom(saved: Record<string, string>) {
     if (!allTypes || !assetHrefs) return;
     const BATCH_SIZE = 5;
     setBuildAllProgress({ done: 0, total: 0 });
     try {
-      const saved = await saveAllDirty();
       const { targets } = await resolveAllPageTargets(saved, allTypes, `${path}/api/dry-http`);
       const pathnames = [...targets.keys()];
       setBuildAllProgress({ done: 0, total: pathnames.length });
@@ -699,6 +772,28 @@ export default function PageEditor() {
     } finally {
       setBuildAllProgress(null);
     }
+  }
+
+  /** Saves every dirty file first (`saveAllDirty()`'s return value, see
+   * `handleBuildCurrent`'s doc comment for why not `savedByPath` state
+   * directly), then hands it to `buildAllFrom`. The topbar's "Build all"
+   * button. */
+  async function handleBuildAll() {
+    const saved = await saveAllDirty();
+    await buildAllFrom(saved);
+  }
+
+  /** `GithubResetDialog`/`GithubHistoryDialog`'s shared `onApplied` -
+   * `pages-source-github-restore.ts`'s `POST` already overwrote
+   * `pagesSourceStorage` server-side by the time this runs; this just
+   * catches this editor up: reload the tree (drops any now-stale
+   * `sourceByPath`/drafts for files the pull removed or changed) and rebuild
+   * straight from `loadTree()`'s own freshly-fetched map - never
+   * `savedByPath` state, which is still the PRE-pull content at this point
+   * (see `buildAllFrom`'s doc comment). */
+  async function handleGithubRestoreApplied() {
+    const saved = await loadTree();
+    if (saved) await buildAllFrom(saved);
   }
 
   async function handleCreateFile(name: string) {
@@ -892,6 +987,19 @@ export default function PageEditor() {
       <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
         {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
       </button>
+      <Popover
+        label="Page Editor settings"
+        tooltip="Settings"
+        trigger={(onClick, open) => (
+          <button type="button" class="icon ghost" aria-haspopup="menu" aria-expanded={open} onClick={onClick}>
+            <SettingsIcon />
+          </button>
+        )}
+        items={[
+          { type: "item", label: "Reset all from GitHub", icon: <RefreshDataIcon />, onClick: () => setResetDialogOpen(true), danger: true },
+          { type: "item", label: "History", icon: <HistoryIcon />, onClick: () => setHistoryDialogOpen(true) },
+        ]}
+      />
     </>,
   );
 
@@ -1363,6 +1471,19 @@ export default function PageEditor() {
         busy={deleting}
         onConfirm={() => void handleDelete()}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <GithubResetDialog
+        open={resetDialogOpen}
+        endpoint={`${path}/api/github-restore`}
+        onClose={() => setResetDialogOpen(false)}
+        onApplied={() => void handleGithubRestoreApplied()}
+      />
+      <GithubHistoryDialog
+        open={historyDialogOpen}
+        endpoint={`${path}/api/github-restore`}
+        onClose={() => setHistoryDialogOpen(false)}
+        onApplied={() => void handleGithubRestoreApplied()}
       />
     </div>
   );

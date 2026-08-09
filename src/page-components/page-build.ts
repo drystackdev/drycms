@@ -447,9 +447,6 @@ export interface PublishOptions {
   pagesBuildEndpoint: string;
   pathname: string;
   buildId?: string;
-  /** Epoch ms in the future = stage for `schedule` instead of publishing
-   * immediately (`plans/app-r2.md` mục 9). */
-  publishAt?: number | null;
 }
 
 function toWireBody(result: PageBuildResult, options: PublishOptions): Record<string, unknown> {
@@ -460,7 +457,6 @@ function toWireBody(result: PageBuildResult, options: PublishOptions): Record<st
     buildId: options.buildId ?? crypto.randomUUID(),
     deps: result.deps,
     inSitemap: result.inSitemap,
-    publishAt: options.publishAt ?? null,
   };
 }
 

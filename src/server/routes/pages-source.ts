@@ -17,11 +17,11 @@ import { StorageError, type StorageAdapter } from "../../storage/types.js";
  *
  * GET stays open to any authenticated session (same "broadly read, narrowly
  * written" treatment `icons`/`richtext-components` GET already get - reading
- * page source is needed by the BUILD flow, gated on `system-build`, not
- * just the code editor). The write methods below (POST/PUT/PATCH/DELETE)
- * are gated on `system-code` in `handler.ts` - a role that can rebuild
- * pages shouldn't automatically be able to change what code runs (quyết
- * định #12).
+ * page source is needed by the BUILD flow). The write methods below
+ * (POST/PUT/PATCH/DELETE) are gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`
+ * ("Page Builder") - originally a separate `system-code` toggle (quyết định
+ * #12), merged with the build permission since the two were never granted
+ * independently in practice.
  */
 async function handleTree(adapter: StorageAdapter): Promise<Response> {
   if (!adapter.listAll) return jsonResponse({ supported: false });

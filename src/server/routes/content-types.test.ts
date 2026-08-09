@@ -123,6 +123,8 @@ describe("GET /dry/api/content-types", () => {
     expect(status).toBe(200);
     expect((json.definitions as ContentTypeDefinition[]).map((t) => t.name).sort()).toEqual([
       "aiKey",
+      "githubSync",
+      "googleVerification",
       "memory",
       "menu",
       "menuItem",

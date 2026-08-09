@@ -26,9 +26,6 @@ interface PagesBuildRequestBody {
   buildId: string;
   deps: PageDependency[];
   inSitemap: boolean;
-  /** Epoch ms in the future = stage this build for `schedule` (mục 9)
-   * instead of publishing it immediately; omitted/`null`/past = publish now. */
-  publishAt?: number | null;
 }
 
 function isValidBody(value: unknown): value is PagesBuildRequestBody {
@@ -52,21 +49,17 @@ function isValidBody(value: unknown): value is PagesBuildRequestBody {
  * request. */
 async function publishOne(context: Parameters<DryRouteHandler>[0], raw: PagesBuildRequestBody): Promise<PageRecord> {
   const now = Date.now();
-  const publishAt = typeof raw.publishAt === "number" && raw.publishAt > now ? raw.publishAt : null;
-  const { immutableKey, liveKey } = await writeBuiltPage(context, raw.pathname, raw.buildId, raw.html, {
-    publishNow: publishAt === null,
-  });
+  const { liveKey } = await writeBuiltPage(context, raw.pathname, raw.buildId, raw.html);
   for (const asset of raw.jsAssets ?? []) {
     await writeBuiltAsset(context, asset.jsPath, asset.source);
   }
 
   const record: PageRecord = {
     path: raw.pathname,
-    objectKey: liveKey ?? immutableKey,
+    objectKey: liveKey,
     buildId: raw.buildId,
     builtAt: now,
     inSitemap: raw.inSitemap,
-    publishAt,
   };
   const { pagesRegistry } = getContentAdapters(context);
   await pagesRegistry.recordBuild(record, raw.deps);

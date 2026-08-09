@@ -31,6 +31,8 @@ import { CONTENT_TYPES_RESOURCE_ID } from "../content-types/permissions.js";
 import { canAccess } from "../store/auth.js";
 import ContentTypeEditor from "./ContentTypeEditor.js";
 import ApplyBuildDialog from "./content-type-editor/ApplyBuildDialog.js";
+import UploadSchemaDialog from "./content-type-editor/UploadSchemaDialog.js";
+import UploadSeedDataDialog from "./content-type-editor/UploadSeedDataDialog.js";
 import AiSchemaWizardPanel from "./content-type-editor/AiSchemaWizardPanel.js";
 import { useDocumentTitle } from "./page-common.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
@@ -366,6 +368,8 @@ export default function BuilderContentType() {
   const [addingKind, setAddingKind] = useState<ContentTypeKind | null>(null);
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [applyBuilderId, setApplyBuilderId] = useState<string | null>(null);
+  const [uploadSchemaOpen, setUploadSchemaOpen] = useState(false);
+  const [uploadSeedDataOpen, setUploadSeedDataOpen] = useState(false);
   const [search, setSearch] = useState("");
   const api = useMemo(
     () => createContentTypesApi(`${path}/api/content-types`),
@@ -444,6 +448,12 @@ export default function BuilderContentType() {
           </p>
         </div>
         <div class="row">
+          <button type="button" class="outline" onClick={() => setUploadSchemaOpen(true)}>
+            <UploadIcon /> Upload schema
+          </button>
+          <button type="button" class="outline" onClick={() => setUploadSeedDataOpen(true)}>
+            <UploadIcon /> Upload seed data
+          </button>
           {pendingCount > 0 && (
             <button
               type="button"
@@ -533,6 +543,17 @@ export default function BuilderContentType() {
           setApplyDialogOpen(false);
           setApplyBuilderId(null);
         }}
+        onApplied={() => void reload()}
+      />
+      <UploadSchemaDialog
+        open={uploadSchemaOpen}
+        liveDefinitions={liveDefinitions}
+        onClose={() => setUploadSchemaOpen(false)}
+        onApplied={() => void reload()}
+      />
+      <UploadSeedDataDialog
+        open={uploadSeedDataOpen}
+        onClose={() => setUploadSeedDataOpen(false)}
         onApplied={() => void reload()}
       />
     </>

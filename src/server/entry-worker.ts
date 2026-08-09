@@ -1,9 +1,8 @@
 import { handleApiRequest, isApiRequest } from "./handler.js";
 import { injectClientConfig } from "./client-config.js";
-import { path as adminPath, content } from "./config.js";
+import { path as adminPath } from "./config.js";
 import { isEdgeCacheable, readEdgeCache, storeEdgeCache } from "./app-router/edge-cache.js";
-import { sitemapEdgeCacheTtlSeconds } from "./app-router/sitemap.js";
-import { createPagesRegistryAdapter } from "../content-types/engine/index.js";
+import { SITEMAP_EDGE_TTL_SECONDS } from "./app-router/sitemap.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
 import { handleVeiRoute } from "./vei-routes.js";
@@ -97,14 +96,9 @@ export default {
     }
 
     const isAdminPath = pathname === adminPath || pathname.startsWith(`${adminPath}/`);
-    // Mục 14 (`plans/app-r2.md`): `sitemap.xml` gets its OWN TTL, decoupled
-    // from `pagesCacheEdgeTtl`'s own on/off toggle - turning page caching
-    // off was never meant to reach it. `1` here is a cheap sentinel, not the
-    // real value: `isEdgeCacheable` only needs to know "positive" to decide
-    // caching is enabled AT ALL, and the real value
-    // (`sitemapEdgeCacheTtlSeconds`, a D1 query) is only computed below, on
-    // an actual cache MISS - paying for it on every hit would undercut the
-    // whole point of caching this route in the first place.
+    // Mục 14 (`plans/app-r2.md`): `sitemap.xml` gets its OWN flat TTL,
+    // decoupled from `pagesCacheEdgeTtl`'s own on/off toggle - turning page
+    // caching off was never meant to reach it.
     const isSitemap = !isAdminPath && pathname === "/sitemap.xml";
 
     // Ahead of the asset branch, not just the page branch: only the App
@@ -134,9 +128,7 @@ export default {
         // carries the exact bytes and headers this render would have sent.
         const secured = withSecurityHeaders(pageResponse);
         if (!cacheable) return secured;
-        const ttlSeconds = isSitemap
-          ? await sitemapEdgeCacheTtlSeconds(createPagesRegistryAdapter(content, env), Date.now())
-          : undefined;
+        const ttlSeconds = isSitemap ? SITEMAP_EDGE_TTL_SECONDS : undefined;
         return storeEdgeCache(request, secured, ctx, ttlSeconds);
       }
       return withSecurityHeaders(

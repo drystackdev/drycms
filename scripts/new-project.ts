@@ -23,15 +23,14 @@
  *   makes NO `dry()` call, so the site renders on a DB that has nothing
  *   modelled in it yet. Deleting the directory outright (what this script
  *   used to do) leaves every URL a 404 with no hint of where to start.
- * - `src/apps/dry.seed.json` - re-snapshotted from the fresh DB. This is the
- *   one that silently undid the whole reset before: `seed.ts`'s
- *   `resolveDefaultContentTypeDefinitions` lets a packaged seed take over
- *   COMPLETELY when present, so a stale `dry.seed.json` re-created all of
- *   the old project's content types (plus its singleton copy and its nav
- *   rows, via `applyPackagedSingletonData`/`applyPackagedMenuData`) on the
- *   next first boot - i.e. the "wiped" project came back.
  * - `.dry/` - local content DB, KV, caches, sessions (all content types and
- *   entries, users, roles, AI keys).
+ *   entries, users, roles, AI keys). Wiping it is now the WHOLE reset for
+ *   content: an app's own content types/data are never auto-seeded at boot
+ *   (`content-types/seed.ts`'s `pendingSeedStatements` only ever creates the
+ *   12 built-in system types), they only ever arrive through the Content
+ *   Types page's "Upload schema"/"Upload seed data" buttons - so a fresh
+ *   `.dry/` alone is guaranteed to boot with system types only, nothing left
+ *   over from the old project to separately reset.
  * - `public/` - the local `storage` root (uploaded media + `dry-icons/`).
  * - `dist/`, `.wrangler/` - stale build output/state for the old project.
  * - `wrangler.jsonc` - worker name + D1/R2/KV names, with the IDs put back
@@ -125,8 +124,8 @@ function replaceOrWarn(source: string, file: string, pattern: RegExp, replacemen
 // ---------------------------------------------------------------- preflight
 
 // Uncommitted work in TRACKED files is exactly what would get destroyed
-// below (`dry.seed.json`/`wrangler.jsonc`/`package.json` are all rewritten
-// in place) - refuse rather than guess whether it's safe to proceed, same
+// below (`wrangler.jsonc`/`package.json` are rewritten in place) - refuse
+// rather than guess whether it's safe to proceed, same
 // spirit as CODING-PRINCIPLES.md's concurrent-editing-hazards section
 // (never assume, never auto-stash).
 // Untracked files are a warning, not a refusal: they only disappear if they
@@ -149,8 +148,6 @@ console.log("This creates a new branch, then permanently resets:");
 console.log("  - .dry/pages-source/  → a minimal blank starter (demo site removed, dev's live app-router source)");
 console.log("  - .dry/               → fresh DB: only the built-in system content types, no entries,");
 console.log("                          no users (bun run dev asks for a first-admin registration again)");
-console.log("  - src/apps/dry.seed.json → re-snapshotted from that fresh DB (drops the old project's");
-console.log("                          content types, singleton content and nav rows)");
 console.log("  - public/             → deleted (uploaded media + dry-icons/)");
 console.log("  - dist/, .wrangler/   → deleted (stale build output for the old project)");
 console.log("  - wrangler.jsonc      → worker/D1/R2/KV names renamed, IDs back to placeholders");
@@ -239,20 +236,9 @@ remove("dist/       (build output)", "dist");
 remove(".wrangler/  (local wrangler state)", ".wrangler");
 if (dropSeedPages) remove(`${seedPagesScript}  (old project content seed)`, seedPagesScript);
 
-// ------------------------------------------------- packaged seed + fresh DB
+// --------------------------------------------------------------- fresh DB
 
-// Written BEFORE the fresh DB is created, and deliberately with no
-// `contentTypes` key at all: `resolveDefaultContentTypeDefinitions` reads
-// `packagedSeed?.contentTypes ?? defaultContentTypeDefinitions()`, so an
-// absent key falls back to the built-in system types, while an empty ARRAY
-// would seed a DB with no system types whatsoever (`[]` is not nullish).
-// The file itself has to keep existing - `seed.ts` imports it statically, so
-// its absence is a hard build error on every runtime (that import is what
-// makes the seed work on Workers, which has no filesystem).
-console.log("\nResetting src/apps/dry.seed.json to an empty packaged seed...");
-writeFileSync(at("src/apps/dry.seed.json"), `${JSON.stringify({ $schema: "./dry.seed.schema.json" }, null, 2)}\n`);
-
-console.log("Wiping .dry/ (content DB, KV, caches, sessions)...");
+console.log("\nWiping .dry/ (content DB, KV, caches, sessions)...");
 const dryRoot = at(".dry");
 rmSync(dryRoot, { recursive: true, force: true });
 // The sqlite driver opens its file with no parent-directory creation of its
@@ -263,29 +249,23 @@ mkdirSync(dryRoot, { recursive: true });
 
 if (content.engine === "D1") {
   console.log(
-    "\n[new:project] content.engine is \"D1\" - the local content reset only " +
-      "applies to the sqlite engine, and dry.seed.json is now empty. Reset " +
-      "your D1 binding/database separately, then re-run `bun run seed:sync`.",
+    '\n[new:project] content.engine is "D1" - the local content reset only ' +
+      "applies to the sqlite engine. Reset your D1 binding/database separately " +
+      "(it boots with the 12 built-in system types either way, same as sqlite).",
   );
 } else {
-  // Both in CHILD processes, which is load-bearing rather than stylistic:
-  // `seed.ts` captures `dry.seed.json` in a module-scope constant at import
-  // time (a static JSON import), so THIS process still holds the old
-  // project's packaged seed in memory. Creating the DB here would seed it
-  // with exactly the content types this reset is removing.
+  // A child process (not called in-process) purely so this one line reuses
+  // the existing `dry:generate` package script instead of reimplementing
+  // its DB-open/migrate/codegen logic here.
   //
   // `dry:generate` opens `.dry/content.sqlite`, which runs the same
   // first-boot migration/seed path `bun run dev` would (`sqlite.ts`'s
-  // `getHandle()`), then regenerates `src/apps/dry.generated.d.ts` - so the
+  // `getHandle()` - system types only, nothing app-specific to leak in from
+  // the old project), then regenerates `src/apps/dry.generated.d.ts` - so the
   // committed generated types match the fresh DB immediately instead of
   // staying stale until the next dev-server start.
   console.log("\nCreating a fresh content DB + regenerating dry.generated.d.ts...");
   bunRun("dry:generate");
-  // Now that the DB holds only the system types, snapshot it back into
-  // `dry.seed.json` the canonical way, so a deployment of this project
-  // seeds from a real snapshot instead of the empty placeholder above.
-  console.log("\nSnapshotting the fresh DB back into dry.seed.json...");
-  bunRun("seed:sync");
 }
 
 // ------------------------------------------------------------- project ids

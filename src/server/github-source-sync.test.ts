@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { pushPagesSourceSnapshot } from "./github-source-sync.js";
+import { listSnapshotCommits, pullPagesSourceSnapshot, pushPagesSourceSnapshot } from "./github-source-sync.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -125,5 +125,92 @@ describe("pushPagesSourceSnapshot", () => {
     fetchMock.mockRejectedValueOnce(new Error("network down"));
     const result = await pushPagesSourceSnapshot({ "page.tsx": "x" }, CONFIG, "snapshot");
     expect(result).toEqual({ pushed: false, reason: "network down" });
+  });
+});
+
+describe("listSnapshotCommits", () => {
+  it("lists the branch's commits, mapped to sha/message/authorName/date", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { sha: "sha-2", commit: { message: "Build all: 3 pages", author: { name: "Ada", date: "2026-08-09T00:00:00Z" } } },
+        { sha: "sha-1", commit: { message: "Build: /about", author: { name: "Ada", date: "2026-08-08T00:00:00Z" } } },
+      ]),
+    );
+
+    const result = await listSnapshotCommits(CONFIG, 30);
+
+    expect(result).toEqual({
+      ok: true,
+      commits: [
+        { sha: "sha-2", message: "Build all: 3 pages", authorName: "Ada", date: "2026-08-09T00:00:00Z" },
+        { sha: "sha-1", message: "Build: /about", authorName: "Ada", date: "2026-08-08T00:00:00Z" },
+      ],
+    });
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.github.com/repos/acme/site/commits?sha=main&per_page=30");
+  });
+
+  it("falls back to the committer's name/date when there's no author", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ sha: "sha-1", commit: { message: "snapshot", committer: { name: "bot", date: "2026-08-09T00:00:00Z" } } }]));
+    const result = await listSnapshotCommits(CONFIG, 30);
+    expect(result).toEqual({ ok: true, commits: [{ sha: "sha-1", message: "snapshot", authorName: "bot", date: "2026-08-09T00:00:00Z" }] });
+  });
+
+  it("never throws - a GitHub API error comes back as ok:false with the error message", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "Bad credentials" }, 401));
+    const result = await listSnapshotCommits(CONFIG, 30);
+    expect(result).toEqual({ ok: false, reason: "Bad credentials" });
+  });
+});
+
+describe("pullPagesSourceSnapshot", () => {
+  it("resolves branch HEAD, then walks commit->tree->blobs, when no sha is given", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ object: { sha: "head-sha" } })) // GET ref/heads/main
+      .mockResolvedValueOnce(jsonResponse({ sha: "head-sha", tree: { sha: "tree-sha" } })) // GET commits/head-sha
+      .mockResolvedValueOnce(
+        jsonResponse({
+          truncated: false,
+          tree: [
+            { path: "page.tsx", type: "blob", sha: "blob-1" },
+            { path: "README.md", type: "blob", sha: "blob-2" }, // non-.tsx/.ts - excluded
+            { path: "blogs", type: "tree", sha: "tree-2" },
+          ],
+        }),
+      ) // GET trees/tree-sha?recursive=1
+      .mockResolvedValueOnce(jsonResponse({ content: Buffer.from("export default function Page(){}").toString("base64"), encoding: "base64" })); // GET blobs/blob-1
+
+    const result = await pullPagesSourceSnapshot(CONFIG);
+
+    expect(result).toEqual({ ok: true, sha: "head-sha", sourceByPath: { "page.tsx": "export default function Page(){}" } });
+    const [refUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(refUrl).toBe("https://api.github.com/repos/acme/site/git/ref/heads/main");
+  });
+
+  it("skips resolving HEAD and reads straight from a given sha", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sha: "old-sha", tree: { sha: "old-tree-sha" } })) // GET commits/old-sha
+      .mockResolvedValueOnce(jsonResponse({ truncated: false, tree: [] })); // GET trees/old-tree-sha?recursive=1
+
+    const result = await pullPagesSourceSnapshot(CONFIG, "old-sha");
+
+    expect(result).toEqual({ ok: true, sha: "old-sha", sourceByPath: {} });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [commitUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(commitUrl).toBe("https://api.github.com/repos/acme/site/git/commits/old-sha");
+  });
+
+  it("fails rather than silently truncating an oversized tree", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sha: "sha", tree: { sha: "tree-sha" } }))
+      .mockResolvedValueOnce(jsonResponse({ truncated: true, tree: [] }));
+    const result = await pullPagesSourceSnapshot(CONFIG, "sha");
+    expect(result).toEqual({ ok: false, reason: "The repository tree is too large to fetch in one request." });
+  });
+
+  it("never throws on a network failure", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    const result = await pullPagesSourceSnapshot(CONFIG, "sha");
+    expect(result).toEqual({ ok: false, reason: "network down" });
   });
 });

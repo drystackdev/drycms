@@ -1,6 +1,5 @@
 import { loadSeoDefaults, mergeSeoLayers, type DrySeoValue } from "../../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
-import type { PagesRegistryAdapter } from "../../content-types/engine/pages-registry-types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { DryRouteContext } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
@@ -95,24 +94,12 @@ export function buildRobotsResponse(url: URL): Response {
   return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
 
-const DEFAULT_SITEMAP_EDGE_TTL_SECONDS = 86_400;
-
-/**
- * `edge-cache.ts`'s `storeEdgeCache`'s `ttlSeconds` for `sitemap.xml` (mục
- * 14): 24h when nothing is scheduled, capped down to exactly when the next
- * `schedule`d page goes live otherwise - a bare 24h TTL would otherwise
- * leave a just-published page missing from a CACHED sitemap for up to a
- * full day. Cheap on the common "nothing scheduled" path: one `MIN(...)`
- * query (mục 9's cron sweep needs the identical query for its own fast
- * empty-case exit, so this is never a new kind of cost, just a second
- * caller of it).
- */
-export async function sitemapEdgeCacheTtlSeconds(pagesRegistry: PagesRegistryAdapter, nowMs: number): Promise<number> {
-  const nextPublishAt = await pagesRegistry.nextPublishAt(nowMs);
-  if (nextPublishAt === null) return DEFAULT_SITEMAP_EDGE_TTL_SECONDS;
-  const secondsUntilDue = Math.floor((nextPublishAt - nowMs) / 1000);
-  return Math.max(1, Math.min(DEFAULT_SITEMAP_EDGE_TTL_SECONDS, secondsUntilDue));
-}
+/** `edge-cache.ts`'s `storeEdgeCache`'s `ttlSeconds` for `sitemap.xml` (mục
+ * 14). Used to be capped down to exactly when the next `schedule`d page
+ * would go live (a page-level staged-publish concept, since removed in
+ * favor of the entry-level `features.schedule` gate alone) - now just a
+ * flat 24h, since nothing can ever go live later than its own build. */
+export const SITEMAP_EDGE_TTL_SECONDS = 86_400;
 
 /**
  * Registry-backed sitemap (`plans/app-r2.md` mục 8) - NOT wired in as a
@@ -148,7 +135,7 @@ export async function buildSitemapResponseFromRegistry(url: URL, routeContext: D
 
   const locs: { loc: string; lastmod: string }[] = siteNoIndex
     ? []
-    : (await pagesRegistry.listSitemapEntries(Date.now())).map((entry) => ({
+    : (await pagesRegistry.listSitemapEntries()).map((entry) => ({
         loc: `${origin}${entry.path}`,
         lastmod: new Date(entry.builtAt).toISOString(),
       }));

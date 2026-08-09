@@ -25,12 +25,11 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import {
-  CODE_EDITOR_RESOURCE_ID,
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
+  PAGE_BUILDER_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
-  SYSTEM_BUILD_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
@@ -125,7 +124,7 @@ const NAV: {
     icon: "Export",
     ready: true,
     section: "System",
-    permissionResourceId: SYSTEM_BUILD_RESOURCE_ID,
+    permissionResourceId: PAGE_BUILDER_RESOURCE_ID,
   },
   {
     key: "page-editor",
@@ -134,7 +133,7 @@ const NAV: {
     icon: "Content",
     ready: true,
     section: "System",
-    permissionResourceId: CODE_EDITOR_RESOURCE_ID,
+    permissionResourceId: PAGE_BUILDER_RESOURCE_ID,
   },
   {
     key: "roles",

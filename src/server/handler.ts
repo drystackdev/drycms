@@ -7,6 +7,7 @@ import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
+import * as contentTypeSeedRoute from "./routes/content-type-seed.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as pageComponentsRoute from "./routes/page-components.js";
@@ -19,15 +20,15 @@ import * as pagesBuildRoute from "./routes/pages-build.js";
 import * as typesCacheRoute from "./routes/types-cache.js";
 import * as pagesSourceRoute from "./routes/pages-source.js";
 import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.js";
+import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import { requirePermission } from "./admin-access.js";
 import {
-  CODE_EDITOR_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
+  PAGE_BUILDER_RESOURCE_ID,
   PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
-  SYSTEM_BUILD_RESOURCE_ID,
 } from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
 
@@ -65,6 +66,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   icons: iconsRoute,
   iconify: iconifyRoute,
   "content-types": contentTypesRoute,
+  "content-type-seed": contentTypeSeedRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
   "page-components": pageComponentsRoute,
@@ -77,6 +79,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "types-cache": typesCacheRoute,
   "pages-source": pagesSourceRoute,
   "github-sync": pagesSourceGithubSyncRoute,
+  "github-restore": pagesSourceGithubRestoreRoute,
   "built-assets": builtAssetsRoute,
   "asset-hrefs": assetHrefsRoute,
 };
@@ -191,26 +194,36 @@ export async function handleApiRequest(
   // pipeline), `pages-build` (writing a built page + registering it), and
   // `github-sync` (pushing a snapshot commit of pages-source - see
   // `status/pages-source-github-versioning.md`) are all only meant to be
-  // called by the build orchestrator - gated behind the same `system-build`
-  // grant (`plans/app-r2.md` quyết định #12), every method including GET
-  // (same "one all-or-nothing toggle" shape as Page Components above, not a
-  // real content type with separate actions).
+  // called by the build orchestrator - gated behind the merged `system-build`
+  // "Page Builder" grant (`plans/app-r2.md` quyết định #12, later merged with
+  // the code-editor toggle - see `PAGE_BUILDER_RESOURCE_ID`'s own doc
+  // comment), every method including GET (same "one all-or-nothing toggle"
+  // shape as Page Components above, not a real content type with separate
+  // actions).
   // `types-cache` stays open to any authenticated session - it only ever
   // serves the generated `.d.ts` (see `routes/types-cache.ts`), same
   // "broadly read, narrowly written" treatment `icons`/`richtext-components`
   // GET already get.
   if (segment === "dry-http" || segment === "pages-build" || segment === "github-sync") {
-    const denied = await requirePermission(context, SYSTEM_BUILD_RESOURCE_ID, "setting");
+    const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   // `pages-source`'s own GET stays open the same "broadly read" way as
   // `icons`/`richtext-components` (needed by the BUILD flow, gated on
-  // `system-build` above, not just the code editor) - only the write
-  // methods (`PageEditor.tsx`'s save/create/move/delete) are gated here, on
-  // `system-code` specifically: a role that can rebuild pages shouldn't
-  // automatically be able to change what code runs (quyết định #12).
+  // Page Builder above) - only the write methods (`PageEditor.tsx`'s
+  // save/create/move/delete) are gated here, on the same merged permission.
   if (segment === "pages-source" && request.method !== "GET") {
-    const denied = await requirePermission(context, CODE_EDITOR_RESOURCE_ID, "setting");
+    const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
+    if (denied) return secureResponse(denied, request);
+  }
+  // `github-restore` (listing GitHub snapshot commits, and pulling one to
+  // overwrite `pagesSourceStorage`) is part of the Code Editor's Settings
+  // surface (`PageEditor.tsx`'s "Reset all from GitHub"/History) - gated on
+  // the same merged Page Builder permission as `pages-source`'s own write
+  // methods above, every method including GET (same "one all-or-nothing
+  // toggle" shape as Page Components).
+  if (segment === "github-restore") {
+    const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   return secureResponse(await handler(context), request);

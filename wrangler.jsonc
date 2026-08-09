@@ -68,9 +68,8 @@
     }
   ]
 
-  // `schedule` (`plans/app-r2.md` mục 9) no longer needs a cron trigger -
-  // `page-handler.ts` promotes a due `_pages` row lazily, at request time,
-  // on a live-key miss (see `status/app-r2-build.md`). If a periodic sweep
-  // is ever needed again (e.g. to warm a page live before its first visitor
-  // hits it), reinstate a `triggers.crons` block here.
+  // No cron trigger needed: the page-level `schedule`/`publishAt` staged-
+  // publish mechanism (`plans/app-r2.md` mục 9) was removed entirely
+  // (2026-08-09) in favor of the entry-level `features.schedule` gate alone
+  // - a build always publishes immediately now, nothing is ever "staged".
 }

@@ -100,11 +100,18 @@ export async function valueToRow(nodes: EntryFieldNode[], value: EntryValue): Pr
       continue;
     }
 
+    const serialize = fieldTypes[node.fieldType]?.serialize;
     if (incoming === null || incoming === undefined || incoming === "") {
-      row[node.columnName] = node.default ?? null;
+      // `node.default` is a raw JS value straight off `FieldDefinition.default`
+      // (e.g. `false` for a boolean field) - same as any other incoming value,
+      // it has to go through the field type's own `serialize` before binding
+      // to SQLite, which (unlike Postgres/MySQL) has no real boolean type and
+      // rejects a bound JS `boolean` outright. Skipping this for the default
+      // path only (fixed here) previously meant any boolean field with a
+      // `default` threw on the very first create that left it unset.
+      row[node.columnName] = node.default === undefined || node.default === null ? null : serialize ? serialize(node.default) : node.default;
       continue;
     }
-    const serialize = fieldTypes[node.fieldType]?.serialize;
     row[node.columnName] = serialize ? serialize(incoming) : incoming;
   }
   return row;

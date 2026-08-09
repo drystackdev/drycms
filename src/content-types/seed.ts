@@ -1,19 +1,26 @@
-import packagedSeedJson from "../apps/dry.seed.json";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import { planMigration, type Statement } from "./migration.js";
 import { GITHUB_SYNC_TYPE_ID, GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
+/**
+ * The shape `scripts/lib/schema-sync.ts`'s `writeContentTypeSeedFile` writes
+ * into `src/apps/schema.json` (`contentTypes`) and `src/apps/seed.json`
+ * (`singletonData`/`menuData`) - and what an admin's "Upload schema"/"Upload
+ * seed data" upload (`BuilderContentType.tsx`, via
+ * `routes/content-type-seed.ts`) parses back. Never auto-loaded: an app's
+ * own content types/data are always an explicit, admin-triggered action now
+ * (see that route's own doc comment for why the old always-on-boot,
+ * static-import version of this was removed).
+ */
 export interface PackagedSeed {
   contentTypes: ContentTypeDefinition[];
   /**
    * A singleton's actual row value at the time `bun run seed:sync` last
    * ran, keyed by content-type `id` (stable across renames, same identity
-   * `contentTypes` itself keeps) - see `scripts/lib/schema-sync.ts`'s
-   * `writeContentTypeSeedFile`. Deliberately singleton-only, not a general
-   * entries/rows seed (that stays out of scope - `plans/content-type-seed.md`
-   * decision #1): a singleton is app-owned config (e.g. site-wide SEO
+   * `contentTypes` itself keeps). Deliberately singleton-only, not a general
+   * entries/rows seed: a singleton is app-owned config (e.g. site-wide SEO
    * defaults), unlike a collection's rows, which are real user content.
    * Applied by `applyPackagedSingletonData` below.
    */
@@ -21,45 +28,17 @@ export interface PackagedSeed {
   /**
    * The `menu` collection's rows at the time `bun run seed:sync` last ran.
    * A deliberate, narrow exception to `singletonData`'s singleton-only rule
-   * above (`plans/content-type-seed.md` decision #1, which keeps a
-   * collection's rows out of the seed because they're real user content):
-   * `menu` is the one collection the APP itself depends on structurally -
-   * `apps/pages/layout.tsx` looks up a row named "Main Navigation" by hand,
-   * so a fresh deployment with no menu row renders every page with no
-   * navigation at all. That makes it app-owned config in everything but
-   * storage kind. Still scoped to `menu` alone rather than a general
-   * `collectionData`, so `blog`/`category`/... stay user content.
+   * above: `menu` is the one collection the APP itself depends on
+   * structurally - `apps/pages/layout.tsx` looks up a row named "Main
+   * Navigation" by hand, so a fresh deployment with no menu row renders
+   * every page with no navigation at all. That makes it app-owned config in
+   * everything but storage kind. Still scoped to `menu` alone rather than a
+   * general `collectionData`, so `blog`/`category`/... stay user content.
    *
    * Applied by `applyPackagedMenuData` below.
    */
   menuData?: EntryValue[];
 }
-
-/**
- * `src/apps/dry.seed.json` (alongside `dry.generated.d.ts` - same
- * "generated but committed" category) is an app's own packaged content-type
- * seed - see `plans/content-type-seed.md`. A PLAIN STATIC IMPORT, which is
- * the only form that satisfies both runtimes this module has to load under:
- *
- * - Vite's SSR build for Cloudflare Workers, which has no filesystem at all.
- *   The previous `readFileSync(process.cwd() + "/dry.seed.json")` didn't
- *   error there, it did something worse: its absence-tolerating `catch`
- *   swallowed the failure and returned `undefined`, so a deployed Worker
- *   silently seeded only `defaultContentTypeDefinitions()` and every page
- *   reading an app content type 500'd with "no content type named X exists".
- * - Plain `bun scripts/*.ts` runs (`seed-sync.ts`, `dry-generate.ts`, both
- *   import the content engine, which imports this file) - those never go
- *   through Vite, which is why `import.meta.glob` is still not an option
- *   here: it isn't a real function there and throws on module load.
- *
- * Both bun and Vite resolve a static JSON import to a parsed object and
- * inline it into the bundle, so the value is present with no I/O on any
- * runtime. The trade-off versus the old read: absence is now a BUILD error
- * rather than a silent fallback to the built-in defaults - deliberate, since
- * silence is exactly what hid the Workers bug. `src/apps/dry.seed.json` is
- * committed; `scripts/seed-sync.ts` regenerates it.
- */
-const realPackagedSeed = packagedSeedJson as unknown as PackagedSeed;
 
 /** Fixed ids for the built-in default content types/fields, so re-running
  * `pendingSeedStatements` on every boot (see the engine adapters) always
@@ -740,36 +719,11 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
 }
 
 /**
- * The list `pendingSeedStatements` treats as "must exist" - an app's own
- * `dry.seed.json` takes over COMPLETELY when present, in place of the
- * built-in defaults, not alongside them (`seed:sync`, which produces that
- * file, snapshots the FULL content-type list of a real dev DB, so it already
- * includes copies of `user`/`role`/etc. - see `plans/content-type-seed.md`).
- * Only falls back to `defaultContentTypeDefinitions()` when no
- * `dry.seed.json` exists - the ordinary drycms-with-no-app-seed case this
- * always was.
- *
- * `packagedSeed` defaults to the real, module-scope `loadPackagedSeed()`
- * result but is a plain parameter so tests can inject a fake one instead of
- * needing a real `dry.seed.json` on disk.
- */
-export function resolveDefaultContentTypeDefinitions(
-  packagedSeed: PackagedSeed | undefined = realPackagedSeed,
-): ContentTypeDefinition[] {
-  return packagedSeed?.contentTypes ?? defaultContentTypeDefinitions();
-}
-
-/**
- * Seeds `dry.seed.json`'s optional `singletonData` into any singleton that
- * doesn't have a row yet. Called exactly once, from the SAME place
- * `seed-assets.ts`'s `extractPackagedSeedAssets` already runs
- * (`routes/auth.ts`'s `register-first-admin`, gated on `hasAnyUser ===
- * false`) - that's the only moment a fresh instance is guaranteed to have no
- * admin-made edits yet, so there's no live data this could ever clobber.
- * `pendingSeedStatements` only creates a singleton's TABLE, never a row (see
- * `plans/content-type-seed.md`), so every packaged singleton is still
- * rowless by the time this runs - the `getSingletonEntry` check per type is
- * just cheap insurance, not a real race in practice.
+ * Seeds an uploaded `PackagedSeed`'s `singletonData` into any singleton that
+ * doesn't have a row yet. Called from `routes/content-type-seed.ts`'s
+ * "Upload seed data" apply mode (admin-triggered, any time) - never
+ * automatically at boot anymore, so `packagedSeed` is a real, required
+ * argument, not a module-scope default.
  *
  * `password`/`secretkey` fields never round-trip through this: a captured
  * row's value for one is the masked `{hasExisting: true}` marker
@@ -780,9 +734,9 @@ export function resolveDefaultContentTypeDefinitions(
 export async function applyPackagedSingletonData(
   entryAdapter: ContentEntryEngineAdapter,
   allTypes: ContentTypeDefinition[],
-  packagedSeed: PackagedSeed | undefined = realPackagedSeed,
+  packagedSeed: PackagedSeed,
 ): Promise<void> {
-  const data = packagedSeed?.singletonData;
+  const data = packagedSeed.singletonData;
   if (!data) return;
   for (const type of allTypes) {
     if (type.kind !== "singleton") continue;
@@ -800,10 +754,9 @@ export async function applyPackagedSingletonData(
 export const MENU_TYPE_ID = IDS.menu;
 
 /**
- * Seeds `dry.seed.json`'s optional `menuData` into the `menu` collection,
- * from the same one-time point as `applyPackagedSingletonData` above
- * (`routes/auth.ts`'s `register-first-admin`, gated on `hasAnyUser ===
- * false`) - so there is never live user data here to clobber.
+ * Seeds an uploaded `PackagedSeed`'s `menuData` into the `menu` collection,
+ * from the same "Upload seed data" apply mode as `applyPackagedSingletonData`
+ * above.
  *
  * ALL-OR-NOTHING on the collection being empty, rather than
  * `applyPackagedSingletonData`'s per-row check: a menu is an ordered list
@@ -815,9 +768,9 @@ export const MENU_TYPE_ID = IDS.menu;
 export async function applyPackagedMenuData(
   entryAdapter: ContentEntryEngineAdapter,
   allTypes: ContentTypeDefinition[],
-  packagedSeed: PackagedSeed | undefined = realPackagedSeed,
+  packagedSeed: PackagedSeed,
 ): Promise<void> {
-  const rows = packagedSeed?.menuData;
+  const rows = packagedSeed.menuData;
   if (!rows || rows.length === 0) return;
 
   const menuType = allTypes.find((type) => type.id === MENU_TYPE_ID);
@@ -841,13 +794,14 @@ export async function applyPackagedMenuData(
  * `newAllTypes` for every planned type is the FULL default set regardless of
  * which are actually missing - `menu`'s plan needs to resolve the `menuItem`
  * component from it even on a run where `menuItem` itself isn't being
- * (re-)created. "Default" here means `resolveDefaultContentTypeDefinitions()`
- * - the packaged app seed when one exists, otherwise the built-in types.
+ * (re-)created. "Default" here always means the 12 built-in system types
+ * (`defaultContentTypeDefinitions()`) - an app's own content types are never
+ * auto-seeded, see "Upload schema" (`routes/content-type-seed.ts`).
  */
 export function pendingSeedStatements(
   existingNamesLowercase: ReadonlySet<string>,
 ): Statement[] {
-  const all = resolveDefaultContentTypeDefinitions();
+  const all = defaultContentTypeDefinitions();
   const missing = all.filter(
     (t) => !existingNamesLowercase.has(t.name.toLowerCase()),
   );

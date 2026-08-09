@@ -26,7 +26,6 @@ const { handlePageRequest } = await import("./page-handler.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../content-types/engine/index.js");
 const { content } = await import("./config.js");
 const { writeBuiltPage, readBuiltPage } = await import("./app-router/built-pages-storage.js");
-const { createPagesRegistryAdapter } = await import("../content-types/engine/index.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -102,57 +101,13 @@ describe("handlePageRequest", () => {
   describe("prod (isDev: false)", () => {
     it("serves a built page's HTML verbatim when one exists at built/live/* (mục 12)", async () => {
       const ctx = { env: {} };
-      await writeBuiltPage(ctx, "/promo", "build-1", "<html><body>promo v3</body></html>", { publishNow: true });
+      await writeBuiltPage(ctx, "/promo", "build-1", "<html><body>promo v3</body></html>");
 
       const response = await handlePageRequest(new Request("http://localhost/promo"), {}, false);
       expect(response).not.toBeNull();
       expect(response!.status).toBe(200);
       expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
       expect(await response!.text()).toBe("<html><body>promo v3</body></html>");
-    });
-
-    it("lazily promotes a due `schedule`d build on a live-key miss, and serves it in the same response (replaces the old cron sweep, see status/app-r2-build.md)", async () => {
-      const ctx = { env: {} };
-      const registry = createPagesRegistryAdapter(content);
-      const now = Date.now();
-
-      // Staged: written to its immutable key only (publishNow: false), not
-      // yet reachable via readBuiltPage - same setup `writeBuiltPage`'s own
-      // doc comment describes for a scheduled build.
-      const { immutableKey } = await writeBuiltPage(ctx, "/promo-scheduled", "build-1", "<html>promo v2</html>", { publishNow: false });
-      await registry.recordBuild(
-        { path: "/promo-scheduled", objectKey: immutableKey, buildId: "build-1", builtAt: now, inSitemap: true, publishAt: now - 1000 },
-        [],
-      );
-      expect(await readBuiltPage(ctx, "/promo-scheduled")).toBeNull();
-
-      const response = await handlePageRequest(new Request("http://localhost/promo-scheduled"), {}, false);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(200);
-      expect(await response!.text()).toBe("<html>promo v2</html>");
-
-      // The registry's own bookkeeping is updated too (publish_at cleared),
-      // and the live key now exists for free on the next, ordinary request
-      // - no second promotion attempt needed.
-      expect((await registry.getPage("/promo-scheduled"))?.publishAt).toBeNull();
-      expect(await readBuiltPage(ctx, "/promo-scheduled")).toBe("<html>promo v2</html>");
-    });
-
-    it("leaves a build staged for the future alone - still a bare 404, not promoted early", async () => {
-      const ctx = { env: {} };
-      const registry = createPagesRegistryAdapter(content);
-      const now = Date.now();
-
-      const { immutableKey } = await writeBuiltPage(ctx, "/later", "build-2", "<html>later</html>", { publishNow: false });
-      await registry.recordBuild(
-        { path: "/later", objectKey: immutableKey, buildId: "build-2", builtAt: now, inSitemap: true, publishAt: now + 1_000_000 },
-        [],
-      );
-
-      const response = await handlePageRequest(new Request("http://localhost/later"), {}, false);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(404);
-      expect(await readBuiltPage(ctx, "/later")).toBeNull();
     });
 
     it("returns a bare 404 - not an attempted render of the pages-root 404.tsx - when nothing is built for this path and no redirect applies (prod never renders live)", async () => {
@@ -192,7 +147,7 @@ describe("handlePageRequest", () => {
 
     it("never even looks at built/live/* - a built page is ignored in favor of a live re-render", async () => {
       const ctx = { env: {} };
-      await writeBuiltPage(ctx, "/dev-check", "build-1", "<html><body>STALE BUILT COPY</body></html>", { publishNow: true });
+      await writeBuiltPage(ctx, "/dev-check", "build-1", "<html><body>STALE BUILT COPY</body></html>");
 
       const response = await handlePageRequest(new Request("http://localhost/dev-check"), {}, true, fixtureDevPagesSource());
       expect(response).not.toBeNull();

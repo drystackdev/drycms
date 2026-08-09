@@ -56,15 +56,15 @@ describe("GET /dry/api/pages-build?byResource=", () => {
   it("returns every path recorded as depending on the resource", async () => {
     const registry = createPagesRegistryAdapter(content);
     await registry.recordBuild(
-      { path: "/blogs/hello-world", objectKey: "pages/x/blogs/hello-world.html", buildId: "x", builtAt: Date.now(), inSitemap: true, publishAt: null },
+      { path: "/blogs/hello-world", objectKey: "pages/x/blogs/hello-world.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
       [{ resource: "blog", version: 1 }],
     );
     await registry.recordBuild(
-      { path: "/", objectKey: "pages/x/index.html", buildId: "x", builtAt: Date.now(), inSitemap: true, publishAt: null },
+      { path: "/", objectKey: "pages/x/index.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
       [{ resource: "blog", version: 1 }, { resource: "homepage", version: 1 }],
     );
     await registry.recordBuild(
-      { path: "/about", objectKey: "pages/x/about.html", buildId: "x", builtAt: Date.now(), inSitemap: true, publishAt: null },
+      { path: "/about", objectKey: "pages/x/about.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
       [{ resource: "aboutPage", version: 1 }],
     );
 

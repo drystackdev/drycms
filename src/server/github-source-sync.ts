@@ -37,6 +37,27 @@ interface GithubTreeResponse {
 interface GithubErrorBody {
   message?: string;
 }
+interface GithubCommitListEntry {
+  sha: string;
+  commit: {
+    message: string;
+    author?: { name?: string; date?: string };
+    committer?: { name?: string; date?: string };
+  };
+}
+interface GithubTreeEntry {
+  path: string;
+  type: string;
+  sha: string;
+}
+interface GithubTreeListResponse {
+  tree: GithubTreeEntry[];
+  truncated: boolean;
+}
+interface GithubBlobContentResponse {
+  content: string;
+  encoding: string;
+}
 
 /** Carries the HTTP status alongside the message so `resolveBaseCommit` can
  * tell "this branch's ref genuinely doesn't exist yet" (404 - fall back to
@@ -176,5 +197,83 @@ export async function pushPagesSourceSnapshot(
     return { pushed: true, commitSha: commit.sha };
   } catch (error) {
     return { pushed: false, reason: error instanceof Error ? error.message : "GitHub sync failed." };
+  }
+}
+
+export interface GithubSnapshotCommit {
+  sha: string;
+  message: string;
+  authorName: string;
+  date: string;
+}
+
+export type GithubHistoryResult =
+  | { ok: true; commits: GithubSnapshotCommit[] }
+  | { ok: false; reason: string };
+
+/**
+ * Lists `config.branch`'s recent commits (`PageEditor.tsx`'s History dialog)
+ * - every one of them IS a full pages-source snapshot, since
+ * `pushPagesSourceSnapshot` always commits the whole tree atomically, never
+ * a partial/per-file commit. Never throws, same `{ok:false,reason}` contract
+ * as `pushPagesSourceSnapshot`/`resolveBaseCommit`'s callers rely on.
+ */
+export async function listSnapshotCommits(
+  config: Pick<GithubSyncConfig, "repo" | "branch" | "token">,
+  limit: number,
+): Promise<GithubHistoryResult> {
+  try {
+    const commits = await githubRequest<GithubCommitListEntry[]>(
+      `/repos/${config.repo}/commits?sha=${encodeURIComponent(config.branch)}&per_page=${limit}`,
+      config.token,
+    );
+    return {
+      ok: true,
+      commits: commits.map((entry) => ({
+        sha: entry.sha,
+        message: entry.commit.message,
+        authorName: entry.commit.author?.name ?? entry.commit.committer?.name ?? "unknown",
+        date: entry.commit.author?.date ?? entry.commit.committer?.date ?? "",
+      })),
+    };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Failed to list GitHub commits." };
+  }
+}
+
+export type GithubPullResult =
+  | { ok: true; sha: string; sourceByPath: Record<string, string> }
+  | { ok: false; reason: string };
+
+/**
+ * The inverse of `pushPagesSourceSnapshot` - fetches the full pages-source
+ * tree as it existed at `sha` (or `config.branch`'s current HEAD when `sha`
+ * is omitted), via the same Git Data API the push side uses (tree ->
+ * blobs), so the result is byte-identical to what was originally pushed.
+ * Backs both "Reset all from GitHub" (HEAD) and History's "Restore this
+ * commit" (a specific `sha`) - `pages-source-github-restore.ts` is the only
+ * caller, and does the actual local-storage overwrite. Never throws, same
+ * `{ok:false,reason}` contract as `pushPagesSourceSnapshot`.
+ */
+export async function pullPagesSourceSnapshot(config: GithubSyncConfig, sha?: string): Promise<GithubPullResult> {
+  try {
+    const resolvedSha =
+      sha ?? (await githubRequest<GithubRefResponse>(`/repos/${config.repo}/git/ref/heads/${encodeURIComponent(config.branch)}`, config.token)).object.sha;
+    const commit = await githubRequest<GithubCommitResponse>(`/repos/${config.repo}/git/commits/${resolvedSha}`, config.token);
+    const tree = await githubRequest<GithubTreeListResponse>(`/repos/${config.repo}/git/trees/${commit.tree.sha}?recursive=1`, config.token);
+    if (tree.truncated) return { ok: false, reason: "The repository tree is too large to fetch in one request." };
+
+    const blobEntries = tree.tree.filter((entry) => entry.type === "blob" && /\.tsx?$/i.test(entry.path));
+    const files = await Promise.all(
+      blobEntries.map(async (entry) => {
+        const blob = await githubRequest<GithubBlobContentResponse>(`/repos/${config.repo}/git/blobs/${entry.sha}`, config.token);
+        const content = blob.encoding === "base64" ? Buffer.from(blob.content, "base64").toString("utf-8") : blob.content;
+        return [entry.path, content] as const;
+      }),
+    );
+
+    return { ok: true, sha: resolvedSha, sourceByPath: Object.fromEntries(files) };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Failed to pull from GitHub." };
   }
 }

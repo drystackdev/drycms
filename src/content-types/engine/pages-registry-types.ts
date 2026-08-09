@@ -17,10 +17,6 @@ export interface PageRecord {
    * SEO cascade is known - see mục 8's "hạn chế biến mất" note), not
    * re-derived at sitemap-serve time. */
   inSitemap: boolean;
-  /** `null` = already live. A future timestamp (ms epoch) = this build is
-   * staged for `schedule` (mục 9) - cron flips it live once due, this
-   * column is what the sitemap query and the cron sweep both filter on. */
-  publishAt: number | null;
 }
 
 /** One content-type dependency a built page's render actually touched -
@@ -61,33 +57,13 @@ export interface PagesRegistryAdapter {
   /** Every path that depends on `resource` - "what needs rebuilding when
    * this content type changes". */
   listPathsByResource(resource: string): Promise<string[]>;
-  /** Sitemap source of truth (mục 8): every in-sitemap page whose
-   * `publishAt` is null or already past `asOfMs`. */
-  listSitemapEntries(asOfMs: number): Promise<{ path: string; builtAt: number }[]>;
+  /** Sitemap source of truth (mục 8): every in-sitemap page. */
+  listSitemapEntries(): Promise<{ path: string; builtAt: number }[]>;
   /** Every row regardless of state - the admin "Build" page's status list
    * (mục 11). Unlike every other `list*` method above, not filtered by
-   * sitemap/publish/staleness - the UI decides what each row means. */
+   * sitemap/staleness - the UI decides what each row means. */
   listAllPages(): Promise<PageRecord[]>;
   /** Admin "stale" list (mục 11): paths whose recorded dependency version no
    * longer matches `_versions`' current value for that resource. */
   listStalePaths(): Promise<StalePageInfo[]>;
-  /** Staged builds due to go live - used by `page-handler.ts`'s lazy,
-   * request-time promotion (replaces the old cron sweep, see
-   * `status/app-r2-build.md`). */
-  listDueForPublish(asOfMs: number): Promise<PageRecord[]>;
-  /** One page's current row, or `null` if it's never been built - the
-   * lookup `page-handler.ts` makes ONLY on a live-key miss, to tell "never
-   * built" apart from "staged for `schedule`, not due yet" without a table
-   * scan. Never called on the hit path (a live key existing already answers
-   * the request), so this adds no per-request cost to ordinary traffic. */
-  getPage(path: string): Promise<PageRecord | null>;
-  /** Cron/admin: flips a page's live pointer to `objectKey` and clears
-   * `publishAt` - called AFTER the caller has already copied that
-   * immutable object's bytes onto the stable live key (mục 12); this only
-   * updates the registry's bookkeeping, it does no storage I/O itself. */
-  markPublished(path: string, objectKey: string): Promise<void>;
-  /** Earliest `publishAt` still in the future, or `null` if nothing's
-   * scheduled - shared by mục 14 (sitemap edge-cache TTL cap) and mục 9
-   * (cron's own fast, empty-case exit). */
-  nextPublishAt(afterMs: number): Promise<number | null>;
 }

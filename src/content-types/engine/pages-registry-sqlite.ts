@@ -8,7 +8,6 @@ interface PageRow {
   build_id: string;
   built_at: number;
   in_sitemap: number;
-  publish_at: number | null;
 }
 
 function toPageRecord(row: PageRow): PageRecord {
@@ -18,7 +17,6 @@ function toPageRecord(row: PageRow): PageRecord {
     buildId: row.build_id,
     builtAt: row.built_at,
     inSitemap: row.in_sitemap === 1,
-    publishAt: row.publish_at,
   };
 }
 
@@ -28,14 +26,18 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
   async function getHandle(): Promise<SqliteHandle> {
     if (!handlePromise) {
       handlePromise = resolveSqliteDriver(option.file).then((handle) => {
+        // `publish_at` used to back a page-level "schedule" build - removed
+        // in favor of the entry-level `features.schedule` gate alone
+        // (`entry-where.ts`'s `buildPublishedOnlyClause`). Not dropped from
+        // any EXISTING local database (no migration runs here), just no
+        // longer read/written - a pre-existing column sits unused, harmless.
         handle.exec(
           `CREATE TABLE IF NOT EXISTS "_pages" (\n` +
             `  "path" TEXT PRIMARY KEY,\n` +
             `  "object_key" TEXT NOT NULL,\n` +
             `  "build_id" TEXT NOT NULL,\n` +
             `  "built_at" INTEGER NOT NULL,\n` +
-            `  "in_sitemap" INTEGER NOT NULL,\n` +
-            `  "publish_at" INTEGER\n` +
+            `  "in_sitemap" INTEGER NOT NULL\n` +
             `);`,
         );
         handle.exec(
@@ -71,11 +73,11 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       handle.exec("BEGIN IMMEDIATE;");
       try {
         handle.run(
-          'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap","publish_at") VALUES (?,?,?,?,?,?) ' +
+          'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap") VALUES (?,?,?,?,?) ' +
             'ON CONFLICT("path") DO UPDATE SET ' +
             '"object_key"=excluded."object_key", "build_id"=excluded."build_id", "built_at"=excluded."built_at", ' +
-            '"in_sitemap"=excluded."in_sitemap", "publish_at"=excluded."publish_at";',
-          [record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0, record.publishAt],
+            '"in_sitemap"=excluded."in_sitemap";',
+          [record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0],
         );
         handle.run('DELETE FROM "_page_deps" WHERE "path" = ?;', [record.path]);
         for (const dep of deps) {
@@ -103,7 +105,7 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
 
     async listAllPages() {
       const handle = await getHandle();
-      const rows = handle.all<PageRow>('SELECT * FROM "_pages" ORDER BY "path" ASC;');
+      const rows = handle.all<PageRow>('SELECT "path","object_key","build_id","built_at","in_sitemap" FROM "_pages" ORDER BY "path" ASC;');
       return rows.map(toPageRecord);
     },
 
@@ -113,12 +115,9 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       return rows.map((row) => row.path);
     },
 
-    async listSitemapEntries(asOfMs) {
+    async listSitemapEntries() {
       const handle = await getHandle();
-      const rows = handle.all<{ path: string; built_at: number }>(
-        'SELECT "path", "built_at" FROM "_pages" WHERE "in_sitemap" = 1 AND ("publish_at" IS NULL OR "publish_at" <= ?);',
-        [asOfMs],
-      );
+      const rows = handle.all<{ path: string; built_at: number }>('SELECT "path", "built_at" FROM "_pages" WHERE "in_sitemap" = 1;');
       return rows.map((row) => ({ path: row.path, builtAt: row.built_at }));
     },
 
@@ -131,32 +130,6 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       const byPath = new Map<string, StalePageInfo>();
       for (const row of rows) if (!byPath.has(row.path)) byPath.set(row.path, { path: row.path, resource: row.resource });
       return [...byPath.values()];
-    },
-
-    async listDueForPublish(asOfMs) {
-      const handle = await getHandle();
-      const rows = handle.all<PageRow>('SELECT * FROM "_pages" WHERE "publish_at" IS NOT NULL AND "publish_at" <= ?;', [asOfMs]);
-      return rows.map(toPageRecord);
-    },
-
-    async getPage(path) {
-      const handle = await getHandle();
-      const rows = handle.all<PageRow>('SELECT * FROM "_pages" WHERE "path" = ?;', [path]);
-      return rows[0] ? toPageRecord(rows[0]) : null;
-    },
-
-    async markPublished(path, objectKey) {
-      const handle = await getHandle();
-      handle.run('UPDATE "_pages" SET "object_key" = ?, "publish_at" = NULL WHERE "path" = ?;', [objectKey, path]);
-    },
-
-    async nextPublishAt(afterMs) {
-      const handle = await getHandle();
-      const rows = handle.all<{ next: number | null }>(
-        'SELECT MIN("publish_at") AS "next" FROM "_pages" WHERE "publish_at" IS NOT NULL AND "publish_at" > ?;',
-        [afterMs],
-      );
-      return rows[0]?.next ?? null;
     },
   };
 }

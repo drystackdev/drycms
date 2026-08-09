@@ -1,6 +1,4 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { SYSTEM_COMPONENT_IDS } from "../../content-types/system-fields.js";
-import type { ContentEngineAdapter } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
@@ -31,31 +29,6 @@ afterEach(() => {
 
 const routeContext = { request: new Request("http://localhost/sitemap.xml"), url: new URL("http://localhost/sitemap.xml"), params: {}, env: {}, session: null } as never;
 
-/**
- * This repo's own `dry.seed.json` (an app-specific packaged seed - see
- * `seed.ts`'s `resolveDefaultContentTypeDefinitions`) takes over content-type
- * seeding COMPLETELY, so a fresh test DB's built-in `seo` component reflects
- * whatever `dry.seed.json` was last snapshotted with, not this branch's
- * `seed.ts` edits - same gap a real admin hits on an existing/live DB (adding
- * a field to `seed.ts` doesn't reach an already-seeded install; it has to be
- * added through the schema editor + "Apply and build", see
- * `status/seo-standard.md`). Mirrors that exact fix here: fetches the live
- * `seo` component and adds the `noIndex` field to it directly, the same way
- * an admin's schema-editor Save would.
- */
-async function ensureSeoNoIndexField(schema: ContentEngineAdapter): Promise<void> {
-  const seoComponent = await schema.getContentType(SYSTEM_COMPONENT_IDS.seo);
-  if (!seoComponent || seoComponent.fields.some((f) => f.name === "noIndex")) return;
-  const next: ContentTypeDefinition = {
-    ...seoComponent,
-    fields: [
-      ...seoComponent.fields,
-      { id: "test-seo-no-index", name: "noIndex", label: "Hide from search engines", type: "boolean", config: {}, validation: {}, order: seoComponent.fields.length },
-    ],
-  };
-  await schema.applySave(next, await schema.planSave(next));
-}
-
 describe("buildRobotsResponse", () => {
   it("disallows the admin path and points at sitemap.xml, absolute to APP_DOMAIN when set", () => {
     process.env.APP_DOMAIN = "https://example.com";
@@ -84,7 +57,6 @@ describe("buildSitemapResponse", () => {
   it("includes a published entry of a seo+slug-enabled collection with seoUrlPattern set, substituting {slug}", async () => {
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
-    await ensureSeoNoIndexField(schema);
     const story: ContentTypeDefinition = {
       id: "test-story",
       kind: "collection",
@@ -121,14 +93,8 @@ describe("buildSitemapResponse", () => {
   // The site-wide `noIndex` gate (empty urlset when the SEO Defaults
   // singleton itself is set to noIndex) is covered in
   // `sitemap-site-noindex.test.ts` instead of here, via a mocked
-  // `loadSeoDefaults` - see that file's own doc comment for why: this file's
-  // shared `seo` component only picks up the real `dry.seed.json`'s stale
-  // (pre-`noIndex`) shape (`ensureSeoNoIndexField` above works around that
-  // for a COLLECTION entry field by resaving the component directly, but
-  // `migration.ts`'s `SavePlan.cascaded` - "dependents" of a saved component
-  // - only tracks a type that references the component through an explicit
-  // `fields[]` entry; `features.seo`'s embed is synthetic (added by
-  // `system-fields.ts`'s `systemFieldsFor` at resolve time, never stored in
-  // `fields[]`), so `seoDefaults` is invisible to that cascade and its table
-  // never picks up the new column this way).
+  // `loadSeoDefaults` - see that file's own doc comment for why (setting a
+  // real `seoDefaults` row through this test harness would need a full
+  // admin-driven write path this suite doesn't otherwise exercise, not
+  // anything specific to this file).
 });

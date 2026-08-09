@@ -28,7 +28,6 @@ function page(overrides: Partial<PageRecord> = {}): PageRecord {
     buildId: "build-1",
     builtAt: 1000,
     inSitemap: true,
-    publishAt: null,
     ...overrides,
   };
 }
@@ -40,32 +39,31 @@ describe("createSqlitePagesRegistryAdapter", () => {
 
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }]);
 
-    const entries = await adapter.listSitemapEntries(Date.now());
+    const entries = await adapter.listSitemapEntries();
     expect(entries).toEqual([{ path: "/blogs/abc", builtAt: 1000 }]);
   });
 
-  it("listAllPages returns every row regardless of sitemap/publish state, sorted by path", async () => {
+  it("listAllPages returns every row regardless of sitemap state, sorted by path", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page({ path: "/z-last", inSitemap: false }), []);
-    await adapter.recordBuild(page({ path: "/a-first", publishAt: Date.now() + 100_000 }), []);
+    await adapter.recordBuild(page({ path: "/a-first" }), []);
 
     const all = await adapter.listAllPages();
     expect(all.map((p) => p.path)).toEqual(["/a-first", "/z-last"]);
-    expect(all[0]).toMatchObject({ path: "/a-first", inSitemap: true, publishAt: expect.any(Number) });
-    expect(all[1]).toMatchObject({ path: "/z-last", inSitemap: false, publishAt: null });
+    expect(all[0]).toMatchObject({ path: "/a-first", inSitemap: true });
+    expect(all[1]).toMatchObject({ path: "/z-last", inSitemap: false });
   });
 
-  it("excludes noIndex/not-yet-published pages from the sitemap", async () => {
+  it("excludes noIndex pages from the sitemap", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page({ path: "/noindex", inSitemap: false }), []);
-    await adapter.recordBuild(page({ path: "/future", publishAt: Date.now() + 100_000 }), []);
     await adapter.recordBuild(page({ path: "/live" }), []);
 
-    const entries = await adapter.listSitemapEntries(Date.now());
+    const entries = await adapter.listSitemapEntries();
     expect(entries.map((e) => e.path)).toEqual(["/live"]);
   });
 
@@ -98,7 +96,7 @@ describe("createSqlitePagesRegistryAdapter", () => {
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }]);
     await adapter.removePage("/blogs/abc");
 
-    expect(await adapter.listSitemapEntries(Date.now())).toEqual([]);
+    expect(await adapter.listSitemapEntries()).toEqual([]);
     expect(await adapter.listPathsByResource("blog")).toEqual([]);
   });
 
@@ -120,49 +118,5 @@ describe("createSqlitePagesRegistryAdapter", () => {
     } finally {
       db.close();
     }
-  });
-
-  it("listDueForPublish + markPublished flips a staged page live", async () => {
-    const { adapter, dir } = freshAdapter();
-    dirs.push(dir);
-
-    const dueAt = Date.now() - 1000;
-    await adapter.recordBuild(page({ path: "/scheduled", objectKey: "pages/build-1/scheduled.html", publishAt: dueAt }), []);
-    await adapter.recordBuild(page({ path: "/not-due", publishAt: Date.now() + 100_000 }), []);
-
-    const due = await adapter.listDueForPublish(Date.now());
-    expect(due.map((p) => p.path)).toEqual(["/scheduled"]);
-
-    await adapter.markPublished("/scheduled", "pages/live/scheduled.html");
-    expect(await adapter.listDueForPublish(Date.now())).toEqual([]);
-    const entries = await adapter.listSitemapEntries(Date.now());
-    expect(entries.some((e) => e.path === "/scheduled")).toBe(true);
-  });
-
-  it("getPage returns a single row by path, or null when never built", async () => {
-    const { adapter, dir } = freshAdapter();
-    dirs.push(dir);
-
-    expect(await adapter.getPage("/nope")).toBeNull();
-
-    const dueAt = Date.now() - 1000;
-    await adapter.recordBuild(page({ path: "/scheduled", objectKey: "pages/build-1/scheduled.html", publishAt: dueAt }), []);
-    const found = await adapter.getPage("/scheduled");
-    expect(found?.path).toBe("/scheduled");
-    expect(found?.objectKey).toBe("pages/build-1/scheduled.html");
-    expect(found?.publishAt).toBe(dueAt);
-  });
-
-  it("nextPublishAt reports the earliest still-future publish time", async () => {
-    const { adapter, dir } = freshAdapter();
-    dirs.push(dir);
-
-    const now = Date.now();
-    await adapter.recordBuild(page({ path: "/soon", publishAt: now + 1000 }), []);
-    await adapter.recordBuild(page({ path: "/later", publishAt: now + 5000 }), []);
-    await adapter.recordBuild(page({ path: "/past-due", publishAt: now - 1000 }), []);
-
-    expect(await adapter.nextPublishAt(now)).toBe(now + 1000);
-    expect(await adapter.nextPublishAt(now + 10_000)).toBeNull();
   });
 });

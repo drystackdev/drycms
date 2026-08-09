@@ -9,7 +9,6 @@ import { signSession } from "../../lib/session-token.js";
 import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { extractPackagedSeedAssets } from "../../content-types/seed-assets.js";
-import { applyPackagedMenuData, applyPackagedSingletonData } from "../../content-types/seed.js";
 import { resolved } from "../config.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
@@ -267,20 +266,11 @@ export const POST: DryRouteHandler = async (context) => {
         // instance (no user yet) - extract a build-time-packaged
         // `seed-assets.zip` (if any) BEFORE creating the admin, so a failure
         // here fails the whole request instead of leaving a half-seeded
-        // instance with an admin account already created (see
-        // `plans/content-type-seed.md`). Content-type schema itself doesn't
-        // need anything here - `content-types/seed.ts`'s every-boot seeding
-        // already applies an app's own `dry.seed.json` (if any) before any
-        // request is served. `dry.seed.json`'s optional `singletonData`
-        // DOES need a call here though - unlike schema, a singleton's ROW
-        // only ever gets seeded at this one-time point (see
-        // `applyPackagedSingletonData`'s doc comment), same reasoning as the
-        // asset zip.
+        // instance with an admin account already created. An app's own
+        // content types/data are NOT touched here (or anywhere at boot) -
+        // they're always an explicit "Upload schema"/"Upload seed data"
+        // admin action instead, see `routes/content-type-seed.ts`.
         await extractPackagedSeedAssets(resolved);
-        await applyPackagedSingletonData(entryAdapter, allTypes);
-        // Same one-time window, same reasoning - see `applyPackagedMenuData`
-        // for why `menu` is the one collection whose rows the seed carries.
-        await applyPackagedMenuData(entryAdapter, allTypes);
 
         const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
         const name = typeof body.name === "string" ? body.name.trim() : "";

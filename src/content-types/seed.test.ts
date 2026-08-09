@@ -8,7 +8,6 @@ import {
   defaultContentTypeDefinitions,
   MENU_TYPE_ID,
   pendingSeedStatements,
-  resolveDefaultContentTypeDefinitions,
 } from "./seed.js";
 import { GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID } from "./system-fields.js";
 import { resolveTableTree } from "./tree.js";
@@ -18,9 +17,10 @@ describe("defaultContentTypeDefinitions", () => {
   const defs = defaultContentTypeDefinitions();
   const byName = (name: string) => defs.find((t) => t.name === name)!;
 
-  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect, memory (collections), and seoDefaults, systemSettings, googleVerification (singletons)", () => {
+  it("declares menuItem+seo (components), user, menu, aiKey, role, redirect, memory (collections), and seoDefaults, systemSettings, googleVerification, githubSync (singletons)", () => {
     expect(defs.map((t) => t.name).sort()).toEqual([
       "aiKey",
+      "githubSync",
       "googleVerification",
       "memory",
       "menu",
@@ -43,6 +43,7 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("seoDefaults").kind).toBe("singleton");
     expect(byName("systemSettings").kind).toBe("singleton");
     expect(byName("googleVerification").kind).toBe("singleton");
+    expect(byName("githubSync").kind).toBe("singleton");
   });
 
   it("hides role/aiKey/redirect/seo/user/seoDefaults/memory/systemSettings from the generic content-type UI, but leaves menu/menuItem visible", () => {
@@ -296,33 +297,8 @@ describe("defaultContentTypeDefinitions", () => {
   });
 });
 
-describe("resolveDefaultContentTypeDefinitions", () => {
-  it("falls back to the built-in defaults when no packaged seed is given", () => {
-    const resolved = resolveDefaultContentTypeDefinitions(undefined);
-    expect(resolved.map((t) => t.name).sort()).toEqual(
-      defaultContentTypeDefinitions().map((t) => t.name).sort(),
-    );
-  });
-
-  it("uses the packaged app seed instead of the built-in defaults when present", () => {
-    const appType: ContentTypeDefinition = {
-      id: "app-post",
-      kind: "collection",
-      name: "post",
-      label: "Post",
-      fields: [],
-      version: 0,
-    };
-    const resolved = resolveDefaultContentTypeDefinitions({ contentTypes: [appType] });
-    expect(resolved).toEqual([appType]);
-    // Completely replaces the built-in list - `user`/`role`/etc. are NOT
-    // silently unioned in, matching decision #4 in plans/content-type-seed.md.
-    expect(resolved.find((t) => t.name === "user")).toBeUndefined();
-  });
-});
-
 describe("pendingSeedStatements", () => {
-  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/memory/seoDefaults/systemSettings tables plus 10 metadata rows when nothing exists yet", () => {
+  it("creates the user/menu/menu_refs/aiKey/role/redirect/user_roles/memory/seoDefaults/systemSettings/googleVerification/githubSync tables plus 12 metadata rows when nothing exists yet", () => {
     const statements = pendingSeedStatements(new Set());
     const sql = statements.map((s) => s.sql).join("\n");
     expect(sql).toContain('CREATE TABLE "user"');
@@ -335,13 +311,15 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "memory"');
     expect(sql).toContain('CREATE TABLE "seoDefaults"');
     expect(sql).toContain('CREATE TABLE "systemSettings"');
+    expect(sql).toContain('CREATE TABLE "googleVerification"');
+    expect(sql).toContain('CREATE TABLE "githubSync"');
     // `seo`, like `menuItem`, is a component - no table of its own.
     expect(sql).not.toContain('CREATE TABLE "seo"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(10);
+    expect(metadataInserts).toHaveLength(12);
   });
 
   it("seeds nothing once every default name is already present", () => {
@@ -357,6 +335,8 @@ describe("pendingSeedStatements", () => {
         "memory",
         "seodefaults",
         "systemsettings",
+        "googleverification",
+        "githubsync",
       ]),
     );
     expect(statements).toEqual([]);
@@ -374,11 +354,13 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "memory"');
     expect(sql).toContain('CREATE TABLE "seoDefaults"');
     expect(sql).toContain('CREATE TABLE "systemSettings"');
+    expect(sql).toContain('CREATE TABLE "googleVerification"');
+    expect(sql).toContain('CREATE TABLE "githubSync"');
 
     const metadataInserts = statements.filter((s) =>
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
-    expect(metadataInserts).toHaveLength(9);
+    expect(metadataInserts).toHaveLength(11);
   });
 });
 

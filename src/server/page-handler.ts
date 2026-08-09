@@ -11,7 +11,7 @@ import { resolveVeiSession } from "./vei-session.js";
 import { discoverRoutes, devSourcePathOf, type DevPagesSource } from "./app-router/route-tree.js";
 import { matchRoute, type RouteMatch } from "./app-router/match.js";
 import { renderErrorHtml, renderPage } from "./app-router/render.js";
-import { publishImmutableObject, readBuiltPage } from "./app-router/built-pages-storage.js";
+import { readBuiltPage } from "./app-router/built-pages-storage.js";
 import { resolveSiteOrigin } from "./app-router/site-origin.js";
 import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegistry } from "./app-router/sitemap.js";
 
@@ -27,12 +27,10 @@ import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegi
  * `plans/app-r2.md`):
  * - **Prod, no VEI session**: static-only. Reads `built/live/*`
  *   (`readBuiltPage` - whatever `/dry/page-build` last published for this
- *   pathname) and serves it as-is; on a miss, checks whether `_pages` has a
- *   due `schedule`d build to lazily promote (see this function's own body)
- *   before finally 404ing - no `page.tsx`/`layout.tsx` code ever executes
- *   for this request at all. A page that was never built through the admin
- *   simply 404s; that's by design, not a bug - see this function's own body
- *   for why.
+ *   pathname) and serves it as-is, or 404s on a miss - no
+ *   `page.tsx`/`layout.tsx` code ever executes for this request at all. A
+ *   page that was never built through the admin simply 404s; that's by
+ *   design, not a bug - see this function's own body for why.
  * - **Dev (always), or a VEI-authenticated session (dev + prod)**: the
  *   ORIGINAL live SSR pipeline below, byte-for-byte the same behavior
  *   this function had before mục 12 - a route MISS first checks the
@@ -126,7 +124,7 @@ export async function handlePageRequest(
   const match = matchRoute(routeTree.root, url.pathname);
 
   try {
-    const { schema, entries, pagesRegistry } = getContentAdapters(routeContext);
+    const { schema, entries } = getContentAdapters(routeContext);
     const allTypes = await schema.listContentTypes();
 
     const vei = await resolveVeiContext(request, env, entries, allTypes);
@@ -156,19 +154,12 @@ export async function handlePageRequest(
       if (cached !== null) {
         return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
-      // `schedule` (mục 9) flip, done lazily instead of by a cron sweep
-      // (see `status/app-r2-build.md`): a live-key miss doesn't necessarily
-      // mean "never built" - it's also what a page staged with a future
-      // `publishAt` looks like (`writeBuiltPage` deliberately skips the live
-      // write for those). One indexed `_pages` lookup, paid ONLY on this
-      // miss branch - a page that's already live never reaches this line,
-      // so ordinary traffic pays nothing extra for `schedule` existing.
-      const staged = await pagesRegistry.getPage(url.pathname);
-      if (staged && staged.publishAt !== null && staged.publishAt <= Date.now()) {
-        const { liveKey, html } = await publishImmutableObject(routeContext, url.pathname, staged.objectKey);
-        await pagesRegistry.markPublished(url.pathname, liveKey);
-        return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-      }
+      // A live-key miss means "never built through `/dry/page-build`" - full
+      // stop. There used to be a page-level `schedule`/`publishAt` staged-
+      // build concept promoted lazily right here; removed in favor of the
+      // entry-level `features.schedule` gate alone (`entry-where.ts`'s
+      // `buildPublishedOnlyClause`) - a build always publishes immediately
+      // now (`writeBuiltPage` always writes the live key).
       // Same reasoning `findRedirectResponse`'s own doc comment already
       // gives for running this AFTER a cache check rather than before -
       // still applies unchanged, just against `readBuiltPage` instead of
