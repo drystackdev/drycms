@@ -2,7 +2,7 @@ import packagedSeedJson from "../../dry.seed.json";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import { planMigration, type Statement } from "./migration.js";
-import { GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
+import { GITHUB_SYNC_TYPE_ID, GOOGLE_VERIFICATION_TYPE_ID, SEO_DEFAULTS_TYPE_ID, SYSTEM_COMPONENT_IDS } from "./system-fields.js";
 import type { ContentTypeDefinition } from "./types.js";
 
 export interface PackagedSeed {
@@ -107,6 +107,11 @@ const IDS = {
   googleVerification: "system-google-verification-singleton",
   googleVerificationName: "system-google-verification-name",
   googleVerificationContent: "system-google-verification-content",
+  githubSync: "system-github-sync-singleton",
+  githubSyncEnabled: "system-github-sync-enabled",
+  githubSyncRepo: "system-github-sync-repo",
+  githubSyncBranch: "system-github-sync-branch",
+  githubSyncToken: "system-github-sync-token",
 } as const;
 
 /**
@@ -671,7 +676,67 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     version: 0,
   };
 
-  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings, googleVerification];
+  const githubSync: ContentTypeDefinition = {
+    id: GITHUB_SYNC_TYPE_ID,
+    kind: "singleton",
+    name: "githubSync",
+    label: "GitHub Sync",
+    description: "Pushes a snapshot commit of the pages-source tree to a GitHub repo on every Build/Build all - version history for what pagesSourceStorage otherwise only keeps as a working copy.",
+    // Reached via its own "GitHub Sync" sub-item under the "Settings" nav
+    // group (`DryLayout.tsx`), same treatment as `googleVerification` above -
+    // a dedicated small form (`GithubSyncSettings.tsx`) replaces the generic
+    // singleton editor.
+    hidden: true,
+    locked: true,
+    frozen: true,
+    fields: [
+      {
+        id: IDS.githubSyncEnabled,
+        name: "enabled",
+        label: "Enabled",
+        type: "boolean",
+        description: "Off by default - Build/Build all skip the GitHub push entirely (no error, no toast) until this is turned on and repo/token below are filled in.",
+        config: {},
+        validation: {},
+        default: false,
+        order: 0,
+      },
+      {
+        id: IDS.githubSyncRepo,
+        name: "repo",
+        label: "Repository",
+        type: "text",
+        description: "owner/name of the GitHub repo the snapshot commit is pushed to.",
+        config: { placeholder: "your-org/your-site" },
+        validation: { required: true },
+        order: 1,
+      },
+      {
+        id: IDS.githubSyncBranch,
+        name: "branch",
+        label: "Branch",
+        type: "text",
+        description: "Branch ref the snapshot commit updates - created if it doesn't exist yet.",
+        config: { placeholder: "main" },
+        validation: { required: true },
+        default: "main",
+        order: 2,
+      },
+      {
+        id: IDS.githubSyncToken,
+        name: "token",
+        label: "Access Token",
+        type: "secretkey",
+        description: "A GitHub Personal Access Token (classic or fine-grained) with Contents: Read and write on the repo above.",
+        config: {},
+        validation: { required: true },
+        order: 3,
+      },
+    ],
+    version: 0,
+  };
+
+  return [menuItem, seo, user, menu, aiKey, role, redirect, seoDefaults, memory, systemSettings, googleVerification, githubSync];
 }
 
 /**

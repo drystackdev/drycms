@@ -1,0 +1,3 @@
+- khi nhấn build và build all thì các class của tailwind chưa chạy được ví dụ "/" hiện tại thể <div class="p-5">Home</div> có .p-5 nhưng không có css tương ứng
+- nút xem trang cần nằm cạnh fit của preview (enable/disabel không ẩn), trang nào Save mà chưa build thì có dáu tròn màu vàng, file đang sửa chưa save thì có dấu màu xanh lá, (các nút thông báo nằm sat bên phải) Khi nhấn build page mà các file liên quan chưa lưu thì tự động lưu theo
+- nút build all nằm sat bên phải - bên trái hiện chữ Page Builder

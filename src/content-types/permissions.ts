@@ -76,7 +76,7 @@ const UNGRANTABLE_TYPE_NAMES: ReadonlySet<string> = new Set(["memory"]);
 /** Content types that never expose Magic (AI) - configuration rather than
  * editorial content: credentials (`aiKey`), access control (`role`/`user`),
  * routing/navigation (`redirect`/`menu`), and the settings singletons
- * (`systemSettings`/`siteSettings`/`googleVerification`). None of them hold
+ * (`systemSettings`/`siteSettings`/`googleVerification`/`githubSync`). None of them hold
  * prose a model should be authoring - an API key, a permission set, a redirect
  * target, or a verification token is either exact or wrong.
  *
@@ -93,6 +93,7 @@ const NO_MAGIC_TYPE_NAMES: ReadonlySet<string> = new Set([
   "systemSettings",
   "siteSettings",
   "googleVerification",
+  "githubSync",
 ]);
 
 /** Whether Magic (AI) applies to this content type at all - a property of the

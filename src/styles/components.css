@@ -5882,6 +5882,91 @@
       min-height: 0;
     }
 
+    /* TypeScript problems panel below the code editor (`PageEditor.tsx`) -
+       collapses to just its own header (the toggle + error/warning badges)
+       when closed, same "small summary bar" shape `.page-editor-diagnostics-header`
+       always renders regardless of open state. */
+    .page-editor-diagnostics {
+      display: flex;
+      flex-direction: column;
+      flex: 0 0 auto;
+      min-height: 0;
+      border-top: 1px solid var(--dry-border);
+      background-color: var(--dry-background);
+    }
+
+    .page-editor-diagnostics-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 0 0 auto;
+      padding: 0.375rem 0.5rem;
+      & button:hover {
+        background-color: transparent;
+      }
+    }
+
+    /* Same rotate-on-expand behavior as `.page-components-tree-chevron`,
+       just not sharing that class - this one isn't a tree row. */
+    .page-editor-diagnostics-toggle {
+      all: unset;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 1.125rem;
+      height: 1.125rem;
+      color: var(--dry-muted-foreground);
+      cursor: pointer;
+      transition: transform 120ms ease;
+
+      &[aria-expanded="true"] {
+        transform: rotate(90deg);
+      }
+
+      & > svg {
+        width: 1rem;
+        height: 1rem;
+      }
+    }
+
+    .page-editor-diagnostics-list {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      margin: 0;
+      padding: 0 0.5rem;
+      list-style: none;
+      font-family: var(--dry-font-mono);
+      font-size: var(--dry-text-sm);
+
+      & li {
+        display: flex;
+        align-items: baseline;
+        gap: 0.625rem;
+        padding-block: 0.375rem;
+        border-bottom: 1px solid var(--dry-border);
+
+        &:last-child {
+          border-bottom: none;
+        }
+
+        &.error {
+          color: light-dark(var(--dry-error-dark), var(--dry-error-light));
+        }
+
+        &.warning {
+          color: light-dark(var(--dry-warning-dark), var(--dry-warning-light));
+        }
+      }
+    }
+
+    .page-editor-diagnostics-location {
+      flex: 0 0 auto;
+      color: var(--dry-muted-foreground);
+      font-variant-numeric: tabular-nums;
+    }
+
     /* Connected segmented control (VS Code/shadcn "toggle group" look) -
        reusable anywhere a mutually-exclusive set of choices reads better as
        one bordered pill than as underline tabs (`[role="tablist"]` above)
@@ -5914,8 +5999,26 @@
      * viewport element (matches `.magic-chat-messages`'s host/viewport
      * split). */
     .page-components-preview-viewport {
+      position: relative;
       height: 100%;
       background-color: var(--dry-background);
+    }
+
+    /* Overlays the LAST successfully rendered preview instead of replacing
+       it (`PageEditor.tsx`'s own comment on why the viewport stays mounted
+       across an error<->success flip) - absolutely positioned so it never
+       changes the viewport's own height/layout, which is what caused the
+       visible jitter this replaced. */
+    .page-editor-preview-error {
+      position: absolute;
+      inset-inline: 0;
+      top: 0;
+      z-index: 2;
+      padding: 0.5rem 0.75rem;
+      font-size: var(--dry-text-sm);
+      white-space: pre-wrap;
+      background-color: color-mix(in srgb, var(--dry-error) 92%, transparent);
+      color: var(--dry-error-foreground);
     }
 
     /* The real scrolling element (`useOverlayScrollbars`'s `viewportRef`)

@@ -21,6 +21,7 @@ import {
   type PublishOptions,
   type UnmatchedTemplate,
 } from "../page-components/page-build.js";
+import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
 
 /**
  * Minimal admin "Build" page (`plans/app-r2.md` mục 11 - a first, real cut,
@@ -360,6 +361,16 @@ export default function PageBuild() {
       }
       await flush();
       toast.add({ type: "success", title: `Built ${total} ${total === 1 ? "page" : "pages"}` });
+      // Snapshot-commits the WHOLE pages-source tree to GitHub exactly ONCE,
+      // after the whole queue (a fresh run or a resume) is fully done - not
+      // per batch, so a resumed/interrupted run still produces a single
+      // coherent commit rather than several partial ones. Best-effort, same
+      // as `PageEditor.tsx`'s own `reportGithubSync`: a real failure gets its
+      // own separate, non-blocking toast, "not configured" stays silent.
+      const githubSync = await triggerGithubSync(`${path}/api/github-sync`, `Build all: ${total} pages - ${new Date().toISOString()}`);
+      if (!githubSync.pushed && githubSync.reason && githubSync.reason !== "not-configured") {
+        toast.add({ type: "default", title: "Built, but GitHub sync failed", description: githubSync.reason });
+      }
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Publishing failed.";
       toast.add({ type: "error", title: "Build all interrupted", description: `${message} - click "Build all" again to resume.` });

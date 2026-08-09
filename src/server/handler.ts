@@ -18,6 +18,7 @@ import * as dryHttpRoute from "./routes/dry-http.js";
 import * as pagesBuildRoute from "./routes/pages-build.js";
 import * as typesCacheRoute from "./routes/types-cache.js";
 import * as pagesSourceRoute from "./routes/pages-source.js";
+import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import { requirePermission } from "./admin-access.js";
@@ -75,6 +76,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "pages-build": pagesBuildRoute,
   "types-cache": typesCacheRoute,
   "pages-source": pagesSourceRoute,
+  "github-sync": pagesSourceGithubSyncRoute,
   "built-assets": builtAssetsRoute,
   "asset-hrefs": assetHrefsRoute,
 };
@@ -186,16 +188,18 @@ export async function handleApiRequest(
     if (denied) return secureResponse(denied, request);
   }
   // `dry-http` (published-only content reads for the browser build
-  // pipeline) and `pages-build` (writing a built page + registering it) are
-  // both only meant to be called by the build orchestrator - gated behind
-  // the same `system-build` grant (`plans/app-r2.md` quyết định #12), every
-  // method including GET (same "one all-or-nothing toggle" shape as
-  // Page Components above, not a real content type with separate actions).
+  // pipeline), `pages-build` (writing a built page + registering it), and
+  // `github-sync` (pushing a snapshot commit of pages-source - see
+  // `status/pages-source-github-versioning.md`) are all only meant to be
+  // called by the build orchestrator - gated behind the same `system-build`
+  // grant (`plans/app-r2.md` quyết định #12), every method including GET
+  // (same "one all-or-nothing toggle" shape as Page Components above, not a
+  // real content type with separate actions).
   // `types-cache` stays open to any authenticated session - it only ever
   // serves the generated `.d.ts` (see `routes/types-cache.ts`), same
   // "broadly read, narrowly written" treatment `icons`/`richtext-components`
   // GET already get.
-  if (segment === "dry-http" || segment === "pages-build") {
+  if (segment === "dry-http" || segment === "pages-build" || segment === "github-sync") {
     const denied = await requirePermission(context, SYSTEM_BUILD_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }

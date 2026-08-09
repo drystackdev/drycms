@@ -79,6 +79,13 @@ export const SEO_DEFAULTS_TYPE_ID = "system-seo-defaults";
  * same reasoning as `SEO_DEFAULTS_TYPE_ID` above. */
 export const GOOGLE_VERIFICATION_TYPE_ID = "system-google-verification";
 
+/** Fixed id for the built-in "GitHub Sync" singleton (see `seed.ts`) - repo/
+ * branch/token config for pushing a snapshot commit of `pagesSourceStorage`
+ * to GitHub on every Build/Build all (`server/github-source-sync.ts`).
+ * Recognized by this fixed id, not by name/label, same reasoning as
+ * `SEO_DEFAULTS_TYPE_ID` above. */
+export const GITHUB_SYNC_TYPE_ID = "system-github-sync";
+
 /** The synthetic fields implied by `type.features` - in front of `type.fields`
  * for the real DB column order (`tree.ts`'s `resolveTableTree`), but AFTER
  * `type.fields` for on-screen display order (`entry-tree.ts`'s

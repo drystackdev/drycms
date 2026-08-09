@@ -2,15 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
-import type { EditerResult } from "../components/Editer/types.js";
+import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
 import { MenuIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import { useScaledPreview } from "./page-components/useDevicePreview.js";
 import { useResizablePanel } from "../lib/useResizablePanel.js";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
+import { useParam } from "../hooks/useParam.js";
 import { mergeRefs } from "../lib/merge-refs.js";
 import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
+import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
 import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft } from "../page-components/page-source-draft-db.js";
 import {
   buildPage,
@@ -29,6 +31,21 @@ import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
 import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
+
+/** Local one-off (same "no shared export for a single-use icon" pattern as
+ * this file's own `ReloadIcon` below, or Media's `OptimizeIcon`) for the
+ * "Open page" button - an arrow breaking out of a box, the standard
+ * external-link glyph. */
+function OpenInNewTabIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M14 3a1 1 0 1 0 0 2h3.586l-7.293 7.293a1 1 0 0 0 1.414 1.414L19 6.414V10a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1zM5 5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 1 0-2 0v5H5V7h5a1 1 0 1 0 0-2z"
+      />
+    </svg>
+  );
+}
 
 /** Same icon `SlugField.tsx`'s `RegenerateSlugIcon` uses, for the same
  * "recompute this on demand" meaning - a local one-off (this codebase's own
@@ -153,6 +170,7 @@ async function listAllFileEntriesRecursive(folder: string): Promise<FileEntry[]>
 
 const SIDEBAR_WIDTH = { initial: 280, min: 200, max: 480 };
 const PREVIEW_WIDTH = { initial: 480, min: 280, max: 900 };
+const DIAGNOSTICS_HEIGHT = { initial: 180, min: 80, max: 480 };
 
 /** Viewport presets for the preview column's responsive toolbar - `sm`/`md`/
  * `lg`/`xl` match Tailwind's own default breakpoints (meaningful for
@@ -179,8 +197,10 @@ interface PageEditorUiState {
   selectedPath: string | null;
   sidebarOpen: boolean;
   previewOpen: boolean;
+  diagnosticsOpen: boolean;
   sidebarWidth: number;
   previewWidth: number;
+  diagnosticsHeight: number;
   viewportKey: ViewportKey;
   manualZoom: number | null;
 }
@@ -221,7 +241,14 @@ export default function PageEditor() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceByPath, setSourceByPath] = useState<Record<string, string>>({});
   const [savedByPath, setSavedByPath] = useState<Record<string, string>>({});
-  const [selectedPath, setSelectedPath] = useState<string | null>(initialUiState?.selectedPath ?? null);
+  // Backed by the URL's `file` query param (`useParam`, same convention as
+  // `BuilderContentType.tsx`'s `selectedKind`), not local state, so the file
+  // currently open is shareable/reloadable via the URL - `""` stands in for
+  // "nothing selected" (falsy, same as the old `null` everywhere below) since
+  // `useParam` only deals in strings. Falls back to the last file persisted
+  // in `localStorage` (`initialUiState`) when the URL has no `file` param
+  // yet, e.g. a bare bookmark to this page.
+  const [selectedPath, setSelectedPath] = useParam<string>("file", initialUiState?.selectedPath ?? "");
   const [saving, setSaving] = useState(false);
   const [buildingCurrent, setBuildingCurrent] = useState(false);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
@@ -229,6 +256,15 @@ export default function PageEditor() {
   const [deleting, setDeleting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(initialUiState?.sidebarOpen ?? true);
   const [previewOpen, setPreviewOpen] = useState(initialUiState?.previewOpen ?? true);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(initialUiState?.diagnosticsOpen ?? true);
+  // The selected file's own TS diagnostics (`Editer`'s `onChange` already
+  // computes these every debounce - see `handleChange` - nothing new to
+  // wire into `Editer` itself). Reset on file switch rather than left
+  // stale: `Editer` remounts via `key={selectedPath}` and re-reports fresh
+  // diagnostics shortly after (its own worker-priming `onChange`), so the
+  // brief empty gap reads as "not yet checked", never as a wrong file's
+  // errors bleeding into the newly selected one.
+  const [diagnostics, setDiagnostics] = useState<EditerDiagnostic[]>([]);
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
@@ -244,6 +280,14 @@ export default function PageEditor() {
     ...PREVIEW_WIDTH,
     initial: initialUiState?.previewWidth !== undefined ? clampWidth(initialUiState.previewWidth, PREVIEW_WIDTH) : PREVIEW_WIDTH.initial,
     axis: "x",
+  });
+  const diagnosticsSplit = useResizablePanel({
+    ...DIAGNOSTICS_HEIGHT,
+    initial:
+      initialUiState?.diagnosticsHeight !== undefined
+        ? clampWidth(initialUiState.diagnosticsHeight, DIAGNOSTICS_HEIGHT)
+        : DIAGNOSTICS_HEIGHT.initial,
+    axis: "y",
   });
   const viewport = useScaledPreview<ViewportKey>(
     VIEWPORT_WIDTHS,
@@ -270,14 +314,26 @@ export default function PageEditor() {
         selectedPath,
         sidebarOpen,
         previewOpen,
+        diagnosticsOpen,
         sidebarWidth: sidebar.size,
         previewWidth: previewSplit.size,
+        diagnosticsHeight: diagnosticsSplit.size,
         viewportKey: viewport.key,
         manualZoom,
       });
     }, 300);
     return () => clearTimeout(timer);
-  }, [selectedPath, sidebarOpen, previewOpen, sidebar.size, previewSplit.size, viewport.key, manualZoom]);
+  }, [
+    selectedPath,
+    sidebarOpen,
+    previewOpen,
+    diagnosticsOpen,
+    sidebar.size,
+    previewSplit.size,
+    diagnosticsSplit.size,
+    viewport.key,
+    manualZoom,
+  ]);
 
   async function loadTree() {
     try {
@@ -306,7 +362,7 @@ export default function PageEditor() {
 
       setSelectedPath((current) => {
         if (current && withDrafts[current] !== undefined) return current;
-        return files.length > 0 ? files[0]!.id : null;
+        return files.length > 0 ? files[0]!.id : "";
       });
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Failed to load pages source.");
@@ -340,6 +396,16 @@ export default function PageEditor() {
 
   const code = selectedPath ? (sourceByPath[selectedPath] ?? "") : "";
   const dirty = !!selectedPath && sourceByPath[selectedPath] !== savedByPath[selectedPath];
+
+  // Clears stale diagnostics from whatever file was open before - `Editer`
+  // remounts on `selectedPath` (its own `key`) and reports fresh ones via
+  // `handleChange` shortly after, this just covers the gap in between.
+  useEffect(() => {
+    setDiagnostics([]);
+  }, [selectedPath]);
+
+  const errorCount = diagnostics.filter((d) => d.source === "syntax").length;
+  const warningCount = diagnostics.length - errorCount;
 
   /** Every OTHER loaded file, PLUS `dry.generated.d.ts` (`routes/types-cache.ts`
    * - already built for exactly this, in an earlier session, but never
@@ -392,6 +458,7 @@ export default function PageEditor() {
   function handleChange(result: EditerResult) {
     if (!selectedPath) return;
     setSourceByPath((prev) => (prev[selectedPath] === result.code ? prev : { ...prev, [selectedPath]: result.code }));
+    setDiagnostics(result.errors);
     if (result.code === savedByPath[selectedPath]) {
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
@@ -436,6 +503,21 @@ export default function PageEditor() {
    * edit) - published output must only ever reflect what's actually on
    * storage, matching what `PageBuild.tsx` itself builds from (a fresh
    * server fetch), never a local in-browser buffer nothing else can see. */
+  /** Fires the GitHub snapshot commit after a build's own publish already
+   * succeeded, and folds the result into a toast - but only when it's
+   * actually actionable. `"not-configured"` (the feature is simply off, or
+   * `githubSync.enabled` isn't checked) stays silent, same as
+   * `dry.generated.d.ts`'s own "never fatal" fetch elsewhere in this file;
+   * a real failure (bad token, GitHub API error) gets its own separate,
+   * non-blocking toast - it must never read as the build itself having
+   * failed, since `publishBuiltPage(s)` above already succeeded. */
+  async function reportGithubSync(message: string): Promise<void> {
+    const result = await triggerGithubSync(`${path}/api/github-sync`, message);
+    if (!result.pushed && result.reason && result.reason !== "not-configured") {
+      toast.add({ type: "default", title: "Built, but GitHub sync failed", description: result.reason });
+    }
+  }
+
   async function handleBuildCurrent() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
     setBuildingCurrent(true);
@@ -457,6 +539,7 @@ export default function PageEditor() {
       });
       await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname });
       toast.add({ type: "success", title: `Built "${previewTarget.pathname}"` });
+      await reportGithubSync(`Build: ${previewTarget.pathname} - ${new Date().toISOString()}`);
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
       toast.add({ type: "error", title: `Failed to build "${previewTarget.pathname}"`, description: message });
@@ -514,6 +597,7 @@ export default function PageEditor() {
         done += batch.length;
       }
       toast.add({ type: "success", title: `Built ${done} ${done === 1 ? "page" : "pages"}` });
+      await reportGithubSync(`Build all: ${done} pages - ${new Date().toISOString()}`);
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
       toast.add({ type: "error", title: "Build all failed", description: message });
@@ -553,7 +637,7 @@ export default function PageEditor() {
       await api.remove(pendingDelete.id);
       cancelDraftWrite(pendingDelete.id);
       void deletePageSourceDraft(pendingDelete.id);
-      if (selectedPath === pendingDelete.id) setSelectedPath(null);
+      if (selectedPath === pendingDelete.id) setSelectedPath("");
       setPendingDelete(null);
       await loadTree();
       toast.add({ type: "success", title: "Deleted." });
@@ -712,8 +796,12 @@ export default function PageEditor() {
    * it silently never initializes for a host that doesn't exist yet on
    * first mount (this component's very first render, before `loadTree()`'s
    * async fetch resolves `previewTarget` - the doc comment on the hook
-   * itself calls this out, e.g. `[open]` for a conditionally-shown panel). */
-  const previewScroll = useOverlayScrollbars<HTMLDivElement>([!!previewTarget && !previewError]);
+   * itself calls this out, e.g. `[open]` for a conditionally-shown panel).
+   * Keyed on `previewTarget` alone, not `previewError` too - the viewport
+   * stays mounted across an error<->success flip now (see the JSX below),
+   * so re-running this on every error toggle would just be redundant
+   * teardown/init work on top of the same DOM node. */
+  const previewScroll = useOverlayScrollbars<HTMLDivElement>([!!previewTarget]);
 
   async function refreshPreview() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
@@ -846,13 +934,6 @@ export default function PageEditor() {
   // of which `resolveAllPageTargets`/`PageBuild.tsx` treat as a buildable
   // target on their own.
   const isPageTarget = !!selectedPath && /(^|\/)page\.tsx$/.test(selectedPath) && !!previewTarget;
-  // Any loaded file's unsaved edit, not just the selected one - a Build
-  // click always compiles from `savedByPath` (see `handleBuildCurrent`'s doc
-  // comment), so an unsaved edit ANYWHERE would silently be left out of a
-  // published build; better to block and point at Save than publish
-  // something the user isn't looking at.
-  const anyDirty = Object.keys(sourceByPath).some((p) => sourceByPath[p] !== savedByPath[p]);
-  const buildBusy = buildingCurrent || buildAllProgress !== null;
 
   return (
     <div class="page-components-shell">
@@ -898,9 +979,19 @@ export default function PageEditor() {
               {buildingCurrent ? "Building…" : "Build"}
             </button>
           )}
-          <button type="button" class="ghost sm" disabled={anyDirty || buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
-            {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
-          </button>
+          {isPageTarget && (
+            <a
+              role="button"
+              class="ghost icon sm"
+              aria-label={`Open "${previewTarget!.pathname}" in a new tab`}
+              title={`Open "${previewTarget!.pathname}" in a new tab`}
+              href={`${origin}${previewTarget!.pathname}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <OpenInNewTabIcon />
+            </a>
+          )}
           {selectedPath && (
             <button type="button" class="sm" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
               Save
@@ -963,17 +1054,28 @@ export default function PageEditor() {
                 </div>
               )}
               {previewTarget ? (
-                previewError ? (
-                  <span class="error" style={{ padding: "0.5rem" }}>{previewError}</span>
-                ) : (
-                  <div class="page-components-preview-viewport" ref={mergeRefs(viewport.viewportRef, previewScroll.ref)}>
-                    <div class="page-components-preview-viewport-inner" ref={previewScroll.viewportRef}>
-                      <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${PREVIEW_FRAME_HEIGHT}px`, zoom: effectiveZoom }}>
-                        <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
-                      </div>
+                // Always mounted regardless of `previewError` - keeping the
+                // viewport/frame/iframe subtree (and the ResizeObserver +
+                // OverlayScrollbars instance attached to it) alive across an
+                // error<->success flip is what avoids the visible jitter a
+                // `previewError ? <span> : <div>...</div>` swap used to cause
+                // (found live: every debounced edit that flips build outcome
+                // unmounted and remounted the whole preview column). An error
+                // now overlays the LAST successfully rendered srcdoc instead
+                // of replacing it - `refreshPreview` never clears the iframe's
+                // `srcdoc` on failure, so there's always something underneath.
+                <div class="page-components-preview-viewport" ref={mergeRefs(viewport.viewportRef, previewScroll.ref)}>
+                  {previewError && (
+                    <div class="page-editor-preview-error" role="alert">
+                      {previewError}
+                    </div>
+                  )}
+                  <div class="page-components-preview-viewport-inner" ref={previewScroll.viewportRef}>
+                    <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${PREVIEW_FRAME_HEIGHT}px`, zoom: effectiveZoom }}>
+                      <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
                     </div>
                   </div>
-                )
+                </div>
               ) : (
                 <p class="hint" style={{ padding: "1rem" }}>
                   Select a page.tsx, layout.tsx, 404.tsx, or 500.tsx to preview it.
@@ -1004,6 +1106,59 @@ export default function PageEditor() {
             ) : (
               <p class="hint">Select or create a page/layout/component on the left to edit it.</p>
             )}
+          </div>
+
+          {diagnosticsOpen && (
+            <div class={`page-components-resize-handle horizontal${diagnosticsSplit.dragging ? " dragging" : ""}`} {...diagnosticsSplit.handleProps} />
+          )}
+
+          <div class="page-editor-diagnostics" style={diagnosticsOpen ? { height: `${diagnosticsSplit.size}px` } : undefined}>
+            <div class="page-editor-diagnostics-header">
+              <button
+                type="button"
+                class="page-editor-diagnostics-toggle"
+                aria-expanded={diagnosticsOpen}
+                aria-label={diagnosticsOpen ? "Collapse problems panel" : "Expand problems panel"}
+                onClick={() => setDiagnosticsOpen((v) => !v)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.343 6.343L15 12l-5.657 5.657" />
+                </svg>
+              </button>
+              {errorCount === 0 && warningCount === 0 ? (
+                <span class="hint">No problems</span>
+              ) : (
+                <>
+                  {errorCount > 0 && (
+                    <span class="badge sm destructive">
+                      {errorCount} error{errorCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                  {warningCount > 0 && (
+                    <span class="badge sm warning">
+                      {warningCount} warning{warningCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            {diagnosticsOpen &&
+              (diagnostics.length > 0 ? (
+                <ul class="page-editor-diagnostics-list">
+                  {diagnostics.map((diagnostic, index) => (
+                    <li key={index} class={diagnostic.source === "syntax" ? "error" : "warning"}>
+                      <span class="page-editor-diagnostics-location">
+                        {diagnostic.line}:{diagnostic.column}
+                      </span>
+                      <span>{diagnostic.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p class="hint" style={{ padding: "0.5rem" }}>
+                  No problems detected.
+                </p>
+              ))}
           </div>
         </div>
       </div>

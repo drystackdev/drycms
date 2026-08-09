@@ -91,12 +91,49 @@ kích hoạt bởi build.
 
 ## Status
 
-Chưa bắt đầu code - mới chỉ có plan này. Chờ xác nhận trước khi làm, đặc
-biệt điểm 4 (build-all gọi 1 lần cuối queue, không phải mỗi batch) và
-điểm 1 (singleton hệ thống thay vì để trong `dry.config.ts` tĩnh - chọn
-singleton vì token cần sửa được từ UI không cần redeploy, giống `aiKey`).
+Hoàn thành cả 6 bước + migrate DB live, chưa QA bằng UI thật (chưa có
+GitHub token thật để thử end-to-end).
+
+1. Singleton `githubSync` (id `system-github-sync`) - `system-fields.ts`,
+   `seed.ts`, `NO_MAGIC_TYPE_NAMES` trong `permissions.ts`. Migrate DB live
+   qua `POST /api/content-types` thật (backup `.dry/content.sqlite` trước),
+   `bun run dry:generate` lại.
+2. `src/server/github-source-sync.ts` - `pushPagesSourceSnapshot`, Git Data
+   API (blob->tree->commit->ref), xử lý cả 3 case: branch có sẵn, branch
+   mới (fallback default branch), repo hoàn toàn trống (root commit).
+   `GithubApiError` riêng mang status để phân biệt "404 = chưa có ref" với
+   lỗi thật (network/401/...) - ban đầu bug: catch nuốt luôn lỗi mạng, test
+   phát hiện ra, đã sửa.
+3. `src/server/routes/pages-source-github-sync.ts` (`POST /api/github-sync`)
+   - đọc singleton + giải mã token qua `decryptSecret`, đọc toàn bộ
+   `pagesSourceStorage` qua `getStorageAdapter` (fallback đệ quy `list()`
+   cho R2 vì `listAll` chỉ có ở local), gọi `pushPagesSourceSnapshot`. Gate
+   quyền `SYSTEM_BUILD_RESOURCE_ID` trong `handler.ts`, cùng nhóm với
+   `dry-http`/`pages-build`.
+4. Hook: `PageEditor.tsx` (`reportGithubSync` sau `handleBuildCurrent`/
+   `handleBuildAll`), `PageBuild.tsx` (sau `runBuildQueue` xong TOÀN BỘ
+   queue, không phải mỗi batch) - qua `page-components/github-sync-http-api.ts`
+   dùng chung. **Không** hook vào `buildOne`/nút Build từng dòng hay
+   `autoBuild` (VEI headless rebuild sau khi lưu content) - đó là rebuild do
+   CONTENT đổi, không phải CODE đổi, snapshot lại y hệt cây nguồn mỗi lần
+   save entry sẽ chỉ tốn API call vô ích.
+5. `GithubSyncSettings.tsx` (enabled/repo/branch/token, secretkey giữ
+   "blank = keep existing" như `AiKeyEditor.tsx`) + `DryLayout.tsx` nav +
+   `App.tsx` route `/dry/settings/github-sync`.
+6. `github-source-sync.test.ts` - 6 test (mock `fetch`, không gọi GitHub
+   thật): rỗng, happy path branch có sẵn, fallback default branch, repo
+   trống (root commit), lỗi API không throw, lỗi network không throw.
+   `bun run typecheck` sạch (trừ 1 lỗi có sẵn, không liên quan, trong
+   `src/apps/pages/` - thư mục build artifact bị gitignore). `bun run test`
+   toàn repo: đúng 14 test fail PRE-EXISTING (xác nhận bằng `git stash` so
+   sánh trước/sau) - đều liên quan `googleVerification` (tính năng trước,
+   không phải của session này), không cái nào liên quan `githubSync`.
+
+Chưa làm: test cho route `pages-source-github-sync.ts` (route test cần
+dựng `DryRouteContext`/adapter mock khá tốn, đã ưu tiên test phần logic
+Git Data API thuần trước vì đó là phần dễ sai nhất).
 
 ## Speed
 
-Chưa triển khai, không có blocker kỹ thuật đã biết - GitHub Git Data API
-đã đủ để làm 1 commit atomic cho toàn bộ tree trong 1 lần build.
+Xong trong 1 phiên. Việc chưa làm duy nhất là QA thật với 1 GitHub repo +
+token thật (cần user cung cấp) và route-level test.
