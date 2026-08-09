@@ -12,7 +12,15 @@ import { mergeRefs } from "../lib/merge-refs.js";
 import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
 import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft } from "../page-components/page-source-draft-db.js";
-import { buildPage, PageBuildError } from "../page-components/page-build.js";
+import {
+  buildPage,
+  publishBuiltPage,
+  publishBuiltPages,
+  resolveAllPageTargets,
+  PageBuildError,
+  type PageBuildResult,
+  type PublishOptions,
+} from "../page-components/page-build.js";
 import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { CODE_EDITOR_RESOURCE_ID } from "../content-types/permissions.js";
@@ -215,6 +223,8 @@ export default function PageEditor() {
   const [savedByPath, setSavedByPath] = useState<Record<string, string>>({});
   const [selectedPath, setSelectedPath] = useState<string | null>(initialUiState?.selectedPath ?? null);
   const [saving, setSaving] = useState(false);
+  const [buildingCurrent, setBuildingCurrent] = useState(false);
+  const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(initialUiState?.sidebarOpen ?? true);
@@ -403,6 +413,113 @@ export default function PageEditor() {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Reverts the SELECTED file's unsaved edit back to what's actually on
+   * storage - drops its pending draft write same as a successful save would
+   * (`handleSave`), just without writing anything. `setSourceByPath` alone
+   * is enough to update the visible editor content (`Editer`'s own `value`
+   * sync effect), no remount needed. */
+  function handleReset() {
+    if (!selectedPath) return;
+    const saved = savedByPath[selectedPath] ?? "";
+    setSourceByPath((prev) => (prev[selectedPath] === saved ? prev : { ...prev, [selectedPath]: saved }));
+    cancelDraftWrite(selectedPath);
+    void deletePageSourceDraft(selectedPath);
+  }
+
+  /** Builds + publishes the SELECTED page.tsx (only enabled when it matches
+   * a real static route - see `previewTarget`'s own doc comment) - a
+   * shortcut for what `PageBuild.tsx`'s per-row "Build" button already does,
+   * without leaving this editor. Always compiles from `savedByPath` (never
+   * `sourceByPath`, which may hold this OR ANOTHER open file's unsaved
+   * edit) - published output must only ever reflect what's actually on
+   * storage, matching what `PageBuild.tsx` itself builds from (a fresh
+   * server fetch), never a local in-browser buffer nothing else can see. */
+  async function handleBuildCurrent() {
+    if (!previewTarget || !allTypes || !assetHrefs) return;
+    setBuildingCurrent(true);
+    try {
+      const result = await buildPage({
+        pathname: previewTarget.pathname,
+        origin,
+        adminPath: path,
+        siteLang: "en",
+        assets: { globalsCssHref: assetHrefs.globalsCssHref, hydrateEntryHref: assetHrefs.hydrateBuiltHref, veiOverlayHref: assetHrefs.veiOverlayHref },
+        preactRuntimeHref: assetHrefs.preactRuntimeHref,
+        builtAssetsBaseUrl: `${path}/api/built-assets`,
+        dryHttpEndpoint: `${path}/api/dry-http`,
+        allTypes,
+        sourceByPath: savedByPath,
+        entryPath: previewTarget.entryPath,
+        layoutPaths: previewTarget.layoutPaths,
+        params: previewTarget.params,
+      });
+      await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname });
+      toast.add({ type: "success", title: `Built "${previewTarget.pathname}"` });
+    } catch (error) {
+      const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
+      toast.add({ type: "error", title: `Failed to build "${previewTarget.pathname}"`, description: message });
+    } finally {
+      setBuildingCurrent(false);
+    }
+  }
+
+  /** Builds + publishes every page on the site (static + resolved dynamic),
+   * same target set `PageBuild.tsx`'s own "Build all" uses
+   * (`resolveAllPageTargets`) - a convenience shortcut, deliberately without
+   * that page's resumable-queue/localStorage machinery (a closed tab losing
+   * progress here just means re-clicking "Build all", same as any other
+   * in-progress admin action elsewhere in this app); `PageBuild.tsx` remains
+   * the place for a large site's resilient, resumable run. Batches publishes
+   * (`publishBuiltPages`) the same way, for the same reason. Compiles from
+   * `savedByPath` - see `handleBuildCurrent`'s doc comment for why. */
+  async function handleBuildAll() {
+    if (!allTypes || !assetHrefs) return;
+    const BATCH_SIZE = 5;
+    setBuildAllProgress({ done: 0, total: 0 });
+    try {
+      const { targets } = await resolveAllPageTargets(savedByPath, allTypes, `${path}/api/dry-http`);
+      const pathnames = [...targets.keys()];
+      setBuildAllProgress({ done: 0, total: pathnames.length });
+      let batch: { result: PageBuildResult; options: PublishOptions }[] = [];
+      let done = 0;
+      for (const pathname of pathnames) {
+        const target = targets.get(pathname)!;
+        const result = await buildPage({
+          pathname,
+          origin,
+          adminPath: path,
+          siteLang: "en",
+          assets: { globalsCssHref: assetHrefs.globalsCssHref, hydrateEntryHref: assetHrefs.hydrateBuiltHref, veiOverlayHref: assetHrefs.veiOverlayHref },
+          preactRuntimeHref: assetHrefs.preactRuntimeHref,
+          builtAssetsBaseUrl: `${path}/api/built-assets`,
+          dryHttpEndpoint: `${path}/api/dry-http`,
+          allTypes,
+          sourceByPath: savedByPath,
+          entryPath: target.entryPath,
+          layoutPaths: target.layoutPaths,
+          params: target.params,
+        });
+        batch.push({ result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname } });
+        if (batch.length >= BATCH_SIZE) {
+          await publishBuiltPages(batch, `${path}/api/pages-build`);
+          done += batch.length;
+          batch = [];
+          setBuildAllProgress({ done, total: pathnames.length });
+        }
+      }
+      if (batch.length > 0) {
+        await publishBuiltPages(batch, `${path}/api/pages-build`);
+        done += batch.length;
+      }
+      toast.add({ type: "success", title: `Built ${done} ${done === 1 ? "page" : "pages"}` });
+    } catch (error) {
+      const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
+      toast.add({ type: "error", title: "Build all failed", description: message });
+    } finally {
+      setBuildAllProgress(null);
     }
   }
 
@@ -706,6 +823,18 @@ export default function PageEditor() {
   if (entries === null) return <span class="hint">Loading…</span>;
 
   const PREVIEW_FRAME_HEIGHT = 900;
+  // `previewTarget` alone isn't enough here - it's also truthy for a
+  // `layout.tsx`/`404.tsx`/`500.tsx` preview (see its own doc comment), none
+  // of which `resolveAllPageTargets`/`PageBuild.tsx` treat as a buildable
+  // target on their own.
+  const isPageTarget = !!selectedPath && /(^|\/)page\.tsx$/.test(selectedPath) && !!previewTarget;
+  // Any loaded file's unsaved edit, not just the selected one - a Build
+  // click always compiles from `savedByPath` (see `handleBuildCurrent`'s doc
+  // comment), so an unsaved edit ANYWHERE would silently be left out of a
+  // published build; better to block and point at Save than publish
+  // something the user isn't looking at.
+  const anyDirty = Object.keys(sourceByPath).some((p) => sourceByPath[p] !== savedByPath[p]);
+  const buildBusy = buildingCurrent || buildAllProgress !== null;
 
   return (
     <div class="page-components-shell">
@@ -741,6 +870,19 @@ export default function PageEditor() {
         <div class="page-editor-toolbar-section" style={{ flex: 1 }}>
           <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedPath ?? ""}</span>
           <div class="spacer" />
+          {selectedPath && (
+            <button type="button" class="ghost sm" disabled={!dirty || saving} onClick={handleReset}>
+              Reset
+            </button>
+          )}
+          {isPageTarget && (
+            <button type="button" class="ghost sm" disabled={dirty || buildBusy} aria-busy={buildingCurrent} onClick={() => void handleBuildCurrent()}>
+              {buildingCurrent ? "Building…" : "Build"}
+            </button>
+          )}
+          <button type="button" class="ghost sm" disabled={anyDirty || buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
+            {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
+          </button>
           {selectedPath && (
             <button type="button" class="sm" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
               Save

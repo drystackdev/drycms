@@ -12,6 +12,8 @@ import { buildDocument } from "../server/app-router/build-document.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { compileTailwindCss } from "./tailwind-build.js";
+import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import { resolveDynamicPages } from "./dynamic-routes.js";
 
 /**
  * The browser build orchestrator (`plans/app-r2.md` mục 7's "một nguồn
@@ -490,4 +492,58 @@ export async function publishBuiltPages(
   if (body.errors && body.errors.length > 0) {
     throw new PageBuildError(body.errors.map((e) => `"${e.pathname}": ${e.message}`).join("; "));
   }
+}
+
+/** One buildable page, static or dynamic - what `resolveAllPageTargets`
+ * resolves the whole site down to and `PageBuildInput.entryPath`/
+ * `layoutPaths`/`params` are built from directly. For a dynamic page these
+ * come from `dynamic-routes.ts`'s real resolved slug, NOT re-derivable from
+ * the pathname alone the way a static page's `entryPath`/`layoutPaths` are
+ * (`matchSourceRoute` has no way to turn `/blogs/hello-world` back into
+ * `blogs/[slug]/page.tsx` without already knowing which template it came
+ * from). */
+export interface PageTarget {
+  pathname: string;
+  entryPath: string;
+  layoutPaths: string[];
+  params: Record<string, string | string[]>;
+}
+
+/** A `[param]` template whose route exists but no content type's
+ * `seoUrlPattern` matches it - shown as a warning, not silently dropped
+ * (`dynamic-routes.ts`'s own `DynamicTemplateResolution.type: null`). */
+export interface UnmatchedTemplate {
+  pathnameTemplate: string;
+}
+
+/** Every buildable page on the site - static `page.tsx` routes plus every
+ * dynamic `[param]` template resolved against its matching content type's
+ * `seoUrlPattern` rows (`dynamic-routes.ts`). Shared by `PageBuild.tsx`
+ * ("Build all") and `PageEditor.tsx` (its own "Build all" shortcut) so the
+ * 2 never compute a different notion of "every page" from the same
+ * `sourceByPath`. */
+export async function resolveAllPageTargets(
+  sourceByPath: Record<string, string>,
+  allTypes: ContentTypeDefinition[],
+  dryHttpEndpoint: string,
+): Promise<{ targets: Map<string, PageTarget>; unmatchedTemplates: UnmatchedTemplate[] }> {
+  const manifest = buildManifestRouteTree(Object.keys(sourceByPath));
+  const targets = new Map<string, PageTarget>();
+  for (const pathname of staticPagePaths(manifest)) {
+    const match = matchSourceRoute(manifest, pathname);
+    if (match) targets.set(pathname, { pathname, ...match });
+  }
+  const unmatchedTemplates: UnmatchedTemplate[] = [];
+  const dynamicTemplates = listDynamicPageTemplates(manifest);
+  if (dynamicTemplates.length > 0) {
+    const resolutions = await resolveDynamicPages(dynamicTemplates, allTypes, dryHttpEndpoint);
+    for (const resolution of resolutions) {
+      if (!resolution.type) {
+        unmatchedTemplates.push({ pathnameTemplate: resolution.template.pathnameTemplate });
+        continue;
+      }
+      for (const page of resolution.pages) targets.set(page.pathname, page);
+    }
+  }
+  return { targets, unmatchedTemplates };
 }

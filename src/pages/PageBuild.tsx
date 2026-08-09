@@ -11,9 +11,17 @@ import TextField from "../components/fields/TextField.js";
 import NumberField from "../components/fields/NumberField.js";
 import { parseScheduleFlipIntervalMinutes, DEFAULT_SCHEDULE_FLIP_INTERVAL_MINUTES } from "../lib/schedule-flip-setting.js";
 import { useDocumentTitle } from "./page-common.js";
-import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
-import { resolveDynamicPages } from "../page-components/dynamic-routes.js";
-import { buildPage, publishBuiltPage, publishBuiltPages, PageBuildError, type PageBuildResult, type PublishOptions } from "../page-components/page-build.js";
+import {
+  buildPage,
+  publishBuiltPage,
+  publishBuiltPages,
+  resolveAllPageTargets,
+  PageBuildError,
+  type PageBuildResult,
+  type PageTarget,
+  type PublishOptions,
+  type UnmatchedTemplate,
+} from "../page-components/page-build.js";
 
 /**
  * Minimal admin "Build" page (`plans/app-r2.md` mục 11 - a first, real cut,
@@ -54,26 +62,6 @@ interface Row extends Record<string, unknown> {
   status: "not-built" | "stale" | "scheduled" | "live";
   builtAt: number | null;
   staleResource: string | null;
-}
-
-/** One buildable page, static or dynamic - what `buildOne` actually needs.
- * For a dynamic page these come from `dynamic-routes.ts`'s real resolved
- * slug, NOT re-derivable from the pathname alone the way a static page's
- * `entryPath`/`layoutPaths` are (`matchSourceRoute` has no way to turn
- * `/blogs/hello-world` back into `blogs/[slug]/page.tsx` without already
- * knowing which template it came from). */
-interface PageTarget {
-  pathname: string;
-  entryPath: string;
-  layoutPaths: string[];
-  params: Record<string, string | string[]>;
-}
-
-/** A `[param]` template whose route exists but no content type's
- * `seoUrlPattern` matches it - shown as a warning, not silently dropped
- * (`dynamic-routes.ts`'s own `DynamicTemplateResolution.type: null`). */
-interface UnmatchedTemplate {
-  pathnameTemplate: string;
 }
 
 /** `routes/asset-hrefs.ts`'s response shape (mục 7). */
@@ -247,26 +235,9 @@ export default function PageBuild() {
         );
         setSourceByPath(sources);
 
-        const manifest = buildManifestRouteTree(Object.keys(sources));
-        const nextTargets = new Map<string, PageTarget>();
-        for (const pathname of staticPagePaths(manifest)) {
-          const match = matchSourceRoute(manifest, pathname);
-          if (match) nextTargets.set(pathname, { pathname, ...match });
-        }
-        const dynamicTemplates = listDynamicPageTemplates(manifest);
-        if (dynamicTemplates.length > 0) {
-          const resolutions = await resolveDynamicPages(dynamicTemplates, types, `${path}/api/dry-http`);
-          const unmatched: UnmatchedTemplate[] = [];
-          for (const resolution of resolutions) {
-            if (!resolution.type) {
-              unmatched.push({ pathnameTemplate: resolution.template.pathnameTemplate });
-              continue;
-            }
-            for (const page of resolution.pages) nextTargets.set(page.pathname, page);
-          }
-          setUnmatchedTemplates(unmatched);
-        }
+        const { targets: nextTargets, unmatchedTemplates } = await resolveAllPageTargets(sources, types, `${path}/api/dry-http`);
         setTargets(nextTargets);
+        setUnmatchedTemplates(unmatchedTemplates);
 
         await reloadStatus();
       } catch (error) {
