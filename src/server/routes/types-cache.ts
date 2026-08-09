@@ -30,10 +30,33 @@ export const GET: DryRouteHandler = async (context) => {
     });
   } catch (error) {
     if (error instanceof StorageError && error.code === "not_found") {
-      // Not generated yet (a brand-new project before its first schema
-      // save/dev-server startup) - an empty file is a valid "nothing to
-      // type yet" answer, not an error the caller needs to branch on.
-      return new Response("", { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      // Not generated yet - the cache and `src/apps/dry.generated.d.ts`
+      // (git) are 2 representations of the same generated data kept in
+      // sync for the same reason `src/apps/pages` and `pagesSourceStorage`
+      // are (`sync-pages-r2.ts`): this cache is what serves code that
+      // isn't compiled from `src` at all (`PageEditor.tsx`'s in-browser
+      // Editer, reading `pagesSourceStorage`-backed files no `tsc`/on-disk
+      // pass ever sees). Unlike that pair, there's no real "edit" to
+      // reconcile here - the content is always fully DERIVED from the
+      // current schema, so a miss is just regenerated on the spot instead
+      // of requiring a schema save/"Apply and build"
+      // (`regenerateTypesCache`'s trigger) or a Node-only dev-server
+      // restart (`dev-server.mjs`) to have happened first - neither of
+      // which runs automatically under `wrangler dev`/D1, where this was
+      // found live serving blank content with no signal why. Uses
+      // `getContentAdapters` (not a Node-only adapter constructor) so this
+      // works identically in every runtime, D1 included.
+      try {
+        const output = generateDryTypes(await getContentAdapters(context).schema.listContentTypes());
+        await writeGeneratedDryTypes(output);
+        return new Response(output, { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      } catch (regenError) {
+        // Same "never fatal" guarantee the original blank-response fallback
+        // had - a DB hiccup here must degrade to "nothing to type yet",
+        // not a 500 that breaks the whole Page Editor for it.
+        console.error("[drycms] failed to lazily regenerate dry.generated.d.ts:", regenError);
+        return new Response("", { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      }
     }
     return errorResponse(error);
   }

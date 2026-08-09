@@ -1060,6 +1060,73 @@ reviewing `components.css` directly:
 - 0 typecheck errors; full suite still 1075 passed / 12 failed (same
   pre-existing group).
 
+## Update 2026-08-09, part 13: `types-cache` self-healing + a real incident
+(`src/apps/pages/**` deleted by a concurrent session) + IDE/tooling fixes
+
+Three more requests, the middle one a live production-feeling incident:
+
+- **`/dry/api/types-cache` now self-heals a genuine cache miss** instead of
+  serving blank content forever until someone happens to trigger a schema
+  save/"Apply and build". Root cause (found earlier this session, part 10):
+  `writeGeneratedDryTypes` only runs from `dev-server.mjs`'s Node-only
+  startup hook or `regenerateTypesCache` (on a content-type save) - neither
+  fires automatically under `wrangler dev`/D1. Fixed in
+  `src/server/routes/types-cache.ts`'s `GET` itself: on a `not_found`, use
+  `getContentAdapters(context)` (the same D1-safe accessor every other route
+  uses, not a Node-only constructor) to list types, generate the `.d.ts`
+  string, persist it via `writeGeneratedDryTypes` (so the NEXT read is a
+  normal cache hit), and return it immediately - wrapped in its own
+  try/catch so a regen failure still degrades to blank, preserving the
+  original "never fatal" contract. Added `types-cache.test.ts` (2 new
+  tests: miss → lazy-regen-and-persist with real schema-derived content;
+  hit → serves stored content verbatim, unregenerated) using the same
+  temp-dir `vi.mock("../config.js", ...)` pattern `pages-build.test.ts`
+  already established.
+- **Real incident, mid-session: `http://localhost:5173/` 404'd entirely.**
+  Investigated live (`ps`/`lsof`/`curl` against the running dev server, not
+  guesswork) and found a concurrent session (same git identity - either the
+  user in another window, or another agent using their config) had just
+  committed (`27cebf8`) a change that, among other things, deleted
+  `src/apps/pages/{404,500,page,layout}.tsx` and `about/page.tsx`,
+  describing them as "unused" in the commit message. They were not:
+  `page-handler.ts`'s dev-mode branch reads `src/apps/pages/**` via
+  `discoverRoutes()` for every request, completely independent of
+  `pagesSourceStorage`/`built/live/*` (only consulted in the prod,
+  non-VEI branch). That same commit's diff also happened to include an
+  edit to `src/server/routes/types-cache.ts` matching what I was mid-way
+  through in my own uncommitted working tree at the time - the concurrent
+  session's commit swept up my in-progress edit too. Recovered by
+  confirming the deleted paths existed in the parent commit
+  (`git show <parent>:<path>`) and restoring them with
+  `git checkout <parent-commit> -- src/apps/pages/` (pulled verbatim from
+  history, nothing hand-reconstructed), then confirming `/` and `/about`
+  both curl 200 again. Full incident write-up in this project's memory
+  (`feedback_concurrent_repo_editing.md`, 2026-08-09 entry) since it's
+  exactly the kind of cross-session risk that recurs in this repo.
+- **VS Code + `tsconfig.json` now understand `.dry/pages-source`** (the
+  local-disk backing store for `pagesSourceStorage`) **as real source**,
+  directly motivated by the incident above - `tsconfig.json`'s `include`
+  gained `.dry/pages-source/**/*.tsx` (IntelliSense/`dry()` ambient types
+  when opened directly; also now covered by `bun run typecheck`, which
+  surfaced and fixed one real pre-existing bug: `about/page.tsx` had a dead
+  `dry().singleton("")` line with an invalid empty name, removed along with
+  the now-pointless `async`). `.vscode/settings.json` hides the REST of
+  `.dry/` (`types-cache`, `pages-cache`, `kv`, `content.sqlite` -
+  generated/runtime data, never source) via `files.exclude`/
+  `search.exclude` - `.dry/types-cache/dry.generated.d.ts` specifically was
+  showing a false-positive "cannot find module" when opened directly in VS
+  Code (it re-emits `src/apps/dry.generated.d.ts`'s relative imports
+  verbatim, which only resolve from `src/apps/`; opening the `.dry/`
+  copy falls outside `tsconfig.json`'s `include` entirely, so VS Code
+  checks it as an inferred loose-file project instead) - hiding it is the
+  fix, not changing how the CMS generates that content, which is correct
+  for its real, intended location. `AGENTS.md`/`CLAUDE.md` (symlinked to
+  it) gained a "Two page-source roots" section spelling out the
+  `src/apps/pages/**`-is-a-hard-runtime-dependency fact plainly, so a
+  future session (concurrent or not) doesn't repeat the deletion.
+- 0 typecheck errors; full suite now 1077 passed / 12 failed (2 new
+  `types-cache.test.ts` tests, same pre-existing unrelated failure group).
+
 ## Speed
 
 Single long session, 2026-08-09 (spanning a context-window compaction

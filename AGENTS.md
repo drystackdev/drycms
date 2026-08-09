@@ -29,6 +29,41 @@ separate compile step, and no directory needs a manual rebuild to pick up
 changes (dev server + Vite HMR cover all of it, server code included - see
 below).
 
+### Two page-source roots - never delete one because the other looks redundant
+
+The site's own pages/layouts (as opposed to the admin app) exist in TWO
+separate places that look like duplicates of each other but are not:
+
+- `src/apps/pages/**` (git-tracked) - `page.tsx`/`layout.tsx`/`404.tsx`/
+  `500.tsx`/etc., read via `import.meta.glob`. `src/server/page-handler.ts`
+  renders EXCLUSIVELY from here for **every dev-server request, and any
+  VEI-authenticated session in prod** - this is a hard runtime dependency,
+  not a fallback: deleting a file here breaks that page in `bun run dev`
+  immediately, even if the exact same content also exists in
+  `pagesSourceStorage`/has been "built" through `/dry/page-build`.
+- `.dry/pages-source/` locally (`pagesSourceStorage` generally, git-ignored)
+  - the SAME pages authored/edited through the browser at `/dry/page-editor`
+    (`PageEditor.tsx`) instead of committed to git. This is what the app-r2
+    browser build pipeline compiles and publishes to `built/live/*`, which
+    `page-handler.ts` serves in prod for an ordinary (non-VEI) visitor
+    instead of live-rendering - see that file's own doc comment for the
+    full prod-vs-dev split.
+
+The two roots are kept in sync only by `scripts/sync-pages-r2.ts`'s
+`push`/`pull` (both never-overwrite; auto-run in that order on every
+`bun run dev` startup) - editing one does not update the other outside that
+sync. **Before deleting or treating anything under `src/apps/pages/**` as
+dead/unused, check whether it's actually unreferenced** (e.g. via
+`git log`/a real usage search) rather than assuming `pagesSourceStorage`
+having the same-looking content makes the git copy redundant - it does not,
+and removing it 404s the live dev server. `.dry/pages-source/**/*.tsx` (and
+`.dry/components`, `.dry/richtext-components`, once non-empty - the same
+category for Component Builder) are included in `tsconfig.json` alongside
+`src/**` for IDE/typecheck purposes, but the rest of `.dry/` (`types-cache`,
+`pages-cache`, `kv`, `content.sqlite`) is pure generated/runtime data, never
+source - don't add it to `include` even if a file there has a `.ts`/`.d.ts`
+extension.
+
 ## Development
 
 Start the dev server in the background:
@@ -53,8 +88,10 @@ other packages in this repo). End-to-end tests (Playwright) live in `e2e/`
 at the repo root and run with `bun run test:e2e` against a running dev
 server.
 
-`bun run typecheck` runs `tsc --noEmit` over `src/` (excluding `*.test.ts` -
-tests are type-checked implicitly by vitest's own transform, not by `tsc`).
+`bun run typecheck` runs `tsc --noEmit` over `src/` plus
+`.dry/pages-source/**/*.tsx` (excluding `*.test.ts` - tests are type-checked
+implicitly by vitest's own transform, not by `tsc`) - see `tsconfig.json`'s
+own comment for why that one `.dry/` subdirectory is included.
 
 ## Status tracking
 

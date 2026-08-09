@@ -1,3 +1,27 @@
 {
-  "css.styleSheets": ["packages/drycms/src/styles/*.css"]
+  "css.styleSheets": ["packages/drycms/src/styles/*.css"],
+  // `.dry/pages-source` (and `components`/`richtext-components`, same
+  // category once non-empty) hold real browser-authored `.tsx` source -
+  // `tsconfig.json` includes them for that reason. The rest of `.dry/` is
+  // generated/cache/runtime-data output that was never meant to be opened
+  // as a project file - `types-cache/dry.generated.d.ts` in particular
+  // re-emits `src/apps/dry.generated.d.ts`'s own relative imports verbatim,
+  // which only resolve correctly from `src/apps/`, so VS Code opening this
+  // copy directly (outside `tsconfig.json`'s `include`, so it falls back to
+  // an inferred loose-file project) shows a real-looking but meaningless
+  // "cannot find module" error. Hiding it here is the fix, not changing
+  // how the CMS generates that content, which is correct for its intended
+  // location.
+  "files.exclude": {
+    "**/.dry/types-cache": true,
+    "**/.dry/pages-cache": true,
+    "**/.dry/kv": true,
+    "**/.dry/content.sqlite": true
+  },
+  "search.exclude": {
+    "**/.dry/types-cache": true,
+    "**/.dry/pages-cache": true,
+    "**/.dry/kv": true,
+    "**/.dry/content.sqlite": true
+  }
 }
