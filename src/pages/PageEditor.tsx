@@ -826,6 +826,25 @@ export default function PageEditor() {
     return null;
   }, [manifest, selectedPath, sourceByPath]);
 
+  /** The chain of files this preview actually renders through, root-first:
+   * every `layout.tsx` wrapping the target (exactly the `layoutPaths`
+   * `buildPage` is handed - the same list the real request-time render
+   * nests, not a re-derivation), plus the previewed page itself as the
+   * trailing crumb. Surfaced as a breadcrumb under the preview so "which
+   * layouts is this page inside?" is answerable without walking the tree,
+   * and each crumb selects that file - which in turn re-targets the
+   * preview (a layout previews against its own placeholder child, see
+   * `previewTarget`).
+   *
+   * The entry crumb is skipped when `extraSource` is set: that's the
+   * synthetic `LAYOUT_PLACEHOLDER_PATH`, not a real file anyone can open. */
+  const previewChain = useMemo(() => {
+    if (!previewTarget || previewTarget.layoutPaths.length === 0) return null;
+    const paths = [...previewTarget.layoutPaths];
+    if (!previewTarget.extraSource) paths.push(previewTarget.entryPath);
+    return paths.map((filePath) => ({ filePath, current: filePath === selectedPath }));
+  }, [previewTarget, selectedPath]);
+
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
   // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
@@ -1142,6 +1161,28 @@ export default function PageEditor() {
                 <p class="hint" style={{ padding: "1rem" }}>
                   Select a page.tsx, layout.tsx, 404.tsx, or 500.tsx to preview it.
                 </p>
+              )}
+              {/* Breadcrumb of the layout chain this preview renders through
+                * - see `previewChain`'s doc comment. Sits under the preview
+                * (not in its header) so it reads bottom-up as "this page,
+                * inside these layouts", and so the header's controls keep
+                * the room they already have. */}
+              {previewChain && (
+                <ol class="page-editor-preview-chain" aria-label="Layout chain">
+                  {previewChain.map(({ filePath, current }) => (
+                    <li key={filePath}>
+                      <button
+                        type="button"
+                        class="ghost sm"
+                        title={current ? `${filePath} (currently open)` : `Open ${filePath}`}
+                        aria-current={current ? "true" : undefined}
+                        onClick={() => setSelectedPath(filePath)}
+                      >
+                        {filePath}
+                      </button>
+                    </li>
+                  ))}
+                </ol>
               )}
             </div>
             <div class={`page-components-resize-handle${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />

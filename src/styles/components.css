@@ -5642,13 +5642,66 @@
       border-bottom: 1px solid var(--dry-border);
     }
 
+    /* Preview panel's own FOOTER, mirroring `.page-editor-preview-label`'s
+       header above it - the layout chain the previewed page renders through
+       (`PageEditor.tsx`'s `previewChain`), as a breadcrumb of buttons that
+       each open that file. Wraps rather than scrolls: the preview column can
+       be as narrow as 280px, where a deep chain would otherwise hide its own
+       last (most specific) crumb behind an overflow. */
+    .page-editor-preview-chain {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.125rem;
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 0.25rem 0.5rem;
+      border-top: 1px solid var(--dry-border);
+      list-style: none;
+      font-size: var(--dry-text-sm);
+
+      & li {
+        display: flex;
+        align-items: center;
+        gap: 0.125rem;
+        min-width: 0;
+      }
+
+      /* Separator on the ITEM, not inside the button, so it never becomes
+         part of a crumb's own click target. */
+      & li + li::before {
+        content: "›";
+        color: var(--dry-muted-foreground);
+      }
+
+      /* `li > button.ghost`, not a bare `button`: the shared button rule is
+         itself `.dry button.ghost`, so anything less specific loses both the
+         muted color and the lighter weight below. */
+      & li > button.ghost {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dry-muted-foreground);
+        font-weight: 400;
+      }
+
+      /* The file currently open in the editor - the chain doubles as "where
+         am I", so the active crumb reads as selected rather than as just
+         another link. */
+      & li > button.ghost[aria-current] {
+        color: var(--dry-foreground);
+        font-weight: var(--dry-weight-button);
+      }
+    }
+
     .page-components-body {
       display: flex;
       flex: 1;
       min-height: 0;
       z-index: 1;
 
-      & .page-components-resize-handle{
+      & .page-components-resize-handle {
         margin-right: -3px;
         z-index: 5;
       }
@@ -5891,6 +5944,12 @@
       &.horizontal.dragging::before {
         inset: -6px 0;
       }
+
+      &.horizontal {
+        margin: 0;
+        border: unset;
+        z-index: 5;
+      }
     }
 
     .page-components-main {
@@ -6027,9 +6086,14 @@
      * sizing only, no overflow/flex here, the library owns that on the real
      * viewport element (matches `.magic-chat-messages`'s host/viewport
      * split). */
+    /* `flex: 1; min-height: 0` rather than `height: 100%`: the preview column
+       is a flex column that now also holds a header AND a footer (the layout
+       chain), so the viewport has to take the space LEFT OVER, not the full
+       column height. */
     .page-components-preview-viewport {
       position: relative;
-      height: 100%;
+      flex: 1;
+      min-height: 0;
       background-color: var(--dry-background);
     }
 
