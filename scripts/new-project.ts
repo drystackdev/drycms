@@ -23,8 +23,8 @@
  *   makes NO `dry()` call, so the site renders on a DB that has nothing
  *   modelled in it yet. Deleting the directory outright (what this script
  *   used to do) leaves every URL a 404 with no hint of where to start.
- * - `dry.seed.json` - re-snapshotted from the fresh DB. This is the one that
- *   silently undid the whole reset before: `seed.ts`'s
+ * - `src/apps/dry.seed.json` - re-snapshotted from the fresh DB. This is the
+ *   one that silently undid the whole reset before: `seed.ts`'s
  *   `resolveDefaultContentTypeDefinitions` lets a packaged seed take over
  *   COMPLETELY when present, so a stale `dry.seed.json` re-created all of
  *   the old project's content types (plus its singleton copy and its nav
@@ -149,7 +149,7 @@ console.log("This creates a new branch, then permanently resets:");
 console.log("  - .dry/pages-source/  → a minimal blank starter (demo site removed, dev's live app-router source)");
 console.log("  - .dry/               → fresh DB: only the built-in system content types, no entries,");
 console.log("                          no users (bun run dev asks for a first-admin registration again)");
-console.log("  - dry.seed.json       → re-snapshotted from that fresh DB (drops the old project's");
+console.log("  - src/apps/dry.seed.json → re-snapshotted from that fresh DB (drops the old project's");
 console.log("                          content types, singleton content and nav rows)");
 console.log("  - public/             → deleted (uploaded media + dry-icons/)");
 console.log("  - dist/, .wrangler/   → deleted (stale build output for the old project)");
@@ -249,8 +249,8 @@ if (dropSeedPages) remove(`${seedPagesScript}  (old project content seed)`, seed
 // The file itself has to keep existing - `seed.ts` imports it statically, so
 // its absence is a hard build error on every runtime (that import is what
 // makes the seed work on Workers, which has no filesystem).
-console.log("\nResetting dry.seed.json to an empty packaged seed...");
-writeFileSync(at("dry.seed.json"), `${JSON.stringify({ $schema: "./dry.seed.schema.json" }, null, 2)}\n`);
+console.log("\nResetting src/apps/dry.seed.json to an empty packaged seed...");
+writeFileSync(at("src/apps/dry.seed.json"), `${JSON.stringify({ $schema: "./dry.seed.schema.json" }, null, 2)}\n`);
 
 console.log("Wiping .dry/ (content DB, KV, caches, sessions)...");
 const dryRoot = at(".dry");

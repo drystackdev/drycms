@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/drycms/drycms/main/src/apps/dry.seed.schema.json",
+  "title": "drycms packaged content-type seed",
+  "description": "Validates src/apps/dry.seed.json - see plans/content-type-seed.md and src/content-types/seed.ts's PackagedSeed/loadPackagedSeed. Hand-maintained: keep in sync with src/content-types/types.ts's FieldValidation/FieldDefinition/ContentTypeFeatures/ContentTypeDefinition whenever those change.",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "contentTypes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ContentTypeDefinition" }
+    },
+    "singletonData": {
+      "type": "object",
+      "description": "A singleton's actual row value at the last seed:sync, keyed by content-type id - see PackagedSeed.singletonData.",
+      "additionalProperties": true
+    },
+    "menuData": {
+      "type": "array",
+      "description": "The `menu` collection's rows at the last seed:sync - see PackagedSeed.menuData.",
+      "items": { "type": "object" }
+    }
+  },
+  "required": ["contentTypes"],
+  "additionalProperties": false,
+  "$defs": {
+    "ContentTypeKind": {
+      "enum": ["collection", "singleton", "component"]
+    },
+    "FieldValidation": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "boolean" },
+        "unique": { "type": "boolean" },
+        "min": { "type": ["number", "string"], "description": "Number, or an ISO date string (JSON has no Date type) for a date field's `min`." },
+        "max": { "type": ["number", "string"], "description": "Number, or an ISO date string (JSON has no Date type) for a date field's `max`." },
+        "minLength": { "type": "number" },
+        "maxLength": { "type": "number" },
+        "regex": { "type": "string" },
+        "format": { "enum": ["none", "email", "url", "slug"] }
+      },
+      "additionalProperties": false
+    },
+    "FieldDefinition": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "type": { "type": "string", "description": "A field-registry type key (text/number/relation/component/...) - not a closed enum here, field-registry.ts is the source of truth and grows over time." },
+        "description": { "type": "string" },
+        "config": { "description": "Per-field-type config, deliberately untyped (`unknown` in FieldDefinition itself too) - shape is field-registry.ts's `configFields` for `type`." },
+        "validation": { "$ref": "#/$defs/FieldValidation" },
+        "default": { "description": "Deliberately untyped, same as `config`." },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "name", "label", "type", "config", "validation", "order"],
+      "additionalProperties": false
+    },
+    "ContentTypeFeatures": {
+      "type": "object",
+      "properties": {
+        "slug": { "type": "boolean" },
+        "draft": { "type": "boolean" },
+        "schedule": { "type": "boolean" },
+        "timestamps": { "type": "boolean" },
+        "seo": { "type": "boolean" },
+        "sortable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "ContentTypeDefinition": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/ContentTypeKind" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "livePreviewUrl": { "type": "string" },
+        "seoUrlPattern": { "type": "string" },
+        "features": { "$ref": "#/$defs/ContentTypeFeatures" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/FieldDefinition" } },
+        "fieldOrder": { "type": "array", "items": { "type": "string" } },
+        "fieldSides": { "type": "object", "additionalProperties": { "enum": ["left", "right"] } },
+        "fieldDescriptions": { "type": "object", "additionalProperties": { "type": "string" } },
+        "fieldDisplayFields": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+        "deletedFieldIds": { "type": "array", "items": { "type": "string" } },
+        "deletedFeatureKeys": { "type": "array", "items": { "type": "string" } },
+        "version": { "type": "number" },
+        "hidden": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "frozen": { "type": "boolean" },
+        "protectedFieldIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "kind", "name", "label", "fields", "version"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,11 +1,11 @@
 /**
  * Snapshots the current dev content-type DB's full list (every content
  * type, including the built-in defaults - they're already there via the
- * normal boot seeding) into `dry.seed.json` at the repo root, plus each
- * singleton's actual row value (`PackagedSeed.singletonData`) and the `menu`
- * collection's rows (`PackagedSeed.menuData` - see `applyPackagedMenuData`
- * for why that one collection is carried and no other), both in
- * `src/content-types/seed.ts`. Written by `bun run seed:sync` - see `plans/content-type-seed.md`.
+ * normal boot seeding) into `src/apps/dry.seed.json`, plus each singleton's
+ * actual row value (`PackagedSeed.singletonData`) and the `menu` collection's
+ * rows (`PackagedSeed.menuData` - see `applyPackagedMenuData` for why that
+ * one collection is carried and no other), both in `src/content-types/seed.ts`.
+ * Written by `bun run seed:sync` - see `plans/content-type-seed.md`.
  */
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -40,7 +40,7 @@ export async function writeContentTypeSeedFile(): Promise<{ count: number; singl
     ? (await entryAdapter.listEntries(menuType, allTypes, { page: 0, pageSize: 500 })).rows.map((row) => row.value)
     : [];
 
-  const target = fileURLToPath(new URL("../../dry.seed.json", import.meta.url));
+  const target = fileURLToPath(new URL("../../src/apps/dry.seed.json", import.meta.url));
   const seed: PackagedSeed = { contentTypes: allTypes };
   if (singletonCount > 0) seed.singletonData = singletonData;
   if (menuData.length > 0) seed.menuData = menuData;

@@ -312,14 +312,17 @@ skipping the session fetch too) when it doesn't match.
 An app's OWN content types (as opposed to the 6 built-in defaults above) can
 be packaged for a fresh production deploy - see `plans/content-type-seed.md`
 for the full design. `bun run seed:sync` snapshots the current dev content-
-type DB (every type, including the 6 defaults) into `dry.seed.json` at the
-repo root; when that file exists, `content-types/seed.ts`'s
+type DB (every type, including the 6 defaults) into `src/apps/dry.seed.json`
+(alongside `dry.generated.d.ts` - both are generated-but-committed app
+artifacts); when that file has content, `content-types/seed.ts`'s
 `resolveDefaultContentTypeDefinitions()` uses it INSTEAD of
 `defaultContentTypeDefinitions()` for every boot's `pendingSeedStatements`
 diff - completely replacing the built-in list, not layering on top of it.
-Read with plain `node:fs` (not Vite's `import.meta.glob`): this module is
-also reached from plain `bun scripts/*.ts` runs (`seed-sync.ts`,
-`dry-generate.ts`), which never go through Vite. Separately, `bun run build`
+Imported as a plain static JSON import (`resolveJsonModule`), not read with
+`node:fs`: this module also has to load on Cloudflare Workers, which has no
+filesystem, and is also reached from plain `bun scripts/*.ts` runs
+(`seed-sync.ts`, `dry-generate.ts`), which never go through Vite - a static
+import is the only form both runtimes resolve with no I/O. Separately, `bun run build`
 zips the `storage`/`icons`/`components.storage`/`pageComponents.storage`
 roots into `dist/server/seed-assets.zip` (`src/lib/zip.ts`, a hand-rolled
 STORE-only container - no new dependency); `routes/auth.ts`'s

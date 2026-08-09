@@ -1,6 +1,6 @@
 /**
- * Snapshots the CURRENT dev content-type DB's full list into `dry.seed.json`
- * at the repo root - the "separate seed script" from `plans/
+ * Snapshots the CURRENT dev content-type DB's full list into
+ * `src/apps/dry.seed.json` - the "separate seed script" from `plans/
  * content-type-seed.md`: overwrites the file wholesale each run (a
  * snapshot, not a merge). See `scripts/lib/schema-sync.ts` for the
  * implementation.

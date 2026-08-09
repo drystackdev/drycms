@@ -1,4 +1,4 @@
-import packagedSeedJson from "../../dry.seed.json";
+import packagedSeedJson from "../apps/dry.seed.json";
 import type { EntryValue } from "./engine/entry-codec.js";
 import type { ContentEntryEngineAdapter } from "./engine/entries-types.js";
 import { planMigration, type Statement } from "./migration.js";
@@ -36,10 +36,10 @@ export interface PackagedSeed {
 }
 
 /**
- * `dry.seed.json` (repo root, alongside `dry.config.ts`) is an app's own
- * packaged content-type seed - see `plans/content-type-seed.md`. A PLAIN
- * STATIC IMPORT, which is the only form that satisfies both runtimes this
- * module has to load under:
+ * `src/apps/dry.seed.json` (alongside `dry.generated.d.ts` - same
+ * "generated but committed" category) is an app's own packaged content-type
+ * seed - see `plans/content-type-seed.md`. A PLAIN STATIC IMPORT, which is
+ * the only form that satisfies both runtimes this module has to load under:
  *
  * - Vite's SSR build for Cloudflare Workers, which has no filesystem at all.
  *   The previous `readFileSync(process.cwd() + "/dry.seed.json")` didn't
@@ -56,8 +56,8 @@ export interface PackagedSeed {
  * inline it into the bundle, so the value is present with no I/O on any
  * runtime. The trade-off versus the old read: absence is now a BUILD error
  * rather than a silent fallback to the built-in defaults - deliberate, since
- * silence is exactly what hid the Workers bug. `dry.seed.json` is committed
- * at the repo root; `scripts/seed-sync.ts` regenerates it.
+ * silence is exactly what hid the Workers bug. `src/apps/dry.seed.json` is
+ * committed; `scripts/seed-sync.ts` regenerates it.
  */
 const realPackagedSeed = packagedSeedJson as unknown as PackagedSeed;
 
