@@ -16,6 +16,7 @@ import { mergeRefs } from "../lib/merge-refs.js";
 import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
 import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
+import { fetchJson, toUrlPath, type AssetHrefs } from "../page-components/pages-source-http.js";
 import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft } from "../page-components/page-source-draft-db.js";
 import {
   buildPage,
@@ -200,26 +201,6 @@ const PREVIEW_NAVIGATE_MESSAGE = "dry-page-editor-preview-navigate";
  * pathname - no origin-joining logic duplicated on this side. */
 function buildPreviewNavigationScript(): string {
   return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);})();</script>`;
-}
-
-/** `routes/asset-hrefs.ts`'s response shape - same as `PageBuild.tsx`'s own
- * local copy (not shared - both are small, page-local types). */
-interface AssetHrefs {
-  globalsCssHref: string;
-  hydrateEntryHref: string;
-  veiOverlayHref: string;
-  preactRuntimeHref: string;
-  hydrateBuiltHref: string;
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
-  return (await response.json()) as T;
-}
-
-function toUrlPath(relativePath: string): string {
-  return relativePath.split("/").map(encodeURIComponent).join("/");
 }
 
 /** Same `?tree`-unsupported (R2/S3) fallback `PageBuild.tsx` uses, but

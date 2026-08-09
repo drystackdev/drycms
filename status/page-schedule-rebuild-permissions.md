@@ -32,6 +32,13 @@ buttons:
   PageBuild.tsx`, `server/routes/pages-source.ts`, `server/routes/
   pages-source-github-sync.ts` doc comments, `plans/app-r2.md`'s decision
   log (annotated, not rewritten).
+- **Known, accepted gap**: no migration reconciles a role that was granted
+  only the old `system-code` (not `system-build`) before this merge - it
+  would lose Page Editor access with no warning. Not fixed: the app is
+  still in dev with no live roles depending on the old split, so the
+  "nobody was ever granted one without the other" assumption above holds
+  in practice today. Revisit with a real migration before any production
+  roles could hit this.
 
 ### 2. Schedule unification
 - Removed entirely: `PageRecord.publishAt`, `PagesRegistryAdapter.

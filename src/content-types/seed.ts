@@ -738,8 +738,14 @@ export async function applyPackagedSingletonData(
 ): Promise<void> {
   const data = packagedSeed.singletonData;
   if (!data) return;
+  // Mirrors `schema-sync.ts`'s write-side exclusion: system singletons
+  // (`seoDefaults`/`systemSettings`/`googleVerification`/`githubSync`) hold
+  // per-deployment operational config, never something to seed from an
+  // uploaded file - a hand-edited or pre-exclusion seed.json must not be
+  // able to push one onto a live site through "Upload seed data".
+  const systemIds = new Set(defaultContentTypeDefinitions().map((t) => t.id));
   for (const type of allTypes) {
-    if (type.kind !== "singleton") continue;
+    if (type.kind !== "singleton" || systemIds.has(type.id)) continue;
     const value = data[type.id];
     if (!value) continue;
     const existing = await entryAdapter.getSingletonEntry(type, allTypes);

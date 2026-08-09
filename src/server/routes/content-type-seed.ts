@@ -91,9 +91,13 @@ async function planSeed(
   allTypes: ContentTypeDefinition[],
   body: SeedRequestBody,
 ): Promise<{ singletons: SeedPlanItem[]; menu: SeedPlanItem | null }> {
+  // Same reserved-id exclusion `handleSchema` enforces for "Upload schema" -
+  // `applyPackagedSingletonData` now silently skips a system singleton too,
+  // so keep "plan" from reporting one as "will apply" in the first place.
+  const systemIds = new Set(defaultContentTypeDefinitions().map((t) => t.id));
   const singletons: SeedPlanItem[] = [];
   for (const [id, value] of Object.entries(body.singletonData ?? {})) {
-    if (!value) continue;
+    if (!value || systemIds.has(id)) continue;
     const type = allTypes.find((t) => t.id === id && t.kind === "singleton");
     if (!type) continue;
     const existing = await entryAdapter.getSingletonEntry(type, allTypes);

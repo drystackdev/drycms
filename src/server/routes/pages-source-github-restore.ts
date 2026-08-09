@@ -38,10 +38,11 @@ async function listCurrentSourcePaths(adapter: StorageAdapter): Promise<string[]
  * `GET {path}/api/github-restore` - lists `githubSync`'s recent commits
  * (`PageEditor.tsx`'s History dialog), each one a full pages-source
  * snapshot (`github-source-sync.ts`'s `listSnapshotCommits` doc comment).
- * `?limit=` caps the page size, default 30. Gated on `system-code` in
- * `handler.ts` (same as `pages-source`'s own write methods) - this is part
- * of the Code Editor's Settings surface, not the build orchestrator's
- * `system-build` (unlike `github-sync`'s push route).
+ * `?limit=` caps the page size, default 30. Gated on `PAGE_BUILDER_RESOURCE_ID`
+ * (`"system-build"`) in `handler.ts` - the same merged resource `github-sync`'s
+ * push route and `pages-source`'s write methods use (see that constant's own
+ * doc comment in `content-types/permissions.ts` for why editing code and
+ * publishing it are one grant, not two).
  */
 export const GET: DryRouteHandler = async (context) => {
   try {

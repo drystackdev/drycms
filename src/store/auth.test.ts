@@ -15,9 +15,31 @@ class FakeDocument extends EventTarget {
   visibilityState: "visible" | "hidden" = "visible";
 }
 
+/** Minimal in-memory stand-in - `slideSession()`'s cross-tab refresh
+ * coalescing (`recentlyRefreshedInAnotherTab`) reads/writes `localStorage`,
+ * which the `node` test environment doesn't provide any more than it does
+ * `document` above. */
+class FakeLocalStorage {
+  private store = new Map<string, string>();
+  getItem(key: string): string | null {
+    return this.store.has(key) ? this.store.get(key)! : null;
+  }
+  setItem(key: string, value: string): void {
+    this.store.set(key, value);
+  }
+  removeItem(key: string): void {
+    this.store.delete(key);
+  }
+  clear(): void {
+    this.store.clear();
+  }
+}
+
 const fakeDocument = new FakeDocument();
+const fakeLocalStorage = new FakeLocalStorage();
 vi.stubGlobal("window", { __DRY_CONFIG__: { path: "/dry" } });
 vi.stubGlobal("document", fakeDocument);
+vi.stubGlobal("localStorage", fakeLocalStorage);
 
 const { authState, login, logout } = await import("./auth.js");
 
@@ -41,6 +63,7 @@ describe("sliding session refresh", () => {
     vi.useFakeTimers();
     fakeDocument.cookie = "";
     fakeDocument.visibilityState = "visible";
+    fakeLocalStorage.clear();
     authState.value = { status: "anonymous", user: null };
   });
 

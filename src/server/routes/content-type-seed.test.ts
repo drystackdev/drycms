@@ -68,6 +68,24 @@ const APP_TYPE: ContentTypeDefinition = {
   version: 0,
 };
 
+const APP_SINGLETON_TYPE: ContentTypeDefinition = {
+  id: "app-site-config",
+  kind: "singleton",
+  name: "siteConfig",
+  label: "Site Config",
+  fields: [{ id: "app-site-config-tagline", name: "tagline", label: "Tagline", type: "text", config: {}, validation: {}, order: 0 }],
+  version: 0,
+};
+
+const APP_SINGLETON_TYPE_WITH_ROW: ContentTypeDefinition = {
+  id: "app-footer-config",
+  kind: "singleton",
+  name: "footerConfig",
+  label: "Footer Config",
+  fields: [{ id: "app-footer-config-text", name: "text", label: "Text", type: "text", config: {}, validation: {}, order: 0 }],
+  version: 0,
+};
+
 describe("POST /dry/api/content-type-seed - kind: schema", () => {
   it("rejects a request from a session without permission", async () => {
     const { status } = await post({ kind: "schema", mode: "plan", contentTypes: [APP_TYPE] }, null);
@@ -119,55 +137,86 @@ describe("POST /dry/api/content-type-seed - kind: schema", () => {
 });
 
 describe("POST /dry/api/content-type-seed - kind: seed", () => {
-  it("plans a singleton with no live row as will-apply, and one with a live row as will-skip", async () => {
+  beforeAll(async () => {
+    // Created directly through the schema adapter's planSave/applySave,
+    // NOT the "kind: schema" HTTP route - that route's `performSave`
+    // (`routes/content-types.ts`) calls `ensureSingletonEntry` right after
+    // creating any singleton, which would give both fixtures a blank row
+    // immediately and defeat the "no live row yet" case below.
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
+    for (const definition of [APP_SINGLETON_TYPE, APP_SINGLETON_TYPE_WITH_ROW]) {
+      const plan = await schema.planSave(definition);
+      await schema.applySave(definition, plan);
+    }
     const allTypes = await schema.listContentTypes();
-    const systemSettingsType = allTypes.find((t) => t.name === "systemSettings")!;
-    const googleVerificationType = allTypes.find((t) => t.name === "googleVerification")!;
+    const footerConfigType = allTypes.find((t) => t.id === APP_SINGLETON_TYPE_WITH_ROW.id)!;
+    // Give it a real row up front so its plan comes back "skip".
+    await entries.saveSingletonEntry(footerConfigType, allTypes, { text: "existing" });
+  });
 
-    // Give systemSettings a real row up front so its plan comes back "skip".
-    await entries.saveSingletonEntry(systemSettingsType, allTypes, { data: "{}" });
+  it("plans an app singleton with no live row as will-apply, and one with a live row as will-skip", async () => {
+    const schema = createContentEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const siteConfigType = allTypes.find((t) => t.id === APP_SINGLETON_TYPE.id)!;
+    const footerConfigType = allTypes.find((t) => t.id === APP_SINGLETON_TYPE_WITH_ROW.id)!;
 
     const { status, json } = await post({
       kind: "seed",
       mode: "plan",
       singletonData: {
-        [systemSettingsType.id]: { data: "{}" },
-        [googleVerificationType.id]: { name: "google-site-verification", content: "abc123" },
+        [siteConfigType.id]: { tagline: "hello" },
+        [footerConfigType.id]: { text: "new value" },
       },
     });
     expect(status).toBe(200);
     expect(json.mode).toBe("plan");
     const byId = (id: string) => json.singletons.find((s: any) => s.id === id);
-    expect(byId(systemSettingsType.id).willApply).toBe(false);
-    expect(byId(googleVerificationType.id).willApply).toBe(true);
+    expect(byId(siteConfigType.id).willApply).toBe(true);
+    expect(byId(footerConfigType.id).willApply).toBe(false);
   });
 
   it("applies seed data, then skips it on a second upload - never overwrites live data", async () => {
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
     const allTypes = await schema.listContentTypes();
-    const googleVerificationType = allTypes.find((t) => t.name === "googleVerification")!;
+    const siteConfigType = allTypes.find((t) => t.id === APP_SINGLETON_TYPE.id)!;
 
     const body = {
       kind: "seed" as const,
       mode: "apply" as const,
-      singletonData: { [googleVerificationType.id]: { name: "google-site-verification", content: "abc123" } },
+      singletonData: { [siteConfigType.id]: { tagline: "abc123" } },
     };
     const first = await post(body);
     expect(first.json.singletons[0].willApply).toBe(true);
-    const row = await entries.getSingletonEntry(googleVerificationType, allTypes);
-    expect(row?.value.content).toBe("abc123");
+    const row = await entries.getSingletonEntry(siteConfigType, allTypes);
+    expect(row?.value.tagline).toBe("abc123");
 
     // Re-apply with DIFFERENT content - must be skipped, not overwritten.
     const second = await post({
       ...body,
-      singletonData: { [googleVerificationType.id]: { name: "google-site-verification", content: "different" } },
+      singletonData: { [siteConfigType.id]: { tagline: "different" } },
     });
     expect(second.json.singletons[0].willApply).toBe(false);
-    const rowAfter = await entries.getSingletonEntry(googleVerificationType, allTypes);
-    expect(rowAfter?.value.content).toBe("abc123");
+    const rowAfter = await entries.getSingletonEntry(siteConfigType, allTypes);
+    expect(rowAfter?.value.tagline).toBe("abc123");
+  });
+
+  it("never offers or applies a system singleton, even with no live row - Upload seed data must not carry per-deployment config between installs", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const googleVerificationType = allTypes.find((t) => t.name === "googleVerification")!;
+
+    const singletonData = { [googleVerificationType.id]: { name: "google-site-verification", content: "abc123" } };
+
+    const planned = await post({ kind: "seed", mode: "plan", singletonData });
+    expect(planned.json.singletons.find((s: any) => s.id === googleVerificationType.id)).toBeUndefined();
+
+    const applied = await post({ kind: "seed", mode: "apply", singletonData });
+    expect(applied.json.singletons.find((s: any) => s.id === googleVerificationType.id)).toBeUndefined();
+    const row = await entries.getSingletonEntry(googleVerificationType, allTypes);
+    expect(row).toBeNull();
   });
 
   it("plans and applies menuData the same all-or-nothing way applyPackagedMenuData already does", async () => {

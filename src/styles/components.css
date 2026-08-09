@@ -2772,11 +2772,12 @@
     button.sidebar-account {
       justify-content: flex-start !important;
       border-radius: 0 !important;
-      border-top: 1px solid var(--dry-border) !important;
+      border-block: 1px solid var(--dry-border) !important;
       gap: 0.75rem;
       width: 100%;
       min-height: 2.75rem;
       padding: 0.375rem 0.625rem;
+      margin-bottom: 1rem;
       border-radius: var(--dry-radius-md);
       background: none;
       border: none;

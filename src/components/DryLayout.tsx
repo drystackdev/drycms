@@ -197,6 +197,7 @@ const HIDDEN_NAV_KEYS = new Set(
   [
     !temporaryFeatureVisibility.richtextComponents && "richtext-components",
     !temporaryFeatureVisibility.pageComponents && "page-components",
+    !temporaryFeatureVisibility.pageBuild && "page-build",
   ].filter((key): key is string => Boolean(key)),
 );
 

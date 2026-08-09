@@ -1,65 +1,7 @@
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import { canAccess } from "../store/auth.js";
-
-interface TreeEntry {
-  id: string;
-  name: string;
-  kind: "file" | "folder";
-}
-
-/** `routes/asset-hrefs.ts`'s response shape - same small page-local copy
- * `PageEditor.tsx`/`PageBuild.tsx` each already keep for themselves. */
-interface AssetHrefs {
-  globalsCssHref: string;
-  hydrateEntryHref: string;
-  veiOverlayHref: string;
-  preactRuntimeHref: string;
-  hydrateBuiltHref: string;
-}
-
-function toUrlPath(relativePath: string): string {
-  return relativePath.split("/").map(encodeURIComponent).join("/");
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
-  return (await response.json()) as T;
-}
-
-async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
-  return response.text();
-}
-
-/** Same `?tree`-unsupported (R2/S3) fallback `PageBuild.tsx`/`PageEditor.tsx`
- * each already carry their own copy of - `StorageAdapter.listAll` is only
- * implemented for `kind: "local"`. */
-async function listAllFilesRecursive(adminPath: string, folder: string): Promise<TreeEntry[]> {
-  const url = folder === "" ? `${adminPath}/api/pages-source` : `${adminPath}/api/pages-source/${toUrlPath(folder)}`;
-  const { entries } = await fetchJson<{ path: string; entries: TreeEntry[] }>(url);
-  const files: TreeEntry[] = [];
-  for (const entry of entries) {
-    if (entry.kind === "folder") files.push(...(await listAllFilesRecursive(adminPath, entry.id)));
-    else files.push(entry);
-  }
-  return files;
-}
-
-async function loadAllSource(adminPath: string): Promise<Record<string, string>> {
-  const tree = await fetchJson<{ supported: boolean; entries?: TreeEntry[] }>(`${adminPath}/api/pages-source?tree`);
-  const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive(adminPath, "");
-  const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts)$/.test(e.name));
-  const sources: Record<string, string> = {};
-  await Promise.all(
-    files.map(async (file) => {
-      sources[file.id] = await fetchText(`${adminPath}/api/pages-source/${toUrlPath(file.id)}`);
-    }),
-  );
-  return sources;
-}
+import { fetchJson, loadAllPagesSource, type AssetHrefs } from "./pages-source-http.js";
 
 /**
  * Background rebuild of every published page that depends on `typeName`,
@@ -101,7 +43,7 @@ export async function rebuildAffectedPages(
 
     const [{ buildPage, publishBuiltPage, resolveAllPageTargets }, [sourceByPath, assetHrefs]] = await Promise.all([
       import("./page-build.js"),
-      Promise.all([loadAllSource(adminPath), fetchJson<AssetHrefs>(`${adminPath}/api/asset-hrefs`)]),
+      Promise.all([loadAllPagesSource(adminPath), fetchJson<AssetHrefs>(`${adminPath}/api/asset-hrefs`)]),
     ]);
 
     const { targets } = await resolveAllPageTargets(sourceByPath, allTypes, `${adminPath}/api/dry-http`);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import TextField from "../../components/fields/TextField.js";
+import { toast } from "../../components/Toast.js";
 import { fetchGithubRestoreStatus, resetPagesSourceFromGithub } from "../../page-components/github-restore-http-api.js";
 
 export interface GithubResetDialogProps {
@@ -41,7 +42,14 @@ export default function GithubResetDialog({ open, endpoint, onClose, onApplied }
       setConfigured(status.configured);
       setRepo(status.repo ?? null);
       setBranch(status.branch ?? null);
-      setStatusError(!status.configured ? (status.reason ?? "GitHub Sync isn't configured/enabled.") : (status.reason ?? null));
+      const reason = status.reason ?? (!status.configured ? "GitHub Sync isn't configured/enabled." : null);
+      setStatusError(reason);
+      // A `reason` can arrive even when `configured && repo` are both true
+      // (e.g. the GitHub API call itself failed, not just missing config) -
+      // the header below only reflects configured/repo, so a toast is what
+      // guarantees the admin actually sees it instead of it getting
+      // silently swallowed by that same condition.
+      if (reason) toast.add({ type: "error", title: "GitHub Sync", description: reason });
       setLoadingStatus(false);
     });
   }, [open, endpoint]);
@@ -76,8 +84,18 @@ export default function GithubResetDialog({ open, endpoint, onClose, onApplied }
       onCancel={onClose}
       message={
         <div class="stack" style={{ gap: "0.75rem" }}>
-          {loadingStatus && <span class="hint">Loading GitHub Sync settings…</span>}
-          {!loadingStatus && !configured && <span class="error">{statusError}</span>}
+          <header class="row justify-between align-center" style={{ flexWrap: "nowrap" }}>
+            <strong>GitHub Sync status</strong>
+            {loadingStatus ? (
+              <span class="hint">Loading…</span>
+            ) : configured && repo ? (
+              <code>
+                {repo}@{branch}
+              </code>
+            ) : (
+              <span class="error">{statusError ?? "Not configured"}</span>
+            )}
+          </header>
           {!loadingStatus && configured && repo && (
             <>
               <p>
@@ -88,7 +106,6 @@ export default function GithubResetDialog({ open, endpoint, onClose, onApplied }
               <TextField label={`Type "${repo}" to confirm`} placeholder={repo} value={confirmText} onChange={setConfirmText} />
             </>
           )}
-          {!loadingStatus && configured && !repo && statusError && <span class="error">{statusError}</span>}
           {applyError && <span class="error">{applyError}</span>}
         </div>
       }

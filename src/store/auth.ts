@@ -138,7 +138,29 @@ function stopSlidingRefresh(): void {
   slidingRefreshTimer = undefined;
 }
 
+/** The refresh-token cookie is shared (same-origin, same browser) across
+ * every open tab, but each tab runs its own independent
+ * `SLIDING_REFRESH_INTERVAL_MS` timer. If two tabs' timers land close
+ * together they both present the SAME one-shot refresh token to
+ * `POST /api/auth/refresh` - `rotateAuthSession()`
+ * (`server/auth-security.ts`) serializes the two calls, but the second one
+ * always finds the token already consumed and, unable to tell that apart
+ * from a stolen/replayed token, revokes every session the user has
+ * (`revokeAllAuthSessions(..., "reuse")`) - turning this feature into a
+ * surprise full logout. `localStorage` is shared across tabs of the same
+ * origin, so recording the last refresh there lets every OTHER tab skip a
+ * redundant call for a while after one tab already rotated the cookies. */
+const LAST_REFRESH_STORAGE_KEY = "drycms_session_last_refresh";
+const REFRESH_COALESCE_WINDOW_MS = 60 * 1000;
+
+function recentlyRefreshedInAnotherTab(): boolean {
+  const last = Number(localStorage.getItem(LAST_REFRESH_STORAGE_KEY) ?? "0");
+  return Number.isFinite(last) && Date.now() - last < REFRESH_COALESCE_WINDOW_MS;
+}
+
 async function slideSession(): Promise<void> {
+  if (recentlyRefreshedInAnotherTab()) return;
+  localStorage.setItem(LAST_REFRESH_STORAGE_KEY, String(Date.now()));
   const refreshedUser = await refreshExpiredSession();
   // A failed refresh here means the refresh token itself is no longer good
   // (revoked, reused, or its own 30-day life ran out) - a real "please sign

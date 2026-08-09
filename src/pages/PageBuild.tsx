@@ -20,6 +20,7 @@ import {
   type UnmatchedTemplate,
 } from "../page-components/page-build.js";
 import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
+import { fetchJson, loadAllPagesSource, type AssetHrefs } from "../page-components/pages-source-http.js";
 
 /**
  * Minimal admin "Build" page (`plans/app-r2.md` mục 11 - a first, real cut,
@@ -30,20 +31,6 @@ import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
  * button per row that runs the REAL pipeline (`page-build.ts`) client-side
  * and publishes the result.
  */
-
-// Deliberately NOT named `FileEntry` (that's `storage/entry-types.ts`'s real
-// exported type, which this doesn't import) - a relative storage path lives
-// on `.id`, NOT `.path` (`storage/entry.ts`'s `toFileEntry`:
-// `id: stat.path`). Caught live: the first version of this file guessed
-// `.path` and crashed ("Cannot read properties of undefined (reading
-// 'split')") the moment a real R2-backed pages-source tree was loaded under
-// `wrangler dev` - `?tree` isn't supported there (R2 has no `listAll`), so
-// the `list()`-fallback path is what actually exercised this field.
-interface TreeEntry {
-  id: string;
-  name: string;
-  kind: "file" | "folder";
-}
 
 interface PageStatusRow {
   path: string;
@@ -59,15 +46,6 @@ interface Row extends Record<string, unknown> {
   status: "not-built" | "stale" | "live";
   builtAt: number | null;
   staleResource: string | null;
-}
-
-/** `routes/asset-hrefs.ts`'s response shape (mục 7). */
-interface AssetHrefs {
-  globalsCssHref: string;
-  hydrateEntryHref: string;
-  veiOverlayHref: string;
-  preactRuntimeHref: string;
-  hydrateBuiltHref: string;
 }
 
 /** Survives a closed tab (`plans/app-r2.md` mục 11 - "đóng tab giữa chừng
@@ -101,39 +79,6 @@ function readPersistedQueue(): PersistedBuildQueue | null {
 function writePersistedQueue(queue: PersistedBuildQueue | null): void {
   if (!queue || queue.remaining.length === 0) localStorage.removeItem(BUILD_QUEUE_STORAGE_KEY);
   else localStorage.setItem(BUILD_QUEUE_STORAGE_KEY, JSON.stringify(queue));
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
-  return (await response.json()) as T;
-}
-
-async function fetchText(url: string): Promise<string> {
-  const response = await fetch(url, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`GET ${url} failed: HTTP ${response.status}`);
-  return response.text();
-}
-
-function toUrlPath(relativePath: string): string {
-  return relativePath.split("/").map(encodeURIComponent).join("/");
-}
-
-/** `?tree` is only implemented for `kind: "local"` (`storage/types.ts`'s
- * `StorageAdapter.listAll` doc comment - deliberately absent for R2/S3,
- * which paginate by prefix/delimiter). Confirmed live under `wrangler dev`
- * (real R2 simulation, `kind: "cloudflare"`): `{"supported":false}`, not an
- * error - this recursive per-folder fallback is required for production,
- * not a defensive nicety. */
-async function listAllFilesRecursive(folder: string): Promise<TreeEntry[]> {
-  const url = folder === "" ? `${path}/api/pages-source` : `${path}/api/pages-source/${toUrlPath(folder)}`;
-  const { entries } = await fetchJson<{ path: string; entries: TreeEntry[] }>(url);
-  const files: TreeEntry[] = [];
-  for (const entry of entries) {
-    if (entry.kind === "folder") files.push(...(await listAllFilesRecursive(entry.id)));
-    else files.push(entry);
-  }
-  return files;
 }
 
 export default function PageBuild() {
@@ -172,22 +117,13 @@ export default function PageBuild() {
     if (!canBuild) return;
     void (async () => {
       try {
-        const [types, tree, hrefs] = await Promise.all([
+        const [types, sources, hrefs] = await Promise.all([
           listCached(typesApi),
-          fetchJson<{ supported: boolean; entries?: TreeEntry[] }>(`${path}/api/pages-source?tree`),
+          loadAllPagesSource(path),
           fetchJson<AssetHrefs>(`${path}/api/asset-hrefs`),
         ]);
         setAllTypes(types);
         setAssetHrefs(hrefs);
-
-        const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive("");
-        const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts)$/.test(e.name));
-        const sources: Record<string, string> = {};
-        await Promise.all(
-          files.map(async (file) => {
-            sources[file.id] = await fetchText(`${path}/api/pages-source/${toUrlPath(file.id)}`);
-          }),
-        );
         setSourceByPath(sources);
 
         const { targets: nextTargets, unmatchedTemplates } = await resolveAllPageTargets(sources, types, `${path}/api/dry-http`);
