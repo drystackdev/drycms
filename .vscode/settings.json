@@ -23,5 +23,6 @@
     "**/.dry/pages-cache": true,
     "**/.dry/kv": true,
     "**/.dry/content.sqlite": true
-  }
+  },
+  "commentTranslate.targetLanguage": "vi"
 }
