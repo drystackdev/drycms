@@ -132,7 +132,13 @@ export default function RichTextToolbar({
     // after the action itself, so it is the reliable final measurement point.
     document.addEventListener("click", restoreScrollAfterAction);
     return () => document.removeEventListener("click", restoreScrollAfterAction);
-  });
+    // Mount-once: this listener used to be detached and re-attached on EVERY
+    // render of the toolbar (no dependency list at all), which is every
+    // keystroke's worth of toolbar state. The handler reads its snapshot out
+    // of a ref and calls nothing else from this scope, so the first render's
+    // closure stays correct for the field's whole lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Groups can end up empty once `blockOnly` items are filtered out (e.g. the
   // align-only group under `inline`) - drop those so an empty block never
