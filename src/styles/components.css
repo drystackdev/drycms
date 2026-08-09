@@ -5646,7 +5646,8 @@
       display: flex;
       flex: 1;
       min-height: 0;
-      & .page-components-resize-handle:nth-child(2) {
+
+      & .page-components-resize-handle{
         margin-right: -3px;
       }
     }
@@ -5897,9 +5898,15 @@
       min-width: 0;
     }
 
+    /* Same background `CodeField.tsx`'s `.editor` uses (`--dry-muted`) - the
+       `Editer` mounted inside (`Editer.tsx`'s own `shadowStyles`) matches
+       this too via `--pce-bg`, so the two never visibly seam; also covers
+       the empty/loading placeholder text shown here before a file is
+       selected, which has no editor of its own to carry a background. */
     .page-components-editor {
       flex: 1;
       min-height: 0;
+      background-color: var(--dry-muted);
     }
 
     /* TypeScript problems panel below the code editor (`PageEditor.tsx`) -

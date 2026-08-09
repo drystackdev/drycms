@@ -16,6 +16,7 @@ import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { addTooltip } from "prism-code-editor/tooltips";
 import { insertText } from "prism-code-editor/utils";
+import { resolveEffectiveTheme } from "../../lib/native/theme.js";
 import { toast } from "../Toast.js";
 import { tailwindCompletionSource } from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
@@ -34,7 +35,12 @@ export interface EditerProps {
   /** Path -> content of other `.tsx`/`.ts` files the code being edited can import from -
    * see `ts-worker.ts`'s module resolution. Not watched/discovered automatically. */
   extraFiles?: Record<string, string>;
-  /** Set once at mount - not live-updatable, matching `basicEditor`'s own contract. */
+  /** Set once at mount - not live-updatable, matching `basicEditor`'s own contract.
+   * Defaults to `vs-code-dark`/`vs-code-light` matching the app's own current
+   * theme (`resolveEffectiveTheme()`) rather than a fixed dark theme - see
+   * `shadowStyles`' own `--pce-*` overrides for why the token colors (this
+   * theme choice) and the surrounding chrome (those overrides) need to agree
+   * on light vs dark. */
   theme?: IncludedTheme;
   /** Merged on top of `ts-worker.ts`'s own defaults (ES2022/bundler resolution/preact
    * JSX/strict) - set once at mount, like `theme`. */
@@ -383,7 +389,22 @@ function renderSignatureTooltip(el: HTMLDivElement, help: EditerSignatureHelp): 
 // standard CSS-only way to draw a VS Code-style squiggle without either.
 const SQUIGGLE_MASK =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='4'%3E%3Cpath d='M0 3 Q2 0.5 4 3 T8 3' stroke='white' stroke-width='1.4' fill='none'/%3E%3C/svg%3E\")";
-const shadowStyles = `.prism-code-editor{height:100%}
+// `!important`-forced `--pce-*` overrides, appended to the shadow root AFTER
+// the theme's own CSS (which sets the same variables on this same
+// `.prism-code-editor` selector - see the mount effect's own comment on
+// where that lives) - `!important` is what makes this win regardless of
+// which `<style>` actually lands second (the theme's own CSS is fetched
+// async by `basicEditor`, so DOM order alone isn't a reliable enough
+// guarantee). Maps the editor's background/gutter/popover chrome onto this
+// app's own `--dry-*` tokens - the exact ones `CodeField.tsx`'s `.editor`
+// already uses - instead of the theme's stock near-black/near-white chrome,
+// so the editor reads as part of this app rather than a separately-styled
+// embed; these are plain custom-property references, so they stay correct
+// live across a theme toggle (custom-property inheritance crosses the
+// shadow boundary) even though the THEME NAME itself (vs-code-dark vs
+// vs-code-light, picked once at mount - see `resolveEffectiveTheme()` above)
+// only updates on the next remount.
+const shadowStyles = `.prism-code-editor{height:100%;--pce-bg:var(--dry-muted) !important;--pce-widget-bg:var(--dry-popover) !important;--pce-widget-color:var(--dry-popover-foreground) !important;--pce-widget-border:var(--dry-border) !important;--pce-widget-bg-hover:var(--dry-accent) !important;--pce-line-number:var(--dry-muted-foreground) !important;--pce-cursor:var(--dry-foreground) !important}
 .${DIAGNOSTIC_CLASS}{position:absolute;bottom:0;height:4px;width:0;cursor:pointer;pointer-events:auto;background-color:var(--editer-diagnostic-color);-webkit-mask-image:${SQUIGGLE_MASK};mask-image:${SQUIGGLE_MASK};-webkit-mask-repeat:repeat-x;mask-repeat:repeat-x;-webkit-mask-size:8px 4px;mask-size:8px 4px}
 .${ERROR_CLASS}{--editer-diagnostic-color:#f14c4c}
 .${WARNING_CLASS}{--editer-diagnostic-color:#cca700}
@@ -421,7 +442,7 @@ export default function Editer({
   value,
   onChange,
   extraFiles,
-  theme = "vs-code-dark",
+  theme,
   compilerOptions,
   formatOptions,
   tabSize = 2,
@@ -480,7 +501,7 @@ export default function Editer({
     const editor = basicEditor(host, {
       language: "tsx",
       value,
-      theme,
+      theme: theme ?? (resolveEffectiveTheme() === "dark" ? "vs-code-dark" : "vs-code-light"),
       tabSize,
       readOnly,
       onUpdate: (code) => {

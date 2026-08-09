@@ -46,6 +46,18 @@ export function readStoredTheme(): DryTheme {
 	return value === 'light' || value === 'dark' ? value : 'system';
 }
 
+/** The theme actually in effect right now - resolves `'system'` via
+ * `prefers-color-scheme` instead of returning it literally, unlike
+ * `readStoredTheme()`. For code that needs to pick between a light/dark
+ * ASSET (e.g. `Editer.tsx`'s syntax-highlighting theme) rather than just
+ * toggle a CSS class. */
+export function resolveEffectiveTheme(): 'light' | 'dark' {
+	const root = document.querySelector<HTMLElement>('.dry') ?? document.body;
+	if (root.classList.contains('dark')) return 'dark';
+	if (root.classList.contains('light')) return 'light';
+	return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 function writeStoredTheme(theme: DryTheme) {
 	writeStore({ ...readStore(), theme });
 }
