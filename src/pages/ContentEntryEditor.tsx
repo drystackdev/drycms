@@ -217,6 +217,22 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   const [entryLoaded, setEntryLoaded] = useState(false);
 
   const [value, setValue] = useState<EntryValue | null>(null);
+  /** The same `value`, reachable without going through a render.
+   *
+   * `handleSave` below is re-created on every render, but the Save button
+   * that calls it lives in the shared topbar (`usePageHeaderActions`), which
+   * only receives the new one from an effect - and Preact runs effects after
+   * paint, a frame or so behind the state update. A click landing inside that
+   * window ran the PREVIOUS render's `handleSave`, which had captured the
+   * previous `value` and saved it. Invisible while every field reported every
+   * keystroke, since the last change was then many frames old by the time
+   * anything could be clicked; a `RichTextField` deliberately settles its
+   * value only once typing pauses (`VALUE_FLUSH_DELAY_MS`), which lands
+   * squarely in that window - typing and immediately clicking Save wrote an
+   * empty body. Reading through this ref is unaffected by which render's
+   * closure is running. */
+  const valueRef = useRef<EntryValue | null>(null);
+  valueRef.current = value;
   const [entryId, setEntryId] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
