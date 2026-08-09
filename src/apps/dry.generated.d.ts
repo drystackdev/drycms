@@ -63,6 +63,13 @@ export interface Memory {
   version: number;
 }
 
+export interface Blog {
+  id: number;
+  title: string;
+  slug: string;
+  noiDung?: string;
+}
+
 export interface SeoDefaults {
   id: number;
   seo: Seo;
@@ -111,13 +118,15 @@ export interface MemoryRelations {
   user: User | null;
 }
 
+export interface BlogRelations {}
+
 export interface SeoDefaultsRelations {}
 
 export interface SystemSettingsRelations {}
 
 export interface GoogleVerificationRelations {}
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "redirect" | "memory";
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "redirect" | "memory" | "blog";
 export type DrySingletonName = "seoDefaults" | "systemSettings" | "googleVerification";
 
 export interface DryCollectionMap {
@@ -127,6 +136,7 @@ export interface DryCollectionMap {
   "role": Role;
   "redirect": Redirect;
   "memory": Memory;
+  "blog": Blog;
 }
 
 export interface DrySingletonMap {
@@ -142,6 +152,7 @@ export interface DryCollectionRelationsMap {
   "role": RoleRelations;
   "redirect": RedirectRelations;
   "memory": MemoryRelations;
+  "blog": BlogRelations;
 }
 
 export interface DrySingletonRelationsMap {

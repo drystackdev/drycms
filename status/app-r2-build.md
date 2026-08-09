@@ -896,6 +896,170 @@ how the rest of `PageEditor.tsx` has been tested all session. 0 typecheck
 errors; full suite unchanged at 1075 passed / 12 failed (same pre-existing,
 unrelated group).
 
+## Update 2026-08-09, part 11: resize/reload/zoom polish + IndexedDB +
+localStorage persistence
+
+Three more user-directed requests on top of part 10's `PageEditor.tsx`
+overhaul, arriving as separate follow-ups in the same session:
+
+- **Resize handle broke on a fast drag.** `useResizablePanel.ts` tracked
+  drags via `document`-level `pointermove`/`pointerup` listeners; a fast
+  drag routinely overshoots the handle's 4px hit-area onto the adjacent
+  `<iframe>` (the preview), whose pointer events fire inside that iframe's
+  own document and never bubble to the parent's `document` listener -
+  tracking just silently stopped. Fixed by switching to
+  `setPointerCapture` on the handle itself (mirroring `overlay.ts`'s own
+  `panelResizeHandle`, which already solved the identical problem):
+  `onPointerDown` calls `setPointerCapture`, and `onPointerMove`/
+  `onPointerUp`/`onPointerCancel` are now plain props on the handle
+  instead of manually added/removed `document` listeners. `handleProps`
+  went from 1 handler to 4; both consumers (`PageEditor.tsx`,
+  `PageComponents.tsx`) just spread `{...x.handleProps}`, so neither
+  needed a call-site change. Added a translucent
+  `.page-components-resize-handle.dragging::before` glow bar so a fast
+  drag has a visible divider even when the cursor has outrun the 4px
+  handle.
+- **Reload button** on the preview toolbar - calls `refreshPreview()`
+  directly, bypassing the debounce for an immediate re-run.
+- **Zoom `[- % +] [Fit]` corrected to scale, not width.** First pass
+  wrongly reused `viewport.widen`/`narrow`/`reset` (the simulated device
+  WIDTH); corrected per explicit feedback - these must zoom the view only,
+  leaving the xs/sm/md/lg/xl width selection untouched. Fixed with a
+  separate `manualZoom: number | null` state layered on top of
+  `viewport.scale`'s auto-fit value (`effectiveZoom = manualZoom ??
+  viewport.scale`); the preview frame keeps `width: viewport.width` fixed
+  and only `zoom: effectiveZoom` changes. `Fit` clears the override.
+- **Bug: scale stopped updating after an error, then recovery, cycle -
+  found and fixed at the root.** `PageEditor.tsx` swaps the whole
+  `<div class="page-components-preview-viewport" ref={viewport.
+  viewportRef}>` out for `<span class="error">` while `previewError` is
+  set (and for a `<p>` hint when no file is selected) - the ref'd div
+  fully unmounts, not just hides. `useScaledPreview` (part 10) attached
+  its `ResizeObserver` via a plain `useRef` inside a `useEffect` keyed
+  only on `[width]`; reassigning a plain ref's `.current` doesn't retrigger
+  effects, so when the error cleared and the div remounted (a new DOM
+  node), the observer kept watching the old, now-detached node forever -
+  `scale` froze from that point on. Fixed in the hook itself (not the call
+  site, so every consumer benefits): `viewportRef` is now a **callback
+  ref** (`RefCallback<HTMLDivElement>`, exported type changed from
+  `RefObject`) - it fires on every attach/detach, disconnecting the old
+  observer and attaching a fresh one to whatever node is currently there,
+  regardless of why it remounted. Confirmed harmless for
+  `ComponentPreview.tsx` (Component Builder), whose viewport div mounts
+  once and never unmounts - a callback ref behaves identically to an
+  object ref in that case. **Live-verified the exact repro**: typed a
+  syntax error into `page.tsx` (error span replaces the viewport) → fixed
+  it (viewport remounts) → dragged the resize handle via real `page.mouse`
+  events over CDP (480px → 694px → 394px) → scale tracked correctly both
+  directions (35% → 52% → 28%), confirming the observer re-bound to the
+  post-recovery node.
+- **Unsaved code edits now survive a reload** (`page-source-draft-db.ts`,
+  new file, mirrors `entry-draft-db.ts` - own IndexedDB database, no
+  `BroadcastChannel`, cross-tab sync isn't a requirement here).
+  `loadTree()` overlays any recovered draft onto the freshly-fetched saved
+  content, keyed by path, but only for a path still present in the loaded
+  tree - a draft for a since-deleted/renamed file is dropped right there
+  instead of being resurrected. Writes are debounced 300ms per path (a
+  `Map<path, timeout>` in the component, matching
+  `entry-draft-store.ts`'s `saveEntryDraft` pattern exactly - a fast
+  typist shouldn't hit IndexedDB every keystroke, and switching files
+  mid-debounce must track each file's pending write independently rather
+  than clobber it). The draft is deleted when: edited content matches
+  `savedByPath` again (typed back to the saved state), after a successful
+  `handleSave`, and after a successful `handleDelete`/`handleMove` (the
+  old path is cleaned up immediately in both, not left for `loadTree()`'s
+  prune pass to catch later). Live-verified: edited `page.tsx` without
+  saving, reloaded the real page, and the editor came back showing the
+  unsaved edit (not the server's last-saved content), with the tree's
+  "Unsaved changes" dot restored too.
+- **Layout/view state now survives a reload too, separately from file
+  content** - a distinct request ("để vẫn giữ được kết quả đúng đắn khi
+  reload"). New `localStorage` key `dry-page-editor-ui-state`, one JSON
+  object: `selectedPath`, `sidebarOpen`, `previewOpen`, `sidebarWidth`,
+  `previewWidth`, `viewportKey`, `manualZoom`. Read once on mount (a lazy
+  `useState` initializer) to seed every dependent piece of state,
+  including the `initial` passed into `useResizablePanel`/
+  `useScaledPreview` - not reset after the fact. Writes are debounced
+  300ms via the effect-cleanup idiom (a single combined write, so no
+  manual timer ref is needed here unlike the per-path IndexedDB draft
+  map). Deliberately a separate mechanism from the IndexedDB draft store:
+  this is pure UI state with no server-side counterpart at all, so a
+  synchronous `localStorage` blob is the right-sized tool rather than
+  sharing the content-recovery store. Live-verified: selected a different
+  file, switched viewport preset, set a manual zoom, waited past the
+  debounce, reloaded the real page - all three came back correctly,
+  confirmed by reading `localStorage.getItem(...)` directly as well as
+  the rendered UI.
+- Dev admin login (memory) had drifted again by the time this part's live
+  testing started - the previously-recorded pair 401'd, the user supplied
+  a new one, memory updated. Confirmed Playwright's browser is fully
+  isolated from the user's own (it had to log in from scratch, inheriting
+  no session), so none of this part's live testing - including the
+  deliberately-broken/unsaved `page.tsx` edits - ever touched the user's
+  real browser tabs or, since nothing was ever saved through `handleSave`,
+  the server-stored source either.
+- 0 typecheck errors; full suite still 1075 passed / 12 failed, confirmed
+  the 12 are the same pre-existing/unrelated failures via `git stash` (ran
+  identically with this part's changes removed).
+
+## Update 2026-08-09, part 12: preview viewport onto real OverlayScrollbars +
+fix a start-edge clipping bug
+
+Two more short requests on the same preview viewport, prompted by the user
+reviewing `components.css` directly:
+
+- **`.page-components-preview-viewport` switched from plain `overflow: auto`
+  to the app's real scroll library.** Turned up a latent bug while doing
+  it: `ComponentPreview.tsx` already carried a `scroll` CSS class on this
+  element, but nothing ever actually initialized `useOverlayScrollbars` on
+  it - the one ref slot on that div was already taken by
+  `useDevicePreview`'s own width-observer ref, so `scroll` had been
+  CSS-only/no-op the whole time, silently rendering native scrollbars.
+  Restructured to the same host/viewport split `.magic-chat-messages`/
+  `.magic-chat-messages-viewport` already established:
+  `.page-components-preview-viewport` (host, `useOverlayScrollbars`'s
+  `ref`, sizing only) wraps a new `.page-components-preview-viewport-inner`
+  (`viewportRef`, the real `display: flex` scrolling element). Both
+  `PageEditor.tsx` and `ComponentPreview.tsx` need 2 independent refs on
+  that one host (the width-observer plus the new scroll-library ref), so
+  added `src/lib/merge-refs.ts` (`mergeRefs`) as a small shared utility
+  rather than a one-off, since both call sites needed it identically.
+- **Found and fixed a real clipping bug while wiring this up**: the frame
+  was centered via `justify-content: center` on the parent, which keeps
+  trying to center even once the child overflows - so zooming in past
+  100% clipped the start edge, with no way to scroll back to see it.
+  Switched to `margin-inline: auto` on the child instead (applied via
+  `& > *` so `ComponentPreview.tsx`'s `.alert`/`.hint` states get the same
+  treatment) - auto margins collapse to 0 once the child is wider than the
+  container, so both edges stay fully reachable by scroll instead of one
+  being permanently masked by an ignored centering attempt.
+- **Trap in wiring `useOverlayScrollbars` for `PageEditor.tsx`
+  specifically**: unlike `useScaledPreview`'s own ref (fixed to a
+  self-healing callback ref in part 11), `useOverlayScrollbars` takes an
+  explicit `deps` array and only runs its mount effect when that changes
+  (defaults to `[]`, run once) - exactly as its own doc comment warns,
+  passing no deps for a conditionally-rendered host means the library
+  never initializes if the host doesn't exist yet on the component's
+  first render (true here: the host is gated on `previewTarget &&
+  !previewError`, and `previewTarget` starts `null` until `loadTree()`'s
+  async fetch resolves). Found via a live check for the `data-
+  overlayscrollbars` attribute coming back completely absent; fixed by
+  passing `[!!previewTarget && !previewError]`, matching the `[open]`
+  convention every other conditionally-shown consumer in this codebase
+  already uses. `ComponentPreview.tsx` didn't need this - its host mounts
+  unconditionally from `PageComponents.tsx`'s own first render.
+- Live-verified on both pages: `data-overlayscrollbars="host"` /
+  `data-overlayscrollbars-viewport="..."` present on the right elements;
+  zooming to 108% flips the viewport's state from `overflowXHidden
+  overflowYHidden` to `overflowXScroll overflowYScroll`; the frame's
+  computed margin is exactly `0px` on both sides while overflowing, and
+  its left edge exactly matches the viewport's visible left edge at
+  `scrollLeft: 0` (nothing masked); re-ran the part-11 error→recovery→
+  resize sequence after this change and both the OverlayScrollbars
+  re-init and the scale recompute (28%→48%) still work post-remount.
+- 0 typecheck errors; full suite still 1075 passed / 12 failed (same
+  pre-existing group).
+
 ## Speed
 
 Single long session, 2026-08-09 (spanning a context-window compaction
@@ -917,7 +1081,9 @@ resume, THE cutover incl. rebuild-on-save, sitemap TTL) likewise. `sivelap`
 entirely from `built/live/*`, that output stays current automatically after
 a VEI save, its pages can be authored/previewed/saved/published without
 leaving the browser (now with a 3-column layout, folder-scoped creation,
-responsive device preview, and real `dry()` typing), "Build all" survives an
+responsive device preview with reliable resize/zoom that survives an
+error-then-recovery cycle, real `dry()` typing, and both unsaved edits and
+the editor's own layout surviving a reload), "Build all" survives an
 interrupted tab and doesn't hammer storage with one request per page, a
 built page's client bundle hydrates cleanly instead of throwing on `dry()`/
 `params()`, and a local dev checkout keeps `src/apps/pages/**` and

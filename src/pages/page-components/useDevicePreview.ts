@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "preact/hooks";
-import type { RefObject } from "preact";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import type { RefCallback } from "preact";
 
 export type Device = "mobile" | "tablet" | "desktop";
 
@@ -16,7 +16,7 @@ export interface UseDevicePreviewResult {
   widthOverride: number | null;
   width: number;
   scale: number;
-  viewportRef: RefObject<HTMLDivElement>;
+  viewportRef: RefCallback<HTMLDivElement>;
   selectDevice: (next: Device) => void;
   widen: () => void;
   narrow: () => void;
@@ -28,7 +28,7 @@ export interface UseScaledPreviewResult<K extends string> {
   widthOverride: number | null;
   width: number;
   scale: number;
-  viewportRef: RefObject<HTMLDivElement>;
+  viewportRef: RefCallback<HTMLDivElement>;
   select: (next: K) => void;
   widen: () => void;
   narrow: () => void;
@@ -44,26 +44,56 @@ export interface UseScaledPreviewResult<K extends string> {
  * `zoom` (not `transform: scale`, applied by the caller using `scale`) does
  * the shrink-to-fit - it reflows layout at the scaled size, so the
  * viewport's own height tracks the *scaled* content height with no leftover
- * whitespace `transform: scale` would leave behind. */
+ * whitespace `transform: scale` would leave behind.
+ *
+ * `viewportRef` is a callback ref, not a plain object ref - the viewport div
+ * isn't always mounted (`PageEditor.tsx` swaps it out for an error message,
+ * or for a "select a file" hint, while keeping this hook alive across the
+ * swap), and a plain ref's `.current` reassignment is invisible to
+ * `useEffect`'s dependency array, so a remount left the `ResizeObserver`
+ * watching the old, now-detached node forever - found live as "scale stops
+ * updating after an error, then recovery, cycle". A callback ref fires on
+ * every attach/detach, so the observer always tracks whichever DOM node is
+ * *currently* there. */
 export function useScaledPreview<K extends string>(widths: Record<K, number>, initialKey: K): UseScaledPreviewResult<K> {
   const [key, setKey] = useState<K>(initialKey);
   const [widthOverride, setWidthOverride] = useState<number | null>(null);
   const [scale, setScale] = useState(1);
-  const viewportRef = useRef<HTMLDivElement>(null);
   const width = widthOverride ?? widths[key];
 
-  useEffect(() => {
-    const viewport = viewportRef.current;
+  const elementRef = useRef<HTMLDivElement | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const widthRef = useRef(width);
+  widthRef.current = width;
+
+  const recompute = useCallback(() => {
+    const viewport = elementRef.current;
     if (!viewport) return;
-    const recompute = () => {
-      const available = viewport.clientWidth - 32; // minus the viewport's own 1rem+1rem padding
-      setScale(available > 0 && width > available ? available / width : 1);
-    };
+    const available = viewport.clientWidth - 32; // minus the viewport's own 1rem+1rem padding
+    setScale(available > 0 && widthRef.current > available ? available / widthRef.current : 1);
+  }, []);
+
+  // Re-derives scale whenever `width` changes against whichever element is
+  // currently attached (a no-op via `recompute`'s own guard if none is).
+  useEffect(() => {
     recompute();
-    const observer = new ResizeObserver(recompute);
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [width]);
+  }, [width, recompute]);
+
+  const viewportRef = useCallback<RefCallback<HTMLDivElement>>(
+    (node) => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      elementRef.current = node;
+      if (!node) return;
+      recompute();
+      const observer = new ResizeObserver(recompute);
+      observer.observe(node);
+      observerRef.current = observer;
+    },
+    [recompute],
+  );
+
+  useEffect(() => () => observerRef.current?.disconnect(), []);
 
   return {
     key,

@@ -959,6 +959,144 @@ thiết).
       đây là UI/tương tác, xác nhận qua Playwright sống thay vì unit test
       mới, giống cách tiếp cận `PageEditor.tsx` đã dùng từ đầu.
 
+11. **✅ `PageEditor.tsx` UX - vòng fix tiếp theo sau mục 10 (2026-08-09),
+    3 yêu cầu rời rạc trong cùng phiên: resize/reload UX, scale tách khỏi
+    width, cache localStorage.**
+    - **Bug resize: kéo nhanh bị đứt tracking.** `useResizablePanel.ts` gốc
+      gắn `pointermove`/`pointerup` ở cấp `document` - kéo nhanh vượt qua
+      hit-area 4px của handle rồi rơi vào `<iframe>` bên cạnh (preview) làm
+      mất tracking vì pointer event của iframe nổ ra trong DOCUMENT RIÊNG
+      của nó, không bubble lên `document` cha. Fix: chuyển sang
+      `setPointerCapture` ngay trên handle (`onPointerDown` gọi
+      `setPointerCapture`, `onPointerMove`/`onPointerUp`/`onPointerCancel`
+      đều là prop của chính handle, không còn listener gắn/gỡ thủ công ở
+      `document`) - đúng pattern `overlay.ts`'s `panelResizeHandle` đã dùng
+      cho tình huống y hệt. `handleProps` giờ có 4 handler thay vì 1;
+      2 nơi dùng (`PageEditor.tsx`, `PageComponents.tsx`) chỉ spread
+      `{...xxx.handleProps}` nên không cần đổi gì ở nơi gọi.
+    - **Thanh chia mờ khi đang kéo.** `.page-components-resize-handle.
+      dragging::before` - dải mờ (`opacity: 0.15`) rộng hơn hit-area 4px
+      thật để dễ thấy đường phân cách đang kéo tới đâu.
+    - **Nút Reload cho preview.** Gọi thẳng `refreshPreview()`, cùng hàm
+      debounce tự động vẫn chạy sau mỗi lần sửa code - nút chỉ để refresh
+      ngay không cần đợi debounce hoặc dùng khi muốn build lại sau lỗi
+      thoáng qua (network v.v.).
+    - **`[- % +] [Fit]` đổi SCALE, không đổi WIDTH - sửa sau khi hiểu sai
+      lần đầu.** Lần đầu tái dùng nhầm `viewport.widen`/`narrow`/`reset`
+      (đổi WIDTH mô phỏng của device) - người dùng chỉnh lại: phải là zoom
+      view, width giữ cố định theo preset xs/sm/md/lg/xl đang chọn. Fix:
+      thêm state `manualZoom` (number | null) độc lập, xếp CHỒNG lên
+      `viewport.scale` tự động (`effectiveZoom = manualZoom ?? viewport.
+      scale`) - khung preview vẫn `width: viewport.width` cố định,
+      chỉ đổi `zoom: effectiveZoom`. `Fit` = xoá override
+      (`setManualZoom(null)`), disabled khi đã ở auto-fit rồi.
+    - **Bug: hết lỗi rồi thì scale hết hoạt động - root cause + fix.**
+      `previewTarget ? (previewError ? <span class="error"> : <div
+      ref={viewport.viewportRef}>...) : <p>)` - khi có lỗi (hoặc chưa
+      chọn file preview được) thì DIV mang `ref` unmount hẳn, không chỉ ẩn.
+      `useScaledPreview` (mục 10) dùng `useRef` thường + 1 `useEffect` chỉ
+      phụ thuộc `[width]` để gắn `ResizeObserver` - gán lại `.current` của
+      ref KHÔNG kích hoạt effect chạy lại, nên khi lỗi hết và div MOUNT LẠI
+      (node DOM mới), observer cũ vẫn đang rình node CŨ đã bị gỡ khỏi
+      DOM - `scale` đứng yên vĩnh viễn từ đó. Fix tại gốc (hook, không phải
+      nơi gọi): đổi `viewportRef` từ ref object sang **callback ref**
+      (`RefCallback<HTMLDivElement>`) - mỗi lần attach/detach đều có
+      callback chạy, disconnect observer cũ + tạo observer mới đúng node
+      hiện tại, bất kể vì sao remount (lỗi, đổi file, hay bất cứ lý do gì
+      sau này). An toàn cho `ComponentPreview.tsx` (Component Builder) vì
+      div ở đó mount 1 lần duy nhất không đổi - callback ref hành xử giống
+      hệt ref object trong trường hợp đó. Xác nhận sống: gõ lỗi cú pháp
+      thật vào `page.tsx` → preview báo lỗi (div biến mất) → sửa lại đúng →
+      preview phục hồi → kéo resize handle đổi width cột preview (480→694→
+      394px, dùng `page.mouse` thật qua CDP, không phải sự kiện giả lập) →
+      % scale đổi ĐÚNG theo cả 2 chiều (35%→52%→28%) - xác nhận
+      `ResizeObserver` bám đúng node mới sau remount.
+    - **Cache code đang sửa vào IndexedDB** (`page-source-draft-db.ts`,
+      mirror `entry-draft-db.ts` - không có `BroadcastChannel`, không cần
+      sync 2 tab). `loadTree()` overlay draft lên `sourceByPath` sau khi
+      fetch xong (chỉ overlay path còn tồn tại trong cây mới tải - path
+      không còn thì xoá draft luôn, không "hồi sinh" file đã xoá).
+      `handleChange` ghi draft debounce 300ms/path (`Map` theo path, đúng
+      pattern `entry-draft-store.ts`'s `saveEntryDraft` - gõ nhanh không
+      ghi IndexedDB mỗi phím; đổi file khác giữa chừng không huỷ debounce
+      của file trước). Xoá draft khi: nội dung gõ về khớp `savedByPath`
+      (`handleChange`), sau `handleSave` thành công, sau `handleDelete`/
+      `handleMove` thành công (path cũ trong `handleMove` được dọn ngay,
+      không đợi `loadTree()`'s prune-pass). Xác nhận sống: sửa `page.tsx`
+      không lưu → reload trang thật → code editor hiện lại ĐÚNG nội dung
+      chưa lưu (không phải bản đã lưu trên server) + dot "Unsaved changes"
+      khôi phục đúng trên cây.
+    - **State layout/view (không phải nội dung file) cache vào
+      localStorage** - yêu cầu riêng "để vẫn giữ được kết quả đúng đắn khi
+      reload". Khoá `dry-page-editor-ui-state`, 1 object JSON:
+      `selectedPath`, `sidebarOpen`, `previewOpen`, `sidebarWidth`,
+      `previewWidth`, `viewportKey`, `manualZoom`. Đọc 1 lần lúc mount
+      (lazy `useState` initializer) để seed toàn bộ state/hook liên quan
+      (kể cả `initial` truyền vào `useResizablePanel`/`useScaledPreview` -
+      không phải set lại SAU khi mount); ghi debounce 300ms qua chính
+      pattern cleanup-effect (không cần `useRef` timer thủ công vì chỉ có
+      1 điểm ghi gộp, khác `page-source-draft-db.ts`'s per-path Map).
+      Tách hẳn khỏi IndexedDB draft (nội dung file, có ý nghĩa phục hồi
+      thật) vì đây thuần UI, không cần schema/migration, `localStorage`
+      đồng bộ đơn giản là đủ. Xác nhận sống: chọn file khác + đổi viewport
+      + zoom, đợi >300ms, reload trang thật → cả 3 khôi phục đúng
+      (`selectedPath`, `viewportKey`, `manualZoom` đọc thẳng từ
+      `localStorage.getItem(...)` khớp giá trị đã set).
+    - Đăng nhập dev để live-test: tài khoản admin lưu trong bộ nhớ đã đổi
+      lần nữa (`drystack.dev@gmail.com` → 401, người dùng cấp lại
+      `thanhkhan2k@gmail.com`) - xác nhận Playwright chạy browser TÁCH
+      BIỆT hoàn toàn khỏi trình duyệt thật của người dùng (phải đăng nhập
+      lại từ đầu, không kế thừa session nào) nên mọi thao tác test (kể cả
+      sửa code không lưu) không đụng gì tới dữ liệu/tab thật của người
+      dùng.
+    - **`.page-components-preview-viewport` đổi sang OverlayScrollbars +
+      frame tính width đúng 100%** (2 yêu cầu ngắn, cùng phiên, phát sinh
+      sau khi xem lại `components.css`). Trước đó class này chỉ có
+      `overflow: auto` (scroll trình duyệt mặc định) - `ComponentPreview.tsx`
+      thật ra ĐÃ có sẵn class `scroll` gắn kèm nhưng KHÔNG hề nối với
+      instance `useOverlayScrollbars` thật nào (ref đang giữ chỗ đó là
+      `preview.viewportRef` của hook scale, không phải hook scroll) - class
+      `scroll` từ trước tới giờ không có tác dụng thật, chỉ là CSS-only.
+      Fix: tách host/viewport đúng pattern `.magic-chat-messages`/
+      `.magic-chat-messages-viewport` đã có sẵn - `.page-components-preview-
+      viewport` (host, `ref` của `useOverlayScrollbars`, chỉ còn `height`+
+      `background-color`) bọc `.page-components-preview-viewport-inner`
+      (mới, `viewportRef` của cùng hook, `display:flex` + phần tử scroll
+      thật). Cả `PageEditor.tsx` lẫn `ComponentPreview.tsx` đều cần 2 ref
+      độc lập trên CÙNG 1 host (`useScaledPreview`'s width-observer +
+      `useOverlayScrollbars`'s host ref) - thêm `src/lib/merge-refs.ts`
+      (`mergeRefs`, dùng chung, không phải one-off) để gộp. Đồng thời đổi
+      `.page-components-preview-frame` từ `justify-content: center` (trên
+      parent) sang `margin-inline: auto` (trên CHÍNH direct-child, áp dụng
+      qua `& > *` để cả `.alert`/`.hint` trong `ComponentPreview.tsx`'s
+      error/empty state cũng được center giống hệt) - khác biệt quan trọng:
+      `justify-content: center` giữ nguyên ý định "center" ngay cả khi con
+      tràn khung, che mất mép ĐẦU không kéo tới được; `margin: auto` tự
+      collapse về 0 khi tràn, cho scroll tới đủ cả 2 mép. **Bẫy khi wire
+      `useOverlayScrollbars` cho `PageEditor.tsx`:** hook này tự nhận
+      `deps` (mặc định `[]`, chỉ init 1 lần lúc mount thật - khác hẳn
+      `useScaledPreview`'s callback ref tự heal ở mục trên) - host div ở
+      đây bị RENDER CÓ ĐIỀU KIỆN (`previewTarget && !previewError`, còn null
+      ở lần render đầu tiên trước khi `loadTree()` xong) nên phải truyền
+      đúng `[!!previewTarget && !previewError]` (giống hệt convention
+      `[open]` mọi nơi khác trong codebase đã dùng cho panel ẩn/hiện) - nếu
+      không, thư viện không bao giờ init được cho div xuất hiện trễ này.
+      `ComponentPreview.tsx` không cần deps đặc biệt vì host của nó luôn
+      mount ngay từ đầu (không có điều kiện). Xác nhận sống: `data-
+      overlayscrollbars="host"` + `data-overlayscrollbars-viewport`
+      xuất hiện đúng trên 2 phần tử tương ứng ở cả 2 trang; zoom in tới
+      108% (vượt container) → attribute đổi đúng từ `overflowXHidden
+      overflowYHidden` sang `overflowXScroll overflowYScroll`, margin frame
+      đo được `0px` cả 2 bên (xác nhận không còn bị che mép), `frameLeft ===
+      innerLeft` tại `scrollLeft:0` (mép đầu tới được đầy đủ); lặp lại
+      chuỗi lỗi→sửa→resize (mục ngay trên) sau khi đổi - `data-
+      overlayscrollbars` xuất hiện lại đúng sau remount, % scale vẫn đổi
+      đúng theo resize (28%→48%) - xác nhận đổi CSS không phá 2 fix trước.
+    - 0 lỗi typecheck; unit test 1075 pass / 12 fail - CÙNG 12 fail đã có
+      từ trước phần này (xác nhận bằng `git stash` rồi chạy lại, fail y
+      hệt không có thay đổi của phần này - do đợt bỏ blog/contact page
+      trước đó làm lệch seed/sitemap test, không liên quan `PageEditor`).
+
 **Quyết định mới #8 (chốt trong lúc build, không có trong bản plan gốc):**
 mọi capability trên được xây **additive và dark** cho tới khi có ít nhất 1
 lần build thật chạy qua UI Build (mục 5) - **điều kiện đó đã đạt được**

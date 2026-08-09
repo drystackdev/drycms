@@ -13,7 +13,12 @@ export interface UseResizablePanelOptions {
 export interface UseResizablePanelResult {
   size: number;
   /** Spread onto the divider element between the two panels. */
-  handleProps: { onPointerDown: (event: PointerEvent) => void };
+  handleProps: {
+    onPointerDown: (event: PointerEvent) => void;
+    onPointerMove: (event: PointerEvent) => void;
+    onPointerUp: (event: PointerEvent) => void;
+    onPointerCancel: (event: PointerEvent) => void;
+  };
   dragging: boolean;
 }
 
@@ -24,6 +29,19 @@ export interface UseResizablePanelResult {
  * (no reorder, no FLIP animation, no overlay clone): the divider itself
  * never moves during a drag, only the number driving the panel's own
  * `style.width`/`height` does.
+ *
+ * Tracks the drag via `setPointerCapture` on the handle itself, not a
+ * `document`-level `pointermove` listener (the original approach here) -
+ * found live (`PageEditor.tsx`'s preview panel, flanked by a real
+ * `<iframe>`): a fast drag routinely overshoots the handle's own 4px hit
+ * area, and once the cursor lands over the iframe, its pointer events fire
+ * inside THAT document instead of bubbling to the parent's `document`
+ * listener at all - the drag would just silently stop tracking. Capture
+ * (the same fix `overlay.ts`'s own `panelResizeHandle` already uses for an
+ * identical drag) redirects every subsequent event for this pointer straight
+ * to the handle regardless of what's actually underneath it, iframe
+ * included, so the listeners can live as plain props on the handle itself
+ * instead of a manually added/removed `document` pair.
  */
 export function useResizablePanel({ initial, min, max, axis }: UseResizablePanelOptions): UseResizablePanelResult {
   const [size, setSize] = useState(initial);
@@ -40,23 +58,27 @@ export function useResizablePanel({ initial, min, max, axis }: UseResizablePanel
     [axis, min, max],
   );
 
-  const onPointerUp = useCallback(() => {
+  const endDrag = useCallback((event: PointerEvent) => {
+    if (!dragState.current) return;
     dragState.current = null;
     setDragging(false);
-    document.removeEventListener("pointermove", onPointerMove);
-    document.removeEventListener("pointerup", onPointerUp);
-  }, [onPointerMove]);
+    const handle = event.currentTarget as Element;
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+  }, []);
 
   const onPointerDown = useCallback(
     (event: PointerEvent) => {
       event.preventDefault();
       dragState.current = { startPos: axis === "x" ? event.clientX : event.clientY, startSize: size };
       setDragging(true);
-      document.addEventListener("pointermove", onPointerMove);
-      document.addEventListener("pointerup", onPointerUp, { once: true });
+      (event.currentTarget as Element).setPointerCapture(event.pointerId);
     },
-    [axis, size, onPointerMove, onPointerUp],
+    [axis, size],
   );
 
-  return { size, handleProps: { onPointerDown }, dragging };
+  return {
+    size,
+    handleProps: { onPointerDown, onPointerMove, onPointerUp: endDrag, onPointerCancel: endDrag },
+    dragging,
+  };
 }

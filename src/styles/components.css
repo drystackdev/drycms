@@ -2553,7 +2553,6 @@
     .sidebar {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
       background-color: var(--dry-sidebar);
       border-inline-end: 1px solid var(--dry-border);
       position: sticky;
@@ -5630,13 +5629,19 @@
       flex: 0 0 4px;
     }
 
+    /* Preview panel's own header - the file label plus its reload/zoom
+       controls (`PageEditor.tsx`). A row, not plain text - kept next to the
+       preview itself rather than the top toolbar, which has no room left
+       once the viewport-preset buttons are already there. */
     .page-editor-preview-label {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
       flex: 0 0 auto;
+      min-width: 0;
       padding: 0.375rem 0.5rem;
+      margin-left: -3px;
       border-bottom: 1px solid var(--dry-border);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     .page-components-body {
@@ -5699,10 +5704,9 @@
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      border-radius: var(--dry-radius-md);
       padding-block: 0.25rem;
       padding-inline-end: 0.5rem;
-      transition: background-color .1s ease-in;
+      transition: background-color 0.1s ease-in;
 
       & svg {
         width: 1.125rem;
@@ -5711,7 +5715,8 @@
       }
 
       &.selected {
-        background-color: var(--dry-muted);
+        outline: 1px solid var(--dry-primary);
+        outline-offset: -1px;
         font-weight: 600;
       }
 
@@ -5734,9 +5739,9 @@
        reads as one continuous rail down the whole subtree, shadcn
        `sidebar-11`-style. */
     .page-components-tree-children {
-      margin-inline-start: 0.9375rem;
-      padding-inline-start: 0.75rem;
-      border-inline-start: 1px solid var(--dry-border);
+      & > div {
+        padding-left: 1rem;
+      }
     }
 
     .page-components-tree-create {
@@ -5752,7 +5757,7 @@
       justify-content: center;
       flex: 0 0 1.125rem;
       height: 1.125rem;
-      padding-left: .25rem;
+      padding-left: 0.25rem;
       color: var(--dry-muted-foreground);
       cursor: pointer;
       transition: transform 120ms ease;
@@ -5761,7 +5766,7 @@
         transform: rotate(90deg);
       }
 
-      &>svg:first-child {
+      & > svg:first-child {
         height: 1rem;
         width: 1rem;
       }
@@ -5806,8 +5811,6 @@
        looking like the same thing. */
     .page-components-tree-row.folder-active {
       background-color: var(--dry-accent);
-      outline: 1px solid var(--dry-border);
-      outline-offset: -1px;
     }
 
     .page-components-tree-input {
@@ -5830,10 +5833,12 @@
     }
 
     .page-components-resize-handle {
+      position: relative;
       flex: 0 0 4px;
       cursor: col-resize;
       background-color: transparent;
       touch-action: none;
+      border-left: 1px solid var(--dry-border);
 
       &.horizontal {
         cursor: row-resize;
@@ -5842,6 +5847,25 @@
       &:hover,
       &.dragging {
         background-color: var(--dry-primary);
+      }
+
+      /* A wider, translucent band while actively dragging - the 4px handle
+         itself is easy to lose track of mid-drag (attention is on the
+         panel content, not the thin strip), so this gives an unmissable
+         visual anchor for where the divider currently sits. Pointer
+         tracking itself doesn't depend on this (`useResizablePanel.ts` uses
+         real pointer capture), it's purely the "where's the line" cue. */
+      &.dragging::before {
+        content: "";
+        position: absolute;
+        inset: 0 -6px;
+        background-color: var(--dry-primary);
+        opacity: 0.15;
+        pointer-events: none;
+      }
+
+      &.horizontal.dragging::before {
+        inset: -6px 0;
       }
     }
 
@@ -5884,19 +5908,38 @@
       }
     }
 
+    /* Host for `useOverlayScrollbars` (its opt-in `viewportRef`, see below) -
+     * sizing only, no overflow/flex here, the library owns that on the real
+     * viewport element (matches `.magic-chat-messages`'s host/viewport
+     * split). */
     .page-components-preview-viewport {
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
       height: 100%;
-      overflow: auto;
-      padding: 1rem;
-      border-bottom: 1px solid var(--dry-border);
       background-color: var(--dry-background);
     }
 
+    /* The real scrolling element (`useOverlayScrollbars`'s `viewportRef`)
+     * AND the direct flex parent of `.page-components-preview-frame` (or
+     * whatever else this shows - an `.alert`/`.hint` in `ComponentPreview`'s
+     * error/empty state) - kept a genuine DOM node the library doesn't
+     * relocate that child out of. `min-width: 100%` (not `width`) so it
+     * still fills the host when the child is narrower (letting the child's
+     * own `margin-inline: auto` center it), but grows past 100% instead of
+     * clipping when the child is wider (the frame, zoomed in past
+     * auto-fit). Every direct child gets auto-centered the same way -
+     * unlike `justify-content: center` on the parent, `margin: auto` on the
+     * child collapses to 0 and stays fully scrollable from both edges once
+     * it's wider than the container, instead of clipping its start edge. */
+    .page-components-preview-viewport-inner {
+      display: flex;
+      align-items: flex-start;
+      min-width: 100%;
+
+      & > * {
+        margin-inline: auto;
+      }
+    }
+
     .page-components-preview-frame {
-      width: 100%;
       flex-shrink: 0;
       background-color: #fff;
     }

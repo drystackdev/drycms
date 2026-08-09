@@ -7,8 +7,11 @@ import { MenuIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import { useScaledPreview } from "./page-components/useDevicePreview.js";
 import { useResizablePanel } from "../lib/useResizablePanel.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
+import { mergeRefs } from "../lib/merge-refs.js";
 import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
+import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft } from "../page-components/page-source-draft-db.js";
 import { buildPage, PageBuildError } from "../page-components/page-build.js";
 import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
@@ -18,6 +21,24 @@ import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
 import { useDocumentTitle } from "./page-common.js";
+
+/** Same icon `SlugField.tsx`'s `RegenerateSlugIcon` uses, for the same
+ * "recompute this on demand" meaning - a local one-off (this codebase's own
+ * established pattern for a single-use icon, e.g. Media's `OptimizeIcon`)
+ * rather than a new shared export for the one button that needs it. */
+function ReloadIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path
+        fill="currentColor"
+        fill-rule="evenodd"
+        d="m18.94 6.5l-2.97-2.97l1.06-1.06l3.897 3.896a1.25 1.25 0 0 1 0 1.768L17.03 12.03l-1.06-1.06L18.94 8H5.75c-.69 0-1.25.56-1.25 1.25V11H3V9.25A2.75 2.75 0 0 1 5.75 6.5zm-13.88 11l2.97 2.97l-1.06 1.06l-3.897-3.896a1.25 1.25 0 0 1 0-1.768L6.97 11.97l1.06 1.06L5.06 16h13.19c.69 0 1.25-.56 1.25-1.25V13H21v1.75a2.75 2.75 0 0 1-2.75 2.75z"
+        clip-rule="evenodd"
+      />
+    </svg>
+  );
+}
 
 /**
  * In-browser page/layout/component source editor (`plans/app-r2.md` Giai
@@ -56,9 +77,7 @@ const DEFAULT_PAGE_SOURCE = `export default function Page() {
 const LAYOUT_PLACEHOLDER_PATH = "__dry-preview-layout-placeholder.tsx";
 const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() {
   return (
-    <div style="padding:3rem 1.5rem;margin:1rem;text-align:center;background:#fef3c7;border:2px dashed #d97706;border-radius:0.5rem;color:#92400e;font:600 14px/1.5 system-ui,sans-serif;">
-      Page content renders here
-    </div>
+    <div style="padding:3rem 1.5rem;margin:1rem;text-align:center;background:#fef3c7;border:2px dashed #d97706;border-radius:0.5rem;color:#92400e;font:600 14px/1.5 system-ui,sans-serif;"></div>
   );
 }
 `;
@@ -108,6 +127,51 @@ const PREVIEW_WIDTH = { initial: 480, min: 280, max: 900 };
 type ViewportKey = "xs" | "sm" | "md" | "lg" | "xl";
 const VIEWPORT_WIDTHS: Record<ViewportKey, number> = { xs: 375, sm: 640, md: 768, lg: 1024, xl: 1280 };
 const VIEWPORT_KEYS: ViewportKey[] = ["xs", "sm", "md", "lg", "xl"];
+const ZOOM_STEP = 0.1;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 3;
+
+/** Persists this page's own layout/view state - which file is open, panel
+ * sizes, viewport preset, zoom - so a reload lands back where the user left
+ * off instead of resetting to defaults every time. Deliberately separate
+ * from `page-source-draft-db.ts`'s IndexedDB: that store holds actual file
+ * CONTENT (recoverable across devices/tabs via the server being the real
+ * source of truth once saved); this is purely local UI state with no server
+ * counterpart at all, so `localStorage` (synchronous, simpler, no schema
+ * migration machinery) is the right tool rather than sharing that store. */
+const UI_STATE_KEY = "dry-page-editor-ui-state";
+
+interface PageEditorUiState {
+  selectedPath: string | null;
+  sidebarOpen: boolean;
+  previewOpen: boolean;
+  sidebarWidth: number;
+  previewWidth: number;
+  viewportKey: ViewportKey;
+  manualZoom: number | null;
+}
+
+function loadPageEditorUiState(): Partial<PageEditorUiState> | null {
+  try {
+    const raw = localStorage.getItem(UI_STATE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PageEditorUiState>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePageEditorUiState(state: PageEditorUiState) {
+  try {
+    localStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // Best-effort - a write failure (quota, private mode) just means the
+    // layout resets to defaults on the next reload, not a functional break.
+  }
+}
+
+function clampWidth(value: number, range: { min: number; max: number }): number {
+  return Math.min(range.max, Math.max(range.min, value));
+}
 
 export default function PageEditor() {
   useDocumentTitle("Page Code Editor");
@@ -115,25 +179,69 @@ export default function PageEditor() {
   const api = useMemo(() => createPagesSourceApi(`${path}/api/pages-source`), []);
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
 
+  // Read once (lazy initializer, not re-read every render) - every piece of
+  // state below seeds itself from this same snapshot.
+  const [initialUiState] = useState(() => loadPageEditorUiState());
+
   const [entries, setEntries] = useState<FileEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceByPath, setSourceByPath] = useState<Record<string, string>>({});
   const [savedByPath, setSavedByPath] = useState<Record<string, string>>({});
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(initialUiState?.selectedPath ?? null);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [previewOpen, setPreviewOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(initialUiState?.sidebarOpen ?? true);
+  const [previewOpen, setPreviewOpen] = useState(initialUiState?.previewOpen ?? true);
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
   const [origin] = useState(() => window.location.origin);
 
-  const sidebar = useResizablePanel({ ...SIDEBAR_WIDTH, axis: "x" });
-  const previewSplit = useResizablePanel({ ...PREVIEW_WIDTH, axis: "x" });
-  const viewport = useScaledPreview<ViewportKey>(VIEWPORT_WIDTHS, "lg");
+  const sidebar = useResizablePanel({
+    ...SIDEBAR_WIDTH,
+    initial: initialUiState?.sidebarWidth !== undefined ? clampWidth(initialUiState.sidebarWidth, SIDEBAR_WIDTH) : SIDEBAR_WIDTH.initial,
+    axis: "x",
+  });
+  const previewSplit = useResizablePanel({
+    ...PREVIEW_WIDTH,
+    initial: initialUiState?.previewWidth !== undefined ? clampWidth(initialUiState.previewWidth, PREVIEW_WIDTH) : PREVIEW_WIDTH.initial,
+    axis: "x",
+  });
+  const viewport = useScaledPreview<ViewportKey>(
+    VIEWPORT_WIDTHS,
+    initialUiState?.viewportKey && VIEWPORT_KEYS.includes(initialUiState.viewportKey) ? initialUiState.viewportKey : "lg",
+  );
+  /** `+`/`-`/`Fit` zoom the PREVIEW ITSELF, layered on top of
+   * `viewport.scale`'s own auto-fit-to-panel value - unlike the xs/sm/md/lg/
+   * xl buttons (which pick `viewport.width`, the simulated device's actual
+   * width the iframe reflows against), this never changes what width the
+   * page inside the iframe thinks it's rendering at, only how big it looks
+   * on screen. `null` = no manual override, use the auto-fit scale as-is. */
+  const [manualZoom, setManualZoom] = useState<number | null>(
+    typeof initialUiState?.manualZoom === "number" ? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, initialUiState.manualZoom)) : null,
+  );
+  const effectiveZoom = manualZoom ?? viewport.scale;
+
+  // Debounced via the effect-cleanup idiom: each dependency change cancels
+  // the previous pending write and schedules a fresh one, so a resize
+  // drag's continuous stream of size updates doesn't hit localStorage on
+  // every pointermove.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      savePageEditorUiState({
+        selectedPath,
+        sidebarOpen,
+        previewOpen,
+        sidebarWidth: sidebar.size,
+        previewWidth: previewSplit.size,
+        viewportKey: viewport.key,
+        manualZoom,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selectedPath, sidebarOpen, previewOpen, sidebar.size, previewSplit.size, viewport.key, manualZoom]);
 
   async function loadTree() {
     try {
@@ -146,10 +254,22 @@ export default function PageEditor() {
       files.forEach((file, index) => {
         nextSource[file.id] = contents[index]!;
       });
-      setSourceByPath(nextSource);
       setSavedByPath(nextSource);
+
+      // Overlay any unsaved edit recovered from IndexedDB on top of the
+      // freshly-loaded saved content - but only for a file that's still in
+      // the tree; a draft for a since-deleted/renamed path is stale, so it's
+      // dropped here rather than resurrected.
+      const drafts = await getAllPageSourceDrafts();
+      const withDrafts = { ...nextSource };
+      for (const draft of drafts) {
+        if (draft.path in nextSource) withDrafts[draft.path] = draft.source;
+        else void deletePageSourceDraft(draft.path);
+      }
+      setSourceByPath(withDrafts);
+
       setSelectedPath((current) => {
-        if (current && nextSource[current] !== undefined) return current;
+        if (current && withDrafts[current] !== undefined) return current;
         return files.length > 0 ? files[0]!.id : null;
       });
     } catch (error) {
@@ -206,9 +326,42 @@ export default function PageEditor() {
     return rest;
   }, [sourceByPath, selectedPath, dryTypes]);
 
+  /** Per-path debounce for the IndexedDB draft write, same 300ms/keyed-Map
+   * shape `entry-draft-store.ts`'s `saveEntryDraft` already established for
+   * the identical "a fast typist shouldn't hit IndexedDB once per keystroke"
+   * reason - keyed (not a single timer) because switching to another file
+   * mid-debounce must flush/track that file independently rather than
+   * cancel the first file's pending write. */
+  const pendingDraftWrites = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  function cancelDraftWrite(filePath: string) {
+    const pending = pendingDraftWrites.current.get(filePath);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      pendingDraftWrites.current.delete(filePath);
+    }
+  }
+
+  function scheduleDraftWrite(filePath: string, source: string) {
+    cancelDraftWrite(filePath);
+    pendingDraftWrites.current.set(
+      filePath,
+      setTimeout(() => {
+        pendingDraftWrites.current.delete(filePath);
+        void putPageSourceDraft(filePath, source);
+      }, 300),
+    );
+  }
+
   function handleChange(result: EditerResult) {
     if (!selectedPath) return;
     setSourceByPath((prev) => (prev[selectedPath] === result.code ? prev : { ...prev, [selectedPath]: result.code }));
+    if (result.code === savedByPath[selectedPath]) {
+      cancelDraftWrite(selectedPath);
+      void deletePageSourceDraft(selectedPath);
+    } else {
+      scheduleDraftWrite(selectedPath, result.code);
+    }
   }
 
   async function handleSave() {
@@ -217,6 +370,8 @@ export default function PageEditor() {
     try {
       await api.save(selectedPath, sourceByPath[selectedPath] ?? "");
       setSavedByPath((prev) => ({ ...prev, [selectedPath]: sourceByPath[selectedPath] ?? "" }));
+      cancelDraftWrite(selectedPath);
+      void deletePageSourceDraft(selectedPath);
       toast.add({ type: "success", title: "Saved.", description: "Build the affected page on Page Build to publish this change." });
     } catch (error) {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
@@ -254,6 +409,8 @@ export default function PageEditor() {
     setDeleting(true);
     try {
       await api.remove(pendingDelete.id);
+      cancelDraftWrite(pendingDelete.id);
+      void deletePageSourceDraft(pendingDelete.id);
       if (selectedPath === pendingDelete.id) setSelectedPath(null);
       setPendingDelete(null);
       await loadTree();
@@ -273,6 +430,8 @@ export default function PageEditor() {
     try {
       const rewrites = rewriteImportsAfterMove(sourceByPath, from, to);
       await api.move(from, to);
+      cancelDraftWrite(from);
+      void deletePageSourceDraft(from);
       if (rewrites[to] !== undefined) await api.save(to, rewrites[to]);
       for (const [otherPath, content] of Object.entries(rewrites)) {
         if (otherPath !== to) await api.save(otherPath, content);
@@ -376,6 +535,24 @@ export default function PageEditor() {
     }
     return null;
   }, [manifest, selectedPath, sourceByPath]);
+
+  /** `.page-components-preview-viewport` (below) needs 2 independent refs -
+   * `useScaledPreview`'s own (measures available width for auto-fit,
+   * self-healing across remounts via its own callback ref - see its doc
+   * comment) and this one (hands scroll/overflow to the app's standard
+   * scroll library, matching every other scrollable panel - see
+   * `.magic-chat-messages`'s host/viewport CSS split for the same pattern).
+   * `mergeRefs` below attaches both to the one host element.
+   *
+   * Unlike `useScaledPreview`, this hook's own `ref` is a plain object, not
+   * self-healing - its mount effect only runs when `deps` changes, so it
+   * MUST be told exactly when the host element's mounted-ness flips (it's
+   * conditionally rendered, gated on `previewTarget && !previewError`) or
+   * it silently never initializes for a host that doesn't exist yet on
+   * first mount (this component's very first render, before `loadTree()`'s
+   * async fetch resolves `previewTarget` - the doc comment on the hook
+   * itself calls this out, e.g. `[open]` for a conditionally-shown panel). */
+  const previewScroll = useOverlayScrollbars<HTMLDivElement>([!!previewTarget && !previewError]);
 
   async function refreshPreview() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
@@ -535,17 +712,45 @@ export default function PageEditor() {
           <>
             <div style={{ width: `${previewSplit.size}px`, display: "flex", flexDirection: "column" }}>
               {previewTarget && (
-                <div class="page-editor-preview-label hint">
-                  {previewLabel ?? previewTarget.label} · {viewport.width}px
+                <div class="page-editor-preview-label">
+                  <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {previewLabel ?? previewTarget.label}
+                  </span>
+                  <div class="spacer" />
+                  <button type="button" class="ghost icon sm" aria-label="Reload preview" disabled={previewLoading} onClick={() => void refreshPreview()}>
+                    <ReloadIcon />
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    aria-label="Zoom out"
+                    onClick={() => setManualZoom(Math.max(MIN_ZOOM, effectiveZoom - ZOOM_STEP))}
+                  >
+                    −
+                  </button>
+                  <span class="hint">{Math.round(effectiveZoom * 100)}%</span>
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    aria-label="Zoom in"
+                    onClick={() => setManualZoom(Math.min(MAX_ZOOM, effectiveZoom + ZOOM_STEP))}
+                  >
+                    +
+                  </button>
+                  <button type="button" class="sm outline" disabled={manualZoom === null} onClick={() => setManualZoom(null)}>
+                    Fit
+                  </button>
                 </div>
               )}
               {previewTarget ? (
                 previewError ? (
                   <span class="error" style={{ padding: "0.5rem" }}>{previewError}</span>
                 ) : (
-                  <div class="page-components-preview-viewport" ref={viewport.viewportRef}>
-                    <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${PREVIEW_FRAME_HEIGHT}px`, zoom: viewport.scale }}>
-                      <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+                  <div class="page-components-preview-viewport" ref={mergeRefs(viewport.viewportRef, previewScroll.ref)}>
+                    <div class="page-components-preview-viewport-inner" ref={previewScroll.viewportRef}>
+                      <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${PREVIEW_FRAME_HEIGHT}px`, zoom: effectiveZoom }}>
+                        <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+                      </div>
                     </div>
                   </div>
                 )
