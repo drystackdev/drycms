@@ -160,6 +160,13 @@ export function createD1PagesRegistryAdapter(
       return (result.results ?? []).map(toPageRecord);
     },
 
+    async getPage(path) {
+      await ensureBootstrap();
+      const result = await db.prepare('SELECT * FROM "_pages" WHERE "path" = ?;').bind(path).all<PageRow>();
+      const row = result.results?.[0];
+      return row ? toPageRecord(row) : null;
+    },
+
     async markPublished(path, objectKey) {
       await ensureBootstrap();
       await db.prepare('UPDATE "_pages" SET "object_key" = ?, "publish_at" = NULL WHERE "path" = ?;').bind(objectKey, path).run();

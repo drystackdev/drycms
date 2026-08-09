@@ -47,16 +47,21 @@ let originalNodeEnv: string | undefined;
  * its own nested lib build has the exact same "inherits the dev server's
  * `NODE_ENV=development` unless forced" problem this was written for. */
 export async function withProductionNodeEnv<T>(fn: () => Promise<T>): Promise<T> {
-  if (productionBuildsInFlight === 0) originalNodeEnv = process.env.NODE_ENV;
+  // Indirected through `env` (rather than writing `process.env.NODE_ENV`
+  // directly) so the worker build's esbuild pass - which defines
+  // `process.env.NODE_ENV` as a literal - doesn't flag this dev-only write
+  // as a "suspicious assignment to defined constant" warning.
+  const env = process.env;
+  if (productionBuildsInFlight === 0) originalNodeEnv = env.NODE_ENV;
   productionBuildsInFlight++;
-  process.env.NODE_ENV = "production";
+  env.NODE_ENV = "production";
   try {
     return await fn();
   } finally {
     productionBuildsInFlight--;
     if (productionBuildsInFlight === 0) {
-      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalNodeEnv === undefined) delete env.NODE_ENV;
+      else env.NODE_ENV = originalNodeEnv;
     }
   }
 }

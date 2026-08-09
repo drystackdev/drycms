@@ -1,0 +1,102 @@
+# Pages-source GitHub versioning (snapshot-on-build)
+
+## Plan
+
+Bối cảnh: `pagesSourceStorage` (local hoặc R2 tuỳ `kind`) vẫn là nơi
+đọc/ghi SỐNG như hiện tại (`page-editor` save, VEI, dev server đọc trực
+tiếp) - không đổi gì ở đây. Yêu cầu mới: coi local/R2 chỉ là bản "tạm",
+mỗi lần **build** (Build current / Build all, ở cả `PageEditor.tsx` và
+`PageBuild.tsx`) thì đẩy thêm 1 **snapshot commit** của toàn bộ cây
+`pages-source` lên một repo GitHub - đó mới là nơi giữ phiên bản lâu dài.
+Đã từng có `kind: "github"/"gitlab"` cho `StorageAdapter` (dùng cho
+Media/Icons + `content.engine: "file"`) nhưng đã gỡ (`883eff2`) - lần này
+không tái dùng làm ĐƯỜNG ĐỌC/GHI SỐNG (rate-limit, latency, cần `sha`
+đúng mới PUT được, phá luôn model `DevPagesSource` đọc file local mỗi
+request), mà chỉ dùng GitHub API cho một hành động rời rạc, best-effort,
+kích hoạt bởi build.
+
+1. **Config: singleton hệ thống `githubSync`** (theo đúng pattern
+   `googleVerification`/`seoDefaults` - xem `google-verification-singleton.md`)
+   - `system-fields.ts`: thêm `GITHUB_SYNC_TYPE_ID = "system-github-sync"`.
+   - `seed.ts`: singleton `hidden: true, locked: true`, fields:
+     - `enabled` (boolean/toggle, default false) - tắt hẳn tính năng khi
+       chưa cấu hình, để build vẫn chạy bình thường không lỗi/không log ồn.
+     - `repo` (text, placeholder `your-org/your-site`, required khi enabled).
+     - `branch` (text, placeholder `main`, default `"main"`).
+     - `token` (type `secretkey` - cùng field type `aiKey`/`user.password`
+       đang dùng, unmasked multiline, không hiện trong List theo rule sẵn có).
+   - Thêm vào `NO_MAGIC_TYPE_NAMES` trong `permissions.ts` (credentials,
+     không phải prose - giống `aiKey`/`googleVerification`).
+   - Migrate DB live bằng script throwaway (`planSave`/`applySave`, backup
+     `.dry/content.sqlite` trước - đúng quy trình `google-verification-singleton.md`
+     đã dùng), rồi `bun run dry:generate`.
+
+2. **`src/server/github-source-sync.ts`** - orchestration thuần, mock được
+   `fetch` để test:
+   - `pushPagesSourceSnapshot(sourceByPath: Record<string,string>, config: {repo,branch,token}, message: string): Promise<{pushed:true; commitSha:string} | {pushed:false; reason:string}>`.
+   - Dùng Git Data API (KHÔNG dùng Contents API PUT-từng-file, vì "Build
+     all" cần đúng 1 commit atomic, không phải N commit rời rạc):
+     1. `GET /repos/{repo}/git/ref/heads/{branch}` -> base commit sha
+        (repo/branch trống -> tạo ref mới từ commit rỗng, xử lý riêng).
+     2. `GET /repos/{repo}/git/commits/{sha}` -> base tree sha.
+     3. `POST /repos/{repo}/git/blobs` cho từng file trong `sourceByPath`
+        (content-addressed - file trùng nội dung với lần trước thì GitHub
+        tự dedupe, không cần tự diff ở client).
+     4. `POST /repos/{repo}/git/trees` với `base_tree` = tree ở bước 2 +
+        entries mới (path, mode `100644`, type `blob`, sha từ bước 3).
+     5. `POST /repos/{repo}/git/commits` (message, parent = base commit,
+        tree = tree mới).
+     6. `PATCH /repos/{repo}/git/refs/heads/{branch}` -> trỏ sang commit mới.
+   - Mọi lỗi HTTP (401/404/409...) trả về `{pushed:false, reason}` thay vì
+     throw - caller quyết định có toast hay không, không bao giờ được làm
+     hỏng luồng publish chính (best-effort, giống cách `dry.generated.d.ts`
+     fetch trong `PageEditor.tsx` đang "never fatal").
+
+3. **Route mới `src/server/routes/pages-source-github-sync.ts`**
+   - `POST {path}/api/pages-source/github-sync`, gate quyền như
+     `CODE_EDITOR_RESOURCE_ID`/`SYSTEM_BUILD_RESOURCE_ID` (setting action).
+   - Đọc singleton `githubSync` qua content-types engine hiện có; nếu
+     `!enabled` -> trả `{ pushed: false, reason: "not-configured" }` ngay,
+     không gọi GitHub.
+   - Đọc TOÀN BỘ cây `pagesSourceStorage` server-side (đã có sẵn qua
+     `pagesSourceStorage` trong `server/config.ts` - không cần round-trip
+     HTTP tới chính route `pages-source.ts` như client đang làm qua
+     `createPagesSourceApi`).
+   - Gọi `pushPagesSourceSnapshot`, trả JSON kết quả.
+
+4. **Hook vào build flow** (client, best-effort):
+   - `PageEditor.tsx`: cuối `handleBuildCurrent`/`handleBuildAll` (sau
+     `publishBuiltPage(s)` thành công), gọi endpoint trên trong `try/catch`
+     riêng; lỗi chỉ toast `type:"default"` cảnh báo ngắn ("Build xong
+     nhưng chưa đồng bộ GitHub: <lý do>"), KHÔNG đổi trạng thái
+     success/failure của toast build chính đã có.
+   - `PageBuild.tsx`: tương tự ở đúng chỗ "Build all" (resumable queue) kết
+     thúc - gọi 1 LẦN sau khi cả queue xong, không gọi mỗi batch (mỗi
+     commit GitHub nên là 1 snapshot trọn vẹn, không phải N commit dở dang
+     giữa chừng nếu queue bị gián đoạn/resume).
+   - `message` truyền vào: `"Build: <pathname hoặc "N pages"> - <ISO timestamp>"`.
+
+5. **Settings UI** - thêm sub-item "GitHub Sync" vào nhóm "Settings"
+   (`DryLayout.tsx`, cùng `ContentNavGroup` đã tổng quát hoá cho
+   `googleVerification`), route `/dry/settings/github-sync`, form nhỏ
+   giống `AiKeyEditor.tsx` (enabled toggle, repo, branch, token
+   `SecretKeyField`) thay vì đi qua generic content-entry editor.
+
+6. **Test**
+   - `github-source-sync.test.ts`: mock `fetch`, verify đúng thứ tự 6
+     bước gọi API, đúng payload blob/tree/commit, xử lý ref chưa tồn tại
+     (repo trống), và mọi nhánh lỗi trả `{pushed:false}` chứ không throw.
+   - `routes/pages-source-github-sync.test.ts`: not-configured -> no-op;
+     configured + mocked sync thành công -> trả commitSha.
+
+## Status
+
+Chưa bắt đầu code - mới chỉ có plan này. Chờ xác nhận trước khi làm, đặc
+biệt điểm 4 (build-all gọi 1 lần cuối queue, không phải mỗi batch) và
+điểm 1 (singleton hệ thống thay vì để trong `dry.config.ts` tĩnh - chọn
+singleton vì token cần sửa được từ UI không cần redeploy, giống `aiKey`).
+
+## Speed
+
+Chưa triển khai, không có blocker kỹ thuật đã biết - GitHub Git Data API
+đã đủ để làm 1 commit atomic cho toàn bộ tree trong 1 lần build.

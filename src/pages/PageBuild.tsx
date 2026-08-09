@@ -2,14 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import DataTable, { type DataTableColumn } from "../components/DataTable.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
-import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 import { SYSTEM_BUILD_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { canAccess } from "../store/auth.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
-import NumberField from "../components/fields/NumberField.js";
-import { parseScheduleFlipIntervalMinutes, DEFAULT_SCHEDULE_FLIP_INTERVAL_MINUTES } from "../lib/schedule-flip-setting.js";
+import DatePickerField from "../components/fields/DatePickerField.js";
+import CheckField from "../components/fields/CheckField.js";
 import { useDocumentTitle } from "./page-common.js";
 import {
   buildPage,
@@ -61,6 +60,7 @@ interface Row extends Record<string, unknown> {
   path: string;
   status: "not-built" | "stale" | "scheduled" | "live";
   builtAt: number | null;
+  publishAt: number | null;
   staleResource: string | null;
 }
 
@@ -142,13 +142,6 @@ async function listAllFilesRecursive(folder: string): Promise<TreeEntry[]> {
 export default function PageBuild() {
   useDocumentTitle("Page Build");
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
-  // Same singleton `Settings.tsx` edits (`systemSettings`), just a
-  // different field of its `data` blob - `scheduleFlipIntervalMinutes`
-  // isn't a theme value, so it doesn't belong on that page, but it's
-  // still gated by that TYPE's own edit permission, not `system-build`'s
-  // (see `canEditSchedule` below) - `system-build` only covers building/
-  // publishing pages, not editing an unrelated singleton.
-  const systemSettingsApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "systemSettings"), []);
   const canBuild = canAccess(SYSTEM_BUILD_RESOURCE_ID, "setting");
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
@@ -173,18 +166,15 @@ export default function PageBuild() {
   const [resumableQueue, setResumableQueue] = useState<PersistedBuildQueue | null>(null);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
 
-  const [scheduleType, setScheduleType] = useState<ContentTypeDefinition | null>(null);
-  const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState<number | null>(null);
-  const [scheduleIntervalInitial, setScheduleIntervalInitial] = useState<number | null>(null);
-  // Everything else already in `systemSettings.data` (Settings.tsx's theme
-  // keys) - saving here spreads onto this rather than replacing `data`
-  // outright, same fix `Settings.tsx`'s own save just got (found while
-  // building this: without it, whichever of these two pages saves LAST
-  // would silently wipe out the other's field).
-  const [scheduleOtherData, setScheduleOtherData] = useState<Record<string, unknown>>({});
-  const [scheduleSaving, setScheduleSaving] = useState(false);
-  const canEditSchedule = !!scheduleType && canAccess(scheduleType.id, "setting");
-  const scheduleDirty = scheduleIntervalInitial !== null && scheduleIntervalMinutes !== null && scheduleIntervalMinutes !== scheduleIntervalInitial;
+  // `null` = build & publish immediately (the default, unchanged behavior).
+  // A future `Date` here is passed as `PublishOptions.publishAt` to
+  // whichever build action runs next - the page then 404s live until this
+  // moment, at which point `page-handler.ts` promotes it lazily on the
+  // first request that arrives after it's due (`status/app-r2-build.md`,
+  // replacing the old cron sweep). Deliberately NOT cleared after a build -
+  // "Build all" against one shared future date is the common case this
+  // exists for.
+  const [scheduleAt, setScheduleAt] = useState<Date | null>(null);
 
   async function reloadStatus() {
     const { pages } = await fetchJson<{ pages: PageStatusRow[] }>(`${path}/api/pages-build`);
@@ -202,28 +192,6 @@ export default function PageBuild() {
         ]);
         setAllTypes(types);
         setAssetHrefs(hrefs);
-
-        const settingsType = types.find((t) => t.name === "systemSettings") ?? null;
-        setScheduleType(settingsType);
-        if (settingsType && canAccess(settingsType.id, "setting")) {
-          const entry = await systemSettingsApi.getSingleton();
-          const raw = entry?.value.data;
-          let stored: Record<string, unknown> = {};
-          if (typeof raw === "string" && raw) {
-            try {
-              const parsed: unknown = JSON.parse(raw);
-              if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>;
-            } catch {
-              // Same "fall back to defaults, don't throw" spirit
-              // `parseScheduleFlipIntervalMinutes` uses for the field
-              // itself - a malformed blob shouldn't fail the whole page.
-            }
-          }
-          setScheduleOtherData(stored);
-          const interval = parseScheduleFlipIntervalMinutes(raw);
-          setScheduleIntervalMinutes(interval);
-          setScheduleIntervalInitial(interval);
-        }
 
         const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive("");
         const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts)$/.test(e.name));
@@ -289,7 +257,7 @@ export default function PageBuild() {
       layoutPaths: target.layoutPaths,
       params: target.params,
     });
-    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname } };
+    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, publishAt: scheduleAt ? scheduleAt.getTime() : null } };
   }
 
   /** Returns whether the build actually published - the auto-build effect
@@ -458,24 +426,6 @@ export default function PageBuild() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  async function saveScheduleInterval() {
-    if (scheduleIntervalMinutes === null) return;
-    setScheduleSaving(true);
-    try {
-      // Spread onto `scheduleOtherData`, not a bare `{scheduleFlipIntervalMinutes}`
-      // - see that state's own doc comment.
-      await systemSettingsApi.saveSingleton({
-        data: JSON.stringify({ ...scheduleOtherData, scheduleFlipIntervalMinutes: scheduleIntervalMinutes }),
-      });
-      setScheduleIntervalInitial(scheduleIntervalMinutes);
-      toast.add({ type: "success", title: "Publish schedule saved." });
-    } catch (error) {
-      toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
-    } finally {
-      setScheduleSaving(false);
-    }
-  }
-
   const rows: Row[] = pathnames.map((pathname) => {
     const status = statusByPath.get(pathname);
     let state: Row["status"] = "not-built";
@@ -484,7 +434,7 @@ export default function PageBuild() {
       else if (status.publishAt) state = "scheduled";
       else state = "live";
     }
-    return { path: pathname, status: state, builtAt: status?.builtAt ?? null, staleResource: status?.staleResource ?? null };
+    return { path: pathname, status: state, builtAt: status?.builtAt ?? null, publishAt: status?.publishAt ?? null, staleResource: status?.staleResource ?? null };
   });
 
   const columns: DataTableColumn<Row>[] = [
@@ -495,7 +445,12 @@ export default function PageBuild() {
       render: (value, row) => {
         const state = value as Row["status"];
         const labels: Record<Row["status"], string> = { "not-built": "Not built", stale: "Stale", scheduled: "Scheduled", live: "Live" };
-        const title = state === "stale" && row.staleResource ? `"${row.staleResource}" changed since last build` : undefined;
+        const title =
+          state === "stale" && row.staleResource
+            ? `"${row.staleResource}" changed since last build`
+            : state === "scheduled" && row.publishAt
+              ? `Goes live ${new Date(row.publishAt).toLocaleString()}`
+              : undefined;
         return <span class={`badge ${state}`} title={title}>{labels[state]}</span>;
       },
     },
@@ -558,31 +513,25 @@ export default function PageBuild() {
         </div>
       </section>
 
-      {canEditSchedule && scheduleIntervalMinutes !== null && (
-        <section class="card">
-          <header>
-            <h2>Publish schedule</h2>
-            <p>
-              How often a scheduled page (a future publish date, set when it was built) actually goes live. The
-              underlying check runs every 15 minutes no matter what - setting this below 15 has no effect without
-              editing `wrangler.jsonc`'s cron trigger and redeploying.
-            </p>
-          </header>
-          <div class="under stack">
-            <NumberField
-              label={`Interval (minutes) - default ${DEFAULT_SCHEDULE_FLIP_INTERVAL_MINUTES}`}
-              value={scheduleIntervalMinutes}
-              min={15}
-              onChange={setScheduleIntervalMinutes}
-            />
-            {scheduleDirty && (
-              <button type="button" disabled={scheduleSaving} aria-busy={scheduleSaving || undefined} onClick={() => void saveScheduleInterval()}>
-                Save
-              </button>
-            )}
-          </div>
-        </section>
-      )}
+      <section class="card">
+        <header>
+          <h2>Publish schedule</h2>
+          <p>
+            Off by default - "Build"/"Build all" publish immediately. Turn on to stage the next build(s) for a
+            future date/time instead: the page 404s until then, and goes live on its own the first time someone
+            requests it after that moment (no separate step to flip it live).
+          </p>
+        </header>
+        <div class="under stack">
+          <CheckField
+            role="switch"
+            label="Schedule for later"
+            value={scheduleAt !== null}
+            onChange={(on) => setScheduleAt(on ? new Date(Date.now() + 3_600_000) : null)}
+          />
+          {scheduleAt && <DatePickerField label="Publish at" mode="input" time min={new Date()} value={scheduleAt} onChange={setScheduleAt} />}
+        </div>
+      </section>
 
       {unmatchedTemplates.length > 0 && (
         <section class="card">

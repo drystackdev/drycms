@@ -28,7 +28,7 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
-import { useDocumentTitle } from "./page-common.js";
+import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
 
 /** Same icon `SlugField.tsx`'s `RegenerateSlugIcon` uses, for the same
  * "recompute this on demand" meaning - a local one-off (this codebase's own
@@ -408,7 +408,6 @@ export default function PageEditor() {
       setSavedByPath((prev) => ({ ...prev, [selectedPath]: sourceByPath[selectedPath] ?? "" }));
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
-      toast.add({ type: "success", title: "Saved.", description: "Build the affected page on Page Build to publish this change." });
     } catch (error) {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
     } finally {
@@ -678,6 +677,25 @@ export default function PageEditor() {
     }
     return null;
   }, [manifest, selectedPath, sourceByPath]);
+
+  // Any loaded file's unsaved edit, not just the selected one - both Build
+  // buttons always compile from `savedByPath` (see `handleBuildCurrent`'s
+  // doc comment), so an unsaved edit ANYWHERE would silently be left out of
+  // a published build; better to block and point at Save than publish
+  // something the user isn't looking at.
+  const anyDirty = Object.keys(sourceByPath).some((p) => sourceByPath[p] !== savedByPath[p]);
+  const buildBusy = buildingCurrent || buildAllProgress !== null;
+
+  // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
+  // rather than living in this page's own compact toolbar, unlike "Build"/
+  // "Reset"/"Save" (which stay local - they act on whichever file is
+  // currently selected, the toolbar's own context). Called unconditionally,
+  // before this component's early-return guards below (Rules of Hooks).
+  usePageHeaderActions(
+    <button type="button" class="outline" disabled={anyDirty || buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
+      {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
+    </button>,
+  );
 
   /** `.page-components-preview-viewport` (below) needs 2 independent refs -
    * `useScaledPreview`'s own (measures available width for auto-fit,
@@ -968,8 +986,21 @@ export default function PageEditor() {
 
         <div class="page-components-main">
           <div class="page-components-editor" style={{ flex: 1 }}>
-            {selectedPath ? (
+            {/* `selectedPath` can be non-null before `loadTree()`'s fetch resolves
+             * (restored from `initialUiState` on mount) - `sourceByPath[selectedPath]`
+             * would then be `undefined` and `code` fall back to `""`. Mounting `Editer`
+             * on that placeholder `""` is not just a visual flash: `Editer` always echoes
+             * its mount-time `value` back through `onChange` ~300ms later (its worker
+             * priming call - see its own doc comment), which `handleChange` below can't
+             * tell apart from a real edit. That schedules an IndexedDB draft write of the
+             * empty string, which `loadTree`'s own draft-overlay then blindly reapplies
+             * on a LATER visit - silently wiping the file until "Reset". Gating on the
+             * real fetch having landed for this path avoids ever handing `Editer` a
+             * placeholder value in the first place. */}
+            {selectedPath && sourceByPath[selectedPath] !== undefined ? (
               <Editer key={selectedPath} value={code} onChange={handleChange} extraFiles={extraFiles} style={{ height: "100%" }} />
+            ) : selectedPath ? (
+              <p class="hint">Loading…</p>
             ) : (
               <p class="hint">Select or create a page/layout/component on the left to edit it.</p>
             )}

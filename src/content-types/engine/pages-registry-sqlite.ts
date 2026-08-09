@@ -139,6 +139,12 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       return rows.map(toPageRecord);
     },
 
+    async getPage(path) {
+      const handle = await getHandle();
+      const rows = handle.all<PageRow>('SELECT * FROM "_pages" WHERE "path" = ?;', [path]);
+      return rows[0] ? toPageRecord(rows[0]) : null;
+    },
+
     async markPublished(path, objectKey) {
       const handle = await getHandle();
       handle.run('UPDATE "_pages" SET "object_key" = ?, "publish_at" = NULL WHERE "path" = ?;', [objectKey, path]);

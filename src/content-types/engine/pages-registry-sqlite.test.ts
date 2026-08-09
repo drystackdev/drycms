@@ -139,6 +139,20 @@ describe("createSqlitePagesRegistryAdapter", () => {
     expect(entries.some((e) => e.path === "/scheduled")).toBe(true);
   });
 
+  it("getPage returns a single row by path, or null when never built", async () => {
+    const { adapter, dir } = freshAdapter();
+    dirs.push(dir);
+
+    expect(await adapter.getPage("/nope")).toBeNull();
+
+    const dueAt = Date.now() - 1000;
+    await adapter.recordBuild(page({ path: "/scheduled", objectKey: "pages/build-1/scheduled.html", publishAt: dueAt }), []);
+    const found = await adapter.getPage("/scheduled");
+    expect(found?.path).toBe("/scheduled");
+    expect(found?.objectKey).toBe("pages/build-1/scheduled.html");
+    expect(found?.publishAt).toBe(dueAt);
+  });
+
   it("nextPublishAt reports the earliest still-future publish time", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);

@@ -21,21 +21,37 @@
  * `build` (the local/Node target) also calls `pull` directly (not through
  * the CLI) to materialize `src/apps/pages` from the current live source
  * before Vite's compile-time glob (`discoverRoutes()`'s prod branch) runs.
- * `build:worker`/`deploy` do NOT - `pull`'s R2 branch shells out to
- * `wrangler r2 object list`, which does not exist in the currently
- * installed `wrangler` (only `get`/`put`/`delete` do; confirmed live,
- * `wrangler r2 object --help`) - so it always fails. Until that's fixed
- * (a real Cloudflare-API/S3-compatible listing call, not a `wrangler`
- * subcommand swap), keep R2 in sync by hand before deploying:
- * `bun run pages:sync --push --remote` after any `src/apps/pages` edit
- * that should reach production.
+ * `build:worker`/`deploy` do NOT.
  *
- * Same "shell out to `wrangler r2 object put/get`, reuse `wrangler
- * deploy`'s own credentials" approach `r2-sync-assets.ts` already
- * established for media - no S3 client, nothing new to authenticate. `get`/
- * `put` (push, and pull's non-listing half) are real, working `wrangler`
- * subcommands - only the listing call `pull`'s R2 branch depends on is
- * currently broken.
+ * `--local` (miniflare-simulated R2, `wrangler dev`/`dev:worker`'s own
+ * storage) delegates to `r2-local-bucket.mjs`, a plain-`node` subprocess
+ * that talks to the real `MEDIA_BUCKET` binding via `getPlatformProxy`
+ * (`wrangler`'s own public API for getting real binding objects outside a
+ * running Worker) - see that file's own doc comment for why this can't just
+ * call `getPlatformProxy` inline from here: it does not work under `bun`
+ * (confirmed live, 2026-08-09 - either throws `DataCloneError` or hangs
+ * indefinitely depending on which binding is touched first), and this
+ * script otherwise runs entirely under `bun`, same as every other file
+ * under `scripts/`. `getPlatformProxy`'s default `persist` location is the
+ * SAME `.wrangler/state/v3` a real `wrangler dev` session reads/writes, so
+ * this sees exactly what a page saved through `/api/pages-source` while
+ * `dev:worker` was running actually wrote. Found live (2026-08-09): the
+ * previous approach (`wrangler r2 object list`) does not exist in the
+ * installed `wrangler` at all (only `get`/`put`/`delete` do - confirmed via
+ * `wrangler r2 object --help`), for `--local` OR `--remote` - `pull`'s R2
+ * branch always failed before this.
+ *
+ * `--remote` (the real bucket) is UNCHANGED and still uses `wrangler r2
+ * object put/get` subprocesses (`push` works fine this way; `pull` still
+ * can't list). Deliberately NOT switched to `getPlatformProxy` too -
+ * `remoteBindings` only actually reaches the real bucket if the binding
+ * itself is marked `remote: true` in `wrangler.jsonc`, which it currently
+ * isn't (and flipping that on would ALSO make every plain `wrangler dev`/
+ * `dev:worker` run - no `--remote` flag needed - silently start reading/
+ * writing the REAL production bucket instead of local state, a much bigger
+ * behavior change than this script should make on its own). Keep R2 in sync
+ * for a real deploy by hand: `bun run pages:sync --push --remote` after any
+ * `src/apps/pages` edit that should reach production.
  */
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -66,9 +82,10 @@ const isR2 = targetsR2;
 
 /** `wrangler.jsonc` is the single source of truth for the bucket name - same
  * parsing `r2-sync-assets.ts` already does (stripping `//` comments rather
- * than adding a JSONC dependency for one field). Only actually called when
- * targeting a real/miniflare R2 bucket (`--remote`/`--local` on the
- * PUSH/PULL commands below), never for the plain local-disk case. */
+ * than adding a JSONC dependency for one field). Only actually called for
+ * the `--remote` (real bucket, `wrangler` CLI subprocess) path below - the
+ * `--local` path resolves the SAME binding through `getPlatformProxy`
+ * instead, which needs no bucket name at all. */
 async function bucketName(): Promise<string> {
   const raw = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   const stripped = raw.replace(/^\s*\/\/.*$/gm, "");
@@ -76,6 +93,20 @@ async function bucketName(): Promise<string> {
   const bucket = config.r2_buckets?.find((entry) => entry.binding === "MEDIA_BUCKET");
   if (!bucket) throw new Error('[drycms] wrangler.jsonc has no r2_buckets entry bound as "MEDIA_BUCKET".');
   return bucket.bucket_name;
+}
+
+const R2_LOCAL_BUCKET_HELPER = new URL("./r2-local-bucket.mjs", import.meta.url).pathname;
+
+/** Spawns `r2-local-bucket.mjs` under plain `node` (see this file's own doc
+ * comment for why) and inherits its stdio directly - that helper already
+ * prints the same per-file/summary log lines this script's own local-disk
+ * and `--remote` branches print, so the caller doesn't repeat them. */
+function runLocalR2Helper(mode: "pull" | "push", rootDir: string): void {
+  const proc = Bun.spawnSync(["node", R2_LOCAL_BUCKET_HELPER, mode, r2Prefix, rootDir], { stdio: ["inherit", "inherit", "inherit"] });
+  if (proc.exitCode !== 0) {
+    console.error(`[drycms] local R2 ${mode} failed (see output above).`);
+    process.exit(1);
+  }
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -100,20 +131,27 @@ export async function push(): Promise<void> {
     console.log(`[drycms] "${GIT_PAGES_ROOT}" is empty - nothing to push.`);
     return;
   }
-  const bucket = isR2 ? await bucketName() : null;
+  if (isR2 && useLocalR2) {
+    runLocalR2Helper("push", GIT_PAGES_ROOT);
+    return;
+  }
   let written = 0;
-  for (const file of files) {
-    const relPath = relative(GIT_PAGES_ROOT, file).split("\\").join("/");
-    if (isR2 && bucket) {
+  if (isR2) {
+    const bucket = await bucketName();
+    for (const file of files) {
+      const relPath = relative(GIT_PAGES_ROOT, file).split("\\").join("/");
       const key = r2Prefix ? `${r2Prefix}/${relPath}` : relPath;
-      const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, useLocalR2 ? "--local" : "--remote"]);
+      const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, "--remote"]);
       if (proc.exitCode !== 0) {
         console.error(`[drycms] failed to push ${key}:\n${new TextDecoder().decode(proc.stderr)}`);
         process.exit(1);
       }
       console.log(`  push ${key}`);
       written += 1;
-    } else {
+    }
+  } else {
+    for (const file of files) {
+      const relPath = relative(GIT_PAGES_ROOT, file).split("\\").join("/");
       const destPath = join(storageRoot.kind === "local" ? storageRoot.root : "", relPath);
       await mkdir(dirname(destPath), { recursive: true });
       await writeFile(destPath, await readFile(file));
@@ -125,31 +163,18 @@ export async function push(): Promise<void> {
 }
 
 export async function pull(): Promise<void> {
+  if (isR2 && useLocalR2) {
+    runLocalR2Helper("pull", GIT_PAGES_ROOT);
+    return;
+  }
   let written = 0;
   if (isR2) {
     const bucket = await bucketName();
-    const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "list", bucket, "--prefix", r2Prefix, useLocalR2 ? "--local" : "--remote", "--json"]);
-    if (proc.exitCode !== 0) {
-      console.error(`[drycms] failed to list "${bucket}/${r2Prefix}":\n${new TextDecoder().decode(proc.stderr)}`);
-      process.exit(1);
-    }
-    // Best-effort JSON parse - `wrangler`'s exact list output shape hasn't
-    // been verified against a real bucket for this script; a parse failure
-    // surfaces loudly rather than silently pulling nothing.
-    const parsed = JSON.parse(new TextDecoder().decode(proc.stdout)) as { objects?: { key: string }[] } | { key: string }[];
-    const objects = Array.isArray(parsed) ? parsed : (parsed.objects ?? []);
-    for (const object of objects) {
-      const relPath = r2Prefix ? object.key.slice(r2Prefix.length).replace(/^\/+/, "") : object.key;
-      const destPath = join(GIT_PAGES_ROOT, relPath);
-      await mkdir(dirname(destPath), { recursive: true });
-      const proc2 = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "get", `${bucket}/${object.key}`, "--file", destPath, useLocalR2 ? "--local" : "--remote"]);
-      if (proc2.exitCode !== 0) {
-        console.error(`[drycms] failed to pull ${object.key}:\n${new TextDecoder().decode(proc2.stderr)}`);
-        process.exit(1);
-      }
-      console.log(`  pull ${relPath}`);
-      written += 1;
-    }
+    console.error(
+      `[drycms] "wrangler r2 object list" does not exist (checked live, "wrangler r2 object --help") - listing "${bucket}/${r2Prefix}" over the real bucket isn't supported yet. ` +
+        `Use "bun run pages:sync --push --remote" to push local edits to the real bucket by hand instead, or "--local" to pull from wrangler dev's own simulated storage.`,
+    );
+    process.exit(1);
   } else {
     if (storageRoot.kind !== "local") throw new Error("[drycms] unreachable - resolveOptions({kind:'local'}) always gives a local root.");
     const files = await filesUnder(storageRoot.root);

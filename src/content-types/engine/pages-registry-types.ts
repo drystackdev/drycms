@@ -71,8 +71,16 @@ export interface PagesRegistryAdapter {
   /** Admin "stale" list (mục 11): paths whose recorded dependency version no
    * longer matches `_versions`' current value for that resource. */
   listStalePaths(): Promise<StalePageInfo[]>;
-  /** Cron flip candidates (mục 9): staged builds due to go live. */
+  /** Staged builds due to go live - used by `page-handler.ts`'s lazy,
+   * request-time promotion (replaces the old cron sweep, see
+   * `status/app-r2-build.md`). */
   listDueForPublish(asOfMs: number): Promise<PageRecord[]>;
+  /** One page's current row, or `null` if it's never been built - the
+   * lookup `page-handler.ts` makes ONLY on a live-key miss, to tell "never
+   * built" apart from "staged for `schedule`, not due yet" without a table
+   * scan. Never called on the hit path (a live key existing already answers
+   * the request), so this adds no per-request cost to ordinary traffic. */
+  getPage(path: string): Promise<PageRecord | null>;
   /** Cron/admin: flips a page's live pointer to `objectKey` and clears
    * `publishAt` - called AFTER the caller has already copied that
    * immutable object's bytes onto the stable live key (mục 12); this only

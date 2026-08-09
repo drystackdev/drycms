@@ -13,10 +13,9 @@ import type { DryRouteContext } from "../context.js";
  * `<encoded-path>.json` at the root; everything here lives under `built/`
  * and ends in `.html`, so the two can never collide.
  *
- * Nothing in `page-handler.ts` reads from here yet - see
- * `status/app-r2-build.md` for why that cutover is deliberately not done in
- * the same pass as this module (flipping the live read path before a real
- * page has ever been built through this pipeline would 404 the whole site).
+ * `page-handler.ts` reads `readBuiltPage` on every prod request and
+ * `publishImmutableObject` on a live-key miss (lazy `schedule` promotion) -
+ * see `status/app-r2-build.md` for the cutover history.
  */
 
 function normalizedPath(pathname: string): string {
@@ -64,22 +63,25 @@ export async function writeBuiltPage(
 }
 
 /** Copies an already-written immutable object onto the live key - the
- * cron-flip half of `schedule` (mục 9) and admin rollback both funnel
- * through this. Not `adapter.copy()` (its contract requires the destination
- * NOT already exist - `types.ts`'s doc comment - wrong for a key that's
- * overwritten every time a page goes live); read-then-write instead, cheap
- * at HTML-document sizes. */
+ * `schedule` flip (mục 9, now done lazily at request time by
+ * `page-handler.ts` rather than a cron sweep - see `status/app-r2-build.md`)
+ * and admin rollback both funnel through this. Not `adapter.copy()` (its
+ * contract requires the destination NOT already exist - `types.ts`'s doc
+ * comment - wrong for a key that's overwritten every time a page goes live);
+ * read-then-write instead, cheap at HTML-document sizes. Returns the HTML
+ * alongside the live key so a request-time caller (`page-handler.ts`) can
+ * serve this same response without a redundant `readBuiltPage` round trip. */
 export async function publishImmutableObject(
   context: Pick<DryRouteContext, "env">,
   pathname: string,
   immutableKey: string,
-): Promise<string> {
+): Promise<{ liveKey: string; html: string }> {
   const adapter = getStorageAdapter(pagesCacheStorage, context);
   const file = await adapter.read(immutableKey);
   const bytes = await bufferOf(file.stream);
   const liveKey = liveKeyFor(pathname);
   await adapter.write(liveKey, bytes);
-  return liveKey;
+  return { liveKey, html: bytes.toString("utf8") };
 }
 
 /** Reads the live HTML for `pathname`, or `null` on a routine miss - same

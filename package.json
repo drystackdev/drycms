@@ -57,7 +57,7 @@
     "start": "node dist/server/entry-node.js",
     "build:worker": "vite build --outDir dist/client && DRYCMS_WORKER_BUILD=1 vite build --ssr src/server/entry-worker.ts --outDir dist/server",
     "deploy": "bun run build:worker && wrangler deploy",
-    "dev:worker": "bun run build:worker && wrangler dev",
+    "dev:worker": "bun scripts/sync-pages-r2.ts --pull --local && bun run build:worker && wrangler dev",
     "r2:sync": "bun scripts/r2-sync-assets.ts",
     "pages:sync": "bun scripts/sync-pages-r2.ts",
     "build:icons": "node scripts/build-icons.mjs",

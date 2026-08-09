@@ -1164,3 +1164,68 @@ pass, not just an implementation push): `page-build.ts` strips VEI's
 editing (mục 12's carve-out, still bypassing to live SSR instead) nor Page
 Editor's preview (part 7's mục 6) can be truly interactive/marker-aware yet
 - fixing that one root cause would unlock both.
+
+## Update 2026-08-09, part 14: mục 9's cron sweep replaced by lazy, request-time promotion
+
+User noticed `wrangler dev`'s own startup warning ("Scheduled Workers are
+not automatically triggered during local development") and asked what the
+cron trigger was actually for and whether it could be dropped. Investigation
+(an `Explore` agent, then direct code reading) found `runScheduledFlip` had
+exactly one caller (`entry-worker.ts`'s `scheduled` export) and the shipped
+`PageBuild.tsx` UI never actually set `publishAt` on a real build
+(`compileOne` never passed it) - the whole cron was dead weight with nothing
+ever staging a page for it to flip. User's own proposal, mirroring how
+`features.schedule` already works for content ENTRIES (`entry-where.ts`'s
+SQL-time filter, no cron involved): make PAGE scheduling lazy too instead of
+re-adding a working cron.
+
+**What was already true architecturally, needing zero new code**: the
+immutable/live key split (`writeBuiltPage`'s `publishNow: false` branch)
+already makes a not-yet-due scheduled page 404 for free - a live-key miss,
+whether "never built" or "staged, not due", was always indistinguishable
+from a bare 404 before this pass. `sitemap.ts`'s `listSitemapEntries` also
+already filtered `publish_at IS NULL OR publish_at <= now` in SQL - item
+3 of the user's proposal (sitemap auto-hides) needed no change at all.
+
+**What was actually built**: `PagesRegistryAdapter.getPage(path)` (both
+`pages-registry-sqlite.ts`/`pages-registry-d1.ts`) - a single indexed-row
+lookup, paid ONLY on `page-handler.ts`'s live-key-miss branch, never on an
+ordinary hit. `publishImmutableObject` now returns `{ liveKey, html }`
+instead of just the key, so the miss-branch caller can serve the promoted
+page in the same response without a redundant `readBuiltPage` re-read.
+`page-handler.ts`'s prod branch: on a `readBuiltPage` miss, calls
+`pagesRegistry.getPage`; if a row exists with a `publishAt` now `<= Date.now()`,
+promotes it (copy immutable -> live, `markPublished`) and serves it
+immediately; otherwise (no row, or still in the future) falls through to
+the existing redirect-check-then-404 path unchanged.
+
+**Cron removed entirely**: `wrangler.jsonc`'s `triggers.crons` block,
+`entry-worker.ts`'s `scheduled` export, `schedule-flip.ts`/
+`schedule-flip.test.ts`, and `lib/schedule-flip-setting.ts`/
+`schedule-flip-setting.test.ts` (the polling-interval setting has no
+meaning anymore - there's no poll). `PageBuild.tsx`'s old "Publish
+schedule" card (an interval-minutes NumberField, `systemSettings`-backed)
+replaced with a real per-build scheduling control: a `CheckField` switch +
+`DatePickerField` (`mode="input"`, `time`) setting `publishAt` on whichever
+`compileOne`/`buildOne`/`buildAll` call runs next - the first time this
+project's page-schedule feature has had an actual UI to set a future date
+from, not just dark plumbing. The "Scheduled" status badge's tooltip now
+shows the target `Date.toLocaleString()`.
+
+**Tests**: `pages-registry-sqlite.test.ts` gained a `getPage` case (found
+by path, `null` for never-built). `page-handler.test.ts` gained two prod
+cases replacing `schedule-flip.test.ts`'s deleted end-to-end coverage: a due
+staged build gets promoted and served in one response (registry
+`publishAt` cleared, live key populated for subsequent free hits), and a
+future-staged build stays a bare 404 without being touched early. Full
+suite: 100/105 files pass, same 12 pre-existing failures as before this
+pass (seed/dry-reader/sitemap/content-types tests unrelated to
+`schedule`/pages-build - confirmed by name against this file's own earlier
+"12 pre-existing" count) - zero new failures. `bun run typecheck` clean.
+
+**Not done, out of scope for this pass**: no "force publish now" action for
+an already-scheduled row (would need its own admin affordance, not asked
+for); no warm-before-first-visitor option (the very first visitor after
+`publishAt` pays the one extra registry read + the promotion copy - fine at
+HTML-document sizes, but a high-traffic launch moment could in principle
+want to pre-warm instead of relying on that first request).
