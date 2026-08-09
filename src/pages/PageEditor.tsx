@@ -1067,7 +1067,7 @@ export default function PageEditor() {
                 needsBuild={(p) => unbuiltPaths.has(p)}
               />
             </div>
-            <div class={`page-components-resize-handle left${sidebar.dragging ? " dragging" : ""}`} {...sidebar.handleProps} />
+            <div class={`page-components-resize-handle${sidebar.dragging ? " dragging" : ""}`} {...sidebar.handleProps} />
           </>
         )}
 
@@ -1144,7 +1144,7 @@ export default function PageEditor() {
                 </p>
               )}
             </div>
-            <div class={`page-components-resize-handle right${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />
+            <div class={`page-components-resize-handle${previewSplit.dragging ? " dragging" : ""}`} {...previewSplit.handleProps} />
           </>
         )}
 

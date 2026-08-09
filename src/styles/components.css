@@ -5646,9 +5646,11 @@
       display: flex;
       flex: 1;
       min-height: 0;
+      z-index: 1;
 
       & .page-components-resize-handle{
         margin-right: -3px;
+        z-index: 5;
       }
     }
 
