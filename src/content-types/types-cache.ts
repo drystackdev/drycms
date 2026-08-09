@@ -25,6 +25,17 @@ export async function writeGeneratedDryTypes(output: string): Promise<void> {
   await storage.write(CACHE_ENTRY_NAME, Buffer.from(output, "utf8"));
 
   if (typeof process === "undefined" || !process.versions?.node) return;
+  // The path below is the real, committed repo file, resolved from the
+  // working directory rather than from any config a test could point
+  // elsewhere - so under vitest this would overwrite it with whatever the
+  // test passed in. That has already happened once for real: `sivelap`
+  // carried a `dry.generated.d.ts` containing only
+  // `declare const marker: 'stored-verbatim';` - the fixture from
+  // `server/routes/types-cache.test.ts`, committed after a test run left it
+  // dirty. Only the on-disk mirror is skipped; the `typesCacheStorage` write
+  // above is what those tests actually assert on, and it already goes to a
+  // temp dir they control.
+  if (process.env.VITEST) return;
   try {
     const { mkdir, writeFile } = await import("node:fs/promises");
     const { resolve: resolvePath } = await import("node:path");
