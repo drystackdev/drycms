@@ -86,6 +86,13 @@ export interface GoogleVerification {
   content: string;
 }
 
+export interface Config {
+  id: number;
+  description?: string;
+  title: string;
+  slug: string;
+}
+
 export interface MenuItem {
   label: string;
   description?: string;
@@ -126,8 +133,10 @@ export interface SystemSettingsRelations {}
 
 export interface GoogleVerificationRelations {}
 
+export interface ConfigRelations {}
+
 export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "redirect" | "memory" | "blog";
-export type DrySingletonName = "seoDefaults" | "systemSettings" | "googleVerification";
+export type DrySingletonName = "seoDefaults" | "systemSettings" | "googleVerification" | "config";
 
 export interface DryCollectionMap {
   "user": User;
@@ -143,6 +152,7 @@ export interface DrySingletonMap {
   "seoDefaults": SeoDefaults;
   "systemSettings": SystemSettings;
   "googleVerification": GoogleVerification;
+  "config": Config;
 }
 
 export interface DryCollectionRelationsMap {
@@ -159,6 +169,7 @@ export interface DrySingletonRelationsMap {
   "seoDefaults": SeoDefaultsRelations;
   "systemSettings": SystemSettingsRelations;
   "googleVerification": GoogleVerificationRelations;
+  "config": ConfigRelations;
 }
 
 declare global {

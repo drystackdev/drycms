@@ -82,6 +82,32 @@ const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() 
 }
 `;
 
+/** `postMessage` type for the `.page-components-preview-frame` iframe -
+ * `srcdoc` has no real route to navigate to (it's a detached, unpublished
+ * render, not a live page - see this file's own doc comment), so a link
+ * clicked INSIDE the preview can't be allowed to actually navigate the
+ * iframe. Instead the injected script below (`buildPreviewNavigationScript`)
+ * intercepts every click, always prevents the default navigation, and
+ * reports the resolved pathname back here - which is then checked against
+ * this SAME `manifest` `previewTarget` itself resolves against, so clicking a
+ * link to another real page focuses that page's `page.tsx` in the tree
+ * (switching what's being edited/previewed) instead of silently doing
+ * nothing. A pathname with no matching `page.tsx` surfaces as a toast error
+ * rather than switching - there's nothing valid to focus. */
+const PREVIEW_NAVIGATE_MESSAGE = "dry-page-editor-preview-navigate";
+
+/** Runs INSIDE the preview iframe (injected as a literal `<script>` into the
+ * built HTML, never sharing a JS realm with this file) - see
+ * `PREVIEW_NAVIGATE_MESSAGE`'s doc comment for why. Capturing-phase so it
+ * runs before any in-page handler the previewed code itself might attach.
+ * `anchor.href` (not `getAttribute("href")`) resolves relative/rooted hrefs
+ * against the `<base href>` `refreshPreview` already stamps onto `<head>`,
+ * so `new URL` here just re-parses an already-absolute URL back out to a
+ * pathname - no origin-joining logic duplicated on this side. */
+function buildPreviewNavigationScript(): string {
+  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);})();</script>`;
+}
+
 /** `routes/asset-hrefs.ts`'s response shape - same as `PageBuild.tsx`'s own
  * local copy (not shared - both are small, page-local types). */
 interface AssetHrefs {
@@ -615,7 +641,10 @@ export default function PageEditor() {
         ? withoutHydration.replace(`<script type="module" src="${assetHrefs.veiOverlayHref}"></script>`, "")
         : withoutHydration;
       const withBase = withoutVei.replace("<head>", `<head><base href="${origin}/">`);
-      if (iframeRef.current) iframeRef.current.srcdoc = withBase;
+      const withNavigationScript = withBase.includes("</body>")
+        ? withBase.replace("</body>", `${buildPreviewNavigationScript()}</body>`)
+        : withBase + buildPreviewNavigationScript();
+      if (iframeRef.current) iframeRef.current.srcdoc = withNavigationScript;
       setPreviewLabel(previewTarget.label);
     } catch (error) {
       if (seq !== previewSeqRef.current) return;
@@ -624,6 +653,32 @@ export default function PageEditor() {
       if (seq === previewSeqRef.current) setPreviewLoading(false);
     }
   }
+
+  // Receives `PREVIEW_NAVIGATE_MESSAGE` from `buildPreviewNavigationScript`'s
+  // injected click handler (see its doc comment) - resolved against the SAME
+  // `manifest` `previewTarget` itself uses, so this is exactly "is this
+  // pathname a real page.tsx", not a separate/looser check. A match focuses
+  // that page.tsx (switches `selectedPath`, which drives the tree selection,
+  // the editor, and - via `previewTarget`'s own dependency on `selectedPath`
+  // - the next preview build); no match surfaces as an error toast instead,
+  // since there's no page here to switch to and the srcdoc iframe was never
+  // going to navigate there for real anyway.
+  useEffect(() => {
+    function handlePreviewMessage(event: MessageEvent) {
+      if (!event.data || event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
+      if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
+      const pathname = event.data.pathname;
+      if (typeof pathname !== "string") return;
+      const match = matchSourceRoute(manifest, pathname);
+      if (match) {
+        setSelectedPath(match.entryPath);
+      } else {
+        toast.add({ type: "error", title: "Page not found", description: `No page.tsx matches "${pathname}" - can't navigate there.` });
+      }
+    }
+    window.addEventListener("message", handlePreviewMessage);
+    return () => window.removeEventListener("message", handlePreviewMessage);
+  }, [manifest]);
 
   // Debounced re-preview on every edit to ANY loaded file (not just the
   // selected one - a layout/shared component the target page depends on

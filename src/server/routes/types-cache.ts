@@ -2,6 +2,9 @@ import type { DryRouteHandler } from "../context.js";
 import { typesCacheStorage } from "../config.js";
 import { errorResponse } from "../route-helpers.js";
 import { getStorageAdapter } from "../storage-adapters.js";
+import { getContentAdapters } from "../content-adapters.js";
+import { generateDryTypes } from "../../content-types/codegen.js";
+import { writeGeneratedDryTypes } from "../../content-types/types-cache.js";
 import { StorageError } from "../../storage/types.js";
 
 const CACHE_ENTRY_NAME = "dry.generated.d.ts";
