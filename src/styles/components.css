@@ -5718,7 +5718,6 @@
       &.selected {
         outline: 1px solid var(--dry-primary);
         outline-offset: -1px;
-        font-weight: 600;
       }
 
       &:hover {
