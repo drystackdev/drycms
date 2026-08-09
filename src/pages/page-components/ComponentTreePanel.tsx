@@ -216,14 +216,6 @@ export default function ComponentTreePanel({
         }
         onDrop={handleRootDrop}
       >
-        {creating && creatingParent === "" && (
-          <CreateRow
-            value={creatingName}
-            onChange={setCreatingName}
-            onSubmit={submitCreate}
-            onCancel={cancelCreating}
-          />
-        )}
         {filteredTree.length === 0 && !(creating && creatingParent === "") ? (
           <p class="hint">
             {query.trim() ? "No matches." : "No components yet."}
