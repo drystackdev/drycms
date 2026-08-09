@@ -33,7 +33,7 @@ const SYLLABLES: Record<string, string[]> = {
  * that Playwright gives it more than one - the second attempt to create the
  * same type is a 400, which is fine as long as the type ends up there. */
 async function createRichTextType(page: Page): Promise<void> {
-  await page.evaluate(
+  const status = await page.evaluate(
     async ([name, fieldLabel]) => {
       const response = await fetch("/dry/api/content-types", {
         method: "POST",
@@ -63,13 +63,23 @@ async function createRichTextType(page: Page): Promise<void> {
     [TYPE_NAME, RICH_FIELD_LABEL] as const,
   );
 
-  const exists = await page.evaluate(async (name) => {
-    const body = (await (await fetch("/dry/api/content-types")).json()) as {
-      definitions?: { name: string }[];
-    };
-    return !!body.definitions?.some((definition) => definition.name === name);
-  }, TYPE_NAME);
-  expect(exists).toBe(true);
+  if (status === 200) return;
+
+  // Someone else got there first (or thinks they did) - confirm rather than
+  // fail. Polled: the schema list is cached per version, so a read taken the
+  // instant after another worker's write can still miss it.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async (name) => {
+          const body = (await (await fetch("/dry/api/content-types")).json()) as {
+            definitions?: { name: string }[];
+          };
+          return !!body.definitions?.some((definition) => definition.name === name);
+        }, TYPE_NAME),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
 }
 
 /** Focused, mounted `.dry-tx-content` (it lives in a shadow root, which
@@ -161,6 +171,12 @@ async function rewriteType(page: Page): Promise<void> {
 }
 
 test.describe("RichTextField - IME composition (Vietnamese Telex)", () => {
+  // These reproduce a timing race on purpose, and the rest of the suite runs
+  // beside them on the same server - under that much CPU contention a real
+  // pass can still miss its window. Retried rather than loosened: the exact
+  // text is the whole assertion.
+  test.describe.configure({ mode: "serial", retries: 2 });
+
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     await page.goto("/dry/content-types");

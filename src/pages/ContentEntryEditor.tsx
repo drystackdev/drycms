@@ -664,14 +664,18 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   }, [scrollField, scrollPath, value === null]);
 
   async function handleSave() {
-    if (!type || !entriesApi || !value) return;
+    // `valueRef`, not the `value` this render closed over - see the ref's own
+    // doc comment: the topbar's Save button can still be holding an earlier
+    // render's `handleSave` when it fires.
+    const current = valueRef.current;
+    if (!type || !entriesApi || !current) return;
     setFieldErrors({});
 
     // Confirm-password mismatches only ever exist client-side - `confirm` never
     // reaches the server - so this is the one pre-submit check the editor runs,
     // ahead of the usual "just submit and surface whatever the server rejects"
     // pattern below.
-    const passwordErrors = findPasswordChangeErrors(nodes, value);
+    const passwordErrors = findPasswordChangeErrors(nodes, current);
     if (Object.keys(passwordErrors).length > 0) {
       setFieldErrors(passwordErrors);
       toast.add({ type: "error", title: "Fix the highlighted fields." });
@@ -687,19 +691,19 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     let saved = false;
     try {
       if (isSingleton) {
-        const entry = await entriesApi.saveSingleton(value);
+        const entry = await entriesApi.saveSingleton(current);
         setValue(entry.value);
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Saved "${type.label}".` });
       } else if (isNew) {
-        await entriesApi.create(value);
+        await entriesApi.create(current);
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Created "${type.label}" entry.` });
         route(`${path}/content/${type.name}`);
       } else if (entryId) {
-        const entry = await entriesApi.update(entryId, value);
+        const entry = await entriesApi.update(entryId, current);
         setValue(entry.value);
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);
