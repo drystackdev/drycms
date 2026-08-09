@@ -125,6 +125,13 @@ export default function DryRichTextSlash({ viewRef, ready, disabled = false, sta
   const { ref: listRef } = useOverlayScrollbars<HTMLDivElement>([!!slash]);
   const selectedActionRef = useRef<HTMLButtonElement | null>(null);
   const actions = useRef(slashActions()).current;
+  /** Read through a ref rather than closed over, so the listener effect below
+   * can keep `state` OUT of its dependency list: a new `ToolbarState` object
+   * used to tear down and re-attach all three listeners (and re-run
+   * `refresh`, which forces a layout through `coordsAtPos`) on essentially
+   * every transaction. The listeners only ever read the latest state anyway. */
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     selectedActionRef.current?.scrollIntoView({ block: "nearest" });
@@ -144,7 +151,7 @@ export default function DryRichTextSlash({ viewRef, ready, disabled = false, sta
         return;
       }
       const candidates = filteredActions(
-        actions.filter((action) => !action.available || action.available(state, source)),
+        actions.filter((action) => !action.available || action.available(stateRef.current, source)),
         match.query,
       );
       if (!candidates.length) {
@@ -170,14 +177,30 @@ export default function DryRichTextSlash({ viewRef, ready, disabled = false, sta
       setSlash(null);
     };
 
-    const onInput = () => {
+    // Everything below skips while an IME composition is open. There's no "/"
+    // token to find mid-composition (the composing text isn't committed yet),
+    // and `refresh`'s `coordsAtPos` forces a layout on a DOM node the IME is
+    // actively rewriting - so this is both wasted work and a way to disturb
+    // the composition. Vietnamese Telex composes a whole syllable, so this is
+    // every keystroke of every accented word, not a rare edge case.
+    const onInput = (event: Event) => {
+      if ((event as InputEvent).isComposing) return;
       dismissedRef.current = false;
       queueMicrotask(refresh);
     };
     const onSelectionChange = () => {
+      if (view.composing) return;
       if (document.activeElement === view.dom || view.dom.contains(document.activeElement)) queueMicrotask(refresh);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      // A live composition owns these keys: Vietnamese Telex commits a
+      // syllable with Space, every IME confirms with Enter. Swallowing them
+      // here - a capture-phase listener, so ahead of ProseMirror itself -
+      // strands the composition mid-syllable and leaves the field looking
+      // frozen. `keyCode === 229` is the same "this key belongs to the IME"
+      // signal, spelled the way browsers report it when `isComposing` isn't
+      // set yet (the keydown that STARTS a composition).
+      if (event.isComposing || event.keyCode === 229) return;
       const current = slashRef.current;
       if (!current && (event.metaKey || event.ctrlKey) && event.key === "/") {
         event.preventDefault();
@@ -185,7 +208,7 @@ export default function DryRichTextSlash({ viewRef, ready, disabled = false, sta
         const selection = view.state.selection;
         const coords = view.coordsAtPos(selection.from);
         const candidates = filteredActions(
-          actions.filter((action) => !action.available || action.available(state, source)),
+          actions.filter((action) => !action.available || action.available(stateRef.current, source)),
           "",
         );
         const opened: SlashState = {
@@ -236,7 +259,9 @@ export default function DryRichTextSlash({ viewRef, ready, disabled = false, sta
       view.dom.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("selectionchange", onSelectionChange);
     };
-  }, [viewRef, ready, disabled, actions, state, source]);
+    // `state` deliberately absent - read through `stateRef` above so a new
+    // toolbar state doesn't re-attach these listeners on every transaction.
+  }, [viewRef, ready, disabled, actions, source]);
 
   if (!slash) return null;
   return (

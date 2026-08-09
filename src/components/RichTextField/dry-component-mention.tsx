@@ -191,14 +191,23 @@ export default function DryComponentMention({ viewRef, ready, disabled = false }
       setMention(null);
     };
 
-    const onInput = () => {
+    // Skipped while an IME composition is open, same as `dry-richtext-slash.tsx`
+    // (see its own comment): there's no committed `@` token to match
+    // mid-composition, and `refresh`'s `coordsAtPos` forces a layout on the
+    // very node the IME is still writing into.
+    const onInput = (event: Event) => {
+      if ((event as InputEvent).isComposing) return;
       dismissedUntilInputRef.current = false;
       queueMicrotask(refresh);
     };
     const onSelectionChange = () => {
+      if (view.composing) return;
       if (document.activeElement === view.dom || view.dom.contains(document.activeElement)) queueMicrotask(refresh);
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      // Enter/Space belong to the IME while it's composing - see the same
+      // guard's doc comment in `dry-richtext-slash.tsx`.
+      if (event.isComposing || event.keyCode === 229) return;
       const current = mentionRef.current;
       if (!current) return;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {

@@ -98,6 +98,51 @@ function readToolbarState(state: EditorState): ToolbarState {
   };
 }
 
+function nodeRefEqual(
+  a: { pos: number; node: PMNode } | null,
+  b: { pos: number; node: PMNode } | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.pos === b.pos && a.node === b.node;
+}
+
+/** Whether two `ToolbarState`s describe the same toolbar - `readToolbarState`
+ * builds a brand-new object for EVERY transaction (each keystroke, each
+ * cursor move), and handing that straight to `setState` re-rendered this
+ * whole field on each one: the toolbar, the three floating menus, and - via
+ * `RichTextField`'s own state lift (`editor-surface.tsx`'s `onReady` effect,
+ * keyed on `state`'s identity) - its parent form too. Almost none of those
+ * renders had anything to draw differently; typing a run of plain text
+ * inside one paragraph changes nothing here after the first character. The
+ * node-holding fields compare by identity on purpose: ProseMirror documents
+ * are persistent, so an untouched table/grid/image keeps the exact same node
+ * object across transactions, and one that WAS edited gets a new one. */
+function toolbarStateEqual(a: ToolbarState, b: ToolbarState): boolean {
+  return (
+    a.format.bold === b.format.bold &&
+    a.format.italic === b.format.italic &&
+    a.format.underline === b.format.underline &&
+    a.align === b.align &&
+    a.color === b.color &&
+    a.blockType === b.blockType &&
+    a.clearable === b.clearable &&
+    a.canUndo === b.canUndo &&
+    a.canRedo === b.canRedo &&
+    a.inlineEditable === b.inlineEditable &&
+    a.hasSelection === b.hasSelection &&
+    a.listType === b.listType &&
+    a.reorderModeActive === b.reorderModeActive &&
+    a.link.href === b.link.href &&
+    a.link.target === b.link.target &&
+    a.link.active === b.link.active &&
+    a.link.disabled === b.link.disabled &&
+    nodeRefEqual(a.selectedImage, b.selectedImage) &&
+    nodeRefEqual(a.selectedTable, b.selectedTable) &&
+    nodeRefEqual(a.selectedGrid, b.selectedGrid)
+  );
+}
+
 /** Unlike the old Lexical version's emptiness check
  * (`$getRoot().getTextContent().length === 0`), a doc holding non-text
  * content and no text does NOT count as "empty" here - `textContent` alone
@@ -122,6 +167,28 @@ function isDocEmpty(state: EditorState): boolean {
     return true;
   });
   return empty;
+}
+
+/** Marks the transaction that pulls an externally-changed `value` INTO the
+ * editor, so `dispatchTransaction` knows not to turn around and report the
+ * same value back out through `onChange`. Without it the parent gets an echo
+ * of its own write - harmless when it stores the HTML verbatim (the ref check
+ * in the sync effect below settles it after one extra round trip), but a
+ * parent that normalizes/sanitizes what it's handed would bounce a slightly
+ * different string back here, and this hook would bounce its own export back
+ * again, indefinitely. */
+const EXTERNAL_SYNC_META = "dryExternalValueSync";
+
+/** Swaps the whole live document for `value`'s - shared by the external-value
+ * sync effect below and the IME-composition flush that has to defer it (see
+ * both call sites). */
+function replaceDocWithValue(view: EditorView, value: string) {
+  const nextDoc = withTrailingParagraph(value ? importCleanHtml(value) : createEmptyDoc());
+  view.dispatch(
+    view.state.tr
+      .replaceWith(0, view.state.doc.content.size, nextDoc.content)
+      .setMeta(EXTERNAL_SYNC_META, true),
+  );
 }
 
 function buildAttributes(state: EditorState, disabled: boolean, label: string) {
@@ -165,6 +232,11 @@ export function useRichTextEditor({
    * typing - see its own doc comment - which silently ate every OTHER
    * source of an external value change too). */
   const lastSyncedValueRef = useRef<string | null>(null);
+  /** An external `value` that arrived while an IME composition was live -
+   * rebuilding the document under the composing text node kills the
+   * composition outright, so the sync effect below parks it here and the
+   * composition-end flush (in the mount effect) applies it instead. */
+  const pendingExternalValueRef = useRef<string | null>(null);
   // Read inside `dispatchTransaction` below via `.current`, same reason
   // `onChangeRef` is - that closure is built once, inside the mount effect
   // that only ever runs on `[]` (see its own doc comment), so a later
@@ -172,6 +244,14 @@ export function useRichTextEditor({
   // stale value baked in at mount.
   const inlineRef = useRef(inline);
   inlineRef.current = inline;
+  /** Same reason as `inlineRef`, plus one of its own: the mount effect below
+   * seeds the document only AFTER an async component-registry fetch, and
+   * `value` can change while that's in flight (a slow registry + a fast
+   * `dry:field-set`/Magic Write). Seeding from the closure's own `value`
+   * dropped that newer one for good - the sync effect further down had
+   * already run and bailed on `viewRef.current` still being null. */
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   const [state, setState] = useState<ToolbarState>({
     format: NO_FORMAT,
@@ -213,6 +293,11 @@ export function useRichTextEditor({
     let cancelled = false;
     let view: EditorView | null = null;
     let htmlReorderSurface: HtmlReorderSurface | null = null;
+    /** Set when a document-changing transaction was swallowed mid-composition
+     * (see `dispatchTransaction`), so the flush that runs once the
+     * composition ends knows it still owes the parent an `onChange`. */
+    let pendingCompositionChange = false;
+    let compositionFlushTimer = -1;
 
     void (async () => {
       const components = await loadRichtextComponents();
@@ -260,16 +345,18 @@ export function useRichTextEditor({
     editorHost.className = "dry-tx-content-host";
     shadowRoot.appendChild(editorHost);
 
+    // `valueRef`, not the closure's `value` - see its own doc comment.
+    const seedValue = valueRef.current;
     let doc = createEmptyDoc();
-    if (value) {
+    if (seedValue) {
       try {
-        doc = importCleanHtml(value);
+        doc = importCleanHtml(seedValue);
       } catch (err) {
         console.error("[drycms] Failed to parse RichTextField value", err);
       }
     }
     doc = withTrailingParagraph(doc);
-    lastSyncedValueRef.current = value;
+    lastSyncedValueRef.current = seedValue;
 
     const editorState = EditorState.create({
       schema,
@@ -346,6 +433,23 @@ export function useRichTextEditor({
       ],
     });
 
+    /** Publishes everything OUTSIDE the `EditorView` that a transaction can
+     * affect: the toolbar's live state, the placeholder's emptiness flag,
+     * and - when the document actually changed - the exported HTML the
+     * parent form holds. Split out of `dispatchTransaction` because a
+     * composition (below) has to defer all of it to a single call at the
+     * end, rather than run it per keystroke. */
+    const flushEditorState = (state: EditorState, docChanged: boolean) => {
+      pendingCompositionChange = false;
+      const nextToolbarState = readToolbarState(state);
+      setState((current) => (toolbarStateEqual(current, nextToolbarState) ? current : nextToolbarState));
+      setEmpty(isDocEmpty(state));
+      if (!docChanged) return;
+      const html = exportCleanHtml(state.doc, { inline: inlineRef.current });
+      lastSyncedValueRef.current = html;
+      onChangeRef.current(html);
+    };
+
     view = new EditorView(editorHost, {
       state: editorState,
       editable: (state) => !disabled && !isReorderActive(state),
@@ -355,6 +459,37 @@ export function useRichTextEditor({
         table: (node) => new TableNodeView(node),
         grid_item: (node, editorView, getPos) => new GridItemNodeView(node, editorView, getPos),
         ...dryNodeViews,
+      },
+      handleDOMEvents: {
+        // `compositionend` clears `view.composing` synchronously, but the
+        // composition's own final DOM changes only reach
+        // `dispatchTransaction` a microtask later (prosemirror-view flushes
+        // its pending mutation records there) or up to 20ms later (its
+        // `endComposition` timer) - either one flushes the held-back change
+        // for us, since `view.composing` is already false by then. This
+        // timer is only the backstop for a composition that ends WITHOUT
+        // producing another transaction at all (cancelled with Escape, or
+        // confirmed with no net change), which would otherwise leave the
+        // deferred `onChange` owing forever.
+        compositionend: () => {
+          clearTimeout(compositionFlushTimer);
+          compositionFlushTimer = window.setTimeout(() => {
+            if (!view || view.isDestroyed || view.composing) return;
+            const pendingValue = pendingExternalValueRef.current;
+            pendingExternalValueRef.current = null;
+            if (pendingValue !== null) {
+              // Dispatches its own transaction, which flushes on its way out.
+              try {
+                replaceDocWithValue(view, pendingValue);
+              } catch (err) {
+                console.error("[drycms] Failed to sync external RichTextField value", err);
+              }
+              return;
+            }
+            flushEditorState(view.state, pendingCompositionChange);
+          }, 30);
+          return false;
+        },
       },
       dispatchTransaction(tr) {
         // Non-null: only ever invoked after the `view =` assignment right
@@ -366,13 +501,30 @@ export function useRichTextEditor({
         const wasReorderActive = isReorderActive(view!.state);
         const newState = view!.state.apply(tr);
         view!.updateState(newState);
-        setState(readToolbarState(newState));
-        setEmpty(isDocEmpty(newState));
-        if (tr.docChanged) {
-          const html = exportCleanHtml(newState.doc, { inline: inlineRef.current });
-          lastSyncedValueRef.current = html;
-          onChangeRef.current(html);
+        // A live IME composition is NOT one keystroke: Vietnamese Telex/VNI
+        // (like the CJK IMEs) composes a whole syllable, and
+        // prosemirror-view's DOM observer flushes on every mutation the IME
+        // makes along the way - so "tieengs" -> "tiếng" arrives here as one
+        // transaction per letter, all while the composition is still open.
+        // Serializing the entire document to HTML and pushing it up through
+        // `onChange` on each of those re-rendered this field AND the whole
+        // entry form around it (which re-serializes/diffs the entry, see
+        // `ContentEntryEditor.tsx`) once per letter, mid-composition: slow
+        // enough on a real document to visibly stall typing, and every one
+        // of those renders is another chance for something to touch the DOM
+        // around the very text node the IME is still composing into - which
+        // drops the composition and leaves the half-typed syllable stuck.
+        // Nobody outside this editor has any use for the intermediate,
+        // pre-composition text anyway, so all of it is held back and flushed
+        // exactly once when the composition ends (see `compositionend`).
+        if (view!.composing) {
+          pendingCompositionChange ||= tr.docChanged;
+          return;
         }
+        // An external-sync transaction is this hook applying the parent's own
+        // `value` - reporting it back would be an echo (see `EXTERNAL_SYNC_META`).
+        const external = tr.getMeta(EXTERNAL_SYNC_META) === true;
+        flushEditorState(newState, !external && (tr.docChanged || pendingCompositionChange));
         const reorderActive = isReorderActive(newState);
         htmlReorderSurface?.setActive(
           reorderActive,
@@ -401,6 +553,7 @@ export function useRichTextEditor({
 
     return () => {
       cancelled = true;
+      clearTimeout(compositionFlushTimer);
       // Only set if the async work above had already reached
       // `new EditorView(...)` before this ran - a mount cancelled while
       // still awaiting `loadRichtextComponents()` never got that far, and
@@ -441,9 +594,17 @@ export function useRichTextEditor({
     const view = viewRef.current;
     if (!view || value === lastSyncedValueRef.current) return;
     lastSyncedValueRef.current = value;
+    // Replacing the document tears down and rebuilds its DOM, including the
+    // text node an open IME composition is writing into - doing that
+    // mid-composition drops the composition and strands the half-typed
+    // syllable. Park it and let the composition-end handler above apply it
+    // (a composition always ends, including on blur).
+    if (view.composing) {
+      pendingExternalValueRef.current = value;
+      return;
+    }
     try {
-      const nextDoc = withTrailingParagraph(value ? importCleanHtml(value) : createEmptyDoc());
-      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, nextDoc.content));
+      replaceDocWithValue(view, value);
     } catch (err) {
       console.error("[drycms] Failed to sync external RichTextField value", err);
     }

@@ -285,6 +285,18 @@ export class DryComponentNodeView implements NodeView {
     return true;
   }
 
+  /** `startDrag` puts its `pointermove`/`pointerup` listeners on `window`, so
+   * they outlive this view's own DOM - if the node is replaced or removed
+   * mid-resize (an undo, a collaborator's edit, the whole document being
+   * re-seeded) `onPointerUp` never runs and both listeners stay bound to a
+   * dead view for the rest of the page's life, still dispatching into a
+   * `getPos()` that no longer resolves. */
+  destroy() {
+    window.removeEventListener("pointermove", this.onPointerMove);
+    window.removeEventListener("pointerup", this.onPointerUp);
+    this.drag = null;
+  }
+
   selectNode() {
     // Own class, not `.is-selected` - see this file's own doc comment.
     this.box.classList.add("dry-component-is-selected");

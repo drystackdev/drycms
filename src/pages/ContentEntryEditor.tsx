@@ -234,14 +234,24 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // Snapshot of `value` right after load, before any edits - see
   // `ContentTypeEditor.tsx`'s identical pattern for the rationale.
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
-  const originalValue: EntryValue | null =
-    initialSnapshot !== null
-      ? (JSON.parse(initialSnapshot) as EntryValue)
-      : null;
-  const isDirty =
-    initialSnapshot !== null &&
-    value !== null &&
-    JSON.stringify(value) !== initialSnapshot;
+  // Both memoized on the values they actually derive from: this component
+  // re-renders on every keystroke in every field (`updateFieldValue` below),
+  // and more than once per keystroke once a child lifts state back up (a
+  // RichText field's toolbar state does - see `editor-surface.tsx`). Re-
+  // parsing and re-serializing the WHOLE entry - rich text HTML and all - on
+  // each of those renders was pure waste: neither result can change unless
+  // `value`/`initialSnapshot` themselves did.
+  const originalValue: EntryValue | null = useMemo(
+    () => (initialSnapshot !== null ? (JSON.parse(initialSnapshot) as EntryValue) : null),
+    [initialSnapshot],
+  );
+  const isDirty = useMemo(
+    () =>
+      initialSnapshot !== null &&
+      value !== null &&
+      JSON.stringify(value) !== initialSnapshot,
+    [value, initialSnapshot],
+  );
 
   const entriesApi = useMemo(
     () =>
@@ -277,10 +287,16 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
       ),
     [nodes],
   );
-  const previewDiffs =
-    originalValue && value
-      ? diffEntryValue(originalValue, value, editableNodes)
-      : [];
+  // Same rationale as `originalValue`/`isDirty` above - a full field-by-field
+  // diff of the entry has no business running on every render, only when one
+  // of its three inputs changes.
+  const previewDiffs = useMemo(
+    () =>
+      originalValue && value
+        ? diffEntryValue(originalValue, value, editableNodes)
+        : [],
+    [originalValue, value, editableNodes],
+  );
 
   const veiFrame = isVeiFrame();
   const isSingleton = type?.kind === "singleton";
