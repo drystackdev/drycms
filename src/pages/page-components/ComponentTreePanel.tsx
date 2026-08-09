@@ -26,6 +26,10 @@ interface ComponentTreePanelProps {
   /** Small unsaved-changes dot on a file row - optional, a consumer with no
    * such concept (none needed it before `PageEditor.tsx`) just omits it. */
   isDirty?: (path: string) => boolean;
+  /** Small "saved but not yet built" dot on a file row - same optional
+   * shape as `isDirty` (only `PageEditor.tsx` has a build concept at all).
+   * Only meaningful for a `page.tsx` row; a consumer decides that. */
+  needsBuild?: (path: string) => boolean;
 }
 
 function parentOf(path: string): string {
@@ -46,6 +50,7 @@ export default function ComponentTreePanel({
   onDelete,
   onMove,
   isDirty,
+  needsBuild,
 }: ComponentTreePanelProps) {
   const [query, setQuery] = useState("");
   // Folders default OPEN (matches the shadcn tree reference) - this tracks
@@ -231,6 +236,7 @@ export default function ComponentTreePanel({
             activeFolder={effectiveFolder}
             isOpen={isOpen}
             isDirty={isDirty}
+            needsBuild={needsBuild}
             onToggleFolder={toggleFolder}
             onSelectFolder={selectFolder}
             onSelectFile={selectFile}
@@ -300,6 +306,7 @@ interface ComponentTreeListProps {
   activeFolder: string;
   isOpen: (id: string) => boolean;
   isDirty?: (path: string) => boolean;
+  needsBuild?: (path: string) => boolean;
   onToggleFolder: (id: string) => void;
   onSelectFolder: (id: string) => void;
   onSelectFile: (path: string) => void;
@@ -329,6 +336,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     activeFolder,
     isOpen,
     isDirty,
+    needsBuild,
     onToggleFolder,
     onSelectFolder,
     onSelectFile,
@@ -484,9 +492,15 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                 onClick={() => onSelectFile(entry.id)}
               >
                 <span>{entry.name}</span>
-                {isDirty?.(entry.id) && (
-                  <span class="page-components-tree-dirty-dot" title="Unsaved changes" />
-                )}
+                <span class="page-components-tree-dots">
+                  {isDirty?.(entry.id) ? (
+                    <span class="page-components-tree-dirty-dot" title="Unsaved changes" />
+                  ) : (
+                    needsBuild?.(entry.id) && (
+                      <span class="page-components-tree-build-dot" title="Saved, not built yet" />
+                    )
+                  )}
+                </span>
               </button>
             ) : (
               <button

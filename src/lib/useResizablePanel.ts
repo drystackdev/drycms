@@ -8,6 +8,13 @@ export interface UseResizablePanelOptions {
    * (dragging left/right resizes a width), `"y"` for a horizontal one
    * (dragging up/down resizes a height). */
   axis: "x" | "y";
+  /** Flips the drag direction - default assumes the resizable panel sits
+   * BEFORE the handle in DOM/visual order (dragging toward positive x/y
+   * grows it, e.g. a left sidebar or a left-hand preview column). Set this
+   * when the panel instead sits AFTER the handle (e.g. a bottom panel whose
+   * handle is above it) - there, dragging toward positive x/y shrinks the
+   * space left for the panel, so the size delta must be negated to match. */
+  invert?: boolean;
 }
 
 export interface UseResizablePanelResult {
@@ -43,7 +50,7 @@ export interface UseResizablePanelResult {
  * included, so the listeners can live as plain props on the handle itself
  * instead of a manually added/removed `document` pair.
  */
-export function useResizablePanel({ initial, min, max, axis }: UseResizablePanelOptions): UseResizablePanelResult {
+export function useResizablePanel({ initial, min, max, axis, invert = false }: UseResizablePanelOptions): UseResizablePanelResult {
   const [size, setSize] = useState(initial);
   const [dragging, setDragging] = useState(false);
   const dragState = useRef<{ startPos: number; startSize: number } | null>(null);
@@ -53,9 +60,10 @@ export function useResizablePanel({ initial, min, max, axis }: UseResizablePanel
       const state = dragState.current;
       if (!state) return;
       const pos = axis === "x" ? event.clientX : event.clientY;
-      setSize(Math.min(max, Math.max(min, state.startSize + (pos - state.startPos))));
+      const delta = invert ? state.startPos - pos : pos - state.startPos;
+      setSize(Math.min(max, Math.max(min, state.startSize + delta)));
     },
-    [axis, min, max],
+    [axis, min, max, invert],
   );
 
   const endDrag = useCallback((event: PointerEvent) => {

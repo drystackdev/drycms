@@ -266,6 +266,31 @@ export default function PageEditor() {
   // errors bleeding into the newly selected one.
   const [diagnostics, setDiagnostics] = useState<EditerDiagnostic[]>([]);
 
+  /** Every `page.tsx` that's been saved since its last successful build in
+   * THIS session (`status/error.md`'s "trang nào Save mà chưa build thì có
+   * dấu tròn màu vàng") - purely a session-local UI hint (a fresh reload
+   * starts empty, same as `PageBuild.tsx`'s own build status not tracking
+   * code changes - see that page's own doc comment on `staleResource`),
+   * not a claim about what's actually live. Drives `ComponentTreePanel`'s
+   * `needsBuild` dot. */
+  const [unbuiltPaths, setUnbuiltPaths] = useState<Set<string>>(new Set());
+
+  function markUnbuilt(paths: Iterable<string>) {
+    setUnbuiltPaths((prev) => {
+      const next = new Set(prev);
+      for (const p of paths) if (/(^|\/)page\.tsx$/.test(p)) next.add(p);
+      return next;
+    });
+  }
+
+  function clearUnbuilt(paths: Iterable<string>) {
+    setUnbuiltPaths((prev) => {
+      const next = new Set(prev);
+      for (const p of paths) next.delete(p);
+      return next;
+    });
+  }
+
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
@@ -288,6 +313,11 @@ export default function PageEditor() {
         ? clampWidth(initialUiState.diagnosticsHeight, DIAGNOSTICS_HEIGHT)
         : DIAGNOSTICS_HEIGHT.initial,
     axis: "y",
+    // The problems panel sits BELOW its own resize handle (handle first,
+    // then the panel - see the JSX below), unlike `sidebar`/`previewSplit`
+    // above (panel first, handle after) - dragging the handle down shrinks
+    // this panel rather than growing it, so the size delta needs flipping.
+    invert: true,
   });
   const viewport = useScaledPreview<ViewportKey>(
     VIEWPORT_WIDTHS,
@@ -475,8 +505,36 @@ export default function PageEditor() {
       setSavedByPath((prev) => ({ ...prev, [selectedPath]: sourceByPath[selectedPath] ?? "" }));
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
+      markUnbuilt([selectedPath]);
     } catch (error) {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Saves every file whose content differs from storage - both Build
+   * buttons call this first now instead of just staying disabled while
+   * dirty (`status/error.md`'s "Khi nhấn build page mà các file liên quan
+   * chưa lưu thì tự động lưu theo"). Returns the up-to-date saved map
+   * directly rather than relying on `savedByPath` state (which wouldn't
+   * reflect this save yet in the same render) so callers can build from it
+   * immediately. */
+  async function saveAllDirty(): Promise<Record<string, string>> {
+    const dirtyPaths = Object.keys(sourceByPath).filter((p) => sourceByPath[p] !== savedByPath[p]);
+    if (dirtyPaths.length === 0) return savedByPath;
+    setSaving(true);
+    try {
+      for (const p of dirtyPaths) {
+        await api.save(p, sourceByPath[p] ?? "");
+        cancelDraftWrite(p);
+        void deletePageSourceDraft(p);
+      }
+      const next = { ...savedByPath };
+      for (const p of dirtyPaths) next[p] = sourceByPath[p] ?? "";
+      setSavedByPath(next);
+      markUnbuilt(dirtyPaths);
+      return next;
     } finally {
       setSaving(false);
     }
@@ -498,11 +556,13 @@ export default function PageEditor() {
   /** Builds + publishes the SELECTED page.tsx (only enabled when it matches
    * a real static route - see `previewTarget`'s own doc comment) - a
    * shortcut for what `PageBuild.tsx`'s per-row "Build" button already does,
-   * without leaving this editor. Always compiles from `savedByPath` (never
-   * `sourceByPath`, which may hold this OR ANOTHER open file's unsaved
-   * edit) - published output must only ever reflect what's actually on
-   * storage, matching what `PageBuild.tsx` itself builds from (a fresh
-   * server fetch), never a local in-browser buffer nothing else can see. */
+   * without leaving this editor. Compiles from `saveAllDirty()`'s return
+   * value (never raw `sourceByPath`, which may hold this OR ANOTHER open
+   * file's unsaved edit) - published output must only ever reflect what's
+   * actually on storage, matching what `PageBuild.tsx` itself builds from (a
+   * fresh server fetch), never a local in-browser buffer nothing else can
+   * see; `saveAllDirty()` is what makes that true even when the editor
+   * itself still has unsaved edits open. */
   /** Fires the GitHub snapshot commit after a build's own publish already
    * succeeded, and folds the result into a toast - but only when it's
    * actually actionable. `"not-configured"` (the feature is simply off, or
@@ -522,6 +582,7 @@ export default function PageEditor() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
     setBuildingCurrent(true);
     try {
+      const saved = await saveAllDirty();
       const result = await buildPage({
         pathname: previewTarget.pathname,
         origin,
@@ -532,12 +593,13 @@ export default function PageEditor() {
         builtAssetsBaseUrl: `${path}/api/built-assets`,
         dryHttpEndpoint: `${path}/api/dry-http`,
         allTypes,
-        sourceByPath: savedByPath,
+        sourceByPath: saved,
         entryPath: previewTarget.entryPath,
         layoutPaths: previewTarget.layoutPaths,
         params: previewTarget.params,
       });
       await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname });
+      clearUnbuilt([previewTarget.entryPath]);
       toast.add({ type: "success", title: `Built "${previewTarget.pathname}"` });
       await reportGithubSync(`Build: ${previewTarget.pathname} - ${new Date().toISOString()}`);
     } catch (error) {
@@ -562,7 +624,8 @@ export default function PageEditor() {
     const BATCH_SIZE = 5;
     setBuildAllProgress({ done: 0, total: 0 });
     try {
-      const { targets } = await resolveAllPageTargets(savedByPath, allTypes, `${path}/api/dry-http`);
+      const saved = await saveAllDirty();
+      const { targets } = await resolveAllPageTargets(saved, allTypes, `${path}/api/dry-http`);
       const pathnames = [...targets.keys()];
       setBuildAllProgress({ done: 0, total: pathnames.length });
       let batch: { result: PageBuildResult; options: PublishOptions }[] = [];
@@ -579,7 +642,7 @@ export default function PageEditor() {
           builtAssetsBaseUrl: `${path}/api/built-assets`,
           dryHttpEndpoint: `${path}/api/dry-http`,
           allTypes,
-          sourceByPath: savedByPath,
+          sourceByPath: saved,
           entryPath: target.entryPath,
           layoutPaths: target.layoutPaths,
           params: target.params,
@@ -596,6 +659,7 @@ export default function PageEditor() {
         await publishBuiltPages(batch, `${path}/api/pages-build`);
         done += batch.length;
       }
+      clearUnbuilt([...targets.values()].map((t) => t.entryPath));
       toast.add({ type: "success", title: `Built ${done} ${done === 1 ? "page" : "pages"}` });
       await reportGithubSync(`Build all: ${done} pages - ${new Date().toISOString()}`);
     } catch (error) {
@@ -762,12 +826,6 @@ export default function PageEditor() {
     return null;
   }, [manifest, selectedPath, sourceByPath]);
 
-  // Any loaded file's unsaved edit, not just the selected one - both Build
-  // buttons always compile from `savedByPath` (see `handleBuildCurrent`'s
-  // doc comment), so an unsaved edit ANYWHERE would silently be left out of
-  // a published build; better to block and point at Save than publish
-  // something the user isn't looking at.
-  const anyDirty = Object.keys(sourceByPath).some((p) => sourceByPath[p] !== savedByPath[p]);
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
   // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
@@ -776,9 +834,15 @@ export default function PageEditor() {
   // currently selected, the toolbar's own context). Called unconditionally,
   // before this component's early-return guards below (Rules of Hooks).
   usePageHeaderActions(
-    <button type="button" class="outline" disabled={anyDirty || buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
-      {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
-    </button>,
+    <>
+      <div class="topbar-page-title">
+        <strong>Page Builder</strong>
+      </div>
+      <span class="spacer" />
+      <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
+        {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
+      </button>
+    </>,
   );
 
   /** `.page-components-preview-viewport` (below) needs 2 independent refs -
@@ -975,22 +1039,9 @@ export default function PageEditor() {
             </button>
           )}
           {isPageTarget && (
-            <button type="button" class="ghost sm" disabled={dirty || buildBusy} aria-busy={buildingCurrent} onClick={() => void handleBuildCurrent()}>
+            <button type="button" class="ghost sm" disabled={buildBusy} aria-busy={buildingCurrent} onClick={() => void handleBuildCurrent()}>
               {buildingCurrent ? "Building…" : "Build"}
             </button>
-          )}
-          {isPageTarget && (
-            <a
-              role="button"
-              class="ghost icon sm"
-              aria-label={`Open "${previewTarget!.pathname}" in a new tab`}
-              title={`Open "${previewTarget!.pathname}" in a new tab`}
-              href={`${origin}${previewTarget!.pathname}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <OpenInNewTabIcon />
-            </a>
           )}
           {selectedPath && (
             <button type="button" class="sm" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
@@ -1013,6 +1064,7 @@ export default function PageEditor() {
                 onDelete={setPendingDelete}
                 onMove={handleMove}
                 isDirty={(p) => sourceByPath[p] !== savedByPath[p]}
+                needsBuild={(p) => unbuiltPaths.has(p)}
               />
             </div>
             <div class={`page-components-resize-handle${sidebar.dragging ? " dragging" : ""}`} {...sidebar.handleProps} />
@@ -1050,6 +1102,16 @@ export default function PageEditor() {
                   </button>
                   <button type="button" class="sm outline" disabled={manualZoom === null} onClick={() => setManualZoom(null)}>
                     Fit
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    aria-label={isPageTarget ? `Open "${previewTarget.pathname}" in a new tab` : "Open in a new tab (select a page.tsx first)"}
+                    title={isPageTarget ? `Open "${previewTarget.pathname}" in a new tab` : "Open in a new tab (select a page.tsx first)"}
+                    disabled={!isPageTarget}
+                    onClick={() => window.open(`${origin}${previewTarget.pathname}`, "_blank", "noopener,noreferrer")}
+                  >
+                    <OpenInNewTabIcon />
                   </button>
                 </div>
               )}

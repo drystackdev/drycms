@@ -5795,15 +5795,36 @@
       }
     }
 
-    /* Unsaved-changes marker on a file row (`ComponentTreePanel.tsx`'s
-       `isDirty` prop) - same dot-not-asterisk convention editors like VS
-       Code use, so it reads as a status indicator rather than more text. */
-    .page-components-tree-dirty-dot {
+    /* Status dots on a file row (`ComponentTreePanel.tsx`'s `isDirty`/
+       `needsBuild` props) - pinned to the row's own right edge regardless of
+       filename length, same "notification sits at the end of the row"
+       placement as everywhere else in this app. */
+    .page-components-tree-dots {
       flex: 0 0 auto;
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    /* Unsaved-changes marker (`isDirty`) - same dot-not-asterisk convention
+       editors like VS Code use, so it reads as a status indicator rather
+       than more text. Green: this file has edits not yet on storage. */
+    .page-components-tree-dirty-dot {
       width: 0.375rem;
       height: 0.375rem;
       border-radius: 50%;
-      background-color: var(--dry-primary);
+      background-color: var(--dry-success);
+    }
+
+    /* `needsBuild` marker - only shown when NOT also dirty (a saved page
+       whose last edit hasn't been published yet). Amber: distinct from the
+       green "unsaved" dot above so the two states never look the same. */
+    .page-components-tree-build-dot {
+      width: 0.375rem;
+      height: 0.375rem;
+      border-radius: 50%;
+      background-color: var(--dry-warning);
     }
 
     /* The folder new files/folders currently get created into - distinct
