@@ -29,6 +29,23 @@ export function renderFieldNodes(
    * it mid-write. `null`/`undefined` outside a Magic Write run - always
    * `undefined` for `QuickCreateEntryDialog`, which has no Magic of its own. */
   streamingFieldName?: string | null,
+  /** `status/relation-quick-create.md` - locks (disables) one top-level
+   * field's `<fieldset>` same as `streamingFieldName` does, but WITHOUT its
+   * "AI is writing…" banner semantics (that banner only ever triggers for a
+   * `column` node anyway, and this is always a `relation` node in practice).
+   * Used by `QuickCreateEntryDialog` to lock a relation field it has
+   * pre-filled to point back at the entry the create dialog was opened from
+   * (a `relationmirror` field's own "+ New" - `RelationMirrorFieldAdapter`).
+   * `null`/`undefined` everywhere else. */
+  lockedFieldName?: string | null,
+  /** `status/relation-quick-create.md` - the entry currently being edited's
+   * own id (already hash-encoded, same shape a relation field's own value
+   * uses), threaded down to `FieldRenderer`'s `relation-mirror` branch so it
+   * can pre-fill+lock the mirrored relation's own field on a newly created
+   * related entry. `null`/`undefined` for a not-yet-saved entry -
+   * `QuickCreateEntryDialog`'s own form always passes `null` here, since
+   * nothing can reference an entry that doesn't exist yet. */
+  currentEntryId?: string | null,
 ) {
   const elements = [];
   for (let i = 0; i < nodes.length; i++) {
@@ -86,7 +103,7 @@ export function renderFieldNodes(
       <fieldset
         key={node.fieldName}
         data-field-name={node.fieldName}
-        disabled={streamingFieldName === node.fieldName}
+        disabled={streamingFieldName === node.fieldName || lockedFieldName === node.fieldName}
         class="content-entry-editor-field"
       >
         {streamingFieldName === node.fieldName && node.kind === "column" && node.fieldType !== "richtext" && (
@@ -114,6 +131,7 @@ export function renderFieldNodes(
           revealPath={
             revealPath?.[0] === node.fieldName ? revealPath : undefined
           }
+          currentEntryId={currentEntryId}
         />
       </fieldset>,
     );

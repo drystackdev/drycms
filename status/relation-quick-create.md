@@ -195,7 +195,7 @@ hướng nào đáng kể.**
 ### Việc CHƯA làm
 
 - **Chưa xác nhận bằng mắt trong browser thật** (Playwright bận - một
-  process Chrome khác đang giữ profile suốt phiên này, thử lại 2 lần đều
+  process Chrome khác đang giữ profile suốt phiên này, thử lại nhiều lần đều
   fail). Mọi verify chỉ qua đọc code + typecheck + unit test + build. Cần mở
   tay 1 collection có field `relation`, bấm "+ New", tạo thử, và (nếu có AI
   key thật) thử yêu cầu Magic "tạo một danh mục mới tên X và gắn vào bài
@@ -203,7 +203,39 @@ hướng nào đáng kể.**
 - Chưa test lồng-2-lớp thật (B có field `relation` sang C, bấm "+ New" bên
   trong dialog tạo B) - chỉ xác nhận đúng qua đọc luồng code, chưa bấm thử.
 
+## Fix (2026-08-10): mở rộng "+ New" sang field `relationmirror`
+
+User bấm thử thật, báo "không thấy nút new" - hoá ra đang xem field
+`relationmirror` (tự sinh, phía B nhìn ngược lại A), không phải field
+`relation` thật (field thật đã hoạt động đúng). Đây đúng là giới hạn CỐ Ý đã
+ghi ở Phase 1 gốc (mirror cần tự điền lại quan hệ ngược, form gốc chưa làm
+được) - user xác nhận muốn làm luôn phần này thay vì để lại cho lần sau.
+
+**Thay đổi thêm** (không phá vỡ gì ở Phase 1/2 gốc, chỉ cộng thêm):
+
+- `entry-fields-form.tsx`: `renderFieldNodes` thêm 2 tham số cuối -
+  `lockedFieldName` (khoá 1 fieldset, KHÔNG kèm banner "AI is writing" của
+  `streamingFieldName`) và `currentEntryId` (id entry đang mở, truyền tiếp
+  xuống `FieldRenderer`).
+- `FieldRenderer.tsx`: `FieldRendererProps` + `useRelationFieldSource` thêm
+  `presetRelation?: { fieldId, value }` - chỉ `RelationMirrorFieldAdapter`
+  tính ra (từ `node.sourceFieldId` + `currentEntryId`, quy ra bare-string hay
+  mảng dựa theo `reverseCardinality === "oneToMany"`). Nút "+ New" ở mirror
+  CHỈ hiện khi `currentEntryId` có thật (entry đang mở đã lưu - chưa lưu thì
+  chưa có gì để trỏ ngược về, cố tình ẩn nút thay vì tạo ra entry mồ côi).
+- `QuickCreateEntryDialog.tsx`: thêm `presetRelation` - tự set giá trị field
+  quan hệ tương ứng vào value khởi tạo (và mỗi lần mở lại) + khoá đúng field
+  đó qua `lockedFieldName`, admin thấy field hiện sẵn (không phải ẩn), có
+  chip/label của chính entry đang mở, không sửa được.
+- `ContentEntryEditor.tsx`: 2 lệnh gọi `renderFieldNodes` truyền thêm
+  `entryId` làm `currentEntryId`.
+
+Typecheck + `bun run test` (1024 pass, cùng 16 fail có sẵn từ trước) +
+`bun run build` (client+SSR) đều sạch. **Vẫn CHƯA xác nhận bằng mắt** - cùng
+lý do Playwright bận như trên.
+
 ## Speed
 
-Xong trong 1 phiên liên tục, không có điểm chặn. Việc còn lại (QA browser
-thật) chỉ chờ có trình duyệt rảnh.
+Code xong toàn bộ (Phase 1 + Phase 2 + mở rộng mirror) trong 1 phiên liên
+tục, không có điểm chặn kỹ thuật. Việc còn lại duy nhất là QA browser thật -
+chỉ chờ có trình duyệt rảnh, không phải việc cần code thêm.

@@ -822,6 +822,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
               typesList,
               revealPath,
               streamingFieldName,
+              undefined,
+              entryId,
             )}
           </div>
 
@@ -835,6 +837,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
                 typesList,
                 revealPath,
                 streamingFieldName,
+                undefined,
+                entryId,
               )}
 
               {canDelete && (

@@ -24,6 +24,14 @@ export interface QuickCreateEntryDialogProps {
   open: boolean;
   onCreated: (id: string) => void;
   onCancel: () => void;
+  /** `status/relation-quick-create.md` - only set when opened from a
+   * `relationmirror` field's own picker (`RelationMirrorFieldAdapter`):
+   * pre-fills AND locks one of `type`'s own `relation` fields to point back
+   * at the entry this dialog was opened from, so the new row shows up as
+   * mirrored immediately. `fieldId` (not `fieldName`) since that's the
+   * stable key every `EntryFieldNode` carries - resolved against this
+   * component's own freshly-built `nodes` below. */
+  presetRelation?: { fieldId: string; value: string | string[] };
 }
 
 /**
@@ -46,6 +54,7 @@ export default function QuickCreateEntryDialog({
   open,
   onCreated,
   onCancel,
+  presetRelation,
 }: QuickCreateEntryDialogProps) {
   const entriesApi = useMemo(
     () => createContentEntriesApi(`${path}/api/content`, type.name),
@@ -55,6 +64,15 @@ export default function QuickCreateEntryDialog({
     () => buildEntryFieldTree(type, allTypes),
     [type, allTypes],
   );
+  // The LOCKED field's `fieldName` (what `renderFieldNodes` addresses fields
+  // by) - resolved from `presetRelation`'s stable `fieldId` against this
+  // type's own freshly-built `nodes`. `undefined` whenever there's nothing
+  // to lock, which `renderFieldNodes` treats as a no-op.
+  const presetFieldName = useMemo(() => {
+    if (!presetRelation) return undefined;
+    const node = nodes.find((n) => n.kind === "relation" && n.fieldId === presetRelation.fieldId);
+    return node?.fieldName;
+  }, [nodes, presetRelation]);
   // Same exclusions `ContentEntryEditor.tsx`'s `editableNodes` applies -
   // server-stamped/list-only fields have no business in a create form.
   const editableNodes = useMemo(
@@ -70,22 +88,29 @@ export default function QuickCreateEntryDialog({
     [nodes],
   );
 
-  const [value, setValue] = useState<EntryValue>(() => blankEntryValue(nodes));
+  function blankValueWithPreset(): EntryValue {
+    const blank = blankEntryValue(nodes);
+    if (presetRelation && presetFieldName) blank[presetFieldName] = presetRelation.value;
+    return blank;
+  }
+
+  const [value, setValue] = useState<EntryValue>(blankValueWithPreset);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const dialogRef = useDialogSync(open, onCancel);
   const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([open]);
 
-  // Fresh blank draft every time this reopens - lets the same instance be
-  // used to create several related entries in a row without carrying over
-  // the previous one's values.
+  // Fresh blank draft (with the preset relation re-applied, if any) every
+  // time this reopens - lets the same instance be used to create several
+  // related entries in a row without carrying over the previous one's
+  // values.
   useEffect(() => {
     if (open) {
-      setValue(blankEntryValue(nodes));
+      setValue(blankValueWithPreset());
       setFieldErrors({});
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on open only, not on every `nodes` identity change
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset on open only, not on every `nodes`/`presetRelation` identity change
   }, [open]);
 
   function updateFieldValue(fieldName: string, fieldValue: unknown) {
@@ -137,7 +162,17 @@ export default function QuickCreateEntryDialog({
           </header>
           <div class="quick-create-entry-dialog-body" ref={bodyScroll}>
             <div class="stack">
-              {renderFieldNodes(editableNodes, value, fieldErrors, updateFieldValue, allTypes)}
+              {renderFieldNodes(
+                editableNodes,
+                value,
+                fieldErrors,
+                updateFieldValue,
+                allTypes,
+                undefined,
+                undefined,
+                presetFieldName,
+                null,
+              )}
             </div>
           </div>
           <footer class="row justify-end">
