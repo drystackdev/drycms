@@ -2726,7 +2726,6 @@
     .sidebar-footer {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
       flex: none;
     }
 
@@ -2946,8 +2945,16 @@
      * used to leave empty at the very bottom of the sidebar. */
     .sidebar-version {
       padding-inline: 0.625rem;
-      color: var(--dry-muted-foreground);
+      overflow: hidden;
+      color: color-mix(in srgb, var(--dry-muted-foreground) 40%, transparent);
       font-size: var(--dry-text-xs);
+      text-align: left;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      padding-block: .25rem;
+    }
+
+    .shell.collapsed .sidebar-version {
       text-align: center;
     }
 

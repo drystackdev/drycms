@@ -688,8 +688,12 @@ export default function DryLayout({ children }: Props) {
               </li>
             </Popover>
           )}
-          {!collapsed.value && import.meta.env.DRYCMS_VERSION && (
-            <small class="sidebar-version">v{import.meta.env.DRYCMS_VERSION}</small>
+          {import.meta.env.DRYCMS_VERSION && (
+            <small class="sidebar-version">
+              {collapsed.value
+                ? `v${import.meta.env.DRYCMS_VERSION}`
+                : `version ${import.meta.env.DRYCMS_VERSION}`}
+            </small>
           )}
         </div>
       </aside>
