@@ -48,9 +48,9 @@ function matchingType(template: DynamicPageTemplate, allTypes: ContentTypeDefini
  * "what does THIS page's own render depend on"), so it must never append to
  * some page's replay log - same reasoning `page-build.ts`'s
  * `fetchSeoDefaults` already documents for its own raw fetch. */
-async function fetchAllSlugs(dryHttpEndpoint: string, typeName: string): Promise<string[]> {
+async function fetchAllSlugs(dryHttpEndpoint: string, typeName: string, slugLimit?: number): Promise<string[]> {
   const slugs: string[] = [];
-  const pageSize = 500;
+  const pageSize = slugLimit !== undefined ? Math.min(500, slugLimit) : 500;
   for (let page = 0; ; page++) {
     const response = await fetch(dryHttpEndpoint, {
       method: "POST",
@@ -63,6 +63,7 @@ async function fetchAllSlugs(dryHttpEndpoint: string, typeName: string): Promise
     const result = entry?.result as { rows: Record<string, unknown>[]; total: number } | undefined;
     const rows = result?.rows ?? [];
     for (const row of rows) if (typeof row.slug === "string") slugs.push(row.slug);
+    if (slugLimit !== undefined && slugs.length >= slugLimit) return slugs.slice(0, slugLimit);
     if (rows.length < pageSize) break;
   }
   return slugs;
@@ -72,6 +73,12 @@ export async function resolveDynamicPages(
   templates: DynamicPageTemplate[],
   allTypes: ContentTypeDefinition[],
   dryHttpEndpoint: string,
+  /** Caps how many rows `fetchAllSlugs` pages through per template - unset
+   * (the "Build all" caller) fetches every published row, same as before.
+   * `PageEditor.tsx`'s live-preview caller only needs ONE sample entry, so
+   * it passes `1` here rather than paginating a whole collection just to
+   * preview its first row. */
+  slugLimit?: number,
 ): Promise<DynamicTemplateResolution[]> {
   const resolutions: DynamicTemplateResolution[] = [];
   for (const template of templates) {
@@ -80,7 +87,7 @@ export async function resolveDynamicPages(
       resolutions.push({ template, type: null, pages: [] });
       continue;
     }
-    const slugs = await fetchAllSlugs(dryHttpEndpoint, type.name);
+    const slugs = await fetchAllSlugs(dryHttpEndpoint, type.name, slugLimit);
     const pages = slugs.map((slug) => ({
       pathname: template.pathnameTemplate.replace(`[${template.paramName}]`, slug),
       entryPath: template.entryPath,

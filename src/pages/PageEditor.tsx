@@ -27,7 +27,14 @@ import {
   type PageBuildResult,
   type PublishOptions,
 } from "../page-components/page-build.js";
-import { buildManifestRouteTree, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import {
+  buildManifestRouteTree,
+  listDynamicPageTemplates,
+  matchSourceRoute,
+  staticPagePaths,
+  type DynamicPageTemplate,
+} from "../server/app-router/route-manifest.js";
+import { resolveDynamicPages, type ResolvedDynamicPage } from "../page-components/dynamic-routes.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { clearDryHttpCache } from "../content-types/dry-http-cache.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
@@ -858,6 +865,49 @@ export default function PageEditor() {
 
   const manifest = useMemo(() => buildManifestRouteTree(Object.keys(sourceByPath)), [sourceByPath]);
 
+  /** Every `[param]` page template in the tree (`blogs/[slug]/page.tsx`
+   * etc.) - the dynamic-route counterpart to `staticPagePaths`, which
+   * `previewTarget` below already walks for static pages. */
+  const dynamicTemplates = useMemo(() => listDynamicPageTemplates(manifest), [manifest]);
+  const dynamicTemplate = useMemo(
+    () => (selectedPath ? (dynamicTemplates.find((t) => t.entryPath === selectedPath) ?? null) : null),
+    [dynamicTemplates, selectedPath],
+  );
+
+  type DynamicPreviewSample =
+    | { status: "loading" }
+    | { status: "resolved"; page: ResolvedDynamicPage }
+    | { status: "no-type" }
+    | { status: "no-entries"; typeName: string };
+
+  /** Resolves ONE real sample row (e.g. the first published blog post) for
+   * whichever `[param]` template is open, so `previewTarget` below has a
+   * concrete pathname/params to build against - the same match-by-
+   * `seoUrlPattern` + fetch-real-rows approach `resolveAllPageTargets` uses
+   * for "Build all", just capped to 1 row (`resolveDynamicPages`'s own
+   * `slugLimit`) since a live preview only ever needs one example, not the
+   * whole collection. Keyed on the template + `allTypes` only (not
+   * `sourceByPath`) - switching which dynamic file is open re-resolves;
+   * editing its code does not. */
+  const [dynamicPreviewSample, setDynamicPreviewSample] = useState<DynamicPreviewSample | null>(null);
+  useEffect(() => {
+    if (!dynamicTemplate || !allTypes) {
+      setDynamicPreviewSample(null);
+      return;
+    }
+    let cancelled = false;
+    setDynamicPreviewSample({ status: "loading" });
+    void resolveDynamicPages([dynamicTemplate], allTypes, `${path}/api/dry-http`, 1).then(([resolution]) => {
+      if (cancelled || !resolution) return;
+      if (!resolution.type) setDynamicPreviewSample({ status: "no-type" });
+      else if (resolution.pages.length === 0) setDynamicPreviewSample({ status: "no-entries", typeName: resolution.type.name });
+      else setDynamicPreviewSample({ status: "resolved", page: resolution.pages[0]! });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dynamicTemplate, allTypes]);
+
   interface PreviewTarget {
     /** Shown in the preview header - a real pathname for a page, a
      * descriptive label for anything else. */
@@ -912,6 +962,19 @@ export default function PageEditor() {
           return { label: pathname, pathname, entryPath: match.entryPath, layoutPaths: match.layoutPaths, params: {} };
         }
       }
+      // No static route matched - this may be a `[param]` template instead
+      // (`blogs/[slug]/page.tsx`), previewed against the sample row
+      // `dynamicPreviewSample` above resolved for it.
+      if (dynamicPreviewSample?.status === "resolved") {
+        const { page } = dynamicPreviewSample;
+        return {
+          label: `${page.pathname} (sample)`,
+          pathname: page.pathname,
+          entryPath: page.entryPath,
+          layoutPaths: page.layoutPaths,
+          params: page.params,
+        };
+      }
       return null;
     }
     if (/(^|\/)layout\.tsx$/.test(selectedPath)) {
@@ -931,7 +994,26 @@ export default function PageEditor() {
       return { label: "500.tsx", pathname: "/__dry-preview-500", entryPath: "500.tsx", layoutPaths: [], params: {} };
     }
     return null;
-  }, [manifest, selectedPath, sourceByPath]);
+  }, [manifest, selectedPath, sourceByPath, dynamicPreviewSample]);
+
+  /** Explains why the preview panel is empty for a `[param]` page whose own
+   * `previewTarget` came back `null` - distinguishes "still resolving a
+   * sample row", "no content type's `seoUrlPattern` matches this route" (a
+   * config gap), and "matched a type but it has no published rows yet" (an
+   * empty collection) from the generic "nothing selected" placeholder below,
+   * since all 3 would otherwise look identical to a user staring at a blank
+   * preview. */
+  const previewUnavailableReason = useMemo(() => {
+    if (previewTarget || !dynamicTemplate) return null;
+    if (!dynamicPreviewSample || dynamicPreviewSample.status === "loading") return "Resolving a sample entry to preview…";
+    if (dynamicPreviewSample.status === "no-type") {
+      return `No content type's SEO URL pattern matches "${dynamicTemplate.pathnameTemplate}" - can't pick a sample entry to preview.`;
+    }
+    if (dynamicPreviewSample.status === "no-entries") {
+      return `No published "${dynamicPreviewSample.typeName}" entries yet - nothing to preview.`;
+    }
+    return null;
+  }, [previewTarget, dynamicTemplate, dynamicPreviewSample]);
 
   /** The chain of files this preview actually renders through, root-first:
    * every `layout.tsx` wrapping the target (exactly the `layoutPaths`
@@ -1334,7 +1416,7 @@ export default function PageEditor() {
                 </div>
               ) : (
                 <p class="hint" style={{ padding: "1rem" }}>
-                  Select a page.tsx, layout.tsx, 404.tsx, or 500.tsx to preview it.
+                  {previewUnavailableReason ?? "Select a page.tsx, layout.tsx, 404.tsx, or 500.tsx to preview it."}
                 </p>
               )}
               {/* Breadcrumb of the layout chain this preview renders through
