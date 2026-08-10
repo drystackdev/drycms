@@ -256,13 +256,29 @@ file thuộc tính năng này.
   bằng `navigator.locks.request`). `sivelap` có cùng baseline sliding-refresh
   (không rõ vì sao 2 branch trùng y hệt dù không chung ancestor gần) nhưng
   CHƯA có fix Web Locks này - đây là một cải tiến độc lập, không phải một
-  phần của "add new cho ref/mirror" nên không port lần này. Có thể port riêng
-  sau nếu cần (diff nằm nguyên trong `977d0e0`).
+  phần của "add new cho ref/mirror" nên không port trong commit đầu.
+  **Đã port riêng ngay sau đó** (commit `2331449`, cùng phiên) theo yêu cầu
+  user: copy nguyên `src/store/auth.ts`/`src/store/auth.test.ts` (kèm
+  `FakeLockManager` test) từ `mai-anh-quyen` - xác nhận byte-identical bằng
+  `diff`. `bun run test -- src/store/auth.test.ts` 6/6 pass (gồm test race
+  2-tab mới), full suite vẫn 1122/1123 pass cùng 1 fail có sẵn
+  (`sitemap.test.ts`), `bun run typecheck`/`build` sạch.
 - `src/server/app-router/generated-asset-hrefs.ts` - build artifact (hash
   asset), không hand-merge; tự sinh lại đúng theo build của `sivelap`.
 
 **Verify sau port**: `bun run typecheck` sạch, `bun run test` 1121/1122 pass
 (1 fail duy nhất là `sitemap.test.ts` - xác nhận bằng `git stash` là fail có
 sẵn từ trước trên `sivelap`, không liên quan lần port này), `bun run build`
-(client+SSR) sạch. Chưa QA bằng mắt trên `sivelap` (kế thừa luôn khoảng
-trống QA đã ghi ở trên).
+(client+SSR) sạch.
+
+**QA bằng mắt trên `sivelap`: vẫn CHƯA làm được** - dev server đang chạy sẵn
+ở `localhost:5173`, nhưng Playwright MCP báo lỗi "Browser is already in use"
+(profile `mcp-chrome-c45ac02` đang bị 1 phiên Chrome thật khác giữ - nhiều
+tiến trình renderer mới tạo trong vài phút gần đây, rất có thể một session
+Claude Code song song khác đang dùng chung profile này). Không tắt Chrome
+đó vì có thể đang giữ việc dở của phiên khác (`feedback_concurrent_repo_editing`).
+Đây là đúng loại vướng mắc đã ghi ở mục "Việc CHƯA làm" phía trên
+(Playwright bận) - tái diễn, không phải lỗi mới. Mọi verify của lần port
+này (cả Quick Create Entry lẫn Web Locks fix) chỉ qua đọc code + typecheck +
+unit test + build, giống hệt cách bên `mai-anh-quyen` đã tự xác nhận trước
+khi port.
