@@ -1680,6 +1680,96 @@
       border: 0;
     }
 
+    /* IconField - a small square tile mirroring AvatarField's box structure
+     * (single click-to-reopen thumb + corner remove badge), sized for a
+     * glyph rather than a photo. Unlike AvatarField, clicking opens a picker
+     * dialog rather than the OS file picker - closer to ImageField in that
+     * respect. */
+    .icon-field-box {
+      position: relative;
+      width: 3.5rem;
+      height: 3.5rem;
+      border: 1px solid var(--dry-input);
+      border-radius: var(--dry-radius-md);
+      background-color: var(--dry-muted);
+    }
+
+    .icon-field-thumb {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--dry-foreground);
+    }
+
+    button.icon-field-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: inherit;
+      background: none;
+      box-shadow: none;
+      color: var(--dry-muted-foreground);
+
+      &:hover:not(:disabled) {
+        background-color: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        color: var(--dry-disabled-foreground);
+      }
+
+      & > svg {
+        width: 1.5rem;
+        height: 1.5rem;
+      }
+    }
+
+    .icon-field-box > button.icon-field-overlay {
+      position: absolute;
+      inset: 0;
+      border: none;
+      border-radius: inherit;
+      background-color: var(--dry-overlay-dark);
+      box-shadow: none;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
+
+      &:hover:not(:disabled) {
+        opacity: 1;
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+      }
+
+      &:hover:not(:disabled) ~ .icon-field-remove {
+        opacity: 1;
+      }
+    }
+
+    .icon-field-remove {
+      position: absolute;
+      inset-block-start: -0.125rem;
+      inset-inline-end: -0.125rem;
+      background-color: var(--dry-overlay-dark-control);
+      color: var(--dry-primary-foreground);
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
+
+      &:hover:not(:disabled) {
+        background-color: var(--dry-overlay-dark-control);
+        opacity: 1;
+      }
+    }
+
     /* ------------------------------------------------------- List cell kinds */
     /* `image` field cells (see `ContentEntryList.tsx`) - a small crop, never
      * the full `ImageField` picker frame. `config.isAvatar` picks the shape. */

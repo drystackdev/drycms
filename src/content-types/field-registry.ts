@@ -3,6 +3,7 @@ import AvatarField from "../components/fields/AvatarField.js";
 import CheckField from "../components/fields/CheckField.js";
 import DatePickerField from "../components/fields/DatePickerField.js";
 import FileField from "../components/fields/FileField.js";
+import IconField from "../components/fields/IconField.js";
 import ImageField from "../components/fields/ImageField.js";
 import NumberField from "../components/fields/NumberField.js";
 import SecretKeyField from "../components/fields/SecretKeyField.js";
@@ -443,6 +444,28 @@ export const fileFieldType: FieldTypeDefinition<string | string[]> = {
   ],
 };
 
+/**
+ * One icon picked from the local icon library (Icon Management's own
+ * storage, a `dry-icons/` subfolder of the main storage root - see
+ * `options.ts`'s `resolveIconsOption`). Stores the icon's full storage id
+ * (e.g. `"dry-icons/solar-home-bold-duotone.svg"`), same "whole
+ * subfolder-prefixed path" convention `avatarFieldType` uses for `.avatar/`.
+ * `storage/http-source.ts`'s `resolveIconSrc`/`iconTagHtml` turn that id into
+ * a usable mask-image URL or a copy-pasteable `<i style="...">` snippet -
+ * both go through the storage root's own already-public `GET` route rather
+ * than the separate (session-gated) `icons` API, so a picked icon renders
+ * for anonymous visitors on the public site too.
+ */
+export const iconFieldType: FieldTypeDefinition<string> = {
+  key: "icon",
+  label: "Icon",
+  shape: "column",
+  Editor: IconField,
+  sqlType: () => "TEXT",
+  configFields: [],
+  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+};
+
 export interface SelectFieldConfig {
   /** Fixed value set defined when the field itself is created - not editable
    * per-entry, only here in the schema. Each option is a single bare string,
@@ -742,6 +765,7 @@ export const FIELD_TYPE_TS_TYPE: Record<string, string> = {
   select: "string",
   file: "string",
   avatar: "string",
+  icon: "string",
 };
 
 export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
@@ -753,6 +777,7 @@ export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [imageFieldType.key]: imageFieldType,
   [avatarFieldType.key]: avatarFieldType,
   [fileFieldType.key]: fileFieldType,
+  [iconFieldType.key]: iconFieldType,
   [selectFieldType.key]: selectFieldType,
   [passwordFieldType.key]: passwordFieldType,
   [secretKeyFieldType.key]: secretKeyFieldType,

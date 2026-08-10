@@ -117,6 +117,7 @@
     "SelectFieldType": "solar:alt-arrow-down-bold-duotone",
     "DatePickerFieldType": "solar:calendar-bold-duotone",
     "ImageFieldType": "solar:gallery-bold-duotone",
+    "IconFieldType": "solar:widget-5-bold-duotone",
     "RelationFieldType": "solar:link-round-bold-duotone",
     "ComponentFieldType": "solar:widget-bold-duotone"
   }

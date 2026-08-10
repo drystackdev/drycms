@@ -1,7 +1,8 @@
 import dayjs from "dayjs";
 import type { JSX } from "preact/jsx-runtime";
 const { path } = window.__DRY_CONFIG__;
-import { encodePath } from "../storage/http-source.js";
+import { encodePath, resolveIconSrc } from "../storage/http-source.js";
+import IconGlyph from "./IconGlyph.js";
 import { EyeIcon } from "./icons/index.js";
 import type { QueryableColumn } from "../content-types/engine/entry-tree.js";
 
@@ -137,6 +138,14 @@ export function renderEntryCellValue(
   // storage id through `/api/storage/...`.
   if (column.fieldType === "avatar") {
     return <img class="cell-avatar" src={String(value)} alt="" />;
+  }
+
+  if (column.fieldType === "icon") {
+    return (
+      <span class="row" style={{ gap: "0.375rem", alignItems: "center" }}>
+        <IconGlyph src={resolveIconSrc(String(value))} size={20} />
+      </span>
+    );
   }
 
   if (column.fieldType === "select") {

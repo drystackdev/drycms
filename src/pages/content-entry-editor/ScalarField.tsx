@@ -6,6 +6,7 @@ import DatePickerField, { type DatePickerMode } from "../../components/fields/Da
 import { createHttpFileSource } from "../../storage/http-source.js";
 import { scopeFileSource } from "../../storage/scoped-source.js";
 import FileField from "../../components/fields/FileField.js";
+import IconField from "../../components/fields/IconField.js";
 import ImageField from "../../components/fields/ImageField.js";
 import NumberField from "../../components/fields/NumberField.js";
 import SecretKeyField from "../../components/fields/SecretKeyField.js";
@@ -207,6 +208,20 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
   if (fieldType === "avatar") {
     return (
       <AvatarField
+        label={label}
+        description={description}
+        value={typeof value === "string" ? value : ""}
+        onChange={onChange}
+        required={!!validation.required}
+        error={!!error}
+        helperText={error}
+      />
+    );
+  }
+
+  if (fieldType === "icon") {
+    return (
+      <IconField
         label={label}
         description={description}
         value={typeof value === "string" ? value : ""}

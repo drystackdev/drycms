@@ -159,6 +159,22 @@ describe("relationMirrorFieldsFor", () => {
     });
     expect(relationMirrorFieldsFor(target, [target, source])).toEqual([]);
   });
+
+  it("skips a relation field whose source type is hidden (e.g. memory -> user)", () => {
+    const target = contentType({ id: "target", name: "user" });
+    const relationField = field({
+      id: "rel1",
+      type: "relation",
+      config: { target: "target", cardinality: "manyToOne" },
+    });
+    const source = contentType({
+      id: "source",
+      name: "memory",
+      fields: [relationField],
+      hidden: true,
+    });
+    expect(relationMirrorFieldsFor(target, [target, source])).toEqual([]);
+  });
 });
 
 describe("defaultFieldSide", () => {

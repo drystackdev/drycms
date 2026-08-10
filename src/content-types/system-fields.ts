@@ -233,6 +233,13 @@ function mirrorFieldId(sourceTypeId: string, sourceFieldId: string): string {
  * (e.g. "User") would be ambiguous repeated twice - disambiguated to
  * `"${source.label} (${field.label})"` only for that source type's mirrors,
  * everyone else keeps the plain label.
+ *
+ * A `source` that's itself `hidden` (e.g. `memory` - see `seed.ts`) is
+ * skipped entirely: it's server-managed infrastructure with no legitimate
+ * reason for an admin to see it surface as a field on the type it relates
+ * to (e.g. a "Memory" field on `user`'s schema editor / entry form). Nothing
+ * downstream needs that mirror - `routes/memory.ts` reaches its rows
+ * directly by `user` id, never through this reverse side.
  */
 export function relationMirrorFieldsFor(
   type: ContentTypeDefinition,
@@ -242,6 +249,7 @@ export function relationMirrorFieldsFor(
 
   const matches: { source: ContentTypeDefinition; field: FieldDefinition }[] = [];
   for (const source of allTypes) {
+    if (source.hidden) continue;
     for (const field of activeFields(source)) {
       if (field.type !== "relation") continue;
       if ((field.config as RelationFieldConfig).target !== type.id) continue;

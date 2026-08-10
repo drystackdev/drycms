@@ -18,6 +18,7 @@ import {
   SelectFieldTypeIcon,
   DatePickerFieldTypeIcon,
   ImageFieldTypeIcon,
+  IconFieldTypeIcon,
   ContentIcon,
   RelationFieldTypeIcon,
   ComponentFieldTypeIcon,
@@ -46,6 +47,8 @@ export const fieldTypeIcons: Record<string, ComponentType<IconProps>> = {
   date: DatePickerFieldTypeIcon,
   "image-field": ImageFieldTypeIcon,
   image: ImageFieldTypeIcon,
+  "icon-field": IconFieldTypeIcon,
+  icon: IconFieldTypeIcon,
   // No dedicated icon - a specialized image picker (see `field-registry.ts`'s
   // `avatarFieldType`), so it borrows `image`'s, same "reuse the closest
   // existing icon" precedent as `file`/`relationmirror` below.
@@ -96,6 +99,8 @@ export const fieldTypeColors: Record<string, string> = {
   date: "#14b8a6",
   "image-field": "#ec4899",
   image: "#ec4899",
+  "icon-field": "#10b981",
+  icon: "#10b981",
   "avatar-field": "#db2777",
   avatar: "#db2777",
   "file-field": "#f97316",

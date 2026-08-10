@@ -57,6 +57,46 @@ export function resolveImageSrc(value: string, basePath: string = adminPath()): 
   return ref ? boxString(resolved, ref) : resolved;
 }
 
+/**
+ * Resolves an `icon`-typed field's stored value (a bare storage id under
+ * `dry-icons/`, e.g. "dry-icons/solar-home-bold-duotone.svg") into a URL fit
+ * for a CSS `mask-image`/`-webkit-mask` source. Icons are just SVG files
+ * living in a `dry-icons/` subfolder of the same storage root `storage`
+ * already serves publicly (see `options.ts`'s `resolveIconsOption`), so this
+ * goes through the same `/api/storage/...` route `resolveImageSrc` does -
+ * always via the `?preview` variant though, since a raw storage GET
+ * force-downloads any `.svg` as `application/octet-stream`
+ * (`routes/storage.ts`'s legacy-SVG guard) rather than serving it as a
+ * directly usable `image/svg+xml` mask source.
+ */
+export function resolveIconSrc(value: string, basePath: string = adminPath()): string {
+  const resolved =
+    /^https?:\/\//i.test(value) || value.startsWith("/")
+      ? String(value)
+      : `${basePath}/api/storage/${encodePath(value)}?preview`;
+  const ref = refOf(value);
+  return ref ? boxString(resolved, ref) : resolved;
+}
+
+/**
+ * The `<i style="...">` CSS-mask copy-paste snippet for an `icon`-typed
+ * field's stored value - same mask technique `IconGlyph`/
+ * `IconPreviewDialog.tsx`'s `maskSnippet` use, pointed at `resolveIconSrc`'s
+ * URL instead of Iconify's hosted API (that one exists for icons not yet
+ * imported into the local library; this is for one already picked on a
+ * field).
+ */
+export function iconTagHtml(value: string, basePath?: string): string {
+  const url = resolveIconSrc(value, basePath);
+  return [
+    "<i",
+    ` style="display:inline-block;width:1em;height:1em;background-color:currentColor;`,
+    `-webkit-mask:url('${url}') no-repeat center / contain;`,
+    `mask:url('${url}') no-repeat center / contain;"`,
+    "></i>",
+  ].join("");
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
