@@ -93,6 +93,29 @@ export default defineConfig(({ isSsrBuild, command }) => ({
               appsHydrate: "src/apps/hydrate-client.ts",
               appsVeiOverlay: "src/apps/vei/overlay.ts",
             },
+            output: {
+              // `prismjs`'s language-component files (`prism-jsx.js` etc.,
+              // pulled in by `CodeBlock.tsx`/`CodeField.tsx`/Page Components'
+              // `Editer`) are legacy UMD `(function (Prism) {...})(Prism)`
+              // scripts that close over a bare GLOBAL `Prism` rather than
+              // importing it - they only work if prismjs's own core module
+              // has already run and attached itself to `globalThis` in the
+              // SAME synchronous evaluation pass. Automatic chunking can
+              // split a component file into a different async chunk than
+              // core depending on which OTHER routes reference prismjs and
+              // in what combination - found live in production as an
+              // intermittent `ReferenceError: Prism is not defined` that
+              // survived even after fixing every known call site to read
+              // the grammar lazily, because the failure was in the
+              // component file's OWN top-level registration, not in this
+              // app's code. Forcing every `prismjs` module into one single
+              // chunk makes core and every language component always load
+              // and execute together, in their real dependency order,
+              // regardless of which route reaches them first.
+              manualChunks(id) {
+                if (id.includes("/node_modules/prismjs/")) return "prismjs";
+              },
+            },
           },
           manifest: true,
         }),
