@@ -141,7 +141,7 @@ describe("GET /dry/api/content-types", () => {
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("redirect").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
-    expect(byName("user").hidden).toBe(true);
+    expect(byName("user").hidden).toBeFalsy();
   });
 });
 
@@ -337,17 +337,25 @@ describe("PUT /dry/api/content-types/[slug] (update)", () => {
     expect(json.error).toBe("invalid_definition");
   });
 
-  it("still allows editing user's other (non-protected) fields", async () => {
+  it("still allows adding and editing a custom (non-protected) field on user", async () => {
     const user = await findByName("user");
-    const name = user.fields.find((f) => f.name === "name")!;
-    const { status, json } = await put(user.id, {
+    const bio = field("bio");
+    const added = await put(user.id, {
+      definition: { ...user, fields: [...user.fields, bio] },
+    });
+    expect(added.status).toBe(200);
+    expect(added.json.definition.fields.find((f: FieldDefinition) => f.id === bio.id).label).toBe("bio");
+
+    const edited = await put(user.id, {
       definition: {
-        ...user,
-        fields: user.fields.map((f) => (f.id === name.id ? { ...f, label: "Full Name" } : f)),
+        ...added.json.definition,
+        fields: added.json.definition.fields.map((f: FieldDefinition) =>
+          f.id === bio.id ? { ...f, label: "Bio" } : f,
+        ),
       },
     });
-    expect(status).toBe(200);
-    expect(json.definition.fields.find((f: FieldDefinition) => f.id === name.id).label).toBe("Full Name");
+    expect(edited.status).toBe(200);
+    expect(edited.json.definition.fields.find((f: FieldDefinition) => f.id === bio.id).label).toBe("Bio");
   });
 });
 

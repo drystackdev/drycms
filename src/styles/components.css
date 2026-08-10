@@ -1574,6 +1574,103 @@
       }
     }
 
+    /* AvatarField - a small circle, unlike ImageField's 16:9 frame: clicking
+     * goes straight to the OS file picker (no Media Library dialog), so
+     * there's no separate empty/thumb "box" width to account for. */
+    .avatar-field-box {
+      position: relative;
+      width: 5rem;
+      height: 5rem;
+      overflow: hidden;
+      border: 1px solid var(--dry-input);
+      border-radius: 50%;
+      background-color: var(--dry-muted);
+    }
+
+    .avatar-field-thumb {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    button.avatar-field-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: inherit;
+      background: none;
+      box-shadow: none;
+      color: var(--dry-muted-foreground);
+
+      &:hover:not(:disabled) {
+        background-color: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        color: var(--dry-disabled-foreground);
+      }
+
+      & > svg {
+        width: 2rem;
+        height: 2rem;
+      }
+    }
+
+    .avatar-field-overlay {
+      position: absolute;
+      inset: 0;
+      border: none;
+      border-radius: inherit;
+      background-color: var(--dry-overlay-dark);
+      box-shadow: none;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
+
+      &:hover:not(:disabled) {
+        opacity: 1;
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+      }
+
+      &:hover:not(:disabled) ~ .avatar-field-remove {
+        opacity: 1;
+      }
+    }
+
+    .avatar-field-remove {
+      position: absolute;
+      inset-block-start: -0.125rem;
+      inset-inline-end: -0.125rem;
+      background-color: var(--dry-overlay-dark-control);
+      color: var(--dry-primary-foreground);
+      opacity: 0;
+      transition: opacity 0.2s ease-in;
+
+      &:hover:not(:disabled) {
+        opacity: 1;
+      }
+    }
+
+    .avatar-field-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
     /* ------------------------------------------------------- List cell kinds */
     /* `image` field cells (see `ContentEntryList.tsx`) - a small crop, never
      * the full `ImageField` picker frame. `config.isAvatar` picks the shape. */

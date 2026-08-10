@@ -46,15 +46,16 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("githubSync").kind).toBe("singleton");
   });
 
-  it("hides role/aiKey/redirect/seo/user/seoDefaults/memory/systemSettings from the generic content-type UI, but leaves menu/menuItem visible", () => {
+  it("hides role/aiKey/redirect/seo/seoDefaults/memory/systemSettings from the generic content-type UI, but leaves menu/menuItem/user visible", () => {
     expect(byName("role").hidden).toBe(true);
     expect(byName("aiKey").hidden).toBe(true);
     expect(byName("redirect").hidden).toBe(true);
     expect(byName("seo").hidden).toBe(true);
-    // `user`/`seoDefaults` moved to their own pinned System nav entry
-    // instead of the generic Collection/Singleton group - still ordinary,
-    // freely editable content otherwise (see the `frozen` test below).
-    expect(byName("user").hidden).toBe(true);
+    // `seoDefaults` moved to its own pinned System nav entry instead of the
+    // generic Collection/Singleton group - still ordinary, freely editable
+    // content otherwise (see the `frozen` test below). `user` stays visible
+    // in the generic list/nav too (in addition to its own pinned "Users"
+    // shortcut) so its schema can be edited through the ordinary editor.
     expect(byName("seoDefaults").hidden).toBe(true);
     // `memory`/`systemSettings` have no nav entry at all (see their own
     // `frozen`/`locked` test) - `hidden` here is necessary but not
@@ -65,6 +66,7 @@ describe("defaultContentTypeDefinitions", () => {
     expect(byName("googleVerification").hidden).toBe(true);
     expect(byName("menu").hidden).toBeFalsy();
     expect(byName("menuItem").hidden).toBeFalsy();
+    expect(byName("user").hidden).toBeFalsy();
   });
 
   it("freezes role/aiKey/redirect/memory/systemSettings' schema entirely, but leaves seo's, user's, and seoDefaults' editable", () => {
@@ -130,15 +132,14 @@ describe("defaultContentTypeDefinitions", () => {
     expect(googleVerification.fields.map((f) => f.name)).toEqual(["name", "content"]);
   });
 
-  it("protects user's email/password/roles fields specifically, and nothing else", () => {
+  it("protects user's name/avatar/email/password/roles fields, and nothing else", () => {
     const user = byName("user");
     const protectedNames = (user.protectedFieldIds ?? [])
       .map((id) => user.fields.find((f) => f.id === id)?.name)
       .sort();
-    expect(protectedNames).toEqual(["email", "password", "roles"]);
-    expect(user.fields.find((f) => f.name === "name")).toBeDefined();
-    expect(user.protectedFieldIds).not.toContain(
-      user.fields.find((f) => f.name === "name")!.id,
+    expect(protectedNames).toEqual(["avatar", "email", "name", "password", "roles"]);
+    expect(user.fields.map((f) => f.name).sort()).toEqual(
+      ["avatar", "email", "name", "password", "roles"].sort(),
     );
   });
 
@@ -164,6 +165,8 @@ describe("defaultContentTypeDefinitions", () => {
     const user = byName("user");
     const role = byName("role");
     expect(user.features?.timestamps).toBe(true);
+    const avatar = user.fields.find((f) => f.name === "avatar")!;
+    expect(avatar.type).toBe("avatar");
     const email = user.fields.find((f) => f.name === "email")!;
     expect(email.validation).toMatchObject({
       required: true,

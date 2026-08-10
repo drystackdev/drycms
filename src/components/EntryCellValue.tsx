@@ -131,6 +131,14 @@ export function renderEntryCellValue(
     );
   }
 
+  // Unlike `image` above, the value itself IS the pixels (a
+  // `data:image/webp;...` string - see `field-registry.ts`'s
+  // `avatarFieldType`), so this renders it directly rather than resolving a
+  // storage id through `/api/storage/...`.
+  if (column.fieldType === "avatar") {
+    return <img class="cell-avatar" src={String(value)} alt="" />;
+  }
+
   if (column.fieldType === "select") {
     const values = Array.isArray(value) ? value : [value];
     return (

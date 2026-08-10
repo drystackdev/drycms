@@ -164,7 +164,8 @@ both client- and server-side - not merely cosmetic:
   outright removal, not just deletion. Still shown normally in the Fields
   list and still openable in `FieldDialog` (view-only: every control
   disabled, footer swaps to a single "Close" button) - never hidden from
-  view, only from saving. Set on `user`'s `email`/`password`/`roles`.
+  view, only from saving. Set on `user`'s `name`/`avatar`/`email`/`password`/
+  `roles`.
 
 `naming.ts` also owns name validation (`validateContentTypeName`/
 `validateFieldName` - alphabet + a `RESERVED_NAMES` set covering every

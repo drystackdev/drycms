@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from '../components/ConfirmDialog.js';
 import DataTable, { type DataTableColumn } from '../components/DataTable.js';
 import { TrashIcon } from '../components/icons/index.js';
 import { toast } from '../components/Toast.js';
-import { createContentEntriesApi } from '../content-types/entries-http-api.js';
 import { discardEntryDraft, entryDraftIndex } from '../content-types/entry-draft-store.js';
 import { createContentTypesApi } from '../content-types/http-api.js';
 import { permissionActionsFor, type PermissionAction } from '../content-types/permissions.js';
@@ -28,7 +27,6 @@ interface CollectionRow extends Record<string, unknown> {
 	label: string;
 	name: string;
 	fieldCount: number;
-	entries: number | null;
 }
 
 interface SingletonRow extends Record<string, unknown> {
@@ -36,7 +34,6 @@ interface SingletonRow extends Record<string, unknown> {
 	label: string;
 	name: string;
 	fieldCount: number;
-	hasData: boolean | null;
 }
 
 interface DraftRow extends Record<string, unknown> {
@@ -66,52 +63,6 @@ export default function Dashboard() {
 		() => (contentTypes ?? []).filter((t) => t.kind === 'singleton' && !t.hidden && canAccess(t.id, 'setting')),
 		[contentTypes],
 	);
-
-	// Per-collection entry counts and per-singleton "has data" - the schema
-	// list has no aggregate of its own, so this fetches page 1 of each
-	// accessible resource just for its `total`/existence, same "one request
-	// per resource" tradeoff `Roles.tsx` accepts for its own small lists.
-	const [entryCounts, setEntryCounts] = useState<Record<string, number>>({});
-	useEffect(() => {
-		let cancelled = false;
-		Promise.all(
-			collections.map(async (type) => {
-				try {
-					const { total } = await createContentEntriesApi(`${path}/api/content`, type.name).list({ page: 0, pageSize: 1 });
-					return [type.id, total] as const;
-				} catch {
-					return [type.id, 0] as const;
-				}
-			}),
-		).then((results) => {
-			if (!cancelled) setEntryCounts(Object.fromEntries(results));
-		});
-		return () => {
-			cancelled = true;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- `collections` is derived from `contentTypes`; re-running per its own identity would refetch every render.
-	}, [contentTypes]);
-
-	const [singletonHasData, setSingletonHasData] = useState<Record<string, boolean>>({});
-	useEffect(() => {
-		let cancelled = false;
-		Promise.all(
-			singletons.map(async (type) => {
-				try {
-					const entry = await createContentEntriesApi(`${path}/api/content`, type.name).getSingleton();
-					return [type.id, entry !== null] as const;
-				} catch {
-					return [type.id, false] as const;
-				}
-			}),
-		).then((results) => {
-			if (!cancelled) setSingletonHasData(Object.fromEntries(results));
-		});
-		return () => {
-			cancelled = true;
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- same reasoning as the entry-count effect above.
-	}, [contentTypes]);
 
 	// Every unsaved local draft (see `entry-draft-store.ts`) across every
 	// collection and singleton - the only "currently being edited" concept
@@ -152,12 +103,9 @@ export default function Dashboard() {
 		}
 	}
 
-	const totalEntries = collections.reduce((sum, type) => sum + (entryCounts[type.id] ?? 0), 0);
-
 	const stats = [
 		{ label: 'Collections', value: String(collections.length) },
 		{ label: 'Singletons', value: String(singletons.length) },
-		{ label: 'Total entries', value: String(totalEntries) },
 		{ label: 'Being edited', value: String(draftRows.length) },
 	];
 
@@ -165,42 +113,24 @@ export default function Dashboard() {
 		{ key: 'label', label: 'Collection', sortable: true },
 		{ key: 'name', label: 'Name' },
 		{ key: 'fieldCount', label: 'Fields', numeric: true, sortable: true },
-		{
-			key: 'entries',
-			label: 'Entries',
-			numeric: true,
-			sortable: true,
-			render: (value) => <>{value === null ? <span class="hint">…</span> : String(value)}</>,
-		},
 	];
 	const collectionRows: CollectionRow[] = collections.map((type) => ({
 		id: type.id,
 		label: type.label,
 		name: type.name,
 		fieldCount: type.fields.length,
-		entries: entryCounts[type.id] ?? null,
 	}));
 
 	const singletonColumns: DataTableColumn<SingletonRow>[] = [
 		{ key: 'label', label: 'Singleton', sortable: true },
 		{ key: 'name', label: 'Name' },
 		{ key: 'fieldCount', label: 'Fields', numeric: true, sortable: true },
-		{
-			key: 'hasData',
-			label: 'Status',
-			render: (value) => (
-				<span class={`badge sm ${value === null ? 'outline' : value ? 'success' : 'warning'}`}>
-					{value === null ? 'Loading…' : value ? 'Configured' : 'Empty'}
-				</span>
-			),
-		},
 	];
 	const singletonRows: SingletonRow[] = singletons.map((type) => ({
 		id: type.id,
 		label: type.label,
 		name: type.name,
 		fieldCount: type.fields.length,
-		hasData: singletonHasData[type.id] ?? null,
 	}));
 
 	const draftColumns: DataTableColumn<DraftRow>[] = [

@@ -1,4 +1,5 @@
 import type { ComponentType } from "preact";
+import AvatarField from "../components/fields/AvatarField.js";
 import CheckField from "../components/fields/CheckField.js";
 import DatePickerField from "../components/fields/DatePickerField.js";
 import FileField from "../components/fields/FileField.js";
@@ -10,7 +11,7 @@ import TextField from "../components/fields/TextField.js";
 import RichTextField from "./richtext-editor.js";
 
 export type FieldShape = "column" | "flatten" | "child-table" | "virtual";
-export type SqlColumnType = "TEXT" | "INTEGER" | "REAL";
+export type SqlColumnType = "TEXT" | "INTEGER" | "REAL" | "BLOB";
 
 export interface SettingOption {
   value: string;
@@ -367,6 +368,62 @@ export const imageFieldType: FieldTypeDefinition<string | string[]> = {
   ],
 };
 
+const AVATAR_DATA_URL_PREFIX = "data:image/webp;base64,";
+
+/** `atob`/`btoa` (not `Buffer`) on purpose - `serialize`/`deserialize` run on
+ * both the client (browser) and every server runtime this app targets
+ * (Bun/Node for `kind: "local"`, Workers for `kind: "cloudflare"` - see
+ * `status/cloudflare-workers-adapter.md`'s global-scope bans), and
+ * `atob`/`btoa` are the one base64 primitive all four actually share. */
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+}
+
+/**
+ * A small profile picture, stored INLINE as raw bytes (SQL `BLOB`) in the row
+ * itself - unlike `image`/`file`, no storage backend/id is involved at all.
+ * Clicking goes straight to the OS file picker (no Media Library dialog); the
+ * pick is resized client-side to a fixed tiny size and re-encoded as WebP
+ * before ever reaching `onChange` (see `AvatarField.tsx`'s
+ * `fileToAvatarDataUrl`), so the stored value is always already-tiny. The
+ * field's own VALUE (what `AvatarField`/`onChange`/entry JSON all see) stays
+ * a `data:image/webp;base64,...` string throughout - a browser `<img src>`
+ * and a JSON entry payload both need that shape regardless of the DB column
+ * type - `serialize`/`deserialize` are what convert to/from raw bytes right
+ * at the DB boundary, saving the ~33% base64-inflation + `TEXT` overhead a
+ * `sqlType: "TEXT"` field (`image`/`file`) would carry. No `configFields`,
+ * unlike `image`'s `multiple`/`isAvatar`. `internal: true` (like `password`):
+ * a fixed system field seeded onto `user` (see `seed.ts`), not meant to be
+ * picked freely on arbitrary content types the way `image`/`file` are.
+ */
+export const avatarFieldType: FieldTypeDefinition<string> = {
+  key: "avatar",
+  label: "Avatar",
+  shape: "column",
+  Editor: AvatarField,
+  sqlType: () => "BLOB",
+  serialize: (value) => {
+    const comma = value.indexOf(",");
+    return base64ToBytes(comma === -1 ? value : value.slice(comma + 1));
+  },
+  deserialize: (raw) => {
+    const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBufferLike);
+    return `${AVATAR_DATA_URL_PREFIX}${bytesToBase64(bytes)}`;
+  },
+  internal: true,
+  configFields: [],
+  validationFields: [{ key: "required", label: "Required", widget: "boolean" }],
+};
+
 export interface FileFieldConfig {
   /** @default false - a single file; `true` lets `FileField`'s own
    * `multiple` mode pick several, stored as a comma-joined id list instead
@@ -712,6 +769,7 @@ export const FIELD_TYPE_TS_TYPE: Record<string, string> = {
   image: "string",
   select: "string",
   file: "string",
+  avatar: "string",
 };
 
 export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
@@ -721,6 +779,7 @@ export const fieldTypes: Record<string, FieldTypeDefinition<any>> = {
   [booleanFieldType.key]: booleanFieldType,
   [dateFieldType.key]: dateFieldType,
   [imageFieldType.key]: imageFieldType,
+  [avatarFieldType.key]: avatarFieldType,
   [fileFieldType.key]: fileFieldType,
   [selectFieldType.key]: selectFieldType,
   [passwordFieldType.key]: passwordFieldType,

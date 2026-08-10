@@ -30,7 +30,7 @@ describe("buildEntryFieldTree", () => {
     // only feature, so createdAt/updatedAt trail after them, followed by the
     // auto-generated relationmirror for `memory`'s `user` relation (see
     // `system-fields.ts`'s `relationMirrorFieldsFor`).
-    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "email", "password", "roles", "createdAt", "updatedAt", "memory"]);
+    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "avatar", "email", "password", "roles", "createdAt", "updatedAt", "memory"]);
 
     const name = byName(nodes, "name") as EntryColumnNode;
     expect(name.kind).toBe("column");
@@ -54,7 +54,7 @@ describe("buildEntryFieldTree", () => {
     // Same trailing `memory` relationmirror as the test above - trashing a
     // field/feature on `user` doesn't touch a relation some OTHER type
     // (`memory`) points at it with.
-    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "email", "roles", "memory"]);
+    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "avatar", "email", "roles", "memory"]);
   });
 
   it("maps a manyToMany relation field to a child table, not a column", () => {
@@ -297,7 +297,7 @@ describe("flattenQueryableColumns", () => {
     const nodes = buildEntryFieldTree(user, allTypes);
     const columns = flattenQueryableColumns(nodes);
 
-    expect(columns.map((c) => c.fieldName)).toEqual(["name", "email", "createdAt", "updatedAt"]);
+    expect(columns.map((c) => c.fieldName)).toEqual(["name", "avatar", "email", "createdAt", "updatedAt"]);
     expect(columns.find((c) => c.fieldName === "name")?.columnName).toBe("name");
   });
 

@@ -1,32 +1,4 @@
 {
   "css.styleSheets": ["packages/drycms/src/styles/*.css"],
-  // `.dry/pages-source` (and `components`/`richtext-components`, same
-  // category once non-empty) hold real browser-authored `.tsx` source -
-  // `tsconfig.json` includes them for that reason. `.dry/dry.generated.d.ts`
-  // is ALSO in that `include` (see its own comment there) despite being
-  // generated output, because `tsc`/the IDE need it for `dry()` ambient
-  // types. The rest of `.dry/` is generated/cache/runtime-data output that
-  // was never meant to be opened as a project file -
-  // `types-cache/dry.generated.d.ts` in particular is a SEPARATE copy (the
-  // `typesCacheStorage` mirror the browser Editer reads over HTTP) that
-  // re-emits `.dry/dry.generated.d.ts`'s own relative imports verbatim,
-  // which only resolve correctly from `.dry/`, so VS Code opening this
-  // `types-cache` copy directly (outside `tsconfig.json`'s `include`, so it
-  // falls back to an inferred loose-file project) shows a real-looking but
-  // meaningless "cannot find module" error. Hiding it here is the fix, not
-  // changing how the CMS generates that content, which is correct for its
-  // intended location.
-  "files.exclude": {
-    "**/.dry/types-cache": true,
-    "**/.dry/pages-cache": true,
-    "**/.dry/kv": true,
-    "**/.dry/content.sqlite": true
-  },
-  "search.exclude": {
-    "**/.dry/types-cache": true,
-    "**/.dry/pages-cache": true,
-    "**/.dry/kv": true,
-    "**/.dry/content.sqlite": true
-  },
   "commentTranslate.targetLanguage": "vi"
 }

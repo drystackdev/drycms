@@ -70,7 +70,7 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(byName("redirect").hidden).toBe(true);
     expect(byName("memory").hidden).toBe(true);
     expect(byName("systemSettings").hidden).toBe(true);
-    expect(byName("user").hidden).toBe(true);
+    expect(byName("user").hidden).toBeFalsy();
   });
 
   it("seeds the permanent Super Admin role at boot", async () => {

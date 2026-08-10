@@ -46,6 +46,11 @@ export const fieldTypeIcons: Record<string, ComponentType<IconProps>> = {
   date: DatePickerFieldTypeIcon,
   "image-field": ImageFieldTypeIcon,
   image: ImageFieldTypeIcon,
+  // No dedicated icon - a specialized image picker (see `field-registry.ts`'s
+  // `avatarFieldType`), so it borrows `image`'s, same "reuse the closest
+  // existing icon" precedent as `file`/`relationmirror` below.
+  "avatar-field": ImageFieldTypeIcon,
+  avatar: ImageFieldTypeIcon,
   // No dedicated icon (only `*FieldType` Iconify picks in `icons.config.json`
   // have one) - borrows `ContentIcon` (a generic documents glyph), same
   // "reuse the closest existing icon" precedent as `relationmirror` below.
@@ -91,6 +96,8 @@ export const fieldTypeColors: Record<string, string> = {
   date: "#14b8a6",
   "image-field": "#ec4899",
   image: "#ec4899",
+  "avatar-field": "#db2777",
+  avatar: "#db2777",
   "file-field": "#f97316",
   file: "#f97316",
   "relation-field": "#6366f1",

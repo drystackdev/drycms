@@ -1,5 +1,6 @@
 import { useContext, useMemo } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
+import AvatarField from "../../components/fields/AvatarField.js";
 import CheckField from "../../components/fields/CheckField.js";
 import DatePickerField, { type DatePickerMode } from "../../components/fields/DatePickerField.js";
 import { createHttpFileSource } from "../../storage/http-source.js";
@@ -196,6 +197,20 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         source={imageSource}
         entrySource={entrySource}
         multiple={multiple ? { min: validation.min as number | undefined, max: validation.max as number | undefined } : false}
+        required={!!validation.required}
+        error={!!error}
+        helperText={error}
+      />
+    );
+  }
+
+  if (fieldType === "avatar") {
+    return (
+      <AvatarField
+        label={label}
+        description={description}
+        value={typeof value === "string" ? value : ""}
+        onChange={onChange}
         required={!!validation.required}
         error={!!error}
         helperText={error}

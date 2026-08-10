@@ -49,6 +49,7 @@ export interface PackagedSeed {
 const IDS = {
   user: "system-user",
   userName: "system-user-name",
+  userAvatar: "system-user-avatar",
   userEmail: "system-user-email",
   userPassword: "system-user-password",
   menu: "system-menu",
@@ -111,14 +112,17 @@ const IDS = {
  * rename, edit, or delete, indistinguishable from anything created by hand -
  * EXCEPT `user`/`seoDefaults`, which carry `locked: true` (their table can't
  * be deleted - see `types.ts`) - `user` also has `protectedFieldIds` over
- * its `email`/`password`/`roles` fields (needed for login/permissions, so
- * they can't be edited or removed either, even though the rest of `user`'s
- * fields are as free as any other type's). `seo`, `aiKey`, `role`,
+ * its `name`/`avatar`/`email`/`password`/`roles` fields (its baseline
+ * identity shape plus what login/permissions depend on, so none of them can
+ * be edited or removed, even though the rest of `user`'s fields are as free
+ * as any other type's). `seo`, `aiKey`, `role`,
  * `redirect`, `memory`, and `systemSettings` carry real restrictions too
- * (`hidden`/`locked`/`frozen` - see `types.ts`'s doc comments); `user`/
- * `seoDefaults` are ALSO `hidden` now (reached through their own pinned
- * System nav entry instead of the generic Collection/Singleton group - see
- * `DryLayout.tsx`), even though their schema stays as editable as ever.
+ * (`hidden`/`locked`/`frozen` - see `types.ts`'s doc comments); `seoDefaults`
+ * is ALSO `hidden` (reached through its own pinned System nav entry instead
+ * of the generic Collection/Singleton group - see `DryLayout.tsx`). `user`
+ * is NOT hidden - it shows in the generic Collection list/nav too (in
+ * addition to its own pinned "Users" shortcut) so its schema stays reachable
+ * through the ordinary content-type editor, even though it's still `locked`.
  * `role`/`aiKey`/`redirect` carry restrictions because the role schema is
  * consumed by the auth layer and `system-fields.ts` hardcodes
  * `seo`'s id - reshaping any of them through the generic schema editor would silently
@@ -238,18 +242,17 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     label: "User",
     description: "Accounts able to sign in.",
     features: { timestamps: true },
-    // Reached via its own pinned "Users" nav entry (`DryLayout.tsx`, System
-    // section) instead of the generic Collection nav group - same mechanism
-    // `redirect`/`aiKey` use (see their own comments). Rows still go through
-    // the normal content-entries API under `redirect`/`aiKey`'s same
-    // permission model; only the nav GROUPING moved, not the table shape.
-    hidden: true,
-    // The table itself can't be deleted (login depends on it existing), and
-    // email/password/roles individually can't be edited or removed either
-    // (login/permissions depend on their fixed shape) - every other field
-    // stays as freely addable/editable/removable as any other type's.
+    // Also reachable via its own pinned "Users" nav entry (`DryLayout.tsx`,
+    // System section) as a shortcut, but NOT `hidden` - it shows in the
+    // generic Collection list/dropdown too, so its schema can be reached
+    // through the ordinary content-type editor to add custom fields.
+    // The table itself can't be deleted (login depends on it existing).
+    // `name`/`avatar`/`email`/`password` individually can't be edited or
+    // removed either (identity fields every account is expected to have),
+    // same for `roles` (permissions depend on its fixed shape) - every OTHER
+    // field stays as freely addable/editable/removable as any other type's.
     locked: true,
-    protectedFieldIds: [IDS.userEmail, IDS.userPassword, IDS.userRoles],
+    protectedFieldIds: [IDS.userName, IDS.userAvatar, IDS.userEmail, IDS.userPassword, IDS.userRoles],
     fields: [
       {
         id: IDS.userName,
@@ -261,13 +264,22 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         order: 0,
       },
       {
+        id: IDS.userAvatar,
+        name: "avatar",
+        label: "Avatar",
+        type: "avatar",
+        config: {},
+        validation: {},
+        order: 1,
+      },
+      {
         id: IDS.userEmail,
         name: "email",
         label: "Email",
         type: "text",
         config: {},
         validation: { required: true, unique: true, format: "email" },
-        order: 1,
+        order: 2,
       },
       {
         id: IDS.userPassword,
@@ -276,7 +288,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "password",
         config: {},
         validation: { required: true },
-        order: 2,
+        order: 3,
       },
       {
         id: IDS.userRoles,
@@ -285,7 +297,7 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
         type: "relation",
         config: { target: IDS.role, cardinality: "manyToMany" },
         validation: {},
-        order: 3,
+        order: 4,
       },
     ],
     version: 0,
