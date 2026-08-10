@@ -6,9 +6,10 @@ export interface AuthUser {
   id: number;
   name: string;
   email: string;
-  /** `data:image/webp;base64,...` or `""` - same "resolved fresh every
-   * time, never in the signed session token" treatment `roles` gets below
-   * (`routes/auth.ts`'s `resolveClientUser`). */
+  /** A storage id under `.avatar/` (resolve with `resolveImageSrc()` for
+   * `<img src>`) or `""` - same "resolved fresh every time, never in the
+   * signed session token" treatment `roles` gets below (`routes/auth.ts`'s
+   * `resolveClientUser`). */
   avatar: string;
   /** Display names of the roles assigned to this user - resolved fresh by
    * the server on every auth response (`routes/auth.ts`'s

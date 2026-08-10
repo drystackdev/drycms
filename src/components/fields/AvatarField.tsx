@@ -1,45 +1,58 @@
 import { useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import { readImageDimensions, renderResizedImage } from "../FileManager/file-manager-image-optimize.js";
+import { resolveImageSrc } from "../../storage/http-source.js";
+import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
+import { randomUUID } from "../../lib/uuid.js";
 import { CloseIcon, UsersIcon } from "../icons/index.js";
 
-/** Longest side, in px, an avatar is downscaled to before storage - still
- * tiny since the whole point of this field (unlike `image`) is storing the
- * pixels themselves as a base64 string directly in the DB row, no separate
- * file/storage record, but large enough to cover the editor's 5rem (80px)
- * circle at 2x device pixel ratio without visibly blurring. */
+/** Longest side, in px, an avatar is downscaled to before upload - large
+ * enough to cover the editor's 5rem (80px) circle at 2x device pixel ratio
+ * without visibly blurring, small enough to keep the uploaded file tiny. */
 const AVATAR_MAX_DIMENSION = 80;
 const AVATAR_QUALITY = 1;
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read image."));
-    reader.readAsDataURL(blob);
-  });
-}
+/** Fixed upload target - hidden from the Media browser (`isHiddenName` in
+ * `storage/local.ts`/`storage/r2.ts`), see `field-registry.ts`'s
+ * `avatarFieldType` doc comment. */
+const AVATAR_FOLDER = ".avatar";
 
-/** Resizes `file` down to `AVATAR_MAX_DIMENSION` on its longest side
- * (aspect ratio kept, no crop), re-encodes as WebP at `AVATAR_QUALITY`, and
- * returns the result as a `data:image/webp;base64,...` string - the field's
- * stored VALUE, unlike `image`/`file` which store a storage-backed id/path
- * (see `field-registry.ts`'s `avatarFieldType` doc comment). */
-async function fileToAvatarDataUrl(file: File): Promise<string> {
+/** Resizes `file` down to `AVATAR_MAX_DIMENSION` on its longest side (aspect
+ * ratio kept, no crop) and re-encodes as WebP at `AVATAR_QUALITY` - the
+ * bytes actually uploaded to storage. */
+async function resizeAvatarImage(file: File): Promise<Blob> {
   const { width, height } = await readImageDimensions(file);
   const scale = Math.min(1, AVATAR_MAX_DIMENSION / Math.max(width, height));
   const targetWidth = Math.max(1, Math.round(width * scale));
   const targetHeight = Math.max(1, Math.round(height * scale));
-  const blob = await renderResizedImage(file, {
+  return renderResizedImage(file, {
     width: targetWidth,
     height: targetHeight,
     format: "webp",
     quality: AVATAR_QUALITY,
   });
-  return blobToDataUrl(blob);
+}
+
+/** `.avatar` may not exist yet (the very first avatar ever uploaded on this
+ * instance) - `routes/storage.ts`'s upload handler 404s on a missing target
+ * folder, so this creates it on that one failure and retries once, instead
+ * of requiring every caller to pre-create it. Every later upload succeeds on
+ * the first try. */
+async function uploadToAvatarFolder(source: FileManagerSource, file: File): Promise<FileEntry[]> {
+  const upload = source.upload;
+  if (!upload) throw new Error("This source can't upload files.");
+  try {
+    return await upload(AVATAR_FOLDER, [file]);
+  } catch {
+    await source.createFolder?.(null, AVATAR_FOLDER).catch(() => undefined);
+    return upload(AVATAR_FOLDER, [file]);
+  }
 }
 
 export interface AvatarFieldProps extends FieldProps<string> {
+  /** Where the resized image gets uploaded to (`.avatar/` folder) - same
+   * storage backend `image`/`file` use. */
+  source: FileManagerSource;
   disabled?: boolean;
   name?: string;
   id?: string;
@@ -50,12 +63,15 @@ export interface AvatarFieldProps extends FieldProps<string> {
 /**
  * Avatar picker: clicking goes straight to the OS file picker (no Media
  * Library dialog, unlike `ImageField`) - the chosen image is resized/
- * re-encoded client-side (see `fileToAvatarDataUrl`) and stored inline as a
- * base64 data URL, so nothing ever touches file storage.
+ * re-encoded client-side (see `resizeAvatarImage`) and uploaded straight to
+ * the `.avatar` storage folder; the field's stored VALUE is the resulting
+ * storage id, resolved to a URL for display via `resolveImageSrc` (see
+ * `field-registry.ts`'s `avatarFieldType` doc comment).
  */
 export default function AvatarField({
   value,
   onChange,
+  source,
   label,
   helperText,
   error = false,
@@ -85,7 +101,11 @@ export default function AvatarField({
     setBusy(true);
     setLocalError(null);
     try {
-      onChange(await fileToAvatarDataUrl(file));
+      const blob = await resizeAvatarImage(file);
+      const uploaded = new File([blob], `${randomUUID()}.webp`, { type: blob.type });
+      const [entry] = await uploadToAvatarFolder(source, uploaded);
+      if (!entry) throw new Error("Upload failed.");
+      onChange(entry.id);
     } catch {
       setLocalError("Could not process this image.");
     } finally {
@@ -106,7 +126,7 @@ export default function AvatarField({
       <div class="avatar-field-box">
         {value ? (
           <>
-            <img class="avatar-field-thumb" src={value} alt="" />
+            <img class="avatar-field-thumb" src={resolveImageSrc(value)} alt="" />
             <button
               id={fieldId}
               type="button"

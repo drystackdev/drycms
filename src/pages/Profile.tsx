@@ -1,10 +1,12 @@
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
+const { path } = window.__DRY_CONFIG__;
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { passwordConfirmError } from "../content-types/engine/entry-validate.js";
 import AvatarField from "../components/fields/AvatarField.js";
 import PasswordField from "../components/fields/PasswordField.js";
 import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
+import { createHttpFileSource } from "../storage/http-source.js";
 import { AuthApiError, authState, updateProfile } from "../store/auth.js";
 import PasswordChangeField from "./content-entry-editor/PasswordChangeField.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -23,6 +25,7 @@ import { useDocumentTitle } from "./page-common.js";
 export default function Profile() {
   useDocumentTitle("My profile");
 
+  const imageSource = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const user = authState.value.user;
   const [name, setName] = useState(user?.name ?? "");
   const [avatar, setAvatar] = useState(user?.avatar ?? "");
@@ -91,7 +94,7 @@ export default function Profile() {
           helperText={nameError}
           required
         />
-        <AvatarField label="Avatar" value={avatar} onChange={setAvatar} />
+        <AvatarField label="Avatar" value={avatar} onChange={setAvatar} source={imageSource} />
         <TextField
           label="Email"
           placeholder="e.g. ada@example.com"

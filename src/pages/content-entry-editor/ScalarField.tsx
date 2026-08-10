@@ -211,6 +211,7 @@ export default function ScalarField({ node, value, onChange, error }: Props) {
         description={description}
         value={typeof value === "string" ? value : ""}
         onChange={onChange}
+        source={imageSource}
         required={!!validation.required}
         error={!!error}
         helperText={error}

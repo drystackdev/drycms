@@ -368,57 +368,28 @@ export const imageFieldType: FieldTypeDefinition<string | string[]> = {
   ],
 };
 
-const AVATAR_DATA_URL_PREFIX = "data:image/webp;base64,";
-
-/** `atob`/`btoa` (not `Buffer`) on purpose - `serialize`/`deserialize` run on
- * both the client (browser) and every server runtime this app targets
- * (Bun/Node for `kind: "local"`, Workers for `kind: "cloudflare"` - see
- * `status/cloudflare-workers-adapter.md`'s global-scope bans), and
- * `atob`/`btoa` are the one base64 primitive all four actually share. */
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
-  return btoa(binary);
-}
-
 /**
- * A small profile picture, stored INLINE as raw bytes (SQL `BLOB`) in the row
- * itself - unlike `image`/`file`, no storage backend/id is involved at all.
- * Clicking goes straight to the OS file picker (no Media Library dialog); the
- * pick is resized client-side to a fixed tiny size and re-encoded as WebP
- * before ever reaching `onChange` (see `AvatarField.tsx`'s
- * `fileToAvatarDataUrl`), so the stored value is always already-tiny. The
- * field's own VALUE (what `AvatarField`/`onChange`/entry JSON all see) stays
- * a `data:image/webp;base64,...` string throughout - a browser `<img src>`
- * and a JSON entry payload both need that shape regardless of the DB column
- * type - `serialize`/`deserialize` are what convert to/from raw bytes right
- * at the DB boundary, saving the ~33% base64-inflation + `TEXT` overhead a
- * `sqlType: "TEXT"` field (`image`/`file`) would carry. No `configFields`,
- * unlike `image`'s `multiple`/`isAvatar`. `internal: true` (like `password`):
- * a fixed system field seeded onto `user` (see `seed.ts`), not meant to be
- * picked freely on arbitrary content types the way `image`/`file` are.
+ * A small profile picture. Physically stored the same way `image` is - a
+ * real file in the configured storage backend (`sqlType: "TEXT"`, the field's
+ * VALUE is just the storage id, no `serialize`/`deserialize` needed) - but
+ * always uploaded under the `.avatar/` folder, which `storage/local.ts`'s and
+ * `storage/r2.ts`'s `isHiddenName` exclude from every Media browser listing
+ * (a file inside is still directly readable by id/URL - only the folder
+ * itself is hidden). Clicking goes straight to the OS file picker (no Media
+ * Library dialog, unlike `ImageField`); the pick is resized client-side to a
+ * fixed tiny size, re-encoded as WebP, and uploaded before ever reaching
+ * `onChange` (see `AvatarField.tsx`'s `resizeAvatarImage`), so the stored
+ * file is always already-tiny. No `configFields`, unlike `image`'s
+ * `multiple`/`isAvatar`. `internal: true` (like `password`): a fixed system
+ * field seeded onto `user` (see `seed.ts`), not meant to be picked freely on
+ * arbitrary content types the way `image`/`file` are.
  */
 export const avatarFieldType: FieldTypeDefinition<string> = {
   key: "avatar",
   label: "Avatar",
   shape: "column",
   Editor: AvatarField,
-  sqlType: () => "BLOB",
-  serialize: (value) => {
-    const comma = value.indexOf(",");
-    return base64ToBytes(comma === -1 ? value : value.slice(comma + 1));
-  },
-  deserialize: (raw) => {
-    const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBufferLike);
-    return `${AVATAR_DATA_URL_PREFIX}${bytesToBase64(bytes)}`;
-  },
+  sqlType: () => "TEXT",
   internal: true,
   configFields: [],
   validationFields: [{ key: "required", label: "Required", widget: "boolean" }],

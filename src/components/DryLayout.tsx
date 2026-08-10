@@ -23,6 +23,7 @@ import { initMemorySync, useStore } from "../hooks/useStore.js";
 import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import { resolveImageSrc } from "../storage/http-source.js";
 import { authState, canAccess, logout } from "../store/auth.js";
 import {
   CONTENT_TYPES_RESOURCE_ID,
@@ -647,7 +648,7 @@ export default function DryLayout({ children }: Props) {
                 >
                   <span class="sidebar-account-avatar">
                     {authState.value.user!.avatar ? (
-                      <img src={authState.value.user!.avatar} alt="" />
+                      <img src={resolveImageSrc(authState.value.user!.avatar)} alt="" />
                     ) : (
                       <UserIcon />
                     )}

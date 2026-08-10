@@ -23,11 +23,13 @@ import {
 const MARKER_FILE = ".dir";
 
 /** Also hides `.tmp.<collection>.<user>` entry-media staging folders
- * (`content-types/entry-media-paths.ts`) from every listing - they're an
- * implementation detail of the not-yet-saved-entry upload flow, never meant
- * to be Media-browsable. */
+ * (`content-types/entry-media-paths.ts`) and `.avatar` (`AvatarField.tsx`'s
+ * upload target, `field-registry.ts`'s `avatarFieldType`) from every listing
+ * - both are implementation details never meant to be Media-browsable. A
+ * file inside `.avatar` is still directly readable by id/URL - only the
+ * folder itself is hidden from `list()`/`listAll()`. */
 function isHiddenName(name: string): boolean {
-  return name === MARKER_FILE || name.startsWith(".tmp.");
+  return name === MARKER_FILE || name === ".avatar" || name.startsWith(".tmp.");
 }
 
 function isErrno(error: unknown, code: string): boolean {
