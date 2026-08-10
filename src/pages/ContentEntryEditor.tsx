@@ -15,6 +15,8 @@ import { RichTextRewriteContext } from "../components/RichTextField/ai-rewrite-c
 import type { RichTextRewriteFn } from "../components/RichTextField/ai-rewrite-context.js";
 import { EntryMediaContext } from "./content-entry-editor/entry-media-context.js";
 import { createHttpFileSource } from "../storage/http-source.js";
+import { commitPendingAvatar, isPendingAvatarValue } from "../components/fields/AvatarField.js";
+import { randomUUID } from "../lib/uuid.js";
 import {
   ContentEntriesApiError,
   createContentEntriesApi,
@@ -23,6 +25,7 @@ import type { EntryValue } from "../content-types/engine/entry-codec.js";
 import { findPasswordChangeErrors } from "../content-types/engine/entry-validate.js";
 import {
   buildEntryFieldTree,
+  type EntryColumnNode,
   type EntryFieldNode,
 } from "../content-types/engine/entry-tree.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
@@ -573,20 +576,42 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     setSaving(true);
     let saved = false;
     try {
+      // An `avatar` column (only ever `user`) holds a pending local `data:`
+      // preview until now - see `AvatarField.tsx`'s own doc comment. Uploaded
+      // here, right before the request actually goes out, not on pick.
+      const avatarNode = nodes.find(
+        (n): n is EntryColumnNode => n.kind === "column" && n.fieldType === "avatar",
+      );
+      const pendingAvatar =
+        avatarNode && typeof current[avatarNode.fieldName] === "string"
+          ? (current[avatarNode.fieldName] as string)
+          : undefined;
+      const payload =
+        pendingAvatar && isPendingAvatarValue(pendingAvatar)
+          ? {
+              ...current,
+              // `entryId` is null for a not-yet-created entry - falls back to
+              // a one-off random id in that rare case (an avatar picked in
+              // the same action that creates the row); every later edit
+              // reuses the row's own stable `entryId`.
+              [avatarNode!.fieldName]: await commitPendingAvatar(magicChatImageSource, pendingAvatar, entryId ?? randomUUID()),
+            }
+          : current;
+
       if (isSingleton) {
-        const entry = await entriesApi.saveSingleton(current);
+        const entry = await entriesApi.saveSingleton(payload);
         setValue(entry.value);
         setEntryId(entry.id);
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Saved "${type.label}".` });
       } else if (isNew) {
-        await entriesApi.create(current);
+        await entriesApi.create(payload);
         await discardEntryDraft(typeSlug, draftEntryId);
         toast.add({ type: "success", title: `Created "${type.label}" entry.` });
         route(`${path}/content/${type.name}`);
       } else if (entryId) {
-        const entry = await entriesApi.update(entryId, current);
+        const entry = await entriesApi.update(entryId, payload);
         setValue(entry.value);
         setInitialSnapshot(JSON.stringify(entry.value));
         await discardEntryDraft(typeSlug, draftEntryId);

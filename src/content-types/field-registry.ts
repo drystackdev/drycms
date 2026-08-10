@@ -377,9 +377,10 @@ export const imageFieldType: FieldTypeDefinition<string | string[]> = {
  * (a file inside is still directly readable by id/URL - only the folder
  * itself is hidden). Clicking goes straight to the OS file picker (no Media
  * Library dialog, unlike `ImageField`); the pick is resized client-side to a
- * fixed tiny size, re-encoded as WebP, and uploaded before ever reaching
- * `onChange` (see `AvatarField.tsx`'s `resizeAvatarImage`), so the stored
- * file is always already-tiny. No `configFields`, unlike `image`'s
+ * fixed tiny size and re-encoded as WebP, but held as a local preview only -
+ * the actual upload is deferred until the surrounding form is saved (see
+ * `AvatarField.tsx`'s `commitPendingAvatar`), so picking a new avatar and
+ * then cancelling never touches storage. No `configFields`, unlike `image`'s
  * `multiple`/`isAvatar`. `internal: true` (like `password`): a fixed system
  * field seeded onto `user` (see `seed.ts`), not meant to be picked freely on
  * arbitrary content types the way `image`/`file` are.

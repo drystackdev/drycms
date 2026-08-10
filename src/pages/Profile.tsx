@@ -2,7 +2,7 @@ import { useMemo, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { passwordConfirmError } from "../content-types/engine/entry-validate.js";
-import AvatarField from "../components/fields/AvatarField.js";
+import AvatarField, { commitPendingAvatar, isPendingAvatarValue } from "../components/fields/AvatarField.js";
 import PasswordField from "../components/fields/PasswordField.js";
 import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
@@ -58,7 +58,13 @@ export default function Profile() {
 
     setSubmitting(true);
     try {
-      await updateProfile(name.trim(), email.trim(), avatar, currentPassword, password.new ?? "");
+      // Uploaded here, right before the request actually goes out, not on
+      // pick - see `AvatarField.tsx`'s own doc comment.
+      const committedAvatar = isPendingAvatarValue(avatar)
+        ? await commitPendingAvatar(imageSource, avatar, user!.id)
+        : avatar;
+      await updateProfile(name.trim(), email.trim(), committedAvatar, currentPassword, password.new ?? "");
+      setAvatar(committedAvatar);
       setCurrentPassword("");
       setPassword({ hasExisting: true });
       setSubmitAttempted(false);
@@ -94,7 +100,7 @@ export default function Profile() {
           helperText={nameError}
           required
         />
-        <AvatarField label="Avatar" value={avatar} onChange={setAvatar} source={imageSource} />
+        <AvatarField label="Avatar" value={avatar} onChange={setAvatar} />
         <TextField
           label="Email"
           placeholder="e.g. ada@example.com"

@@ -59,7 +59,18 @@ function initTooltip() {
 		// keeps this tooltip above any `<dialog>` (or other popover) opened
 		// since the last time it was shown.
 		if (el.matches?.(':popover-open')) el.hidePopover?.();
-		el.showPopover?.();
+		try {
+			el.showPopover?.();
+		} catch {
+			// Hiding an `auto` popover elsewhere (Popover.tsx's `hidePopover()`
+			// on menu-item click) synchronously returns focus to its trigger,
+			// which fires this same handler reentrantly while that hide is
+			// still on the call stack - `showPopover()` then collides with the
+			// in-progress operation and throws. Retry once it's unwound, as a
+			// fresh microtask.
+			queueMicrotask(() => trigger === next && show(next));
+			return;
+		}
 		const rect = next.getBoundingClientRect();
 		const right = next.getAttribute('data-tooltip-placement') === 'right';
 		const above = !right && rect.top > 40;
