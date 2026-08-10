@@ -31,7 +31,7 @@ describe("buildEntryFieldTree", () => {
     // `user` relation would otherwise mirror back here, but `memory` is
     // `hidden` (server-managed infra - see `seed.ts`), and
     // `relationMirrorFieldsFor` skips mirrors from a hidden source.
-    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "avatar", "email", "password", "roles", "createdAt", "updatedAt"]);
+    expect(nodes.map((n) => n.fieldName)).toEqual(["avatar", "name", "email", "password", "roles", "createdAt", "updatedAt"]);
 
     const name = byName(nodes, "name") as EntryColumnNode;
     expect(name.kind).toBe("column");
@@ -53,7 +53,7 @@ describe("buildEntryFieldTree", () => {
     };
     const nodes = buildEntryFieldTree(trashed, allTypes);
     // No trailing `memory` mirror here either, same as the test above.
-    expect(nodes.map((n) => n.fieldName)).toEqual(["name", "avatar", "email", "roles"]);
+    expect(nodes.map((n) => n.fieldName)).toEqual(["avatar", "name", "email", "roles"]);
   });
 
   it("maps a manyToMany relation field to a child table, not a column", () => {
@@ -296,7 +296,7 @@ describe("flattenQueryableColumns", () => {
     const nodes = buildEntryFieldTree(user, allTypes);
     const columns = flattenQueryableColumns(nodes);
 
-    expect(columns.map((c) => c.fieldName)).toEqual(["name", "avatar", "email", "createdAt", "updatedAt"]);
+    expect(columns.map((c) => c.fieldName)).toEqual(["avatar", "name", "email", "createdAt", "updatedAt"]);
     expect(columns.find((c) => c.fieldName === "name")?.columnName).toBe("name");
   });
 

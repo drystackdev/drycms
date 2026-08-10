@@ -4,11 +4,10 @@ import { unzipToDirectories } from "../lib/zip.js";
 import type { ResolvedDryOption } from "../server/options.js";
 
 /**
- * Extracts a build-time-packaged `seed-assets.zip` (storage/icons/components/
- * pageComponents, see `scripts/build-seed-assets.mjs`) into the CURRENTLY
- * RUNNING server's own resolved local-filesystem roots - see
- * `plans/content-type-seed.md`. Deliberately covers only these 4 "real
- * asset" roots, not `pagesCache`/`typesCache` (caches, regenerate on their
+ * Extracts a build-time-packaged `seed-assets.zip` (storage/icons/components,
+ * see `scripts/build-seed-assets.ts`) into the CURRENTLY RUNNING server's own
+ * resolved local-filesystem roots - see `plans/content-type-seed.md`.
+ * Deliberately covers only these 3 "real asset" roots, not `pagesCache`/`typesCache` (caches, regenerate on their
  * own) or `kv` (runtime state, not a build-time asset). A root backed by
  * `kind: "r2"` has no local directory to extract into - skipped rather than
  * erroring, since a Workers/R2 deployment has no local filesystem for this
@@ -19,7 +18,6 @@ function prefixToDirFor(resolved: ResolvedDryOption): Record<string, string> {
     storage: resolved.storage,
     icons: resolved.icons,
     "components-storage": resolved.components.storage,
-    "page-components-storage": resolved.pageComponents.storage,
   };
   const result: Record<string, string> = {};
   for (const [prefix, option] of Object.entries(candidates)) {

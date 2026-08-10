@@ -19,7 +19,6 @@ import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_BUILDER_RESOURCE_ID,
-  PAGE_COMPONENTS_RESOURCE_ID,
   permissionActionsFor,
   permissionKeyFor,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
@@ -73,16 +72,6 @@ function permissionPrerequisites(resource: ContentTypeDefinition, action: Permis
  * the "System" fieldset below (never through `renderPermissionResource`/
  * `permissionActionsFor`, so their `magic` action - real singletons also get
  * one now - never applies here; none of these pages have a Magic feature). */
-const PAGE_COMPONENTS_RESOURCE: ContentTypeDefinition = {
-  id: PAGE_COMPONENTS_RESOURCE_ID,
-  kind: "singleton",
-  name: "pageComponents",
-  label: "Page Components",
-  description: "Build and manage saved page-builder components.",
-  fields: [],
-  version: 0,
-};
-
 const ICON_MANAGEMENT_RESOURCE: ContentTypeDefinition = {
   id: ICON_MANAGEMENT_RESOURCE_ID,
   kind: "singleton",
@@ -140,7 +129,6 @@ const PAGE_BUILDER_RESOURCE: ContentTypeDefinition = {
  * 2026-08-07, managing role permission assignments is already gated by the
  * `role` collection's own permissions, not a separate System toggle.) */
 const SYSTEM_RESOURCES: ContentTypeDefinition[] = [
-  PAGE_COMPONENTS_RESOURCE,
   ICON_MANAGEMENT_RESOURCE,
   RICHTEXT_COMPONENTS_RESOURCE,
   CONTENT_TYPES_RESOURCE,

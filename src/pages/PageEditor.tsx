@@ -23,6 +23,7 @@ import {
   publishBuiltPage,
   publishBuiltPages,
   resolveAllPageTargets,
+  pagesAffectedBy,
   PageBuildError,
   type PageBuildResult,
   type PublishOptions,
@@ -42,6 +43,11 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
+import { entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
+import { COMPONENT_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, rootOf } from "../server/app-router/source-roots.js";
+import { COMPONENT_PREVIEW_ENTRY_PATH, buildComponentPreviewSource } from "../page-components/component-preview.js";
+import { samplePropsSource } from "../page-components/props-sample.js";
+import type { PropsSchema } from "../components/Editer/worker-protocol.js";
 import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
 
 /** Local one-off (same "no shared export for a single-use icon" pattern as
@@ -170,6 +176,22 @@ const DEFAULT_PAGE_SOURCE = `export default function Page() {
 }
 `;
 
+/** Starter source for a new file in the Component tab - deliberately shows
+ * both halves of the component contract at once (a typed props interface,
+ * which the preview reads to invent sample values, and an explicit
+ * `_preview` that overrides them), since neither is discoverable from an
+ * empty file. */
+const DEFAULT_COMPONENT_SOURCE = `interface Props {
+  title: string;
+}
+
+export default function Component({ title }: Props) {
+  return <div>{title}</div>;
+}
+
+export const _preview: Props = { title: "Sample title" };
+`;
+
 /** Never a real file - a key `refreshPreview` injects into its own LOCAL
  * copy of `sourceByPath` (never the state, never storage) when previewing a
  * `layout.tsx` directly, standing in for "whatever page would actually
@@ -252,6 +274,8 @@ const UI_STATE_KEY = "dry-page-editor-ui-state";
 
 interface PageEditorUiState {
   selectedPath: string | null;
+  /** Which sidebar tab (source root - `source-roots.ts`) was last open. */
+  activeRoot: string;
   sidebarOpen: boolean;
   previewOpen: boolean;
   codeOpen: boolean;
@@ -307,6 +331,18 @@ export default function PageEditor() {
   // in `localStorage` (`initialUiState`) when the URL has no `file` param
   // yet, e.g. a bare bookmark to this page.
   const [selectedPath, setSelectedPath] = useParam<string>("file", initialUiState?.selectedPath ?? "");
+  /** Which source root the sidebar is showing (`source-roots.ts`) - plain
+   * state, NOT derived from `selectedPath`: deriving it would snap the tab
+   * back the instant the user switched to a tab whose files they haven't
+   * opened yet. Seeded from whatever file is open on mount (so a shared
+   * `?file=component/Card.tsx` link lands on the right tab), then only moved
+   * by an explicit tab click or by opening a file from another root. */
+  const [activeRoot, setActiveRoot] = useState<string>(initialUiState?.activeRoot ?? PAGES_ROOT);
+  /** The open component's default-export props, described from its real TS
+   * types by `Editer`'s worker (`describeProps`) - what the preview falls
+   * back to when the component exports no `_preview`. `null` for a page (no
+   * `describeProps`) or a file with no default-exported function. */
+  const [propsSchema, setPropsSchema] = useState<PropsSchema | null>(null);
   const [saving, setSaving] = useState(false);
   const [buildingCurrent, setBuildingCurrent] = useState(false);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
@@ -425,6 +461,7 @@ export default function PageEditor() {
     const timer = setTimeout(() => {
       savePageEditorUiState({
         selectedPath,
+        activeRoot,
         sidebarOpen,
         previewOpen,
         codeOpen,
@@ -439,6 +476,7 @@ export default function PageEditor() {
     return () => clearTimeout(timer);
   }, [
     selectedPath,
+    activeRoot,
     sidebarOpen,
     previewOpen,
     codeOpen,
@@ -519,12 +557,28 @@ export default function PageEditor() {
 
   const code = selectedPath ? (sourceByPath[selectedPath] ?? "") : "";
   const dirty = !!selectedPath && sourceByPath[selectedPath] !== savedByPath[selectedPath];
+  /** The open file is a component (`component/**`, `source-roots.ts`) rather
+   * than a route file - drives the preview mode, the props-schema request to
+   * `Editer`, and which starter source a new file gets. */
+  const isComponentPath = !!selectedPath && rootOf(selectedPath)?.id === COMPONENT_ROOT;
 
   // Clears stale diagnostics from whatever file was open before - `Editer`
   // remounts on `selectedPath` (its own `key`) and reports fresh ones via
-  // `handleChange` shortly after, this just covers the gap in between.
+  // `handleChange` shortly after, this just covers the gap in between. The
+  // props schema is dropped for the same reason, and harder: a stale one
+  // would put the PREVIOUS component's sample props on this one.
   useEffect(() => {
     setDiagnostics([]);
+    setPropsSchema(null);
+  }, [selectedPath]);
+
+  /** Follows the open file into its own tab - covers a `?file=` deep link on
+   * mount, a preview-chain crumb, and `loadTree`'s own "nothing selected, take
+   * the first file" fallback alike. Only reacts to the FILE changing, so
+   * clicking a tab (which changes no file) still just switches the tab. */
+  useEffect(() => {
+    const root = rootOf(selectedPath)?.id;
+    if (root) setActiveRoot(root);
   }, [selectedPath]);
 
   const errorCount = diagnostics.filter((d) => d.source === "syntax").length;
@@ -582,6 +636,9 @@ export default function PageEditor() {
     if (!selectedPath) return;
     setSourceByPath((prev) => (prev[selectedPath] === result.code ? prev : { ...prev, [selectedPath]: result.code }));
     setDiagnostics(result.errors);
+    // Only ever present for a component (`describeProps`), so this can't
+    // clobber a page's own (absent) schema - see `propsSchema`'s doc comment.
+    if (result.propsSchema !== undefined) setPropsSchema(result.propsSchema);
     if (result.code === savedByPath[selectedPath]) {
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
@@ -595,10 +652,15 @@ export default function PageEditor() {
     setSaving(true);
     try {
       await api.save(selectedPath, sourceByPath[selectedPath] ?? "");
-      setSavedByPath((prev) => ({ ...prev, [selectedPath]: sourceByPath[selectedPath] ?? "" }));
+      const nextSaved = { ...savedByPath, [selectedPath]: sourceByPath[selectedPath] ?? "" };
+      setSavedByPath(nextSaved);
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
-      markUnbuilt([selectedPath]);
+      // Not just this file: saving a shared component (or a layout) leaves
+      // every page rendering through it stale too, and the yellow dot is the
+      // only signal that says so - `markUnbuilt` keeps only `page.tsx` paths,
+      // so handing it the file itself as well is harmless.
+      markUnbuilt([selectedPath, ...pagesAffectedBy(selectedPath, nextSaved)]);
     } catch (error) {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
     } finally {
@@ -626,7 +688,7 @@ export default function PageEditor() {
       const next = { ...savedByPath };
       for (const p of dirtyPaths) next[p] = sourceByPath[p] ?? "";
       setSavedByPath(next);
-      markUnbuilt(dirtyPaths);
+      markUnbuilt(dirtyPaths.flatMap((p) => [p, ...pagesAffectedBy(p, next)]));
       return next;
     } finally {
       setSaving(false);
@@ -785,9 +847,12 @@ export default function PageEditor() {
   }
 
   async function handleCreateFile(name: string) {
-    const filePath = /\.tsx?$/i.test(name) ? name : `${name}.tsx`;
+    // The tree panel builds `name` from the (root-rebased) folder the user
+    // is creating in, so a file typed at the tab's own root arrives with no
+    // source root on it - see `withSourceRoot`.
+    const filePath = withSourceRoot(activeRoot, /\.tsx?$/i.test(name) ? name : `${name}.tsx`);
     try {
-      await api.save(filePath, DEFAULT_PAGE_SOURCE);
+      await api.save(filePath, activeRoot === COMPONENT_ROOT ? DEFAULT_COMPONENT_SOURCE : DEFAULT_PAGE_SOURCE);
       await loadTree();
       setSelectedPath(filePath);
       toast.add({ type: "success", title: `Created "${filePath}".` });
@@ -796,7 +861,8 @@ export default function PageEditor() {
     }
   }
 
-  async function handleCreateFolder(name: string) {
+  async function handleCreateFolder(rawName: string) {
+    const name = withSourceRoot(activeRoot, rawName);
     try {
       const segments = name.split("/");
       const leaf = segments.pop()!;
@@ -829,7 +895,10 @@ export default function PageEditor() {
   /** Move (rename or drag into another folder) - also recomputes any
    * relative import affected by the path change, same as
    * `PageComponents.tsx`'s own `handleMove`. */
-  async function handleMove(from: string, to: string) {
+  async function handleMove(from: string, rawTo: string) {
+    // A move stays inside the root the file came from (a drag to the tab's
+    // own tree root arrives with the root folder stripped, same as a create).
+    const to = withSourceRoot(rootOf(from)?.id ?? activeRoot, rawTo);
     if (from === to) return;
     try {
       const rewrites = rewriteImportsAfterMove(sourceByPath, from, to);
@@ -947,14 +1016,32 @@ export default function PageEditor() {
   }
 
   /** Only when the SELECTED file is itself a `page.tsx` matching a real
-   * static route - see this file's own doc comment for why a shared
-   * component isn't resolved to "whichever pages use it". A `layout.tsx`
-   * previews wrapped around a placeholder child (there's no single "the"
-   * page it belongs to); `404.tsx`/`500.tsx` preview standalone, same "no
-   * layouts" shape `render.ts`'s own `renderErrorHtml` fallback uses for
-   * them at request time. */
+   * static route - see this file's own doc comment for why a shared file
+   * under `pages/` isn't resolved to "whichever pages use it". A
+   * `layout.tsx` previews wrapped around a placeholder child (there's no
+   * single "the" page it belongs to); `404.tsx`/`500.tsx` preview
+   * standalone, same "no layouts" shape `render.ts`'s own `renderErrorHtml`
+   * fallback uses for them at request time; a file under `component/`
+   * previews through a synthetic page of its own (`component-preview.ts`). */
   const previewTarget = useMemo<PreviewTarget | null>(() => {
     if (!selectedPath) return null;
+    if (isComponentPath) {
+      return {
+        label: `${selectedPath} (component)`,
+        pathname: "/__dry-preview-component",
+        entryPath: COMPONENT_PREVIEW_ENTRY_PATH,
+        // Deliberately NOT wrapped in the site's root layout: a layout's own
+        // nav/footer would render around every component preview, which is
+        // chrome, not the component. The site's CSS still applies - it comes
+        // from `buildPage`'s own document/Tailwind pass, not from a layout.
+        layoutPaths: [],
+        params: {},
+        extraSource: {
+          path: COMPONENT_PREVIEW_ENTRY_PATH,
+          source: buildComponentPreviewSource(selectedPath, samplePropsSource(propsSchema)),
+        },
+      };
+    }
     if (/(^|\/)page\.tsx$/.test(selectedPath)) {
       for (const pathname of staticPagePaths(manifest)) {
         const match = matchSourceRoute(manifest, pathname);
@@ -987,14 +1074,14 @@ export default function PageEditor() {
         extraSource: { path: LAYOUT_PLACEHOLDER_PATH, source: LAYOUT_PLACEHOLDER_SOURCE },
       };
     }
-    if (selectedPath === "404.tsx") {
-      return { label: "404.tsx", pathname: "/__dry-preview-404", entryPath: "404.tsx", layoutPaths: [], params: {} };
+    if (selectedPath === `${PAGES_ROOT}/404.tsx`) {
+      return { label: "404.tsx", pathname: "/__dry-preview-404", entryPath: selectedPath, layoutPaths: [], params: {} };
     }
-    if (selectedPath === "500.tsx") {
-      return { label: "500.tsx", pathname: "/__dry-preview-500", entryPath: "500.tsx", layoutPaths: [], params: {} };
+    if (selectedPath === `${PAGES_ROOT}/500.tsx`) {
+      return { label: "500.tsx", pathname: "/__dry-preview-500", entryPath: selectedPath, layoutPaths: [], params: {} };
     }
     return null;
-  }, [manifest, selectedPath, sourceByPath, dynamicPreviewSample]);
+  }, [manifest, selectedPath, sourceByPath, dynamicPreviewSample, isComponentPath, propsSchema]);
 
   /** Explains why the preview panel is empty for a `[param]` page whose own
    * `previewTarget` came back `null` - distinguishes "still resolving a
@@ -1226,10 +1313,21 @@ export default function PageEditor() {
 
   const PREVIEW_FRAME_HEIGHT = 900;
   // `previewTarget` alone isn't enough here - it's also truthy for a
-  // `layout.tsx`/`404.tsx`/`500.tsx` preview (see its own doc comment), none
-  // of which `resolveAllPageTargets`/`PageBuild.tsx` treat as a buildable
-  // target on their own.
-  const isPageTarget = !!selectedPath && /(^|\/)page\.tsx$/.test(selectedPath) && !!previewTarget;
+  // `layout.tsx`/`404.tsx`/`500.tsx`/component preview (see its own doc
+  // comment), none of which `resolveAllPageTargets`/`PageBuild.tsx` treat as
+  // a buildable target on their own.
+  const isPageTarget = !isComponentPath && !!selectedPath && /(^|\/)page\.tsx$/.test(selectedPath) && !!previewTarget;
+
+  /** The tree the active tab shows - the same `entries` list, narrowed to one
+   * source root and rebased so the tab starts inside it (`tree.ts`). */
+  const visibleEntries = entriesForSourceRoot(entries, activeRoot);
+  /** The open file only counts as "selected" for the tab currently showing
+   * it. Found live: `ComponentTreePanel` derives where a NEW file lands from
+   * the selected file's own folder, so leaving a `pages/...` path selected
+   * while the Component tab is open aimed "New" at `pages/` - the inline
+   * create form rendered inside a folder this tab doesn't even show, so it
+   * looked like the button did nothing at all. */
+  const selectedInActiveRoot = !!selectedPath && visibleEntries.some((entry) => entry.id === selectedPath);
 
   // With the code column hidden the preview is the only resizable column
   // left, so there's nothing to size it AGAINST - it takes the leftover room
@@ -1320,10 +1418,23 @@ export default function PageEditor() {
       <div class="page-components-body">
         {sidebarOpen && (
           <>
-            <div style={{ width: `${sidebar.size}px` }}>
+            <div style={{ width: `${sidebar.size}px`, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div role="tablist" class="page-editor-source-roots">
+                {PAGES_SOURCE_ROOTS.map((root) => (
+                  <button
+                    key={root.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeRoot === root.id}
+                    onClick={() => setActiveRoot(root.id)}
+                  >
+                    {root.label}
+                  </button>
+                ))}
+              </div>
               <ComponentTreePanel
-                entries={entries}
-                selectedPath={selectedPath}
+                entries={visibleEntries}
+                selectedPath={selectedInActiveRoot ? selectedPath : null}
                 onSelect={setSelectedPath}
                 onCreateFile={handleCreateFile}
                 onCreateFolder={handleCreateFolder}
@@ -1416,7 +1527,7 @@ export default function PageEditor() {
                 </div>
               ) : (
                 <p class="hint" style={{ padding: "1rem" }}>
-                  {previewUnavailableReason ?? "Select a page.tsx, layout.tsx, 404.tsx, or 500.tsx to preview it."}
+                  {previewUnavailableReason ?? "Select a page.tsx, layout.tsx, 404.tsx, 500.tsx, or a component to preview it."}
                 </p>
               )}
               {/* Breadcrumb of the layout chain this preview renders through
@@ -1461,7 +1572,14 @@ export default function PageEditor() {
                * real fetch having landed for this path avoids ever handing `Editer` a
                * placeholder value in the first place. */}
               {selectedPath && sourceByPath[selectedPath] !== undefined ? (
-                <Editer key={selectedPath} value={code} onChange={handleChange} extraFiles={extraFiles} style={{ height: "100%" }} />
+                <Editer
+                  key={selectedPath}
+                  value={code}
+                  onChange={handleChange}
+                  extraFiles={extraFiles}
+                  describeProps={isComponentPath}
+                  style={{ height: "100%" }}
+                />
               ) : selectedPath ? (
                 <p class="hint">Loading…</p>
               ) : (

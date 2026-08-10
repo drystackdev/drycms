@@ -25,7 +25,6 @@ export const { path, storage, icons, content, ai, kv, lang } = resolved;
 // see `storage/admin-path.ts` for why it can't just import this file.
 setAdminPath(resolved.path);
 export const componentsStorage = resolved.components.storage;
-export const pageComponentsStorage = resolved.pageComponents.storage;
 export const pagesCacheStorage = resolved.pagesCache.storage;
 export const pagesCacheEdgeTtl = resolved.pagesCache.edgeTtl;
 export const typesCacheStorage = resolved.typesCache.storage;

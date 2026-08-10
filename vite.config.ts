@@ -5,6 +5,7 @@ import preact from "@preact/preset-vite";
 import { defineConfig, type Plugin } from "vite";
 import { appRouterPlugin } from "./src/server/app-router/app-router-plugin.js";
 import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js";
+import { COMPONENT_ALIAS, COMPONENT_ROOT } from "./src/server/app-router/source-roots.js";
 
 // Set by `bun run build:worker` only - `isSsrBuild` alone can't tell the
 // Workers build apart from the Node one (both are `vite build --ssr`), and
@@ -190,6 +191,26 @@ export default defineConfig(({ isSsrBuild, command }) => ({
         }),
   },
   resolve: {
+    alias: {
+      /**
+       * `@component/Card` in page source (`source-roots.ts`) - the same alias
+       * `page-build.ts` resolves for the in-browser build and `ts-worker.ts`
+       * resolves for the editor's type-checking, here for the two compile
+       * paths Vite itself owns.
+       *
+       * Dev (`command === "serve"`) points at the LIVE store: the dev server
+       * renders pages straight out of `pagesSourceStorage` through
+       * `vite.ssrLoadModule` (`route-tree.ts`'s `DevPagesSource`), so a
+       * component has to resolve where it's actually saved, with no build
+       * step in between. A build points at the materialized copy
+       * `sync-pages-r2.ts --pull` writes right before `vite build` runs -
+       * the only form the Worker/Node bundle can see.
+       */
+      [COMPONENT_ALIAS]:
+        command === "serve"
+          ? fileURLToPath(new URL(`./.dry/pages-source/${COMPONENT_ROOT}/`, import.meta.url)).replace(/\/$/, "")
+          : fileURLToPath(new URL(`./src/apps/${COMPONENT_ROOT}/`, import.meta.url)).replace(/\/$/, ""),
+    },
     // Keep `preact-iso` and the app on one Preact singleton.
     dedupe: [
       "preact",

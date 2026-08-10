@@ -35,7 +35,14 @@ below).
 ### Two page-source roots - `.dry/pages-source` is the real one now
 
 The site's own pages/layouts (as opposed to the admin app) exist in TWO
-places (`status/pages-source-dev-live.md` has the full migration writeup):
+places (`status/pages-source-dev-live.md` has the full migration writeup).
+Since 2026-08-11 the store is split into per-kind ROOT FOLDERS
+(`src/server/app-router/source-roots.ts`, `plans/component.md`): `pages/`
+holds route files (`page.tsx`/`layout.tsx`/`404.tsx`/`500.tsx` - the only
+root route discovery looks at), `component/` holds reusable `.tsx`
+components a page imports as `@component/Card`. Each root materializes into
+its OWN `src/apps/<root>` directory, so `src/apps/pages/**` still means
+exactly what it always did.
 
 - `.dry/pages-source/` locally (`pagesSourceStorage` generally - R2 under
   `kind: "cloudflare"`) - the LIVE source. `bun run dev` reads it directly
@@ -67,9 +74,10 @@ UNCONDITIONALLY OVERWRITE the destination (mirror semantics, same as
 `r2:sync`), no longer the old never-overwrite behavior; there is no more
 auto-run on `bun run dev` startup (removed - it would now conflict with
 `src/apps/pages` being a disposable build artifact). `.dry/pages-source/**/
-*.tsx` (and `.dry/components`, `.dry/richtext-components`, once non-empty -
-the same category for Component Builder) are included in `tsconfig.json`
-alongside `src/**` for IDE/typecheck purposes, but the rest of `.dry/`
+*.tsx` (and `.dry/richtext-components`, once non-empty - the same
+browser-authored-source category) are included in `tsconfig.json`
+alongside `src/**` for IDE/typecheck purposes (which is also where
+`@component/*` gets its `paths` entry), but the rest of `.dry/`
 (`types-cache`, `pages-cache`, `kv`, `content.sqlite`) is pure generated/
 runtime data, never source - don't add it to `include` even if a file there
 has a `.ts`/`.d.ts` extension. `.dry/dry.generated.d.ts` is the one

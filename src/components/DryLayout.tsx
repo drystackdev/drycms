@@ -29,7 +29,6 @@ import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_BUILDER_RESOURCE_ID,
-  PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
   type PermissionAction,
 } from "../content-types/permissions.js";
@@ -110,15 +109,6 @@ const NAV: {
     permissionResourceId: RICHTEXT_COMPONENTS_RESOURCE_ID,
   },
   {
-    key: "page-components",
-    label: "Page Components",
-    href: `${path}/page-components`,
-    icon: "Content",
-    ready: true,
-    section: "Content",
-    permissionResourceId: PAGE_COMPONENTS_RESOURCE_ID,
-  },
-  {
     key: "page-build",
     label: "Page Build",
     href: `${path}/page-build`,
@@ -197,7 +187,6 @@ const NAV_SECTIONS = ["Overview", "Content", "System"] as const;
 const HIDDEN_NAV_KEYS = new Set(
   [
     !temporaryFeatureVisibility.richtextComponents && "richtext-components",
-    !temporaryFeatureVisibility.pageComponents && "page-components",
     !temporaryFeatureVisibility.pageBuild && "page-build",
   ].filter((key): key is string => Boolean(key)),
 );

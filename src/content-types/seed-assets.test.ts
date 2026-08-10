@@ -24,12 +24,11 @@ describe("applyPackagedSeedAssets", () => {
     await expect(applyPackagedSeedAssets(null, resolved)).resolves.toBeUndefined();
   });
 
-  it("extracts storage/icons/components/pageComponents into the CURRENT resolved roots", async () => {
+  it("extracts storage/icons/components into the CURRENT resolved roots", async () => {
     const zip = createZip([
       { path: "storage/logo.png", data: new TextEncoder().encode("logo-bytes") },
       { path: "icons/lucide/home.svg", data: new TextEncoder().encode("<svg/>") },
       { path: "components-storage/confirmed.json", data: new TextEncoder().encode('{"ok":true}') },
-      { path: "page-components-storage/tree.json", data: new TextEncoder().encode("[]") },
     ]);
 
     const resolved = resolveOptions({}, { localDataRoot: tempDir("data-root") });
@@ -39,7 +38,6 @@ describe("applyPackagedSeedAssets", () => {
     expect((await readFile(join(resolved.storage.root, "logo.png"))).toString()).toBe("logo-bytes");
     expect((await readFile(join(resolved.icons.root, "lucide", "home.svg"))).toString()).toBe("<svg/>");
     expect((await readFile(join(resolved.components.storage.root, "confirmed.json"))).toString()).toBe('{"ok":true}');
-    expect((await readFile(join(resolved.pageComponents.storage.root, "tree.json"))).toString()).toBe("[]");
   });
 
   it("never touches pagesCache/typesCache/kv roots even if a zip somehow contained them", async () => {

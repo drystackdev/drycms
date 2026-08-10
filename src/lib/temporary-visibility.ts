@@ -6,7 +6,6 @@
  * ready to continue development.
  */
 export const temporaryFeatureVisibility = {
-  pageComponents: false,
   richtextComponents: false,
   contentTypeComponents: true,
   richtextComponentInsert: false,

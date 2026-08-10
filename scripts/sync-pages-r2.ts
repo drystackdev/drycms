@@ -1,6 +1,7 @@
 /**
- * Mirrors `src/apps/pages/**` <-> the `pagesSource` storage root
- * (`.dry/pages-source` locally, R2 under `kind: "cloudflare"`) -
+ * Mirrors `src/apps/<root>/**` <-> the `pagesSource` storage root's own
+ * source roots (`.dry/pages-source/{pages,component}` locally, R2 under
+ * `kind: "cloudflare"` - see `source-roots.ts`) -
  * `pagesSourceStorage` is now the live source `discoverRoutes()` reads from
  * in dev (`route-tree.ts`), and `src/apps/pages` is a gitignored, build-time
  * artifact `push`/`pull` materializes right before `vite build` (`build`/
@@ -56,6 +57,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { resolveOptions } from "../src/server/options.js";
+import { PAGES_SOURCE_ROOTS } from "../src/server/app-router/source-roots.js";
 
 const args = process.argv.slice(2);
 // 3-way, not a boolean: no flag = target the plain local-disk root (`kind:
@@ -73,7 +75,14 @@ const args = process.argv.slice(2);
 const targetsR2 = args.includes("--remote") || args.includes("--local");
 const useLocalR2 = args.includes("--local");
 
-const GIT_PAGES_ROOT = new URL("../src/apps/pages/", import.meta.url).pathname.replace(/\/$/, "");
+/** One mapping per source root (`source-roots.ts`): storage `pages/**` <->
+ * git `src/apps/pages/**`, storage `component/**` <-> git
+ * `src/apps/component/**`. Deliberately NOT a single `src/apps` <-> storage
+ * root mirror: `src/apps` also holds real, committed source (`vei/`,
+ * `hydrate-client.ts`), which a blanket `push` would upload into the pages
+ * store. Adding a source root here needs no change in this file - it walks
+ * whatever `PAGES_SOURCE_ROOTS` declares. */
+const GIT_APPS_ROOT = new URL("../src/apps/", import.meta.url).pathname.replace(/\/$/, "");
 const localRoots = resolveOptions({ kind: "local" });
 const r2Roots = resolveOptions({ kind: "cloudflare" });
 const storageRoot = localRoots.pagesSource.storage;
@@ -101,8 +110,8 @@ const R2_LOCAL_BUCKET_HELPER = new URL("./r2-local-bucket.mjs", import.meta.url)
  * comment for why) and inherits its stdio directly - that helper already
  * prints the same per-file/summary log lines this script's own local-disk
  * and `--remote` branches print, so the caller doesn't repeat them. */
-function runLocalR2Helper(mode: "pull" | "push", rootDir: string): void {
-  const proc = Bun.spawnSync(["node", R2_LOCAL_BUCKET_HELPER, mode, r2Prefix, rootDir], { stdio: ["inherit", "inherit", "inherit"] });
+function runLocalR2Helper(mode: "pull" | "push", rootDir: string, keyPrefix: string): void {
+  const proc = Bun.spawnSync(["node", R2_LOCAL_BUCKET_HELPER, mode, keyPrefix, rootDir], { stdio: ["inherit", "inherit", "inherit"] });
   if (proc.exitCode !== 0) {
     console.error(`[drycms] local R2 ${mode} failed (see output above).`);
     process.exit(1);
@@ -125,69 +134,85 @@ async function filesUnder(dir: string): Promise<string[]> {
   return found;
 }
 
+interface RootMapping {
+  id: string;
+  /** `src/apps/<id>` - the build-time materialized copy. */
+  gitDir: string;
+  /** `<pagesSource root>/<id>` on local disk (empty string when the target is R2). */
+  storageDir: string;
+  /** R2 key prefix for this root, e.g. `pages-source/component`. */
+  keyPrefix: string;
+}
+
+const rootMappings: RootMapping[] = PAGES_SOURCE_ROOTS.map((root) => ({
+  id: root.id,
+  gitDir: join(GIT_APPS_ROOT, root.id),
+  storageDir: storageRoot.kind === "local" ? join(storageRoot.root, root.id) : "",
+  keyPrefix: r2Prefix ? `${r2Prefix}/${root.id}` : root.id,
+}));
+
 export async function push(): Promise<void> {
-  const files = await filesUnder(GIT_PAGES_ROOT);
-  if (files.length === 0) {
-    console.log(`[drycms] "${GIT_PAGES_ROOT}" is empty - nothing to push.`);
-    return;
-  }
-  if (isR2 && useLocalR2) {
-    runLocalR2Helper("push", GIT_PAGES_ROOT);
-    return;
-  }
   let written = 0;
-  if (isR2) {
-    const bucket = await bucketName();
-    for (const file of files) {
-      const relPath = relative(GIT_PAGES_ROOT, file).split("\\").join("/");
-      const key = r2Prefix ? `${r2Prefix}/${relPath}` : relPath;
-      const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, "--remote"]);
-      if (proc.exitCode !== 0) {
-        console.error(`[drycms] failed to push ${key}:\n${new TextDecoder().decode(proc.stderr)}`);
-        process.exit(1);
-      }
-      console.log(`  push ${key}`);
-      written += 1;
+  const bucket = isR2 && !useLocalR2 ? await bucketName() : "";
+  for (const mapping of rootMappings) {
+    const files = await filesUnder(mapping.gitDir);
+    if (files.length === 0) {
+      console.log(`[drycms] "${mapping.gitDir}" is empty - nothing to push.`);
+      continue;
     }
-  } else {
+    if (isR2 && useLocalR2) {
+      runLocalR2Helper("push", mapping.gitDir, mapping.keyPrefix);
+      continue;
+    }
     for (const file of files) {
-      const relPath = relative(GIT_PAGES_ROOT, file).split("\\").join("/");
-      const destPath = join(storageRoot.kind === "local" ? storageRoot.root : "", relPath);
-      await mkdir(dirname(destPath), { recursive: true });
-      await writeFile(destPath, await readFile(file));
-      console.log(`  push ${relPath}`);
+      const relPath = relative(mapping.gitDir, file).split("\\").join("/");
+      if (isR2) {
+        const key = `${mapping.keyPrefix}/${relPath}`;
+        const proc = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, "--remote"]);
+        if (proc.exitCode !== 0) {
+          console.error(`[drycms] failed to push ${key}:\n${new TextDecoder().decode(proc.stderr)}`);
+          process.exit(1);
+        }
+        console.log(`  push ${key}`);
+      } else {
+        const destPath = join(mapping.storageDir, relPath);
+        await mkdir(dirname(destPath), { recursive: true });
+        await writeFile(destPath, await readFile(file));
+        console.log(`  push ${mapping.id}/${relPath}`);
+      }
       written += 1;
     }
   }
-  console.log(`[drycms] pushed ${written} file(s) (destination overwritten if already present).`);
+  if (!(isR2 && useLocalR2)) console.log(`[drycms] pushed ${written} file(s) (destination overwritten if already present).`);
 }
 
 export async function pull(): Promise<void> {
-  if (isR2 && useLocalR2) {
-    runLocalR2Helper("pull", GIT_PAGES_ROOT);
-    return;
-  }
-  let written = 0;
-  if (isR2) {
+  if (isR2 && !useLocalR2) {
     const bucket = await bucketName();
     console.error(
       `[drycms] "wrangler r2 object list" does not exist (checked live, "wrangler r2 object --help") - listing "${bucket}/${r2Prefix}" over the real bucket isn't supported yet. ` +
         `Use "bun run pages:sync --push --remote" to push local edits to the real bucket by hand instead, or "--local" to pull from wrangler dev's own simulated storage.`,
     );
     process.exit(1);
-  } else {
+  }
+  let written = 0;
+  for (const mapping of rootMappings) {
+    if (isR2) {
+      runLocalR2Helper("pull", mapping.gitDir, mapping.keyPrefix);
+      continue;
+    }
     if (storageRoot.kind !== "local") throw new Error("[drycms] unreachable - resolveOptions({kind:'local'}) always gives a local root.");
-    const files = await filesUnder(storageRoot.root);
+    const files = await filesUnder(mapping.storageDir);
     for (const file of files) {
-      const relPath = relative(storageRoot.root, file).split("\\").join("/");
-      const destPath = join(GIT_PAGES_ROOT, relPath);
+      const relPath = relative(mapping.storageDir, file).split("\\").join("/");
+      const destPath = join(mapping.gitDir, relPath);
       await mkdir(dirname(destPath), { recursive: true });
       await writeFile(destPath, await readFile(file));
-      console.log(`  pull ${relPath}`);
+      console.log(`  pull ${mapping.id}/${relPath}`);
       written += 1;
     }
   }
-  console.log(`[drycms] pulled ${written} file(s) (destination overwritten if already present).`);
+  if (!isR2) console.log(`[drycms] pulled ${written} file(s) (destination overwritten if already present).`);
 }
 
 /**

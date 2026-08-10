@@ -159,3 +159,17 @@ live dev store again afterward.
 
 Complete in one session (three passes: initial build, VS Code-style
 redesign, then this visual-polish pass after a real screenshot review).
+
+## Superseded 2026-08-11
+
+This whole feature was REMOVED and folded into the Page Editor - see
+`plans/component.md` + `status/component.md`. Components no longer have
+their own page (`/dry/page-components`), their own storage root
+(`.dry/components`, `DryOption.pageComponents`), their own API route
+(`routes/page-components.ts`) or their own permission
+(`system-page-components`); they are files in `pagesSourceStorage`'s
+`component/` source root, edited from the Page Editor's Component tab under
+the Page Builder permission. Still alive from this work:
+`ComponentTreePanel.tsx`, `useDevicePreview.ts`, `page-components/tree.ts`,
+`import-rewrite.ts`. Kept for the history of WHY those pieces look the way
+they do.

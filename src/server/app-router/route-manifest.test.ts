@@ -1,44 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "./route-manifest.js";
 
+// Storage-root-relative, so every route file sits under the `pages` source
+// root (`source-roots.ts`) - the shape `pagesSourceStorage`'s own `listAll()`
+// returns since the root split.
 const PATHS = [
-  "page.tsx",
-  "layout.tsx",
-  "404.tsx",
-  "500.tsx",
-  "about/page.tsx",
-  "blogs/layout.tsx",
-  "blogs/page.tsx",
-  "blogs/[slug]/page.tsx",
-  "blogs/[slug]/layout.tsx",
+  "pages/page.tsx",
+  "pages/layout.tsx",
+  "pages/404.tsx",
+  "pages/500.tsx",
+  "pages/about/page.tsx",
+  "pages/blogs/layout.tsx",
+  "pages/blogs/page.tsx",
+  "pages/blogs/[slug]/page.tsx",
+  "pages/blogs/[slug]/layout.tsx",
   // A catch-all - mục 4's "khai báo tay hoặc chấp nhận không build":
   // must never appear in listDynamicPageTemplates's output.
-  "docs/[...path]/page.tsx",
+  "pages/docs/[...path]/page.tsx",
   // Non-route files a real storage listing would also contain - must be
   // ignored, not mistaken for a page/layout.
-  "Greeting.tsx",
-  "blogs/utils.ts",
+  "pages/Greeting.tsx",
+  "pages/blogs/utils.ts",
+  // Another source root entirely: a component named `page.tsx` is still just
+  // a component, never the `/component` route.
+  "component/Card.tsx",
+  "component/page.tsx",
 ];
 
 describe("buildManifestRouteTree + matchSourceRoute", () => {
   it("matches the root page with its root layout", () => {
     const tree = buildManifestRouteTree(PATHS);
     const match = matchSourceRoute(tree, "/");
-    expect(match).toEqual({ entryPath: "page.tsx", layoutPaths: ["layout.tsx"], params: {} });
+    expect(match).toEqual({ entryPath: "pages/page.tsx", layoutPaths: ["pages/layout.tsx"], params: {} });
   });
 
   it("matches a nested static page with the full root-to-leaf layout chain", () => {
     const tree = buildManifestRouteTree(PATHS);
     const match = matchSourceRoute(tree, "/blogs");
-    expect(match).toEqual({ entryPath: "blogs/page.tsx", layoutPaths: ["layout.tsx", "blogs/layout.tsx"], params: {} });
+    expect(match).toEqual({ entryPath: "pages/blogs/page.tsx", layoutPaths: ["pages/layout.tsx", "pages/blogs/layout.tsx"], params: {} });
   });
 
   it("matches a dynamic [slug] segment and captures the param", () => {
     const tree = buildManifestRouteTree(PATHS);
     const match = matchSourceRoute(tree, "/blogs/my-post");
     expect(match).toEqual({
-      entryPath: "blogs/[slug]/page.tsx",
-      layoutPaths: ["layout.tsx", "blogs/layout.tsx", "blogs/[slug]/layout.tsx"],
+      entryPath: "pages/blogs/[slug]/page.tsx",
+      layoutPaths: ["pages/layout.tsx", "pages/blogs/layout.tsx", "pages/blogs/[slug]/layout.tsx"],
       params: { slug: "my-post" },
     });
   });
@@ -63,7 +70,7 @@ describe("buildManifestRouteTree + matchSourceRoute", () => {
   it("a non-route file under a [slug] directory still resolves through that dynamic segment - same as any other visitor-typed path (route-tree.ts's own documented behavior, not a bug here)", () => {
     const tree = buildManifestRouteTree(PATHS);
     const match = matchSourceRoute(tree, "/blogs/utils");
-    expect(match?.entryPath).toBe("blogs/[slug]/page.tsx");
+    expect(match?.entryPath).toBe("pages/blogs/[slug]/page.tsx");
     expect(match?.params).toEqual({ slug: "utils" });
   });
 });
@@ -76,8 +83,8 @@ describe("listDynamicPageTemplates", () => {
       {
         pathnameTemplate: "/blogs/[slug]",
         paramName: "slug",
-        entryPath: "blogs/[slug]/page.tsx",
-        layoutPaths: ["layout.tsx", "blogs/layout.tsx", "blogs/[slug]/layout.tsx"],
+        entryPath: "pages/blogs/[slug]/page.tsx",
+        layoutPaths: ["pages/layout.tsx", "pages/blogs/layout.tsx", "pages/blogs/[slug]/layout.tsx"],
       },
     ]);
     // docs/[...path]/page.tsx must never appear - catch-all, mục 4's
@@ -86,7 +93,7 @@ describe("listDynamicPageTemplates", () => {
   });
 
   it("returns nothing for a tree with no dynamic segments at all", () => {
-    const tree = buildManifestRouteTree(["page.tsx", "layout.tsx", "about/page.tsx"]);
+    const tree = buildManifestRouteTree(["pages/page.tsx", "pages/layout.tsx", "pages/about/page.tsx"]);
     expect(listDynamicPageTemplates(tree)).toEqual([]);
   });
 });

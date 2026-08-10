@@ -24,16 +24,8 @@ export function permissionKeyFor(resourceId: string, action: PermissionAction): 
  * browser-facing editable/display column. */
 export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
 
-/** Synthetic resource id for Component Builder's Role-editor toggle - it has
- * no real `ContentTypeDefinition` row (same idea as `RoleEditor.tsx`'s
- * other `SYSTEM_RESOURCES` entries), so the id is a fixed string shared
- * between `RoleEditor.tsx` (renders the toggle) and `admin-access.ts`'s
- * `requirePermission` route gate (checks it), rather than each side
- * hard-coding its own copy. */
-export const PAGE_COMPONENTS_RESOURCE_ID = "system-page-components";
-
-/** Same synthetic-resource pattern as `PAGE_COMPONENTS_RESOURCE_ID` above,
- * one id per admin page that isn't backed by a real `ContentTypeDefinition`
+/** Synthetic resource id: one per admin page that isn't backed by a real
+ * `ContentTypeDefinition` row
  * - grouped together in `RoleEditor.tsx`'s "System" fieldset, checked at the
  * matching route (`handler.ts`/`content-types.ts`) with
  * `requirePermission(context, id, "setting")`, same as Page Components.

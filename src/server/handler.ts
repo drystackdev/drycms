@@ -10,7 +10,6 @@ import * as contentTypesRoute from "./routes/content-types.js";
 import * as contentTypeSeedRoute from "./routes/content-type-seed.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
-import * as pageComponentsRoute from "./routes/page-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as aiRoute from "./routes/ai.js";
 import * as memoryRoute from "./routes/memory.js";
@@ -27,7 +26,6 @@ import { requirePermission } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
   PAGE_BUILDER_RESOURCE_ID,
-  PAGE_COMPONENTS_RESOURCE_ID,
   RICHTEXT_COMPONENTS_RESOURCE_ID,
 } from "../content-types/permissions.js";
 import { bodyLimitResponse, limitRequestBody } from "./request-limits.js";
@@ -69,7 +67,6 @@ const API_ROUTES: Record<string, RouteModule> = {
   "content-type-seed": contentTypeSeedRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
-  "page-components": pageComponentsRoute,
   auth: authRoute,
   ai: aiRoute,
   memory: memoryRoute,
@@ -180,14 +177,6 @@ export async function handleApiRequest(
   }
   if (segment === "richtext-components" && request.method !== "GET") {
     const denied = await requirePermission(context, RICHTEXT_COMPONENTS_RESOURCE_ID, "setting");
-    if (denied) return secureResponse(denied, request);
-  }
-  // Every method, including `GET` - Component Builder has no separate
-  // "view" permission, its `role.permissions` toggle is one all-or-nothing
-  // `setting` grant (see `PAGE_COMPONENTS_RESOURCE_ID`), same collapse a
-  // real singleton's schema gets in `permissionActionsFor`.
-  if (segment === "page-components") {
-    const denied = await requirePermission(context, PAGE_COMPONENTS_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
   // `dry-http` (published-only content reads for the browser build

@@ -1,10 +1,14 @@
-# App Router (`src/apps/pages/**`)
+# App Router (`pages/**` in the page source store)
 
 A Next.js-App-Router-style file router for the site's own public content
 pages - not the admin UI (`src/pages/` + [DESIGN.md](DESIGN.md), a
 completely different, hand-rolled-CSS design system; never mix the two).
-Read this before creating or editing anything under `src/apps/pages/**` or
-`src/apps/globals.css`. Full design background: `plans/app-router.md`,
+Read this before creating or editing anything under the page source store's
+`pages/` root (`.dry/pages-source/pages/**` locally, materialized to
+`src/apps/pages/**` for a build - see `source-roots.ts`) or
+`src/apps/globals.css`. A reusable component lives in the sibling
+`component/` root instead and is imported as `@component/Card`; it is never
+a route, whatever it's named. Full design background: `plans/app-router.md`,
 execution log: `status/app-router.md`.
 
 ## File conventions

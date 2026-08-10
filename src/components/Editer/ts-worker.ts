@@ -14,9 +14,13 @@ import type {
   EditerHoverInfo,
   EditerSignatureHelp,
   EditerTextEdit,
+  PropsField,
+  PropsSchema,
+  PropsTypeNode,
   WorkerRequest,
   WorkerResponse,
 } from "./worker-protocol.js";
+import { PAGES_SOURCE_ROOTS, resolveAliasSpecifier } from "../../server/app-router/source-roots.js";
 
 const MAIN_FILE = "/main.tsx";
 
@@ -84,6 +88,19 @@ const BARE_MODULE_PATHS: Record<string, string> = {
 
 function resolveModuleName(spec: string, containingFile: string): string | undefined {
   if (spec in BARE_MODULE_PATHS) return BARE_MODULE_PATHS[spec];
+  // `@component/Card` -> `/component/Card.tsx` (`source-roots.ts`) - resolved
+  // from the source ROOT, never relative to `containingFile`, matching what
+  // `page-build.ts` and `vite.config.ts` do for the same specifier. Without
+  // this, a page importing a component type-checks as an unresolved module
+  // and every prop on it silently degrades to `any`.
+  const aliased = resolveAliasSpecifier(spec);
+  if (aliased !== null) {
+    const base = `/${aliased}`;
+    for (const candidate of [base, `${base}.tsx`, `${base}.ts`, `${base}.d.ts`]) {
+      if (files.has(candidate)) return candidate;
+    }
+    return undefined;
+  }
   if (!spec.startsWith(".")) return undefined;
   const containingDir = containingFile.slice(0, containingFile.lastIndexOf("/"));
   const base = normalizePath(`${containingDir}/${spec}`);
@@ -180,6 +197,111 @@ function computeDiagnostics(): EditerResult {
   };
 }
 
+/** Walk limits for `describeDefaultExportProps` - a props type can be
+ * arbitrarily recursive (a `children: VNode` chain, a self-referential tree
+ * node), and this runs on every debounced keystroke of the previewed file,
+ * so the walk is bounded rather than exhaustive. Anything past a limit
+ * degrades to `{ kind: "unknown" }`, which the sample generator simply skips. */
+const PROPS_MAX_DEPTH = 4;
+const PROPS_MAX_FIELDS = 30;
+const PROPS_MAX_UNION_OPTIONS = 8;
+
+/** Preact's own renderable types (plus React's name, for source pasted in
+ * from elsewhere) - matched by NAME rather than by identity because the
+ * virtual FS's `preact` copy is a flattened stand-in, so `checker` has no
+ * stable symbol to compare against. */
+const NODE_TYPE_NAME_RE = /\b(VNode|ComponentChild|ComponentChildren|ReactNode|ReactElement|JSX\.Element)\b/;
+
+function describeType(type: ts.Type, checker: ts.TypeChecker, depth: number): PropsTypeNode {
+  if (depth > PROPS_MAX_DEPTH) return { kind: "unknown" };
+  const flags = type.flags;
+  if (flags & ts.TypeFlags.StringLiteral) return { kind: "literal", value: (type as ts.StringLiteralType).value };
+  if (flags & ts.TypeFlags.NumberLiteral) return { kind: "literal", value: (type as ts.NumberLiteralType).value };
+  // `boolean` itself is a union of the `true`/`false` literal types, so this
+  // has to come BEFORE the union branch or every boolean prop would describe
+  // as `true | false` instead.
+  if (flags & ts.TypeFlags.Boolean) return { kind: "boolean" };
+  if (flags & ts.TypeFlags.BooleanLiteral) return { kind: "literal", value: checker.typeToString(type) === "true" };
+  if (flags & ts.TypeFlags.String) return { kind: "string" };
+  if (flags & ts.TypeFlags.Number) return { kind: "number" };
+  if (flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never | ts.TypeFlags.TypeParameter)) return { kind: "unknown" };
+
+  if (type.isUnion()) {
+    // `undefined`/`null` members carry no sample value of their own - an
+    // optional prop is already marked optional by its symbol, and a sample
+    // that picked `undefined` would just be the prop being absent.
+    const members = type.types.filter((member) => !(member.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)));
+    if (members.length === 0) return { kind: "unknown" };
+    if (members.length === 1) return describeType(members[0]!, checker, depth);
+    return { kind: "union", options: members.slice(0, PROPS_MAX_UNION_OPTIONS).map((member) => describeType(member, checker, depth + 1)) };
+  }
+
+  const typeName = checker.typeToString(type);
+  if (NODE_TYPE_NAME_RE.test(typeName)) return { kind: "node" };
+  if (type.getCallSignatures().length > 0) return { kind: "function" };
+
+  const symbolName = type.getSymbol()?.getName();
+  if (symbolName === "Array" || symbolName === "ReadonlyArray") {
+    const args = checker.getTypeArguments(type as ts.TypeReference);
+    return { kind: "array", element: args[0] ? describeType(args[0], checker, depth + 1) : { kind: "unknown" } };
+  }
+  const numberIndexType = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
+  if (numberIndexType) return { kind: "array", element: describeType(numberIndexType, checker, depth + 1) };
+
+  if (flags & ts.TypeFlags.Object) return { kind: "object", fields: describeFields(type, checker, depth + 1) };
+  return { kind: "unknown" };
+}
+
+function describeFields(type: ts.Type, checker: ts.TypeChecker, depth: number): PropsField[] {
+  if (depth > PROPS_MAX_DEPTH) return [];
+  const fields: PropsField[] = [];
+  for (const property of checker.getPropertiesOfType(type)) {
+    if (fields.length >= PROPS_MAX_FIELDS) break;
+    const name = property.getName();
+    if (name.startsWith("__")) continue;
+    const declaration = property.valueDeclaration ?? property.declarations?.[0];
+    const propertyType = declaration
+      ? checker.getTypeOfSymbolAtLocation(property, declaration)
+      : checker.getDeclaredTypeOfSymbol(property);
+    fields.push({
+      name,
+      optional: (property.flags & ts.SymbolFlags.Optional) !== 0,
+      type: describeType(propertyType, checker, depth),
+    });
+  }
+  return fields;
+}
+
+/**
+ * The props of `MAIN_FILE`'s default export, described from the REAL checked
+ * types (so an `interface Props` imported from another file, a union, or a
+ * generic instantiation all describe correctly - not a regex over the
+ * source). `null` when there's no default export or it isn't callable.
+ */
+function describeDefaultExportProps(): PropsSchema | null {
+  const program = languageService.getProgram();
+  const sourceFile = program?.getSourceFile(MAIN_FILE);
+  if (!program || !sourceFile) return null;
+  const checker = program.getTypeChecker();
+  const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
+  if (!moduleSymbol) return null;
+  const defaultExport = checker.getExportsOfModule(moduleSymbol).find((symbol) => symbol.getName() === "default");
+  if (!defaultExport) return null;
+  const declaration = defaultExport.valueDeclaration ?? defaultExport.declarations?.[0] ?? sourceFile;
+  // An `export default` of an aliased local (`function Card() {}` then
+  // `export default Card`) resolves to the alias symbol, whose own type is
+  // the alias, not the function - unwrap it first.
+  const symbol = defaultExport.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(defaultExport) : defaultExport;
+  const type = checker.getTypeOfSymbolAtLocation(symbol, symbol.valueDeclaration ?? declaration);
+  const signature = type.getCallSignatures()[0];
+  if (!signature) return null;
+  const parameter = signature.getParameters()[0];
+  if (!parameter) return { fields: [] };
+  const parameterDeclaration = parameter.valueDeclaration ?? parameter.declarations?.[0] ?? declaration;
+  const propsType = checker.getTypeOfSymbolAtLocation(parameter, parameterDeclaration);
+  return { fields: describeFields(propsType, checker, 1) };
+}
+
 const KIND_MAP: Record<string, EditerCompletionItem["kind"]> = {
   keyword: "keyword",
   class: "class",
@@ -253,9 +375,26 @@ function computeImportSpecifierCompletions(typed: string): EditerCompletionItem[
       .filter((spec) => spec.toLowerCase().includes(typedLower))
       .map((label) => ({ label, insert: label, kind: "namespace" as const }));
   }
-  return Object.keys(BARE_MODULE_PATHS)
+  return [...aliasSpecifierCompletions(), ...Object.keys(BARE_MODULE_PATHS)]
     .filter((spec) => spec.toLowerCase().includes(typedLower))
     .map((label) => ({ label, insert: label, kind: "namespace" as const }));
+}
+
+/** `@component/Card` for every component currently in `extraFiles`
+ * (`source-roots.ts`) - the alias half of the completions above. Extension
+ * dropped from the suggestion (`resolveModuleName` adds it back), matching
+ * how these get written by hand. */
+function aliasSpecifierCompletions(): string[] {
+  const specifiers: string[] = [];
+  for (const root of PAGES_SOURCE_ROOTS) {
+    if (!root.alias) continue;
+    const prefix = `/${root.id}/`;
+    for (const path of extraFilePaths) {
+      if (!path.startsWith(prefix)) continue;
+      specifiers.push(`${root.alias}/${path.slice(prefix.length).replace(/\.tsx?$/, "")}`);
+    }
+  }
+  return specifiers;
 }
 
 function rawCompletionsAt(pos: number): ts.CompletionInfo | undefined {
@@ -471,7 +610,9 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     setFile(MAIN_FILE, request.code);
     setExtraFiles(request.extraFiles);
     if (request.emitDiagnostics) {
-      const response: WorkerResponse = { kind: "diagnostics", result: computeDiagnostics() };
+      const result = computeDiagnostics();
+      if (request.describeProps) result.propsSchema = describeDefaultExportProps();
+      const response: WorkerResponse = { kind: "diagnostics", result };
       postMessage(response);
     }
   } else if (request.kind === "completions") {

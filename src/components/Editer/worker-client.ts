@@ -29,13 +29,17 @@ export class EditerWorkerClient {
   #onDiagnostics: (result: EditerResult) => void;
   #onRestart: (() => void) | undefined;
   #hangTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Carried on every `update` - see `WorkerRequest`'s own `describeProps`. */
+  #describeProps: boolean;
 
   constructor(
     onDiagnostics: (result: EditerResult) => void,
     config?: EditerLanguageConfig,
     debounceMs = DEFAULT_DEBOUNCE_MS,
     onRestart?: () => void,
+    describeProps = false,
   ) {
+    this.#describeProps = describeProps;
     this.#debounceMs = debounceMs;
     this.#config = config;
     this.#onDiagnostics = onDiagnostics;
@@ -95,7 +99,7 @@ export class EditerWorkerClient {
     if (this.#config?.compilerOptions || this.#config?.formatOptions) {
       this.#post({ kind: "configure", ...this.#config });
     }
-    if (this.#latest) this.#post({ kind: "update", ...this.#latest, emitDiagnostics: true });
+    if (this.#latest) this.#post({ kind: "update", ...this.#latest, emitDiagnostics: true, describeProps: this.#describeProps });
   }
 
   /** Debounced - safe to call on every keystroke. Only the debounced timer
@@ -109,7 +113,7 @@ export class EditerWorkerClient {
 
   #sync(emitDiagnostics: boolean): void {
     if (!this.#latest) return;
-    this.#post({ kind: "update", ...this.#latest, emitDiagnostics });
+    this.#post({ kind: "update", ...this.#latest, emitDiagnostics, describeProps: this.#describeProps && emitDiagnostics });
   }
 
   /**

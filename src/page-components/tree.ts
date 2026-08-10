@@ -1,4 +1,45 @@
 import type { FileEntry } from "../storage/entry-types.js";
+import { PAGES_ROOT, PAGES_SOURCE_ROOTS } from "../server/app-router/source-roots.js";
+
+/**
+ * The entries one Page Editor sidebar tab shows (`plans/component.md` mục 3).
+ *
+ * `id` is deliberately left as the FULL storage path (`pages/blogs/page.tsx`)
+ * - only the tree's SHAPE is rebased: the root folder's own entry is dropped
+ * and its direct children re-parented to the tree root, so the tab starts
+ * inside `pages/`/`component/` without an extra folder level. Rewriting ids
+ * instead would mean re-prefixing them again in every save/move/delete
+ * handler and in the `?file=` URL param, for a purely cosmetic gain.
+ *
+ * The `pages` tab also absorbs anything that belongs to NO known root - a
+ * store predating the root split can have files sitting at the storage root,
+ * and hiding them from the only UI that can edit them would be worse than
+ * showing them one level up.
+ */
+export function entriesForSourceRoot(entries: FileEntry[], rootId: string): FileEntry[] {
+  const otherRootIds = PAGES_SOURCE_ROOTS.map((root) => root.id).filter((id) => id !== rootId);
+  const isOtherRoot = (path: string) => otherRootIds.some((id) => path === id || path.startsWith(`${id}/`));
+  const inThisRoot = (path: string) => path === rootId || path.startsWith(`${rootId}/`);
+
+  return entries
+    .filter((entry) => {
+      if (entry.id === rootId) return false;
+      if (isOtherRoot(entry.id)) return false;
+      // Only the `pages` tab keeps unrooted leftovers (see doc comment).
+      return inThisRoot(entry.id) || rootId === PAGES_ROOT;
+    })
+    .map((entry) => (entry.parentId === rootId ? { ...entry, parentId: null } : entry));
+}
+
+/** Prefixes a path typed at a tab's tree ROOT with that tab's source root -
+ * `ComponentTreePanel` builds a create/move target out of the (rebased) tree
+ * position, which is empty at the root, so the root folder has to be put
+ * back before the path reaches storage. A path already inside the root (from
+ * a nested folder) is returned unchanged. */
+export function withSourceRoot(rootId: string, path: string): string {
+  if (path === rootId || path.startsWith(`${rootId}/`)) return path;
+  return `${rootId}/${path}`;
+}
 
 export interface ComponentTreeNode {
   entry: FileEntry;

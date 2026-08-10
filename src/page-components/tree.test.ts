@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildComponentTree, filterComponentTree } from "./tree.js";
+import { buildComponentTree, entriesForSourceRoot, filterComponentTree, withSourceRoot } from "./tree.js";
 import type { FileEntry } from "../storage/entry-types.js";
 
 function file(id: string, parentId: string | null): FileEntry {
@@ -57,5 +57,40 @@ describe("filterComponentTree", () => {
     const { nodes } = filterComponentTree(tree, "layout");
     const layoutNode = nodes.find((n) => n.entry.id === "layout");
     expect(layoutNode?.children.map((n) => n.entry.id)).toEqual(["layout/Footer.tsx", "layout/Header.tsx"]);
+  });
+});
+
+describe("entriesForSourceRoot", () => {
+  const entries: FileEntry[] = [
+    { id: "pages", name: "pages", parentId: null, kind: "folder" },
+    { id: "pages/page.tsx", name: "page.tsx", parentId: "pages", kind: "file" },
+    { id: "pages/blogs", name: "blogs", parentId: "pages", kind: "folder" },
+    { id: "pages/blogs/page.tsx", name: "page.tsx", parentId: "pages/blogs", kind: "file" },
+    { id: "component", name: "component", parentId: null, kind: "folder" },
+    { id: "component/Card.tsx", name: "Card.tsx", parentId: "component", kind: "file" },
+    // Predates the root split - belongs to no root at all.
+    { id: "stray.tsx", name: "stray.tsx", parentId: null, kind: "file" },
+  ];
+
+  it("keeps full paths as ids but re-parents the root's direct children to the tree root", () => {
+    const pages = entriesForSourceRoot(entries, "pages");
+    expect(pages.map((entry) => entry.id)).toEqual(["pages/page.tsx", "pages/blogs", "pages/blogs/page.tsx", "stray.tsx"]);
+    expect(pages.find((entry) => entry.id === "pages/page.tsx")!.parentId).toBeNull();
+    // A deeper file keeps its real parent, so the tree still nests.
+    expect(pages.find((entry) => entry.id === "pages/blogs/page.tsx")!.parentId).toBe("pages/blogs");
+  });
+
+  it("shows only that root's own files in another tab", () => {
+    expect(entriesForSourceRoot(entries, "component").map((entry) => entry.id)).toEqual(["component/Card.tsx"]);
+  });
+});
+
+describe("withSourceRoot", () => {
+  it("prefixes a path typed at the tab's own tree root", () => {
+    expect(withSourceRoot("component", "Card.tsx")).toBe("component/Card.tsx");
+  });
+
+  it("leaves a path that already names the root alone", () => {
+    expect(withSourceRoot("pages", "pages/blogs/page.tsx")).toBe("pages/blogs/page.tsx");
   });
 });

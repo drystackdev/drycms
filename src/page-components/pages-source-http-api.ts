@@ -17,12 +17,12 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
   throw new PagesSourceApiError(typeof body.message === "string" ? body.message : fallback);
 }
 
-/** Thin client-side fetch wrapper around `routes/pages-source.ts`, mirroring
- * `page-components/http-api.ts`'s `createPageComponentsApi` almost exactly -
- * same route shape, same storage-adapter contract underneath, just a
- * different root (`pagesSourceStorage` instead of `pageComponentsStorage`).
- * Used by both `PageBuild.tsx` (read-only: tree + file contents, to compile)
- * and `PageEditor.tsx` (Giai đoạn 6 - adds the write calls below). */
+/** Thin client-side fetch wrapper around `routes/pages-source.ts` - the one
+ * client for everything in `pagesSourceStorage`, both source roots included
+ * (`source-roots.ts`: `pages/**` and `component/**` are plain paths in the
+ * same tree, not separate endpoints). Used by both `PageBuild.tsx`
+ * (read-only: tree + file contents, to compile) and `PageEditor.tsx` (adds
+ * the write calls below). */
 export function createPagesSourceApi(baseUrl: string) {
   /** The whole pages-source tree, one round trip - `entries` is empty and
    * `supported: false` if the configured storage kind doesn't implement

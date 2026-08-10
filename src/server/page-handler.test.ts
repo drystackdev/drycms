@@ -42,9 +42,12 @@ afterAll(async () => {
  * pipeline's `app-router-plugin.ts` ambient-global injection, same
  * limitation the module-mocked `config.js` above already accepts). */
 function fixtureDevPagesSource(): DevPagesSource {
+  // Keyed by storage-root-relative path, so both files sit under the `pages`
+  // source root (`source-roots.ts`) - what `discoverRoutes`'s dev branch
+  // filters on since the root split.
   const modules: Record<string, () => Promise<{ default: (props: never) => unknown }>> = {
-    "layout.tsx": async () => ({ default: (({ children }: { children?: unknown }) => h("div", null, children as never)) as never }),
-    "404.tsx": async () => ({ default: (() => h("p", null, "not found")) as never }),
+    "pages/layout.tsx": async () => ({ default: (({ children }: { children?: unknown }) => h("div", null, children as never)) as never }),
+    "pages/404.tsx": async () => ({ default: (() => h("p", null, "not found")) as never }),
   };
   return {
     async listPaths() {

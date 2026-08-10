@@ -1,5 +1,6 @@
 import { buildRouteTree, staticPagePaths, type ModuleLoader, type RouteTree, type RouteTreeNode } from "./route-tree.js";
 import { matchRoute } from "./match.js";
+import { PAGES_ROOT } from "./source-roots.js";
 
 /**
  * `plans/app-r2.md` mục 1 - the manifest-driven counterpart to
@@ -41,21 +42,22 @@ function sourcePathOf(loader: ModuleLoader): string {
 }
 
 /** `paths` - every file under the pages source root, e.g. from
- * `pagesSourceStorage`'s `listAll()`/`?tree` (same shape
- * `page-components.ts`'s `handleTree` already returns for a different
- * root): `["page.tsx", "layout.tsx", "blogs/layout.tsx",
- * "blogs/page.tsx", "blogs/[slug]/page.tsx", "404.tsx"]` - NOT prefixed
- * with a leading slash or a root marker, unlike `discoverRoutes()`'s Vite
- * glob keys (`buildRouteTree`'s own `rootPrefix` param exists for that
- * distinction - here it's simply `""`, since the manifest is already
- * root-relative). */
+ * `pagesSourceStorage`'s `listAll()`/`?tree`: `["pages/page.tsx",
+ * "pages/layout.tsx", "pages/blogs/[slug]/page.tsx", "pages/404.tsx",
+ * "component/Card.tsx"]` - storage-root-relative, so INCLUDING the source
+ * root folder (`source-roots.ts`) but with no leading slash, unlike
+ * `discoverRoutes()`'s Vite glob keys. Only the `pages` root produces
+ * routes; the tagged loader keeps the FULL path (`pages/page.tsx`) so
+ * `sourcePathOf` still hands `buildPage` a key its `sourceByPath` actually
+ * has. */
 export function buildManifestRouteTree(paths: string[]): RouteTree {
   const modules: Record<string, ModuleLoader> = {};
   for (const path of paths) {
+    if (!path.startsWith(`${PAGES_ROOT}/`)) continue;
     if (!/(^|\/)(page|layout|404|500)\.tsx$/.test(path)) continue;
     modules[path] = pathTaggedLoader(path);
   }
-  return buildRouteTree(modules, "");
+  return buildRouteTree(modules, PAGES_ROOT);
 }
 
 export interface SourceRouteMatch {

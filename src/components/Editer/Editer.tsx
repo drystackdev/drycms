@@ -53,6 +53,12 @@ export interface EditerProps {
   /** Delay after the last keystroke before diagnostics recompute and `onChange` fires.
    * @default 300 */
   debounceMs?: number;
+  /** Whether every debounced `onChange` also carries `EditerResult.propsSchema` - the
+   * default export's props, described from the real TS types (see `ts-worker.ts`'s
+   * `describeDefaultExportProps`). Off by default: only the Page Editor's component
+   * preview needs it, and it costs a type walk per debounce. Set once at mount.
+   * @default false */
+  describeProps?: boolean;
   /** Whether `className`/`class` JSX attribute strings offer Tailwind class-name
    * completions (see `tailwind-completions.ts`) - per-instance, since the completion
    * source itself is registered once, globally, the first time any `Editer` mounts.
@@ -461,6 +467,7 @@ export default function Editer({
   formatOptions,
   tabSize = 2,
   debounceMs = 300,
+  describeProps = false,
   tailwindCompletions = true,
   readOnly = false,
   class: className,
@@ -502,6 +509,7 @@ export default function Editer({
           title: "Code editor restarted",
           description: "The language service stopped responding and was restarted.",
         }),
+      describeProps,
     );
     // Every cached position is only valid against the code it was computed
     // from - stale entries would otherwise resurface via `tsCompletionSource`

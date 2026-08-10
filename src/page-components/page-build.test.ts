@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { buildPage, publishBuiltPage, PageBuildError } from "./page-build.js";
+import { buildPage, pagesAffectedBy, publishBuiltPage, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
@@ -236,6 +236,46 @@ describe("buildPage", () => {
     ).rejects.toThrow(PageBuildError);
   });
 
+  it("resolves an `@component/...` import from the source root, and points its ESM asset at the built URL", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(encodeCallLog([{ kind: "singleton", name: "seoDefaults", method: "get", result: null }]), {
+        status: 200,
+        headers: jsonHeaders("seoDefaults", 0),
+      }),
+    );
+
+    const result = await buildPage({
+      pathname: "/",
+      origin: "https://example.com",
+      adminPath: "/dry",
+      siteLang: "en",
+      assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
+      dryHttpEndpoint: "/dry/api/dry-http",
+      allTypes: [],
+      sourceByPath: {
+        "pages/page.tsx": `import Card from "@component/ui/Card";\nexport default function Page() { return <Card title="Hi" />; }`,
+        "pages/layout.tsx": LAYOUT_SOURCE,
+        "component/ui/Card.tsx": `export default function Card({ title }) { return <div class="card">{title}</div>; }`,
+      },
+      entryPath: "pages/page.tsx",
+      layoutPaths: ["pages/layout.tsx"],
+      params: {},
+    });
+
+    expect(result.html).toContain('class="card"');
+    expect(result.html).toContain("Hi");
+    // The component is part of the page's own hydration closure, and the
+    // alias specifier is rewritten to its public asset URL - a browser has
+    // no idea what `@component/...` means.
+    const cardAsset = result.jsAssets.find((asset) => asset.jsPath === "component/ui/Card.js");
+    expect(cardAsset).toBeDefined();
+    const pageAsset = result.jsAssets.find((asset) => asset.jsPath === "pages/page.js");
+    expect(pageAsset!.source).toContain(`${TEST_BUILT_ASSETS_BASE_URL}/component/ui/Card.js`);
+    expect(pageAsset!.source).not.toContain("@component/");
+  });
+
   it("computes inSitemap=false when the page's own SEO cascade sets noIndex", async () => {
     fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string) as { kind: string; name: string };
@@ -297,5 +337,34 @@ describe("publishBuiltPage", () => {
       publishBuiltPage({ html: "", jsAssets: [], deps: [], inSitemap: true }, { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x" }),
     ).rejects.toThrow(PageBuildError);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("pagesAffectedBy", () => {
+  const SOURCE = {
+    "pages/layout.tsx": `import Nav from "@component/Nav";\nexport default function Layout({ children }) { return <div><Nav />{children}</div>; }`,
+    "pages/page.tsx": `export default function Page() { return <div />; }`,
+    "pages/about/page.tsx": `import Card from "@component/Card";\nexport default function About() { return <Card />; }`,
+    "pages/blogs/page.tsx": `export default function Blogs() { return <div />; }`,
+    "component/Card.tsx": `export default function Card() { return <div />; }`,
+    "component/Nav.tsx": `export default function Nav() { return <nav />; }`,
+  };
+
+  it("finds the pages that import a component directly", () => {
+    expect(pagesAffectedBy("component/Card.tsx", SOURCE)).toEqual(["pages/about/page.tsx"]);
+  });
+
+  it("finds pages reached only through a layout that imports the component", () => {
+    // Every page is wrapped by the root layout, and the root layout is what
+    // imports `Nav` - none of the pages import it themselves.
+    expect(pagesAffectedBy("component/Nav.tsx", SOURCE).sort()).toEqual([
+      "pages/about/page.tsx",
+      "pages/blogs/page.tsx",
+      "pages/page.tsx",
+    ]);
+  });
+
+  it("returns a page itself when the changed file IS that page", () => {
+    expect(pagesAffectedBy("pages/blogs/page.tsx", SOURCE)).toEqual(["pages/blogs/page.tsx"]);
   });
 });

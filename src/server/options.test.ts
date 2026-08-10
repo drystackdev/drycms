@@ -24,9 +24,6 @@ describe('resolveOptions', () => {
 			components: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/richtext-components') },
 			},
-			pageComponents: {
-				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/components') },
-			},
 			pagesCache: {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/pages-cache') },
 				edgeTtl: 60,
@@ -61,7 +58,6 @@ describe('resolveOptions', () => {
 		expect(resolved.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage' });
 		expect(resolved.icons).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'storage/dry-icons' });
 		expect(resolved.components.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'richtext-components' });
-		expect(resolved.pageComponents.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'components' });
 		expect(resolved.pagesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-cache' });
 		expect(resolved.typesCache.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'types-cache' });
 		expect(resolved.pagesSource.storage).toEqual({ kind: 'r2', binding: 'MEDIA_BUCKET', prefix: 'pages-source' });

@@ -22,7 +22,6 @@ vi.mock("./config.js", async () => {
     ...resolved,
     resolved,
     componentsStorage: resolved.components.storage,
-    pageComponentsStorage: resolved.pageComponents.storage,
     pagesCacheStorage: resolved.pagesCache.storage,
     typesCacheStorage: resolved.typesCache.storage,
   };

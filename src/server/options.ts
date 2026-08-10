@@ -26,16 +26,15 @@ const STORAGE_DIR_NAME = "storage";
 const ICONS_DIR_NAME = "dry-icons";
 const CONTENT_FILE_NAME = "content.sqlite";
 const COMPONENTS_STORAGE_DIR_NAME = "richtext-components";
-const PAGE_COMPONENTS_STORAGE_DIR_NAME = "components";
 const PAGES_CACHE_STORAGE_DIR_NAME = "pages-cache";
 const TYPES_CACHE_STORAGE_DIR_NAME = "types-cache";
-/** `src/apps/pages/**` source `.tsx`/`.ts` - `plans/app-r2.md` quyết định
- * #6: git remains the source of truth, this root is what `scripts/sync-pages-r2.ts`
- * (push, no-overwrite) pushes INTO and the browser build pipeline reads
- * FROM (mục 1's route manifest, mục 7's per-page compile). Deliberately
- * separate from `pagesCacheStorage` (built HTML OUTPUT) and
- * `pageComponentsStorage` (Component Builder's unrelated `.dry/components`
- * tree, quyết định #10 - left alone). */
+/** The live source of the public site, split into per-kind root folders
+ * (`source-roots.ts`: `pages/` routes, `component/` reusable components) -
+ * `plans/app-r2.md` quyết định #6 + `plans/component.md` mục 1. What
+ * `scripts/sync-pages-r2.ts` mirrors to/from `src/apps/<root>` for a build,
+ * and what the browser build pipeline reads (mục 1's route manifest, mục 7's
+ * per-page compile). Deliberately separate from `pagesCacheStorage` (built
+ * HTML OUTPUT). */
 const PAGES_SOURCE_STORAGE_DIR_NAME = "pages-source";
 const KV_DIR_NAME = "kv";
 
@@ -196,10 +195,6 @@ export interface ResolvedComponentsOption {
   storage: ResolvedStorageOption;
 }
 
-export interface ResolvedPageComponentsOption {
-  storage: ResolvedStorageOption;
-}
-
 export interface ResolvedPagesCacheOption {
   storage: ResolvedStorageOption;
   /** Seconds a rendered public page may be held in the Cloudflare edge cache
@@ -257,7 +252,6 @@ export interface ResolvedDryOption {
   icons: ResolvedIconsOption;
   content: ResolvedContentOption;
   components: ResolvedComponentsOption;
-  pageComponents: ResolvedPageComponentsOption;
   pagesCache: ResolvedPagesCacheOption;
   typesCache: ResolvedTypesCacheOption;
   pagesSource: ResolvedPagesSourceOption;
@@ -507,7 +501,6 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
     icons: resolveIconsOption(storage),
     content: resolveContentOption(kind, overrides),
     components: { storage: resolveStorageBackedOption(kind, COMPONENTS_STORAGE_DIR_NAME, overrides) },
-    pageComponents: { storage: resolveStorageBackedOption(kind, PAGE_COMPONENTS_STORAGE_DIR_NAME, overrides) },
     pagesCache: {
       storage: resolveStorageBackedOption(kind, PAGES_CACHE_STORAGE_DIR_NAME, overrides),
       edgeTtl: resolvePagesCacheEdgeTtl(options.pagesCache?.edgeTtl),

@@ -255,21 +255,21 @@ export function defaultContentTypeDefinitions(): ContentTypeDefinition[] {
     protectedFieldIds: [IDS.userName, IDS.userAvatar, IDS.userEmail, IDS.userPassword, IDS.userRoles],
     fields: [
       {
-        id: IDS.userName,
-        name: "name",
-        label: "Name",
-        type: "text",
-        config: {},
-        validation: { required: true },
-        order: 0,
-      },
-      {
         id: IDS.userAvatar,
         name: "avatar",
         label: "Avatar",
         type: "avatar",
         config: {},
         validation: {},
+        order: 0,
+      },
+      {
+        id: IDS.userName,
+        name: "name",
+        label: "Name",
+        type: "text",
+        config: {},
+        validation: { required: true },
         order: 1,
       },
       {

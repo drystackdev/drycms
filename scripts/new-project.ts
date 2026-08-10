@@ -51,9 +51,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { resolve as resolvePath } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { slugify } from "../src/lib/slugify.js";
 import { content, pagesSourceStorage, resolved } from "../src/server/config.js";
+import { PAGES_ROOT, PAGES_SOURCE_ROOTS } from "../src/server/app-router/source-roots.js";
 
 if (pagesSourceStorage.kind !== "local") {
   console.error(`[new:project] pagesSourceStorage is "${pagesSourceStorage.kind}" - this script only supports resetting a local ("kind: local") checkout.`);
@@ -218,15 +219,18 @@ git("checkout", "-b", branch);
 
 console.log("\nResetting the public site (.dry/pages-source)...");
 rmSync(pagesSourceRoot, { recursive: true, force: true });
-mkdirSync(pagesSourceRoot, { recursive: true });
+// Both source roots (`source-roots.ts`), not just the storage root itself -
+// route discovery only ever looks inside `pages/`, and the Page Editor's
+// Component tab expects `component/` to exist even while empty.
+for (const root of PAGES_SOURCE_ROOTS) mkdirSync(join(pagesSourceRoot, root.id), { recursive: true });
 writeStarterSite(rawName, resolved.path);
-console.log("  wrote layout.tsx, page.tsx, 404.tsx, 500.tsx (no dry() calls - renders on an empty DB)");
+console.log("  wrote pages/{layout,page,404,500}.tsx (no dry() calls - renders on an empty DB)");
 // `src/apps/pages` (gitignored, build-time-only per Part 3 of
 // `status/pages-source-dev-live.md`) may still hold the OLD project's demo
 // site on disk from a previous `bun run build` - not the live source
 // anymore (dev reads `.dry/pages-source` directly), but stale enough to be
 // worth clearing so it can't be mistaken for current content.
-rmSync(at("src/apps/pages"), { recursive: true, force: true });
+for (const root of PAGES_SOURCE_ROOTS) rmSync(at(`src/apps/${root.id}`), { recursive: true, force: true });
 
 // -------------------------------------------------------- local artifacts
 
@@ -327,7 +331,7 @@ console.log("\nReview `git status`, then commit when ready.");
  */
 function writeStarterSite(projectName: string, adminPath: string): void {
   const write = (file: string, source: string) => {
-    writeFileSync(resolvePath(pagesSourceRoot, file), source);
+    writeFileSync(resolvePath(join(pagesSourceRoot, PAGES_ROOT), file), source);
   };
   // The name is free-form user input, so it goes into the generated TSX as a
   // string LITERAL rendered through `{...}`, never inline JSX text - a name

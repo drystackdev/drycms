@@ -50,7 +50,6 @@ const r2Roots = resolveOptions({ kind: "cloudflare" });
 const pairs = [
   { dir: localRoots.storage, r2: r2Roots.storage },
   { dir: localRoots.components.storage, r2: r2Roots.components.storage },
-  { dir: localRoots.pageComponents.storage, r2: r2Roots.pageComponents.storage },
 ];
 
 /** `wrangler.jsonc` is the single source of truth for the bucket name, the

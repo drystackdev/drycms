@@ -8,6 +8,8 @@
  * `virtual-fs-files.ts` already use for a different `src/**` glob).
  */
 
+import { PAGES_ROOT } from "./source-roots.js";
+
 export interface RouteModule {
   default: (props: never) => unknown;
 }
@@ -118,9 +120,12 @@ const PAGES_ROOT_PREFIX = "/src/apps/pages";
  * it through, gated on `isDev` - `entry-node.ts`/`entry-worker.ts` never
  * pass one, so production's route discovery is completely unaffected. */
 export interface DevPagesSource {
-  /** Every `.tsx`/`.ts` path under the storage root, root-relative
-   * (`"page.tsx"`, `"blogs/[slug]/page.tsx"`) - same shape `listAll()`'s
-   * `StorageStatEntry.path` already returns. */
+  /** Every `.tsx`/`.ts` path under the storage root, root-relative and
+   * INCLUDING the source root folder (`"pages/page.tsx"`,
+   * `"pages/blogs/[slug]/page.tsx"`, `"component/Card.tsx"` -
+   * `source-roots.ts`) - same shape `listAll()`'s `StorageStatEntry.path`
+   * already returns. Only the `pages` root becomes routes; the rest are
+   * files a page imports, never a route of their own. */
   listPaths(): Promise<string[]>;
   loadModule(relPath: string): Promise<RouteModule>;
   /** The SAME module's URL as the BROWSER can `import()` it - dev's client
@@ -156,12 +161,16 @@ export async function discoverRoutes(devSource?: DevPagesSource): Promise<RouteT
     const paths = await devSource.listPaths();
     const modules: Record<string, ModuleLoader> = {};
     for (const path of paths) {
+      // Only the `pages` source root holds routes (`source-roots.ts`) - a
+      // `component/page.tsx` is just a component that happens to be named
+      // that, never the `/component` route.
+      if (!path.startsWith(`${PAGES_ROOT}/`)) continue;
       if (!/(^|\/)(page|layout|404|500)\.tsx$/.test(path)) continue;
       const loader: ModuleLoader & { devSourcePath?: string } = () => devSource.loadModule(path);
       loader.devSourcePath = path;
       modules[path] = loader;
     }
-    return buildRouteTree(modules, "");
+    return buildRouteTree(modules, PAGES_ROOT);
   }
   const pageModules = import.meta.glob<RouteModule>(
     "/src/apps/pages/**/{page,layout}.tsx",

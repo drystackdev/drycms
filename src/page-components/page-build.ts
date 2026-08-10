@@ -14,6 +14,7 @@ import type { RouteMatch } from "../server/app-router/match.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { compileTailwindCss } from "./tailwind-build.js";
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import { COMPONENT_ALIAS, PAGES_ROOT, PAGES_SOURCE_ROOTS, resolveAliasSpecifier } from "../server/app-router/source-roots.js";
 import { resolveDynamicPages } from "./dynamic-routes.js";
 
 /**
@@ -48,18 +49,30 @@ function resolveModulePath(
   sourceByPath: Record<string, string>,
 ): { kind: "external"; value: Record<string, unknown> } | { kind: "local"; path: string } {
   if (specifier in NPM_ALLOWLIST) return { kind: "external", value: NPM_ALLOWLIST[specifier]! };
-  if (!specifier.startsWith(".")) {
-    throw new PageBuildError(`Cannot import "${specifier}" from "${fromPath}" - only relative file imports and preact/preact-hooks are allowed.`);
+  // `@component/Card` (`source-roots.ts`) resolves from the STORAGE ROOT, not
+  // relative to the importing file - a page at any depth writes the exact
+  // same specifier. Same alias `vite.config.ts` resolves for the dev/prod
+  // compile paths and `ts-worker.ts` for the editor's type-checking.
+  const aliased = resolveAliasSpecifier(specifier);
+  if (aliased === null && !specifier.startsWith(".")) {
+    throw new PageBuildError(
+      `Cannot import "${specifier}" from "${fromPath}" - only relative file imports, ${COMPONENT_ALIAS}/*, and preact/preact-hooks are allowed.`,
+    );
   }
-  const fromDir = fromPath.includes("/") ? fromPath.slice(0, fromPath.lastIndexOf("/")) : "";
-  const segments = (fromDir ? fromDir.split("/") : []).concat(specifier.split("/"));
-  const resolved: string[] = [];
-  for (const segment of segments) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") resolved.pop();
-    else resolved.push(segment);
+  let base: string;
+  if (aliased !== null) {
+    base = aliased;
+  } else {
+    const fromDir = fromPath.includes("/") ? fromPath.slice(0, fromPath.lastIndexOf("/")) : "";
+    const segments = (fromDir ? fromDir.split("/") : []).concat(specifier.split("/"));
+    const resolved: string[] = [];
+    for (const segment of segments) {
+      if (segment === "" || segment === ".") continue;
+      if (segment === "..") resolved.pop();
+      else resolved.push(segment);
+    }
+    base = resolved.join("/");
   }
-  const base = resolved.join("/");
   // Real page/layout source in this codebase writes explicit `.js`
   // extensions on relative imports (this project's own NodeNext-style
   // convention, e.g. `import Foo from "./Foo.js"`) - unlike
@@ -93,7 +106,20 @@ function toBuiltAssetUrl(builtAssetsBaseUrl: string, sourcePath: string): string
   return `${builtAssetsBaseUrl}/${toJsAssetPath(sourcePath).split("/").map(encodeURIComponent).join("/")}`;
 }
 
-const IMPORT_FROM_RE = /\bfrom\s*(["'])((?:\.[^"']*)|preact(?:\/hooks)?)\1/g;
+/** Built from `PAGES_SOURCE_ROOTS` rather than spelled out, so declaring a
+ * new aliased source root there is enough for the import SCANNERS below
+ * (`localImportsOf`/`rewriteEsmImports`) to follow it too - a specifier this
+ * regex doesn't match is invisible to them, which would silently drop the
+ * file from `transitiveDependencies` (no JS asset uploaded) even though
+ * `resolveModulePath` resolves it fine. */
+const ALIAS_ALTERNATION = PAGES_SOURCE_ROOTS.filter((root) => root.alias)
+  .map((root) => root.alias!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  .join("|");
+
+const IMPORT_FROM_RE = new RegExp(
+  `\\bfrom\\s*(["'])((?:\\.[^"']*)|(?:(?:${ALIAS_ALTERNATION})/[^"']*)|preact(?:/hooks)?)\\1`,
+  "g",
+);
 
 /** Every relative-import specifier in `source`, resolved to real tree
  * paths - shared by `transitiveDependencies` (which needs to know what to
@@ -128,6 +154,35 @@ function transitiveDependencies(roots: string[], sourceByPath: Record<string, st
   }
   for (const root of roots) visit(root);
   return visited;
+}
+
+/** Every `layout.tsx` wrapping `pagePath`, root-first - derived from the
+ * path string alone (a folder's layout wraps every page below it), the same
+ * way `PageEditor.tsx`'s own `ancestorLayoutChain` does for a layout. */
+function ancestorLayoutsOf(pagePath: string, sourceByPath: Record<string, string>): string[] {
+  const segments = pagePath.split("/").slice(0, -1);
+  const chain: string[] = [];
+  for (let i = 0; i <= segments.length; i++) {
+    const prefix = segments.slice(0, i).join("/");
+    const candidate = prefix ? `${prefix}/layout.tsx` : "layout.tsx";
+    if (sourceByPath[candidate] !== undefined) chain.push(candidate);
+  }
+  return chain;
+}
+
+/**
+ * Every `page.tsx` whose rendered output can change because `path` changed -
+ * it either imports `path` (at any depth) or is wrapped by a `layout.tsx`
+ * that does. Used by the Page Editor to flag pages as "saved but not built"
+ * after a shared component is edited: without it, editing `@component/Card`
+ * silently leaves every page using it stale with no indication in the tree.
+ *
+ * `path` itself is included when it IS a page (a page trivially depends on
+ * itself), so callers don't need to special-case that.
+ */
+export function pagesAffectedBy(path: string, sourceByPath: Record<string, string>): string[] {
+  const pagePaths = Object.keys(sourceByPath).filter((p) => p.startsWith(`${PAGES_ROOT}/`) && /(^|\/)page\.tsx$/.test(p));
+  return pagePaths.filter((pagePath) => transitiveDependencies([pagePath, ...ancestorLayoutsOf(pagePath, sourceByPath)], sourceByPath).has(path));
 }
 
 /** Rewrites a compiled ESM module's bare `"preact"`/`"preact/hooks"`
