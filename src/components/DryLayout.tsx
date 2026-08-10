@@ -24,7 +24,7 @@ import { useFetch } from "../hooks/useFetch.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { resolveImageSrc } from "../storage/http-source.js";
-import { authState, canAccess, logout } from "../store/auth.js";
+import { authState, avatarVersion, canAccess, logout } from "../store/auth.js";
 import {
   CONTENT_TYPES_RESOURCE_ID,
   ICON_MANAGEMENT_RESOURCE_ID,
@@ -349,6 +349,13 @@ function SidebarNavGroup({
   );
 }
 
+/** `resolveImageSrc(avatar)` plus `avatarVersion` as a cache-busting query
+ * param - see that signal's own doc comment for why the sidebar's avatar
+ * `<img>` needs one and a generic `resolveImageSrc()` call doesn't. */
+function avatarSrc(avatar: string): string {
+  return `${resolveImageSrc(avatar)}?v=${avatarVersion.value}`;
+}
+
 export default function DryLayout({ children }: Props) {
   const { url, route } = useLocation();
   const { ref: sidebar } = useOverlayScrollbars<HTMLDivElement>([], {
@@ -648,7 +655,7 @@ export default function DryLayout({ children }: Props) {
                 >
                   <span class="sidebar-account-avatar">
                     {authState.value.user!.avatar ? (
-                      <img src={resolveImageSrc(authState.value.user!.avatar)} alt="" />
+                      <img src={avatarSrc(authState.value.user!.avatar)} alt="" />
                     ) : (
                       <UserIcon />
                     )}

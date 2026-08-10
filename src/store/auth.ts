@@ -51,6 +51,17 @@ export class AuthApiError extends Error {
  */
 export const authState = signal<AuthState>({ status: "loading", user: null });
 
+/** Cache-busting nonce for the signed-in user's own avatar image, bumped by
+ * `updateProfile()`. `AvatarField`'s upload target is a FIXED path per user
+ * (`.avatar/<userId>.webp` - see its own doc comment), so replacing an
+ * avatar overwrites the exact URL the sidebar/topbar may already have
+ * cached from page load; the storage `GET` route sets `Last-Modified` but no
+ * `Cache-Control`, so the browser's heuristic cache can keep serving the old
+ * bytes at that URL after a successful save with no visible re-fetch.
+ * Same `signal(0)` + "bump on success" shape as `content-types.ts`'s
+ * `contentTypesVersion`. */
+export const avatarVersion = signal(0);
+
 /** UI hint only. Every mutation is still authorized again by the server. */
 export function canAccess(resourceId: string, action: PermissionAction): boolean {
   const user = authState.value.user;
@@ -269,6 +280,7 @@ export async function updateProfile(
   await assertOk(res, "Failed to update profile.");
   const body = await res.json();
   authState.value = { status: "authenticated", user: body.user };
+  avatarVersion.value++;
 }
 
 export async function logout(): Promise<void> {
