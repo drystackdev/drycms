@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* `.dry/pages-source` is gitignored (`CLAUDE.md`'s "two page-source roots" -
+ * it's live, browser-authored data, not checked-in source), so Tailwind's
+ * default automatic content detection (which skips anything `.gitignore`
+ * matches) never sees classes used there. In dev this IS the tree actually
+ * rendered (`route-tree.ts`'s `DevPagesSource` reads it directly, no
+ * `src/apps/pages` sync) - without this, a class only ever used in a
+ * `.dry/pages-source/**` file compiles to nothing, no matter how many times
+ * you Build. */
+@source "../../.dry/pages-source";
