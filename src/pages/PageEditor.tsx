@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
@@ -13,6 +13,7 @@ import { useResizablePanel } from "../lib/useResizablePanel.js";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
 import { useParam } from "../hooks/useParam.js";
 import { mergeRefs } from "../lib/merge-refs.js";
+import { resolveThemeColor } from "../lib/native/theme.js";
 import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
 import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
@@ -179,8 +180,10 @@ const DEFAULT_PAGE_SOURCE = `export default function Page() {
 /** Starter source for a new file in the Component tab - deliberately shows
  * both halves of the component contract at once (a typed props interface,
  * which the preview reads to invent sample values, and an explicit
- * `_preview` that overrides them), since neither is discoverable from an
- * empty file. */
+ * `defaultProps` that overrides them), since neither is discoverable from an
+ * empty file. The `_view` escape hatch gets a comment rather than real code:
+ * it's the rarer case (see `component-preview.ts`), and a file can't
+ * meaningfully show both at once - `_view` wins outright when present. */
 const DEFAULT_COMPONENT_SOURCE = `interface Props {
   title: string;
 }
@@ -189,7 +192,15 @@ export default function Component({ title }: Props) {
   return <div>{title}</div>;
 }
 
-export const _preview: Props = { title: "Sample title" };
+export const defaultProps: Props = { title: "Sample title" };
+
+// Or take the preview over entirely - whatever this holds is what the
+// preview shows, props and all:
+// export const _view = (
+//   <>
+//     <Component title="Sample title" />
+//   </>
+// );
 `;
 
 /** Never a real file - a key `refreshPreview` injects into its own LOCAL
@@ -210,7 +221,7 @@ const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() 
  * `srcdoc` has no real route to navigate to (it's a detached, unpublished
  * render, not a live page - see this file's own doc comment), so a link
  * clicked INSIDE the preview can't be allowed to actually navigate the
- * iframe. Instead the injected script below (`buildPreviewNavigationScript`)
+ * iframe. Instead the injected script below (`buildPreviewBridgeScript`)
  * intercepts every click, always prevents the default navigation, and
  * reports the resolved pathname back here - which is then checked against
  * this SAME `manifest` `previewTarget` itself resolves against, so clicking a
@@ -220,16 +231,25 @@ const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() 
  * rather than switching - there's nothing valid to focus. */
 const PREVIEW_NAVIGATE_MESSAGE = "dry-page-editor-preview-navigate";
 
+/** `postMessage` type for `Cmd/Ctrl+S` pressed while focus sits INSIDE the
+ * preview iframe (clicking a link or scrolling the preview puts it there).
+ * A key event never crosses a frame boundary, so the editor's own window
+ * listener (`useEffect` below `handleSave`) can't see it - without this the
+ * browser's "Save page as…" dialog would still open in exactly that spot,
+ * which is the one thing this shortcut exists to prevent. */
+const PREVIEW_SAVE_MESSAGE = "dry-page-editor-preview-save";
+
 /** Runs INSIDE the preview iframe (injected as a literal `<script>` into the
  * built HTML, never sharing a JS realm with this file) - see
- * `PREVIEW_NAVIGATE_MESSAGE`'s doc comment for why. Capturing-phase so it
- * runs before any in-page handler the previewed code itself might attach.
- * `anchor.href` (not `getAttribute("href")`) resolves relative/rooted hrefs
- * against the `<base href>` `refreshPreview` already stamps onto `<head>`,
- * so `new URL` here just re-parses an already-absolute URL back out to a
- * pathname - no origin-joining logic duplicated on this side. */
-function buildPreviewNavigationScript(): string {
-  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);})();</script>`;
+ * `PREVIEW_NAVIGATE_MESSAGE`/`PREVIEW_SAVE_MESSAGE`'s doc comments for why.
+ * Capturing-phase so it runs before any in-page handler the previewed code
+ * itself might attach. `anchor.href` (not `getAttribute("href")`) resolves
+ * relative/rooted hrefs against the `<base href>` `refreshPreview` already
+ * stamps onto `<head>`, so `new URL` here just re-parses an already-absolute
+ * URL back out to a pathname - no origin-joining logic duplicated on this
+ * side. */
+function buildPreviewBridgeScript(): string {
+  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 /** Same `?tree`-unsupported (R2/S3) fallback `PageBuild.tsx` uses, but
@@ -340,13 +360,23 @@ export default function PageEditor() {
   const [activeRoot, setActiveRoot] = useState<string>(initialUiState?.activeRoot ?? PAGES_ROOT);
   /** The open component's default-export props, described from its real TS
    * types by `Editer`'s worker (`describeProps`) - what the preview falls
-   * back to when the component exports no `_preview`. `null` for a page (no
+   * back to when the component exports no `defaultProps`. `null` for a page (no
    * `describeProps`) or a file with no default-exported function. */
   const [propsSchema, setPropsSchema] = useState<PropsSchema | null>(null);
+  /** The admin's CURRENT background color, resolved to a concrete value - the
+   * component preview stage paints itself with it (see
+   * `buildComponentPreviewSource`) so a component previews on the same ground
+   * as the editor around it instead of a hardcoded white. Kept in state
+   * rather than read during render because the theme class lands on the
+   * `.dry` root asynchronously (`applyThemeTransition` flips it INSIDE a view
+   * transition callback), so a render-time probe would read the old theme. */
   const [saving, setSaving] = useState(false);
   const [buildingCurrent, setBuildingCurrent] = useState(false);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null);
+  /** The rows the delete dialog is confirming - an ARRAY because the tree
+   * panel can hand over a whole multi-selection (Cmd/Ctrl+click, Shift+click
+   * range), not just the one row that was right-clicked. Empty = closed. */
+  const [pendingDelete, setPendingDelete] = useState<FileEntry[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -667,6 +697,47 @@ export default function PageEditor() {
       setSaving(false);
     }
   }
+
+  /** What `Cmd/Ctrl+S` actually does, kept in a ref that's refreshed after
+   * every render. Both listeners that call it (the window `keydown` below,
+   * and the preview-iframe `message` handler further down) are registered
+   * with dep arrays that deliberately don't re-run per keystroke, so calling
+   * `handleSave` from inside them directly would fire a closure holding an
+   * old `sourceByPath`/`dirty` pair and save stale content. Guarded exactly
+   * like the Save button's own `disabled={!dirty || saving}`: a no-op on a
+   * clean file rather than a pointless write that would also light up the
+   * unbuilt dot (`markUnbuilt`) for a page nothing changed in. */
+  const saveShortcutRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    saveShortcutRef.current = () => {
+      if (!selectedPath || !dirty || saving) return;
+      void handleSave();
+    };
+  });
+
+  /** `Cmd/Ctrl+S` saves the open file instead of letting the browser open its
+   * own "Save page as…" dialog - the browser's copy of this screen is useless,
+   * and it's the keystroke every editor user reaches for. `preventDefault`
+   * runs UNCONDITIONALLY, even with no file open or nothing dirty: swallowing
+   * the browser default is the point of the binding, and letting it through in
+   * exactly those cases would be the worse surprise. Capturing-phase on
+   * `window` so it fires wherever focus sits - `Editer`'s own `<textarea>`
+   * keydown handlers included (none of which bind this key, but they'd
+   * otherwise win the race). `event.key` rather than the `event.code` the
+   * Editer hotkeys use: `code` is the physical key position, but the browser
+   * shortcut being overridden here follows the CHARACTER, so on a non-QWERTY
+   * layout `code` would preventDefault on the wrong physical key and let the
+   * real one through. `Ctrl`/`Meta` (unlike `Alt`) never substitute the
+   * character, so `key` is a reliable "s" on every layout. */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s" || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      saveShortcutRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
   /** Saves every file whose content differs from storage - both Build
    * buttons call this first now instead of just staying disabled while
@@ -1175,6 +1246,29 @@ export default function PageEditor() {
    * teardown/init work on top of the same DOM node. */
   const previewScroll = useOverlayScrollbars<HTMLDivElement>([!!previewTarget]);
 
+  /** The preview panel's own visible height, tracked live. A COMPONENT
+   * preview's frame is sized from this instead of the fixed
+   * `PREVIEW_FRAME_HEIGHT` a page preview uses, so the stage
+   * (`buildComponentPreviewSource`'s `100dvh` box) is exactly as tall as
+   * what's on screen - no scrolling to reach the bottom of a component that
+   * fits, no dead space under one that doesn't fill 900px. A third callback
+   * ref on the same host as `viewport.viewportRef`/`previewScroll.ref`, for
+   * the same reason `useScaledPreview` uses one (the host unmounts and
+   * remounts across error/empty states - see that hook's own doc comment). */
+  const [previewViewportHeight, setPreviewViewportHeight] = useState(0);
+  const previewHeightObserverRef = useRef<ResizeObserver | null>(null);
+  const previewHeightRef = useCallback((node: HTMLDivElement | null) => {
+    previewHeightObserverRef.current?.disconnect();
+    previewHeightObserverRef.current = null;
+    if (!node) return;
+    const measure = () => setPreviewViewportHeight(node.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    previewHeightObserverRef.current = observer;
+  }, []);
+  useEffect(() => () => previewHeightObserverRef.current?.disconnect(), []);
+
   async function refreshPreview() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
     const seq = ++previewSeqRef.current;
@@ -1242,10 +1336,10 @@ export default function PageEditor() {
         ? withoutHydration.replace(`<script type="module" src="${assetHrefs.veiOverlayHref}"></script>`, "")
         : withoutHydration;
       const withBase = withoutVei.replace("<head>", `<head><base href="${origin}/">`);
-      const withNavigationScript = withBase.includes("</body>")
-        ? withBase.replace("</body>", `${buildPreviewNavigationScript()}</body>`)
-        : withBase + buildPreviewNavigationScript();
-      if (iframeRef.current) iframeRef.current.srcdoc = withNavigationScript;
+      const withBridgeScript = withBase.includes("</body>")
+        ? withBase.replace("</body>", `${buildPreviewBridgeScript()}</body>`)
+        : withBase + buildPreviewBridgeScript();
+      if (iframeRef.current) iframeRef.current.srcdoc = withBridgeScript;
       setPreviewLabel(previewTarget.label);
     } catch (error) {
       if (seq !== previewSeqRef.current) return;
@@ -1265,8 +1359,9 @@ export default function PageEditor() {
     await refreshPreview();
   }
 
-  // Receives `PREVIEW_NAVIGATE_MESSAGE` from `buildPreviewNavigationScript`'s
-  // injected click handler (see its doc comment) - resolved against the SAME
+  // Receives `PREVIEW_NAVIGATE_MESSAGE` (and `PREVIEW_SAVE_MESSAGE`) from
+  // `buildPreviewBridgeScript`'s injected handlers (see their doc comments).
+  // The navigate pathname is resolved against the SAME
   // `manifest` `previewTarget` itself uses, so this is exactly "is this
   // pathname a real page.tsx", not a separate/looser check. A match focuses
   // that page.tsx (switches `selectedPath`, which drives the tree selection,
@@ -1276,8 +1371,10 @@ export default function PageEditor() {
   // going to navigate there for real anyway.
   useEffect(() => {
     function handlePreviewMessage(event: MessageEvent) {
-      if (!event.data || event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
+      if (!event.data) return;
       if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
+      if (event.data.type === PREVIEW_SAVE_MESSAGE) return saveShortcutRef.current();
+      if (event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
       const pathname = event.data.pathname;
       if (typeof pathname !== "string") return;
       const match = matchSourceRoute(manifest, pathname);
@@ -1305,6 +1402,8 @@ export default function PageEditor() {
     const timer = setTimeout(() => void refreshPreview(), 500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `previewTarget?.label` alone wouldn't catch a theme flip - it's the
+    // same file, only the stage color inside `extraSource` changed.
   }, [previewTarget?.label, sourceByPath, allTypes, assetHrefs, origin]);
 
   if (!canEdit) return <span class="error">You don't have permission to edit page source.</span>;
@@ -1312,6 +1411,15 @@ export default function PageEditor() {
   if (entries === null) return <span class="hint">Loading…</span>;
 
   const PREVIEW_FRAME_HEIGHT = 900;
+  /** Divided by the zoom because the frame is scaled by CSS `zoom` (see
+   * `useScaledPreview`): at zoom `z` a frame `h` CSS pixels tall occupies
+   * `h * z` on screen, so filling a `previewViewportHeight`-tall panel
+   * exactly means asking for `previewViewportHeight / z`. That larger number
+   * is also what the iframe reports as `100dvh` to the previewed component -
+   * correct, and the vertical twin of `viewport.width` already being the
+   * unscaled device width. */
+  const previewFrameHeight =
+    isComponentPath && previewViewportHeight > 0 ? previewViewportHeight / effectiveZoom : PREVIEW_FRAME_HEIGHT;
   // `previewTarget` alone isn't enough here - it's also truthy for a
   // `layout.tsx`/`404.tsx`/`500.tsx`/component preview (see its own doc
   // comment), none of which `resolveAllPageTargets`/`PageBuild.tsx` treat as
@@ -1408,7 +1516,7 @@ export default function PageEditor() {
             </button>
           )}
           {selectedPath && (
-            <button type="button" class="sm" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
+            <button type="button" class="sm" title="Save (Ctrl/Cmd+S)" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
               Save
             </button>
           )}
@@ -1513,14 +1621,14 @@ export default function PageEditor() {
                 // now overlays the LAST successfully rendered srcdoc instead
                 // of replacing it - `refreshPreview` never clears the iframe's
                 // `srcdoc` on failure, so there's always something underneath.
-                <div class="page-components-preview-viewport" ref={mergeRefs(viewport.viewportRef, previewScroll.ref)}>
+                <div class="page-components-preview-viewport" ref={mergeRefs(viewport.viewportRef, previewScroll.ref, previewHeightRef)}>
                   {previewError && (
                     <div class="page-editor-preview-error" role="alert">
                       {previewError}
                     </div>
                   )}
                   <div class="page-components-preview-viewport-inner" ref={previewScroll.viewportRef}>
-                    <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${PREVIEW_FRAME_HEIGHT}px`, zoom: effectiveZoom }}>
+                    <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${previewFrameHeight}px`, zoom: effectiveZoom }}>
                       <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
                     </div>
                   </div>

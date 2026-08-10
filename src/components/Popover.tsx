@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import { CheckIcon, MoreVerticalIcon } from "./icons/index.js";
 import { useCloseOnResize, usePopupFlip, useTrackRect } from "../hooks/list-nav.js";
 
-/** Matches `.popover-menu`'s `width: 11rem` in components.css. */
+/** Fallback only, for the one measurement that can happen before the menu has
+ * a box to measure (`showPopover` not called yet). Matches `.popover-menu`'s
+ * `min-width: 11rem` in components.css - its `width` is content-sized, so any
+ * real menu is this wide *or wider*. */
 const MENU_WIDTH = 176;
 const EDGE_MARGIN = 8;
 
@@ -82,31 +85,41 @@ export default function Popover({
   } | null>(null);
   useCloseOnResize(open, () => setOpen(false));
 
-  useTrackRect(open, wrapRef.current, () => {
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // Right-aligned by default (menu's right edge under the trigger's), but
-    // shifted to left-aligned instead when that would run the menu off the
-    // left edge of the viewport - a trigger near the left side of a narrow
-    // (mobile) screen, now that this no longer becomes a full-width bottom
-    // drawer there. `MENU_WIDTH` is a stand-in for the menu's own rendered
-    // width (not yet knowable here - the `popover="auto"` element is still
-    // closed at this point in the commit, so measuring it would read 0),
-    // same role as `usePopupFlip`'s `estimatedHeight` above.
-    const alignRight = placement !== "right" && rect.right - MENU_WIDTH >= EDGE_MARGIN;
-    setPosition({
-      left: placement === "right" ? rect.right : alignRight ? rect.right : rect.left,
-      top: openUp ? rect.top - 4 : rect.bottom + 4,
-      alignRight,
-    });
-  });
-
-  useEffect(() => {
+  // Shown from a *layout* effect declared ahead of `useTrackRect`'s own (also
+  // a layout effect, so hook order decides which runs first) - the menu is
+  // content-sized, so positioning has to measure its real width, and a
+  // `popover` element is `display: none` until `showPopover` puts it in the
+  // top layer. Same ordering trick ContextMenu.tsx uses for its clamp.
+  useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
     if (open) el.showPopover?.();
     else el.hidePopover?.();
   }, [open]);
+
+  useTrackRect(open, wrapRef.current, () => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const menuWidth = menuRef.current?.getBoundingClientRect().width || MENU_WIDTH;
+    // Right-aligned by default (menu's right edge under the trigger's), but
+    // shifted to left-aligned instead when that would run the menu off the
+    // left edge of the viewport - a trigger near the left side of a narrow
+    // (mobile) screen, now that this no longer becomes a full-width bottom
+    // drawer there.
+    const alignRight = placement !== "right" && rect.right - menuWidth >= EDGE_MARGIN;
+    const anchorLeft = placement === "right" || alignRight ? rect.right : rect.left;
+    setPosition({
+      // Right-aligned already fits by construction (that's what `alignRight`
+      // tests); the two left-growing cases don't, so clamp them back inside
+      // the viewport - a wide menu on a trigger near the right edge, or the
+      // collapsed sidebar's `placement: "right"`, would otherwise run off.
+      left: alignRight
+        ? anchorLeft
+        : Math.max(EDGE_MARGIN, Math.min(anchorLeft, window.innerWidth - menuWidth - EDGE_MARGIN)),
+      top: openUp ? rect.top - 4 : rect.bottom + 4,
+      alignRight,
+    });
+  });
 
   useEffect(() => {
     const el = menuRef.current;
@@ -176,7 +189,11 @@ export default function Popover({
                 top: `${position.top}px`,
                 transform: `translate(${position.alignRight ? "-100%" : "0"}, ${openUp ? "-100%" : "0"})`,
               }
-            : undefined
+            : // Measurable (it has a box) but invisible, for the single frame
+              // between `showPopover` above and the first measurement - the
+              // UA stylesheet would otherwise flash it centered in the
+              // viewport on the very first open, before any `left`/`top`.
+              { position: "fixed", left: 0, top: 0, visibility: "hidden" }
         }
       >
         {children ?? items?.map((entry, index) =>
@@ -195,7 +212,8 @@ export default function Popover({
                 class={entry.danger ? "popover-menu-danger" : undefined}
                 onClick={() => run(entry.onClick)}
               >
-                {entry.icon} {entry.label}
+                {entry.icon}
+                <span class="popover-menu-label">{entry.label}</span>
                 {entry.checked && <CheckIcon class="popover-menu-check" />}
               </button>
             </li>

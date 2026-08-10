@@ -10,7 +10,8 @@
   root mới chỉ sửa file đó.
 - Preview component chạy qua `buildPage()` thật, render trong iframe (CSS
   site + Tailwind thật), không render thẳng trong trang admin.
-- Props preview sinh từ TYPE thật (TS worker của `Editer`), `_preview` đè lên.
+- Props preview sinh từ TYPE thật (TS worker của `Editer`), `defaultProps` đè
+  lên (tên cũ: `_preview`, đổi 2026-08-11 - xem "Đợt sau").
 - Component Builder cũ (`/dry/page-components` + store `.dry/components`) xoá
   hẳn, gộp vào Page Editor, dùng chung quyền Page Builder.
 
@@ -48,13 +49,13 @@ QA thật trên trình duyệt đã chạy (mục "QA" bên dưới).
   `props-sample.ts` (thuần, 14 test) biến schema thành SOURCE object literal
   (source chứ không phải JSON - còn phải sinh `() => {}`).
 - `component-preview.ts` - entry ảo `__dry-preview-component.tsx` import
-  component qua alias, `_preview` (object hoặc mảng nhiều biến thể) thắng
+  component qua alias, `defaultProps` (object hoặc mảng nhiều biến thể) thắng
   props tự sinh, thiếu default export thì báo lỗi đọc được.
 - `PageEditor.tsx`: 2 tab Page/Component (`[role=tablist]`, CSS
   `.page-editor-source-roots` - hạ 3rem xuống 2.25rem cho sidebar),
   `entriesForSourceRoot`/`withSourceRoot` (`tree.ts`) giữ NGUYÊN id path đầy
   đủ, chỉ re-parent con trực tiếp của root; tab suy theo file đang mở; file
-  component mới có starter source dạy sẵn `interface Props` + `_preview`;
+  component mới có starter source dạy sẵn `interface Props` + `defaultProps`;
   preview/Build/Open-in-new-tab phân biệt component vs page; Save một
   component đánh dấu mọi page phụ thuộc là "chưa build"
   (`pagesAffectedBy`, mới trong `page-build.ts`, theo cả chuỗi layout).
@@ -112,6 +113,50 @@ mới từ thư mục của file ĐANG CHỌN, nên khi mở tab Component trong
 không hiện) → bấm "New" trông như không có gì xảy ra. Sửa bằng
 `selectedInActiveRoot`: chỉ truyền `selectedPath` xuống panel khi file đó
 thuộc root của tab đang mở.
+
+### Đợt sau (2026-08-11) - sân khấu preview + hợp đồng export mới
+
+Theo yêu cầu user, 3 thay đổi nhỏ trên chính chỗ preview component:
+
+- **Sân khấu preview**: `buildComponentPreviewSource` bọc mọi preview trong 1
+  `<div>` `display:flex; justify-content:center; align-items:center;
+  width:100dvw; height:100dvh; background-color:<màu theme hiện tại>`. Style
+  inline thuần, KHÔNG class Tailwind - component có thể không dùng Tailwind,
+  và đây là chrome do build chèn chứ không phải code tác giả viết.
+  Màu nền lấy `--dry-background` đã resolve thành màu cụ thể qua
+  `resolveThemeColor` mới (`lib/native/theme.ts`): đọc thẳng custom property
+  ra `light-dark(...)` literal, đem sang iframe sẽ resolve theo
+  `color-scheme` của TRANG BUILT chứ không phải của admin, nên phải sơn token
+  lên element tạm rồi đọc `backgroundColor` ngược lại (bonus: ăn luôn màu
+  người dùng đặt ở Settings → Theme). `PageEditor` theo dõi bằng
+  `MutationObserver` trên class của root `.dry` chứ không subscribe signal
+  `theme` - class mới là thứ token resolve theo, và `applyThemeTransition`
+  lật nó BÊN TRONG callback view-transition, tức sau khi signal đã settle.
+- **Hợp đồng export**: `_preview` → `defaultProps` (đổi tên, giữ nguyên
+  ngữ nghĩa: object hoặc mảng nhiều biến thể). Thêm `export const _view =
+  (<>…</>)`: JSX render sẵn, hiện nguyên xi, thắng cả `defaultProps` lẫn props
+  tự sinh; check `_view` đứng TRƯỚC guard "thiếu default export" nên file
+  preview qua `_view` không bắt buộc có default export.
+- **Chiều cao khung**: component preview không còn dùng `PREVIEW_FRAME_HEIGHT
+  = 900` cố định mà `previewViewportHeight / effectiveZoom` (frame bị CSS
+  `zoom` thu nhỏ, nên muốn chiếm đúng H trên màn hình phải xin `H / zoom`) →
+  `100dvh` của sân khấu = đúng vùng đang nhìn thấy, không phải cuộn.
+  `previewViewportHeight` đo bằng `ResizeObserver` qua callback ref thứ 3 trên
+  cùng host với `viewport.viewportRef`/`previewScroll.ref`.
+
+QA thật (Playwright, dev server, iframe computed style):
+
+| | dark | light |
+|---|---|---|
+| nền sân khấu | `rgb(20, 26, 33)` = `#141a21` | `rgb(249, 250, 251)` = `#f9fafb` |
+
+flex/center/center cả 2 theme; đổi theme giữa chừng → preview tự build lại
+với màu mới, không cần reload. Chiều cao: host 520px, zoom 0.5404, frame CSS
+962.313px → trên màn hình đúng 520px, iframe không cuộn dọc. `_view` (file
+tạm có cả `defaultProps` lẫn `_view`) render đúng phần `_view` (2 node, kể cả
+`<Component title="From _view B"/>` tự gọi), `defaultProps` bị bỏ qua như
+thiết kế; file tạm đã xoá. `component/button.tsx` trong store local đã đổi
+`_preview` → `defaultProps`.
 
 ### Còn lại
 

@@ -78,6 +78,60 @@ export interface FilteredComponentTree {
   matchedFolderIds: Set<string>;
 }
 
+/** Every FILE id in the exact top-to-bottom order the tree renders them,
+ * skipping the contents of a collapsed folder. This is the order a
+ * Shift+click range is measured in (`ComponentTreePanel`) - "everything
+ * between these two rows" has to mean what's on screen between them, not
+ * what's between them in the underlying entry list, which is neither sorted
+ * nor aware of which folders are open. Folder rows are excluded: they aren't
+ * part of a selection (only files are copyable/openable), so including them
+ * would make a range look like it skipped rows the user did see. */
+export function flattenVisibleFilePaths(
+  nodes: ComponentTreeNode[],
+  isOpen: (id: string) => boolean,
+): string[] {
+  const paths: string[] = [];
+  function walk(list: ComponentTreeNode[]): void {
+    for (const node of list) {
+      if (node.entry.kind === "file") {
+        paths.push(node.entry.id);
+      } else if (isOpen(node.entry.id)) {
+        walk(node.children);
+      }
+    }
+  }
+  walk(nodes);
+  return paths;
+}
+
+/** Where a copied file lands when pasted into `destFolder` (both `sourcePath`
+ * and `destFolder` are FULL storage paths, `""` = storage root): its own name
+ * if that's free, else `Button copy.tsx`, `Button copy 2.tsx`, ... Pasting
+ * into a different folder therefore keeps the original name, which is the
+ * whole point of the gesture ("the same component, over there"); only a real
+ * collision renames.
+ *
+ * Splits on the FIRST dot, not the last - `Card.test.tsx` has to become
+ * `Card copy.test.tsx`, not `Card.test copy.tsx`, and a leading-dot name
+ * (`.keep`) has no base to suffix, so it's treated as all-extension. */
+export function copyDestinationPath(
+  existingPaths: ReadonlySet<string>,
+  destFolder: string,
+  sourcePath: string,
+): string {
+  const name = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+  const join = (candidate: string) => (destFolder ? `${destFolder}/${candidate}` : candidate);
+  if (!existingPaths.has(join(name))) return join(name);
+
+  const dot = name.indexOf(".", 1);
+  const base = dot === -1 ? name : name.slice(0, dot);
+  const extension = dot === -1 ? "" : name.slice(dot);
+  for (let n = 1; ; n += 1) {
+    const candidate = join(n === 1 ? `${base} copy${extension}` : `${base} copy ${n}${extension}`);
+    if (!existingPaths.has(candidate)) return candidate;
+  }
+}
+
 /** A file passes if its name matches; a folder passes (and keeps its WHOLE
  * subtree unfiltered) if its own name matches, otherwise only if some
  * descendant does (in which case only the matching descendants are kept) -

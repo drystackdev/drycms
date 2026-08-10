@@ -17,13 +17,31 @@ describe("buildComponentPreviewSource", () => {
     expect(source).toContain('const dryGeneratedProps = { title: "Title" };');
   });
 
-  it("lets an exported _preview win over the generated props", () => {
-    expect(source).toContain("preview ?? dryGeneratedProps");
+  it("lets an exported defaultProps win over the generated props", () => {
+    expect(source).toContain("dryPreviewExports.defaultProps");
+    expect(source).toContain("defaults ?? dryGeneratedProps");
   });
 
-  it("renders an array _preview as one variant per entry", () => {
-    expect(source).toContain("Array.isArray(preview) ? preview : [");
+  it("renders an array defaultProps as one variant per entry", () => {
+    expect(source).toContain("Array.isArray(defaults) ? defaults : [");
     expect(source).toContain("list.map(");
+  });
+
+  it("shows an exported _view as is, ahead of any props path", () => {
+    expect(source).toContain("const view = dryPreviewExports._view;");
+    expect(source).toContain("if (view !== undefined && view !== null) return view;");
+    // Before the default-export guard: a file previewing through `_view`
+    // renders that node and never calls the component itself.
+    expect(source.indexOf("return view;")).toBeLessThan(source.indexOf("no default export function"));
+  });
+
+  it("centers every preview inside a viewport-sized stage", () => {
+    expect(source).toContain("display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;");
+  });
+
+  it("paints the stage with the passed-in theme background, defaulting to white", () => {
+    expect(source).toContain("background-color:#ffffff;");
+    expect(buildComponentPreviewSource("component/Card.tsx", "{}", "rgb(20, 26, 33)")).toContain("background-color:rgb(20, 26, 33);");
   });
 
   it("compiles - the preview entry is real source `buildPage` has to transform", () => {

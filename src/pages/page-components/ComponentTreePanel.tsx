@@ -1,9 +1,12 @@
 import { useMemo, useState } from "preact/hooks";
 import ContextMenu from "../../components/ContextMenu.js";
+import type { PopoverMenuEntry } from "../../components/Popover.js";
 import type { FileEntry } from "../../storage/entry-types.js";
 import {
   CodeFieldTypeIcon,
+  CopyIcon,
   FolderIcon,
+  PasteIcon,
   PlusIcon,
   RenameIcon,
   SearchIcon,
@@ -12,6 +15,7 @@ import {
 import {
   buildComponentTree,
   filterComponentTree,
+  flattenVisibleFilePaths,
   type ComponentTreeNode,
 } from "../../page-components/tree.js";
 
@@ -21,8 +25,18 @@ interface ComponentTreePanelProps {
   onSelect: (path: string) => void;
   onCreateFile: (path: string) => void;
   onCreateFolder: (path: string) => void;
-  onDelete: (entry: FileEntry) => void;
+  /** Always an array - a single right-clicked row is a one-element delete,
+   * a right-click inside a multi-selection deletes the whole set. */
+  onDelete: (entries: FileEntry[]) => void;
   onMove: (from: string, to: string) => void;
+  /** Copies `paths` (files only) into `destFolder` - a full storage path, or
+   * `""` for the tab's own tree root, same convention `onCreateFile` uses.
+   * The panel owns the clipboard (which paths are copied); the consumer owns
+   * the actual read+write, since only it has the file CONTENT. */
+  onPaste: (paths: string[], destFolder: string) => void;
+  /** Fired when paths enter the panel's clipboard - Cmd/Ctrl+C has no visible
+   * effect of its own, so the consumer gets a chance to say something. */
+  onCopy?: (paths: string[]) => void;
   /** Small unsaved-changes dot on a file row - optional, a consumer with no
    * such concept (none needed it before `PageEditor.tsx`) just omits it. */
   isDirty?: (path: string) => boolean;
@@ -41,6 +55,19 @@ function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
 
+/** Callback ref for an input that only exists while it's being used (the
+ * create row, the rename row) - it has to take focus the moment it appears,
+ * or the user types into nothing. NOT the `autofocus` attribute: that's only
+ * honored while the document is still loading, so on an element inserted
+ * later (every case here) it silently does nothing - and Preact 10 has no
+ * special handling that would paper over it. Module-level so its identity is
+ * stable across renders and Preact doesn't re-run it on every keystroke. */
+function focusOnMount(element: HTMLInputElement | null): void {
+  if (!element) return;
+  element.focus();
+  element.select();
+}
+
 export default function ComponentTreePanel({
   entries,
   selectedPath,
@@ -49,6 +76,8 @@ export default function ComponentTreePanel({
   onCreateFolder,
   onDelete,
   onMove,
+  onPaste,
+  onCopy,
   isDirty,
   needsBuild,
 }: ComponentTreePanelProps) {
@@ -75,15 +104,51 @@ export default function ComponentTreePanel({
    * whatever file is currently open, which is friendlier than always
    * defaulting all the way back to root. */
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  /** Files picked with Cmd/Ctrl+click or a Shift+click range - what a copy or
+   * a delete acts on. Empty is the normal state and does NOT mean "nothing
+   * selected": `selectedPaths` below then falls back to the file open in the
+   * editor, so a plain click never has to write this at all. Files only -
+   * a folder row picks `activeFolder` instead (a different concept: where
+   * new/pasted items land). */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
+  /** The row a Shift+click measures its range FROM - the last row picked
+   * without Shift. Kept separate from the selection so a second Shift+click
+   * re-measures from the same origin (growing/shrinking one range) instead of
+   * walking the anchor along with it. */
+  const [anchorPath, setAnchorPath] = useState<string | null>(null);
+  /** Panel-local copy buffer - deliberately not the system clipboard: these
+   * are storage PATHS, meaningless outside this tree, and reading the real
+   * clipboard would need a permission prompt for no gain. */
+  const [clipboard, setClipboard] = useState<string[]>([]);
   const effectiveFolder = activeFolder ?? (selectedPath ? parentOf(selectedPath) : "");
 
   const tree = useMemo(() => buildComponentTree(entries), [entries]);
+  const entryById = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
   const { nodes: filteredTree, matchedFolderIds } = useMemo(
     () => filterComponentTree(tree, query),
     [tree, query],
   );
   const isOpen = (id: string) =>
     (query.trim() && matchedFolderIds.has(id)) || !collapsed.has(id);
+
+  /** The selection as everything else should read it: pruned of paths that no
+   * longer exist (a delete/move/rename/tab switch can strip a row out from
+   * under it - deriving instead of syncing means no stale entry ever survives
+   * to be copied or deleted), and falling back to the open file so "copy" with
+   * nothing explicitly picked still means something. */
+  const selectedPaths = useMemo(() => {
+    const alive = new Set<string>();
+    for (const path of selection) {
+      if (entryById.get(path)?.kind === "file") alive.add(path);
+    }
+    if (alive.size === 0 && selectedPath) alive.add(selectedPath);
+    return alive;
+  }, [selection, entryById, selectedPath]);
+
+  // Not memoized: one O(rows) walk per render over a tree small enough to fit
+  // in a sidebar, and its real inputs (`collapsed`, `query`, `matchedFolderIds`
+  // via `isOpen`) are exactly the things a dep array here would get wrong.
+  const visibleFilePaths = flattenVisibleFilePaths(filteredTree, isOpen);
 
   function toggleFolder(id: string) {
     setCollapsed((prev) => {
@@ -104,12 +169,77 @@ export default function ComponentTreePanel({
     });
   }
 
+  /** Plain click: the selection collapses back to this one file and the file
+   * opens. Also clears an explicit folder pin - `effectiveFolder` then falls
+   * back to this file's own parent, so "New"/paste after browsing to a
+   * different file targets where the user is actually looking, not a stale
+   * earlier pick. */
   function selectFile(path: string) {
-    // Clears an explicit folder pin - `effectiveFolder` then falls back to
-    // this file's own parent, so "New" after browsing to a different file
-    // targets where the user is actually looking, not a stale earlier pick.
     setActiveFolder(null);
+    setSelection(new Set([path]));
+    setAnchorPath(path);
     onSelect(path);
+  }
+
+  /** The three click gestures a file row supports, VS Code's own split:
+   * Cmd/Ctrl toggles ONE row in or out without touching what's open in the
+   * editor; Shift replaces the selection with everything between the anchor
+   * and this row, in on-screen order (`visibleFilePaths`); a plain click
+   * resets to just this file. */
+  function handleFileClick(path: string, event: MouseEvent) {
+    if (event.shiftKey) {
+      const from = anchorPath ?? selectedPath;
+      const start = from ? visibleFilePaths.indexOf(from) : -1;
+      const end = visibleFilePaths.indexOf(path);
+      // Anchor scrolled out of the filtered/collapsed view - nothing sensible
+      // to range from, so treat it as a fresh plain click.
+      if (start === -1 || end === -1) return selectFile(path);
+      const [lo, hi] = start <= end ? [start, end] : [end, start];
+      setSelection(new Set(visibleFilePaths.slice(lo, hi + 1)));
+      setActiveFolder(null);
+      onSelect(path);
+      return;
+    }
+    if (event.metaKey || event.ctrlKey) {
+      const next = new Set(selectedPaths);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      setSelection(next);
+      setAnchorPath(path);
+      return;
+    }
+    selectFile(path);
+  }
+
+  function copyPaths(paths: string[]) {
+    if (paths.length === 0) return;
+    setClipboard(paths);
+    onCopy?.(paths);
+  }
+
+  function pasteInto(destFolder: string) {
+    if (clipboard.length === 0) return;
+    onPaste(clipboard, destFolder);
+  }
+
+  /** Cmd/Ctrl+C / Cmd/Ctrl+V, scoped to the tree container rather than the
+   * window: the code editor next to it owns those keys for text, and even
+   * inside this panel the rename/create inputs (and the search box, which
+   * lives outside this container anyway) must keep the browser's own
+   * copy/paste. `tabIndex={-1}` on the container is what makes this fire at
+   * all in Safari, where clicking a `<button>` doesn't focus it. */
+  function handleTreeKeyDown(event: KeyboardEvent) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+    const key = event.key.toLowerCase();
+    if (key === "c") {
+      event.preventDefault();
+      copyPaths([...selectedPaths]);
+    } else if (key === "v") {
+      event.preventDefault();
+      pasteInto(effectiveFolder);
+    }
   }
 
   function startCreating() {
@@ -201,6 +331,8 @@ export default function ComponentTreePanel({
 
       <div
         class="page-components-tree scroll"
+        tabIndex={-1}
+        onKeyDown={handleTreeKeyDown}
         onClick={(event) => {
           // Only the container's own background, not a bubbled row click -
           // clicking empty space deselects the active folder (new items
@@ -225,14 +357,19 @@ export default function ComponentTreePanel({
             nodes={filteredTree}
             folderId=""
             selectedPath={selectedPath}
+            selectedPaths={selectedPaths}
             activeFolder={effectiveFolder}
             isOpen={isOpen}
             isDirty={isDirty}
             needsBuild={needsBuild}
             onToggleFolder={toggleFolder}
             onSelectFolder={selectFolder}
-            onSelectFile={selectFile}
+            onFileClick={handleFileClick}
             onDelete={onDelete}
+            entryById={entryById}
+            clipboardSize={clipboard.length}
+            onCopyPaths={copyPaths}
+            onPasteInto={pasteInto}
             onStartRename={startRename}
             renamingPath={renamingPath}
             renamingValue={renamingValue}
@@ -274,7 +411,7 @@ function CreateRow({ value, onChange, onSubmit, onCancel }: CreateRowProps) {
     >
       {isFolder ? <FolderIcon /> : <CodeFieldTypeIcon />}
       <input
-        autoFocus
+        ref={focusOnMount}
         class="page-components-tree-input"
         value={value}
         placeholder="e.g. Button.tsx, or folder/ for a folder"
@@ -295,14 +432,21 @@ interface ComponentTreeListProps {
    * decide whether the create-form belongs inside THIS list. */
   folderId: string;
   selectedPath: string | null;
+  /** Every file row in the current selection (see the panel's own
+   * `selectedPaths`) - what the row's Copy/Delete act on. */
+  selectedPaths: ReadonlySet<string>;
   activeFolder: string;
   isOpen: (id: string) => boolean;
   isDirty?: (path: string) => boolean;
   needsBuild?: (path: string) => boolean;
   onToggleFolder: (id: string) => void;
   onSelectFolder: (id: string) => void;
-  onSelectFile: (path: string) => void;
-  onDelete: (entry: FileEntry) => void;
+  onFileClick: (path: string, event: MouseEvent) => void;
+  onDelete: (entries: FileEntry[]) => void;
+  entryById: Map<string, FileEntry>;
+  clipboardSize: number;
+  onCopyPaths: (paths: string[]) => void;
+  onPasteInto: (destFolder: string) => void;
   onStartRename: (entry: FileEntry) => void;
   renamingPath: string | null;
   renamingValue: string;
@@ -325,14 +469,19 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     nodes,
     folderId,
     selectedPath,
+    selectedPaths,
     activeFolder,
     isOpen,
     isDirty,
     needsBuild,
     onToggleFolder,
     onSelectFolder,
-    onSelectFile,
+    onFileClick,
     onDelete,
+    entryById,
+    clipboardSize,
+    onCopyPaths,
+    onPasteInto,
     onStartRename,
     renamingPath,
     renamingValue,
@@ -364,30 +513,63 @@ function ComponentTreeList(props: ComponentTreeListProps) {
         const entry = node.entry;
         const renaming = renamingPath === entry.id;
         const open = entry.kind === "folder" && isOpen(entry.id);
-        const menuItems = renaming
-          ? []
-          : [
-              {
-                type: "item" as const,
-                label: "Rename",
-                icon: <RenameIcon />,
-                onClick: () => onStartRename(entry),
-              },
-              { type: "separator" as const },
-              {
-                type: "item" as const,
-                label: "Delete",
-                icon: <TrashIcon />,
-                danger: true,
-                onClick: () => onDelete(entry),
-              },
-            ];
+        const inSelection = entry.kind === "file" && selectedPaths.has(entry.id);
+        /** Right-clicking INSIDE the selection acts on the whole set;
+         * right-clicking a row outside it acts on that row alone (and leaves
+         * the selection untouched - same as every file manager). */
+        const targets = inSelection ? [...selectedPaths] : entry.kind === "file" ? [entry.id] : [];
+        const bulk = inSelection && selectedPaths.size > 1;
+        const deleteTargets = bulk
+          ? targets.map((path) => entryById.get(path)).filter((item): item is FileEntry => !!item)
+          : [entry];
+        // A file's own folder is where a paste next to it belongs.
+        const pasteFolder = entry.kind === "folder" ? entry.id : parentOf(entry.id);
+        // Built imperatively rather than as one conditional-spread literal:
+        // every group here is optional, and a separator must never lead the
+        // menu (it would render as a stray rule above the first item).
+        const menuItems: PopoverMenuEntry[] = [];
+        if (!renaming) {
+          if (targets.length > 0) {
+            menuItems.push({
+              type: "item",
+              label: bulk ? `Copy ${targets.length} files` : "Copy",
+              icon: <CopyIcon />,
+              onClick: () => onCopyPaths(targets),
+            });
+          }
+          if (clipboardSize > 0) {
+            menuItems.push({
+              type: "item",
+              label: clipboardSize > 1 ? `Paste ${clipboardSize} files` : "Paste",
+              icon: <PasteIcon />,
+              onClick: () => onPasteInto(pasteFolder),
+            });
+          }
+          if (!bulk) {
+            if (menuItems.length > 0) menuItems.push({ type: "separator" });
+            menuItems.push({
+              type: "item",
+              label: "Rename",
+              icon: <RenameIcon />,
+              onClick: () => onStartRename(entry),
+            });
+          }
+          if (menuItems.length > 0) menuItems.push({ type: "separator" });
+          menuItems.push({
+            type: "item",
+            label: bulk ? `Delete ${deleteTargets.length} items` : "Delete",
+            icon: <TrashIcon />,
+            danger: true,
+            onClick: () => onDelete(deleteTargets),
+          });
+        }
 
         const row = (
           <div
             class={[
               "page-components-tree-row",
               entry.kind === "file" && selectedPath === entry.id && "selected",
+              inSelection && "in-selection",
               entry.kind === "folder" && activeFolder === entry.id && "folder-active",
               dragOverPath === entry.id && "drop-target",
             ]
@@ -462,7 +644,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
             {entry.kind === "folder" ? <FolderIcon /> : <CodeFieldTypeIcon />}
             {renaming ? (
               <input
-                autoFocus
+                ref={focusOnMount}
                 class="page-components-tree-input"
                 value={renamingValue}
                 onInput={(event) =>
@@ -481,7 +663,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               <button
                 type="button"
                 class="page-components-tree-item"
-                onClick={() => onSelectFile(entry.id)}
+                onClick={(event) => onFileClick(entry.id, event)}
               >
                 <span>{entry.name}</span>
                 <span class="page-components-tree-dots">

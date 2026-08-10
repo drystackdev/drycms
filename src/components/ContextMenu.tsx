@@ -107,7 +107,8 @@ export default function ContextMenu({ label, items, children }: ContextMenuProps
                 class={entry.danger ? "popover-menu-danger" : undefined}
                 onClick={() => run(entry.onClick)}
               >
-                {entry.icon} {entry.label}
+                {entry.icon}
+                <span class="popover-menu-label">{entry.label}</span>
               </button>
             </li>
           ),

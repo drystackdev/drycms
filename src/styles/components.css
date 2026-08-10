@@ -4612,8 +4612,11 @@
        * shrink this below its content width so wrapping ever kicks in; a
        * block wider than the toolbar itself wraps rather than overflowing
        * and getting clipped by `.richtext`'s own `overflow: hidden`. */
+      /* `.popover-menu` is content-sized app-wide now, so only the 11rem
+       * floor needs dropping here - the toolbar's menus (align, color swatch
+       * grid, grid picker) are deliberately as narrow as their own content. */
       & .popover-menu {
-        width: fit-content;
+        min-width: 0;
       }
     }
 
@@ -5220,9 +5223,18 @@
      * Popover.tsx) puts this in the top layer and handles outside-click/
      * Escape dismissal natively, above everything in normal document flow
      * including an open native `<dialog>`. */
+    /* Sized by its own content, not a fixed width: menu buttons are
+     * `white-space: nowrap` (the base button rule), so a label longer than
+     * the box used to spill straight out of the rounded background. The old
+     * fixed `11rem` survives as `min-width` - short menus (Edit/Delete) keep
+     * exactly the width they had, only longer labels now widen the menu.
+     * `max-width` is the backstop for a genuinely long label (a file name, a
+     * page title): the menu stops growing and the label truncates below. */
     .popover-menu {
       border-width: 1px;
-      width: 11rem;
+      width: max-content;
+      min-width: 11rem;
+      max-width: min(20rem, calc(100vw - 1rem));
       margin: 0;
       padding: 0.25rem 0.5rem;
       list-style: none;
@@ -5245,6 +5257,16 @@
           background-color: var(--dry-accent);
         }
       }
+    }
+
+    /* Truncates only once the menu has hit its `max-width` above - the label
+     * is its own element (not a bare text node) because `text-overflow` needs
+     * a block container of its own to act on, and the button itself is a flex
+     * container whose anonymous text run it would never apply to. */
+    .popover-menu-label {
+      overflow: hidden;
+      min-width: 0;
+      text-overflow: ellipsis;
     }
 
     .popover-menu-separator {
@@ -6016,6 +6038,15 @@
         outline-offset: -1px;
       }
 
+      /* Every row in the tree's current selection (Cmd/Ctrl+click, Shift+click
+         range - `ComponentTreePanel`'s `selectedPaths`): the FILL says "copy/
+         delete acts on these", while `.selected`'s outline above stays
+         reserved for the one file open in the editor. A single-file selection
+         is normally the same row and carries both. */
+      &.in-selection {
+        background-color: var(--dry-accent);
+      }
+
       &:hover {
         background-color: var(--dry-accent);
         & button {
@@ -6042,7 +6073,7 @@
 
     .page-components-tree-create {
       border-bottom: 1px solid var(--dry-border);
-      padding: 0.5rem;
+      padding: 0 0.5rem;
     }
 
     .page-components-tree-chevron {

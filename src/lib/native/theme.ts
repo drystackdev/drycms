@@ -58,6 +58,29 @@ export function resolveEffectiveTheme(): 'light' | 'dark' {
 	return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+/** The CONCRETE color a `--dry-*` token currently resolves to (e.g.
+ * `"rgb(20, 26, 33)"`) - for code that has to hand a color to somewhere the
+ * admin's own stylesheet doesn't reach: an `about:srcdoc` iframe, a canvas, a
+ * generated source string. Reading the custom property straight off
+ * `getComputedStyle` is NOT enough - `tokens.css` declares these with
+ * `light-dark()`, which stays literal in a custom property's computed value
+ * and would then resolve against the DESTINATION document's `color-scheme`
+ * rather than this one's. Painting the token onto a throwaway element and
+ * reading `backgroundColor` back makes the browser resolve it here, in the
+ * right realm, which also picks up any `systemSettingsThemeVars` override for
+ * free. `fallback` covers an undefined token (invalid `background-color`,
+ * computed as fully transparent) and a non-DOM caller. */
+export function resolveThemeColor(token: string, fallback = '#ffffff'): string {
+	if (typeof document === 'undefined') return fallback;
+	const root = document.querySelector<HTMLElement>('.dry') ?? document.body;
+	const probe = document.createElement('span');
+	probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;background-color:var(${token})`;
+	root.appendChild(probe);
+	const color = getComputedStyle(probe).backgroundColor;
+	probe.remove();
+	return color && color !== 'rgba(0, 0, 0, 0)' ? color : fallback;
+}
+
 function writeStoredTheme(theme: DryTheme) {
 	writeStore({ ...readStore(), theme });
 }

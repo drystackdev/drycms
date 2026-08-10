@@ -112,7 +112,7 @@ export default function Component({ title }: Props) {
   return <div>{title}</div>;
 }
 
-export const _preview: Props = { title: "Sample title" };
+export const defaultProps: Props = { title: "Sample title" };
 ```
 
 ## 4. Preview component
@@ -125,15 +125,33 @@ Khi file đang chọn nằm dưới `component/`, `previewTarget` trỏ tới m�
 ```tsx
 import __Component, * as __module from "@component/Card";
 const __generated = { title: "Sample title" }; // sinh từ type, xem mục 5
+const __exports = __module as { defaultProps?: unknown; _view?: any };
+function __children() {
+  const __view = __exports._view;
+  if (__view !== undefined && __view !== null) return __view;
+  const __defaults = __exports.defaultProps;
+  const __list = Array.isArray(__defaults) ? __defaults : [__defaults ?? __generated];
+  return __list.map((props, index) => <__Component key={index} {...(props as never)} />);
+}
 export default function DryComponentPreview() {
-  const __preview = (__module as { _preview?: unknown })._preview;
-  const __list = Array.isArray(__preview) ? __preview : [__preview ?? __generated];
-  return <>{__list.map((props, index) => <__Component key={index} {...(props as never)} />)}</>;
+  // Sân khấu preview: 1 div `display:flex` căn giữa 2 chiều, `100dvw`/
+  // `100dvh`, nền = màu `--dry-background` của theme admin hiện tại (đã
+  // resolve sẵn thành màu cụ thể, trang built không có token của admin).
+  return <div style="…">{__children()}</div>;
 }
 ```
 
-- `_preview` là **object props**, hoặc **mảng object** = nhiều biến thể,
-  render lần lượt. Có `_preview` thì luôn thắng object tự sinh.
+- `defaultProps` là **object props**, hoặc **mảng object** = nhiều biến thể,
+  render lần lượt. Có `defaultProps` thì luôn thắng object tự sinh.
+- `_view` (`export const _view = (<>…</>)`) là **JSX đã render sẵn**, hiện
+  nguyên xi lên sân khấu preview và thắng cả `defaultProps` lẫn object tự
+  sinh - cho component mà preview đáng xem không phải "một instance với vài
+  props" (nhiều size cạnh nhau, cần wrapper bọc ngoài, children ghép sẵn).
+  Có `_view` thì default export không bị đụng tới, nên file cũng không bắt
+  buộc phải có.
+- Khung iframe của component preview cao đúng bằng vùng nhìn thấy của panel
+  preview (`previewViewportHeight / zoom`), nên `100dvh` của sân khấu = đúng
+  những gì đang thấy, không phải cuộn.
 - `layoutPaths: []` - component preview **đứng độc lập**, không bọc trong
   `layout.tsx` của site (bọc thì nav/footer của layout lọt vào khung
   preview). CSS site vẫn đúng vì `buildPage` tự inline `globals.css` và

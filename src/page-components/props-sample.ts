@@ -4,7 +4,7 @@ import type { PropsField, PropsSchema, PropsTypeNode } from "../components/Edite
  * Turns a `PropsSchema` (the real TS types of a component's default export,
  * described in `ts-worker.ts`) into the SOURCE of a props object literal -
  * what the Page Editor's component preview passes to a component that
- * doesn't export its own `_preview` (`plans/component.md` mục 5).
+ * doesn't export its own `defaultProps` (`plans/component.md` mục 5).
  *
  * Source text, not a JSON value, for two reasons: a prop can legitimately be
  * a function (`onClick`), which has no JSON form; and the result is spliced
@@ -132,7 +132,7 @@ function isSafeIdentifier(name: string): boolean {
  * component whose props are ALL optional would otherwise preview with
  * nothing set, which is exactly the case where seeing sample content helps
  * most); a component that genuinely wants its own defaults shown can export
- * `_preview` instead, which always wins (`component-preview.ts`).
+ * `defaultProps` instead, which always wins (`component-preview.ts`).
  */
 export function samplePropsSource(schema: PropsSchema | null | undefined): string {
   if (!schema) return "{}";

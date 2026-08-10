@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildComponentTree, entriesForSourceRoot, filterComponentTree, withSourceRoot } from "./tree.js";
+import {
+  buildComponentTree,
+  copyDestinationPath,
+  entriesForSourceRoot,
+  filterComponentTree,
+  flattenVisibleFilePaths,
+  withSourceRoot,
+} from "./tree.js";
 import type { FileEntry } from "../storage/entry-types.js";
 
 function file(id: string, parentId: string | null): FileEntry {
@@ -57,6 +64,51 @@ describe("filterComponentTree", () => {
     const { nodes } = filterComponentTree(tree, "layout");
     const layoutNode = nodes.find((n) => n.entry.id === "layout");
     expect(layoutNode?.children.map((n) => n.entry.id)).toEqual(["layout/Footer.tsx", "layout/Header.tsx"]);
+  });
+});
+
+describe("flattenVisibleFilePaths", () => {
+  const tree = buildComponentTree([
+    folder("layout", null),
+    file("layout/Header.tsx", "layout"),
+    file("layout/Footer.tsx", "layout"),
+    file("Button.tsx", null),
+    file("Alert.tsx", null),
+  ]);
+
+  it("lists files in render order - folders first, then alphabetical, folder rows themselves excluded", () => {
+    expect(flattenVisibleFilePaths(tree, () => true)).toEqual([
+      "layout/Footer.tsx",
+      "layout/Header.tsx",
+      "Alert.tsx",
+      "Button.tsx",
+    ]);
+  });
+
+  it("skips a collapsed folder's children - they aren't on screen, so a range can't cross them", () => {
+    expect(flattenVisibleFilePaths(tree, (id) => id !== "layout")).toEqual(["Alert.tsx", "Button.tsx"]);
+  });
+});
+
+describe("copyDestinationPath", () => {
+  const existing = new Set(["component/Button.tsx", "component/Button copy.tsx", "component/ui/Card.test.tsx"]);
+
+  it("keeps the original name when pasting into a folder that doesn't have it", () => {
+    expect(copyDestinationPath(existing, "component/ui", "component/Button.tsx")).toBe("component/ui/Button.tsx");
+  });
+
+  it("suffixes past every taken copy on a collision", () => {
+    expect(copyDestinationPath(existing, "component", "component/Button.tsx")).toBe("component/Button copy 2.tsx");
+  });
+
+  it("splits on the first dot so a multi-part extension survives", () => {
+    expect(copyDestinationPath(existing, "component/ui", "component/ui/Card.test.tsx")).toBe(
+      "component/ui/Card copy.test.tsx",
+    );
+  });
+
+  it("pastes at the storage root without a leading slash", () => {
+    expect(copyDestinationPath(new Set(["Button.tsx"]), "", "component/Button.tsx")).toBe("Button copy.tsx");
   });
 });
 

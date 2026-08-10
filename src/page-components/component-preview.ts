@@ -22,34 +22,64 @@ export function aliasSpecifierFor(componentPath: string): string {
   return `${COMPONENT_ALIAS}/${componentPath.slice(COMPONENT_ROOT.length + 1).replace(/\.tsx?$/, "")}`;
 }
 
+/** The stage every component preview renders inside: one viewport-sized box
+ * centering it both ways, so a component sits in the middle of the preview
+ * frame instead of hugging its top-left corner. Plain inline CSS on purpose -
+ * a previewed component may use no Tailwind at all, and the stage has to look
+ * right either way (it's chrome the build injects, not something the author
+ * wrote). `backgroundColor` is passed in already resolved to a concrete color
+ * (`resolveThemeColor`, `lib/native/theme.ts`) - the built page carries none
+ * of the admin's own tokens, so a `var(--dry-background)` here would resolve
+ * to nothing inside the preview iframe. */
+function previewStageStyle(backgroundColor: string): string {
+  return `display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;`;
+}
+
 /**
- * `propsSource` is an object-literal SOURCE (see `props-sample.ts`), used
- * only when the component doesn't export `_preview` - an explicit `_preview`
- * always wins, and may be an ARRAY, in which case each entry renders as its
- * own variant, stacked in document order.
+ * Two escape hatches, checked in this order:
+ *
+ * - `export const _view = (<>…</>)` - already-rendered JSX, shown AS IS. For
+ *   a component whose interesting preview isn't "one instance with some
+ *   props" (several sizes side by side, a wrapper the component needs around
+ *   it, composed children). Nothing is invented for it: what's exported is
+ *   exactly what the stage shows.
+ * - `export const defaultProps = {…}` - props to render the default export
+ *   with, overriding `propsSource` (the object-literal SOURCE invented from
+ *   the component's real TS types, see `props-sample.ts`). May be an ARRAY,
+ *   in which case each entry renders as its own variant, in document order.
+ *
+ * With neither, the preview falls back to `propsSource` alone.
  *
  * The `typeof` guard turns "this file has no default export" into a readable
  * preview error instead of a bare "undefined is not a function" from deep
- * inside Preact's render.
+ * inside Preact's render. It sits behind the `_view` check on purpose - a
+ * file previewing through `_view` renders whatever that node holds and never
+ * touches the default export, so it shouldn't have to have one.
  */
-export function buildComponentPreviewSource(componentPath: string, propsSource: string): string {
+export function buildComponentPreviewSource(
+  componentPath: string,
+  propsSource: string,
+): string {
   return `import DryPreviewComponent, * as dryPreviewModule from ${JSON.stringify(aliasSpecifierFor(componentPath))};
 
 const dryGeneratedProps = ${propsSource};
+const dryPreviewExports = dryPreviewModule as { defaultProps?: unknown; _view?: any };
 
-export default function DryComponentPreview() {
+function dryPreviewChildren() {
+  const view = dryPreviewExports._view;
+  if (view !== undefined && view !== null) return view;
   if (typeof DryPreviewComponent !== "function") {
     throw new Error(${JSON.stringify(`"${componentPath}" has no default export function to preview.`)});
   }
-  const preview = (dryPreviewModule as { _preview?: unknown })._preview;
-  const list = Array.isArray(preview) ? preview : [preview ?? dryGeneratedProps];
-  return (
-    <>
-      {list.map((props: unknown, index: number) => (
-        <DryPreviewComponent key={index} {...(props as Record<string, unknown>)} />
-      ))}
-    </>
-  );
+  const defaults = dryPreviewExports.defaultProps;
+  const list = Array.isArray(defaults) ? defaults : [defaults ?? dryGeneratedProps];
+  return list.map((props: unknown, index: number) => (
+    <DryPreviewComponent key={index} {...(props as Record<string, unknown>)} />
+  ));
+}
+
+export default function DryComponentPreview() {
+  return <div style="display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;">{dryPreviewChildren()}</div>;
 }
 `;
 }
