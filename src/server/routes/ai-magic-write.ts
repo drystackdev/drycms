@@ -58,6 +58,11 @@ interface MagicWriteHttpRequest {
   /** Which of `aiKeyName`'s own configured models to use for this run - see
    * `ai.ts`'s `WizardHttpRequest.aiModel` doc comment, same shape/pairing. */
   aiModel?: string;
+  /** Output language for this turn's prose, chosen once by the admin via
+   * `MagicChat.tsx`'s picker before the session's first message and fixed
+   * for the rest of it - overrides the server's own `ai.lang` default.
+   * Falls back to `ai.lang` when absent (e.g. an older client build). */
+  lang?: string;
   /** `status/richtext-rewrite-shared-chat.md` - present only when this turn
    * is a RichText "Rewrite selection" request (`AiRewriteButton`'s own call,
    * relayed through `MagicChat.tsx`'s shared conversation): the exact current
@@ -134,6 +139,7 @@ interface MagicWriteValidatedRequest {
   sessionImagePaths: string[];
   aiKeyName: string | undefined;
   aiModel: string | undefined;
+  lang: string;
   rewritePassage: string | undefined;
   rewriteInline: boolean;
 }
@@ -190,7 +196,8 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
 
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
-  if (ai.mode === "server" && !aiKeyName) throw new Error("Choose an AI Key before running Magic.");
+  if (!aiKeyName) throw new Error("Choose an AI Key before running Magic.");
+  const lang = typeof body.lang === "string" && body.lang.trim() ? body.lang.trim() : ai.lang;
 
   const rewritePassage = validateRewritePassage(body.rewritePassage);
   const rewriteInline = body.rewriteInline === true;
@@ -204,6 +211,7 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     sessionImagePaths,
     aiKeyName,
     aiModel,
+    lang,
     rewritePassage,
     rewriteInline,
   };
@@ -364,7 +372,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const fieldsDescription = describeFieldsForPrompt(nodes, request.currentValue, allTypes);
           const relationContext = await loadRelationContext(entries, allTypes, nodes, request.currentValue);
           const systemPrompt = buildMagicWriteSystemPrompt({
-            lang: ai.lang,
+            lang: request.lang,
             typeLabel: type.label,
             fieldsDescription,
             imagePaths: [...allowedImageSrcs],

@@ -40,8 +40,8 @@
  * - `package.json`'s `name`.
  *
  * Deliberately NOT touched (framework-level or shared, not project content):
- * `dry.config.ts`, `icons.config.json`, `src/apps/vei/**`, `src/server/**`,
- * `docs/`, `plans/`, `status/`, `e2e/`.
+ * `icons.config.json`, `src/apps/vei/**`, `src/server/**`, `docs/`, `plans/`,
+ * `status/`, `e2e/`.
  *
  * A plain `.ts` script run directly via `bun` (not through Vite's
  * `ssrLoadModule`), same reasoning as `dry-generate.ts`: it needs real

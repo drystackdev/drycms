@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-const { path, aiMode } = window.__DRY_CONFIG__;
+const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import SlugField from "../components/fields/SlugField.js";
 import { toast } from "../components/Toast.js";
@@ -196,7 +196,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // so a RichText field's "Rewrite selection" button can see a live `ready`
   // answer (`rewriteApi.ready` below) as soon as this editor mounts, not
   // only after the admin has opened the Magic Chat bubble at least once.
-  const aiKey = useAiKeySelection(aiMode === "server");
+  const aiKey = useAiKeySelection(true);
   const rewriteFnRef = useRef<RichTextRewriteFn | null>(null);
 
   const listFetcher = useCallback(
@@ -355,16 +355,13 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // (rather than up next to `aiKey`/`rewriteFnRef`) because it needs
   // `canUseMagic`, which needs `type` - see `status/role-system-permissions.md`.
   const rewriteApi = useMemo(
-    () =>
-      aiMode === "server"
-        ? {
-            ready: aiKey.ready && canUseMagic,
-            requestRewrite: ((passage, instruction, inline, onDelta, signal) => {
-              if (!rewriteFnRef.current) return Promise.reject(new Error("Magic is not ready yet."));
-              return rewriteFnRef.current(passage, instruction, inline, onDelta, signal);
-            }) as RichTextRewriteFn,
-          }
-        : null,
+    () => ({
+      ready: aiKey.ready && canUseMagic,
+      requestRewrite: ((passage, instruction, inline, onDelta, signal) => {
+        if (!rewriteFnRef.current) return Promise.reject(new Error("Magic is not ready yet."));
+        return rewriteFnRef.current(passage, instruction, inline, onDelta, signal);
+      }) as RichTextRewriteFn,
+    }),
     [aiKey.ready, canUseMagic],
   );
   const canDelete =
@@ -1025,21 +1022,19 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
         onRequestResetAll={() => setShowResetAllConfirm(true)}
       />
 
-      {aiMode === "server" && (
-        <MagicChat
-          typeSlug={typeSlug}
-          entryId={entryId}
-          nodes={editableNodes}
-          value={value}
-          updateFieldValue={updateFieldValue}
-          onStreamingFieldChange={setStreamingFieldName}
-          source={magicChatImageSource}
-          canUse={canUseMagic}
-          veiFrame={veiFrame}
-          aiKey={aiKey}
-          rewriteFnRef={rewriteFnRef}
-        />
-      )}
+      <MagicChat
+        typeSlug={typeSlug}
+        entryId={entryId}
+        nodes={editableNodes}
+        value={value}
+        updateFieldValue={updateFieldValue}
+        onStreamingFieldChange={setStreamingFieldName}
+        source={magicChatImageSource}
+        canUse={canUseMagic}
+        veiFrame={veiFrame}
+        aiKey={aiKey}
+        rewriteFnRef={rewriteFnRef}
+      />
     </EntryMediaContext.Provider>
     </RichTextRewriteContext.Provider>
   );

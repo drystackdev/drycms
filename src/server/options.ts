@@ -51,42 +51,20 @@ const E2E_DATA_ROOT_DIR = "test-results/e2e-data";
 const PUBLIC_DIR_NAME = "public";
 
 export interface DryAiOption {
-  /**
-   * How AI requests are executed. Defaults to following the top-level
-   * `kind` toggle - `"local"` under `kind: "local"` (runs a CLI on the same
-   * machine), `"server"` under `kind: "cloudflare"` (calls a provider's
-   * HTTP API using a stored `aiKey` record).
-   *
-   * Set this explicitly to run server-mode AI (a real provider HTTP call,
-   * needed for anything that sends images/attachments - the local CLI mode
-   * has no attachment protocol) while every OTHER backend (storage/content/
-   * kv) stays on `kind: "local"` - e.g. for developing/testing an AI
-   * feature without standing up Cloudflare D1/R2/KV and a Workers adapter.
-   *
-   * `"local"` cannot be combined with `kind: "cloudflare"` - spawning a CLI
-   * via `node:child_process` does not work in a Workers runtime.
-   */
-  mode?: "local" | "server";
-  /** `codex`/`claude` when `ai.mode` is `"local"`, `openai`/`anthropic` when
-   * `ai.mode` is `"server"` (see `mode`'s doc comment for how that's
-   * decided). */
-  provider?: "codex" | "claude" | "openai" | "anthropic";
-  /** Local executable name/path. Defaults to the selected provider CLI. */
-  command?: string;
-  /** Extra CLI arguments. Use `{prompt}` to control where the prompt is inserted. */
-  args?: string[];
-  /** Server provider model. */
+  /** Calls a provider's HTTP API using a stored `aiKey` record. */
+  provider?: "openai" | "anthropic";
+  /** Provider model. */
   model?: string;
-  /** Server provider base URL override. */
+  /** Provider base URL override. */
   baseUrl?: string;
-  /** Local working directory. Defaults to the app's current working directory. */
-  cwd?: string;
-  /** Request/process timeout in milliseconds. */
+  /** Request timeout in milliseconds. */
   timeoutMs?: number;
   /** Display language for AI-generated, user-facing text (e.g. the Content
    * Types AI schema wizard's questions/choice labels). The prompt sent to
    * the model always stays English regardless of this setting - only the
    * text it's asked to write back for a person to read follows `lang`.
+   * Magic Chat overrides this per-session with its own picker instead
+   * (`MagicChat.tsx`) rather than reading this value.
    * @default "en" */
   lang?: string;
 }
@@ -238,26 +216,13 @@ export interface ResolvedPagesSourceOption {
   storage: ResolvedStorageOption;
 }
 
-export interface ResolvedLocalAiOption {
-  mode: "local";
-  provider: "codex" | "claude";
-  command: string;
-  args: string[];
-  cwd?: string;
-  timeoutMs: number;
-  lang: string;
-}
-
-export interface ResolvedServerAiOption {
-  mode: "server";
+export interface ResolvedAiOption {
   provider: "openai" | "anthropic";
   model: string;
   baseUrl: string;
   timeoutMs: number;
   lang: string;
 }
-
-export type ResolvedAiOption = ResolvedLocalAiOption | ResolvedServerAiOption;
 
 export interface ResolvedKvTuning {
   maxEntries: number;
@@ -469,49 +434,22 @@ function resolveKvOption(
   return { ...tuning, kind: "local", root: resolvePath(process.cwd(), localBaseDir(overrides), KV_DIR_NAME) };
 }
 
-/** `mode` defaults to following the top-level `kind` but can be overridden
- * independently (see `DryAiOption.mode`'s doc comment) - `"local"` runs a
- * CLI, `"server"` calls a provider HTTP API via a stored `aiKey` record. */
-function resolveAiOption(kind: "local" | "cloudflare", option: DryAiOption = {}): ResolvedAiOption {
-  const mode = option.mode ?? (kind === "local" ? "local" : "server");
-  if (mode !== "local" && mode !== "server") {
-    throw new Error('[drycms] `ai.mode` must be "local" or "server".');
-  }
-  if (mode === "local" && kind === "cloudflare") {
-    throw new Error('[drycms] `ai.mode` cannot be "local" when `kind` is "cloudflare" - spawning a CLI via `node:child_process` does not work in a Workers runtime.');
-  }
+function resolveAiOption(option: DryAiOption = {}): ResolvedAiOption {
   const timeoutMs = resolvePositiveNumber(option.timeoutMs, "ai.timeoutMs", 120_000);
   const lang = option.lang ?? "en";
   if (typeof lang !== "string" || !lang.trim()) {
     throw new TypeError('[drycms] `ai.lang` must be a non-empty string.');
   }
 
-  if (mode === "local") {
-    const provider = option.provider ?? "codex";
-    if (provider !== "codex" && provider !== "claude") {
-      throw new Error('[drycms] `ai.provider` must be `codex` or `claude` when `ai.mode` is `local`.');
-    }
-    const command = option.command ?? provider;
-    if (typeof command !== "string" || !command.trim()) {
-      throw new TypeError('[drycms] `ai.command` must be a non-empty string.');
-    }
-    const args = option.args ?? (provider === "codex" ? ["exec", "--ephemeral", "--skip-git-repo-check"] : ["-p"]);
-    if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
-      throw new TypeError('[drycms] `ai.args` must be an array of strings.');
-    }
-    const cwd = option.cwd === undefined ? undefined : resolvePath(process.cwd(), option.cwd);
-    return { mode, provider, command: command.trim(), args: [...args], cwd, timeoutMs, lang: lang.trim() };
-  }
-
   const provider = option.provider ?? "openai";
   if (provider !== "openai" && provider !== "anthropic") {
-    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic` when `ai.mode` is `server`.');
+    throw new Error('[drycms] `ai.provider` must be `openai` or `anthropic`.');
   }
   const model = option.model ?? (provider === "openai" ? "gpt-5" : "claude-sonnet-4-20250514");
   const baseUrl = option.baseUrl ?? (provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com");
   if (typeof model !== "string" || !model.trim()) throw new TypeError('[drycms] `ai.model` must be a non-empty string.');
   if (typeof baseUrl !== "string" || !/^https?:\/\//.test(baseUrl)) throw new TypeError('[drycms] `ai.baseUrl` must be an http(s) URL.');
-  return { mode, provider, model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs, lang: lang.trim() };
+  return { provider, model: model.trim(), baseUrl: baseUrl.replace(/\/+$/, ""), timeoutMs, lang: lang.trim() };
 }
 
 /**
@@ -576,7 +514,7 @@ export function resolveOptions(options: DryOption = {}, overrides: ResolveOption
     },
     typesCache: { storage: resolveStorageBackedOption(kind, TYPES_CACHE_STORAGE_DIR_NAME, overrides) },
     pagesSource: { storage: resolveStorageBackedOption(kind, PAGES_SOURCE_STORAGE_DIR_NAME, overrides) },
-    ai: resolveAiOption(kind, options.ai),
+    ai: resolveAiOption(options.ai),
     kv: resolveKvOption(kind, options.kv, overrides),
     lang: lang.trim(),
   };

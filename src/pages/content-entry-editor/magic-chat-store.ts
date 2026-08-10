@@ -40,6 +40,11 @@ export interface MagicChatSession {
    * (both are `magic-${n}`, and `key`-based reconciliation breaks on a
    * collision). */
   nextId: number;
+  /** Output language, chosen once via the picker shown before the first
+   * message (`MagicChat.tsx`'s empty state) and fixed for the rest of the
+   * session - sent with every turn, overriding the server's own `ai.lang`
+   * default. */
+  lang: "vi" | "en";
 }
 
 interface MagicChatRecord extends MagicChatSession {
@@ -90,7 +95,9 @@ export async function loadMagicChatSession(typeSlug: string, entryId: string | n
       req.onerror = () => reject(req.error);
     });
     if (!record) return undefined;
-    return { messages: record.messages, history: record.history, sessionImagePaths: record.sessionImagePaths, nextId: record.nextId };
+    // Older persisted records (before the lang picker existed) have no
+    // `lang` field on disk despite the type saying otherwise.
+    return { messages: record.messages, history: record.history, sessionImagePaths: record.sessionImagePaths, nextId: record.nextId, lang: record.lang ?? "vi" };
   } catch {
     return undefined;
   }

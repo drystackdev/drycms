@@ -40,7 +40,7 @@ the structural field itself.
 ## Fail at config-resolution time, not at request time
 
 `src/server/options.ts`'s `resolveOptions()` validates and throws on bad
-`dry.config.ts` input immediately, with an error naming the exact offending
+config input immediately, with an error naming the exact offending
 key (`` `[drycms] \`content.binding\` is only used with...` ``) - so a config
 mistake surfaces once, at boot, instead of producing a confusing failure
 deep inside a request handler later. Apply the same standard to any new
@@ -79,9 +79,9 @@ worth remembering:
   var, a port). For anything runtime-affecting, check the dev server's own
   startup log after a restart and compare against what it said before,
   rather than trusting a clean diff.
-- **The dev server resolves `dry.config.ts` once per process and caches it
-  at module scope** (`server/config.ts`) - editing the config file requires
-  a restart to take effect, and a long-lived process can end up internally
+- **The dev server resolves config once per process and caches it at module
+  scope** (`server/config.ts`) - editing `config.ts`/`options.ts` requires a
+  restart to take effect, and a long-lived process can end up internally
   inconsistent if Vite's SSR module graph reloads different server modules
   at different times relative to a config edit. An inconsistent error from a
   running dev server (one route behaves differently from another for config

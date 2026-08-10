@@ -64,8 +64,10 @@ const apiMiddleware = createApiMiddleware();
  * ambient-global injection, which also gates on this same root - see that
  * file's own doc comment). `null` under any storage kind other than
  * `"local"` (R2-backed `pagesSourceStorage` has no local files for
- * `ssrLoadModule` to read - `bun run dev` is always `kind: "local"` per
- * `dry.config.ts`, so this is defensive, not a real branch this repo hits).
+ * `ssrLoadModule` to read - `bun run dev` always resolves `kind: "local"`
+ * (`vite.config.ts`'s `DRYCMS_WORKER_BUILD` is only set for the Workers
+ * build/dev, see `src/server/config.ts`), so this is defensive, not a real
+ * branch this repo hits).
  */
 const { createStorageAdapter } = await vite.ssrLoadModule("/src/storage/index.ts");
 const pagesSourceAdapter = pagesSourceStorage.kind === "local" ? createStorageAdapter(pagesSourceStorage) : null;

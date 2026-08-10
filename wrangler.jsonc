@@ -5,10 +5,10 @@
   // `wrangler d1 create`/`wrangler r2 bucket create`/`wrangler kv namespace
   // create` output (or the dashboard) before `bun run deploy`. The binding
   // NAMES (`CONTENT_DB`/`MEDIA_BUCKET`/`KV`) are fixed, not configurable -
-  // `dry.config.ts`'s single `kind: "cloudflare"` toggle (see `options.ts`'s
-  // `DryOption`) assumes exactly these names on both sides of the
-  // contract; rename them here AND in `options.ts` together if you need
-  // different ones for your own account.
+  // the resolved `kind: "cloudflare"` toggle (`options.ts`'s `DryOption`,
+  // auto-detected per-build - see `src/server/config.ts`) assumes exactly
+  // these names on both sides of the contract; rename them here AND in
+  // `options.ts` together if you need different ones for your own account.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sivelap",
   "main": "dist/server/entry-worker.js",
@@ -37,7 +37,7 @@
     "run_worker_first": ["/"]
   },
 
-  // `dry.config.ts`'s `kind: "cloudflare"` uses this for content (Node-only
+  // The resolved `kind: "cloudflare"` uses this for content (Node-only
   // `sqlite`, the `kind: "local"` default, has no Workers driver).
   "d1_databases": [
     {
@@ -49,7 +49,7 @@
 
   // One shared bucket, key-prefixed per storage-backed root (`storage/`,
   // `icons/`, `richtext-components/`, `components/`, `pages-cache/`,
-  // `types-cache/` - see `storage/r2.ts`'s doc comment) - `dry.config.ts`'s
+  // `types-cache/` - see `storage/r2.ts`'s doc comment) - the resolved
   // `kind: "cloudflare"` points every one of them at this same binding.
   "r2_buckets": [
     {
@@ -58,7 +58,7 @@
     }
   ],
 
-  // `dry.config.ts`'s `kind: "cloudflare"` uses this for the Key Value store
+  // The resolved `kind: "cloudflare"` uses this for the Key Value store
   // (`kv.kind: "local"`, the default under `kind: "local"`, has no Workers
   // driver either).
   "kv_namespaces": [

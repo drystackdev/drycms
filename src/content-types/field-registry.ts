@@ -167,8 +167,9 @@ export interface RichTextFieldConfig {
   grid?: boolean;
   fullscreen?: boolean;
   /** Toolbar's "Rewrite selection with AI" button (`status/magic-write.md`
-   * Phase 4) - server-mode AI only, same as Magic Write; the button itself
-   * additionally checks `window.__DRY_CONFIG__.aiMode` at render time. */
+   * Phase 4) - the button itself additionally hides wherever no
+   * `RichTextRewriteContext` is provided (e.g. the content-type editor's own
+   * default-value field), see `ai-rewrite-button.tsx`. */
   aiRewrite?: boolean;
 }
 

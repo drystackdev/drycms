@@ -19,9 +19,12 @@ the repo root (see `status/remove-astro.md` for the migration this replaced).
 - `src/server/adapters/node.ts` - the Node bridge (the only adapter
   implemented today; `adapters/types.ts` documents the contract a future
   Workers/Bun adapter would follow).
-- `dry.config.ts` (repo root) - the app's own config (path/storage/icons/
-  content/richtext), resolved once at server startup by
-  `src/server/options.ts`'s `resolveOptions`.
+- `src/server/config.ts` - resolves the app's own config once at server
+  startup via `src/server/options.ts`'s `resolveOptions`. No project-level
+  config file - `kind` (`"local"` vs `"cloudflare"`) is derived automatically
+  from which SSR entry is being built (`import.meta.env.DRYCMS_KIND`, baked
+  in by `vite.config.ts`'s `define` - see `src/env.d.ts`), everything else
+  uses `resolveOptions`'s own defaults.
 - `vite.config.ts` - client build config (Preact via `@preact/preset-vite`).
 
 Everything under `src/` is real TypeScript/TSX, transformed by Vite - no
@@ -83,7 +86,7 @@ This runs `scripts/dev-server.mjs`, a plain-JS entry that boots Vite in
 middleware mode and loads every `src/server/**` module through
 `vite.ssrLoadModule` - so server code hot-reloads exactly like client code,
 no separate watch/build step. Serves on `http://localhost:5173` (base path
-`/dry` by default, see `dry.config.ts`).
+`/dry` by default - `DryOption.path`'s own default, see `options.ts`).
 
 Production build: `bun run build` (client via `vite build`, server via
 `vite build --ssr src/server/entry-node.ts`), then `bun run start` runs the

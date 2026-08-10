@@ -40,9 +40,9 @@ const useLocal = process.argv.includes("--local");
  * `storage/dry-icons` - the same nesting on both sides, so walking `storage`
  * recursively already carries it to exactly the right keys. Listing it again
  * would upload every icon twice. `resolveOptions` is called with an explicit
- * `kind` for each side rather than reading `dry.config.ts`, which resolves
- * `kind` off `import.meta.env.PROD` and would give this script only one of
- * the two halves it needs to pair up.
+ * `kind` for each side rather than reading the app's own resolved config
+ * (`src/server/config.ts`), which only ever resolves ONE `kind` per build
+ * and would give this script only one of the two halves it needs to pair up.
  */
 const localRoots = resolveOptions({ kind: "local" });
 const r2Roots = resolveOptions({ kind: "cloudflare" });

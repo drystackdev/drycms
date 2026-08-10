@@ -1,4 +1,3 @@
-import userOptions from "../../dry.config.js";
 import { setAdminPath } from "../storage/admin-path.js";
 import { resolveOptions } from "./options.js";
 
@@ -7,8 +6,18 @@ import { resolveOptions } from "./options.js";
  * loads this module; prod: at process start) and reused for the lifetime of
  * the process - same "resolve once, read everywhere" contract the old
  * `virtual:drycms/*-config` Vite plugins gave each injected Astro route.
+ *
+ * No project-level config file (there used to be a `dry.config.ts` here) -
+ * `kind` is the only thing this app ever set, and it's now derived
+ * automatically from which SSR entry is being built rather than hand-written:
+ * `import.meta.env.DRYCMS_KIND` is baked in per-build by `vite.config.ts`'s
+ * `define` (`"cloudflare"` only for the Workers build/dev - `build:worker`/
+ * `deploy`/`dev:worker` - `"local"` for `bun run dev` and the Node build
+ * alike). `import.meta.env.PROD` alone can't make this distinction: both the
+ * Node and Workers SSR builds are plain `vite build --ssr`, so PROD is `true`
+ * for both.
  */
-export const resolved = resolveOptions(userOptions);
+export const resolved = resolveOptions({ kind: import.meta.env.DRYCMS_KIND ?? "local" });
 
 export const { path, storage, icons, content, ai, kv, lang } = resolved;
 

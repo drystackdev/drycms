@@ -21,9 +21,9 @@ bun run start
 - `dist/client/` - client-side Preact app (Vite SPA build)
 - `dist/server/entry-node.js` - Node server entry point
 
-Data storage (configured via `dry.config.ts`):
-- `kind: "local"` (default) - SQLite file at `.dry/content.sqlite`, media in `.dry/storage/`
-- `kind: "cloudflare"` - (incompatible with Node) - requires Workers runtime
+Data storage (`kind`, auto-detected per build - see `src/server/config.ts`):
+- `kind: "local"` (Node build) - SQLite file at `.dry/content.sqlite`, media in `.dry/storage/`
+- `kind: "cloudflare"` (Workers build) - (incompatible with Node) - requires Workers runtime
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#server-one-fetch-shaped-handler-adapter-per-runtime) for the handler architecture.
 
@@ -41,14 +41,10 @@ drycms runs as a Cloudflare Worker backed by D1 (SQL database) and R2 (file stor
 
 ### Configuration
 
-1. **Update `dry.config.ts`** to use Cloudflare backend:
-
-   ```ts
-   export default config({
-     kind: "cloudflare",  // Switches to D1 + R2
-     ai: { /* ... */ }
-   });
-   ```
+1. **No config file to switch** - `bun run build:worker`/`deploy`/`dev:worker`
+   already resolve `kind: "cloudflare"` automatically (`vite.config.ts`'s
+   `DRYCMS_WORKER_BUILD` env var, baked in as `import.meta.env.DRYCMS_KIND` -
+   see `src/server/config.ts`). Nothing to edit here.
 
 2. **Update `wrangler.jsonc`** with your Cloudflare resources:
 
@@ -112,8 +108,9 @@ wrangler deploy --dry-run
 A public page view goes through two caches, in this order:
 
 1. **Edge cache** (`src/server/app-router/edge-cache.ts`) - Cloudflare's Cache
-   API, keyed by URL, TTL from `pagesCache.edgeTtl` in `dry.config.ts`
-   (default `60` seconds, `0` disables). A hit costs no D1 and no R2 at all.
+   API, keyed by URL, TTL from `pagesCache.edgeTtl` (`DryOption`, passed to
+   `resolveOptions` in `src/server/config.ts` - default `60` seconds, `0`
+   disables). A hit costs no D1 and no R2 at all.
    Only anonymous `GET`s are stored or served: a request carrying an admin
    session or VEI cookie bypasses it in both directions, so an editor always
    sees their own change immediately while an anonymous visitor sees it at
@@ -145,7 +142,7 @@ When `kind: "cloudflare"`, `src/server/entry-worker.ts` passes the Cloudflare `e
 Bindings used:
 - `env.CONTENT_DB` - D1 database for entries, content-types, auth, roles
 - `env.MEDIA_BUCKET` - R2 bucket for user uploads, icons, component bundles
-- `env.KV` - Cloudflare KV for caching (optional, configured via `dry.config.ts`'s `kv` block)
+- `env.KV` - Cloudflare KV for caching (optional, tuned via `DryOption`'s `kv` block, passed to `resolveOptions` in `src/server/config.ts`)
 - `env.ASSETS` - Workers Static Assets for the admin shell + client SPA
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#server-one-fetch-shaped-handler-adapter-per-runtime) for details.

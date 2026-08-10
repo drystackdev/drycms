@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from "preact/hooks";
 import Combobox from "./Combobox.js";
 import { createContentEntriesApi } from "../content-types/entries-http-api.js";
 
-const { path, aiMode } = window.__DRY_CONFIG__;
+const { path } = window.__DRY_CONFIG__;
 
 const aiKeyApi = createContentEntriesApi(`${path}/api/content`, "aiKey");
 const LAST_USED_STORAGE_KEY = "drycms.aiKeySelection";
@@ -62,7 +62,7 @@ export function useAiKeySelection(active: boolean): AiKeySelection {
   const [model, setModel] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!active || aiMode !== "server") return;
+    if (!active) return;
     let cancelled = false;
     void aiKeyApi
       .list({ page: 0, pageSize: 100 })
@@ -105,7 +105,7 @@ export function useAiKeySelection(active: boolean): AiKeySelection {
     loaded,
     keyName,
     model,
-    ready: aiMode !== "server" || (loaded && !!keyName && !!model),
+    ready: loaded && !!keyName && !!model,
     selectKey(name: string) {
       const nextModel = keys.find((row) => row.name === name)?.models[0];
       setKeyName(name || undefined);
@@ -120,13 +120,12 @@ export function useAiKeySelection(active: boolean): AiKeySelection {
 }
 
 /**
- * The AI Key + Model pickers every AI action shows before it runs. Always
- * rendered in server mode (even with a single configured key) so the admin
- * can always see which credentials a run is about to spend.
+ * The AI Key + Model pickers every AI action shows before it runs - always
+ * rendered (even with a single configured key) so the admin can always see
+ * which credentials a run is about to spend.
  */
 export default function AiKeyPicker({ selection }: { selection: AiKeySelection }) {
   const fieldId = useId();
-  if (aiMode !== "server") return <></>;
   if (selection.loaded && selection.keys.length === 0) {
     return (
       <div class="alert">

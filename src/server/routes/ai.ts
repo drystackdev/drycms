@@ -90,13 +90,11 @@ export function releaseAiStreamSlot(): void {
   activeAiStreams = Math.max(0, activeAiStreams - 1);
 }
 
-function aiProviderLabel(provider: ServerCredential["provider"] | "codex" | "claude"): string {
+function aiProviderLabel(provider: ServerCredential["provider"]): string {
   return {
     openai: "OpenAI",
     anthropic: "Anthropic",
     google: "Google AI",
-    codex: "Codex",
-    claude: "Claude",
   }[provider];
 }
 
@@ -125,7 +123,6 @@ function readModelList(value: unknown): string[] {
  */
 async function readServerCredential(context: DryRouteContext, keyName: string, model: string | undefined): Promise<ServerCredential> {
   const serverAi = ai;
-  if (serverAi.mode !== "server") throw new Error("Server AI mode is not configured.");
   const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
   const type = allTypes.find((candidate) => candidate.name === "aiKey");
@@ -272,76 +269,6 @@ export function trackAiStream(stream: ReadableStream<Uint8Array>, release: () =>
   });
 }
 
-function promptForCli(messages: ChatMessage[]): string {
-  return [
-    "You are helping build a content type in drycms. Answer the user's latest request clearly and briefly.",
-    ...messages.map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text}`),
-    "Assistant:",
-  ].join("\n\n");
-}
-
-/**
- * `ai.mode: "local"` spawns a CLI via `node:child_process`, which no
- * Workers runtime provides (not even under the `nodejs_compat`
- * compatibility flag - there is no OS process for an isolate to spawn).
- * Turns whatever cryptic module-resolution error that dynamic `import`
- * would otherwise throw into a clear, actionable one - see
- * `status/cloudflare-workers-adapter.md`'s Phase 3.
- */
-async function loadNodeSpawn(): Promise<(typeof import("node:child_process"))["spawn"]> {
-  try {
-    const { spawn } = await import("node:child_process");
-    return spawn;
-  } catch {
-    throw new Error('`ai.mode: "local"` requires Node (`node:child_process` is not available on this runtime) - use `ai.mode: "server"` instead.');
-  }
-}
-
-async function runLocalCli(messages: ChatMessage[]): Promise<string> {
-  const localAi = ai;
-  if (localAi.mode !== "local") throw new Error("Local AI mode is not configured.");
-  const spawn = await loadNodeSpawn();
-  const prompt = promptForCli(messages);
-  const hasPromptSlot = localAi.args.some((arg) => arg.includes("{prompt}"));
-  const args = hasPromptSlot
-    ? localAi.args.map((arg) => arg.replaceAll("{prompt}", prompt))
-    : [...localAi.args, prompt];
-
-  return await new Promise<string>((resolve, reject) => {
-    const child = spawn(localAi.command, args, {
-      cwd: localAi.cwd,
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`The ${ai.provider} CLI timed out.`));
-    }, localAi.timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(new Error(`Unable to start ${localAi.command}: ${error.message}`));
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        reject(new Error(stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.`));
-        return;
-      }
-      const result = stdout.trim();
-      if (!result) reject(new Error(`${localAi.command} returned an empty response.`));
-      else resolve(result);
-    });
-  });
-}
-
 async function requestServerAiWithCredential(messages: ChatMessage[], credential: ServerCredential): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ai.timeoutMs);
@@ -409,105 +336,6 @@ async function readSseStream(
   }
   buffer += decoder.decode();
   if (buffer.startsWith("data:")) onData(buffer.slice(5).trim());
-}
-
-function streamLocalCli(messages: ChatMessage[], onDelta: (delta: string) => void): ReadableStream<Uint8Array> {
-  const localAi = ai;
-  if (localAi.mode !== "local") throw new Error("Local AI mode is not configured.");
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      void (async () => {
-        const spawn = await loadNodeSpawn();
-        const prompt = promptForCli(messages);
-        const hasPromptSlot = localAi.args.some((arg) => arg.includes("{prompt}"));
-        const baseArgs = hasPromptSlot
-          ? localAi.args.map((arg) => arg.replaceAll("{prompt}", prompt))
-          : [...localAi.args, prompt];
-        // Codex's normal exec output is line-buffered and only emits the final
-        // answer. JSONL gives us a stable final-message event; we progressively
-        // release that text below so the UI still renders it incrementally.
-        const args = localAi.provider === "codex" && !baseArgs.includes("--json")
-          ? [...baseArgs, "--json"]
-          : baseArgs;
-        const child = spawn(localAi.command, args, {
-          cwd: localAi.cwd,
-          env: process.env,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        let stderr = "";
-        let stdout = "";
-        let settled = false;
-        const timer = setTimeout(() => {
-          child.kill("SIGTERM");
-          if (!settled) {
-            settled = true;
-            controller.enqueue(streamEvent({ error: `The ${ai.provider} CLI timed out.` }));
-            controller.close();
-          }
-        }, localAi.timeoutMs);
-        child.stdout.on("data", (chunk: Buffer) => {
-          if (!settled && localAi.provider === "codex") {
-            stdout += chunk.toString();
-          } else if (!settled) {
-            const delta = chunk.toString();
-            onDelta(delta);
-            controller.enqueue(streamEvent({ delta }));
-          }
-        });
-        child.stderr.on("data", (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-        child.on("error", (error) => {
-          clearTimeout(timer);
-          if (settled) return;
-          settled = true;
-          controller.enqueue(streamEvent({ error: safeAiMessage(new Error(`Unable to start ${localAi.command}: ${error.message}`)) }));
-          controller.close();
-        });
-        child.on("close", (code) => {
-          void (async () => {
-            clearTimeout(timer);
-            if (settled) return;
-            if (code !== 0) {
-              settled = true;
-              controller.enqueue(streamEvent({ error: safeAiMessage(new Error(stderr.trim() || `${localAi.command} exited with code ${code ?? "unknown"}.`)) }));
-              controller.enqueue(streamEvent({ done: true }));
-              controller.close();
-              return;
-            }
-            if (localAi.provider === "codex") {
-              let finalText = "";
-              for (const line of stdout.split(/\r?\n/)) {
-                try {
-                  const event = JSON.parse(line) as { type?: string; item?: { type?: string; text?: string } };
-                  if (event.type === "item.completed" && event.item?.type === "agent_message" && typeof event.item.text === "string") {
-                    finalText = event.item.text;
-                  }
-                } catch {
-                  // Ignore non-JSON diagnostic lines from the CLI.
-                }
-              }
-              if (!finalText) finalText = stdout.trim();
-              const chars = Array.from(finalText);
-              for (let index = 0; index < chars.length && !settled; index += 12) {
-                const delta = chars.slice(index, index + 12).join("");
-                onDelta(delta);
-                controller.enqueue(streamEvent({ delta }));
-                await new Promise((resolve) => setTimeout(resolve, 15));
-              }
-            }
-            if (settled) return;
-            settled = true;
-            controller.enqueue(streamEvent({ done: true }));
-            controller.close();
-          })();
-        });
-      })().catch((error) => {
-        controller.enqueue(streamEvent({ error: safeAiMessage(error) }));
-        controller.close();
-      });
-    },
-  });
 }
 
 /** OpenAI Responses API `input[].content` - a plain string for a text-only
@@ -760,12 +588,6 @@ export async function createChatStream(
   maxOutputTokens?: number,
   timeoutMs?: number,
 ): Promise<ChatStreamResult> {
-  if (ai.mode === "local") {
-    return {
-      stream: streamLocalCli(messages, onDelta),
-      aiLabel: `${aiProviderLabel(ai.provider)} (local)`,
-    };
-  }
   if (!aiKeyName) throw new Error("Choose an AI Key before running this request.");
   const credential = await readServerCredential(context, aiKeyName, aiModel);
   return {
@@ -1062,7 +884,7 @@ function handleWizard(context: DryRouteContext, body: WizardHttpRequest): Respon
   const history = validateWizardHistory(body.history);
   const aiKeyName = typeof body.aiKeyName === "string" && body.aiKeyName.trim() ? body.aiKeyName.trim() : undefined;
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
-  if (ai.mode === "server" && !aiKeyName) {
+  if (!aiKeyName) {
     return jsonResponse({ error: "invalid_request", message: "Choose an AI Key before running this request." }, 400);
   }
   const goal = history.length === 0 && typeof body.goal === "string" && body.goal.trim()

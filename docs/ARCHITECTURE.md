@@ -25,19 +25,22 @@ is a Workers-style `fetch(request, env, ctx)` env object - Node's adapter has
 nothing real to put there (`{}`), Workers passes its real bindings
 (`R2Bucket`/`D1Database`/KV namespaces) straight through.
 
-`dry.config.ts` (repo root) is resolved once at server startup by
+`src/server/config.ts` is resolved once at server startup by
 `src/server/options.ts`'s `resolveOptions()` into a fully-normalized
-`ResolvedDryOption`. Invalid config throws **at resolution time**, not at
-first request - see "fail at config time" in CODING-PRINCIPLES.md. The one
-exception is `content.engine: "D1"`: the live `D1Database` binding only
-exists per-request (`context.env`), so its adapter must be constructed fresh
-inside the route handler, never cached at module scope like the other
-engines are.
+`ResolvedDryOption` - no project-level config file, `kind` (`"local"` vs
+`"cloudflare"`) is derived automatically from which SSR entry is being built
+(`import.meta.env.DRYCMS_KIND`, baked in by `vite.config.ts`'s `define`).
+Invalid config throws **at resolution time**, not at first request - see
+"fail at config time" in CODING-PRINCIPLES.md. The one exception is
+`content.engine: "D1"`: the live `D1Database` binding only exists per-request
+(`context.env`), so its adapter must be constructed fresh inside the route
+handler, never cached at module scope like the other engines are.
 
 **Caution:** the dev server (`scripts/dev-server.mjs`) resolves config once
 per process and keeps it at module scope for the process's whole lifetime.
-Editing `dry.config.ts` requires a dev-server restart to take effect - see
-"concurrent editing / stale process" in CODING-PRINCIPLES.md.
+Editing `src/server/config.ts`/`options.ts` requires a dev-server restart to
+take effect - see "concurrent editing / stale process" in
+CODING-PRINCIPLES.md.
 
 ## Content engine: schema adapter + entry adapter, three backends
 
@@ -49,7 +52,7 @@ Content has two orthogonal concerns, each with its own adapter interface
   saves.
 - **`ContentEntryEngineAdapter`** - rows: CRUD on the actual entries.
 
-Two engines implement both, selected by `content.engine` in `dry.config.ts`
+Two engines implement both, selected by the resolved `content.engine`
 (`src/content-types/engine/index.ts`'s `createContentEngineAdapter` /
 `createContentEntryEngineAdapter` factories):
 
@@ -192,7 +195,7 @@ enforcement layer (`content-types/access.ts`'s `resolveAccess`). Every
 ## Storage: one adapter interface, two backends, icons nested inside storage
 
 `src/storage/` implements one adapter interface (`types.ts`) via two backends,
-selected by `kind` in `dry.config.ts`:
+selected by the resolved `kind`:
 
 | kind | adapter | storage root |
 | :-- | :-- | :-- |
@@ -327,8 +330,9 @@ zips the `storage`/`icons`/`components.storage`/`pageComponents.storage`
 roots into `dist/server/seed-assets.zip` (`src/lib/zip.ts`, a hand-rolled
 STORE-only container - no new dependency); `routes/auth.ts`'s
 `register-first-admin` extracts it into whichever roots the RUNNING
-server's own `dry.config.ts` resolves to (once, gated on `hasAnyUser` being
-false - never re-extracted on a later boot, unlike the schema seed above).
+server's own config (`src/server/config.ts`) resolves to (once, gated on
+`hasAnyUser` being false - never re-extracted on a later boot, unlike the
+schema seed above).
 
 ### Enforcement (added 2026-07-31): a session for everything, permissions for content
 

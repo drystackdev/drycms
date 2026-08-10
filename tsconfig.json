@@ -25,6 +25,6 @@
   // `.dry/richtext-components` are the same category (Component Builder's
   // own browser-authored source) but empty on a fresh checkout, so there's
   // nothing to include yet.
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "dry.config.ts", ".dry/pages-source/**/*.tsx"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", ".dry/pages-source/**/*.tsx"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

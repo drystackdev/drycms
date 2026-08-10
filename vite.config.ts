@@ -31,6 +31,14 @@ export default defineConfig(({ isSsrBuild, command }) => ({
    * media root.
    */
   publicDir: command === "build" ? false : "public",
+  // Baked in per-build, not read at runtime - see `src/env.d.ts`'s
+  // `ImportMetaEnv.DRYCMS_KIND` doc comment. `isWorkerBuild` is the only
+  // signal that actually tells the Workers SSR build apart from the Node
+  // one (both are plain `vite build --ssr`, so `import.meta.env.PROD` alone
+  // is `true` for both and can't distinguish them - see `src/server/config.ts`).
+  define: {
+    "import.meta.env.DRYCMS_KIND": JSON.stringify(isWorkerBuild ? "cloudflare" : "local"),
+  },
   // `appRouterPlugin` (`enforce: "pre"`) injects `dry()`'s import for
   // `src/apps/pages/**` before Preact's own JSX transform runs (a
   // server-real or client-replay version depending on

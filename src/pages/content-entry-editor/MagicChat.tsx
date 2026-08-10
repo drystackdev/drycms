@@ -280,6 +280,7 @@ export default function MagicChat({
   const widgetRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatBubble[]>([]);
+  const [sessionLang, setSessionLang] = useState<"vi" | "en">("vi");
   const [prompt, setPrompt] = useState("");
   const [attachedPaths, setAttachedPaths] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -336,6 +337,7 @@ export default function MagicChat({
   // uses for a live abort ("Stopped.").
   useEffect(() => {
     setMessages([]);
+    setSessionLang("vi");
     historyRef.current = [];
     sessionImagePathsRef.current = [];
     idRef.current = 0;
@@ -351,6 +353,7 @@ export default function MagicChat({
             : { id: bubble.id, role: "status", text: "Interrupted." };
         }),
       );
+      setSessionLang(saved.lang);
       historyRef.current = saved.history;
       sessionImagePathsRef.current = saved.sessionImagePaths;
       idRef.current = saved.nextId;
@@ -371,8 +374,9 @@ export default function MagicChat({
       history: historyRef.current,
       sessionImagePaths: sessionImagePathsRef.current,
       nextId: idRef.current,
+      lang: sessionLang,
     });
-  }, [messages, typeSlug, entryId]);
+  }, [messages, typeSlug, entryId, sessionLang]);
 
   // `useOverlayScrollbars` via its opt-in `viewportRef`: `.magic-chat-messages`
   // (host, ref) stays a plain non-scrolling wrapper, while
@@ -581,6 +585,7 @@ export default function MagicChat({
           history: historyForThisTurn,
           images,
           sessionImagePaths: sessionImagePathsRef.current,
+          lang: sessionLang,
           aiKeyName: aiKey.keyName,
           aiModel: aiKey.model,
           ...(rewriteRequest
@@ -960,6 +965,27 @@ export default function MagicChat({
                         {suggestion}
                       </button>
                     ))}
+                  </div>
+                  <div class="field">
+                    <label>Output language</label>
+                    <div class="file-view-toggle" role="group" aria-label="Output language">
+                      <button
+                        type="button"
+                        class="ghost sm"
+                        aria-pressed={sessionLang === "vi"}
+                        onClick={() => setSessionLang("vi")}
+                      >
+                        Tiếng Việt
+                      </button>
+                      <button
+                        type="button"
+                        class="ghost sm"
+                        aria-pressed={sessionLang === "en"}
+                        onClick={() => setSessionLang("en")}
+                      >
+                        English
+                      </button>
+                    </div>
                   </div>
                   <AiKeyPicker selection={aiKey} />
                 </div>

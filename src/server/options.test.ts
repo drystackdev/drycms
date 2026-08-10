@@ -38,9 +38,8 @@ describe('resolveOptions', () => {
 				storage: { kind: 'local', root: resolve(process.cwd(), '.dry/pages-source') },
 			},
 			ai: {
-				mode: 'local', provider: 'codex', command: 'codex',
-				args: ['exec', '--ephemeral', '--skip-git-repo-check'],
-				cwd: undefined, timeoutMs: 120_000, lang: 'en',
+				provider: 'openai', model: 'gpt-5', baseUrl: 'https://api.openai.com',
+				timeoutMs: 120_000, lang: 'en',
 			},
 			kv: {
 				kind: 'local', root: resolve(process.cwd(), '.dry/kv'), maxEntries: 10_000,
@@ -139,28 +138,19 @@ describe('resolveOptions', () => {
 		});
 	});
 
-	it('derives ai.mode from kind - "local" runs a CLI, "cloudflare" calls a provider API', () => {
-		expect(resolveOptions().ai).toMatchObject({ mode: 'local', provider: 'codex' });
-		expect(resolveOptions({ kind: 'cloudflare' }).ai).toMatchObject({ mode: 'server', provider: 'openai' });
+	it('defaults ai.provider to "openai", independent of kind', () => {
+		expect(resolveOptions().ai).toMatchObject({ provider: 'openai', model: 'gpt-5' });
+		expect(resolveOptions({ kind: 'cloudflare' }).ai).toMatchObject({ provider: 'openai', model: 'gpt-5' });
 	});
 
-	it('rejects an ai.provider that does not match the derived mode', () => {
-		expect(() => resolveOptions({ ai: { provider: 'openai' } })).toThrow(/codex.*claude.*ai\.mode.*local/);
-		expect(() => resolveOptions({ kind: 'cloudflare', ai: { provider: 'codex' as 'openai' } })).toThrow(/openai.*anthropic.*ai\.mode.*server/);
-	});
-
-	it('allows ai.mode to be overridden independently of kind - "server" while kind stays "local"', () => {
-		expect(resolveOptions({ ai: { mode: 'server', provider: 'anthropic' } }).ai).toMatchObject({
-			mode: 'server', provider: 'anthropic',
-		});
-		expect(resolveOptions({ ai: { mode: 'server', provider: 'anthropic' } }).kind).toBe('local');
-		expect(resolveOptions({ ai: { mode: 'server', provider: 'anthropic' } }).storage).toEqual({
-			kind: 'local', root: resolve(process.cwd(), 'public'),
+	it('accepts an explicit ai.provider', () => {
+		expect(resolveOptions({ ai: { provider: 'anthropic' } }).ai).toMatchObject({
+			provider: 'anthropic', model: 'claude-sonnet-4-20250514',
 		});
 	});
 
-	it('rejects ai.mode "local" when kind is "cloudflare" - a CLI cannot spawn in a Workers runtime', () => {
-		expect(() => resolveOptions({ kind: 'cloudflare', ai: { mode: 'local' } })).toThrow(/ai\.mode.*local.*kind.*cloudflare/);
+	it('rejects an unrecognized ai.provider', () => {
+		expect(() => resolveOptions({ ai: { provider: 'codex' as 'openai' } })).toThrow(/openai.*anthropic/);
 	});
 
 	it('defaults ai.lang to "en" and accepts an override, under both kinds', () => {

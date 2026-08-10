@@ -10,9 +10,10 @@ bun run dev      # http://localhost:5173, base path /dry by default
 ```
 
 See `AGENTS.md` for the full layout and development workflow, and
-`dry.config.ts` for configuration (storage/icons/content backends, base
-path). With the default local configuration, runtime data is kept under
-`.dry/` (explicit paths in `dry.config.ts` remain unchanged).
+`src/server/options.ts`'s `DryOption`/`resolveOptions` for configuration
+(storage/icons/content backends, base path) - passed in by
+`src/server/config.ts`, no project-level config file. With the default local
+configuration, runtime data is kept under `.dry/`.
 
 ## Commands
 
