@@ -25,6 +25,15 @@
   // `.dry/richtext-components` are the same category (Component Builder's
   // own browser-authored source) but empty on a fresh checkout, so there's
   // nothing to include yet.
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", ".dry/pages-source/**/*.tsx"],
+  //
+  // `.dry/dry.generated.d.ts` is the one exception: real generated/cache
+  // output (regenerated from the live content-type schema, gitignored like
+  // the rest of `.dry/` - see `content-types/types-cache.ts`), but it still
+  // has to be in this program because it's what makes the ambient globals
+  // `dry()`/`params()`/`setTitle()` typecheck at all for both roots above.
+  // On a fresh checkout it won't exist until `bun run dev` (or `bun run
+  // dry:generate`) has run once - `tsc`/the IDE just sees those globals as
+  // untyped until then, not an error.
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", ".dry/pages-source/**/*.tsx", ".dry/dry.generated.d.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

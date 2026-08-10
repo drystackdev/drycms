@@ -213,7 +213,7 @@ export function generateDryTypes(allTypes: ContentTypeDefinition[]): string {
 // \`import { params } from "../content-types/params-reader.js"\`,
 // \`import { setTitle } from "../content-types/dry-title.js"\`.
 
-import type { DryReader } from "../content-types/dry-reader.js";
+import type { DryReader } from "../src/content-types/dry-reader.js";
 
 ${interfaces}
 

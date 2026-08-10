@@ -92,10 +92,11 @@ const devPagesSource = pagesSourceAdapter && {
 };
 
 /**
- * Regenerates `src/apps/dry.generated.d.ts` (see `plans/reader.md`) once on
- * startup, so a fresh checkout has correct `dry()` types without a manual
- * step - `bun run dry:generate` (`scripts/dry-generate.ts`) covers the
- * mid-session case (schema changed, no restart) this can't. `content.engine
+ * Regenerates `.dry/dry.generated.d.ts` (see `plans/reader.md`) once on
+ * startup, so a fresh checkout has correct `dry()` types after this first
+ * run without any manual step - `bun run dry:generate`
+ * (`scripts/dry-generate.ts`) covers the mid-session case (schema changed,
+ * no restart) this can't. `content.engine
  * === "D1"` has no local binding to read here, same as that script - skipped
  * silently rather than logging a scary, expected error on every D1 dev
  * startup. Never fatal: a codegen bug must not block the dev server itself.

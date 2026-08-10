@@ -111,7 +111,7 @@ describe("appRouterPlugin handleHotUpdate", () => {
   });
 
   it("ignores files outside src/apps/pages and globals.css", () => {
-    const { result, send } = hotUpdate(join(process.cwd(), "src/apps/dry.generated.d.ts"));
+    const { result, send } = hotUpdate(join(process.cwd(), ".dry/dry.generated.d.ts"));
     expect(send).not.toHaveBeenCalled();
     expect(result).toBeUndefined();
   });

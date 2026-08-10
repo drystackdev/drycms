@@ -316,8 +316,10 @@ An app's OWN content types (as opposed to the 6 built-in defaults above) can
 be packaged for a fresh production deploy - see `plans/content-type-seed.md`
 for the full design. `bun run seed:sync` snapshots the current dev content-
 type DB (every type, including the 6 defaults) into `src/apps/dry.seed.json`
-(alongside `dry.generated.d.ts` - both are generated-but-committed app
-artifacts); when that file has content, `content-types/seed.ts`'s
+(a generated-but-committed app artifact, unlike `.dry/dry.generated.d.ts` -
+that one is gitignored, since it tracks the live schema rather than
+anything a fresh deploy needs to ship with); when that file has content,
+`content-types/seed.ts`'s
 `resolveDefaultContentTypeDefinitions()` uses it INSTEAD of
 `defaultContentTypeDefinitions()` for every boot's `pendingSeedStatements`
 diff - completely replacing the built-in list, not layering on top of it.

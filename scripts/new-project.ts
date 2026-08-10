@@ -261,9 +261,9 @@ if (content.engine === "D1") {
   // `dry:generate` opens `.dry/content.sqlite`, which runs the same
   // first-boot migration/seed path `bun run dev` would (`sqlite.ts`'s
   // `getHandle()` - system types only, nothing app-specific to leak in from
-  // the old project), then regenerates `src/apps/dry.generated.d.ts` - so the
-  // committed generated types match the fresh DB immediately instead of
-  // staying stale until the next dev-server start.
+  // the old project), then regenerates `.dry/dry.generated.d.ts` - so the
+  // generated types match the fresh DB immediately instead of staying stale
+  // until the next dev-server start.
   console.log("\nCreating a fresh content DB + regenerating dry.generated.d.ts...");
   bunRun("dry:generate");
 }
@@ -390,7 +390,7 @@ export default function RootLayout({ children }: { children?: unknown }) {
  *   const { rows } = await dry().collection("blog").list({ pageSize: 3 });
  *
  * \`dry()\` is an ambient global here - no import needed (see
- * \`src/apps/dry.generated.d.ts\`, regenerated on every dev-server start).
+ * \`.dry/dry.generated.d.ts\`, regenerated on every dev-server start).
  */
 const SITE_NAME = ${nameLiteral};
 

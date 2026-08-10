@@ -91,8 +91,8 @@ function resolveModuleName(spec: string, containingFile: string): string | undef
   // `./foo.js` -> `./foo.ts`, the extension rewrite every TS resolution mode
   // does for ESM-style specifiers. This repo writes all of its own relative
   // imports that way, so without it `dry.generated.d.ts`'s
-  // `from "../content-types/dry-reader.js"` (and any page importing a sibling
-  // as `./Card.js`) resolves to nothing at all.
+  // `from "../src/content-types/dry-reader.js"` (and any page importing a
+  // sibling as `./Card.js`) resolves to nothing at all.
   if (base.endsWith(".js")) {
     const stem = base.slice(0, -".js".length);
     candidates.push(`${stem}.ts`, `${stem}.tsx`, `${stem}.d.ts`);

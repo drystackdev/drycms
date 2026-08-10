@@ -1,5 +1,5 @@
 /**
- * Regenerates `src/apps/dry.generated.d.ts` from the current content types -
+ * Regenerates `.dry/dry.generated.d.ts` from the current content types -
  * the same generation `scripts/dev-server.mjs` runs once on startup, exposed
  * standalone for CI or a manual re-run without restarting the dev server
  * (e.g. right after an "Apply and build" - see `plans/reader.md`).

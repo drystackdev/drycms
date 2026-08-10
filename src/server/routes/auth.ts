@@ -187,7 +187,7 @@ const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // refresh session lifetime
 
 function withSessionCookies(response: Response, context: DryRouteContext, token: string, refreshToken: string): Response {
   response.headers.append("Set-Cookie", sessionCookieHeader(context, token, 15 * 60));
-  response.headers.append("Set-Cookie", sessionCookieHeader(context, refreshToken, SESSION_MAX_AGE_SECONDS, REFRESH_COOKIE_NAME));
+  response.headers.append("Set-Cookie", sessionCookieHeader(context, refreshToken, refreshToken ? SESSION_MAX_AGE_SECONDS : 0, REFRESH_COOKIE_NAME));
   response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
   // Any signed-in user can use the public-site "Edit" overlay - no separate
   // VEI permission to check.

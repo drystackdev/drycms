@@ -38,9 +38,10 @@ export const preactVirtualFiles: Record<string, string> = {
 /**
  * The modules `dry.generated.d.ts` imports from, keyed by where its own
  * relative specifiers land in this virtual FS (it sits at
- * `/dry.generated.d.ts`, so `../content-types/dry-reader.js` resolves to
- * `/content-types/dry-reader.js` - see `resolveModuleName`'s `.js` -> `.ts`
- * fallback in `ts-worker.ts`).
+ * `/dry.generated.d.ts`, matching its real on-disk home `.dry/` being a
+ * repo-root sibling of `src/`, so `../src/content-types/dry-reader.js`
+ * resolves to `/src/content-types/dry-reader.js` - see
+ * `resolveModuleName`'s `.js` -> `.ts` fallback in `ts-worker.ts`).
  *
  * Without these, that one import is unresolved, `DryReader` silently
  * degrades to `any` (`skipLibCheck` hides the error, since the generated
@@ -58,10 +59,10 @@ export const preactVirtualFiles: Record<string, string> = {
  * `src/content-types/` as raw text.
  */
 export const dryReaderVirtualFiles: Record<string, string> = {
-  "/content-types/dry-reader.ts": dryReaderSource,
-  "/content-types/dry-vei.ts": dryVeiSource,
-  "/content-types/dry-vei-ref.ts": dryVeiRefSource,
-  "/content-types/engine/entry-where.ts": entryWhereSource,
+  "/src/content-types/dry-reader.ts": dryReaderSource,
+  "/src/content-types/dry-vei.ts": dryVeiSource,
+  "/src/content-types/dry-vei-ref.ts": dryVeiRefSource,
+  "/src/content-types/engine/entry-where.ts": entryWhereSource,
 };
 
 const rawLibFiles = import.meta.glob("/node_modules/typescript/lib/lib.*.d.ts", {

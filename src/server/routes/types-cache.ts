@@ -30,9 +30,9 @@ export const GET: DryRouteHandler = async (context) => {
     });
   } catch (error) {
     if (error instanceof StorageError && error.code === "not_found") {
-      // Not generated yet - the cache and `src/apps/dry.generated.d.ts`
-      // (git) are 2 representations of the same generated data kept in
-      // sync for the same reason `src/apps/pages` and `pagesSourceStorage`
+      // Not generated yet - the cache and `.dry/dry.generated.d.ts` (both
+      // gitignored) are 2 representations of the same generated data kept
+      // in sync for the same reason `src/apps/pages` and `pagesSourceStorage`
       // are (`sync-pages-r2.ts`): this cache is what serves code that
       // isn't compiled from `src` at all (`PageEditor.tsx`'s in-browser
       // Editer, reading `pagesSourceStorage`-backed files no `tsc`/on-disk
