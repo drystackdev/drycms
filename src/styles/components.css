@@ -5949,7 +5949,7 @@
 
       & .page-components-resize-handle {
         margin-right: -3px;
-        z-index: 5;
+        z-index: 10;
       }
     }
 
@@ -6038,11 +6038,11 @@
         outline-offset: -1px;
       }
 
-      /* Every row in the tree's current selection (Cmd/Ctrl+click, Shift+click
-         range - `ComponentTreePanel`'s `selectedPaths`): the FILL says "copy/
-         delete acts on these", while `.selected`'s outline above stays
-         reserved for the one file open in the editor. A single-file selection
-         is normally the same row and carries both. */
+      /* Every explicitly picked row (Cmd/Ctrl+click, Shift+click range -
+         `ComponentTreePanel`'s `pickedPaths`): the FILL says "copy/delete acts
+         on these", while `.selected`'s outline above stays reserved for the one
+         file open in the editor. An ordinary single click picks nothing, so it
+         still shows only the outline - the fill is what multi-select adds. */
       &.in-selection {
         background-color: var(--dry-accent);
       }
@@ -6250,6 +6250,7 @@
       flex-direction: column;
       flex: 0 0 auto;
       min-height: 0;
+      margin-top: -4px;
       border-top: 1px solid var(--dry-border);
       background-color: var(--dry-background);
     }

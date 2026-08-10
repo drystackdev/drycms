@@ -44,7 +44,7 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
-import { entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
+import { copyDestinationPath, entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
 import { COMPONENT_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, rootOf } from "../server/app-router/source-roots.js";
 import { COMPONENT_PREVIEW_ENTRY_PATH, buildComponentPreviewSource } from "../page-components/component-preview.js";
 import { samplePropsSource } from "../page-components/props-sample.js";
@@ -239,6 +239,17 @@ const PREVIEW_NAVIGATE_MESSAGE = "dry-page-editor-preview-navigate";
  * which is the one thing this shortcut exists to prevent. */
 const PREVIEW_SAVE_MESSAGE = "dry-page-editor-preview-save";
 
+/** `postMessage` type for a wheel/trackpad gesture over the preview iframe.
+ * A wheel event is dispatched in the iframe's own document and never crosses
+ * the frame boundary, so scrolling the preview PANEL (the surrounding
+ * `.page-components-preview-viewport-inner`, which is what actually overflows
+ * once the frame is zoomed in past the panel's width) was impossible with the
+ * pointer anywhere over the preview - the one place it naturally sits. The
+ * injected bridge forwards only the axis the preview document itself can't
+ * scroll, so a tall page preview still scrolls its own content vertically
+ * while the horizontal delta pans the zoomed frame. */
+const PREVIEW_WHEEL_MESSAGE = "dry-page-editor-preview-wheel";
+
 /** Runs INSIDE the preview iframe (injected as a literal `<script>` into the
  * built HTML, never sharing a JS realm with this file) - see
  * `PREVIEW_NAVIGATE_MESSAGE`/`PREVIEW_SAVE_MESSAGE`'s doc comments for why.
@@ -249,7 +260,7 @@ const PREVIEW_SAVE_MESSAGE = "dry-page-editor-preview-save";
  * URL back out to a pathname - no origin-joining logic duplicated on this
  * side. */
 function buildPreviewBridgeScript(): string {
-  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
+  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);document.addEventListener("wheel",function(event){var el=document.scrollingElement||document.documentElement;var unit=event.deltaMode===1?16:event.deltaMode===2?el.clientHeight:1;var dx=el.scrollWidth>el.clientWidth?0:event.deltaX*unit;var dy=el.scrollHeight>el.clientHeight?0:event.deltaY*unit;if(!dx&&!dy)return;window.parent.postMessage({type:${JSON.stringify(PREVIEW_WHEEL_MESSAGE)},deltaX:dx,deltaY:dy},"*");},{passive:true,capture:true});})();</script>`;
 }
 
 /** Same `?tree`-unsupported (R2/S3) fallback `PageBuild.tsx` uses, but
@@ -946,20 +957,69 @@ export default function PageEditor() {
   }
 
   async function handleDelete() {
-    if (!pendingDelete) return;
+    if (pendingDelete.length === 0) return;
     setDeleting(true);
     try {
-      await api.remove(pendingDelete.id);
-      cancelDraftWrite(pendingDelete.id);
-      void deletePageSourceDraft(pendingDelete.id);
-      if (selectedPath === pendingDelete.id) setSelectedPath("");
-      setPendingDelete(null);
+      // Sequential, not `Promise.all`: these hit the same storage tree (a
+      // folder and a file inside it can both be in the set), and the
+      // adapters make no ordering guarantee for concurrent writes.
+      for (const entry of pendingDelete) {
+        await api.remove(entry.id);
+        cancelDraftWrite(entry.id);
+        void deletePageSourceDraft(entry.id);
+      }
+      if (pendingDelete.some((entry) => entry.id === selectedPath)) setSelectedPath("");
+      setPendingDelete([]);
       await loadTree();
-      toast.add({ type: "success", title: "Deleted." });
+      toast.add({ type: "success", title: pendingDelete.length > 1 ? `Deleted ${pendingDelete.length} items.` : "Deleted." });
     } catch (error) {
       toast.add({ type: "error", title: "Delete failed", description: error instanceof Error ? error.message : undefined });
     } finally {
       setDeleting(false);
+    }
+  }
+
+  /** Copy/paste in the tree panel: the panel holds the clipboard (which paths
+   * were copied), this side does the actual work, because only it has the file
+   * CONTENT (`sourceByPath`) and knows about source roots.
+   *
+   * Deliberately pastes the SAVED content, not the open editor buffer -
+   * `savedByPath` is what the original file actually is on storage right now,
+   * and silently baking someone's unsaved half-edit into a new file would be
+   * the kind of surprise nothing later undoes. Relative imports get rebased
+   * through `rewriteImportsAfterMove` (the copy's own imports only - every
+   * OTHER file still points at the original, which hasn't moved), so pasting
+   * into a different folder doesn't produce a file with broken `./` paths. */
+  async function handlePaste(paths: string[], destFolder: string) {
+    // `""` is the tab's own tree root, which on storage IS the root folder -
+    // rooting it here (rather than `withSourceRoot`-ing the result) is what
+    // makes the collision check below compare like-for-like against the real,
+    // fully-rooted paths in `taken`.
+    const folder = destFolder || activeRoot;
+    const taken = new Set(Object.keys(sourceByPath));
+    const created: string[] = [];
+    try {
+      for (const from of paths) {
+        const content = savedByPath[from] ?? sourceByPath[from];
+        if (content === undefined) continue;
+        const to = copyDestinationPath(taken, folder, from);
+        // Reserve it before the next iteration looks for a free name -
+        // pasting 2 copies into the same folder must not pick it twice.
+        taken.add(to);
+        // A one-entry map on purpose: this only wants the COPY's own imports
+        // rebased. The full map would also return rewrites for every file
+        // importing the original - which must keep pointing at the original.
+        const rewrites = rewriteImportsAfterMove({ [from]: content }, from, to);
+        await api.save(to, rewrites[to] ?? content);
+        created.push(to);
+      }
+      if (created.length === 0) return;
+      await loadTree();
+      setSelectedPath(created[created.length - 1]!);
+      toast.add({ type: "success", title: created.length > 1 ? `Pasted ${created.length} files.` : `Pasted "${created[0]}".` });
+    } catch (error) {
+      toast.add({ type: "error", title: "Paste failed", description: error instanceof Error ? error.message : undefined });
+      if (created.length > 0) await loadTree();
     }
   }
 
@@ -1234,17 +1294,30 @@ export default function PageEditor() {
    *
    * Unlike `useScaledPreview`, this hook's own `ref` is a plain object, not
    * self-healing - its mount effect only runs when `deps` changes, so it
-   * MUST be told exactly when the host element's mounted-ness flips (it's
-   * conditionally rendered, gated on `previewTarget && !previewError`) or
-   * it silently never initializes for a host that doesn't exist yet on
-   * first mount (this component's very first render, before `loadTree()`'s
-   * async fetch resolves `previewTarget` - the doc comment on the hook
-   * itself calls this out, e.g. `[open]` for a conditionally-shown panel).
-   * Keyed on `previewTarget` alone, not `previewError` too - the viewport
-   * stays mounted across an error<->success flip now (see the JSX below),
-   * so re-running this on every error toggle would just be redundant
-   * teardown/init work on top of the same DOM node. */
-  const previewScroll = useOverlayScrollbars<HTMLDivElement>([!!previewTarget]);
+   * MUST be told exactly when the host element's mounted-ness flips, which
+   * is `previewHostMounted` (EVERY condition the host renders under), not
+   * `previewTarget` alone as it used to be. That older, narrower key was a
+   * real bug, not a nicety: opening this page with a component already in
+   * the URL (`?file=component/Card.tsx` - the normal case, since the URL and
+   * `localStorage` both restore the last file) makes `previewTarget` truthy
+   * on the very FIRST render, while `entries === null` still short-circuits
+   * the whole UI to "Loading…". The effect then ran once against a host that
+   * didn't exist yet, and - deps never changing again - never re-ran once it
+   * did, leaving the viewport at `overflow: visible`: a zoomed-in preview
+   * simply overflowed and got clipped, with no scrollbar on either axis.
+   * `previewError` is deliberately NOT part of it - the viewport stays
+   * mounted across an error<->success flip (see the JSX below), so including
+   * it would just be redundant teardown/init on the same DOM node. */
+  const previewScroll = useOverlayScrollbars<HTMLDivElement>([previewHostMounted], {
+    // `autoHide: "never"` (not the app-wide `"move"` default): the iframe
+    // fills this viewport, and a pointer sitting over an iframe generates no
+    // `pointermove` in THIS document at all - so the auto-hiding overlay bar
+    // would stay invisible for exactly the gesture it exists for (panning a
+    // zoomed-in preview). Nothing shows when there's nothing to scroll: an
+    // unusable axis's handle is `opacity: 0` (scrollbar.css) and this theme
+    // paints no track.
+    scrollbars: { autoHide: "never" },
+  });
 
   /** The preview panel's own visible height, tracked live. A COMPONENT
    * preview's frame is sized from this instead of the fixed
@@ -1374,6 +1447,18 @@ export default function PageEditor() {
       if (!event.data) return;
       if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
       if (event.data.type === PREVIEW_SAVE_MESSAGE) return saveShortcutRef.current();
+      if (event.data.type === PREVIEW_WHEEL_MESSAGE) {
+        // The OverlayScrollbars-managed viewport (`previewScroll.viewportRef`)
+        // is the element that actually overflows - the host around it doesn't
+        // scroll at all (see its own CSS comment). Refs never go stale, so
+        // reading `.current` here is safe despite this effect only re-running
+        // on `manifest`.
+        previewScroll.viewportRef.current?.scrollBy({
+          left: Number(event.data.deltaX) || 0,
+          top: Number(event.data.deltaY) || 0,
+        });
+        return;
+      }
       if (event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
       const pathname = event.data.pathname;
       if (typeof pathname !== "string") return;
@@ -1548,6 +1633,8 @@ export default function PageEditor() {
                 onCreateFolder={handleCreateFolder}
                 onDelete={setPendingDelete}
                 onMove={handleMove}
+                onPaste={(paths, destFolder) => void handlePaste(paths, destFolder)}
+                onCopy={(paths) => toast.add({ type: "success", title: paths.length > 1 ? `Copied ${paths.length} files.` : `Copied "${paths[0]}".` })}
                 isDirty={(p) => sourceByPath[p] !== savedByPath[p]}
                 needsBuild={(p) => unbuiltPaths.has(p)}
               />
@@ -1752,14 +1839,20 @@ export default function PageEditor() {
       </div>
 
       <ConfirmDialog
-        open={pendingDelete !== null}
-        title={`Delete "${pendingDelete?.name ?? ""}"?`}
-        message={pendingDelete?.kind === "folder" ? "This deletes the folder and everything inside it. This cannot be undone." : "This cannot be undone."}
+        open={pendingDelete.length > 0}
+        title={pendingDelete.length > 1 ? `Delete ${pendingDelete.length} items?` : `Delete "${pendingDelete[0]?.name ?? ""}"?`}
+        message={
+          pendingDelete.length > 1
+            ? `${pendingDelete.map((entry) => entry.name).join(", ")}. This cannot be undone.`
+            : pendingDelete[0]?.kind === "folder"
+              ? "This deletes the folder and everything inside it. This cannot be undone."
+              : "This cannot be undone."
+        }
         confirmLabel="Delete"
         destructive
         busy={deleting}
         onConfirm={() => void handleDelete()}
-        onCancel={() => setPendingDelete(null)}
+        onCancel={() => setPendingDelete([])}
       />
 
       <GithubResetDialog

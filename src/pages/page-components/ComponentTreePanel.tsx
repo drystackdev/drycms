@@ -106,7 +106,7 @@ export default function ComponentTreePanel({
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   /** Files picked with Cmd/Ctrl+click or a Shift+click range - what a copy or
    * a delete acts on. Empty is the normal state and does NOT mean "nothing
-   * selected": `selectedPaths` below then falls back to the file open in the
+   * selected": `actingPaths` below then falls back to the file open in the
    * editor, so a plain click never has to write this at all. Files only -
    * a folder row picks `activeFolder` instead (a different concept: where
    * new/pasted items land). */
@@ -131,19 +131,27 @@ export default function ComponentTreePanel({
   const isOpen = (id: string) =>
     (query.trim() && matchedFolderIds.has(id)) || !collapsed.has(id);
 
-  /** The selection as everything else should read it: pruned of paths that no
-   * longer exist (a delete/move/rename/tab switch can strip a row out from
-   * under it - deriving instead of syncing means no stale entry ever survives
-   * to be copied or deleted), and falling back to the open file so "copy" with
-   * nothing explicitly picked still means something. */
-  const selectedPaths = useMemo(() => {
+  /** What the user actually picked, pruned of paths that no longer exist (a
+   * delete/move/rename/tab switch can strip a row out from under it - deriving
+   * instead of syncing means no stale entry ever survives to be copied or
+   * deleted). This is what gets the selection FILL, so an ordinary single
+   * click - which leaves this empty - keeps looking exactly as it always has. */
+  const pickedPaths = useMemo(() => {
     const alive = new Set<string>();
     for (const path of selection) {
       if (entryById.get(path)?.kind === "file") alive.add(path);
     }
-    if (alive.size === 0 && selectedPath) alive.add(selectedPath);
     return alive;
-  }, [selection, entryById, selectedPath]);
+  }, [selection, entryById]);
+
+  /** What a copy/delete acts on: the explicit pick, or - when there is none -
+   * the file open in the editor, so Cmd+C with nothing picked still copies the
+   * obvious thing. Also the seed a Cmd/Ctrl+click toggles against, which is
+   * what makes "open A, Cmd+click B" mean both rather than only B. */
+  const actingPaths = useMemo(
+    () => (pickedPaths.size > 0 ? pickedPaths : new Set(selectedPath ? [selectedPath] : [])),
+    [pickedPaths, selectedPath],
+  );
 
   // Not memoized: one O(rows) walk per render over a tree small enough to fit
   // in a sidebar, and its real inputs (`collapsed`, `query`, `matchedFolderIds`
@@ -176,7 +184,10 @@ export default function ComponentTreePanel({
    * earlier pick. */
   function selectFile(path: string) {
     setActiveFolder(null);
-    setSelection(new Set([path]));
+    // Empty, not `{path}`: with no explicit pick the row draws exactly as it
+    // did before multi-select existed (outline only, no fill), while
+    // `actingPaths` still resolves a lone Cmd+C to this file.
+    setSelection(new Set());
     setAnchorPath(path);
     onSelect(path);
   }
@@ -201,7 +212,7 @@ export default function ComponentTreePanel({
       return;
     }
     if (event.metaKey || event.ctrlKey) {
-      const next = new Set(selectedPaths);
+      const next = new Set(actingPaths);
       if (next.has(path)) next.delete(path);
       else next.add(path);
       setSelection(next);
@@ -219,6 +230,12 @@ export default function ComponentTreePanel({
 
   function pasteInto(destFolder: string) {
     if (clipboard.length === 0) return;
+    // Drop the selection: it still points at the SOURCE files, and leaving
+    // them filled while the fresh copy is what just opened reads as if the
+    // paste landed on the originals. Empty falls back to the open file, which
+    // the consumer switches to the new copy.
+    setSelection(new Set());
+    setAnchorPath(null);
     onPaste(clipboard, destFolder);
   }
 
@@ -235,7 +252,7 @@ export default function ComponentTreePanel({
     const key = event.key.toLowerCase();
     if (key === "c") {
       event.preventDefault();
-      copyPaths([...selectedPaths]);
+      copyPaths([...actingPaths]);
     } else if (key === "v") {
       event.preventDefault();
       pasteInto(effectiveFolder);
@@ -357,7 +374,7 @@ export default function ComponentTreePanel({
             nodes={filteredTree}
             folderId=""
             selectedPath={selectedPath}
-            selectedPaths={selectedPaths}
+            pickedPaths={pickedPaths}
             activeFolder={effectiveFolder}
             isOpen={isOpen}
             isDirty={isDirty}
@@ -432,9 +449,9 @@ interface ComponentTreeListProps {
    * decide whether the create-form belongs inside THIS list. */
   folderId: string;
   selectedPath: string | null;
-  /** Every file row in the current selection (see the panel's own
-   * `selectedPaths`) - what the row's Copy/Delete act on. */
-  selectedPaths: ReadonlySet<string>;
+  /** The explicitly picked file rows (see the panel's own `pickedPaths`) -
+   * these draw filled, and a right-click inside them acts on the whole set. */
+  pickedPaths: ReadonlySet<string>;
   activeFolder: string;
   isOpen: (id: string) => boolean;
   isDirty?: (path: string) => boolean;
@@ -469,7 +486,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     nodes,
     folderId,
     selectedPath,
-    selectedPaths,
+    pickedPaths,
     activeFolder,
     isOpen,
     isDirty,
@@ -513,12 +530,12 @@ function ComponentTreeList(props: ComponentTreeListProps) {
         const entry = node.entry;
         const renaming = renamingPath === entry.id;
         const open = entry.kind === "folder" && isOpen(entry.id);
-        const inSelection = entry.kind === "file" && selectedPaths.has(entry.id);
+        const inSelection = entry.kind === "file" && pickedPaths.has(entry.id);
         /** Right-clicking INSIDE the selection acts on the whole set;
          * right-clicking a row outside it acts on that row alone (and leaves
          * the selection untouched - same as every file manager). */
-        const targets = inSelection ? [...selectedPaths] : entry.kind === "file" ? [entry.id] : [];
-        const bulk = inSelection && selectedPaths.size > 1;
+        const targets = inSelection ? [...pickedPaths] : entry.kind === "file" ? [entry.id] : [];
+        const bulk = inSelection && pickedPaths.size > 1;
         const deleteTargets = bulk
           ? targets.map((path) => entryById.get(path)).filter((item): item is FileEntry => !!item)
           : [entry];
