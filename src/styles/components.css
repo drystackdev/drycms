@@ -3449,11 +3449,15 @@
       margin-block-start: 1.25rem;
     }
 
-    /* Ref-picker dialog (components/RelationField.tsx) and the
-     * repeatable-component item dialog (components/ComponentField.tsx) -
-     * same fixed-header/scrolling-body shape as `.field-dialog[open]` above. */
+    /* Ref-picker dialog (components/RelationField.tsx), the repeatable-
+     * component item dialog (components/ComponentField.tsx), and the
+     * quick-create-entry dialog nested inside a relation picker
+     * (content-entry-editor/QuickCreateEntryDialog.tsx,
+     * status/relation-quick-create.md) - same fixed-header/scrolling-body
+     * shape as `.field-dialog[open]` above. */
     .ref-picker-dialog[open],
-    .component-item-dialog[open] {
+    .component-item-dialog[open],
+    .quick-create-entry-dialog[open] {
       display: flex;
       flex-direction: column;
       max-height: min(44rem, calc(100vh - 4rem));
@@ -3465,7 +3469,8 @@
     }
 
     .ref-picker-body,
-    .component-item-dialog-body {
+    .component-item-dialog-body,
+    .quick-create-entry-dialog-body {
       flex: 1 1 auto;
       min-height: 0;
       overflow-y: auto;

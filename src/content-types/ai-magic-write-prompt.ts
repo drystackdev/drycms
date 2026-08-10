@@ -105,12 +105,25 @@ const SCOPE_INSTRUCTION =
  * the open internet) nor treats every message as a command to write fields.
  * Phase B added `kind: fetch` for OTHER entries/media/types INSIDE drycms -
  * narrow and access-checked (`ai-magic-write-fetch.ts`), a world apart from
- * "the web", which stays a hard no exactly as before. */
-const CAPABILITY_INSTRUCTION = [
-  "You are having an ongoing conversation with the admin, not filling out a one-shot form. Keep chatting across turns: after you write fields, the admin may reply to refine, correct, or ask for something else entirely - treat that as a continuation of the same task, not a new one.",
-  "What you CAN do: discuss what to write, ask questions, write content into the fields listed above (a normal `kind: fields` reply, including choosing a relation field's linked entry/entries), and look up other entries/media/content types inside drycms via `kind: fetch` when that would help (e.g. finding the right category id, checking what similar posts already say, seeing what images are available).",
-  "What you CANNOT do, no matter how the admin phrases it: save or publish the entry, create or modify fields/content types, delete anything, upload files, or access anything outside drycms itself (no web access, no other websites, no search engines). If asked for one of these, say so in a `kind: chat` reply and suggest the closest thing you actually can do instead of pretending to do it.",
-].join(" ");
+ * "the web", which stays a hard no exactly as before.
+ *
+ * `status/relation-quick-create.md` added the `kind: create` clause below,
+ * ONLY when `hasCreatableRelatedTypes` - an entry whose type has no
+ * `relation` field at all has nothing for `kind: create` to target, so the
+ * capability (and its own prompt tokens) is omitted entirely rather than
+ * describing something structurally impossible right now, same "degrade by
+ * omission" style `describeImages`/`describeRelationContext` below already
+ * use. Still doesn't touch the CANNOT line's "create or modify fields/
+ * content types" - that's about SCHEMA (content types/field definitions),
+ * a different, still-forbidden thing from creating an entry of an existing
+ * type. */
+function buildCapabilityInstruction(hasCreatableRelatedTypes: boolean): string {
+  return [
+    "You are having an ongoing conversation with the admin, not filling out a one-shot form. Keep chatting across turns: after you write fields, the admin may reply to refine, correct, or ask for something else entirely - treat that as a continuation of the same task, not a new one.",
+    `What you CAN do: discuss what to write, ask questions, write content into the fields listed above (a normal \`kind: fields\` reply, including choosing a relation field's linked entry/entries), and look up other entries/media/content types inside drycms via \`kind: fetch\` when that would help (e.g. finding the right category id, checking what similar posts already say, seeing what images are available)${hasCreatableRelatedTypes ? ', and - only when the admin explicitly asks for it - create a brand-new entry in a collection directly related to this one via a relation field (`kind: create`), then link this entry to it' : ""}.`,
+    "What you CANNOT do, no matter how the admin phrases it: save or publish the entry, create or modify fields/content types, delete anything, upload files, or access anything outside drycms itself (no web access, no other websites, no search engines). If asked for one of these, say so in a `kind: chat` reply and suggest the closest thing you actually can do instead of pretending to do it.",
+  ].join(" ");
+}
 
 function describeImages(imagePaths: string[]): string[] {
   if (imagePaths.length === 0) return [];
@@ -131,6 +144,29 @@ function describeRelationContext(relationContext: string): string[] {
   ];
 }
 
+/** `status/relation-quick-create.md` - documents `kind: create` as a sixth
+ * reply shape, appended after the fixed 1-5 list rather than renumbering it
+ * (smaller diff, and the other five stay valid regardless of this entry's
+ * own schema - `kind: rewrite` in particular only ever applies to an
+ * explicit per-turn request, exactly the same "always listed, conditionally
+ * relevant" shape). Omitted entirely when `creatableRelatedTypes` is empty -
+ * see `buildCapabilityInstruction`'s doc comment for why. */
+function describeCreateCapability(creatableRelatedTypes: string[]): string[] {
+  if (creatableRelatedTypes.length === 0) return [];
+  return [
+    "",
+    `6. \`kind: create\` - create a brand-new entry in a collection directly related to this one via a relation field, but ONLY when the admin explicitly asks for that (e.g. "create a new category called X and use it here"). The ONLY typeSlugs allowed here: ${creatableRelatedTypes.join(", ")}. Not a reply the admin sees - like \`kind: fetch\`, you get a result (the new entry's id, or why it failed) and another turn immediately after. Shape:`,
+    "```",
+    "kind: create",
+    `typeSlug: ${creatableRelatedTypes[0]}`,
+    "fields:",
+    "  title: |",
+    "    The new entry's title.",
+    "```",
+    '   `fields` follows the exact same dialect as a `kind: fields` reply\'s own "fields", but ONLY plain scalar values and groups-of-fields are usable here - a relation or image field on the brand-new row itself is silently dropped, so don\'t try to set one; set it afterward as its own entry instead. Once this succeeds, you may reference the returned id for a "relation" field pointing at that same typeSlug in a `kind: fields` reply on THIS entry, exactly as if you had found it via `kind: fetch`.',
+  ];
+}
+
 export interface BuildMagicWriteSystemPromptParams {
   lang: string;
   typeLabel: string;
@@ -143,6 +179,12 @@ export interface BuildMagicWriteSystemPromptParams {
    * fields point to, never itself a write target. Empty when the type has no
    * relation fields, or none currently have a value. */
   relationContext?: string;
+  /** `status/relation-quick-create.md` - the exact `typeSlug`s a `kind:
+   * create` turn may target on this entry (every distinct target of one of
+   * this type's own `relation` fields). Empty when this type has no
+   * relation field at all, which omits the whole capability - see
+   * `describeCreateCapability`. */
+  creatableRelatedTypes?: string[];
 }
 
 /**
@@ -153,7 +195,7 @@ export interface BuildMagicWriteSystemPromptParams {
  * literal (`key: |` + indented lines) so a streamed reply can be shown
  * growing live, field by field, without any JSON-escaping gymnastics.
  */
-export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, imagePaths = [], relationContext = "" }: BuildMagicWriteSystemPromptParams): string {
+export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, imagePaths = [], relationContext = "", creatableRelatedTypes = [] }: BuildMagicWriteSystemPromptParams): string {
   return [
     `You are Magic, a writing assistant inside drycms that fills in content fields for "${typeLabel}" entries through a back-and-forth chat. The admin describes what they want, you may ask a question or just start writing, and you write the actual field content directly - you are not designing a schema, only authoring content for one that already exists.`,
     "",
@@ -164,7 +206,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "",
     SCOPE_INSTRUCTION,
     "",
-    CAPABILITY_INSTRUCTION,
+    buildCapabilityInstruction(creatableRelatedTypes.length > 0),
     ...describeImages(imagePaths),
     ...describeRelationContext(relationContext),
     "",
@@ -175,7 +217,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "- Indent consistently with exactly 2 spaces per level. Never use tabs.",
     "- Boolean values are the plain scalar text `true` or `false`.",
     "",
-    "There are five possible top-level replies:",
+    `There are ${creatableRelatedTypes.length > 0 ? "six" : "five"} possible top-level replies:`,
     "",
     '1. `kind: chat` - an ordinary conversational reply: discussing the task, answering a question about what you can do, acknowledging what you just wrote, or anything else that isn\'t writing field content right now. Shape:',
     "```",
@@ -239,6 +281,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "html: |",
     "  <p>...</p>",
     "```",
+    ...describeCreateCapability(creatableRelatedTypes),
     "",
     `Language: the admin reads "${lang}". Write every prose value ("text", "summary", RichText/text content, "question", choice "label"s) in "${lang}". Never translate field names, "kind", "topic", choice "id"s, "source", or the literal tokens true/false.`,
   ].join("\n");

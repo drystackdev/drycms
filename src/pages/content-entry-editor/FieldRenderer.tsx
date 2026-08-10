@@ -22,7 +22,9 @@ import {
 } from "../../content-types/engine/entry-tree.js";
 import { SUPER_ADMIN_FIELD_NAME } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
+import { canAccess } from "../../store/auth.js";
 import { blankEntryValue } from "./blank-value.js";
+import QuickCreateEntryDialog from "./QuickCreateEntryDialog.js";
 import ScalarField from "./ScalarField.js";
 
 export interface FieldRendererProps {
@@ -193,6 +195,13 @@ function useRelationFieldSource(
   type: ContentTypeDefinition | undefined,
   allTypes: ContentTypeDefinition[],
   displayFields: string[] | undefined,
+  /** Only `RelationFieldAdapter` passes `true` - a `relationmirror` picker
+   * (`RelationMirrorFieldAdapter`) stays pick-only. Creating a new row there
+   * would need this field's OWN relation (back to the entry currently open)
+   * pre-filled to actually show up as mirrored, which the plain create form
+   * below has no way to do - out of scope for now, see
+   * `status/relation-quick-create.md`. @default false */
+  allowCreate = false,
 ): RelationFieldSourceResult {
   const [richTextPreview, setRichTextPreview] = useState<{
     label: string;
@@ -293,8 +302,29 @@ function useRelationFieldSource(
         );
         return Object.fromEntries(pairs);
       },
+      // `create` (not `update`/`setting`) - the same permission a brand-new
+      // top-level entry of this type would require, checked against THIS
+      // type, never borrowed from whatever entry the picker itself was
+      // opened from (`status/relation-quick-create.md`, same principle
+      // `kind: fetch`'s own per-type `checkAccess` already established for
+      // Magic - see `status/magic-chat.md` Phase B).
+      createTarget:
+        allowCreate && canAccess(type.id, "create")
+          ? {
+              label: type.label,
+              render: ({ open: createOpen, onCreated, onCancel }) => (
+                <QuickCreateEntryDialog
+                  type={type}
+                  allTypes={allTypes}
+                  open={createOpen}
+                  onCreated={onCreated}
+                  onCancel={onCancel}
+                />
+              ),
+            }
+          : undefined,
     };
-  }, [type, entriesApi, queryableColumns, targetFieldNodes, displayFields, allTypes, resolveRelation]);
+  }, [type, entriesApi, queryableColumns, targetFieldNodes, displayFields, allTypes, resolveRelation, allowCreate]);
 
   return {
     source,
@@ -325,7 +355,7 @@ function RelationFieldAdapter({
 }) {
   const targetType = allTypes.find((t) => t.id === node.targetTypeId);
   const multiple = node.cardinality !== "manyToOne";
-  const { source, previewDialog } = useRelationFieldSource(targetType, allTypes, node.displayFields);
+  const { source, previewDialog } = useRelationFieldSource(targetType, allTypes, node.displayFields, true);
 
   if (!targetType || !source) {
     return (

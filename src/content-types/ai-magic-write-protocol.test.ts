@@ -224,6 +224,26 @@ describe("parseMagicWriteYaml - rewrite turn", () => {
   });
 });
 
+describe("parseMagicWriteYaml - create turn", () => {
+  it("parses a typeSlug with flat scalar fields", () => {
+    const doc = ["kind: create", "typeSlug: category", "fields:", "  name: |", "    Adventure"].join("\n");
+    const result = parseMagicWriteYaml(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "create", typeSlug: "category", fields: { name: "Adventure" } });
+  });
+
+  it("rejects a create turn with no typeSlug", () => {
+    const result = parseMagicWriteYaml("kind: create\nfields:\n  name: |\n    Adventure");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a create turn with no fields mapping", () => {
+    const result = parseMagicWriteYaml("kind: create\ntypeSlug: category");
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("extractMagicWriteYaml", () => {
   it("strips a markdown fence", () => {
     const wrapped = "```yaml\nkind: fields\nsummary: |\n  s\nfields:\n  a: |\n    b\n```";

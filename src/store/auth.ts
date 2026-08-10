@@ -66,6 +66,50 @@ async function assertOk(res: Response, fallback: string): Promise<void> {
   throw new AuthApiError(typeof body.message === "string" ? body.message : fallback, body.fieldErrors);
 }
 
+const REFRESH_LOCK_NAME = "drycms-session-refresh";
+const LAST_REFRESH_STORAGE_KEY = "drycms_session_last_refresh";
+const REFRESH_COALESCE_WINDOW_MS = 60 * 1000;
+
+function recentlyRefreshedInAnotherTab(): boolean {
+  const last = Number(localStorage.getItem(LAST_REFRESH_STORAGE_KEY) ?? "0");
+  return Number.isFinite(last) && Date.now() - last < REFRESH_COALESCE_WINDOW_MS;
+}
+
+async function fetchCurrentUser(): Promise<AuthUser | null> {
+  const res = await fetch(`${path}/api/auth/session`);
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body.user ?? null;
+}
+
+async function rotateRefreshToken(): Promise<AuthUser | null> {
+  const res = await fetch(`${path}/api/auth/refresh`, { method: "POST" });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body.user ?? null;
+}
+
+/**
+ * The refresh-token cookie is shared (same-origin, same browser) across
+ * every open tab. `rotateAuthSession()` (`server/auth-security.ts`) treats
+ * that token as single-use, and its single-use check is only atomic on the
+ * D1/SQLite backends - Cloudflare KV has no compare-and-delete primitive, so
+ * two tabs presenting the SAME token close together can both "succeed" there
+ * before either sees the other's write. The loser's token then looks
+ * identical to a stolen/replayed one on its next use, so the server can't
+ * tell them apart and revokes every session the user has
+ * (`revokeAllAuthSessions(..., "reuse")`) - a surprise full logout. The Web
+ * Locks API makes the rotation itself mutually exclusive ACROSS tabs (not
+ * just within one tab's own event loop), and `recentlyRefreshedInAnotherTab()`
+ * is only checked AFTER the lock is held - checking before acquiring it
+ * can't rule out a sibling tab acquiring and finishing first while this tab
+ * was still waiting. A tab that loses the race this way reuses the
+ * sibling's outcome via a plain `GET /api/auth/session` (cheap, doesn't
+ * consume a token) instead of presenting its now-stale refresh token.
+ * Locks are undefined in older browsers (pre-Safari 15.4); falling back to
+ * running inline there just restores the tiny pre-existing race window
+ * rather than breaking refresh entirely.
+ */
 async function refreshExpiredSession(): Promise<AuthUser | null> {
   // The refresh token is HttpOnly. The CSRF cookie is only readable by the
   // browser when a session was previously issued, so anonymous app loads do
@@ -73,10 +117,14 @@ async function refreshExpiredSession(): Promise<AuthUser | null> {
   if (typeof document === "undefined" || !document.cookie.split(";").some((part) => part.trim().startsWith("drycms_csrf="))) {
     return null;
   }
-  const res = await fetch(`${path}/api/auth/refresh`, { method: "POST" });
-  if (!res.ok) return null;
-  const body = await res.json();
-  return body.user ?? null;
+  const rotate = async (): Promise<AuthUser | null> => {
+    if (recentlyRefreshedInAnotherTab()) return fetchCurrentUser();
+    const user = await rotateRefreshToken();
+    if (user) localStorage.setItem(LAST_REFRESH_STORAGE_KEY, String(Date.now()));
+    return user;
+  };
+  if (typeof navigator === "undefined" || !("locks" in navigator)) return rotate();
+  return navigator.locks.request(REFRESH_LOCK_NAME, rotate);
 }
 
 /** Reads `GET /api/auth/session` and sets `authState` accordingly - the one
@@ -138,29 +186,7 @@ function stopSlidingRefresh(): void {
   slidingRefreshTimer = undefined;
 }
 
-/** The refresh-token cookie is shared (same-origin, same browser) across
- * every open tab, but each tab runs its own independent
- * `SLIDING_REFRESH_INTERVAL_MS` timer. If two tabs' timers land close
- * together they both present the SAME one-shot refresh token to
- * `POST /api/auth/refresh` - `rotateAuthSession()`
- * (`server/auth-security.ts`) serializes the two calls, but the second one
- * always finds the token already consumed and, unable to tell that apart
- * from a stolen/replayed token, revokes every session the user has
- * (`revokeAllAuthSessions(..., "reuse")`) - turning this feature into a
- * surprise full logout. `localStorage` is shared across tabs of the same
- * origin, so recording the last refresh there lets every OTHER tab skip a
- * redundant call for a while after one tab already rotated the cookies. */
-const LAST_REFRESH_STORAGE_KEY = "drycms_session_last_refresh";
-const REFRESH_COALESCE_WINDOW_MS = 60 * 1000;
-
-function recentlyRefreshedInAnotherTab(): boolean {
-  const last = Number(localStorage.getItem(LAST_REFRESH_STORAGE_KEY) ?? "0");
-  return Number.isFinite(last) && Date.now() - last < REFRESH_COALESCE_WINDOW_MS;
-}
-
 async function slideSession(): Promise<void> {
-  if (recentlyRefreshedInAnotherTab()) return;
-  localStorage.setItem(LAST_REFRESH_STORAGE_KEY, String(Date.now()));
   const refreshedUser = await refreshExpiredSession();
   // A failed refresh here means the refresh token itself is no longer good
   // (revoked, reused, or its own 30-day life ran out) - a real "please sign

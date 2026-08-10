@@ -1,8 +1,9 @@
 import { useEffect, useId, useState } from "preact/hooks";
+import type { JSX } from "preact/jsx-runtime";
 import type { FieldProps } from "./field-common.js";
 import DataTable, { type DataTableColumn, type SortState } from "../DataTable.js";
 import EntrySummaryLines from "../EntrySummaryLines.js";
-import { DragHandleIcon, EditIcon } from "../icons/index.js";
+import { DragHandleIcon, EditIcon, PlusIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
@@ -41,6 +42,22 @@ export interface RelationFieldSource<Row extends { id: string }> {
    * when provided. Optional so a caller with nothing richer than a single
    * label field can skip it entirely. */
   resolveSummaries?(ids: string[]): Promise<Record<string, SummaryLine[]>>;
+  /** Optional "create a new row without leaving this picker" escape hatch
+   * (`status/relation-quick-create.md`) - absent when the caller doesn't
+   * support it, or the current user lacks permission to create in the
+   * target collection. `render` mounts the create UI (a nested dialog in
+   * practice) driven by `open`, calling `onCreated`/`onCancel` when done -
+   * same "caller owns the UI, this just wires callbacks" shape the rest of
+   * this interface already uses. */
+  createTarget?: {
+    /** e.g. "Author" - used as "+ New Author". */
+    label: string;
+    render: (props: {
+      open: boolean;
+      onCreated: (id: string) => void;
+      onCancel: () => void;
+    }) => JSX.Element;
+  };
 }
 
 export interface RelationFieldProps extends FieldProps<string | string[]> {
@@ -119,6 +136,12 @@ export default function RelationField({
   const [rows, setRows] = useState<{ id: string }[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  // Bumped after a successful create so the `fetchRows` effect below
+  // reloads the current query even though `page`/`sort`/`search` didn't
+  // themselves change - lets a freshly-created row show up (and appear
+  // checked) without the admin having to re-search/re-page manually.
+  const [refreshToken, setRefreshToken] = useState(0);
 
   // Resolves chip labels for the trigger card - re-runs whenever the
   // selected id SET changes, not on every render.
@@ -181,7 +204,7 @@ export default function RelationField({
     return () => {
       cancelled = true;
     };
-  }, [open, source, page, sort, search]);
+  }, [open, source, page, sort, search, refreshToken]);
 
   const dnd = useSortableList<{ id: string }>({
     items: selectedIds.map((sid) => ({ id: sid })),
@@ -198,6 +221,23 @@ export default function RelationField({
       else next.add(rowId);
       return next;
     });
+  }
+
+  /** A single-select field has nothing left to pick once a new row exists -
+   * commits and closes the whole picker immediately, same as clicking Save
+   * right after checking a radio. A multi-select field instead just checks
+   * the new row and leaves the picker open, so the admin can keep adding
+   * more (existing or freshly created) before committing via Save. */
+  function handleCreated(newId: string) {
+    setShowCreate(false);
+    if (!multiple) {
+      onChange(newId);
+      setOpen(false);
+      return;
+    }
+    setDraftSelected((current) => new Set(current).add(newId));
+    setPage(0);
+    setRefreshToken((t) => t + 1);
   }
 
   // A pinned `leadingColumn` (see `DataTable.tsx`'s own doc comment) rather
@@ -301,7 +341,18 @@ export default function RelationField({
               />
             </div>
             <footer class="row justify-between">
-              <small>{draftSelected.size} selected</small>
+              <div class="row" style={{ alignItems: "center" }}>
+                {source.createTarget && (
+                  <button
+                    type="button"
+                    class="outline"
+                    onClick={() => setShowCreate(true)}
+                  >
+                    <PlusIcon /> New {source.createTarget.label}
+                  </button>
+                )}
+                <small>{draftSelected.size} selected</small>
+              </div>
               <div class="row">
                 <button type="button" class="outline" onClick={() => setOpen(false)}>
                   Cancel
@@ -321,6 +372,11 @@ export default function RelationField({
           </>
         )}
       </dialog>
+      {source.createTarget?.render({
+        open: showCreate,
+        onCreated: handleCreated,
+        onCancel: () => setShowCreate(false),
+      })}
     </div>
   );
 }

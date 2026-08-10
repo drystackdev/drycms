@@ -144,6 +144,29 @@ describe("buildMagicWriteSystemPrompt", () => {
     expect(prompt).toContain("kind: rewrite");
     expect(prompt).toContain("five possible top-level replies");
   });
+
+  it("omits kind: create entirely when the entry's type has no relation field", () => {
+    const prompt = buildMagicWriteSystemPrompt({
+      lang: "English",
+      typeLabel: "Post",
+      fieldsDescription: "(none)",
+    });
+    expect(prompt).not.toContain("kind: create");
+    expect(prompt).not.toContain("directly related");
+  });
+
+  it("documents kind: create as a sixth reply, scoped to the given typeSlugs, when the entry's type has relation fields", () => {
+    const prompt = buildMagicWriteSystemPrompt({
+      lang: "English",
+      typeLabel: "Post",
+      fieldsDescription: "(none)",
+      creatableRelatedTypes: ["category", "tag"],
+    });
+    expect(prompt).toContain("six possible top-level replies");
+    expect(prompt).toContain("kind: create");
+    expect(prompt).toContain("category, tag");
+    expect(prompt).toContain("only when the admin explicitly asks");
+  });
 });
 
 describe("buildRewriteTurnMessage", () => {

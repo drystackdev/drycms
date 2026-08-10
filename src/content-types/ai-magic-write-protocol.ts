@@ -35,6 +35,17 @@
  * explicit per-turn "rewrite this exact passage" request (see
  * `ai-magic-write-prompt.ts`'s `buildRewriteTurnMessage`) - never something
  * the model reaches for on its own.
+ *
+ * `status/relation-quick-create.md` added a sixth shape, `kind: create` -
+ * the model creating a brand-new entry in a collection DIRECTLY related to
+ * this one via a `relation` field (never an arbitrary type - see
+ * `ai-magic-write.ts`'s `creatableTypeSlugs`), so it can then link this
+ * entry to it without the admin having to leave the chat to create the
+ * related row by hand first. Like `kind: fetch`, never terminal: executed
+ * server-side and looped back for another reply, and its own `fields` are
+ * plain scalars/groups only (`ai-magic-write-fields.ts`'s
+ * `WRITABLE_COLUMN_TYPES` - no relation/image on the newly created row
+ * itself, keeping one create hop's blast radius small).
  */
 
 export interface MagicWriteChoice {
@@ -112,7 +123,18 @@ export interface MagicWriteRewriteTurn {
   html: string;
 }
 
-export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn | MagicWriteFetchTurn | MagicWriteRewriteTurn;
+/** `status/relation-quick-create.md` - the model creating a new entry in a
+ * directly-related collection. Never a terminal turn - see this file's own
+ * doc comment. `fields` uses the exact same raw shape a `kind: fields` reply
+ * does (coerced the same way, via `applyMagicWriteFields`), just for the
+ * NEW row instead of the entry currently open. */
+export interface MagicWriteCreateTurn {
+  kind: "create";
+  typeSlug: string;
+  fields: MagicWriteRawFields;
+}
+
+export type MagicWriteTurn = MagicWriteQuestionTurn | MagicWriteFieldsTurn | MagicWriteChatTurn | MagicWriteFetchTurn | MagicWriteRewriteTurn | MagicWriteCreateTurn;
 
 export type MagicWriteValidationResult =
   | { ok: true; turn: MagicWriteTurn }
@@ -347,6 +369,14 @@ function validateRewriteTurn(top: MagicWriteRawFields): MagicWriteValidationResu
   return { ok: true, turn: { kind: "rewrite", html: html.trim() } };
 }
 
+function validateCreateTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
+  const typeSlug = top.typeSlug;
+  const fields = top.fields;
+  if (!isRawString(typeSlug) || !typeSlug.trim()) return { ok: false, error: '"typeSlug" must be a non-empty string.' };
+  if (!isRawFields(fields)) return { ok: false, error: '"fields" must be a mapping of field name to value.' };
+  return { ok: true, turn: { kind: "create", typeSlug: typeSlug.trim(), fields } };
+}
+
 /** `kind: chat` reads its `text:` block literal like any other prose value;
  * falls back to the full raw reply when that's missing/empty (covers both
  * an explicit-but-malformed `kind: chat` and - via `parseMagicWriteYaml`
@@ -380,6 +410,7 @@ export function parseMagicWriteYaml(text: string): MagicWriteValidationResult {
   if (top.kind === "fields") return validateFieldsTurn(top);
   if (top.kind === "fetch") return validateFetchTurn(top);
   if (top.kind === "rewrite") return validateRewriteTurn(top);
+  if (top.kind === "create") return validateCreateTurn(top);
   return coerceChatTurn(top, text);
 }
 
