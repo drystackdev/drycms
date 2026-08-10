@@ -1,15 +1,27 @@
 import { useMemo, useState } from "preact/hooks";
 import Prism from "prismjs";
-// The only grammar CodeBlock highlights with - jsx extends the markup
-// grammar, so plain HTML/XML snippets (e.g. the icon dialogs' `<i>`
-// snippets) still highlight fine under it too.
+// `prismjs/components/prism-jsx` (and every other language component in the
+// package) is written as a legacy UMD-style `(function (Prism) {...})(Prism)`
+// that closes over a bare, already-set GLOBAL `Prism` rather than importing
+// it - it isn't a real ESM/CJS consumer of the `prismjs` import above. This
+// line is a defensive backstop for that, but isn't sufficient by itself: it
+// only fixes ordering when THIS file's own copy of prismjs's core is what
+// the plugin closure resolves against, and Rollup's code-splitting doesn't
+// guarantee this statement runs before another bundled module's own inlined
+// copy of the same plugin needs it - found live in production as an
+// unqualified `ReferenceError: Prism is not defined` once `CodeBlock` became
+// reachable from a new import path (`entry-fields-form.tsx`) that changed
+// how this file's chunk was split. `JSX_GRAMMAR` below is read lazily
+// (inside the component, not at module top level) for exactly that reason -
+// by the time a component actually RENDERS, every module in its chunk has
+// already finished its own top-level evaluation regardless of relative
+// statement order, so the grammar is guaranteed to be registered by then.
+globalThis.Prism = Prism;
 import "prismjs/components/prism-jsx";
 import { toast } from "./Toast.js";
 import { CopyIcon } from "./icons/index.js";
 import type { CSSProperties } from "preact";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
-
-const JSX_GRAMMAR = Prism.languages.jsx!;
 
 interface Props {
   code: string;
@@ -102,7 +114,7 @@ export default function CodeBlock({
     return editable ? formatted : formatted.trim();
   }, [code, shouldFormatHtml, editable]);
   const highlighted = useMemo(
-    () => Prism.highlight(displayCode, JSX_GRAMMAR, "jsx"),
+    () => Prism.highlight(displayCode, Prism.languages.jsx!, "jsx"),
     [displayCode],
   );
 
