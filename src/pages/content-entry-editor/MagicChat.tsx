@@ -140,6 +140,13 @@ interface MagicChatStreamEvent {
    * (e.g. `Looking up 5 "Blog Post" entries…`); another `{delta}`/`{turn}`
    * follows on the SAME connection once the model's next reply streams in. */
   fetching?: string;
+  /** A `kind: create` hop just ran server-side
+   * (`status/relation-quick-create.md`) - same "never terminal, just a
+   * status label" shape as `fetching` above, but for a WRITE (a new related
+   * entry) rather than a read, so it gets its own distinct status text
+   * (e.g. `Created a new "Category" entry…`) instead of reusing `fetching`'s
+   * wording. */
+  creating?: string;
   turn?: MagicChatTurnResult;
   aiLabel?: string;
   error?: string;
@@ -155,6 +162,7 @@ async function requestMagicTurn(
   onDelta: (delta: string) => void,
   onRetry: () => void,
   onFetching: (label: string) => void,
+  onCreating: (label: string) => void,
   signal: AbortSignal,
 ): Promise<{ turn: MagicChatTurnResult; aiLabel: string }> {
   const response = await fetch(`${path}/api/ai/magic-write`, {
@@ -191,6 +199,7 @@ async function requestMagicTurn(
         return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
       if (event.retry) onRetry();
       else if (event.fetching) onFetching(event.fetching);
+      else if (event.creating) onCreating(event.creating);
       else if (event.delta) onDelta(event.delta);
     }
   }
@@ -575,6 +584,19 @@ export default function MagicChat({
     const controller = new AbortController();
     abortRef.current = controller;
     const historyForThisTurn = historyRef.current;
+    // Shared by `onFetching`/`onCreating` below - a `kind: fetch`/`kind:
+    // create` hop just ran, so the CURRENT assistant placeholder is about to
+    // keep growing with the model's NEXT reply (a fresh stream, same as
+    // after a dialect `{retry}`), and its own status bubble ("Looking up 5
+    // blog posts…" / "Created a new \"Category\" entry…") shows the admin
+    // Magic is actively doing something, not just slow.
+    function pushHopStatus(label: string) {
+      rawTextRef.current = "";
+      setMessages((current) => [
+        ...current,
+        { id: newId(), role: "status", text: label },
+      ]);
+    }
     try {
       const result = await requestMagicTurn(
         {
@@ -602,19 +624,8 @@ export default function MagicChat({
         () => {
           rawTextRef.current = "";
         },
-        (label) => {
-          // A `kind: fetch` hop just ran - the CURRENT assistant placeholder
-          // is about to keep growing with the model's NEXT reply (a fresh
-          // stream, same as after a dialect `{retry}`), so its buffer resets
-          // the same way. Unlike a silent retry, this gets its own status
-          // bubble ("Looking up 5 blog posts…") so the admin sees Magic is
-          // actively doing something, not just slow.
-          rawTextRef.current = "";
-          setMessages((current) => [
-            ...current,
-            { id: newId(), role: "status", text: label },
-          ]);
-        },
+        pushHopStatus,
+        pushHopStatus,
         controller.signal,
       );
       if (!mountedRef.current) return;

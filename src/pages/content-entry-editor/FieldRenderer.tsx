@@ -22,7 +22,9 @@ import {
 } from "../../content-types/engine/entry-tree.js";
 import { SUPER_ADMIN_FIELD_NAME } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
+import { canAccess } from "../../store/auth.js";
 import { blankEntryValue } from "./blank-value.js";
+import QuickCreateEntryDialog from "./QuickCreateEntryDialog.js";
 import ScalarField from "./ScalarField.js";
 
 export interface FieldRendererProps {
@@ -48,6 +50,14 @@ export interface FieldRendererProps {
    * resolve to the whole block's `<fieldset>` - see the second `scrollToField`
    * call in `ContentEntryEditor.tsx`'s `?_field=`/`?_path=` effect. */
   pathPrefix?: string;
+  /** `status/relation-quick-create.md` - the entry currently being edited's
+   * own id (already hash-encoded), only ever read by the `relation-mirror`
+   * branch below to pre-fill+lock a newly created related entry's own
+   * relation field. A `relation-mirror` node only ever appears at the TOP
+   * level (`system-fields.ts`'s `relationMirrorFieldsFor` never nests one
+   * inside a component), so this is never threaded into the recursive
+   * `flatten`/`component-repeat` calls further down - they'd never read it. */
+  currentEntryId?: string | null;
 }
 
 /**
@@ -69,6 +79,7 @@ export default function FieldRenderer({
   allTypes,
   revealPath,
   pathPrefix,
+  currentEntryId,
 }: FieldRendererProps) {
   if (node.kind === "column") {
     return (
@@ -132,6 +143,7 @@ export default function FieldRenderer({
         onChange={onChange}
         allTypes={allTypes}
         error={error}
+        currentEntryId={currentEntryId}
       />
     );
   }
@@ -193,6 +205,18 @@ function useRelationFieldSource(
   type: ContentTypeDefinition | undefined,
   allTypes: ContentTypeDefinition[],
   displayFields: string[] | undefined,
+  /** `RelationFieldAdapter` always passes `true`; `RelationMirrorFieldAdapter`
+   * passes `true` only once it has a `currentEntryId` to pre-fill
+   * `presetRelation` with - see that adapter's own doc comment.
+   * @default false */
+  allowCreate = false,
+  /** `status/relation-quick-create.md` - only ever set by
+   * `RelationMirrorFieldAdapter`: pre-fills AND locks the freshly created
+   * row's own relation field (the one `type` here has back to the entry the
+   * picker was opened from), so it shows up as mirrored immediately instead
+   * of needing a second manual edit. `undefined` for the plain
+   * `RelationFieldAdapter` case, which has nothing to lock. */
+  presetRelation?: { fieldId: string; value: string | string[] },
 ): RelationFieldSourceResult {
   const [richTextPreview, setRichTextPreview] = useState<{
     label: string;
@@ -293,8 +317,30 @@ function useRelationFieldSource(
         );
         return Object.fromEntries(pairs);
       },
+      // `create` (not `update`/`setting`) - the same permission a brand-new
+      // top-level entry of this type would require, checked against THIS
+      // type, never borrowed from whatever entry the picker itself was
+      // opened from (`status/relation-quick-create.md`, same principle
+      // `kind: fetch`'s own per-type `checkAccess` already established for
+      // Magic - see `status/magic-chat.md` Phase B).
+      createTarget:
+        allowCreate && canAccess(type.id, "create")
+          ? {
+              label: type.label,
+              render: ({ open: createOpen, onCreated, onCancel }) => (
+                <QuickCreateEntryDialog
+                  type={type}
+                  allTypes={allTypes}
+                  open={createOpen}
+                  onCreated={onCreated}
+                  onCancel={onCancel}
+                  presetRelation={presetRelation}
+                />
+              ),
+            }
+          : undefined,
     };
-  }, [type, entriesApi, queryableColumns, targetFieldNodes, displayFields, allTypes, resolveRelation]);
+  }, [type, entriesApi, queryableColumns, targetFieldNodes, displayFields, allTypes, resolveRelation, allowCreate, presetRelation]);
 
   return {
     source,
@@ -325,7 +371,7 @@ function RelationFieldAdapter({
 }) {
   const targetType = allTypes.find((t) => t.id === node.targetTypeId);
   const multiple = node.cardinality !== "manyToOne";
-  const { source, previewDialog } = useRelationFieldSource(targetType, allTypes, node.displayFields);
+  const { source, previewDialog } = useRelationFieldSource(targetType, allTypes, node.displayFields, true);
 
   if (!targetType || !source) {
     return (
@@ -371,19 +417,29 @@ function RelationFieldAdapter({
  * already-flipped `reverseCardinality` rather than a plain `cardinality`. An
  * unresolved node (source relation field renamed/deleted/retargeted since
  * this mirror was added) degrades the same way a dangling `relation.target`
- * already does. */
+ * already does.
+ *
+ * `status/relation-quick-create.md`: also offers "+ New" like
+ * `RelationFieldAdapter`, but ONLY once `currentEntryId` is set (the entry
+ * being edited must already be saved - there's nothing to link a freshly
+ * created row back to otherwise) - `presetRelation` pre-fills AND locks the
+ * SOURCE type's own relation field (`node.sourceFieldId`) to point at this
+ * entry, so the new row shows up as mirrored immediately instead of needing
+ * a second manual edit through its own entry. */
 function RelationMirrorFieldAdapter({
   node,
   value,
   onChange,
   allTypes,
   error,
+  currentEntryId,
 }: {
   node: EntryRelationMirrorNode;
   value: unknown;
   onChange: (value: unknown) => void;
   allTypes: ContentTypeDefinition[];
   error?: string;
+  currentEntryId?: string | null;
 }) {
   const sourceType = node.resolved
     ? allTypes.find((t) => t.id === node.sourceTypeId)
@@ -393,10 +449,25 @@ function RelationMirrorFieldAdapter({
   // sourced from `ContentTypeDefinition.fieldDisplayFields` instead (see
   // that map's doc comment), already resolved onto `node.displayFields` by
   // `entry-tree.ts`'s `buildRelationMirrorNode`.
+  //
+  // `presetRelation`'s value SHAPE: the SOURCE field's own cardinality (not
+  // `reverseCardinality`, which is THIS side's, flipped) decides bare-string
+  // vs array - `reverseCardinality === "oneToMany"` is exactly the case
+  // where the source was `manyToOne` (a single value), the only case
+  // `flipCardinality` (`entry-tree.ts`, private) maps TO `"oneToMany"`.
+  const presetRelation =
+    node.resolved && currentEntryId
+      ? {
+          fieldId: node.sourceFieldId,
+          value: node.reverseCardinality === "oneToMany" ? currentEntryId : [currentEntryId],
+        }
+      : undefined;
   const { source, previewDialog } = useRelationFieldSource(
     sourceType,
     allTypes,
     node.resolved ? node.displayFields : undefined,
+    !!presetRelation,
+    presetRelation,
   );
 
   if (!node.resolved || !sourceType || !source) {

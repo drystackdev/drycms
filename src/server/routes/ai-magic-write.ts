@@ -17,6 +17,7 @@ import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields
 import { supportsMagic } from "../../content-types/permissions.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { executeMagicFetch } from "./ai-magic-write-fetch.js";
+import { executeMagicCreate } from "./ai-magic-write-create.js";
 import {
   acquireAiStreamSlot,
   createChatStream,
@@ -264,6 +265,11 @@ const MAGIC_WRITE_MAX_ATTEMPTS = 3;
  * fetches cleanly every time but never gets around to actually answering
  * shouldn't burn through the SAME 3 attempts a malformed reply would. */
 const MAGIC_FETCH_MAX_HOPS = 3;
+/** `status/relation-quick-create.md` - its own, stricter budget: creating
+ * entries is a real write with consequences beyond this conversation
+ * (unlike `fetch`'s read-only lookups), so it gets a smaller allowance than
+ * `MAGIC_FETCH_MAX_HOPS`, not the same one. */
+const MAGIC_CREATE_MAX_HOPS = 2;
 /** A whole entry's worth of fields (title/body/excerpt/SEO/...) easily runs
  * past the 2048-token default `ai.ts`'s Anthropic branch otherwise applies -
  * see that function's own doc comment. Only affects Anthropic (OpenAI/Google
@@ -371,12 +377,30 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           const nodes = buildEntryFieldTree(type, allTypes);
           const fieldsDescription = describeFieldsForPrompt(nodes, request.currentValue, allTypes);
           const relationContext = await loadRelationContext(entries, allTypes, nodes, request.currentValue);
+          // `status/relation-quick-create.md` - the ONLY typeSlugs a
+          // `kind: create` turn may target: collections this entry's own
+          // type actually links to via a `relation` field (never
+          // `relation-mirror` - a mirror has no config surface of its own to
+          // create "into"), computed purely from the schema. Deliberately
+          // narrower than `kind: fetch`'s allow-list (which can read ANY
+          // content type) - creating data is a bigger blast radius than
+          // reading it, so it stays scoped to what this entry actually
+          // references. Permission (`magic`+`create` on the target type
+          // itself) is re-checked per attempt in `executeMagicCreate`, not
+          // here - this set is schema scope only.
+          const creatableTypeSlugs = new Set<string>();
+          for (const node of nodes) {
+            if (node.kind !== "relation") continue;
+            const targetName = allTypes.find((candidate) => candidate.id === node.targetTypeId)?.name;
+            if (targetName) creatableTypeSlugs.add(targetName);
+          }
           const systemPrompt = buildMagicWriteSystemPrompt({
             lang: request.lang,
             typeLabel: type.label,
             fieldsDescription,
             imagePaths: [...allowedImageSrcs],
             relationContext,
+            creatableRelatedTypes: [...creatableTypeSlugs],
           });
 
           // `status/magic-chat.md` decision C - the system prompt is its own
@@ -403,6 +427,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           let lastError = "Magic used too many internal lookups without producing a final reply.";
           let dialectAttempt = 0;
           let fetchHops = 0;
+          let createHops = 0;
           // `EntryRelationNode.targetTypeId` -> every id `kind: fetch` actually
           // surfaced THIS turn (`ai-magic-write-fields.ts`'s
           // `AllowedRelationIds`) - a relation field write may only reference
@@ -415,7 +440,7 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
           // which budget below is being spent is the real backstop against a
           // runaway loop (each budget's own check only stops THAT kind of
           // iteration from recurring past its own limit).
-          const maxIterations = MAGIC_WRITE_MAX_ATTEMPTS + MAGIC_FETCH_MAX_HOPS;
+          const maxIterations = MAGIC_WRITE_MAX_ATTEMPTS + MAGIC_FETCH_MAX_HOPS + MAGIC_CREATE_MAX_HOPS;
           for (let iteration = 0; iteration < maxIterations; iteration++) {
             if (dialectAttempt > 0) controller.enqueue(streamEvent({ retry: true }));
             const result = await runMagicWriteTurn(context, messages, request.aiKeyName, request.aiModel, (delta) => {
@@ -463,6 +488,31 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
               // streaming buffer, same as it already does for `{retry}`).
               controller.enqueue(streamEvent({ fetching: fetchResult.label }));
               messages = [...messages, { role: "assistant", text: result.text }, { role: "user", text: fetchResult.resultText }];
+              continue;
+            }
+
+            if (turn.kind === "create") {
+              createHops++;
+              if (createHops > MAGIC_CREATE_MAX_HOPS) {
+                messages = [
+                  ...messages,
+                  { role: "assistant", text: result.text },
+                  { role: "user", text: "You've used up this turn's entry creations - reply now with what you already have (kind: chat, fields, or question), no more kind: create." },
+                ];
+                continue;
+              }
+              const createResult = await executeMagicCreate(context, entries, allTypes, creatableTypeSlugs, turn);
+              if (createResult.createdEntryId) {
+                const { targetTypeId, id } = createResult.createdEntryId;
+                const existing = allowedRelationIds.get(targetTypeId) ?? new Set<number>();
+                existing.add(id);
+                allowedRelationIds.set(targetTypeId, existing);
+              }
+              // Transient status only, same treatment as `{fetching}` above -
+              // never a terminal `turn` event, the admin never sees the raw
+              // fields sent, just this label.
+              controller.enqueue(streamEvent({ creating: createResult.label }));
+              messages = [...messages, { role: "assistant", text: result.text }, { role: "user", text: createResult.resultText }];
               continue;
             }
 
