@@ -35,11 +35,31 @@ class FakeLocalStorage {
   }
 }
 
+/** Real browsers serialize same-name `navigator.locks.request()` calls
+ * across tabs; Bun's `navigator` global has no `locks` at all (`"locks" in
+ * navigator` is `false`), so `refreshExpiredSession()` falls back to running
+ * unlocked - fine for the single-caller tests below, but it would hide the
+ * exact race `refreshExpiredSession()` exists to close. This stand-in only
+ * needs to chain callbacks in call order, same as the real exclusive lock. */
+class FakeLockManager {
+  private queue: Promise<unknown> = Promise.resolve();
+  reset(): void {
+    this.queue = Promise.resolve();
+  }
+  request<T>(_name: string, callback: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(callback);
+    this.queue = run.then(() => undefined, () => undefined);
+    return run;
+  }
+}
+
 const fakeDocument = new FakeDocument();
 const fakeLocalStorage = new FakeLocalStorage();
+const fakeLockManager = new FakeLockManager();
 vi.stubGlobal("window", { __DRY_CONFIG__: { path: "/dry" } });
 vi.stubGlobal("document", fakeDocument);
 vi.stubGlobal("localStorage", fakeLocalStorage);
+vi.stubGlobal("navigator", { locks: fakeLockManager });
 
 const { authState, login, logout } = await import("./auth.js");
 
@@ -64,6 +84,7 @@ describe("sliding session refresh", () => {
     fakeDocument.cookie = "";
     fakeDocument.visibilityState = "visible";
     fakeLocalStorage.clear();
+    fakeLockManager.reset();
     authState.value = { status: "anonymous", user: null };
   });
 
@@ -130,5 +151,34 @@ describe("sliding session refresh", () => {
     fakeDocument.visibilityState = "visible";
     fakeDocument.dispatchEvent(new Event("visibilitychange"));
     await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
+  });
+
+  it("two overlapping refresh attempts (e.g. two tabs' timers landing together) consume the one-shot refresh token only once", async () => {
+    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
+    await login("khan@example.com", "secret");
+    fakeDocument.cookie = "drycms_csrf=abc";
+
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/api/auth/refresh")) return new Response(JSON.stringify({ user: USER }), { status: 200 });
+      if (url.endsWith("/api/auth/session")) return new Response(JSON.stringify({ hasAnyUser: true, user: USER }), { status: 200 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+
+    // Two `slideSession()` calls fired back-to-back, neither awaited before
+    // the other starts - the same overlap two tabs' independent 10-minute
+    // timers can produce. Without the cross-tab lock, both would present the
+    // same refresh token to POST /api/auth/refresh; the second would then
+    // look like a replayed token on its next use and the server would revoke
+    // every session (`revokeAllAuthSessions(..., "reuse")`).
+    fakeDocument.dispatchEvent(new Event("visibilitychange"));
+    fakeDocument.dispatchEvent(new Event("visibilitychange"));
+    await vi.waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(2));
+
+    expect(calls.filter((url) => url.endsWith("/api/auth/refresh"))).toHaveLength(1);
+    expect(calls.filter((url) => url.endsWith("/api/auth/session"))).toHaveLength(1);
+    expect(authState.value).toEqual({ status: "authenticated", user: USER });
   });
 });
