@@ -1,7 +1,7 @@
 const { path } = window.__DRY_CONFIG__;
+import { refreshExpiredSession } from "../../store/auth.js";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const SESSION_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 let installed = false;
 let refreshing: Promise<boolean> | undefined;
 
@@ -15,22 +15,18 @@ function isAuthEndpoint(pathname: string): boolean {
   return pathname.startsWith(`${path}/api/auth/`);
 }
 
-async function refreshSession(originalFetch: typeof window.fetch): Promise<boolean> {
-  const refreshCsrf = csrfToken();
-  // The refresh token is HttpOnly, so the readable CSRF cookie is the safe
-  // client-side signal that this browser still has an authenticated session.
-  if (!refreshCsrf) return false;
-  const refreshHeaders = new Headers({ "X-CSRF-Token": refreshCsrf });
-  const refreshResponse = await originalFetch(`${path}/api/auth/refresh`, {
-    method: "POST",
-    headers: refreshHeaders,
-    credentials: "same-origin",
-  });
-  return refreshResponse.ok;
+/** Shares `store/auth.ts`'s own refresh path (Web Locks + cross-tab
+ * coalescing) rather than posting to `/api/auth/refresh` directly - the
+ * proactive sliding refresh over there already runs on its own timer, so a
+ * second, uncoordinated caller here would periodically race it to rotate the
+ * same single-use refresh token and trigger the server's reuse-detection
+ * full logout. */
+async function refreshSession(): Promise<boolean> {
+  return (await refreshExpiredSession()) !== null;
 }
 
-function refreshOnce(originalFetch: typeof window.fetch): Promise<boolean> {
-  refreshing ??= refreshSession(originalFetch).catch(() => false).finally(() => {
+function refreshOnce(): Promise<boolean> {
+  refreshing ??= refreshSession().catch(() => false).finally(() => {
     refreshing = undefined;
   });
   return refreshing;
@@ -57,7 +53,7 @@ export function installCsrfFetch(): void {
     const securedRequest = new Request(request, { headers });
     let response = await originalFetch(securedRequest.clone());
 
-    if (response.status === 401 && !isAuthEndpoint(url.pathname) && await refreshOnce(originalFetch)) {
+    if (response.status === 401 && !isAuthEndpoint(url.pathname) && await refreshOnce()) {
       const retryHeaders = new Headers(securedRequest.headers);
       const retryCsrf = csrfToken();
       if (retryCsrf && MUTATING_METHODS.has(method)) retryHeaders.set("X-CSRF-Token", retryCsrf);
@@ -66,10 +62,6 @@ export function installCsrfFetch(): void {
     return response;
   };
   window.fetch = csrfFetch as typeof window.fetch;
-
-  // A session token lasts 15 minutes. Refresh earlier to keep an idle tab
-  // signed in; the CSRF-cookie check prevents anonymous refresh calls.
-  window.setInterval(() => {
-    void refreshOnce(originalFetch);
-  }, SESSION_REFRESH_INTERVAL_MS);
+  // Proactive sliding refresh lives in `store/auth.ts` (its own timer, with
+  // cross-tab coordination) - this module only reacts to an actual 401.
 }

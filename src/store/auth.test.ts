@@ -7,18 +7,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * both have to exist before the dynamic `import()` below runs. No `jsdom`/
  * `happy-dom` in this repo (vitest defaults to the `node` environment) -
  * `document` is stubbed as a real `EventTarget` rather than pulling in a DOM
- * library, since the module under test only ever calls
- * `addEventListener`/reads `visibilityState`/`cookie` on it.
+ * library, since the module under test only ever reads `document.cookie`.
  */
 class FakeDocument extends EventTarget {
   cookie = "";
-  visibilityState: "visible" | "hidden" = "visible";
 }
 
-/** Minimal in-memory stand-in - `slideSession()`'s cross-tab refresh
- * coalescing (`recentlyRefreshedInAnotherTab`) reads/writes `localStorage`,
- * which the `node` test environment doesn't provide any more than it does
- * `document` above. */
+/** Minimal in-memory stand-in - `refreshExpiredSession()`'s cross-tab
+ * refresh coalescing (`recentlyRefreshedInAnotherTab`) reads/writes
+ * `localStorage`, which the `node` test environment doesn't provide any
+ * more than it does `document` above. */
 class FakeLocalStorage {
   private store = new Map<string, string>();
   getItem(key: string): string | null {
@@ -61,9 +59,7 @@ vi.stubGlobal("document", fakeDocument);
 vi.stubGlobal("localStorage", fakeLocalStorage);
 vi.stubGlobal("navigator", { locks: fakeLockManager });
 
-const { authState, login, logout } = await import("./auth.js");
-
-const SLIDING_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const { authState, loadSession, login, logout, refreshExpiredSession } = await import("./auth.js");
 
 function stubFetchOnce(responses: { url: string; ok: boolean; body?: unknown }[]) {
   const fetchMock = vi.fn(async (input: string | URL) => {
@@ -78,86 +74,60 @@ function stubFetchOnce(responses: { url: string; ok: boolean; body?: unknown }[]
 
 const USER = { id: 1, name: "Khan", email: "khan@example.com", roles: [], isSuperAdmin: true, permissions: [] };
 
-describe("sliding session refresh", () => {
+/**
+ * There is deliberately no proactive/periodic refresh in this module -
+ * drycms tried a `setInterval`-based sliding refresh once (2026-08-10) and
+ * it raced `lib/native/csrf-fetch.ts`'s own independent refresh trigger
+ * every ~10 minutes, both rotating the one single-use refresh token; the
+ * loser looked like a replayed token and the server revoked every session
+ * (`revokeAllAuthSessions(..., "reuse")`) - a surprise full logout. Refresh
+ * is reactive-only now: `loadSession()` on mount, and `csrf-fetch.ts`'s
+ * 401-retry mid-session, both funneled through the one coordinated
+ * `refreshExpiredSession()` below so two callers can never race each other.
+ */
+describe("session refresh", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
     fakeDocument.cookie = "";
-    fakeDocument.visibilityState = "visible";
     fakeLocalStorage.clear();
     fakeLockManager.reset();
     authState.value = { status: "anonymous", user: null };
   });
 
-  it("refreshes the access token on a timer once authenticated, without the caller doing anything", async () => {
-    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
-    await login("khan@example.com", "secret");
-    expect(authState.value.status).toBe("authenticated");
-
+  it("loadSession() transparently refreshes an already-expired access token on mount, using the still-good refresh cookie", async () => {
     fakeDocument.cookie = "drycms_csrf=abc";
-    const refreshMock = stubFetchOnce([{ url: "/api/auth/refresh", ok: true, body: { user: USER } }]);
+    stubFetchOnce([
+      { url: "/api/auth/session", ok: true, body: { hasAnyUser: true, user: null } },
+      { url: "/api/auth/refresh", ok: true, body: { user: USER } },
+    ]);
 
-    await vi.advanceTimersByTimeAsync(SLIDING_REFRESH_INTERVAL_MS);
+    await loadSession();
 
-    expect(refreshMock).toHaveBeenCalledWith("/dry/api/auth/refresh", { method: "POST" });
-    expect(authState.value.status).toBe("authenticated");
+    expect(authState.value).toEqual({ status: "authenticated", user: USER });
   });
 
-  it("keeps refreshing indefinitely across multiple ticks - the whole point (an open tab never runs out on its own)", async () => {
-    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
-    await login("khan@example.com", "secret");
+  it("loadSession() falls back to anonymous - a real re-login - once the refresh token itself is no longer good", async () => {
     fakeDocument.cookie = "drycms_csrf=abc";
-    const refreshMock = stubFetchOnce([{ url: "/api/auth/refresh", ok: true, body: { user: USER } }]);
+    stubFetchOnce([
+      { url: "/api/auth/session", ok: true, body: { hasAnyUser: true, user: null } },
+      { url: "/api/auth/refresh", ok: false },
+    ]);
 
-    await vi.advanceTimersByTimeAsync(SLIDING_REFRESH_INTERVAL_MS * 3);
-
-    expect(refreshMock).toHaveBeenCalledTimes(3);
-    expect(authState.value.status).toBe("authenticated");
-  });
-
-  it("drops to anonymous - a real re-login, not a silent mid-session failure - once the refresh token itself is no longer good", async () => {
-    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
-    await login("khan@example.com", "secret");
-    fakeDocument.cookie = "drycms_csrf=abc";
-    stubFetchOnce([{ url: "/api/auth/refresh", ok: false }]);
-
-    await vi.advanceTimersByTimeAsync(SLIDING_REFRESH_INTERVAL_MS);
+    await loadSession();
 
     expect(authState.value).toEqual({ status: "anonymous", user: null });
   });
 
-  it("stops ticking once logged out - no dangling timer left calling refresh for a signed-out user", async () => {
-    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
-    await login("khan@example.com", "secret");
-    fakeDocument.cookie = "drycms_csrf=abc";
+  it("refreshExpiredSession() skips the network entirely when there's no CSRF cookie (this browser was never signed in)", async () => {
+    const fetchMock = stubFetchOnce([]);
 
-    stubFetchOnce([{ url: "/api/auth/logout", ok: true }]);
-    await logout();
-    expect(authState.value.status).toBe("anonymous");
+    const user = await refreshExpiredSession();
 
-    const refreshMock = stubFetchOnce([{ url: "/api/auth/refresh", ok: true, body: { user: USER } }]);
-    await vi.advanceTimersByTimeAsync(SLIDING_REFRESH_INTERVAL_MS * 2);
-
-    expect(refreshMock).not.toHaveBeenCalled();
+    expect(user).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("catches up immediately when the tab is foregrounded again, not on whatever throttled tick a backgrounded timer gets", async () => {
-    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
-    await login("khan@example.com", "secret");
+  it("two overlapping refreshExpiredSession() calls (e.g. two tabs, or two 401-triggered retries at once) consume the one-shot refresh token only once", async () => {
     fakeDocument.cookie = "drycms_csrf=abc";
-    const refreshMock = stubFetchOnce([{ url: "/api/auth/refresh", ok: true, body: { user: USER } }]);
-
-    // No timer advance at all - only a visibility change, simulating a tab
-    // that was backgrounded long enough for its timer to have been throttled.
-    fakeDocument.visibilityState = "visible";
-    fakeDocument.dispatchEvent(new Event("visibilitychange"));
-    await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
-  });
-
-  it("two overlapping refresh attempts (e.g. two tabs' timers landing together) consume the one-shot refresh token only once", async () => {
-    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
-    await login("khan@example.com", "secret");
-    fakeDocument.cookie = "drycms_csrf=abc";
-
     const calls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
@@ -167,18 +137,26 @@ describe("sliding session refresh", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     }));
 
-    // Two `slideSession()` calls fired back-to-back, neither awaited before
-    // the other starts - the same overlap two tabs' independent 10-minute
-    // timers can produce. Without the cross-tab lock, both would present the
-    // same refresh token to POST /api/auth/refresh; the second would then
-    // look like a replayed token on its next use and the server would revoke
-    // every session (`revokeAllAuthSessions(..., "reuse")`).
-    fakeDocument.dispatchEvent(new Event("visibilitychange"));
-    fakeDocument.dispatchEvent(new Event("visibilitychange"));
-    await vi.waitFor(() => expect(calls.length).toBeGreaterThanOrEqual(2));
+    // Not awaited individually before the other starts - the same overlap
+    // two tabs (or two in-flight requests both hitting a 401) can produce.
+    // Without the cross-tab lock, both would present the same refresh token
+    // to POST /api/auth/refresh; the second would then look like a replayed
+    // token on its next use and the server would revoke every session.
+    const [first, second] = await Promise.all([refreshExpiredSession(), refreshExpiredSession()]);
 
     expect(calls.filter((url) => url.endsWith("/api/auth/refresh"))).toHaveLength(1);
     expect(calls.filter((url) => url.endsWith("/api/auth/session"))).toHaveLength(1);
+    expect(first).toEqual(USER);
+    expect(second).toEqual(USER);
+  });
+
+  it("login()/logout() still set authState directly, unaffected by the refresh path", async () => {
+    stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
+    await login("khan@example.com", "secret");
     expect(authState.value).toEqual({ status: "authenticated", user: USER });
+
+    stubFetchOnce([{ url: "/api/auth/logout", ok: true }]);
+    await logout();
+    expect(authState.value).toEqual({ status: "anonymous", user: null });
   });
 });
