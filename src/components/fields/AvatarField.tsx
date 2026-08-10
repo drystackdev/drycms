@@ -8,7 +8,7 @@ import { CloseIcon, UsersIcon } from "../icons/index.js";
 /** Longest side, in px, an avatar is downscaled to before upload - large
  * enough to cover the editor's 5rem (80px) circle at 2x device pixel ratio
  * without visibly blurring, small enough to keep the uploaded file tiny. */
-const AVATAR_MAX_DIMENSION = 100;
+const AVATAR_MAX_DIMENSION = 120;
 const AVATAR_QUALITY = 1;
 
 /** Fixed upload target - hidden from the Media browser (`isHiddenName` in
