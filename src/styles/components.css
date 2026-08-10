@@ -3785,8 +3785,8 @@
       overflow-y: auto;
       overscroll-behavior-y: contain;
       scrollbar-gutter: stable;
-      margin-inline: -1rem;
       padding-inline: 1.25rem;
+      padding-block: 0.5rem;
     }
 
     .github-history-body > [data-overlayscrollbars-viewport] {
@@ -3811,6 +3811,15 @@
     .github-history-dialog .content-type-list-item {
       padding-left: 0;
       padding-right: 0;
+
+      /* Inside the `.under` panel's own border, the list's default
+       * first/last dividers just double up against it. */
+      &:first-child {
+        border-top: none;
+      }
+      &:last-child {
+        border-block-end: none;
+      }
     }
 
     .apply-build-summary {

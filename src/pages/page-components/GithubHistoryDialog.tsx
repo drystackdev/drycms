@@ -78,7 +78,7 @@ export default function GithubHistoryDialog({ open, endpoint, onClose, onApplied
           <>
             <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
               <div class="spacer">
-                <h3>History</h3>
+                <strong>History</strong>
                 <p class="hint">Every Build with GitHub Sync enabled commits a full snapshot - pick one to restore the whole tree back to it.</p>
               </div>
               <button type="button" class="icon ghost" onClick={onClose}>
@@ -86,7 +86,7 @@ export default function GithubHistoryDialog({ open, endpoint, onClose, onApplied
               </button>
             </header>
 
-            <div class="confirm-dialog-body under github-history-body" ref={bodyScroll}>
+            <div class="under github-history-body" ref={bodyScroll}>
               <div class="github-history-scroll-content">
                 {loading && <span class="hint">Loading…</span>}
                 {!loading && loadError && <span class="error">{loadError}</span>}
@@ -110,12 +110,6 @@ export default function GithubHistoryDialog({ open, endpoint, onClose, onApplied
                 )}
               </div>
             </div>
-
-            <footer>
-              <button type="button" class="outline" onClick={onClose}>
-                Close
-              </button>
-            </footer>
           </>
         )}
       </dialog>
