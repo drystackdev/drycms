@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { appRouterPlugin } from "./src/server/app-router/app-router-plugin.js";
 import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js";
 
@@ -8,6 +8,43 @@ import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js"
 // Workers build apart from the Node one (both are `vite build --ssr`), and
 // the two need different chunking (see `inlineDynamicImports` below).
 const isWorkerBuild = process.env.DRYCMS_WORKER_BUILD === "1";
+
+const PRISM_LANGUAGE_FILE = /\/node_modules\/prismjs\/components\/prism-[\w-]+\.js$/;
+
+/**
+ * Gives `prismjs`'s language files (`components/prism-*.js`) the import of
+ * prismjs core they are missing.
+ *
+ * Those files are legacy browser scripts shaped
+ * `(function (Prism) { ... }(Prism))`: they read a bare GLOBAL `Prism` and
+ * declare no dependency at all, so nothing in the module graph says they must
+ * run after core. Core itself is CommonJS (`module.exports = Prism`), which
+ * the bundler compiles into a LAZY factory that only executes when a module
+ * actually imports it - while a language file, having no CJS markers
+ * whatsoever, is treated as ESM and executes EAGERLY at the top of its chunk.
+ * The language file therefore ran before core ever did, so neither a local
+ * binding nor `window.Prism` existed yet, and production died on
+ * `ReferenceError: Prism is not defined` inside the prismjs chunk. Dev never
+ * showed it: unbundled, each file is its own request and simply runs in
+ * import order.
+ *
+ * Prepending a real `import` fixes both halves at once - it is the dependency
+ * edge that forces core to evaluate first, AND it puts a `Prism` binding in
+ * scope for the trailing `}(Prism))` call - so no chunking strategy, and no
+ * import order at any call site, can break the pairing again.
+ */
+function prismjsLanguagesPlugin(): Plugin {
+  return {
+    name: "drycms:prismjs-languages",
+    // Before Vite's CommonJS/ESM handling, so the injected import is part of
+    // the module as every later plugin sees it.
+    enforce: "pre",
+    transform(code, id) {
+      if (!PRISM_LANGUAGE_FILE.test(id.split("?")[0]!)) return null;
+      return { code: `import Prism from "prismjs";\n${code}`, map: null };
+    },
+  };
+}
 
 export default defineConfig(({ isSsrBuild, command }) => ({
   /**
@@ -53,7 +90,13 @@ export default defineConfig(({ isSsrBuild, command }) => ({
   // same doc) - the admin's own hand-rolled `.css` files (`docs/DESIGN.md`)
   // never opt in, so this is safe to register globally rather than needing
   // a separate Vite config just for `src/apps`.
-  plugins: [appRouterPlugin(), assetHrefsPlugin(), tailwindcss(), preact()],
+  plugins: [
+    appRouterPlugin(),
+    assetHrefsPlugin(),
+    prismjsLanguagesPlugin(),
+    tailwindcss(),
+    preact(),
+  ],
   build: {
     // Page Components carries the whole `Editer` code editor (TypeScript
     // services + Prism) in one route chunk; it is lazy-loaded from the app
@@ -113,6 +156,20 @@ export default defineConfig(({ isSsrBuild, command }) => ({
               // (`build-preact-runtime-bundle.ts`), and hooks silently
               // break across two instances.
               appsHydrateBuilt: "src/apps/hydrate-built.ts",
+            },
+            output: {
+              // Keep prismjs to exactly ONE instance across the app. A
+              // language grammar registers itself onto whichever copy of
+              // core it was bundled next to, so a duplicated core means a
+              // route that resolved the other copy sees
+              // `Prism.languages.jsx` as undefined. Pinning the package to a
+              // single chunk makes that impossible no matter how many routes
+              // reach it. This is deduplication only - what guarantees core
+              // EVALUATES before its language files is
+              // `prismjsLanguagesPlugin` above, not this.
+              manualChunks(id) {
+                if (id.includes("/node_modules/prismjs/")) return "prismjs";
+              },
             },
           },
           manifest: true,

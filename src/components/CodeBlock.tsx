@@ -1,15 +1,11 @@
 import { useMemo, useState } from "preact/hooks";
-import Prism from "prismjs";
-// The only grammar CodeBlock highlights with - jsx extends the markup
-// grammar, so plain HTML/XML snippets (e.g. the icon dialogs' `<i>`
-// snippets) still highlight fine under it too.
-import "prismjs/components/prism-jsx";
+// Never `prismjs` directly - `src/lib/prism.ts` is what pairs core with the
+// `jsx` grammar this file highlights against.
+import Prism from "../lib/prism.js";
 import { toast } from "./Toast.js";
 import { CopyIcon } from "./icons/index.js";
 import type { CSSProperties } from "preact";
 import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
-
-const JSX_GRAMMAR = Prism.languages.jsx!;
 
 interface Props {
   code: string;
@@ -102,7 +98,7 @@ export default function CodeBlock({
     return editable ? formatted : formatted.trim();
   }, [code, shouldFormatHtml, editable]);
   const highlighted = useMemo(
-    () => Prism.highlight(displayCode, JSX_GRAMMAR, "jsx"),
+    () => Prism.highlight(displayCode, Prism.languages.jsx!, "jsx"),
     [displayCode],
   );
 

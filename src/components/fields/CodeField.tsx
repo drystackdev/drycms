@@ -1,9 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "preact/hooks";
-import Prism from "prismjs";
-import "prismjs/components/prism-jsx";
+// Never `prismjs` directly - see `src/lib/prism.ts`.
+import Prism from "../../lib/prism.js";
 import type { FieldProps } from "./field-common.js";
-
-const JSX_GRAMMAR = Prism.languages.jsx!;
 
 export interface CodeFieldProps extends FieldProps<string> {
   placeholder?: string;
@@ -54,7 +52,7 @@ export default function CodeField({
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const highlighted = useMemo(
-    () => Prism.highlight(draft, JSX_GRAMMAR, "jsx"),
+    () => Prism.highlight(draft, Prism.languages.jsx!, "jsx"),
     [draft],
   );
   const hasTrailingNewline = draft?.endsWith("\n");
