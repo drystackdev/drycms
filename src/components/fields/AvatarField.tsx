@@ -3,11 +3,12 @@ import type { FieldProps } from "./field-common.js";
 import { readImageDimensions, renderResizedImage } from "../FileManager/file-manager-image-optimize.js";
 import { CloseIcon, UsersIcon } from "../icons/index.js";
 
-/** Longest side, in px, an avatar is downscaled to before storage - kept tiny
- * on purpose since the whole point of this field (unlike `image`) is storing
- * the pixels themselves as a base64 string directly in the DB row, no
- * separate file/storage record. */
-const AVATAR_MAX_DIMENSION = 50;
+/** Longest side, in px, an avatar is downscaled to before storage - still
+ * tiny since the whole point of this field (unlike `image`) is storing the
+ * pixels themselves as a base64 string directly in the DB row, no separate
+ * file/storage record, but large enough to cover the editor's 5rem (80px)
+ * circle at 2x device pixel ratio without visibly blurring. */
+const AVATAR_MAX_DIMENSION = 80;
 const AVATAR_QUALITY = 1;
 
 function blobToDataUrl(blob: Blob): Promise<string> {

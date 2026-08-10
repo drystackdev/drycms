@@ -1579,19 +1579,23 @@
      * there's no separate empty/thumb "box" width to account for. */
     .avatar-field-box {
       position: relative;
-      width: 5rem;
-      height: 5rem;
-      overflow: hidden;
+      width: 4rem;
+      height: 4rem;
       border: 1px solid var(--dry-input);
       border-radius: 50%;
       background-color: var(--dry-muted);
     }
 
+    /* Rounded on itself (rather than relying on the box's `overflow:
+     * hidden`) so the corner-badge remove button - deliberately positioned
+     * partly outside the box in `.avatar-field-remove` - doesn't get
+     * clipped by the box's own circular mask. */
     .avatar-field-thumb {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
+      border-radius: 50%;
       object-fit: cover;
     }
 
@@ -1623,7 +1627,7 @@
       }
     }
 
-    .avatar-field-overlay {
+    .avatar-field-box > button.avatar-field-overlay {
       position: absolute;
       inset: 0;
       border: none;
@@ -1632,6 +1636,7 @@
       box-shadow: none;
       cursor: pointer;
       opacity: 0;
+      height: 100%;
       transition: opacity 0.2s ease-in;
 
       &:hover:not(:disabled) {
@@ -1656,7 +1661,11 @@
       opacity: 0;
       transition: opacity 0.2s ease-in;
 
+      /* Re-assert the dark badge background against the generic
+       * `.ghost:hover` accent-tint rule, which otherwise wins on
+       * specificity and flips the badge to a near-invisible light tint. */
       &:hover:not(:disabled) {
+        background-color: var(--dry-overlay-dark-control);
         opacity: 1;
       }
     }
