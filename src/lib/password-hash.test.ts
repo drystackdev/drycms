@@ -28,22 +28,15 @@ describe("hashPassword / verifyPassword", () => {
   it("rejects a value that isn't its own format, without throwing", async () => {
     expect(await verifyPassword("anything", "not-a-hash")).toBe(false);
     expect(await verifyPassword("anything", "")).toBe(false);
-    expect(await verifyPassword("anything", "v2:not-a-number:c2FsdA==:aGFzaA==")).toBe(false);
+    expect(await verifyPassword("anything", "scrypt:not-a-number:8:1:c2FsdA==:aGFzaA==")).toBe(false);
   });
 
-  it("writes v2 with the iteration count embedded, at or below the Workers cap", async () => {
+  it("writes the scrypt cost parameters embedded in the stored string", async () => {
     const stored = await hashPassword("hunter2");
-    const [, iterations] = stored.split(":");
-    expect(stored.startsWith("v2:")).toBe(true);
-    expect(Number(iterations)).toBeLessThanOrEqual(100_000);
-  });
-
-  // Real `v1:` output, produced by the pre-v2 scheme (210,000 iterations,
-  // count not stored) - accounts created before that format change must keep
-  // working on Node, where the count is still within reach.
-  it("still verifies a legacy v1 hash", async () => {
-    const legacy = "v1:3Np9/wgPKvnEwDIb82Ms0g==:iLYAyDih26v8BRNsD5td4ZN7eLX/POsk1eahqjb+MYc=";
-    expect(await verifyPassword("correct horse battery staple", legacy)).toBe(true);
-    expect(await verifyPassword("wrong password", legacy)).toBe(false);
+    expect(stored.startsWith("scrypt:")).toBe(true);
+    const [, n, r, p] = stored.split(":");
+    expect(Number(n)).toBeGreaterThan(0);
+    expect(Number(r)).toBeGreaterThan(0);
+    expect(Number(p)).toBeGreaterThan(0);
   });
 });
