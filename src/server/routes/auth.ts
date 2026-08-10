@@ -106,6 +106,7 @@ interface SessionUser {
 }
 
 interface ClientSessionUser extends SessionUser {
+  avatar: string;
   roles: string[];
   isSuperAdmin: boolean;
   permissions: string[];
@@ -122,6 +123,9 @@ async function resolveClientUser(
   const access = await resolveAccess(entryAdapter, allTypes, base);
   return {
     ...base,
+    // Same "resolved fresh every time, never in the signed token" reasoning
+    // `roles` above already carries - see this function's own doc comment.
+    avatar: typeof entry.value.avatar === "string" ? entry.value.avatar : "",
     roles,
     isSuperAdmin: access?.isSuperAdmin === true,
     permissions: [...(access?.permissions ?? [])],
@@ -393,11 +397,13 @@ export const POST: DryRouteHandler = async (context) => {
       const body = (await context.request.json()) as {
         name?: unknown;
         email?: unknown;
+        avatar?: unknown;
         currentPassword?: unknown;
         newPassword?: unknown;
       };
       const name = typeof body.name === "string" ? body.name.trim() : "";
       const email = typeof body.email === "string" ? body.email.trim() : "";
+      const avatar = typeof body.avatar === "string" ? body.avatar : "";
       const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
       const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
 
@@ -443,6 +449,7 @@ export const POST: DryRouteHandler = async (context) => {
         ...existing.value,
         name,
         email,
+        avatar,
         password: { hasExisting: true, ...(newPassword ? { new: newPassword } : {}) },
       });
 

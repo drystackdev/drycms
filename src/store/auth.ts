@@ -6,6 +6,10 @@ export interface AuthUser {
   id: number;
   name: string;
   email: string;
+  /** `data:image/webp;base64,...` or `""` - same "resolved fresh every
+   * time, never in the signed session token" treatment `roles` gets below
+   * (`routes/auth.ts`'s `resolveClientUser`). */
+  avatar: string;
   /** Display names of the roles assigned to this user - resolved fresh by
    * the server on every auth response (`routes/auth.ts`'s
    * `resolveRoleLabels`), never cached in the session token itself. Read-only
@@ -239,7 +243,8 @@ export async function login(email: string, password: string): Promise<void> {
   authState.value = { status: "authenticated", user: body.user };
 }
 
-/** Self-service edit of the signed-in user's own `name`/`email`/password -
+/** Self-service edit of the signed-in user's own `name`/`email`/`avatar`/
+ * password -
  * `currentPassword`/`newPassword` both empty means "keep the current
  * password" (same "leave blank" contract as `PasswordChangeField`); the
  * server requires BOTH together otherwise (`routes/auth.ts` rejects a
@@ -251,13 +256,14 @@ export async function login(email: string, password: string): Promise<void> {
 export async function updateProfile(
   name: string,
   email: string,
+  avatar: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
   const res = await fetch(`${path}/api/auth/update-profile`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, currentPassword, newPassword }),
+    body: JSON.stringify({ name, email, avatar, currentPassword, newPassword }),
   });
   await assertOk(res, "Failed to update profile.");
   const body = await res.json();

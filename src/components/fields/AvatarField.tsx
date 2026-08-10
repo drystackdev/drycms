@@ -8,7 +8,7 @@ import { CloseIcon, UsersIcon } from "../icons/index.js";
  * the pixels themselves as a base64 string directly in the DB row, no
  * separate file/storage record. */
 const AVATAR_MAX_DIMENSION = 50;
-const AVATAR_QUALITY = 0.6;
+const AVATAR_QUALITY = 1;
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {

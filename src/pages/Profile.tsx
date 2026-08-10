@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { passwordConfirmError } from "../content-types/engine/entry-validate.js";
+import AvatarField from "../components/fields/AvatarField.js";
 import PasswordField from "../components/fields/PasswordField.js";
 import TextField from "../components/fields/TextField.js";
 import { toast } from "../components/Toast.js";
@@ -11,7 +12,7 @@ import { useDocumentTitle } from "./page-common.js";
 /**
  * Self-service account editor, reached from `DryLayout`'s sidebar account
  * menu ("Profile") - a standalone page (own route, own back-less header),
- * not a dialog. Only `name`/`email`/password are editable here; role
+ * not a dialog. Only `name`/`email`/`avatar`/password are editable here; role
  * assignment stays admin-only (`pages/RoleEditor.tsx`) - the current roles
  * are shown read-only for context. Reuses `PasswordChangeField` (built for
  * the admin entry editor) for the new/confirm pair, plus a separate "Current
@@ -24,6 +25,7 @@ export default function Profile() {
 
   const user = authState.value.user;
   const [name, setName] = useState(user?.name ?? "");
+  const [avatar, setAvatar] = useState(user?.avatar ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState<MaskedValue>({ hasExisting: true });
@@ -53,7 +55,7 @@ export default function Profile() {
 
     setSubmitting(true);
     try {
-      await updateProfile(name.trim(), email.trim(), currentPassword, password.new ?? "");
+      await updateProfile(name.trim(), email.trim(), avatar, currentPassword, password.new ?? "");
       setCurrentPassword("");
       setPassword({ hasExisting: true });
       setSubmitAttempted(false);
@@ -75,7 +77,7 @@ export default function Profile() {
       <div class="page-header">
         <div style={{ flex: 1 }}>
           <h1>My profile</h1>
-          <p>Update your account's name, email, and password.</p>
+          <p>Update your account's name, avatar, email, and password.</p>
         </div>
       </div>
 
@@ -89,6 +91,7 @@ export default function Profile() {
           helperText={nameError}
           required
         />
+        <AvatarField label="Avatar" value={avatar} onChange={setAvatar} />
         <TextField
           label="Email"
           placeholder="e.g. ada@example.com"
