@@ -239,17 +239,6 @@ const PREVIEW_NAVIGATE_MESSAGE = "dry-page-editor-preview-navigate";
  * which is the one thing this shortcut exists to prevent. */
 const PREVIEW_SAVE_MESSAGE = "dry-page-editor-preview-save";
 
-/** `postMessage` type for a wheel/trackpad gesture over the preview iframe.
- * A wheel event is dispatched in the iframe's own document and never crosses
- * the frame boundary, so scrolling the preview PANEL (the surrounding
- * `.page-components-preview-viewport-inner`, which is what actually overflows
- * once the frame is zoomed in past the panel's width) was impossible with the
- * pointer anywhere over the preview - the one place it naturally sits. The
- * injected bridge forwards only the axis the preview document itself can't
- * scroll, so a tall page preview still scrolls its own content vertically
- * while the horizontal delta pans the zoomed frame. */
-const PREVIEW_WHEEL_MESSAGE = "dry-page-editor-preview-wheel";
-
 /** Runs INSIDE the preview iframe (injected as a literal `<script>` into the
  * built HTML, never sharing a JS realm with this file) - see
  * `PREVIEW_NAVIGATE_MESSAGE`/`PREVIEW_SAVE_MESSAGE`'s doc comments for why.
@@ -260,7 +249,7 @@ const PREVIEW_WHEEL_MESSAGE = "dry-page-editor-preview-wheel";
  * URL back out to a pathname - no origin-joining logic duplicated on this
  * side. */
 function buildPreviewBridgeScript(): string {
-  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);document.addEventListener("wheel",function(event){var el=document.scrollingElement||document.documentElement;var unit=event.deltaMode===1?16:event.deltaMode===2?el.clientHeight:1;var dx=el.scrollWidth>el.clientWidth?0:event.deltaX*unit;var dy=el.scrollHeight>el.clientHeight?0:event.deltaY*unit;if(!dx&&!dy)return;window.parent.postMessage({type:${JSON.stringify(PREVIEW_WHEEL_MESSAGE)},deltaX:dx,deltaY:dy},"*");},{passive:true,capture:true});})();</script>`;
+  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 /** Same `?tree`-unsupported (R2/S3) fallback `PageBuild.tsx` uses, but
@@ -1252,6 +1241,13 @@ export default function PageEditor() {
     return paths.map((filePath) => ({ filePath, current: filePath === selectedPath }));
   }, [previewTarget, selectedPath]);
 
+  /** Whether `.page-components-preview-viewport` is in the DOM right now -
+   * every gate the JSX below puts in front of it, including the three early
+   * returns (`canEdit`/`loadError`/`entries`) that render no editor UI at
+   * all. Read by `previewScroll`'s `deps`, which is only correct while it
+   * mirrors that JSX exactly - keep the two in sync if either gains a gate. */
+  const previewHostMounted = canEdit && !loadError && entries !== null && previewOpen && !!previewTarget;
+
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
   // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
@@ -1447,18 +1443,6 @@ export default function PageEditor() {
       if (!event.data) return;
       if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
       if (event.data.type === PREVIEW_SAVE_MESSAGE) return saveShortcutRef.current();
-      if (event.data.type === PREVIEW_WHEEL_MESSAGE) {
-        // The OverlayScrollbars-managed viewport (`previewScroll.viewportRef`)
-        // is the element that actually overflows - the host around it doesn't
-        // scroll at all (see its own CSS comment). Refs never go stale, so
-        // reading `.current` here is safe despite this effect only re-running
-        // on `manifest`.
-        previewScroll.viewportRef.current?.scrollBy({
-          left: Number(event.data.deltaX) || 0,
-          top: Number(event.data.deltaY) || 0,
-        });
-        return;
-      }
       if (event.data.type !== PREVIEW_NAVIGATE_MESSAGE) return;
       const pathname = event.data.pathname;
       if (typeof pathname !== "string") return;

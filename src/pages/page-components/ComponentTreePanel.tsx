@@ -563,7 +563,6 @@ function ComponentTreeList(props: ComponentTreeListProps) {
             });
           }
           if (!bulk) {
-            if (menuItems.length > 0) menuItems.push({ type: "separator" });
             menuItems.push({
               type: "item",
               label: "Rename",
