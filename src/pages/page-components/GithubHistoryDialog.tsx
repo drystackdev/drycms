@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { useDialogSync } from "../../hooks/list-nav.js";
+import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
 import ConfirmDialog from "../../components/ConfirmDialog.js";
 import { XIcon } from "../../components/icons/index.js";
 import { fetchGithubRestoreStatus, resetPagesSourceFromGithub, type GithubSnapshotCommit } from "../../page-components/github-restore-http-api.js";
@@ -33,6 +34,7 @@ function formatCommitDate(iso: string): string {
  */
 export default function GithubHistoryDialog({ open, endpoint, onClose, onApplied }: GithubHistoryDialogProps) {
   const ref = useDialogSync(open, onClose);
+  const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([open]);
   const [loading, setLoading] = useState(false);
   const [commits, setCommits] = useState<GithubSnapshotCommit[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -71,7 +73,7 @@ export default function GithubHistoryDialog({ open, endpoint, onClose, onApplied
 
   return (
     <>
-      <dialog ref={ref} class="md" aria-label="History">
+      <dialog ref={ref} class="lg github-history-dialog" aria-label="History">
         {open && (
           <>
             <header class="row justify-between" style={{ flexWrap: "nowrap" }}>
@@ -84,27 +86,29 @@ export default function GithubHistoryDialog({ open, endpoint, onClose, onApplied
               </button>
             </header>
 
-            <div class="confirm-dialog-body">
-              {loading && <span class="hint">Loading…</span>}
-              {!loading && loadError && <span class="error">{loadError}</span>}
-              {!loading && !loadError && commits.length === 0 && <span class="hint">No snapshot commits yet.</span>}
-              {!loading && commits.length > 0 && (
-                <ul class="content-type-list">
-                  {commits.map((commit) => (
-                    <li key={commit.sha} class="content-type-list-item row justify-between align-center">
-                      <span class="stack" style={{ gap: "0.125rem", minWidth: 0 }}>
-                        <strong>{commit.message.split("\n")[0]}</strong>
-                        <small class="hint">
-                          {formatCommitDate(commit.date)} • {commit.authorName} • <code>{commit.sha.slice(0, 7)}</code>
-                        </small>
-                      </span>
-                      <button type="button" class="outline sm" onClick={() => setPendingRestore(commit)}>
-                        Restore
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <div class="confirm-dialog-body under github-history-body" ref={bodyScroll}>
+              <div class="github-history-scroll-content">
+                {loading && <span class="hint">Loading…</span>}
+                {!loading && loadError && <span class="error">{loadError}</span>}
+                {!loading && !loadError && commits.length === 0 && <span class="hint">No snapshot commits yet.</span>}
+                {!loading && commits.length > 0 && (
+                  <ul class="content-type-list">
+                    {commits.map((commit) => (
+                      <li key={commit.sha} class="content-type-list-item row justify-between align-center">
+                        <span class="stack" style={{ gap: "0.125rem", minWidth: 0 }}>
+                          <strong>{commit.message.split("\n")[0]}</strong>
+                          <small class="hint">
+                            {formatCommitDate(commit.date)} • {commit.authorName} • <code>{commit.sha.slice(0, 7)}</code>
+                          </small>
+                        </span>
+                        <button type="button" class="outline sm" onClick={() => setPendingRestore(commit)}>
+                          Restore
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
 
             <footer>

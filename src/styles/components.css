@@ -3764,6 +3764,55 @@
       min-width: 0;
     }
 
+    /* Same fixed-header/scrolling-body shape as `.apply-build-dialog[open]`
+     * above - the commit list can run long. */
+    .github-history-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    .github-history-body {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      scrollbar-gutter: stable;
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
+    }
+
+    .github-history-body > [data-overlayscrollbars-viewport] {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .github-history-scroll-content {
+      width: 100%;
+      min-width: 0;
+    }
+
+    /* `.content-type-list`'s default `margin-inline: -2rem` assumes it's
+     * bleeding to a 2rem-padded page panel's own edges - inside the `.under`
+     * scroll panel here that instead makes it wider than its container,
+     * which is what was forcing an unwanted horizontal scrollbar. */
+    .github-history-dialog .content-type-list {
+      margin: 0;
+      padding: 0;
+    }
+
+    .github-history-dialog .content-type-list-item {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
     .apply-build-summary {
       display: grid;
       gap: 0.125rem;
