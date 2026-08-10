@@ -67,7 +67,7 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
    * `list()` produces - folders get no `size`/`fileCount` here (a cheap
    * count needs a second pass, done by `stat()`/`list()` themselves via
    * `aggregateFolder` below), files get real `size`/`modifiedAt`. */
-  async function listRaw(relPath: string): Promise<{ files: StorageStatEntry[]; folders: string[] }> {
+  async function listRaw(relPath: string, includeHidden = false): Promise<{ files: StorageStatEntry[]; folders: string[] }> {
     const listPrefix = folderListPrefix(relPath);
     const files: StorageStatEntry[] = [];
     const folders: string[] = [];
@@ -76,7 +76,7 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
       const page = await bucket.list({ prefix: listPrefix, delimiter: "/", cursor, limit: 1000 });
       for (const object of page.objects) {
         const name = entryName(object.key, listPrefix);
-        if (isHiddenName(name)) continue;
+        if (isHiddenName(name) && !includeHidden) continue;
         files.push({
           path: relPath ? `${relPath}/${name}` : name,
           name,
@@ -88,7 +88,7 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
       }
       for (const delimited of page.delimitedPrefixes) {
         const name = entryName(delimited, listPrefix).replace(/\/$/, "");
-        if (name && !isHiddenName(name)) folders.push(name);
+        if (name && (includeHidden || !isHiddenName(name))) folders.push(name);
       }
       if (!page.truncated || !page.cursor) break;
       cursor = page.cursor;
@@ -114,13 +114,13 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
     return objects;
   }
 
-  async function aggregateFolder(relPath: string): Promise<{ size: number; fileCount: number }> {
-    const { files, folders } = await listRaw(relPath);
+  async function aggregateFolder(relPath: string, includeHidden = false): Promise<{ size: number; fileCount: number }> {
+    const { files, folders } = await listRaw(relPath, includeHidden);
     return { size: files.reduce((sum, file) => sum + (file.size ?? 0), 0), fileCount: files.length + folders.length };
   }
 
-  async function folderEntry(relPath: string): Promise<StorageStatEntry> {
-    const { size, fileCount } = await aggregateFolder(relPath);
+  async function folderEntry(relPath: string, includeHidden = false): Promise<StorageStatEntry> {
+    const { size, fileCount } = await aggregateFolder(relPath, includeHidden);
     return {
       path: relPath,
       name: relPath === "" ? "" : relPath.slice(relPath.lastIndexOf("/") + 1),
@@ -130,13 +130,13 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
     };
   }
 
-  async function list(relPath: string): Promise<StorageStatEntry[]> {
+  async function list(relPath: string, includeHidden = false): Promise<StorageStatEntry[]> {
     if (relPath !== "" && !(await stat(relPath))) {
       throw new StorageError("not_found", `"${relPath}" does not exist.`);
     }
-    const { files, folders } = await listRaw(relPath);
+    const { files, folders } = await listRaw(relPath, includeHidden);
     const folderEntries = await Promise.all(
-      folders.map((name) => folderEntry(relPath ? `${relPath}/${name}` : name)),
+      folders.map((name) => folderEntry(relPath ? `${relPath}/${name}` : name, includeHidden)),
     );
     return [...folderEntries, ...files];
   }

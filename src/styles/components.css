@@ -1579,8 +1579,8 @@
      * there's no separate empty/thumb "box" width to account for. */
     .avatar-field-box {
       position: relative;
-      width: 4rem;
-      height: 4rem;
+      width: 4.5rem;
+      height: 4.5rem;
       border: 1px solid var(--dry-input);
       border-radius: 50%;
       background-color: var(--dry-muted);

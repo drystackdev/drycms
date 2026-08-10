@@ -5,6 +5,11 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 const testSession: SessionPayload = { id: 1, name: "Test Admin", email: "test-admin@example.com" };
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
+const superAdminBox = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../admin-access.js", () => ({
+  isSuperAdminSession: async () => superAdminBox.value,
+}));
 
 vi.mock("../config.js", async () => {
   const { mkdtempSync } = await import("node:fs");
@@ -339,5 +344,33 @@ describe("DELETE /dry/api/storage/[...slug]", () => {
   it("400s deleting the storage root", async () => {
     const response = await DELETE(context({ slug: "", method: "DELETE" }));
     expect(response.status).toBe(400);
+  });
+});
+
+describe("hidden .avatar/.tmp.* folders", () => {
+  afterAll(() => {
+    superAdminBox.value = false;
+  });
+
+  it("stays out of list/tree for an ordinary session", async () => {
+    await mkdir(".avatar");
+    const listResponse = await GET(context({ slug: "" }));
+    const listData = (await listResponse.json()) as { entries: { id: string }[] };
+    expect(listData.entries.some((e) => e.id === ".avatar")).toBe(false);
+
+    const treeResponse = await GET(context({ slug: "", query: { tree: "1" } }));
+    const treeData = (await treeResponse.json()) as { entries: { id: string }[] };
+    expect(treeData.entries.some((e) => e.id === ".avatar")).toBe(false);
+  });
+
+  it("shows up in list/tree for a super-admin session", async () => {
+    superAdminBox.value = true;
+    const listResponse = await GET(context({ slug: "" }));
+    const listData = (await listResponse.json()) as { entries: { id: string }[] };
+    expect(listData.entries.some((e) => e.id === ".avatar")).toBe(true);
+
+    const treeResponse = await GET(context({ slug: "", query: { tree: "1" } }));
+    const treeData = (await treeResponse.json()) as { entries: { id: string }[] };
+    expect(treeData.entries.some((e) => e.id === ".avatar")).toBe(true);
   });
 });

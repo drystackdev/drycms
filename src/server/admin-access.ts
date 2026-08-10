@@ -16,6 +16,18 @@ export async function requireSuperAdmin(context: DryRouteContext, message = "Sup
   return access.isSuperAdmin ? null : forbiddenResponse(message);
 }
 
+/** Soft variant of `requireSuperAdmin` - resolves the same access, but
+ * returns a boolean instead of a 401/403 response, for callers that adjust
+ * behavior (e.g. what a listing includes) rather than gate the whole
+ * request. `false` for a missing or unresolvable session. */
+export async function isSuperAdminSession(context: DryRouteContext): Promise<boolean> {
+  if (!context.session) return false;
+  const { schema, entries } = getContentAdapters(context);
+  const allTypes = await schema.listContentTypes();
+  const access = await resolveAccess(entries, allTypes, context.session);
+  return access?.isSuperAdmin === true;
+}
+
 /** Same shape as `requireSuperAdmin`, but for a single `role.permissions`
  * key rather than the `isSuperAdmin` bypass - for a route backing a page
  * that isn't a real content type (so `content-types/access.ts`'s normal

@@ -16,6 +16,7 @@ import {
 } from "../route-helpers.js";
 import { toFileEntry } from "../../storage/entry.js";
 import { getStorageAdapter } from "../storage-adapters.js";
+import { isSuperAdminSession } from "../admin-access.js";
 import { joinStoragePath, normalizeStoragePath, storagePathParent } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
 import { sanitizeSvg, IconValidationError } from "../../icons/sanitize-svg.js";
@@ -46,9 +47,9 @@ function withPreview(entry: FileEntry, apiBase: string): FileEntry {
  * implements `listAll` (not R2/S3). `supported: false` tells the client to
  * fall back to per-folder `list()`, same contract as every other optional
  * `FileManagerSource` method. */
-async function handleTree(adapter: StorageAdapter, apiBase: string): Promise<Response> {
+async function handleTree(adapter: StorageAdapter, apiBase: string, includeHidden: boolean): Promise<Response> {
   if (!adapter.listAll) return jsonResponse({ supported: false });
-  const all = await adapter.listAll();
+  const all = await adapter.listAll(includeHidden);
   const entries = all.map((entry) => withPreview(toFileEntry(entry), apiBase));
   return jsonResponse({ supported: true, entries });
 }
@@ -61,7 +62,8 @@ export const GET: DryRouteHandler = async (context) => {
       if (path !== "") {
         throw new StorageError("invalid_path", "`?tree` is only valid at the storage root.");
       }
-      return await handleTree(adapter, apiBaseFrom(context.url, "storage"));
+      const includeHidden = await isSuperAdminSession(context);
+      return await handleTree(adapter, apiBaseFrom(context.url, "storage"), includeHidden);
     }
 
     const stat = await adapter.stat(path);
@@ -75,7 +77,11 @@ export const GET: DryRouteHandler = async (context) => {
       // route. `handler.ts` lets an unauthenticated `GET` this far only
       // because it can't tell file from folder without this same `stat()`.
       if (!context.session) return unauthenticatedResponse();
-      const children = await adapter.list(path);
+      // `.avatar`/`.tmp.*` staging folders (see `isHiddenName` in
+      // `local.ts`/`r2.ts`) are implementation details for everyone else,
+      // but a super admin browsing Media can still open and inspect them.
+      const includeHidden = await isSuperAdminSession(context);
+      const children = await adapter.list(path, includeHidden);
       const apiBase = apiBaseFrom(context.url, "storage");
       const entries = children.map((child) => withPreview(toFileEntry(child), apiBase));
       return jsonResponse({ path, entries });

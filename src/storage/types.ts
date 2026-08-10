@@ -51,8 +51,10 @@ export class StorageError extends Error {
  * route layer enforces product-level rules (e.g. "upload target must exist").
  */
 export interface StorageAdapter {
-  /** One level deep. `.dir` marker files are excluded. */
-  list(path: string): Promise<StorageStatEntry[]>;
+  /** One level deep. `.dir` marker files are always excluded; `.avatar` and
+   * `.tmp.*` staging folders too unless `includeHidden` is set (the Media
+   * page passes it for a super-admin session - see `storage.ts`'s `GET`). */
+  list(path: string, includeHidden?: boolean): Promise<StorageStatEntry[]>;
   /** Same directory `list()` reads, but names/kind only - no `modifiedAt`.
    * Optional: falls back to `list()` (dropping the extra fields) wherever a
    * backend doesn't override it. */
@@ -66,8 +68,9 @@ export interface StorageAdapter {
    * a full-bucket listing there would be the exact cost that pagination
    * exists to avoid. Callers must fall back to per-folder `list()` when this
    * is `undefined`. Folders in the result carry a true recursive
-   * size/fileCount (see `StorageStatEntry.size`), unlike `list()`/`stat()`. */
-  listAll?(): Promise<StorageStatEntry[]>;
+   * size/fileCount (see `StorageStatEntry.size`), unlike `list()`/`stat()`.
+   * Same `includeHidden` meaning as `list()`. */
+  listAll?(includeHidden?: boolean): Promise<StorageStatEntry[]>;
   stat(path: string): Promise<StorageStatEntry | null>;
   read(path: string): Promise<StorageReadResult>;
   /** Writes the `.dir` marker; creates missing parents. */

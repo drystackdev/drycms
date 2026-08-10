@@ -64,6 +64,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     absPath: string,
     relPath: string,
     name: string,
+    includeHidden = false,
   ): Promise<StorageStatEntry> {
     const stats = await fs.stat(absPath);
     if (!stats.isDirectory()) {
@@ -74,7 +75,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     let size = 0;
     let fileCount = 0;
     for (const child of children) {
-      if (isHiddenName(child.name)) continue;
+      if (isHiddenName(child.name) && !includeHidden) continue;
       fileCount += 1;
       const childStats = await statOrNull(join(absPath, child.name));
       if (childStats && !childStats.isDirectory()) size += childStats.size;
@@ -89,7 +90,7 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
     };
   }
 
-  async function list(relPath: string): Promise<StorageStatEntry[]> {
+  async function list(relPath: string, includeHidden = false): Promise<StorageStatEntry[]> {
     await ensureRoot();
     const dir = relPath === "" ? root : resolveWithinRoot(root, relPath);
     let dirents: import("node:fs").Dirent[];
@@ -107,9 +108,9 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
 
     const entries: StorageStatEntry[] = [];
     for (const dirent of dirents) {
-      if (isHiddenName(dirent.name)) continue;
+      if (isHiddenName(dirent.name) && !includeHidden) continue;
       const childRelPath = joinStoragePath(relPath, dirent.name);
-      entries.push(await statEntry(join(dir, dirent.name), childRelPath, dirent.name));
+      entries.push(await statEntry(join(dir, dirent.name), childRelPath, dirent.name, includeHidden));
     }
     return entries;
   }
@@ -140,16 +141,16 @@ export function createLocalStorageAdapter(root: string): StorageAdapter {
   /** Every file/folder under `root`, flattened - one recursive walk on the
    * same disk `list()`/`stat()` already hit; still one `readdir`+`stat`
    * per entry, same total work `list()` would do if called once per folder. */
-  async function listAll(): Promise<StorageStatEntry[]> {
+  async function listAll(includeHidden = false): Promise<StorageStatEntry[]> {
     await ensureRoot();
     const results: StorageStatEntry[] = [];
     async function walk(absDir: string, relDir: string): Promise<void> {
       const dirents = await fs.readdir(absDir, { withFileTypes: true });
       for (const dirent of dirents) {
-        if (isHiddenName(dirent.name)) continue;
+        if (isHiddenName(dirent.name) && !includeHidden) continue;
         const relPath = joinStoragePath(relDir, dirent.name);
         const absPath = join(absDir, dirent.name);
-        results.push(await statEntry(absPath, relPath, dirent.name));
+        results.push(await statEntry(absPath, relPath, dirent.name, includeHidden));
         if (dirent.isDirectory()) await walk(absPath, relPath);
       }
     }
