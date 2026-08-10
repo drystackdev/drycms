@@ -1,10 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "preact/hooks";
-import Prism from "prismjs";
-// See `CodeBlock.tsx`'s identical guard (and its doc comment) for why this
-// global assignment is only a backstop, and why the grammar itself is read
-// lazily below rather than at module top level.
-globalThis.Prism = Prism;
-import "prismjs/components/prism-jsx";
+// Never `prismjs` directly - see `src/lib/prism.ts`.
+import Prism from "../../lib/prism.js";
 import type { FieldProps } from "./field-common.js";
 
 export interface CodeFieldProps extends FieldProps<string> {

@@ -68,12 +68,14 @@ export interface Blog {
   title: string;
   slug: string;
   noiDung?: string;
+  category?: number | null; // relation -> category
 }
 
 export interface Category {
   id: number;
   title: string;
   slug: string;
+  blog?: number[]; // relationmirror -> blog, read-only
 }
 
 export interface SeoDefaults {
@@ -289,9 +291,13 @@ export interface MemoryRelations {
   user: User | null;
 }
 
-export interface BlogRelations {}
+export interface BlogRelations {
+  category: Category | null;
+}
 
-export interface CategoryRelations {}
+export interface CategoryRelations {
+  blog: Blog[];
+}
 
 export interface SeoDefaultsRelations {}
 
