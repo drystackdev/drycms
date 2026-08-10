@@ -80,6 +80,31 @@ export default defineConfig(({ isSsrBuild, command }) => ({
    * media root.
    */
   publicDir: command === "build" ? false : "public",
+  server: {
+    watch: {
+      /**
+       * `.dry/` is runtime DATA, not source (see `CLAUDE.md`), and Vite
+       * watches the whole project root by default - only `.git`,
+       * `node_modules`, `test-results` and the cache dir are ignored out of
+       * the box. That mattered for one specific write: publishing a built
+       * page (`built-pages-storage.ts`'s `writeBuiltPage`, i.e. every
+       * "Build"/"Build all" click in `PageEditor.tsx`/`PageBuild.tsx`) drops
+       * an `.html` file into `.dry/pages-cache/built/`, and Vite's HMR
+       * handler treats ANY changed `.html` that isn't in the module graph as
+       * "html cannot be hot updated" -> `full-reload`. Under
+       * `middlewareMode` (which `scripts/dev-server.mjs` uses) that reload is
+       * broadcast with `path: "*"`, so it reloads whatever page the browser
+       * has open - including the Page Editor tab that just started the
+       * build, mid-build, once per published page.
+       *
+       * `pages-source` is deliberately NOT ignored: it's the live page
+       * source (`tsconfig.json` includes it) and `@component/*` resolves
+       * into it below, so it belongs in the module graph like any other
+       * source file.
+       */
+      ignored: ["**/.dry/pages-cache/**", "**/.dry/kv/**", "**/.dry/types-cache/**", "**/.dry/content.sqlite*"],
+    },
+  },
   // Baked in per-build, not read at runtime - see `src/env.d.ts`'s
   // `ImportMetaEnv.DRYCMS_KIND` doc comment. `isWorkerBuild` is the only
   // signal that actually tells the Workers SSR build apart from the Node

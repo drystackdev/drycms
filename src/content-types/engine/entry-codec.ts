@@ -96,7 +96,12 @@ export async function valueToRow(nodes: EntryFieldNode[], value: EntryValue): Pr
       continue;
     }
     if (node.fieldType === "secretkey") {
-      if (typeof incoming === "string" && incoming.length > 0) row[node.columnName] = await encryptSecret(incoming);
+      // Trimmed before encrypting: a stray trailing newline/space from a
+      // copy-paste (e.g. a whole line lifted out of a `.env` file) would
+      // otherwise get baked into the stored ciphertext verbatim, producing a
+      // token that silently fails whatever it authenticates against.
+      const trimmed = typeof incoming === "string" ? incoming.trim() : "";
+      if (trimmed.length > 0) row[node.columnName] = await encryptSecret(trimmed);
       continue;
     }
 

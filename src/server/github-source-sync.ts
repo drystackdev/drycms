@@ -21,9 +21,6 @@ export type GithubSyncResult =
 interface GithubRefResponse {
   object: { sha: string };
 }
-interface GithubRepoResponse {
-  default_branch: string;
-}
 interface GithubCommitResponse {
   sha: string;
   tree: { sha: string };
@@ -110,25 +107,19 @@ async function githubRequest<T>(path: string, token: string, init: RequestInit =
 }
 
 /** The commit `pushPagesSourceSnapshot` should build on top of - `null` when
- * `branch` doesn't exist yet AND the repo has no commits at all to fall back
- * to (a brand-new, fully empty repo), in which case the snapshot becomes the
- * repo's very first (parentless, `base_tree`-less) commit. */
+ * `branch` doesn't exist yet, in which case the snapshot becomes a brand new
+ * parentless, `base_tree`-less commit containing only the current
+ * pages-source files, never the target repo's default branch content (a
+ * newly-created branch must start clean, not silently inherit whatever else
+ * lives in the repo). */
 async function resolveBaseCommit(repo: string, branch: string, token: string): Promise<{ sha: string; branchExists: boolean } | { sha: null; branchExists: false }> {
   try {
     const ref = await githubRequest<GithubRefResponse>(`/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return { sha: ref.object.sha, branchExists: true };
   } catch (error) {
-    // Only a genuine "no ref yet" 404 falls through to the default-branch
-    // fallback below - anything else (bad token, rate limit, network) is a
-    // real failure and must propagate, not be mistaken for a missing branch.
-    if (!(error instanceof GithubApiError) || error.status !== 404) throw error;
-  }
-  const repoInfo = await githubRequest<GithubRepoResponse>(`/repos/${repo}`, token);
-  if (repoInfo.default_branch === branch) return { sha: null, branchExists: false };
-  try {
-    const defaultRef = await githubRequest<GithubRefResponse>(`/repos/${repo}/git/ref/heads/${encodeURIComponent(repoInfo.default_branch)}`, token);
-    return { sha: defaultRef.object.sha, branchExists: false };
-  } catch (error) {
+    // Only a genuine "no ref yet" 404 means "create this branch fresh" -
+    // anything else (bad token, rate limit, network) is a real failure and
+    // must propagate, not be mistaken for a missing branch.
     if (!(error instanceof GithubApiError) || error.status !== 404) throw error;
     return { sha: null, branchExists: false };
   }

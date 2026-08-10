@@ -64,15 +64,12 @@ describe("pushPagesSourceSnapshot", () => {
     expect(JSON.parse(patchInit.body as string)).toEqual({ sha: "new-commit-sha", force: false });
   });
 
-  it("falls back to the default branch's commit and creates a new ref when the target branch doesn't exist yet", async () => {
+  it("creates a parentless root commit and a new ref when the target branch doesn't exist yet - never inherits another branch's content", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, 404)) // GET ref/heads/feature (missing)
-      .mockResolvedValueOnce(jsonResponse({ default_branch: "main" })) // GET repo
-      .mockResolvedValueOnce(jsonResponse({ object: { sha: "default-commit-sha" } })) // GET ref/heads/main
-      .mockResolvedValueOnce(jsonResponse({ sha: "default-commit-sha", tree: { sha: "default-tree-sha" } })) // GET commits/default-commit-sha
       .mockResolvedValueOnce(jsonResponse({ sha: "blob-sha-1" })) // POST blobs
-      .mockResolvedValueOnce(jsonResponse({ sha: "new-tree-sha" })) // POST trees
-      .mockResolvedValueOnce(jsonResponse({ sha: "new-commit-sha" })) // POST commits
+      .mockResolvedValueOnce(jsonResponse({ sha: "root-tree-sha" })) // POST trees (no base_tree)
+      .mockResolvedValueOnce(jsonResponse({ sha: "root-commit-sha" })) // POST commits (no parents)
       .mockResolvedValueOnce(jsonResponse({}, 201)); // POST refs (create)
 
     const result = await pushPagesSourceSnapshot(
@@ -81,34 +78,24 @@ describe("pushPagesSourceSnapshot", () => {
       "snapshot",
     );
 
-    expect(result).toEqual({ pushed: true, commitSha: "new-commit-sha" });
-    const [createRefUrl, createRefInit] = fetchMock.mock.calls[7] as [string, RequestInit];
-    expect(createRefUrl).toBe("https://api.github.com/repos/acme/site/git/refs");
-    expect(createRefInit.method).toBe("POST");
-    expect(JSON.parse(createRefInit.body as string)).toEqual({ ref: "refs/heads/feature", sha: "new-commit-sha" });
-  });
-
-  it("creates a parentless root commit when the repo has no commits at all", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, 404)) // GET ref/heads/main (missing)
-      .mockResolvedValueOnce(jsonResponse({ default_branch: "main" })) // GET repo - default IS the requested branch
-      .mockResolvedValueOnce(jsonResponse({ sha: "blob-sha-1" })) // POST blobs
-      .mockResolvedValueOnce(jsonResponse({ sha: "root-tree-sha" })) // POST trees (no base_tree)
-      .mockResolvedValueOnce(jsonResponse({ sha: "root-commit-sha" })) // POST commits (no parents)
-      .mockResolvedValueOnce(jsonResponse({}, 201)); // POST refs (create)
-
-    const result = await pushPagesSourceSnapshot({ "page.tsx": "x" }, CONFIG, "first commit");
-
     expect(result).toEqual({ pushed: true, commitSha: "root-commit-sha" });
-    const [treeUrl, treeInit] = fetchMock.mock.calls[3] as [string, RequestInit];
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+
+    const [treeUrl, treeInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(treeUrl).toBe("https://api.github.com/repos/acme/site/git/trees");
     expect(JSON.parse(treeInit.body as string)).toEqual({
       base_tree: undefined,
       tree: [{ path: "page.tsx", mode: "100644", type: "blob", sha: "blob-sha-1" }],
     });
-    const [commitUrl, commitInit] = fetchMock.mock.calls[4] as [string, RequestInit];
+
+    const [commitUrl, commitInit] = fetchMock.mock.calls[3] as [string, RequestInit];
     expect(commitUrl).toBe("https://api.github.com/repos/acme/site/git/commits");
-    expect(JSON.parse(commitInit.body as string)).toEqual({ message: "first commit", tree: "root-tree-sha", parents: [] });
+    expect(JSON.parse(commitInit.body as string)).toEqual({ message: "snapshot", tree: "root-tree-sha", parents: [] });
+
+    const [createRefUrl, createRefInit] = fetchMock.mock.calls[4] as [string, RequestInit];
+    expect(createRefUrl).toBe("https://api.github.com/repos/acme/site/git/refs");
+    expect(createRefInit.method).toBe("POST");
+    expect(JSON.parse(createRefInit.body as string)).toEqual({ ref: "refs/heads/feature", sha: "root-commit-sha" });
   });
 
   it("never throws - a GitHub API error comes back as pushed:false with the error message", async () => {
