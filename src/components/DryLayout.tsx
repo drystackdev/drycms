@@ -646,7 +646,11 @@ export default function DryLayout({ children }: Props) {
                   data-tooltip-placement="right"
                 >
                   <span class="sidebar-account-avatar">
-                    <UserIcon />
+                    {authState.value.user!.avatar ? (
+                      <img src={authState.value.user!.avatar} alt="" />
+                    ) : (
+                      <UserIcon />
+                    )}
                   </span>
                   {!collapsed.value && (
                     <span class="sidebar-account-info">
@@ -683,6 +687,9 @@ export default function DryLayout({ children }: Props) {
                 </button>
               </li>
             </Popover>
+          )}
+          {!collapsed.value && import.meta.env.DRYCMS_VERSION && (
+            <small class="sidebar-version">v{import.meta.env.DRYCMS_VERSION}</small>
           )}
         </div>
       </aside>

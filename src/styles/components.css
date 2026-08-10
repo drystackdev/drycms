@@ -2883,7 +2883,6 @@
       width: 100%;
       min-height: 2.75rem;
       padding: 0.375rem 0.625rem;
-      margin-bottom: 1rem;
       border-radius: var(--dry-radius-md);
       background: none;
       border: none;
@@ -2912,6 +2911,13 @@
         width: 1.125rem;
         height: 1.125rem;
       }
+
+      & > img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+      }
     }
 
     .sidebar-account-info {
@@ -2934,6 +2940,15 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+    }
+
+    /* Fills the space `button.sidebar-account`'s old `margin-bottom: 1rem`
+     * used to leave empty at the very bottom of the sidebar. */
+    .sidebar-version {
+      padding-inline: 0.625rem;
+      color: var(--dry-muted-foreground);
+      font-size: var(--dry-text-xs);
+      text-align: center;
     }
 
     .main {

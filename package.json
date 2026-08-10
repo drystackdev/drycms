@@ -4,9 +4,7 @@
   "dependencies": {
     "@preact/signals": "^2.10.0",
     "dayjs": "^1.11.21",
-    "dompurify": "^3.4.12",
     "fuzzysort": "^3.1.0",
-    "marked": "^18.0.7",
     "overlayscrollbars": "^2.16.0",
     "preact": "^10.29.7",
     "preact-iso": "^2.12.1",

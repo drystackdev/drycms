@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
 import { defineConfig, type Plugin } from "vite";
@@ -8,6 +10,15 @@ import { assetHrefsPlugin } from "./src/server/app-router/asset-hrefs-plugin.js"
 // Workers build apart from the Node one (both are `vite build --ssr`), and
 // the two need different chunking (see `inlineDynamicImports` below).
 const isWorkerBuild = process.env.DRYCMS_WORKER_BUILD === "1";
+
+// Read directly off disk (rather than a static `import`) so a plain `node`
+// run of this config - no project-level tsconfig/loader involved - doesn't
+// need JSON-module import support.
+const pkgVersion = (
+  JSON.parse(
+    readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf-8"),
+  ) as { version: string }
+).version;
 
 const PRISM_LANGUAGE_FILE = /\/node_modules\/prismjs\/components\/prism-[\w-]+\.js$/;
 
@@ -75,6 +86,9 @@ export default defineConfig(({ isSsrBuild, command }) => ({
   // is `true` for both and can't distinguish them - see `src/server/config.ts`).
   define: {
     "import.meta.env.DRYCMS_KIND": JSON.stringify(isWorkerBuild ? "cloudflare" : "local"),
+    // Read once at build/dev-server startup, not at runtime - see
+    // `src/env.d.ts`'s `ImportMetaEnv.DRYCMS_VERSION` doc comment.
+    "import.meta.env.DRYCMS_VERSION": JSON.stringify(pkgVersion),
   },
   // `appRouterPlugin` (`enforce: "pre"`) injects `dry()`'s import for
   // `src/apps/pages/**` before Preact's own JSX transform runs (a
