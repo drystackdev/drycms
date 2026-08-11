@@ -5,6 +5,7 @@
 - Show one confirmation dialog per image; upload into the entry scope and replace the image node source.
 - Sanitize pasted HTML styles to the RichText-supported CSS vocabulary.
 - Keep the RichText toolbar sticky immediately below the admin topbar.
+- Update changed E2E expectations and cover paste-style/image upload with Playwright.
 - Add focused tests and run unit tests/typecheck.
 
 # Status
@@ -18,7 +19,8 @@
 - Focused storage/RichText tests pass (71 tests), and the production build succeeds.
 - Typecheck still reports only pre-existing generated Blog schema/page mismatches; no changed file appears in its diagnostics.
 - Visual light/dark browser QA could not run because no in-app or connected browser session was available.
+- Playwright E2E updated for current Builder behavior and extended with the RichText paste/upload flow; all 20 tests pass with 4 workers.
 
 # Speed
 
-- Implementation complete. Browser screenshot/computed-style QA remains unavailable in this environment.
+- Implementation and automated E2E coverage complete. Browser screenshot/computed-style QA remains unavailable in this environment.

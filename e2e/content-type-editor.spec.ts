@@ -60,9 +60,15 @@ async function createTestCollection(page: Page, options?: { slug?: boolean }): P
 async function addTextField(page: Page, label: string): Promise<void> {
   await page.getByRole("button", { name: "Add Field" }).click();
   const dialog = page.getByRole("dialog", { name: "Add field" });
-  await dialog.getByLabel("Label*", { exact: true }).fill(label);
   await dialog.getByRole("button", { name: "Select…" }).click();
   await page.getByRole("option", { name: "Text", exact: true }).click();
+  // Choosing a type initializes that type's draft/config, so fill identity
+  // fields after it rather than racing the initialization render.
+  await dialog.getByLabel("Label*", { exact: true }).fill(label);
+  const fieldName = label
+    .replace(/[^A-Za-z0-9]+(.)/g, (_match, next: string) => next.toUpperCase())
+    .replace(/^./, (first) => first.toLowerCase());
+  await dialog.getByLabel("Name", { exact: true }).fill(fieldName);
   await dialog.getByRole("button", { name: "Save field" }).click();
   await expect(dialog).toBeHidden();
 }
