@@ -33,7 +33,7 @@ async function listAllSourcePaths(adapter: StorageAdapter, folder = ""): Promise
   return paths;
 }
 
-async function readPagesSourceTree(context: Pick<DryRouteContext, "env">): Promise<Record<string, string>> {
+export async function readPagesSourceTree(context: Pick<DryRouteContext, "env">): Promise<Record<string, string>> {
   const adapter = getStorageAdapter(pagesSourceStorage, context);
   const paths = adapter.listAll
     ? (await adapter.listAll()).filter((entry: StorageStatEntry) => entry.kind === "file" && SOURCE_FILE_PATTERN.test(entry.name)).map((entry: StorageStatEntry) => entry.path)

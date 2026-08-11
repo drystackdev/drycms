@@ -334,6 +334,65 @@ function applyDiagnostics(editor: PrismEditor, errors: EditerDiagnostic[]): void
   }
 }
 
+const COLOR_SWATCH_CLASS = "editer-color-swatch";
+
+/** Hex (`#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa`) or functional (`rgb()`/`rgba()`/
+ * `hsl()`/`hsla()`/`hwb()`/`lab()`/`lch()`/`oklab()`/`oklch()`/`color()`) CSS
+ * color literals - each usable as-is as a CSS `background` value for its own
+ * preview swatch (see `applyColorSwatches`). The functional alternative
+ * allows one level of nested parens so CSS Color 4 relative-color syntax
+ * (`rgb(from var(--x) r g b)`) still matches whole rather than truncating at
+ * the first inner `)`. */
+const COLOR_VALUE_RE =
+  /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})(?![0-9a-f])|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\((?:[^()]|\([^()]*\))*\)/gi;
+
+function clearColorSwatches(editor: PrismEditor): void {
+  for (let i = 1; i < editor.lines.length; i++) {
+    editor.lines[i]?.querySelectorAll(`.${COLOR_SWATCH_CLASS}`).forEach((el) => el.remove());
+  }
+}
+
+/**
+ * VS Code-style inline dots next to every color literal in a `styles/*.css`
+ * file - `prism-code-editor` has no widget-insertion API (only absolute
+ * overlays, the same constraint `applyDiagnostics` above works around), so
+ * each dot sits in the character cell just *before* its color's first
+ * character (real CSS almost always has a delimiter - `: `, `, `, `(` -
+ * there already) rather than pushing the text over. Pinned to the *top* of
+ * the line (`.editer-color-swatch`'s CSS) instead of vertically centered,
+ * and small enough to clear a monospace glyph's own ink entirely even when
+ * that delimiter cell isn't blank whitespace - a centered/full-height swatch
+ * used to sit right on top of whatever character was there. A color at
+ * column 1 (nothing to sit before) puts its dot just after the match
+ * instead. The checkerboard behind the dot's own `background`
+ * (same technique as `color-menu.tsx`'s opacity row) shows through a
+ * translucent color instead of it fading into the editor's own background.
+ * Assigning an invalid/unparsed match to `style.background` is a silent
+ * no-op, not a thrown error, so a false-positive regex match just renders an
+ * empty dot.
+ */
+function applyColorSwatches(editor: PrismEditor): void {
+  clearColorSwatches(editor);
+  const lineTexts = editor.value.split("\n");
+  lineTexts.forEach((lineText, index) => {
+    const line = editor.lines[index + 1];
+    if (!line) return;
+    COLOR_VALUE_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = COLOR_VALUE_RE.exec(lineText))) {
+      const swatch = document.createElement("span");
+      swatch.className = COLOR_SWATCH_CLASS;
+      const fill = document.createElement("span");
+      fill.style.background = match[0];
+      swatch.append(fill);
+      const before = match.index - 1;
+      const column = before >= 0 ? before : match.index + match[0].length;
+      swatch.style.left = `calc(var(--padding-left) + ${column}ch)`;
+      line.append(swatch);
+    }
+  });
+}
+
 /** First diagnostic (if any) whose `{line, column, length}` range contains `pos`. */
 function findDiagnosticAt(
   errors: EditerDiagnostic[],
@@ -479,6 +538,8 @@ const shadowStyles = `.prism-code-editor{height:100%;--pce-bg:var(--dry-muted) !
 .${DIAGNOSTIC_CLASS}{position:absolute;bottom:0;height:4px;width:0;cursor:pointer;pointer-events:auto;background-color:var(--editer-diagnostic-color);-webkit-mask-image:${SQUIGGLE_MASK};mask-image:${SQUIGGLE_MASK};-webkit-mask-repeat:repeat-x;mask-repeat:repeat-x;-webkit-mask-size:8px 4px;mask-size:8px 4px}
 .${ERROR_CLASS}{--editer-diagnostic-color:#f14c4c}
 .${WARNING_CLASS}{--editer-diagnostic-color:#cca700}
+.${COLOR_SWATCH_CLASS}{position:absolute;top:.1em;width:.42em;height:.42em;border-radius:50%;border:1px solid var(--dry-border);overflow:hidden;pointer-events:none;background-image:conic-gradient(var(--dry-grey-300) 90deg,transparent 90deg 180deg,var(--dry-grey-300) 180deg 270deg,transparent 270deg);background-size:.21em .21em}
+.${COLOR_SWATCH_CLASS}>span{position:absolute;inset:0}
 .editer-hover-panel,.editer-quickfix-menu{position:fixed;z-index:20;max-width:32em;background:var(--pce-widget-bg);color:var(--pce-widget-color);border:1px solid var(--pce-widget-border);border-radius:.3em;box-shadow:0 2px 8px rgba(0,0,0,.35);pointer-events:auto;display:none}
 .editer-hover-panel{padding:.5em .7em;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
 .editer-hover-sig{margin:0;white-space:pre-wrap;font-family:inherit}
@@ -563,6 +624,7 @@ export default function Editer({
         tabSize,
         readOnly,
         onUpdate: (code) => {
+          applyColorSwatches(editor);
           clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
             lastReportedCodeRef.current = code;
@@ -574,6 +636,7 @@ export default function Editer({
       instances.set(editor, { tailwindCompletions });
       ensureCompletionsRegistered();
       editor.addExtensions(autoComplete({ filter: fuzzyFilter }));
+      applyColorSwatches(editor);
 
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {

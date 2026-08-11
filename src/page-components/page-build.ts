@@ -43,7 +43,7 @@ const NPM_ALLOWLIST: Record<string, Record<string, unknown>> = {
   "preact/hooks": preactHooks as unknown as Record<string, unknown>,
 };
 
-function resolveModulePath(
+export function resolveModulePath(
   fromPath: string,
   specifier: string,
   sourceByPath: Record<string, string>,
@@ -91,7 +91,7 @@ function resolveModulePath(
   throw new PageBuildError(`Cannot find "${specifier}" imported from "${fromPath}".`);
 }
 
-const CJS_OPTIONS: SucraseOptions = { transforms: ["jsx", "typescript", "imports"], jsxPragma: "h", jsxFragmentPragma: "Fragment", production: true };
+export const CJS_OPTIONS: SucraseOptions = { transforms: ["jsx", "typescript", "imports"], jsxPragma: "h", jsxFragmentPragma: "Fragment", production: true };
 const ESM_OPTIONS: SucraseOptions = { transforms: ["jsx", "typescript"], jsxPragma: "h", jsxFragmentPragma: "Fragment", production: true };
 
 /** `"blogs/[slug]/page.tsx"` -> `"blogs/[slug]/page.js"` - the public JS

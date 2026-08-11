@@ -2,8 +2,8 @@ import type { DryRouteHandler } from "../context.js";
 import { pagesSourceStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { jsonResponse, errorResponse } from "../route-helpers.js";
-import { listSnapshotCommits, pullPagesSourceSnapshot } from "../github-source-sync.js";
-import { loadGithubSyncConfig } from "./pages-source-github-sync.js";
+import { ensureBranchExists, listSnapshotCommits, pullPagesSourceSnapshot } from "../github-source-sync.js";
+import { loadGithubSyncConfig, readPagesSourceTree } from "./pages-source-github-sync.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
 
 /** Same `.tsx`/`.ts`-only rule `pages-source-github-sync.ts`'s own push side
@@ -43,6 +43,11 @@ async function listCurrentSourcePaths(adapter: StorageAdapter): Promise<string[]
  * push route and `pages-source`'s write methods use (see that constant's own
  * doc comment in `content-types/permissions.ts` for why editing code and
  * publishing it are one grant, not two).
+ *
+ * If `branch` doesn't exist on GitHub yet (first time Sync is turned on
+ * against a fresh repo), self-heals via `ensureBranchExists` - creates it
+ * with an initial snapshot commit of the current pages-source tree - instead
+ * of surfacing GitHub's 404 as a dead-end "Not Found" status.
  */
 export const GET: DryRouteHandler = async (context) => {
   try {
@@ -51,7 +56,12 @@ export const GET: DryRouteHandler = async (context) => {
 
     const limitParam = context.url.searchParams.get("limit");
     const limit = limitParam ? Math.min(100, Math.max(1, Number(limitParam) || 30)) : 30;
-    const result = await listSnapshotCommits(loaded.config, limit);
+    let result = await listSnapshotCommits(loaded.config, limit);
+    if (!result.ok) {
+      const ensured = await ensureBranchExists(loaded.config, () => readPagesSourceTree(context));
+      if (!ensured.ok) return jsonResponse({ configured: true, repo: loaded.config.repo, branch: loaded.config.branch, reason: ensured.reason, commits: [] });
+      if (ensured.created) result = await listSnapshotCommits(loaded.config, limit);
+    }
     // `repo`/`branch` (never `token`) are echoed back so `PageEditor.tsx` can
     // show what "Reset all"/"Restore" actually pulls from - e.g. the typed
     // "type the repo name to confirm" prompt on the Reset dialog.
@@ -73,6 +83,13 @@ export const GET: DryRouteHandler = async (context) => {
  * (`PageEditor.tsx`) reloads its file tree and re-triggers "Build all"
  * itself once this returns `applied: true`; this route only ever touches
  * `pagesSourceStorage`, never the published `built/live/*` output.
+ *
+ * Same self-heal as this file's `GET` for the branch-HEAD case (no `sha` -
+ * "Reset all"): a missing `branch` gets created from the current
+ * pages-source tree via `ensureBranchExists` before pulling, so a direct
+ * POST (or a race with `GET`) can't fail with "Not Found" either. Not
+ * applied when `sha` is given (History's "Restore this commit") - a branch
+ * that doesn't exist can't have a specific commit to restore.
  */
 export const POST: DryRouteHandler = async (context) => {
   try {
@@ -81,6 +98,11 @@ export const POST: DryRouteHandler = async (context) => {
 
     const body = (await context.request.json().catch(() => ({}))) as { sha?: unknown };
     const sha = typeof body.sha === "string" && body.sha.trim() ? body.sha.trim() : undefined;
+
+    if (!sha) {
+      const ensured = await ensureBranchExists(loaded.config, () => readPagesSourceTree(context));
+      if (!ensured.ok) return jsonResponse({ applied: false, reason: ensured.reason });
+    }
 
     const pulled = await pullPagesSourceSnapshot(loaded.config, sha);
     if (!pulled.ok) return jsonResponse({ applied: false, reason: pulled.reason });

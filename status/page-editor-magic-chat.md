@@ -74,9 +74,44 @@ curl-only turn against `/api/page-source-ai` can't exercise a real model
 call right now regardless of the browser - would need an AI Key added via
 `/dry/content/aiKey/new` first.
 
+**Follow-up: `preview_page_source` MCP tool** (user asked how an MCP client
+sees what the human sees via the Page Editor's `srcdoc` preview). Investigated
+reusing `page-build.ts`'s `buildPage()` (the same function behind that
+`srcdoc` preview) directly server-side - found it's never been called
+server-side before, and its `dry()` data layer (`dry-reader-http.ts`) does an
+unauthenticated self-fetch to `/api/dry-http`, which `handler.ts` only
+accepts a session cookie or (segment `"mcp"` only) a PAT bearer for - so a
+real-data preview would need widening what a PAT can reach, a real security-
+scope decision, not something to fold silently into a preview tool. Flagged
+that explicitly instead of deciding it unilaterally.
+
+Shipped the smaller, honestly-scoped piece instead: `src/page-components/
+page-source-preview.ts` (`checkPageSourceBuild`) - reuses `page-build.ts`'s
+now-exported `resolveModulePath`/`CJS_OPTIONS` plus the portable
+`resolveMatchToVNode`/`buildDocument`, with its own small eval loop injecting
+a STUBBED `dry()` (every call resolves empty/null - `params`/`setTitle`/
+`dryBind` are pure local state, reused verbatim, not stubbed). Static routes
+only (`[param]` segments rejected with a clear message - resolving those to
+a real example would hit the same data-access problem this avoids). New
+`preview_page_source` MCP tool in `mcp.ts` wraps it, loading the whole
+`pages`/`component` source tree the same bulk way `loadTree()` does
+client-side.
+
+Verified live against the real dev server after another required restart
+(same registry-hot-reload gap, this time on `mcp.ts`'s own `TOOLS` array,
+not a new `handler.ts` segment): `preview_page_source` on `pages/page.tsx`
+returned a full, correct compiled HTML document (the real `@component/button`
+import resolved and rendered, exact markup match against what
+`read_page_source` shows). Error paths also verified: unknown path → clear
+"No file at ..." message; a non-`page.tsx` path (`component/button.tsx`) →
+clear "not a page.tsx route entry" message. `tools/list` now shows 10 tools
+total. `bun run typecheck`/`bun run test` both clean (same 4 pre-existing
+unrelated failures, no new ones).
+
 ## Speed
 
-Implementation complete + typecheck/tests clean + server-side (route,
-permission, MCP tools) verified live against the real dev server, same day
-as plan approval. Only remaining step is a human (or a free browser session)
-clicking through the widget itself in `/dry/page-editor`.
+Implementation complete + typecheck/tests clean + server-side (routes,
+permissions, all 4 new MCP tools including `preview_page_source`) verified
+live against the real dev server, same day as plan approval. Only remaining
+step is a human (or a free browser session) clicking through the in-app
+widget itself in `/dry/page-editor`.

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listSnapshotCommits, pullPagesSourceSnapshot, pushPagesSourceSnapshot } from "./github-source-sync.js";
+import { ensureBranchExists, listSnapshotCommits, pullPagesSourceSnapshot, pushPagesSourceSnapshot } from "./github-source-sync.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -199,5 +199,60 @@ describe("pullPagesSourceSnapshot", () => {
     fetchMock.mockRejectedValueOnce(new Error("network down"));
     const result = await pullPagesSourceSnapshot(CONFIG, "sha");
     expect(result).toEqual({ ok: false, reason: "network down" });
+  });
+});
+
+describe("ensureBranchExists", () => {
+  it("does nothing when the branch already exists, and never reads the source tree", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ object: { sha: "head-sha" } })); // GET ref/heads/main
+    const sourceByPath = vi.fn();
+
+    const result = await ensureBranchExists(CONFIG, sourceByPath);
+
+    expect(result).toEqual({ ok: true, created: false });
+    expect(sourceByPath).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates the branch from the current source tree when it doesn't exist yet", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, 404)) // GET ref/heads/main - this check
+      .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, 404)) // GET ref/heads/main - pushPagesSourceSnapshot's own check
+      .mockResolvedValueOnce(jsonResponse({ sha: "blob-sha-1" })) // POST blobs
+      .mockResolvedValueOnce(jsonResponse({ sha: "root-tree-sha" })) // POST trees
+      .mockResolvedValueOnce(jsonResponse({ sha: "root-commit-sha" })) // POST commits
+      .mockResolvedValueOnce(jsonResponse({}, 201)); // POST refs (create)
+    const sourceByPath = vi.fn().mockResolvedValue({ "page.tsx": "export default function Page(){}" });
+
+    const result = await ensureBranchExists(CONFIG, sourceByPath);
+
+    expect(result).toEqual({ ok: true, created: true });
+    expect(sourceByPath).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    const [commitUrl, commitInit] = fetchMock.mock.calls[4] as [string, RequestInit];
+    expect(commitUrl).toBe("https://api.github.com/repos/acme/site/git/commits");
+    expect(JSON.parse(commitInit.body as string)).toEqual({ message: "Initial commit", tree: "root-tree-sha", parents: [] });
+  });
+
+  it("propagates a real failure (not a missing branch) without pushing", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "Bad credentials" }, 401));
+    const sourceByPath = vi.fn();
+
+    const result = await ensureBranchExists(CONFIG, sourceByPath);
+
+    expect(result).toEqual({ ok: false, reason: "Bad credentials" });
+    expect(sourceByPath).not.toHaveBeenCalled();
+  });
+
+  it("returns the push failure reason when creating the branch fails", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, 404))
+      .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, 404))
+      .mockResolvedValueOnce(jsonResponse({ message: "Bad credentials" }, 401)); // fails on the blob POST
+    const sourceByPath = vi.fn().mockResolvedValue({ "page.tsx": "x" });
+
+    const result = await ensureBranchExists(CONFIG, sourceByPath);
+
+    expect(result).toEqual({ ok: false, reason: "Bad credentials" });
   });
 });

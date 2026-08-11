@@ -24,7 +24,9 @@
  */
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse } from "../route-helpers.js";
-import { storage, pagesSourceStorage } from "../config.js";
+import { storage, pagesSourceStorage, path as adminBasePath, lang as siteLang } from "../config.js";
+import { resolveSiteOrigin } from "../app-router/site-origin.js";
+import { checkPageSourceBuild } from "../../page-components/page-source-preview.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { getAuthSecurityStore } from "../auth-security.js";
 import { checkAccess } from "./content-entries.js";
@@ -171,6 +173,17 @@ const TOOLS: ToolDefinition[] = [
         code: { type: "string", description: "The file's complete new contents." },
       },
       required: ["path", "code"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "preview_page_source",
+    description:
+      "Compile and render a page.tsx route (with its layout chain) to check it works, returning the resulting HTML. Content data is NOT real - every dry() call resolves to empty/null, so this checks that the code compiles and renders without crashing, not what a real visitor would see. Only static routes (no [param] segments) are supported.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "The page.tsx file's path, e.g. \"pages/about/page.tsx\" or \"pages/page.tsx\"." } },
+      required: ["path"],
       additionalProperties: false,
     },
   },
@@ -361,6 +374,49 @@ async function runWritePageSourceTool(context: DryRouteContext, rawPath: string 
   }
 }
 
+const MAX_PREVIEW_HTML_CHARS = 40_000;
+
+/** Loads every `.tsx`/`.ts` file in `pagesSourceStorage` (`pages/`/
+ * `component/` roots - `.css` files under `styles/` don't match the
+ * extension filter, and aren't needed for evaluating components anyway).
+ * Same bulk-load shape `PageEditor.tsx`'s own `loadTree()` uses client-side -
+ * simpler than precisely walking the import graph, and cheap enough for a
+ * preview (not a hot path). */
+async function loadAllPageSource(context: DryRouteContext): Promise<Record<string, string>> {
+  const adapter = getStorageAdapter(pagesSourceStorage, context);
+  if (!adapter.listAll) throw new Error("This storage backend doesn't support listing the whole tree, which preview needs.");
+  const all = await adapter.listAll();
+  const files = all.filter((entry) => entry.kind === "file" && /\.tsx?$/i.test(entry.path));
+  const sourceByPath: Record<string, string> = {};
+  await Promise.all(
+    files.map(async (file) => {
+      const stat = await adapter.read(file.path);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stat.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      sourceByPath[file.path] = Buffer.concat(chunks).toString("utf-8");
+    }),
+  );
+  return sourceByPath;
+}
+
+async function runPreviewPageSourceTool(context: DryRouteContext, rawPath: string | undefined): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  if (!rawPath) return { text: "\"path\" is required.", isError: true };
+  const path = normalizeStoragePath(rawPath);
+  try {
+    const sourceByPath = await loadAllPageSource(context);
+    if (sourceByPath[path] === undefined) return { text: `No file at "${path}".`, isError: true };
+    const origin = resolveSiteOrigin(context.url);
+    const result = await checkPageSourceBuild(path, sourceByPath, origin, adminBasePath, siteLang);
+    if (!result.ok) return { text: `Build failed: ${result.message}`, isError: true };
+    const html = result.html.length > MAX_PREVIEW_HTML_CHARS ? `${result.html.slice(0, MAX_PREVIEW_HTML_CHARS)}\n<!-- truncated -->` : result.html;
+    return { text: `"${path}" compiled and rendered successfully. Content data is stubbed empty (see this tool's own description) - the HTML below shows real structure/markup, not real content:\n\n${html}` };
+  } catch (error) {
+    return { text: `Could not preview "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
+  }
+}
+
 function stringArg(args: Record<string, unknown>, name: string): string | undefined {
   const value = args[name];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -458,6 +514,9 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
       break;
     case "write_page_source":
       outcome = await runWritePageSourceTool(context, stringArg(args, "path"), args.code);
+      break;
+    case "preview_page_source":
+      outcome = await runPreviewPageSourceTool(context, stringArg(args, "path"));
       break;
     default:
       outcome = { text: `Unknown tool "${name}".`, isError: true };

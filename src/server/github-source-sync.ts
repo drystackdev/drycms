@@ -191,6 +191,34 @@ export async function pushPagesSourceSnapshot(
   }
 }
 
+export type GithubEnsureBranchResult =
+  | { ok: true; created: boolean }
+  | { ok: false; reason: string };
+
+/**
+ * Makes sure `config.branch` exists on GitHub, creating it with one initial
+ * snapshot commit of `sourceByPath()` when it doesn't - the first time
+ * GitHub Sync is turned on against a repo that has no matching branch yet,
+ * `resolveBaseCommit`'s 404 would otherwise surface to the admin as a
+ * dead-end "Not Found" instead of self-healing the same way a Build's
+ * `pushPagesSourceSnapshot` already does for a missing branch.
+ * `sourceByPath` is a thunk so the common case (branch already exists)
+ * never pays for reading the whole pages-source tree. Never throws, same
+ * `{ok,reason}` contract as this file's other exports.
+ */
+export async function ensureBranchExists(config: GithubSyncConfig, sourceByPath: () => Promise<Record<string, string>>): Promise<GithubEnsureBranchResult> {
+  try {
+    const base = await resolveBaseCommit(config.repo, config.branch, config.token);
+    if (base.branchExists) return { ok: true, created: false };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "Failed to check the GitHub branch." };
+  }
+
+  const pushed = await pushPagesSourceSnapshot(await sourceByPath(), config, "Initial commit");
+  if (!pushed.pushed) return { ok: false, reason: pushed.reason };
+  return { ok: true, created: true };
+}
+
 export interface GithubSnapshotCommit {
   sha: string;
   message: string;
