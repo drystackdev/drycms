@@ -26,6 +26,7 @@ const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
 export default function ImageInsertButton({ viewRef, disabled = false, source, entrySource, iconSize, shortcut }: ToolbarCustomProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState("");
+  const [pendingLink, setPendingLink] = useState("");
   const anchorPosRef = useRef<number | null>(null);
   const dialogRef = useDialogSync(open, () => setOpen(false));
   const { ref: pickerBody } = useOverlayScrollbars<HTMLDivElement>([open]);
@@ -36,6 +37,7 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, e
     if (disabled) return;
     anchorPosRef.current = viewRef.current?.state.selection.to ?? null;
     setPending("");
+    setPendingLink("");
     setOpen(true);
   };
 
@@ -49,10 +51,10 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, e
     return () => document.removeEventListener(RICH_TEXT_SHORTCUT_EVENT, onShortcut);
   });
 
-  const insertImage = (entry: FileEntry) => {
+  const insertImage = (src: string, alt: string) => {
     const view = viewRef.current;
-    if (!view || !entry.previewUrl) return;
-    const imageNode = schema.nodes.image!.create({ src: entry.previewUrl, alt: entry.name });
+    if (!view) return;
+    const imageNode = schema.nodes.image!.create({ src, alt });
     const docSize = view.state.doc.content.size;
     const pos = anchorPosRef.current !== null && anchorPosRef.current <= docSize ? anchorPosRef.current : docSize;
     view.dispatch(view.state.tr.insert(pos, imageNode));
@@ -60,12 +62,17 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, e
   };
 
   const confirm = async () => {
+    if (pendingLink) {
+      setOpen(false);
+      insertImage(pendingLink, "");
+      return;
+    }
     if (!pending) return;
     const all = (await source.listAll?.()) ?? null;
     const list = all ?? (await source.list(parentFolderOf(pending)));
-    const entry = list.find((item) => item.id === pending);
+    const entry: FileEntry | undefined = list.find((item) => item.id === pending);
     setOpen(false);
-    if (entry) insertImage(entry);
+    if (entry?.previewUrl) insertImage(entry.previewUrl, entry.name);
   };
 
   return (
@@ -93,17 +100,27 @@ export default function ImageInsertButton({ viewRef, disabled = false, source, e
                 fullSource={source}
                 entrySource={entrySource}
                 value={pending}
-                onChange={(next) => setPending(next as string)}
+                onChange={(next) => {
+                  setPending(next as string);
+                  setPendingLink("");
+                }}
                 multiple={false}
                 accept={IMAGE_EXTENSIONS}
                 syncUrl={false}
+                link={{
+                  value: pendingLink,
+                  onChange: (next) => {
+                    setPendingLink(next);
+                    if (next) setPending("");
+                  },
+                }}
               />
             </div>
             <footer>
               <button type="button" class="outline" onClick={() => setOpen(false)}>
                 Cancel
               </button>
-              <button type="button" disabled={!pending} onClick={confirm}>
+              <button type="button" disabled={!pending && !pendingLink} onClick={confirm}>
                 Insert
               </button>
             </footer>

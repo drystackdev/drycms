@@ -4,6 +4,9 @@ import type { FieldProps } from "./field-common.js";
 export interface TextFieldProps extends FieldProps<string> {
   /** Renders a `<textarea>` instead of `<input type="text">`. @default false */
   multiline?: boolean;
+  /** `<input>`'s own `type` - only meaningful browser-side (keyboard/
+   * autofill/validation hints), ignored when `multiline`. @default "text" */
+  type?: "text" | "url" | "email";
   placeholder?: string;
   disabled?: boolean;
   name?: string;
@@ -19,6 +22,7 @@ export default function TextField({
   helperText,
   error = false,
   multiline = false,
+  type = "text",
   placeholder,
   disabled = false,
   name,
@@ -48,7 +52,7 @@ export default function TextField({
       ) : (
         <input
           id={fieldId}
-          type="text"
+          type={type}
           name={name}
           value={value}
           placeholder={placeholder}
