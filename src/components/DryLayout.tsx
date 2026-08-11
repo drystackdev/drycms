@@ -9,7 +9,6 @@ import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
 import { LogOutIcon, UserIcon } from "./icons/index.js";
-import McpActivityIndicator from "./McpActivityIndicator.js";
 import Popover from "./Popover.js";
 import SidebarToggle from "./SidebarToggle.js";
 import SyncIndicator from "./SyncIndicator.js";
@@ -40,7 +39,6 @@ import {
   hydrateEntryDraftIndex,
   watchEntryDraftIndex,
 } from "../content-types/entry-draft-store.js";
-import { startMcpActivityPoll } from "../store/mcp-activity.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -469,13 +467,6 @@ export default function DryLayout({ children }: Props) {
     void initMemorySync();
   }, []);
 
-  // Same "never remounts" reasoning as the effects above - starts the
-  // app-wide MCP activity poll once per session (see `store/mcp-activity.ts`
-  // and `McpActivityIndicator` in the topbar below).
-  useEffect(() => {
-    startMcpActivityPoll();
-  }, []);
-
   const shellClass = [
     "shell",
     collapsed.value && "collapsed",
@@ -709,7 +700,6 @@ export default function DryLayout({ children }: Props) {
           <SidebarToggle />
           <div class="topbar-page-actions">{pageHeaderActions.value}</div>
           <SyncIndicator />
-          <McpActivityIndicator />
         </header>
 
         <main class="content">{children}</main>

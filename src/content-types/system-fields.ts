@@ -97,9 +97,13 @@ export const GITHUB_SYNC_TYPE_ID = "system-github-sync";
  * both); `id` is never in here at all, unconditionally on every root table
  * (see `migration.ts`'s `CREATE TABLE ... INTEGER PRIMARY KEY AUTOINCREMENT`
  * codegen) - it is baked directly into the DDL rather than being a diffable
- * field. `draft`/`schedule`/`timestamps` are collection-only; `singleton`
- * only ever gets `slug` (+ the `title` it brings with it) and `seo`;
- * `component` has no table of its own and never calls this. */
+ * field. `draft`/`schedule`/`timestamps` are collection-only; `singleton` only
+ * ever gets `seo` from the UI now (`FeaturesFieldset.tsx`'s
+ * `FEATURES_BY_KIND` no longer offers `slug` there - a singleton has exactly
+ * one row, so a URL-unique slug never did anything for it) - this function
+ * stays kind-agnostic regardless, so an existing singleton saved with the
+ * flag on from before keeps generating `slug`/`title` unchanged; `component`
+ * has no table of its own and never calls this. */
 export function systemFieldsFor(type: ContentTypeDefinition): FieldDefinition[] {
   // `order` is assigned once, below, from final push order - these synthetic
   // fields aren't part of any persisted `fields[]` array (see `types.ts`'s

@@ -52,12 +52,6 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
   ],
   singleton: [
     {
-      key: "slug",
-      label: "Slug",
-      description:
-        "Adds a URL-friendly Slug field, and a Title field to go with it.",
-    },
-    {
       key: "seo",
       label: "SEO",
       description:

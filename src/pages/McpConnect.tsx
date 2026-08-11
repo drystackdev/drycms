@@ -3,10 +3,10 @@ import dayjs from "dayjs";
 import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import { ArrowLeftIcon, CopyIcon, PlusIcon, TrashIcon } from "../components/icons/index.js";
+import { useDialogSync } from "../hooks/list-nav.js";
+import { ArrowLeftIcon, CopyIcon, EyeIcon, PlusIcon, TrashIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
-import { mcpActivity, markMcpActivitySeen } from "../store/mcp-activity.js";
 import { useDocumentTitle } from "./page-common.js";
 
 /** `status/mcp-server.md` - a Personal Access Token an MCP client (Claude
@@ -94,7 +94,7 @@ function McpTokensSection() {
   }
 
   return (
-    <section class="card" style={{ maxWidth: "28rem" }}>
+    <section class="card">
       <header>
         <h2>API Token</h2>
         <p>Lets an MCP client (Claude Desktop, Claude Code, ...) connect to this drycms instance as you.</p>
@@ -135,7 +135,7 @@ function McpTokensSection() {
               </ul>
             )}
 
-            <form class="row" style={{ gap: "0.5rem" }} onSubmit={handleGenerate}>
+            <form class="row" style={{ gap: "0.5rem", alignItems: "flex-end" }} onSubmit={handleGenerate}>
               <TextField label="New token label" placeholder="e.g. Claude Desktop" value={label} onChange={setLabel} />
               <button type="submit" disabled={!label.trim() || creating} aria-busy={creating || undefined}>
                 <PlusIcon /> Generate
@@ -159,58 +159,121 @@ function McpTokensSection() {
   );
 }
 
-/** `status/mcp-server.md` Phase 3 - reads the shared, app-wide poll from
- * `store/mcp-activity.ts` (also driving the topbar's `McpActivityIndicator`)
- * instead of running its own `setInterval`, so the two never disagree and
- * this page doesn't double the request rate on top of the topbar's poll.
- * Still not live: same "no cross-tab broadcast" limitation Magic Chat itself
- * already has, just made visible on a timer instead of promised as instant. */
-function McpActivitySection() {
-  const activity = mcpActivity.value;
+interface McpActivityEntry {
+  id: string;
+  tool: string;
+  summary: string;
+  isError: boolean;
+  timestamp: string;
+}
 
-  // Being on this page IS "seeing" the activity - clears the topbar's red
-  // dot for whatever's shown here, same as opening the dropdown does.
+const ACTIVITY_POLL_MS = 5_000;
+
+/** Own small dialog rather than reusing `ConfirmDialog` - this one has no
+ * confirm/cancel action, just a read-only view of a row's full `summary`
+ * (the table cell truncates it to 1 line via CSS ellipsis). Same native
+ * `<dialog>` + `useDialogSync` pattern as `RichTextPreviewDialog.tsx`. */
+function McpActivityDetailDialog({ entry, onClose }: { entry: McpActivityEntry | null; onClose: () => void }) {
+  const ref = useDialogSync(entry !== null, onClose);
+  return (
+    <dialog ref={ref} class="md" aria-label={entry ? `${entry.tool} activity` : "Activity detail"}>
+      {entry && (
+        <>
+          <header>
+            <h3>{entry.tool}</h3>
+            <small class="hint">{dayjs(entry.timestamp).format("YYYY-MM-DD HH:mm:ss")}</small>
+          </header>
+          <p style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{entry.summary}</p>
+          <footer>
+            <button type="button" onClick={onClose}>Close</button>
+          </footer>
+        </>
+      )}
+    </dialog>
+  );
+}
+
+/** `status/mcp-server.md` Phase 3 - mirrors the server's `routes/mcp.ts`
+ * `McpActivityEntry` shape. Polled, not live: same "no cross-tab broadcast"
+ * limitation Magic Chat itself already has, just made visible on a timer
+ * instead of promised as instant. Rows render as a 2-column CSS grid (tool +
+ * timestamp / content) instead of a plain flex list, so every row lines up
+ * the same way a real table would - a flex row per item let a long tool
+ * name's badge push that one row's content out of line with its neighbors. */
+function McpActivitySection() {
+  const [activity, setActivity] = useState<McpActivityEntry[] | null>(null);
+  const [viewing, setViewing] = useState<McpActivityEntry | null>(null);
+
   useEffect(() => {
-    markMcpActivitySeen();
-  }, [activity]);
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`${path}/api/mcp/activity`, { credentials: "same-origin" });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { activity?: McpActivityEntry[] };
+        if (!cancelled) setActivity(body.activity ?? []);
+      } catch {
+        // Leave the previous list showing - a transient poll failure isn't worth surfacing.
+      }
+    }
+    void load();
+    const timer = window.setInterval(() => void load(), ACTIVITY_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   return (
-    <section class="card" style={{ maxWidth: "28rem" }}>
+    <section class="card">
       <header>
         <h2>AI Activity (MCP)</h2>
         <p>The most recent tool calls an MCP client has made as you. Refreshes every few seconds.</p>
       </header>
-      <div class="under stack">
-        {activity.length === 0 ? (
+      <div class="under">
+        {activity === null ? (
+          <span class="hint">Loading…</span>
+        ) : activity.length === 0 ? (
           <span class="hint">No activity yet.</span>
         ) : (
-          <ul class="stack" style={{ gap: "0.5rem", listStyle: "none", padding: 0, margin: 0 }}>
+          <ul class="mcp-activity-table">
             {activity.map((entry) => (
-              <li key={entry.id} class="row" style={{ gap: "0.5rem", alignItems: "flex-start" }}>
-                <span class={`badge sm ${entry.isError ? "destructive" : "info"}`} style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>
-                  {entry.tool}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div>{entry.summary}</div>
+              <li key={entry.id} class="mcp-activity-row">
+                <div class="mcp-activity-meta">
+                  <span class={`badge sm ${entry.isError ? "destructive" : "info"}`} style={{ fontFamily: "monospace" }}>
+                    {entry.tool}
+                  </span>
                   <small class="hint">{dayjs(entry.timestamp).format("YYYY-MM-DD HH:mm:ss")}</small>
+                </div>
+                <div class="mcp-activity-content">
+                  <span>{entry.summary}</span>
+                  <button
+                    type="button"
+                    class="ghost icon sm"
+                    aria-label={`View full activity for ${entry.tool}`}
+                    data-tooltip="View"
+                    onClick={() => setViewing(entry)}
+                  >
+                    <EyeIcon />
+                  </button>
                 </div>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <McpActivityDetailDialog entry={viewing} onClose={() => setViewing(null)} />
     </section>
   );
 }
 
 /**
- * Own top-level route (`/dry/mcp`), reached from Profile's "MCP" card, the
- * topbar's `McpActivityIndicator` ("View all"), and MagicChat's lock-icon
- * shortcut - not in `DryLayout`'s sidebar `NAV` (same as Profile itself),
- * since it's a secondary destination rather than a primary one. Used to be
- * 2 sections bolted onto the bottom of `Profile.tsx`; split out once the
- * page-wide `McpActivityIndicator` gave "MCP" its own identity separate from
- * "my account".
+ * Own top-level route (`/dry/mcp`), reached from Profile's "MCP" card and
+ * MagicChat's lock-icon shortcut - not in `DryLayout`'s sidebar `NAV` (same
+ * as Profile itself), since it's a secondary destination rather than a
+ * primary one. Used to be 2 sections bolted onto the bottom of `Profile.tsx`;
+ * split out into its own full-width page instead.
  */
 export default function McpConnect() {
   useDocumentTitle("MCP");
