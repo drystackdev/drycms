@@ -3,7 +3,7 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
-import { CodeFieldTypeIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
+import { CodeFieldTypeIcon, ComponentIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
 import Popover from "../components/Popover.js";
 import { toast } from "../components/Toast.js";
 import GithubResetDialog from "./page-components/GithubResetDialog.js";
@@ -111,6 +111,46 @@ function HistoryIcon() {
       />
     </svg>
   );
+}
+
+/** Local one-off (same "no shared export for a single-use icon" pattern as
+ * `HistoryIcon` above) for the source-root switcher's "Page" button
+ * (`PAGES_SOURCE_ROOTS`) - a page with a folded corner, the standard
+ * "document" glyph. */
+function PageRootIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" opacity=".5" />
+      <path fill="currentColor" d="M13 2v5h5z" />
+    </svg>
+  );
+}
+
+/** Local one-off, same pattern as `PageRootIcon` above, for the "Styles"
+ * button (`STYLES_ROOT`) - 3 overlapping swatches, the standard "theme/
+ * palette" glyph. */
+function StylesRootIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="8" cy="9" r="5" fill="currentColor" opacity=".4" />
+      <circle cx="16" cy="9" r="5" fill="currentColor" opacity=".7" />
+      <circle cx="12" cy="16" r="5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** `PAGES_SOURCE_ROOTS` (`source-roots.ts`) is deliberately dependency-free
+ * (imported from a Vite config and a web worker, not just this app), so the
+ * root -> icon mapping lives here instead of on `PagesSourceRoot` itself. */
+function sourceRootIcon(rootId: string) {
+  switch (rootId) {
+    case COMPONENT_ROOT:
+      return <ComponentIcon />;
+    case STYLES_ROOT:
+      return <StylesRootIcon />;
+    default:
+      return <PageRootIcon />;
+  }
 }
 
 /** How long the live preview may reuse a `dry()` response out of IndexedDB
@@ -1607,18 +1647,22 @@ export default function PageEditor() {
         {sidebarOpen && (
           <>
             <div style={{ width: `${sidebar.size}px`, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div role="tablist" class="page-editor-source-roots">
-                {PAGES_SOURCE_ROOTS.map((root) => (
-                  <button
-                    key={root.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeRoot === root.id}
-                    onClick={() => setActiveRoot(root.id)}
-                  >
-                    {root.label}
-                  </button>
-                ))}
+              <div class="page-editor-source-roots">
+                <div class="button-group">
+                  {PAGES_SOURCE_ROOTS.map((root) => (
+                    <button
+                      key={root.id}
+                      type="button"
+                      class="icon sm"
+                      aria-label={root.label}
+                      title={root.label}
+                      aria-pressed={activeRoot === root.id}
+                      onClick={() => setActiveRoot(root.id)}
+                    >
+                      {sourceRootIcon(root.id)}
+                    </button>
+                  ))}
+                </div>
               </div>
               <ComponentTreePanel
                 entries={visibleEntries}

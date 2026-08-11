@@ -3041,7 +3041,7 @@
       text-align: left;
       white-space: nowrap;
       text-overflow: ellipsis;
-      padding-block: .25rem;
+      padding-block: 0.25rem;
     }
 
     .shell.collapsed .sidebar-version {
@@ -6019,19 +6019,15 @@
     }
 
     /* Source-root switcher above the file tree (`PageEditor.tsx`: Page /
-       Component - `source-roots.ts`). Keeps the app's underline tab look but
-       drops the global 3rem tab height, which is sized for a page-level
-       tablist and would eat a visible slice of a sidebar whose whole job is
-       showing as many file rows as possible. */
+       Component / Styles - `source-roots.ts`) - a `.button-group` of
+       icon-only buttons (same compact segmented look as the preview
+       viewport picker's XS/SM/MD/LG/XL row) instead of a full-width
+       underline tablist, which read as oversized for 3 single-glyph
+       choices above a sidebar whose whole job is showing file rows. */
     .page-editor-source-roots {
       flex: 0 0 auto;
       display: flex;
-      padding-inline: 0.5rem;
-
-      & [role="tab"] {
-        height: 2.25rem;
-        padding-inline: 0.5rem;
-      }
+      padding: 0.5rem;
     }
 
     .page-components-sidebar-header {
@@ -6400,6 +6396,7 @@
         border-radius: 0;
         border-inline-start: 1px solid var(--dry-border);
         background-color: transparent;
+        box-shadow: unset;
 
         &:first-child {
           border-inline-start: none;
