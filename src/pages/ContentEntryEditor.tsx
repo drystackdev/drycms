@@ -725,6 +725,10 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     try {
       await entriesApi.remove(entryId);
       setShowDeleteConfirm(false);
+      // The entry is gone server-side - a lingering unsaved draft for it
+      // would otherwise resurface on next load (same reasoning as
+      // `handleResetAll`'s own `discardEntryDraft` call above).
+      void discardEntryDraft(typeSlug, draftEntryId);
       toast.add({ type: "success", title: `Deleted "${type.label}" entry.` });
       route(`${path}/content/${type.name}`);
     } catch (error) {
