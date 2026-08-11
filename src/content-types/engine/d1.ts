@@ -21,10 +21,16 @@ import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
  * re-run its DDL + seed check on every single request - 6 wasted D1 round
  * trips per page view (see `status/worker-request-cost.md`). The binding
  * object itself is stable for the isolate, so this memoizes for exactly as
- * long as it's safe to. A rejected bootstrap is evicted so the next request
- * retries instead of inheriting a permanently failed promise.
+ * long as it's safe to.
+ *
+ * A set of FINISHED bootstraps, never the in-flight promise: sharing a
+ * promise across requests hangs the whole isolate the moment the request
+ * that created it is canceled - see `entries-d1.ts`'s `versionsTableReady`
+ * for the full write-up (that exact pattern, in that file, is what took
+ * production down). Racing requests before the first success just re-run an
+ * idempotent bootstrap.
  */
-const bootstrapByBinding = new WeakMap<D1Database, Promise<void>>();
+const bootstrappedBindings = new WeakSet<D1Database>();
 
 export function createD1ContentEngineAdapter(
   option: ResolvedD1ContentOption,
@@ -71,44 +77,38 @@ export function createD1ContentEngineAdapter(
   }
 
   async function ensureBootstrap(): Promise<void> {
-    let bootstrapped = bootstrapByBinding.get(db);
-    if (!bootstrapped) {
-      bootstrapped = (async () => {
-        await db
-          .prepare(
-            `CREATE TABLE IF NOT EXISTS "metadata" (\n` +
-              `  "id" TEXT PRIMARY KEY,\n` +
-              `  "kind" TEXT NOT NULL,\n` +
-              `  "name" TEXT NOT NULL,\n` +
-              `  "definition" TEXT NOT NULL,\n` +
-              `  "version" INTEGER NOT NULL\n` +
-              `);`,
-          )
-          .run();
-        await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`).run();
-        await db
-          .prepare(
-            `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
-              `  "resource" TEXT PRIMARY KEY,\n` +
-              `  "version" INTEGER NOT NULL,\n` +
-              `  "updated_at" INTEGER NOT NULL\n` +
-              `);`,
-          )
-          .run();
+    if (bootstrappedBindings.has(db)) return;
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "metadata" (\n` +
+          `  "id" TEXT PRIMARY KEY,\n` +
+          `  "kind" TEXT NOT NULL,\n` +
+          `  "name" TEXT NOT NULL,\n` +
+          `  "definition" TEXT NOT NULL,\n` +
+          `  "version" INTEGER NOT NULL\n` +
+          `);`,
+      )
+      .run();
+    await db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS "ux_metadata_name" ON "metadata"("name" COLLATE NOCASE);`).run();
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+          `  "resource" TEXT PRIMARY KEY,\n` +
+          `  "version" INTEGER NOT NULL,\n` +
+          `  "updated_at" INTEGER NOT NULL\n` +
+          `);`,
+      )
+      .run();
 
-        const existing = await db.prepare('SELECT "name" FROM "metadata";').all<{ name: string }>();
-        const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
-        await runBatch(db, statements);
-        if (statements.length > 0) await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
+    const existing = await db.prepare('SELECT "name" FROM "metadata";').all<{ name: string }>();
+    const statements = pendingSeedStatements(new Set((existing.results ?? []).map((row) => row.name.toLowerCase())));
+    await runBatch(db, statements);
+    if (statements.length > 0) await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
 
-        const superAdmin = superAdminSeedStatement();
-        await db.prepare(superAdmin.sql).bind(...(superAdmin.params ?? [])).run();
+    const superAdmin = superAdminSeedStatement();
+    await db.prepare(superAdmin.sql).bind(...(superAdmin.params ?? [])).run();
 
-      })();
-      bootstrapByBinding.set(db, bootstrapped);
-      bootstrapped.catch(() => bootstrapByBinding.delete(db));
-    }
-    return bootstrapped;
+    bootstrappedBindings.add(db);
   }
 
   async function listContentTypes(): Promise<ContentTypeDefinition[]> {
