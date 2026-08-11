@@ -462,7 +462,10 @@
       border: 1px solid var(--dry-input);
       border-radius: var(--dry-radius-md);
       box-shadow: var(--dry-shadow-xs);
-      overflow: hidden;
+      /* `clip` keeps the rounded editor boundary without creating an
+       * overflow scroll container, which would prevent the toolbar's sticky
+       * positioning from following the page viewport. */
+      overflow: clip;
       transition:
         border-color 120ms ease,
         box-shadow 120ms ease;

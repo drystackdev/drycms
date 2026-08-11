@@ -147,6 +147,16 @@ export function createHttpFileSource(apiBase: string): FileManagerSource {
     return data.entries;
   }
 
+  async function importUrl(folderId: string | null, url: string): Promise<FileEntry> {
+    const response = await fetch(urlFor(idFor(folderId)), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "import-url", url }),
+    });
+    const data = await parseJson<{ entry: FileEntry }>(response);
+    return data.entry;
+  }
+
   async function createFolder(folderId: string | null, name: string): Promise<FileEntry> {
     const response = await fetch(urlFor(idFor(folderId)), {
       method: "POST",
@@ -239,5 +249,5 @@ export function createHttpFileSource(apiBase: string): FileManagerSource {
     return data.entry;
   }
 
-  return { list, listAll, upload, createFolder, move, copy, remove, rename, replace };
+  return { list, listAll, upload, importUrl, createFolder, move, copy, remove, rename, replace };
 }

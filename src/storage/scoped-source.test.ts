@@ -28,6 +28,7 @@ describe("scopeFileSource", () => {
       expect.objectContaining({ id: ".tmp.blog.admin/pasted.jpg", parentId: null, name: "pasted.jpg" }),
     ]);
   });
+
   it("list(null) shows only the scoped folder's immediate children, re-rooted but with absolute ids", async () => {
     const scoped = scopeFileSource(createMemoryFileSource(seed), "entry/blog-1");
     const entries = await scoped.list(null);

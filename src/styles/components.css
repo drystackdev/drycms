@@ -4683,6 +4683,23 @@
       }
     }
 
+    /* Entry forms can be much taller than the viewport. Keep formatting
+     * controls immediately below the shared sticky topbar while the editor
+     * itself is passing through the viewport; the richtext box remains the
+     * sticky element's containing boundary, so it releases at the field's
+     * bottom instead of following the rest of the page. */
+    .main .richtext:not(.richtext-fullscreen) > .richtext-toolbar {
+      position: sticky;
+      top: var(--dry-topbar-height);
+      z-index: 10;
+    }
+
+    .pasted-image-dialog code {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
     /* Shared "boxed group of related controls" look, used by every
      * `.richtext-toolbar` group (toolbar.tsx wraps each `TOOLBAR_GROUPS`
      * entry in one - undo/redo; inline formatting + image; block-level

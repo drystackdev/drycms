@@ -135,6 +135,19 @@ export function scopeFileSource(delegate: FileManagerSource, folderPath: string)
       }
     };
   }
+  if (delegate.importUrl) {
+    const importUrl = delegate.importUrl;
+    source.importUrl = async (folderId, url) => {
+      const target = toAbsoluteId(folderPath, folderId);
+      try {
+        return remapEntry(folderPath, await importUrl(target, url));
+      } catch (error) {
+        if (folderId !== null) throw error;
+        await ensureFolderPath(delegate, folderPath);
+        return remapEntry(folderPath, await importUrl(target, url));
+      }
+    };
+  }
   if (delegate.createFolder) {
     const createFolder = delegate.createFolder;
     source.createFolder = async (folderId, name) => remapEntry(folderPath, await createFolder(toAbsoluteId(folderPath, folderId), name));
