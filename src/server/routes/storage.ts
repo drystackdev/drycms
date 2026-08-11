@@ -19,6 +19,9 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath, storagePathParent } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
 import { sanitizeSvg, IconValidationError } from "../../icons/sanitize-svg.js";
+import { fetchNoRedirect, validateOutboundUrlForRequest } from "../outbound-url.js";
+
+const MAX_IMPORTED_IMAGE_BYTES = 20 * 1024 * 1024;
 
 function isSvgName(name: string): boolean {
   return /\.svg$/i.test(name);
@@ -162,8 +165,7 @@ async function handleUpload(adapter: StorageAdapter, request: Request, folder: s
   return jsonResponse({ entries }, 201);
 }
 
-async function handleCreateFolder(adapter: StorageAdapter, request: Request, folder: string): Promise<Response> {
-  const body = (await request.json()) as { action?: string; name?: unknown };
+async function handleCreateFolder(adapter: StorageAdapter, body: { action?: string; name?: unknown }, folder: string): Promise<Response> {
   if (body.action !== "mkdir") {
     throw new StorageError("invalid_path", `Unsupported action "${String(body.action)}".`);
   }
@@ -171,6 +173,46 @@ async function handleCreateFolder(adapter: StorageAdapter, request: Request, fol
   const targetPath = normalizeStoragePath(joinStoragePath(folder, name));
   const stat = await adapter.mkdir(targetPath);
   return jsonResponse({ entry: toFileEntry(stat) }, 201);
+}
+
+function importedImageName(url: string, contentType: string): string {
+  const raw = decodeURIComponent(new URL(url).pathname.split("/").pop() || "").replace(/[^A-Za-z0-9._-]+/g, "-");
+  if (raw && /\.(?:avif|gif|jpe?g|png|webp)$/i.test(raw)) return raw;
+  const extension = contentType.split(";")[0]?.split("/")[1]?.replace("jpeg", "jpg").replace(/[^A-Za-z0-9]/g, "") || "png";
+  return `pasted-image.${extension}`;
+}
+
+async function handleImportUrl(adapter: StorageAdapter, body: { url?: unknown }, folder: string, apiBase: string): Promise<Response> {
+  const target = await adapter.stat(folder);
+  if (!target || target.kind !== "folder") throw new StorageError("not_found", `"${folder}" is not an existing folder.`);
+  if (typeof body.url !== "string") throw new StorageError("invalid_path", "An image URL is required.");
+
+  const url = await validateOutboundUrlForRequest(body.url, "Image URL");
+  const response = await fetchNoRedirect(url, { headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" } });
+  if (!response.ok) throw new StorageError("unsupported", `Image download failed (${response.status}).`);
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!/^image\/(?:avif|gif|jpeg|png|webp)(?:;|$)/.test(contentType)) {
+    throw new StorageError("unsupported", "The URL did not return a supported raster image.");
+  }
+  const declaredSize = Number(response.headers.get("content-length") ?? 0);
+  if (declaredSize > MAX_IMPORTED_IMAGE_BYTES) throw new StorageError("unsupported", "The remote image is larger than 20 MB.");
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > MAX_IMPORTED_IMAGE_BYTES) throw new StorageError("unsupported", "The remote image is larger than 20 MB.");
+
+  const name = readLeafName(importedImageName(url, contentType));
+  let targetPath = normalizeStoragePath(joinStoragePath(folder, name));
+  if (await adapter.stat(targetPath)) {
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : "";
+    let suffix = 2;
+    do {
+      targetPath = normalizeStoragePath(joinStoragePath(folder, `${stem}-${suffix}${extension}`));
+      suffix += 1;
+    } while (await adapter.stat(targetPath));
+  }
+  const stat = await adapter.write(targetPath, bytes);
+  return jsonResponse({ entry: withPreview(toFileEntry(stat), apiBase) }, 201);
 }
 
 export const POST: DryRouteHandler = async (context) => {
@@ -182,7 +224,11 @@ export const POST: DryRouteHandler = async (context) => {
       return await handleUpload(adapter, context.request, path, apiBaseFrom(context.url, "storage"));
     }
     if (contentType.includes("application/json")) {
-      return await handleCreateFolder(adapter, context.request, path);
+      const body = (await context.request.json()) as { action?: string; name?: unknown; url?: unknown };
+      if (body.action === "import-url") {
+        return await handleImportUrl(adapter, body, path, apiBaseFrom(context.url, "storage"));
+      }
+      return await handleCreateFolder(adapter, body, path);
     }
     return jsonResponse(
       { error: "invalid_path", message: "Unsupported Content-Type." },

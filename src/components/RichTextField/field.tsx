@@ -10,6 +10,8 @@ import RichTextToolbar from "./toolbar.js";
 import type { EditorView } from "prosemirror-view";
 import type { ToolbarIconSize, ToolbarState } from "./types.js";
 import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
+import PastedImageDialog from "./pasted-image-dialog.js";
+import type { PastedImage } from "./pasted-images.js";
 
 interface EditorSurfaceProps {
   value: string;
@@ -20,6 +22,7 @@ interface EditorSurfaceProps {
   placeholder?: string;
   onReady: (result: EditorSurfaceResult) => void;
   features?: RichTextFieldConfig;
+  onPastedImages?: (images: PastedImage[]) => void;
 }
 
 interface EditorSurfaceResult {
@@ -88,6 +91,7 @@ export default function RichTextField({
   const [loading, setLoading] = useState(true);
   const [EditorSurface, setEditorSurface] = useState<ComponentType<EditorSurfaceProps> | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   useScrollLock(fullscreen, richtextRef);
 
   useEffect(() => {
@@ -157,6 +161,9 @@ export default function RichTextField({
             inline={inline}
             features={features}
             placeholder={placeholder}
+            onPastedImages={(images) => {
+              if (entrySource?.upload) setPastedImages((current) => [...current, ...images]);
+            }}
             onReady={({ contentRef: nextContentRef, viewRef: nextViewRef, state: nextState, empty: nextEmpty, loading: nextLoading }) => {
               contentRef.current = nextContentRef.current;
               viewRef.current = nextViewRef.current;
@@ -173,6 +180,19 @@ export default function RichTextField({
         <ImageMenu viewRef={viewRef} state={state} disabled={disabled || loading} source={source} entrySource={entrySource} iconSize={iconSize} />
         <DryComponentMention viewRef={viewRef} ready={!loading} disabled={disabled} />
         <DryRichTextSlash viewRef={viewRef} ready={!loading} disabled={disabled} state={state} source={source} />
+        <PastedImageDialog
+          image={pastedImages[0] ?? null}
+          remaining={Math.max(0, pastedImages.length - 1)}
+          source={entrySource}
+          viewRef={viewRef}
+          onDone={(uploaded) => setPastedImages((current) => {
+            const [done, ...remaining] = current;
+            if (!uploaded || !done) return remaining;
+            return remaining.map((image) => image.src === done.src
+              ? { ...image, occurrence: Math.max(0, (image.occurrence ?? 0) - 1) }
+              : image);
+          })}
+        />
       </div>
       {helperText && <span class={error ? "error" : "hint"}>{helperText}</span>}
     </div>

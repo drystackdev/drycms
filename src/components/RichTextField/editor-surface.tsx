@@ -4,6 +4,7 @@ import type { EditorView } from "prosemirror-view";
 import { useRichTextEditor } from "./useRichTextEditor.js";
 import type { ToolbarState } from "./types.js";
 import type { RichTextFieldConfig } from "../../content-types/field-registry.js";
+import type { PastedImage } from "./pasted-images.js";
 
 interface EditorSurfaceProps {
   value: string;
@@ -14,6 +15,7 @@ interface EditorSurfaceProps {
   placeholder?: string;
   onReady: (result: EditorSurfaceResult) => void;
   features?: RichTextFieldConfig;
+  onPastedImages?: (images: PastedImage[]) => void;
 }
 
 interface EditorSurfaceResult {
@@ -24,8 +26,8 @@ interface EditorSurfaceResult {
   loading: boolean;
 }
 
-export default function EditorSurface({ value, onChange, label, disabled, inline, placeholder, onReady }: EditorSurfaceProps) {
-  const result = useRichTextEditor({ value, onChange, label, disabled, inline });
+export default function EditorSurface({ value, onChange, label, disabled, inline, placeholder, onReady, onPastedImages }: EditorSurfaceProps) {
+  const result = useRichTextEditor({ value, onChange, label, disabled, inline, onPastedImages });
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
 

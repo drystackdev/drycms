@@ -45,6 +45,9 @@ export interface FileManagerSource {
 	 * lazy per-folder `list()` instead. */
 	listAll?(): Promise<FileEntry[] | null>;
 	upload?(folderId: string | null, files: File[]): Promise<FileEntry[]>;
+	/** Downloads one public HTTP(S) image server-side and stores it in the
+	 * target folder. This avoids browser CORS blocking pasted remote images. */
+	importUrl?(folderId: string | null, url: string): Promise<FileEntry>;
 	createFolder?(folderId: string | null, name: string): Promise<FileEntry>;
 	move?(ids: string[], targetFolderId: string | null): Promise<FileEntry[]>;
 	copy?(ids: string[], targetFolderId: string | null): Promise<FileEntry[]>;

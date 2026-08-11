@@ -230,6 +230,46 @@ describe("POST /dry/api/storage/[...slug] (mkdir)", () => {
   });
 });
 
+describe("POST /dry/api/storage/[...slug] (remote image import)", () => {
+  it("downloads a public raster image and auto-suffixes a repeated filename", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
+      status: 200,
+      headers: { "content-type": "image/jpeg", "content-length": "3" },
+    })) as typeof fetch;
+    try {
+      await mkdir("pasted");
+      const body = jsonBody({ action: "import-url", url: "https://93.184.216.34/photo.jpg" });
+      const first = await POST(context({ slug: "pasted", method: "POST", ...body }));
+      const second = await POST(context({ slug: "pasted", method: "POST", ...body }));
+
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      expect((await first.json()).entry).toMatchObject({ id: "pasted/photo.jpg", previewUrl: "/dry/api/storage/pasted/photo.jpg" });
+      expect((await second.json()).entry).toMatchObject({ id: "pasted/photo-2.jpg" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("rejects a remote response that is not an image", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response("hello", { headers: { "content-type": "text/plain" } })) as typeof fetch;
+    try {
+      await mkdir("pasted-invalid");
+      const response = await POST(context({
+        slug: "pasted-invalid",
+        method: "POST",
+        ...jsonBody({ action: "import-url", url: "https://93.184.216.34/file.txt" }),
+      }));
+      expect(response.status).toBe(501);
+      expect((await response.json()).error).toBe("unsupported");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("PUT /dry/api/storage/[...slug]", () => {
   it("creates/overwrites a file's bytes", async () => {
     const first = await PUT(context({ slug: "replace.txt", method: "PUT", body: "v1" }));

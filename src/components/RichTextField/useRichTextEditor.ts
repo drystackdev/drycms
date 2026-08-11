@@ -45,6 +45,7 @@ import { NO_FORMAT, type ToolbarState } from "./types.js";
 import { loadRichtextComponents } from "./component-registry.js";
 import { flattenDryComponentRecords } from "./component-registry-types.js";
 import { openRichTextShortcut } from "./shortcuts.js";
+import { insertPastedImageFiles, pastedImagesFromClipboard, sanitizePastedHtml, type PastedImage } from "./pasted-images.js";
 
 export interface UseRichTextEditorOptions {
   /** HTML string - the only seed/output format, reported on every change
@@ -58,6 +59,7 @@ export interface UseRichTextEditorOptions {
    * instead of the usual `<p>...</p>` around a single paragraph's worth of
    * content. @default false */
   inline?: boolean;
+  onPastedImages?: (images: PastedImage[]) => void;
 }
 
 export interface UseRichTextEditorResult {
@@ -244,11 +246,14 @@ export function useRichTextEditor({
   label,
   disabled,
   inline = false,
+  onPastedImages,
 }: UseRichTextEditorOptions): UseRichTextEditorResult {
   const contentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onPastedImagesRef = useRef(onPastedImages);
+  onPastedImagesRef.current = onPastedImages;
   /** The last HTML this hook itself produced (either the initial seed, or
    * `dispatchTransaction`'s own `onChange` echo) - lets the sync effect
    * below tell "the parent just reflected back what we told it" (a no-op,
@@ -540,6 +545,21 @@ export function useRichTextEditor({
         grid_item: (node, editorView, getPos) => new GridItemNodeView(node, editorView, getPos),
         ...dryNodeViews,
       },
+      handlePaste: (editorView, event) => {
+        if (!event.clipboardData || !onPastedImagesRef.current) return false;
+        const images = pastedImagesFromClipboard(event.clipboardData);
+        if (!images.length) return false;
+
+        const hasImageFiles = images.some((image) => !!image.file);
+        const htmlHasImages = /<img\b/i.test(event.clipboardData.getData("text/html"));
+        if (hasImageFiles || !htmlHasImages) {
+          event.preventDefault();
+          insertPastedImageFiles(editorView, images);
+        }
+        onPastedImagesRef.current(images);
+        return hasImageFiles || !htmlHasImages;
+      },
+      transformPastedHTML: sanitizePastedHtml,
       handleDOMEvents: {
         // Focus leaving the editor is when everything else on the page is
         // about to read the value - clicking Save in the topbar blurs this

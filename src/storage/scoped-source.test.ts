@@ -15,6 +15,19 @@ const seed: FileEntry[] = [
 ];
 
 describe("scopeFileSource", () => {
+  it("falls back to listing the exact scope when the full tree hides a temp entry folder", async () => {
+    const delegate: FileManagerSource = {
+      listAll: async () => [],
+      list: async (folderId) => folderId === ".tmp.blog.admin"
+        ? [{ id: ".tmp.blog.admin/pasted.jpg", parentId: ".tmp.blog.admin", name: "pasted.jpg", kind: "file", previewUrl: "/storage/.tmp.blog.admin/pasted.jpg" }]
+        : [],
+    };
+
+    const scoped = scopeFileSource(delegate, ".tmp.blog.admin");
+    expect(await scoped.listAll?.()).toEqual([
+      expect.objectContaining({ id: "pasted.jpg", parentId: null, name: "pasted.jpg" }),
+    ]);
+  });
   it("list(null) shows only the scoped folder's immediate children, with prefix stripped", async () => {
     const scoped = scopeFileSource(createMemoryFileSource(seed), "entry/blog-1");
     const entries = await scoped.list(null);

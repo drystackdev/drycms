@@ -82,10 +82,14 @@ export function scopeFileSource(delegate: FileManagerSource, folderPath: string)
       return [];
     }
     if (all === null) return null;
-    return all
+    const scoped = all
       .filter((entry) => entry.id === folderPath || entry.id.startsWith(`${folderPath}/`))
       .filter((entry) => entry.id !== folderPath)
       .map((entry) => remapEntry(folderPath, entry));
+    // New entries upload into a hidden `.tmp.*` scope. The storage tree
+    // deliberately omits hidden folders, so a successful upload would look
+    // empty here unless we list that exact scope directly.
+    return scoped.length > 0 ? scoped : list(null);
   }
 
   const source: FileManagerSource = { list };
@@ -107,6 +111,19 @@ export function scopeFileSource(delegate: FileManagerSource, folderPath: string)
         await ensureFolderPath(delegate, folderPath);
         const entries = await upload(target, files);
         return entries.map((entry) => remapEntry(folderPath, entry));
+      }
+    };
+  }
+  if (delegate.importUrl) {
+    const importUrl = delegate.importUrl;
+    source.importUrl = async (folderId, url) => {
+      const target = toAbsoluteId(folderPath, folderId);
+      try {
+        return remapEntry(folderPath, await importUrl(target, url));
+      } catch (error) {
+        if (folderId !== null) throw error;
+        await ensureFolderPath(delegate, folderPath);
+        return remapEntry(folderPath, await importUrl(target, url));
       }
     };
   }

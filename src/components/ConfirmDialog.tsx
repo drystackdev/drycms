@@ -9,6 +9,7 @@ export interface ConfirmDialogProps {
   cancelLabel?: string;
   busy?: boolean;
   size?: "sm" | "md" | "lg" | "xl";
+  class?: string;
   /** Disables the confirm action until a dialog-specific condition is met. */
   confirmDisabled?: boolean;
   /** Styles the confirm button as destructive (red) - for actions like delete. */
@@ -35,11 +36,12 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   size = "md",
+  class: className,
 }: ConfirmDialogProps) {
   const ref = useDialogSync(open, onCancel);
 
   return (
-    <dialog ref={ref} class={`${size}`} aria-label={title}>
+    <dialog ref={ref} class={`${size}${className ? ` ${className}` : ""}`} aria-label={title}>
       {open && (
         <>
           <header>
