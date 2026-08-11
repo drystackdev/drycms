@@ -162,4 +162,18 @@ describe("DELETE /dry/api/pages-source/[...slug]", () => {
     const response = await DELETE(context({ slug: "", method: "DELETE" }));
     expect(response.status).toBe(400);
   });
+
+  it("403s deleting a core styles/ file", async () => {
+    await PUT(context({ slug: "styles/globals.css", method: "PUT", body: "@import \"tailwindcss\";" }));
+    const response = await DELETE(context({ slug: "styles/globals.css", method: "DELETE" }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "protected" });
+    expect((await GET(context({ slug: "styles/globals.css" }))).status).toBe(200);
+  });
+
+  it("still allows deleting a non-core file inside styles/", async () => {
+    await PUT(context({ slug: "styles/extra.css", method: "PUT", body: "/* extra */" }));
+    const response = await DELETE(context({ slug: "styles/extra.css", method: "DELETE" }));
+    expect(response.status).toBe(204);
+  });
 });

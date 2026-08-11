@@ -32,7 +32,8 @@ export type StorageErrorCode =
   | "invalid_path"
   | "not_found"
   | "already_exists"
-  | "unsupported";
+  | "unsupported"
+  | "protected";
 
 export class StorageError extends Error {
   code: StorageErrorCode;

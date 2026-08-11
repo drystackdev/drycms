@@ -7,19 +7,26 @@ import {
   fuzzyFilter,
   registerCompletions,
 } from "prism-code-editor/autocomplete";
+import { cssCompletion } from "prism-code-editor/autocomplete/css";
 import autocompleteIconsCss from "prism-code-editor/autocomplete-icons.css?raw";
 import autocompleteCss from "prism-code-editor/autocomplete.css?raw";
 import { cursorPosition } from "prism-code-editor/cursor";
 import { highlightText } from "prism-code-editor/prism";
 import "prism-code-editor/prism/languages/tsx";
-import "prism-code-editor/prism/languages/css";
+import "prism-code-editor/prism/languages/css-extras";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { addTooltip } from "prism-code-editor/tooltips";
 import { insertText } from "prism-code-editor/utils";
 import { resolveEffectiveTheme } from "../../lib/native/theme.js";
 import { toast } from "../Toast.js";
-import { tailwindApplyCompletionSource, tailwindCompletionSource } from "./tailwind-completions.js";
+import {
+  tailwindApplyCompletionSource,
+  tailwindAtRuleCompletionSource,
+  tailwindClassNames,
+  tailwindCompletionSource,
+  tailwindThemeVariables,
+} from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
 import { EditerWorkerClient } from "./worker-client.js";
 import type {
@@ -261,7 +268,22 @@ function ensureCompletionsRegistered() {
   if (completionsRegistered) return;
   completionsRegistered = true;
   registerCompletions(["tsx"], { sources: [scopedTailwindCompletionSource, tsCompletionSource] });
-  registerCompletions(["css"], { sources: [scopedTailwindApplyCompletionSource] });
+  registerCompletions(["css"], {
+    sources: [
+      // Generic CSS IntelliSense (properties, values, at-rules, pseudo-classes/
+      // elements, `var(--...)`) - ships with `prism-code-editor` itself, just never
+      // wired up before now. `tailwindClassNames`/`tailwindThemeVariables` seed its
+      // `.selector` and `var(--...)` completions with Tailwind's own utility classes
+      // and `@theme` tokens on top of whatever it finds in the document.
+      cssCompletion(tailwindClassNames, tailwindThemeVariables),
+      // Tailwind v4's own at-rules (`@theme`, `@layer`, `@apply`, `@variant`, ...) -
+      // `cssCompletion`'s built-in at-rule list only knows standard CSS ones.
+      tailwindAtRuleCompletionSource,
+      // Utility-class/variant completion inside an `@apply` line - unrelated to
+      // `cssCompletion` above, which doesn't know what `@apply`'s argument list means.
+      scopedTailwindApplyCompletionSource,
+    ],
+  });
 }
 
 const DIAGNOSTIC_CLASS = "editer-diagnostic";

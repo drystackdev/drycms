@@ -11,6 +11,7 @@ type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>;
  */
 let classList: string[] | undefined;
 let variantList: string[] | undefined;
+let themeVariableList: string[] | undefined;
 let listsPromise: Promise<void> | undefined;
 
 /**
@@ -47,6 +48,10 @@ function loadTailwindLists(): Promise<void> {
     }).then((designSystem) => {
       classList = designSystem.getClassList().map(([className]) => className);
       variantList = buildVariantList(designSystem);
+      // Every `--color-red-500`/`--font-sans`/`--radius-lg`/... CSS custom property the
+      // default theme defines - what `@theme { ... }` blocks and `var(...)` calls in a
+      // `styles/*.css` file (`tailwindThemeVariables` below) draw their completions from.
+      themeVariableList = [...designSystem.theme.entries()].map(([name]) => name);
     });
   }
   return listsPromise;
@@ -55,6 +60,21 @@ function loadTailwindLists(): Promise<void> {
 /** Kicks off the (one-time) load eagerly so the lists are likely warm by the
  * time the user's first keystroke could trigger a completion. */
 void loadTailwindLists();
+
+/**
+ * Live views over `classList`/`themeVariableList` for `prism-code-editor`'s built-in
+ * `cssCompletion` (`Editer.tsx`), which captures whatever `classes`/`variables`
+ * iterable it's given ONCE, at registration time - before `loadTailwindLists` above
+ * has necessarily resolved. A plain array reference captured that early would stay
+ * empty forever (the `let`s above are reassigned wholesale once the design system
+ * loads, never mutated in place); these wrap the *variable*, not its current value,
+ * so every completion query - which re-iterates fresh each time - sees whatever's
+ * loaded by then.
+ */
+export const tailwindClassNames: Iterable<string> = { [Symbol.iterator]: () => (classList ?? [])[Symbol.iterator]() };
+export const tailwindThemeVariables: Iterable<string> = {
+  [Symbol.iterator]: () => (themeVariableList ?? [])[Symbol.iterator](),
+};
 
 const CLASS_ATTR_RE = /\b(?:className|class)\s*=\s*["']([^"']*)$/;
 /** `@apply flex items-c` (Tailwind v4 CSS) - same "everything after the
@@ -119,4 +139,52 @@ export const tailwindApplyCompletionSource: CompletionSource = (context) => {
   const match = APPLY_RE.exec(context.before);
   if (!match) return null;
   return classCompletions(context.pos, match[1] ?? "");
+};
+
+const AT_RULE_RE = /@([\w-]*)$/;
+/** `@layer base|components|utilities` - a closed set, unlike every other at-rule here. */
+const LAYER_VALUE_RE = /@layer\s+([\w-]*)$/;
+
+/** Tailwind v4's own CSS at-rules - `prism-code-editor`'s built-in `cssCompletion`
+ * (`Editer.tsx`) ships a fixed, standard-CSS-only at-rule list (`@media`, `@import`,
+ * `@layer`, ...) with no way to extend it, so these are offered as a separate source
+ * instead. Labels double as the inserted text (`Completion.insert` defaults to
+ * `label`), so they carry the leading `@` themselves - `from` is computed to include
+ * the already-typed `@` in the replaced range (see `tailwindAtRuleCompletionSource`). */
+const TAILWIND_AT_RULES: Completion[] = [
+  "theme",
+  "layer",
+  "apply",
+  "import",
+  "variant",
+  "custom-variant",
+  "utility",
+  "source",
+  "plugin",
+  "reference",
+  "config",
+].map((name) => ({ label: `@${name}`, icon: "keyword" as const, detail: "Tailwind" }));
+
+const TAILWIND_LAYER_NAMES: Completion[] = ["base", "components", "utilities"].map((label) => ({
+  label,
+  icon: "constant" as const,
+  detail: "Tailwind layer",
+}));
+
+/**
+ * `CompletionSource` for Tailwind v4's CSS-side at-rules (`@theme`, `@layer`, `@apply`,
+ * `@variant`, ...) plus `@layer`'s own base/components/utilities values - registered
+ * alongside `prism-code-editor`'s built-in `cssCompletion` for the `"css"` language
+ * (`Editer.tsx`); both fire on the same `@` trigger and their results merge (every
+ * registered source runs and their non-null results are pooled, then filtered/sorted
+ * together - see `registerCompletions`).
+ */
+export const tailwindAtRuleCompletionSource: CompletionSource = (context) => {
+  const layerMatch = LAYER_VALUE_RE.exec(context.before);
+  if (layerMatch) {
+    return { from: context.pos - (layerMatch[1]?.length ?? 0), options: TAILWIND_LAYER_NAMES };
+  }
+  const match = AT_RULE_RE.exec(context.before);
+  if (!match) return null;
+  return { from: context.pos - (match[1]?.length ?? 0) - 1, options: TAILWIND_AT_RULES };
 };

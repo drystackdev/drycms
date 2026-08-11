@@ -3,9 +3,8 @@ import ContextMenu from "../../components/ContextMenu.js";
 import type { PopoverMenuEntry } from "../../components/Popover.js";
 import type { FileEntry } from "../../storage/entry-types.js";
 import {
-  CodeFieldTypeIcon,
   CopyIcon,
-  FolderIcon,
+  LockIcon,
   PasteIcon,
   PlusIcon,
   RenameIcon,
@@ -18,6 +17,8 @@ import {
   flattenVisibleFilePaths,
   type ComponentTreeNode,
 } from "../../page-components/tree.js";
+import { isCoreStyleFilePath } from "../../server/app-router/source-roots.js";
+import { FolderBaseIcon, FolderBaseOpenIcon, fileIconForName } from "./file-type-icons.js";
 
 interface ComponentTreePanelProps {
   entries: FileEntry[];
@@ -426,7 +427,7 @@ function CreateRow({ value, onChange, onSubmit, onCancel }: CreateRowProps) {
       class="page-components-tree-row page-components-tree-create"
       onSubmit={onSubmit}
     >
-      {isFolder ? <FolderIcon /> : <CodeFieldTypeIcon />}
+      {isFolder ? <FolderBaseIcon /> : fileIconForName(value)}
       <input
         ref={focusOnMount}
         class="page-components-tree-input"
@@ -536,9 +537,16 @@ function ComponentTreeList(props: ComponentTreeListProps) {
          * the selection untouched - same as every file manager). */
         const targets = inSelection ? [...pickedPaths] : entry.kind === "file" ? [entry.id] : [];
         const bulk = inSelection && pickedPaths.size > 1;
-        const deleteTargets = bulk
+        const locked = entry.kind === "file" && isCoreStyleFilePath(entry.id);
+        // Built-in style files (`source-roots.ts`) never appear as a delete
+        // target, bulk selection included - a right-click landing squarely on
+        // `globals.css` alone ends up with an empty list, which is what
+        // suppresses the menu item below entirely rather than showing a
+        // "Delete" that would just 403 against the server's own guard.
+        const deleteTargets = (bulk
           ? targets.map((path) => entryById.get(path)).filter((item): item is FileEntry => !!item)
-          : [entry];
+          : [entry]
+        ).filter((item) => item.kind !== "file" || !isCoreStyleFilePath(item.id));
         // A file's own folder is where a paste next to it belongs.
         const pasteFolder = entry.kind === "folder" ? entry.id : parentOf(entry.id);
         // Built imperatively rather than as one conditional-spread literal:
@@ -570,14 +578,16 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               onClick: () => onStartRename(entry),
             });
           }
-          if (menuItems.length > 0) menuItems.push({ type: "separator" });
-          menuItems.push({
-            type: "item",
-            label: bulk ? `Delete ${deleteTargets.length} items` : "Delete",
-            icon: <TrashIcon />,
-            danger: true,
-            onClick: () => onDelete(deleteTargets),
-          });
+          if (deleteTargets.length > 0) {
+            if (menuItems.length > 0) menuItems.push({ type: "separator" });
+            menuItems.push({
+              type: "item",
+              label: bulk && deleteTargets.length > 1 ? `Delete ${deleteTargets.length} items` : "Delete",
+              icon: <TrashIcon />,
+              danger: true,
+              onClick: () => onDelete(deleteTargets),
+            });
+          }
         }
 
         const row = (
@@ -657,7 +667,15 @@ function ComponentTreeList(props: ComponentTreeListProps) {
             ) : (
               <span class="page-components-tree-chevron-spacer" />
             )}
-            {entry.kind === "folder" ? <FolderIcon /> : <CodeFieldTypeIcon />}
+            {entry.kind === "folder" ? (
+              open ? (
+                <FolderBaseOpenIcon />
+              ) : (
+                <FolderBaseIcon />
+              )
+            ) : (
+              fileIconForName(entry.name)
+            )}
             {renaming ? (
               <input
                 ref={focusOnMount}
@@ -683,6 +701,11 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               >
                 <span>{entry.name}</span>
                 <span class="page-components-tree-dots">
+                  {locked && (
+                    <span class="page-components-tree-lock" title="Built-in file - can't be deleted">
+                      <LockIcon />
+                    </span>
+                  )}
                   {isDirty?.(entry.id) ? (
                     <span class="page-components-tree-dirty-dot" title="Unsaved changes" />
                   ) : (

@@ -5,7 +5,7 @@ import { toFileEntry } from "../../storage/entry.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
-import { rootOf, STYLES_ROOT } from "../app-router/source-roots.js";
+import { isCoreStyleFilePath, rootOf, STYLES_ROOT } from "../app-router/source-roots.js";
 
 /**
  * The `pagesSource` storage root (`plans/app-r2.md` quyết định #6 - git is
@@ -162,6 +162,9 @@ export const DELETE: DryRouteHandler = async (context) => {
     const adapter = getStorageAdapter(pagesSourceStorage, context);
     const path = readSlug(context);
     if (!path) throw new StorageError("invalid_path", "Cannot delete the root.");
+    if (isCoreStyleFilePath(path)) {
+      throw new StorageError("protected", `"${path}" is a built-in file and can't be deleted.`);
+    }
     await adapter.remove(path);
     return new Response(null, { status: 204 });
   } catch (error) {

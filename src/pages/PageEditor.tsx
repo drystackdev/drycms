@@ -3,7 +3,7 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
-import { CodeFieldTypeIcon, ComponentIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
+import { LockIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
 import Popover from "../components/Popover.js";
 import { toast } from "../components/Toast.js";
 import GithubResetDialog from "./page-components/GithubResetDialog.js";
@@ -44,6 +44,9 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
+import SystemFilesPanel from "./page-components/core-styles/SystemFilesPanel.js";
+import { CORE_STYLE_FILES } from "./page-components/core-styles/registry.js";
+import { FolderComponentsIcon, FolderCssIcon, FolderRoutesIcon, fileIconForName } from "./page-components/file-type-icons.js";
 import { copyDestinationPath, entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
 import { COMPONENT_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import { COMPONENT_PREVIEW_ENTRY_PATH, buildComponentPreviewSource } from "../page-components/component-preview.js";
@@ -113,45 +116,31 @@ function HistoryIcon() {
   );
 }
 
-/** Local one-off (same "no shared export for a single-use icon" pattern as
- * `HistoryIcon` above) for the source-root switcher's "Page" button
- * (`PAGES_SOURCE_ROOTS`) - a page with a folded corner, the standard
- * "document" glyph. */
-function PageRootIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M6 2h7l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" opacity=".5" />
-      <path fill="currentColor" d="M13 2v5h5z" />
-    </svg>
-  );
-}
-
-/** Local one-off, same pattern as `PageRootIcon` above, for the "Styles"
- * button (`STYLES_ROOT`) - 3 overlapping swatches, the standard "theme/
- * palette" glyph. */
-function StylesRootIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="8" cy="9" r="5" fill="currentColor" opacity=".4" />
-      <circle cx="16" cy="9" r="5" fill="currentColor" opacity=".7" />
-      <circle cx="12" cy="16" r="5" fill="currentColor" />
-    </svg>
-  );
-}
-
 /** `PAGES_SOURCE_ROOTS` (`source-roots.ts`) is deliberately dependency-free
  * (imported from a Vite config and a web worker, not just this app), so the
- * root -> icon mapping lives here instead of on `PagesSourceRoot` itself. */
+ * root -> icon mapping lives here instead of on `PagesSourceRoot` itself.
+ * Icons are the Material Icon Theme folders matching each root's own
+ * content (`FolderRoutesIcon` etc. - see `file-type-icons.tsx`'s own doc
+ * comment), same set the file tree and the code-editor toggle below use. */
 function sourceRootIcon(rootId: string) {
   switch (rootId) {
     case COMPONENT_ROOT:
-      return <ComponentIcon />;
+      return <FolderComponentsIcon />;
     case STYLES_ROOT:
-      return <StylesRootIcon />;
+      return <FolderCssIcon />;
     default:
-      return <PageRootIcon />;
+      return <FolderRoutesIcon />;
   }
 }
+
+/** A 4th sidebar tab alongside `PAGES_SOURCE_ROOTS`, but NOT one of them -
+ * it has no folder of its own in storage, so it's kept out of
+ * `source-roots.ts` entirely (that list also drives the Vite alias/
+ * `sync-pages-r2.ts`'s mirroring, neither of which apply here). It only ever
+ * shows up for the rest of this session after `loadTree` recreates a
+ * missing built-in `styles/` file (`core-styles/registry.ts`) - see
+ * `recoveredCoreFiles` below. */
+const SYSTEM_ROOT = "system";
 
 /** How long the live preview may reuse a `dry()` response out of IndexedDB
  * before refetching it (`content-types/dry-http-cache.ts`). Only the preview
@@ -404,6 +393,18 @@ export default function PageEditor() {
    * `?file=component/Card.tsx` link lands on the right tab), then only moved
    * by an explicit tab click or by opening a file from another root. */
   const [activeRoot, setActiveRoot] = useState<string>(initialUiState?.activeRoot ?? PAGES_ROOT);
+  /** Tab click handler - deliberately clears `selectedPath` (closing
+   * whatever code/preview is showing) rather than leaving the previous
+   * root's file open while a DIFFERENT root's tree is browsed underneath
+   * it: every path belongs to exactly one root (`rootOf`), so the open file
+   * can never be part of the tab just switched to anyway. A no-op on the
+   * already-active tab (re-clicking "Page" while on "Page" shouldn't close
+   * the very file that tab is showing). */
+  function selectRoot(rootId: string) {
+    if (rootId === activeRoot) return;
+    setActiveRoot(rootId);
+    setSelectedPath("");
+  }
   /** The open component's default-export props, described from its real TS
    * types by `Editer`'s worker (`describeProps`) - what the preview falls
    * back to when the component exports no `defaultProps`. `null` for a page (no
@@ -424,6 +425,13 @@ export default function PageEditor() {
    * range), not just the one row that was right-clicked. Empty = closed. */
   const [pendingDelete, setPendingDelete] = useState<FileEntry[]>([]);
   const [deleting, setDeleting] = useState(false);
+  /** `styles/` filenames (`core-styles/registry.ts`) `loadTree` found
+   * missing THIS session and recreated with their default content - reveals
+   * the sidebar's "System" tab (`SYSTEM_ROOT`) for the rest of the session.
+   * Session-local on purpose: once recreated, the next `loadTree` finds
+   * everything present and simply never repopulates this, so the tab goes
+   * back to hidden on its own without needing an explicit dismiss. */
+  const [recoveredCoreFiles, setRecoveredCoreFiles] = useState<string[]>([]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(initialUiState?.sidebarOpen ?? true);
@@ -573,7 +581,31 @@ export default function PageEditor() {
   async function loadTree(): Promise<Record<string, string> | null> {
     try {
       const result = await api.listTree();
-      const all = result.supported ? result.entries : await listAllFileEntriesRecursive("");
+      let all = result.supported ? result.entries : await listAllFileEntriesRecursive("");
+
+      // Core `styles/` files (`core-styles/registry.ts`) back a hardcoded
+      // Vite build entry and each other's `@import`s (`source-roots.ts`'s
+      // `isCoreStyleFilePath` doc comment) - restore any missing one (a
+      // fresh checkout, or an old project predating this lock) instead of
+      // leaving the Styles tab, and the build, silently broken.
+      const existingIds = new Set(all.filter((entry) => entry.kind === "file").map((entry) => entry.id));
+      const missing = CORE_STYLE_FILES.filter((file) => !existingIds.has(`${STYLES_ROOT}/${file.name}`));
+      if (missing.length > 0) {
+        const restored = await Promise.all(
+          missing.map((file) => api.save(`${STYLES_ROOT}/${file.name}`, file.defaultContent).catch(() => null)),
+        );
+        all = [...all, ...restored.filter((entry): entry is FileEntry => !!entry)];
+        const restoredNames = missing.filter((_, index) => restored[index]).map((file) => file.name);
+        if (restoredNames.length > 0) {
+          setRecoveredCoreFiles(restoredNames);
+          toast.add({
+            type: "info",
+            title: restoredNames.length > 1 ? `Restored ${restoredNames.length} built-in style files.` : `Restored ${restoredNames[0]}.`,
+            description: "See the System tab.",
+          });
+        }
+      }
+
       setEntries(all);
       const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css)$/i.test(entry.name));
       const contents = await Promise.all(files.map((file) => api.read(file.id).catch(() => "")));
@@ -1585,6 +1617,37 @@ export default function PageEditor() {
           >
             <MenuIcon />
           </button>
+          {sidebarOpen && (
+            <div class="page-editor-root-tabs" role="tablist">
+              {PAGES_SOURCE_ROOTS.map((root) => (
+                <button
+                  key={root.id}
+                  type="button"
+                  class="ghost icon sm"
+                  role="tab"
+                  aria-label={root.label}
+                  title={root.label}
+                  aria-selected={activeRoot === root.id}
+                  onClick={() => selectRoot(root.id)}
+                >
+                  {sourceRootIcon(root.id)}
+                </button>
+              ))}
+              {recoveredCoreFiles.length > 0 && (
+                <button
+                  type="button"
+                  class="ghost icon sm"
+                  role="tab"
+                  aria-label="System"
+                  title="System"
+                  aria-selected={activeRoot === SYSTEM_ROOT}
+                  onClick={() => selectRoot(SYSTEM_ROOT)}
+                >
+                  <LockIcon />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {sidebarOpen && <div class="page-editor-toolbar-spacer" />}
 
@@ -1621,7 +1684,7 @@ export default function PageEditor() {
             aria-pressed={codeOpen}
             onClick={() => setCodeOpen((v) => !v)}
           >
-            <CodeFieldTypeIcon />
+            {fileIconForName(selectedPath ?? "")}
           </button>
           <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedPath ?? ""}</span>
           <div class="spacer" />
@@ -1647,36 +1710,29 @@ export default function PageEditor() {
         {sidebarOpen && (
           <>
             <div style={{ width: `${sidebar.size}px`, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div class="page-editor-source-roots">
-                <div class="button-group">
-                  {PAGES_SOURCE_ROOTS.map((root) => (
-                    <button
-                      key={root.id}
-                      type="button"
-                      class="icon sm"
-                      aria-label={root.label}
-                      title={root.label}
-                      aria-pressed={activeRoot === root.id}
-                      onClick={() => setActiveRoot(root.id)}
-                    >
-                      {sourceRootIcon(root.id)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <ComponentTreePanel
-                entries={visibleEntries}
-                selectedPath={selectedInActiveRoot ? selectedPath : null}
-                onSelect={setSelectedPath}
-                onCreateFile={handleCreateFile}
-                onCreateFolder={handleCreateFolder}
-                onDelete={setPendingDelete}
-                onMove={handleMove}
-                onPaste={(paths, destFolder) => void handlePaste(paths, destFolder)}
-                onCopy={(paths) => toast.add({ type: "success", title: paths.length > 1 ? `Copied ${paths.length} files.` : `Copied "${paths[0]}".` })}
-                isDirty={(p) => sourceByPath[p] !== savedByPath[p]}
-                needsBuild={(p) => unbuiltPaths.has(p)}
-              />
+              {activeRoot === SYSTEM_ROOT ? (
+                <SystemFilesPanel
+                  recovered={recoveredCoreFiles}
+                  onOpen={(p) => {
+                    setActiveRoot(STYLES_ROOT);
+                    setSelectedPath(p);
+                  }}
+                />
+              ) : (
+                <ComponentTreePanel
+                  entries={visibleEntries}
+                  selectedPath={selectedInActiveRoot ? selectedPath : null}
+                  onSelect={setSelectedPath}
+                  onCreateFile={handleCreateFile}
+                  onCreateFolder={handleCreateFolder}
+                  onDelete={setPendingDelete}
+                  onMove={handleMove}
+                  onPaste={(paths, destFolder) => void handlePaste(paths, destFolder)}
+                  onCopy={(paths) => toast.add({ type: "success", title: paths.length > 1 ? `Copied ${paths.length} files.` : `Copied "${paths[0]}".` })}
+                  isDirty={(p) => sourceByPath[p] !== savedByPath[p]}
+                  needsBuild={(p) => unbuiltPaths.has(p)}
+                />
+              )}
             </div>
             <div class={`page-components-resize-handle${sidebar.dragging ? " dragging" : ""}`} {...sidebar.handleProps} />
           </>

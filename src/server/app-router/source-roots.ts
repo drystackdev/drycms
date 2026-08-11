@@ -54,6 +54,20 @@ export function rootOf(path: string): PagesSourceRoot | null {
   return PAGES_SOURCE_ROOTS.find((root) => root.id === first) ?? null;
 }
 
+/** `styles/` filenames every project ships with and that back a hardcoded
+ * dependency elsewhere - `globals.css` is `vite.config.ts`'s literal
+ * Tailwind build entry, and it `@import`s the other two by exact relative
+ * name. Deleting any of them silently breaks the build rather than failing
+ * loudly, so both the Page Editor's tree UI and this route's own `DELETE`
+ * refuse to remove them (`PageEditor.tsx` also recreates one from its
+ * default content if it's ever found missing). */
+export const CORE_STYLE_FILE_NAMES = ["globals.css", "theme.css", "base.css"] as const;
+
+export function isCoreStyleFilePath(path: string): boolean {
+  const prefix = `${STYLES_ROOT}/`;
+  return path.startsWith(prefix) && (CORE_STYLE_FILE_NAMES as readonly string[]).includes(path.slice(prefix.length));
+}
+
 /** `"@component/Card"` -> `"component/Card"`; `null` for anything that isn't
  * an alias specifier. Extension resolution is the caller's job (each
  * consumer has its own file map to probe - see `page-build.ts`'s

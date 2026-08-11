@@ -11,6 +11,7 @@ export const STATUS_BY_CODE: Record<string, number> = {
   not_found: 404,
   already_exists: 409,
   unsupported: 501,
+  protected: 403,
 };
 
 export const MIME_TYPES: Record<string, string> = {
