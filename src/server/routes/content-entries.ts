@@ -6,7 +6,7 @@ import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content
 import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { PermissionAction } from "../../content-types/permissions.js";
 import { recordSlugRedirect } from "../../content-types/redirects.js";
-import { removeEntryMediaFolder, syncEntryMediaFolder } from "../../content-types/entry-media.js";
+import { removeEntryMediaFolder, rewriteEntryMediaPaths, syncEntryMediaFolder, type EntryMediaMove } from "../../content-types/entry-media.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { decodeEntryId, encodeEntryId } from "../../lib/id-hash.js";
 import { forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
@@ -397,6 +397,30 @@ export const GET: DryRouteHandler = async (context) => {
   }
 };
 
+/** `syncEntryMediaFolder` only moves the underlying storage folder - the
+ * `value` that was just saved to `row` may still embed the OLD path (an
+ * `image`/`file` field's bare id, or a `richtext` field's `<img src>`), which
+ * would now 404 since nothing lives at that path anymore. When a move
+ * actually happened, rewrite the same `value` the caller just saved and
+ * persist the correction as a second write - skipped entirely when nothing
+ * in `value` referenced the old path (the common case: an entry with no
+ * media). Uses `updateEntry` unconditionally (works by id regardless of
+ * `type.kind`), so this covers both the collection and singleton call sites
+ * below with one helper. */
+async function applyEntryMediaRename(
+  entryAdapter: ContentEntryEngineAdapter,
+  type: ContentTypeDefinition,
+  allTypes: ContentTypeDefinition[],
+  row: Awaited<ReturnType<ContentEntryEngineAdapter["updateEntry"]>>,
+  value: EntryValue,
+  move: EntryMediaMove | null,
+) {
+  if (!move) return row;
+  const { value: rewritten, changed } = rewriteEntryMediaPaths(value, move.fromPath, move.toPath);
+  if (!changed) return row;
+  return entryAdapter.updateEntry(type, allTypes, row.id, rewritten);
+}
+
 export const POST: DryRouteHandler = async (context) => {
   try {
     const { typeSlug, hashedId } = parseSlug(context);
@@ -411,16 +435,17 @@ export const POST: DryRouteHandler = async (context) => {
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
 
-    const row =
+    let row =
       type.kind === "singleton"
         ? await entryAdapter.saveSingletonEntry(type, allTypes, value)
         : await entryAdapter.createEntry(type, allTypes, value);
     if (type.features?.slug && typeof value.slug === "string" && context.session) {
-      await syncEntryMediaFolder(getStorageAdapter(storage, context), {
+      const move = await syncEntryMediaFolder(getStorageAdapter(storage, context), {
         collectionName: type.name,
         userEmail: context.session.email,
         toSlug: value.slug,
       });
+      row = await applyEntryMediaRename(entryAdapter, type, allTypes, row, value, move);
     }
     return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } }, 201);
   } catch (error) {
@@ -446,17 +471,18 @@ export const PUT: DryRouteHandler = async (context) => {
       // fetched ahead of the save (not after) since `saveSingletonEntry`
       // overwrites in place, leaving nothing to diff against afterward.
       const existingSlug = type.features?.slug ? (await entryAdapter.getSingletonEntry(type, allTypes))?.value.slug : undefined;
-      const row = await entryAdapter.saveSingletonEntry(type, allTypes, value);
+      let row = await entryAdapter.saveSingletonEntry(type, allTypes, value);
       if (typeof existingSlug === "string" && typeof value.slug === "string") {
         await recordSlugRedirect(entryAdapter, allTypes, existingSlug, value.slug);
       }
       if (type.features?.slug && typeof value.slug === "string" && context.session) {
-        await syncEntryMediaFolder(getStorageAdapter(storage, context), {
+        const move = await syncEntryMediaFolder(getStorageAdapter(storage, context), {
           collectionName: type.name,
           userEmail: context.session.email,
           fromSlug: typeof existingSlug === "string" ? existingSlug : undefined,
           toSlug: value.slug,
         });
+        row = await applyEntryMediaRename(entryAdapter, type, allTypes, row, value, move);
       }
       return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
     }
@@ -466,17 +492,18 @@ export const PUT: DryRouteHandler = async (context) => {
     const systemDenied = await protectSystemMutation(context, entryAdapter, allTypes, type, "update", entryId, value);
     if (systemDenied) return systemDenied;
     await assertRelationTargetsExist(entryAdapter, allTypes, nodes, value);
-    const row = await entryAdapter.updateEntry(type, allTypes, entryId, value);
+    let row = await entryAdapter.updateEntry(type, allTypes, entryId, value);
     if (type.features?.slug && typeof existing?.value.slug === "string" && typeof value.slug === "string") {
       await recordSlugRedirect(entryAdapter, allTypes, existing.value.slug, value.slug);
     }
     if (type.features?.slug && typeof value.slug === "string" && context.session) {
-      await syncEntryMediaFolder(getStorageAdapter(storage, context), {
+      const move = await syncEntryMediaFolder(getStorageAdapter(storage, context), {
         collectionName: type.name,
         userEmail: context.session.email,
         fromSlug: typeof existing?.value.slug === "string" ? existing.value.slug : undefined,
         toSlug: value.slug,
       });
+      row = await applyEntryMediaRename(entryAdapter, type, allTypes, row, value, move);
     }
     return jsonResponse({ entry: { id: encodeEntryId(row.id), value: encodeRelationIds(nodes, row.value) } });
   } catch (error) {

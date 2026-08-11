@@ -233,6 +233,53 @@ describe("content-entries route - slug-change redirects", () => {
   });
 });
 
+describe("content-entries route - entry media folder rename rewrites saved field values", () => {
+  it("rewrites both an image field's stored id and a richtext field's embedded <img src> on first save", async () => {
+    const { createLocalStorageAdapter } = await import("../../storage/local.js");
+    const { tempEntryMediaFolderPath, entryMediaFolderPath } = await import("../../content-types/entry-media-paths.js");
+
+    const schema = createContentEngineAdapter(content);
+    const mediaPost: ContentTypeDefinition = {
+      id: "custom-media-post",
+      kind: "collection",
+      name: "mediaPost",
+      label: "Media Post",
+      features: { slug: true },
+      fields: [
+        { id: "media-post-cover", name: "cover", label: "Cover", type: "image", config: {}, validation: {}, order: 0 },
+        { id: "media-post-content", name: "content", label: "Content", type: "richtext", config: {}, validation: {}, order: 1 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(mediaPost, await schema.planSave(mediaPost));
+
+    const storageAdapter = createLocalStorageAdapter(tempDirBox.storageRoot);
+    const tempPath = tempEntryMediaFolderPath("mediaPost", superAdminSession.email);
+    await storageAdapter.mkdir(tempPath);
+    await storageAdapter.write(`${tempPath}/hero.jpg`, new Uint8Array([1]));
+
+    const createdResp = await post("mediaPost", {
+      title: "Hello",
+      slug: "media-post-slug",
+      cover: `${tempPath}/hero.jpg`,
+      content: `<p><img src="/dry/api/storage/${tempPath}/hero.jpg" alt=""></p>`,
+    });
+    const created = createdResp.json.entry;
+
+    const finalPath = `${entryMediaFolderPath("media-post-slug")}/hero.jpg`;
+    expect(created.value.cover).toBe(finalPath);
+    expect(created.value.content).toBe(`<p><img src="/dry/api/storage/${finalPath}" alt=""></p>`);
+
+    // Persisted, not just reflected in the response.
+    const entries = createContentEntryEngineAdapter(content);
+    const allTypes = await schema.listContentTypes();
+    const type = allTypes.find((t) => t.name === "mediaPost")!;
+    const stored = await entries.getEntry(type, allTypes, Number(created.id) || (await entries.findEntry(type, allTypes, [{ field: "slug", op: "eq", value: "media-post-slug" }]))!.id);
+    expect(stored?.value.cover).toBe(finalPath);
+    expect(stored?.value.content).toContain(finalPath);
+  });
+});
+
 describe("content-entries route - authorization", () => {
   it("401s every verb with no session", async () => {
     expect((await get("role", undefined, null)).status).toBe(401);
