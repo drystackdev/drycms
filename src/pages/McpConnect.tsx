@@ -135,9 +135,9 @@ function McpTokensSection() {
               </ul>
             )}
 
-            <form class="row" style={{ gap: "0.5rem", alignItems: "flex-end" }} onSubmit={handleGenerate}>
-              <TextField label="New token label" placeholder="e.g. Claude Desktop" value={label} onChange={setLabel} />
-              <button type="submit" disabled={!label.trim() || creating} aria-busy={creating || undefined}>
+            <form class="row" style={{ gap: "0.5rem", alignItems: "flex-end", width: "100%" }} onSubmit={handleGenerate}>
+              <TextField label="New token label" style={{flex: 1}} placeholder="e.g. Claude Desktop" value={label} onChange={setLabel} />
+              <button type="submit" class="lg" disabled={!label.trim() || creating} aria-busy={creating || undefined}>
                 <PlusIcon /> Generate
               </button>
             </form>
