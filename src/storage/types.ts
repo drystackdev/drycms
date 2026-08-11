@@ -24,6 +24,19 @@ export interface StorageStatEntry {
 
 export interface StorageReadResult {
   stream: Readable;
+  /** The same bytes as `stream`, when the backend's native shape is already
+   * a web stream (R2). Consume ONE of the two, never both.
+   *
+   * It exists so a Fetch-API response can hand the backend's own stream
+   * straight to `new Response(...)` instead of round-tripping it through
+   * `Readable.fromWeb` here and `Readable.toWeb` in `routes/storage.ts`.
+   * That round trip isn't just wasted work per byte: when the client
+   * cancels mid-download - a `<video>` seek, a navigation - the cancel
+   * propagates into workerd's `nodejs_compat` shim and throws `TypeError:
+   * Cannot read properties of undefined (reading '_readableState')`
+   * (observed in production on 2026-08-12, one per canceled media request).
+   * Absent on the Node/local backend, whose native shape IS a `Readable`. */
+  webStream?: ReadableStream;
   size: number;
   modifiedAt: string;
 }

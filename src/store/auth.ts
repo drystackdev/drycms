@@ -199,6 +199,23 @@ export async function refreshExpiredSession(): Promise<AuthUser | null> {
   }
 }
 
+/**
+ * The session is gone for good: an API request came back 401 and
+ * `refreshExpiredSession()` couldn't rescue it (`lib/native/csrf-fetch.ts`).
+ * Flipping to `anonymous` makes `AuthGate` show Sign in; without it every
+ * page just sat on its spinner waiting for data that was never going to
+ * arrive, with no error anywhere - the admin looked frozen and only a manual
+ * reload brought it back (production, 2026-08-12). In-progress entry edits
+ * survive this: they're kept in IndexedDB, not in the page.
+ *
+ * A no-op unless we currently believe we're signed in, so a 401 on a public/
+ * pre-login page can't bounce a first-run admin off `needs-setup`.
+ */
+export function markSessionExpired(): void {
+  if (authState.value.status !== "authenticated") return;
+  authState.value = { status: "anonymous", user: null };
+}
+
 /** Reads `GET /api/auth/session` and sets `authState` accordingly - the one
  * call that decides which of the 3 gate states to show. Called once on app
  * mount (`AuthGate`) and again after `logout()`. */
