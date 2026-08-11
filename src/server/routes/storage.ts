@@ -20,7 +20,7 @@ import { isSuperAdminSession } from "../admin-access.js";
 import { joinStoragePath, normalizeStoragePath, storagePathParent } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
 import { sanitizeSvg, IconValidationError } from "../../icons/sanitize-svg.js";
-import { fetchNoRedirect, validateOutboundUrlForRequest } from "../outbound-url.js";
+import { fetchAllowingOneRedirect, validateOutboundUrlForRequest } from "../outbound-url.js";
 
 const MAX_IMPORTED_IMAGE_BYTES = 20 * 1024 * 1024;
 
@@ -199,13 +199,14 @@ async function handleImportUrl(adapter: StorageAdapter, body: { url?: unknown },
   const url = await validateOutboundUrlForRequest(body.url, "Image URL");
   let response: Response;
   try {
-    response = await fetchNoRedirect(url, { headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" } });
+    response = await fetchAllowingOneRedirect(url, { headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" } }, "Image URL");
   } catch (error) {
-    // `fetchNoRedirect` throws a plain `Error` (redirect refused, DNS/network
-    // failure) rather than a `StorageError` - it's shared with `routes/ai.ts`,
-    // which surfaces any `Error`'s message directly and has no reason to know
-    // about this module's error type. Translate it here so the caller gets
-    // the real reason instead of `errorResponse`'s generic 500 fallback.
+    // `fetchAllowingOneRedirect` throws a plain `Error` (redirect refused,
+    // DNS/network failure) rather than a `StorageError` - it's built on
+    // `outbound-url.ts`'s shared primitives, which `routes/ai.ts` also uses
+    // and which surface any `Error`'s message directly, with no reason to
+    // know about this module's error type. Translate it here so the caller
+    // gets the real reason instead of `errorResponse`'s generic 500 fallback.
     throw new StorageError("unsupported", error instanceof Error ? error.message : "Image download failed.");
   }
   if (!response.ok) throw new StorageError("unsupported", `Image download failed (${response.status}).`);
