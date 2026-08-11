@@ -188,7 +188,17 @@ async function handleImportUrl(adapter: StorageAdapter, body: { url?: unknown },
   if (typeof body.url !== "string") throw new StorageError("invalid_path", "An image URL is required.");
 
   const url = await validateOutboundUrlForRequest(body.url, "Image URL");
-  const response = await fetchNoRedirect(url, { headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" } });
+  let response: Response;
+  try {
+    response = await fetchNoRedirect(url, { headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif" } });
+  } catch (error) {
+    // `fetchNoRedirect` throws a plain `Error` (redirect refused, DNS/network
+    // failure) rather than a `StorageError` - it's shared with `routes/ai.ts`,
+    // which surfaces any `Error`'s message directly and has no reason to know
+    // about this module's error type. Translate it here so the caller gets
+    // the real reason instead of `errorResponse`'s generic 500 fallback.
+    throw new StorageError("unsupported", error instanceof Error ? error.message : "Image download failed.");
+  }
   if (!response.ok) throw new StorageError("unsupported", `Image download failed (${response.status}).`);
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (!/^image\/(?:avif|gif|jpeg|png|webp)(?:;|$)/.test(contentType)) {
