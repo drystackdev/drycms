@@ -6,13 +6,14 @@ test.describe("Content Types list page", () => {
   }) => {
     await page.goto("/dry/content-types/");
 
-    // `component` is hidden while `temporaryFeatureVisibility.contentTypeComponents`
-    // is off (see `lib/temporary-visibility.ts`) - only 2 kinds are pickable today.
+    // Components are now managed from the same builder list as collections
+    // and singletons.
     const nav = page.locator(".file-view-toggle");
     const navItems = nav.locator("button");
-    await expect(navItems).toHaveCount(2);
+    await expect(navItems).toHaveCount(3);
     await expect(navItems.nth(0)).toContainText("Collection");
     await expect(navItems.nth(1)).toContainText("Singleton");
+    await expect(navItems.nth(2)).toContainText("Component");
 
     // Each kind button shows a count badge.
     await expect(navItems.nth(0).locator(".badge")).toBeVisible();
