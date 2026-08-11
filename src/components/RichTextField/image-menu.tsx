@@ -3,6 +3,7 @@ import type { RefObject } from "preact";
 import type { Command } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
+import { storageIdFromSrc } from "../../storage/entry-utils.js";
 import FloatingPanel from "../FloatingPanel.js";
 import NumberField from "../fields/NumberField.js";
 import Select, { type SelectOption } from "../Select.js";
@@ -66,6 +67,7 @@ export interface ImageMenuProps {
 export default function ImageMenu({ viewRef, state, disabled = false, source, entrySource, iconSize = "md" }: ImageMenuProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState("");
+  const [pendingLink, setPendingLink] = useState("");
   const dialogRef = useDialogSync(open, () => setOpen(false));
   const { ref: pickerBody } = useOverlayScrollbars<HTMLDivElement>([open]);
 
@@ -111,12 +113,27 @@ export default function ImageMenu({ viewRef, state, disabled = false, source, en
 
   const openReplace = () => {
     if (disabled || !selected) return;
-    setPending("");
+    // Pre-select the image already in the document (same as `ImageField`
+    // opening onto its current `value`) instead of always starting from an
+    // empty picker - the node's `src` is a resolved URL, not the bare
+    // `source` id the picker/`confirmReplace` need, so recover one from the
+    // other; a genuine external link (no recoverable id) pre-fills the Link
+    // tab instead.
+    const currentSrc = (selected.node.attrs.src as string | null) ?? "";
+    const currentId = storageIdFromSrc(currentSrc);
+    setPending(currentId ?? "");
+    setPendingLink(currentId ? "" : currentSrc);
     setOpen(true);
   };
 
   const confirmReplace = async () => {
-    if (!pending || !selected || !source) return;
+    if (!selected) return;
+    if (pendingLink) {
+      setOpen(false);
+      run(replaceImageSrc(selected.pos, pendingLink, (selected.node.attrs.alt as string) ?? ""));
+      return;
+    }
+    if (!pending || !source) return;
     const all = (await source.listAll?.()) ?? null;
     const list = all ?? (await source.list(parentFolderOf(pending)));
     const entry = list.find((item) => item.id === pending);
@@ -311,17 +328,28 @@ export default function ImageMenu({ viewRef, state, disabled = false, source, en
                   fullSource={source}
                   entrySource={entrySource}
                   value={pending}
-                  onChange={(next) => setPending(next as string)}
+                  onChange={(next) => {
+                    setPending(next as string);
+                    setPendingLink("");
+                  }}
                   multiple={false}
                   accept={IMAGE_EXTENSIONS}
+                  initialFolderId={pending ? parentFolderOf(pending) : undefined}
                   syncUrl={false}
+                  link={{
+                    value: pendingLink,
+                    onChange: (next) => {
+                      setPendingLink(next);
+                      if (next) setPending("");
+                    },
+                  }}
                 />
               </div>
               <footer>
                 <button type="button" class="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </button>
-                <button type="button" disabled={!pending} onClick={confirmReplace}>
+                <button type="button" disabled={!pending && !pendingLink} onClick={confirmReplace}>
                   Replace
                 </button>
               </footer>

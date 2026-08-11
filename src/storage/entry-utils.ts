@@ -107,6 +107,19 @@ export function parentFolderOf(id: string): string | null {
 	return slash === -1 ? null : id.slice(0, slash);
 }
 
+/** Recovers a `source` id (e.g. `entry/slug/photo.jpg`) from an already-
+ * resolved `previewUrl`-shaped src (e.g. `/dry/api/storage/entry/slug/
+ * photo.jpg`) - `null` for a genuine external link, which has no such id.
+ * Lets a "replace this image" picker pre-select the image already in place
+ * instead of always opening empty (see `RichTextField/image-menu.tsx`'s
+ * `openReplace`) - `ImageField` doesn't need this itself since its own
+ * `value` already IS the bare id, never a resolved URL. */
+export function storageIdFromSrc(src: string): string | null {
+	const marker = '/api/storage/';
+	const index = src.indexOf(marker);
+	return index === -1 ? null : decodeURIComponent(src.slice(index + marker.length));
+}
+
 /** A picked id is either a `source` path (resolved through `resolveFileUrls`/
  * `FileManager`) or an already-absolute URL (typed into a picker's own
  * "Link" tab) - the two are told apart by shape alone, no separate flag
