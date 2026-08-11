@@ -94,7 +94,7 @@ export default async function BlogDetailPage({
           them is `display:table`, so it shrink-wraps to whatever the image
           ends up at. */}
       <div
-        class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base [&_img]:max-w-full!"
+        class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base"
         dangerouslySetInnerHTML={{ __html: post.content }}
       />
 
