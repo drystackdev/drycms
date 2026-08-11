@@ -36,12 +36,12 @@ async function handleTree(adapter: StorageAdapter): Promise<Response> {
  * TS/TSX by both `Editer`'s Language Service and the build pipeline's own
  * Sucrase compile. The `styles/` root (`source-roots.ts`) is the one
  * exception - it's plain Tailwind `.css`, never compiled by that pipeline. */
-function isPageSourceFileName(path: string): boolean {
+export function isPageSourceFileName(path: string): boolean {
   if (rootOf(path)?.id === STYLES_ROOT) return /\.css$/i.test(path);
   return /\.tsx?$/i.test(path) && !path.toLowerCase().endsWith(".d.ts");
 }
 
-function requirePageSourceFileName(path: string): void {
+export function requirePageSourceFileName(path: string): void {
   if (isPageSourceFileName(path)) return;
   const expected = rootOf(path)?.id === STYLES_ROOT ? '".css"' : '".tsx" or ".ts"';
   throw new StorageError("invalid_path", `"${path}" must end in ${expected}.`);

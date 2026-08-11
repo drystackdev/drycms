@@ -43,6 +43,7 @@ import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
+import PageSourceMagicChat from "./page-editor/PageSourceMagicChat.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
 import SystemFilesPanel from "./page-components/core-styles/SystemFilesPanel.js";
 import { CORE_STYLE_FILES } from "./page-components/core-styles/registry.js";
@@ -973,6 +974,20 @@ export default function PageEditor() {
     setSourceByPath((prev) => (prev[selectedPath] === saved ? prev : { ...prev, [selectedPath]: saved }));
     cancelDraftWrite(selectedPath);
     void deletePageSourceDraft(selectedPath);
+  }
+
+  /** `PageSourceMagicChat`'s own write callback - the exact same
+   * `setSourceByPath` seam `handleChange`/`handleReset` already use, so an
+   * AI edit is indistinguishable from a hand-typed one to the rest of this
+   * page. When `changedPath === selectedPath`, `Editer`'s own value-sync
+   * effect reacts to the changed prop and re-runs `handleChange` itself
+   * (diagnostics + draft persistence included) - nothing extra needed here.
+   * A write to some OTHER (not currently open) path only updates in-memory
+   * state; it isn't draft-persisted to IndexedDB until the admin opens that
+   * file (which mounts a fresh `Editer` and primes normally) or Saves - an
+   * accepted v1 gap, see `status/page-editor-magic-chat.md`. */
+  function handleMagicCodeChange(changedPath: string, code: string) {
+    setSourceByPath((prev) => (prev[changedPath] === code ? prev : { ...prev, [changedPath]: code }));
   }
 
   /** Builds + publishes the SELECTED page.tsx (only enabled when it matches
@@ -2115,6 +2130,10 @@ export default function PageEditor() {
         onConfirm={() => void handleDelete()}
         onCancel={() => setPendingDelete([])}
       />
+
+      {selectedPath && (
+        <PageSourceMagicChat path={selectedPath} code={sourceByPath[selectedPath] ?? ""} onCodeChange={handleMagicCodeChange} canUse={canEdit} />
+      )}
 
       <GithubResetDialog
         open={resetDialogOpen}

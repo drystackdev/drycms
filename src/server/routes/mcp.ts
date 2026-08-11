@@ -24,7 +24,7 @@
  */
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse } from "../route-helpers.js";
-import { storage } from "../config.js";
+import { storage, pagesSourceStorage } from "../config.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { getAuthSecurityStore } from "../auth-security.js";
 import { checkAccess } from "./content-entries.js";
@@ -33,9 +33,13 @@ import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
-import { supportsMagic } from "../../content-types/permissions.js";
+import { supportsMagic, PAGE_BUILDER_RESOURCE_ID } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { MagicWriteFetchTurn, MagicWriteRawFields, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
+import { requirePermission } from "../admin-access.js";
+import { getStorageAdapter } from "../storage-adapters.js";
+import { normalizeStoragePath } from "../../storage/path.js";
+import { requirePageSourceFileName } from "./pages-source.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
@@ -134,6 +138,39 @@ const TOOLS: ToolDefinition[] = [
         fields: { type: "object", description: "Field name -> value.", additionalProperties: true },
       },
       required: ["typeSlug", "fields"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "list_page_source",
+    description: "List files and folders in the page-source tree (pages/, component/, styles/).",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "Folder path. Root when omitted." } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_page_source",
+    description: "Read the raw text of one page/layout/component/stylesheet source file.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "The file's path, e.g. \"pages/blog/page.tsx\" or \"component/Card.tsx\"." } },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "write_page_source",
+    description:
+      "Create or overwrite one page-source file's raw text. Writes immediately to storage - unlike the Page Editor's own UI, there is no separate draft/Save step here.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file's path. Must end in \".tsx\"/\".ts\" (pages/component root) or \".css\" (styles root)." },
+        code: { type: "string", description: "The file's complete new contents." },
+      },
+      required: ["path", "code"],
       additionalProperties: false,
     },
   },
@@ -251,6 +288,79 @@ async function runUpdateTool(
   return { text: `Updated ${type.label} (${type.name})${type.kind === "singleton" ? "" : ` #${saved.id}`} - ${applied.writtenFieldNames.join(", ")}.` };
 }
 
+/** Shared by all three page-source tools below - the same
+ * `requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting")` gate
+ * `handler.ts` already applies to `pages-source`'s own write methods and to
+ * `page-source-ai` (the in-app Magic Chat's own route), adapted to return a
+ * `ToolResult` instead of a `Response` - an MCP tool call has no HTTP
+ * response of its own to redirect to, so a denial is just another `isError`
+ * result. */
+async function requirePageBuilderAccess(context: DryRouteContext): Promise<ToolResult | null> {
+  const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
+  return denied ? { text: "You don't have permission to use the Page Builder.", isError: true } : null;
+}
+
+const MAX_PAGE_SOURCE_LIST_ITEMS = 100;
+
+async function runListPageSourceTool(context: DryRouteContext, rawPath: string | undefined): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  const path = normalizeStoragePath(rawPath);
+  try {
+    const adapter = getStorageAdapter(pagesSourceStorage, context);
+    if (path) {
+      const stat = await adapter.stat(path);
+      if (stat?.kind !== "folder") return { text: `"${path}" is not a folder.`, isError: true };
+    }
+    const items = await adapter.list(path);
+    const lines = items.slice(0, MAX_PAGE_SOURCE_LIST_ITEMS).map((item) => `- ${path ? `${path}/` : ""}${item.name}${item.kind === "folder" ? "/" : ""}`);
+    if (lines.length === 0) return { text: `"${path || "(root)"}" is empty.` };
+    const truncatedNote = items.length > MAX_PAGE_SOURCE_LIST_ITEMS ? `\n(${items.length - MAX_PAGE_SOURCE_LIST_ITEMS} more not shown - narrow with a more specific "path")` : "";
+    return { text: `Files/folders in "${path || "(root)"}":\n${lines.join("\n")}${truncatedNote}` };
+  } catch (error) {
+    return { text: `Could not list "${path || "(root)"}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
+  }
+}
+
+const MAX_PAGE_SOURCE_READ_CHARS = 100_000;
+
+async function runReadPageSourceTool(context: DryRouteContext, rawPath: string | undefined): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  if (!rawPath) return { text: "\"path\" is required.", isError: true };
+  const path = normalizeStoragePath(rawPath);
+  try {
+    const adapter = getStorageAdapter(pagesSourceStorage, context);
+    const stat = await adapter.stat(path);
+    if (!stat || stat.kind !== "file") return { text: `No file at "${path}".`, isError: true };
+    const file = await adapter.read(path);
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const text = Buffer.concat(chunks).toString("utf-8");
+    return { text: text.length > MAX_PAGE_SOURCE_READ_CHARS ? `${text.slice(0, MAX_PAGE_SOURCE_READ_CHARS)}\n… (truncated)` : text };
+  } catch (error) {
+    return { text: `Could not read "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
+  }
+}
+
+async function runWritePageSourceTool(context: DryRouteContext, rawPath: string | undefined, code: unknown): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  if (!rawPath) return { text: "\"path\" is required.", isError: true };
+  if (typeof code !== "string") return { text: "\"code\" must be a string.", isError: true };
+  const path = normalizeStoragePath(rawPath);
+  try {
+    requirePageSourceFileName(path);
+    const adapter = getStorageAdapter(pagesSourceStorage, context);
+    const existing = await adapter.stat(path);
+    if (existing?.kind === "folder") return { text: `"${path}" is a folder.`, isError: true };
+    await adapter.write(path, new TextEncoder().encode(code));
+    return { text: `Wrote "${path}" (${code.length.toLocaleString()} characters). This is saved to storage already - it still needs a Build (via the Page Editor or the pages-build tool) to reach the live site.` };
+  } catch (error) {
+    return { text: `Could not write "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
+  }
+}
+
 function stringArg(args: Record<string, unknown>, name: string): string | undefined {
   const value = args[name];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -340,6 +450,15 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
       outcome = await runUpdateTool(context, entries, allTypes, typeSlug, stringArg(args, "id"), args.fields);
       break;
     }
+    case "list_page_source":
+      outcome = await runListPageSourceTool(context, stringArg(args, "path"));
+      break;
+    case "read_page_source":
+      outcome = await runReadPageSourceTool(context, stringArg(args, "path"));
+      break;
+    case "write_page_source":
+      outcome = await runWritePageSourceTool(context, stringArg(args, "path"), args.code);
+      break;
     default:
       outcome = { text: `Unknown tool "${name}".`, isError: true };
   }

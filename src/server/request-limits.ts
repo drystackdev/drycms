@@ -5,6 +5,12 @@ export const MAX_UPLOAD_BODY_BYTES = 50 * 1024 * 1024;
  * ~33%) - well past the generic 2 MiB JSON cap, nowhere near a real upload's
  * 50 MiB. See `status/magic-write.md` decision #3. */
 export const MAX_MAGIC_WRITE_BODY_BYTES = 6 * 1024 * 1024;
+/** The Page Editor's Magic Chat (`status/page-editor-magic-chat.md`) resends
+ * the open file's full current text plus prior-turn summaries on every
+ * request - a real source file can exceed the generic 2 MiB JSON cap well
+ * before hitting `ai-page-source-write.ts`'s own 150,000-character content
+ * check. */
+export const MAX_PAGE_SOURCE_AI_BODY_BYTES = 4 * 1024 * 1024;
 
 export class RequestBodyLimitError extends Error {
   constructor() {
@@ -20,6 +26,7 @@ function jsonResponse(data: unknown, status: number): Response {
 export function maxBodyBytesFor(segment: string, slug?: string): number {
   if (segment === "storage") return MAX_UPLOAD_BODY_BYTES;
   if (segment === "ai" && slug === "magic-write") return MAX_MAGIC_WRITE_BODY_BYTES;
+  if (segment === "page-source-ai") return MAX_PAGE_SOURCE_AI_BODY_BYTES;
   return MAX_JSON_BODY_BYTES;
 }
 

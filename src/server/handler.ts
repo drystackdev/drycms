@@ -21,6 +21,7 @@ import * as dryHttpRoute from "./routes/dry-http.js";
 import * as pagesBuildRoute from "./routes/pages-build.js";
 import * as typesCacheRoute from "./routes/types-cache.js";
 import * as pagesSourceRoute from "./routes/pages-source.js";
+import * as pageSourceAiRoute from "./routes/ai-page-source-write.js";
 import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.js";
 import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
@@ -79,6 +80,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "pages-build": pagesBuildRoute,
   "types-cache": typesCacheRoute,
   "pages-source": pagesSourceRoute,
+  "page-source-ai": pageSourceAiRoute,
   "github-sync": pagesSourceGithubSyncRoute,
   "github-restore": pagesSourceGithubRestoreRoute,
   "built-assets": builtAssetsRoute,
@@ -233,6 +235,16 @@ export async function handleApiRequest(
   // Page Builder above) - only the write methods (`PageEditor.tsx`'s
   // save/create/move/delete) are gated here, on the same merged permission.
   if (segment === "pages-source" && request.method !== "GET") {
+    const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
+    if (denied) return secureResponse(denied, request);
+  }
+  // `page-source-ai` (`status/page-editor-magic-chat.md`) is the Page
+  // Editor's own Magic Chat, gated on the same merged Page Builder
+  // permission as `pages-source`'s write methods above - it never writes to
+  // storage itself (see that route's own doc comment), but reading/editing
+  // page source through AI is still part of the same "Page Builder" surface,
+  // not a separately grantable action.
+  if (segment === "page-source-ai") {
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
