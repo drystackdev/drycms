@@ -200,6 +200,40 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   );
 
   const veiFrame = isVeiFrame();
+  // Publishes this frame's own sticky `.page-header` height as
+  // `--dry-vei-header-height`, which `.vei-frame-content` turns into the
+  // offset a sticky `.richtext-toolbar` sticks at (see components.css). Bare
+  // mode has no `.topbar`, so there's no fixed token to reuse here and the
+  // header's real height varies with how its description wraps - hence a
+  // measurement rather than a constant. On `documentElement` (not the header
+  // itself) so the value is visible to the whole frame, `.vei-frame-content`
+  // included; removed on unmount so a route that renders no header falls
+  // back to the `0px` default instead of inheriting a stale number.
+  //
+  // `formLoaded` is in the deps, not just `type`: the header renders in the
+  // same pass as the form itself, which this component doesn't reach until
+  // `value` has loaded (`if (value === null) return ...` further down), so an
+  // effect keyed on `type` alone would run once against a ref that is still
+  // `null`. The boolean (rather than `value`) keeps it from re-running on
+  // every keystroke.
+  const formLoaded = value !== null;
+  const veiHeaderRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const header = veiHeaderRef.current;
+    if (!veiFrame || !header) return;
+    const publish = () =>
+      document.documentElement.style.setProperty(
+        "--dry-vei-header-height",
+        `${Math.round(header.getBoundingClientRect().height)}px`,
+      );
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--dry-vei-header-height");
+    };
+  }, [veiFrame, type, formLoaded]);
   const isSingleton = type?.kind === "singleton";
   // IndexedDB draft key (see `content-types/entry-draft-store.ts`) - a
   // singleton and a brand-new not-yet-created entry both key off `null`
@@ -745,7 +779,7 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
        * - `VeiFrame.tsx` skips `DryLayout` (and its topbar) entirely, so the
        * dialog keeps its own local header exactly as it always has. */}
       {veiFrame && (
-        <div class="page-header">
+        <div class="page-header" ref={veiHeaderRef}>
           {/* No list to go back to inside the VEI dialog - same reasoning as
            * the Cancel button below not navigating there either. */}
           {!isSingleton && !veiFrame && (

@@ -11,7 +11,21 @@ export interface PastedImage {
 const IMAGE_URL = /^https?:\/\/[^\s]+\.(?:avif|gif|jpe?g|png|webp)(?:[?#][^\s]*)?$/i;
 
 const TEXT_STYLES = new Set(["color", "font-weight", "font-style", "text-decoration", "text-align"]);
-const IMAGE_STYLES = new Set(["width", "height", "object-fit", "float", "min-width"]);
+/** `display` + the two `margin-inline` longhands carry the center encoding
+ * (`schema.ts`'s `imageAlignStyleString`) - `margin-inline: auto` is listed
+ * by `CSSStyleDeclaration` under its longhand names, never the shorthand, so
+ * those are the names a paste has to be checked against. `min-width` is the
+ * legacy center marker, kept so older copied content still pastes centered. */
+const IMAGE_STYLES = new Set([
+  "width",
+  "height",
+  "object-fit",
+  "float",
+  "min-width",
+  "display",
+  "margin-inline-start",
+  "margin-inline-end",
+]);
 const TABLE_STYLES = new Set(["width", "height", "text-align", "vertical-align"]);
 const GRID_STYLES = new Set(["display", "grid-template-columns", "grid-column", "grid-row", "gap"]);
 
@@ -32,6 +46,10 @@ function keepSupportedStyle(element: HTMLElement, name: string): boolean {
     if (name === "object-fit") return /^(?:fill|cover|contain)$/.test(value);
     if (name === "float") return /^(?:left|right)$/.test(value);
     if (name === "min-width") return value === "100%";
+    // `block` is the centered `<img>`'s own display, `table` the captioned
+    // `<figure>`'s shrink-wrap - no other value is part of this vocabulary.
+    if (name === "display") return value === "block" || value === "table";
+    if (name === "margin-inline-start" || name === "margin-inline-end") return value === "auto";
   }
   if (["TABLE", "TR", "TD", "TH", "COL"].includes(element.tagName)) {
     if (name === "text-align") return /^(?:left|center|right|justify)$/.test(value);

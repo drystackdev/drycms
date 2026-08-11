@@ -40,7 +40,7 @@ export default async function AboutPage() {
         <div class="mx-auto max-w-6xl px-4 py-16">
           <h2 class="text-2xl font-bold text-slate-900">{story.heading}</h2>
           <div
-            class="mt-4 whitespace-pre-line text-sm leading-relaxed text-slate-600"
+            class="dry-richtext mt-4 space-y-4 whitespace-pre-line text-sm leading-relaxed text-slate-600"
             dangerouslySetInnerHTML={{ __html: story.content }}
           ></div>
         </div>

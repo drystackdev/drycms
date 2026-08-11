@@ -1807,6 +1807,13 @@
 
     /* ---------------------------------------------------------------- Dialog */
     dialog {
+      /* A dialog's own `<header>` sits OUTSIDE its scrolling body (see
+       * `QuickCreateEntryDialog.tsx`'s shape), so nothing is stuck above a
+       * richtext field opened in one and its toolbar belongs at the body's
+       * very top. Without this reset the value inherited from `.main` (a
+       * dialog is a DOM descendant of it) would push the toolbar a whole
+       * topbar-height down, leaving a dead band the content scrolls behind. */
+      --dry-richtext-toolbar-top: 0px;
       padding: 1.5rem;
       /* Defaults to "xs" - otherwise a short-content dialog hugs its content. */
       width: 20rem;
@@ -2832,6 +2839,10 @@
 
     .main {
       height: 100dvh;
+      /* The one scroll container with sticky chrome of its own above the
+       * form: `.topbar` (`top: 0`, below). Read by
+       * `.richtext-toolbar`'s own sticky rule - see its comment. */
+      --dry-richtext-toolbar-top: var(--dry-topbar-height);
     }
 
     .topbar {
@@ -2901,6 +2912,14 @@
       grid-template-columns: minmax(0, 1fr);
       gap: var(--dry-gap);
       align-content: start;
+      /* Bare mode has no `.topbar`; the sticky thing a richtext toolbar has
+       * to clear here is this frame's own `.page-header` below. Its height
+       * isn't a fixed token like `--dry-topbar-height` (title + description +
+       * action row, and the description wraps in a narrow dialog iframe), so
+       * `ContentEntryEditor.tsx` measures it and publishes
+       * `--dry-vei-header-height`. The `0px` fallback covers the frames that
+       * never render one. */
+      --dry-richtext-toolbar-top: var(--dry-vei-header-height, 0px);
     }
 
     /* No `.topbar` inside this frame (bare mode skips `DryLayout`
@@ -4359,13 +4378,23 @@
     }
 
     /* Entry forms can be much taller than the viewport. Keep formatting
-     * controls immediately below the shared sticky topbar while the editor
-     * itself is passing through the viewport; the richtext box remains the
-     * sticky element's containing boundary, so it releases at the field's
-     * bottom instead of following the rest of the page. */
-    .main .richtext:not(.richtext-fullscreen) > .richtext-toolbar {
+     * controls immediately below whatever sticky chrome the surrounding
+     * scroll container already has while the editor itself is passing
+     * through the viewport; the richtext box remains the sticky element's
+     * containing boundary, so it releases at the field's bottom instead of
+     * following the rest of the page.
+     *
+     * That offset differs per context, so it comes in as an inherited custom
+     * property (set by `.main`/`dialog`/`.vei-frame-content` below) rather
+     * than as one selector per context: a `<dialog>` is a DOM descendant of
+     * `.main`, so a `.main ...` selector reaches inside it too and a `dialog
+     * ...` override would have to out-specify it. Custom properties inherit
+     * from the nearest ancestor that sets one, which is exactly the "closest
+     * enclosing context wins" rule this needs. `0px` (not `0`) so the
+     * fallback is a length `calc()`-compatible everywhere. */
+    .richtext:not(.richtext-fullscreen) > .richtext-toolbar {
       position: sticky;
-      top: var(--dry-topbar-height);
+      top: var(--dry-richtext-toolbar-top, 0px);
       z-index: 10;
     }
 

@@ -1,1 +1,163 @@
 @import "tailwindcss";
+
+/* ------------------------------------------------------------- CMS content
+ * Everything authored in the CMS's RichText field arrives on a page as a raw
+ * HTML string (`dangerouslySetInnerHTML` in `blogs/[slug]/page.tsx`,
+ * `about/page.tsx`) - plain `<h2>`/`<ul>`/`<blockquote>`/`<table>`/`<a>` tags
+ * with no classes on them, because the editor styles those from its own
+ * shadow-root stylesheet (`components/RichTextField/content-shadow-styles.ts`)
+ * which of course doesn't ship to the site. Tailwind's preflight then resets
+ * the browser defaults that markup was relying on - list markers, heading
+ * sizes, table borders, link underlines - so CMS content rendered flat and
+ * unstyled, nothing like what the editor showed while it was written.
+ *
+ * These rules are that missing stylesheet: same values as the editor's, so
+ * what an author sees in the field is what the page renders. Add
+ * `class="dry-richtext"` to any element a richtext value is injected into.
+ *
+ * In `@layer components` deliberately: Tailwind's layer order (theme, base,
+ * components, utilities) then puts these AFTER preflight - so they win the
+ * reset - but still BEFORE utilities, so a page can override any of it with
+ * an ordinary utility class on the container. */
+@layer components {
+  .dry-richtext h2 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.3;
+  }
+
+  .dry-richtext h3 {
+    font-size: 1.375rem;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  .dry-richtext h4 {
+    font-size: 1.1875rem;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  .dry-richtext h5 {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  .dry-richtext h6 {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.55;
+  }
+
+  .dry-richtext :is(h2, h3, h4, h5, h6) {
+    color: var(--color-slate-900);
+  }
+
+  .dry-richtext strong,
+  .dry-richtext b {
+    font-weight: 700;
+  }
+
+  .dry-richtext ul,
+  .dry-richtext ol {
+    padding-inline-start: 1.25rem;
+  }
+
+  .dry-richtext ul {
+    list-style: disc;
+  }
+
+  .dry-richtext ol {
+    list-style: decimal;
+  }
+
+  .dry-richtext li {
+    margin-block: 0.25rem;
+  }
+
+  /* Nested lists switch marker style the way a browser's own default would -
+   * preflight drops that distinction along with the markers themselves. */
+  .dry-richtext ul ul {
+    list-style: circle;
+  }
+
+  .dry-richtext ul ul ul {
+    list-style: square;
+  }
+
+  .dry-richtext blockquote {
+    padding-inline-start: 1rem;
+    border-inline-start: 2px solid var(--color-slate-300);
+    color: var(--color-slate-500);
+    font-style: italic;
+  }
+
+  .dry-richtext a {
+    color: var(--color-red-900);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* `table-layout: fixed` matches the editor: the exported `<colgroup>`
+   * carries the author's own column widths (schema.ts's `colgroupHtml`), and
+   * only a fixed layout actually honours them. */
+  .dry-richtext table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+  }
+
+  .dry-richtext :is(td, th) {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-slate-200);
+    vertical-align: top;
+  }
+
+  .dry-richtext th {
+    background-color: var(--color-slate-50);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .dry-richtext caption,
+  .dry-richtext figcaption {
+    color: var(--color-slate-500);
+    font-size: 0.875em;
+  }
+
+  /* Inline like the editor's own `.dry-tx-image` (preflight makes every
+   * `<img>` a block), so an image dropped mid-sentence still flows with the
+   * text around it. An image the author aligned carries its own
+   * `display: block` inline (schema.ts's `imageStyleString`), which wins over
+   * this - that IS the alignment.
+   *
+   * `!important` on the cap is not optional: a resized image exports
+   * `width: 537px; max-width: none` (the `none` is what lets it grow past the
+   * editor's own cap), and an inline declaration outranks any plain rule
+   * here, so a narrow viewport got a horizontally overflowing page. Capped,
+   * the exported `object-fit` keeps the ratio inside the clamped box instead
+   * of stretching (see `imageSizeAndFitStyleString`). */
+  .dry-richtext img {
+    display: inline;
+    max-width: 100% !important;
+  }
+
+  .dry-richtext figure {
+    max-width: 100%;
+  }
+
+  /* Grid layout (`richtext-grid` in the editor) travels as inline `style` on
+   * the elements themselves (`gridContainerStyleString`/`gridItemStyleString`),
+   * so the columns and spans already work here with no help. Only the two
+   * rules the editor's own stylesheet adds around them are missing - the
+   * block spacing, and the `min-width: 0` that lets a long word inside a cell
+   * wrap instead of widening its column past its share of the track. */
+  .dry-richtext .dry-tx-grid {
+    margin-block: 0.5rem;
+  }
+
+  .dry-richtext .dry-tx-grid-item {
+    min-width: 0;
+  }
+}

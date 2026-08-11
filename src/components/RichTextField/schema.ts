@@ -71,27 +71,46 @@ export function imageObjectFitFromElement(el: HTMLElement): ImageObjectFit {
 export type ImageAlign = "left" | "center" | "right";
 
 /** Inverse of `imageAlignStyleString` below - reads which layout (if any)
- * an `<img>`'s inline style currently encodes. `min-width: 100%` only ever
- * comes from the "center" encoding here (a plain unaligned image never sets
- * it), so it's an unambiguous marker even without checking `margin-inline`. */
+ * an `<img>` (or the `<figure>`/`dry-*` element wrapping one) currently
+ * encodes in its inline style. Auto inline margins are the current center
+ * marker (nothing else this schema exports sets them), and `min-width: 100%`
+ * is the legacy one: center used to export as `min-width: 100%;
+ * margin-inline: auto` on the `<img>` itself, which is exactly the bug
+ * `imageAlignStyleString` below now avoids - already-saved content still has
+ * to read back as centered, and re-exports in the current encoding on the
+ * next save. */
 export function parseImageAlign(el: HTMLElement): ImageAlign | null {
   if (el.style.float === "left" || el.style.float === "right") return el.style.float;
-  if (el.style.minWidth === "100%") return "center";
+  // The shorthand getter is only populated when both longhands agree, and
+  // `Array.from(el.style)` lists the longhands rather than the shorthand -
+  // check both so either spelling of the same declaration is recognized.
+  const autoMargins =
+    el.style.marginInline === "auto" ||
+    (el.style.marginInlineStart === "auto" && el.style.marginInlineEnd === "auto");
+  if (autoMargins || el.style.minWidth === "100%") return "center";
   return null;
 }
 
 /** The inline `style` for an image's align attr - `left`/`right` float it
  * (matching drystack's own `imageContainerAlignStyle`, physical rather than
- * logical directions since `float` itself already is), `center` stretches it
- * to the paragraph's full width via `min-width: 100%` (an `<img>` is a
- * replaced element, so `min-width` takes effect regardless of its default
- * inline display - no `display: block` needed) - `margin-inline: auto` is a
- * no-op once the image already fills the line, kept only for parity with
- * `image-view.ts`'s own wrapper-based centering. */
+ * logical directions since `float` itself already is), `center` centers the
+ * element in its container with auto inline margins.
+ *
+ * Center used to be `min-width: 100%; margin-inline: auto` instead, stretching
+ * the element to the paragraph's full width so the image inside it landed in
+ * the middle. On a bare `<img>` (the uncaptioned export, which has no wrapper
+ * to absorb that stretch - see `imageStyleString`) that inflates the image's
+ * OWN box: an image exported with `width: 537px; height: 302px` rendered
+ * 100%x302px, i.e. horizontally stretched and distorted, and an unsized one
+ * scaled up to the full column width. Auto margins center the element at its
+ * real size instead, in every case, and leave `<figure>`'s own `display:
+ * table` shrink-wrap intact (`min-width: 100%` made THAT full-width too, with
+ * the image sitting at its left edge - centering the wrapper but not the
+ * image). Verified in Chromium against both encodings. */
 export function imageAlignStyleString(align: ImageAlign | null): string {
   if (align === "left") return "float:left;margin-inline-end:1em;margin-block:0.5em";
   if (align === "right") return "float:right;margin-inline-start:1em;margin-block:0.5em";
-  if (align === "center") return "min-width:100%;margin-inline:auto";
+  if (align === "center") return "margin-inline:auto";
   return "";
 }
 
@@ -105,11 +124,26 @@ export function imageAlignStyleString(align: ImageAlign | null): string {
  * itself and align on the `<figure>` wrapping it, instead of both landing
  * on the same element the way the uncaptioned case does.
  *
- * `objectFit: null` (callers pass this whenever `node.attrs.lockAspectRatio`
- * is true) omits the declaration entirely rather than writing it out anyway:
- * a locked image's box is always in its own natural ratio, so `fill`/`cover`/
- * `contain` render identically either way - there's nothing for the attr to
- * *do* until the box can actually differ from that ratio (i.e. unlocked). */
+ * Written for every sized image, locked ratio included. It used to be
+ * skipped while `lockAspectRatio` was on - a locked box is always in the
+ * image's own natural ratio, so no `object-fit` value can look any different
+ * there - but that reasoning only holds inside this editor:
+ *
+ * - A consumer page routinely clamps CMS images (`.dry-richtext img` in
+ *   `apps/globals.css` caps them at the column width, and it has to, since
+ *   `max-width: none` above deliberately opts out of every non-`!important`
+ *   cap). The clamp shrinks the width while the exported `height` stays put,
+ *   so the box stops matching the natural ratio on a narrow viewport and a
+ *   missing `object-fit` renders the image stretched - the bug behind
+ *   maianhquyen.vn's own center-aligned images.
+ * - `lockAspectRatio` is editor-only state that resets to its default on
+ *   every reload (see the `image` node spec below), so an UNLOCKED image's
+ *   `object-fit` silently disappeared from the export on the first save after
+ *   a reload - the declaration was tied to a flag the saved HTML never
+ *   carried.
+ *
+ * `objectFit: null` still omits it, for callers with no fit concept at all
+ * (`dryInlineStyleString`). */
 export function imageSizeAndFitStyleString(
   width: number | null,
   height: number | null,
@@ -125,14 +159,26 @@ export function imageSizeAndFitStyleString(
 /** `imageSizeAndFitStyleString` + `imageAlignStyleString` combined onto one
  * element - this field's own uncaptioned `<img>` (both this schema's own
  * `toDOM` and `exportCleanHtml`'s bare-image case) has no wrapper to split
- * them across, unlike the captioned `<figure>` case. */
+ * them across, unlike the captioned `<figure>` case.
+ *
+ * `display: block` is what makes `imageAlignStyleString`'s auto margins
+ * actually center it: an `<img>` is inline by default, and auto inline
+ * margins on an inline box compute to `0`. The captioned case doesn't need
+ * (or want) this - its `<figure>` is already `display: table`, which is
+ * shrink-wrapped and honours auto margins on its own. */
 export function imageStyleString(
   width: number | null,
   height: number | null,
   align: ImageAlign | null,
   objectFit: ImageObjectFit | null,
 ): string {
-  return [imageSizeAndFitStyleString(width, height, objectFit), imageAlignStyleString(align)].filter(Boolean).join(";");
+  return [
+    imageSizeAndFitStyleString(width, height, objectFit),
+    align === "center" ? "display:block" : "",
+    imageAlignStyleString(align),
+  ]
+    .filter(Boolean)
+    .join(";");
 }
 
 const olDOM: DOMOutputSpec = ["ol", 0];
@@ -455,9 +501,19 @@ const tableNodeSpecs = tableNodes({
  * name, see their own doc comments) rather than re-deriving the same float/
  * margin/size rules. No `objectFit` equivalent exists for an arbitrary
  * component (that's a CSS property specific to replaced elements like
- * `<img>`), so that argument is always `null` here. */
+ * `<img>`), so that argument is always `null` here.
+ *
+ * `display: block` for center, same as `imageStyleString`'s own bare-`<img>`
+ * case and for the same reason - a `dry-*` custom element is an unknown
+ * element, so it's inline by default and would ignore the auto margins. */
 export function dryInlineStyleString(width: number | null, height: number | null, align: ImageAlign | null): string {
-  return [imageSizeAndFitStyleString(width, height, null), imageAlignStyleString(align)].filter(Boolean).join(";");
+  return [
+    imageSizeAndFitStyleString(width, height, null),
+    align === "center" ? "display:block" : "",
+    imageAlignStyleString(align),
+  ]
+    .filter(Boolean)
+    .join(";");
 }
 
 /** Inverse of `dryInlineStyleString` - reads width/height/align back off a
@@ -730,7 +786,7 @@ function buildSchema(components: DryComponentRecord[]): Schema {
           node.attrs.width as number | null,
           node.attrs.height as number | null,
           node.attrs.align as ImageAlign | null,
-          node.attrs.lockAspectRatio ? null : (node.attrs.objectFit as ImageObjectFit),
+          node.attrs.objectFit as ImageObjectFit,
         );
         return [
           "img",

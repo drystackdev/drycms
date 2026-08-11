@@ -132,10 +132,10 @@ function imageChildHtml(node: PMNode): string {
   const width = node.attrs.width as number | null;
   const height = node.attrs.height as number | null;
   const align = node.attrs.align as ImageAlign | null;
-  // Locked means the box is always in the image's own natural ratio, so
-  // object-fit can't have any visible effect - omit it (see
-  // `imageSizeAndFitStyleString`'s own doc comment in schema.ts).
-  const objectFit = node.attrs.lockAspectRatio ? null : (node.attrs.objectFit as ImageObjectFit);
+  // Written whether or not the ratio is locked in the editor - see
+  // `imageSizeAndFitStyleString`'s own doc comment in schema.ts for why that
+  // exception had to go.
+  const objectFit = node.attrs.objectFit as ImageObjectFit;
   const caption = node.attrs.caption as string;
   const src = escapeAttr(node.attrs.src as string);
   const alt = escapeAttr(node.attrs.alt as string);
@@ -165,7 +165,16 @@ function imageChildHtml(node: PMNode): string {
  * `schema.ts`'s own `buildDryNodeSpecs`) writes its real `block+` content
  * between the tags instead of leaving them empty - the light-DOM children a
  * browser projects into the component's own `<slot />` (`dry-component-
- * view.ts`), same idea as `exportGridHtml` writing a grid's own children. */
+ * view.ts`), same idea as `exportGridHtml` writing a grid's own children.
+ *
+ * A `block` component carries `display: block` explicitly. Nothing in HTML
+ * says a `dry-x` tag is a block: an unknown/custom element is `display:
+ * inline` until either its own `:host` rule or a page stylesheet says
+ * otherwise, so a block component dropped into a consumer page rendered
+ * inline - sharing a line with the text around it and collapsing its own
+ * height - and only jumped into place if and when its script upgraded the
+ * element. Writing it into the exported markup means the layout is right
+ * from first paint, before any component JS has loaded. */
 function dryComponentHtml(node: PMNode): string {
   const tag = `dry-${node.type.name.slice("dry_".length)}`;
   const attrs: Record<string, string> = { props: escapeAttr(JSON.stringify(node.attrs.props)) };
@@ -176,6 +185,8 @@ function dryComponentHtml(node: PMNode): string {
       node.attrs.align as ImageAlign | null,
     );
     if (style) attrs.style = escapeAttr(style);
+  } else {
+    attrs.style = "display:block";
   }
   const attrString = Object.entries(attrs)
     .map(([key, value]) => ` ${key}="${value}"`)
@@ -522,7 +533,12 @@ function imageNodeFromFigure(figure: Element): PMNode | null {
   const img = figure.querySelector("img");
   if (!img) return null;
   const caption = figure.querySelector("figcaption")?.textContent ?? "";
-  return schema.nodes.image!.create({ ...imageAttrsFromElement(img), caption });
+  // Align lives on the `<figure>` in this shape, not on the `<img>`
+  // (`imageChildHtml` splits them exactly that way) - reading it off the
+  // image alone, as this used to, silently dropped a captioned image's
+  // alignment on every import.
+  const align = parseImageAlign(figure as HTMLElement) ?? parseImageAlign(img);
+  return schema.nodes.image!.create({ ...imageAttrsFromElement(img), align, caption });
 }
 
 /** The marks an inline node inherits from the elements wrapping it - shared

@@ -191,13 +191,13 @@ export class ImageNodeView implements NodeView {
     this.img.style.height = height != null ? `${height}px` : "";
     this.img.style.maxWidth = width != null ? "none" : "";
     this.img.style.maxHeight = height != null ? "none" : "";
-    // Locked means width/height always move together in the image's own
-    // natural ratio, so object-fit can't have any visible effect there -
-    // same reasoning as `imageSizeAndFitStyleString` in schema.ts, which
-    // `html.ts`'s export shares this with (this node view has its own
-    // direct `.style` write instead, but the condition must stay identical).
-    const lockedRatio = !!this.node.attrs.lockAspectRatio;
-    this.img.style.objectFit = !lockedRatio && (width != null || height != null) ? (this.node.attrs.objectFit as ImageObjectFit) : "";
+    // Same condition as `imageSizeAndFitStyleString` in schema.ts, which
+    // `html.ts`'s export shares (this node view has its own direct `.style`
+    // write instead, but the two must stay identical): any sized image, lock
+    // or no lock - a locked box already matches the natural ratio, so writing
+    // it out changes nothing here and keeps editor and export in step.
+    const objectFit = this.node.attrs.objectFit as ImageObjectFit;
+    this.img.style.objectFit = objectFit && (width != null || height != null) ? objectFit : "";
     const caption = (this.node.attrs.caption as string) ?? "";
     this.captionEl.textContent = caption;
     if (caption) {
