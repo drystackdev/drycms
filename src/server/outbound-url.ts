@@ -61,6 +61,24 @@ export async function fetchNoRedirect(url: string, init: RequestInit = {}): Prom
   return response;
 }
 
+/** Like `fetchNoRedirect`, but follows exactly one redirect - common for a
+ * caller-supplied `http://` URL a host 301s to its own `https://` origin.
+ * Safe unlike a plain `redirect: "follow"`: the `Location` target goes back
+ * through `validateOutboundUrlForRequest` (the same check the original URL
+ * passed) before it's ever fetched, so a redirect can't be used to reach a
+ * private/local destination the caller couldn't have named directly. A
+ * second redirect (or a `Location`-less redirect response) still fails hard,
+ * via `fetchNoRedirect`'s own check on the second hop. */
+export async function fetchAllowingOneRedirect(url: string, init: RequestInit = {}, label = "URL"): Promise<Response> {
+  const response = await fetch(url, { ...init, redirect: "manual" });
+  const isRedirect = response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400);
+  if (!isRedirect) return response;
+  const location = response.headers.get("location");
+  if (!location) throw new Error("Server refused to follow a redirect from the upstream URL.");
+  const target = await validateOutboundUrlForRequest(new URL(location, url).toString(), label);
+  return fetchNoRedirect(target, init);
+}
+
 function isPrivateIpv4(hostname: string): boolean {
   if (/^\d+$/.test(hostname)) return true;
   const parts = hostname.split(".");

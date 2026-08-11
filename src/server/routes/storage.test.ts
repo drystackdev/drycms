@@ -268,6 +268,54 @@ describe("POST /dry/api/storage/[...slug] (remote image import)", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("follows a single http->https redirect, re-validating the target", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("http://")) {
+        return new Response(null, { status: 301, headers: { location: url.replace("http://", "https://") } });
+      }
+      return new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "content-type": "image/jpeg", "content-length": "3" },
+      });
+    }) as typeof fetch;
+    try {
+      await mkdir("redirected");
+      const response = await POST(context({
+        slug: "redirected",
+        method: "POST",
+        ...jsonBody({ action: "import-url", url: "http://93.184.216.34/photo.jpg" }),
+      }));
+      expect(response.status).toBe(201);
+      expect((await response.json()).entry).toMatchObject({ id: "redirected/photo.jpg" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("still refuses a second redirect", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response(null, {
+      status: 301,
+      headers: { location: "https://93.184.216.34/other.jpg" },
+    })) as typeof fetch;
+    try {
+      await mkdir("double-redirect");
+      const response = await POST(context({
+        slug: "double-redirect",
+        method: "POST",
+        ...jsonBody({ action: "import-url", url: "http://93.184.216.34/photo.jpg" }),
+      }));
+      expect(response.status).toBe(501);
+      const body = (await response.json()) as { error: string; message: string };
+      expect(body.error).toBe("unsupported");
+      expect(body.message).toMatch(/redirect/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe("PUT /dry/api/storage/[...slug]", () => {
