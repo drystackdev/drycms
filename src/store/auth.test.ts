@@ -38,16 +38,49 @@ class FakeLocalStorage {
  * navigator` is `false`), so `refreshExpiredSession()` falls back to running
  * unlocked - fine for the single-caller tests below, but it would hide the
  * exact race `refreshExpiredSession()` exists to close. This stand-in only
- * needs to chain callbacks in call order, same as the real exclusive lock. */
+ * needs to chain callbacks in call order, same as the real exclusive lock -
+ * plus the `{ signal }` overload and its abort-while-queued rejection, which
+ * is how the caller stops waiting on a lock nobody is releasing. */
+interface FakeLockOptions {
+  signal?: AbortSignal;
+}
 class FakeLockManager {
   private queue: Promise<unknown> = Promise.resolve();
   reset(): void {
     this.queue = Promise.resolve();
   }
-  request<T>(_name: string, callback: () => Promise<T>): Promise<T> {
-    const run = this.queue.then(callback);
+  /** Blocks every later `request()` behind a lock that is never released -
+   * a tab that wedged mid-refresh, or one the browser froze while holding
+   * it. */
+  blockForever(): void {
+    this.queue = new Promise(() => {});
+  }
+  request<T>(
+    _name: string,
+    optionsOrCallback: FakeLockOptions | (() => Promise<T>),
+    maybeCallback?: () => Promise<T>,
+  ): Promise<T> {
+    const callback = (typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback)!;
+    const signal = typeof optionsOrCallback === "function" ? undefined : optionsOrCallback.signal;
+    let started = false;
+    const run = this.queue.then(() => {
+      started = true;
+      return callback();
+    });
     this.queue = run.then(() => undefined, () => undefined);
-    return run;
+    if (!signal) return run;
+    // Aborting only counts while still queued - once the callback is running,
+    // the lock is held and the signal is ignored (same as the real API).
+    return Promise.race([
+      run,
+      new Promise<T>((_resolve, reject) => {
+        const onAbort = () => {
+          if (!started) reject(Object.assign(new Error("Lock request aborted."), { name: "AbortError" }));
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
   }
 }
 
@@ -148,6 +181,44 @@ describe("session refresh", () => {
     expect(calls.filter((url) => url.endsWith("/api/auth/session"))).toHaveLength(1);
     expect(first).toEqual(USER);
     expect(second).toEqual(USER);
+  });
+
+  it("refreshes unlocked rather than hanging when a sibling tab's lock is never released", async () => {
+    // The production freeze on 2026-08-12: one wedged refresh kept the Web
+    // Lock, so every 401-triggered retry queued behind it forever -
+    // `csrf-fetch.ts` awaits this before retrying, and shares that one
+    // promise across requests, so the whole admin sat on spinners with no
+    // error until the page was reloaded.
+    fakeDocument.cookie = "drycms_csrf=abc";
+    fakeLockManager.blockForever();
+    const fetchMock = stubFetchOnce([{ url: "/api/auth/refresh", ok: true, body: { user: USER } }]);
+    vi.useFakeTimers();
+    try {
+      const pending = refreshExpiredSession();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await pending).toEqual(USER);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up on a refresh request that never comes back, instead of blocking every 401'd request behind it", async () => {
+    fakeDocument.cookie = "drycms_csrf=abc";
+    vi.stubGlobal("fetch", vi.fn((_input: string | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      // A request that hangs until its own abort signal fires - exactly what
+      // an unresponsive `/api/auth/refresh` looked like from the browser.
+      init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+    })));
+    vi.useFakeTimers();
+    try {
+      const pending = refreshExpiredSession();
+      await vi.advanceTimersByTimeAsync(20_000);
+      // `null`, not a rejection: the caller's own 401 is what should surface.
+      await expect(pending).resolves.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("login()/logout() still set authState directly, unaffected by the refresh path", async () => {

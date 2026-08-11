@@ -61,6 +61,45 @@ const moduleStore = !kv || (kv.kind !== "D1" && kv.kind !== "KV")
   : undefined;
 const requestStores = new WeakMap<object, KeyValueStore>();
 const refreshLocks = new Map<string, Promise<void>>();
+/** How long a rotation will wait for the previous one on the same token
+ * before going ahead anyway - see `awaitPreviousLock`. Comfortably above a
+ * real rotation's cost (~3s at the worst observed on Workers/KV), so this
+ * only ever fires for a lock that is never coming back. */
+const REFRESH_LOCK_WAIT_MS = 10_000;
+
+/**
+ * Waits for the previous holder of a lock, but NEVER forever.
+ *
+ * These locks chain one request's promise into the next request's `await`,
+ * and the release only happens in the holder's own `finally`. On Workers a
+ * request that goes away mid-flight (the admin reloads the page, or the
+ * client aborts the fetch) has its pending I/O canceled: the `try` body
+ * never settles, so that `finally` never runs and the promise is never
+ * resolved OR rejected. Every later request for the same key then awaits a
+ * promise that can't complete - hanging with no response, no error and no
+ * `wrangler tail` event (an invocation is only logged once it ends), for the
+ * whole life of the isolate. That is exactly what took `/dry/api/auth/refresh`
+ * down in production on 2026-08-12, and with it the admin UI: the browser
+ * holds a Web Lock across its refresh (`store/auth.ts`), so one wedged
+ * rotation left every 401-retry in every tab spinning silently.
+ *
+ * Timing out here costs one slow request and then heals the chain: the
+ * waiter has already installed ITS own promise as the current lock, and it
+ * does release that one.
+ */
+async function awaitPreviousLock(previous: Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      previous,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 function storeFor(env: Record<string, unknown>): KeyValueStore {
   if (moduleStore) return moduleStore;
@@ -172,7 +211,7 @@ export async function rotateAuthSession(refreshToken: string, env: Record<string
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
   refreshLocks.set(tokenHash, current);
-  await previous;
+  await awaitPreviousLock(previous, REFRESH_LOCK_WAIT_MS);
   try {
     const store = storeFor(env);
     // Consuming the refresh index makes rotation single-use across processes

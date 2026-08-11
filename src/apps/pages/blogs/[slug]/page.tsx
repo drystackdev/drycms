@@ -83,9 +83,18 @@ export default async function BlogDetailPage({
       {/* `content` is a `richtext` field - HTML authored through the CMS's own
           RichText editor by an authenticated, permissioned admin, not public
           input, so rendering it directly is the same trust boundary every
-          other admin-authored field on this page already crosses. */}
+          other admin-authored field on this page already crosses.
+
+          `[&_img]:max-w-full!` keeps every image in that HTML inside the
+          column, however it was sized in the editor. The `!` isn't optional:
+          a resized image exports an inline `style="width:640px;max-width:none"`
+          (`schema.ts`'s `imageSizeAndFitStyleString`), and an inline
+          declaration outranks any class-based rule without it. Captioned
+          images keep their size on the `<img>` too - the `<figure>` around
+          them is `display:table`, so it shrink-wraps to whatever the image
+          ends up at. */}
       <div
-        class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base"
+        class="mt-8 space-y-4 text-sm leading-relaxed text-slate-700 sm:text-base [&_img]:max-w-full!"
         dangerouslySetInnerHTML={{ __html: post.content }}
       />
 

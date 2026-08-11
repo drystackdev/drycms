@@ -82,11 +82,39 @@ async function fetchCurrentUser(): Promise<AuthUser | null> {
   return body.user ?? null;
 }
 
+/** Hard ceiling on a single refresh round trip. A refresh that never comes
+ * back used to freeze the whole admin silently: `csrf-fetch.ts` awaits this
+ * before retrying the 401'd request, and shares that one promise with every
+ * other request that 401s, so nothing in the UI ever resolved or errored -
+ * just spinners (production, 2026-08-12). Giving up returns `null`, which
+ * surfaces the original 401 to the caller instead. */
+const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
+/** How long to wait for a sibling tab's refresh lock before refreshing
+ * without it (see `refreshExpiredSession`). */
+const REFRESH_LOCK_WAIT_MS = 12_000;
+
+function timeoutSignal(ms: number): { signal: AbortSignal; done: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return { signal: controller.signal, done: () => clearTimeout(timer) };
+}
+
 async function rotateRefreshToken(): Promise<AuthUser | null> {
-  const res = await fetch(`${path}/api/auth/refresh`, { method: "POST" });
-  if (!res.ok) return null;
-  const body = await res.json();
-  return body.user ?? null;
+  const { signal, done } = timeoutSignal(REFRESH_REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${path}/api/auth/refresh`, { method: "POST", signal });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.user ?? null;
+  } catch {
+    // Aborted by the timeout above, or a genuine network failure - either way
+    // this refresh didn't happen. Never rethrow: every caller treats `null`
+    // as "still signed out", and a throw here would reject the API request
+    // that triggered it with a confusing error instead of its own 401.
+    return null;
+  } finally {
+    done();
+  }
 }
 
 /**
@@ -137,7 +165,22 @@ export async function refreshExpiredSession(): Promise<AuthUser | null> {
     return user;
   };
   if (typeof navigator === "undefined" || !("locks" in navigator)) return rotate();
-  return navigator.locks.request(REFRESH_LOCK_NAME, rotate);
+  // Bounded, because a Web Lock is only released when its holder finishes or
+  // its page goes away - and a tab whose refresh wedged (or that the browser
+  // froze in the background) does neither. Waiting unbounded there means
+  // every 401 in THIS tab hangs behind it with no error, which is how the
+  // whole admin appeared to freeze in production (2026-08-12). Falling back
+  // to an unlocked rotate after the wait restores only the small cross-tab
+  // race this lock exists to close, and only in that already-degraded case.
+  const { signal, done } = timeoutSignal(REFRESH_LOCK_WAIT_MS);
+  try {
+    return await navigator.locks.request(REFRESH_LOCK_NAME, { signal }, rotate);
+  } catch (error) {
+    if ((error as { name?: string } | null)?.name !== "AbortError") throw error;
+    return rotate();
+  } finally {
+    done();
+  }
 }
 
 /** Reads `GET /api/auth/session` and sets `authState` accordingly - the one

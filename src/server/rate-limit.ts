@@ -13,13 +13,25 @@ interface Counter {
 }
 
 const locks = new Map<string, Promise<void>>();
+/** Same "never wait forever on another request's promise" rule as
+ * `auth-security.ts`'s `awaitPreviousLock` - see that function for why a
+ * canceled request can leave one of these permanently unresolved. Shorter
+ * budget than the refresh lock: this only serializes a counter read/write,
+ * and letting two logins share a window is a far smaller problem than
+ * wedging the login route. */
+const LOCK_WAIT_MS = 3_000;
 
 async function withLock<T>(key: string, work: () => Promise<T>): Promise<T> {
   const previous = locks.get(key) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
   locks.set(key, current);
-  await previous;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([previous, new Promise<void>((resolve) => { timer = setTimeout(resolve, LOCK_WAIT_MS); })]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
   try {
     return await work();
   } finally {

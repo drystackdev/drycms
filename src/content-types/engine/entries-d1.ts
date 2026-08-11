@@ -213,9 +213,25 @@ function assertValid(nodes: EntryFieldNode[], value: EntryValue): void {
   }
 }
 
-/** See `ensureVersionsTable` below - module-scoped so the memo survives the
- * per-request adapter `content-adapters.ts` builds. */
-const versionsTableByBinding = new WeakMap<D1Database, Promise<void>>();
+/** Bindings whose `_versions` table is CONFIRMED to exist, in this isolate -
+ * see `ensureVersionsTable` below. Module-scoped so the memo survives the
+ * per-request adapter `content-adapters.ts` builds.
+ *
+ * A set of FINISHED work, deliberately not a `WeakMap<D1Database,
+ * Promise<void>>` (what this was until it took production down): a promise
+ * created inside one request's I/O context and awaited by a LATER request is
+ * the classic workerd hang. When the request that started it goes away -
+ * and the admin SPA cancels in-flight fetches all the time via `useFetch`'s
+ * `AbortSignal` - workerd cancels its pending I/O, so that promise never
+ * settles and never rejects. Every later request in the same isolate then
+ * awaits it forever: no response, no error, no `wrangler tail` event (an
+ * invocation only logs when it ends), until the isolate is recycled. The
+ * eviction-on-reject below only ever covered the rejection case, which is
+ * not the one that happens.
+ *
+ * Re-running an idempotent `CREATE TABLE IF NOT EXISTS` on the rare request
+ * that races the first one is the whole cost of not risking that. */
+const versionsTableReady = new WeakSet<D1Database>();
 
 /** D1 counterpart to `entries-sqlite.ts` - see that file's doc comments for
  * the shared algorithm (child-table population/write/delete, unique-violation
@@ -239,26 +255,23 @@ export function createD1ContentEntryEngineAdapter(
   // Same `_versions` table/shape as `entries-sqlite.ts`, bootstrapped lazily
   // on first use rather than eagerly (mirrors `d1.ts`'s own
   // `ensureBootstrap`, since a D1 binding is only resolvable per-request) -
-  // and memoized against the BINDING, not this adapter, for the same reason
-  // `d1.ts`'s `bootstrapByBinding` is (a per-adapter memo means one wasted
-  // CREATE TABLE per request; see `status/worker-request-cost.md`).
+  // and remembered against the BINDING, not this adapter, for the same reason
+  // `d1.ts`'s own memo is (a per-adapter memo means one wasted CREATE TABLE
+  // per request; see `status/worker-request-cost.md`). Only the COMPLETED
+  // statement is remembered, never the in-flight promise - see
+  // `versionsTableReady` above for what that cost us.
   async function ensureVersionsTable(): Promise<void> {
-    let bootstrapped = versionsTableByBinding.get(db);
-    if (!bootstrapped) {
-      bootstrapped = db
-        .prepare(
-          `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
-            `  "resource" TEXT PRIMARY KEY,\n` +
-            `  "version" INTEGER NOT NULL,\n` +
-            `  "updated_at" INTEGER NOT NULL\n` +
-            `);`,
-        )
-        .run()
-        .then(() => undefined);
-      versionsTableByBinding.set(db, bootstrapped);
-      bootstrapped.catch(() => versionsTableByBinding.delete(db));
-    }
-    return bootstrapped;
+    if (versionsTableReady.has(db)) return;
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS "_versions" (\n` +
+          `  "resource" TEXT PRIMARY KEY,\n` +
+          `  "version" INTEGER NOT NULL,\n` +
+          `  "updated_at" INTEGER NOT NULL\n` +
+          `);`,
+      )
+      .run();
+    versionsTableReady.add(db);
   }
 
   /** `resource`'s current data version (see `status/build-cache.md`) - `0`
