@@ -165,8 +165,18 @@ export function createR2StorageAdapter(bucket: R2BucketLike, prefix: string): St
   async function read(relPath: string): Promise<StorageReadResult> {
     const object = await bucket.get(fileKey(relPath));
     if (!object) throw new StorageError("not_found", `"${relPath}" does not exist.`);
+    // Both shapes of the SAME body (see `StorageReadResult.webStream`), and
+    // `stream` is a getter on purpose: `Readable.fromWeb` locks the web
+    // stream the moment it runs, which would leave `webStream` unusable for
+    // the response. Converting only happens if a caller actually asks for
+    // the Node shape.
+    const body = object.body as unknown as ReadableStream;
+    let nodeStream: Readable | undefined;
     return {
-      stream: Readable.fromWeb(object.body as unknown as NodeWebReadableStream),
+      get stream(): Readable {
+        return (nodeStream ??= Readable.fromWeb(body as unknown as NodeWebReadableStream));
+      },
+      webStream: body,
       size: object.size,
       modifiedAt: object.uploaded.toISOString(),
     };

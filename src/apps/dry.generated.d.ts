@@ -50,19 +50,6 @@ export interface Role {
   user?: number[]; // relationmirror -> user, read-only
 }
 
-export interface Redirect {
-  id: number;
-  from: string;
-  to: string;
-}
-
-export interface Memory {
-  id: number;
-  user: number | null; // relation -> user
-  data?: string;
-  version: number;
-}
-
 export interface Blog {
   id: number;
   category?: number | null; // relation -> category
@@ -82,27 +69,17 @@ export interface Category {
   blog?: number[]; // relationmirror -> blog, read-only
 }
 
-export interface SeoDefaults {
+export interface Redirect {
   id: number;
-  seo: Seo;
+  from: string;
+  to: string;
 }
 
-export interface SystemSettings {
+export interface Memory {
   id: number;
+  user: number | null; // relation -> user
   data?: string;
-}
-
-export interface GoogleVerification {
-  id: number;
-  name: string;
-  content: string;
-}
-
-export interface GithubSync {
-  id: number;
-  enabled?: boolean;
-  repo: string;
-  branch: string;
+  version: number;
 }
 
 export interface Homepage {
@@ -150,11 +127,27 @@ export interface SiteSettings {
   copyrightText?: string;
 }
 
+export interface SeoDefaults {
+  id: number;
+  seo: Seo;
+}
+
 export interface BlogsPage {
   id: number;
   header: BlogsHeader;
   bottomCta: BottomCta;
   seo: Seo;
+}
+
+export interface SystemSettings {
+  id: number;
+  data?: string;
+}
+
+export interface GoogleVerification {
+  id: number;
+  name: string;
+  content: string;
 }
 
 export interface MenuItem {
@@ -167,7 +160,6 @@ export interface Seo {
   metaTitle?: string;
   description?: string;
   image?: string;
-  noIndex?: boolean;
 }
 
 export interface HeroSection {
@@ -282,12 +274,6 @@ export interface RoleRelations {
   user: User[];
 }
 
-export interface RedirectRelations {}
-
-export interface MemoryRelations {
-  user: User | null;
-}
-
 export interface BlogRelations {
   category: Category | null;
 }
@@ -296,13 +282,11 @@ export interface CategoryRelations {
   blog: Blog[];
 }
 
-export interface SeoDefaultsRelations {}
+export interface RedirectRelations {}
 
-export interface SystemSettingsRelations {}
-
-export interface GoogleVerificationRelations {}
-
-export interface GithubSyncRelations {}
+export interface MemoryRelations {
+  user: User | null;
+}
 
 export interface HomepageRelations {}
 
@@ -312,32 +296,37 @@ export interface ContactRelations {}
 
 export interface SiteSettingsRelations {}
 
+export interface SeoDefaultsRelations {}
+
 export interface BlogsPageRelations {}
 
-export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "redirect" | "memory" | "blog" | "category";
-export type DrySingletonName = "seoDefaults" | "systemSettings" | "googleVerification" | "githubSync" | "homepage" | "about" | "contact" | "siteSettings" | "blogsPage";
+export interface SystemSettingsRelations {}
+
+export interface GoogleVerificationRelations {}
+
+export type DryCollectionName = "user" | "menu" | "aiKey" | "role" | "blog" | "category" | "redirect" | "memory";
+export type DrySingletonName = "homepage" | "about" | "contact" | "siteSettings" | "seoDefaults" | "blogsPage" | "systemSettings" | "googleVerification";
 
 export interface DryCollectionMap {
   "user": User;
   "menu": Menu;
   "aiKey": AiKey;
   "role": Role;
-  "redirect": Redirect;
-  "memory": Memory;
   "blog": Blog;
   "category": Category;
+  "redirect": Redirect;
+  "memory": Memory;
 }
 
 export interface DrySingletonMap {
-  "seoDefaults": SeoDefaults;
-  "systemSettings": SystemSettings;
-  "googleVerification": GoogleVerification;
-  "githubSync": GithubSync;
   "homepage": Homepage;
   "about": About;
   "contact": Contact;
   "siteSettings": SiteSettings;
+  "seoDefaults": SeoDefaults;
   "blogsPage": BlogsPage;
+  "systemSettings": SystemSettings;
+  "googleVerification": GoogleVerification;
 }
 
 export interface DryCollectionRelationsMap {
@@ -345,22 +334,21 @@ export interface DryCollectionRelationsMap {
   "menu": MenuRelations;
   "aiKey": AiKeyRelations;
   "role": RoleRelations;
-  "redirect": RedirectRelations;
-  "memory": MemoryRelations;
   "blog": BlogRelations;
   "category": CategoryRelations;
+  "redirect": RedirectRelations;
+  "memory": MemoryRelations;
 }
 
 export interface DrySingletonRelationsMap {
-  "seoDefaults": SeoDefaultsRelations;
-  "systemSettings": SystemSettingsRelations;
-  "googleVerification": GoogleVerificationRelations;
-  "githubSync": GithubSyncRelations;
   "homepage": HomepageRelations;
   "about": AboutRelations;
   "contact": ContactRelations;
   "siteSettings": SiteSettingsRelations;
+  "seoDefaults": SeoDefaultsRelations;
   "blogsPage": BlogsPageRelations;
+  "systemSettings": SystemSettingsRelations;
+  "googleVerification": GoogleVerificationRelations;
 }
 
 declare global {

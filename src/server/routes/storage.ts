@@ -103,7 +103,10 @@ export const GET: DryRouteHandler = async (context) => {
       });
     }
 
-    return new Response(Readable.toWeb(file.stream) as unknown as ReadableStream, {
+    // Prefer the backend's own web stream (R2) - converting a Node stream
+    // back to a web one costs a copy per chunk AND breaks on client cancel
+    // under `nodejs_compat` (see `StorageReadResult.webStream`).
+    return new Response(file.webStream ?? (Readable.toWeb(file.stream) as unknown as ReadableStream), {
       status: 200,
       headers: {
         // SVG is not accepted for new generic uploads. Legacy files are

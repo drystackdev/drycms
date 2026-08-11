@@ -1,5 +1,5 @@
 const { path } = window.__DRY_CONFIG__;
-import { refreshExpiredSession } from "../../store/auth.js";
+import { markSessionExpired, refreshExpiredSession } from "../../store/auth.js";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 let installed = false;
@@ -53,11 +53,18 @@ export function installCsrfFetch(): void {
     const securedRequest = new Request(request, { headers });
     let response = await originalFetch(securedRequest.clone());
 
-    if (response.status === 401 && !isAuthEndpoint(url.pathname) && await refreshOnce()) {
-      const retryHeaders = new Headers(securedRequest.headers);
-      const retryCsrf = csrfToken();
-      if (retryCsrf && MUTATING_METHODS.has(method)) retryHeaders.set("X-CSRF-Token", retryCsrf);
-      response = await originalFetch(new Request(securedRequest, { headers: retryHeaders }));
+    if (response.status === 401 && !isAuthEndpoint(url.pathname)) {
+      if (await refreshOnce()) {
+        const retryHeaders = new Headers(securedRequest.headers);
+        const retryCsrf = csrfToken();
+        if (retryCsrf && MUTATING_METHODS.has(method)) retryHeaders.set("X-CSRF-Token", retryCsrf);
+        response = await originalFetch(new Request(securedRequest, { headers: retryHeaders }));
+      } else {
+        // The refresh couldn't rescue this one - say so instead of handing
+        // the 401 back to a caller that will silently swallow it and leave
+        // its spinner up forever (`markSessionExpired`'s doc comment).
+        markSessionExpired();
+      }
     }
     return response;
   };
