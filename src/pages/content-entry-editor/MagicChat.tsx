@@ -11,7 +11,7 @@ import {
   PlusIcon,
   XIcon,
 } from "../../components/icons/index.js";
-import FileManager from "../../components/FileManager/FileManager.js";
+import EntryScopedPicker from "../../components/FileManager/EntryScopedPicker.js";
 import { optimizeUploadImage } from "../../components/FileManager/file-manager-image-optimize.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
@@ -40,6 +40,7 @@ import {
 } from "../../content-types/ai-magic-write-fields.js";
 import { sanitizeAiRichTextHtml } from "../../content-types/ai-richtext-sanitize.js";
 import { scrollToField } from "./field-events.js";
+import { useEntryMediaSource } from "./entry-media-context.js";
 
 const { path } = window.__DRY_CONFIG__;
 
@@ -285,6 +286,11 @@ export default function MagicChat({
   const fieldLabel = (name: string) =>
     writableNodes.find((candidate) => candidate.fieldName === name)?.label ??
     name;
+
+  // The same entry-scoped view of Media the entry's own image/file fields
+  // get (`ScalarField.tsx`) - both the attach picker's "Entry" tab and the
+  // folder the model is told about below come from it.
+  const entrySource = useEntryMediaSource(source);
 
   const widgetRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -1103,6 +1109,7 @@ export default function MagicChat({
 
       <MagicChatImagePicker
         source={source}
+        entrySource={entrySource}
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onAttach={(picked) =>
@@ -1253,18 +1260,22 @@ function MagicChatBubbleView({
   );
 }
 
-/** A trimmed picker for attaching images to one chat turn - single (File)
- * tab of `ImageField.tsx`'s own picker dialog, reusing the same
- * `.image-picker-dialog` CSS and `FileManager` it's built on rather than the
- * full field (which also renders a persistent 4:3 frame/reorderable list
- * that doesn't fit an ephemeral chat attachment). */
+/** A trimmed picker for attaching images to one chat turn - the Entry/File
+ * tabs of `ImageField.tsx`'s own picker dialog (via the shared
+ * `EntryScopedPicker`, minus its Link tab: an external URL is a path the
+ * server can't `storage.stat()`, so it could never be attached anyway),
+ * reusing the same `.image-picker-dialog` CSS and `FileManager` it's built
+ * on rather than the full field (which also renders a persistent 4:3 frame/
+ * reorderable list that doesn't fit an ephemeral chat attachment). */
 function MagicChatImagePicker({
   source,
+  entrySource,
   open,
   onClose,
   onAttach,
 }: {
   source: FileManagerSource;
+  entrySource?: FileManagerSource;
   open: boolean;
   onClose: () => void;
   onAttach: (paths: string[]) => void;
@@ -1289,8 +1300,9 @@ function MagicChatImagePicker({
             <h3>Attach images</h3>
           </header>
           <div class="image-picker-body" ref={bodyRef}>
-            <FileManager
-              source={source}
+            <EntryScopedPicker
+              fullSource={source}
+              entrySource={entrySource}
               value={picked}
               onChange={(next) =>
                 setPicked(Array.isArray(next) ? next : [next])

@@ -25,50 +25,69 @@ describe("scopeFileSource", () => {
 
     const scoped = scopeFileSource(delegate, ".tmp.blog.admin");
     expect(await scoped.listAll?.()).toEqual([
-      expect.objectContaining({ id: "pasted.jpg", parentId: null, name: "pasted.jpg" }),
+      expect.objectContaining({ id: ".tmp.blog.admin/pasted.jpg", parentId: null, name: "pasted.jpg" }),
     ]);
   });
-  it("list(null) shows only the scoped folder's immediate children, with prefix stripped", async () => {
+  it("list(null) shows only the scoped folder's immediate children, re-rooted but with absolute ids", async () => {
     const scoped = scopeFileSource(createMemoryFileSource(seed), "entry/blog-1");
     const entries = await scoped.list(null);
-    expect(entries.map((e) => e.id).sort()).toEqual(["hero.jpg", "sub"]);
+    // Ids stay storage-absolute - that's what a picked value gets stored as.
+    expect(entries.map((e) => e.id).sort()).toEqual(["entry/blog-1/hero.jpg", "entry/blog-1/sub"]);
+    // Only `parentId` is re-rooted, so `FileManager` treats the scope as root.
     expect(entries.every((e) => e.parentId === null)).toBe(true);
   });
 
-  it("list(folderId) descends into a subfolder using the scoped (relative) id", async () => {
+  it("list(folderId) descends into a subfolder using its absolute id", async () => {
     const scoped = scopeFileSource(createMemoryFileSource(seed), "entry/blog-1");
-    const entries = await scoped.list("sub");
-    expect(entries).toEqual([expect.objectContaining({ id: "sub/x.png", parentId: "sub" })]);
+    const entries = await scoped.list("entry/blog-1/sub");
+    expect(entries).toEqual([
+      expect.objectContaining({ id: "entry/blog-1/sub/x.png", parentId: "entry/blog-1/sub" }),
+    ]);
   });
 
-  it("listAll returns only descendants of the scoped folder, remapped", async () => {
+  it("still accepts a relative id, for a value stored before ids went absolute", async () => {
+    const scoped = scopeFileSource(createMemoryFileSource(seed), "entry/blog-1");
+    const entries = await scoped.list("sub");
+    expect(entries).toEqual([expect.objectContaining({ id: "entry/blog-1/sub/x.png" })]);
+  });
+
+  it("listAll returns only descendants of the scoped folder, re-rooted", async () => {
     const scoped = scopeFileSource(createMemoryFileSource(seed), "entry/blog-1");
     const all = (await scoped.listAll!())!;
-    expect(all.map((e) => e.id).sort()).toEqual(["hero.jpg", "sub", "sub/x.png"]);
+    expect(all.map((e) => e.id).sort()).toEqual([
+      "entry/blog-1/hero.jpg",
+      "entry/blog-1/sub",
+      "entry/blog-1/sub/x.png",
+    ]);
+    expect(all.find((e) => e.id === "entry/blog-1/hero.jpg")?.parentId).toBe(null);
     // Nothing from the sibling "blog-2" folder or the storage root ever leaks through.
     expect(all.some((e) => e.id.includes("blog-2") || e.id === "readme.txt")).toBe(false);
   });
 
-  it("mutating operations translate ids to/from the scoped prefix", async () => {
+  it("exposes its scope root, so a picker can tell an entry-folder id apart", async () => {
+    expect(scopeFileSource(createMemoryFileSource(seed), "entry/blog-1").scopeRoot).toBe("entry/blog-1");
+  });
+
+  it("mutating operations resolve ids against the scoped prefix", async () => {
     const delegate = createMemoryFileSource(seed);
     const scoped = scopeFileSource(delegate, "entry/blog-1");
 
     const created = await scoped.createFolder!(null, "photos");
-    expect(created.id).toBe("photos");
+    expect(created.id).toBe("entry/blog-1/photos");
     expect(await delegate.list("entry/blog-1")).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "entry/blog-1/photos" })]),
     );
 
     const uploaded = await scoped.upload!(null, [new File(["x"], "cover.jpg", { type: "image/jpeg" })]);
-    expect(uploaded[0]?.id).toBe("cover.jpg");
+    expect(uploaded[0]?.id).toBe("entry/blog-1/cover.jpg");
     expect(await delegate.list("entry/blog-1")).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "entry/blog-1/cover.jpg" })]),
     );
 
-    const renamed = await scoped.rename!("cover.jpg", "banner.jpg");
-    expect(renamed.id).toBe("banner.jpg");
+    const renamed = await scoped.rename!("entry/blog-1/cover.jpg", "banner.jpg");
+    expect(renamed.id).toBe("entry/blog-1/banner.jpg");
 
-    await scoped.remove!(["banner.jpg"]);
+    await scoped.remove!(["entry/blog-1/banner.jpg"]);
     expect(await delegate.list("entry/blog-1")).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "banner.jpg" })]),
     );
@@ -121,7 +140,7 @@ describe("scopeFileSource", () => {
     const uploaded = await scoped.upload!(null, [new File(["x"], "cover.jpg", { type: "image/jpeg" })]);
 
     expect(created).toEqual([".tmp.blog.person-example-com"]);
-    expect(uploaded[0]?.id).toBe("cover.jpg");
+    expect(uploaded[0]?.id).toBe(".tmp.blog.person-example-com/cover.jpg");
   });
 
   it("upload into a real (non-root) missing subfolder still propagates without retrying", async () => {

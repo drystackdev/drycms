@@ -1,21 +1,42 @@
 import type { FileEntry, FileManagerSource } from "./entry-types.js";
 
+function isInScope(prefix: string, id: string): boolean {
+  return id === prefix || id.startsWith(`${prefix}/`);
+}
+
+/** Whether `id` belongs to `source`'s sandbox - i.e. whether a picked value
+ * is one of the current entry's own media files. `false` for any unscoped
+ * source (`scopeRoot` unset), so callers can pass whatever they have. */
+export function isInScopeOf(source: FileManagerSource | undefined, id: string): boolean {
+  return !!source?.scopeRoot && isInScope(source.scopeRoot, id);
+}
+
+/** `null` (the scoped root) becomes `prefix`; anything else is already an
+ * absolute id (that's what this source hands out - see `remapEntry`) and is
+ * returned untouched. Ids that somehow arrive relative are still prefixed, so
+ * a caller holding an id from before this file kept them absolute - a saved
+ * field value, say - keeps resolving. */
 function toAbsoluteId(prefix: string, id: string | null): string {
-  return id ? `${prefix}/${id}` : prefix;
+  if (!id) return prefix;
+  return isInScope(prefix, id) ? id : `${prefix}/${id}`;
 }
 
-function toScopedId(prefix: string, absoluteId: string): string {
-  if (absoluteId === prefix) return "";
-  return absoluteId.startsWith(`${prefix}/`) ? absoluteId.slice(prefix.length + 1) : absoluteId;
-}
-
-function toScopedParentId(prefix: string, absoluteParentId: string | null): string | null {
-  if (absoluteParentId === null || absoluteParentId === prefix) return null;
-  return toScopedId(prefix, absoluteParentId);
-}
-
+/**
+ * Ids stay ABSOLUTE (storage-root-relative, exactly what the delegate hands
+ * back) - only `parentId` is re-rooted, so the scoped folder's own children
+ * read as top-level (`parentId: null`) and `FileManager` treats it as its
+ * root: breadcrumbs stop there (`entry-utils.ts`'s `folderPath` walks
+ * `parentId`, never the id string) and nothing above it is reachable.
+ *
+ * Ids used to be stripped to the prefix as well, which leaked out of the
+ * picker: a scoped id ("cover.jpg") is what got STORED in the field, and a
+ * stored `image`/`file` value is a full storage path everywhere else
+ * (`resolveImageSrc`, `entry-media.ts`'s path rewrite, the server's
+ * `storage.stat()` checks) - so the pick resolved to nothing on the field,
+ * on the public site, and for Magic.
+ */
 function remapEntry(prefix: string, entry: FileEntry): FileEntry {
-  return { ...entry, id: toScopedId(prefix, entry.id), parentId: toScopedParentId(prefix, entry.parentId) };
+  return entry.parentId === prefix ? { ...entry, parentId: null } : entry;
 }
 
 /** Creates every missing segment of `path` (root to leaf), via repeated
@@ -42,11 +63,12 @@ async function ensureFolderPath(delegate: FileManagerSource, path: string): Prom
 /**
  * Sandboxes a `FileManagerSource` to one subfolder (`folderPath`, relative
  * to the delegate's own root) - `folderId: null` becomes that subfolder
- * instead of the delegate's real root, and every id in/out is prefixed/
- * stripped so nothing outside the subtree is ever reachable. `FileManager`
- * itself needs no changes for this: it only ever navigates entries this
- * source hands back (see `entry-media-paths.ts`'s doc comment on the entry-
- * media folder convention this backs).
+ * instead of the delegate's real root, and nothing outside the subtree is
+ * ever listed or reachable. Ids stay absolute (see `remapEntry` above);
+ * only the scoped root's own children are re-parented to `null`.
+ * `FileManager` itself needs no changes for this: it only ever navigates
+ * entries this source hands back (see `entry-media-paths.ts`'s doc comment
+ * on the entry-media folder convention this backs).
  *
  * The scoped folder may not exist yet (e.g. a brand-new entry's temp folder,
  * or an existing entry that's never had media, before their first upload) -
@@ -83,8 +105,7 @@ export function scopeFileSource(delegate: FileManagerSource, folderPath: string)
     }
     if (all === null) return null;
     const scoped = all
-      .filter((entry) => entry.id === folderPath || entry.id.startsWith(`${folderPath}/`))
-      .filter((entry) => entry.id !== folderPath)
+      .filter((entry) => isInScope(folderPath, entry.id) && entry.id !== folderPath)
       .map((entry) => remapEntry(folderPath, entry));
     // New entries upload into a hidden `.tmp.*` scope. The storage tree
     // deliberately omits hidden folders, so a successful upload would look
@@ -92,7 +113,7 @@ export function scopeFileSource(delegate: FileManagerSource, folderPath: string)
     return scoped.length > 0 ? scoped : list(null);
   }
 
-  const source: FileManagerSource = { list };
+  const source: FileManagerSource = { scopeRoot: folderPath, list };
   if (delegate.listAll) source.listAll = listAll;
 
   if (delegate.upload) {

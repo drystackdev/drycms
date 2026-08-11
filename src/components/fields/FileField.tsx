@@ -1,8 +1,9 @@
-import { useEffect, useId, useState } from "preact/hooks";
+import { useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import EntryScopedPicker from "../FileManager/EntryScopedPicker.js";
-import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
 import { parentFolderOf, thumbnailUrl } from "../../storage/entry-utils.js";
+import { useFileEntries } from "../../hooks/useFileEntries.js";
 import { CloseIcon, ContentIcon, DragHandleIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
@@ -77,7 +78,6 @@ export default function FileField({
 
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<string | string[]>(value);
-  const [entriesById, setEntriesById] = useState<Record<string, FileEntry>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
   const { ref: pickerBody } = useOverlayScrollbars<HTMLDivElement>([open]);
 
@@ -97,34 +97,16 @@ export default function FileField({
       : [];
 
   // Resolves `selectedIds` (+ `pendingIds`) to the `FileEntry`s behind them,
-  // for icon + name - re-lists on every change since a rename/move elsewhere
-  // in `source` can leave a stale id.
-  useEffect(() => {
+  // for icon + name - `entrySource` included, so a file picked on the Entry
+  // tab resolves too (see `useFileEntries`).
+  const resolvableIds = (() => {
     const ids = [...selectedIds];
     for (const pendingId of pendingIds) {
       if (!ids.includes(pendingId)) ids.push(pendingId);
     }
-    if (ids.length === 0) {
-      setEntriesById({});
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const all = (await source.listAll?.()) ?? null;
-      const list = all ?? (await source.list(parentFolderOf(ids[0]!)));
-      if (cancelled) return;
-      const map: Record<string, FileEntry> = {};
-      for (const fileId of ids) {
-        const found = list.find((item) => item.id === fileId);
-        if (found) map[fileId] = found;
-      }
-      setEntriesById(map);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds.join(","), pendingIds.join(","), source]);
+    return ids;
+  })();
+  const entriesById = useFileEntries(resolvableIds, source, entrySource);
 
   const firstSelectedId = selectedIds[0];
   const entry = !isMultiple && firstSelectedId ? (entriesById[firstSelectedId] ?? null) : null;

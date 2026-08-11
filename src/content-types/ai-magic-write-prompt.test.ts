@@ -167,6 +167,33 @@ describe("buildMagicWriteSystemPrompt", () => {
     expect(prompt).toContain("category, tag");
     expect(prompt).toContain("only when the admin explicitly asks");
   });
+
+  it("lists this entry's own media folder, kept separate from the images actually shown", () => {
+    const prompt = buildMagicWriteSystemPrompt({
+      lang: "English",
+      typeLabel: "Post",
+      fieldsDescription: "(none)",
+      imagePaths: ["uploads/attached.jpg"],
+      entryMediaFolder: "entry/my-post",
+      entryMediaPaths: ["entry/my-post/hero.webp"],
+    });
+    expect(prompt).toContain("its own media folder (\"entry/my-post\")");
+    expect(prompt).toContain("- entry/my-post/hero.webp");
+    // The attached-images section still claims (only) its own images were seen.
+    expect(prompt).toContain("Images provided as context (already shown to you)");
+    expect(prompt).toContain("You have not seen what they look like, only their names");
+  });
+
+  it("omits the entry-media section when nothing's been uploaded to this entry", () => {
+    const prompt = buildMagicWriteSystemPrompt({
+      lang: "English",
+      typeLabel: "Post",
+      fieldsDescription: "(none)",
+      entryMediaFolder: "entry/my-post",
+      entryMediaPaths: [],
+    });
+    expect(prompt).not.toContain("its own media folder");
+  });
 });
 
 describe("buildRewriteTurnMessage", () => {
