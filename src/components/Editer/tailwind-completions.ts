@@ -1,8 +1,63 @@
 import type { Completion, CompletionSource } from "prism-code-editor/autocomplete";
+import tailwindColors from "tailwindcss/colors";
 import tailwindIndexCss from "tailwindcss/index.css?raw";
 import { __unstable__loadDesignSystem } from "tailwindcss";
 
 type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>;
+
+/**
+ * `colorKey` ("red-500", "black", "current", ...) -> its resolved CSS color -
+ * flattened from `tailwindcss/colors`' default palette once at module load.
+ * Used to show a real color swatch icon (`resolveTailwindColorIcon` below)
+ * instead of the generic "property" icon for a color utility class
+ * (`bg-red-500`, `text-current`, ...). Deliberately sourced from the static
+ * `tailwindcss/colors` export rather than the async `DesignSystem` loaded
+ * below - it's synchronously available at import time, so there's no race
+ * with `Editer.tsx`'s `shadowStyles` (a module-level constant, computed once,
+ * long before `loadTailwindLists`'s promise could resolve) needing the
+ * swatch CSS ready before any editor mounts.
+ */
+const tailwindColorTokens = new Map<string, string>(
+  Object.entries(tailwindColors as Record<string, string | Record<string, string>>).flatMap(([name, value]) =>
+    typeof value === "string" ? [[name, value] as const] : Object.entries(value).map(([shade, hex]) => [`${name}-${shade}`, hex] as const),
+  ),
+);
+/** Longest key first, so a compound key (`red-500`) is tried before any
+ * shorter one that might otherwise coincidentally match the same suffix. */
+const tailwindColorKeysByLength = [...tailwindColorTokens.keys()].sort((a, b) => b.length - a.length);
+
+/** A color utility's class name always ends in `-<colorKey>` (`bg-red-500`,
+ * `ring-offset-current`, ...) - checking the suffix against every known
+ * color key is cheap (at most 50 classes per keystroke, see `classCompletions`)
+ * and needs no hardcoded list of which utility prefixes take a color, which
+ * Tailwind itself doesn't keep fixed across versions. */
+function resolveTailwindColorIcon(className: string): string | undefined {
+  const key = tailwindColorKeysByLength.find((k) => className.length > k.length + 1 && className.endsWith(`-${k}`));
+  return key && `swatch-${key}`;
+}
+
+const SWATCH_MASK = `url('data:image/svg+xml,<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="12" height="12" rx="3"/></svg>')`;
+
+/**
+ * CSS for the `swatch-<colorKey>` icons `resolveTailwindColorIcon` hands out -
+ * appended into `Editer.tsx`'s shared `shadowStyles` alongside
+ * `prism-code-editor`'s own `autocomplete-icons.css`, whose `.pce-ac-icon-<name>{--mask:
+ * ...}` / `iconEl.style.color = var(--pce-ac-icon-<name>)` convention (see that file) this
+ * follows: one shared filled-square mask for every `swatch-*` icon (attribute selector,
+ * so it isn't repeated per color), then one rule per color token supplying that color's
+ * actual value through the same-named CSS variable.
+ */
+export const tailwindSwatchIconsCss: string =
+  `[class*="pce-ac-icon-swatch-"]{--mask:${SWATCH_MASK}}` +
+  // `autocomplete-icons.css`'s own `.pce-ac-row[aria-selected] .pce-ac-icon:before{color:
+  // var(--pce-widget-color-active)}` forces every icon to one fixed "active" color on the
+  // currently highlighted row - right for a monochrome icon (guarantees contrast against
+  // the highlight), wrong for a swatch, which should keep showing its real color there too.
+  // Higher specificity (`[class*=...]` adds a selector part) than that rule, so this wins
+  // and `color: inherit` falls back to the swatch's own color, set via inline style on the
+  // parent `.pce-ac-icon` (see `iconEl.style.color` in `prism-code-editor`'s tooltip code).
+  `.pce-ac-row[aria-selected] .pce-ac-icon[class*="pce-ac-icon-swatch-"]:before{color:inherit}` +
+  [...tailwindColorTokens.entries()].map(([key, value]) => `.pce-ac-icon-swatch-${key}{--pce-ac-icon-swatch-${key}:${value}}`).join("");
 
 /**
  * Shared across every `Editer` instance on the page - the class/variant lists
@@ -108,7 +163,7 @@ function classCompletions(pos: number, classesSoFar: string): { from: number; op
     ...classList
       .filter((name) => name.startsWith(segment))
       .slice(0, 50)
-      .map((label) => ({ label, icon: "property" as const })),
+      .map((label) => ({ label, icon: resolveTailwindColorIcon(label) ?? "property" })),
   ];
   if (options.length === 0) return null;
   return {

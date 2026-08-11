@@ -8,6 +8,7 @@ import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import {
   CloseIcon,
   EraserIcon,
+  LockIcon,
   PlusIcon,
   XIcon,
 } from "../../components/icons/index.js";
@@ -947,6 +948,16 @@ export default function MagicChat({
               >
                 <EraserIcon /> Clear all
               </button>
+              <a
+                href={`${path}/profile`}
+                target="_blank"
+                rel="noopener"
+                class="ghost icon sm"
+                aria-label="Connect an MCP client"
+                data-tooltip="Connect an MCP client (API Token)"
+              >
+                <LockIcon />
+              </a>
               <button
                 type="button"
                 class="ghost icon sm"

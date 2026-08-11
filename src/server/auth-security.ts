@@ -7,6 +7,17 @@ const SESSION_NAMESPACE = "auth-sessions";
 const REFRESH_NAMESPACE = "auth-refresh";
 const USER_NAMESPACE = "auth-users";
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** `status/mcp-server.md` - Personal Access Tokens for MCP clients (Claude
+ * Desktop, Claude Code, ...). Same 2-namespace split as sessions/refresh
+ * tokens above: `MCP_TOKEN_NAMESPACE` is the O(1) auth-time lookup (keyed by
+ * the hash of the raw token, value is just a pointer), `MCP_TOKEN_INDEX_NAMESPACE`
+ * is the per-user listing Profile's "API Token" section reads/revokes from
+ * (keyed by user id, value is the metadata array - never the hash or raw
+ * token). Long-lived - no TTL - since there's no refresh cycle for a PAT the
+ * way there is for a browser session; a token is valid until explicitly
+ * revoked. */
+const MCP_TOKEN_NAMESPACE = "mcp-tokens";
+const MCP_TOKEN_INDEX_NAMESPACE = "mcp-token-index";
 
 export interface AuthSessionRecord {
   sessionId: string;
@@ -209,4 +220,74 @@ export async function rotateAuthSession(refreshToken: string, env: Record<string
     release();
     if (refreshLocks.get(tokenHash) === current) refreshLocks.delete(tokenHash);
   }
+}
+
+/** Metadata shown/managed in Profile's "API Token" list - deliberately never
+ * carries the raw token or its hash (those stay in `MCP_TOKEN_NAMESPACE`,
+ * write-only from this module's own perspective too - nothing here ever
+ * reads a raw token back out). */
+export interface McpTokenMeta {
+  tokenId: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
+interface McpTokenLookup {
+  tokenId: string;
+  userId: number;
+}
+
+function mcpTokenIndexKey(userId: number): string {
+  return `user-${userId}`;
+}
+
+/** Generates a new PAT for `userId`, returning the raw token exactly once -
+ * same "shown once, never retrievable again" contract a secretkey field
+ * already has elsewhere in this app. Only the hash is ever persisted. */
+export async function createMcpToken(userId: number, label: string, env: Record<string, unknown> = {}): Promise<{ tokenId: string; token: string }> {
+  const store = storeFor(env);
+  const tokenId = crypto.randomUUID();
+  const token = `mcp_${randomToken()}`;
+  const now = new Date().toISOString();
+  await store.set(MCP_TOKEN_NAMESPACE, `token-${await hash(token)}`, { tokenId, userId } satisfies McpTokenLookup, { durability: "sync" });
+  const index = (await store.get<McpTokenMeta[]>(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId))) ?? [];
+  index.push({ tokenId, label, createdAt: now, lastUsedAt: now });
+  await store.set(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId), index, { durability: "sync" });
+  return { tokenId, token };
+}
+
+export async function listMcpTokens(userId: number, env: Record<string, unknown> = {}): Promise<McpTokenMeta[]> {
+  return (await storeFor(env).get<McpTokenMeta[]>(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId))) ?? [];
+}
+
+/** Removes `tokenId` from `userId`'s own index only - a caller can never
+ * revoke another user's token by guessing its id. The matching
+ * `MCP_TOKEN_NAMESPACE` hash entry is deliberately left in place rather than
+ * scanned for and deleted (there's no reverse index from `tokenId` back to
+ * its hash); `resolveMcpToken` below re-checks the index on every call, so a
+ * revoked token stops authenticating immediately regardless. */
+export async function revokeMcpToken(userId: number, tokenId: string, env: Record<string, unknown> = {}): Promise<void> {
+  const store = storeFor(env);
+  const index = (await store.get<McpTokenMeta[]>(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId))) ?? [];
+  const next = index.filter((entry) => entry.tokenId !== tokenId);
+  if (next.length === index.length) return;
+  await store.set(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId), next, { durability: "sync" });
+}
+
+/** Resolves a raw `Authorization: Bearer <token>` value to the user id that
+ * owns it - `null` for an unknown OR revoked token (the two are
+ * indistinguishable on purpose, same as every other auth lookup in this
+ * file). Bumps `lastUsedAt` best-effort (fire-and-forget - a failed write
+ * here must never fail the request it's authenticating). */
+export async function resolveMcpToken(token: string, env: Record<string, unknown> = {}): Promise<{ userId: number } | null> {
+  const store = storeFor(env);
+  const lookup = await store.get<McpTokenLookup>(MCP_TOKEN_NAMESPACE, `token-${await hash(token)}`);
+  if (!lookup) return null;
+  const index = (await store.get<McpTokenMeta[]>(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(lookup.userId))) ?? [];
+  const meta = index.find((entry) => entry.tokenId === lookup.tokenId);
+  if (!meta) return null;
+  meta.lastUsedAt = new Date().toISOString();
+  void store.set(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(lookup.userId), index, { durability: "sync" });
+  return { userId: lookup.userId };
 }

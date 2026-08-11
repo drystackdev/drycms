@@ -25,6 +25,7 @@ import {
   tailwindAtRuleCompletionSource,
   tailwindClassNames,
   tailwindCompletionSource,
+  tailwindSwatchIconsCss,
   tailwindThemeVariables,
 } from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
@@ -490,7 +491,8 @@ const shadowStyles = `.prism-code-editor{height:100%;--pce-bg:var(--dry-muted) !
 .editer-quickfix-menu button:hover,.editer-quickfix-menu button:focus-visible{background:var(--pce-widget-bg-hover)}
 .editer-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 ${autocompleteCss}
-${autocompleteIconsCss}`;
+${autocompleteIconsCss}
+${tailwindSwatchIconsCss}`;
 
 /**
  * TSX/Preact code editor: `prism-code-editor` (mounted in its own Shadow DOM

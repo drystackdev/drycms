@@ -5,6 +5,8 @@ import {
   HYDRATE_BUILT_HREF as GENERATED_HYDRATE_BUILT_HREF,
 } from "./generated-asset-hrefs.js";
 
+import { resolveGlobalsCssHref } from "./resolve-asset-href.js";
+
 export {
   resolveGlobalsCssHref,
   resolveHydrateEntryHref,
@@ -24,7 +26,7 @@ export {
  * already be plain strings by the time this module is evaluated on any
  * runtime.
  */
-export const GLOBALS_CSS_HREF = import.meta.env.DEV ? "/src/apps/globals.css" : GENERATED_GLOBALS_CSS_HREF;
+export const GLOBALS_CSS_HREF = import.meta.env.DEV ? resolveGlobalsCssHref(true) : GENERATED_GLOBALS_CSS_HREF;
 export const HYDRATE_ENTRY_HREF = import.meta.env.DEV ? "/src/apps/hydrate-client.ts" : GENERATED_HYDRATE_ENTRY_HREF;
 export const VEI_OVERLAY_HREF = import.meta.env.DEV ? "/src/apps/vei/overlay.ts" : GENERATED_VEI_OVERLAY_HREF;
 /** mục 7 - see `src/apps/hydrate-built.ts`'s doc comment. */

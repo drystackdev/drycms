@@ -6463,6 +6463,36 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* Build/Build-all failure (`PageEditor.tsx`'s `buildError` state) - not a
+       positional TS diagnostic, so it gets its own block above the list
+       instead of a fake `line:column` entry. */
+    .page-editor-diagnostics-build-error {
+      flex: 0 0 auto;
+      padding: 0.5rem;
+      border-bottom: 1px solid var(--dry-border);
+      background-color: light-dark(var(--dry-error-light), var(--dry-error-dark));
+      color: light-dark(var(--dry-error-dark), var(--dry-error-light));
+      font-size: var(--dry-text-sm);
+
+      & p {
+        margin: 0.25rem 0 0;
+        font-family: var(--dry-font-mono);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    }
+
+    .page-editor-diagnostics-build-error-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+
+      & button {
+        color: inherit;
+      }
+    }
+
     /* Connected segmented control (VS Code/shadcn "toggle group" look) -
        reusable anywhere a mutually-exclusive set of choices reads better as
        one bordered pill than as underline tabs (`[role="tablist"]` above)

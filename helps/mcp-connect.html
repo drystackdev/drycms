@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kết nối MCP tới drycms</title>
+
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #ecedf2;
+    --surface-3: #e2e4ec;
+    --text: #1a1f2b;
+    --text-muted: #5b6472;
+    --text-faint: #838c9a;
+    --border: #dbdfe6;
+    --border-strong: #c3c9d4;
+    --accent: #a85c0d;
+    --accent-strong: #7c4308;
+    --accent-tint: #f2e2cd;
+    --success: #1f7a4d;
+    --success-tint: #e0f0e6;
+    --danger: #b3402f;
+    --danger-tint: #f6e2de;
+    --shadow: 0 1px 2px rgba(20, 24, 34, 0.06), 0 8px 24px rgba(20, 24, 34, 0.05);
+    --font-sans: ui-sans-serif, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151c;
+      --surface: #191d26;
+      --surface-2: #20242f;
+      --surface-3: #272c39;
+      --text: #e8eaf0;
+      --text-muted: #9aa3b2;
+      --text-faint: #6b7383;
+      --border: #2b303c;
+      --border-strong: #3a4152;
+      --accent: #e0a24a;
+      --accent-strong: #f0b863;
+      --accent-tint: #3a2c15;
+      --success: #4cae82;
+      --success-tint: #16302370;
+      --danger: #e08070;
+      --danger-tint: #3a201b;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #12151c;
+    --surface: #191d26;
+    --surface-2: #20242f;
+    --surface-3: #272c39;
+    --text: #e8eaf0;
+    --text-muted: #9aa3b2;
+    --text-faint: #6b7383;
+    --border: #2b303c;
+    --border-strong: #3a4152;
+    --accent: #e0a24a;
+    --accent-strong: #f0b863;
+    --accent-tint: #3a2c15;
+    --success: #4cae82;
+    --success-tint: #16302370;
+    --danger: #e08070;
+    --danger-tint: #3a201b;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent-strong); }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .page {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 6rem;
+  }
+
+  /* ---------- Hero ---------- */
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-strong);
+    margin: 0 0 0.75rem;
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 1.4rem + 1.5vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0 0 0.6rem;
+    text-wrap: balance;
+  }
+
+  .lede {
+    font-size: 1.0625rem;
+    color: var(--text-muted);
+    max-width: 38rem;
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  .hero {
+    padding-bottom: 2.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2.5rem;
+  }
+
+  .hero-meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.25rem;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 100px;
+    border: 1px solid var(--border-strong);
+    color: var(--text-muted);
+    background: var(--surface);
+  }
+  .pill.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border-strong)); background: var(--success-tint); }
+
+  /* ---------- Section rhythm ---------- */
+
+  section { margin-bottom: 2.75rem; }
+  section > h2 { margin-top: 0; }
+
+  h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 1rem;
+  }
+
+  h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem;
+    color: var(--text);
+  }
+
+  p { margin: 0 0 0.85rem; }
+  p:last-child { margin-bottom: 0; }
+
+  .prose-muted { color: var(--text-muted); }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+  }
+
+  /* ---------- Steps ---------- */
+
+  .step {
+    display: grid;
+    grid-template-columns: 2.25rem 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .step:last-child { margin-bottom: 0; }
+
+  .step-index {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+    background: var(--accent-tint);
+    border-radius: 8px;
+    width: 2.25rem;
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step-body {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem 1.25rem;
+    box-shadow: var(--shadow);
+    min-width: 0;
+  }
+
+  .step-body > *:first-child { margin-top: 0; }
+
+  .ui-path {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    margin: 0.75rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .ui-path .sep { color: var(--text-faint); }
+  .ui-path strong { font-weight: 600; color: var(--text); }
+
+  /* ---------- Code panel ---------- */
+
+  .panel {
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 0.85rem 0;
+    background: var(--surface-2);
+  }
+  .panel-head {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    color: var(--text-faint);
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-3);
+  }
+  .panel pre {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .panel .tok-key { color: var(--accent-strong); }
+  .panel .tok-str { color: var(--success); }
+  .panel .tok-comment { color: var(--text-faint); font-style: italic; }
+
+  .note {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 0.7rem 0.9rem;
+    margin-top: 0.85rem;
+  }
+  .note.warn { border-left-color: var(--danger); }
+  .note strong { color: var(--text); }
+
+  /* ---------- Tools table ---------- */
+
+  .tools {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .tool-row {
+    display: grid;
+    grid-template-columns: 12rem 1fr;
+    gap: 1rem;
+    padding: 0.8rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    align-items: baseline;
+  }
+  .tool-row:last-child { border-bottom: none; }
+  .tool-row:nth-child(odd) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+  .tool-name {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+    white-space: nowrap;
+  }
+  .tool-desc { font-size: 0.875rem; color: var(--text-muted); }
+  .tool-desc .scope { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-faint); }
+
+  @media (max-width: 32rem) {
+    .tool-row { grid-template-columns: 1fr; gap: 0.2rem; }
+  }
+
+  /* ---------- Security callout ---------- */
+
+  .callout {
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+    background: var(--danger-tint);
+    padding: 1.1rem 1.25rem;
+  }
+  .callout h2 { color: var(--danger); }
+  .callout ul { margin: 0; padding-left: 1.2rem; }
+  .callout li { margin-bottom: 0.4rem; }
+  .callout li:last-child { margin-bottom: 0; }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .step-body { transition: border-color 0.15s ease; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <p class="eyebrow">status/mcp-server.md — hướng dẫn kết nối</p>
+    <h1>Kết nối MCP tới drycms</h1>
+    <p class="lede">Cho Claude Desktop hoặc Claude Code đọc và ghi nội dung của bạn trực tiếp, bằng đúng quyền hạn tài khoản của bạn — không có cơ chế quyền riêng cho MCP.</p>
+    <div class="hero-meta">
+      <span class="pill ok">Phase 1+2+3 · đã triển khai</span>
+      <span class="pill">6 tools</span>
+      <span class="pill">Xác thực bằng Personal Access Token</span>
+    </div>
+  </div>
+
+  <section>
+    <h2>1. Tạo token trong Profile</h2>
+    <div class="step">
+      <div class="step-index">1</div>
+      <div class="step-body">
+        <p>Token thay bạn đăng nhập — MCP client không phải trình duyệt nên không có cookie phiên, phải xác thực bằng token này thay thế.</p>
+        <div class="ui-path"><strong>My profile</strong><span class="sep">→</span>mục <strong>"API Token"</strong><span class="sep">→</span>nhập nhãn (vd <code>Claude Desktop</code>)<span class="sep">→</span><strong>Generate</strong></div>
+        <p class="prose-muted">Token chỉ hiện ra <strong>đúng một lần</strong> ngay sau khi tạo — bấm nút copy rồi lưu lại an toàn (trình quản lý mật khẩu, biến môi trường...). Đóng hộp thoại rồi thì không lấy lại được nữa, phải Generate token mới nếu quên.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-index">2</div>
+      <div class="step-body">
+        <p>Mỗi token có dạng <code>mcp_&lt;chuỗi ngẫu nhiên&gt;</code>, đại diện đúng cho tài khoản đã tạo ra nó — quyền hạn của token luôn bằng đúng quyền hạn (role/permissions) hiện tại của bạn, tra lại mới mỗi lần gọi, không đóng băng lúc tạo.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. Trỏ MCP client vào drycms</h2>
+
+    <div class="step">
+      <div class="step-index">3</div>
+      <div class="step-body">
+        <h3>Claude Code (CLI)</h3>
+        <p class="prose-muted">Cách nhanh nhất — 1 lệnh, thêm server dạng HTTP kèm header xác thực:</p>
+        <div class="panel">
+          <div class="panel-head">terminal</div>
+          <pre><span class="tok-comment"># thay URL + token bằng của bạn</span>
+claude mcp add --transport http drycms \
+  <span class="tok-str">https://your-domain.example.com/dry/api/mcp</span> \
+  --header <span class="tok-str">"Authorization: Bearer mcp_xxxxxxxx"</span></pre>
+        </div>
+        <div class="note">
+          <span>ℹ️</span>
+          <span><strong>/dry</strong> là base path mặc định của drycms (<code>DryOption.path</code>). Nếu instance của bạn đổi sang path khác, sửa lại URL cho khớp.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-index">4</div>
+      <div class="step-body">
+        <h3>Claude Desktop</h3>
+        <p class="prose-muted">Settings → Connectors → Add custom connector → dán URL <code>.../dry/api/mcp</code>, thêm header <code>Authorization: Bearer &lt;token&gt;</code> ở mục header tuỳ chỉnh (nếu bản Desktop đang dùng có mục này — vị trí chính xác đổi theo từng phiên bản app).</p>
+        <div class="note warn">
+          <span>⚠️</span>
+          <span>Đã verify giao thức (JSON-RPC/tool-call) đúng end-to-end bằng curl thật trên dev server, nhưng chưa cắm thử bằng chính app Claude Desktop. Nếu giao diện Settings khác mô tả trên, ưu tiên cách CLI (Claude Code) ở bước 3, đã đúng theo cú pháp <code>claude mcp add --transport http</code> hiện hành.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Kiểm tra kết nối</h2>
+    <div class="step">
+      <div class="step-index">5</div>
+      <div class="step-body">
+        <p>Hỏi thẳng trợ lý AI trong client vừa kết nối:</p>
+        <div class="panel">
+          <div class="panel-head">thử trong Claude</div>
+          <pre><span class="tok-comment">"Liệt kê content type của drycms giúp mình"</span></pre>
+        </div>
+        <p class="prose-muted">Trả lời đúng danh sách content type nghĩa là token + kết nối ổn. Gặp lỗi <code>401</code>: token sai/đã bị revoke, hoặc URL/base path chưa đúng.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-index">6</div>
+      <div class="step-body">
+        <p>Xem lại AI vừa làm gì bất cứ lúc nào ở <strong>My profile → AI Activity (MCP)</strong> — danh sách 50 tool call gần nhất, tự làm mới mỗi 5 giây (không phải theo thời gian thực từng mili giây, chỉ poll định kỳ).</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Các tool đang có</h2>
+    <p class="prose-muted" style="margin-bottom: 1rem;">Mỗi tool tra lại đúng quyền hạn thật của bạn trên content type liên quan (giống hệt cách Magic Chat trong admin đã kiểm tra) — không có allow-list riêng cho MCP.</p>
+    <div class="tools">
+      <div class="tool-row">
+        <span class="tool-name">list_content_types</span>
+        <span class="tool-desc">Liệt kê toàn bộ content type (collection/singleton) hiện có.</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-name">list_entries</span>
+        <span class="tool-desc">Liệt kê entry trong 1 collection, có thể lọc theo từ khoá. <span class="scope">quyền view</span></span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-name">get_entry</span>
+        <span class="tool-desc">Lấy 1 entry theo id, hoặc entry của 1 singleton. <span class="scope">quyền view</span></span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-name">list_media</span>
+        <span class="tool-desc">Liệt kê file/folder trong thư viện media.</span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-name">create_entry</span>
+        <span class="tool-desc">Tạo entry mới trong 1 collection. <span class="scope">quyền magic + create</span></span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-name">update_entry_fields</span>
+        <span class="tool-desc">Ghi đè field trên entry có sẵn hoặc 1 singleton. <span class="scope">quyền magic + update</span></span>
+      </div>
+    </div>
+    <div class="note">
+      <span>ℹ️</span>
+      <span><code>create_entry</code>/<code>update_entry_fields</code> chỉ nhận field vô hướng (text/richtext/number/boolean/date/select) — field <strong>relation</strong> và <strong>image</strong> chưa hỗ trợ qua MCP, phải set tay trong admin UI sau đó.</span>
+    </div>
+  </section>
+
+  <section class="callout">
+    <h2>Lưu ý bảo mật</h2>
+    <ul>
+      <li>Token = chìa khoá vào đúng tài khoản của bạn. Ai cầm được token đều thao tác được như chính bạn đang đăng nhập.</li>
+      <li>Thu hồi bất cứ lúc nào ở <strong>My profile → API Token → Revoke</strong> — có hiệu lực ngay cho mọi client đang dùng token đó.</li>
+      <li>Content type nào bị khoá Magic (<code>role</code>/<code>user</code>/<code>aiKey</code>/menu/redirect/các singleton hệ thống) thì MCP cũng không đọc/ghi được, giống hệt Magic Chat trong admin.</li>
+    </ul>
+  </section>
+
+  <footer>
+    drycms · status/mcp-server.md · đã verify end-to-end bằng curl thật trên dev server; chưa test bằng Claude Desktop/Claude Code GUI thật
+  </footer>
+
+</div>
+</body>
+</html>

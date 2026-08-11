@@ -34,6 +34,17 @@ export function readRefreshCookie(request: Request): string | undefined {
   return readCookie(request, REFRESH_COOKIE_NAME);
 }
 
+/** `status/mcp-server.md` - an MCP client isn't a browser, so it can't carry
+ * `SESSION_COOKIE_NAME`; it authenticates with a Personal Access Token
+ * instead, sent the ordinary bearer-token way. Only `handler.ts`'s `mcp`
+ * segment ever calls this - every other route stays cookie-only. */
+export function readBearerToken(request: Request): string | undefined {
+  const header = request.headers.get("Authorization");
+  if (!header) return undefined;
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match?.[1];
+}
+
 export async function resolveSession(
   request: Request,
   env: Record<string, unknown> = {},

@@ -6,7 +6,7 @@ import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import { verifyPassword } from "../../lib/password-hash.js";
 import { signSession } from "../../lib/session-token.js";
-import { createAuthSession, revokeAllAuthSessions, revokeAuthSession, rotateAuthSession } from "../auth-security.js";
+import { createAuthSession, createMcpToken, listMcpTokens, revokeAllAuthSessions, revokeAuthSession, revokeMcpToken, rotateAuthSession } from "../auth-security.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { extractPackagedSeedAssets } from "../../content-types/seed-assets.js";
 import { resolved } from "../config.js";
@@ -219,6 +219,13 @@ async function hasAnyUser(entryAdapter: ContentEntryEngineAdapter, userType: Con
 export const GET: DryRouteHandler = async (context) => {
   try {
     const endpoint = context.params.slug;
+
+    if (endpoint === "mcp-tokens") {
+      if (!context.session) return unauthenticatedResponse();
+      const tokens = await listMcpTokens(context.session.id, context.env);
+      return jsonResponse({ tokens });
+    }
+
     if (endpoint !== "session") return jsonResponse({ error: "not_found", message: `Unknown auth endpoint "${String(endpoint)}".` }, 404);
 
     const { schema: schemaAdapter, entries: entryAdapter } = getContentAdapters(context);
@@ -308,6 +315,17 @@ export const POST: DryRouteHandler = async (context) => {
         const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
         return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken);
       });
+    }
+
+    if (endpoint === "mcp-tokens") {
+      if (!context.session) return unauthenticatedResponse();
+      const body = (await context.request.json().catch(() => ({}))) as { label?: unknown };
+      const label = typeof body.label === "string" ? body.label.trim().slice(0, 100) : "";
+      if (!label) throw new AuthError("validation_failed", "A label is required.", { label: "A label is required." });
+      const { tokenId, token } = await createMcpToken(context.session.id, label, context.env);
+      // `token` is only ever returned here, this once - see `auth-security.ts`'s
+      // `createMcpToken` doc comment. The client must show/copy it immediately.
+      return jsonResponse({ tokenId, token }, 201);
     }
 
     if (endpoint === "login") {
@@ -478,6 +496,21 @@ export const POST: DryRouteHandler = async (context) => {
     }
 
     return jsonResponse({ error: "not_found", message: `Unknown auth endpoint "${String(endpoint)}".` }, 404);
+  } catch (error) {
+    return errorResponse(error);
+  }
+};
+
+export const DELETE: DryRouteHandler = async (context) => {
+  try {
+    const raw = (context.params.slug as string | undefined) ?? "";
+    const [endpoint, tokenId] = raw.split("/").filter(Boolean);
+    if (endpoint !== "mcp-tokens" || !tokenId) {
+      return jsonResponse({ error: "not_found", message: `Unknown auth endpoint "${raw}".` }, 404);
+    }
+    if (!context.session) return unauthenticatedResponse();
+    await revokeMcpToken(context.session.id, tokenId, context.env);
+    return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);
   }

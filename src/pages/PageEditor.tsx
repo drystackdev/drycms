@@ -3,7 +3,7 @@ const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
-import { LockIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
+import { CloseIcon, LockIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
 import Popover from "../components/Popover.js";
 import { toast } from "../components/Toast.js";
 import GithubResetDialog from "./page-components/GithubResetDialog.js";
@@ -174,6 +174,69 @@ function persistUnbuiltPaths(paths: Set<string>): void {
     sessionStorage.setItem(UNBUILT_STORAGE_KEY, JSON.stringify([...paths]));
   } catch {
     // Best-effort - see this constant's own doc comment.
+  }
+}
+
+/** `reportBuildResult`'s sessionStorage backing - same "survive the
+ * self-inflicted reload" need as `UNBUILT_STORAGE_KEY` above, for the same
+ * root cause (`app-router-plugin.ts`'s `handleHotUpdate` sends an unscoped
+ * Vite `full-reload` the instant `saveAllDirty()`'s write lands, which fires
+ * BEFORE this tab's own build result has had time to be shown - found live:
+ * a toast either never renders or vanishes with the reload before anyone can
+ * see it, leaving only a freshly-remounted, misleadingly-empty "No problems
+ * detected" panel behind). A real `applyBuildResult` call still fires
+ * immediately too (covers the case where nothing was dirty, so no save/
+ * reload happens at all) - this is purely a fallback for when the reload
+ * wins the race.
+ *
+ * Success stays a toast (brief, fire-and-forget is fine - the build DID
+ * work). A build FAILURE is reported through the diagnostics/"Problems"
+ * panel instead of a toast (`applyBuildResult`'s own doc comment) - a toast
+ * auto-dismisses in 5s, which is the wrong shape for something the user
+ * needs to actually read and act on, and doubly so once the self-inflicted
+ * reload above is in the picture. */
+const PENDING_BUILD_RESULT_STORAGE_KEY = "drycms-page-editor-pending-toast";
+/** Longer than the reload itself ever takes to land (typically well under
+ * 1s in dev), short enough that a stray leftover key from a tab that was
+ * closed mid-build can never replay as stale on some LATER, unrelated visit
+ * to this page. */
+const PENDING_BUILD_RESULT_MAX_AGE_MS = 15000;
+
+interface PendingBuildResult {
+  type: "success" | "error";
+  title: string;
+  description?: string;
+  at: number;
+}
+
+function persistPendingBuildResult(result: Omit<PendingBuildResult, "at">): void {
+  try {
+    sessionStorage.setItem(PENDING_BUILD_RESULT_STORAGE_KEY, JSON.stringify({ ...result, at: Date.now() }));
+  } catch {
+    // Best-effort - see this constant's own doc comment.
+  }
+}
+
+/** Reads back and clears the pending result (if any) - always removed on
+ * read, whether or not it turns out to be fresh enough to replay, so it can
+ * never fire twice or leak into an unrelated later visit. */
+function consumePendingBuildResult(): PendingBuildResult | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_BUILD_RESULT_STORAGE_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(PENDING_BUILD_RESULT_STORAGE_KEY);
+    const parsed = JSON.parse(raw) as Partial<PendingBuildResult>;
+    if (
+      (parsed.type !== "success" && parsed.type !== "error") ||
+      typeof parsed.title !== "string" ||
+      typeof parsed.at !== "number" ||
+      Date.now() - parsed.at > PENDING_BUILD_RESULT_MAX_AGE_MS
+    ) {
+      return null;
+    }
+    return parsed as PendingBuildResult;
+  } catch {
+    return null;
   }
 }
 
@@ -451,6 +514,18 @@ export default function PageEditor() {
   // errors bleeding into the newly selected one.
   const [diagnostics, setDiagnostics] = useState<EditerDiagnostic[]>([]);
 
+  /** A Build/Build-all FAILURE, shown in the "Problems" panel instead of a
+   * toast (`applyBuildResult`'s own doc comment) - unlike `diagnostics`
+   * above (the open file's own TS syntax/type errors, positional and
+   * cleared on every file switch), this is a whole-build failure with no
+   * `line:column` of its own, so it renders as its own block rather than a
+   * fake diagnostic entry. Deliberately NOT cleared on `selectedPath`
+   * change - a "Build all" failure in particular is rarely about the file
+   * currently open, and the user still needs to see it after clicking
+   * around. Cleared on the NEXT build attempt (success or failure) and by
+   * its own dismiss button. */
+  const [buildError, setBuildError] = useState<{ title: string; message: string } | null>(null);
+
   /** Every `page.tsx` that's been saved since its last successful build in
    * THIS session (`status/error.md`'s "trang nào Save mà chưa build thì có
    * dấu tròn màu vàng") - purely a session-local UI hint (a fresh reload
@@ -662,6 +737,45 @@ export default function PageEditor() {
       .catch(() => setDryTypes(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canEdit]);
+
+  /** Where a Build/Build-all result actually shows up: success is a toast
+   * (brief, the build worked, nothing to act on); failure goes into the
+   * "Problems" panel (`buildError` above) instead - opened if it was
+   * collapsed, since silently setting state behind a closed panel would
+   * defeat the point. Shared by the real call sites below (`reportBuildResult`)
+   * AND the post-reload replay effect right after this one, so a failure
+   * that only became visible after the self-inflicted reload lands in
+   * exactly the same place a same-tick failure would have. */
+  function applyBuildResult(result: Omit<PendingBuildResult, "at">): void {
+    if (result.type === "success") {
+      setBuildError(null);
+      toast.add({ type: "success", title: result.title, description: result.description });
+    } else {
+      setBuildError({ title: result.title, message: result.description ?? "" });
+      setDiagnosticsOpen(true);
+    }
+  }
+
+  /** Every Build/Build-all success or failure goes through here - persists
+   * to sessionStorage (`PENDING_BUILD_RESULT_STORAGE_KEY`'s doc comment, for
+   * the self-inflicted-reload race) THEN applies it immediately, so the
+   * common no-reload case (nothing was dirty) still shows up with no delay. */
+  function reportBuildResult(result: Omit<PendingBuildResult, "at">): void {
+    persistPendingBuildResult(result);
+    applyBuildResult(result);
+  }
+
+  // Replays a Build/Build-all result left behind by the previous mount of
+  // this same tab, if the self-inflicted `full-reload`
+  // (`PENDING_BUILD_RESULT_STORAGE_KEY`'s doc comment) fired before it could
+  // be read. Deliberately not gated on `canEdit` - a pending result can only
+  // exist here if a build already ran, which requires having had edit
+  // access at the time.
+  useEffect(() => {
+    const pending = consumePendingBuildResult();
+    if (pending) applyBuildResult(pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const code = selectedPath ? (sourceByPath[selectedPath] ?? "") : "";
   const dirty = !!selectedPath && sourceByPath[selectedPath] !== savedByPath[selectedPath];
@@ -885,6 +999,7 @@ export default function PageEditor() {
   async function handleBuildCurrent() {
     if (!previewTarget || !allTypes || !assetHrefs) return;
     setBuildingCurrent(true);
+    setBuildError(null);
     try {
       const saved = await saveAllDirty();
       const result = await buildPage({
@@ -904,11 +1019,11 @@ export default function PageEditor() {
       });
       await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname });
       clearUnbuilt([previewTarget.entryPath]);
-      toast.add({ type: "success", title: `Built "${previewTarget.pathname}"` });
+      reportBuildResult({ type: "success", title: `Built "${previewTarget.pathname}"` });
       await reportGithubSync(`Build: ${previewTarget.pathname} - ${new Date().toISOString()}`);
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
-      toast.add({ type: "error", title: `Failed to build "${previewTarget.pathname}"`, description: message });
+      reportBuildResult({ type: "error", title: `Failed to build "${previewTarget.pathname}"`, description: message });
     } finally {
       setBuildingCurrent(false);
     }
@@ -927,6 +1042,7 @@ export default function PageEditor() {
     if (!allTypes || !assetHrefs) return;
     const BATCH_SIZE = 5;
     setBuildAllProgress({ done: 0, total: 0 });
+    setBuildError(null);
     try {
       const { targets } = await resolveAllPageTargets(saved, allTypes, `${path}/api/dry-http`);
       const pathnames = [...targets.keys()];
@@ -963,11 +1079,11 @@ export default function PageEditor() {
         done += batch.length;
       }
       clearUnbuilt([...targets.values()].map((t) => t.entryPath));
-      toast.add({ type: "success", title: `Built ${done} ${done === 1 ? "page" : "pages"}` });
+      reportBuildResult({ type: "success", title: `Built ${done} ${done === 1 ? "page" : "pages"}` });
       await reportGithubSync(`Build all: ${done} pages - ${new Date().toISOString()}`);
     } catch (error) {
       const message = error instanceof PageBuildError || error instanceof Error ? error.message : "Build failed.";
-      toast.add({ type: "error", title: "Build all failed", description: message });
+      reportBuildResult({ type: "error", title: "Build all failed", description: message });
     } finally {
       setBuildAllProgress(null);
     }
@@ -1333,6 +1449,26 @@ export default function PageEditor() {
 
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
+  /** "Build all" only earns its place in the topbar once there's actually a
+   * batch to build - with 0 or 1 file unsaved/unbuilt, the per-file "Build"
+   * button in the toolbar already covers it, and a second button doing
+   * almost the same thing just adds noise. Union of `unbuiltPaths` (saved
+   * but not yet built) and every path where `sourceByPath` still differs
+   * from `savedByPath` (not yet saved at all) - either kind counts toward
+   * the batch `handleBuildAll` would actually publish (it saves everything
+   * dirty first). Kept visible once a batch build is ACTUALLY RUNNING
+   * (`buildAllProgress`) even if that drops the live count below 2 as pages
+   * finish one by one - hiding the "Building all… (n/total)" progress
+   * indicator mid-flight would be worse than the noise this guards against. */
+  const buildAllPendingCount = useMemo(() => {
+    const pending = new Set(unbuiltPaths);
+    for (const filePath of Object.keys(sourceByPath)) {
+      if (sourceByPath[filePath] !== savedByPath[filePath]) pending.add(filePath);
+    }
+    return pending.size;
+  }, [sourceByPath, savedByPath, unbuiltPaths]);
+  const buildAllVisible = buildAllPendingCount >= 2 || buildAllProgress !== null;
+
   // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
   // rather than living in this page's own compact toolbar, unlike "Build"/
   // "Reset"/"Save" (which stay local - they act on whichever file is
@@ -1344,9 +1480,11 @@ export default function PageEditor() {
         <strong>Page Builder</strong>
       </div>
       <span class="spacer" />
-      <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
-        {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
-      </button>
+      {buildAllVisible && (
+        <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
+          {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
+        </button>
+      )}
       <Popover
         label="Page Editor settings"
         tooltip="Settings"
@@ -1895,8 +2033,11 @@ export default function PageEditor() {
                     <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.343 6.343L15 12l-5.657 5.657" />
                   </svg>
                 </button>
+                {buildError && (
+                  <span class="badge sm destructive">Build failed</span>
+                )}
                 {errorCount === 0 && warningCount === 0 ? (
-                  <span class="hint">No problems</span>
+                  !buildError && <span class="hint">No problems</span>
                 ) : (
                   <>
                     {errorCount > 0 && (
@@ -1912,6 +2053,17 @@ export default function PageEditor() {
                   </>
                 )}
               </div>
+              {diagnosticsOpen && buildError && (
+                <div class="page-editor-diagnostics-build-error">
+                  <div class="page-editor-diagnostics-build-error-header">
+                    <strong>{buildError.title}</strong>
+                    <button type="button" class="ghost icon sm" aria-label="Dismiss" onClick={() => setBuildError(null)}>
+                      <CloseIcon />
+                    </button>
+                  </div>
+                  {buildError.message && <p>{buildError.message}</p>}
+                </div>
+              )}
               {diagnosticsOpen &&
                 (diagnostics.length > 0 ? (
                   <ul class="page-editor-diagnostics-list">
@@ -1925,9 +2077,11 @@ export default function PageEditor() {
                     ))}
                   </ul>
                 ) : (
-                  <p class="hint" style={{ padding: "0.5rem" }}>
-                    No problems detected.
-                  </p>
+                  !buildError && (
+                    <p class="hint" style={{ padding: "0.5rem" }}>
+                      No problems detected.
+                    </p>
+                  )
                 ))}
             </div>
           </div>

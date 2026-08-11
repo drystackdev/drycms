@@ -1,7 +1,9 @@
 import { path as basePath } from "./config.js";
 import type { DryRouteContext, DryRouteHandler } from "./context.js";
-import { readRefreshCookie, readSessionCookie, resolveSession } from "./session.js";
+import { readBearerToken, readRefreshCookie, readSessionCookie, resolveSession } from "./session.js";
 import { verifySessionClaims } from "../lib/session-token.js";
+import { resolveMcpToken } from "./auth-security.js";
+import { getContentAdapters } from "./content-adapters.js";
 import { hasValidCsrf, requiresCsrf } from "./csrf.js";
 import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
@@ -12,6 +14,7 @@ import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as aiRoute from "./routes/ai.js";
+import * as mcpRoute from "./routes/mcp.js";
 import * as memoryRoute from "./routes/memory.js";
 import * as systemSettingsRoute from "./routes/system-settings.js";
 import * as dryHttpRoute from "./routes/dry-http.js";
@@ -69,6 +72,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "richtext-components": richtextComponentsRoute,
   auth: authRoute,
   ai: aiRoute,
+  mcp: mcpRoute,
   memory: memoryRoute,
   "system-settings": systemSettingsRoute,
   "dry-http": dryHttpRoute,
@@ -155,16 +159,43 @@ export async function handleApiRequest(
   const sessionToken = readSessionCookie(request);
   const refreshToken = readRefreshCookie(request);
   const claims = sessionToken ? await verifySessionClaims(sessionToken) : null;
-  const session = await resolveSession(request, env, claims);
+  let session = await resolveSession(request, env, claims);
+
+  const boundedRequest = limitRequestBody(request, segment, request.method, slug);
+  const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
+
+  // `mcp` (`status/mcp-server.md`) authenticates external MCP clients (Claude
+  // Desktop, Claude Code, ...) with a Personal Access Token instead of the
+  // session cookie - they're not a browser, so `session` above is always
+  // null for them. `resolveMcpToken` is a cheap KV lookup (just the owning
+  // user id); `name`/`email` are then read fresh off the `user` entry
+  // itself (not denormalized into the token at creation time) so a PAT never
+  // goes stale the way a long-lived cached claim would - unlike a cookie
+  // session, a PAT has no refresh cycle to otherwise pick that up. Every
+  // permission check downstream (`checkAccess`) re-resolves the user's
+  // grants from `session.id` regardless, so this only affects the identity
+  // fields carried alongside it (e.g. the email `syncEntryMediaFolder` uses).
+  if (!session && segment === "mcp") {
+    const bearer = readBearerToken(request);
+    const resolved = bearer ? await resolveMcpToken(bearer, env) : null;
+    if (resolved) {
+      const { schema, entries } = getContentAdapters(context);
+      const allTypes = await schema.listContentTypes();
+      const userType = allTypes.find((type) => type.name === "user");
+      const entry = userType ? await entries.getEntry(userType, allTypes, resolved.userId) : null;
+      if (entry) {
+        session = { id: entry.id, name: String(entry.value.name ?? ""), email: String(entry.value.email ?? "") };
+        context.session = session;
+      }
+    }
+  }
+
   if (segment !== "auth" && !isPublicStorageRead && !isPublicThemeCss && !isPublicBuiltAsset && !session) {
     return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     }), request);
   }
-
-  const boundedRequest = limitRequestBody(request, segment, request.method, slug);
-  const context: DryRouteContext = { request: boundedRequest, url, params: { slug }, env, session, sessionToken, refreshToken, sessionId: claims?.sessionId };
   // GET stays open to any authenticated session either way - an icon/
   // component's rendered output is read broadly across the app (nav icons,
   // RichText component blocks in arbitrary content), not just from these

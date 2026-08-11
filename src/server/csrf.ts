@@ -40,6 +40,12 @@ export function clearCsrfCookieHeader(context: { url: URL }): string {
 
 export function requiresCsrf(request: Request, segment: string, slug?: string): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return false;
+  // `mcp` authenticates with a bearer token (`status/mcp-server.md`), never
+  // the session cookie the double-submit CSRF check protects - an external
+  // MCP client has no CSRF cookie to send, and CSRF isn't a meaningful
+  // attack against a request an attacker's page can't get the victim's
+  // browser to attach ambient credentials to in the first place.
+  if (segment === "mcp") return false;
   if (segment !== "auth") return true;
   return slug !== "login";
 }
