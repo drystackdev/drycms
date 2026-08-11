@@ -97,6 +97,26 @@ describe("PUT /dry/api/pages-source/[...slug]", () => {
     const body = await put.json();
     expect(body.error).toBe("invalid_path");
   });
+
+  const SAMPLE_CSS = '@theme {\n  --color-brand: red;\n}\n';
+
+  it("accepts a .css file under styles/ and GET reads it back as raw text", async () => {
+    const put = await PUT(context({ slug: "styles/theme.css", method: "PUT", body: SAMPLE_CSS }));
+    expect(put.status).toBe(200);
+    const get = await GET(context({ slug: "styles/theme.css" }));
+    expect(get.status).toBe(200);
+    expect(await get.text()).toBe(SAMPLE_CSS);
+  });
+
+  it("rejects a non-.css file name under styles/", async () => {
+    const put = await PUT(context({ slug: "styles/theme.tsx", method: "PUT", body: SAMPLE_SOURCE }));
+    expect(put.status).toBe(400);
+  });
+
+  it("rejects a .css file name outside styles/", async () => {
+    const put = await PUT(context({ slug: "pages/theme.css", method: "PUT", body: SAMPLE_CSS }));
+    expect(put.status).toBe(400);
+  });
 });
 
 describe("POST /dry/api/pages-source/[...slug] (mkdir)", () => {

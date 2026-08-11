@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { appRouterPlugin } from "./app-router-plugin.js";
+import { resolveOptions } from "../options.js";
 
 const plugin = appRouterPlugin();
 
@@ -104,13 +105,19 @@ describe("appRouterPlugin handleHotUpdate", () => {
     expect(result).toEqual([]);
   });
 
-  it("broadcasts full-reload for a globals.css change", () => {
-    const { result, send } = hotUpdate(join(process.cwd(), "src/apps/globals.css"));
+  it("broadcasts full-reload for a live pages-source styles/globals.css change", () => {
+    // `globals.css` lives in `pagesSourceStorage`'s `styles/` root now
+    // (`source-roots.ts`), not `src/apps/**` - its hot-reload comes from
+    // `isPagesSourceFile()` matching any file under the live storage root,
+    // same as any `pages/`/`component/` edit, not from `RELOAD_TRIGGER`.
+    const storage = resolveOptions({ kind: "local" }).pagesSource.storage;
+    if (storage.kind !== "local") throw new Error("expected a local pagesSource root in tests");
+    const { result, send } = hotUpdate(join(storage.root, "styles/globals.css"));
     expect(send).toHaveBeenCalledWith({ type: "full-reload" });
     expect(result).toEqual([]);
   });
 
-  it("ignores files outside src/apps/pages and globals.css", () => {
+  it("ignores files outside src/apps/pages and pagesSourceStorage", () => {
     const { result, send } = hotUpdate(join(process.cwd(), ".dry/dry.generated.d.ts"));
     expect(send).not.toHaveBeenCalled();
     expect(result).toBeUndefined();

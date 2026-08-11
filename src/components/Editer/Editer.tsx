@@ -12,13 +12,14 @@ import autocompleteCss from "prism-code-editor/autocomplete.css?raw";
 import { cursorPosition } from "prism-code-editor/cursor";
 import { highlightText } from "prism-code-editor/prism";
 import "prism-code-editor/prism/languages/tsx";
+import "prism-code-editor/prism/languages/css";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { addTooltip } from "prism-code-editor/tooltips";
 import { insertText } from "prism-code-editor/utils";
 import { resolveEffectiveTheme } from "../../lib/native/theme.js";
 import { toast } from "../Toast.js";
-import { tailwindCompletionSource } from "./tailwind-completions.js";
+import { tailwindApplyCompletionSource, tailwindCompletionSource } from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
 import { EditerWorkerClient } from "./worker-client.js";
 import type {
@@ -32,6 +33,15 @@ import type {
 export interface EditerProps {
   value: string;
   onChange: (result: EditerResult) => void;
+  /** Set once at mount - not live-updatable, matching `theme`'s own contract
+   * (`PageEditor.tsx` forces a remount via `key={selectedPath}` whenever the
+   * open file's language would change anyway). `"css"` skips every
+   * TypeScript-Language-Service feature below (diagnostics/hover/
+   * signature-help/quick-fix/describeProps) - none of it applies to a plain
+   * `styles/*.css` file (`source-roots.ts`) - and only wires up syntax
+   * highlighting plus the `@apply`-triggered Tailwind completion source.
+   * @default "tsx" */
+  language?: "tsx" | "css";
   /** Path -> content of other `.tsx`/`.ts` files the code being edited can import from -
    * see `ts-worker.ts`'s module resolution. Not watched/discovered automatically. */
   extraFiles?: Record<string, string>;
@@ -73,13 +83,19 @@ export interface EditerProps {
 }
 
 interface InstanceState {
-  client: EditerWorkerClient;
-  /** Per-position cache bridging the worker's async completions onto
-   * `CompletionSource`'s synchronous return contract - see `tsCompletionSource`. */
-  cache: Map<number, EditerCompletionItem[]>;
-  /** Positions with a `getCompletions` request already in flight - see `tsCompletionSource`. */
-  pending: Set<number>;
   tailwindCompletions: boolean;
+  /** Only present for a `"tsx"`-language instance - a `"css"` one has no
+   * `EditerWorkerClient` at all (see the mount effect's own `language`
+   * branch), so `tsCompletionSource` below treats its absence as "no
+   * completions from this source" rather than throwing. */
+  worker?: {
+    client: EditerWorkerClient;
+    /** Per-position cache bridging the worker's async completions onto
+     * `CompletionSource`'s synchronous return contract - see `tsCompletionSource`. */
+    cache: Map<number, EditerCompletionItem[]>;
+    /** Positions with a `getCompletions` request already in flight - see `tsCompletionSource`. */
+    pending: Set<number>;
+  };
 }
 
 /** Keyed by editor instance so the (registered once, globally) "tsx" completion
@@ -198,9 +214,10 @@ function tsCompletionSource(
   editor: PrismEditor,
 ) {
   if (!context.explicit && !isImplicitTriggerPosition(context.before)) return null;
-  const state = instances.get(editor);
-  if (!state) return null;
-  const { client, cache, pending } = state;
+  const instanceState = instances.get(editor);
+  const worker = instanceState?.worker;
+  if (!worker) return null;
+  const { client, cache, pending } = worker;
   const cached = cache.get(context.pos);
   if (cached === undefined) {
     if (!pending.has(context.pos)) {
@@ -208,7 +225,7 @@ function tsCompletionSource(
       client.getCompletions(context.pos).then((items) => {
         pending.delete(context.pos);
         cache.set(context.pos, items);
-        if (instances.get(editor) === state) editor.extensions.autoComplete?.startQuery();
+        if (instances.get(editor) === instanceState) editor.extensions.autoComplete?.startQuery();
       });
     }
     return null;
@@ -229,11 +246,22 @@ function scopedTailwindCompletionSource(
   return tailwindCompletionSource(context, editor);
 }
 
+/** Same per-instance `tailwindCompletions` gate as `scopedTailwindCompletionSource`,
+ * for the `"css"`-language counterpart (`@apply` instead of `class="...""`). */
+function scopedTailwindApplyCompletionSource(
+  context: Parameters<typeof tailwindApplyCompletionSource>[0],
+  editor: PrismEditor,
+) {
+  if (instances.get(editor)?.tailwindCompletions === false) return null;
+  return tailwindApplyCompletionSource(context, editor);
+}
+
 let completionsRegistered = false;
 function ensureCompletionsRegistered() {
   if (completionsRegistered) return;
   completionsRegistered = true;
   registerCompletions(["tsx"], { sources: [scopedTailwindCompletionSource, tsCompletionSource] });
+  registerCompletions(["css"], { sources: [scopedTailwindApplyCompletionSource] });
 }
 
 const DIAGNOSTIC_CLASS = "editer-diagnostic";
@@ -462,6 +490,7 @@ export default function Editer({
   value,
   onChange,
   extraFiles,
+  language = "tsx",
   theme,
   compilerOptions,
   formatOptions,
@@ -491,6 +520,50 @@ export default function Editer({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+
+    // Plain syntax-highlighted CSS editing, no `EditerWorkerClient` at all -
+    // there's no TypeScript to run a Language Service over. Debounced the
+    // same `debounceMs` the worker path uses (`worker-client.ts`'s own
+    // `update()`), so `onChange` still fires at most once per pause in
+    // typing rather than once per keystroke, matching the tsx path's own
+    // externally-visible timing. A short, self-contained branch rather than
+    // guarding every TS-only code path below with `language === "tsx"`
+    // checks - keeps the tsx path (everything after this `if`) byte-for-byte
+    // what it already was.
+    if (language === "css") {
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+      const editor = basicEditor(host, {
+        language: "css",
+        value,
+        theme: theme ?? (resolveEffectiveTheme() === "dark" ? "vs-code-dark" : "vs-code-light"),
+        tabSize,
+        readOnly,
+        onUpdate: (code) => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            lastReportedCodeRef.current = code;
+            onChangeRef.current({ code, success: true, errors: [] });
+          }, debounceMs);
+        },
+      });
+      editorRef.current = editor;
+      instances.set(editor, { tailwindCompletions });
+      ensureCompletionsRegistered();
+      editor.addExtensions(autoComplete({ filter: fuzzyFilter }));
+
+      const shadowRoot = host.shadowRoot;
+      if (shadowRoot) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = shadowStyles;
+        shadowRoot.append(styleEl);
+      }
+
+      return () => {
+        editorRef.current = undefined;
+        clearTimeout(debounceTimer);
+        editor.remove();
+      };
+    }
 
     let currentErrors: EditerDiagnostic[] = [];
     const client = new EditerWorkerClient(
@@ -533,7 +606,7 @@ export default function Editer({
       },
     });
     editorRef.current = editor;
-    instances.set(editor, { client, cache, pending, tailwindCompletions });
+    instances.set(editor, { tailwindCompletions, worker: { client, cache, pending } });
     ensureCompletionsRegistered();
     editor.addExtensions(cursorPosition(), autoComplete({ filter: fuzzyFilter }));
 
@@ -780,11 +853,12 @@ export default function Editer({
       client.dispose();
     };
     // Mount once; `value`/`extraFiles` prop changes are synced by the effects
-    // below instead of remounting the editor. `theme`/`compilerOptions`/
-    // `formatOptions`/`tabSize`/`debounceMs`/`tailwindCompletions` are all
-    // captured here at their current value and stay fixed for the editor's
-    // lifetime - like `theme`, changing any of them requires remounting
-    // (changing `key` on the `Editer` element) rather than updating a prop.
+    // below instead of remounting the editor. `language`/`theme`/
+    // `compilerOptions`/`formatOptions`/`tabSize`/`debounceMs`/
+    // `tailwindCompletions` are all captured here at their current value and
+    // stay fixed for the editor's lifetime - like `theme`, changing any of
+    // them requires remounting (changing `key` on the `Editer` element)
+    // rather than updating a prop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -806,8 +880,8 @@ export default function Editer({
 
   useEffect(() => {
     const editor = editorRef.current;
-    const state = editor && instances.get(editor);
-    if (editor && state) state.client.update(editor.value, extraFilesRef.current);
+    const worker = editor && instances.get(editor)?.worker;
+    if (editor && worker) worker.client.update(editor.value, extraFilesRef.current);
   }, [extraFiles]);
 
   return (

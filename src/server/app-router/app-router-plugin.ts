@@ -3,7 +3,11 @@ import type { Plugin } from "vite";
 import { resolveOptions } from "../options.js";
 
 const SOURCE_FILE = /\.(tsx?|jsx?)$/;
-const RELOAD_TRIGGER = /\/src\/apps\/(pages\/|globals\.css$)/;
+// `globals.css` used to have its own alternative here (`src/apps/globals.css`
+// was a real, directly-served dev file) - it now lives in `pagesSourceStorage`'s
+// `styles/` root instead (`source-roots.ts`), so its hot-reload is already
+// covered by `isPagesSourceFile()` below like any other live-storage file.
+const RELOAD_TRIGGER = /\/src\/apps\/pages\//;
 
 const CONTENT_TYPES_DIR = join(process.cwd(), "src/content-types");
 

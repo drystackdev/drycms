@@ -40,18 +40,20 @@ pnpm-debug.log*
 /components/
 /richtext-components/
 
-# `src/apps/pages` + `src/apps/component` - build-time-only materialized copy
-# of `pagesSourceStorage`'s own source roots (`.dry/pages-source/{pages,
-# component}` locally, R2 in prod - see `source-roots.ts`), NOT hand-edited/
-# committed anymore. `pagesSourceStorage` is the durable source (dev's app
-# router reads it live - `route-tree.ts`'s `DevPagesSource`); `bun run build`/
-# `build:worker` each run `bun scripts/sync-pages-r2.ts --pull [--remote]` to
-# regenerate these directories right before `vite build`'s compile-time glob
-# (`discoverRoutes()`'s prod branch) reads them - same "R2/storage is the
-# durable copy, this is only the local working copy" reasoning `/public/`
-# above already documents for media.
+# `src/apps/pages` + `src/apps/component` + `src/apps/styles` - build-time-only
+# materialized copy of `pagesSourceStorage`'s own source roots (`.dry/pages-source/
+# {pages,component,styles}` locally, R2 in prod - see `source-roots.ts`), NOT
+# hand-edited/committed anymore. `pagesSourceStorage` is the durable source
+# (dev's app router reads it live - `route-tree.ts`'s `DevPagesSource`;
+# `styles/globals.css` likewise, via `resolve-asset-href.ts`'s `/@fs/` dev
+# href); `bun run build`/`build:worker` each run `bun scripts/sync-pages-r2.ts
+# --pull [--remote]` to regenerate these directories right before `vite
+# build`'s compile-time glob (`discoverRoutes()`'s prod branch)/Tailwind entry
+# reads them - same "R2/storage is the durable copy, this is only the local
+# working copy" reasoning `/public/` above already documents for media.
 /src/apps/pages/
 /src/apps/component/
+/src/apps/styles/
 
 # `src/apps/schema.json`/`src/apps/seed.json` - `bun run seed:sync`'s output
 # (an app's own content types + singleton/menu data, built-in system

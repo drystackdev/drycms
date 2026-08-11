@@ -45,7 +45,7 @@ import type { FileEntry } from "../storage/entry-types.js";
 import { canAccess } from "../store/auth.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
 import { copyDestinationPath, entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
-import { COMPONENT_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, rootOf } from "../server/app-router/source-roots.js";
+import { COMPONENT_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import { COMPONENT_PREVIEW_ENTRY_PATH, buildComponentPreviewSource } from "../page-components/component-preview.js";
 import { samplePropsSource } from "../page-components/props-sample.js";
 import type { PropsSchema } from "../components/Editer/worker-protocol.js";
@@ -202,6 +202,12 @@ export const defaultProps: Props = { title: "Sample title" };
 //   </>
 // );
 `;
+
+/** Starter source for a new file in the Styles tab - just a reminder, not
+ * real CSS: unlike a page/component, a new stylesheet isn't reachable on its
+ * own (`vite.config.ts`'s Tailwind entry only ever compiles
+ * `styles/globals.css`), it has to be pulled in via `@import` first. */
+const DEFAULT_STYLES_SOURCE = `/* New stylesheet - add an @import for it to styles/globals.css to use it. */\n`;
 
 /** Never a real file - a key `refreshPreview` injects into its own LOCAL
  * copy of `sourceByPath` (never the state, never storage) when previewing a
@@ -529,7 +535,7 @@ export default function PageEditor() {
       const result = await api.listTree();
       const all = result.supported ? result.entries : await listAllFileEntriesRecursive("");
       setEntries(all);
-      const files = all.filter((entry) => entry.kind === "file" && /\.tsx?$/i.test(entry.name));
+      const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css)$/i.test(entry.name));
       const contents = await Promise.all(files.map((file) => api.read(file.id).catch(() => "")));
       const nextSource: Record<string, string> = {};
       files.forEach((file, index) => {
@@ -920,10 +926,15 @@ export default function PageEditor() {
   async function handleCreateFile(name: string) {
     // The tree panel builds `name` from the (root-rebased) folder the user
     // is creating in, so a file typed at the tab's own root arrives with no
-    // source root on it - see `withSourceRoot`.
-    const filePath = withSourceRoot(activeRoot, /\.tsx?$/i.test(name) ? name : `${name}.tsx`);
+    // source root on it - see `withSourceRoot`. `styles/` defaults to
+    // `.css` (and CSS starter content) instead of `.tsx` - it's the only
+    // root that isn't TS/TSX (`pages-source.ts`'s own `isPageSourceFileName`).
+    const isStyles = activeRoot === STYLES_ROOT;
+    const hasExtension = isStyles ? /\.css$/i.test(name) : /\.tsx?$/i.test(name);
+    const filePath = withSourceRoot(activeRoot, hasExtension ? name : `${name}${isStyles ? ".css" : ".tsx"}`);
+    const starterSource = isStyles ? DEFAULT_STYLES_SOURCE : activeRoot === COMPONENT_ROOT ? DEFAULT_COMPONENT_SOURCE : DEFAULT_PAGE_SOURCE;
     try {
-      await api.save(filePath, activeRoot === COMPONENT_ROOT ? DEFAULT_COMPONENT_SOURCE : DEFAULT_PAGE_SOURCE);
+      await api.save(filePath, starterSource);
       await loadTree();
       setSelectedPath(filePath);
       toast.add({ type: "success", title: `Created "${filePath}".` });
@@ -1756,6 +1767,7 @@ export default function PageEditor() {
                   value={code}
                   onChange={handleChange}
                   extraFiles={extraFiles}
+                  language={rootOf(selectedPath)?.id === STYLES_ROOT ? "css" : "tsx"}
                   describeProps={isComponentPath}
                   style={{ height: "100%" }}
                 />

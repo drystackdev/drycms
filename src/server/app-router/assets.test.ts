@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveGlobalsCssHref, resolveHydrateEntryHref, resolveVeiOverlayHref } from "./assets.js";
+import { resolveOptions } from "../options.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -18,20 +19,28 @@ function writeManifest(content: unknown): string {
 }
 
 describe("resolveGlobalsCssHref", () => {
-  it("returns the dev source path without touching the filesystem", () => {
-    expect(resolveGlobalsCssHref(true, "/does/not/exist.json")).toBe("/src/apps/globals.css");
+  it("in dev, points straight at the live pagesSourceStorage file via /@fs/, without touching the filesystem", () => {
+    // `globals.css` lives in `pagesSourceStorage`'s `styles/` root now
+    // (`source-roots.ts`), not `src/apps/**` - see `resolve-asset-href.ts`'s
+    // own doc comment on why the dev branch differs from every sibling
+    // `resolve*Href` function.
+    const storage = resolveOptions({ kind: "local" }).pagesSource.storage;
+    if (storage.kind !== "local") throw new Error("expected a local pagesSource root in tests");
+    expect(resolveGlobalsCssHref(true, "/does/not/exist.json")).toBe(
+      `/@fs/${join(storage.root, "styles/globals.css").replace(/\\/g, "/")}`,
+    );
   });
 
   it("reads the built, hashed asset path from the manifest in production", () => {
     const path = writeManifest({
-      "src/apps/globals.css": { file: "assets/appsGlobals-abc123.css" },
+      "src/apps/styles/globals.css": { file: "assets/appsGlobals-abc123.css" },
     });
     expect(resolveGlobalsCssHref(false, path)).toBe("/assets/appsGlobals-abc123.css");
   });
 
   it("throws a clear error when the manifest has no globals.css entry", () => {
     const path = writeManifest({ "index.html": { file: "assets/main-def456.js" } });
-    expect(() => resolveGlobalsCssHref(false, path)).toThrow(/src\/apps\/globals\.css/);
+    expect(() => resolveGlobalsCssHref(false, path)).toThrow(/src\/apps\/styles\/globals\.css/);
   });
 });
 

@@ -126,10 +126,10 @@ export default defineConfig(({ isSsrBuild, command }) => ({
   // doesn't connect a `page.tsx`/`layout.tsx` edit to (the server-rendered
   // HTML it hydrates against would go stale otherwise).
   // `tailwindcss()` only transforms CSS files that `@import "tailwindcss"`
-  // themselves (`src/apps/globals.css` - see "CSS: 1 file chung" in the
-  // same doc) - the admin's own hand-rolled `.css` files (`docs/DESIGN.md`)
-  // never opt in, so this is safe to register globally rather than needing
-  // a separate Vite config just for `src/apps`.
+  // themselves (`src/apps/styles/globals.css` - see "CSS: 1 file chung" in
+  // the same doc) - the admin's own hand-rolled `.css` files
+  // (`docs/DESIGN.md`) never opt in, so this is safe to register globally
+  // rather than needing a separate Vite config just for `src/apps`.
   plugins: [
     appRouterPlugin(),
     assetHrefsPlugin(),
@@ -180,7 +180,20 @@ export default defineConfig(({ isSsrBuild, command }) => ({
           rollupOptions: {
             input: {
               main: "index.html",
-              appsGlobals: "src/apps/globals.css",
+              // Only during a real build, unlike the other 3 entries below
+              // (real, always-on-disk committed files): `src/apps/styles/
+              // globals.css` is `styles/`'s (`source-roots.ts`) build-time
+              // materialized copy - `sync-pages-r2.ts --pull` writes it right
+              // before `bun run build`'s own `vite build` runs, but it does
+              // NOT exist yet during `bun run dev` (dev serves the LIVE file
+              // straight out of `pagesSourceStorage` instead - see
+              // `resolve-asset-href.ts`'s `/@fs/` dev href). Including it
+              // unconditionally broke `vite dev`'s own dependency scanner on
+              // a fresh checkout - found live, not in review: "Failed to run
+              // dependency scan... failed to resolve rolldownOptions.input
+              // value" the moment this repo's `.dry/pages-source` didn't
+              // have a `src/apps/styles/globals.css` copy sitting around yet.
+              ...(command === "build" ? { appsGlobals: "src/apps/styles/globals.css" } : {}),
               appsHydrate: "src/apps/hydrate-client.ts",
               appsVeiOverlay: "src/apps/vei/overlay.ts",
               // mục 7 (app-r2 build pipeline hydration) - the client

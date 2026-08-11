@@ -57,29 +57,25 @@ function loadTailwindLists(): Promise<void> {
 void loadTailwindLists();
 
 const CLASS_ATTR_RE = /\b(?:className|class)\s*=\s*["']([^"']*)$/;
+/** `@apply flex items-c` (Tailwind v4 CSS) - same "everything after the
+ * open-ended token" shape as `CLASS_ATTR_RE`, just not string-quoted: an
+ * `@apply` line ends at `;`/`{`/`}`, not a closing quote. */
+const APPLY_RE = /@apply\s+([^;{}]*)$/;
 
 /**
- * `CompletionSource` for `prism-code-editor`'s autocomplete extension (see
- * `Editer.tsx`) - suggests Tailwind utility classes and variants (`hover:`,
- * `md:`, `group-hover:`, ...) while the cursor is inside a `className="..."`
- * string.
- *
- * Both kinds of suggestion are computed off the same in-progress token
- * (everything after the last space), further split on its last `:` - the
- * part after that is what's currently being typed (`segment`), the part
- * before (if any) is one or more already-chosen variants left untouched in
- * the document. Variants and utility classes are offered side by side for
- * that same `segment`, since either is a valid next thing to type there;
- * picking a variant inserts its trailing `:` too, so the very next keystroke
- * re-runs this same source with a new, now-empty `segment` after it - which
- * is how stacking (`md:hover:bg-red-500`) falls out for free, with no
- * explicit handling of "how many variants deep" here.
+ * Shared by both completion sources below - `classesSoFar` is everything the
+ * triggering regex captured (the `class="..."` string content, or the
+ * `@apply ...` token list); `segment` is the in-progress token being typed
+ * out of it (everything after the last space, further split on its last `:`
+ * so an already-chosen variant prefix like `md:hover:` is left alone).
+ * Variants and utility classes are offered side by side, since either is a
+ * valid next thing to type there; picking a variant inserts its trailing `:`
+ * too, so the very next keystroke re-runs the source with a new, now-empty
+ * `segment` after it - which is how stacking (`md:hover:bg-red-500`) falls
+ * out for free, with no explicit handling of "how many variants deep" here.
  */
-export const tailwindCompletionSource: CompletionSource = (context) => {
+function classCompletions(pos: number, classesSoFar: string): { from: number; options: Completion[] } | null {
   if (!classList || !variantList) return null;
-  const match = CLASS_ATTR_RE.exec(context.before);
-  if (!match) return null;
-  const classesSoFar = match[1] ?? "";
   const currentToken = classesSoFar.slice(classesSoFar.lastIndexOf(" ") + 1);
   const segment = currentToken.slice(currentToken.lastIndexOf(":") + 1);
   if (!segment) return null;
@@ -96,7 +92,31 @@ export const tailwindCompletionSource: CompletionSource = (context) => {
   ];
   if (options.length === 0) return null;
   return {
-    from: context.pos - segment.length,
+    from: pos - segment.length,
     options,
   };
+}
+
+/**
+ * `CompletionSource` for `prism-code-editor`'s autocomplete extension (see
+ * `Editer.tsx`) - suggests Tailwind utility classes and variants (`hover:`,
+ * `md:`, `group-hover:`, ...) while the cursor is inside a `className="..."`
+ * string.
+ */
+export const tailwindCompletionSource: CompletionSource = (context) => {
+  const match = CLASS_ATTR_RE.exec(context.before);
+  if (!match) return null;
+  return classCompletions(context.pos, match[1] ?? "");
+};
+
+/**
+ * Same suggestions as `tailwindCompletionSource`, triggered by an `@apply`
+ * at-rule instead of a `class="..."` attribute - the CSS-mode counterpart
+ * registered for the `"css"` language (`Editer.tsx`), used while editing the
+ * Page Builder's `styles/*.css` files.
+ */
+export const tailwindApplyCompletionSource: CompletionSource = (context) => {
+  const match = APPLY_RE.exec(context.before);
+  if (!match) return null;
+  return classCompletions(context.pos, match[1] ?? "");
 };

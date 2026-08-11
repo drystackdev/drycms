@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveOptions } from "../options.js";
 
 interface ManifestEntry {
   file: string;
@@ -41,11 +42,33 @@ function resolveBuiltAssetHref(dev: boolean, sourcePath: string, manifestPath: s
   return `/${entry.file}`;
 }
 
+/**
+ * Unlike the sibling `resolve*Href` functions below, `globals.css`'s LIVE
+ * source in dev isn't `src/apps/**` at all - it's `pagesSourceStorage`'s
+ * `styles/` root (`source-roots.ts`), the same live-storage `pages/`/
+ * `component/` already edit through the Page Editor with no separate build
+ * step. `src/apps/styles/globals.css` (this function's `dev: false` branch)
+ * is only the BUILD-TIME materialized copy `sync-pages-r2.ts` produces right
+ * before `vite build` - in dev that path is never written to at all, so
+ * serving it would 404. Instead the dev branch points straight at the live
+ * file on disk via Vite's `/@fs/<absolute-path>` mechanism (same
+ * `resolveOptions({ kind: "local" })` call `app-router-plugin.ts`'s own
+ * `pagesSourceRoot` constant already uses, for the same reason: this only
+ * ever runs inside a local Vite dev process, so a local storage root always
+ * resolves). Forward slashes only - `/@fs/` is a literal URL path, and a
+ * Windows backslash would round-trip as `%5C` instead of a path separator.
+ */
 export function resolveGlobalsCssHref(
   dev: boolean,
   manifestPath: string = join(process.cwd(), "dist/client/.vite/manifest.json"),
 ): string {
-  return resolveBuiltAssetHref(dev, "src/apps/globals.css", manifestPath);
+  if (dev) {
+    const storage = resolveOptions({ kind: "local" }).pagesSource.storage;
+    if (storage.kind === "local") {
+      return `/@fs/${join(storage.root, "styles/globals.css").replace(/\\/g, "/")}`;
+    }
+  }
+  return resolveBuiltAssetHref(dev, "src/apps/styles/globals.css", manifestPath);
 }
 
 export function resolveHydrateEntryHref(

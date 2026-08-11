@@ -33,9 +33,17 @@ export const COMPONENT_ROOT = "component";
 
 export const COMPONENT_ALIAS = "@component";
 
+/** The site's shared Tailwind entry (`globals.css`) plus its split-out
+ * `.css` files (`theme.css`, `base.css`, ...) - live-edited from the Page
+ * Editor's "Styles" tab exactly like `pages/`/`component/`. No `alias`: page
+ * code never `import`s these by specifier, they're a fixed build entry
+ * (`vite.config.ts`'s `appsGlobals`). */
+export const STYLES_ROOT = "styles";
+
 export const PAGES_SOURCE_ROOTS: readonly PagesSourceRoot[] = [
   { id: PAGES_ROOT, label: "Page" },
   { id: COMPONENT_ROOT, label: "Component", alias: COMPONENT_ALIAS },
+  { id: STYLES_ROOT, label: "Styles" },
 ];
 
 /** The root folder `path` belongs to, or `null` for a file sitting directly
