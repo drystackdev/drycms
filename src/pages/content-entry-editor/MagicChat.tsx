@@ -949,7 +949,7 @@ export default function MagicChat({
                 <EraserIcon /> Clear all
               </button>
               <a
-                href={`${path}/profile`}
+                href={`${path}/mcp`}
                 target="_blank"
                 rel="noopener"
                 class="ghost icon sm"

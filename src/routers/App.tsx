@@ -28,6 +28,7 @@ const ContentEntryList = lazy(() => import("../pages/ContentEntryList.js"));
 const ContentEntryEditor = lazy(() => import("../pages/ContentEntryEditor.js"));
 const AiKeyEditor = lazy(() => import("../pages/AiKeyEditor.js"));
 const Profile = lazy(() => import("../pages/Profile.js"));
+const McpConnect = lazy(() => import("../pages/McpConnect.js"));
 const Roles = lazy(() => import("../pages/Roles.js"));
 const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
@@ -197,6 +198,7 @@ function AuthenticatedApp() {
               />
               <Route path={`${path}/vei/changes`} component={VeiChangesPreview} />
               <Route path={`${path}/profile`} component={Profile} />
+              <Route path={`${path}/mcp`} component={McpConnect} />
               <Route path={`${path}/roles`} component={Roles} />
               {/* Bare `/settings` -> the default sub-page, so an old
                   bookmark/link to the flat pre-sub-nav URL still lands
