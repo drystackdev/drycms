@@ -1,18 +1,33 @@
 ---
 name: seed-pages-content
-description: Convert a hardcoded section of src/apps/pages/** (the public site) into a drycms content type + real seed data, wired to the page via dry(). Use when asked to "make X page CMS-editable", add a content type for a page/section, or seed entry data into the local content DB.
+description: Convert a hardcoded section of the page source store (`.dry/pages-source/pages/**`, the public site) into a drycms content type + real seed data, wired to the page via dry(). Use when asked to "make X page CMS-editable", add a content type for a page/section, or seed entry data into the local content DB.
 ---
 
-# Seeding content types + data for `src/apps/pages/**`
+# Seeding content types + data for `.dry/pages-source/pages/**`
 
-`src/apps/pages/**` (the public-facing site, App Router-style) starts out as
-plain hardcoded JSX/Tailwind with mock arrays at the top of each file - see
-`docs/APP-ROUTER.md`. Turning a section into something the CMS admin can
-edit is a 4-step conversion, always in this order:
+The public-facing site (App Router-style) lives in the page source store's
+`pages/` root - locally that's `.dry/pages-source/pages/**`, the LIVE
+source that `bun run dev` reads directly and the Page Editor writes to. It
+starts out as plain hardcoded JSX/Tailwind with mock arrays at the top of
+each file - see `docs/APP-ROUTER.md`. A sibling `component/` root
+(`.dry/pages-source/component/**`) holds reusable pieces a page imports as
+`@component/Card` - if the hardcoded section is already split into its own
+component file, that's where it lives instead of under `pages/`.
+
+**Never target `src/apps/pages/**` for this** - it's a gitignored,
+build-time-only materialized COPY of `.dry/pages-source/pages/**`
+(regenerated from it by `sync-pages-r2.ts`, and often simply absent/empty
+on a checkout that hasn't run a build yet). Hand-editing it has no lasting
+effect: the next sync or build overwrites it from the real source. See
+CLAUDE.md's "Two page-source roots" section for the full split.
+
+Turning a section into something the CMS admin can edit is a 4-step
+conversion, always in this order:
 
 ## 1. Read the hardcoded section as the schema's ground truth
 
-Open the page file and find the mock `const`s / inline JSX text it renders.
+Open the page file under `.dry/pages-source/pages/**` (or `component/**`)
+and find the mock `const`s / inline JSX text it renders.
 Each visually-distinct block (hero, a card grid, a CTA band) becomes either:
 - a **flat field group** → a `component` content type with `shape: "flatten"`
   (`repeatable: false`), embedded on the parent via a `component` field -
@@ -37,11 +52,21 @@ Import the shared helpers from `scripts/lib/content-seed.ts`:
 - `writeSingletonEntry(name, value)` - upsert the one row a singleton has.
 - `insertCollectionEntry(name, value)` / `clearCollection(name)` - for a
   `collection`; call `clearCollection` first if the script should be safely
-  re-runnable (`bun run seed:pages` clears+reinserts `blog` every run).
+  re-runnable (wipes+reinserts every row on each run).
+- `upsertCollectionEntryByField(name, matchField, matchValue, value)` - for
+  a collection the seed script doesn't own exclusively, or whose rows are
+  referenced elsewhere by id (a `relation` field pointing at them) - matches
+  an existing row by field value instead of blind clear+reinsert, so ids
+  stay stable across re-runs. Returns the saved row.
 
-See `scripts/seed-pages-content.ts` for a full worked example (the
-`homepage` singleton + its 7 section components + the `blog` collection),
-runnable with `bun run seed:pages`.
+There's no permanent `seed:pages` npm script and no standing worked-example
+file to open - write a one-off script directly under `scripts/` (e.g.
+`scripts/seed-<page>-content.ts`) that imports the helpers above, then run
+it once with `bun scripts/seed-<page>-content.ts` against the live DB. (A
+prior worked example for the homepage existed at that exact path but was
+deleted by a `bun run new:project` reset along with the pages it seeded -
+treat this section as the pattern to follow each time, not something to go
+read.)
 
 ### Field/type naming gotchas (`src/content-types/naming.ts`)
 
@@ -78,7 +103,7 @@ runnable with `bun run seed:pages`.
 bun run dry:generate
 ```
 
-Rewrites `src/apps/dry.generated.d.ts` so `dry().singleton("homepage")` /
+Rewrites `.dry/dry.generated.d.ts` so `dry().singleton("homepage")` /
 `dry().collection("blog")` are typed. Needed once after schema changes;
 `scripts/dev-server.mjs` also does this once on dev-server boot.
 
@@ -94,7 +119,9 @@ const { rows: latestPosts } = await dry().collection("blog").list({
 
 Delete the mock `const` arrays once the page reads live data. A `collection`
 with `features.slug` supports `dry().collection(name).get(slug)` for detail
-pages (throws if the collection has no `slug` feature).
+pages (throws if the collection has no `slug` feature). Since this edit is
+in `.dry/pages-source/pages/**`, `bun run dev` picks it up immediately -
+no rebuild or sync step needed to see the wired-up page.
 
 ## Content engine constraint
 
