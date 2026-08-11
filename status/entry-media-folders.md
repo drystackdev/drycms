@@ -90,6 +90,54 @@ still used as-is in `FileField.tsx` and RichText's Replace/Insert-image
 dialogs - those never had a second tab level to nest under, so they were
 already flat.
 
+## Follow-up fix (2026-08-12): picked entry images vanished + Magic
+
+Three reports from `/dry/content/blog/new`: (1) an image picked on the Entry
+tab didn't show on the field, (2) Magic Chat had no Entry tab, (3) "AI cũng
+cần biết entry" - Magic should know the entry's own images.
+
+Root cause of (1): `scopeFileSource` handed back PREFIX-STRIPPED ids
+(`cover.webp`), so the value stored on the field wasn't a real storage path.
+Nothing downstream could resolve it - not `ImageField`'s own name/thumbnail
+lookup (which lists the FULL source), not `resolveImageSrc` on the public
+site, not the server's `storage.stat()` checks. It looked like the pick was
+simply ignored.
+
+- `src/storage/scoped-source.ts` - ids stay absolute; only `parentId` is
+  re-rooted (the scope's children read as `parentId: null`, which is all
+  `FileManager` needs to treat it as its root - breadcrumbs walk `parentId`,
+  never the id string). `toAbsoluteId` is idempotent, so a relative id
+  stored before this change still resolves. Added `scopeRoot` (on
+  `FileManagerSource`) + `isInScopeOf`, so a picker can tell "this pick is
+  in the entry folder" apart from "somewhere else in Media".
+- `src/hooks/useFileEntries.ts` (new) - the id→`FileEntry` resolution
+  `ImageField`/`FileField` each had inline, now also consulting
+  `entrySource`. Needed on its own: a NEW entry's `.tmp.*` folder is hidden
+  from the storage tree, so ids inside it resolve ONLY through the scoped
+  source.
+- `ImageField`/`EntryScopedPicker` - reopening the picker onto a current
+  pick lands on the tab that pick actually lives in (a new entry's staging
+  folder is unreachable from "File").
+- `MagicChat.tsx` - the attach-images picker is now an `EntryScopedPicker`
+  (Entry/File, Entry first), not a bare `FileManager`.
+- `entry-media-context.ts` - `useEntryMediaSource()` extracted from
+  `ScalarField`, shared with `MagicChat` so both resolve the same folder.
+- Magic knows the entry (3): `ai-magic-write.ts`'s `resolveEntryMedia`
+  resolves the folder SERVER-side (stored slug for a saved entry, this
+  admin's `.tmp.*` folder for a new one - never a client-claimed path),
+  lists its images (`listEntryMediaImages`), adds them to
+  `allowedImageSrcs`, and passes them to the prompt as their own section
+  (`describeEntryMedia`) - deliberately separate from the "already shown to
+  you" attached-images list, since the model only gets their names.
+
+Verified: `bun run typecheck` clean; `bun run test` 1046 passed (the same 16
+pre-existing failures as before this change - seed/dry-reader/engine specs,
+untouched by it); `bunx playwright test` 22/22 including a new
+`e2e/entry-media-picker.spec.ts` that uploads into a new entry's folder,
+picks it, asserts the field renders `.tmp.<user>/cover.webp`, saves, and
+asserts the value was rewritten to `entry/cover-test/cover.webp` - plus the
+Entry tab in Magic's attach dialog.
+
 ## Speed
 
 Implementation + unit tests + typecheck/test verification done in one

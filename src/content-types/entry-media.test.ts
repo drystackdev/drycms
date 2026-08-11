@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLocalStorageAdapter } from "../storage/local.js";
 import type { StorageAdapter } from "../storage/types.js";
-import { removeEntryMediaFolder, syncEntryMediaFolder } from "./entry-media.js";
+import { listEntryMediaImages, removeEntryMediaFolder, syncEntryMediaFolder } from "./entry-media.js";
 import { entryMediaFolderPath, tempEntryMediaFolderPath } from "./entry-media-paths.js";
 
 let dir: string;
@@ -73,5 +73,41 @@ describe("removeEntryMediaFolder", () => {
 
   it("no-ops when the entry never had a media folder", async () => {
     await expect(removeEntryMediaFolder(adapter, "never-had-one")).resolves.toBeUndefined();
+  });
+});
+
+describe("listEntryMediaImages", () => {
+  it("lists only the image files in the folder, as full storage paths", async () => {
+    const folder = entryMediaFolderPath("my-post");
+    await adapter.mkdir(folder);
+    await adapter.write(`${folder}/hero.JPG`, new Uint8Array([1]));
+    await adapter.write(`${folder}/diagram.svg`, new Uint8Array([1]));
+    await adapter.write(`${folder}/notes.pdf`, new Uint8Array([1]));
+    await adapter.mkdir(`${folder}/gallery`);
+
+    expect((await listEntryMediaImages(adapter, folder)).sort()).toEqual([
+      "entry/my-post/diagram.svg",
+      "entry/my-post/hero.JPG",
+    ]);
+  });
+
+  it("reads a brand-new entry's hidden temp folder, which parent listings omit", async () => {
+    const tempPath = tempEntryMediaFolderPath("blog", "person@example.com");
+    await adapter.mkdir(tempPath);
+    await adapter.write(`${tempPath}/pasted.png`, new Uint8Array([1]));
+
+    expect(await listEntryMediaImages(adapter, tempPath)).toEqual([`${tempPath}/pasted.png`]);
+  });
+
+  it("resolves to nothing for a folder that doesn't exist yet", async () => {
+    await expect(listEntryMediaImages(adapter, entryMediaFolderPath("never-uploaded"))).resolves.toEqual([]);
+  });
+
+  it("caps how many paths it hands back", async () => {
+    const folder = entryMediaFolderPath("many");
+    await adapter.mkdir(folder);
+    for (let index = 0; index < 5; index++) await adapter.write(`${folder}/img-${index}.png`, new Uint8Array([1]));
+
+    expect(await listEntryMediaImages(adapter, folder, 2)).toHaveLength(2);
   });
 });

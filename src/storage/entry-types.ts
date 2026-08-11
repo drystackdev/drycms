@@ -34,6 +34,14 @@ export interface FileEntry {
  * was acted on - `FileManager` re-lists rather than patching state in place.
  */
 export interface FileManagerSource {
+	/** Set only by `scoped-source.ts`'s `scopeFileSource` - the absolute
+	 * storage path this source is sandboxed to (e.g. `entry/blog-post-1`).
+	 * Ids stay absolute either way (see that file's doc comment), so this is
+	 * never needed to READ a source; it's how a picker tells "this id belongs
+	 * to the current entry's folder" apart from "this id is somewhere else in
+	 * Media" - e.g. `ImageField` deciding whether to open on the Entry or the
+	 * File tab. `undefined` on every unscoped source. */
+	scopeRoot?: string;
 	list(folderId: string | null): Promise<FileEntry[]>;
 	/** Every entry at every depth, flattened, in one call - lets `FileManager`
 	 * prefetch the whole tree once on mount instead of a `list()` per folder as

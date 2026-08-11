@@ -1,6 +1,7 @@
 import { useId, useState } from "preact/hooks";
 import FileManager, { type FileManagerProps } from "./FileManager.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
+import { isInScopeOf } from "../../storage/scoped-source.js";
 import TextField from "../fields/TextField.js";
 
 export interface EntryScopedPickerLink {
@@ -41,16 +42,22 @@ export interface EntryScopedPickerProps extends Omit<FileManagerProps, "source">
 export default function EntryScopedPicker({ fullSource, entrySource, link, ...fileManagerProps }: EntryScopedPickerProps) {
   const reactId = useId();
   // A pre-filled `value` (a caller reopening the picker onto its current
-  // selection, e.g. `image-menu.tsx`'s `openReplace`) is always in
-  // `fullSource`'s own id-space, never `entrySource`'s scoped one - so it
-  // only ever resolves under "File", regardless of whether "Entry" would
-  // otherwise be the default. Only the truly-empty case (a fresh insert)
-  // falls back to preferring "Entry" when it's available.
-  const hasFileValue = Array.isArray(fileManagerProps.value)
-    ? fileManagerProps.value.length > 0
-    : !!fileManagerProps.value;
+  // selection, e.g. `image-menu.tsx`'s `openReplace`) is a plain storage path
+  // on both tabs - the two share one id-space (`scoped-source.ts`) - so the
+  // opening tab is whichever one that path actually lives in. It matters most
+  // for a brand-new entry, whose folder is the hidden `.tmp.*` one that
+  // "File" can't reach at all.
+  const valueIds = Array.isArray(fileManagerProps.value)
+    ? fileManagerProps.value
+    : fileManagerProps.value
+      ? [fileManagerProps.value]
+      : [];
   const [activeTab, setActiveTab] = useState<"entry" | "file" | "link">(
-    link?.value ? "link" : hasFileValue ? "file" : entrySource ? "entry" : "file",
+    link?.value
+      ? "link"
+      : entrySource && (valueIds.length === 0 || valueIds.some((id) => isInScopeOf(entrySource, id)))
+        ? "entry"
+        : "file",
   );
 
   if (!entrySource && !link) return <FileManager source={fullSource} {...fileManagerProps} />;

@@ -7,6 +7,11 @@ import { checkAccess } from "./content-entries.js";
 import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
 import { loadRelationContext } from "../../content-types/engine/entry-relation-context.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
+import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
+import type { ContentTypeDefinition } from "../../content-types/types.js";
+import { entryMediaFolderPath, tempEntryMediaFolderPath } from "../../content-types/entry-media-paths.js";
+import { listEntryMediaImages } from "../../content-types/entry-media.js";
+import { decodeEntryId } from "../../lib/id-hash.js";
 import {
   extractMagicWriteYaml,
   parseMagicWriteYaml,
@@ -133,6 +138,11 @@ function validateMagicWriteSessionImagePaths(value: unknown): string[] {
 
 interface MagicWriteValidatedRequest {
   typeSlug: string;
+  /** The hashed id of the entry being edited (`lib/id-hash.ts`), or
+   * `undefined` for a brand-new one that's never been saved - the only thing
+   * it's used for is resolving this entry's own media folder (see
+   * `resolveEntryMedia`), never as an authorization input. */
+  entryId: string | undefined;
   currentValue: EntryValue;
   prompt: string;
   history: ChatMessage[];
@@ -205,6 +215,7 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
 
   return {
     typeSlug,
+    entryId: typeof body.entryId === "string" && body.entryId.trim() ? body.entryId.trim() : undefined,
     currentValue,
     prompt,
     history,
@@ -216,6 +227,61 @@ function validateMagicWriteRequest(body: MagicWriteHttpRequest): MagicWriteValid
     rewritePassage,
     rewriteInline,
   };
+}
+
+/**
+ * This entry's own media folder and the images already in it
+ * (`status/entry-media-folders.md`) - resolved SERVER-side from the entry
+ * itself, never from a client-supplied path, so Magic can only ever be told
+ * about the folder belonging to the entry actually being edited.
+ *
+ * - Saved entry: `entry/<slug>`, from the STORED slug (an unsaved rename in
+ *   `currentValue` hasn't moved the folder yet - `content-entries.ts` only
+ *   does that on save, and rewrites the field values with it).
+ * - Brand-new entry: this admin's own `.tmp.<collection>.<user>` staging
+ *   folder, the same one the entry form's pickers upload into. Paths there
+ *   are rewritten to `entry/<slug>` by the first save, so a value Magic
+ *   writes now survives it.
+ * - No `features.slug` (no entry folder at all), or nothing uploaded yet:
+ *   empty, which omits the whole prompt section.
+ *
+ * The new-vs-saved split mirrors `ContentEntryEditor.tsx`'s own `isNew`
+ * exactly (a singleton is never "new" - it has one implicit row whether or
+ * not it's been written yet), so the model is told about the same folder the
+ * admin's own pickers are writing into.
+ */
+export async function resolveEntryMedia(
+  context: DryRouteContext,
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  type: ContentTypeDefinition,
+  request: MagicWriteValidatedRequest,
+): Promise<{ folder: string; imagePaths: string[] }> {
+  const empty = { folder: "", imagePaths: [] };
+  if (!type.features?.slug) return empty;
+
+  const isNew = type.kind !== "singleton" && !request.entryId;
+  let folder: string;
+  if (isNew) {
+    const email = context.session?.email;
+    if (!email) return empty;
+    folder = tempEntryMediaFolderPath(type.name, email);
+  } else {
+    const id = request.entryId ? decodeEntryId(request.entryId) : null;
+    const row = id === null ? null : await entries.getEntry(type, allTypes, id).catch(() => null);
+    // An unsaved singleton has no row to read a stored slug off yet - its
+    // pickers go by the live value, so this does too.
+    const slug = typeof row?.value.slug === "string" && row.value.slug
+      ? row.value.slug
+      : typeof request.currentValue.slug === "string"
+        ? request.currentValue.slug
+        : "";
+    if (!slug) return empty;
+    folder = entryMediaFolderPath(slug);
+  }
+
+  const imagePaths = await listEntryMediaImages(getStorageAdapter(storage, context), folder);
+  return { folder, imagePaths };
 }
 
 /** Same drain-and-collect shape as `ai.ts`'s own `runWizardTurn` - kept as a
@@ -372,7 +438,17 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
               }),
             )
           ).filter((path): path is string => path !== null);
-          const allowedImageSrcs = new Set([...verifiedImages.map((image) => image.path), ...verifiedSessionPaths]);
+          // This entry's own media folder joins the same allow-list: those
+          // paths came from the admin's own uploads on THIS entry (resolved
+          // server-side, never client-claimed - see `resolveEntryMedia`), so
+          // they're as trustworthy a write target as an attached image, even
+          // though the model only ever sees their names.
+          const entryMedia = await resolveEntryMedia(context, entries, allTypes, type, request);
+          // Listed separately in the prompt, deliberately: `imagePaths` there
+          // means "images you were actually shown", which entry-folder files
+          // were not (`describeEntryMedia` says so in its own words).
+          const attachedImageSrcs = [...verifiedImages.map((image) => image.path), ...verifiedSessionPaths];
+          const allowedImageSrcs = new Set([...attachedImageSrcs, ...entryMedia.imagePaths]);
 
           const nodes = buildEntryFieldTree(type, allTypes);
           const fieldsDescription = describeFieldsForPrompt(nodes, request.currentValue, allTypes);
@@ -398,7 +474,11 @@ function streamMagicWrite(context: DryRouteContext, request: MagicWriteValidated
             lang: request.lang,
             typeLabel: type.label,
             fieldsDescription,
-            imagePaths: [...allowedImageSrcs],
+            imagePaths: [...new Set(attachedImageSrcs)],
+            entryMediaFolder: entryMedia.folder,
+            // Anything already attached this session is listed above as a
+            // real (seen) context image - no reason to repeat it here.
+            entryMediaPaths: entryMedia.imagePaths.filter((imagePath) => !attachedImageSrcs.includes(imagePath)),
             relationContext,
             creatableRelatedTypes: [...creatableTypeSlugs],
           });

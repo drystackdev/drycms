@@ -1,8 +1,10 @@
-import { useEffect, useId, useState } from "preact/hooks";
+import { useId, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
 import FileManager from "../FileManager/FileManager.js";
-import type { FileEntry, FileManagerSource } from "../../storage/entry-types.js";
+import type { FileManagerSource } from "../../storage/entry-types.js";
 import { parentFolderOf, thumbnailUrl } from "../../storage/entry-utils.js";
+import { isInScopeOf } from "../../storage/scoped-source.js";
+import { useFileEntries } from "../../hooks/useFileEntries.js";
 import { AddIcon, CloseIcon, DragHandleIcon, MediaIcon, TrashIcon, UploadIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
@@ -103,7 +105,6 @@ export default function ImageField({
    * on confirm, so picks made in either tab survive switching to the other. */
   const [pendingLinks, setPendingLinks] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"entry" | "file" | "link">(entrySource ? "entry" : "file");
-  const [entriesById, setEntriesById] = useState<Record<string, FileEntry>>({});
   const dialogRef = useDialogSync(open, () => setOpen(false));
   // Deps include `open`: the body only mounts once the dialog opens, so the
   // ref is still null on `ImageField`'s own first render.
@@ -132,38 +133,18 @@ export default function ImageField({
       : [];
 
   // Resolves `selectedIds` (+ `pendingFileIds` above) to the `FileEntry`s
-  // behind them, for thumbnails + names - re-lists on every change since a
-  // rename/move elsewhere in `source` can leave a stale id. Link ids
-  // (Link-tab entries) aren't `source` paths, so they're skipped here and
-  // rendered straight from the id itself below. Only the first *file* id's
-  // folder is used as the fallback scope when `source` can't `listAll` -
-  // multi-folder selections aren't expected from sources without it.
-  useEffect(() => {
+  // behind them, for thumbnails + names. Link ids (Link-tab entries) aren't
+  // `source` paths, so they're skipped here and rendered straight from the id
+  // itself below - everything else goes through `useFileEntries`, which also
+  // knows to look inside `entrySource` (see its doc comment).
+  const resolvableIds = (() => {
     const fileIds = selectedIds.filter((id) => !isLinkValue(id));
     for (const pendingId of pendingFileIds) {
       if (!fileIds.includes(pendingId)) fileIds.push(pendingId);
     }
-    if (fileIds.length === 0) {
-      setEntriesById({});
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const all = (await source.listAll?.()) ?? null;
-      const list = all ?? (await source.list(parentFolderOf(fileIds[0]!)));
-      if (cancelled) return;
-      const map: Record<string, FileEntry> = {};
-      for (const imageId of fileIds) {
-        const found = list.find((item) => item.id === imageId);
-        if (found) map[imageId] = found;
-      }
-      setEntriesById(map);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds.join(","), pendingFileIds.join(","), source]);
+    return fileIds;
+  })();
+  const entriesById = useFileEntries(resolvableIds, source, entrySource);
 
   const pendingFileUrls = pendingFileIds.map((fid) => entriesById[fid]?.previewUrl ?? fid);
 
@@ -182,7 +163,10 @@ export default function ImageField({
     setActiveTab(
       fileIds.length === 0 && linkIds.length > 0
         ? "link"
-        : fileIds.length === 0 && entrySource
+        : // Reopening onto a current pick lands on the tab that pick actually
+          // lives in: the entry's own folder is a real place in Media, but a
+          // NEW entry's is the hidden `.tmp.*` one, unreachable from "File".
+          (fileIds.length === 0 || fileIds.some((id) => isInScopeOf(entrySource, id))) && entrySource
           ? "entry"
           : "file",
     );

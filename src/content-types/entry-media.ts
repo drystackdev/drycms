@@ -81,6 +81,33 @@ export function rewriteEntryMediaPaths<T>(value: T, fromPath: string, toPath: st
   return changed ? { value: rewritten, changed: true } : { value, changed: false };
 }
 
+const ENTRY_MEDIA_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "svg", "webp"];
+
+/**
+ * The image files sitting in one entry's own media folder, as full storage
+ * paths - what Magic is told about so it can write `cover: entry/<slug>/
+ * hero.jpg` without the admin having to attach that image to the chat first
+ * (`status/entry-media-folders.md`). One level deep only (the same depth the
+ * pickers' "Entry" tab opens on), capped, and quiet about a folder that
+ * doesn't exist yet - a brand-new entry that's never uploaded anything is
+ * the normal case, not an error.
+ *
+ * Works for the `.tmp.*` staging folder too: it's hidden from `list()`ings of
+ * its PARENT (`storage/local.ts`'s `isHiddenName` filters children by name),
+ * never from a listing of itself.
+ */
+export async function listEntryMediaImages(
+  adapter: StorageAdapter,
+  folderPath: string,
+  limit = 30,
+): Promise<string[]> {
+  const items = await adapter.list(folderPath).catch(() => []);
+  return items
+    .filter((item) => item.kind === "file" && ENTRY_MEDIA_IMAGE_EXTENSIONS.includes((item.name.split(".").pop() ?? "").toLowerCase()))
+    .slice(0, limit)
+    .map((item) => `${folderPath}/${item.name}`);
+}
+
 /** Removes a deleted entry's media folder, if it has one. */
 export async function removeEntryMediaFolder(adapter: StorageAdapter, slug: string): Promise<void> {
   const path = entryMediaFolderPath(slug);

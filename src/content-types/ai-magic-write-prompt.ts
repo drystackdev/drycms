@@ -135,6 +135,26 @@ function describeImages(imagePaths: string[]): string[] {
   ];
 }
 
+/**
+ * This entry's OWN media folder (`status/entry-media-folders.md`) - the
+ * images the admin uploaded through the entry form's own pickers, which the
+ * model would otherwise have no idea existed unless each one was attached to
+ * a chat turn by hand. Unlike `describeImages`' list these were never shown
+ * to the model as pixels (only names), so the wording is careful not to
+ * claim otherwise - but they ARE valid write targets (`allowedImageSrcs` in
+ * `ai-magic-write.ts` includes them), since they're real files the admin put
+ * on this exact entry.
+ */
+function describeEntryMedia(folder: string, imagePaths: string[]): string[] {
+  if (imagePaths.length === 0) return [];
+  return [
+    "",
+    `This entry has its own media folder ("${folder}") - images the admin uploaded for THIS entry specifically. You have not seen what they look like, only their names:`,
+    ...imagePaths.map((imagePath) => `- ${imagePath}`),
+    'These are usable exactly like the context images above (an "image" field value, or `<img src="EXACT_PATH">` in RichText), using the EXACT path listed. Prefer them over anything else in Media when the admin asks for "this post\'s image(s)" - but since you can\'t see them, go by the file name and ask the admin if which one to use isn\'t obvious.',
+  ];
+}
+
 function describeRelationContext(relationContext: string): string[] {
   if (!relationContext.trim()) return [];
   return [
@@ -174,6 +194,12 @@ export interface BuildMagicWriteSystemPromptParams {
   /** Storage paths of the context images this request attached (see
    * `status/magic-write.md` decision #3) - empty when none were picked. */
   imagePaths?: string[];
+  /** This entry's own media folder and the images in it (see
+   * `describeEntryMedia`) - `entryMediaPaths` empty (or the folder unset)
+   * whenever the type has no `features.slug`, or nothing's been uploaded to
+   * this entry yet, which omits the whole section. */
+  entryMediaFolder?: string;
+  entryMediaPaths?: string[];
   /** `entry-relation-context.ts`'s `loadRelationContext` output (Phase 3,
    * decision #2) - a summary of what this entry's `relation`/`relation-mirror`
    * fields point to, never itself a write target. Empty when the type has no
@@ -195,7 +221,7 @@ export interface BuildMagicWriteSystemPromptParams {
  * literal (`key: |` + indented lines) so a streamed reply can be shown
  * growing live, field by field, without any JSON-escaping gymnastics.
  */
-export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, imagePaths = [], relationContext = "", creatableRelatedTypes = [] }: BuildMagicWriteSystemPromptParams): string {
+export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription, imagePaths = [], entryMediaFolder = "", entryMediaPaths = [], relationContext = "", creatableRelatedTypes = [] }: BuildMagicWriteSystemPromptParams): string {
   return [
     `You are Magic, a writing assistant inside drycms that fills in content fields for "${typeLabel}" entries through a back-and-forth chat. The admin describes what they want, you may ask a question or just start writing, and you write the actual field content directly - you are not designing a schema, only authoring content for one that already exists.`,
     "",
@@ -208,6 +234,7 @@ export function buildMagicWriteSystemPrompt({ lang, typeLabel, fieldsDescription
     "",
     buildCapabilityInstruction(creatableRelatedTypes.length > 0),
     ...describeImages(imagePaths),
+    ...describeEntryMedia(entryMediaFolder, entryMediaPaths),
     ...describeRelationContext(relationContext),
     "",
     'RichText field HTML dialect - use ONLY these tags, nothing else (no classes, no style attributes, no tables, no <div>/<span>): <p>, <h2>-<h6>, <blockquote>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <a href="...">, <br>, and (only when an allowed image path is listed above) <img src="...">. Every RichText value must be well-formed HTML built only from those tags - plain prose wrapped in <p> at minimum.',
