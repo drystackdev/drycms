@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMemoryFileSource } from "../mock/file-manager.js";
 import { scopeFileSource } from "./scoped-source.js";
 import type { FileEntry, FileManagerSource } from "./entry-types.js";
@@ -80,5 +80,51 @@ describe("scopeFileSource", () => {
     };
     const scoped = scopeFileSource(throwingDelegate, ".tmp.blog.person-example-com");
     await expect(scoped.list("sub")).rejects.toThrow("boom");
+  });
+
+  it("upload(null) creates the not-yet-existing scoped folder and retries, instead of failing", async () => {
+    const created: string[] = [];
+    let folderExists = false;
+    const delegate: FileManagerSource = {
+      list: async () => [],
+      createFolder: async (folderId, name) => {
+        if (folderId !== null) throw new Error(`unexpected parent "${String(folderId)}"`);
+        created.push(name);
+        folderExists = true;
+        return { id: name, name, parentId: null, kind: "folder" };
+      },
+      upload: async (folderId, files) => {
+        if (!folderExists) throw new Error(`"${String(folderId)}" is not an existing folder.`);
+        return files.map((file) => ({
+          id: `${folderId}/${file.name}`,
+          name: file.name,
+          parentId: folderId,
+          kind: "file",
+        }));
+      },
+    };
+    const scoped = scopeFileSource(delegate, ".tmp.blog.person-example-com");
+
+    const uploaded = await scoped.upload!(null, [new File(["x"], "cover.jpg", { type: "image/jpeg" })]);
+
+    expect(created).toEqual([".tmp.blog.person-example-com"]);
+    expect(uploaded[0]?.id).toBe("cover.jpg");
+  });
+
+  it("upload into a real (non-root) missing subfolder still propagates without retrying", async () => {
+    const createFolder = vi.fn();
+    const delegate: FileManagerSource = {
+      list: async () => [],
+      createFolder,
+      upload: async () => {
+        throw new Error("boom");
+      },
+    };
+    const scoped = scopeFileSource(delegate, "entry/blog-1");
+
+    await expect(
+      scoped.upload!("sub", [new File(["x"], "cover.jpg", { type: "image/jpeg" })]),
+    ).rejects.toThrow("boom");
+    expect(createFolder).not.toHaveBeenCalled();
   });
 });

@@ -18,6 +18,27 @@ function remapEntry(prefix: string, entry: FileEntry): FileEntry {
   return { ...entry, id: toScopedId(prefix, entry.id), parentId: toScopedParentId(prefix, entry.parentId) };
 }
 
+/** Creates every missing segment of `path` (root to leaf), via repeated
+ * leaf-only `createFolder` calls - `routes/storage.ts`'s `readLeafName`
+ * rejects a `name` containing "/", so a nested scope (`entry/<slug>`) can't
+ * be created in one call the way the delegate's own `mkdir` could. Each
+ * segment's "already exists" failure is swallowed (that's the expected case
+ * for every segment above the leaf, and often the leaf itself under a race)
+ * - any segment that fails for a real reason just means the upload retry
+ * right after this fails too, surfacing that real error instead. */
+async function ensureFolderPath(delegate: FileManagerSource, path: string): Promise<void> {
+  if (!delegate.createFolder) return;
+  let parentId: string | null = null;
+  for (const segment of path.split("/").filter(Boolean)) {
+    try {
+      await delegate.createFolder(parentId, segment);
+    } catch {
+      // Already exists - fine, keep descending.
+    }
+    parentId = parentId ? `${parentId}/${segment}` : segment;
+  }
+}
+
 /**
  * Sandboxes a `FileManagerSource` to one subfolder (`folderPath`, relative
  * to the delegate's own root) - `folderId: null` becomes that subfolder
@@ -27,13 +48,19 @@ function remapEntry(prefix: string, entry: FileEntry): FileEntry {
  * source hands back (see `entry-media-paths.ts`'s doc comment on the entry-
  * media folder convention this backs).
  *
- * The scoped folder may not exist yet (e.g. a brand-new entry's temp folder
- * before its first upload) - a `list()`/`listAll()` failure at the scoped
- * root is treated as "nothing here yet" rather than propagated, since the
- * delegate has no dedicated "doesn't exist" signal a client-side caller can
- * reliably distinguish from other errors (see `http-source.ts`'s `parseJson`,
- * which only ever surfaces a plain `Error` with a message). A failure below
- * the root still throws - that's a real error worth surfacing.
+ * The scoped folder may not exist yet (e.g. a brand-new entry's temp folder,
+ * or an existing entry that's never had media, before their first upload) -
+ * a `list()`/`listAll()` failure at the scoped root is treated as "nothing
+ * here yet" rather than propagated, since the delegate has no dedicated
+ * "doesn't exist" signal a client-side caller can reliably distinguish from
+ * other errors (see `http-source.ts`'s `parseJson`, which only ever surfaces
+ * a plain `Error` with a message). A failure below the root still throws -
+ * that's a real error worth surfacing. `upload` needs the same tolerance:
+ * unlike `list`, the delegate's own route (`routes/storage.ts`'s
+ * `handleUpload`) deliberately 404s an upload into a non-existent folder
+ * (a real product rule for the plain Media browser), so a first upload at
+ * the scoped root retries once after creating the missing path instead of
+ * surfacing that 404 to the user.
  */
 export function scopeFileSource(delegate: FileManagerSource, folderPath: string): FileManagerSource {
   async function list(folderId: string | null): Promise<FileEntry[]> {
@@ -67,8 +94,20 @@ export function scopeFileSource(delegate: FileManagerSource, folderPath: string)
   if (delegate.upload) {
     const upload = delegate.upload;
     source.upload = async (folderId, files) => {
-      const entries = await upload(toAbsoluteId(folderPath, folderId), files);
-      return entries.map((entry) => remapEntry(folderPath, entry));
+      const target = toAbsoluteId(folderPath, folderId);
+      try {
+        const entries = await upload(target, files);
+        return entries.map((entry) => remapEntry(folderPath, entry));
+      } catch (error) {
+        // Only worth a retry at the scoped root itself, the one place the
+        // folder is genuinely expected to not exist yet (see `list` above).
+        // Uploading into a subfolder that's missing for real reasons should
+        // still fail immediately.
+        if (folderId !== null) throw error;
+        await ensureFolderPath(delegate, folderPath);
+        const entries = await upload(target, files);
+        return entries.map((entry) => remapEntry(folderPath, entry));
+      }
     };
   }
   if (delegate.createFolder) {
