@@ -182,19 +182,21 @@ function persistUnbuiltPaths(paths: Set<string>): void {
  * root cause (`app-router-plugin.ts`'s `handleHotUpdate` sends an unscoped
  * Vite `full-reload` the instant `saveAllDirty()`'s write lands, which fires
  * BEFORE this tab's own build result has had time to be shown - found live:
- * a toast either never renders or vanishes with the reload before anyone can
- * see it, leaving only a freshly-remounted, misleadingly-empty "No problems
- * detected" panel behind). A real `applyBuildResult` call still fires
- * immediately too (covers the case where nothing was dirty, so no save/
- * reload happens at all) - this is purely a fallback for when the reload
- * wins the race.
+ * a failure would either never render or vanish with the reload before
+ * anyone can see it, leaving only a freshly-remounted, misleadingly-empty
+ * "No problems detected" panel behind). A real `applyBuildResult` call still
+ * fires immediately too (covers the case where nothing was dirty, so no
+ * save/reload happens at all) - this is purely a fallback for when the
+ * reload wins the race.
  *
- * Success stays a toast (brief, fire-and-forget is fine - the build DID
- * work). A build FAILURE is reported through the diagnostics/"Problems"
- * panel instead of a toast (`applyBuildResult`'s own doc comment) - a toast
+ * A build FAILURE is reported through the diagnostics/"Problems" panel
+ * instead of a toast (`applyBuildResult`'s own doc comment) - a toast
  * auto-dismisses in 5s, which is the wrong shape for something the user
  * needs to actually read and act on, and doubly so once the self-inflicted
- * reload above is in the picture. */
+ * reload above is in the picture. Success carries no toast at all
+ * (`applyBuildResult`'s own doc comment), so a replayed "success" here is a
+ * no-op other than clearing a stale `buildError` - still persisted (rather
+ * than special-cased away) so that clearing happens even across the reload. */
 const PENDING_BUILD_RESULT_STORAGE_KEY = "drycms-page-editor-pending-toast";
 /** Longer than the reload itself ever takes to land (typically well under
  * 1s in dev), short enough that a stray leftover key from a tab that was
@@ -738,18 +740,20 @@ export default function PageEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canEdit]);
 
-  /** Where a Build/Build-all result actually shows up: success is a toast
-   * (brief, the build worked, nothing to act on); failure goes into the
-   * "Problems" panel (`buildError` above) instead - opened if it was
-   * collapsed, since silently setting state behind a closed panel would
-   * defeat the point. Shared by the real call sites below (`reportBuildResult`)
-   * AND the post-reload replay effect right after this one, so a failure
-   * that only became visible after the self-inflicted reload lands in
-   * exactly the same place a same-tick failure would have. */
+  /** Where a Build/Build-all result actually shows up: success carries no
+   * toast and no lingering message - the "Problems" panel header's status
+   * (`buildingCurrent`/`buildAllProgress`, rendered in the JSX below) already
+   * shows a running status while the build is in flight, and reverts to "No
+   * problems" the moment it finishes, which IS the success signal. Failure
+   * goes into the "Problems" panel (`buildError` above) instead - opened if
+   * it was collapsed, since silently setting state behind a closed panel
+   * would defeat the point. Shared by the real call sites below
+   * (`reportBuildResult`) AND the post-reload replay effect right after this
+   * one, so a failure that only became visible after the self-inflicted
+   * reload lands in exactly the same place a same-tick failure would have. */
   function applyBuildResult(result: Omit<PendingBuildResult, "at">): void {
     if (result.type === "success") {
       setBuildError(null);
-      toast.add({ type: "success", title: result.title, description: result.description });
     } else {
       setBuildError({ title: result.title, message: result.description ?? "" });
       setDiagnosticsOpen(true);
@@ -1450,16 +1454,15 @@ export default function PageEditor() {
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
   /** "Build all" only earns its place in the topbar once there's actually a
-   * batch to build - with 0 or 1 file unsaved/unbuilt, the per-file "Build"
-   * button in the toolbar already covers it, and a second button doing
-   * almost the same thing just adds noise. Union of `unbuiltPaths` (saved
-   * but not yet built) and every path where `sourceByPath` still differs
-   * from `savedByPath` (not yet saved at all) - either kind counts toward
-   * the batch `handleBuildAll` would actually publish (it saves everything
-   * dirty first). Kept visible once a batch build is ACTUALLY RUNNING
-   * (`buildAllProgress`) even if that drops the live count below 2 as pages
-   * finish one by one - hiding the "Building all… (n/total)" progress
-   * indicator mid-flight would be worse than the noise this guards against. */
+   * batch to build - with 0 files unsaved/unbuilt there's nothing for it to
+   * do. Union of `unbuiltPaths` (saved but not yet built) and every path
+   * where `sourceByPath` still differs from `savedByPath` (not yet saved at
+   * all) - either kind counts toward the batch `handleBuildAll` would
+   * actually publish (it saves everything dirty first). Kept visible once a
+   * batch build is ACTUALLY RUNNING (`buildAllProgress`) even if that drops
+   * the live count to 0 as pages finish one by one - hiding the "Building
+   * all… (n/total)" progress indicator mid-flight would be worse than the
+   * noise this guards against. */
   const buildAllPendingCount = useMemo(() => {
     const pending = new Set(unbuiltPaths);
     for (const filePath of Object.keys(sourceByPath)) {
@@ -1467,7 +1470,7 @@ export default function PageEditor() {
     }
     return pending.size;
   }, [sourceByPath, savedByPath, unbuiltPaths]);
-  const buildAllVisible = buildAllPendingCount >= 2 || buildAllProgress !== null;
+  const buildAllVisible = buildAllPendingCount >= 1 || buildAllProgress !== null;
 
   // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
   // rather than living in this page's own compact toolbar, unlike "Build"/
@@ -1831,7 +1834,7 @@ export default function PageEditor() {
               Reset
             </button>
           )}
-          {isPageTarget && (
+          {isPageTarget && (dirty || unbuiltPaths.has(selectedPath)) && (
             <button type="button" class="ghost sm" disabled={buildBusy} aria-busy={buildingCurrent} onClick={() => void handleBuildCurrent()}>
               {buildingCurrent ? "Building…" : "Build"}
             </button>
@@ -2037,7 +2040,15 @@ export default function PageEditor() {
                   <span class="badge sm destructive">Build failed</span>
                 )}
                 {errorCount === 0 && warningCount === 0 ? (
-                  !buildError && <span class="hint">No problems</span>
+                  !buildError && (
+                    <span class="hint">
+                      {buildingCurrent
+                        ? "Building…"
+                        : buildAllProgress
+                          ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})`
+                          : "No problems"}
+                    </span>
+                  )
                 ) : (
                   <>
                     {errorCount > 0 && (
