@@ -576,18 +576,5 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
       const handle = await getHandle();
       return getResourceVersion(handle, type.name);
     },
-    getResourceVersions: async (types) => {
-      const versions: Record<string, number> = {};
-      if (types.length === 0) return versions;
-      const handle = await getHandle();
-      const names = types.map((type) => type.name);
-      for (const name of names) versions[name] = 0;
-      const rows = handle.all<{ resource: string; version: number }>(
-        `SELECT "resource", "version" FROM "_versions" WHERE "resource" IN (${names.map(() => "?").join(",")});`,
-        names,
-      );
-      for (const row of rows) versions[row.resource] = row.version;
-      return versions;
-    },
   };
 }

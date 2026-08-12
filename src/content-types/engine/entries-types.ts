@@ -145,15 +145,4 @@ export interface ContentEntryEngineAdapter {
    * mutated through this adapter yet.
    */
   getResourceVersion(type: ContentTypeDefinition): Promise<number>;
-  /**
-   * `getResourceVersion` for several types at once, keyed by `type.name` -
-   * one query instead of one per type. Exists for `pages-cache.ts`, which
-   * re-checks EVERY type a cached page touched on every single request: on
-   * D1 those were N sequential round trips to a single-threaded database,
-   * the dominant per-request cost of an otherwise-free cache hit (see
-   * `status/worker-request-cost.md`). A type that has never been mutated is
-   * `0`, same as `getResourceVersion` - every requested name is present in
-   * the result.
-   */
-  getResourceVersions(types: ContentTypeDefinition[]): Promise<Record<string, number>>;
 }

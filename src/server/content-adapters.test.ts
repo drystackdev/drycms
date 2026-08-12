@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { KeyValueStore } from "../kv/memory.js";
 import type { KeyValueAdapter, KvRecord } from "../kv/types.js";
-import { withCachedRoleReads, withCachedSchema } from "./content-adapters.js";
+import { withCachedRoleReads, withCachedSchema, withCachedSystemSettings } from "./content-adapters.js";
 import type { ContentEngineAdapter } from "../content-types/engine/types.js";
 import type { ContentEntryEngineAdapter, EntryRow } from "../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
@@ -125,7 +125,6 @@ describe("withCachedRoleReads", () => {
       ensureSingletonEntry: async (_type, _allTypes) => ({ id: 1, value: {} }),
       reorderEntries: async () => {},
       getResourceVersion: async () => 0,
-      getResourceVersions: async () => ({}),
     };
     return { adapter, listCalls, getCalls };
   }
@@ -185,5 +184,72 @@ describe("withCachedRoleReads", () => {
     await cached.deleteEntry(roleType, allTypes, 1);
     await cached.getEntry(roleType, allTypes, 1);
     expect(listCalls[0]).toBe(4);
+  });
+});
+
+describe("withCachedSystemSettings", () => {
+  function fakeEntries(initial: EntryRow | null): { adapter: ContentEntryEngineAdapter; getCalls: number[] } {
+    let current = initial;
+    const getCalls = [0];
+    const adapter: ContentEntryEngineAdapter = {
+      listEntries: async () => ({ rows: [], total: 0 }),
+      getEntry: async () => null,
+      findEntry: async () => null,
+      getRawEntry: async () => null,
+      createEntry: async (_type, _allTypes, value) => ({ id: 1, value }),
+      updateEntry: async (_type, _allTypes, id, value) => ({ id, value }),
+      deleteEntry: async () => {},
+      getSingletonEntry: async () => {
+        getCalls[0]!++;
+        return current;
+      },
+      saveSingletonEntry: async (_type, _allTypes, value) => {
+        current = { id: current?.id ?? 1, value };
+        return current;
+      },
+      ensureSingletonEntry: async (_type, _allTypes) => ({ id: 1, value: {} }),
+      reorderEntries: async () => {},
+      getResourceVersion: async () => 0,
+    };
+    return { adapter, getCalls };
+  }
+
+  it("serves getSingletonEntry from cache after the first call, and saveSingletonEntry clears it", async () => {
+    const store = new KeyValueStore(memoryAdapter(), { cache: true });
+    const row: EntryRow = { id: 1, value: { data: "{}" } };
+    const { adapter, getCalls } = fakeEntries(row);
+    const cached = withCachedSystemSettings(adapter, store);
+    const type = fakeType("systemSettings");
+
+    expect(await cached.getSingletonEntry(type, [type])).toEqual(row);
+    expect(await cached.getSingletonEntry(type, [type])).toEqual(row);
+    expect(getCalls[0]).toBe(1);
+
+    await cached.saveSingletonEntry(type, [type], { data: "{}" });
+    await cached.getSingletonEntry(type, [type]);
+    expect(getCalls[0]).toBe(2);
+  });
+
+  it("caches a legitimate `null` (never-saved settings row) instead of re-querying every time", async () => {
+    const store = new KeyValueStore(memoryAdapter(), { cache: true });
+    const { adapter, getCalls } = fakeEntries(null);
+    const cached = withCachedSystemSettings(adapter, store);
+    const type = fakeType("systemSettings");
+
+    expect(await cached.getSingletonEntry(type, [type])).toBeNull();
+    expect(await cached.getSingletonEntry(type, [type])).toBeNull();
+    expect(getCalls[0]).toBe(1);
+  });
+
+  it("never caches a different singleton type", async () => {
+    const store = new KeyValueStore(memoryAdapter(), { cache: true });
+    const row: EntryRow = { id: 1, value: {} };
+    const { adapter, getCalls } = fakeEntries(row);
+    const cached = withCachedSystemSettings(adapter, store);
+    const type = fakeType("seoDefaults");
+
+    await cached.getSingletonEntry(type, [type]);
+    await cached.getSingletonEntry(type, [type]);
+    expect(getCalls[0]).toBe(2);
   });
 });

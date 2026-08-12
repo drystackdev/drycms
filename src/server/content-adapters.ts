@@ -33,6 +33,7 @@ const requestAdapters = new WeakMap<object, ContentAdapters>();
 const SCHEMA_CACHE_NAMESPACE = "schema-cache";
 const CONTENT_TYPES_CACHE_KEY = "content-types";
 const ROLES_CACHE_KEY = "roles";
+const SYSTEM_SETTINGS_CACHE_KEY = "system-settings";
 /** Bounds how long a stale value can survive an isolate/edge that missed an
  * `applySave`/role-write's own explicit cache-clear (see `withCachedSchema`/
  * `withCachedRoleReads` below) - the writer's OWN isolate clears
@@ -121,12 +122,18 @@ function schemaCacheStoreFor(env: Record<string, unknown>): KeyValueStore | null
  * isolate-memory/KV cache above instead of a real `SELECT * FROM metadata`
  * on every call - `content-types/engine/d1.ts`'s own cache only survives one
  * request (a fresh adapter is built per request there); this one survives
- * the whole isolate. `applySave`/`deleteContentType` clear BOTH cache keys
- * (not just content-types) since a schema change can retarget/rename a
- * `relation` field on the `role` type itself, which the roles cache doesn't
- * otherwise have any way to notice.
+ * the whole isolate. `applySave`/`deleteContentType` clear EVERY entry-data
+ * cache key too (not just content-types) since a schema change can
+ * retarget/rename a field on `role`/`systemSettings` themselves, which
+ * those caches don't otherwise have any way to notice.
  */
 export function withCachedSchema(schema: ContentEngineAdapter, store: KeyValueStore): ContentEngineAdapter {
+  async function invalidateAll(): Promise<void> {
+    await safeDelete(store, SCHEMA_CACHE_NAMESPACE, CONTENT_TYPES_CACHE_KEY);
+    await safeDelete(store, SCHEMA_CACHE_NAMESPACE, ROLES_CACHE_KEY);
+    await safeDelete(store, SCHEMA_CACHE_NAMESPACE, SYSTEM_SETTINGS_CACHE_KEY);
+  }
+
   return {
     ...schema,
     listContentTypes: async () => {
@@ -138,14 +145,12 @@ export function withCachedSchema(schema: ContentEngineAdapter, store: KeyValueSt
     },
     applySave: async (next, plan) => {
       const saved = await schema.applySave(next, plan);
-      await safeDelete(store, SCHEMA_CACHE_NAMESPACE, CONTENT_TYPES_CACHE_KEY);
-      await safeDelete(store, SCHEMA_CACHE_NAMESPACE, ROLES_CACHE_KEY);
+      await invalidateAll();
       return saved;
     },
     deleteContentType: async (id) => {
       await schema.deleteContentType(id);
-      await safeDelete(store, SCHEMA_CACHE_NAMESPACE, CONTENT_TYPES_CACHE_KEY);
-      await safeDelete(store, SCHEMA_CACHE_NAMESPACE, ROLES_CACHE_KEY);
+      await invalidateAll();
     },
   };
 }
@@ -201,6 +206,37 @@ export function withCachedRoleReads(entries: ContentEntryEngineAdapter, store: K
   };
 }
 
+/**
+ * Wraps a D1 `entries` adapter so the `systemSettings` singleton (the theme
+ * CSS override every `.dry` page - admin AND the pre-login screens - links
+ * on load, see `routes/system-settings.ts`) is served from cache instead of
+ * a real `SELECT` on literally every page view. Cached as `{ row }` rather
+ * than the bare row: `getSingletonEntry` legitimately returns `null` before
+ * a Super Admin has ever saved a theme, and that "unset" answer needs to be
+ * cacheable too - an envelope object is always truthy, so it can't be
+ * confused with "not cached yet" the way a bare cached `null` would be.
+ * Every other singleton passes straight through - narrow to this one type,
+ * same reasoning `withCachedRoleReads` documents for `role`.
+ */
+export function withCachedSystemSettings(entries: ContentEntryEngineAdapter, store: KeyValueStore): ContentEntryEngineAdapter {
+  return {
+    ...entries,
+    getSingletonEntry: async (type, allTypes) => {
+      if (type.name !== "systemSettings") return entries.getSingletonEntry(type, allTypes);
+      const cached = await safeGet<{ row: EntryRow | null }>(store, SCHEMA_CACHE_NAMESPACE, SYSTEM_SETTINGS_CACHE_KEY);
+      if (cached) return cached.row;
+      const row = await entries.getSingletonEntry(type, allTypes);
+      await safeSet(store, SCHEMA_CACHE_NAMESPACE, SYSTEM_SETTINGS_CACHE_KEY, { row }, CACHE_TTL_MS);
+      return row;
+    },
+    saveSingletonEntry: async (type, allTypes, value) => {
+      const row = await entries.saveSingletonEntry(type, allTypes, value);
+      if (type.name === "systemSettings") await safeDelete(store, SCHEMA_CACHE_NAMESPACE, SYSTEM_SETTINGS_CACHE_KEY);
+      return row;
+    },
+  };
+}
+
 export function getContentAdapters(context: DryRouteContext): ContentAdapters {
   if (moduleAdapters) return moduleAdapters;
   const existing = requestAdapters.get(context);
@@ -210,7 +246,7 @@ export function getContentAdapters(context: DryRouteContext): ContentAdapters {
   const cacheStore = schemaCacheStoreFor(context.env);
   const adapters = {
     schema: cacheStore ? withCachedSchema(rawSchema, cacheStore) : rawSchema,
-    entries: cacheStore ? withCachedRoleReads(rawEntries, cacheStore) : rawEntries,
+    entries: cacheStore ? withCachedSystemSettings(withCachedRoleReads(rawEntries, cacheStore), cacheStore) : rawEntries,
     pagesRegistry: createPagesRegistryAdapter(content, context.env),
   };
   requestAdapters.set(context, adapters);

@@ -668,19 +668,5 @@ export function createD1ContentEntryEngineAdapter(
     saveSingletonEntry,
     ensureSingletonEntry,
     getResourceVersion: (type) => getResourceVersionValue(type.name),
-    getResourceVersions: async (types) => {
-      const versions: Record<string, number> = {};
-      if (types.length === 0) return versions;
-      await ensureVersionsTable();
-      const names = types.map((type) => type.name);
-      for (const name of names) versions[name] = 0;
-      const rows = await dbAll<{ resource: string; version: number }>(
-        db,
-        `SELECT "resource", "version" FROM "_versions" WHERE "resource" IN (${names.map(() => "?").join(",")});`,
-        names,
-      );
-      for (const row of rows) versions[row.resource] = row.version;
-      return versions;
-    },
   };
 }
