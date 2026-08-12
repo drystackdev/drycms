@@ -131,14 +131,20 @@ items selected." in the editor); deleting one of two authors left
   (`getPlatformProxy` doesn't work under bun, so talking to the server that
   owns the bindings is the only way to reach miniflare's D1/R2). Idempotent:
   types matched by fixed `demo-*` ids, entries by slug, page sources never
-  overwritten. `--pages-only` writes the page sources to disk (both
-  `src/apps/**` and the live store) and applies the types to the local store
-  so `dry:generate` keeps `bun run typecheck` clean.
-- `scripts/dev-worker.mjs` - runs `wrangler dev`, watches its output for
-  `Ready on <url>`, then seeds. Seeding failure is reported but non-fatal.
-- `dev:worker` is now: pull → seed pages → push → build → wrangler+seed. The
-  page sources have to land BEFORE `build:worker`, since the Worker's route
-  table is a compile-time `import.meta.glob`.
+  overwritten (`--force` relaxes that last one).
+
+**Revised 2026-08-12, same day**: this first landed auto-wired into
+`dev:worker` (a `scripts/dev-worker.mjs` wrapper watched for `wrangler dev`'s
+"Ready on" line, then seeded; `dev:worker` itself gained a pre-build
+`--pages-only` step to get the pages into `src/apps/pages` before the
+compile-time route glob ran). The user asked for seeding to stay a separate,
+deliberately-run command instead - starting the dev server and populating it
+with demo content are two different decisions, not one step. Reverted:
+`dev:worker` is back to its original `pull → build:worker → wrangler dev`;
+`scripts/dev-worker.mjs` and `seed-demo.ts`'s `--pages-only` mode (and the
+local-store `applyDemoTypesLocally` it depended on) are gone. `bun run
+seed:demo` is unchanged otherwise - run it yourself, against whichever
+server (`bun run dev` or `bun run dev:worker`) you already have up.
 
 Known limit, by design rather than a gap in the seed: under `dev:worker` (and
 production) `/demo` 404s for an ordinary visitor until it's built once from
