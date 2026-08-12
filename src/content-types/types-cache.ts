@@ -10,18 +10,35 @@ const CACHE_ENTRY_NAME = "dry.generated.d.ts";
  * pipeline's Editer `extraFiles` (`plans/app-r2.md` mục 10), the "future
  * browser-based code editor" this was originally prep for.
  *
- * ALSO writes the real on-disk `.dry/dry.generated.d.ts` (still needed by
- * local `tsc`/IDE tooling - `reader.md`'s own decision, unchanged, though
- * the file itself moved out of `src/apps/` and out of git on 2026-08-10:
- * it's derived from the live content-type schema, not from code, so it
- * doesn't belong in commits any more than `.dry/content.sqlite` does) - but
- * only when a filesystem is actually available. This function is no longer
- * called from Node-only scripts exclusively (see `routes/content-types.ts`'s
- * `regenerateTypesCache`, which runs on every request-handling runtime
- * including a Workers isolate, which has no filesystem at all) - a bare
- * `node:fs/promises` import at module scope would have broken that runtime
- * outright, not just skipped the disk write, so the import itself is
- * deferred into the branch that needs it.
+ * ALSO makes sure the real on-disk `.dry/dry.generated.d.ts` exists (still
+ * needed by local `tsc`/IDE tooling - `reader.md`'s own decision, unchanged,
+ * though the file itself moved out of `src/apps/` and out of git on
+ * 2026-08-10: it's derived from the live content-type schema, not from
+ * code, so it doesn't belong in commits any more than `.dry/content.sqlite`
+ * does) - but only when a filesystem is actually available. This function is
+ * no longer called from Node-only scripts exclusively (see
+ * `routes/content-types.ts`'s `regenerateTypesCache`, which runs on every
+ * request-handling runtime including a Workers isolate, which has no
+ * filesystem at all) - a bare `node:fs/promises` import at module scope
+ * would have broken that runtime outright, not just skipped the disk write,
+ * so the import itself is deferred into the branch that needs it.
+ *
+ * `tsconfig.json` needs ONE path that's correct no matter which of this
+ * app's several run modes last touched it - `.dry/` itself is that stable
+ * anchor (`resolvePath(process.cwd(), ".dry")`, ignoring `overrides`/E2E
+ * entirely), but `typesCacheStorage`'s OWN root is not: `options.ts`'s
+ * `localBaseDir` redirects it to `test-results/e2e-data/types-cache` under
+ * `DRYCMS_E2E=1`, and to a per-test temp dir under a unit test's
+ * `overrides.localDataRoot`. When the storage write above already landed at
+ * the plain, un-overridden `.dry/types-cache/` (the common `bun run dev`
+ * case), `.dry/dry.generated.d.ts` is made a SYMLINK to that file instead of
+ * a second independent write - same bytes, one real copy. Anywhere else
+ * (E2E, an override, `kind: "cloudflare"`'s R2 storage, or a platform where
+ * `symlink` itself fails - Windows commonly needs Developer Mode/admin
+ * rights for it) falls back to writing a real, independent file at the
+ * stable path, exactly as before - a stale/dangling symlink left over from
+ * an E2E run would otherwise break `tsc`/the IDE until the next plain `dev`
+ * run regenerated it.
  */
 export async function writeGeneratedDryTypes(output: string): Promise<void> {
   const storage = createStorageAdapter(typesCacheStorage);
@@ -42,11 +59,27 @@ export async function writeGeneratedDryTypes(output: string): Promise<void> {
   // since nothing should clobber a file mid-test-run regardless.
   if (process.env.VITEST) return;
   try {
-    const { mkdir, writeFile } = await import("node:fs/promises");
-    const { resolve: resolvePath } = await import("node:path");
+    const { mkdir, rm, symlink, writeFile } = await import("node:fs/promises");
+    const { relative: relativePath, resolve: resolvePath } = await import("node:path");
     const generatedDir = resolvePath(process.cwd(), ".dry");
     await mkdir(generatedDir, { recursive: true });
-    await writeFile(resolvePath(generatedDir, "dry.generated.d.ts"), output);
+    const onDiskPath = resolvePath(generatedDir, "dry.generated.d.ts");
+    const stableTypesCacheRoot = resolvePath(generatedDir, "types-cache");
+
+    if (typesCacheStorage.kind === "local" && typesCacheStorage.root === stableTypesCacheRoot) {
+      const target = relativePath(generatedDir, resolvePath(stableTypesCacheRoot, CACHE_ENTRY_NAME));
+      try {
+        await rm(onDiskPath, { force: true });
+        await symlink(target, onDiskPath);
+        return;
+      } catch (error) {
+        // `symlink` itself can fail even where `writeFile` wouldn't (e.g.
+        // Windows without Developer Mode/admin rights) - fall through to a
+        // real independent copy rather than leave nothing on disk at all.
+        console.error("[drycms] failed to symlink on-disk dry.generated.d.ts, writing a real copy instead:", error);
+      }
+    }
+    await writeFile(onDiskPath, output);
   } catch (error) {
     // Best-effort: a request-time caller (`regenerateTypesCache`) must never
     // fail the schema-apply response just because, say, the working
