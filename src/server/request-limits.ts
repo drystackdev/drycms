@@ -1,5 +1,12 @@
 export const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
 export const MAX_UPLOAD_BODY_BYTES = 50 * 1024 * 1024;
+/** A storage restore uploads the WHOLE Media library as one zip, not a
+ * single file - well past a single Media upload's 50 MiB cap. Still bounded
+ * (not unlimited): the request itself has to fit in memory to be unzipped
+ * (`storage/zip.ts`'s `parseZip` needs random access to the whole byte
+ * array), and the underlying platform (Cloudflare Workers) caps request
+ * body size regardless of what's configured here. */
+export const MAX_STORAGE_BACKUP_BODY_BYTES = 500 * 1024 * 1024;
 /** Magic Write's own request can carry several base64-encoded context images
  * (already client-resized to ~240px, but base64 still inflates raw bytes
  * ~33%) - well past the generic 2 MiB JSON cap, nowhere near a real upload's
@@ -29,6 +36,7 @@ export function maxBodyBytesFor(segment: string, slug?: string): number {
   // than the generic 2 MiB JSON cap for any real site, same ceiling as a
   // Media upload.
   if (segment === "backup") return MAX_UPLOAD_BODY_BYTES;
+  if (segment === "storage-backup") return MAX_STORAGE_BACKUP_BODY_BYTES;
   if (segment === "ai" && slug === "magic-write") return MAX_MAGIC_WRITE_BODY_BYTES;
   if (segment === "page-source-ai") return MAX_PAGE_SOURCE_AI_BODY_BYTES;
   return MAX_JSON_BODY_BYTES;

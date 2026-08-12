@@ -28,6 +28,7 @@ import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-res
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
 import * as backupRoute from "./routes/backup.js";
+import * as storageBackupRoute from "./routes/storage-backup.js";
 import { requirePermission } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
@@ -96,6 +97,10 @@ const API_ROUTES: Record<string, RouteModule> = {
   // each call `requireSuperAdmin` directly instead, same self-gating
   // precedent as `routes/ai.ts`'s Magic Chat check.
   backup: backupRoute,
+  // Same self-gating (no dispatcher-level check) and same reasoning as
+  // `backup` above - a Media storage backup/restore has no Role toggle
+  // either.
+  "storage-backup": storageBackupRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {
