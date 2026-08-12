@@ -12,7 +12,13 @@ const { path } = window.__DRY_CONFIG__;
 import { useDialogSync } from "../hooks/list-nav.js";
 import { createContentTypesApi } from "../content-types/http-api.js";
 import { diffContentType } from "../content-types/draft-diff.js";
-import { drafts as draftsSignal } from "../content-types/draft-store.js";
+import {
+  drafts as draftsSignal,
+  syncAiContentTypeDrafts,
+  resolveAiDraftConflict,
+  type AiDraftConflict,
+} from "../content-types/draft-store.js";
+import ConfirmDialog from "../components/ConfirmDialog.js";
 import { fieldTypes } from "../content-types/field-registry.js";
 import { relationMirrorFieldsFor } from "../content-types/system-fields.js";
 import type {
@@ -395,6 +401,25 @@ export default function BuilderContentType() {
   }, [contentTypesVersion.value, reload]);
   const pendingDrafts = draftsSignal.value;
   const pendingCount = Object.keys(pendingDrafts).length;
+
+  // Pull any pending AI-proposed schema changes (MCP's `propose_content_type`)
+  // into the local draft store on every visit to this page - the same
+  // "Apply and build" review below shows them alongside human-typed drafts,
+  // no separate screen. A draft that conflicts with one already sitting
+  // here (different content, same id) isn't silently overwritten - it's
+  // queued in `aiConflicts` for the admin to resolve one at a time below.
+  const [aiConflicts, setAiConflicts] = useState<AiDraftConflict[]>([]);
+  useEffect(() => {
+    void syncAiContentTypeDrafts().then((conflicts) => {
+      if (conflicts.length > 0) setAiConflicts((current) => [...current, ...conflicts]);
+    });
+  }, []);
+  const currentConflict = aiConflicts[0] ?? null;
+  function resolveCurrentConflict(action: "overwrite" | "keep") {
+    if (!currentConflict) return;
+    void resolveAiDraftConflict(currentConflict, action);
+    setAiConflicts((current) => current.slice(1));
+  }
   const liveDefinitions = (definitions ?? []).filter(
     (definition) => !definition.hidden,
   );
@@ -555,6 +580,22 @@ export default function BuilderContentType() {
         open={uploadSeedDataOpen}
         onClose={() => setUploadSeedDataOpen(false)}
         onApplied={() => void reload()}
+      />
+      <ConfirmDialog
+        open={currentConflict !== null}
+        title="AI proposed a conflicting change"
+        message={
+          <p>
+            AI has proposed a change to "
+            {currentConflict?.server.definition.label || currentConflict?.server.definition.name}
+            " that's different from a draft you already have pending for it. Use the AI's
+            version, or keep what you already have and discard the AI's proposal?
+          </p>
+        }
+        confirmLabel="Use AI's version"
+        cancelLabel="Keep my draft"
+        onConfirm={() => resolveCurrentConflict("overwrite")}
+        onCancel={() => resolveCurrentConflict("keep")}
       />
     </>
   );

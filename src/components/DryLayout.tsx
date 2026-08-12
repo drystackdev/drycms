@@ -39,6 +39,10 @@ import {
   hydrateEntryDraftIndex,
   watchEntryDraftIndex,
 } from "../content-types/entry-draft-store.js";
+import {
+  hydrateContentTypeDraftIndex,
+  watchContentTypeDraftIndex,
+} from "../content-types/draft-store.js";
 
 interface Props {
   children?: ComponentChildren;
@@ -175,6 +179,18 @@ const NAV: {
     ready: true,
     section: "System",
     permissionName: "redirect",
+  },
+  {
+    key: "backup",
+    label: "Backup",
+    href: `${path}/backup`,
+    icon: "Archive",
+    ready: true,
+    section: "System",
+    // Deliberately `superAdminOnly`, not a grantable System toggle - same
+    // reasoning as `ai-keys` above: a full database backup/restore has no
+    // per-Role notion of partial access.
+    superAdminOnly: true,
   },
   // No flat "settings" entry here - it's rendered as its own expandable
   // `SidebarNavGroup` (2 static sub-items: Color schema/Google Verification)
@@ -457,6 +473,14 @@ export default function DryLayout({ children }: Props) {
   useEffect(() => {
     void hydrateEntryDraftIndex();
     return watchEntryDraftIndex();
+  }, []);
+
+  // Same one-time-hydrate-then-watch treatment as the entry-draft effect
+  // right above, for content-type schema drafts (`draft-store.ts`, now
+  // IndexedDB-backed instead of synchronous localStorage).
+  useEffect(() => {
+    void hydrateContentTypeDraftIndex();
+    return watchContentTypeDraftIndex();
   }, []);
 
   // One-time pull-then-reconcile against this account's server-side

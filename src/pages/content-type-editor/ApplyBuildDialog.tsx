@@ -14,7 +14,14 @@ import {
 } from "../../components/icons/index.js";
 import { createContentTypesApi, type BatchItemResult } from "../../content-types/http-api.js";
 import { describeDestructiveChange, diffContentType } from "../../content-types/draft-diff.js";
-import { discardDraft, discardDrafts, drafts, type DraftEntry } from "../../content-types/draft-store.js";
+import {
+  discardDraft,
+  discardDrafts,
+  drafts,
+  deleteAiContentTypeDraftOnServer,
+  type DraftEntry,
+} from "../../content-types/draft-store.js";
+import { SparkleIcon } from "../../components/AiSparkleIcon.js";
 import { bumpContentTypesVersion } from "../../store/content-types.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
 
@@ -144,6 +151,13 @@ export default function ApplyBuildDialog({
       setApplyResults(response.results);
       const succeededIds = response.results.filter((r) => r.ok).map((r) => r.id);
       discardDrafts(succeededIds);
+      // A succeeded AI-proposed draft is now live - its server-side staging
+      // copy (`ai-content-type-drafts.ts`) is no longer pending review, so
+      // clear it too, same as any other resolved AI draft.
+      for (const id of succeededIds) {
+        const entry = items.find((item) => item.definition.id === id);
+        if (entry?.source === "ai") void deleteAiContentTypeDraftOnServer(id);
+      }
       const allOk = response.results.length === items.length && response.results.every((r) => r.ok);
       setStage("applied");
       if (succeededIds.length > 0) {
@@ -180,13 +194,18 @@ export default function ApplyBuildDialog({
 
   function handleResetItem() {
     if (!resetItemId) return;
+    const entry = items.find((item) => item.definition.id === resetItemId);
     discardDraft(resetItemId);
+    if (entry?.source === "ai") void deleteAiContentTypeDraftOnServer(resetItemId);
     resetItemsState(items.filter((entry) => entry.definition.id !== resetItemId));
     setResetItemId(null);
   }
 
   function handleResetAll() {
     discardDrafts(items.map((entry) => entry.definition.id));
+    for (const entry of items) {
+      if (entry.source === "ai") void deleteAiContentTypeDraftOnServer(entry.definition.id);
+    }
     resetItemsState([]);
     setResetAllConfirm(false);
   }
@@ -273,6 +292,11 @@ export default function ApplyBuildDialog({
                           <strong>{entry.definition.label || entry.definition.name || "(untitled)"}</strong>
                           <span class="badge sm secondary">{KIND_LABELS[entry.definition.kind]}</span>
                           {diff.isNew && <span class="badge sm info">New</span>}
+                          {entry.source === "ai" && (
+                            <span class="badge sm" data-tooltip="Proposed by an MCP client">
+                              <SparkleIcon /> AI
+                            </span>
+                          )}
                         </span>
                         <button
                           type="button"

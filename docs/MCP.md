@@ -49,8 +49,35 @@ client can never do anything the token's owner couldn't already do by hand.
 - `list_docs` / `read_doc` - this repo's own `docs/*.md` files (this one
   included) - read `docs/APP-ROUTER.md` before writing page-source code.
 
+**Schema:**
+- `propose_content_type` - the one tool that does NOT apply immediately.
+  Give it a full content-type definition as a JSON string; matching by
+  `name` against an existing type proposes an UPDATE to it, a `name` that
+  doesn't exist yet proposes a new one. Either way it's saved as a pending
+  draft the admin reviews and applies (or discards) themselves under
+  Content Types -> Apply and build - exactly like a draft they typed by
+  hand, badged "AI" in that review dialog. Deleting a content type isn't
+  supported by this tool.
+
 The `initialize` response's `instructions` field gives a client a short
 orientation covering the points above, so a well-behaved MCP client
 generally reaches for `read_dry_types`/`read_doc` on its own before writing
 code - but nothing enforces that; a client can still call `write_page_source`
 directly.
+
+## AI-proposed schema drafts never touch the live schema directly
+
+`propose_content_type` writes to a server-side KV staging area
+(`src/server/ai-content-type-drafts.ts`), never to the live content-type
+table - the same "index + per-draft record" shape `auth-security.ts` already
+uses for Personal Access Tokens, capped at 20 pending drafts per user with a
+30-day TTL as a backstop if nothing ever reviews them. The admin's browser
+pulls pending drafts into the same IndexedDB-backed draft store a
+human-typed draft already uses (`content-types/draft-store.ts`,
+`content-type-draft-db.ts`) the next time they open Content Types, so it
+shows up in the exact same "Apply and build" flow - no separate review
+screen. If a pulled AI draft conflicts with a different draft already
+sitting there for the same content type, the admin is asked to overwrite or
+keep their own before anything is merged. Applying, discarding, or
+explicitly keeping a conflicting local draft instead all clear the
+server-side staging entry.

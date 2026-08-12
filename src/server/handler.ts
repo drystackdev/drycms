@@ -9,6 +9,7 @@ import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
+import * as aiContentTypeDraftsRoute from "./routes/ai-content-type-drafts.js";
 import * as contentTypeSeedRoute from "./routes/content-type-seed.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
@@ -26,6 +27,7 @@ import * as pagesSourceGithubSyncRoute from "./routes/pages-source-github-sync.j
 import * as pagesSourceGithubRestoreRoute from "./routes/pages-source-github-restore.js";
 import * as builtAssetsRoute from "./routes/built-assets.js";
 import * as assetHrefsRoute from "./routes/asset-hrefs.js";
+import * as backupRoute from "./routes/backup.js";
 import { requirePermission } from "./admin-access.js";
 import {
   ICON_MANAGEMENT_RESOURCE_ID,
@@ -68,6 +70,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   icons: iconsRoute,
   iconify: iconifyRoute,
   "content-types": contentTypesRoute,
+  "ai-content-type-drafts": aiContentTypeDraftsRoute,
   "content-type-seed": contentTypeSeedRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
@@ -85,6 +88,14 @@ const API_ROUTES: Record<string, RouteModule> = {
   "github-restore": pagesSourceGithubRestoreRoute,
   "built-assets": builtAssetsRoute,
   "asset-hrefs": assetHrefsRoute,
+  // No dispatcher-level gate below for `backup` - unlike `github-sync`/
+  // `github-restore`'s grantable `PAGE_BUILDER_RESOURCE_ID` permission, a
+  // full database backup/restore has no Role toggle at all (same
+  // `superAdminOnly`, not-a-System-toggle reasoning `DryLayout.tsx`'s `NAV`
+  // entry documents for `ai-keys`) - `routes/backup.ts`'s own `GET`/`POST`
+  // each call `requireSuperAdmin` directly instead, same self-gating
+  // precedent as `routes/ai.ts`'s Magic Chat check.
+  backup: backupRoute,
 };
 
 export function isApiRequest(pathname: string): boolean {

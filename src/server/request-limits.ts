@@ -25,6 +25,10 @@ function jsonResponse(data: unknown, status: number): Response {
 
 export function maxBodyBytesFor(segment: string, slug?: string): number {
   if (segment === "storage") return MAX_UPLOAD_BODY_BYTES;
+  // A restore upload is a full SQL dump of the content DB - easily bigger
+  // than the generic 2 MiB JSON cap for any real site, same ceiling as a
+  // Media upload.
+  if (segment === "backup") return MAX_UPLOAD_BODY_BYTES;
   if (segment === "ai" && slug === "magic-write") return MAX_MAGIC_WRITE_BODY_BYTES;
   if (segment === "page-source-ai") return MAX_PAGE_SOURCE_AI_BODY_BYTES;
   return MAX_JSON_BODY_BYTES;

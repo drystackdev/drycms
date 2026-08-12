@@ -38,6 +38,7 @@ const PageEditor = lazy(() => import("../pages/PageEditor.js"));
 const Settings = lazy(() => import("../pages/Settings.js"));
 const GoogleVerificationSettings = lazy(() => import("../pages/GoogleVerificationSettings.js"));
 const GithubSyncSettings = lazy(() => import("../pages/GithubSyncSettings.js"));
+const Backup = lazy(() => import("../pages/Backup.js"));
 const VeiChangesPreview = lazy(() => import("../pages/vei/ChangesPreview.js"));
 
 /** Client-side redirect - Astro injects a single catch-all route, so the bare
@@ -219,6 +220,7 @@ function AuthenticatedApp() {
                 path={`${path}/settings/github-sync`}
                 component={GithubSyncSettings}
               />
+              <Route path={`${path}/backup`} component={Backup} />
               {/* `/new` registered before `/:id` so it isn't swallowed by the id param. */}
               <Route
                 path={`${path}/roles/new`}

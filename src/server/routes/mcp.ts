@@ -37,13 +37,16 @@ import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
-import { supportsMagic, PAGE_BUILDER_RESOURCE_ID } from "../../content-types/permissions.js";
+import { supportsMagic, PAGE_BUILDER_RESOURCE_ID, CONTENT_TYPES_RESOURCE_ID } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { MagicWriteFetchTurn, MagicWriteRawFields, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
 import { requirePermission } from "../admin-access.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { normalizeStoragePath } from "../../storage/path.js";
 import { requirePageSourceFileName } from "./pages-source.js";
+import { validateContentTypeDefinition, NamingError } from "../../content-types/naming.js";
+import { randomUUID } from "../../lib/uuid.js";
+import { saveAiContentTypeDraft, type AiContentTypeDraft } from "../ai-content-type-drafts.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
@@ -61,6 +64,7 @@ const MCP_INSTRUCTIONS = [
   "Before writing or editing any dry() call in a page/component, call read_dry_types to see this project's REAL, current collection/singleton names and field shapes - never guess a field name, it changes as the content schema evolves. list_content_types/list_entries/get_entry preview the actual data a dry() call would render.",
   'For drycms\'s own developer documentation (routing conventions, the dry() API, styling rules, the content-type model, deployment), call list_docs then read_doc - read "docs/APP-ROUTER.md" before writing any page-source code.',
   "write_page_source saves straight to storage immediately - unlike the admin's own Page Editor UI there is no draft/review step here - but the change still needs a Build (from the admin's Page Editor) before it reaches the live site. Use preview_page_source to confirm a static page.tsx compiles and renders before considering a change done.",
+  "propose_content_type is the ONE exception to \"applies immediately\": it never touches the live schema - it saves a pending draft the admin reviews and applies themselves under Content Types -> Apply and build, matching by \"name\" to propose an update to an existing type or a new one otherwise.",
 ].join("\n\n");
 
 class McpError extends Error {
@@ -221,6 +225,23 @@ const TOOLS: ToolDefinition[] = [
       type: "object",
       properties: { path: { type: "string", description: "The doc's path, e.g. \"docs/APP-ROUTER.md\"." } },
       required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "propose_content_type",
+    description:
+      "Propose creating a new content type, or updating an existing one, by full JSON definition. NEVER applied directly - saved as a PENDING draft the admin reviews and applies (or discards) themselves under Content Types -> Apply and build, exactly like a draft they typed by hand. Matching by \"name\" against an existing content type proposes an update to it; a name that doesn't exist yet proposes a new one. Deleting a content type isn't supported by this tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        definitionJson: {
+          type: "string",
+          description:
+            "The full content type definition as a JSON string: at least \"name\", \"label\", \"kind\" (\"collection\"|\"singleton\"|\"component\"), and \"fields\" (an array, may be empty). Omit \"id\"/\"version\" - they're assigned/looked up server-side. See docs/ARCHITECTURE.md (via read_doc) for the field model.",
+        },
+      },
+      required: ["definitionJson"],
       additionalProperties: false,
     },
   },
@@ -487,6 +508,62 @@ async function runReadDocTool(context: DryRouteContext, rawPath: string | undefi
   return { text: content.length > MAX_PAGE_SOURCE_READ_CHARS ? `${content.slice(0, MAX_PAGE_SOURCE_READ_CHARS)}\n… (truncated)` : content };
 }
 
+async function requireContentTypesAccess(context: DryRouteContext): Promise<ToolResult | null> {
+  const denied = await requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting");
+  return denied ? { text: "You don't have permission to edit content type schemas.", isError: true } : null;
+}
+
+const VALID_KINDS = new Set<string>(["collection", "singleton", "component"]);
+
+/** Never applies directly - always lands in `ai-content-type-drafts.ts`'s KV
+ * staging area, the same "AI proposes, admin reviews and applies via Apply
+ * and build" flow a human-authored draft already goes through
+ * (`content-types/draft-store.ts`, `ApplyBuildDialog.tsx`).
+ * `id`/`version` are never trusted from the AI - resolved server-side by
+ * matching `name` against the live schema, so the AI never has to guess (or
+ * risk colliding) an internal id. */
+async function runProposeContentTypeTool(context: DryRouteContext, allTypes: ContentTypeDefinition[], definitionJson: string | undefined): Promise<ToolResult> {
+  const denied = await requireContentTypesAccess(context);
+  if (denied) return denied;
+  if (!context.session) return { text: "Sign in required.", isError: true };
+  if (!definitionJson) return { text: '"definitionJson" is required.', isError: true };
+
+  let parsed: Partial<ContentTypeDefinition>;
+  try {
+    parsed = JSON.parse(definitionJson);
+  } catch (error) {
+    return { text: `"definitionJson" is not valid JSON: ${error instanceof Error ? error.message : "parse error"}.`, isError: true };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { text: '"definitionJson" must decode to an object.', isError: true };
+  }
+  if (!parsed.name || typeof parsed.name !== "string") return { text: 'The definition must include a "name".', isError: true };
+  if (!parsed.kind || !VALID_KINDS.has(parsed.kind)) return { text: '"kind" must be "collection", "singleton", or "component".', isError: true };
+  if (!Array.isArray(parsed.fields)) return { text: '"fields" must be an array (may be empty).', isError: true };
+
+  const existing = allTypes.find((type) => type.name === parsed.name && type.kind === parsed.kind);
+  const isNew = !existing;
+  const definition: ContentTypeDefinition = {
+    ...parsed,
+    label: parsed.label || parsed.name,
+    id: existing?.id ?? randomUUID(),
+    version: existing?.version ?? 0,
+  } as ContentTypeDefinition;
+
+  try {
+    validateContentTypeDefinition(definition, allTypes);
+  } catch (error) {
+    const message = error instanceof NamingError || error instanceof Error ? error.message : "Invalid content type definition.";
+    return { text: `Invalid content type: ${message}`, isError: true };
+  }
+
+  const draft: AiContentTypeDraft = { id: definition.id, definition, isNew, createdAt: new Date().toISOString() };
+  await saveAiContentTypeDraft(context.session.id, draft, context.env);
+  return {
+    text: `Proposed ${isNew ? "creating" : "updating"} content type "${definition.name}" (${definition.label}) - saved as a pending draft, not applied. The admin will see it under Content Types -> Apply and build to review and apply it.`,
+  };
+}
+
 function stringArg(args: Record<string, unknown>, name: string): string | undefined {
   const value = args[name];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -596,6 +673,9 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
       break;
     case "read_doc":
       outcome = await runReadDocTool(context, stringArg(args, "path"));
+      break;
+    case "propose_content_type":
+      outcome = await runProposeContentTypeTool(context, allTypes, stringArg(args, "definitionJson"));
       break;
     default:
       outcome = { text: `Unknown tool "${name}".`, isError: true };

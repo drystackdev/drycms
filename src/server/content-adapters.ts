@@ -237,6 +237,21 @@ export function withCachedSystemSettings(entries: ContentEntryEngineAdapter, sto
   };
 }
 
+/**
+ * Clears the isolate/KV schema cache after a write that bypasses every
+ * normal path (`applySave`, entry CRUD) this cache's other invalidation
+ * hooks are wired to - currently only `routes/backup.ts`'s restore, which
+ * replaces every table directly via raw SQL. No-op for the local sqlite/
+ * file engines (`schemaCacheStoreFor` only ever returns a store for D1).
+ */
+export async function invalidateSchemaCache(context: DryRouteContext): Promise<void> {
+  const store = schemaCacheStoreFor(context.env);
+  if (!store) return;
+  await safeDelete(store, SCHEMA_CACHE_NAMESPACE, CONTENT_TYPES_CACHE_KEY);
+  await safeDelete(store, SCHEMA_CACHE_NAMESPACE, ROLES_CACHE_KEY);
+  await safeDelete(store, SCHEMA_CACHE_NAMESPACE, SYSTEM_SETTINGS_CACHE_KEY);
+}
+
 export function getContentAdapters(context: DryRouteContext): ContentAdapters {
   if (moduleAdapters) return moduleAdapters;
   const existing = requestAdapters.get(context);
