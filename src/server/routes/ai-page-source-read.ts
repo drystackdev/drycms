@@ -24,6 +24,7 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { normalizeStoragePath } from "../../storage/path.js";
 import type { PageSourceReadTurn } from "../../page-components/ai-page-source-protocol.js";
 import { PAGE_SOURCE_DOCS } from "../../page-components/ai-page-source-docs.js";
+import { readGeneratedDryTypes } from "../../content-types/types-cache.js";
 import { MD_ROOT } from "../app-router/source-roots.js";
 
 export interface PageSourceReadResult {
@@ -74,8 +75,24 @@ function readDoc(path: string): PageSourceReadResult {
   return { label, resultText: `Contents of "${key}":\n${truncate(content)}` };
 }
 
+/** `path` is ignored - this root always resolves to the one generated
+ * `dry.generated.d.ts` file (`content-types/types-cache.ts`'s
+ * `readGeneratedDryTypes`), the real, current `dry()` collection/singleton
+ * names and field shapes. */
+async function readGeneratedTypes(context: DryRouteContext): Promise<PageSourceReadResult> {
+  const label = "Reading dry() types…";
+  try {
+    const text = await readGeneratedDryTypes(context);
+    return { label, resultText: `This project's generated dry() types (dry.generated.d.ts):\n\`\`\`ts\n${truncate(text)}\n\`\`\`` };
+  } catch (error) {
+    return { label, resultText: `Could not read the generated dry() types: ${error instanceof Error ? error.message : "unknown error"}.` };
+  }
+}
+
 export async function executePageSourceRead(context: DryRouteContext, turn: PageSourceReadTurn): Promise<PageSourceReadResult> {
-  return turn.root === "docs" ? readDoc(turn.path) : readSourceFile(context, turn.path);
+  if (turn.root === "docs") return readDoc(turn.path);
+  if (turn.root === "types") return readGeneratedTypes(context);
+  return readSourceFile(context, turn.path);
 }
 
 const MD_README_PATH = `${MD_ROOT}/README.md`;

@@ -341,7 +341,13 @@ function validateFieldsTurn(top: MagicWriteRawFields): MagicWriteValidationResul
 
 const FETCH_SOURCES = new Set<string>(["entries", "entry", "media", "types"]);
 
-function validateFetchTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
+/** Exported for reuse by `ai-page-source-protocol.ts`'s own `kind: fetch`
+ * turn (Page Editor Magic Chat) - the exact same lookup-other-drycms-data
+ * concern, on the exact same wire shape (`MagicWriteFetchTurn`), so there's
+ * no reason to keep a second copy of this parser around (unlike the
+ * `fields`/`relation`/`component-repeat` parsing this module also owns,
+ * which genuinely doesn't apply to page-source and stays private). */
+export function validateFetchTurn(top: MagicWriteRawFields): MagicWriteValidationResult {
   const source = top.source;
   if (!isRawString(source) || !FETCH_SOURCES.has(source.trim())) {
     return { ok: false, error: '"source" must be one of "entries", "entry", "media", "types".' };

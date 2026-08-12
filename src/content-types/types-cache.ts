@@ -1,5 +1,10 @@
 import { createStorageAdapter } from "../storage/index.js";
 import { typesCacheStorage } from "../server/config.js";
+import type { DryRouteContext } from "../server/context.js";
+import { getStorageAdapter } from "../server/storage-adapters.js";
+import { getContentAdapters } from "../server/content-adapters.js";
+import { StorageError } from "../storage/types.js";
+import { generateDryTypes } from "./codegen.js";
 
 const CACHE_ENTRY_NAME = "dry.generated.d.ts";
 
@@ -87,5 +92,33 @@ export async function writeGeneratedDryTypes(output: string): Promise<void> {
     // `types-cache` storage write above already succeeded, which is the
     // copy every runtime actually depends on going forward.
     console.error("[drycms] failed to write on-disk dry.generated.d.ts:", error);
+  }
+}
+
+/**
+ * Read side of `writeGeneratedDryTypes` above - the real, current `dry()`
+ * ambient types (collection/singleton names, field shapes), straight from
+ * `typesCacheStorage`. Shared by every reader that needs this content: the
+ * browser Editer's own route (`routes/types-cache.ts`'s `GET`), the Page
+ * Editor Magic Chat's `kind: read, root: "types"`, and the MCP
+ * `read_dry_types` tool - all three want the exact same "read, or lazily
+ * regenerate if the cache hasn't been populated yet" behavior, so it lives
+ * here once rather than three times.
+ */
+export async function readGeneratedDryTypes(context: DryRouteContext): Promise<string> {
+  const adapter = getStorageAdapter(typesCacheStorage, context);
+  try {
+    const file = await adapter.read(CACHE_ENTRY_NAME);
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    return Buffer.concat(chunks).toString("utf-8");
+  } catch (error) {
+    if (!(error instanceof StorageError) || error.code !== "not_found") throw error;
+    // Not generated yet - same lazy-regenerate fallback `routes/types-cache.ts`'s
+    // `GET` originally had inline (see that file's own doc comment for why a
+    // miss is regenerated on the spot rather than treated as a real error).
+    const output = generateDryTypes(await getContentAdapters(context).schema.listContentTypes());
+    await writeGeneratedDryTypes(output);
+    return output;
   }
 }

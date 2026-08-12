@@ -10,7 +10,7 @@
  * forced shared abstraction (see `ai-magic-write.ts`'s own doc comment on why
  * IT is a copy of `ai.ts`'s wizard rather than a shared helper).
  *
- * Three top-level turn kinds:
+ * Four top-level turn kinds:
  * - `kind: chat` - an ordinary conversational reply, identical shape to
  *   Magic Write's own `chat` turn. The only TERMINAL kind - a request may
  *   chain several `code`/`read` turns, but always ends in `chat`.
@@ -24,11 +24,20 @@
  *   one request can touch several files in sequence before a final `chat`
  *   wraps up. Shape mirrors `fields`'s `summary` + payload pattern.
  * - `kind: read` - look at another file before replying (this project's own
- *   source tree, or this repo's own `docs/*.md` reference docs) - never
- *   terminal, looped back server-side by `ai-page-source-write.ts` for
- *   another turn, same non-terminal treatment `ai-magic-write-protocol.ts`
- *   gives `kind: fetch`.
+ *   source tree, this repo's own `docs/*.md` reference docs, or the
+ *   generated `dry()` types) - never terminal, looped back server-side by
+ *   `ai-page-source-write.ts` for another turn, same non-terminal treatment
+ *   `ai-magic-write-protocol.ts` gives `kind: fetch`.
+ * - `kind: fetch` - look up content-type/entry/media data INSIDE drycms
+ *   (not a file) before replying - the exact same concern and wire shape
+ *   `ai-magic-write-protocol.ts` already has for the content-entry Magic
+ *   Chat, reused as-is (`MagicWriteFetchTurn`/`validateFetchTurn`, imported
+ *   rather than duplicated) since page-source authoring needs to look up
+ *   the same kind of data (e.g. "what does this collection's real data look
+ *   like"). Never terminal, same treatment as `kind: read`.
  */
+
+import { validateFetchTurn as validateMagicWriteFetchTurn, type MagicWriteFetchTurn, type MagicWriteRawFields } from "../content-types/ai-magic-write-protocol.js";
 
 export type PageSourceRawValue = string | PageSourceRawValue[] | PageSourceRawFields;
 
@@ -51,7 +60,7 @@ export interface PageSourceCodeTurn {
   code: string;
 }
 
-export type PageSourceReadRoot = "source" | "docs";
+export type PageSourceReadRoot = "source" | "docs" | "types";
 
 /** Never terminal - `ai-page-source-write.ts` executes it (via
  * `ai-page-source-read.ts`) and loops back for another model reply, same
@@ -59,14 +68,17 @@ export type PageSourceReadRoot = "source" | "docs";
  * another file in this project's own `pages/`/`component/`/`styles/` tree
  * (e.g. an imported component); `root: "docs"` reads one of this repo's own
  * `docs/*.md` reference docs (see `ai-page-source-prompt.ts`'s always-
- * embedded `docs/README.md` index). */
+ * embedded `docs/README.md` index); `root: "types"` reads this project's
+ * generated `dry()` ambient types (`dry.generated.d.ts`) - the real, current
+ * collection/singleton names and field shapes, straight from the live
+ * schema (`path` is ignored for this root, there's exactly one file). */
 export interface PageSourceReadTurn {
   kind: "read";
   root: PageSourceReadRoot;
   path: string;
 }
 
-export type PageSourceTurn = PageSourceChatTurn | PageSourceCodeTurn | PageSourceReadTurn;
+export type PageSourceTurn = PageSourceChatTurn | PageSourceCodeTurn | PageSourceReadTurn | MagicWriteFetchTurn;
 
 export type PageSourceValidationResult =
   | { ok: true; turn: PageSourceTurn }
@@ -219,12 +231,12 @@ function validateCodeTurn(top: PageSourceRawFields): PageSourceValidationResult 
   return { ok: true, turn: { kind: "code", path: path.trim(), summary: summary.trim(), code } };
 }
 
-const READ_ROOTS = new Set<string>(["source", "docs"]);
+const READ_ROOTS = new Set<string>(["source", "docs", "types"]);
 
 function validateReadTurn(top: PageSourceRawFields): PageSourceValidationResult {
   const root = top.root;
   const path = top.path;
-  if (!isRawString(root) || !READ_ROOTS.has(root.trim())) return { ok: false, error: '"root" must be "source" or "docs".' };
+  if (!isRawString(root) || !READ_ROOTS.has(root.trim())) return { ok: false, error: '"root" must be "source", "docs", or "types".' };
   if (!isRawString(path) || !path.trim()) return { ok: false, error: '"path" must be a non-empty string.' };
   return { ok: true, turn: { kind: "read", root: root.trim() as PageSourceReadRoot, path: path.trim() } };
 }
@@ -253,6 +265,10 @@ export function parsePageSourceYaml(text: string): PageSourceValidationResult {
   }
   if (top.kind === "code") return validateCodeTurn(top);
   if (top.kind === "read") return validateReadTurn(top);
+  if (top.kind === "fetch") {
+    const result = validateMagicWriteFetchTurn(top as MagicWriteRawFields);
+    return result.ok ? { ok: true, turn: result.turn as MagicWriteFetchTurn } : result;
+  }
   return coerceChatTurn(top, text);
 }
 

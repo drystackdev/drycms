@@ -60,6 +60,13 @@ describe("parsePageSourceYaml - read turn", () => {
     expect(result.turn).toEqual({ kind: "read", root: "docs", path: "docs/ARCHITECTURE.md" });
   });
 
+  it("parses a types-root read (the generated dry() types)", () => {
+    const result = parsePageSourceYaml("kind: read\nroot: types\npath: types");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "read", root: "types", path: "types" });
+  });
+
   it("rejects an unrecognized root", () => {
     const result = parsePageSourceYaml("kind: read\nroot: web\npath: x");
     expect(result.ok).toBe(false);
@@ -67,6 +74,32 @@ describe("parsePageSourceYaml - read turn", () => {
 
   it("rejects a read turn with no path", () => {
     const result = parsePageSourceYaml("kind: read\nroot: source");
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("parsePageSourceYaml - fetch turn", () => {
+  it("parses a types-source fetch", () => {
+    const result = parsePageSourceYaml("kind: fetch\nsource: types");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "fetch", source: "types", typeSlug: undefined, id: undefined, search: undefined, path: undefined });
+  });
+
+  it("parses an entries-source fetch with a typeSlug and search", () => {
+    const result = parsePageSourceYaml("kind: fetch\nsource: entries\ntypeSlug: post\nsearch: hello");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.turn).toEqual({ kind: "fetch", source: "entries", typeSlug: "post", id: undefined, search: "hello", path: undefined });
+  });
+
+  it("rejects an entry-source fetch missing an id", () => {
+    const result = parsePageSourceYaml("kind: fetch\nsource: entry\ntypeSlug: post");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects an unrecognized fetch source", () => {
+    const result = parsePageSourceYaml("kind: fetch\nsource: bogus");
     expect(result.ok).toBe(false);
   });
 });

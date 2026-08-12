@@ -22,12 +22,14 @@
  * its existing validation) the admin's own Save button already calls - see
  * `status/page-editor-magic-chat.md`.
  */
-import { ai } from "../config.js";
+import { ai, storage } from "../config.js";
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse } from "../route-helpers.js";
 import { extractPageSourceYaml, parsePageSourceYaml } from "../../page-components/ai-page-source-protocol.js";
 import { buildPageSourceSystemPrompt } from "../../page-components/ai-page-source-prompt.js";
 import { executePageSourceRead, readProjectReadme } from "./ai-page-source-read.js";
+import { executeMagicFetch } from "./ai-magic-write-fetch.js";
+import { getContentAdapters } from "../content-adapters.js";
 import {
   acquireAiStreamSlot,
   createChatStream,
@@ -188,6 +190,11 @@ const PAGE_SOURCE_READ_MAX_HOPS = 3;
  * a real multi-file change (e.g. a new component plus the page that uses
  * it) without being unbounded. */
 const PAGE_SOURCE_CODE_MAX_HOPS = 8;
+/** Mirrors `ai-magic-write.ts`'s own fetch-hop cap for the content-entry
+ * Magic Chat - a `kind: fetch` lookup (content types/entries/media) is a
+ * cheap orientation aid, not something a single request needs unbounded
+ * access to. */
+const PAGE_SOURCE_FETCH_MAX_HOPS = 3;
 /** A whole file's replacement text can easily run past the 2048-token
  * default `ai.ts`'s Anthropic branch otherwise applies - same override
  * `ai-magic-write.ts` makes for a whole entry's worth of fields, reused
@@ -220,6 +227,8 @@ function streamPageSourceWrite(context: DryRouteContext, request: PageSourceWrit
             projectFiles: request.projectFiles,
             projectContext,
           });
+          const { schema, entries } = getContentAdapters(context);
+          const allTypes = await schema.listContentTypes();
           const priming: ChatMessage = { role: "user", text: systemPrompt };
           const currentTurn: ChatMessage = { role: "user", text: request.prompt };
           let messages: ChatMessage[] = [priming, ...request.history, currentTurn];
@@ -227,8 +236,9 @@ function streamPageSourceWrite(context: DryRouteContext, request: PageSourceWrit
           let dialectAttempt = 0;
           let readHops = 0;
           let codeHops = 0;
+          let fetchHops = 0;
 
-          const maxIterations = PAGE_SOURCE_MAX_ATTEMPTS + PAGE_SOURCE_READ_MAX_HOPS + PAGE_SOURCE_CODE_MAX_HOPS;
+          const maxIterations = PAGE_SOURCE_MAX_ATTEMPTS + PAGE_SOURCE_READ_MAX_HOPS + PAGE_SOURCE_CODE_MAX_HOPS + PAGE_SOURCE_FETCH_MAX_HOPS;
           for (let iteration = 0; iteration < maxIterations; iteration++) {
             if (dialectAttempt > 0) controller.enqueue(streamEvent({ retry: true }));
             const result = await runPageSourceTurn(context, messages, request.aiKeyName, request.aiModel, (delta) => {
@@ -268,6 +278,23 @@ function streamPageSourceWrite(context: DryRouteContext, request: PageSourceWrit
               // `ai-magic-write.ts` - never a terminal `turn` event.
               controller.enqueue(streamEvent({ reading: readResult.label }));
               messages = [...messages, { role: "assistant", text: result.text }, { role: "user", text: readResult.resultText }];
+              continue;
+            }
+
+            if (turn.kind === "fetch") {
+              fetchHops++;
+              if (fetchHops > PAGE_SOURCE_FETCH_MAX_HOPS) {
+                messages = [
+                  ...messages,
+                  { role: "assistant", text: result.text },
+                  { role: "user", text: "You've used up this turn's lookups - reply now with what you already have (kind: chat or code), no more kind: fetch." },
+                ];
+                continue;
+              }
+              const fetchResult = await executeMagicFetch(context, entries, allTypes, storage, turn);
+              // Transient status only, same non-terminal treatment `kind: read` gets above.
+              controller.enqueue(streamEvent({ reading: fetchResult.label }));
+              messages = [...messages, { role: "assistant", text: result.text }, { role: "user", text: fetchResult.resultText }];
               continue;
             }
 

@@ -29,6 +29,10 @@ to reproduce the same mistakes.
 - [DEPLOYMENT.md](DEPLOYMENT.md) - how to run drycms in production on Node or
   Cloudflare Workers. Covers configuration, build steps, and runtime setup for
   both platforms. Read before deploying.
+- [MCP.md](MCP.md) - the Model Context Protocol server for external AI
+  clients (Claude Desktop, Claude Code, ...): auth, and the full tool list
+  for reading/writing content and page source. A different surface from
+  this Page Editor chat you're reading this index in.
 
 For the project layout and dev/build/test commands, see
 [`AGENTS.md`](../AGENTS.md) at the repo root (`CLAUDE.md` is a symlink to it).

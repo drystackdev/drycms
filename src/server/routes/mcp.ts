@@ -31,6 +31,8 @@ import { getContentAdapters } from "../content-adapters.js";
 import { getAuthSecurityStore } from "../auth-security.js";
 import { checkAccess } from "./content-entries.js";
 import { executeMagicFetch } from "./ai-magic-write-fetch.js";
+import { readGeneratedDryTypes } from "../../content-types/types-cache.js";
+import { PAGE_SOURCE_DOCS } from "../../page-components/ai-page-source-docs.js";
 import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
@@ -46,6 +48,20 @@ import { requirePageSourceFileName } from "./pages-source.js";
 const PROTOCOL_VERSION = "2025-06-18";
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
 const SERVER_INFO = { name: "drycms", version: "0.0.1" };
+
+/** Sent once, in `initialize`'s result - the closest thing this server has
+ * to a system prompt for an external MCP client. Orients it before it makes
+ * its first tool call: the 4 page-source roots, where this project's own
+ * admin-authored notes live, and - the single most common mistake an AI
+ * editing drycms makes - to check `read_dry_types` for real collection/field
+ * names before writing a `dry()` call rather than guessing (see
+ * `docs/APP-ROUTER.md`'s own warning about this, fetchable via `read_doc`). */
+const MCP_INSTRUCTIONS = [
+  'This is drycms, a headless CMS. Page/layout/component source lives under 4 roots inside "pages-source": "pages/" (routes - page.tsx/layout.tsx/404.tsx/500.tsx), "component/" (reusable .tsx components, imported as @component/Name), "styles/" (Tailwind CSS), and "md/" (this project\'s own admin-authored Markdown notes for AI - read "md/README.md" first via read_page_source if it exists).',
+  "Before writing or editing any dry() call in a page/component, call read_dry_types to see this project's REAL, current collection/singleton names and field shapes - never guess a field name, it changes as the content schema evolves. list_content_types/list_entries/get_entry preview the actual data a dry() call would render.",
+  'For drycms\'s own developer documentation (routing conventions, the dry() API, styling rules, the content-type model, deployment), call list_docs then read_doc - read "docs/APP-ROUTER.md" before writing any page-source code.',
+  "write_page_source saves straight to storage immediately - unlike the admin's own Page Editor UI there is no draft/review step here - but the change still needs a Build (from the admin's Page Editor) before it reaches the live site. Use preview_page_source to confirm a static page.tsx compiles and renders before considering a change done.",
+].join("\n\n");
 
 class McpError extends Error {
   code: number;
@@ -183,6 +199,27 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "The page.tsx file's path, e.g. \"pages/about/page.tsx\" or \"pages/page.tsx\"." } },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_dry_types",
+    description:
+      "Read this project's generated TypeScript ambient types for dry() - the real, current collection/singleton names and field shapes, straight from the live content schema. Always check this before writing or editing a dry() call in a page/component - never guess a collection or field name.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "list_docs",
+    description: "List this repo's own developer documentation files - routing conventions, the dry() API, styling rules, the content-type/field model, deployment.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "read_doc",
+    description: "Read one of this repo's own documentation files by path (see list_docs). Start with \"docs/APP-ROUTER.md\" before writing page-source code - it covers routing conventions and the dry() API.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", description: "The doc's path, e.g. \"docs/APP-ROUTER.md\"." } },
       required: ["path"],
       additionalProperties: false,
     },
@@ -417,6 +454,39 @@ async function runPreviewPageSourceTool(context: DryRouteContext, rawPath: strin
   }
 }
 
+const MAX_DRY_TYPES_CHARS = 100_000;
+
+async function runReadDryTypesTool(context: DryRouteContext): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  try {
+    const output = await readGeneratedDryTypes(context);
+    return { text: output.length > MAX_DRY_TYPES_CHARS ? `${output.slice(0, MAX_DRY_TYPES_CHARS)}\n… (truncated)` : output };
+  } catch (error) {
+    return { text: `Could not read the generated dry() types: ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
+  }
+}
+
+async function runListDocsTool(context: DryRouteContext): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  const keys = Object.keys(PAGE_SOURCE_DOCS).sort();
+  return { text: keys.length > 0 ? `Available docs:\n${keys.map((key) => `- ${key}`).join("\n")}` : "No docs available." };
+}
+
+async function runReadDocTool(context: DryRouteContext, rawPath: string | undefined): Promise<ToolResult> {
+  const denied = await requirePageBuilderAccess(context);
+  if (denied) return denied;
+  if (!rawPath) return { text: "\"path\" is required.", isError: true };
+  const key = rawPath.replace(/^\/+/, "");
+  const content = PAGE_SOURCE_DOCS[key];
+  if (content === undefined) {
+    const available = Object.keys(PAGE_SOURCE_DOCS).sort().join(", ") || "(none)";
+    return { text: `No doc at "${key}". Available: ${available}.`, isError: true };
+  }
+  return { text: content.length > MAX_PAGE_SOURCE_READ_CHARS ? `${content.slice(0, MAX_PAGE_SOURCE_READ_CHARS)}\n… (truncated)` : content };
+}
+
 function stringArg(args: Record<string, unknown>, name: string): string | undefined {
   const value = args[name];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -518,6 +588,15 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
     case "preview_page_source":
       outcome = await runPreviewPageSourceTool(context, stringArg(args, "path"));
       break;
+    case "read_dry_types":
+      outcome = await runReadDryTypesTool(context);
+      break;
+    case "list_docs":
+      outcome = await runListDocsTool(context);
+      break;
+    case "read_doc":
+      outcome = await runReadDocTool(context, stringArg(args, "path"));
+      break;
     default:
       outcome = { text: `Unknown tool "${name}".`, isError: true };
   }
@@ -533,6 +612,7 @@ async function dispatch(context: DryRouteContext, method: string, params: Record
       protocolVersion: requested && SUPPORTED_PROTOCOL_VERSIONS.has(requested) ? requested : PROTOCOL_VERSION,
       capabilities: { tools: {} },
       serverInfo: SERVER_INFO,
+      instructions: MCP_INSTRUCTIONS,
     };
   }
   if (method === "ping") return {};
