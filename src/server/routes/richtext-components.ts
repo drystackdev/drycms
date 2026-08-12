@@ -190,7 +190,10 @@ export const GET: DryRouteHandler = async (context) => {
     if (name.endsWith(".js")) {
       const slug = slugFor(name.slice(0, -".js".length));
       const result = await adapter.read(`${slug}.js`);
-      return new Response(Readable.toWeb(result.stream) as unknown as ReadableStream, {
+      // Same reason as `routes/storage.ts` - prefer the backend's own web
+      // stream, since the Node round trip breaks on client cancel under
+      // `nodejs_compat` (see `StorageReadResult.webStream`).
+      return new Response(result.webStream ?? (Readable.toWeb(result.stream) as unknown as ReadableStream), {
         status: 200,
         headers: { "Content-Type": "text/javascript" },
       });

@@ -16,11 +16,10 @@ function isAuthEndpoint(pathname: string): boolean {
 }
 
 /** Shares `store/auth.ts`'s own refresh path (Web Locks + cross-tab
- * coalescing) rather than posting to `/api/auth/refresh` directly - the
- * proactive sliding refresh over there already runs on its own timer, so a
- * second, uncoordinated caller here would periodically race it to rotate the
- * same single-use refresh token and trigger the server's reuse-detection
- * full logout. */
+ * coalescing) rather than posting to `/api/auth/refresh` directly - that
+ * function is also called on mount by `loadSession()`, so a second,
+ * uncoordinated caller here could race it to rotate the same single-use
+ * refresh token and trigger the server's reuse-detection full logout. */
 async function refreshSession(): Promise<boolean> {
   return (await refreshExpiredSession()) !== null;
 }
@@ -69,6 +68,7 @@ export function installCsrfFetch(): void {
     return response;
   };
   window.fetch = csrfFetch as typeof window.fetch;
-  // Proactive sliding refresh lives in `store/auth.ts` (its own timer, with
-  // cross-tab coordination) - this module only reacts to an actual 401.
+  // No periodic refresh timer here on purpose - refresh is reactive only
+  // (`store/auth.ts`'s `refreshExpiredSession` explains why two independent
+  // rotators of one single-use token is the bug, not the fix).
 }

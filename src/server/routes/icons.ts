@@ -93,7 +93,10 @@ export const GET: DryRouteHandler = async (context) => {
       throw new StorageError("not_found", `"${name}" does not exist.`);
     }
     const file = await adapter.read(name);
-    return new Response(Readable.toWeb(file.stream) as unknown as ReadableStream, {
+    // Same reason as `routes/storage.ts` - prefer the backend's own web
+    // stream, since the Node round trip breaks on client cancel under
+    // `nodejs_compat` (see `StorageReadResult.webStream`).
+    return new Response(file.webStream ?? (Readable.toWeb(file.stream) as unknown as ReadableStream), {
       status: 200,
       headers: {
         "Content-Type": mimeType(stat.name),
