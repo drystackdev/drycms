@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sổ tay dry()</title>
+<style>
+  :root {
+    --paper: #f9fafb;
+    --card: #ffffff;
+    --ink: #1c252e;
+    --muted: #f4f6f8;
+    --muted-fg: #637381;
+    --line: rgb(145 158 171 / 24%);
+    --line-soft: rgb(145 158 171 / 12%);
+    --accent: #007d53;
+    --accent-solid: #00a76f;
+    --warn: #b76e00;
+    --warn-soft: rgb(183 110 0 / 8%);
+    --code-str: #118d57;
+    --code-kw: #006c9c;
+    --code-tag: #b71d18;
+    --code-attr: #5119b7;
+    --code-com: #91a0ab;
+
+    --font-sans: "DM Sans Variable", "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #141a21;
+      --card: #1c252e;
+      --ink: #f4f7f8;
+      --muted: #28323d;
+      --muted-fg: #919eab;
+      --line: rgb(145 158 171 / 22%);
+      --line-soft: rgb(145 158 171 / 10%);
+      --accent: #5be49b;
+      --accent-solid: #00a76f;
+      --warn: #ffd666;
+      --warn-soft: rgb(255 214 102 / 8%);
+      --code-str: #77ed8b;
+      --code-kw: #61f3f3;
+      --code-tag: #ffac82;
+      --code-attr: #c684ff;
+      --code-com: #7b8794;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #141a21;
+    --card: #1c252e;
+    --ink: #f4f7f8;
+    --muted: #28323d;
+    --muted-fg: #919eab;
+    --line: rgb(145 158 171 / 22%);
+    --line-soft: rgb(145 158 171 / 10%);
+    --accent: #5be49b;
+    --accent-solid: #00a76f;
+    --warn: #ffd666;
+    --warn-soft: rgb(255 214 102 / 8%);
+    --code-str: #77ed8b;
+    --code-kw: #61f3f3;
+    --code-tag: #ffac82;
+    --code-attr: #c684ff;
+    --code-com: #7b8794;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+  a:focus-visible, .rail a:focus-visible { outline: 2px solid var(--accent-solid); outline-offset: 3px; border-radius: 2px; }
+
+  code, pre, .mono { font-family: var(--font-mono); }
+
+  /* ---------------------------------------------------------- masthead */
+
+  .masthead {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .band {
+    max-width: 1180px;
+    margin-inline: auto;
+    padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+  }
+
+  .masthead .band { padding-block: clamp(2.75rem, 7vw, 4.5rem) clamp(2rem, 5vw, 3rem); }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin: 0 0 1.25rem;
+  }
+
+  h1 {
+    font-family: var(--font-mono);
+    font-size: clamp(2.25rem, 7vw, 3.25rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h1 .paren { color: var(--accent); }
+
+  .lede {
+    max-width: 60ch;
+    margin: 1.25rem 0 0;
+    font-size: 1.125rem;
+    color: var(--muted-fg);
+    text-wrap: pretty;
+  }
+
+  .cheats {
+    margin-top: clamp(2rem, 5vw, 2.75rem);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    overflow: hidden;
+  }
+
+  .cheat {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem 1.5rem;
+    padding: 0.85rem 1.15rem;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .cheat:first-child { border-top: 0; }
+
+  .cheat code { font-size: 0.875rem; color: var(--ink); }
+  .cheat span { font-size: 0.8125rem; color: var(--muted-fg); }
+
+  @media (min-width: 720px) {
+    .cheat { grid-template-columns: minmax(0, 30rem) minmax(0, 1fr); align-items: baseline; }
+  }
+
+  /* ------------------------------------------------------------- shell */
+
+  .shell {
+    max-width: 1180px;
+    margin-inline: auto;
+    padding: clamp(2.5rem, 6vw, 4rem) clamp(1.25rem, 4vw, 2.5rem) 6rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3rem;
+  }
+
+  @media (min-width: 1080px) {
+    .shell { grid-template-columns: 14rem minmax(0, 1fr); gap: 4rem; }
+  }
+
+  .rail { align-self: start; }
+
+  @media (min-width: 1080px) {
+    .rail { position: sticky; top: 2.5rem; }
+  }
+
+  .rail p {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin: 0 0 0.85rem;
+  }
+
+  .rail ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .rail a {
+    display: block;
+    padding: 0.3rem 0 0.3rem 0.85rem;
+    border-left: 2px solid var(--line);
+    font-size: 0.875rem;
+    color: var(--muted-fg);
+    text-decoration: none;
+  }
+
+  .rail a:hover { color: var(--ink); }
+
+  .rail a.is-active {
+    color: var(--ink);
+    border-left-color: var(--accent-solid);
+    font-weight: 500;
+  }
+
+  main { min-width: 0; }
+
+  section { margin-bottom: clamp(3rem, 7vw, 4.5rem); scroll-margin-top: 2rem; }
+
+  section > * { max-width: 68ch; }
+  section > .wide, section > figure { max-width: none; }
+
+  h2 {
+    font-size: clamp(1.375rem, 3vw, 1.625rem);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    margin: 0 0 0.75rem;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 2rem 0 0.5rem;
+  }
+
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin: 0 0 0.4rem;
+    word-break: break-word;
+  }
+
+  p { margin: 0 0 1rem; text-wrap: pretty; }
+
+  ul { margin: 0 0 1rem; padding-left: 1.15rem; }
+  li { margin-bottom: 0.4rem; }
+  li::marker { color: var(--muted-fg); }
+
+  strong { font-weight: 600; }
+
+  p code, li code, td code, th code, .note code {
+    font-size: 0.875em;
+    background: var(--muted);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+  }
+
+  /* -------------------------------------------------------------- code */
+
+  figure { margin: 1.5rem 0; }
+
+  figcaption {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted-fg);
+    background: var(--muted);
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 0.6rem 0.6rem 0 0;
+    padding: 0.5rem 0.9rem;
+  }
+
+  pre {
+    margin: 0;
+    padding: 1rem 1.1rem;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0 0 0.6rem 0.6rem;
+    overflow-x: auto;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    tab-size: 2;
+  }
+
+  figure.bare pre { border-radius: 0.6rem; }
+
+  .c { color: var(--code-com); font-style: italic; }
+  .s { color: var(--code-str); }
+  .k { color: var(--code-kw); }
+  .t { color: var(--code-tag); }
+  .a { color: var(--code-attr); }
+
+  /* ------------------------------------------------------------- table */
+
+  .table-wrap { overflow-x: auto; margin: 1.5rem 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 34rem;
+    font-size: 0.875rem;
+  }
+
+  th, td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.6rem 1rem 0.6rem 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  th {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    font-weight: 500;
+    border-bottom-color: var(--line);
+  }
+
+  td:first-child { font-family: var(--font-mono); font-size: 0.8125rem; white-space: nowrap; padding-right: 1.5rem; }
+  td:first-child code { background: none; padding: 0; }
+
+  /* ------------------------------------------------------------- notes */
+
+  .note {
+    margin: 1.5rem 0;
+    padding: 0.9rem 1.1rem;
+    background: var(--muted);
+    border-radius: 0.6rem;
+    font-size: 0.9375rem;
+  }
+
+  .note p:last-child, .note ul:last-child { margin-bottom: 0; }
+
+  .note.trap {
+    background: var(--warn-soft);
+    border-left: 3px solid var(--warn);
+    border-radius: 0 0.6rem 0.6rem 0;
+  }
+
+  .note .label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-fg);
+    margin-bottom: 0.35rem;
+  }
+
+  .note.trap .label { color: var(--warn); }
+
+  /* ------------------------------------------------------------- steps */
+
+  ol.steps { counter-reset: step; list-style: none; margin: 1.25rem 0; padding: 0; }
+
+  ol.steps li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 2.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0.05rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent);
+    background: var(--muted);
+    border-radius: 50%;
+  }
+
+  footer {
+    border-top: 1px solid var(--line);
+    background: var(--card);
+  }
+
+  footer .band {
+    padding-block: 2rem 3rem;
+    font-size: 0.875rem;
+    color: var(--muted-fg);
+  }
+
+  footer p { max-width: 60ch; }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="band">
+    <p class="eyebrow">drycms · App Router</p>
+    <h1>dry<span class="paren">()</span></h1>
+    <p class="lede">
+      Cách đọc nội dung từ CMS ngay trong một trang. Một hàm toàn cục, không
+      import, chạy khi trang được render trên server rồi tự phát lại y nguyên
+      lúc hydrate ở trình duyệt.
+    </p>
+
+    <div class="cheats">
+      <div class="cheat">
+        <code>await dry().collection("demoArticle").get(slug)</code>
+        <span>Một entry, theo slug hoặc id</span>
+      </div>
+      <div class="cheat">
+        <code>await dry().collection("demoArticle").list({ ... })</code>
+        <span>Nhiều entry, có phân trang</span>
+      </div>
+      <div class="cheat">
+        <code>await dry().singleton("demoLanding").get()</code>
+        <span>Bản ghi duy nhất của một singleton</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Mục lục">
+    <p>Mục lục</p>
+    <ol>
+      <li><a href="#co-ban">Gọi ở đâu</a></li>
+      <li><a href="#get">Lấy một entry</a></li>
+      <li><a href="#list">Lấy danh sách</a></li>
+      <li><a href="#select">select</a></li>
+      <li><a href="#where">Lọc &amp; sắp xếp</a></li>
+      <li><a href="#populate">Relation</a></li>
+      <li><a href="#routes">Trang động</a></li>
+      <li><a href="#seo">Title &amp; SEO</a></li>
+      <li><a href="#vei">Sửa tại chỗ</a></li>
+      <li><a href="#bay">Bẫy thường gặp</a></li>
+      <li><a href="#loi">Lỗi hay gặp</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="co-ban">
+      <p class="kicker">dry()</p>
+      <h2>Gọi ở đâu, và tại sao không cần import</h2>
+      <p>
+        Trong <code>pages/**</code> của kho page source, <code>dry()</code> là
+        một biến toàn cục có sẵn — <strong>đừng import nó</strong>. Một Vite
+        plugin tự chèn đúng bản cài đặt: bản đọc thẳng database khi render trên
+        server, và bản phát lại dữ liệu đã fetch khi hydrate ở trình duyệt. Bạn
+        không cần phân biệt hai bản đó, chỉ cần gọi <code>dry()</code>.
+      </p>
+      <p>
+        Cùng cơ chế đó còn có <code>params()</code> (các đoạn động của URL),
+        <code>setTitle()</code> và <code>dryBind()</code>.
+      </p>
+      <p>
+        Quy ước của repo: <strong>trang fetch, component nhận props</strong>.
+        <code>page.tsx</code>/<code>layout.tsx</code> gọi <code>dry()</code> rồi
+        truyền dữ liệu xuống component trong <code>component/</code> — dễ đọc
+        hơn, và tránh việc cùng một dữ liệu bị fetch ở hai nơi.
+      </p>
+
+      <figure>
+        <figcaption>pages/demo/[slug]/page.tsx</figcaption>
+<pre><span class="k">export default async function</span> DemoArticlePage() {
+  <span class="k">const</span> { slug } = params();
+  <span class="k">const</span> article = <span class="k">await</span> dry().collection(<span class="s">"demoArticle"</span>).get(String(slug));
+  <span class="k">if</span> (!article) <span class="k">return</span> &lt;<span class="t">main</span>&gt;Not found.&lt;/<span class="t">main</span>&gt;;
+
+  setTitle(article.heading);
+
+  <span class="k">return</span> (
+    &lt;<span class="t">main</span> <span class="a">class</span>=<span class="s">"mx-auto max-w-3xl px-6 py-12"</span>&gt;
+      &lt;<span class="t">h1</span>&gt;{article.heading}&lt;/<span class="t">h1</span>&gt;
+      &lt;<span class="t">div</span> <span class="a">dangerouslySetInnerHTML</span>={{ __html: article.body ?? <span class="s">""</span> }} /&gt;
+    &lt;/<span class="t">main</span>&gt;
+  );
+}</pre>
+      </figure>
+
+      <div class="note">
+        <span class="label">Trước khi viết</span>
+        <p>
+          Mở <code>.dry/dry.generated.d.ts</code> để lấy đúng tên collection,
+          tên singleton và tên field hiện có — file này sinh ra từ schema đang
+          chạy (<code>bun run dev</code> hoặc <code>bun run dry:generate</code>
+          tạo lại). Đừng đoán tên field.
+        </p>
+      </div>
+    </section>
+
+    <section id="get">
+      <p class="kicker">.get(idOrSlug)</p>
+      <h2>Lấy một entry</h2>
+      <p>
+        Truyền <strong>số</strong> là tra theo <code>id</code>, truyền
+        <strong>chuỗi</strong> là tra theo <code>slug</code>. Không tìm thấy thì
+        trả <code>null</code> — luôn kiểm tra trước khi render.
+      </p>
+      <ul>
+        <li>
+          Tra theo chuỗi chỉ hoạt động khi collection đã bật feature
+          <strong>Slug</strong>; chưa bật thì lời gọi ném lỗi, vì không có gì để
+          tra.
+        </li>
+        <li>
+          <code>get()</code> luôn chỉ trả nội dung <strong>đã publish</strong> —
+          không có tuỳ chọn nào để đọc bản nháp hay bài hẹn giờ chưa tới hạn.
+        </li>
+        <li>
+          <code>get()</code> lấy đủ mọi cột, kể cả richtext — khác với
+          <code>list()</code> ở mục dưới.
+        </li>
+        <li>
+          Nếu content type có bật SEO, <code>get()</code> tự nạp luôn phần SEO
+          của entry vào thẻ meta của trang. Không cần viết thêm gì.
+        </li>
+      </ul>
+      <figure class="bare">
+<pre><span class="c">// singleton chỉ có một bản ghi nên get() không nhận tham số</span>
+<span class="k">const</span> landing = <span class="k">await</span> dry().singleton(<span class="s">"demoLanding"</span>).get();
+landing?.headline;</pre>
+      </figure>
+    </section>
+
+    <section id="list">
+      <p class="kicker">.list(options)</p>
+      <h2>Lấy danh sách</h2>
+      <p>
+        Trả về <code>{ rows, total }</code>: <code>rows</code> là trang hiện
+        tại, <code>total</code> là tổng số bản ghi khớp điều kiện (dùng để vẽ
+        phân trang).
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Tuỳ chọn</th><th>Ý nghĩa</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>where</code></td>
+              <td>Điều kiện lọc — xem mục <a href="#where">Lọc &amp; sắp xếp</a>.</td>
+            </tr>
+            <tr>
+              <td><code>sort</code></td>
+              <td><code>{ field, dir }</code>, <code>dir</code> là <code>"asc"</code> hoặc <code>"desc"</code>.</td>
+            </tr>
+            <tr>
+              <td><code>page</code><br /><code>pageSize</code></td>
+              <td>Phân trang. <code>page</code> đếm từ 0.</td>
+            </tr>
+            <tr>
+              <td><code>select</code></td>
+              <td>Chỉ lấy những field bạn render — xem mục <a href="#select">select</a>.</td>
+            </tr>
+            <tr>
+              <td><code>includeDraft</code></td>
+              <td>Mặc định <code>false</code>. Bật lên mới thấy bản nháp / bài hẹn giờ chưa tới hạn.</td>
+            </tr>
+            <tr>
+              <td><code>include</code></td>
+              <td>Kéo lại field richtext mà <code>list()</code> vốn bỏ qua (xem ghi chú ngay dưới).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note trap">
+        <span class="label">Bẫy</span>
+        <p>
+          <code>list()</code> <strong>không</strong> lấy cột richtext. Một
+          trang danh sách hiếm khi cần toàn bộ HTML của từng bài, nên field đó
+          trả về <code>null</code> chứ không phải nội dung thật — dễ tưởng là
+          mất dữ liệu. Trang nào thật sự cần thì khai báo
+          <code>include: ["body"]</code>. <code>get()</code> không bao giờ cần
+          cái này.
+        </p>
+      </div>
+    </section>
+
+    <section id="select">
+      <p class="kicker">.list({ select })</p>
+      <h2>Chỉ lấy field bạn render</h2>
+      <p>
+        Mọi kết quả <code>dry()</code> đều được nhúng kèm vào HTML của trang —
+        đó chính là thứ giúp hydrate không phải gọi lại server lần hai. Nên một
+        trang danh sách lấy 20 field mà chỉ hiển thị 4 sẽ bắt mọi khách tải
+        thừa 16 field. <code>select</code> là cách chặn việc đó.
+      </p>
+
+      <figure class="bare">
+<pre><span class="k">const</span> { rows, total } = <span class="k">await</span> dry().collection(<span class="s">"demoArticle"</span>).list({
+  sort: { field: <span class="s">"publishedAt"</span>, dir: <span class="s">"desc"</span> },
+  pageSize: 20,
+  select: {
+    title: <span class="k">true</span>,                              <span class="c">// giữ nguyên như đã lưu</span>
+    slug: <span class="k">true</span>,
+    summary: (value) =&gt; value?.slice(0, 120) ?? <span class="s">""</span>,  <span class="c">// hoặc biến đổi</span>
+  },
+});
+<span class="c">// rows[0] là { id, title, slug, summary } — đúng bằng đó, và được gõ kiểu</span></pre>
+      </figure>
+
+      <ul>
+        <li><strong>Không khai <code>select</code> thì lấy tất cả</strong>, y như trước khi có tuỳ chọn này. Nó hoàn toàn tự nguyện.</li>
+        <li><code>id</code> luôn luôn trả về.</li>
+        <li>
+          Hàm biến đổi chạy <strong>một lần, trên server</strong>, và
+          <strong>kết quả</strong> mới là thứ được gửi đi — nên nó phải trả về
+          giá trị JSON hoá được (<code>Date</code> thì được). Đừng trả về VNode.
+        </li>
+        <li>Field không chọn thì không được fetch: không có trong câu SELECT, và cũng không sinh query con cho component lặp hay relation nhiều giá trị.</li>
+        <li><code>where</code>/<code>sort</code> vẫn chạy được trên field bạn không chọn — chúng giải quyết trong SQL, không phải trên dữ liệu trả về.</li>
+        <li>Không đệ quy: chọn một field kiểu component thì component đó về nguyên vẹn.</li>
+      </ul>
+    </section>
+
+    <section id="where">
+      <p class="kicker">where · sort</p>
+      <h2>Lọc &amp; sắp xếp</h2>
+      <p>
+        <code>where</code> là một mảng: các phần tử ở cấp cao nhất được nối bằng
+        <strong>AND</strong>. Một phần tử có thể là điều kiện đơn
+        <code>{ field, op, value }</code>, hoặc một nhóm
+        <code>{ or: [...] }</code> — các điều kiện bên trong nhóm nối bằng
+        <strong>OR</strong>.
+      </p>
+      <p>
+        Toán tử: <code>eq</code>, <code>ne</code>, <code>gt</code>,
+        <code>gte</code>, <code>lt</code>, <code>lte</code>, <code>in</code>
+        (riêng <code>in</code> nhận mảng).
+      </p>
+
+      <figure class="bare">
+<pre><span class="c">// featured = true AND (category = 1 OR category = 2)</span>
+<span class="k">const</span> { rows } = <span class="k">await</span> dry().collection(<span class="s">"demoArticle"</span>).list({
+  where: [
+    { field: <span class="s">"featured"</span>, op: <span class="s">"eq"</span>, value: <span class="k">true</span> },
+    { or: [
+      { field: <span class="s">"category"</span>, op: <span class="s">"eq"</span>, value: 1 },
+      { field: <span class="s">"category"</span>, op: <span class="s">"eq"</span>, value: 2 },
+    ] },
+  ],
+  sort: { field: <span class="s">"publishedAt"</span>, dir: <span class="s">"desc"</span> },
+});</pre>
+      </figure>
+
+      <p>
+        <code>value</code> nhận giá trị đời thường, không phải dạng mã hoá
+        trong cột: điều kiện trên field ngày tháng nhận thẳng
+        <code>Date</code>, field boolean nhận <code>true</code>/<code>false</code>.
+        Chỉ lồng một tầng — nhóm <code>or</code> không chứa nhóm khác.
+      </p>
+    </section>
+
+    <section id="populate">
+      <p class="kicker">{ populate }</p>
+      <h2>Relation: từ id sang bản ghi thật</h2>
+      <p>
+        Mặc định, field relation trả về <strong>id</strong> (hoặc mảng id), đúng
+        như trong database. Khai <code>populate</code> để nhận về bản ghi đầy đủ
+        của collection đích, đã lọc published sẵn.
+      </p>
+
+      <figure class="bare">
+<pre><span class="k">const</span> article = <span class="k">await</span> dry().collection(<span class="s">"demoArticle"</span>)
+  .get(String(slug), { populate: [<span class="s">"authors"</span>, <span class="s">"category"</span>] });
+
+article?.authors[0].name;   <span class="c">// DemoAuthor, không còn là number</span>
+article?.category?.name;    <span class="c">// DemoCategory | null</span></pre>
+      </figure>
+
+      <p>
+        Mỗi tên trong <code>populate</code> tốn thêm một query (chạy song song
+        giữa các field và giữa các id của cùng một field), không phải JOIN. Chỉ
+        khai những cái trang thực sự render.
+      </p>
+    </section>
+
+    <section id="routes">
+      <p class="kicker">pages/blogs/[slug]/page.tsx</p>
+      <h2>Trang động: chính lời gọi dry() quyết định trang nào tồn tại</h2>
+      <p>
+        Một route <code>[slug]</code> là khuôn, không phải trang. Phải có cái gì
+        đó liệt kê ra các slug thật thì mới build được và mới đưa vào
+        <code>sitemap.xml</code>. Cái đó chính là <strong>code của trang</strong>:
+        drycms đọc <code>page.tsx</code> của khuôn, tìm lời gọi
+        <code>dry().collection("...").get(...)</code> trong đó, rồi build một
+        trang cho mỗi entry đã publish của collection ấy.
+      </p>
+      <p>
+        Không có ô cài đặt URL nào phải điền: thư mục route cho ra đường dẫn,
+        field Slug cho ra đoạn cuối, và lời gọi <code>dry()</code> là thứ nối
+        hai cái đó lại.
+      </p>
+
+      <h3>Để một collection có trang thật</h3>
+      <ol class="steps">
+        <li>Bật feature <strong>Slug</strong> cho collection trong Content Types.</li>
+        <li>Tạo file <code>pages/&lt;tên&gt;/[slug]/page.tsx</code>.</li>
+        <li>Lấy entry trong đó bằng <code>dry().collection("...").get(...)</code>.</li>
+        <li>Build trang (Page Builder → Build all, hoặc nút Build trong Page Editor).</li>
+      </ol>
+
+      <ul>
+        <li>Đổi tên thư mục route là đổi URL công khai. Không phải sửa gì thêm.</li>
+        <li>Collection không có trang nào render thì không có URL, nên cũng không bao giờ lọt vào <code>sitemap.xml</code>.</li>
+        <li><code>.list()</code> không tính (trang liệt kê bài liên quan không được định danh bởi chúng), và <code>.get()</code> trên collection chưa bật Slug cũng không tính — nên đọc thêm settings hay menu trong cùng trang là vô hại.</li>
+        <li>Entry bật <em>Hide from search engines</em> vẫn được build, chỉ là không vào sitemap.</li>
+      </ul>
+
+      <div class="note trap">
+        <span class="label">Bẫy</span>
+        <p>
+          Lời gọi phải viết thẳng trong trang. Giấu nó sau một helper hay một
+          biến trung gian —
+          <code>const c = dry().collection("blog"); await c.get(slug)</code> —
+          thì route không resolve được. Khi đó Page Builder liệt nó vào
+          “Unresolved dynamic routes” và khung preview trong Page Editor cũng
+          báo, chứ không âm thầm build ra con số không.
+        </p>
+      </div>
+    </section>
+
+    <section id="seo">
+      <p class="kicker">setTitle() · features.seo</p>
+      <h2>Title &amp; SEO</h2>
+      <p>
+        Thẻ <code>&lt;title&gt;</code>, <code>og:*</code> và
+        <code>canonical</code> được ghép từ bốn tầng, tầng sau đè tầng trước:
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Tầng</th><th>Đến từ đâu</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1. Mặc định</td><td>Singleton <strong>SEO Defaults</strong> — áp cho cả site.</td></tr>
+            <tr><td>2. Singleton</td><td>Một singleton có bật SEO mà trang này đọc.</td></tr>
+            <tr><td>3. Entry</td><td>Field SEO của chính entry mà <code>get()</code> lấy về.</td></tr>
+            <tr><td>4. <code>setTitle()</code></td><td>Gọi tay trong trang — ưu tiên cao nhất.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Tầng 2 và 3 tự động: chỉ cần trang gọi <code>get()</code> trên một type
+        có bật SEO là phần SEO của bản ghi đó được nạp vào, không cần viết thêm
+        dòng nào. <code>setTitle()</code> gọi được ở bất kỳ đâu trong lúc
+        render, gọi bao nhiêu lần cũng được — lần cuối thắng.
+      </p>
+
+      <figure class="bare">
+<pre>setTitle(`${article.heading} — Tạp chí drycms`);</pre>
+      </figure>
+    </section>
+
+    <section id="vei">
+      <p class="kicker">$ · dryBind()</p>
+      <h2>Sửa tại chỗ trên trang công khai</h2>
+      <p>
+        Mỗi bản ghi <code>dry()</code> trả về có thêm một thuộc tính
+        <code>$</code> cho biết từng field đến từ đâu. Nhờ đó admin đang đăng
+        nhập có thể sửa nội dung ngay trên trang công khai. <code>$</code> không
+        đếm được khi duyệt object nên không bao giờ lọt vào JSON hay HTML.
+      </p>
+      <p>
+        Phần lớn trường hợp là tự động. Khi bạn <em>biến đổi</em> giá trị trước
+        khi render thì mối nối bị đứt — dùng <code>dryBind()</code> để nối lại
+        bằng tay:
+      </p>
+
+      <figure class="bare">
+<pre>&lt;<span class="t">h1</span> {...dryBind(article.$.heading)}&gt;{article.heading.toUpperCase()}&lt;/<span class="t">h1</span>&gt;
+&lt;<span class="t">img</span> {...dryBind(article.$.cover, <span class="s">"src"</span>)} <span class="a">src</span>={imageUrl(article.cover)} /&gt;</pre>
+      </figure>
+
+      <p>
+        Hệ quả cần nhớ: field đã qua hàm biến đổi trong <code>select</code>
+        thì <strong>không sửa tại chỗ được</strong> (chữ hiển thị không còn
+        đúng thứ nằm trong database). Field nào admin cần sửa được thì để
+        <code>true</code>.
+      </p>
+    </section>
+
+    <section id="bay">
+      <p class="kicker">Checklist</p>
+      <h2>Bẫy thường gặp</h2>
+      <ul>
+        <li>
+          <strong>Component <code>async</code> không được dùng hook.</strong>
+          Nó ném lỗi lúc chạy, không phải chuyện phong cách. Trang
+          <code>async</code> lo fetch dữ liệu; cần state hay sự kiện thì tách ra
+          một component <strong>đồng bộ</strong> và truyền props xuống.
+        </li>
+        <li>
+          <strong><code>params</code> prop và <code>params()</code> global đừng
+          dùng lẫn trong cùng một hàm.</strong> Prop cục bộ sẽ che mất global và
+          lời gọi ném lỗi “params is not a function”.
+        </li>
+        <li>
+          <strong>Mọi thứ đọc ra đều là bản đã publish.</strong> Nháp chỉ hiện
+          khi <code>list({ includeDraft: true })</code>; <code>get()</code>
+          không có lối tắt nào cả.
+        </li>
+        <li>
+          <strong>Kết quả <code>dry()</code> đi kèm vào HTML.</strong> Fetch bao
+          nhiêu, khách tải bấy nhiêu — dùng <code>select</code> cho trang danh
+          sách.
+        </li>
+        <li>
+          <strong>Tên collection phải khớp schema.</strong> Kiểm tra
+          <code>.dry/dry.generated.d.ts</code> thay vì gõ theo trí nhớ.
+        </li>
+      </ul>
+    </section>
+
+    <section id="loi">
+      <p class="kicker">Thông báo lỗi</p>
+      <h2>Lỗi hay gặp, và ý nghĩa</h2>
+
+      <figure class="bare">
+<pre><span class="c">// Gõ sai tên, hoặc content type đó chưa được apply.</span>
+[drycms] dry().collection(<span class="s">"blogs"</span>) - no content type named <span class="s">"blogs"</span> exists.
+
+<span class="c">// Đúng tên, nhưng nhầm loại: singleton phải gọi .singleton().</span>
+[drycms] dry().collection(<span class="s">"demoLanding"</span>) - <span class="s">"demoLanding"</span> is a singleton, not a collection.</pre>
+      </figure>
+
+      <p>
+        Còn khi <code>get("chuỗi")</code> ném lỗi vì collection không có slug:
+        bật feature <strong>Slug</strong> cho collection đó, hoặc tra theo
+        <code>id</code> (kiểu số) nếu nó vốn không có URL riêng.
+      </p>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div class="band">
+    <p>
+      Tài liệu gốc trong repo: <code>docs/APP-ROUTER.md</code> (quy ước file
+      router, layout, CSS) và <code>src/content-types/dry-reader.ts</code> (khai
+      báo kiểu đầy đủ của mọi tuỳ chọn nói ở đây).
+    </p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+    if (!links.length || !("IntersectionObserver" in window)) return;
+    var byId = {};
+    links.forEach(function (link) { byId[link.getAttribute("href").slice(1)] = link; });
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (link) { link.classList.remove("is-active"); });
+        var active = byId[entry.target.id];
+        if (active) active.classList.add("is-active");
+      });
+    }, { rootMargin: "-10% 0px -70% 0px", threshold: 0 });
+
+    Object.keys(byId).forEach(function (id) {
+      var section = document.getElementById(id);
+      if (section) observer.observe(section);
+    });
+  })();
+</script>
+
+</body>
+</html>
