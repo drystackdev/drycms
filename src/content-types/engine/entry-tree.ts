@@ -582,3 +582,86 @@ export function buildEntryFieldTree(type: ContentTypeDefinition, allTypes: Conte
   );
   return buildNodes(rootFields, rootTree, componentsById, allTypes);
 }
+
+/** The `ContentTypeDefinition.name` of the collection/singleton that OWNS
+ * the referencing field - the resource whose data version a caller has to
+ * bump after clearing the reference, which is NOT derivable from
+ * `tableName` alone (a `component-repeat` item table and a relation link
+ * table both have names of their own). */
+interface InboundRelationOwner {
+  ownerTypeName: string;
+}
+
+/** One place some OTHER row physically stores a reference to a row of the
+ * type being deleted - see `inboundRelationRefs`. */
+export interface InboundRelationRef extends InboundRelationOwner {
+  /** `manyToOne`: `columnName` on `tableName` holds the target id directly,
+   * so the reference is cleared by setting it back to `NULL`. */
+  kind: "column";
+  tableName: string;
+  columnName: string;
+}
+
+/** `oneToMany`/`manyToMany`: `tableName` is the relation's own link table
+ * (`parent_id`/`position`/`target_id`), so the reference is cleared by
+ * deleting the link rows whose `target_id` matches. */
+export interface InboundRelationLinkTable extends InboundRelationOwner {
+  kind: "link-table";
+  tableName: string;
+}
+
+export type InboundRelation = InboundRelationRef | InboundRelationLinkTable;
+
+/**
+ * Every physical location where a row of `targetTypeId` can be referenced BY
+ * another row - the inbound side of `EntryRelationNode`, which only ever
+ * describes the outbound one.
+ *
+ * Deleting a row leaves those references dangling: nothing in the generated
+ * DDL declares a real `FOREIGN KEY` (the same gap `deleteChildFields`'s own
+ * doc comment and `migration.ts` already note), so a `manyToOne` column keeps
+ * an id that resolves to nothing and a link table keeps a row pointing at a
+ * table row that no longer exists. In the admin that shows up as a relation
+ * chip stuck on "…" forever, and in `dry()` as a populated relation that
+ * silently drops to `null` - a deleted row should read as "no relation", not
+ * as a broken one, so `deleteEntry` clears these (see its own callers in
+ * `entries-sqlite.ts`/`entries-d1.ts`).
+ *
+ * Walks every collection/singleton in `allTypes` (a `component` has no table
+ * of its own - its fields are reached through the `component-repeat` node
+ * that embeds them, which is where their real table name comes from), keeping
+ * track of which table the current level actually lives on: `flatten` stays
+ * on the same table, `component-repeat` switches to the item table. The
+ * result includes the deleted type's OWN self-references - a type whose rows
+ * can point at each other is no different here.
+ */
+export function inboundRelationRefs(targetTypeId: string, allTypes: ContentTypeDefinition[]): InboundRelation[] {
+  const found: InboundRelation[] = [];
+  const seen = new Set<string>();
+
+  function add(ref: InboundRelation): void {
+    const key = ref.kind === "column" ? `c:${ref.tableName}.${ref.columnName}` : `t:${ref.tableName}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push(ref);
+  }
+
+  function walk(nodes: EntryFieldNode[], tableName: string, ownerTypeName: string): void {
+    for (const node of nodes) {
+      if (node.kind === "flatten") {
+        walk(node.children, tableName, ownerTypeName);
+      } else if (node.kind === "component-repeat") {
+        walk(node.itemFields, node.tableName, ownerTypeName);
+      } else if (node.kind === "relation" && node.targetTypeId === targetTypeId) {
+        if (node.tableName) add({ kind: "link-table", tableName: node.tableName, ownerTypeName });
+        else if (node.columnName) add({ kind: "column", tableName, columnName: node.columnName, ownerTypeName });
+      }
+    }
+  }
+
+  for (const type of allTypes) {
+    if (type.kind === "component") continue;
+    walk(buildEntryFieldTree(type, allTypes), type.name, type.name);
+  }
+  return found;
+}

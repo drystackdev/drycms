@@ -250,6 +250,7 @@ function useRelationFieldSource(
   >(() => {
     if (!type || !entriesApi) return null;
     const labelField = queryableColumns[0]?.fieldName;
+    const searchableFields = queryableColumns.map((c) => c.fieldName);
     return {
       columns: queryableColumns.map((column) => ({
         key: column.fieldName,
@@ -268,20 +269,27 @@ function useRelationFieldSource(
         storageKey: `refPicker:${type.name}:columns`,
         defaultVisible: queryableColumns.slice(0, 3).map((c) => c.fieldName),
       },
-      fetchRows: async (query) => {
-        const result = await entriesApi.list({
-          page: query.page,
-          pageSize: query.pageSize,
-          sortField: query.sortField,
-          sortDir: query.sortDir,
-          search: query.search,
-          searchableFields: queryableColumns.map((c) => c.fieldName),
-        });
-        return {
-          rows: result.rows.map((r) => ({ id: r.id, ...r.value })),
-          total: result.total,
-        };
-      },
+      // Deliberately the SAME key shape `ContentEntryList.tsx` builds for its
+      // own list (`entries:<type>:list:<every query param>`) - a picker and a
+      // List page showing the identical query then hit one IndexedDB entry
+      // instead of two, and neither can render rows the other already knows
+      // are gone.
+      rowsCacheKey: (query) =>
+        `entries:${type.name}:list:${query.page}:${query.pageSize}:${query.sortField ?? ""}:${query.sortDir ?? ""}:${query.search ?? ""}:${searchableFields.join(",")}`,
+      fetchRows: (query, ifVersion, signal) =>
+        entriesApi.listVersioned(
+          {
+            page: query.page,
+            pageSize: query.pageSize,
+            sortField: query.sortField,
+            sortDir: query.sortDir,
+            search: query.search,
+            searchableFields,
+          },
+          ifVersion,
+          signal,
+        ),
+      toRow: (entry) => ({ id: entry.id, ...entry.value }),
       resolveLabels: async (ids) => {
         const pairs = await Promise.all(
           ids.map((id) =>

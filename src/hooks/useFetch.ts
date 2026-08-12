@@ -25,6 +25,20 @@ export interface UseFetchOptions {
    * header's sync-success indicator (see `store/sync.ts`'s `flashSyncSuccess`)
    * - `false` disables it for this `useFetch()` call. @default true */
   notify?: boolean;
+  /**
+   * Skips the whole thing - no IndexedDB read, no request - while `false`,
+   * then runs normally (cache-first, same as a first mount) the moment it
+   * flips to `true`.
+   *
+   * For data behind a control that opens on demand: `RelationField`'s picker
+   * dialog is mounted the entire time its field is on screen but only shows
+   * rows once opened, and a form with a dozen relation fields would otherwise
+   * fetch a dozen entry lists nobody asked for on every render of the entry
+   * editor. Deliberately not a "conditional hook" - the hook always runs, only
+   * its effect is gated, so the rules of hooks still hold.
+   * @default true
+   */
+  enabled?: boolean;
 }
 
 export interface UseFetchResult<T> {
@@ -67,6 +81,7 @@ interface State<T> {
 export function useFetch<T>(key: string, fetcher: Fetcher<T>, options: UseFetchOptions = {}): UseFetchResult<T> {
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const notify = options.notify ?? true;
+  const enabled = options.enabled ?? true;
 
   const [state, setState] = useState<State<T>>({ data: undefined, loading: true, refreshing: false, error: undefined });
 
@@ -110,6 +125,7 @@ export function useFetch<T>(key: string, fetcher: Fetcher<T>, options: UseFetchO
   );
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const requestId = ++requestIdRef.current;
     versionRef.current = undefined;
@@ -137,13 +153,14 @@ export function useFetch<T>(key: string, fetcher: Fetcher<T>, options: UseFetchO
       abortRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `runFetch`/`debounceMs` intentionally excluded: re-running this effect on every fetcher-identity change would defeat the whole "only `key` triggers a re-fetch" contract.
-  }, [key]);
+  }, [key, enabled]);
 
   const reload = useCallback(async () => {
+    if (!enabled) return;
     const requestId = ++requestIdRef.current;
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     await runFetch(requestId, versionRef.current, true);
-  }, [runFetch]);
+  }, [runFetch, enabled]);
 
   return { data: state.data, loading: state.loading, refreshing: state.refreshing, error: state.error, reload };
 }

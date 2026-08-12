@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "preact/hooks";
+import { useCallback, useEffect, useId, useMemo, useState } from "preact/hooks";
 import type { JSX } from "preact/jsx-runtime";
 import type { FieldProps } from "./field-common.js";
 import DataTable, { type DataTableColumn, type SortState } from "../DataTable.js";
@@ -6,6 +6,7 @@ import EntrySummaryLines from "../EntrySummaryLines.js";
 import { DragHandleIcon, EditIcon, PlusIcon } from "../icons/index.js";
 import { useDialogSync } from "../../hooks/list-nav.js";
 import { useOverlayScrollbars } from "../../hooks/overlayscrollbars.js";
+import { useFetch, type VersionedFetchResult } from "../../hooks/useFetch.js";
 import { useSortableList } from "../../lib/dnd/useSortableList.js";
 import type { SummaryLine } from "../../content-types/engine/entry-summary.js";
 
@@ -15,6 +16,22 @@ export interface RelationFieldQuery {
   sortField?: string;
   sortDir?: "asc" | "desc";
   search?: string;
+}
+
+/** One row exactly as the entries API (and therefore the IndexedDB cache)
+ * stores it - deliberately NOT the flattened `Row` the picker's columns
+ * render against. The picker shares its cache entries with the List page
+ * (`ContentEntryList.tsx`), so what gets written under a given key has to be
+ * byte-identical between the two; flattening happens after the read, in
+ * `toRow` below. */
+export interface RelationFieldEntry {
+  id: string;
+  value: Record<string, unknown>;
+}
+
+export interface RelationFieldEntryPage {
+  rows: RelationFieldEntry[];
+  total: number;
 }
 
 /** Abstracts the picker dialog's data away from any particular backend -
@@ -30,7 +47,32 @@ export interface RelationFieldSource<Row extends { id: string }> {
    * queryable columns doesn't cram all of them into this compact dialog by
    * default - omit to always show every column in `columns` above. */
   columnToggle?: { storageKey: string; defaultVisible: string[] };
-  fetchRows(query: RelationFieldQuery): Promise<{ rows: Row[]; total: number }>;
+  /**
+   * IndexedDB cache key for `query` - must cover every parameter that
+   * affects the response (`hooks/useFetch.ts`'s own contract). Building the
+   * key is the SOURCE's job, not this component's, precisely so the key can
+   * match the one the target collection's List page already uses: the two
+   * then warm-start from and refresh the very same entry instead of each
+   * keeping its own half-stale copy of the same rows.
+   */
+  rowsCacheKey(query: RelationFieldQuery): string;
+  /**
+   * Data-version-protocol fetcher for `query` (see `status/build-cache.md`) -
+   * `ifVersion` is whatever version the cache already holds, and a response
+   * that reports `changed: false` leaves the rendered rows exactly as they
+   * are. Replacing the old unconditional `fetchRows(query)` is what stops
+   * every open/page/sort/search of this dialog from re-downloading rows the
+   * browser already had, AND makes the picker self-correcting after a write
+   * elsewhere bumps the collection's version (e.g. a row being deleted -
+   * `entries-sqlite.ts`'s `deleteEntry`).
+   */
+  fetchRows(
+    query: RelationFieldQuery,
+    ifVersion: number | undefined,
+    signal: AbortSignal,
+  ): Promise<VersionedFetchResult<RelationFieldEntryPage>>;
+  /** Flattens one cached entry into the shape `columns` render against. */
+  toRow(entry: RelationFieldEntry): Row;
   /** Resolves ids to display labels for the trigger card's chip list -
    * batched, called whenever a not-yet-resolved id shows up in `value`. Only
    * still used as the accessible name once `resolveSummaries` below is
@@ -133,15 +175,7 @@ export default function RelationField({
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<SortState>(null);
   const [search, setSearch] = useState("");
-  const [rows, setRows] = useState<{ id: string }[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  // Bumped after a successful create so the `fetchRows` effect below
-  // reloads the current query even though `page`/`sort`/`search` didn't
-  // themselves change - lets a freshly-created row show up (and appear
-  // checked) without the admin having to re-search/re-page manually.
-  const [refreshToken, setRefreshToken] = useState(0);
 
   // Resolves chip labels for the trigger card - re-runs whenever the
   // selected id SET changes, not on every render.
@@ -181,30 +215,30 @@ export default function RelationField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    source
-      .fetchRows({
-        page,
-        pageSize: PAGE_SIZE,
-        sortField: sort?.key,
-        sortDir: sort?.direction,
-        search: search || undefined,
-      })
-      .then((result) => {
-        if (cancelled) return;
-        setRows(result.rows);
-        setTotal(result.total);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, source, page, sort, search, refreshToken]);
+  // Same IndexedDB-cache-first path the target's own List page uses, keyed by
+  // `source.rowsCacheKey` so the two literally share entries - opening this
+  // picker onto a page the admin has already seen renders instantly and only
+  // re-checks the version, and a delete/create elsewhere shows up here on the
+  // next open rather than lingering as a stale row. `enabled: open` keeps an
+  // entry form with several relation fields from fetching every target
+  // collection just to render its closed pickers.
+  const query: RelationFieldQuery = {
+    page,
+    pageSize: PAGE_SIZE,
+    sortField: sort?.key,
+    sortDir: sort?.direction,
+    search: search || undefined,
+  };
+  const rowsCacheKey = source.rowsCacheKey(query);
+  const fetchRows = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) => source.fetchRows(query, ifVersion, signal),
+    // `rowsCacheKey` already encodes every part of `query` that matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [source, rowsCacheKey],
+  );
+  const { data: rowsPage, loading, reload } = useFetch<RelationFieldEntryPage>(rowsCacheKey, fetchRows, { enabled: open });
+  const rows = useMemo(() => (rowsPage?.rows ?? []).map((entry) => source.toRow(entry)), [rowsPage, source]);
+  const total = rowsPage?.total ?? 0;
 
   const dnd = useSortableList<{ id: string }>({
     items: selectedIds.map((sid) => ({ id: sid })),
@@ -237,7 +271,9 @@ export default function RelationField({
     }
     setDraftSelected((current) => new Set(current).add(newId));
     setPage(0);
-    setRefreshToken((t) => t + 1);
+    // The create already bumped the collection's data version, so this
+    // conditional re-check comes back `changed: true` with the new row in it.
+    void reload();
   }
 
   // A pinned `leadingColumn` (see `DataTable.tsx`'s own doc comment) rather

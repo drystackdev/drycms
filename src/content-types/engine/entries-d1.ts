@@ -4,7 +4,7 @@ import type { ContentTypeDefinition } from "../types.js";
 import { runBatch, type D1Database } from "./d1-driver.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
-import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
+import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, inboundRelationRefs, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 
@@ -33,9 +33,9 @@ async function dbAll<T = unknown>(db: D1Database, sql: string, params: unknown[]
   return result.results ?? [];
 }
 
-async function dbRun(db: D1Database, sql: string, params: unknown[] = []): Promise<{ lastInsertRowid: number }> {
+async function dbRun(db: D1Database, sql: string, params: unknown[] = []): Promise<{ lastInsertRowid: number; changes: number }> {
   const result = await db.prepare(sql).bind(...params).run();
-  return { lastInsertRowid: Number(result.meta.last_row_id ?? 0) };
+  return { lastInsertRowid: Number(result.meta.last_row_id ?? 0), changes: Number(result.meta.changes ?? 0) };
 }
 
 async function populateChildFields(db: D1Database, nodes: EntryFieldNode[], parentId: number, value: EntryValue): Promise<void> {
@@ -472,11 +472,28 @@ export function createD1ContentEntryEngineAdapter(
     return (await getEntry(type, allTypes, id))!;
   }
 
+  /** D1 counterpart to `entries-sqlite.ts`'s helper of the same name - see
+   * `entry-tree.ts`'s `inboundRelationRefs`. No transaction here, matching
+   * every other write in this adapter (D1 has no interactive transaction;
+   * `deleteChildFields` below already runs unwrapped too). */
+  async function clearInboundRelations(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<string[]> {
+    const touched = new Set<string>();
+    for (const ref of inboundRelationRefs(type.id, allTypes)) {
+      const result = ref.kind === "column"
+        ? await dbRun(db, `UPDATE ${quoteIdent(ref.tableName)} SET ${quoteIdent(ref.columnName)} = NULL WHERE ${quoteIdent(ref.columnName)} = ?;`, [id])
+        : await dbRun(db, `DELETE FROM ${quoteIdent(ref.tableName)} WHERE "target_id" = ?;`, [id]);
+      if (result.changes > 0) touched.add(ref.ownerTypeName);
+    }
+    return [...touched];
+  }
+
   async function deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
     const nodes = buildEntryFieldTree(type, allTypes);
     await deleteChildFields(db, nodes, id);
+    const touched = await clearInboundRelations(type, allTypes, id);
     await dbRun(db, `DELETE FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
     await bumpResourceVersion(type.name);
+    for (const name of touched) if (name !== type.name) await bumpResourceVersion(name);
   }
 
   async function reorderEntries(

@@ -296,6 +296,80 @@ describe("createSqliteContentEntryEngineAdapter", () => {
     expect(excludingSelf.rows.map((r) => r.id)).toEqual([p2.id]);
   });
 
+  it("clears every inbound relation when a row is deleted, and bumps the referencing type's own version", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+
+    const tag: ContentTypeDefinition = { id: "t-tag", kind: "collection", name: "tag", label: "Tag", fields: [], version: 0 };
+    await schema.applySave(tag, await schema.planSave(tag));
+    const post: ContentTypeDefinition = {
+      id: "t-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      fields: [
+        { id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 },
+        // Both cardinalities at once: `primaryTag` is a column on `post`,
+        // `tags` is a link table - the two storage shapes a delete has to
+        // clean up differently (`entry-tree.ts`'s `inboundRelationRefs`).
+        { id: "f-primary-tag", name: "primaryTag", label: "Primary tag", type: "relation", config: { target: "t-tag", cardinality: "manyToOne" }, validation: {}, order: 1 },
+        { id: "f-tags", name: "tags", label: "Tags", type: "relation", config: { target: "t-tag", cardinality: "manyToMany" }, validation: {}, order: 2 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(post, await schema.planSave(post));
+
+    const allTypes = await schema.listContentTypes();
+    const tagType = allTypes.find((t) => t.name === "tag")!;
+    const postType = allTypes.find((t) => t.name === "post")!;
+
+    const doomed = await entries.createEntry(tagType, allTypes, {});
+    const kept = await entries.createEntry(tagType, allTypes, {});
+    const article = await entries.createEntry(postType, allTypes, {
+      title: "One",
+      primaryTag: doomed.id,
+      tags: [doomed.id, kept.id],
+    });
+    const versionBefore = await entries.getResourceVersion(postType);
+
+    await entries.deleteEntry(tagType, allTypes, doomed.id);
+
+    const after = await entries.getEntry(postType, allTypes, article.id);
+    expect(after?.value.primaryTag).toBeNull();
+    expect(after?.value.tags).toEqual([kept.id]);
+    // Without this bump the admin keeps rendering the stale row straight out
+    // of IndexedDB (`hooks/useFetch.ts`), relation chip and all.
+    expect(await entries.getResourceVersion(postType)).toBeGreaterThan(versionBefore);
+  });
+
+  it("leaves an untouched referencing type's version alone when a deleted row had no inbound relations", async () => {
+    const { schema, entries, dir } = freshAdapters();
+    dirs.push(dir);
+
+    const tag: ContentTypeDefinition = { id: "t-tag", kind: "collection", name: "tag", label: "Tag", fields: [], version: 0 };
+    await schema.applySave(tag, await schema.planSave(tag));
+    const post: ContentTypeDefinition = {
+      id: "t-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      fields: [
+        { id: "f-primary-tag", name: "primaryTag", label: "Primary tag", type: "relation", config: { target: "t-tag", cardinality: "manyToOne" }, validation: {}, order: 0 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(post, await schema.planSave(post));
+
+    const allTypes = await schema.listContentTypes();
+    const tagType = allTypes.find((t) => t.name === "tag")!;
+    const postType = allTypes.find((t) => t.name === "post")!;
+
+    const unreferenced = await entries.createEntry(tagType, allTypes, {});
+    const versionBefore = await entries.getResourceVersion(postType);
+    await entries.deleteEntry(tagType, allTypes, unreferenced.id);
+    expect(await entries.getResourceVersion(postType)).toBe(versionBefore);
+  });
+
   it("reads and writes back an auto-generated relationmirror field reflecting a manyToMany relation (role.user mirrors user.roles)", async () => {
     const { schema, entries, dir } = freshAdapters();
     dirs.push(dir);

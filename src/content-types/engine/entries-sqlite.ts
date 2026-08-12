@@ -3,7 +3,7 @@ import { quoteIdent } from "../naming.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { applyTimestamps, rowToValue, validateEntryValue, valueToRow, type EntryValue } from "./entry-codec.js";
 import { blankEntryValue } from "./entry-defaults.js";
-import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
+import { buildEntryFieldTree, flattenQueryableColumns, flattenWhereColumns, inboundRelationRefs, listSelectColumnNames, selectFieldNodes, ID_WHERE_COLUMN, type EntryFieldNode, type QueryableColumn } from "./entry-tree.js";
 import { buildPublishedOnlyClause, buildWhereClause, combineWhereClauses, type EntryWhere } from "./entry-where.js";
 import { ContentEntryError, type ContentEntryEngineAdapter, type EntryPage, type EntryQuery, type EntryRow } from "./entries-types.js";
 import { resolveSqliteDriver, type SqliteHandle } from "./sqlite-driver.js";
@@ -469,14 +469,34 @@ export function createSqliteContentEntryEngineAdapter(option: ResolvedSqliteCont
     return (await getEntry(type, allTypes, id))!;
   }
 
+  /** Clears every reference OTHER rows still hold to `id` - see
+   * `entry-tree.ts`'s `inboundRelationRefs` for why a plain `DELETE` leaves
+   * them dangling. Runs inside `deleteEntry`'s own transaction, before the
+   * row itself goes, and reports which types it actually touched so their
+   * resource versions get bumped too (an unbumped referencing type would
+   * keep serving its now-wrong rows straight from the client's IndexedDB
+   * cache - see `hooks/useFetch.ts`). */
+  function clearInboundRelations(handle: SqliteHandle, type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): string[] {
+    const touched = new Set<string>();
+    for (const ref of inboundRelationRefs(type.id, allTypes)) {
+      const result = ref.kind === "column"
+        ? handle.run(`UPDATE ${quoteIdent(ref.tableName)} SET ${quoteIdent(ref.columnName)} = NULL WHERE ${quoteIdent(ref.columnName)} = ?;`, [id])
+        : handle.run(`DELETE FROM ${quoteIdent(ref.tableName)} WHERE "target_id" = ?;`, [id]);
+      if (result.changes > 0) touched.add(ref.ownerTypeName);
+    }
+    return [...touched];
+  }
+
   async function deleteEntry(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[], id: number): Promise<void> {
     const handle = await getHandle();
     const nodes = buildEntryFieldTree(type, allTypes);
     handle.exec("BEGIN IMMEDIATE;");
     try {
       await deleteChildFields(handle, nodes, id);
+      const touched = clearInboundRelations(handle, type, allTypes, id);
       handle.run(`DELETE FROM ${quoteIdent(type.name)} WHERE "id" = ?;`, [id]);
       bumpResourceVersion(handle, type.name);
+      for (const name of touched) if (name !== type.name) bumpResourceVersion(handle, name);
       handle.exec("COMMIT;");
     } catch (error) {
       handle.exec("ROLLBACK;");

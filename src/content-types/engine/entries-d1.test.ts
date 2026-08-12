@@ -171,6 +171,47 @@ describe("createD1ContentEntryEngineAdapter", () => {
     ).toBeNull();
   });
 
+  it("clears every inbound relation when a row is deleted, and bumps the referencing type's own version", async () => {
+    const { schema, entries, dir } = await freshAdapters();
+    dirs.push(dir);
+
+    const tag: ContentTypeDefinition = { id: "t-tag", kind: "collection", name: "tag", label: "Tag", fields: [], version: 0 };
+    await schema.applySave(tag, await schema.planSave(tag));
+    const post: ContentTypeDefinition = {
+      id: "t-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      fields: [
+        { id: "f-title", name: "title", label: "Title", type: "text", config: {}, validation: {}, order: 0 },
+        { id: "f-primary-tag", name: "primaryTag", label: "Primary tag", type: "relation", config: { target: "t-tag", cardinality: "manyToOne" }, validation: {}, order: 1 },
+        { id: "f-tags", name: "tags", label: "Tags", type: "relation", config: { target: "t-tag", cardinality: "manyToMany" }, validation: {}, order: 2 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(post, await schema.planSave(post));
+
+    const allTypes = await schema.listContentTypes();
+    const tagType = allTypes.find((t) => t.name === "tag")!;
+    const postType = allTypes.find((t) => t.name === "post")!;
+
+    const doomed = await entries.createEntry(tagType, allTypes, {});
+    const kept = await entries.createEntry(tagType, allTypes, {});
+    const article = await entries.createEntry(postType, allTypes, {
+      title: "One",
+      primaryTag: doomed.id,
+      tags: [doomed.id, kept.id],
+    });
+    const versionBefore = await entries.getResourceVersion(postType);
+
+    await entries.deleteEntry(tagType, allTypes, doomed.id);
+
+    const after = await entries.getEntry(postType, allTypes, article.id);
+    expect(after?.value.primaryTag).toBeNull();
+    expect(after?.value.tags).toEqual([kept.id]);
+    expect(await entries.getResourceVersion(postType)).toBeGreaterThan(versionBefore);
+  });
+
   it("listEntries omits a non-inline richtext field by default, includes it when asked, and getEntry always includes it", async () => {
     const { schema, entries, dir } = await freshAdapters();
     dirs.push(dir);
