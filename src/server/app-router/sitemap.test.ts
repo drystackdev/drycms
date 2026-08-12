@@ -1,5 +1,6 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
+import type { DevPagesSource, RouteModule } from "./route-tree.js";
 
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 
@@ -29,6 +30,30 @@ afterEach(() => {
 
 const routeContext = { request: new Request("http://localhost/sitemap.xml"), url: new URL("http://localhost/sitemap.xml"), params: {}, env: {}, session: null } as never;
 
+/**
+ * A fixture route tree, injected through `buildSitemapResponse`'s own
+ * `devSource` test seam (`route-tree.ts`'s `DevPagesSource`) - the real,
+ * no-argument path reads `src/apps/pages/**` (a gitignored, build-time-only
+ * materialized copy of whatever `.dry/pages-source` currently holds, see
+ * `CLAUDE.md`), which varies by checkout/sync state and isn't something a
+ * unit test should depend on.
+ */
+function fixturePagesSource(paths: string[]): DevPagesSource {
+  const routeModule: RouteModule = { default: () => null };
+  return {
+    listPaths: async () => paths,
+    loadModule: async () => routeModule,
+    browserUrlFor: (relPath) => `/${relPath}`,
+  };
+}
+
+const staticPages = fixturePagesSource([
+  "pages/page.tsx",
+  "pages/about/page.tsx",
+  "pages/blogs/page.tsx",
+  "pages/blogs/[slug]/page.tsx",
+]);
+
 describe("buildRobotsResponse", () => {
   it("disallows the admin path and points at sitemap.xml, absolute to APP_DOMAIN when set", () => {
     process.env.APP_DOMAIN = "https://example.com";
@@ -42,9 +67,9 @@ describe("buildRobotsResponse", () => {
 });
 
 describe("buildSitemapResponse", () => {
-  it("includes every static page from the real route tree, absolute to the request's own origin when APP_DOMAIN is unset", async () => {
+  it("includes every static page from the route tree, absolute to the request's own origin when APP_DOMAIN is unset", async () => {
     delete process.env.APP_DOMAIN;
-    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext);
+    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext, staticPages);
     expect(response.headers.get("Content-Type")).toBe("application/xml; charset=utf-8");
     const xml = await response.text();
     expect(xml).toContain("<loc>http://localhost/</loc>");

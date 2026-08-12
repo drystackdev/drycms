@@ -32,7 +32,7 @@ export function aliasSpecifierFor(componentPath: string): string {
  * of the admin's own tokens, so a `var(--dry-background)` here would resolve
  * to nothing inside the preview iframe. */
 function previewStageStyle(backgroundColor: string): string {
-  return `display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;`;
+  return `display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;background-color:${backgroundColor};`;
 }
 
 /**
@@ -59,6 +59,7 @@ function previewStageStyle(backgroundColor: string): string {
 export function buildComponentPreviewSource(
   componentPath: string,
   propsSource: string,
+  backgroundColor = "#ffffff",
 ): string {
   return `import DryPreviewComponent, * as dryPreviewModule from ${JSON.stringify(aliasSpecifierFor(componentPath))};
 
@@ -79,7 +80,7 @@ function dryPreviewChildren() {
 }
 
 export default function DryComponentPreview() {
-  return <div style="display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;">{dryPreviewChildren()}</div>;
+  return <div style=${JSON.stringify(previewStageStyle(backgroundColor))}>{dryPreviewChildren()}</div>;
 }
 `;
 }
