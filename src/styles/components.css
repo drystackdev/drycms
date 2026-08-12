@@ -6647,6 +6647,26 @@
       color: var(--dry-error-foreground);
     }
 
+    /* A `component/` file with no preview to build (`isUnpreviewableComponentFile`
+       - a plain `.ts` helper, not a `.tsx` component) - a neutral placeholder,
+       never styled as an error: there's nothing wrong with the file, it was
+       just never meant to render on its own. `font-size` scales the file-type
+       icon (every icon in `file-type-icons.tsx` is sized in `1em`). */
+    .page-editor-preview-nopreview {
+      display: flex;
+      height: 100%;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-size: 2.5rem;
+      color: var(--dry-muted-foreground);
+
+      & .hint {
+        font-size: var(--dry-text-sm);
+      }
+    }
+
     /* The real scrolling element (`useOverlayScrollbars`'s `viewportRef`)
      * AND the direct flex parent of `.page-components-preview-frame` (or
      * whatever else this shows - an `.alert`/`.hint` in `ComponentPreview`'s

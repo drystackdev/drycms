@@ -842,6 +842,12 @@ export default function PageEditor() {
    * than a route file - drives the preview mode, the props-schema request to
    * `Editer`, and which starter source a new file gets. */
   const isComponentPath = !!selectedPath && rootOf(selectedPath)?.id === COMPONENT_ROOT;
+  /** A `component/` file with nothing to preview - a plain `.ts` helper
+   * (e.g. `component/lib/utils.ts`), not a `.tsx` component. `previewTarget`
+   * below resolves to `null` for this exactly like "nothing selected" does,
+   * but the fallback panel needs to tell the two apart: this one gets a
+   * plain "No preview" placeholder, not the generic "select a file" hint. */
+  const isUnpreviewableComponentFile = isComponentPath && !/\.tsx$/i.test(selectedPath);
 
   // Clears stale diagnostics from whatever file was open before - `Editer`
   // remounts on `selectedPath` (its own `key`) and reports fresh ones via
@@ -1481,6 +1487,14 @@ export default function PageEditor() {
    * previews through a synthetic page of its own (`component-preview.ts`). */
   const previewTarget = useMemo<PreviewTarget | null>(() => {
     if (!selectedPath) return null;
+    // A `.ts` file under `component/` (e.g. `component/lib/utils.ts`) has no
+    // JSX/default export to render - previewing it through
+    // `buildComponentPreviewSource` would just throw its own "has no
+    // default export function to preview" at runtime, surfacing as a real
+    // preview ERROR for a file that was never meant to have one.
+    // `isUnpreviewableComponentFile` below drives a plain "No preview"
+    // placeholder for this case instead.
+    if (isComponentPath && !/\.tsx$/i.test(selectedPath)) return null;
     if (isComponentPath) {
       return {
         label: `${selectedPath} (component)`,
@@ -1832,8 +1846,16 @@ export default function PageEditor() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // `previewTarget?.label` alone wouldn't catch a theme flip - it's the
-    // same file, only the stage color inside `extraSource` changed.
-  }, [previewTarget?.label, sourceByPath, allTypes, assetHrefs, origin]);
+    // same file, only the stage color inside `extraSource` changed. `propsSchema`
+    // IS listed explicitly (not folded into a full `previewTarget` dependency,
+    // to avoid rebuilding on every incidental object-identity change) - without
+    // it, opening a component previewed with the WRONG (empty/fallback) sample
+    // props from BEFORE `describeProps`'s async worker round trip resolved,
+    // and stayed wrong until the admin clicked "Reload preview" by hand (which
+    // calls `refreshPreview` fresh, picking up the by-then-populated schema) -
+    // found live: a component's own default props silently missing from its
+    // own preview on first open, self-correcting only on a manual reload.
+  }, [previewTarget?.label, sourceByPath, allTypes, assetHrefs, origin, propsSchema]);
 
   if (!canEdit) return <span class="error">You don't have permission to edit page source.</span>;
   if (loadError) return <span class="error">{loadError}</span>;
@@ -2091,6 +2113,11 @@ export default function PageEditor() {
                       <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
                     </div>
                   </div>
+                </div>
+              ) : isUnpreviewableComponentFile ? (
+                <div class="page-editor-preview-nopreview">
+                  {fileIconForName(selectedPath)}
+                  <span class="hint">No preview</span>
                 </div>
               ) : (
                 <p class="hint" style={{ padding: "1rem" }}>

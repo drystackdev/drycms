@@ -2,8 +2,18 @@ import { LockIcon } from "../../../components/icons/index.js";
 
 /** Recreated verbatim if `styles/base.css` is ever found missing - see
  * `GlobalsCssFile.tsx`'s doc comment. This is deliberately a small set of
- * site-wide, accessible defaults; component styling stays in utilities. */
+ * site-wide, accessible defaults; component styling stays in utilities.
+ * shadcn/ui's own default base layer - applies `theme.css`'s tokens
+ * site-wide (a default border color, and the page's own background/text
+ * colors) rather than defining any tokens of its own. */
 export const DEFAULT_CONTENT = `@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 `;
 

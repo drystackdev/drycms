@@ -25,7 +25,9 @@
   },
   // `.dry/pages-source` mirrors `src/apps/{pages,component}` for content
   // authored through the browser (`PageEditor.tsx`) instead of committed to
-  // git - real, editable `.tsx` source (see
+  // git - real, editable `.tsx`/`.ts` source (a plain `.ts` helper, e.g.
+  // `component/lib/utils.ts`, is as legal here as a component - see
+  // `pages-source.ts`'s own `isPageSourceFileName`; see
   // `src/server/app-router/built-pages-storage.ts`'s doc comment for the
   // split), not generated/cache output, so it belongs in the same TS program
   // as `src/**` for IntelliSense/`dry()` ambient types to work when opened
@@ -41,6 +43,6 @@
   // On a fresh checkout it won't exist until `bun run dev` (or `bun run
   // dry:generate`) has run once - `tsc`/the IDE just sees those globals as
   // untyped until then, not an error.
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", ".dry/pages-source/**/*.tsx", ".dry/dry.generated.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", ".dry/pages-source/**/*.ts", ".dry/pages-source/**/*.tsx", ".dry/dry.generated.d.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }
