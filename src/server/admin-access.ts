@@ -1,5 +1,5 @@
 import type { DryRouteContext } from "./context.js";
-import { resolveAccess } from "../content-types/access.js";
+import { resolveAccessCached } from "../content-types/access.js";
 import type { PermissionAction } from "../content-types/permissions.js";
 import { getContentAdapters } from "./content-adapters.js";
 import { forbiddenResponse, unauthenticatedResponse } from "./route-helpers.js";
@@ -11,7 +11,7 @@ export async function requireSuperAdmin(context: DryRouteContext, message = "Sup
   if (!context.session) return unauthenticatedResponse();
   const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
-  const access = await resolveAccess(entries, allTypes, context.session);
+  const access = await resolveAccessCached(context, entries, allTypes, context.session);
   if (!access) return unauthenticatedResponse();
   return access.isSuperAdmin ? null : forbiddenResponse(message);
 }
@@ -24,7 +24,7 @@ export async function isSuperAdminSession(context: DryRouteContext): Promise<boo
   if (!context.session) return false;
   const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
-  const access = await resolveAccess(entries, allTypes, context.session);
+  const access = await resolveAccessCached(context, entries, allTypes, context.session);
   return access?.isSuperAdmin === true;
 }
 
@@ -43,7 +43,7 @@ export async function requirePermission(
   if (!context.session) return unauthenticatedResponse();
   const { schema, entries } = getContentAdapters(context);
   const allTypes = await schema.listContentTypes();
-  const access = await resolveAccess(entries, allTypes, context.session);
+  const access = await resolveAccessCached(context, entries, allTypes, context.session);
   if (!access) return unauthenticatedResponse();
   return access.can(resourceId, action) ? null : forbiddenResponse(message);
 }

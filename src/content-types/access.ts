@@ -71,3 +71,41 @@ export async function resolveAccess(
     can: (resourceId, action) => grantedPermissionKeys.has(permissionKeyFor(resourceId, action)),
   };
 }
+
+const accessCache = new WeakMap<object, Map<number, Promise<AccessInfo | null>>>();
+
+/**
+ * Request-scoped memo over `resolveAccess`, keyed by the caller's own
+ * `DryRouteContext` (untyped as `object` here to avoid this module depending
+ * on `server/context.ts`) and then by session user id. A single request
+ * often resolves the SAME session's access more than once -
+ * `routes/content-entries.ts`'s `checkAccess` + `protectSystemMutation` back
+ * to back, `routes/mcp.ts`'s two-step magic+create/update checks,
+ * `admin-access.ts`'s several independent gates - each re-running
+ * `resolveAccess`'s `getEntry(user)` + N `getEntry(role)` D1 round trips from
+ * scratch. The cache key is a `WeakMap` on the request's own `context`
+ * object, so it can never outlive the request that created it - a role/
+ * permission change still takes effect on the very next request, same as
+ * `resolveAccess`'s own "fresh every call" contract already promises; only
+ * WITHIN one request is the result now reused. Storing the promise (not the
+ * resolved value) also collapses concurrent callers within the same request
+ * onto a single computation.
+ */
+export async function resolveAccessCached(
+  context: object,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  session: SessionPayload,
+): Promise<AccessInfo | null> {
+  let byUser = accessCache.get(context);
+  if (!byUser) {
+    byUser = new Map();
+    accessCache.set(context, byUser);
+  }
+  let pending = byUser.get(session.id);
+  if (!pending) {
+    pending = resolveAccess(entryAdapter, allTypes, session);
+    byUser.set(session.id, pending);
+  }
+  return pending;
+}

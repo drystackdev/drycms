@@ -243,4 +243,126 @@ describe("createD1ContentEntryEngineAdapter", () => {
     const fetched = await entries.getEntry(articleType, allTypes, created.id);
     expect(fetched?.value.body).toBe("<p>Full body</p>");
   });
+
+  it("listEntries batches relation/component-repeat/relation-mirror population across a whole page, keeping each row's own data correctly grouped and ordered", async () => {
+    const { schema, entries, dir } = await freshAdapters();
+    dirs.push(dir);
+
+    const tag: ContentTypeDefinition = { id: "t-tag", kind: "collection", name: "tag", label: "Tag", fields: [], version: 0 };
+    await schema.applySave(tag, await schema.planSave(tag));
+
+    const link: ContentTypeDefinition = {
+      id: "c-link",
+      kind: "component",
+      name: "link",
+      label: "Link",
+      fields: [{ id: "f-url", name: "url", label: "URL", type: "text", config: {}, validation: {}, order: 0 }],
+      version: 0,
+    };
+    await schema.applySave(link, await schema.planSave(link));
+
+    const post: ContentTypeDefinition = {
+      id: "t-post",
+      kind: "collection",
+      name: "post",
+      label: "Post",
+      fields: [
+        { id: "f-primary-tag", name: "primaryTag", label: "Primary tag", type: "relation", config: { target: "t-tag", cardinality: "manyToOne" }, validation: {}, order: 0 },
+        { id: "f-tags", name: "tags", label: "Tags", type: "relation", config: { target: "t-tag", cardinality: "manyToMany" }, validation: {}, order: 1 },
+        { id: "f-links", name: "links", label: "Links", type: "component", config: { componentId: "c-link", repeatable: true }, validation: {}, order: 2 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(post, await schema.planSave(post));
+
+    const category: ContentTypeDefinition = {
+      id: "t-category",
+      kind: "collection",
+      name: "category",
+      label: "Category",
+      fields: [
+        { id: "f-posts", name: "posts", label: "Posts", type: "relation", config: { target: "t-post", cardinality: "oneToMany" }, validation: {}, order: 0 },
+      ],
+      version: 0,
+    };
+    await schema.applySave(category, await schema.planSave(category));
+
+    const allTypes = await schema.listContentTypes();
+    const tagType = allTypes.find((t) => t.name === "tag")!;
+    const postType = allTypes.find((t) => t.name === "post")!;
+    const categoryType = allTypes.find((t) => t.name === "category")!;
+
+    const tag1 = await entries.createEntry(tagType, allTypes, {});
+    const tag2 = await entries.createEntry(tagType, allTypes, {});
+    const tag3 = await entries.createEntry(tagType, allTypes, {});
+
+    const postA = await entries.createEntry(postType, allTypes, {
+      primaryTag: tag1.id,
+      tags: [tag1.id, tag2.id],
+      links: [{ url: "a1" }, { url: "a2" }],
+    });
+    const postB = await entries.createEntry(postType, allTypes, {
+      primaryTag: tag2.id,
+      tags: [tag2.id, tag3.id],
+      links: [{ url: "b1" }],
+    });
+    const postC = await entries.createEntry(postType, allTypes, {
+      primaryTag: null,
+      tags: [],
+      links: [],
+    });
+
+    const categoryEntry = await entries.createEntry(categoryType, allTypes, { posts: [postA.id, postB.id] });
+
+    const listedPosts = await entries.listEntries(postType, allTypes, { page: 0, pageSize: 10 });
+    const byId = new Map(listedPosts.rows.map((r) => [r.id, r]));
+    const rowA = byId.get(postA.id);
+    const rowB = byId.get(postB.id);
+    const rowC = byId.get(postC.id);
+    expect(rowA!.id).toBe(postA.id);
+    expect(rowA!.value.primaryTag).toBe(tag1.id);
+    expect(rowA!.value.tags).toEqual([tag1.id, tag2.id]);
+    expect((rowA!.value.links as { url: string }[]).map((l) => l.url)).toEqual(["a1", "a2"]);
+    expect(rowA!.value.category).toBe(categoryEntry.id);
+
+    expect(rowB!.id).toBe(postB.id);
+    expect(rowB!.value.primaryTag).toBe(tag2.id);
+    expect(rowB!.value.tags).toEqual([tag2.id, tag3.id]);
+    expect((rowB!.value.links as { url: string }[]).map((l) => l.url)).toEqual(["b1"]);
+    expect(rowB!.value.category).toBe(categoryEntry.id);
+
+    expect(rowC!.id).toBe(postC.id);
+    expect(rowC!.value.primaryTag).toBeNull();
+    expect(rowC!.value.tags).toEqual([]);
+    expect(rowC!.value.links).toEqual([]);
+    expect(rowC!.value.category).toBeNull();
+
+    const listedTags = await entries.listEntries(tagType, allTypes, { page: 0, pageSize: 10 });
+    const byTagId = new Map(listedTags.rows.map((r) => [r.id, r]));
+    const rowTag1 = byTagId.get(tag1.id);
+    const rowTag2 = byTagId.get(tag2.id);
+    const rowTag3 = byTagId.get(tag3.id);
+    expect(rowTag1!.id).toBe(tag1.id);
+    expect(rowTag1!.value.postPrimaryTag).toEqual([postA.id]);
+    expect(rowTag1!.value.postTags).toEqual([postA.id]);
+
+    expect(rowTag2!.id).toBe(tag2.id);
+    expect(rowTag2!.value.postPrimaryTag).toEqual([postB.id]);
+    expect(rowTag2!.value.postTags).toEqual([postA.id, postB.id]);
+
+    expect(rowTag3!.id).toBe(tag3.id);
+    expect(rowTag3!.value.postPrimaryTag).toEqual([]);
+    expect(rowTag3!.value.postTags).toEqual([postB.id]);
+
+    // Cross-check against the unbatched single-row path (`getEntry`) to make
+    // sure batching produced exactly the same shape, not just plausible data.
+    for (const row of listedPosts.rows) {
+      const single = await entries.getEntry(postType, allTypes, row.id);
+      expect(row.value).toEqual(single!.value);
+    }
+    for (const row of listedTags.rows) {
+      const single = await entries.getEntry(tagType, allTypes, row.id);
+      expect(row.value).toEqual(single!.value);
+    }
+  });
 });

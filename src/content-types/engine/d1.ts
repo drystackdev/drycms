@@ -57,6 +57,21 @@ export function createD1ContentEngineAdapter(
   // this file.
   const CONTENT_TYPES_RESOURCE = "__content-types__";
 
+  /**
+   * Memoized for the LIFE OF THIS ADAPTER INSTANCE only - `content-adapters.ts`
+   * builds a fresh D1 adapter per request (`requestAdapters`, keyed by the
+   * request's own `context` object), so this never survives past the request
+   * that populated it. `listContentTypes()` used to be the single most-called
+   * D1 query in the app: every route calls it independently (each
+   * `admin-access.ts` gate, most `routes/*.ts` handlers), often 3-4 times in
+   * one request, for data that can't have changed mid-request except through
+   * `applySave`/`deleteContentType` below - both of which reset this to
+   * force a fresh read. Storing the PROMISE (not just the resolved array)
+   * collapses concurrent callers in the same request onto one D1 round trip
+   * too, not just sequential ones.
+   */
+  let cachedListPromise: Promise<ContentTypeDefinition[]> | null = null;
+
   async function getResourceVersionValue(resource: string): Promise<number> {
     const rows = await db.prepare('SELECT "version" FROM "_versions" WHERE "resource" = ?;').bind(resource).all<{ version: number }>();
     return rows.results?.[0]?.version ?? 0;
@@ -113,8 +128,13 @@ export function createD1ContentEngineAdapter(
 
   async function listContentTypes(): Promise<ContentTypeDefinition[]> {
     await ensureBootstrap();
-    const result = await db.prepare('SELECT "definition" FROM "metadata";').all<{ definition: string }>();
-    return (result.results ?? []).map((row) => JSON.parse(row.definition) as ContentTypeDefinition);
+    if (!cachedListPromise) {
+      cachedListPromise = db
+        .prepare('SELECT "definition" FROM "metadata";')
+        .all<{ definition: string }>()
+        .then((result) => (result.results ?? []).map((row) => JSON.parse(row.definition) as ContentTypeDefinition));
+    }
+    return cachedListPromise;
   }
 
   async function getContentType(id: string): Promise<ContentTypeDefinition | null> {
@@ -184,6 +204,7 @@ export function createD1ContentEngineAdapter(
       }
     }
     await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
+    cachedListPromise = null;
 
     const saved = await getContentType(next.id);
     if (!saved) throw new ContentEngineError("not_found", `Content type "${next.id}" not found after save.`);
@@ -210,6 +231,7 @@ export function createD1ContentEngineAdapter(
     await runBatch(db, dropStatements);
     await db.prepare('DELETE FROM "metadata" WHERE "id" = ?;').bind(id).run();
     await bumpResourceVersion(CONTENT_TYPES_RESOURCE);
+    cachedListPromise = null;
   }
 
   return {

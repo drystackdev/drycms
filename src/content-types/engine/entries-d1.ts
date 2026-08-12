@@ -94,6 +94,113 @@ async function populateChildFields(db: D1Database, nodes: EntryFieldNode[], pare
   }
 }
 
+function groupByNumberKey<T>(rows: T[], key: (row: T) => unknown): Map<number, T[]> {
+  const map = new Map<number, T[]>();
+  for (const row of rows) {
+    const k = Number(key(row));
+    const list = map.get(k);
+    if (list) list.push(row);
+    else map.set(k, [row]);
+  }
+  return map;
+}
+
+/**
+ * Batched counterpart to `populateChildFields`, for `listEntries`'s whole
+ * page of rows at once: one grouped `WHERE parent_id IN (...)` query per
+ * relation/component-repeat/relation-mirror field, instead of
+ * `populateChildFields`'s one query per such field PER ROW - the N+1 that
+ * dominated a list view's D1 cost (a page of 20 rows with 3 relation-shaped
+ * fields cost 60+ extra round trips before this). `getEntry`/`findEntry`
+ * fetch a single row already, so they keep calling `populateChildFields`
+ * directly - nothing to batch across just one id.
+ *
+ * `valuesById` is mutated in place (same "fill in this field" contract as
+ * `populateChildFields`), keyed by the CURRENT level's parent ids - a nested
+ * `component-repeat`'s own child ids become the next level's `parentIds`,
+ * so nesting still costs one round trip PER DEPTH LEVEL across the whole
+ * page, not per row.
+ */
+async function populateChildFieldsBatch(
+  db: D1Database,
+  nodes: EntryFieldNode[],
+  parentIds: number[],
+  valuesById: Map<number, EntryValue>,
+): Promise<void> {
+  if (parentIds.length === 0) return;
+  const placeholders = parentIds.map(() => "?").join(",");
+
+  for (const node of nodes) {
+    if (node.kind === "flatten") {
+      const subValuesById = new Map(parentIds.map((id) => [id, valuesById.get(id)![node.fieldName] as EntryValue]));
+      await populateChildFieldsBatch(db, node.children, parentIds, subValuesById);
+    } else if (node.kind === "component-repeat") {
+      const rows = await dbAll<Record<string, unknown>>(
+        db,
+        `SELECT * FROM ${quoteIdent(node.tableName)} WHERE "parent_id" IN (${placeholders}) ORDER BY "parent_id" ASC, "position" ASC;`,
+        parentIds,
+      );
+      const byParent = groupByNumberKey(rows, (r) => r.parent_id);
+      const itemValuesById = new Map<number, EntryValue>();
+      const childIds: number[] = [];
+      for (const parentId of parentIds) {
+        const items: EntryValue[] = [];
+        for (const row of byParent.get(parentId) ?? []) {
+          const item = rowToValue(node.itemFields, row);
+          const childId = Number(row.id);
+          items.push(item);
+          itemValuesById.set(childId, item);
+          childIds.push(childId);
+        }
+        valuesById.get(parentId)![node.fieldName] = items;
+      }
+      await populateChildFieldsBatch(db, node.itemFields, childIds, itemValuesById);
+    } else if (node.kind === "relation" && node.tableName) {
+      const rows = await dbAll<{ parent_id: number; target_id: number }>(
+        db,
+        `SELECT "parent_id", "target_id" FROM ${quoteIdent(node.tableName)} WHERE "parent_id" IN (${placeholders}) ORDER BY "parent_id" ASC, "position" ASC;`,
+        parentIds,
+      );
+      const byParent = groupByNumberKey(rows, (r) => r.parent_id);
+      for (const parentId of parentIds) {
+        valuesById.get(parentId)![node.fieldName] = (byParent.get(parentId) ?? []).map((r) => Number(r.target_id));
+      }
+    } else if (node.kind === "relation-mirror" && node.resolved) {
+      if (node.sourceColumnName) {
+        const rows = await dbAll<{ id: number; parent_id: number }>(
+          db,
+          `SELECT "id", ${quoteIdent(node.sourceColumnName)} AS "parent_id" FROM ${quoteIdent(node.sourceTableName)} WHERE ${quoteIdent(node.sourceColumnName)} IN (${placeholders}) ORDER BY "parent_id" ASC, "id" ASC;`,
+          parentIds,
+        );
+        const byParent = groupByNumberKey(rows, (r) => r.parent_id);
+        for (const parentId of parentIds) {
+          valuesById.get(parentId)![node.fieldName] = (byParent.get(parentId) ?? []).map((r) => Number(r.id));
+        }
+      } else if (node.reverseCardinality === "manyToOne") {
+        const rows = await dbAll<{ parent_id: number; target_id: number }>(
+          db,
+          `SELECT "parent_id", "target_id" FROM ${quoteIdent(node.sourceChildTableName!)} WHERE "target_id" IN (${placeholders});`,
+          parentIds,
+        );
+        const byTarget = new Map(rows.map((r) => [Number(r.target_id), Number(r.parent_id)]));
+        for (const parentId of parentIds) {
+          valuesById.get(parentId)![node.fieldName] = byTarget.has(parentId) ? byTarget.get(parentId)! : null;
+        }
+      } else {
+        const rows = await dbAll<{ id: number; parent_id: number; target_id: number }>(
+          db,
+          `SELECT "id", "parent_id", "target_id" FROM ${quoteIdent(node.sourceChildTableName!)} WHERE "target_id" IN (${placeholders}) ORDER BY "target_id" ASC, "id" ASC;`,
+          parentIds,
+        );
+        const byTarget = groupByNumberKey(rows, (r) => r.target_id);
+        for (const parentId of parentIds) {
+          valuesById.get(parentId)![node.fieldName] = (byTarget.get(parentId) ?? []).map((r) => Number(r.parent_id));
+        }
+      }
+    }
+  }
+}
+
 async function deleteChildFields(db: D1Database, nodes: EntryFieldNode[], parentId: number): Promise<void> {
   for (const node of nodes) {
     if (node.kind === "flatten") {
@@ -350,12 +457,16 @@ export function createD1ContentEntryEngineAdapter(
     );
 
     const result: EntryRow[] = [];
+    const ids: number[] = [];
+    const valuesById = new Map<number, EntryValue>();
     for (const row of rows) {
       const id = Number(row.id);
       const value = rowToValue(selected, row);
-      await populateChildFields(db, selected, id, value);
+      ids.push(id);
+      valuesById.set(id, value);
       result.push({ id, value });
     }
+    await populateChildFieldsBatch(db, selected, ids, valuesById);
     return { total, rows: result };
   }
 

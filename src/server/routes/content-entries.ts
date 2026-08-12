@@ -1,5 +1,5 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
-import { resolveAccess } from "../../content-types/access.js";
+import { resolveAccessCached } from "../../content-types/access.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
@@ -98,7 +98,7 @@ export async function checkAccess(
   action: PermissionAction,
 ): Promise<Response | null> {
   if (!context.session) return unauthenticatedResponse();
-  const access = await resolveAccess(entryAdapter, allTypes, context.session);
+  const access = await resolveAccessCached(context, entryAdapter, allTypes, context.session);
   if (!access) return unauthenticatedResponse();
   if (!access.can(type.id, action)) return forbiddenResponse();
   return null;
@@ -114,7 +114,7 @@ async function protectSystemMutation(
   value?: EntryValue,
 ): Promise<Response | null> {
   if (!context.session) return unauthenticatedResponse();
-  const access = await resolveAccess(entryAdapter, allTypes, context.session);
+  const access = await resolveAccessCached(context, entryAdapter, allTypes, context.session);
   if (!access) return unauthenticatedResponse();
   if (access.isSuperAdmin) return null;
 
