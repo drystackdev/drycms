@@ -1,7 +1,9 @@
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
 import type { DynamicPageTemplate } from "../server/app-router/route-manifest.js";
+import { buildEntryFieldTree, flattenQueryableColumns } from "../content-types/engine/entry-tree.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import type { VersionedResult } from "../content-types/entries-http-api.js";
 
 /**
  * `plans/app-r2.md` mục 4 - "liệt kê param cho route động", the
@@ -58,6 +60,90 @@ async function fetchAllSlugs(dryHttpEndpoint: string, typeName: string, slugLimi
     if (rows.length < pageSize) break;
   }
   return slugs;
+}
+
+/** One row a `[param]` template can be previewed against - `slug` is the
+ * param value, `label` the human-readable name to show in a picker. */
+export interface PreviewEntryRef {
+  slug: string;
+  /** The row's first queryable, non-nested field when it holds a non-empty
+   * string - the same "title column" convention `ChangesPreview.tsx`'s own
+   * `entryLabel` uses. `undefined` when the type has no such field (or the
+   * value isn't a string), leaving the caller to fall back to `slug`. */
+  label?: string;
+}
+
+/** Which field `fetchPreviewEntries` reads a row's `label` from - the first
+ * queryable column that isn't `slug` itself and isn't nested inside a
+ * `flatten` component (a dotted path can't be read off the flat row object
+ * `dry()`'s `select` projection returns). */
+function labelFieldFor(type: ContentTypeDefinition, allTypes: ContentTypeDefinition[]): string | undefined {
+  const column = flattenQueryableColumns(buildEntryFieldTree(type, allTypes)).find(
+    (candidate) => candidate.fieldName !== "slug" && !candidate.fieldName.includes("."),
+  );
+  return column?.fieldName;
+}
+
+/**
+ * The rows a human can PICK between when previewing a `[param]` template
+ * (`PageEditor.tsx`'s preview entry picker) - the same published-only
+ * `dry-http` read `fetchAllSlugs` above does for the build, in ONE request
+ * capped at `limit`, plus a label per row.
+ *
+ * Deliberately NOT the admin entries API (`entries-http-api.ts`), for two
+ * reasons that both make it the wrong list here:
+ *
+ * - Permission: `dry-http` is gated on the same Page Builder grant the Page
+ *   Editor itself needs (`handler.ts`), while `/api/content-entries` needs a
+ *   per-type `content` read - so an editor allowed to edit pages could open
+ *   this preview and still get a 403 for the collection behind it.
+ * - Drafts: `dry()` is published-only with no override (see `dry-http.ts`),
+ *   so this returns EXACTLY the rows the preview can actually render. The
+ *   admin list also carries drafts/scheduled rows, every one of which would
+ *   preview as the page's own "not found" branch.
+ *
+ * Shaped as a `useFetch()` fetcher (`hooks/useFetch.ts`) - `dry-http` answers
+ * with the collection's real `X-Dry-Resource-Version`, so an unchanged
+ * collection resolves to `changed: false` and leaves the cached list (and the
+ * picker's current selection) untouched. The request itself is not saved by
+ * that - this endpoint always sends its body - only the re-render is.
+ */
+export async function fetchPreviewEntries(
+  dryHttpEndpoint: string,
+  type: ContentTypeDefinition,
+  allTypes: ContentTypeDefinition[],
+  limit: number,
+  ifVersion: number | undefined,
+  signal?: AbortSignal,
+): Promise<VersionedResult<PreviewEntryRef[]>> {
+  const labelField = labelFieldFor(type, allTypes);
+  const response = await fetch(dryHttpEndpoint, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      kind: "collection",
+      name: type.name,
+      method: "list",
+      selectFields: labelField ? ["slug", labelField] : ["slug"],
+      page: 0,
+      pageSize: limit,
+    }),
+    signal,
+  });
+  if (!response.ok) throw new Error(`Failed to list "${type.name}" entries to preview.`);
+  const version = Number(response.headers.get("X-Dry-Resource-Version") ?? 0);
+  const body = await response.text();
+  if (ifVersion !== undefined && version === ifVersion) return { changed: false, version };
+  const [entry] = decodeCallLog(body);
+  const result = entry?.result as { rows: Record<string, unknown>[] } | undefined;
+  const rows: PreviewEntryRef[] = [];
+  for (const row of result?.rows ?? []) {
+    if (typeof row.slug !== "string") continue;
+    const raw = labelField ? row[labelField] : undefined;
+    rows.push({ slug: row.slug, label: typeof raw === "string" && raw.trim() ? raw : undefined });
+  }
+  return { changed: true, version, data: rows };
 }
 
 export async function resolveDynamicPages(

@@ -30,9 +30,16 @@ export function aliasSpecifierFor(componentPath: string): string {
  * wrote). `backgroundColor` is passed in already resolved to a concrete color
  * (`resolveThemeColor`, `lib/native/theme.ts`) - the built page carries none
  * of the admin's own tokens, so a `var(--dry-background)` here would resolve
- * to nothing inside the preview iframe. */
+ * to nothing inside the preview iframe.
+ *
+ * The `1rem` padding keeps a full-width component (or one with an outline/
+ * shadow that would otherwise touch the frame edge) off the preview's own
+ * borders. `box-sizing:border-box` is spelled out rather than assumed from
+ * Tailwind's preflight: the padding is added to a `100dvw`/`100dvh` box, so
+ * under `content-box` it would push the stage 2rem past the viewport and
+ * give every component preview a scrollbar on both axes. */
 function previewStageStyle(backgroundColor: string): string {
-  return `display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;background-color:${backgroundColor};`;
+  return `box-sizing:border-box;display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;padding:1rem;background-color:${backgroundColor};`;
 }
 
 /**

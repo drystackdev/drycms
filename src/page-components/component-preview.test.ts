@@ -39,6 +39,13 @@ describe("buildComponentPreviewSource", () => {
     expect(source).toContain("display:flex;justify-content:center;align-items:center;width:100dvw;height:100dvh;");
   });
 
+  it("insets the stage by 1rem without overflowing the viewport", () => {
+    expect(source).toContain("padding:1rem;");
+    // Without this the padding is ADDED to `100dvw`/`100dvh` and every
+    // component preview scrolls on both axes.
+    expect(source).toContain("box-sizing:border-box;");
+  });
+
   it("paints the stage with the passed-in theme background, defaulting to white", () => {
     expect(source).toContain("background-color:#ffffff;");
     expect(buildComponentPreviewSource("component/Card.tsx", "{}", "rgb(20, 26, 33)")).toContain("background-color:rgb(20, 26, 33);");

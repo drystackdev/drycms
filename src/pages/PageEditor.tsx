@@ -36,7 +36,10 @@ import {
   staticPagePaths,
   type DynamicPageTemplate,
 } from "../server/app-router/route-manifest.js";
-import { resolveDynamicPages, type ResolvedDynamicPage } from "../page-components/dynamic-routes.js";
+import { fetchPreviewEntries, type PreviewEntryRef } from "../page-components/dynamic-routes.js";
+import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
+import { useFetch } from "../hooks/useFetch.js";
+import Select from "../components/Select.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { clearDryHttpCache } from "../content-types/dry-http-cache.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
@@ -150,6 +153,14 @@ const SYSTEM_ROOT = "system";
  * up in the preview within this window, or immediately via the toolbar's
  * "Refresh data" button. */
 const PREVIEW_DRY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** How many published rows the `[param]` preview's entry picker offers
+ * (`fetchPreviewEntries`). A cap, not a page size - there's no paging in a
+ * toolbar dropdown, and picking one of the most recent entries to eyeball a
+ * template against is what the control is for; building EVERY row is "Build
+ * all"'s job (`resolveAllPageTargets`), which enumerates the collection
+ * uncapped. */
+const PREVIEW_ENTRY_LIMIT = 100;
 
 /** `unbuiltPaths`'s sessionStorage backing - see that state's own doc
  * comment for why it needs to survive the reload a Save causes to THIS
@@ -1281,41 +1292,61 @@ export default function PageEditor() {
     [dynamicTemplates, selectedPath],
   );
 
-  type DynamicPreviewSample =
-    | { status: "loading" }
-    | { status: "resolved"; page: ResolvedDynamicPage }
-    | { status: "no-type" }
-    | { status: "no-entries"; typeName: string };
+  /** Which collection the open `[param]` template renders one entry of, read
+   * straight off its own `dry().collection(x).get(...)` call
+   * (`page-collection.ts` - the replacement for the removed `seoUrlPattern`).
+   * Reads `savedByPath`, not `sourceByPath`: the preview builds from saved
+   * content anyway (`handleBuildCurrent` saves first), so re-resolving on
+   * every keystroke would be both wrong and needless - switching file or
+   * saving a changed `dry().collection(...)` re-resolves, typing does not. */
+  const dynamicType = useMemo(
+    () => (dynamicTemplate && allTypes ? collectionTypeForPageSource(savedByPath[dynamicTemplate.entryPath], allTypes) : null),
+    [dynamicTemplate, allTypes, savedByPath],
+  );
 
-  /** Resolves ONE real sample row (e.g. the first published blog post) for
-   * whichever `[param]` template is open, so `previewTarget` below has a
-   * concrete pathname/params to build against - the same read-the-page's-own
-   * -`dry()`-call + fetch-real-rows approach `resolveAllPageTargets` uses
-   * for "Build all", just capped to 1 row (`resolveDynamicPages`'s own
-   * `slugLimit`) since a live preview only ever needs one example, not the
-   * whole collection. Reads `savedByPath`, not `sourceByPath`: the preview
-   * builds from saved content anyway (`handleBuildCurrent` saves first), so
-   * re-resolving on every keystroke would be both wrong and needless -
-   * switching file or saving a changed `dry().collection(...)` re-resolves,
-   * typing does not. */
-  const [dynamicPreviewSample, setDynamicPreviewSample] = useState<DynamicPreviewSample | null>(null);
+  /** The real, published rows the open `[param]` template can be previewed
+   * against - the picker's options, and (its first row) the default target
+   * when nothing has been picked yet. Capped: a picker is for eyeballing a
+   * few representative entries, not for paging through a whole collection,
+   * and the build path ("Build all", `resolveAllPageTargets`) is what
+   * enumerates every row.
+   *
+   * Through `useFetch` for the same reason every other list on this app is:
+   * IndexedDB answers instantly on the next visit while `dry-http`'s
+   * `X-Dry-Resource-Version` decides whether anything actually changed (see
+   * `fetchPreviewEntries`). `notify: false` - a background refresh of a
+   * preview-only list isn't the kind of "new data available" the header's
+   * sync flash is meant to announce. */
+  const dynamicEntriesFetcher = useCallback(
+    (ifVersion: number | undefined, signal: AbortSignal) =>
+      fetchPreviewEntries(`${path}/api/dry-http`, dynamicType!, allTypes!, PREVIEW_ENTRY_LIMIT, ifVersion, signal),
+    [dynamicType, allTypes],
+  );
+  const { data: dynamicEntriesData, loading: dynamicEntriesLoading, reload: reloadDynamicEntries } = useFetch<PreviewEntryRef[]>(
+    `page-editor:preview-entries:${dynamicType?.name ?? ""}`,
+    dynamicEntriesFetcher,
+    { enabled: !!dynamicType && !!allTypes, notify: false },
+  );
+  /** `useFetch` keeps the last `data` it loaded while `enabled` is false (its
+   * effect returns early rather than clearing state), so a page with no
+   * dynamic collection at all would otherwise keep showing the PREVIOUS
+   * template's rows. Gated on `dynamicType` here, once, instead of at each
+   * of the 4 reads below. */
+  const dynamicEntries = useMemo(() => (dynamicType ? (dynamicEntriesData ?? []) : []), [dynamicType, dynamicEntriesData]);
+
+  /** Which row the picker has on - `null` (the default, re-armed whenever the
+   * open template or its collection changes) means "whichever row comes
+   * first", so the preview still shows something the moment a `[param]` page
+   * is opened, exactly as it did before there was a picker. */
+  const [previewSlug, setPreviewSlug] = useState<string | null>(null);
   useEffect(() => {
-    if (!dynamicTemplate || !allTypes) {
-      setDynamicPreviewSample(null);
-      return;
-    }
-    let cancelled = false;
-    setDynamicPreviewSample({ status: "loading" });
-    void resolveDynamicPages([dynamicTemplate], allTypes, savedByPath, `${path}/api/dry-http`, 1).then(([resolution]) => {
-      if (cancelled || !resolution) return;
-      if (!resolution.type) setDynamicPreviewSample({ status: "no-type" });
-      else if (resolution.pages.length === 0) setDynamicPreviewSample({ status: "no-entries", typeName: resolution.type.name });
-      else setDynamicPreviewSample({ status: "resolved", page: resolution.pages[0]! });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [dynamicTemplate, allTypes, savedByPath]);
+    setPreviewSlug(null);
+  }, [dynamicTemplate?.entryPath, dynamicType?.name]);
+
+  const previewEntry = useMemo(
+    () => dynamicEntries.find((row) => row.slug === previewSlug) ?? dynamicEntries[0] ?? null,
+    [dynamicEntries, previewSlug],
+  );
 
   interface PreviewTarget {
     /** Shown in the preview header - a real pathname for a page, a
@@ -1390,16 +1421,16 @@ export default function PageEditor() {
         }
       }
       // No static route matched - this may be a `[param]` template instead
-      // (`blogs/[slug]/page.tsx`), previewed against the sample row
-      // `dynamicPreviewSample` above resolved for it.
-      if (dynamicPreviewSample?.status === "resolved") {
-        const { page } = dynamicPreviewSample;
+      // (`blogs/[slug]/page.tsx`), previewed against whichever real row
+      // `previewEntry` above has selected.
+      if (dynamicTemplate && previewEntry) {
+        const pathname = dynamicTemplate.pathnameTemplate.replace(`[${dynamicTemplate.paramName}]`, previewEntry.slug);
         return {
-          label: `${page.pathname} (sample)`,
-          pathname: page.pathname,
-          entryPath: page.entryPath,
-          layoutPaths: page.layoutPaths,
-          params: page.params,
+          label: pathname,
+          pathname,
+          entryPath: dynamicTemplate.entryPath,
+          layoutPaths: dynamicTemplate.layoutPaths,
+          params: { [dynamicTemplate.paramName]: previewEntry.slug },
         };
       }
       return null;
@@ -1421,26 +1452,24 @@ export default function PageEditor() {
       return { label: "500.tsx", pathname: "/__dry-preview-500", entryPath: selectedPath, layoutPaths: [], params: {} };
     }
     return null;
-  }, [manifest, selectedPath, sourceByPath, dynamicPreviewSample, isComponentPath, propsSchema]);
+  }, [manifest, selectedPath, sourceByPath, dynamicTemplate, previewEntry, isComponentPath, propsSchema]);
 
   /** Explains why the preview panel is empty for a `[param]` page whose own
-   * `previewTarget` came back `null` - distinguishes "still resolving a
-   * sample row", "this page's source names no collection to enumerate" (a
+   * `previewTarget` came back `null` - distinguishes "still loading the rows
+   * to pick from", "this page's source names no collection to enumerate" (a
    * code gap), and "matched a type but it has no published rows yet" (an
    * empty collection) from the generic "nothing selected" placeholder below,
    * since all 3 would otherwise look identical to a user staring at a blank
    * preview. */
   const previewUnavailableReason = useMemo(() => {
     if (previewTarget || !dynamicTemplate) return null;
-    if (!dynamicPreviewSample || dynamicPreviewSample.status === "loading") return "Resolving a sample entry to preview…";
-    if (dynamicPreviewSample.status === "no-type") {
+    if (!dynamicType) {
+      if (!allTypes) return "Resolving an entry to preview…";
       return `"${dynamicTemplate.pathnameTemplate}" has no dry().collection("...").get() call naming a slug-enabled collection - can't tell which entry to preview.`;
     }
-    if (dynamicPreviewSample.status === "no-entries") {
-      return `No published "${dynamicPreviewSample.typeName}" entries yet - nothing to preview.`;
-    }
-    return null;
-  }, [previewTarget, dynamicTemplate, dynamicPreviewSample]);
+    if (dynamicEntriesLoading) return "Resolving an entry to preview…";
+    return `No published "${dynamicType.name}" entries yet - nothing to preview.`;
+  }, [previewTarget, dynamicTemplate, dynamicType, allTypes, dynamicEntriesLoading]);
 
   /** The chain of files this preview actually renders through, root-first:
    * every `layout.tsx` wrapping the target (exactly the `layoutPaths`
@@ -1666,6 +1695,11 @@ export default function PageEditor() {
    * same (possibly cached) data against the current source. */
   async function refreshPreviewData() {
     await clearDryHttpCache();
+    // The `[param]` entry picker is content too - an entry published in the
+    // CMS since this list loaded should appear in the dropdown from the same
+    // one click that refreshes the preview's own data, rather than only after
+    // its collection's data version happens to be re-checked.
+    await reloadDynamicEntries();
     await refreshPreview();
   }
 
@@ -1904,6 +1938,21 @@ export default function PageEditor() {
                   <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {previewLabel ?? previewTarget.label}
                   </span>
+                  {/* Which entry a `[param]` template previews against.
+                    * Shown from the FIRST row, not only once there are 2 to
+                    * switch between: the label beside it carries the built
+                    * pathname (a slug), so even standing alone this names the
+                    * entry the preview is actually showing - and a control
+                    * that only materializes once a collection happens to have
+                    * a second published row is a control nobody finds. */}
+                  {dynamicEntries.length > 0 && previewEntry && (
+                    <Select
+                      ariaLabel="Preview entry"
+                      value={previewEntry.slug}
+                      onChange={setPreviewSlug}
+                      options={dynamicEntries.map((row) => ({ value: row.slug, label: row.label ?? row.slug }))}
+                    />
+                  )}
                   <div class="spacer" />
                   <button type="button" class="ghost icon sm" aria-label="Reload preview" disabled={previewLoading} onClick={() => void refreshPreview()}>
                     <ReloadIcon />
