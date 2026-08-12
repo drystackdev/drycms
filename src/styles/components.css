@@ -6035,18 +6035,31 @@
       min-width: 0;
       padding: 0.375rem 0.5rem;
       border-bottom: 1px solid var(--dry-border);
+    }
 
-      /* The entry picker for a `[param]` page (`PageEditor.tsx`'s Select of
-         published rows). Every other control in this row is `sm`, so the
-         app-wide FORM-sized select (full width, 2.75rem tall - it's built for
-         a field in a stacked form, not a toolbar) is brought down to their
-         scale here rather than given a size variant of its own: this is the
-         only place a select sits in a dense toolbar. Capped instead of
-         content-sized so a long entry title can't push the zoom/reload
-         buttons off the end of a narrow preview column. */
+    /* Preview panel's own SECOND footer row, between the viewport and
+       `.page-editor-preview-chain` below it - the entry picker for a
+       `[param]` page (`PageEditor.tsx`'s Select of published rows). Moved
+       out of `.page-editor-preview-label` (the top header) so it doesn't
+       compete with that row's reload/zoom controls for space - it's a
+       content-data choice, not a viewport control, so it reads more clearly
+       grouped with the chain below than mixed into the toolbar above. */
+    .page-editor-preview-entry-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      flex: 0 0 auto;
+      min-width: 0;
+      padding: 0.375rem 0.5rem;
+      border-top: 1px solid var(--dry-border);
+      font-size: var(--dry-text-sm);
+      color: var(--dry-muted-foreground);
+
+      /* Full-width here (unlike the cramped top toolbar this used to share
+         space in) - this row has nothing else competing for room. */
       & > .select {
-        width: auto;
-        max-width: 12rem;
+        flex: 1;
+        min-width: 0;
         min-height: 2rem;
         padding-block: 0.125rem;
       }

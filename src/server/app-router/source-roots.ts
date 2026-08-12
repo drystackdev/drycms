@@ -40,10 +40,25 @@ export const COMPONENT_ALIAS = "@component";
  * (`vite.config.ts`'s `appsGlobals`). */
 export const STYLES_ROOT = "styles";
 
+/** Markdown context files for AI (Magic Chat's Page Editor chat, and the
+ * `list_page_source`/`read_page_source` MCP tools - `mcp.ts`) - notes the
+ * admin writes about THIS project (conventions, terminology, anything worth
+ * the model knowing before it edits `pages/`/`component/`/`styles/`), as
+ * opposed to `ai-page-source-docs.ts`'s `PAGE_SOURCE_README` (drycms's OWN
+ * developer docs, bundled at build time, unrelated to any one project).
+ * `md/README.md` specifically is the entry point - `ai-page-source-prompt.ts`
+ * embeds its content in every Magic Chat turn the same way `PAGE_SOURCE_README`
+ * already is; any OTHER file here is only read on demand (`kind: read, root:
+ * source, path: md/...`), so README.md is expected to link to them. No
+ * `alias` (page code never imports a `.md` file), and unlike `STYLES_ROOT` it
+ * isn't a build entry either - purely admin-authored text, never compiled. */
+export const MD_ROOT = "md";
+
 export const PAGES_SOURCE_ROOTS: readonly PagesSourceRoot[] = [
   { id: PAGES_ROOT, label: "Page" },
   { id: COMPONENT_ROOT, label: "Component", alias: COMPONENT_ALIAS },
   { id: STYLES_ROOT, label: "Styles" },
+  { id: MD_ROOT, label: "MD" },
 ];
 
 /** The root folder `path` belongs to, or `null` for a file sitting directly

@@ -20,26 +20,38 @@ const { path } = window.__DRY_CONFIG__;
  * MagicChat.tsx` (same floating-bubble-expands-into-a-panel UI, same
  * `popover="manual"` top-layer mounting trick, same IndexedDB session
  * persistence shape), NOT a reuse of that component: this one edits raw
- * `.tsx`/`.css` source text, not typed content-entry fields, so its "apply"
- * step is fundamentally different (see `status/page-editor-magic-chat.md`).
+ * `.tsx`/`.css`/`.md` source text, not typed content-entry fields, so its
+ * "apply" step is fundamentally different (see `status/page-editor-magic-chat.md`).
  *
- * Per that plan, a `kind: code` reply is written DIRECTLY into the open
- * file's live editor buffer as it streams (`onCodeChange`, called on every
- * delta) - no diff/preview/confirm gate. The existing Save/Reset/diagnostics
- * flow already in `PageEditor.tsx` is the safety net: nothing here ever
- * touches real storage itself (see `ai-page-source-write.ts`'s own doc
- * comment), only the in-memory buffer the admin's own Save button already
- * writes from.
+ * Project-WIDE, not scoped to the open file: each `kind: code` reply names
+ * its OWN target `path` (`ai-page-source-protocol.ts`'s own doc comment) and
+ * is written DIRECTLY into THAT file's live editor buffer as it streams
+ * (`onCodeChange`) - no diff/preview/confirm gate, and a single admin
+ * message may trigger several such writes in a row before Magic's final
+ * `kind: chat` reply. `path`/`code` below are still passed in (what's
+ * CURRENTLY open, if anything) purely as context for the model - never a
+ * constraint on which file(s) it may touch. The existing Save/Reset/
+ * diagnostics flow already in `PageEditor.tsx` is the safety net: nothing
+ * here ever touches real storage itself (see `ai-page-source-write.ts`'s own
+ * doc comment), only the in-memory buffer the admin's own Save button
+ * already writes from.
  */
 
-const SUGGESTIONS = [
+const FILE_SUGGESTIONS = [
   "Explain what this file does",
   "Add a new section to this page",
   "Clean up the styling",
 ];
 
+const PROJECT_SUGGESTIONS = [
+  "What does this project do?",
+  "Add a new page",
+  "Create a reusable component",
+];
+
 interface PageSourceCodeResult {
   kind: "code";
+  path: string;
   summary: string;
   code: string;
 }
@@ -63,14 +75,19 @@ interface PageSourceStreamEvent {
 /** Same drain-and-dispatch shape as `MagicChat.tsx`'s own `requestMagicTurn`,
  * against `/api/page-source-ai` instead of `/api/ai/magic-write` and the
  * `{reading}` event `ai-page-source-write.ts` sends for a `kind: read` hop
- * instead of `{fetching}`/`{creating}`. */
+ * instead of `{fetching}`/`{creating}`. Unlike that sibling, a `kind: code`
+ * turn is NOT terminal here either (`ai-page-source-write.ts`'s own loop
+ * keeps going after one) - `onCodeWritten` fires for each one as it arrives
+ * and reading continues; only a `kind: chat` event ends the call, so the
+ * resolved `turn` is always that kind. */
 async function requestPageSourceTurn(
   payload: Record<string, unknown>,
   onDelta: (delta: string) => void,
   onRetry: () => void,
   onReading: (label: string) => void,
+  onCodeWritten: (turn: PageSourceCodeResult) => void,
   signal: AbortSignal,
-): Promise<{ turn: PageSourceTurnResult; aiLabel: string }> {
+): Promise<{ turn: PageSourceChatResult; aiLabel: string }> {
   const response = await fetch(`${path}/api/page-source-ai`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -99,7 +116,13 @@ async function requestPageSourceTurn(
         continue;
       }
       if (event.error) throw new Error(event.error);
-      if (event.turn) return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
+      if (event.turn) {
+        if (event.turn.kind === "code") {
+          onCodeWritten(event.turn);
+          continue;
+        }
+        return { turn: event.turn, aiLabel: event.aiLabel ?? "AI" };
+      }
       if (event.retry) onRetry();
       else if (event.reading) onReading(event.reading);
       else if (event.delta) onDelta(event.delta);
@@ -109,17 +132,26 @@ async function requestPageSourceTurn(
 }
 
 export interface PageSourceMagicChatProps {
-  /** The file currently open in the editor. */
+  /** The file currently open in the editor, `""` if none - passed to the
+   * model purely as CONTEXT (what the admin is looking at), never a limit on
+   * which file(s) it may write to (`ai-page-source-prompt.ts`'s own doc
+   * comment). */
   path: string;
-  /** That file's current buffer content (`sourceByPath[path]`). */
+  /** That file's current buffer content (`sourceByPath[path]`) - ignored
+   * when `path` is `""`. */
   code: string;
-  /** Writes new content into `path`'s buffer - `PageEditor.tsx`'s
+  /** Every file path that already exists in the project's source tree
+   * (`PageEditor.tsx`'s `Object.keys(sourceByPath)`) - lets the model tell
+   * "rewrite an existing file" from "create a new one" without a `kind: read`
+   * hop just to discover the tree's shape. */
+  projectFiles: string[];
+  /** Writes new content into a file's buffer - `PageEditor.tsx`'s
    * `setSourceByPath`-based setter, the exact same seam `handleChange`/
    * `handleReset` already use, so an AI edit is indistinguishable from a
    * hand-typed one to the rest of the page (dirty tracking, diagnostics,
-   * Save, Reset). Always called with the ORIGINAL target path, even if
-   * `path` (this component's own prop) has since changed - see
-   * `runAssistant`'s own doc comment. */
+   * Save, Reset). Called once per file Magic writes (`runAssistant`'s
+   * `pushCodeWrittenStatus`), with whatever `path` THAT write named - never
+   * assumed to be the file currently open. */
   onCodeChange: (path: string, code: string) => void;
   /** `PageEditor.tsx`'s own `canEdit` (`canAccess(PAGE_BUILDER_RESOURCE_ID,
    * "setting")`) - the same single toggle already gating the whole page,
@@ -129,7 +161,7 @@ export interface PageSourceMagicChatProps {
   canUse: boolean;
 }
 
-export default function PageSourceMagicChat({ path: filePath, code, onCodeChange, canUse }: PageSourceMagicChatProps) {
+export default function PageSourceMagicChat({ path: filePath, code, projectFiles, onCodeChange, canUse }: PageSourceMagicChatProps) {
   const widgetRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<PageSourceChatBubble[]>([]);
@@ -284,15 +316,18 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
     return id;
   }
 
-  /** `targetPath`/`targetSource` are captured by the caller (`sendTurn`)
-   * from THIS render's own `filePath`/`code` props, synchronously - the
-   * exact same "freshest at click time" guarantee `MagicChat.tsx`'s
-   * `valueRef.current` read gives, just via a plain closure instead of a
-   * ref (no `await` happens between the click and this capture, so there's
-   * nothing for a prop change to race). Every `onCodeChange` call below
-   * uses `targetPath`, never the live `filePath` prop - a mid-stream file
-   * switch in the editor can't redirect where this turn's output lands. */
-  async function runAssistant(userText: string, assistantBubbleId: string, targetPath: string, targetSource: string) {
+  /** `openPath`/`openSource`/`openProjectFiles` are captured by the caller
+   * (`sendTurn`) from THIS render's own `filePath`/`code`/`projectFiles`
+   * props, synchronously - the exact same "freshest at click time" guarantee
+   * `MagicChat.tsx`'s `valueRef.current` read gives, just via a plain
+   * closure instead of a ref (no `await` happens between the click and this
+   * capture, so there's nothing for a prop change to race). `openPath` is
+   * sent to the model purely as CONTEXT (`PageSourceMagicChatProps.path`'s
+   * own doc comment) - it does NOT decide where any write lands; each
+   * `kind: code` reply names its own target path, applied in
+   * `pushCodeWrittenStatus` below regardless of what's open or was open
+   * when this turn started. */
+  async function runAssistant(userText: string, assistantBubbleId: string, openPath: string, openSource: string, openProjectFiles: string[]) {
     setSending(true);
     stopReasonRef.current = null;
     rawTextRef.current = "";
@@ -304,8 +339,14 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
       rawTextRef.current += delta;
       const partial = parsePartialPageSourceYaml(rawTextRef.current);
       if (partial.kind === "code") {
-        if (typeof partial.code === "string") scheduleCodeFlush(targetPath, partial.code);
-        updateBubble(assistantBubbleId, (bubble) => ({ ...bubble, role: "status", text: partial.summary || "Writing code…" }) as PageSourceChatBubble);
+        // Live-flush only once the target `path:` line itself has fully
+        // streamed in - before that there's nowhere to flush the
+        // still-growing `code:` block to yet.
+        if (partial.path && typeof partial.code === "string") scheduleCodeFlush(partial.path, partial.code);
+        updateBubble(
+          assistantBubbleId,
+          (bubble) => ({ ...bubble, role: "status", text: partial.summary || (partial.path ? `Writing "${partial.path}"…` : "Writing code…") }) as PageSourceChatBubble,
+        );
         return;
       }
       updateBubble(assistantBubbleId, (bubble) => (bubble.role === "assistant" ? { ...bubble, text: partial.text ?? "" } : bubble));
@@ -316,11 +357,37 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
       setMessages((current) => [...current, { id: newId(), role: "status", text: label }]);
     }
 
+    /** One per file Magic writes - NOT terminal (`requestPageSourceTurn`'s
+     * own doc comment), so this may fire several times before the turn's
+     * final `kind: chat` reply. Applies the write immediately (same seam
+     * `handleChange`/`handleReset` use), pushes its own status line (so each
+     * write is individually visible in the transcript, not just the last
+     * one), and resets the streaming state for whatever hop comes next -
+     * same reset `pushReadingStatus` already does for a `kind: read` hop. */
+    function pushCodeWrittenStatus(turn: PageSourceCodeResult) {
+      cancelCodeFlush();
+      rawTextRef.current = "";
+      onCodeChange(turn.path, turn.code);
+      setMessages((current) => [...current, { id: newId(), role: "status", text: `Wrote "${turn.path}": ${turn.summary}` }]);
+      // `handleDelta`'s `kind !== "code"` branch only updates `assistantBubbleId`
+      // while it's still `role: "assistant"` (so it can't clobber an
+      // unrelated status/error bubble) - but the `kind === "code"` branch
+      // just flipped this SAME bubble to `role: "status"` while streaming
+      // THIS write. Reset it back so whatever hop comes next (another
+      // write, a read, or the final chat reply) streams into it live too,
+      // instead of silently no-op'ing until the awaited final result lands.
+      updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "assistant", text: "", streaming: true }));
+      if (turn.path !== filePathRef.current) {
+        toast.add({ type: "info", title: `Magic updated "${turn.path}"`, description: "Open that file to see the change." });
+      }
+    }
+
     try {
       const result = await requestPageSourceTurn(
         {
-          path: targetPath,
-          currentSource: targetSource,
+          path: openPath,
+          currentSource: openSource,
+          projectFiles: openProjectFiles,
           prompt: userText,
           history: historyForThisTurn,
           lang: sessionLang,
@@ -332,27 +399,14 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
           rawTextRef.current = "";
         },
         pushReadingStatus,
+        pushCodeWrittenStatus,
         controller.signal,
       );
       if (!mountedRef.current) return;
 
       cancelCodeFlush();
-      let assistantHistoryText: string;
-      if (result.turn.kind === "chat") {
-        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "assistant", text: result.turn.kind === "chat" ? result.turn.text : "", streaming: false }));
-        assistantHistoryText = result.turn.text;
-      } else {
-        onCodeChange(targetPath, result.turn.code);
-        // Terse summary only in history - never the full file text, same
-        // "don't resend a whole passage every future turn" reasoning
-        // `MagicChat.tsx`'s own `rewrite`-turn history entry uses.
-        updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "status", text: `Wrote: ${result.turn.kind === "code" ? result.turn.summary : ""}` }));
-        assistantHistoryText = result.turn.summary;
-        if (targetPath !== filePathRef.current) {
-          toast.add({ type: "info", title: `Magic updated "${targetPath}"`, description: "Open that file to see the change." });
-        }
-      }
-      historyRef.current = [...historyForThisTurn, { role: "user", text: userText }, { role: "assistant", text: assistantHistoryText }];
+      updateBubble(assistantBubbleId, () => ({ id: assistantBubbleId, role: "assistant", text: result.turn.text, streaming: false }));
+      historyRef.current = [...historyForThisTurn, { role: "user", text: userText }, { role: "assistant", text: result.turn.text }];
       setSending(false);
     } catch (error) {
       cancelCodeFlush();
@@ -376,7 +430,7 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
     setMessages((current) => [...current, { id: userBubbleId, role: "user", text: userText }]);
     wasNearBottomRef.current = true;
     const assistantBubbleId = pushAssistantPlaceholder();
-    void runAssistant(userText, assistantBubbleId, filePath, code);
+    void runAssistant(userText, assistantBubbleId, filePath, code, projectFiles);
   }
 
   async function handleComposerSubmit() {
@@ -394,7 +448,7 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
   function handleRetry(bubbleId: string, text: string) {
     setMessages((current) => current.filter((bubble) => bubble.id !== bubbleId));
     const assistantBubbleId = pushAssistantPlaceholder();
-    void runAssistant(text, assistantBubbleId, filePath, code);
+    void runAssistant(text, assistantBubbleId, filePath, code, projectFiles);
   }
 
   function handleStop() {
@@ -457,9 +511,13 @@ export default function PageSourceMagicChat({ path: filePath, code, onCodeChange
             <div class="magic-chat-messages-viewport" ref={messagesViewportRef}>
               {messages.length === 0 && (
                 <div class="magic-chat-empty">
-                  <p class="hint">Ask Magic to explain, write, or revise "{filePath}".</p>
+                  <p class="hint">
+                    {filePath
+                      ? `Ask Magic to explain, write, or revise "${filePath}" - or any other page, component, style, or doc this project needs.`
+                      : "Ask Magic to explain this project, or to write any page, component, style, or doc it needs - no file has to be open first."}
+                  </p>
                   <div class="row magic-chat-suggestions">
-                    {SUGGESTIONS.map((suggestion) => (
+                    {(filePath ? FILE_SUGGESTIONS : PROJECT_SUGGESTIONS).map((suggestion) => (
                       <button key={suggestion} type="button" class="sm outline" onClick={() => handleSuggestion(suggestion)}>
                         {suggestion}
                       </button>

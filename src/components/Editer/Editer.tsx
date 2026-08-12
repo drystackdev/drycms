@@ -14,6 +14,7 @@ import { cursorPosition } from "prism-code-editor/cursor";
 import { highlightText } from "prism-code-editor/prism";
 import "prism-code-editor/prism/languages/tsx";
 import "prism-code-editor/prism/languages/css-extras";
+import "prism-code-editor/prism/languages/markdown";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { addTooltip } from "prism-code-editor/tooltips";
@@ -48,8 +49,10 @@ export interface EditerProps {
    * signature-help/quick-fix/describeProps) - none of it applies to a plain
    * `styles/*.css` file (`source-roots.ts`) - and only wires up syntax
    * highlighting plus the `@apply`-triggered Tailwind completion source.
+   * `"md"` (`MD_ROOT`'s admin-authored context files) is plainer still -
+   * syntax highlighting only, no completions of any kind.
    * @default "tsx" */
-  language?: "tsx" | "css";
+  language?: "tsx" | "css" | "md";
   /** Path -> content of other `.tsx`/`.ts` files the code being edited can import from -
    * see `ts-worker.ts`'s module resolution. Not watched/discovered automatically. */
   extraFiles?: Record<string, string>;
@@ -637,6 +640,43 @@ export default function Editer({
       ensureCompletionsRegistered();
       editor.addExtensions(autoComplete({ filter: fuzzyFilter }));
       applyColorSwatches(editor);
+
+      const shadowRoot = host.shadowRoot;
+      if (shadowRoot) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = shadowStyles;
+        shadowRoot.append(styleEl);
+      }
+
+      return () => {
+        editorRef.current = undefined;
+        clearTimeout(debounceTimer);
+        editor.remove();
+      };
+    }
+
+    // Plain syntax-highlighted Markdown editing - no `EditerWorkerClient`,
+    // no completions/color-swatches (nothing in `md/` (`MD_ROOT`) triggers
+    // either), just `basicEditor`'s own bracket/find-replace/undo baseline
+    // plus Prism's markdown grammar. Same self-contained early-return shape
+    // as the `"css"` branch above, for the same reason.
+    if (language === "md") {
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+      const editor = basicEditor(host, {
+        language: "markdown",
+        value,
+        theme: theme ?? (resolveEffectiveTheme() === "dark" ? "vs-code-dark" : "vs-code-light"),
+        tabSize,
+        readOnly,
+        onUpdate: (code) => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            lastReportedCodeRef.current = code;
+            onChangeRef.current({ code, success: true, errors: [] });
+          }, debounceMs);
+        },
+      });
+      editorRef.current = editor;
 
       const shadowRoot = host.shadowRoot;
       if (shadowRoot) {

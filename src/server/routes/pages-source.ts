@@ -5,7 +5,7 @@ import { toFileEntry } from "../../storage/entry.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
-import { isCoreStyleFilePath, rootOf, STYLES_ROOT } from "../app-router/source-roots.js";
+import { isCoreStyleFilePath, MD_ROOT, rootOf, STYLES_ROOT } from "../app-router/source-roots.js";
 
 /**
  * The `pagesSource` storage root (`plans/app-r2.md` quyết định #6 - git is
@@ -34,16 +34,20 @@ async function handleTree(adapter: StorageAdapter): Promise<Response> {
  * `page-components.ts`'s own `requireComponentFileName` enforces for its
  * own tree, for the same reason: every file here is assumed to be real
  * TS/TSX by both `Editer`'s Language Service and the build pipeline's own
- * Sucrase compile. The `styles/` root (`source-roots.ts`) is the one
- * exception - it's plain Tailwind `.css`, never compiled by that pipeline. */
+ * Sucrase compile. The `styles/` root (`source-roots.ts`) is plain Tailwind
+ * `.css`, never compiled by that pipeline; `md/` (`MD_ROOT`) is plain
+ * Markdown, never compiled OR imported by anything - both exceptions. */
 export function isPageSourceFileName(path: string): boolean {
-  if (rootOf(path)?.id === STYLES_ROOT) return /\.css$/i.test(path);
+  const root = rootOf(path)?.id;
+  if (root === STYLES_ROOT) return /\.css$/i.test(path);
+  if (root === MD_ROOT) return /\.md$/i.test(path);
   return /\.tsx?$/i.test(path) && !path.toLowerCase().endsWith(".d.ts");
 }
 
 export function requirePageSourceFileName(path: string): void {
   if (isPageSourceFileName(path)) return;
-  const expected = rootOf(path)?.id === STYLES_ROOT ? '".css"' : '".tsx" or ".ts"';
+  const root = rootOf(path)?.id;
+  const expected = root === STYLES_ROOT ? '".css"' : root === MD_ROOT ? '".md"' : '".tsx" or ".ts"';
   throw new StorageError("invalid_path", `"${path}" must end in ${expected}.`);
 }
 

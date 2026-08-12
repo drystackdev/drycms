@@ -14,18 +14,20 @@
  * before this handler ever runs, the same centralized-gate pattern
  * `pages-source.ts`'s own write methods rely on (no per-request `checkAccess`
  * call in that file either). Also note this route never itself writes to
- * `pagesSourceStorage` - a `kind: code` reply only streams a new full-file
- * string back to the browser, which lands in the editor's own in-memory
- * buffer; persisting it to disk still goes through the SAME `PUT
- * /api/pages-source/:path` route (and its existing validation) the admin's
- * own Save button already calls - see `status/page-editor-magic-chat.md`.
+ * `pagesSourceStorage` - each `kind: code` reply (one PER FILE, and not
+ * limited to whatever's open in the editor - `ai-page-source-protocol.ts`'s
+ * own doc comment) only streams a new full-file string back to the browser,
+ * which lands in that path's own in-memory buffer; persisting any of it to
+ * disk still goes through the SAME `PUT /api/pages-source/:path` route (and
+ * its existing validation) the admin's own Save button already calls - see
+ * `status/page-editor-magic-chat.md`.
  */
 import { ai } from "../config.js";
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse } from "../route-helpers.js";
 import { extractPageSourceYaml, parsePageSourceYaml } from "../../page-components/ai-page-source-protocol.js";
 import { buildPageSourceSystemPrompt } from "../../page-components/ai-page-source-prompt.js";
-import { executePageSourceRead } from "./ai-page-source-read.js";
+import { executePageSourceRead, readProjectReadme } from "./ai-page-source-read.js";
 import {
   acquireAiStreamSlot,
   createChatStream,
@@ -39,6 +41,9 @@ import {
 interface PageSourceWriteHttpRequest {
   path?: string;
   currentSource?: string;
+  /** Every file path already in this project's source tree - see
+   * `validateProjectFiles`. */
+  projectFiles?: unknown;
   prompt?: string;
   /** Prior turns of this same conversation - TERSE summaries only (never a
    * full replaced file's text - see `PageSourceMagicChat.tsx`'s own history
@@ -51,8 +56,13 @@ interface PageSourceWriteHttpRequest {
 }
 
 interface PageSourceWriteValidatedRequest {
+  /** `""` when no file is open in the editor - see `buildPageSourceSystemPrompt`'s
+   * `path` doc comment. Magic is no longer scoped to one open file
+   * (`PageSourceCodeTurn` carries its own target `path`), so this is
+   * context only, not a requirement. */
   path: string;
   currentSource: string;
+  projectFiles: string[];
   prompt: string;
   history: ChatMessage[];
   aiKeyName: string;
@@ -86,14 +96,33 @@ function validatePageSourceHistory(value: unknown): ChatMessage[] {
   });
 }
 
+/** A very large project's file list is still just an orientation aid, not
+ * something worth failing the request over if it's oversized - malformed/
+ * excess entries are silently dropped rather than rejected (this is the
+ * client's own `Object.keys(sourceByPath)`, not user-typed content, so a bad
+ * entry here is a client bug, not something to bubble as a user-facing
+ * error - unlike `validatePageSourceHistory`'s strict throw). Capped well
+ * past any real project's file count; `buildPageSourceSystemPrompt`'s own
+ * `MAX_LISTED_FILES` applies the tighter, prompt-budget-driven cap. */
+const MAX_PROJECT_FILES = 2_000;
+const MAX_PROJECT_FILE_PATH_CHARS = 300;
+
+function validateProjectFiles(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0 && entry.length <= MAX_PROJECT_FILE_PATH_CHARS)
+    .slice(0, MAX_PROJECT_FILES);
+}
+
 function validatePageSourceWriteRequest(body: PageSourceWriteHttpRequest): PageSourceWriteValidatedRequest {
   const path = typeof body.path === "string" ? body.path.trim() : "";
-  if (!path) throw new Error("Magic requires a file to be open.");
 
   const currentSource = typeof body.currentSource === "string" ? body.currentSource : "";
   if (currentSource.length > MAX_PAGE_SOURCE_CHARS) {
     throw new Error(`This file is too large for Magic - it supports files up to ${MAX_PAGE_SOURCE_CHARS.toLocaleString()} characters.`);
   }
+
+  const projectFiles = validateProjectFiles(body.projectFiles);
 
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) throw new Error("Say something to Magic first.");
@@ -106,7 +135,7 @@ function validatePageSourceWriteRequest(body: PageSourceWriteHttpRequest): PageS
   const aiModel = typeof body.aiModel === "string" && body.aiModel.trim() ? body.aiModel.trim() : undefined;
   const lang = typeof body.lang === "string" && body.lang.trim() ? body.lang.trim() : ai.lang;
 
-  return { path, currentSource, prompt, history, aiKeyName, aiModel, lang };
+  return { path, currentSource, projectFiles, prompt, history, aiKeyName, aiModel, lang };
 }
 
 /** Same drain-and-collect shape as `ai-magic-write.ts`'s own
@@ -152,6 +181,13 @@ async function runPageSourceTurn(
 
 const PAGE_SOURCE_MAX_ATTEMPTS = 3;
 const PAGE_SOURCE_READ_MAX_HOPS = 3;
+/** How many files one admin message may write in a row before Magic is
+ * forced to wrap up with `kind: chat` - `kind: code` is no longer terminal
+ * (`PageSourceCodeTurn`'s own doc comment), so without a cap a single
+ * request could in principle rewrite the whole project. Generous enough for
+ * a real multi-file change (e.g. a new component plus the page that uses
+ * it) without being unbounded. */
+const PAGE_SOURCE_CODE_MAX_HOPS = 8;
 /** A whole file's replacement text can easily run past the 2048-token
  * default `ai.ts`'s Anthropic branch otherwise applies - same override
  * `ai-magic-write.ts` makes for a whole entry's worth of fields, reused
@@ -161,6 +197,7 @@ const PAGE_SOURCE_TIMEOUT_MS = 90_000;
 
 interface PageSourceCodeTurnEvent {
   kind: "code";
+  path: string;
   summary: string;
   code: string;
 }
@@ -175,15 +212,23 @@ function streamPageSourceWrite(context: DryRouteContext, request: PageSourceWrit
     start(controller) {
       void (async () => {
         try {
-          const systemPrompt = buildPageSourceSystemPrompt({ lang: request.lang, path: request.path, currentSource: request.currentSource });
+          const projectContext = await readProjectReadme(context);
+          const systemPrompt = buildPageSourceSystemPrompt({
+            lang: request.lang,
+            path: request.path,
+            currentSource: request.currentSource,
+            projectFiles: request.projectFiles,
+            projectContext,
+          });
           const priming: ChatMessage = { role: "user", text: systemPrompt };
           const currentTurn: ChatMessage = { role: "user", text: request.prompt };
           let messages: ChatMessage[] = [priming, ...request.history, currentTurn];
           let lastError = "Magic used too many internal lookups without producing a final reply.";
           let dialectAttempt = 0;
           let readHops = 0;
+          let codeHops = 0;
 
-          const maxIterations = PAGE_SOURCE_MAX_ATTEMPTS + PAGE_SOURCE_READ_MAX_HOPS;
+          const maxIterations = PAGE_SOURCE_MAX_ATTEMPTS + PAGE_SOURCE_READ_MAX_HOPS + PAGE_SOURCE_CODE_MAX_HOPS;
           for (let iteration = 0; iteration < maxIterations; iteration++) {
             if (dialectAttempt > 0) controller.enqueue(streamEvent({ retry: true }));
             const result = await runPageSourceTurn(context, messages, request.aiKeyName, request.aiModel, (delta) => {
@@ -226,8 +271,35 @@ function streamPageSourceWrite(context: DryRouteContext, request: PageSourceWrit
               continue;
             }
 
-            const event: PageSourceCodeTurnEvent | PageSourceChatTurnEvent =
-              turn.kind === "code" ? { kind: "code", summary: turn.summary, code: turn.code } : { kind: "chat", text: turn.text };
+            if (turn.kind === "code") {
+              codeHops++;
+              if (codeHops > PAGE_SOURCE_CODE_MAX_HOPS) {
+                messages = [
+                  ...messages,
+                  { role: "assistant", text: result.text },
+                  { role: "user", text: "You've written the maximum number of files for this turn - reply now with kind: chat summarizing what you've done, no more kind: code." },
+                ];
+                continue;
+              }
+              // Applied by the CLIENT (writes `turn.path`'s in-editor buffer -
+              // see this module's own doc comment on why nothing here
+              // touches real storage), never terminal: the model gets
+              // another turn right after, so one request can write several
+              // files in sequence before a final `kind: chat` wraps up.
+              const event: PageSourceCodeTurnEvent = { kind: "code", path: turn.path, summary: turn.summary, code: turn.code };
+              controller.enqueue(streamEvent({ turn: event, aiLabel: result.aiLabel }));
+              messages = [
+                ...messages,
+                { role: "assistant", text: result.text },
+                {
+                  role: "user",
+                  text: `Wrote "${turn.path}" (${turn.summary}). Continue with another kind: code for a different file if this request needs one, or reply with kind: chat to summarize and finish.`,
+                },
+              ];
+              continue;
+            }
+
+            const event: PageSourceChatTurnEvent = { kind: "chat", text: turn.text };
             controller.enqueue(streamEvent({ turn: event, aiLabel: result.aiLabel }));
             controller.close();
             return;

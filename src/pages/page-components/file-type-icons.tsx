@@ -71,6 +71,17 @@ export function FolderCssIcon() {
   );
 }
 
+/** For the MD source root (`MD_ROOT`) - admin-authored Markdown context
+ * files for AI (see `source-roots.ts`'s own doc comment on `MD_ROOT`). */
+export function FolderMarkdownIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" aria-hidden="true">
+      <path fill="#42a5f5" d="m6.922 3.768l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232" />
+      <path fill="#bbdefb" d="M4 11V7h1l1 1.25L7 7h1v4H7V8.5l-1 1.25l-1-1.25V11Zm7-4v2h1.5L10 11.5L7.5 9H9V7Z" />
+    </svg>
+  );
+}
+
 export function ReactTsFileIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 32 32" aria-hidden="true">

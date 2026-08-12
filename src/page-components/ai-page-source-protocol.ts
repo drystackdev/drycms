@@ -12,12 +12,17 @@
  *
  * Three top-level turn kinds:
  * - `kind: chat` - an ordinary conversational reply, identical shape to
- *   Magic Write's own `chat` turn.
- * - `kind: code` - the FULL new replacement source for the file currently
- *   open in the editor (whole-file rewrite, not a patch/diff - see
+ *   Magic Write's own `chat` turn. The only TERMINAL kind - a request may
+ *   chain several `code`/`read` turns, but always ends in `chat`.
+ * - `kind: code` - the FULL new replacement source for ONE file, named by
+ *   its own `path` (whole-file rewrite, not a patch/diff - see
  *   `status/page-editor-magic-chat.md`: the admin chose direct-write-while-
  *   streaming over a diff-preview gate, so there's no patch format to design
- *   for v1). Shape mirrors `fields`'s `summary` + payload pattern.
+ *   for v1). Not limited to the file open in the editor, and NOT terminal -
+ *   `ai-page-source-write.ts` applies it (streams it to the client, which
+ *   writes it into that path's buffer) and loops back for another turn, so
+ *   one request can touch several files in sequence before a final `chat`
+ *   wraps up. Shape mirrors `fields`'s `summary` + payload pattern.
  * - `kind: read` - look at another file before replying (this project's own
  *   source tree, or this repo's own `docs/*.md` reference docs) - never
  *   terminal, looped back server-side by `ai-page-source-write.ts` for
@@ -38,6 +43,10 @@ export interface PageSourceChatTurn {
 
 export interface PageSourceCodeTurn {
   kind: "code";
+  /** The file this write targets - ANY path under `pages/`/`component/`/
+   * `styles/`/`md/` (`source-roots.ts`), new or existing, not just whatever
+   * happens to be open in the admin's editor right now. */
+  path: string;
   summary: string;
   code: string;
 }
@@ -201,11 +210,13 @@ function parseSequence(lines: RawLine[], start: number, indent: number): { items
 }
 
 function validateCodeTurn(top: PageSourceRawFields): PageSourceValidationResult {
+  const path = top.path;
   const summary = top.summary;
   const code = top.code;
+  if (!isRawString(path) || !path.trim()) return { ok: false, error: '"path" must be a non-empty string.' };
   if (!isRawString(summary) || !summary.trim()) return { ok: false, error: '"summary" must be a non-empty string.' };
   if (!isRawString(code) || !code.trim()) return { ok: false, error: '"code" must be a non-empty string.' };
-  return { ok: true, turn: { kind: "code", summary: summary.trim(), code } };
+  return { ok: true, turn: { kind: "code", path: path.trim(), summary: summary.trim(), code } };
 }
 
 const READ_ROOTS = new Set<string>(["source", "docs"]);
@@ -250,15 +261,20 @@ export interface PageSourcePartialState {
   /** Only meaningful once `kind === "chat"` (or the lenient no-`kind`
    * fallback) - whatever of the `text:` block has streamed in so far. */
   text?: string;
+  /** Only meaningful once `kind === "code"` - the target file's path, once
+   * that (short, plain-scalar) line has fully streamed in. The client waits
+   * for this before it starts live-flushing `code` into any buffer at all -
+   * see `path`'s sibling doc comment below. */
+  path?: string;
   /** Only meaningful once `kind === "code"` - whatever of the `summary:`
    * block has streamed in so far. */
   summary?: string;
   /** Only meaningful once `kind === "code"` - whatever of the `code:` block
-   * has streamed in so far. The client feeds this straight into the open
-   * file's live editor buffer on every tick (`status/page-editor-magic-chat.md`
-   * - direct-write-while-streaming, no diff gate), same "stream straight
-   * into the real value" treatment `MagicChat.tsx` already gives a
-   * streaming `text`/`richtext` field. */
+   * has streamed in so far. The client feeds this straight into `path`'s
+   * live editor buffer (if that file happens to be open) on every tick
+   * (`status/page-editor-magic-chat.md` - direct-write-while-streaming, no
+   * diff gate), same "stream straight into the real value" treatment
+   * `MagicChat.tsx` already gives a streaming `text`/`richtext` field. */
   code?: string;
 }
 
@@ -274,6 +290,7 @@ export function parsePartialPageSourceYaml(text: string): PageSourcePartialState
   return {
     kind: isRawString(top.kind) ? top.kind : undefined,
     text: isRawString(top.text) ? top.text : undefined,
+    path: isRawString(top.path) ? top.path : undefined,
     summary: isRawString(top.summary) ? top.summary : undefined,
     code: isRawString(top.code) ? top.code : undefined,
   };

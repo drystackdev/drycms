@@ -50,9 +50,9 @@ import PageSourceMagicChat from "./page-editor/PageSourceMagicChat.js";
 import ComponentTreePanel from "./page-components/ComponentTreePanel.js";
 import SystemFilesPanel from "./page-components/core-styles/SystemFilesPanel.js";
 import { CORE_STYLE_FILES } from "./page-components/core-styles/registry.js";
-import { FolderComponentsIcon, FolderCssIcon, FolderRoutesIcon, fileIconForName } from "./page-components/file-type-icons.js";
+import { FolderComponentsIcon, FolderCssIcon, FolderMarkdownIcon, FolderRoutesIcon, fileIconForName } from "./page-components/file-type-icons.js";
 import { copyDestinationPath, entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
-import { COMPONENT_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
+import { COMPONENT_ROOT, MD_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import { COMPONENT_PREVIEW_ENTRY_PATH, buildComponentPreviewSource } from "../page-components/component-preview.js";
 import { samplePropsSource } from "../page-components/props-sample.js";
 import type { PropsSchema } from "../components/Editer/worker-protocol.js";
@@ -132,6 +132,8 @@ function sourceRootIcon(rootId: string) {
       return <FolderComponentsIcon />;
     case STYLES_ROOT:
       return <FolderCssIcon />;
+    case MD_ROOT:
+      return <FolderMarkdownIcon />;
     default:
       return <FolderRoutesIcon />;
   }
@@ -315,6 +317,20 @@ export const defaultProps: Props = { title: "Sample title" };
  * `styles/globals.css`), it has to be pulled in via `@import` first. */
 const DEFAULT_STYLES_SOURCE = `/* New stylesheet - add an @import for it to styles/globals.css to use it. */\n`;
 
+/** Starter source for a new file in the MD tab (`MD_ROOT`) - only
+ * `README.md` is ever read automatically (`ai-page-source-prompt.ts` embeds
+ * it in every Magic Chat turn), so any other file only reaches the model
+ * when README.md (or another already-read file) links to it. */
+const DEFAULT_MD_SOURCE = `# New document
+
+Write project-specific context for Magic Chat/MCP here - conventions, terminology,
+or instructions worth the model knowing before it edits this project's pages,
+components, or styles.
+
+Only "README.md" is read automatically. Link to this file from README.md (or another
+file the model has already read) so it gets picked up, e.g. [like this](./other.md).
+`;
+
 /** Never a real file - a key `refreshPreview` injects into its own LOCAL
  * copy of `sourceByPath` (never the state, never storage) when previewing a
  * `layout.tsx` directly, standing in for "whatever page would actually
@@ -408,6 +424,13 @@ interface PageEditorUiState {
   selectedPath: string | null;
   /** Which sidebar tab (source root - `source-roots.ts`) was last open. */
   activeRoot: string;
+  /** The last file focused WITHIN each tab (source root id -> path) - lets
+   * `selectRoot` restore that tab's own open file instead of always
+   * clearing to nothing, so switching Page -> Component -> Page lands back
+   * on the same page rather than an empty editor. Keyed by root id, not
+   * just remembered as a single `selectedPath`, since each tab has its own
+   * independent "last file" (see `selectRoot`'s doc comment). */
+  lastPathByRoot: Record<string, string>;
   sidebarOpen: boolean;
   previewOpen: boolean;
   codeOpen: boolean;
@@ -470,17 +493,35 @@ export default function PageEditor() {
    * `?file=component/Card.tsx` link lands on the right tab), then only moved
    * by an explicit tab click or by opening a file from another root. */
   const [activeRoot, setActiveRoot] = useState<string>(initialUiState?.activeRoot ?? PAGES_ROOT);
-  /** Tab click handler - deliberately clears `selectedPath` (closing
-   * whatever code/preview is showing) rather than leaving the previous
-   * root's file open while a DIFFERENT root's tree is browsed underneath
-   * it: every path belongs to exactly one root (`rootOf`), so the open file
-   * can never be part of the tab just switched to anyway. A no-op on the
-   * already-active tab (re-clicking "Page" while on "Page" shouldn't close
-   * the very file that tab is showing). */
+  /** `lastPathByRoot`'s doc comment (`PageEditorUiState`) - the per-tab
+   * memory `selectRoot` reads/writes. Seeded from `initialUiState` so a
+   * reload restores every tab's own last-open file, not just the one that
+   * happened to be active. */
+  const [lastPathByRoot, setLastPathByRoot] = useState<Record<string, string>>(initialUiState?.lastPathByRoot ?? {});
+  /** Keeps `lastPathByRoot` current as the open file changes for any reason
+   * (a tree click, a preview-chain crumb, a Magic Chat write, `loadTree`'s
+   * own fallback) - cheaper and more complete than updating it at every
+   * individual call site that can change `selectedPath`. */
+  useEffect(() => {
+    if (!selectedPath) return;
+    const root = rootOf(selectedPath)?.id;
+    if (!root) return;
+    setLastPathByRoot((prev) => (prev[root] === selectedPath ? prev : { ...prev, [root]: selectedPath }));
+  }, [selectedPath]);
+  /** Tab click handler - restores whichever file was last open in the
+   * TARGET tab (`lastPathByRoot`) rather than always clearing to nothing,
+   * so switching Page -> Component -> Page lands back on the same page
+   * instead of an empty editor. Falls back to closing the editor (`""`) when
+   * that tab has never had a file open, or the remembered one was since
+   * deleted/moved out of the tree. A no-op on the already-active tab
+   * (re-clicking "Page" while on "Page" shouldn't close the very file that
+   * tab is showing). */
   function selectRoot(rootId: string) {
     if (rootId === activeRoot) return;
     setActiveRoot(rootId);
-    setSelectedPath("");
+    const remembered = lastPathByRoot[rootId];
+    const stillExists = !!remembered && !!entries?.some((entry) => entry.id === remembered && entry.kind === "file");
+    setSelectedPath(stillExists ? remembered! : "");
   }
   /** The open component's default-export props, described from its real TS
    * types by `Editer`'s worker (`describeProps`) - what the preview falls
@@ -635,6 +676,7 @@ export default function PageEditor() {
       savePageEditorUiState({
         selectedPath,
         activeRoot,
+        lastPathByRoot,
         sidebarOpen,
         previewOpen,
         codeOpen,
@@ -650,6 +692,7 @@ export default function PageEditor() {
   }, [
     selectedPath,
     activeRoot,
+    lastPathByRoot,
     sidebarOpen,
     previewOpen,
     codeOpen,
@@ -696,7 +739,7 @@ export default function PageEditor() {
       }
 
       setEntries(all);
-      const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css)$/i.test(entry.name));
+      const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css|md)$/i.test(entry.name));
       const contents = await Promise.all(files.map((file) => api.read(file.id).catch(() => "")));
       const nextSource: Record<string, string> = {};
       files.forEach((file, index) => {
@@ -839,9 +882,22 @@ export default function PageEditor() {
   const extraFiles = useMemo(() => {
     const rest = { ...sourceByPath };
     if (selectedPath) delete rest[selectedPath];
+    // `md/` (`MD_ROOT`) holds plain Markdown, never TS/TSX a page/component
+    // could import - handing its content to the TS Language Service as an
+    // "extra file" would be pure noise (nothing ever resolves an import to
+    // it) and it isn't real source for that worker to reason about.
+    for (const key of Object.keys(rest)) {
+      if (rootOf(key)?.id === MD_ROOT) delete rest[key];
+    }
     if (dryTypes) rest["dry.generated.d.ts"] = dryTypes;
     return rest;
   }, [sourceByPath, selectedPath, dryTypes]);
+
+  /** Every file that already exists in this project's source tree, for
+   * `PageSourceMagicChat`'s own orientation (`PageSourceMagicChatProps.projectFiles`'s
+   * doc comment) - Magic now has authority to write ANY of these (or a new
+   * path), not just whatever's currently open. */
+  const projectFiles = useMemo(() => Object.keys(sourceByPath), [sourceByPath]);
 
   /** Per-path debounce for the IndexedDB draft write, same 300ms/keyed-Map
    * shape `entry-draft-store.ts`'s `saveEntryDraft` already established for
@@ -996,9 +1052,29 @@ export default function PageEditor() {
    * A write to some OTHER (not currently open) path only updates in-memory
    * state; it isn't draft-persisted to IndexedDB until the admin opens that
    * file (which mounts a fresh `Editer` and primes normally) or Saves - an
-   * accepted v1 gap, see `status/page-editor-magic-chat.md`. */
+   * accepted v1 gap, see `status/page-editor-magic-chat.md`.
+   *
+   * Magic can now target a path with no `FileEntry` yet (a brand new file -
+   * `ai-page-source-protocol.ts`'s `PageSourceCodeTurn` isn't limited to
+   * existing paths) - `entries` gets a synthetic `file` row for it so the
+   * tree/tab it belongs to can actually show and select it, exactly like a
+   * real one it just hasn't been told about yet (`handleCreateFile`'s own
+   * `loadTree()` call plays the identical role for a HAND-created file, just
+   * from the server instead of client-side - this one's genuinely unsaved,
+   * so there's nothing to reload from yet). Ancestor FOLDER rows aren't
+   * synthesized the same way - a file whose parent folder doesn't already
+   * have its own row still renders (`ComponentTreePanel`'s tree builder
+   * falls back to the tab's root for an unknown `parentId`), just not nested
+   * under a folder that doesn't visually exist yet either. */
   function handleMagicCodeChange(changedPath: string, code: string) {
     setSourceByPath((prev) => (prev[changedPath] === code ? prev : { ...prev, [changedPath]: code }));
+    setEntries((prev) => {
+      if (!prev || prev.some((entry) => entry.id === changedPath)) return prev;
+      const slash = changedPath.lastIndexOf("/");
+      const name = slash === -1 ? changedPath : changedPath.slice(slash + 1);
+      const parentId = slash === -1 ? null : changedPath.slice(0, slash);
+      return [...prev, { id: changedPath, name, parentId, kind: "file" }];
+    });
   }
 
   /** Builds + publishes the SELECTED page.tsx (only enabled when it matches
@@ -1144,13 +1220,22 @@ export default function PageEditor() {
   async function handleCreateFile(name: string) {
     // The tree panel builds `name` from the (root-rebased) folder the user
     // is creating in, so a file typed at the tab's own root arrives with no
-    // source root on it - see `withSourceRoot`. `styles/` defaults to
-    // `.css` (and CSS starter content) instead of `.tsx` - it's the only
-    // root that isn't TS/TSX (`pages-source.ts`'s own `isPageSourceFileName`).
+    // source root on it - see `withSourceRoot`. `styles/`/`md/` default to
+    // `.css`/`.md` (and their own starter content) instead of `.tsx` - the
+    // two roots that aren't TS/TSX (`pages-source.ts`'s own
+    // `isPageSourceFileName`).
     const isStyles = activeRoot === STYLES_ROOT;
-    const hasExtension = isStyles ? /\.css$/i.test(name) : /\.tsx?$/i.test(name);
-    const filePath = withSourceRoot(activeRoot, hasExtension ? name : `${name}${isStyles ? ".css" : ".tsx"}`);
-    const starterSource = isStyles ? DEFAULT_STYLES_SOURCE : activeRoot === COMPONENT_ROOT ? DEFAULT_COMPONENT_SOURCE : DEFAULT_PAGE_SOURCE;
+    const isMd = activeRoot === MD_ROOT;
+    const extension = isStyles ? ".css" : isMd ? ".md" : ".tsx";
+    const hasExtension = isStyles ? /\.css$/i.test(name) : isMd ? /\.md$/i.test(name) : /\.tsx?$/i.test(name);
+    const filePath = withSourceRoot(activeRoot, hasExtension ? name : `${name}${extension}`);
+    const starterSource = isStyles
+      ? DEFAULT_STYLES_SOURCE
+      : isMd
+        ? DEFAULT_MD_SOURCE
+        : activeRoot === COMPONENT_ROOT
+          ? DEFAULT_COMPONENT_SOURCE
+          : DEFAULT_PAGE_SOURCE;
     try {
       await api.save(filePath, starterSource);
       await loadTree();
@@ -1938,21 +2023,6 @@ export default function PageEditor() {
                   <span class="hint" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {previewLabel ?? previewTarget.label}
                   </span>
-                  {/* Which entry a `[param]` template previews against.
-                    * Shown from the FIRST row, not only once there are 2 to
-                    * switch between: the label beside it carries the built
-                    * pathname (a slug), so even standing alone this names the
-                    * entry the preview is actually showing - and a control
-                    * that only materializes once a collection happens to have
-                    * a second published row is a control nobody finds. */}
-                  {dynamicEntries.length > 0 && previewEntry && (
-                    <Select
-                      ariaLabel="Preview entry"
-                      value={previewEntry.slug}
-                      onChange={setPreviewSlug}
-                      options={dynamicEntries.map((row) => ({ value: row.slug, label: row.label ?? row.slug }))}
-                    />
-                  )}
                   <div class="spacer" />
                   <button type="button" class="ghost icon sm" aria-label="Reload preview" disabled={previewLoading} onClick={() => void refreshPreview()}>
                     <ReloadIcon />
@@ -2027,6 +2097,26 @@ export default function PageEditor() {
                   {previewUnavailableReason ?? "Select a page.tsx, layout.tsx, 404.tsx, 500.tsx, or a component to preview it."}
                 </p>
               )}
+              {/* Which entry a `[param]` template previews against. Shown
+                * from the FIRST row, not only once there are 2 to switch
+                * between: the label above carries the built pathname (a
+                * slug), so even standing alone this names the entry the
+                * preview is actually showing - and a control that only
+                * materializes once a collection happens to have a second
+                * published row is a control nobody finds. Sits under the
+                * preview (not in its header) so it doesn't compete with the
+                * header's reload/zoom controls for room. */}
+              {dynamicEntries.length > 0 && previewEntry && (
+                <div class="page-editor-preview-entry-bar">
+                  <span>Entry</span>
+                  <Select
+                    ariaLabel="Preview entry"
+                    value={previewEntry.slug}
+                    onChange={setPreviewSlug}
+                    options={dynamicEntries.map((row) => ({ value: row.slug, label: row.label ?? row.slug }))}
+                  />
+                </div>
+              )}
               {/* Breadcrumb of the layout chain this preview renders through
                 * - see `previewChain`'s doc comment. Sits under the preview
                 * (not in its header) so it reads bottom-up as "this page,
@@ -2074,7 +2164,7 @@ export default function PageEditor() {
                   value={code}
                   onChange={handleChange}
                   extraFiles={extraFiles}
-                  language={rootOf(selectedPath)?.id === STYLES_ROOT ? "css" : "tsx"}
+                  language={rootOf(selectedPath)?.id === STYLES_ROOT ? "css" : rootOf(selectedPath)?.id === MD_ROOT ? "md" : "tsx"}
                   describeProps={isComponentPath}
                   style={{ height: "100%" }}
                 />
@@ -2183,7 +2273,7 @@ export default function PageEditor() {
       />
 
       {selectedPath && (
-        <PageSourceMagicChat path={selectedPath} code={sourceByPath[selectedPath] ?? ""} onCodeChange={handleMagicCodeChange} canUse={canEdit} />
+        <PageSourceMagicChat path={selectedPath} code={sourceByPath[selectedPath] ?? ""} projectFiles={projectFiles} onCodeChange={handleMagicCodeChange} canUse={canEdit} />
       )}
 
       <GithubResetDialog

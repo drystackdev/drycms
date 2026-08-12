@@ -9,7 +9,7 @@
  *
  * Two allowed roots, each resolved independently:
  * - `root: "source"` - another file in THIS project's own `pagesSourceStorage`
- *   tree (`pages/`/`component/`/`styles/`) - read through the same
+ *   tree (`pages/`/`component/`/`styles/`/`md/`) - read through the same
  *   `StorageAdapter` `pages-source.ts`'s own `GET` uses, so path
  *   normalization/sandboxing is identical; a path outside the storage root
  *   simply resolves to nothing (`stat()` returns `null`), never a traversal.
@@ -24,6 +24,7 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { normalizeStoragePath } from "../../storage/path.js";
 import type { PageSourceReadTurn } from "../../page-components/ai-page-source-protocol.js";
 import { PAGE_SOURCE_DOCS } from "../../page-components/ai-page-source-docs.js";
+import { MD_ROOT } from "../app-router/source-roots.js";
 
 export interface PageSourceReadResult {
   /** Short status shown to the admin while this hop runs (`{reading}` SSE
@@ -75,4 +76,35 @@ function readDoc(path: string): PageSourceReadResult {
 
 export async function executePageSourceRead(context: DryRouteContext, turn: PageSourceReadTurn): Promise<PageSourceReadResult> {
   return turn.root === "docs" ? readDoc(turn.path) : readSourceFile(context, turn.path);
+}
+
+const MD_README_PATH = `${MD_ROOT}/README.md`;
+/** Smaller than `MAX_READ_CHARS` above - this is embedded in EVERY Magic
+ * Chat turn (`buildPageSourceSystemPrompt`'s `projectContext`), unlike an
+ * on-demand `kind: read`, so a runaway README costs every turn's token
+ * budget, not just one hop's. */
+const MAX_README_CHARS = 20_000;
+
+/** `md/README.md`'s content (`MD_ROOT`), if the project has written one -
+ * this project's own admin-authored context for Magic Chat/MCP, always
+ * embedded in the system prompt the same way `ai-page-source-docs.ts`'s
+ * `PAGE_SOURCE_README` already is (see `ai-page-source-prompt.ts`). `null`
+ * for "no such file yet" AND for any read failure alike - this is a
+ * best-effort orientation aid, never something worth failing the whole
+ * Magic Chat turn over. */
+export async function readProjectReadme(context: DryRouteContext): Promise<string | null> {
+  try {
+    const adapter = getStorageAdapter(pagesSourceStorage, context);
+    const stat = await adapter.stat(MD_README_PATH);
+    if (!stat || stat.kind !== "file") return null;
+    const file = await adapter.read(MD_README_PATH);
+    const chunks: Buffer[] = [];
+    for await (const chunk of file.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const text = Buffer.concat(chunks).toString("utf-8");
+    return text.length > MAX_README_CHARS
+      ? `${text.slice(0, MAX_README_CHARS)}\n… (truncated - read "${MD_README_PATH}" via \`kind: read\` for the rest)`
+      : text;
+  } catch {
+    return null;
+  }
 }

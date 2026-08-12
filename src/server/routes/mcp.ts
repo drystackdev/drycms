@@ -145,7 +145,7 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: "list_page_source",
-    description: "List files and folders in the page-source tree (pages/, component/, styles/).",
+    description: "List files and folders in the page-source tree (pages/, component/, styles/, md/ - the last holds admin-authored Markdown context notes for AI, entry point \"md/README.md\").",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "Folder path. Root when omitted." } },
@@ -154,7 +154,7 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: "read_page_source",
-    description: "Read the raw text of one page/layout/component/stylesheet source file.",
+    description: "Read the raw text of one page/layout/component/stylesheet/md-context source file. Start with \"md/README.md\" for this project's own admin-authored context notes, if any exist.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "The file's path, e.g. \"pages/blog/page.tsx\" or \"component/Card.tsx\"." } },
@@ -169,7 +169,7 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        path: { type: "string", description: "The file's path. Must end in \".tsx\"/\".ts\" (pages/component root) or \".css\" (styles root)." },
+        path: { type: "string", description: "The file's path. Must end in \".tsx\"/\".ts\" (pages/component root), \".css\" (styles root), or \".md\" (md root)." },
         code: { type: "string", description: "The file's complete new contents." },
       },
       required: ["path", "code"],
