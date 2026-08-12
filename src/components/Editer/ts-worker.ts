@@ -13,7 +13,6 @@ import type {
   EditerCompletionItem,
   EditerHoverInfo,
   EditerSignatureHelp,
-  EditerTextEdit,
   PropsField,
   PropsSchema,
   PropsTypeNode,
@@ -570,34 +569,6 @@ function computeCodeFixes(pos: number): EditerCodeFix[] {
   }
 }
 
-/** `Editer`'s `formatOptions` prop overrides these - see the `"configure"` case in
- * `self.onmessage` below. */
-const DEFAULT_FORMAT_SETTINGS: ts.FormatCodeSettings = {
-  indentSize: 2,
-  tabSize: 2,
-  convertTabsToSpaces: true,
-  insertSpaceAfterCommaDelimiter: true,
-  insertSpaceAfterSemicolonInForStatements: true,
-  insertSpaceBeforeAndAfterBinaryOperators: true,
-  insertSpaceAfterKeywordsInControlFlowStatements: true,
-  insertSpaceAfterFunctionKeywordForAnonymousFunctions: true,
-  insertSpaceBeforeFunctionParenthesis: false,
-  placeOpenBraceOnNewLineForFunctions: false,
-  placeOpenBraceOnNewLineForControlBlocks: false,
-  semicolons: ts.SemicolonPreference.Insert,
-};
-let formatSettings: ts.FormatCodeSettings = DEFAULT_FORMAT_SETTINGS;
-
-function computeFormatting(): EditerTextEdit[] {
-  try {
-    return languageService
-      .getFormattingEditsForDocument(MAIN_FILE, formatSettings)
-      .map((tc) => ({ start: tc.span.start, length: tc.span.length, newText: tc.newText }));
-  } catch {
-    return [];
-  }
-}
-
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   if (request.kind === "configure") {
@@ -605,7 +576,6 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     // its first "update" - safe to merge onto the defaults unconditionally since there's
     // no user content/diagnostics computed yet for changed options to invalidate.
     if (request.compilerOptions) compilerOptions = { ...DEFAULT_COMPILER_OPTIONS, ...request.compilerOptions };
-    if (request.formatOptions) formatSettings = { ...DEFAULT_FORMAT_SETTINGS, ...request.formatOptions };
   } else if (request.kind === "update") {
     setFile(MAIN_FILE, request.code);
     setExtraFiles(request.extraFiles);
@@ -627,8 +597,5 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   } else if (request.kind === "codeFixes") {
     const fixes = computeCodeFixes(request.pos);
     postMessage({ kind: "codeFixes", requestId: request.requestId, fixes } satisfies WorkerResponse);
-  } else if (request.kind === "format") {
-    const edits = computeFormatting();
-    postMessage({ kind: "format", requestId: request.requestId, edits } satisfies WorkerResponse);
   }
 };

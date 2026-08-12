@@ -18,9 +18,10 @@ import "prism-code-editor/prism/languages/markdown";
 import { basicEditor } from "prism-code-editor/setups";
 import type { IncludedTheme } from "prism-code-editor/themes";
 import { addTooltip } from "prism-code-editor/tooltips";
-import { insertText } from "prism-code-editor/utils";
+import { insertText, setSelection } from "prism-code-editor/utils";
 import { resolveEffectiveTheme } from "../../lib/native/theme.js";
 import { toast } from "../Toast.js";
+import { type EditerFormatLanguage, formatCode } from "./format-code.js";
 import {
   tailwindApplyCompletionSource,
   tailwindAtRuleCompletionSource,
@@ -66,9 +67,6 @@ export interface EditerProps {
   /** Merged on top of `ts-worker.ts`'s own defaults (ES2022/bundler resolution/preact
    * JSX/strict) - set once at mount, like `theme`. */
   compilerOptions?: EditerLanguageConfig["compilerOptions"];
-  /** Merged on top of `ts-worker.ts`'s own default `Shift+Alt+F` formatting style - set
-   * once at mount, like `theme`. */
-  formatOptions?: EditerLanguageConfig["formatOptions"];
   /** @default 2 */
   tabSize?: number;
   /** Delay after the last keystroke before diagnostics recompute and `onChange` fires.
@@ -498,6 +496,38 @@ function announceDiagnostics(liveRegion: HTMLDivElement, errors: EditerDiagnosti
   liveRegion.textContent = parts.join(", ");
 }
 
+/** Builds the `Shift+Alt+F` keydown listener shared by all 3 `language`
+ * modes - only `apply` (how the formatted text actually lands in the
+ * buffer) differs per mode, so that's the one thing callers pass in. Not
+ * `addEditorHotkey(editor, "shift+alt+f", ...)`: that keys off `event.key`,
+ * which is layout-dependent - on a real Mac keyboard, Option (Alt) turns
+ * letter keys into special characters (`Option+F` types "ƒ"), so
+ * `event.key` is never "f" there. `event.code` is the physical key position
+ * regardless of what modifiers produce, so it works on every layout. Guards
+ * against a race with further typing during the async `formatCode` call by
+ * checking `editor.value` is still exactly what was formatted before
+ * applying - losing that check would silently discard keystrokes typed
+ * while Prettier's parser was loading/running. */
+function bindFormatKeydown(
+  editor: PrismEditor,
+  language: EditerFormatLanguage,
+  readOnly: boolean,
+  apply: (newText: string, start: number, end: number) => void,
+): (event: KeyboardEvent) => void {
+  return (event: KeyboardEvent) => {
+    if (readOnly) return;
+    if (event.code !== "KeyF" || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    const before = editor.value;
+    const cursorOffset = editor.getSelection()[0];
+    void formatCode(before, language, cursorOffset).then(({ code, cursorOffset: nextCursor }) => {
+      if (code === before || editor.value !== before) return;
+      apply(code, 0, before.length);
+      setSelection(editor, nextCursor);
+    });
+  };
+}
+
 function renderSignatureTooltip(el: HTMLDivElement, help: EditerSignatureHelp): void {
   el.replaceChildren();
   const label = document.createElement("div");
@@ -581,7 +611,6 @@ export default function Editer({
   language = "tsx",
   theme,
   compilerOptions,
-  formatOptions,
   tabSize = 2,
   debounceMs = 300,
   describeProps = false,
@@ -648,9 +677,15 @@ export default function Editer({
         shadowRoot.append(styleEl);
       }
 
+      const onFormatKeydown = bindFormatKeydown(editor, "css", readOnly, (newText, start, end) =>
+        insertText(editor, newText, start, end),
+      );
+      editor.textarea.addEventListener("keydown", onFormatKeydown);
+
       return () => {
         editorRef.current = undefined;
         clearTimeout(debounceTimer);
+        editor.textarea.removeEventListener("keydown", onFormatKeydown);
         editor.remove();
       };
     }
@@ -685,9 +720,15 @@ export default function Editer({
         shadowRoot.append(styleEl);
       }
 
+      const onFormatKeydown = bindFormatKeydown(editor, "md", readOnly, (newText, start, end) =>
+        insertText(editor, newText, start, end),
+      );
+      editor.textarea.addEventListener("keydown", onFormatKeydown);
+
       return () => {
         editorRef.current = undefined;
         clearTimeout(debounceTimer);
+        editor.textarea.removeEventListener("keydown", onFormatKeydown);
         editor.remove();
       };
     }
@@ -701,7 +742,7 @@ export default function Editer({
         announceDiagnostics(liveRegion, result.errors);
         onChangeRef.current(result);
       },
-      { compilerOptions, formatOptions },
+      { compilerOptions },
       debounceMs,
       () =>
         toast.add({
@@ -816,20 +857,9 @@ export default function Editer({
     };
     host.addEventListener("click", onClick);
 
-    // Not `addEditorHotkey(editor, "shift+alt+f", ...)`: that keys off `event.key`,
-    // which is layout-dependent - on a real Mac keyboard, Option (Alt) turns letter
-    // keys into special characters (`Option+F` types "ƒ", `Shift+Option+F` a different
-    // accented letter, never "f"), so `event.key` is never "f" and the hotkey silently
-    // never fires. The library special-cases this for `Shift+Meta+<letter>` but not for
-    // `Alt+<letter>`. `event.code` is the physical key position ("KeyF") regardless of
-    // what character modifiers produce, so it works the same on every keyboard layout.
-    const onFormatKeydown = (event: KeyboardEvent) => {
-      if (readOnly) return;
-      if (event.code === "KeyF" && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey) {
-        event.preventDefault();
-        client.getFormatting().then(commitEdits);
-      }
-    };
+    const onFormatKeydown = bindFormatKeydown(editor, "tsx", readOnly, (newText, start, end) =>
+      commitEdits([{ start, length: end - start, newText }]),
+    );
     editor.textarea.addEventListener("keydown", onFormatKeydown);
 
     // Every other way to see a symbol's type or a diagnostic's message in this editor
@@ -981,7 +1011,7 @@ export default function Editer({
     };
     // Mount once; `value`/`extraFiles` prop changes are synced by the effects
     // below instead of remounting the editor. `language`/`theme`/
-    // `compilerOptions`/`formatOptions`/`tabSize`/`debounceMs`/
+    // `compilerOptions`/`tabSize`/`debounceMs`/
     // `tailwindCompletions` are all captured here at their current value and
     // stay fixed for the editor's lifetime - like `theme`, changing any of
     // them requires remounting (changing `key` on the `Editer` element)

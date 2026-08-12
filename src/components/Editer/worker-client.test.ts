@@ -61,7 +61,7 @@ describe("EditerWorkerClient", () => {
 
   it("restarts the worker and resolves to the safe empty fallback if nothing responds in time", async () => {
     const client = new EditerWorkerClient(() => {});
-    const promise = client.getFormatting();
+    const promise = client.getCompletions(5);
     const worker = workers[0]!;
 
     await vi.advanceTimersByTimeAsync(HANG_TIMEOUT_MS + 1000);
@@ -99,7 +99,7 @@ describe("EditerWorkerClient", () => {
 
     const client = new EditerWorkerClient(() => {}, config);
     const worker = workers[1]!;
-    const promise = client.getFormatting();
+    const promise = client.getCompletions(5);
     await vi.advanceTimersByTimeAsync(HANG_TIMEOUT_MS + 1000);
     await promise;
 

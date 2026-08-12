@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
+import { type EditerFormatLanguage, formatCode } from "../components/Editer/format-code.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
 import { CloseIcon, LockIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
 import Popover from "../components/Popover.js";
@@ -858,6 +859,10 @@ export default function PageEditor() {
    * previewable file again - no explicit save/restore needed. */
   const isMdPath = !!selectedPath && rootOf(selectedPath)?.id === MD_ROOT;
   const previewVisible = previewOpen && !isMdPath;
+  /** Mirrors `Editer`'s own `language` prop below - shared so `handleSave`'s
+   * format-on-save runs through the exact same Prettier parser `Editer`
+   * itself would for this file. */
+  const editorLanguage: EditerFormatLanguage = rootOf(selectedPath)?.id === STYLES_ROOT ? "css" : isMdPath ? "md" : "tsx";
 
   // Clears stale diagnostics from whatever file was open before - `Editer`
   // remounts on `selectedPath` (its own `key`) and reports fresh ones via
@@ -957,12 +962,21 @@ export default function PageEditor() {
     }
   }
 
+  /** Reformats the buffer (Prettier, via `editorLanguage`) before persisting it -
+   * `dirty` (the only thing that gates a call to this, both from the Save
+   * button and the Ctrl/Cmd+S shortcut below) means there's real new content
+   * to write anyway, so folding formatting into that same write means a
+   * saved file is always pretty-printed without a separate action. Updates
+   * `sourceByPath` too so the editor visibly shows the reformatted text
+   * rather than the saved copy silently drifting from what's on screen. */
   async function handleSave() {
     if (!selectedPath) return;
     setSaving(true);
     try {
-      await api.save(selectedPath, sourceByPath[selectedPath] ?? "");
-      const nextSaved = { ...savedByPath, [selectedPath]: sourceByPath[selectedPath] ?? "" };
+      const { code: formatted } = await formatCode(sourceByPath[selectedPath] ?? "", editorLanguage);
+      setSourceByPath((prev) => (prev[selectedPath] === formatted ? prev : { ...prev, [selectedPath]: formatted }));
+      await api.save(selectedPath, formatted);
+      const nextSaved = { ...savedByPath, [selectedPath]: formatted };
       setSavedByPath(nextSaved);
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
@@ -2227,7 +2241,7 @@ export default function PageEditor() {
                   value={code}
                   onChange={handleChange}
                   extraFiles={extraFiles}
-                  language={rootOf(selectedPath)?.id === STYLES_ROOT ? "css" : rootOf(selectedPath)?.id === MD_ROOT ? "md" : "tsx"}
+                  language={editorLanguage}
                   describeProps={isComponentPath}
                   style={{ height: "100%" }}
                 />

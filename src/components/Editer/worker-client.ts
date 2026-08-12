@@ -5,7 +5,6 @@ import type {
   EditerHoverInfo,
   EditerLanguageConfig,
   EditerSignatureHelp,
-  EditerTextEdit,
   WorkerRequest,
   WorkerResponse,
 } from "./worker-protocol.js";
@@ -48,7 +47,7 @@ export class EditerWorkerClient {
     // Sent first (the worker processes messages in the order they arrive), so every
     // later "update"/completions/etc. computes against the configured options, never
     // the worker's own bare defaults.
-    if (config?.compilerOptions || config?.formatOptions) {
+    if (config?.compilerOptions) {
       this.#post({ kind: "configure", ...config });
     }
   }
@@ -96,7 +95,7 @@ export class EditerWorkerClient {
     this.#pending.clear();
     this.#onRestart?.();
     this.#worker = this.#createWorker();
-    if (this.#config?.compilerOptions || this.#config?.formatOptions) {
+    if (this.#config?.compilerOptions) {
       this.#post({ kind: "configure", ...this.#config });
     }
     if (this.#latest) this.#post({ kind: "update", ...this.#latest, emitDiagnostics: true, describeProps: this.#describeProps });
@@ -154,11 +153,6 @@ export class EditerWorkerClient {
   async getCodeFixes(pos: number): Promise<EditerCodeFix[]> {
     const response = await this.#request((requestId) => ({ kind: "codeFixes", requestId, pos }));
     return response?.kind === "codeFixes" ? response.fixes : [];
-  }
-
-  async getFormatting(): Promise<EditerTextEdit[]> {
-    const response = await this.#request((requestId) => ({ kind: "format", requestId }));
-    return response?.kind === "format" ? response.edits : [];
   }
 
   dispose(): void {

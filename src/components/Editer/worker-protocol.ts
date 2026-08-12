@@ -1,15 +1,14 @@
-import type { CompilerOptions, FormatCodeSettings } from "typescript";
+import type { CompilerOptions } from "typescript";
 import type { EditerResult } from "./types.js";
 
 /**
- * Overrides merged on top of `ts-worker.ts`'s own defaults (`DEFAULT_COMPILER_OPTIONS`/
- * `DEFAULT_FORMAT_SETTINGS`) - only `typescript`'s *types* are imported here (erased at
- * build time, same as everywhere else in this file), so accepting real `CompilerOptions`/
- * `FormatCodeSettings` doesn't pull the `typescript` package into the client bundle.
+ * Overrides merged on top of `ts-worker.ts`'s own defaults (`DEFAULT_COMPILER_OPTIONS`) -
+ * only `typescript`'s *types* are imported here (erased at build time, same as everywhere
+ * else in this file), so accepting real `CompilerOptions` doesn't pull the `typescript`
+ * package into the client bundle.
  */
 export interface EditerLanguageConfig {
   compilerOptions?: Partial<CompilerOptions>;
-  formatOptions?: Partial<FormatCodeSettings>;
 }
 
 /**
@@ -111,13 +110,11 @@ export type WorkerRequest =
   | { kind: "completions"; requestId: number; pos: number }
   | { kind: "hover"; requestId: number; pos: number }
   | { kind: "signatureHelp"; requestId: number; pos: number }
-  | { kind: "codeFixes"; requestId: number; pos: number }
-  | { kind: "format"; requestId: number };
+  | { kind: "codeFixes"; requestId: number; pos: number };
 
 export type WorkerResponse =
   | { kind: "diagnostics"; result: EditerResult }
   | { kind: "completions"; requestId: number; items: EditerCompletionItem[] }
   | { kind: "hover"; requestId: number; info: EditerHoverInfo | null }
   | { kind: "signatureHelp"; requestId: number; help: EditerSignatureHelp | null }
-  | { kind: "codeFixes"; requestId: number; fixes: EditerCodeFix[] }
-  | { kind: "format"; requestId: number; edits: EditerTextEdit[] };
+  | { kind: "codeFixes"; requestId: number; fixes: EditerCodeFix[] };
