@@ -43,6 +43,11 @@ import AiSchemaWizardPanel from "./content-type-editor/AiSchemaWizardPanel.js";
 import { useDocumentTitle } from "./page-common.js";
 import { temporaryFeatureVisibility } from "../lib/temporary-visibility.js";
 
+/** How often this page re-checks the server for new/changed AI-proposed
+ * content-type drafts while it's open - see the effect below for why plain
+ * polling (not a push mechanism) is the deliberate choice here. */
+const AI_DRAFT_POLL_MS = 25_000;
+
 interface CardHighlights {
   label: ComponentChildren;
   name: ComponentChildren;
