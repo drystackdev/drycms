@@ -403,16 +403,37 @@ export default function BuilderContentType() {
   const pendingCount = Object.keys(pendingDrafts).length;
 
   // Pull any pending AI-proposed schema changes (MCP's `propose_content_type`)
-  // into the local draft store on every visit to this page - the same
-  // "Apply and build" review below shows them alongside human-typed drafts,
-  // no separate screen. A draft that conflicts with one already sitting
-  // here (different content, same id) isn't silently overwritten - it's
-  // queued in `aiConflicts` for the admin to resolve one at a time below.
+  // into the local draft store - the same "Apply and build" review below
+  // shows them alongside human-typed drafts, no separate screen. Re-synced
+  // on an interval (not just on mount) so a proposal made WHILE this page is
+  // already open still shows up without the admin having to navigate away
+  // and back - deliberately plain polling rather than a push mechanism
+  // (Durable Object/WebSocket): this notification has no real latency
+  // requirement, and polling needs no new infrastructure and works
+  // identically under both `kind: "local"` and `kind: "cloudflare"`. A
+  // draft that conflicts with one already sitting here (different content,
+  // same id) isn't silently overwritten - it's queued in `aiConflicts` for
+  // the admin to resolve one at a time below, deduped by id so a later poll
+  // never queues the same unresolved conflict twice.
   const [aiConflicts, setAiConflicts] = useState<AiDraftConflict[]>([]);
   useEffect(() => {
-    void syncAiContentTypeDrafts().then((conflicts) => {
-      if (conflicts.length > 0) setAiConflicts((current) => [...current, ...conflicts]);
-    });
+    let cancelled = false;
+    function pull() {
+      void syncAiContentTypeDrafts().then((conflicts) => {
+        if (cancelled || conflicts.length === 0) return;
+        setAiConflicts((current) => {
+          const existingIds = new Set(current.map((entry) => entry.server.id));
+          const fresh = conflicts.filter((entry) => !existingIds.has(entry.server.id));
+          return fresh.length > 0 ? [...current, ...fresh] : current;
+        });
+      });
+    }
+    pull();
+    const interval = setInterval(pull, AI_DRAFT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
   const currentConflict = aiConflicts[0] ?? null;
   function resolveCurrentConflict(action: "overwrite" | "keep") {
