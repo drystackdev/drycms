@@ -573,16 +573,17 @@ export interface PageTarget {
   params: Record<string, string | string[]>;
 }
 
-/** A `[param]` template whose route exists but no content type's
- * `seoUrlPattern` matches it - shown as a warning, not silently dropped
- * (`dynamic-routes.ts`'s own `DynamicTemplateResolution.type: null`). */
+/** A `[param]` template whose route exists but whose own source names no
+ * slug-enabled collection to enumerate (`page-collection.ts`) - shown as a
+ * warning, not silently dropped (`dynamic-routes.ts`'s own
+ * `DynamicTemplateResolution.type: null`). */
 export interface UnmatchedTemplate {
   pathnameTemplate: string;
 }
 
 /** Every buildable page on the site - static `page.tsx` routes plus every
- * dynamic `[param]` template resolved against its matching content type's
- * `seoUrlPattern` rows (`dynamic-routes.ts`). Shared by `PageBuild.tsx`
+ * dynamic `[param]` template resolved against the published rows of
+ * whichever collection its own source reads (`dynamic-routes.ts`). Shared by `PageBuild.tsx`
  * ("Build all") and `PageEditor.tsx` (its own "Build all" shortcut) so the
  * 2 never compute a different notion of "every page" from the same
  * `sourceByPath`. */
@@ -600,7 +601,7 @@ export async function resolveAllPageTargets(
   const unmatchedTemplates: UnmatchedTemplate[] = [];
   const dynamicTemplates = listDynamicPageTemplates(manifest);
   if (dynamicTemplates.length > 0) {
-    const resolutions = await resolveDynamicPages(dynamicTemplates, allTypes, dryHttpEndpoint);
+    const resolutions = await resolveDynamicPages(dynamicTemplates, allTypes, sourceByPath, dryHttpEndpoint);
     for (const resolution of resolutions) {
       if (!resolution.type) {
         unmatchedTemplates.push({ pathnameTemplate: resolution.template.pathnameTemplate });

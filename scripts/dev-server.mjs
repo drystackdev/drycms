@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { join, relative, sep } from "node:path";
 import { createServer as createViteServer } from "vite";
@@ -85,6 +86,9 @@ const devPagesSource = pagesSourceAdapter && {
   },
   async loadModule(relPath) {
     return vite.ssrLoadModule(join(pagesSourceStorage.root, relPath));
+  },
+  async readSource(relPath) {
+    return readFile(join(pagesSourceStorage.root, relPath), "utf-8");
   },
   browserUrlFor(relPath) {
     return `${pagesSourceUrlPrefix}/${relPath}`;

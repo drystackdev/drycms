@@ -1,4 +1,5 @@
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
+import { collectionTypeForPageSource } from "../server/app-router/page-collection.js";
 import type { DynamicPageTemplate } from "../server/app-router/route-manifest.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 
@@ -6,11 +7,10 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
  * `plans/app-r2.md` mục 4 - "liệt kê param cho route động", the
  * `generateStaticParams`-equivalent. Resolves each `[param]` template
  * (`route-manifest.ts`'s `listDynamicPageTemplates`) to a concrete list of
- * real pages by matching it against a content type's `seoUrlPattern` - the
- * SAME (and only) collection->route association this codebase already has
- * (`sitemap.ts`'s own doc comment: "không có formal collection->route
- * mapping elsewhere"). No new config field: `{slug}` in `seoUrlPattern`
- * lines up with `[paramName]` in the route template by construction.
+ * real pages by reading which collection the template's own `page.tsx`
+ * fetches its entry from (`page-collection.ts`) - no config field declares
+ * that mapping any more (`seoUrlPattern`, removed - see
+ * `status/auto-page-collection.md`).
  */
 
 export interface ResolvedDynamicPage {
@@ -22,21 +22,12 @@ export interface ResolvedDynamicPage {
 
 export interface DynamicTemplateResolution {
   template: DynamicPageTemplate;
-  /** `null` when no collection's `seoUrlPattern` matches this template at
-   * all - the template exists in the pages tree but nothing tells the
-   * build which rows it should enumerate. Surfaced to the caller to show,
-   * not silently dropped. */
+  /** `null` when the template's own source has no `dry().collection(x).get()`
+   * call naming a real slug-enabled collection - the template exists in the
+   * pages tree but nothing in it says which rows to enumerate. Surfaced to
+   * the caller to show, not silently dropped. */
   type: ContentTypeDefinition | null;
   pages: ResolvedDynamicPage[];
-}
-
-function matchingType(template: DynamicPageTemplate, allTypes: ContentTypeDefinition[]): ContentTypeDefinition | null {
-  const asPattern = template.pathnameTemplate.replace(`[${template.paramName}]`, "{slug}");
-  return (
-    allTypes.find(
-      (t) => t.kind === "collection" && t.features?.slug === true && t.seoUrlPattern === asPattern,
-    ) ?? null
-  );
 }
 
 /** Every PUBLISHED row's `slug`, paginated - same 500-per-page loop
@@ -72,6 +63,10 @@ async function fetchAllSlugs(dryHttpEndpoint: string, typeName: string, slugLimi
 export async function resolveDynamicPages(
   templates: DynamicPageTemplate[],
   allTypes: ContentTypeDefinition[],
+  /** Keyed by the same storage-root-relative paths `DynamicPageTemplate.
+   * entryPath` carries - only each template's OWN entry is read (a layout is
+   * shared by every slug, so it can't be what identifies one). */
+  sourceByPath: Record<string, string>,
   dryHttpEndpoint: string,
   /** Caps how many rows `fetchAllSlugs` pages through per template - unset
    * (the "Build all" caller) fetches every published row, same as before.
@@ -82,7 +77,7 @@ export async function resolveDynamicPages(
 ): Promise<DynamicTemplateResolution[]> {
   const resolutions: DynamicTemplateResolution[] = [];
   for (const template of templates) {
-    const type = matchingType(template, allTypes);
+    const type = collectionTypeForPageSource(sourceByPath[template.entryPath], allTypes);
     if (!type) {
       resolutions.push({ template, type: null, pages: [] });
       continue;

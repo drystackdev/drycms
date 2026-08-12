@@ -444,7 +444,7 @@ export default function PageBuild() {
         <section class="card">
           <header>
             <h2>Unresolved dynamic routes</h2>
-            <p>No content type's `seoUrlPattern` matches these - nothing tells the build which slugs to enumerate (`plans/app-r2.md` mục 4).</p>
+            <p>These pages have no `dry().collection("...").get()` call naming a slug-enabled collection, so nothing tells the build which slugs to enumerate.</p>
           </header>
           <div class="under stack">
             {unmatchedTemplates.map((t) => (

@@ -58,6 +58,11 @@ function fixtureDevPagesSource(): DevPagesSource {
       if (!loader) throw new Error(`[test] no fixture module for "${relPath}"`);
       return loader();
     },
+    // Only `sitemap.ts` reads this, and only for a `[param]` page - the
+    // fixture tree has none, so nothing here ever calls it.
+    async readSource() {
+      return "";
+    },
     browserUrlFor(relPath) {
       return `/__test-pages-source/${relPath}`;
     },

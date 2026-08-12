@@ -38,7 +38,11 @@ execution log: `status/app-router.md`.
     return <section>{children as never}</section>;
   }
   ```
-  `params` is a normal prop, never a global.
+  `params` is a normal prop. There is also an ambient `params()` global (same
+  injection as `dry()` below), for a helper function that isn't the top-level
+  component and so has no prop to read. Use one or the other inside a given
+  function, never both - a local `params` prop shadows the global and the
+  call throws.
 
 ## `dry()` - reading content
 
@@ -98,6 +102,46 @@ const { rows } = await dry().collection("blog").list({
 - One caveat for [VEI](../plans/vei.md) inline editing: a field you
   transformed is not inline-editable (the rendered text isn't what's in the
   DB). Use `true` for fields an admin should be able to edit in place.
+
+## Dynamic routes: the page's own `dry()` call decides which pages exist
+
+A `[slug]` route is a template, not a page - something has to enumerate the
+real slugs before "Build all" can build them and before `sitemap.xml` can
+list them. That something is **the page's own code**: drycms reads the
+template's `page.tsx`, finds its
+
+```tsx
+await dry().collection("blog").get(params.slug as string);
+```
+
+call, and builds one page per published entry of that collection. There is
+no URL-pattern setting to fill in anywhere - the route folder gives the
+path, the collection's Slug field gives the last segment, and that `dry()`
+call is what ties the two together (`src/server/app-router/page-collection.ts`).
+
+To make a collection's entries reachable as real pages:
+
+1. Turn on the **Slug** feature for the collection (Content Types editor).
+2. Create `pages/<whatever>/[slug]/page.tsx`.
+3. Fetch the entry in it with `dry().collection("<name>").get(...)`.
+4. Build the page (Page Builder's "Build all", or the Page Editor's Build).
+
+What this means in practice:
+
+- Renaming the route folder changes the public URL. Nothing else to update.
+- A collection nothing renders has no URL and so never appears in
+  `sitemap.xml` - a sitemap entry always corresponds to a page that was
+  really built.
+- The call must be written out in the page itself. Hiding it behind a helper
+  or a variable (`const c = dry().collection("blog"); await c.get(slug)`)
+  leaves the route unresolvable - Page Builder then lists it under
+  "Unresolved dynamic routes" and the Page Editor preview says so too,
+  rather than silently building nothing.
+- A `.list()` call doesn't count (a page listing related posts isn't
+  identified by them), and neither does a `.get()` on a collection without
+  the Slug feature - so a header/settings read on the same page is harmless.
+- An entry with SEO's "Hide from search engines" on is still built, just
+  kept out of `sitemap.xml`.
 
 ## The one rule that matters: `async` = data, `sync` = interactive
 
@@ -169,11 +213,18 @@ open/close, the `dry()` replay data + isodata hydration markers). A layout
 that renders its own `<html>` produces literally invalid, doubled markup -
 this has happened once already in this repo, don't repeat it.
 
-## Not built yet (Giai đoạn 4, ask before assuming these exist)
+## Titles, meta tags, 404/500
+
+- **Title/meta**: call the ambient `setTitle("...")` in a page, or turn on a
+  content type's SEO feature and let its Title/Description/Image ride the
+  cascade (site defaults < singleton < entry < `setTitle`, see
+  `src/content-types/dry-seo.ts`). `src/server/app-router/build-document.ts`
+  turns that into `<title>`, `og:*`, and `<link rel="canonical">`.
+- **404/500**: `pages/404.tsx` and `pages/500.tsx` (pages root only, not per
+  folder) render for an unmatched path and for a render that threw. Without
+  them the response is a plain-text 404 / 500.
+
+## Not built yet (ask before assuming these exist)
 
 - No preview/draft mode - `dry()` is always published-only, no session-gated
   override.
-- No custom 404/error page (`not-found.tsx`-style) - unmatched routes get a
-  plain-text 404.
-- No per-page `<title>`/meta tags yet - the `<title>` is fixed, set once in
-  `render.ts`.

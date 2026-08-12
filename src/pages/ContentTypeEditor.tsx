@@ -851,36 +851,6 @@ export default function ContentTypeEditor({
               helperText="Optional description for this content type, shown in the admin UI."
             />
 
-            {definition.kind !== "component" && (
-              <TextField
-                label="Live Preview"
-                placeholder={
-                  definition.kind === "singleton"
-                    ? "e.g. https://example.com/about"
-                    : "e.g. https://example.com/posts/{slug}"
-                }
-                value={definition.livePreviewUrl ?? ""}
-                onChange={(v) =>
-                  setDefinition((d) => (d ? { ...d, livePreviewUrl: v } : d))
-                }
-                helperText="URL the entry editor will open for a live preview."
-              />
-            )}
-
-            {definition.kind === "collection" &&
-              effectiveFeatures(definition).seo &&
-              effectiveFeatures(definition).slug && (
-                <TextField
-                  label="Sitemap URL pattern"
-                  placeholder="/blogs/{slug}"
-                  value={definition.seoUrlPattern ?? ""}
-                  onChange={(v) =>
-                    setDefinition((d) => (d ? { ...d, seoUrlPattern: v } : d))
-                  }
-                  helperText="Root-relative URL entries live at, e.g. /blogs/{slug} - used to build sitemap.xml. Leave blank to leave this collection out of the sitemap."
-                />
-              )}
-
             <FeaturesFieldset
               kind={definition.kind}
               features={effectiveFeatures(definition)}

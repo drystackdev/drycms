@@ -4,6 +4,8 @@ import type { ContentTypeDefinition } from "../../content-types/types.js";
 import type { DryRouteContext } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { path as adminPath } from "../config.js";
+import { collectionTypeForPageSource } from "./page-collection.js";
+import { buildManifestRouteTree, listDynamicPageTemplates } from "./route-manifest.js";
 import { discoverRoutes, staticPagePaths, type DevPagesSource } from "./route-tree.js";
 import { resolveSiteOrigin } from "./site-origin.js";
 
@@ -39,14 +41,21 @@ async function* publishedEntries(
 }
 
 /**
- * `sitemap.xml` - static pages (from the route tree, see `route-tree.ts`'s
- * `staticPagePaths`) plus every published entry of every `collection` with
- * `features.seo && features.slug && seoUrlPattern` set (`types.ts`'s doc
- * comment on `seoUrlPattern` - no formal collection->route mapping exists
- * elsewhere, so a collection with that field unset is silently left out).
+ * `sitemap.xml` (DEV only now - see `page-handler.ts`'s `/sitemap.xml`
+ * branch, prod serves `buildSitemapResponseFromRegistry` below): static
+ * pages from the route tree (`route-tree.ts`'s `staticPagePaths`) plus, for
+ * each `[param]` route, every published entry of whichever `collection`
+ * that page's own source reads (`page-collection.ts`). Driven by the ROUTE
+ * TREE, not by the content types: a collection with no page of its own has
+ * no URL to advertise, and the pathname comes from the real route template,
+ * so nothing here can point at a path the site doesn't serve.
+ *
  * An entry/the site-wide default with `noIndex` set is excluded, using the
  * exact same `mergeSeoLayers` cascade a real page render uses - not a
- * separate "should this show up" check.
+ * separate "should this show up" check. `features.seo` itself is NOT
+ * required: a page exists whether or not its type carries SEO fields (that
+ * feature only supplies the `noIndex`/meta overrides), same as the prod
+ * registry branch, which never looks at it either.
  *
  * Known, accepted limitation (same category as `page-handler.ts`'s
  * `findRedirectResponse` doc comment): a STATIC page's own `noIndex` (set on
@@ -64,17 +73,24 @@ export async function buildSitemapResponse(url: URL, routeContext: DryRouteConte
 
   const locs: string[] = [];
   if (!siteNoIndex) {
-    for (const staticPath of staticPagePaths(await discoverRoutes(devPagesSource))) {
+    // `buildManifestRouteTree` (not `discoverRoutes`) whenever there IS a
+    // dev source: both build the same tree from the same file list, but only
+    // the manifest one's loaders carry the source path back out, which is
+    // what `listDynamicPageTemplates` below needs to read a page's own code.
+    const paths = devPagesSource ? await devPagesSource.listPaths() : null;
+    const tree = paths ? buildManifestRouteTree(paths) : await discoverRoutes();
+    for (const staticPath of staticPagePaths(tree)) {
       locs.push(`${origin}${staticPath}`);
     }
-    for (const type of allTypes) {
-      if (type.kind !== "collection" || !type.features?.seo || !type.features.slug || !type.seoUrlPattern) continue;
+    for (const template of paths ? listDynamicPageTemplates(tree) : []) {
+      const type = collectionTypeForPageSource(await devPagesSource!.readSource(template.entryPath), allTypes);
+      if (!type) continue;
       for await (const value of publishedEntries(entries, type, allTypes)) {
         const seo = mergeSeoLayers({ default: defaultSeo, entry: value.seo as DrySeoValue | undefined });
         if (seo.noIndex === true) continue;
         const slug = typeof value.slug === "string" ? value.slug : "";
         if (!slug) continue;
-        locs.push(`${origin}${type.seoUrlPattern.replace("{slug}", slug)}`);
+        locs.push(`${origin}${template.pathnameTemplate.replace(`[${template.paramName}]`, slug)}`);
       }
     }
   }
@@ -102,23 +118,18 @@ export function buildRobotsResponse(url: URL): Response {
 export const SITEMAP_EDGE_TTL_SECONDS = 86_400;
 
 /**
- * Registry-backed sitemap (`plans/app-r2.md` mục 8) - NOT wired in as a
- * replacement for `buildSitemapResponse` anywhere (`page-handler.ts` still
- * calls the original, unchanged). Reads `_pages` (`pagesRegistry.
- * listSitemapEntries`) instead of looping every collection's published
- * entries directly - the whole point of mục 5's registry: `in_sitemap` and
- * `lastmod` were already decided for real, at build time, by whichever page
- * actually rendered (fixes the ORIGINAL `buildSitemapResponse`'s own
- * documented limitation above: a static page's own `noIndex` isn't
- * reflected there because checking it would mean actually rendering the
- * page - here it already WAS rendered, before this function ever runs).
- *
- * Flipping `page-handler.ts`'s `/sitemap.xml` branch over to this is
- * deliberately left undone (see `status/app-r2-build.md`): on a site with
- * no pages built through the new pipeline yet, `_pages` is empty and this
- * would return a sitemap with zero URLs, silently breaking the CURRENTLY
- * WORKING sitemap on first deploy - a decision for whoever has actually run
- * a real build pass, not a side effect of adding this function.
+ * Registry-backed sitemap (`plans/app-r2.md` mục 8) - what PROD serves
+ * (`page-handler.ts`'s `/sitemap.xml` branch; dev keeps
+ * `buildSitemapResponse` above, since `_pages` only holds whatever has
+ * actually been built through `/dry/page-build`). Reads `_pages`
+ * (`pagesRegistry.listSitemapEntries`) instead of looping every
+ * collection's published entries directly - the whole point of mục 5's
+ * registry: `in_sitemap` and `lastmod` were already decided for real, at
+ * build time, by whichever page actually rendered (fixes the ORIGINAL
+ * `buildSitemapResponse`'s own documented limitation above: a static page's
+ * own `noIndex` isn't reflected there because checking it would mean
+ * actually rendering the page - here it already WAS rendered, before this
+ * function ever runs).
  *
  * `siteNoIndex` is the ONE thing still read live rather than off the
  * registry (mục 8's own text: "Giữ live query đúng 1 thứ") - a runtime

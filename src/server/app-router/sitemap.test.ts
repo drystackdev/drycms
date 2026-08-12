@@ -38,21 +38,25 @@ const routeContext = { request: new Request("http://localhost/sitemap.xml"), url
  * `CLAUDE.md`), which varies by checkout/sync state and isn't something a
  * unit test should depend on.
  */
-function fixturePagesSource(paths: string[]): DevPagesSource {
+function fixturePagesSource(sourceByPath: Record<string, string>): DevPagesSource {
   const routeModule: RouteModule = { default: () => null };
   return {
-    listPaths: async () => paths,
+    listPaths: async () => Object.keys(sourceByPath),
     loadModule: async () => routeModule,
+    readSource: async (relPath) => sourceByPath[relPath] ?? "",
     browserUrlFor: (relPath) => `/${relPath}`,
   };
 }
 
-const staticPages = fixturePagesSource([
-  "pages/page.tsx",
-  "pages/about/page.tsx",
-  "pages/blogs/page.tsx",
-  "pages/blogs/[slug]/page.tsx",
-]);
+/** The `[slug]` page's body is what maps that route to a collection now
+ * (`page-collection.ts`) - a real page's `dry().collection(x).get(param)`
+ * call, condensed to the one line this actually reads. */
+const staticPages = fixturePagesSource({
+  "pages/page.tsx": "",
+  "pages/about/page.tsx": "",
+  "pages/blogs/page.tsx": "",
+  "pages/blogs/[slug]/page.tsx": 'const post = await dry().collection("story").get(String(slug));',
+});
 
 describe("buildRobotsResponse", () => {
   it("disallows the admin path and points at sitemap.xml, absolute to APP_DOMAIN when set", () => {
@@ -79,7 +83,7 @@ describe("buildSitemapResponse", () => {
     expect(xml).not.toContain("[slug]");
   });
 
-  it("includes a published entry of a seo+slug-enabled collection with seoUrlPattern set, substituting {slug}", async () => {
+  it("includes a published entry of the collection the [slug] page itself reads, at that route's own pathname", async () => {
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
     const story: ContentTypeDefinition = {
@@ -88,7 +92,6 @@ describe("buildSitemapResponse", () => {
       name: "story",
       label: "Story",
       features: { slug: true, seo: true },
-      seoUrlPattern: "/stories/{slug}",
       fields: [],
       version: 0,
     };
@@ -97,9 +100,9 @@ describe("buildSitemapResponse", () => {
     const storyType = allTypes.find((t) => t.id === "test-story")!;
     await entries.createEntry(storyType, allTypes, { title: "My Story", slug: "my-story" });
 
-    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext);
+    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext, staticPages);
     const xml = await response.text();
-    expect(xml).toContain("<loc>http://localhost/stories/my-story</loc>");
+    expect(xml).toContain("<loc>http://localhost/blogs/my-story</loc>");
   });
 
   it("excludes an entry whose own seo.noIndex is true", async () => {
@@ -109,10 +112,36 @@ describe("buildSitemapResponse", () => {
     const storyType = allTypes.find((t) => t.id === "test-story")!;
     await entries.createEntry(storyType, allTypes, { title: "Hidden", slug: "hidden-story", seo: { noIndex: true } });
 
-    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext);
+    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext, staticPages);
     const xml = await response.text();
     expect(xml).toContain("my-story");
     expect(xml).not.toContain("hidden-story");
+  });
+
+  /** The point of reading the route tree instead of the content types: a
+   * collection nothing renders has no URL to advertise, so it can't end up
+   * in the sitemap as a 404 waiting to be crawled. */
+  it("leaves out a slug-enabled collection that no [param] page reads", async () => {
+    const schema = createContentEngineAdapter(content);
+    const entries = createContentEntryEngineAdapter(content);
+    const note: ContentTypeDefinition = {
+      id: "test-note",
+      kind: "collection",
+      name: "note",
+      label: "Note",
+      features: { slug: true, seo: true },
+      fields: [],
+      version: 0,
+    };
+    await schema.applySave(note, await schema.planSave(note));
+    const allTypes = await schema.listContentTypes();
+    const noteType = allTypes.find((t) => t.id === "test-note")!;
+    await entries.createEntry(noteType, allTypes, { title: "Routeless", slug: "routeless-note" });
+
+    const response = await buildSitemapResponse(new URL("http://localhost/sitemap.xml"), routeContext, staticPages);
+    const xml = await response.text();
+    expect(xml).toContain("my-story");
+    expect(xml).not.toContain("routeless-note");
   });
 
   // The site-wide `noIndex` gate (empty urlset when the SEO Defaults

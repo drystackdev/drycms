@@ -6,13 +6,12 @@ import { PAGES_ROOT } from "./source-roots.js";
  * `plans/app-r2.md` mục 1 - the manifest-driven counterpart to
  * `route-tree.ts`'s `discoverRoutes()` (which uses Vite's `import.meta.glob`,
  * compile-time only - a `.tsx` written to `pagesSourceStorage` at RUNTIME by
- * the browser build pipeline would never appear there). NOT wired in as a
- * replacement for `discoverRoutes()` anywhere - `page-handler.ts`/
- * `sitemap.ts` still call that one, unchanged (see `status/app-r2-build.md`
- * for why this stays dark: the browser build orchestrator that would
- * actually call this doesn't have a live trigger yet, and flipping
- * `discoverRoutes()` itself over would 404 the whole site the moment
- * `pagesSourceStorage` is empty, which it is on every existing deployment).
+ * the browser build pipeline would never appear there). Used by the build
+ * pipeline (`page-build.ts`) and by `sitemap.ts`, both of which need a tree
+ * whose matched nodes read back as SOURCE PATHS rather than as loaders to
+ * await; `page-handler.ts`'s own request routing still calls
+ * `discoverRoutes()`, whose loaders really do render (see
+ * `status/app-r2-build.md`).
  *
  * Reuses `buildRouteTree`/`matchRoute`/`staticPagePaths` UNCHANGED (zero
  * risk of behavioral drift from the tested dev-mode matcher) rather than

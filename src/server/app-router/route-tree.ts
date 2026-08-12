@@ -128,6 +128,11 @@ export interface DevPagesSource {
    * files a page imports, never a route of their own. */
   listPaths(): Promise<string[]>;
   loadModule(relPath: string): Promise<RouteModule>;
+  /** The file's raw text. Only ever called for a `[param]` page's own
+   * `page.tsx` (`sitemap.ts`), to read which collection that page renders
+   * off its `dry().collection(...).get()` call - see `page-collection.ts`
+   * for why that call, and not a config field, is the mapping. */
+  readSource(relPath: string): Promise<string>;
   /** The SAME module's URL as the BROWSER can `import()` it - dev's client
    * hydration (`hydrate-client.ts`) can't call `discoverRoutes()` itself the
    * way it does for the prod glob branch (a `.dry/pages-source` file isn't

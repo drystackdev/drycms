@@ -1289,13 +1289,15 @@ export default function PageEditor() {
 
   /** Resolves ONE real sample row (e.g. the first published blog post) for
    * whichever `[param]` template is open, so `previewTarget` below has a
-   * concrete pathname/params to build against - the same match-by-
-   * `seoUrlPattern` + fetch-real-rows approach `resolveAllPageTargets` uses
+   * concrete pathname/params to build against - the same read-the-page's-own
+   * -`dry()`-call + fetch-real-rows approach `resolveAllPageTargets` uses
    * for "Build all", just capped to 1 row (`resolveDynamicPages`'s own
    * `slugLimit`) since a live preview only ever needs one example, not the
-   * whole collection. Keyed on the template + `allTypes` only (not
-   * `sourceByPath`) - switching which dynamic file is open re-resolves;
-   * editing its code does not. */
+   * whole collection. Reads `savedByPath`, not `sourceByPath`: the preview
+   * builds from saved content anyway (`handleBuildCurrent` saves first), so
+   * re-resolving on every keystroke would be both wrong and needless -
+   * switching file or saving a changed `dry().collection(...)` re-resolves,
+   * typing does not. */
   const [dynamicPreviewSample, setDynamicPreviewSample] = useState<DynamicPreviewSample | null>(null);
   useEffect(() => {
     if (!dynamicTemplate || !allTypes) {
@@ -1304,7 +1306,7 @@ export default function PageEditor() {
     }
     let cancelled = false;
     setDynamicPreviewSample({ status: "loading" });
-    void resolveDynamicPages([dynamicTemplate], allTypes, `${path}/api/dry-http`, 1).then(([resolution]) => {
+    void resolveDynamicPages([dynamicTemplate], allTypes, savedByPath, `${path}/api/dry-http`, 1).then(([resolution]) => {
       if (cancelled || !resolution) return;
       if (!resolution.type) setDynamicPreviewSample({ status: "no-type" });
       else if (resolution.pages.length === 0) setDynamicPreviewSample({ status: "no-entries", typeName: resolution.type.name });
@@ -1313,7 +1315,7 @@ export default function PageEditor() {
     return () => {
       cancelled = true;
     };
-  }, [dynamicTemplate, allTypes]);
+  }, [dynamicTemplate, allTypes, savedByPath]);
 
   interface PreviewTarget {
     /** Shown in the preview header - a real pathname for a page, a
@@ -1423,8 +1425,8 @@ export default function PageEditor() {
 
   /** Explains why the preview panel is empty for a `[param]` page whose own
    * `previewTarget` came back `null` - distinguishes "still resolving a
-   * sample row", "no content type's `seoUrlPattern` matches this route" (a
-   * config gap), and "matched a type but it has no published rows yet" (an
+   * sample row", "this page's source names no collection to enumerate" (a
+   * code gap), and "matched a type but it has no published rows yet" (an
    * empty collection) from the generic "nothing selected" placeholder below,
    * since all 3 would otherwise look identical to a user staring at a blank
    * preview. */
@@ -1432,7 +1434,7 @@ export default function PageEditor() {
     if (previewTarget || !dynamicTemplate) return null;
     if (!dynamicPreviewSample || dynamicPreviewSample.status === "loading") return "Resolving a sample entry to preview…";
     if (dynamicPreviewSample.status === "no-type") {
-      return `No content type's SEO URL pattern matches "${dynamicTemplate.pathnameTemplate}" - can't pick a sample entry to preview.`;
+      return `"${dynamicTemplate.pathnameTemplate}" has no dry().collection("...").get() call naming a slug-enabled collection - can't tell which entry to preview.`;
     }
     if (dynamicPreviewSample.status === "no-entries") {
       return `No published "${dynamicPreviewSample.typeName}" entries yet - nothing to preview.`;

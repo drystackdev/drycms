@@ -18,7 +18,7 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
       key: "slug",
       label: "Slug",
       description:
-        "Adds a URL-friendly Slug field, and a Title field to go with it.",
+        "Adds a URL-friendly Slug field, and a Title field to go with it. A page file like pages/blogs/[slug]/page.tsx that reads this collection then builds one page per entry, at that slug.",
     },
     {
       key: "draft",
@@ -42,7 +42,7 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
       key: "seo",
       label: "SEO",
       description:
-        "Adds Title, Description, and Image fields for search engines and social previews.",
+        "Adds Title, Description, Image and Hide-from-search-engines fields - used for the page's meta tags, its social preview, and whether it appears in sitemap.xml.",
     },
     {
       key: "sortable",
@@ -55,7 +55,7 @@ export const FEATURES_BY_KIND: Record<ContentTypeKind, FeatureDescriptor[]> = {
       key: "seo",
       label: "SEO",
       description:
-        "Adds Title, Description, and Image fields for search engines and social previews.",
+        "Adds Title, Description, Image and Hide-from-search-engines fields - used for the page's meta tags, its social preview, and whether it appears in sitemap.xml.",
     },
   ],
   component: [],

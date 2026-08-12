@@ -12,8 +12,12 @@ const BLOG_TYPE: ContentTypeDefinition = {
   fields: [],
   version: 0,
   features: { slug: true },
-  seoUrlPattern: "/blogs/{slug}",
 };
+
+/** Stands in for `blogs/[slug]/page.tsx`'s real source - the `dry()` call
+ * IS the route->collection mapping now (`page-collection.ts`), so this is
+ * what `resolveDynamicPages` reads instead of a config field. */
+const SOURCE = { "blogs/[slug]/page.tsx": 'const post = await dry().collection("blog").get(String(slug));' };
 
 const TEMPLATE: DynamicPageTemplate = {
   pathnameTemplate: "/blogs/[slug]",
@@ -30,7 +34,7 @@ describe("resolveDynamicPages", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("matches a template to its content type via seoUrlPattern and resolves one page per published slug", async () => {
+  it("matches a template to the collection its own source reads and resolves one page per published slug", async () => {
     fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string) as { page: number };
       if (body.page === 0) {
@@ -40,7 +44,7 @@ describe("resolveDynamicPages", () => {
       return new Response(encodeCallLog([{ kind: "collection", name: "blog", method: "list", result: { rows: [], total: 2 } }]), { status: 200 });
     });
 
-    const [resolution] = await resolveDynamicPages([TEMPLATE], [BLOG_TYPE], "/dry/api/dry-http");
+    const [resolution] = await resolveDynamicPages([TEMPLATE], [BLOG_TYPE], SOURCE, "/dry/api/dry-http");
 
     expect(resolution!.type).toBe(BLOG_TYPE);
     expect(resolution!.pages).toEqual([
@@ -58,14 +62,15 @@ describe("resolveDynamicPages", () => {
       return new Response(encodeCallLog([{ kind: "collection", name: "blog", method: "list", result: { rows, total: 501 } }]), { status: 200 });
     });
 
-    const [resolution] = await resolveDynamicPages([TEMPLATE], [BLOG_TYPE], "/dry/api/dry-http");
+    const [resolution] = await resolveDynamicPages([TEMPLATE], [BLOG_TYPE], SOURCE, "/dry/api/dry-http");
 
     expect(calls).toBe(2);
     expect(resolution!.pages).toHaveLength(501);
   });
 
-  it("reports type: null when no content type's seoUrlPattern matches the template, without calling fetch", async () => {
-    const [resolution] = await resolveDynamicPages([TEMPLATE], [{ ...BLOG_TYPE, seoUrlPattern: "/articles/{slug}" }], "/dry/api/dry-http");
+  it("reports type: null when the template's source names no slug-enabled collection, without calling fetch", async () => {
+    const noGet = { "blogs/[slug]/page.tsx": 'const posts = await dry().collection("blog").list();' };
+    const [resolution] = await resolveDynamicPages([TEMPLATE], [BLOG_TYPE], noGet, "/dry/api/dry-http");
     expect(resolution!.type).toBeNull();
     expect(resolution!.pages).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
