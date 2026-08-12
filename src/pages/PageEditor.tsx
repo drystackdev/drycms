@@ -848,6 +848,16 @@ export default function PageEditor() {
    * but the fallback panel needs to tell the two apart: this one gets a
    * plain "No preview" placeholder, not the generic "select a file" hint. */
   const isUnpreviewableComponentFile = isComponentPath && !/\.tsx$/i.test(selectedPath);
+  /** `md/` (`MD_ROOT`) holds plain AI-context Markdown, never anything
+   * `previewTarget` could render - the whole panel auto-collapses while one
+   * is open (not just a placeholder, unlike `isUnpreviewableComponentFile`
+   * above: there's no "component preview" equivalent for prose, so the
+   * space is better spent on the editor). Derived from `previewOpen` rather
+   * than writing to it, so the user's manual open/closed preference is
+   * preserved underneath and reasserts itself the moment they select a
+   * previewable file again - no explicit save/restore needed. */
+  const isMdPath = !!selectedPath && rootOf(selectedPath)?.id === MD_ROOT;
+  const previewVisible = previewOpen && !isMdPath;
 
   // Clears stale diagnostics from whatever file was open before - `Editer`
   // remounts on `selectedPath` (its own `key`) and reports fresh ones via
@@ -1594,7 +1604,7 @@ export default function PageEditor() {
    * returns (`canEdit`/`loadError`/`entries`) that render no editor UI at
    * all. Read by `previewScroll`'s `deps`, which is only correct while it
    * mirrors that JSX exactly - keep the two in sync if either gains a gate. */
-  const previewHostMounted = canEdit && !loadError && entries !== null && previewOpen && !!previewTarget;
+  const previewHostMounted = canEdit && !loadError && entries !== null && previewVisible && !!previewTarget;
 
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
@@ -1894,8 +1904,8 @@ export default function PageEditor() {
   // shrinks to just its own buttons so the two rows still line up with the
   // body columns below. `previewSplit.size` is never overwritten while
   // hidden, so reopening the code column restores the previous split.
-  const previewFills = previewOpen && !codeOpen;
-  const previewSectionStyle = previewOpen ? (previewFills ? { flex: 1 } : { width: `${previewSplit.size}px` }) : undefined;
+  const previewFills = previewVisible && !codeOpen;
+  const previewSectionStyle = previewVisible ? (previewFills ? { flex: 1 } : { width: `${previewSplit.size}px` }) : undefined;
   const codeSectionStyle = previewFills ? undefined : { flex: 1 };
 
   return (
@@ -1954,14 +1964,15 @@ export default function PageEditor() {
           <button
             type="button"
             class="ghost icon sm"
-            aria-label={previewOpen ? "Hide preview" : "Show preview"}
-            title={previewOpen ? "Hide preview" : "Show preview"}
-            aria-pressed={previewOpen}
+            aria-label={previewVisible ? "Hide preview" : "Show preview"}
+            title={isMdPath ? "No preview for Markdown files" : previewVisible ? "Hide preview" : "Show preview"}
+            aria-pressed={previewVisible}
+            disabled={isMdPath}
             onClick={() => setPreviewOpen((v) => !v)}
           >
             <PreviewIcon />
           </button>
-          {previewOpen && (
+          {previewVisible && (
             <div class="button-group">
               {VIEWPORT_KEYS.map((key) => (
                 <button key={key} type="button" class="sm" aria-pressed={viewport.key === key} title={`${VIEWPORT_WIDTHS[key]}px`} onClick={() => viewport.select(key)}>
@@ -1972,7 +1983,7 @@ export default function PageEditor() {
           )}
           {previewLoading && <span class="hint">Building…</span>}
         </div>
-        {previewOpen && codeOpen && <div class="page-editor-toolbar-spacer" />}
+        {previewVisible && codeOpen && <div class="page-editor-toolbar-spacer" />}
 
         <div class="page-editor-toolbar-section" style={codeSectionStyle}>
           <button
@@ -2037,7 +2048,7 @@ export default function PageEditor() {
           </>
         )}
 
-        {previewOpen && (
+        {previewVisible && (
           <>
             <div style={{ ...(previewFills ? { flex: 1 } : { width: `${previewSplit.size}px` }), minWidth: 0, display: "flex", flexDirection: "column" }}>
               {previewTarget && (
@@ -2109,8 +2120,33 @@ export default function PageEditor() {
                     </div>
                   )}
                   <div class="page-components-preview-viewport-inner" ref={previewScroll.viewportRef}>
-                    <div class="page-components-preview-frame" style={{ width: `${viewport.width}px`, height: `${previewFrameHeight}px`, zoom: effectiveZoom }}>
-                      <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+                    {/* `zoom` (unlike `transform`) shrinks an <iframe>'s own
+                      * LAYOUT footprint, which is what `useScaledPreview`'s own
+                      * doc comment praises it for (no leftover whitespace a
+                      * `transform: scale` would leave) - but for an iframe
+                      * specifically it does NOT shrink what's rendered INSIDE
+                      * it: the iframe is its own browsing context, so `zoom`
+                      * on an ancestor just hands it a smaller effective
+                      * viewport to reflow into at full (unscaled) font sizes,
+                      * rather than "the same layout, shown smaller" - found
+                      * live: at a low zoom, the frame box shrank correctly but
+                      * the TEXT inside it stayed full-size and wrapped into a
+                      * narrow column instead of shrinking with everything
+                      * else. `transform: scale` on an INNER wrapper (kept at
+                      * the real, unscaled size) fixes that - it scales the
+                      * iframe's rendered pixels as a whole, matching what a
+                      * real device at this width actually looks like - and
+                      * the OUTER `.page-components-preview-frame` reserves
+                      * exactly the SCALED footprint itself, so the surrounding
+                      * flex/centering layout still sees no leftover
+                      * whitespace either. */}
+                    <div
+                      class="page-components-preview-frame"
+                      style={{ width: `${viewport.width * effectiveZoom}px`, height: `${previewFrameHeight * effectiveZoom}px` }}
+                    >
+                      <div style={{ width: `${viewport.width}px`, height: `${previewFrameHeight}px`, transform: `scale(${effectiveZoom})`, transformOrigin: "top left" }}>
+                        <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+                      </div>
                     </div>
                   </div>
                 </div>

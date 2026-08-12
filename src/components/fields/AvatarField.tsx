@@ -1,6 +1,9 @@
 import { useRef, useState } from "preact/hooks";
 import type { FieldProps } from "./field-common.js";
-import { readImageDimensions, renderResizedImage } from "../FileManager/file-manager-image-optimize.js";
+import {
+  readImageDimensions,
+  renderResizedImage,
+} from "../FileManager/file-manager-image-optimize.js";
 import { resolveImageSrc } from "../../storage/http-source.js";
 import type { FileManagerSource } from "../../storage/entry-types.js";
 import { CloseIcon, UsersIcon } from "../icons/index.js";
@@ -36,7 +39,8 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read image."));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not read image."));
     reader.readAsDataURL(blob);
   });
 }
@@ -64,7 +68,11 @@ function avatarPathFor(userId: number | string): string {
  * of requiring every caller to pre-create it. Every later write succeeds on
  * the first try. PUT (not POST) on purpose: it overwrites in place, where
  * `upload()` would 409 on the second avatar for the same user. */
-async function replaceInAvatarFolder(source: FileManagerSource, path: string, file: File) {
+async function replaceInAvatarFolder(
+  source: FileManagerSource,
+  path: string,
+  file: File,
+) {
   const replace = source.replace;
   if (!replace) throw new Error("This source can't replace files.");
   try {
@@ -103,7 +111,11 @@ export async function commitPendingAvatar(
   if (!isPendingAvatarValue(value)) return value;
   const blob = dataUrlToBlob(value);
   const uploaded = new File([blob], `${userId}.webp`, { type: blob.type });
-  const entry = await replaceInAvatarFolder(source, avatarPathFor(userId), uploaded);
+  const entry = await replaceInAvatarFolder(
+    source,
+    avatarPathFor(userId),
+    uploaded,
+  );
   return entry.id;
 }
 
@@ -169,7 +181,11 @@ export default function AvatarField({
 
   const shownHelperText = localError ?? helperText;
   const shownIsError = !!localError || error;
-  const previewSrc = value ? (isPendingAvatarValue(value) ? value : resolveImageSrc(value)) : undefined;
+  const previewSrc = value
+    ? isPendingAvatarValue(value)
+      ? value
+      : resolveImageSrc(value)
+    : undefined;
 
   return (
     <div class={`field${className ? ` ${className}` : ""}`} style={style}>
@@ -225,10 +241,10 @@ export default function AvatarField({
         onChange={handleFile}
       />
       {name && <input type="hidden" name={name} value={value} />}
-      {busy && (
-        <small class="hint">Processing…</small>
+      {busy && <small class="hint">Processing…</small>}
+      {shownHelperText && (
+        <span class={shownIsError ? "error" : "hint"}>{shownHelperText}</span>
       )}
-      {shownHelperText && <span class={shownIsError ? "error" : "hint"}>{shownHelperText}</span>}
     </div>
   );
 }
