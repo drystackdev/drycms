@@ -3,7 +3,9 @@ import { dry } from "../../content-types/dry-reader.js";
 import type { DryRouteHandler } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { encodeCallLog } from "../app-router/dry-replay-codec.js";
-import { errorResponse } from "../route-helpers.js";
+import { errorResponse, forbiddenResponse, unauthenticatedResponse } from "../route-helpers.js";
+import { resolveAccessCached } from "../../content-types/access.js";
+import { PAGE_BUILDER_RESOURCE_ID } from "../../content-types/permissions.js";
 
 /**
  * Server side of `dry-reader-http.ts` (`plans/app-r2.md` mục 3) - the ONLY
@@ -59,6 +61,27 @@ export const POST: DryRouteHandler = async (context) => {
 
     const { schema, entries } = getContentAdapters(context);
     const allTypes = await schema.listContentTypes();
+
+    // Authorization: a build orchestrator running under the code-edit
+    // permission (`PAGE_BUILDER_RESOURCE_ID`) may query any resource, same
+    // as before this check existed. Anyone else needs `view` (`setting` for
+    // a singleton - same split `content-entries.ts`'s own `checkAccess`
+    // uses) on the SPECIFIC type being queried, resolved fresh per request -
+    // this endpoint has no other gate of its own now that `handler.ts` no
+    // longer blanket-requires the code-edit permission for this segment.
+    // Without this, a content editor's newly-allowed build access
+    // (`routes/pages-build.ts`) would double as a way to read ANY other
+    // resource's published data over `dry-http`, not just the one they
+    // actually have rights to.
+    if (!context.session) return unauthenticatedResponse();
+    const access = await resolveAccessCached(context, entries, allTypes, context.session);
+    if (!access) return unauthenticatedResponse();
+    if (!access.can(PAGE_BUILDER_RESOURCE_ID, "setting")) {
+      const targetType = allTypes.find((t) => t.name === body.name && t.kind === body.kind);
+      const requiredAction = body.kind === "singleton" ? "setting" : "view";
+      if (!targetType || !access.can(targetType.id, requiredAction)) return forbiddenResponse();
+    }
+
     const touchedTypes = new Set<string>();
     const dryContext: DryRequestContext = { entries, allTypes, callLog: [], touchedTypes };
     const reader = dry();

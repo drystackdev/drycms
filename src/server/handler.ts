@@ -212,21 +212,26 @@ export async function handleApiRequest(
     const denied = await requirePermission(context, RICHTEXT_COMPONENTS_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
-  // `dry-http` (published-only content reads for the browser build
-  // pipeline), `pages-build` (writing a built page + registering it), and
   // `github-sync` (pushing a snapshot commit of pages-source - see
-  // `status/pages-source-github-versioning.md`) are all only meant to be
-  // called by the build orchestrator - gated behind the merged `system-build`
-  // "Page Builder" grant (`plans/app-r2.md` quyết định #12, later merged with
-  // the code-editor toggle - see `PAGE_BUILDER_RESOURCE_ID`'s own doc
-  // comment), every method including GET (same "one all-or-nothing toggle"
-  // shape as Page Components above, not a real content type with separate
-  // actions).
+  // `status/pages-source-github-versioning.md`) is only meant to be called
+  // by the build orchestrator - gated behind the `system-build` "Page
+  // Builder" (code-edit) grant (`plans/app-r2.md` quyết định #12), every
+  // method including GET (same "one all-or-nothing toggle" shape as Page
+  // Components above, not a real content type with separate actions).
   // `types-cache` stays open to any authenticated session - it only ever
   // serves the generated `.d.ts` (see `routes/types-cache.ts`), same
   // "broadly read, narrowly written" treatment `icons`/`richtext-components`
   // GET already get.
-  if (segment === "dry-http" || segment === "pages-build" || segment === "github-sync") {
+  //
+  // `dry-http` and `pages-build` are DELIBERATELY NOT blanket-gated here
+  // anymore ("code + content = page" - a role that can edit a
+  // collection/singleton can also build the pages that depend on it, not
+  // just a role with the code-edit permission) - each does its own
+  // per-resource authorization internally instead, since which resource(s)
+  // are involved is only known once the request body/registered
+  // dependencies are read (see `routes/dry-http.ts`'s `POST` and
+  // `routes/pages-build.ts`'s `resolvePublishAccess`/`canPublishPath`).
+  if (segment === "github-sync") {
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }

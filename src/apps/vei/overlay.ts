@@ -829,9 +829,15 @@ function main(): void {
    * a separate lazy chunk that only ever loads inside this hidden iframe.
    *
    * Never throws and never blocks the reload on more than a bounded wait:
-   * missing `system-build` (403 on the lookup below), an offline network, a
-   * stuck build - every failure just resolves, and `saveAll` falls back to
-   * its pre-existing plain-reload behavior either way.
+   * an offline network or a stuck build just resolves (after a brief
+   * `dock.setStatus` so the dock doesn't silently vanish into the reload
+   * below with no explanation), and `saveAll` falls back to its
+   * pre-existing plain-reload behavior either way. Doesn't need the
+   * code-edit permission at all - `/api/pages-build?byResource=` authorizes
+   * per-resource server-side (`routes/pages-build.ts`) and just silently
+   * omits whatever `resources` this session can't view, same as before this
+   * comment was last touched, just no longer gated behind a single
+   * all-or-nothing permission check.
    */
   async function rebuildAffectedPages(resources: string[]): Promise<void> {
     if (resources.length === 0) return;
@@ -841,10 +847,14 @@ function main(): void {
         `${(config as VeiConfig).path}/api/pages-build?byResource=${encodeURIComponent(resources.join(","))}`,
         { credentials: "same-origin" },
       );
-      if (!response.ok) return;
+      if (!response.ok) {
+        dock.setStatus("Saved, but couldn't check which pages to publish.");
+        return;
+      }
       const body = (await response.json()) as { paths?: string[] };
       paths = body.paths ?? [];
     } catch {
+      dock.setStatus("Saved, but publishing failed (network error).");
       return;
     }
     if (paths.length === 0) return;

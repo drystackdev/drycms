@@ -103,14 +103,20 @@ const CONTENT_TYPES_RESOURCE: ContentTypeDefinition = {
 };
 
 /** `plans/app-r2.md` quyết định #12 originally split this into 2 separate
- * toggles (code-editing vs. build/publish) - merged back into 1, since in
- * practice nobody was ever granted one without the other. */
+ * toggles (code-editing vs. build/publish), merged back into 1, then
+ * re-split 2026-08-13 - but this time build/publish itself isn't a second
+ * toggle at all: a role that can already edit a collection/singleton can
+ * (re)publish the pages that depend on it without needing this ON (see
+ * `PAGE_BUILDER_RESOURCE_ID`'s own doc comment). This toggle is now only
+ * about the code itself - editing source, and publishing ANY page
+ * unconditionally (needed for a brand new page's first build in
+ * particular). */
 const PAGE_BUILDER_RESOURCE: ContentTypeDefinition = {
   id: PAGE_BUILDER_RESOURCE_ID,
   kind: "singleton",
   name: "pageBuilder",
   label: "Page Builder",
-  description: "Edit src/apps/pages source code and trigger a page build/rebuild for the public site.",
+  description: "Edit src/apps/pages source code, and build/publish ANY page unrestricted. (A role that can edit a collection/singleton can already rebuild the pages that depend on it, without this.)",
   fields: [],
   version: 0,
 };

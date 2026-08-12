@@ -43,14 +43,29 @@ export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
 export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
-/** Gates `src/apps/pages/**` code edits AND triggering a page build/rebuild
- * / reading published content over `dry-http` (`plans/app-r2.md` mục 12,
- * `routes/dry-http.ts`, `routes/pages-build.ts`, `routes/pages-source.ts`).
+/** Gates editing `src/apps/pages/**` source code (`routes/pages-source.ts`'s
+ * write methods, Magic Chat AI, GitHub sync/restore) AND build/publish of
+ * ANY page unrestricted, regardless of what it depends on.
+ *
+ * Build/publish itself is NO LONGER exclusive to this permission
+ * ("code + content = page"): `routes/pages-build.ts` (POST) and
+ * `routes/dry-http.ts` (the content reads a build performs) each authorize
+ * per-resource instead - a role that can `view`/`setting` a collection or
+ * singleton can also (re)publish whatever already-built page depends ONLY
+ * on resources it can see (`PagesRegistryAdapter.listResourcesByPath`,
+ * checked against the SERVER's own recorded `_page_deps`, never a
+ * client-submitted one). This permission is what a role needs INSTEAD, to
+ * either edit code at all, or to publish a page unconditionally (a brand
+ * new page's first build always needs it, since nothing is recorded yet to
+ * authorize a narrower grant against).
+ *
  * Originally 2 separate toggles (`plans/app-r2.md` quyết định #12,
- * "sửa code = chạy code") - merged into one in practice, editing code and
- * publishing it were never granted independently. Keeps the `"system-build"`
- * string value (not a fresh id) so a role that already had Page Build access
- * isn't silently locked out by the merge. */
+ * "sửa code = chạy code"), then merged into one because in practice nobody
+ * was ever granted one without the other - re-split 2026-08-13, but along a
+ * different, resource-scoped line rather than reverting to the original 2
+ * blanket toggles. Keeps the `"system-build"` string value (not a fresh id)
+ * so a role that already had this access isn't silently affected by the
+ * change. */
 export const PAGE_BUILDER_RESOURCE_ID = "system-build";
 
 /** Content types no role permission applies to AT ALL - `permissionActionsFor`

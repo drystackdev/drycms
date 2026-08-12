@@ -2,18 +2,49 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createSqlitePagesRegistryAdapter } from "./pages-registry-sqlite.js";
+import type { D1Database, D1PreparedStatement, D1Result } from "./d1-driver.js";
+import { createD1PagesRegistryAdapter } from "./pages-registry-d1.js";
+import { resolveSqliteDriver, type SqliteHandle } from "./sqlite-driver.js";
 import type { PageRecord } from "./pages-registry-types.js";
 
-function freshAdapter() {
-  const dir = mkdtempSync(join(tmpdir(), "drycms-pages-registry-test-"));
-  const adapter = createSqlitePagesRegistryAdapter({ engine: "sqlite", file: join(dir, "content.sqlite") });
-  return { adapter, dir };
+/** Same fake-D1-over-real-SQLite double as `entries-d1.test.ts` uses - real
+ * D1 is SQLite-compatible, so this exercises `pages-registry-d1.ts`'s own
+ * SQL without a live Cloudflare binding. */
+function createFakeD1(handle: SqliteHandle): D1Database {
+  return {
+    prepare(sql: string): D1PreparedStatement {
+      let boundParams: unknown[] = [];
+      const statement: D1PreparedStatement = {
+        bind(...params: unknown[]) {
+          boundParams = params;
+          return statement;
+        },
+        async run(): Promise<D1Result> {
+          const result = handle.run(sql, boundParams);
+          return { success: true, meta: { changes: result.changes, last_row_id: result.lastInsertRowid } };
+        },
+        async all<T>(): Promise<D1Result<T>> {
+          const results = handle.all<T>(sql, boundParams);
+          return { success: true, results, meta: {} };
+        },
+      };
+      return statement;
+    },
+    async batch(statements: D1PreparedStatement[]): Promise<D1Result[]> {
+      const results: D1Result[] = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
+    },
+  };
 }
 
-async function rawDb(dir: string) {
-  const { DatabaseSync } = await import("node:sqlite");
-  return new DatabaseSync(join(dir, "content.sqlite"));
+async function freshAdapter() {
+  const dir = mkdtempSync(join(tmpdir(), "drycms-pages-registry-d1-test-"));
+  const handle = await resolveSqliteDriver(join(dir, "content.sqlite"));
+  const db = createFakeD1(handle);
+  const binding = "CONTENT_DB";
+  const adapter = createD1PagesRegistryAdapter({ engine: "D1", binding }, { [binding]: db });
+  return { adapter, dir };
 }
 
 const dirs: string[] = [];
@@ -32,9 +63,9 @@ function page(overrides: Partial<PageRecord> = {}): PageRecord {
   };
 }
 
-describe("createSqlitePagesRegistryAdapter", () => {
+describe("createD1PagesRegistryAdapter", () => {
   it("records a build and lists it in the sitemap", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }]);
@@ -44,7 +75,7 @@ describe("createSqlitePagesRegistryAdapter", () => {
   });
 
   it("listAllPages returns every row regardless of sitemap state, sorted by path", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page({ path: "/z-last", inSitemap: false }), []);
@@ -56,19 +87,8 @@ describe("createSqlitePagesRegistryAdapter", () => {
     expect(all[1]).toMatchObject({ path: "/z-last", inSitemap: false });
   });
 
-  it("excludes noIndex pages from the sitemap", async () => {
-    const { adapter, dir } = freshAdapter();
-    dirs.push(dir);
-
-    await adapter.recordBuild(page({ path: "/noindex", inSitemap: false }), []);
-    await adapter.recordBuild(page({ path: "/live" }), []);
-
-    const entries = await adapter.listSitemapEntries();
-    expect(entries.map((e) => e.path)).toEqual(["/live"]);
-  });
-
   it("upsert replaces the dependency set, not appends to it", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }, { resource: "settings", version: 1 }]);
@@ -79,7 +99,7 @@ describe("createSqlitePagesRegistryAdapter", () => {
   });
 
   it("listPathsByResource answers what to rebuild when a resource changes", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page({ path: "/a" }), [{ resource: "blog", version: 1 }]);
@@ -90,7 +110,7 @@ describe("createSqlitePagesRegistryAdapter", () => {
   });
 
   it("listResourcesByPath answers what a given page depends on - empty for a path never built", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     expect(await adapter.listResourcesByPath("/never-built")).toEqual([]);
@@ -98,14 +118,12 @@ describe("createSqlitePagesRegistryAdapter", () => {
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }, { resource: "settings", version: 1 }]);
     expect((await adapter.listResourcesByPath("/blogs/abc")).sort()).toEqual(["blog", "settings"]);
 
-    // Upsert replaces the dependency set here too, same as
-    // `listPathsByResource`'s own "upsert replaces, not appends" test above.
     await adapter.recordBuild(page({ builtAt: 2000 }), [{ resource: "blog", version: 2 }]);
     expect(await adapter.listResourcesByPath("/blogs/abc")).toEqual(["blog"]);
   });
 
   it("removePage deletes both the page row and its deps", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }]);
@@ -113,17 +131,24 @@ describe("createSqlitePagesRegistryAdapter", () => {
 
     expect(await adapter.listSitemapEntries()).toEqual([]);
     expect(await adapter.listPathsByResource("blog")).toEqual([]);
+    expect(await adapter.listResourcesByPath("/blogs/abc")).toEqual([]);
   });
 
   it("listStalePaths finds pages whose recorded dep version no longer matches _versions", async () => {
-    const { adapter, dir } = freshAdapter();
+    const { adapter, dir } = await freshAdapter();
     dirs.push(dir);
 
     await adapter.recordBuild(page(), [{ resource: "blog", version: 1 }]);
     // Nothing in `_versions` yet - not stale (nothing to compare against).
     expect(await adapter.listStalePaths()).toEqual([]);
 
-    const db = await rawDb(dir);
+    // Same underlying file the fake D1 writes through - a second, direct
+    // `node:sqlite` connection to simulate a content change bumping
+    // `_versions` (real bookkeeping this adapter has no method of its own
+    // for), same approach `pages-registry-sqlite.test.ts`'s own `rawDb`
+    // helper uses.
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(join(dir, "content.sqlite"));
     try {
       db.exec('INSERT INTO "_versions" ("resource","version","updated_at") VALUES (\'blog\', 1, 0);');
       expect(await adapter.listStalePaths()).toEqual([]);

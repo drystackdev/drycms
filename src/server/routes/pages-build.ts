@@ -1,8 +1,11 @@
 import type { DryRouteHandler } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
-import { errorResponse, jsonResponse } from "../route-helpers.js";
+import { errorResponse, forbiddenResponse, jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { readBuiltPage, removeBuiltPage, writeBuiltAsset, writeBuiltPage } from "../app-router/built-pages-storage.js";
 import type { PageDependency, PageRecord } from "../../content-types/engine/pages-registry-types.js";
+import { resolveAccessCached, type AccessInfo } from "../../content-types/access.js";
+import { PAGE_BUILDER_RESOURCE_ID } from "../../content-types/permissions.js";
+import type { ContentTypeDefinition } from "../../content-types/types.js";
 
 /**
  * Write side of the app-r2 build pipeline (`plans/app-r2.md` mục 12) - the
@@ -11,7 +14,65 @@ import type { PageDependency, PageRecord } from "../../content-types/engine/page
  * or compiling itself - decision #2, "server không SSR gì cả"). Not wired
  * into anything that serves real traffic yet - see
  * `built-pages-storage.ts`'s doc comment.
+ *
+ * Authorization is per-resource, not a blanket segment gate anymore
+ * (`handler.ts` no longer requires `PAGE_BUILDER_RESOURCE_ID` for this
+ * segment) - "code + content = page": a role with the code-edit permission
+ * can build/publish ANY page, same as before; a role that can only edit a
+ * collection/singleton can (re)publish a page IF AND ONLY IF every resource
+ * that page's last recorded build actually depended on (`_page_deps`, via
+ * `PagesRegistryAdapter.listResourcesByPath`) is something that role can
+ * view - see `resolvePublishAccess`/`canPublishPath` below. A page that has
+ * never been built has nothing recorded yet, so its first build always
+ * requires the code-edit permission.
  */
+async function resolvePublishAccess(context: Parameters<DryRouteHandler>[0]): Promise<
+  | { ok: true; access: AccessInfo; allTypes: ContentTypeDefinition[]; hasCodePermission: boolean }
+  | { ok: false; response: Response }
+> {
+  if (!context.session) return { ok: false, response: unauthenticatedResponse() };
+  const { schema, entries } = getContentAdapters(context);
+  const allTypes = await schema.listContentTypes();
+  const access = await resolveAccessCached(context, entries, allTypes, context.session);
+  if (!access) return { ok: false, response: unauthenticatedResponse() };
+  return { ok: true, access, allTypes, hasCodePermission: access.can(PAGE_BUILDER_RESOURCE_ID, "setting") };
+}
+
+/** Whether `access` (lacking the code-edit permission) may (re)publish
+ * `pathname` - every resource `pagesRegistry` has on record for it from its
+ * last real build must be one `access` can already view/setting on.
+ * Deliberately does NOT consult the request body's own self-reported
+ * `deps` - only the server's own prior record is trustworthy, or a role
+ * without the code-edit permission could claim any `deps` it likes and
+ * publish arbitrary content to an unrelated page. */
+async function canPublishPath(
+  context: Parameters<DryRouteHandler>[0],
+  access: AccessInfo,
+  allTypes: ContentTypeDefinition[],
+  pathname: string,
+): Promise<boolean> {
+  const { pagesRegistry } = getContentAdapters(context);
+  const resources = await pagesRegistry.listResourcesByPath(pathname);
+  if (resources.length === 0) return false;
+  return resources.every((resource) => {
+    const type = allTypes.find((t) => t.name === resource);
+    return !!type && access.can(type.id, type.kind === "singleton" ? "setting" : "view");
+  });
+}
+
+/** Gate for the parts of this segment that stay code-edit-permission-only
+ * even under the new per-resource model: the full site-wide manifest
+ * (`handleList`) and reading back an arbitrary path's built HTML (`?path=`)
+ * both span every page regardless of which resource it depends on, so
+ * there's no single resource to check `canPublishPath` against - unlike
+ * `byResource`/publish, which are naturally scoped to specific resources/a
+ * specific already-built page. */
+async function requireCodePermission(context: Parameters<DryRouteHandler>[0]): Promise<Response | null> {
+  const resolved = await resolvePublishAccess(context);
+  if (!resolved.ok) return resolved.response;
+  return resolved.hasCodePermission ? null : forbiddenResponse();
+}
+
 interface PagesBuildRequestBody {
   pathname: string;
   html: string;
@@ -85,6 +146,13 @@ function isValidBatchBody(value: unknown): value is { pages: unknown[] } {
 
 export const POST: DryRouteHandler = async (context) => {
   try {
+    const resolved = await resolvePublishAccess(context);
+    if (!resolved.ok) return resolved.response;
+    const { access, allTypes, hasCodePermission } = resolved;
+    async function authorized(pathname: string): Promise<boolean> {
+      return hasCodePermission || (await canPublishPath(context, access, allTypes, pathname));
+    }
+
     const raw: unknown = await context.request.json();
     if (isValidBatchBody(raw)) {
       const records: PageRecord[] = [];
@@ -92,6 +160,10 @@ export const POST: DryRouteHandler = async (context) => {
       for (const entry of raw.pages) {
         if (!isValidBody(entry)) {
           errors.push({ pathname: typeof (entry as { pathname?: unknown })?.pathname === "string" ? (entry as { pathname: string }).pathname : "?", message: "Invalid page entry." });
+          continue;
+        }
+        if (!(await authorized(entry.pathname))) {
+          errors.push({ pathname: entry.pathname, message: "You don't have permission to publish this page." });
           continue;
         }
         try {
@@ -103,6 +175,7 @@ export const POST: DryRouteHandler = async (context) => {
       return jsonResponse({ records, errors }, errors.length > 0 && records.length === 0 ? 500 : 200);
     }
     if (!isValidBody(raw)) return errorResponse(new Error("Invalid pages-build request body."));
+    if (!(await authorized(raw.pathname))) return forbiddenResponse();
     const record = await publishOne(context, raw);
     return jsonResponse({ record }, 200);
   } catch (error) {
@@ -115,6 +188,8 @@ export const POST: DryRouteHandler = async (context) => {
  * listStalePaths()`, a JOIN against `_versions`), combined into one
  * response so the UI does 1 request instead of N. */
 async function handleList(context: Parameters<DryRouteHandler>[0]): Promise<Response> {
+  const denied = await requireCodePermission(context);
+  if (denied) return denied;
   const { pagesRegistry } = getContentAdapters(context);
   const [pages, stale] = await Promise.all([pagesRegistry.listAllPages(), pagesRegistry.listStalePaths()]);
   const staleByPath = new Map(stale.map((s) => [s.path, s.resource]));
@@ -133,8 +208,23 @@ async function handleList(context: Parameters<DryRouteHandler>[0]): Promise<Resp
  * ask. Comma-joined rather than repeated `?byResource=` params - pathnames
  * and content-type names can't contain a comma, so splitting is unambiguous. */
 async function handleByResource(context: Parameters<DryRouteHandler>[0], raw: string): Promise<Response> {
+  const resolved = await resolvePublishAccess(context);
+  if (!resolved.ok) return resolved.response;
+  const { access, allTypes, hasCodePermission } = resolved;
+  const requested = [...new Set(raw.split(",").map((r) => r.trim()).filter(Boolean))];
+  // Same "silently drop what the caller can't see" treatment as a POST
+  // publish being denied for one page in a batch - the caller (an
+  // authenticated user acting on content they just successfully saved)
+  // gets back whatever it's entitled to instead of a hard 403 for the whole
+  // request, which would otherwise abort a mixed-permission save's rebuild
+  // for even the resources it DOES have rights to.
+  const resources = hasCodePermission
+    ? requested
+    : requested.filter((resource) => {
+        const type = allTypes.find((t) => t.name === resource);
+        return !!type && access.can(type.id, type.kind === "singleton" ? "setting" : "view");
+      });
   const { pagesRegistry } = getContentAdapters(context);
-  const resources = [...new Set(raw.split(",").map((r) => r.trim()).filter(Boolean))];
   const paths = new Set<string>();
   for (const resource of resources) {
     for (const p of await pagesRegistry.listPathsByResource(resource)) paths.add(p);
@@ -156,6 +246,8 @@ export const GET: DryRouteHandler = async (context) => {
     if (!pathname.startsWith("/")) {
       return errorResponse(new Error('"path" must start with "/".'));
     }
+    const denied = await requireCodePermission(context);
+    if (denied) return denied;
     const html = await readBuiltPage(context, pathname);
     if (html === null) return jsonResponse({ error: "not_found", message: `No built page at "${pathname}".` }, 404);
     return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -166,6 +258,8 @@ export const GET: DryRouteHandler = async (context) => {
 
 export const DELETE: DryRouteHandler = async (context) => {
   try {
+    const denied = await requireCodePermission(context);
+    if (denied) return denied;
     const pathname = context.url.searchParams.get("path");
     if (!pathname || !pathname.startsWith("/")) {
       return errorResponse(new Error('A "path" query param starting with "/" is required.'));

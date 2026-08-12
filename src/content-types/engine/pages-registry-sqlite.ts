@@ -115,6 +115,12 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       return rows.map((row) => row.path);
     },
 
+    async listResourcesByPath(path) {
+      const handle = await getHandle();
+      const rows = handle.all<{ resource: string }>('SELECT DISTINCT "resource" FROM "_page_deps" WHERE "path" = ?;', [path]);
+      return rows.map((row) => row.resource);
+    },
+
     async listSitemapEntries() {
       const handle = await getHandle();
       const rows = handle.all<{ path: string; built_at: number }>('SELECT "path", "built_at" FROM "_pages" WHERE "in_sitemap" = 1;');

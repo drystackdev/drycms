@@ -57,6 +57,14 @@ export interface PagesRegistryAdapter {
   /** Every path that depends on `resource` - "what needs rebuilding when
    * this content type changes". */
   listPathsByResource(resource: string): Promise<string[]>;
+  /** Every resource `path`'s last recorded build actually depended on - the
+   * authorization source of truth for a non-code-permission publish (see
+   * `routes/pages-build.ts`): a role without the code-edit permission may
+   * only (re)publish a path whose ENTIRE recorded dependency set is
+   * something that role can view. Empty for a path never built before -
+   * that first build always requires the code-edit permission, since
+   * there's nothing recorded yet to authorize against. */
+  listResourcesByPath(path: string): Promise<string[]>;
   /** Sitemap source of truth (mục 8): every in-sitemap page. */
   listSitemapEntries(): Promise<{ path: string; builtAt: number }[]>;
   /** Every row regardless of state - the admin "Build" page's status list

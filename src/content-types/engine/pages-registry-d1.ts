@@ -131,6 +131,12 @@ export function createD1PagesRegistryAdapter(
       return (result.results ?? []).map((row) => row.path);
     },
 
+    async listResourcesByPath(path) {
+      await ensureBootstrap();
+      const result = await db.prepare('SELECT DISTINCT "resource" FROM "_page_deps" WHERE "path" = ?;').bind(path).all<{ resource: string }>();
+      return (result.results ?? []).map((row) => row.resource);
+    },
+
     async listSitemapEntries() {
       await ensureBootstrap();
       const result = await db.prepare('SELECT "path", "built_at" FROM "_pages" WHERE "in_sitemap" = 1;').all<{ path: string; built_at: number }>();
