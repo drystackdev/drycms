@@ -153,6 +153,22 @@ instead of a URL that 404s. Under `bun run dev` the page is live immediately.
   untouched (`component-preview`, `sitemap`, 2 in `auth.test.ts`; the auth
   pair is the `avatar` field this branch added and that test not expecting
   it). Net +38 passing tests.
+- `bun run test:e2e`: 22/22, twice in a row. Two of those needed fixing
+  first, both of them mine:
+  - `richtext-paste-image.spec.ts` opened `/dry/content/blog/new`. That's a
+    `mai-anh-quyen` fixture assumption - `blog` came from its `dry.seed.json`,
+    which `sivelap` removed in `a6aab73`, and the e2e server boots a fresh
+    DB with the packaged system types only. Rewritten to create its own
+    slugged collection with a RichText field, like `entry-media-picker.spec.ts`
+    already does.
+  - `entry-media-picker.spec.ts` failed only under parallel workers, and not
+    always in the same place - which is the real finding: every spec shares
+    ONE server, one SQLite file and one storage root, and several of them
+    apply a real schema migration. Under contention the loser surfaces
+    somewhere unrelated (a Save whose navigation never lands, a picked image
+    whose field never resolves). `playwright.config.ts` now pins
+    `workers: 1`; the whole suite is 37s serial. The race was latent before
+    this branch - adding two more schema-applying specs is what made it show.
 - `bun run dev:worker` builds, boots, auto-seeds, and re-seeds idempotently.
 
 ### Found while working, NOT fixed
