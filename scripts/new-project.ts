@@ -315,7 +315,7 @@ console.log("\nNext steps:");
 console.log("  1. bun run dev");
 console.log(`  2. open http://localhost:5173${resolved.path} and register the first admin`);
 console.log("     (the old account was wiped with .dry/)");
-console.log("  3. model your content types, then `bun run seed:sync` to package them");
+console.log("  3. model your content types, then use the admin's Backup page to export/import them between installs");
 console.log("  4. before `bun run deploy`: fill in wrangler.jsonc's D1/KV IDs");
 console.log("     (`wrangler d1 create`, `wrangler kv namespace create`, `wrangler r2 bucket create`)");
 console.log("\nReview `git status`, then commit when ready.");
@@ -414,8 +414,8 @@ export default function HomePage() {
         </li>
         <li>2. Tạo content type trong Content → Apply and build.</li>
         <li>
-          3. Đọc dữ liệu ra trang bằng <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sm">dry()</code>, rồi{" "}
-          <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sm">bun run seed:sync</code> để đóng gói schema.
+          3. Đọc dữ liệu ra trang bằng <code class="rounded bg-slate-100 px-1.5 py-0.5 text-sm">dry()</code>, rồi dùng trang{" "}
+          <strong>Backup</strong> trong khu vực quản trị để sao lưu/khôi phục schema giữa các bản cài đặt.
         </li>
       </ol>
     </div>

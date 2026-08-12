@@ -279,8 +279,8 @@ export const POST: DryRouteHandler = async (context) => {
         // here fails the whole request instead of leaving a half-seeded
         // instance with an admin account already created. An app's own
         // content types/data are NOT touched here (or anywhere at boot) -
-        // they're always an explicit "Upload schema"/"Upload seed data"
-        // admin action instead, see `routes/content-type-seed.ts`.
+        // they only ever arrive by being created directly in the admin UI,
+        // or by restoring a database backup (`routes/backup.ts`).
         await extractPackagedSeedAssets(resolved);
 
         const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };

@@ -311,31 +311,29 @@ SPA and fall into its router's dashboard-redirect fallback; `AuthGate`
 checks `url.startsWith(path)` first and renders nothing (a blank page,
 skipping the session fetch too) when it doesn't match.
 
-### App-level seed: `dry.seed.json` + packaged storage assets
+### App-level content + packaged storage assets
 
-An app's OWN content types (as opposed to the 6 built-in defaults above) can
-be packaged for a fresh production deploy - see `plans/content-type-seed.md`
-for the full design. `bun run seed:sync` snapshots the current dev content-
-type DB (every type, including the 6 defaults) into `src/apps/dry.seed.json`
-(a generated-but-committed app artifact, unlike `.dry/dry.generated.d.ts` -
-that one is gitignored, since it tracks the live schema rather than
-anything a fresh deploy needs to ship with); when that file has content,
-`content-types/seed.ts`'s
-`resolveDefaultContentTypeDefinitions()` uses it INSTEAD of
-`defaultContentTypeDefinitions()` for every boot's `pendingSeedStatements`
-diff - completely replacing the built-in list, not layering on top of it.
-Imported as a plain static JSON import (`resolveJsonModule`), not read with
-`node:fs`: this module also has to load on Cloudflare Workers, which has no
-filesystem, and is also reached from plain `bun scripts/*.ts` runs
-(`seed-sync.ts`, `dry-generate.ts`), which never go through Vite - a static
-import is the only form both runtimes resolve with no I/O. Separately, `bun run build`
-zips the `storage`/`icons`/`components.storage`/`pageComponents.storage`
-roots into `dist/server/seed-assets.zip` (`src/lib/zip.ts`, a hand-rolled
-STORE-only container - no new dependency); `routes/auth.ts`'s
-`register-first-admin` extracts it into whichever roots the RUNNING
-server's own config (`src/server/config.ts`) resolves to (once, gated on
-`hasAnyUser` being false - never re-extracted on a later boot, unlike the
-schema seed above).
+An app's OWN content types/data (as opposed to the 12 built-in defaults
+above) are never auto-seeded at boot - they only ever arrive by being
+created directly in the admin UI, or by restoring a full database backup
+(`routes/backup.ts` - Settings → Backup, Super Admin only; downloads/
+restores every content type, entry, role, and system setting as a portable
+`.sql` script, the same format for both `content.engine` values). An
+earlier design instead shipped an app's content types via a committed
+`dry.seed.json` always imported at boot, then via an admin-triggered
+"Upload schema"/"Upload seed data" action - both removed once the database
+backup/restore feature covered the same need more completely (entries and
+roles too, not just content-type defs + singleton/menu rows).
+
+Separately (and still current), `bun run build` zips the
+`storage`/`icons`/`components.storage`/`pageComponents.storage` roots into
+`dist/server/seed-assets.zip` (`src/lib/zip.ts`, a hand-rolled STORE-only
+container - no new dependency); `routes/auth.ts`'s `register-first-admin`
+extracts it into whichever roots the RUNNING server's own config
+(`src/server/config.ts`) resolves to (once, gated on `hasAnyUser` being
+false - never re-extracted on a later boot). This is unrelated to content
+types/data - it only ever covers the storage-backed asset roots (default
+theme images, icons, etc.) a fresh deploy should start with.
 
 ### Enforcement (added 2026-07-31): a session for everything, permissions for content
 

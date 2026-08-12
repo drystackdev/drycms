@@ -1,9 +1,9 @@
 /**
  * Reusable helpers for seeding content-type SCHEMA and ENTRY data straight
  * into the live content DB from a standalone `bun` script - the same
- * dependency-free pattern `scripts/seed-sync.ts`/`scripts/dry-generate.ts`
- * already use (imports real project `.ts` modules directly; Bun resolves
- * them natively, no Vite `ssrLoadModule` needed).
+ * dependency-free pattern `scripts/dry-generate.ts` already uses (imports
+ * real project `.ts` modules directly; Bun resolves them natively, no Vite
+ * `ssrLoadModule` needed).
  *
  * `upsertContentType` is idempotent by NAME (same idea as `seed.ts`'s own
  * `pendingSeedStatements`): a type whose `name` already exists in the DB has

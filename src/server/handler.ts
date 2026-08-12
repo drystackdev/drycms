@@ -10,7 +10,6 @@ import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
 import * as contentTypesRoute from "./routes/content-types.js";
 import * as aiContentTypeDraftsRoute from "./routes/ai-content-type-drafts.js";
-import * as contentTypeSeedRoute from "./routes/content-type-seed.js";
 import * as contentEntriesRoute from "./routes/content-entries.js";
 import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as authRoute from "./routes/auth.js";
@@ -72,7 +71,6 @@ const API_ROUTES: Record<string, RouteModule> = {
   iconify: iconifyRoute,
   "content-types": contentTypesRoute,
   "ai-content-type-drafts": aiContentTypeDraftsRoute,
-  "content-type-seed": contentTypeSeedRoute,
   content: contentEntriesRoute,
   "richtext-components": richtextComponentsRoute,
   auth: authRoute,

@@ -163,9 +163,6 @@ async function handleSave(
   return jsonResponse(result, 200);
 }
 
-/** Exported so `routes/content-type-seed.ts`'s "Upload schema" can build the
- * same shape from an uploaded file's `contentTypes[]` and delegate straight
- * to `handleBatch` below - see that route's own doc comment. */
 export interface BatchDraftInput {
   definition: ContentTypeDefinition;
 }
@@ -196,13 +193,7 @@ interface BatchItemResult {
  * item is its own transaction, see `engine/sqlite.ts`'s `applySave`) so the
  * client knows exactly which drafts are now safe to discard and which are
  * still pending. Plan mode never stops early - every item's result is
- * useful to show at once.
- *
- * Exported: also the entire "apply" logic behind "Upload schema"
- * (`routes/content-type-seed.ts`) - an uploaded `schema.json`'s
- * `contentTypes[]` is just another `BatchDraftInput[]` to this function,
- * getting the exact same create-or-update/version-conflict/destructive-
- * change handling `performSave` already gives the drafts flow, for free. */
+ * useful to show at once. */
 export async function handleBatch(
   adapter: ContentEngineAdapter,
   entryAdapter: ContentEntryEngineAdapter,

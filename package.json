@@ -62,7 +62,6 @@
     "build:icons": "node scripts/build-icons.mjs",
     "dry:generate": "bun scripts/dry-generate.ts",
     "new:project": "bun scripts/new-project.ts",
-    "seed:sync": "bun scripts/seed-sync.ts",
     "seed:demo": "bun scripts/seed-demo.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
