@@ -20,6 +20,12 @@ import { resolveSiteOrigin } from "./app-router/site-origin.js";
  * content, since one deployment always serves exactly one resource/issuer -
  * there's no ambiguity a bare fallback could introduce here.
  */
+/** The single scope this server grants (an MCP token can do whatever its
+ * owner can - there are no narrower slices), plus the conventional
+ * `offline_access` a client asks for when it wants a refresh token. */
+export const MCP_SCOPE = "mcp";
+export const OFFLINE_ACCESS_SCOPE = "offline_access";
+
 export function tryServeOAuthMetadata(request: Request): Response | null {
   if (request.method !== "GET") return null;
   const url = new URL(request.url);
@@ -34,6 +40,13 @@ export function tryServeOAuthMetadata(request: Request): Response | null {
     return jsonMetadata({
       resource: mcpUrl,
       authorization_servers: [origin],
+      // claude.ai's documented behaviour: with no `scope` in the 401's
+      // `WWW-Authenticate`, it requests exactly what this list advertises
+      // (plus `offline_access` if the authorization-server metadata below
+      // lists it). One scope covers this whole server - an MCP token can do
+      // what its owner can do, no narrower slices exist to grant.
+      scopes_supported: [MCP_SCOPE],
+      bearer_methods_supported: ["header"],
     });
   }
 
@@ -47,6 +60,7 @@ export function tryServeOAuthMetadata(request: Request): Response | null {
       authorization_endpoint: `${origin}${basePath}/api/oauth/authorize`,
       token_endpoint: `${origin}${basePath}/api/oauth/token`,
       registration_endpoint: `${origin}${basePath}/api/oauth/register`,
+      scopes_supported: [MCP_SCOPE, OFFLINE_ACCESS_SCOPE],
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],

@@ -228,3 +228,63 @@ against). Fixed:
   the RFC 6749 §5.1 `Cache-Control: no-store` / `Pragma: no-cache` headers.
 
 Deployed as version `25707557`. 20/20 unit tests, typecheck clean.
+
+### Round 4: `expires_in` wasn't it either - and this is a KNOWN claude.ai bug
+
+Post-deploy tail (my own `--format json` run, so with statuses):
+
+```
+02:38:03 POST /dry/api/mcp                                  401  IAD  python-httpx
+02:38:04 GET  /.well-known/oauth-protected-resource/...     200  IAD
+02:38:04 GET  /.well-known/oauth-authorization-server       200  IAD
+02:38:04 POST /dry/api/oauth/register                       201  IAD
+02:38:06 GET  /dry/api/oauth/authorize                      302  SIN  (browser)
+02:38:11 GET  /dry/api/oauth/consent-info                   200  SIN
+02:38:12 POST /dry/api/oauth/consent                        200  SIN
+02:38:14 POST /dry/api/oauth/token                          200  IAD
+<nothing - claude.ai never calls the MCP endpoint with the token>
+```
+
+Everything on our side returns exactly what it should, and claude.ai still
+reports "Authorization with DryCMS failed". This is a documented,
+still-open claude.ai-side failure mode, reported by several independent
+servers with correct implementations:
+`anthropics/claude-ai-mcp` issues #315 (JWT + full metadata + scopes +
+Cache-Control + RFC 9207 `iss` + RFC 8707 audience binding all tried, closed
+as not planned), #690 (token issued, Claude never sends
+`Authorization: Bearer` on the follow-up), #171, #313, #326, #506. In #690
+the follow-up request at least reaches the server without the header; here
+no follow-up request arrives at all.
+
+From Anthropic's own connector docs (claude.com/docs/connectors/building/
+authentication) the only requirement we were still not meeting:
+
+> To control which scopes Claude requests, include a `scope` parameter in the
+> `WWW-Authenticate` header on your 401 response. If you don't, Claude
+> requests the scopes your protected resource metadata advertises in
+> `scopes_supported`. Claude also appends `offline_access` when your
+> authorization server metadata lists it in `scopes_supported`, to obtain a
+> refresh token.
+
+We advertised no scopes at all, so Claude requested none and the token
+response granted none. Now implemented end to end (deployed, version
+`91005966`):
+- PRM: `scopes_supported: ["mcp"]`, `bearer_methods_supported: ["header"]`.
+- AS metadata: `scopes_supported: ["mcp", "offline_access"]`.
+- `/authorize` accepts `scope`, narrows it to what's grantable
+  (`grantableScope`), and carries it through the authz request → code →
+  refresh record; `/token` echoes the granted `scope` (only when one was
+  requested - granting an unrequested scope is itself a rejection reason).
+- TEMPORARY log of the (redacted) `/token` request body, to finally see
+  whether claude.ai sends `resource`/`scope`/`client_secret` there.
+
+Also verified NOT the cause along the way: KV cross-colo consistency (the
+code written in SIN was read fine from IAD), a WAF/bot block in front of the
+Worker (an authenticated-shaped `POST /dry/api/mcp` with
+`user-agent: python-httpx` reaches the Worker and gets a normal 401), and
+endpoint latency (every OAuth endpoint answers in <1s, far under claude.ai's
+10s budget).
+
+If round 4 still fails, the remaining evidence all points at claude.ai's
+broker rather than this server, and the practical answer is the PAT flow
+(`McpConnect.tsx`) with Claude Code/Desktop, which works today.

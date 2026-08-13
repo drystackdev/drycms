@@ -31,6 +31,7 @@ import { jsonResponse, unauthenticatedResponse, errorResponse } from "../route-h
 import { path as basePath } from "../config.js";
 import { getAuthSecurityStore, createMcpToken, revokeMcpToken } from "../auth-security.js";
 import { readCookie } from "../session.js";
+import { MCP_SCOPE, OFFLINE_ACCESS_SCOPE } from "../oauth-metadata.js";
 
 const OAUTH_CLIENTS_NAMESPACE = "oauth-clients";
 const OAUTH_AUTHZ_REQUESTS_NAMESPACE = "oauth-authz-requests";
@@ -60,6 +61,7 @@ interface OAuthAuthzRequest {
   redirectUri: string;
   codeChallenge: string;
   state: string;
+  scope: string;
   createdAt: string;
 }
 
@@ -68,6 +70,7 @@ interface OAuthCodeRecord {
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
+  scope: string;
 }
 
 /** What a `refresh_token` grant needs to mint the next access token: whose
@@ -79,6 +82,7 @@ interface OAuthRefreshRecord {
   clientId: string;
   clientName: string;
   accessTokenId: string;
+  scope: string;
 }
 
 function clientKey(clientId: string): string {
@@ -165,6 +169,17 @@ function isAllowedRedirectUri(uri: string): boolean {
   }
 }
 
+/** Narrows a requested `scope` down to what this server actually grants -
+ * silently dropping anything else, per OAuth 2.1 §3.2.2.1 (the granted scope
+ * is then echoed in the token response, so a client can see the difference).
+ * There is exactly one real scope here (`mcp`); `offline_access` is the
+ * client asking for a refresh token, which it gets either way. */
+function grantableScope(requested: string | null): string {
+  const asked = (requested ?? "").split(/\s+/).filter(Boolean);
+  if (asked.length === 0) return "";
+  return asked.filter((scope) => scope === MCP_SCOPE || scope === OFFLINE_ACCESS_SCOPE).join(" ");
+}
+
 function safeHost(uri: string): string {
   try {
     return new URL(uri).host;
@@ -228,6 +243,7 @@ async function handleAuthorize(context: DryRouteContext): Promise<Response> {
     redirectUri,
     codeChallenge,
     state,
+    scope: grantableScope(params.get("scope")),
     createdAt: new Date().toISOString(),
   } satisfies OAuthAuthzRequest, { ttlMs: AUTHZ_REQUEST_TTL_MS, durability: "sync" });
 
@@ -343,6 +359,7 @@ async function handleConsent(context: DryRouteContext): Promise<Response> {
     clientId: record.clientId,
     redirectUri: record.redirectUri,
     codeChallenge: record.codeChallenge,
+    scope: record.scope ?? "",
   } satisfies OAuthCodeRecord, { ttlMs: CODE_TTL_MS, durability: "sync" });
 
   return withSetCookie(
@@ -377,7 +394,7 @@ async function readTokenRequestBody(request: Request): Promise<Record<string, st
  */
 async function issueTokens(
   context: DryRouteContext,
-  grant: { userId: number; clientId: string; clientName: string },
+  grant: { userId: number; clientId: string; clientName: string; scope: string },
 ): Promise<Response> {
   const store = getAuthSecurityStore(context.env);
   const { tokenId, token } = await createMcpToken(grant.userId, grant.clientName, context.env, { ttlMs: ACCESS_TOKEN_TTL_MS });
@@ -387,16 +404,17 @@ async function issueTokens(
     clientId: grant.clientId,
     clientName: grant.clientName,
     accessTokenId: tokenId,
+    scope: grant.scope,
   } satisfies OAuthRefreshRecord, { durability: "sync" });
 
-  // Deliberately no `scope` in the response: a client that requested none
-  // (this server advertises no `scopes_supported`) is entitled to reject a
-  // token response that grants a scope it never asked for.
+  // `scope` is echoed only when the client asked for one - granting a scope
+  // nobody requested is something a strict client is entitled to reject.
   const response = jsonResponse({
     access_token: token,
     token_type: "Bearer",
     expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
     refresh_token: refreshToken,
+    ...(grant.scope ? { scope: grant.scope } : {}),
   });
   // RFC 6749 §5.1 - a token response MUST NOT be cached anywhere.
   response.headers.set("Cache-Control", "no-store");
@@ -422,7 +440,7 @@ async function handleAuthorizationCodeGrant(context: DryRouteContext, body: Reco
   }
 
   const client = await store.get<OAuthClientRecord>(OAUTH_CLIENTS_NAMESPACE, clientKey(clientId));
-  return issueTokens(context, { userId: record.userId, clientId, clientName: client?.clientName || "MCP client" });
+  return issueTokens(context, { userId: record.userId, clientId, clientName: client?.clientName || "MCP client", scope: record.scope ?? "" });
 }
 
 /** OAuth 2.1 §4.3.1 requires refresh tokens issued to a public client to be
@@ -439,11 +457,22 @@ async function handleRefreshTokenGrant(context: DryRouteContext, body: Record<st
   }
 
   await revokeMcpToken(record.userId, record.accessTokenId, context.env);
-  return issueTokens(context, { userId: record.userId, clientId: record.clientId, clientName: record.clientName });
+  return issueTokens(context, { userId: record.userId, clientId: record.clientId, clientName: record.clientName, scope: record.scope ?? "" });
 }
 
 async function handleToken(context: DryRouteContext): Promise<Response> {
   const body = await readTokenRequestBody(context.request);
+  // TEMPORARY (2026-08-14): claude.ai gets a 200 here and then never calls
+  // the MCP endpoint at all - logging what it actually sends (`resource`?
+  // `scope`? `client_secret`?) is the only visibility we have. Redacted of
+  // the secrets themselves. Remove once the connect succeeds.
+  console.log("[drycms] oauth/token request", JSON.stringify({
+    ...body,
+    code: body.code ? `<${body.code.length} chars>` : undefined,
+    code_verifier: body.code_verifier ? "<redacted>" : undefined,
+    refresh_token: body.refresh_token ? "<redacted>" : undefined,
+    client_secret: body.client_secret ? "<redacted>" : undefined,
+  }));
   if (body.grant_type === "authorization_code") return handleAuthorizationCodeGrant(context, body);
   if (body.grant_type === "refresh_token") return handleRefreshTokenGrant(context, body);
   return jsonResponse({ error: "unsupported_grant_type" }, 400);
