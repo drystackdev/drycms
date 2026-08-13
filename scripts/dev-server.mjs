@@ -112,7 +112,7 @@ try {
     const { writeGeneratedDryTypes } = await vite.ssrLoadModule("/src/content-types/types-cache.ts");
     const adapter = createContentEngineAdapter(content);
     const allTypes = await adapter.listContentTypes();
-    await writeGeneratedDryTypes(generateDryTypes(allTypes));
+    await writeGeneratedDryTypes(generateDryTypes(allTypes), { env: {} });
     console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types)`);
   }
 } catch (error) {

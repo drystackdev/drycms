@@ -25,6 +25,6 @@ if (content.engine === "D1") {
 const adapter = createContentEngineAdapter(content);
 const allTypes = await adapter.listContentTypes();
 const output = generateDryTypes(allTypes);
-await writeGeneratedDryTypes(output);
+await writeGeneratedDryTypes(output, { env: {} });
 
 console.log(`[drycms] generated dry.generated.d.ts (${allTypes.length} content types)`);

@@ -1,4 +1,3 @@
-import { createStorageAdapter } from "../storage/index.js";
 import { typesCacheStorage } from "../server/config.js";
 import type { DryRouteContext } from "../server/context.js";
 import { getStorageAdapter } from "../server/storage-adapters.js";
@@ -29,6 +28,18 @@ const CACHE_ENTRY_NAME = "dry.generated.d.ts";
  * would have broken that runtime outright, not just skipped the disk write,
  * so the import itself is deferred into the branch that needs it.
  *
+ * Takes `context` so the storage write can resolve a LIVE R2 binding under
+ * `kind: "cloudflare"` (`getStorageAdapter`, not the raw `createStorageAdapter`
+ * this used to call directly) - found live, 2026-08-13: a freshly
+ * (re)created R2 bucket has no cached `dry.generated.d.ts` yet, so the very
+ * first Page Editor session after a fresh deploy always hit
+ * `readGeneratedDryTypes`'s "not found, regenerate" fallback, which called
+ * this function and threw `storage.kind "r2" requires a live R2 bucket
+ * binding` - silently swallowed by `routes/types-cache.ts`'s GET (its own
+ * "never fatal" contract), so the Editer just quietly had no `dry()`/
+ * `params()`/`setTitle()`/`dryBind()` ambient globals in scope, surfacing
+ * only as "Cannot find name 'setTitle'"-style diagnostics with no hint why.
+ *
  * `tsconfig.json` needs ONE path that's correct no matter which of this
  * app's several run modes last touched it - `.dry/` itself is that stable
  * anchor (`resolvePath(process.cwd(), ".dry")`, ignoring `overrides`/E2E
@@ -46,8 +57,8 @@ const CACHE_ENTRY_NAME = "dry.generated.d.ts";
  * an E2E run would otherwise break `tsc`/the IDE until the next plain `dev`
  * run regenerated it.
  */
-export async function writeGeneratedDryTypes(output: string): Promise<void> {
-  const storage = createStorageAdapter(typesCacheStorage);
+export async function writeGeneratedDryTypes(output: string, context: Pick<DryRouteContext, "env">): Promise<void> {
+  const storage = getStorageAdapter(typesCacheStorage, context);
   await storage.write(CACHE_ENTRY_NAME, Buffer.from(output, "utf8"));
 
   if (!isNodeRuntime()) return;
@@ -119,7 +130,7 @@ export async function readGeneratedDryTypes(context: DryRouteContext): Promise<s
     // `GET` originally had inline (see that file's own doc comment for why a
     // miss is regenerated on the spot rather than treated as a real error).
     const output = generateDryTypes(await getContentAdapters(context).schema.listContentTypes());
-    await writeGeneratedDryTypes(output);
+    await writeGeneratedDryTypes(output, context);
     return output;
   }
 }

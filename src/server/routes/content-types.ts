@@ -143,10 +143,10 @@ async function performSave(
  * is a DX papercut (bad autocomplete), not a reason to fail a schema save
  * that already committed - see `types-cache.ts`'s own "risk" analysis.
  */
-async function regenerateTypesCache(adapter: ContentEngineAdapter): Promise<void> {
+async function regenerateTypesCache(adapter: ContentEngineAdapter, context: Pick<DryRouteContext, "env">): Promise<void> {
   try {
     const allTypes = await adapter.listContentTypes();
-    await writeGeneratedDryTypes(generateDryTypes(allTypes));
+    await writeGeneratedDryTypes(generateDryTypes(allTypes), context);
   } catch (error) {
     console.error("[drycms] failed to regenerate dry.generated.d.ts after a schema change:", error);
   }
@@ -157,9 +157,10 @@ async function handleSave(
   entryAdapter: ContentEntryEngineAdapter,
   definition: ContentTypeDefinition,
   confirm: boolean,
+  context: Pick<DryRouteContext, "env">,
 ): Promise<Response> {
   const result = await performSave(adapter, entryAdapter, definition, confirm);
-  await regenerateTypesCache(adapter);
+  await regenerateTypesCache(adapter, context);
   return jsonResponse(result, 200);
 }
 
@@ -199,6 +200,7 @@ export async function handleBatch(
   entryAdapter: ContentEntryEngineAdapter,
   mode: "plan" | "apply",
   draftInputs: BatchDraftInput[],
+  context: Pick<DryRouteContext, "env">,
 ): Promise<Response> {
   const results: BatchItemResult[] = [];
   for (const { definition } of draftInputs) {
@@ -227,7 +229,7 @@ export async function handleBatch(
       if (mode === "apply") break;
     }
   }
-  if (mode === "apply" && results.some((r) => r.ok)) await regenerateTypesCache(adapter);
+  if (mode === "apply" && results.some((r) => r.ok)) await regenerateTypesCache(adapter, context);
   return jsonResponse({ mode, results });
 }
 
@@ -276,7 +278,7 @@ export const POST: DryRouteHandler = async (context) => {
     // here only dispatches on the first path segment + HTTP method (see
     // `server/handler.ts`).
     if (Array.isArray(raw.drafts)) {
-      return await handleBatch(adapter, entryAdapter, raw.mode === "apply" ? "apply" : "plan", raw.drafts);
+      return await handleBatch(adapter, entryAdapter, raw.mode === "apply" ? "apply" : "plan", raw.drafts, context);
     }
 
     if (!raw.definition) throw new ContentEngineError("invalid_definition", "Request body must include `definition`.");
@@ -286,7 +288,7 @@ export const POST: DryRouteHandler = async (context) => {
       id: raw.definition.id || randomUUID(),
       version: 0,
     };
-    return await handleSave(adapter, entryAdapter, definition, raw.confirm === true);
+    return await handleSave(adapter, entryAdapter, definition, raw.confirm === true, context);
   } catch (error) {
     return errorResponse(error);
   }
@@ -308,7 +310,7 @@ export const PUT: DryRouteHandler = async (context) => {
     }
 
     const definition: ContentTypeDefinition = { ...raw.definition, id };
-    return await handleSave(adapter, entryAdapter, definition, raw.confirm === true);
+    return await handleSave(adapter, entryAdapter, definition, raw.confirm === true, context);
   } catch (error) {
     return errorResponse(error);
   }
@@ -330,7 +332,7 @@ export const DELETE: DryRouteHandler = async (context) => {
       );
     }
     await adapter.deleteContentType(id);
-    await regenerateTypesCache(adapter);
+    await regenerateTypesCache(adapter, context);
     return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);

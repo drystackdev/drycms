@@ -9,8 +9,10 @@ vi.mock("../config.js", async () => {
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
+  const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-content-types-route-"));
-  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") } };
+  const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
+  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, typesCacheStorage: resolved.typesCache.storage };
 });
 
 const { GET, POST, PUT, DELETE } = await import("./content-types.js");

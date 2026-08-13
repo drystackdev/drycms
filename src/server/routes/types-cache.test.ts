@@ -45,7 +45,7 @@ describe("GET /dry/api/types-cache", () => {
   });
 
   it("serves the stored cache as-is once one exists, without regenerating it", async () => {
-    await writeGeneratedDryTypes("declare const marker: 'stored-verbatim';");
+    await writeGeneratedDryTypes("declare const marker: 'stored-verbatim';", context());
     const response = await GET(context());
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("declare const marker: 'stored-verbatim';");
