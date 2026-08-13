@@ -31,13 +31,42 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#server-one-fetch-shaped-handler-adapter-pe
 
 drycms runs as a Cloudflare Worker backed by D1 (SQL database) and R2 (file storage).
 
+### drycms is a website-builder TOOL, not one website
+
+The app's own source (`src/`) lives in ONE shared git repo. In practice each
+git branch is a separate deployed TENANT/project (`sivelap`, `drystack`,
+`mai-anh-quyen`, ...), each with its own Cloudflare resources named
+`<branch>-db` (D1), `<branch>-content` (R2), `<branch>-session` (KV) -
+`wrangler.jsonc`'s `name`/`database_name`/`bucket_name` follow the same
+`<branch>` convention (`scripts/new-project.ts` sets these on `bun run
+new:project`).
+
+**Page/component/layout content authored through the Page Editor is NEVER
+tracked in git** - it lives in `.dry/pages-source` locally or that tenant's
+own R2 bucket in production (`pagesSourceStorage`, see AGENTS.md's "Two
+page-source roots"), entirely separate from the application source code so
+editing content never needs a commit/deploy cycle. This means:
+
+- A fresh deploy of the TOOL (via git push or a first `wrangler deploy`) is
+  expected to have **zero site pages** - that's correct, not a bug. The
+  client/server build tolerates this on purpose (`vite.config.ts`'s
+  `existsSync` guard on the `globals.css` entry, `resolve-asset-href.ts`'s
+  `resolveGlobalsCssHref`) - it no longer crashes when `src/apps/pages`/
+  `component`/`styles` are empty, which they always are on a brand new git
+  checkout (found live on a real Cloudflare build, 2026-08-13).
+- Getting a tenant's real pages onto its live site is a step SEPARATE from
+  deploying code: run `bun run pages:sync --push --remote` by hand, from a
+  machine that already has that tenant's real `.dry/pages-source` content,
+  against that tenant's own R2 bucket. No deploy or git push does this for
+  you.
+
 ### Prerequisites
 
 1. **Cloudflare account** - with a Zone/Domain for your app's public URL
 2. **Wrangler CLI** - installed as `wrangler` devDependency (included in repo)
-3. **D1 database** - created via `wrangler d1 create drycms`
-4. **R2 bucket** - created via `wrangler r2 bucket create drycms-media`
-5. **KV namespace** (optional, for caching) - created via `wrangler kv:namespace create drycms-cache`
+3. **D1 database** - created via `wrangler d1 create <branch>-db`
+4. **R2 bucket** - created via `wrangler r2 bucket create <branch>-content`
+5. **KV namespace** (optional, for caching) - created via `wrangler kv namespace create <branch>-session`
 
 ### Configuration
 
@@ -102,6 +131,20 @@ wrangler deploy --dry-run
 3. Zips `dist/client/` for the Assets binding
 
 **After first deploy**, visit your Worker's URL to register the first Super Admin account (one-time). The registration form requires a `DRYCMS_BOOTSTRAP_TOKEN` env var (set via `wrangler secret put` or `.env.production`).
+
+### Git-integrated builds (Cloudflare Pages / Workers Builds)
+
+If a tenant's repo is connected to Cloudflare for git-triggered builds (as
+opposed to running `bun run deploy` by hand), set the dashboard's **Build
+command** to `bun run build:worker` - **not** `bun run build`. The plain
+`build` script targets Node (`dist/server/entry-node.js`, an `http.Server`
+entry), which cannot run on the Workers runtime at all regardless of
+whether the rest of the build succeeds.
+
+Either way, a git-triggered build runs on a completely fresh checkout with
+no `.dry/pages-source` ever populated - see "drycms is a website-builder
+TOOL" above for why that's expected to produce zero site pages, not a
+failure to fix.
 
 ### Public-page caching (and what a page view actually costs)
 

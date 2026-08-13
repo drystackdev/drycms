@@ -8,10 +8,13 @@
  * Interactive by default. For a scripted/CI run (and for testing this script
  * itself against a throwaway clone), it also takes flags:
  *
- *   bun run new:project -- --name "My Site" --yes [--drop-seed-pages]
+ *   bun run new:project -- --name "My Site" --yes [--drop-seed-pages] [--skip-cloudflare]
  *
  * `--yes` answers every confirmation, including the type-the-branch-name one,
  * so it is the only mode that can destroy a tree without a human in the loop.
+ * `--skip-cloudflare` skips creating real D1/R2/KV resources (see "project
+ * ids" below) - use it when testing this script itself, so a throwaway run
+ * doesn't leave orphaned resources on the real Cloudflare account.
  *
  * What it resets, and why each one matters for a project that actually boots:
  *
@@ -33,10 +36,17 @@
  *   over from the old project to separately reset.
  * - `public/` - the local `storage` root (uploaded media + `dry-icons/`).
  * - `dist/`, `.wrangler/` - stale build output/state for the old project.
- * - `wrangler.jsonc` - worker name + D1/R2/KV names, with the IDs put back
- *   to placeholders. Left alone, a `bun run deploy` from the new project
- *   would write straight into the OLD project's production database and
- *   bucket.
+ * - `wrangler.jsonc` - worker name + D1/R2/KV names renamed to `<branch>-*`
+ *   (drycms is a multi-tenant TOOL, one branch per deployed project - see
+ *   AGENTS.md's "drycms is a website-builder TOOL"), and the D1/KV resources
+ *   actually CREATED for real via `wrangler d1 create`/`wrangler kv
+ *   namespace create` (R2 bucket too, via `wrangler r2 bucket create` - no
+ *   ID needed, the name alone is the binding target) - their real IDs get
+ *   written in directly. Best-effort: falls back to the old
+ *   REPLACE_WITH_*_ID placeholders if `wrangler` isn't logged in or a
+ *   create call fails, same as before this existed. Left alone, a
+ *   `bun run deploy` from the new project would write straight into the
+ *   OLD project's production database and bucket.
  * - `package.json`'s `name`.
  *
  * Deliberately NOT touched (framework-level or shared, not project content):
@@ -75,6 +85,9 @@ function flagValue(name: string): string | undefined {
 }
 /** `--yes` skips every confirmation below, including the type-the-name one. */
 const autoYes = hasFlag("yes");
+/** Skips creating real Cloudflare resources - see this file's own doc
+ * comment. */
+const skipCloudflare = hasFlag("skip-cloudflare");
 
 /** A yes/no confirmation. Auto-confirmed under `--yes`. */
 async function confirm(question: string): Promise<boolean> {
@@ -97,6 +110,40 @@ function git(...args: string[]): string {
  * `dry:generate` call below for why that isolation is load-bearing. */
 function bunRun(script: string): void {
   execFileSync("bun", ["run", script], { stdio: "inherit" });
+}
+
+/** Runs `wrangler <args>`, returning its stdout - or `null` on any failure
+ * (not logged in, network down, name already taken, ...). Resource creation
+ * is deliberately best-effort: every OTHER reset this script does is a pure
+ * local/offline operation and must still fully succeed with no Cloudflare
+ * account reachable at all - see the "project ids" section below, which
+ * falls back to the old REPLACE_WITH_*_ID placeholders on a `null`. Piped
+ * stdio (not `inherit`) so `wrangler`'s own interactive "add this to your
+ * config?" prompt sees a non-TTY stdin and auto-answers "no" (confirmed
+ * live) instead of hanging this script waiting for input. */
+function wranglerCreate(...args: string[]): string | null {
+  try {
+    return execFileSync("npx", ["wrangler", ...args], { encoding: "utf8" });
+  } catch (error) {
+    const detail =
+      error && typeof error === "object" && "stderr" in error
+        ? String((error as { stderr?: unknown }).stderr ?? "")
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    console.warn(`  ! wrangler ${args.join(" ")} failed - leaving a placeholder:\n${detail.trim()}`);
+    return null;
+  }
+}
+
+/** Pulls `"<key>": "<value>"` out of one of `wrangler`'s own human-readable
+ * `create` command outputs (the JSON snippet it prints for you to paste into
+ * your config) - see this file's own doc comment on `replaceOrWarn` for why
+ * this reads text rather than something more structured: `wrangler` has no
+ * `--json` output for `d1 create`/`kv namespace create` today (checked live,
+ * `--help` on both). */
+function extractCreatedField(output: string, key: string): string | null {
+  return new RegExp(`"${key}":\\s*"([^"]+)"`).exec(output)?.[1] ?? null;
 }
 
 function at(...segments: string[]): string {
@@ -151,7 +198,7 @@ console.log("  - .dry/               → fresh DB: only the built-in system cont
 console.log("                          no users (bun run dev asks for a first-admin registration again)");
 console.log("  - public/             → deleted (uploaded media + dry-icons/)");
 console.log("  - dist/, .wrangler/   → deleted (stale build output for the old project)");
-console.log("  - wrangler.jsonc      → worker/D1/R2/KV names renamed, IDs back to placeholders");
+console.log("  - wrangler.jsonc      → worker/D1/R2/KV names renamed, real D1/R2/KV resources created");
 console.log("  - package.json        → \"name\" renamed");
 console.log("");
 
@@ -276,27 +323,36 @@ if (content.engine === "D1") {
 
 console.log("\nRenaming the project...");
 
+let d1Id = "REPLACE_WITH_D1_DATABASE_ID";
+let kvId = "REPLACE_WITH_KV_NAMESPACE_ID";
+if (skipCloudflare) {
+  console.log("  --skip-cloudflare set - not creating D1/R2/KV, IDs left as placeholders");
+} else {
+  console.log(`  wrangler d1 create ${branch}-db ...`);
+  const d1Output = wranglerCreate("d1", "create", `${branch}-db`);
+  if (d1Output) d1Id = extractCreatedField(d1Output, "database_id") ?? d1Id;
+
+  console.log(`  wrangler r2 bucket create ${branch}-content ...`);
+  wranglerCreate("r2", "bucket", "create", `${branch}-content`);
+
+  console.log(`  wrangler kv namespace create ${branch}-session ...`);
+  const kvOutput = wranglerCreate("kv", "namespace", "create", `${branch}-session`);
+  if (kvOutput) kvId = extractCreatedField(kvOutput, "id") ?? kvId;
+}
+
 const wranglerFile = "wrangler.jsonc";
 let wrangler = readFileSync(at(wranglerFile), "utf8");
 wrangler = replaceOrWarn(wrangler, wranglerFile, /("name":\s*)"[^"]*"/, `$1"${branch}"`);
 wrangler = replaceOrWarn(wrangler, wranglerFile, /("database_name":\s*)"[^"]*"/, `$1"${branch}-db"`);
-wrangler = replaceOrWarn(
-  wrangler,
-  wranglerFile,
-  /("database_id":\s*)"[^"]*"/,
-  `$1"REPLACE_WITH_D1_DATABASE_ID"`,
-);
+wrangler = replaceOrWarn(wrangler, wranglerFile, /("database_id":\s*)"[^"]*"/, `$1"${d1Id}"`);
 wrangler = replaceOrWarn(wrangler, wranglerFile, /("bucket_name":\s*)"[^"]*"/, `$1"${branch}-content"`);
 // Scoped to the `kv_namespaces` block: a bare `"id"` would also match D1's
 // `database_id` line above.
-wrangler = replaceOrWarn(
-  wrangler,
-  wranglerFile,
-  /("kv_namespaces":[\s\S]*?"id":\s*)"[^"]*"/,
-  `$1"REPLACE_WITH_KV_NAMESPACE_ID"`,
-);
+wrangler = replaceOrWarn(wrangler, wranglerFile, /("kv_namespaces":[\s\S]*?"id":\s*)"[^"]*"/, `$1"${kvId}"`);
 writeFileSync(at(wranglerFile), wrangler);
-console.log(`  ${wranglerFile}: name=${branch}, D1=${branch}-db, R2=${branch}-content, IDs → placeholders`);
+console.log(
+  `  ${wranglerFile}: name=${branch}, D1=${branch}-db (${d1Id}), R2=${branch}-content, KV=${branch}-session (${kvId})`,
+);
 
 let pkg = readFileSync(at("package.json"), "utf8");
 // `"name"` is package.json's first key; `"database_name"`-style keys can't
@@ -316,8 +372,13 @@ console.log("  1. bun run dev");
 console.log(`  2. open http://localhost:5173${resolved.path} and register the first admin`);
 console.log("     (the old account was wiped with .dry/)");
 console.log("  3. model your content types, then use the admin's Backup page to export/import them between installs");
-console.log("  4. before `bun run deploy`: fill in wrangler.jsonc's D1/KV IDs");
-console.log("     (`wrangler d1 create`, `wrangler kv namespace create`, `wrangler r2 bucket create`)");
+const stillPlaceholder = d1Id === "REPLACE_WITH_D1_DATABASE_ID" || kvId === "REPLACE_WITH_KV_NAMESPACE_ID";
+if (stillPlaceholder) {
+  console.log("  4. before `bun run deploy`: fill in wrangler.jsonc's D1/KV IDs by hand");
+  console.log("     (`wrangler d1 create`, `wrangler kv namespace create`, `wrangler r2 bucket create` - skipped or failed above)");
+} else {
+  console.log("  4. D1/R2/KV already created and wired into wrangler.jsonc - `bun run deploy` when ready");
+}
 console.log("\nReview `git status`, then commit when ready.");
 
 /**
