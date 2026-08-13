@@ -29,12 +29,13 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse, unauthenticatedResponse, errorResponse } from "../route-helpers.js";
 import { path as basePath } from "../config.js";
-import { getAuthSecurityStore, createMcpToken } from "../auth-security.js";
+import { getAuthSecurityStore, createMcpToken, revokeMcpToken } from "../auth-security.js";
 import { readCookie } from "../session.js";
 
 const OAUTH_CLIENTS_NAMESPACE = "oauth-clients";
 const OAUTH_AUTHZ_REQUESTS_NAMESPACE = "oauth-authz-requests";
 const OAUTH_CODES_NAMESPACE = "oauth-codes";
+const OAUTH_REFRESH_NAMESPACE = "oauth-refresh-tokens";
 const OAUTH_REGISTER_RATE_NAMESPACE = "oauth-register-rate";
 const OAUTH_REQ_COOKIE_NAME = "drycms_oauth_req";
 const AUTHZ_REQUEST_TTL_MS = 10 * 60_000;
@@ -65,6 +66,17 @@ interface OAuthCodeRecord {
   codeChallenge: string;
 }
 
+/** What a `refresh_token` grant needs to mint the next access token: whose
+ * account it belongs to, which client may present it, and the PAT it
+ * replaces (revoked on rotation so a long-lived connector doesn't pile up
+ * one dead token per refresh in the owner's MCP token list). */
+interface OAuthRefreshRecord {
+  userId: number;
+  clientId: string;
+  clientName: string;
+  accessTokenId: string;
+}
+
 function clientKey(clientId: string): string {
   return `client-${clientId}`;
 }
@@ -75,6 +87,10 @@ function authzRequestKey(requestId: string): string {
 
 function codeKey(codeHash: string): string {
   return `code-${codeHash}`;
+}
+
+function refreshKey(tokenHash: string): string {
+  return `refresh-${tokenHash}`;
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -225,10 +241,18 @@ async function handleRegister(context: DryRouteContext): Promise<Response> {
     return jsonResponse({ error: "rate_limited", message: "Too many registration attempts. Try again later." }, 429);
   }
 
-  const body = (await context.request.json().catch(() => ({}))) as { redirect_uris?: unknown; client_name?: unknown };
+  const raw = await context.request.text().catch(() => "");
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    parsed = {};
+  }
+  const body = parsed as { redirect_uris?: unknown; client_name?: unknown; scope?: unknown; grant_types?: unknown; response_types?: unknown; client_uri?: unknown; token_endpoint_auth_method?: unknown };
   const rawUris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
   const redirectUris = rawUris.filter((uri): uri is string => typeof uri === "string" && isAllowedRedirectUri(uri));
   if (redirectUris.length === 0) {
+    console.log("[drycms] oauth/register rejected", raw.slice(0, 1000));
     return jsonResponse({ error: "invalid_redirect_uri", message: "At least one https:// (or loopback) redirect_uri is required." }, 400);
   }
   const clientName = (typeof body.client_name === "string" ? body.client_name.trim().slice(0, 200) : "") || "MCP client";
@@ -242,12 +266,30 @@ async function handleRegister(context: DryRouteContext): Promise<Response> {
     createdAt: new Date().toISOString(),
   } satisfies OAuthClientRecord, { durability: "sync" });
 
-  return jsonResponse({
+  // RFC 7591 §3.2.1: the response must echo back the client metadata the
+  // server actually registered - a client that asked for something it
+  // didn't get (a dropped `redirect_uri`, a grant type) has to be able to
+  // see that. Anything not echoed is defined to fall back to the RFC's own
+  // default, which is how a strict client decides the registration is
+  // unusable and gives up (`status/mcp-oauth.md`'s claude.ai stall).
+  const registration: Record<string, unknown> = {
     client_id: clientId,
+    client_id_issued_at: Math.floor(Date.now() / 1000),
     client_name: clientName,
     redirect_uris: redirectUris,
+    grant_types: ["authorization_code", "refresh_token"],
+    response_types: ["code"],
     token_endpoint_auth_method: "none",
-  }, 201);
+  };
+  if (typeof body.scope === "string" && body.scope.trim()) registration.scope = body.scope.trim().slice(0, 500);
+  if (typeof body.client_uri === "string" && body.client_uri.trim()) registration.client_uri = body.client_uri.trim().slice(0, 500);
+  // TEMPORARY (2026-08-14): claude.ai registers successfully and then never
+  // calls `/authorize` - logging both sides of this exchange is the only way
+  // to see what it actually asked for. Remove once that's diagnosed.
+  console.log("[drycms] oauth/register request", raw.slice(0, 1000));
+  console.log("[drycms] oauth/register response", JSON.stringify(registration));
+
+  return jsonResponse(registration, 201);
 }
 
 async function handleConsentInfo(context: DryRouteContext): Promise<Response> {
@@ -316,11 +358,36 @@ async function readTokenRequestBody(request: Request): Promise<Record<string, st
   return form ? Object.fromEntries([...form.entries()].map(([key, value]) => [key, String(value)])) : {};
 }
 
-async function handleToken(context: DryRouteContext): Promise<Response> {
-  const body = await readTokenRequestBody(context.request);
-  if (body.grant_type !== "authorization_code") {
-    return jsonResponse({ error: "unsupported_grant_type" }, 400);
-  }
+/**
+ * Mints the access token (an ordinary MCP PAT - see this file's own doc
+ * comment) plus the rotating refresh token that goes with it. The access
+ * token itself doesn't expire, so no `expires_in` is returned; the refresh
+ * grant exists because an OAuth 2.1 public client (which is what every MCP
+ * client registering here is) expects to be able to rotate its credential,
+ * and a client that asked for `refresh_token` at registration and got no way
+ * to use one can legitimately decide the registration is unusable.
+ */
+async function issueTokens(
+  context: DryRouteContext,
+  grant: { userId: number; clientId: string; clientName: string },
+): Promise<Response> {
+  const store = getAuthSecurityStore(context.env);
+  const { tokenId, token } = await createMcpToken(grant.userId, grant.clientName, context.env);
+  const refreshToken = `mcpr_${crypto.randomUUID()}${crypto.randomUUID()}`;
+  await store.set(OAUTH_REFRESH_NAMESPACE, refreshKey(await sha256Hex(refreshToken)), {
+    userId: grant.userId,
+    clientId: grant.clientId,
+    clientName: grant.clientName,
+    accessTokenId: tokenId,
+  } satisfies OAuthRefreshRecord, { durability: "sync" });
+
+  // Deliberately no `scope` in the response: a client that requested none
+  // (this server advertises no `scopes_supported`) is entitled to reject a
+  // token response that grants a scope it never asked for.
+  return jsonResponse({ access_token: token, token_type: "Bearer", refresh_token: refreshToken });
+}
+
+async function handleAuthorizationCodeGrant(context: DryRouteContext, body: Record<string, string>): Promise<Response> {
   const { code = "", redirect_uri: redirectUri = "", client_id: clientId = "", code_verifier: codeVerifier = "" } = body;
   if (!code || !redirectUri || !clientId || !codeVerifier) {
     return jsonResponse({ error: "invalid_request" }, 400);
@@ -338,11 +405,31 @@ async function handleToken(context: DryRouteContext): Promise<Response> {
   }
 
   const client = await store.get<OAuthClientRecord>(OAUTH_CLIENTS_NAMESPACE, clientKey(clientId));
-  // v1 scope cut: long-lived, revoke-only token - same trust model every
-  // other MCP PAT already has (see this file's own doc comment). No
-  // `expires_in`/refresh_token grant.
-  const { token } = await createMcpToken(record.userId, client?.clientName || "MCP client", context.env);
-  return jsonResponse({ access_token: token, token_type: "Bearer" });
+  return issueTokens(context, { userId: record.userId, clientId, clientName: client?.clientName || "MCP client" });
+}
+
+/** OAuth 2.1 §4.3.1 requires refresh tokens issued to a public client to be
+ * rotated, so this is one-shot too (`take`, not `get`) and the PAT the old
+ * refresh token was paired with is revoked as the new one is issued. */
+async function handleRefreshTokenGrant(context: DryRouteContext, body: Record<string, string>): Promise<Response> {
+  const { refresh_token: refreshToken = "", client_id: clientId = "" } = body;
+  if (!refreshToken) return jsonResponse({ error: "invalid_request" }, 400);
+
+  const store = getAuthSecurityStore(context.env);
+  const record = await store.take<OAuthRefreshRecord>(OAUTH_REFRESH_NAMESPACE, refreshKey(await sha256Hex(refreshToken)));
+  if (!record || (clientId && record.clientId !== clientId)) {
+    return jsonResponse({ error: "invalid_grant" }, 400);
+  }
+
+  await revokeMcpToken(record.userId, record.accessTokenId, context.env);
+  return issueTokens(context, { userId: record.userId, clientId: record.clientId, clientName: record.clientName });
+}
+
+async function handleToken(context: DryRouteContext): Promise<Response> {
+  const body = await readTokenRequestBody(context.request);
+  if (body.grant_type === "authorization_code") return handleAuthorizationCodeGrant(context, body);
+  if (body.grant_type === "refresh_token") return handleRefreshTokenGrant(context, body);
+  return jsonResponse({ error: "unsupported_grant_type" }, 400);
 }
 
 export const GET: DryRouteHandler = async (context) => {

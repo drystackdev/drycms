@@ -269,6 +269,38 @@ describe("oauth token", () => {
     expect(await resolveMcpToken(access_token, {})).toEqual({ userId: SESSION.id });
   });
 
+  it("rotates the refresh token: a refresh mints a fresh pair, revokes the old access token, and can't be replayed", async () => {
+    const client = await registerClient("https://claude.ai/callback", "Claude");
+    const { code, codeVerifier } = await authorizeAndApprove(client.client_id, "https://claude.ai/callback");
+
+    const first = await POST(makeContext({
+      method: "POST",
+      slug: "token",
+      body: { grant_type: "authorization_code", code, redirect_uri: "https://claude.ai/callback", client_id: client.client_id, code_verifier: codeVerifier },
+    }));
+    const initial = (await first.json()) as { access_token: string; refresh_token: string };
+    expect(initial.refresh_token).toBeTruthy();
+
+    const refreshed = await POST(makeContext({
+      method: "POST",
+      slug: "token",
+      body: { grant_type: "refresh_token", refresh_token: initial.refresh_token, client_id: client.client_id },
+    }));
+    expect(refreshed.status).toBe(200);
+    const next = (await refreshed.json()) as { access_token: string; refresh_token: string };
+    expect(next.access_token).not.toBe(initial.access_token);
+    expect(next.refresh_token).not.toBe(initial.refresh_token);
+    expect(await resolveMcpToken(next.access_token, {})).toEqual({ userId: SESSION.id });
+    expect(await resolveMcpToken(initial.access_token, {})).toBeNull();
+
+    const replay = await POST(makeContext({
+      method: "POST",
+      slug: "token",
+      body: { grant_type: "refresh_token", refresh_token: initial.refresh_token, client_id: client.client_id },
+    }));
+    expect(replay.status).toBe(400);
+  });
+
   it("rejects a replayed code", async () => {
     const client = await registerClient("https://claude.ai/callback");
     const { code, codeVerifier } = await authorizeAndApprove(client.client_id, "https://claude.ai/callback");
@@ -307,8 +339,14 @@ describe("oauth token", () => {
   });
 
   it("rejects an unsupported grant_type", async () => {
-    const response = await POST(makeContext({ method: "POST", slug: "token", body: { grant_type: "refresh_token" } }));
+    const response = await POST(makeContext({ method: "POST", slug: "token", body: { grant_type: "client_credentials" } }));
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: "unsupported_grant_type" });
+  });
+
+  it("rejects an unknown refresh_token", async () => {
+    const response = await POST(makeContext({ method: "POST", slug: "token", body: { grant_type: "refresh_token", refresh_token: "mcpr_nope" } }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_grant" });
   });
 });

@@ -50,7 +50,12 @@ import { randomUUID } from "../../lib/uuid.js";
 import { saveAiContentTypeDraft, type AiContentTypeDraft } from "../ai-content-type-drafts.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
-const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26", "2024-11-05"]);
+// Nothing this server exposes (tools only - no resources/prompts/sampling,
+// no server-initiated stream) differs between these revisions, so an
+// `initialize` asking for any of them is answered in its own version rather
+// than forcing a downgrade. `2025-11-25` is what claude.ai's connector sends
+// today (`mcp-protocol-version` header, seen in `wrangler tail`).
+const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]);
 const SERVER_INFO = { name: "drycms", version: "0.0.1" };
 
 /** Sent once, in `initialize`'s result - the closest thing this server has
@@ -760,6 +765,14 @@ export const POST: DryRouteHandler = async (context) => {
  */
 export const GET: DryRouteHandler = async (context) => {
   if (!context.session) return jsonResponse({ error: "unauthenticated", message: "Sign in required." }, 401);
+  // A bare `GET` on the MCP endpoint itself is the Streamable HTTP client
+  // opening the server-push SSE stream, which this stateless server doesn't
+  // offer. The spec REQUIRES `405` here (a client special-cases exactly that
+  // status as "fine, carry on without a stream"); a 404 reads as a broken
+  // endpoint instead.
+  if (context.params.slug === undefined) {
+    return new Response(null, { status: 405, headers: { Allow: "POST" } });
+  }
   if (context.params.slug !== "activity") return jsonResponse({ error: "not_found", message: "Unknown mcp endpoint." }, 404);
   const activity = await listMcpActivity(context.session.id, context.env);
   return jsonResponse({ activity });

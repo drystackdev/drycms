@@ -102,3 +102,92 @@ edits don't hot-reload - `scripts/dev-server.mjs` caches its Vite
 `ssrLoadModule` exports at boot) - a full restart was needed to verify,
 same class of issue as the existing "Server HMR misses new registry
 entries" memory, now extended.
+
+## Follow-up: claude.ai "Connect" spins forever (2026-08-14)
+
+Symptom (user): on `claude.ai/.../customize-connectors/<id>`, pressing
+Connect → OAuth consent → Approve → claude.ai loads for a very long time and
+never finishes, with no error shown.
+
+Ruled out so far (full flow replayed against a local `bun run dev` with a
+real session, timings in ms):
+`authorize` 105ms → `consent` 6ms → `token` 6ms → MCP `initialize` 5ms →
+`notifications/initialized` 202 3ms → `tools/list` 3ms (14 tools).
+So the protocol logic itself is fine and fast; nothing in the code path
+hangs on Node.
+
+Deviations/suspects found while replaying:
+1. `GET ${basePath}/api/mcp` (the Streamable-HTTP SSE probe every MCP client
+   makes right after `notifications/initialized`) returns **404 JSON**, not
+   the spec-mandated **405 + `Allow: POST`**. Clients special-case 405 as
+   "server has no SSE stream, carry on"; a 404 is an error to them.
+2. Production stores OAuth codes AND MCP tokens in **Workers KV**
+   (`getAuthSecurityStore` → `createCloudflareKvAdapter`), which is
+   eventually consistent and negatively caches misses for up to 60s. The
+   browser half of the flow (`authorize`/`consent`, which WRITES the code)
+   runs in the user's colo; the `token` exchange and every MCP call come
+   from claude.ai's own backend in a different colo. A cross-colo read of a
+   just-written key can legitimately miss → `invalid_grant` on `/token`, or
+   a 401 on `/api/mcp` for a token that was just minted.
+
+Next: `wrangler tail --format json` running while the user presses Connect,
+to see the real status codes for `/oauth/token` and `/api/mcp`.
+
+### Root cause found in `wrangler tail` (2026-08-14, second round)
+
+Real claude.ai traffic (`user-agent: python-httpx/0.28.1`, `cf.colo: IAD`,
+`asOrganization: Anthropic, PBC`) for one "Connect" press:
+
+```
+GET  /.well-known/oauth-authorization-server            200
+POST /dry/api/mcp                                       401   (expected - triggers auth)
+GET  /.well-known/oauth-protected-resource/dry/api/mcp  200
+POST /dry/api/oauth/register                            201
+<nothing else - /authorize is NEVER reached>
+```
+
+and every further Connect press re-runs `POST /register` (4 in a row seen),
+which is claude.ai's UI spinning. So the flow now dies BETWEEN dynamic client
+registration and the authorization redirect - the user-visible error is
+claude.ai's "Authorization with the MCP server failed".
+
+Two things changed on claude.ai's side since the first working run: it now
+sends `mcp-protocol-version: 2025-11-25` (was 2025-06-18), and it now DOES
+call `POST /register` (the earlier "no DCR support, always sends
+client_id=Authorization" finding is obsolete).
+
+Fixed/hardened in response (all deployed, version `63c2669b`):
+- `routes/oauth.ts` `handleRegister` now returns a full RFC 7591 §3.2.1
+  registration response (`client_id_issued_at`, `grant_types`,
+  `response_types`, `token_endpoint_auth_method`, echoed `scope`/`client_uri`)
+  instead of 4 fields. Anything omitted is defined to fall back to the RFC
+  default, which is how a strict client concludes the registration is
+  unusable - the prime suspect for the stall.
+- **Refresh tokens implemented end to end** (`issueTokens` +
+  `handleRefreshTokenGrant`): `/token` now returns a `refresh_token` and
+  accepts `grant_type=refresh_token`, rotating it one-shot (OAuth 2.1 §4.3.1
+  for public clients) and revoking the PAT the old refresh token was paired
+  with. `oauth-metadata.ts` advertises `refresh_token` in
+  `grant_types_supported`. claude.ai registers asking for that grant; before
+  this it was neither advertised nor implemented.
+- `routes/mcp.ts` bare `GET` now returns the spec-mandated `405 + Allow:
+  POST` (was a 404 JSON body) - that GET is the Streamable HTTP client
+  opening the server-push SSE stream, and 405 is the one status a client
+  treats as "no stream here, carry on".
+- `SUPPORTED_PROTOCOL_VERSIONS` gained `2025-11-25`.
+- TEMPORARY diagnostic `console.log` of the `/register` request+response
+  bodies (tail shows headers but never bodies). REMOVE once the connect
+  succeeds.
+
+Verified locally end to end after the change (real dev server, real login):
+`authorize` 42ms → `consent` → `token` (now with `refresh_token`) →
+`initialize` → `notifications/initialized` 202 → GET probe **405** →
+`tools/list` 200 (14 tools) → `refresh_token` grant 200 → rotated access
+token `tools/list` 200. 18/18 `oauth.test.ts` tests pass (2 new).
+
+Still open / next suspect if it still stalls: Workers KV is eventually
+consistent, and the authorization CODE is written in the user's colo
+(browser, SIN) but read by `/token` from claude.ai's colo (IAD) a second
+later - a cross-colo miss there returns `invalid_grant`. If the tail shows
+`/token` 400, move the code (and only the code) to a strongly consistent
+store (D1 via `kv/d1.ts`, binding `CONTENT_DB`).
