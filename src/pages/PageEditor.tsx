@@ -4,7 +4,7 @@ import ConfirmDialog from "../components/ConfirmDialog.js";
 import Editer from "../components/Editer.js";
 import { type EditerFormatLanguage, formatCode } from "../components/Editer/format-code.js";
 import type { EditerDiagnostic, EditerResult } from "../components/Editer/types.js";
-import { CloseIcon, LockIcon, MenuIcon, PreviewIcon, SettingsIcon } from "../components/icons/index.js";
+import { CloseIcon, LockIcon, MenuIcon, PreviewIcon, SettingsIcon, UploadIcon } from "../components/icons/index.js";
 import Popover from "../components/Popover.js";
 import { toast } from "../components/Toast.js";
 import GithubResetDialog from "./page-components/GithubResetDialog.js";
@@ -1622,41 +1622,22 @@ export default function PageEditor() {
 
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
-  /** "Build all" only earns its place in the topbar once there's actually a
-   * batch to build - with 0 files unsaved/unbuilt there's nothing for it to
-   * do. Union of `unbuiltPaths` (saved but not yet built) and every path
-   * where `sourceByPath` still differs from `savedByPath` (not yet saved at
-   * all) - either kind counts toward the batch `handleBuildAll` would
-   * actually publish (it saves everything dirty first). Kept visible once a
-   * batch build is ACTUALLY RUNNING (`buildAllProgress`) even if that drops
-   * the live count to 0 as pages finish one by one - hiding the "Building
-   * all… (n/total)" progress indicator mid-flight would be worse than the
-   * noise this guards against. */
-  const buildAllPendingCount = useMemo(() => {
-    const pending = new Set(unbuiltPaths);
-    for (const filePath of Object.keys(sourceByPath)) {
-      if (sourceByPath[filePath] !== savedByPath[filePath]) pending.add(filePath);
-    }
-    return pending.size;
-  }, [sourceByPath, savedByPath, unbuiltPaths]);
-  const buildAllVisible = buildAllPendingCount >= 1 || buildAllProgress !== null;
-
-  // "Build all" moves into `DryLayout`'s shared topbar (`usePageHeaderActions`)
-  // rather than living in this page's own compact toolbar, unlike "Build"/
-  // "Reset"/"Save" (which stay local - they act on whichever file is
-  // currently selected, the toolbar's own context). Called unconditionally,
-  // before this component's early-return guards below (Rules of Hooks).
+  // "Build all"/Publish moves into `DryLayout`'s shared topbar
+  // (`usePageHeaderActions`) rather than living in this page's own compact
+  // toolbar, unlike "Build"/"Reset"/"Save" (which stay local - they act on
+  // whichever file is currently selected, the toolbar's own context). Called
+  // unconditionally, before this component's early-return guards below
+  // (Rules of Hooks).
   usePageHeaderActions(
     <>
       <div class="topbar-page-title">
         <strong>Page Builder</strong>
       </div>
       <span class="spacer" />
-      {buildAllVisible && (
-        <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
-          {buildAllProgress ? `Building all… (${buildAllProgress.done}/${buildAllProgress.total})` : "Build all"}
-        </button>
-      )}
+      <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
+        <UploadIcon />
+        {buildAllProgress ? `Publishing… (${buildAllProgress.done}/${buildAllProgress.total})` : "Publish"}
+      </button>
       <Popover
         label="Page Editor settings"
         tooltip="Settings"

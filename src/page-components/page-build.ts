@@ -16,6 +16,7 @@ import { compileTailwindCss } from "./tailwind-build.js";
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { COMPONENT_ALIAS, PAGES_ROOT, PAGES_SOURCE_ROOTS, resolveAliasSpecifier } from "../server/app-router/source-roots.js";
 import { resolveDynamicPages } from "./dynamic-routes.js";
+import { minifyEsmSource } from "./minify-js.js";
 
 /**
  * The browser build orchestrator (`plans/app-r2.md` mục 7's "một nguồn
@@ -220,13 +221,18 @@ function rewriteEsmImports(
  * exception found while building this) - a page that DID would collide
  * with this prepended import (`h`/`Fragment` declared twice); a real
  * limitation, not exercised by anything in this codebase today.
+ *
+ * The result is minified (`minify-js.ts`) before being returned - sucrase
+ * only strips types/JSX, it never touches whitespace, so without this a
+ * shipped `page.js`/`layout.js` would be close to byte-for-byte the
+ * original source's own indentation/line breaks.
  */
-function compileEsmAsset(
+async function compileEsmAsset(
   path: string,
   sourceByPath: Record<string, string>,
   preactRuntimeHref: string,
   builtAssetsBaseUrl: string,
-): string {
+): Promise<string> {
   const source = sourceByPath[path];
   if (source === undefined) throw new PageBuildError(`"${path}" is not loaded.`);
   let esm: string;
@@ -236,7 +242,12 @@ function compileEsmAsset(
     throw new PageBuildError(`Failed to compile "${path}" (ESM): ${error instanceof Error ? error.message : String(error)}`);
   }
   const rewritten = rewriteEsmImports(esm, path, sourceByPath, preactRuntimeHref, builtAssetsBaseUrl);
-  return `import { h, Fragment } from ${JSON.stringify(preactRuntimeHref)};\n${rewritten}`;
+  const withRuntimeImport = `import { h, Fragment } from ${JSON.stringify(preactRuntimeHref)};\n${rewritten}`;
+  try {
+    return await minifyEsmSource(withRuntimeImport);
+  } catch (error) {
+    throw new PageBuildError(`Failed to minify "${path}": ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
@@ -448,10 +459,12 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
   const roots = [input.entryPath, ...input.layoutPaths];
   const jsAssets = input.skipJsAssets
     ? []
-    : [...transitiveDependencies(roots, input.sourceByPath)].map((path) => ({
-        jsPath: toJsAssetPath(path),
-        source: compileEsmAsset(path, input.sourceByPath, input.preactRuntimeHref, input.builtAssetsBaseUrl),
-      }));
+    : await Promise.all(
+        [...transitiveDependencies(roots, input.sourceByPath)].map(async (path) => ({
+          jsPath: toJsAssetPath(path),
+          source: await compileEsmAsset(path, input.sourceByPath, input.preactRuntimeHref, input.builtAssetsBaseUrl),
+        })),
+      );
   const hydrateManifest = {
     entryUrl: toBuiltAssetUrl(input.builtAssetsBaseUrl, input.entryPath),
     layoutUrls: input.layoutPaths.map((p) => toBuiltAssetUrl(input.builtAssetsBaseUrl, p)),
