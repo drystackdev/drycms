@@ -26,6 +26,7 @@ import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse } from "../route-helpers.js";
 import { storage, pagesSourceStorage, path as adminBasePath, lang as siteLang } from "../config.js";
 import { resolveSiteOrigin } from "../app-router/site-origin.js";
+import { protectedResourceMetadataUrl } from "../oauth-metadata.js";
 import { checkPageSourceBuild } from "../../page-components/page-source-preview.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { getAuthSecurityStore } from "../auth-security.js";
@@ -713,7 +714,15 @@ async function dispatch(context: DryRouteContext, method: string, params: Record
  * ever runs.
  */
 export const POST: DryRouteHandler = async (context) => {
-  if (!context.session) return jsonResponse({ error: "unauthenticated", message: "Sign in required." }, 401);
+  if (!context.session) {
+    // Unreachable for real HTTP traffic (`handler.ts`'s own blanket 401
+    // already fires first and attaches the same `WWW-Authenticate` header -
+    // see its own comment) - kept only for a direct-call unit test that
+    // invokes this handler without going through that dispatcher.
+    const response = jsonResponse({ error: "unauthenticated", message: "Sign in required." }, 401);
+    response.headers.set("WWW-Authenticate", `Bearer resource_metadata="${protectedResourceMetadataUrl(resolveSiteOrigin(context.url))}"`);
+    return response;
+  }
 
   let body: JsonRpcRequestBody;
   try {

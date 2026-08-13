@@ -33,6 +33,7 @@ const ContentEntryEditor = lazy(() => import("../pages/ContentEntryEditor.js"));
 const AiKeyEditor = lazy(() => import("../pages/AiKeyEditor.js"));
 const Profile = lazy(() => import("../pages/Profile.js"));
 const McpConnect = lazy(() => import("../pages/McpConnect.js"));
+const OAuthConsent = lazy(() => import("../pages/OAuthConsent.js"));
 const Roles = lazy(() => import("../pages/Roles.js"));
 const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
@@ -229,6 +230,7 @@ function AuthenticatedApp() {
               <Route path={`${path}/vei/changes`} component={VeiChangesPreview} />
               <Route path={`${path}/profile`} component={Profile} />
               <Route path={`${path}/mcp`} component={McpConnect} />
+              <Route path={`${path}/oauth/consent`} component={OAuthConsent} />
               <Route path={`${path}/roles`} component={Roles} />
               {/* Bare `/settings` -> the default sub-page, so an old
                   bookmark/link to the flat pre-sub-nav URL still lands
@@ -287,7 +289,16 @@ const REGISTER_PATH = `${path}/register`;
  * and skips even fetching the session - there's nothing here to gate.
  */
 function AuthGate() {
-  const { url } = useLocation();
+  // `path` below shadows the module-scoped admin `path` constant on
+  // purpose - renamed to `locationPath` so both stay usable. `url` is
+  // `location.pathname + location.search` (`preact-iso`'s own source);
+  // `onLoginPath`/`onRegisterPath` must compare against the pathname-only
+  // `locationPath` instead, or a `/login?return_to=...` URL (see the
+  // `status/mcp-oauth.md` OAuth consent flow, which sends an unauthenticated
+  // visitor here) would fail this equality, fall through to the
+  // `<Redirect to={LOGIN_PATH}/>` below, and get redirected to itself with
+  // the query string silently stripped.
+  const { url, path: locationPath, query } = useLocation();
   const inScope = url === path || url.startsWith(`${path}/`);
 
   useEffect(() => {
@@ -300,8 +311,8 @@ function AuthGate() {
 
   if (status === "loading") return <progress class="route-progress" />;
 
-  const onLoginPath = url === LOGIN_PATH;
-  const onRegisterPath = url === REGISTER_PATH;
+  const onLoginPath = locationPath === LOGIN_PATH;
+  const onRegisterPath = locationPath === REGISTER_PATH;
 
   if (status === "needs-setup") {
     return onRegisterPath ? (
@@ -317,8 +328,17 @@ function AuthGate() {
     return onLoginPath ? <SignIn /> : <Redirect to={LOGIN_PATH} />;
   }
   // authenticated
-  if (onLoginPath || onRegisterPath)
-    return <Redirect to={`${path}/dashboard`} />;
+  if (onLoginPath || onRegisterPath) {
+    // `?return_to=` (set by e.g. `routes/oauth.ts`'s `/authorize` when it
+    // sends an unauthenticated visitor here mid-flow) wins over the default
+    // dashboard landing - but only a same-origin admin path, never an
+    // arbitrary external URL a crafted link could plant here.
+    const returnTo = query.return_to;
+    const target = typeof returnTo === "string" && (returnTo === path || returnTo.startsWith(`${path}/`))
+      ? returnTo
+      : `${path}/dashboard`;
+    return <Redirect to={target} />;
+  }
   return <AuthenticatedApp />;
 }
 

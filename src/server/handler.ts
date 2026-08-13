@@ -5,6 +5,8 @@ import { verifySessionClaims } from "../lib/session-token.js";
 import { resolveMcpToken } from "./auth-security.js";
 import { getContentAdapters } from "./content-adapters.js";
 import { hasValidCsrf, requiresCsrf } from "./csrf.js";
+import { resolveSiteOrigin } from "./app-router/site-origin.js";
+import { protectedResourceMetadataUrl } from "./oauth-metadata.js";
 import * as storageRoute from "./routes/storage.js";
 import * as iconsRoute from "./routes/icons.js";
 import * as iconifyRoute from "./routes/iconify.js";
@@ -15,6 +17,7 @@ import * as richtextComponentsRoute from "./routes/richtext-components.js";
 import * as authRoute from "./routes/auth.js";
 import * as aiRoute from "./routes/ai.js";
 import * as mcpRoute from "./routes/mcp.js";
+import * as oauthRoute from "./routes/oauth.js";
 import * as memoryRoute from "./routes/memory.js";
 import * as systemSettingsRoute from "./routes/system-settings.js";
 import * as dryHttpRoute from "./routes/dry-http.js";
@@ -76,6 +79,13 @@ const API_ROUTES: Record<string, RouteModule> = {
   auth: authRoute,
   ai: aiRoute,
   mcp: mcpRoute,
+  // OAuth 2.1 Authorization Server for `mcp` (`status/mcp-oauth.md`) -
+  // `authorize`/`register`/`token` must reach their handlers with no
+  // session at all (a client registers/exchanges a code before any login
+  // exists), so `oauth` is exempted from the blanket session gate below the
+  // same way `auth` is; `consent`/`consent-info` self-check `context.session`
+  // instead, matching `routes/auth.ts`'s `mcp-tokens` precedent.
+  oauth: oauthRoute,
   memory: memoryRoute,
   "system-settings": systemSettingsRoute,
   "dry-http": dryHttpRoute,
@@ -206,10 +216,19 @@ export async function handleApiRequest(
     }
   }
 
-  if (segment !== "auth" && !isPublicStorageRead && !isPublicThemeCss && !isPublicBuiltAsset && !session) {
+  if (segment !== "auth" && segment !== "oauth" && !isPublicStorageRead && !isPublicThemeCss && !isPublicBuiltAsset && !session) {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    // This is the response an unauthenticated `mcp` request actually gets
+    // (the bearer-token branch above never set `session`) - `mcp.ts`'s own
+    // matching check never runs for real HTTP traffic, only a direct-call
+    // unit test bypassing this dispatcher, so the RFC 9728 discovery pointer
+    // has to be attached here to ever reach a real client.
+    if (segment === "mcp") {
+      headers["WWW-Authenticate"] = `Bearer resource_metadata="${protectedResourceMetadataUrl(resolveSiteOrigin(url))}"`;
+    }
     return secureResponse(new Response(JSON.stringify({ error: "unauthenticated", message: "Sign in required." }), {
       status: 401,
-      headers: { "Content-Type": "application/json" },
+      headers,
     }), request);
   }
   // GET stays open to any authenticated session either way - an icon/

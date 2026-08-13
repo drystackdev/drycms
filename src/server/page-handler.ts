@@ -2,6 +2,7 @@ import { path as adminPath } from "./config.js";
 import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
 import { tryServeGoogleVerificationFile } from "./google-verification.js";
+import { tryServeOAuthMetadata } from "./oauth-metadata.js";
 import type { DryRequestContext, DryVeiContext } from "../content-types/dry-context.js";
 import { loadSeoDefaults, type DrySeoLayers } from "../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
@@ -98,6 +99,9 @@ export async function handlePageRequest(
 
   const verificationResponse = await tryServeGoogleVerificationFile(request, routeContext);
   if (verificationResponse) return verificationResponse;
+
+  const oauthMetadataResponse = tryServeOAuthMetadata(request);
+  if (oauthMetadataResponse) return oauthMetadataResponse;
 
   // Not real `page.tsx` routes (XML/plain text, not HTML) - handled here,
   // before routing, with their own try/catch rather than the big one below:

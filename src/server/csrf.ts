@@ -46,6 +46,14 @@ export function requiresCsrf(request: Request, segment: string, slug?: string): 
   // attack against a request an attacker's page can't get the victim's
   // browser to attach ambient credentials to in the first place.
   if (segment === "mcp") return false;
+  // `oauth`'s `register`/`token` are server-to-server (DCR clients and code
+  // exchanges carry no session cookie, so no CSRF cookie to send either) -
+  // same reasoning as `mcp` above. `consent`/`consent-info` ARE ordinary
+  // cookie-authenticated browser requests though (see `routes/oauth.ts`'s
+  // own doc comment on the confused-deputy risk that gate closes) and must
+  // keep the double-submit check; `authorize` is a GET, already outside this
+  // function's method filter above.
+  if (segment === "oauth") return slug !== "register" && slug !== "token";
   if (segment !== "auth") return true;
   return slug !== "login";
 }
