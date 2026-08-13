@@ -1,10 +1,12 @@
 {
-  // Template for deploying drycms to Cloudflare Workers - see
+  // Deploying drycms to Cloudflare Workers - see
   // `status/cloudflare-workers-adapter.md` for the full plan this
-  // implements. Every ID below is a placeholder; fill them in with
-  // `wrangler d1 create`/`wrangler r2 bucket create`/`wrangler kv namespace
-  // create` output (or the dashboard) before `bun run deploy`. The binding
-  // NAMES (`CONTENT_DB`/`MEDIA_BUCKET`/`KV`) are fixed, not configurable -
+  // implements. The D1/R2/KV resources below already exist on the
+  // `drystack.dev@gmail.com` account (`wrangler d1 create sivelap-db`,
+  // `wrangler kv namespace create sivelap-session`; the `sivelap-content` R2
+  // bucket was created earlier) - IDs filled in from their own create
+  // output. The binding NAMES (`CONTENT_DB`/`MEDIA_BUCKET`/`KV`) are fixed,
+  // not configurable -
   // the resolved `kind: "cloudflare"` toggle (`options.ts`'s `DryOption`,
   // auto-detected per-build - see `src/server/config.ts`) assumes exactly
   // these names on both sides of the contract; rename them here AND in
@@ -43,7 +45,7 @@
     {
       "binding": "CONTENT_DB",
       "database_name": "sivelap-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "1fe6d996-6613-4dc5-b99e-8d757dc5241c"
     }
   ],
 
@@ -64,7 +66,7 @@
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+      "id": "7153b3375a27483792a278de65ff0645"
     }
   ]
 
