@@ -469,3 +469,38 @@ what Codex does on this same server.
 Note the fallback is still worth keeping: Claude Code identifies itself with
 a Client ID Metadata Document (an https URL as `client_id`, never registered
 here), and that path needs it.
+
+### Follow-up: an existing token row can't show its value - Connect removed (2026-08-14)
+
+Symptom (user): pressing Connect on an existing token row showed
+`<YOUR_TOKEN>` instead of a real value. That is by design and NOT fixable by
+reading anything back - `auth-security.ts`'s `createMcpToken` persists only
+`hash(token)`, so the raw value genuinely no longer exists anywhere on the
+server after the create response. (Two alternatives were offered: storing the
+raw value so it could be re-revealed - declined, it would put a working bearer
+token in KV/D1 in plaintext - and a "Regenerate token" button, which was built
+and verified end to end, then removed at the user's request.)
+
+Final shape in `McpConnect.tsx`:
+
+- A token row now carries ONLY the Revoke button. The Connect (link icon)
+  button is gone - it could never have shown anything but a placeholder, so it
+  was pure noise. Getting a fresh usable token = Revoke + Generate.
+- `McpConnectDialog` therefore opens in exactly one situation, right after
+  `handleGenerate` mints a token, and lost its `revealed`/placeholder branch
+  (`MCP_TOKEN_PLACEHOLDER`, the `revealedTokens` in-memory map, and the
+  `tokenId` on its state all deleted with it).
+- The one keeper from that round: the dialog now shows the raw token in its
+  own copyable `CodeBlock` above the per-client connect snippets. Before, the
+  value was only ever visible embedded inside the command for whichever client
+  tab happened to be selected.
+
+`routes/auth.ts` is back to its pre-round state (the `replaces` body field and
+its `auth.test.ts` route test were removed along with the button).
+1297/1297 unit tests + `typecheck` pass.
+
+Gotcha worth remembering: the running `bun run dev` server was started before
+these edits and kept serving stale `routes/auth.ts` (the tokens it minted
+still had the pre-`308fe5b` dot in them) - same server-HMR gap already noted
+above. A full dev-server restart was needed before any live check meant
+anything.
