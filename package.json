@@ -55,7 +55,7 @@
     "dev": "node scripts/dev-server.mjs",
     "build": "bun scripts/sync-pages-r2.ts --pull && vite build --outDir dist/client && vite build --ssr src/server/entry-node.ts --outDir dist/server && bun scripts/build-seed-assets.ts",
     "start": "node dist/server/entry-node.js",
-    "build:worker": "vite build --outDir dist/client && DRYCMS_WORKER_BUILD=1 vite build --ssr src/server/entry-worker.ts --outDir dist/server",
+    "build:worker": "vite build --outDir dist/client && bun scripts/build-preact-runtime.ts && DRYCMS_WORKER_BUILD=1 vite build --ssr src/server/entry-worker.ts --outDir dist/server",
     "deploy": "bun run build:worker && wrangler deploy",
     "dev:worker": "bun scripts/sync-pages-r2.ts --pull --local && bun run build:worker && wrangler dev",
     "r2:sync": "bun scripts/r2-sync-assets.ts",

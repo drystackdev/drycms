@@ -5,6 +5,8 @@ import { vi } from "vitest";
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 const ORIGINAL_SECRET = process.env.DRYCMS_SECRET_KEY;
 const ORIGINAL_BOOTSTRAP = process.env.DRYCMS_BOOTSTRAP_TOKEN;
+const ORIGINAL_EMAIL_ADMIN = process.env.EMAIL_ADMIN;
+const ORIGINAL_PASSWORD_ADMIN = process.env.PASSWORD_ADMIN;
 
 vi.mock("../config.js", async () => {
   const { mkdtempSync } = await import("node:fs");
@@ -38,6 +40,13 @@ const { resolveSession } = await import("../session.js");
 beforeEach(() => {
   process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
   process.env.DRYCMS_BOOTSTRAP_TOKEN = "test-bootstrap-token-do-not-use-in-prod-1234567890";
+  // Explicit empty override, not `delete` - `readEnvVar` falls back to the
+  // real on-disk `.env` for a truly-absent key, which would pick up
+  // whatever EMAIL_ADMIN/PASSWORD_ADMIN a local dev checkout happens to have
+  // configured there (auto-bootstrap, see `auth-auto-bootstrap.test.ts`) and
+  // auto-create/sign-in an admin these tests don't expect.
+  process.env.EMAIL_ADMIN = "";
+  process.env.PASSWORD_ADMIN = "";
   seedAssetsBox.calls = [];
   seedAssetsBox.shouldThrow = false;
 });
@@ -47,6 +56,10 @@ afterEach(() => {
   else process.env.DRYCMS_SECRET_KEY = ORIGINAL_SECRET;
   if (ORIGINAL_BOOTSTRAP === undefined) delete process.env.DRYCMS_BOOTSTRAP_TOKEN;
   else process.env.DRYCMS_BOOTSTRAP_TOKEN = ORIGINAL_BOOTSTRAP;
+  if (ORIGINAL_EMAIL_ADMIN === undefined) delete process.env.EMAIL_ADMIN;
+  else process.env.EMAIL_ADMIN = ORIGINAL_EMAIL_ADMIN;
+  if (ORIGINAL_PASSWORD_ADMIN === undefined) delete process.env.PASSWORD_ADMIN;
+  else process.env.PASSWORD_ADMIN = ORIGINAL_PASSWORD_ADMIN;
 });
 
 afterAll(async () => {

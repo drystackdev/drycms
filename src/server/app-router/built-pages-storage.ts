@@ -4,6 +4,7 @@ import { pagesCacheStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import type { DryRouteContext } from "../context.js";
 import { isNodeRuntime } from "../../lib/runtime-env.js";
+import { PREACT_RUNTIME_JS } from "./generated-preact-runtime.js";
 
 /**
  * Raw-HTML object storage for the app-r2 build pipeline
@@ -133,7 +134,7 @@ export async function readBuiltAsset(context: Pick<DryRouteContext, "env">, jsPa
 const PREACT_RUNTIME_ASSET_PATH = "__dry/preact-runtime.js";
 
 /**
- * Builds `preact-runtime.js` into `built-assets` storage the first time
+ * Writes `preact-runtime.js` into `built-assets` storage the first time
  * anything asks for it, then leaves it alone - `stat` (not a full `read`)
  * is enough to tell whether that's already happened, same "build once,
  * reuse forever" contract `build-component-bundle.ts`'s
@@ -153,11 +154,18 @@ const PREACT_RUNTIME_ASSET_PATH = "__dry/preact-runtime.js";
  * not - see `lib/runtime-env.ts`'s `isNodeRuntime` (shared with
  * `types-cache.ts`'s `writeGeneratedDryTypes`) for why a bare
  * `process.versions.node` check isn't enough to tell the two apart on its
- * own. A Workers deployment can still SERVE an already-built copy fine
- * (`routes/built-assets.ts` is a plain storage read, runtime-agnostic) -
- * it just needs a Node run against its storage backend (`bun run dev`
- * pointed at the same storage, or a Node deployment of this same project)
- * to have produced one first.
+ * own.
+ *
+ * Not Node-capable (Workers, dev OR deployed) writes `generated-preact-
+ * runtime.ts`'s `PREACT_RUNTIME_JS` instead - a plain string baked in at
+ * `bun run build:worker` time (`scripts/build-preact-runtime.ts`, chained
+ * between the client and SSR builds) from the SAME `buildPreactRuntimeBundle`
+ * this function calls live under Node. Used to just throw "unsupported"
+ * here and tell the operator to run a Node instance first - found live,
+ * 2026-08-13: a freshly created (or recreated) R2 bucket has no cached copy
+ * either, so EVERY first request after a fresh deploy hit this wall,
+ * including the very first Page Editor/publish attempt - not a rare edge
+ * case worth a manual workaround.
  */
 /** Returns the `jsPath` (not the storage key) - `routes/built-assets.ts`
  * takes the same shape `page-build.ts`'s own `jsAssets` do, so the caller
@@ -177,10 +185,14 @@ export async function ensurePreactRuntimeAsset(context: Pick<DryRouteContext, "e
   // build's `DRYCMS_KIND` folds to `"local"` instead, so this stays a
   // no-op there and `isNodeRuntime()` keeps doing the real gating.
   if (import.meta.env.DRYCMS_KIND === "cloudflare" || !isNodeRuntime()) {
-    throw new StorageError(
-      "unsupported",
-      "The Preact runtime bundle hasn't been built yet - run a Node instance of this project (e.g. `bun run dev`) against this storage backend once before using the Workers build.",
-    );
+    if (!PREACT_RUNTIME_JS) {
+      throw new StorageError(
+        "unsupported",
+        "The Preact runtime bundle has no build-time fallback either - run `bun run build:worker` (not a bare SSR build) so `scripts/build-preact-runtime.ts` generates one.",
+      );
+    }
+    await writeBuiltAsset(context, PREACT_RUNTIME_ASSET_PATH, PREACT_RUNTIME_JS);
+    return PREACT_RUNTIME_ASSET_PATH;
   }
   const { buildPreactRuntimeBundle } = await import("../../apps/build-preact-runtime-bundle.js");
   const code = await buildPreactRuntimeBundle();

@@ -40,6 +40,13 @@ const { resolveSession } = await import("../session.js");
 beforeEach(() => {
   process.env.DRYCMS_SECRET_KEY = "test-passphrase-do-not-use-in-prod";
   process.env.DRYCMS_BOOTSTRAP_TOKEN = "test-bootstrap-token-do-not-use-in-prod-1234567890";
+  // Explicit empty default (not left alone) - `readEnvVar` falls back to the
+  // real on-disk `.env` for a truly-absent key, which would pick up
+  // whatever EMAIL_ADMIN/PASSWORD_ADMIN a local dev checkout happens to have
+  // configured there. Individual tests below still override these to a real
+  // value when THEY want auto-bootstrap to actually fire.
+  process.env.EMAIL_ADMIN = "";
+  process.env.PASSWORD_ADMIN = "";
   seedAssetsBox.calls = [];
 });
 
