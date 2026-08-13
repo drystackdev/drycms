@@ -11,7 +11,7 @@ import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { requirePermission } from "../admin-access.js";
 import { CONTENT_TYPES_RESOURCE_ID } from "../../content-types/permissions.js";
-import { listAiContentTypeDrafts, deleteAiContentTypeDraft } from "../ai-content-type-drafts.js";
+import { listAiContentTypeDrafts, deleteAiContentTypeDraft, getAiContentTypeDraftsVersion } from "../ai-content-type-drafts.js";
 
 function readId(context: DryRouteContext): string | undefined {
   const raw = context.params.slug as string | undefined;
@@ -23,12 +23,39 @@ function readId(context: DryRouteContext): string | undefined {
   }
 }
 
+/** The data-version protocol (see `status/build-cache.md`, and
+ * `routes/content-types.ts`'s identical `parseIfVersion` - kept as its own
+ * copy here, same existing precedent of each route owning this helper
+ * rather than sharing one). `undefined` if the client sent nothing or an
+ * unparseable value, treated the same as "no cached version, always send
+ * the full payload". */
+function parseIfVersion(context: DryRouteContext): number | undefined {
+  const header = context.request.headers.get("X-Data-Version");
+  if (header === null) return undefined;
+  const n = Number(header);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
+/** `BuilderContentType.tsx` polls this every `AI_DRAFT_POLL_MS` while the
+ * page is open, almost always with nothing new pending - the conditional
+ * check below (mirroring `routes/content-types.ts`'s GET) lets that common
+ * case answer with `{changed:false}` instead of re-sending every pending
+ * draft's full `ContentTypeDefinition` (can be large - see
+ * `ai-content-type-drafts.ts`'s own doc comment on why each draft gets its
+ * own KV entry) on every single poll. */
 export const GET: DryRouteHandler = async (context) => {
   if (!context.session) return unauthenticatedResponse();
   const denied = await requirePermission(context, CONTENT_TYPES_RESOURCE_ID, "setting", "You don't have permission to edit content type schemas.");
   if (denied) return denied;
+
+  const version = await getAiContentTypeDraftsVersion(context.session.id, context.env);
+  const ifVersion = parseIfVersion(context);
+  if (ifVersion !== undefined && ifVersion === version) {
+    return jsonResponse({ changed: false, version });
+  }
+
   const drafts = await listAiContentTypeDrafts(context.session.id, context.env);
-  return jsonResponse({ drafts });
+  return jsonResponse({ changed: true, version, drafts });
 };
 
 export const DELETE: DryRouteHandler = async (context) => {

@@ -103,8 +103,22 @@ function toJsAssetPath(sourcePath: string): string {
   return sourcePath.replace(/\.tsx?$/, ".js");
 }
 
+/** The encode/join half of `toBuiltAssetUrl`, exported on its own for
+ * `PageEditor.tsx`'s interactive preview: it only ever has a `PageBuildResult
+ * .jsAssets` entry's already-`.js` `jsPath` in hand (not the original source
+ * path `toBuiltAssetUrl` expects), and needs the EXACT same URL string
+ * `compileEsmAsset`'s rewritten imports/the hydrate manifest embed for that
+ * file - to key an import map that remaps it to a blob URL. Safe to skip
+ * `toJsAssetPath` here: a `jsPath` already ends in `.js`, which that
+ * function's `\.tsx?$` pattern never matches, so calling it again on an
+ * already-converted path is already a no-op today - this just skips the
+ * redundant call rather than depending on that being true. */
+export function builtAssetUrlForJsPath(builtAssetsBaseUrl: string, jsPath: string): string {
+  return `${builtAssetsBaseUrl}/${jsPath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
 function toBuiltAssetUrl(builtAssetsBaseUrl: string, sourcePath: string): string {
-  return `${builtAssetsBaseUrl}/${toJsAssetPath(sourcePath).split("/").map(encodeURIComponent).join("/")}`;
+  return builtAssetUrlForJsPath(builtAssetsBaseUrl, toJsAssetPath(sourcePath));
 }
 
 /** Built from `PAGES_SOURCE_ROOTS` rather than spelled out, so declaring a
@@ -514,12 +528,18 @@ async function inlinePageCss(html: string): Promise<string> {
 export interface PublishOptions {
   pagesBuildEndpoint: string;
   pathname: string;
+  /** The route-entry SOURCE file this build compiled from (same value
+   * passed as `buildPage()`'s own `PageBuildInput.entryPath`) - forwarded to
+   * `routes/pages-build.ts` so it can clear `ai-page-source-flags.ts`'s red
+   * dot for this file once the publish actually succeeds. */
+  entryPath: string;
   buildId?: string;
 }
 
 function toWireBody(result: PageBuildResult, options: PublishOptions): Record<string, unknown> {
   return {
     pathname: options.pathname,
+    entryPath: options.entryPath,
     html: result.html,
     jsAssets: result.jsAssets,
     buildId: options.buildId ?? crypto.randomUUID(),

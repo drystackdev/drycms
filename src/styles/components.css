@@ -6368,6 +6368,19 @@
       background-color: var(--dry-warning);
     }
 
+    /* `aiWritten` marker (`ai-page-source-flags.ts`) - takes priority over
+       BOTH dots above when it applies (see `ComponentTreePanel.tsx`'s row
+       renderer): an MCP client overwrote this file's real storage content
+       directly, outside any browser session, so it's the most alarming of
+       the three states - what's open here may not even match what's on
+       storage anymore. Red: distinct from both the green/amber states. */
+    .page-components-tree-ai-dot {
+      width: 0.375rem;
+      height: 0.375rem;
+      border-radius: 50%;
+      background-color: var(--dry-error);
+    }
+
     /* Built-in-file marker (`ComponentTreePanel.tsx`'s `locked`, e.g.
        `styles/globals.css`) - sits with the other row-end status markers
        above, sized down from the row's own 1.125rem icons (the `svg`

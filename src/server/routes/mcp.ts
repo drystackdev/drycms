@@ -39,7 +39,8 @@ import type { ContentEntryEngineAdapter } from "../../content-types/engine/entri
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
 import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
 import { supportsMagic, PAGE_BUILDER_RESOURCE_ID, CONTENT_TYPES_RESOURCE_ID } from "../../content-types/permissions.js";
-import type { ContentTypeDefinition } from "../../content-types/types.js";
+import type { ContentTypeDefinition, FieldDefinition } from "../../content-types/types.js";
+import { fieldTypes } from "../../content-types/field-registry.js";
 import type { MagicWriteFetchTurn, MagicWriteRawFields, MagicWriteRawValue } from "../../content-types/ai-magic-write-protocol.js";
 import { requirePermission } from "../admin-access.js";
 import { getStorageAdapter } from "../storage-adapters.js";
@@ -47,7 +48,8 @@ import { normalizeStoragePath } from "../../storage/path.js";
 import { requirePageSourceFileName } from "./pages-source.js";
 import { validateContentTypeDefinition, NamingError } from "../../content-types/naming.js";
 import { randomUUID } from "../../lib/uuid.js";
-import { saveAiContentTypeDraft, type AiContentTypeDraft } from "../ai-content-type-drafts.js";
+import { saveAiContentTypeDraft, listAiContentTypeDrafts, type AiContentTypeDraft } from "../ai-content-type-drafts.js";
+import { markAiPageSourceWrite } from "../ai-page-source-flags.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
 // Nothing this server exposes (tools only - no resources/prompts/sampling,
@@ -244,7 +246,7 @@ const TOOLS: ToolDefinition[] = [
         definitionJson: {
           type: "string",
           description:
-            "The full content type definition as a JSON string: at least \"name\", \"label\", \"kind\" (\"collection\"|\"singleton\"|\"component\"), and \"fields\" (an array, may be empty). Omit \"id\"/\"version\" - they're assigned/looked up server-side. See docs/ARCHITECTURE.md (via read_doc) for the field model.",
+            "The full content type definition as a JSON string: at least \"name\", \"label\", \"kind\" (\"collection\"|\"singleton\"|\"component\"), and \"fields\" (an array, may be empty). Omit \"id\"/\"version\" - they're assigned/looked up server-side. Each field needs \"id\", \"name\", \"label\", \"type\", and - for a \"component\" field - \"config.componentId\": that component's id, OR (since you won't know a sibling proposal's id yet) its \"name\" - resolved automatically against both the live schema and your own other pending proposals. Propose the component itself first. This tool's success message echoes back the id it assigned; prefer that id once you have it. See docs/ARCHITECTURE.md (via read_doc) for the full field model.",
         },
       },
       required: ["definitionJson"],
@@ -432,6 +434,11 @@ async function runWritePageSourceTool(context: DryRouteContext, rawPath: string 
     const existing = await adapter.stat(path);
     if (existing?.kind === "folder") return { text: `"${path}" is a folder.`, isError: true };
     await adapter.write(path, new TextEncoder().encode(code));
+    // A no-op for anything other than a `page.tsx` (see that module's own
+    // doc comment on scope) - lights up the Page Editor's file-tree red dot
+    // for every OTHER open admin session, not just this request's caller,
+    // until a real Build/Publish of this path clears it.
+    await markAiPageSourceWrite(path, context.env);
     return { text: `Wrote "${path}" (${code.length.toLocaleString()} characters). This is saved to storage already - it still needs a Build (via the Page Editor or the pages-build tool) to reach the live site.` };
   } catch (error) {
     return { text: `Could not write "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
@@ -521,6 +528,104 @@ async function requireContentTypesAccess(context: DryRouteContext): Promise<Tool
 
 const VALID_KINDS = new Set<string>(["collection", "singleton", "component"]);
 
+type RawRecord = Record<string, unknown>;
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function firstBoolean(...values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+  }
+  return undefined;
+}
+
+/**
+ * `component`-type fields are the one place `propose_content_type` has
+ * repeatedly tripped an AI up: `config.componentId` must be another content
+ * type's real, server-assigned id, but an AI proposing several new types in
+ * one conversation has no way to know a sibling proposal's id ahead of time
+ * (this tool's own success text didn't even say what id got assigned, until
+ * now - see `runProposeContentTypeTool` below) - so it naturally reaches for
+ * that component's NAME instead, often without the `config` wrapper at all
+ * (e.g. a bare `"component": "statItem"` alongside the field rather than
+ * `"config": {"componentId": "..."}`). Resolved here against `componentsByRef`
+ * (built by the caller from both the live schema and this same user's OTHER
+ * still-pending proposals), by id OR by name - so a natural multi-call
+ * proposal session (propose a component, then a type that embeds it) just
+ * works instead of silently saving a draft that only fails much later, when
+ * an admin tries to apply it through "Apply and build".
+ * Mutates `config` in place; returns an error message (field-name already
+ * stripped, the caller prefixes it) on failure, `undefined` on success. */
+function resolveComponentFieldConfig(field: RawRecord, config: RawRecord, componentsByRef: Map<string, string>): string | undefined {
+  const ref = firstString(config.componentId, config.component, config.target, field.component, field.componentId, field.target);
+  if (!ref) return 'a "component" field needs "config.componentId" set to that component\'s id or name.';
+  const resolvedId = componentsByRef.get(ref) ?? componentsByRef.get(ref.toLowerCase());
+  if (!resolvedId) {
+    return `references unknown component "${ref}" - propose that component first (or check the spelling of its "name"), then retry.`;
+  }
+  config.componentId = resolvedId;
+  if (typeof config.repeatable !== "boolean") {
+    // Defaults to non-repeatable (the "flatten" shape - see
+    // `field-registry.ts`'s `componentFieldType.shape`) when unspecified:
+    // the safer of the two, since it never implies a child table the AI
+    // didn't ask for.
+    config.repeatable = firstBoolean(config.multiple, field.multiple, field.repeatable) ?? false;
+  }
+  return undefined;
+}
+
+/**
+ * Turns whatever shape of `fields` the AI actually sent into real
+ * `FieldDefinition`s - defensively, since this is untrusted JSON, not
+ * something that went through the schema editor's own `FieldDialog`. Every
+ * field gets a well-formed `config`/`validation` (missing/malformed becomes
+ * `{}` - a legitimate "nothing set" value, same as an untouched field in the
+ * real editor), the exact gap that used to reach `resolveTableTree` at
+ * "Apply and build" plan/apply time as a raw, unhelpful `TypeError` (e.g.
+ * reading `.unique` off an undefined `validation`) instead of a clear
+ * message the AI could act on immediately. Collects every problem rather
+ * than stopping at the first, so one retry can fix them all. */
+function normalizeProposedFields(rawFields: unknown[], componentsByRef: Map<string, string>): { fields: FieldDefinition[]; errors: string[] } {
+  const errors: string[] = [];
+  const fields = rawFields.map((raw, index): FieldDefinition => {
+    const field = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as RawRecord;
+    const name = firstString(field.name) ?? `field${index + 1}`;
+    const type = firstString(field.type) ?? "";
+    const config: RawRecord =
+      field.config && typeof field.config === "object" && !Array.isArray(field.config) ? { ...(field.config as RawRecord) } : {};
+
+    if (!fieldTypes[type]) {
+      errors.push(`Field "${name}": unknown field type "${type || "(missing)"}".`);
+    } else if (type === "component") {
+      const error = resolveComponentFieldConfig(field, config, componentsByRef);
+      if (error) errors.push(`Field "${name}": ${error}`);
+    }
+
+    return {
+      id: firstString(field.id) ?? randomUUID(),
+      name,
+      label: firstString(field.label) ?? name,
+      description: firstString(field.description),
+      type,
+      config,
+      validation: (field.validation && typeof field.validation === "object" && !Array.isArray(field.validation) ? field.validation : {}) as FieldDefinition["validation"],
+      default: field.default,
+      // Real order is re-derived from array position anyway
+      // (`naming.ts`'s `normalizeFieldOrder`, applied when the admin actually
+      // applies this draft) - filled in here too just so the STORED draft is
+      // a well-formed `FieldDefinition` at rest, matching what the real
+      // editor UI always produces.
+      order: index,
+    };
+  });
+  return { fields, errors };
+}
+
 /** Never applies directly - always lands in `ai-content-type-drafts.ts`'s KV
  * staging area, the same "AI proposes, admin reviews and applies via Apply
  * and build" flow a human-authored draft already goes through
@@ -547,10 +652,29 @@ async function runProposeContentTypeTool(context: DryRouteContext, allTypes: Con
   if (!parsed.kind || !VALID_KINDS.has(parsed.kind)) return { text: '"kind" must be "collection", "singleton", or "component".', isError: true };
   if (!Array.isArray(parsed.fields)) return { text: '"fields" must be an array (may be empty).', isError: true };
 
+  // Every component a `component`-type field can reference: what's live,
+  // PLUS this same user's other still-pending proposals - a draft doesn't
+  // have to be applied yet to be a valid reference target (see
+  // `resolveComponentFieldConfig`'s doc comment). Keyed by both id and
+  // lowercased name.
+  const pendingDrafts = await listAiContentTypeDrafts(context.session.id, context.env);
+  const componentsByRef = new Map<string, string>();
+  for (const type of [...allTypes, ...pendingDrafts.map((draft) => draft.definition)]) {
+    if (type.kind !== "component") continue;
+    componentsByRef.set(type.id, type.id);
+    componentsByRef.set(type.name.toLowerCase(), type.id);
+  }
+
+  const { fields, errors } = normalizeProposedFields(parsed.fields, componentsByRef);
+  if (errors.length > 0) {
+    return { text: `Invalid content type: ${errors.join(" ")}`, isError: true };
+  }
+
   const existing = allTypes.find((type) => type.name === parsed.name && type.kind === parsed.kind);
   const isNew = !existing;
   const definition: ContentTypeDefinition = {
     ...parsed,
+    fields,
     label: parsed.label || parsed.name,
     id: existing?.id ?? randomUUID(),
     version: existing?.version ?? 0,
@@ -566,7 +690,7 @@ async function runProposeContentTypeTool(context: DryRouteContext, allTypes: Con
   const draft: AiContentTypeDraft = { id: definition.id, definition, isNew, createdAt: new Date().toISOString() };
   await saveAiContentTypeDraft(context.session.id, draft, context.env);
   return {
-    text: `Proposed ${isNew ? "creating" : "updating"} content type "${definition.name}" (${definition.label}) - saved as a pending draft, not applied. The admin will see it under Content Types -> Apply and build to review and apply it.`,
+    text: `Proposed ${isNew ? "creating" : "updating"} content type "${definition.name}" (${definition.label}, id "${definition.id}") - saved as a pending draft, not applied. If another proposed type embeds this one as a component, reference this id (preferred) or the name "${definition.name}" as its "config.componentId". The admin will see it under Content Types -> Apply and build to review and apply it.`,
   };
 }
 
@@ -597,8 +721,25 @@ export interface McpActivityEntry {
   timestamp: string;
 }
 
+/** Same "wrap the list with a bump-on-write counter" shape
+ * `ai-content-type-drafts.ts`'s `AiContentTypeDraftIndex` uses, for the
+ * identical reason: `McpActivitySection` (`McpConnect.tsx`) polls `GET
+ * /api/mcp/activity` every `ACTIVITY_POLL_MS` (5s - even tighter than the AI
+ * drafts poll), almost always with nothing new since the last tick. The GET
+ * handler below answers a conditional `X-Data-Version` poll with
+ * `{changed:false}` instead of re-sending up to `MAX_ACTIVITY_ENTRIES`
+ * entries on every single tick. */
+interface McpActivityLog {
+  version: number;
+  entries: McpActivityEntry[];
+}
+
 function activityKey(userId: number): string {
   return `user-${userId}`;
+}
+
+async function readActivityLog(userId: number, env: Record<string, unknown>): Promise<McpActivityLog> {
+  return (await getAuthSecurityStore(env).get<McpActivityLog>(MCP_ACTIVITY_NAMESPACE, activityKey(userId))) ?? { version: 0, entries: [] };
 }
 
 /** Fire-and-forget from every call site - a logging failure must never fail
@@ -607,9 +748,9 @@ function recordMcpActivity(userId: number, entry: Omit<McpActivityEntry, "id" | 
   void (async () => {
     try {
       const store = getAuthSecurityStore(env);
-      const current = (await store.get<McpActivityEntry[]>(MCP_ACTIVITY_NAMESPACE, activityKey(userId))) ?? [];
-      const next = [{ ...entry, id: crypto.randomUUID(), timestamp: new Date().toISOString() }, ...current].slice(0, MAX_ACTIVITY_ENTRIES);
-      await store.set(MCP_ACTIVITY_NAMESPACE, activityKey(userId), next, { durability: "sync" });
+      const current = await readActivityLog(userId, env);
+      const entries = [{ ...entry, id: crypto.randomUUID(), timestamp: new Date().toISOString() }, ...current.entries].slice(0, MAX_ACTIVITY_ENTRIES);
+      await store.set(MCP_ACTIVITY_NAMESPACE, activityKey(userId), { version: current.version + 1, entries }, { durability: "sync" });
     } catch {
       // Best-effort, same as every other non-critical KV write in this app.
     }
@@ -617,7 +758,13 @@ function recordMcpActivity(userId: number, entry: Omit<McpActivityEntry, "id" | 
 }
 
 export async function listMcpActivity(userId: number, env: Record<string, unknown> = {}): Promise<McpActivityEntry[]> {
-  return (await getAuthSecurityStore(env).get<McpActivityEntry[]>(MCP_ACTIVITY_NAMESPACE, activityKey(userId))) ?? [];
+  return (await readActivityLog(userId, env)).entries;
+}
+
+/** `routes/mcp.ts`'s own GET handler reads only this (never the full entry
+ * list) to answer a conditional poll. */
+export async function getMcpActivityVersion(userId: number, env: Record<string, unknown> = {}): Promise<number> {
+  return (await readActivityLog(userId, env)).version;
 }
 
 async function callTool(context: DryRouteContext, params: Record<string, unknown>): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
@@ -756,6 +903,16 @@ export const POST: DryRouteHandler = async (context) => {
   }
 };
 
+/** Same data-version protocol as `routes/content-types.ts`'s
+ * `parseIfVersion`/`routes/ai-content-type-drafts.ts`'s copy - kept as its
+ * own copy here too, matching that existing per-route precedent. */
+function parseIfVersion(context: DryRouteContext): number | undefined {
+  const header = context.request.headers.get("X-Data-Version");
+  if (header === null) return undefined;
+  const n = Number(header);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
 /**
  * `GET /api/mcp/activity` - the poll target for Profile's "AI Activity"
  * section (`status/mcp-server.md` Phase 3). Cookie-authenticated the normal
@@ -774,6 +931,12 @@ export const GET: DryRouteHandler = async (context) => {
     return new Response(null, { status: 405, headers: { Allow: "POST" } });
   }
   if (context.params.slug !== "activity") return jsonResponse({ error: "not_found", message: "Unknown mcp endpoint." }, 404);
+
+  const version = await getMcpActivityVersion(context.session.id, context.env);
+  const ifVersion = parseIfVersion(context);
+  if (ifVersion !== undefined && ifVersion === version) {
+    return jsonResponse({ changed: false, version });
+  }
   const activity = await listMcpActivity(context.session.id, context.env);
-  return jsonResponse({ activity });
+  return jsonResponse({ changed: true, version, activity });
 };

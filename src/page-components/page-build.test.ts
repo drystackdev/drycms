@@ -318,7 +318,7 @@ describe("publishBuiltPage", () => {
 
     await publishBuiltPage(
       { html: "<html></html>", jsAssets: [{ jsPath: "page.js", source: "export default function(){}" }], deps: [{ resource: "blog", version: 2 }], inSitemap: true },
-      { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", buildId: "build-1" },
+      { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", entryPath: "pages/blogs/abc/page.tsx", buildId: "build-1" },
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -326,6 +326,7 @@ describe("publishBuiltPage", () => {
     expect(url).toBe("/dry/api/pages-build");
     expect(JSON.parse(init.body as string)).toEqual({
       pathname: "/blogs/abc",
+      entryPath: "pages/blogs/abc/page.tsx",
       html: "<html></html>",
       jsAssets: [{ jsPath: "page.js", source: "export default function(){}" }],
       buildId: "build-1",
@@ -339,7 +340,7 @@ describe("publishBuiltPage", () => {
   it("throws PageBuildError on a non-OK response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
     await expect(
-      publishBuiltPage({ html: "", jsAssets: [], deps: [], inSitemap: true }, { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x" }),
+      publishBuiltPage({ html: "", jsAssets: [], deps: [], inSitemap: true }, { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x", entryPath: "pages/x/page.tsx" }),
     ).rejects.toThrow(PageBuildError);
     vi.unstubAllGlobals();
   });

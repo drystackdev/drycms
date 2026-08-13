@@ -247,7 +247,15 @@ function orderByDependency(inputs: BatchDraftInput[]): BatchDraftInput[] {
     visiting.add(id);
     for (const field of input.definition.fields) {
       if (field.type !== "component") continue;
-      const { componentId } = field.config as ComponentFieldConfig;
+      // Defensive, not just a type guard: `config` shape is only guaranteed
+      // for a definition that already passed validation, and this ordering
+      // pass runs BEFORE `performSave` validates anything. A malformed/
+      // missing `config` (bad client input) must fall through to that real,
+      // per-item validation - not crash the whole batch request with an
+      // uncaught exception (which surfaces as an opaque 500 to every item,
+      // not just the bad one).
+      const componentId = (field.config as Partial<ComponentFieldConfig> | undefined)?.componentId;
+      if (typeof componentId !== "string") continue;
       const dependency = byId.get(componentId);
       if (dependency) visit(dependency);
     }

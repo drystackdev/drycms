@@ -180,7 +180,7 @@ export default function PageBuild() {
       layoutPaths: target.layoutPaths,
       params: target.params,
     });
-    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname } };
+    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, entryPath: target.entryPath } };
   }
 
   /** Returns whether the build actually published - the auto-build effect

@@ -18,6 +18,7 @@
  * merges a pulled draft into that same review UI.
  */
 import { getAuthSecurityStore } from "./auth-security.js";
+import type { KeyValueStore } from "../kv/memory.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 
 const AI_DRAFT_NAMESPACE = "ai-content-type-drafts";
@@ -48,14 +49,41 @@ type AiContentTypeDraftIndexEntry = Pick<AiContentTypeDraft, "id" | "isNew" | "c
   kind: ContentTypeDefinition["kind"];
 };
 
+/** The whole per-user pending-proposals list is one resource for versioning
+ * purposes (same "one counter for the whole collection" shape
+ * `routes/content-types.ts`'s `getResourceVersion`/`status/build-cache.md`
+ * uses) - bumped on every add/remove so `routes/ai-content-type-drafts.ts`'s
+ * GET can answer a conditional `X-Data-Version` poll with `{changed:false}`
+ * and skip re-sending every pending draft's full `ContentTypeDefinition`
+ * (`BuilderContentType.tsx` polls this every `AI_DRAFT_POLL_MS` while open -
+ * almost always with nothing new). Wrapped around the SAME index array
+ * already being read/written here rather than a separate KV key, so this
+ * costs no extra round trip. */
+interface AiContentTypeDraftIndex {
+  version: number;
+  entries: AiContentTypeDraftIndexEntry[];
+}
+
 function indexKey(userId: number): string {
   return `user-${userId}`;
 }
 
+async function readIndex(store: KeyValueStore, userId: number): Promise<AiContentTypeDraftIndex> {
+  return (await store.get<AiContentTypeDraftIndex>(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId))) ?? { version: 0, entries: [] };
+}
+
+/** `routes/ai-content-type-drafts.ts`'s GET reads only this (never the full
+ * per-draft KV entries) to answer a conditional poll - cheap even when
+ * there are `MAX_PENDING_DRAFTS` pending. */
+export async function getAiContentTypeDraftsVersion(userId: number, env: Record<string, unknown> = {}): Promise<number> {
+  const store = getAuthSecurityStore(env);
+  return (await readIndex(store, userId)).version;
+}
+
 export async function listAiContentTypeDrafts(userId: number, env: Record<string, unknown> = {}): Promise<AiContentTypeDraft[]> {
   const store = getAuthSecurityStore(env);
-  const index = (await store.get<AiContentTypeDraftIndexEntry[]>(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId))) ?? [];
-  const drafts = await Promise.all(index.map((entry) => store.get<AiContentTypeDraft>(AI_DRAFT_NAMESPACE, entry.id)));
+  const { entries } = await readIndex(store, userId);
+  const drafts = await Promise.all(entries.map((entry) => store.get<AiContentTypeDraft>(AI_DRAFT_NAMESPACE, entry.id)));
   return drafts.filter((draft): draft is AiContentTypeDraft => draft !== null);
 }
 
@@ -67,8 +95,8 @@ export async function saveAiContentTypeDraft(userId: number, draft: AiContentTyp
   const store = getAuthSecurityStore(env);
   await store.set(AI_DRAFT_NAMESPACE, draft.id, draft, { durability: "sync", ttlMs: DRAFT_TTL_MS });
 
-  const current = (await store.get<AiContentTypeDraftIndexEntry[]>(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId))) ?? [];
-  const withoutThisId = current.filter((entry) => entry.id !== draft.id);
+  const current = await readIndex(store, userId);
+  const withoutThisId = current.entries.filter((entry) => entry.id !== draft.id);
   const indexEntry: AiContentTypeDraftIndexEntry = {
     id: draft.id,
     name: draft.definition.name,
@@ -77,17 +105,17 @@ export async function saveAiContentTypeDraft(userId: number, draft: AiContentTyp
     isNew: draft.isNew,
     createdAt: draft.createdAt,
   };
-  const next = [indexEntry, ...withoutThisId].slice(0, MAX_PENDING_DRAFTS);
+  const nextEntries = [indexEntry, ...withoutThisId].slice(0, MAX_PENDING_DRAFTS);
   const evicted = withoutThisId.slice(MAX_PENDING_DRAFTS - 1);
   await Promise.all(evicted.map((entry) => store.delete(AI_DRAFT_NAMESPACE, entry.id)));
-  await store.set(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId), next, { durability: "sync" });
+  await store.set(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId), { version: current.version + 1, entries: nextEntries }, { durability: "sync" });
 }
 
 export async function deleteAiContentTypeDraft(userId: number, id: string, env: Record<string, unknown> = {}): Promise<void> {
   const store = getAuthSecurityStore(env);
   await store.delete(AI_DRAFT_NAMESPACE, id);
-  const current = (await store.get<AiContentTypeDraftIndexEntry[]>(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId))) ?? [];
-  const next = current.filter((entry) => entry.id !== id);
-  if (next.length === current.length) return;
-  await store.set(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId), next, { durability: "sync" });
+  const current = await readIndex(store, userId);
+  const nextEntries = current.entries.filter((entry) => entry.id !== id);
+  if (nextEntries.length === current.entries.length) return;
+  await store.set(AI_DRAFT_INDEX_NAMESPACE, indexKey(userId), { version: current.version + 1, entries: nextEntries }, { durability: "sync" });
 }

@@ -89,6 +89,7 @@ function postContext(body: unknown, session: SessionPayload | null = superAdminS
 function onePage(pathname: string, deps: { resource: string; version: number }[] = []) {
   return {
     pathname,
+    entryPath: `pages${pathname === "/" ? "" : pathname}/page.tsx`,
     html: `<html><body>${pathname}</body></html>`,
     jsAssets: [{ jsPath: `${pathname.replace(/^\//, "") || "index"}.js`, source: "export default function(){}" }],
     buildId: crypto.randomUUID(),
@@ -160,6 +161,41 @@ describe("POST /dry/api/pages-build { pages: [...] } (batch)", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { record: { path: string } };
     expect(body.record.path).toBe("/single-page");
+  });
+});
+
+describe("POST /dry/api/pages-build - clears ai-page-source-flags.ts on a successful build", () => {
+  it("clears the flag for the page's entryPath once it publishes", async () => {
+    const { markAiPageSourceWrite, listAiPageSourceFlags } = await import("../ai-page-source-flags.js");
+    await markAiPageSourceWrite("pages/build-clears-flag/page.tsx", {});
+    expect((await listAiPageSourceFlags({})).some((f) => f.path === "pages/build-clears-flag/page.tsx")).toBe(true);
+
+    const response = await POST(postContext(onePage("/build-clears-flag")));
+    expect(response.status).toBe(200);
+
+    expect((await listAiPageSourceFlags({})).some((f) => f.path === "pages/build-clears-flag/page.tsx")).toBe(false);
+  });
+
+  it("leaves an UNRELATED flagged path untouched", async () => {
+    const { markAiPageSourceWrite, listAiPageSourceFlags } = await import("../ai-page-source-flags.js");
+    await markAiPageSourceWrite("pages/build-unrelated/page.tsx", {});
+
+    await POST(postContext(onePage("/build-something-else")));
+
+    expect((await listAiPageSourceFlags({})).some((f) => f.path === "pages/build-unrelated/page.tsx")).toBe(true);
+  });
+
+  it("clears every published page's own entryPath in a batch build", async () => {
+    const { markAiPageSourceWrite, listAiPageSourceFlags } = await import("../ai-page-source-flags.js");
+    await markAiPageSourceWrite("pages/batch-clear-a/page.tsx", {});
+    await markAiPageSourceWrite("pages/batch-clear-b/page.tsx", {});
+
+    const response = await POST(postContext({ pages: [onePage("/batch-clear-a"), onePage("/batch-clear-b")] }));
+    expect(response.status).toBe(200);
+
+    const flags = await listAiPageSourceFlags({});
+    expect(flags.some((f) => f.path === "pages/batch-clear-a/page.tsx")).toBe(false);
+    expect(flags.some((f) => f.path === "pages/batch-clear-b/page.tsx")).toBe(false);
   });
 });
 

@@ -45,6 +45,12 @@ interface ComponentTreePanelProps {
    * shape as `isDirty` (only `PageEditor.tsx` has a build concept at all).
    * Only meaningful for a `page.tsx` row; a consumer decides that. */
   needsBuild?: (path: string) => boolean;
+  /** Red "overwritten by AI, not built since" dot - takes priority over
+   * both `isDirty`/`needsBuild` when it applies (see the row renderer
+   * below). Only ever true for a `page.tsx` row - see
+   * `ai-page-source-flags.ts`'s own doc comment on why the flag itself is
+   * scoped that way. */
+  aiWritten?: (path: string) => boolean;
 }
 
 function parentOf(path: string): string {
@@ -81,6 +87,7 @@ export default function ComponentTreePanel({
   onCopy,
   isDirty,
   needsBuild,
+  aiWritten,
 }: ComponentTreePanelProps) {
   const [query, setQuery] = useState("");
   // Folders default OPEN (matches the shadcn tree reference) - this tracks
@@ -380,6 +387,7 @@ export default function ComponentTreePanel({
             isOpen={isOpen}
             isDirty={isDirty}
             needsBuild={needsBuild}
+            aiWritten={aiWritten}
             onToggleFolder={toggleFolder}
             onSelectFolder={selectFolder}
             onFileClick={handleFileClick}
@@ -457,6 +465,7 @@ interface ComponentTreeListProps {
   isOpen: (id: string) => boolean;
   isDirty?: (path: string) => boolean;
   needsBuild?: (path: string) => boolean;
+  aiWritten?: (path: string) => boolean;
   onToggleFolder: (id: string) => void;
   onSelectFolder: (id: string) => void;
   onFileClick: (path: string, event: MouseEvent) => void;
@@ -492,6 +501,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     isOpen,
     isDirty,
     needsBuild,
+    aiWritten,
     onToggleFolder,
     onSelectFolder,
     onFileClick,
@@ -706,7 +716,9 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                       <LockIcon />
                     </span>
                   )}
-                  {isDirty?.(entry.id) ? (
+                  {aiWritten?.(entry.id) ? (
+                    <span class="page-components-tree-ai-dot" title="Overwritten by AI - not built yet" />
+                  ) : isDirty?.(entry.id) ? (
                     <span class="page-components-tree-dirty-dot" title="Unsaved changes" />
                   ) : (
                     needsBuild?.(entry.id) && (

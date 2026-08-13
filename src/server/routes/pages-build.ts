@@ -6,6 +6,7 @@ import type { PageDependency, PageRecord } from "../../content-types/engine/page
 import { resolveAccessCached, type AccessInfo } from "../../content-types/access.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
+import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
 
 /**
  * Write side of the app-r2 build pipeline (`plans/app-r2.md` mục 12) - the
@@ -75,6 +76,12 @@ async function requireCodePermission(context: Parameters<DryRouteHandler>[0]): P
 
 interface PagesBuildRequestBody {
   pathname: string;
+  /** The route-entry SOURCE file this build compiled from (`PageTarget.
+   * entryPath` - `page-build.ts`), e.g. `"pages/blog/page.tsx"`. Distinct
+   * from `pathname` (the public URL) - only ever used to clear
+   * `ai-page-source-flags.ts`'s red dot for this file below, never
+   * persisted to `PagesRegistryAdapter`. */
+  entryPath: string;
   html: string;
   /** mục 7 - `page.js`/`layout.js`/every transitively-imported component,
    * already compiled to real ESM client-side (`page-build.ts`'s
@@ -95,6 +102,8 @@ function isValidBody(value: unknown): value is PagesBuildRequestBody {
   return (
     typeof body.pathname === "string" &&
     body.pathname.startsWith("/") &&
+    typeof body.entryPath === "string" &&
+    body.entryPath.length > 0 &&
     typeof body.html === "string" &&
     (body.jsAssets === undefined || Array.isArray(body.jsAssets)) &&
     typeof body.buildId === "string" &&
@@ -124,6 +133,14 @@ async function publishOne(context: Parameters<DryRouteHandler>[0], raw: PagesBui
   };
   const { pagesRegistry } = getContentAdapters(context);
   await pagesRegistry.recordBuild(record, raw.deps);
+  // Best-effort, never fatal to a publish that already succeeded - same
+  // "log and move on" contract `content-types.ts`'s `regenerateTypesCache`
+  // uses for its own post-write side effect.
+  try {
+    await clearAiPageSourceWrite(raw.entryPath, context.env);
+  } catch (error) {
+    console.error("[drycms] failed to clear the ai-page-source-flags entry after a build:", error);
+  }
   return record;
 }
 

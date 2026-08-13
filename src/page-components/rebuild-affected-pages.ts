@@ -81,7 +81,7 @@ export async function rebuildAffectedPages(
         layoutPaths: target.layoutPaths,
         params: target.params,
       });
-      await publishBuiltPage(result, { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname });
+      await publishBuiltPage(result, { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath });
       built += 1;
     }
     onStatus?.(built > 0 ? `Published ${built} ${built === 1 ? "page" : "pages"}` : "No pages needed rebuilding");

@@ -3,7 +3,7 @@ import type { ContentTypeDefinition } from "../content-types/types.js";
 
 vi.mock("./config.js", () => ({ path: "/dry" }));
 
-const { listAiContentTypeDrafts, saveAiContentTypeDraft, deleteAiContentTypeDraft } = await import("./ai-content-type-drafts.js");
+const { listAiContentTypeDrafts, saveAiContentTypeDraft, deleteAiContentTypeDraft, getAiContentTypeDraftsVersion } = await import("./ai-content-type-drafts.js");
 
 function definition(id: string, name: string): ContentTypeDefinition {
   return { id, kind: "collection", name, label: name, fields: [], version: 0 } as ContentTypeDefinition;
@@ -51,5 +51,41 @@ describe("ai-content-type-drafts", () => {
     expect(listed).toHaveLength(20);
     expect(listed.some((draft) => draft.id === "d0")).toBe(false);
     expect(listed.some((draft) => draft.id === "d20")).toBe(true);
+  });
+
+  describe("version counter (routes/ai-content-type-drafts.ts's data-version poll)", () => {
+    it("starts at 0 for a user with no drafts, and bumps by 1 on every save/delete that actually changes something", async () => {
+      const userId = 9006;
+      expect(await getAiContentTypeDraftsVersion(userId, {})).toBe(0);
+
+      await saveAiContentTypeDraft(userId, { id: "v1", definition: definition("v1", "versioned"), isNew: true, createdAt: new Date().toISOString() }, {});
+      expect(await getAiContentTypeDraftsVersion(userId, {})).toBe(1);
+
+      // Overwriting the SAME id still bumps - it's a real change to the
+      // resource (`saveAiContentTypeDraft` always saves), same as any other
+      // write path this counter tracks.
+      await saveAiContentTypeDraft(userId, { id: "v1", definition: definition("v1", "versioned-renamed"), isNew: true, createdAt: new Date().toISOString() }, {});
+      expect(await getAiContentTypeDraftsVersion(userId, {})).toBe(2);
+
+      await deleteAiContentTypeDraft(userId, "v1", {});
+      expect(await getAiContentTypeDraftsVersion(userId, {})).toBe(3);
+    });
+
+    it("does not bump on a delete that matches nothing (a no-op write must not fool a poller into thinking something changed)", async () => {
+      const userId = 9007;
+      await saveAiContentTypeDraft(userId, { id: "v1", definition: definition("v1", "versioned"), isNew: true, createdAt: new Date().toISOString() }, {});
+      const afterSave = await getAiContentTypeDraftsVersion(userId, {});
+
+      await deleteAiContentTypeDraft(userId, "does-not-exist", {});
+      expect(await getAiContentTypeDraftsVersion(userId, {})).toBe(afterSave);
+    });
+
+    it("is scoped per user, like the drafts themselves", async () => {
+      const userA = 9008;
+      const userB = 9009;
+      await saveAiContentTypeDraft(userA, { id: "a1", definition: definition("a1", "a-type"), isNew: true, createdAt: new Date().toISOString() }, {});
+      expect(await getAiContentTypeDraftsVersion(userA, {})).toBe(1);
+      expect(await getAiContentTypeDraftsVersion(userB, {})).toBe(0);
+    });
   });
 });

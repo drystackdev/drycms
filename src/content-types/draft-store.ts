@@ -137,6 +137,18 @@ export interface AiDraftConflict {
   local: DraftEntry;
 }
 
+/** Last version this tab saw from `GET /api/ai-content-type-drafts` (see
+ * `status/build-cache.md`'s data-version protocol, same shape
+ * `http-api.ts`'s `listVersioned` uses for `content-types:list`) - sent back
+ * as `X-Data-Version` on the NEXT poll so the common "nothing new since last
+ * time" case (this runs on a plain interval, `AI_DRAFT_POLL_MS`, almost
+ * always with nothing pending) answers with a tiny `{changed:false}` instead
+ * of re-sending every pending draft's full `ContentTypeDefinition`. Module-
+ * level, not persisted: resets to `undefined` on a full page reload, which
+ * just means that first poll fetches fully again - the same cold-start cost
+ * `listVersioned` accepts elsewhere. */
+let lastKnownAiDraftsVersion: number | undefined;
+
 /** Pulls every pending AI-proposed draft this account has on the server
  * (`GET /api/ai-content-type-drafts`) and merges each one into the SAME
  * local draft store `drafts`/IndexedDB above uses - so it shows up in the
@@ -151,9 +163,13 @@ export interface AiDraftConflict {
 export async function syncAiContentTypeDrafts(): Promise<AiDraftConflict[]> {
   let serverDrafts: AiContentTypeDraftPayload[];
   try {
-    const response = await fetch(`${path}/api/ai-content-type-drafts`, { credentials: "same-origin" });
+    const headers =
+      lastKnownAiDraftsVersion === undefined ? undefined : { "X-Data-Version": String(lastKnownAiDraftsVersion) };
+    const response = await fetch(`${path}/api/ai-content-type-drafts`, { credentials: "same-origin", headers });
     if (!response.ok) return [];
-    const body = (await response.json()) as { drafts?: AiContentTypeDraftPayload[] };
+    const body = (await response.json()) as { changed: boolean; version: number; drafts?: AiContentTypeDraftPayload[] };
+    lastKnownAiDraftsVersion = body.version;
+    if (!body.changed) return [];
     serverDrafts = Array.isArray(body.drafts) ? body.drafts : [];
   } catch {
     return [];

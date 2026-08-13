@@ -21,11 +21,19 @@ import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
 import { fetchJson, toUrlPath, type AssetHrefs } from "../page-components/pages-source-http.js";
 import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft } from "../page-components/page-source-draft-db.js";
 import {
+  getAllPageSourceCache,
+  putPageSourceCache,
+  deletePageSourceCache,
+  getPagesTreeCache,
+  putPagesTreeCache,
+} from "../page-components/page-source-cache-db.js";
+import {
   buildPage,
   publishBuiltPage,
   publishBuiltPages,
   resolveAllPageTargets,
   pagesAffectedBy,
+  builtAssetUrlForJsPath,
   PageBuildError,
   type PageBuildResult,
   type PublishOptions,
@@ -172,6 +180,11 @@ const PREVIEW_ENTRY_LIMIT = 100;
  * browsing tab that blocks storage access, or a corrupt stored value,
  * should just mean the dot starts empty again, never a broken editor. */
 const UNBUILT_STORAGE_KEY = "drycms-page-editor-unbuilt-paths";
+
+/** How often this page re-checks the server for MCP-authored page.tsx
+ * writes - `ai-page-source-flags.ts`'s red dot. Same cadence
+ * `BuilderContentType.tsx`'s own AI-draft poll uses (`AI_DRAFT_POLL_MS`). */
+const AI_PAGE_SOURCE_FLAGS_POLL_MS = 25_000;
 
 function loadPersistedUnbuiltPaths(): Set<string> {
   try {
@@ -396,6 +409,11 @@ async function listAllFileEntriesRecursive(folder: string): Promise<FileEntry[]>
   return all;
 }
 
+/** Max in-flight `api.read` calls during `hydrateInitialTree`'s background
+ * sync pass - matches a typical browser's per-origin HTTP connection cap, so
+ * this doesn't compete with itself for sockets. */
+const BACKGROUND_SYNC_CONCURRENCY = 6;
+
 const SIDEBAR_WIDTH = { initial: 280, min: 200, max: 480 };
 const PREVIEW_WIDTH = { initial: 480, min: 280, max: 900 };
 const DIAGNOSTICS_HEIGHT = { initial: 180, min: 80, max: 480 };
@@ -487,6 +505,13 @@ export default function PageEditor() {
   // in `localStorage` (`initialUiState`) when the URL has no `file` param
   // yet, e.g. a bare bookmark to this page.
   const [selectedPath, setSelectedPath] = useParam<string>("file", initialUiState?.selectedPath ?? "");
+  /** Freshest `selectedPath`, readable from inside `hydrateInitialTree`'s
+   * async mount routine - the admin can click a different file in the
+   * sidebar (painted from cache) while the server tree/priority fetch is
+   * still in flight, and the priority fetch should chase whichever file is
+   * open AT THAT MOMENT, not whatever was open when the effect started. */
+  const selectedPathRef = useRef(selectedPath);
+  selectedPathRef.current = selectedPath;
   /** Which source root the sidebar is showing (`source-roots.ts`) - plain
    * state, NOT derived from `selectedPath`: deriving it would snap the tab
    * back the instant the user switched to a tab whose files they haven't
@@ -625,6 +650,40 @@ export default function PageEditor() {
     });
   }
 
+  /** Every `page.tsx` an MCP client (`routes/mcp.ts`'s `write_page_source`)
+   * has overwritten directly in storage, not built since -
+   * `ai-page-source-flags.ts`'s global tracker, polled here so it lights up
+   * `ComponentTreePanel`'s red dot for a write that happened OUTSIDE this
+   * (or any) browser session, unlike `unbuiltPaths` above (session-local,
+   * only ever set by this tab's own Save). Cleared server-side the moment a
+   * real Build/Publish of that file succeeds - never removed client-side. */
+  const [aiWrittenPaths, setAiWrittenPaths] = useState<Set<string>>(new Set());
+  const aiFlagsLastVersion = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const headers =
+          aiFlagsLastVersion.current === undefined ? undefined : { "X-Data-Version": String(aiFlagsLastVersion.current) };
+        const res = await fetch(`${path}/api/ai-page-source-flags`, { credentials: "same-origin", headers });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { changed: boolean; version: number; flags?: { path: string }[] };
+        aiFlagsLastVersion.current = body.version;
+        if (!body.changed || cancelled) return;
+        setAiWrittenPaths(new Set((body.flags ?? []).map((f) => f.path)));
+      } catch {
+        // Leave the previous set showing - a transient poll failure isn't worth surfacing.
+      }
+    }
+    void poll();
+    const timer = window.setInterval(() => void poll(), AI_PAGE_SOURCE_FLAGS_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
@@ -705,48 +764,69 @@ export default function PageEditor() {
     manualZoom,
   ]);
 
+  /** Fetches the authoritative file tree from the server (or the R2/S3
+   * per-folder fallback), restoring any missing core `styles/` file along
+   * the way - the one piece `loadTree` and the mount-only
+   * `hydrateInitialTree` both need, factored out so neither has to
+   * duplicate the core-style-recovery toast logic. */
+  async function fetchAndReconcileEntries(): Promise<FileEntry[]> {
+    const result = await api.listTree();
+    let all = result.supported ? result.entries : await listAllFileEntriesRecursive("");
+
+    // Core `styles/` files (`core-styles/registry.ts`) back a hardcoded
+    // Vite build entry and each other's `@import`s (`source-roots.ts`'s
+    // `isCoreStyleFilePath` doc comment) - restore any missing one (a
+    // fresh checkout, or an old project predating this lock) instead of
+    // leaving the Styles tab, and the build, silently broken.
+    const existingIds = new Set(all.filter((entry) => entry.kind === "file").map((entry) => entry.id));
+    const missing = CORE_STYLE_FILES.filter((file) => !existingIds.has(`${STYLES_ROOT}/${file.name}`));
+    if (missing.length > 0) {
+      const restored = await Promise.all(
+        missing.map((file) => api.save(`${STYLES_ROOT}/${file.name}`, file.defaultContent).catch(() => null)),
+      );
+      all = [...all, ...restored.filter((entry): entry is FileEntry => !!entry)];
+      const restoredNames = missing.filter((_, index) => restored[index]).map((file) => file.name);
+      if (restoredNames.length > 0) {
+        setRecoveredCoreFiles(restoredNames);
+        toast.add({
+          type: "info",
+          title: restoredNames.length > 1 ? `Restored ${restoredNames.length} built-in style files.` : `Restored ${restoredNames[0]}.`,
+          description: "See the System tab.",
+        });
+      }
+    }
+    return all;
+  }
+
   /** Returns the freshly-fetched SAVED map (no draft overlay) on success, or
    * `null` on failure - `handleGithubRestoreApplied` below builds directly
    * from this return value rather than `savedByPath` state, since a state
    * setter's effect isn't visible to a closure still running in the same
    * async call (the same staleness `saveAllDirty`'s own doc comment already
-   * calls out for the ordinary Save-then-Build path). */
+   * calls out for the ordinary Save-then-Build path). Always fetches every
+   * file's content fresh and in parallel (never serves stale cache) - every
+   * caller (post-mutation refreshes, the GitHub restore reload) needs a
+   * guaranteed-current map, unlike the mount-only `hydrateInitialTree`
+   * below. Still keeps the IndexedDB content cache in sync as a side effect,
+   * so a later mount finds accurate cached content. */
   async function loadTree(): Promise<Record<string, string> | null> {
     try {
-      const result = await api.listTree();
-      let all = result.supported ? result.entries : await listAllFileEntriesRecursive("");
-
-      // Core `styles/` files (`core-styles/registry.ts`) back a hardcoded
-      // Vite build entry and each other's `@import`s (`source-roots.ts`'s
-      // `isCoreStyleFilePath` doc comment) - restore any missing one (a
-      // fresh checkout, or an old project predating this lock) instead of
-      // leaving the Styles tab, and the build, silently broken.
-      const existingIds = new Set(all.filter((entry) => entry.kind === "file").map((entry) => entry.id));
-      const missing = CORE_STYLE_FILES.filter((file) => !existingIds.has(`${STYLES_ROOT}/${file.name}`));
-      if (missing.length > 0) {
-        const restored = await Promise.all(
-          missing.map((file) => api.save(`${STYLES_ROOT}/${file.name}`, file.defaultContent).catch(() => null)),
-        );
-        all = [...all, ...restored.filter((entry): entry is FileEntry => !!entry)];
-        const restoredNames = missing.filter((_, index) => restored[index]).map((file) => file.name);
-        if (restoredNames.length > 0) {
-          setRecoveredCoreFiles(restoredNames);
-          toast.add({
-            type: "info",
-            title: restoredNames.length > 1 ? `Restored ${restoredNames.length} built-in style files.` : `Restored ${restoredNames[0]}.`,
-            description: "See the System tab.",
-          });
-        }
-      }
-
+      const all = await fetchAndReconcileEntries();
       setEntries(all);
+      void putPagesTreeCache(all);
       const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css|md)$/i.test(entry.name));
       const contents = await Promise.all(files.map((file) => api.read(file.id).catch(() => "")));
       const nextSource: Record<string, string> = {};
+      const nextIds = new Set<string>();
       files.forEach((file, index) => {
         nextSource[file.id] = contents[index]!;
+        nextIds.add(file.id);
       });
       setSavedByPath(nextSource);
+      files.forEach((file, index) => void putPageSourceCache(file.id, contents[index]!));
+      for (const cached of await getAllPageSourceCache()) {
+        if (!nextIds.has(cached.path)) void deletePageSourceCache(cached.path);
+      }
 
       // Overlay any unsaved edit recovered from IndexedDB on top of the
       // freshly-loaded saved content - but only for a file that's still in
@@ -771,9 +851,103 @@ export default function PageEditor() {
     }
   }
 
+  /** Mount-only alternative to `loadTree()` - same end state, but optimized
+   * for "just opened the page" instead of "just need a guaranteed-fresh
+   * map": paints the sidebar and the currently-open file from the
+   * IndexedDB content cache FIRST (before any network request resolves),
+   * then fetches the real tree, re-fetches whichever file is open with
+   * priority (so it's interactive as fast as possible), and only then walks
+   * the remaining files in the background via a small bounded-concurrency
+   * pool (`BACKGROUND_SYNC_CONCURRENCY`) - overwriting the cache only for a
+   * file whose content actually changed. `isCancelled` is
+   * checked between network hops so navigating away mid-walk stops it. */
+  async function hydrateInitialTree(isCancelled: () => boolean) {
+    const [cachedTree, cachedFiles, drafts] = await Promise.all([
+      getPagesTreeCache(),
+      getAllPageSourceCache(),
+      getAllPageSourceDrafts(),
+    ]);
+    const draftMap: Record<string, string> = {};
+    for (const draft of drafts) draftMap[draft.path] = draft.source;
+
+    const cachedSource: Record<string, string> = {};
+    for (const file of cachedFiles) cachedSource[file.path] = file.source;
+
+    if (cachedTree) setEntries(cachedTree);
+    if (cachedFiles.length > 0) {
+      setSavedByPath(cachedSource);
+      const withDrafts = { ...cachedSource };
+      for (const path in draftMap) if (path in cachedSource) withDrafts[path] = draftMap[path]!;
+      setSourceByPath(withDrafts);
+    }
+
+    if (isCancelled()) return;
+    let all: FileEntry[];
+    try {
+      all = await fetchAndReconcileEntries();
+    } catch (error) {
+      // A cache paint already happened above (if any) - only surface the
+      // error if there was nothing to fall back to.
+      if (cachedFiles.length === 0) setLoadError(error instanceof Error ? error.message : "Failed to load pages source.");
+      return;
+    }
+    if (isCancelled()) return;
+    setEntries(all);
+    void putPagesTreeCache(all);
+
+    const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css|md)$/i.test(entry.name));
+    const fileIds = new Set(files.map((file) => file.id));
+    for (const cached of cachedFiles) {
+      if (!fileIds.has(cached.path)) void deletePageSourceCache(cached.path);
+    }
+    setSelectedPath((current) => (current && fileIds.has(current) ? current : (files[0]?.id ?? "")));
+
+    function applyFresh(file: FileEntry, content: string) {
+      if (cachedSource[file.id] !== content) void putPageSourceCache(file.id, content);
+      setSavedByPath((prev) => ({ ...prev, [file.id]: content }));
+      const visible = draftMap[file.id] !== undefined ? draftMap[file.id]! : content;
+      setSourceByPath((prev) => ({ ...prev, [file.id]: visible }));
+    }
+
+    const priorityFile = files.find((file) => file.id === selectedPathRef.current) ?? files[0];
+    const rest = files.filter((file) => file !== priorityFile);
+
+    if (priorityFile) {
+      try {
+        applyFresh(priorityFile, await api.read(priorityFile.id));
+      } catch {
+        // Transient failure - leave whatever cache/state already has for
+        // this file rather than blanking it out.
+      }
+    }
+
+    // Bounded-concurrency background sync - not fully sequential (would be
+    // needlessly slow for a large project) and not `Promise.all` either
+    // (that's the original all-at-once burst this whole flow exists to
+    // avoid); a small worker pool keeps at most `BACKGROUND_SYNC_CONCURRENCY`
+    // requests in flight, each worker pulling the next file off `rest` as it
+    // finishes, so the walk still drains in roughly the priority order files
+    // appear in the tree without stalling on one file at a time.
+    let cursor = 0;
+    async function worker() {
+      for (;;) {
+        if (isCancelled()) return;
+        const file = rest[cursor++];
+        if (!file) return;
+        try {
+          applyFresh(file, await api.read(file.id));
+        } catch {
+          // Transient failure - skip this file, keep going.
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(BACKGROUND_SYNC_CONCURRENCY, rest.length) }, worker));
+  }
+
   useEffect(() => {
     if (!canEdit) return;
-    void loadTree();
+    let cancelled = false;
+    void hydrateInitialTree(() => cancelled);
     void (async () => {
       try {
         const [types, hrefs] = await Promise.all([listCached(typesApi), fetchJson<AssetHrefs>(`${path}/api/asset-hrefs`)]);
@@ -793,6 +967,9 @@ export default function PageEditor() {
       .then((response) => (response.ok ? response.text() : null))
       .then((text) => setDryTypes(text))
       .catch(() => setDryTypes(null));
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canEdit]);
 
@@ -1153,7 +1330,7 @@ export default function PageEditor() {
         layoutPaths: previewTarget.layoutPaths,
         params: previewTarget.params,
       });
-      await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname });
+      await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname, entryPath: previewTarget.entryPath });
       clearUnbuilt([previewTarget.entryPath]);
       reportBuildResult({ type: "success", title: `Built "${previewTarget.pathname}"` });
       await reportGithubSync(`Build: ${previewTarget.pathname} - ${new Date().toISOString()}`);
@@ -1202,7 +1379,7 @@ export default function PageEditor() {
           layoutPaths: target.layoutPaths,
           params: target.params,
         });
-        batch.push({ result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname } });
+        batch.push({ result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, entryPath: target.entryPath } });
         if (batch.length >= BATCH_SIZE) {
           await publishBuiltPages(batch, `${path}/api/pages-build`);
           done += batch.length;
@@ -1395,6 +1572,19 @@ export default function PageEditor() {
    * correct result. Same `sigSeq` token pattern `Editer.tsx`'s own
    * `checkSignatureHelp` already uses for the identical race. */
   const previewSeqRef = useRef(0);
+  /** Object URLs backing the CURRENT iframe's import map (`refreshPreview`'s
+   * interactive-hydration step) - tracked so they can be revoked once the
+   * iframe no longer needs them, instead of leaking one `Blob` per compiled
+   * file on every debounced edit. Revoked only after the NEXT build's srcdoc
+   * assignment has already started the old iframe document's teardown (see
+   * `refreshPreview`), and on unmount. */
+  const previewBlobUrlsRef = useRef<string[]>([]);
+  useEffect(() => {
+    return () => {
+      for (const url of previewBlobUrlsRef.current) URL.revokeObjectURL(url);
+      previewBlobUrlsRef.current = [];
+    };
+  }, []);
 
   const manifest = useMemo(() => buildManifestRouteTree(Object.keys(sourceByPath)), [sourceByPath]);
 
@@ -1745,6 +1935,20 @@ export default function PageEditor() {
       const buildSourceByPath = previewTarget.extraSource
         ? { ...sourceByPath, [previewTarget.extraSource.path]: previewTarget.extraSource.source }
         : sourceByPath;
+      // Origin-QUALIFIED, unlike the real publish path's root-relative
+      // `${path}/api/built-assets` (`handleBuildCurrent`/`buildAllFrom`) -
+      // found necessary here specifically: a module loaded from a `blob:`
+      // URL (every compiled asset below) has a non-hierarchical base, so the
+      // browser can't resolve a root-relative specifier (`/dry/api/...`)
+      // against it at all (`Failed to resolve module specifier` - confirmed
+      // live, not a spec reading) even with a matching import map entry - it
+      // never gets far enough to consult the map, since resolving a plain
+      // absolute-path specifier against a non-hierarchical base fails before
+      // that step. An already-absolute specifier sidesteps the base
+      // entirely, so it parses fine regardless of what module it's imported
+      // from - only this in-browser preview needs that, real publishes never
+      // touch a `blob:` URL.
+      const builtAssetsBaseUrl = `${origin}${path}/api/built-assets`;
       const result = await buildPage({
         pathname: previewTarget.pathname,
         origin,
@@ -1755,40 +1959,83 @@ export default function PageEditor() {
           hydrateEntryHref: assetHrefs.hydrateBuiltHref,
           veiOverlayHref: assetHrefs.veiOverlayHref,
         },
-        preactRuntimeHref: assetHrefs.preactRuntimeHref,
-        builtAssetsBaseUrl: `${path}/api/built-assets`,
+        // Same reasoning as `builtAssetsBaseUrl` above, and just as needed:
+        // `compileEsmAsset` prepends an `import { h, Fragment } from
+        // "${preactRuntimeHref}"` to EVERY compiled asset (entry, layouts,
+        // every transitively-imported file), and the manifest carries it too
+        // (`preactRuntimeUrl`) - both go through the same blob-module
+        // resolution as any other asset URL, so this needs to be absolute
+        // for exactly the same reason, independent of `builtAssetsBaseUrl`
+        // (a different value - `/api/asset-hrefs`'s own root-relative
+        // `preactRuntimeHref`, not derived from it).
+        preactRuntimeHref: `${origin}${assetHrefs.preactRuntimeHref}`,
+        builtAssetsBaseUrl,
         dryHttpEndpoint: `${path}/api/dry-http`,
         allTypes,
         sourceByPath: buildSourceByPath,
         entryPath: previewTarget.entryPath,
         layoutPaths: previewTarget.layoutPaths,
         params: previewTarget.params,
-        // result.jsAssets is never used below (see that comment) - skip
-        // compiling it, roughly halving how long each debounced edit blocks
-        // the main thread (benchmarked: sucrase's ESM pass costs about as
-        // much as the CJS pass this preview does still need).
-        skipJsAssets: true,
         dryCacheTtlMs: PREVIEW_DRY_CACHE_TTL_MS,
       });
       if (seq !== previewSeqRef.current) return; // a newer edit already started another build - discard this stale result
-      // Root-relative asset URLs in `result.html` (`/assets/...`) need a
-      // real origin to resolve against - an `about:srcdoc` iframe has none
-      // of its own. Real inlined CSS, real `dry()` data - NOT real
-      // hydration though, found live: the embedded manifest points
-      // `hydrate-built.ts` at `${builtAssetsBaseUrl}/page.js`, which is
-      // whatever a real "Build" click on Page Build last PUBLISHED - not
-      // this in-browser, unpublished preview's own fresher compile
-      // (`result.jsAssets`, deliberately never written anywhere here - see
-      // this component's own doc comment on never calling
-      // `publishBuiltPage`). Left in, hydration would silently overwrite
-      // the correct freshly-SSR'd preview with that stale published
-      // version the instant it finishes. Stripping the manifest here
-      // instead of fixing the mismatch - `hydrate-built.ts` already
-      // no-ops gracefully with none present (mục 7's own "static page, no
-      // islands" case) - falls back to a real, accurate STATIC render;
-      // making interactive islands work in the preview too is a follow-up
-      // (`status/app-r2-build.md`), not solved by this pass.
-      const withoutHydration = result.html.replace(/<script type="application\/json" id="dry-hydrate-(?:manifest|params)">[\s\S]*?<\/script>/g, "");
+      // Interactive hydration inside the preview iframe. The embedded
+      // hydrate manifest, and every compiled asset's own rewritten `import`
+      // statements (`page-build.ts`'s `compileEsmAsset`), point at
+      // `${builtAssetsBaseUrl}/...` - the REAL, published `/api/built-assets`
+      // endpoint. Fetching those as written would either 404 (this page has
+      // never been built before) or silently hydrate against whatever a past
+      // "Build" click last PUBLISHED - not this in-browser, unpublished
+      // preview's own fresher compile, `result.jsAssets` - overwriting the
+      // correct freshly-SSR'd markup the instant it finished. That mismatch
+      // used to be sidestepped by stripping the manifest entirely (no
+      // preview was ever interactive as a result); fixed here with an import
+      // map instead: each asset's real URL is remapped, for THIS iframe
+      // document only, to a `Blob` object URL holding the exact source just
+      // compiled. The browser never requests the real endpoint at all -
+      // `hydrate-built.ts`'s `import()` calls, and every compiled module's
+      // own nested imports, resolve straight to the blob (import maps apply
+      // to dynamic `import()` the same as static `import`, for every script
+      // in the document, not just the one that registered them).
+      //
+      // Known gap, not fixed here: an `about:srcdoc` iframe has no origin of
+      // its own, so it inherits the EMBEDDING document's - this admin tab's.
+      // `document`/`window` are correctly the IFRAME's own (confirmed live -
+      // a previewed component's DOM writes never touch the admin's `<html>`
+      // element), but `localStorage`/`sessionStorage`/cookies are the SAME
+      // storage as the admin app itself, not isolated per preview. A
+      // previewed component that writes one of those (this codebase's own
+      // `ThemeToggle`, e.g., under `dry-theme`) can silently affect the
+      // admin's own state. Fixing it would mean sandboxing the iframe to a
+      // real cross-origin realm, which breaks blob: URL access entirely
+      // (same-origin only) - a bigger redesign than this pass, not attempted.
+      const blobUrls: string[] = [];
+      const importMap = { imports: {} as Record<string, string> };
+      for (const asset of result.jsAssets) {
+        const blobUrl = URL.createObjectURL(new Blob([asset.source], { type: "text/javascript" }));
+        blobUrls.push(blobUrl);
+        const realUrl = builtAssetUrlForJsPath(builtAssetsBaseUrl, asset.jsPath);
+        importMap.imports[realUrl] = blobUrl;
+        // `hydrate-built.ts`'s `import(manifest.entryUrl)` (and the layout/
+        // preact-runtime imports beside it) carries `/* @vite-ignore */` so
+        // Vite's dev transform won't rewrite the CALL - but under `bun run
+        // dev` that file is itself served as a raw, Vite-dev-transformed
+        // module (unlike a real prod build, where it'd be a prebuilt static
+        // bundle), and Vite's dev import-analysis pass instruments EVERY
+        // dynamic `import()` it sees regardless, wrapping the url argument
+        // in its own `__vite__injectQuery(url, "import")` helper for its
+        // module-graph bookkeeping - confirmed by fetching `/src/apps/
+        // hydrate-built.ts` from the dev server directly and reading the
+        // transformed output. That appends a literal `?import` to a query-
+        // less URL (`injectQuery`'s own source), so the string actually
+        // reaching native `import()` in dev is `realUrl + "?import"`, not
+        // `realUrl` - a plain, single-key import map would silently miss and
+        // fall through to a real (404) network request. The nested static
+        // imports INSIDE the compiled module itself aren't affected (they
+        // run from a `blob:` URL, which Vite's dev server never sees), so
+        // only this one entry point needs the extra key.
+        importMap.imports[`${realUrl}?import`] = blobUrl;
+      }
       // The VEI overlay script (`assets.veiOverlayHref`, embedded by
       // `buildDocument` on every page unconditionally) checks the admin's
       // OWN `drycms_admin` hint cookie and, since whoever is using this
@@ -1798,14 +2045,33 @@ export default function PageEditor() {
       // known href rather than a generic pattern - `assetHrefs` already has
       // the exact URL this build just used.
       const withoutVei = assetHrefs
-        ? withoutHydration.replace(`<script type="module" src="${assetHrefs.veiOverlayHref}"></script>`, "")
-        : withoutHydration;
-      const withBase = withoutVei.replace("<head>", `<head><base href="${origin}/">`);
+        ? result.html.replace(`<script type="module" src="${assetHrefs.veiOverlayHref}"></script>`, "")
+        : result.html;
+      // Root-relative asset URLs in `result.html` (`/assets/...`) need a
+      // real origin to resolve against - an `about:srcdoc` iframe has none of
+      // its own. The import map must come AFTER `<base>` in document order
+      // (its own relative-URL resolution, e.g. the manifest's root-relative
+      // asset URLs above, needs the real origin already in effect) but
+      // BEFORE the hydrate bootstrap `<script type="module">` `buildHeadPrefix`
+      // already emits (registering an import map after a module graph has
+      // started fetching is a no-op per spec) - both hold by construction
+      // here, since this whole block runs before that script tag is reached.
+      const headExtras =
+        `<base href="${origin}/">` +
+        (result.jsAssets.length > 0 ? `<script type="importmap">${JSON.stringify(importMap).replace(/</g, "\\u003c")}</script>` : "");
+      const withBase = withoutVei.replace("<head>", `<head>${headExtras}`);
       const withBridgeScript = withBase.includes("</body>")
         ? withBase.replace("</body>", `${buildPreviewBridgeScript()}</body>`)
         : withBase + buildPreviewBridgeScript();
       if (iframeRef.current) iframeRef.current.srcdoc = withBridgeScript;
       setPreviewLabel(previewTarget.label);
+      // Only revoke the PREVIOUS build's blob URLs now, not before: the
+      // srcdoc assignment just above has already started tearing down the
+      // old iframe document, so anything it still needed from them is moot -
+      // revoking earlier risks yanking a URL out from under an in-flight
+      // fetch in the OLD document.
+      for (const url of previewBlobUrlsRef.current) URL.revokeObjectURL(url);
+      previewBlobUrlsRef.current = blobUrls;
     } catch (error) {
       if (seq !== previewSeqRef.current) return;
       setPreviewError(error instanceof PageBuildError || error instanceof Error ? error.message : "Preview failed.");
@@ -2058,6 +2324,7 @@ export default function PageEditor() {
                   onCopy={(paths) => toast.add({ type: "success", title: paths.length > 1 ? `Copied ${paths.length} files.` : `Copied "${paths[0]}".` })}
                   isDirty={(p) => sourceByPath[p] !== savedByPath[p]}
                   needsBuild={(p) => unbuiltPaths.has(p)}
+                  aiWritten={(p) => aiWrittenPaths.has(p)}
                 />
               )}
             </div>

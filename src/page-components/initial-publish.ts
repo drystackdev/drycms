@@ -70,7 +70,7 @@ export async function publishAllPages(
         layoutPaths: target.layoutPaths,
         params: target.params,
       });
-      batch.push({ result, options: { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname } });
+      batch.push({ result, options: { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath } });
       if (batch.length >= PUBLISH_ALL_BATCH_SIZE) await flush();
     }
     await flush();

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import dayjs from "dayjs";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
@@ -358,15 +358,27 @@ function McpActivityDetailDialog({ entry, onClose }: { entry: McpActivityEntry |
 function McpActivitySection() {
   const [activity, setActivity] = useState<McpActivityEntry[] | null>(null);
   const [viewing, setViewing] = useState<McpActivityEntry | null>(null);
+  // Last version this component saw (see `status/build-cache.md`'s
+  // data-version protocol, same shape `draft-store.ts`'s
+  // `lastKnownAiDraftsVersion` uses for the AI content-type drafts poll) -
+  // sent back as `X-Data-Version` on the NEXT tick so the common "nothing
+  // new in the last 5s" case answers with a tiny `{changed:false}` instead
+  // of re-sending up to 50 activity entries every tick. A ref, not state:
+  // read/written across ticks without itself triggering a re-render.
+  const lastKnownVersion = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch(`${path}/api/mcp/activity`, { credentials: "same-origin" });
+        const headers =
+          lastKnownVersion.current === undefined ? undefined : { "X-Data-Version": String(lastKnownVersion.current) };
+        const res = await fetch(`${path}/api/mcp/activity`, { credentials: "same-origin", headers });
         if (!res.ok || cancelled) return;
-        const body = (await res.json()) as { activity?: McpActivityEntry[] };
-        if (!cancelled) setActivity(body.activity ?? []);
+        const body = (await res.json()) as { changed: boolean; version: number; activity?: McpActivityEntry[] };
+        lastKnownVersion.current = body.version;
+        if (!body.changed || cancelled) return;
+        setActivity(body.activity ?? []);
       } catch {
         // Leave the previous list showing - a transient poll failure isn't worth surfacing.
       }

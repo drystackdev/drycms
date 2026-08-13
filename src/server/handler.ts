@@ -22,6 +22,7 @@ import * as memoryRoute from "./routes/memory.js";
 import * as systemSettingsRoute from "./routes/system-settings.js";
 import * as dryHttpRoute from "./routes/dry-http.js";
 import * as pagesBuildRoute from "./routes/pages-build.js";
+import * as aiPageSourceFlagsRoute from "./routes/ai-page-source-flags.js";
 import * as typesCacheRoute from "./routes/types-cache.js";
 import * as pagesSourceRoute from "./routes/pages-source.js";
 import * as pageSourceAiRoute from "./routes/ai-page-source-write.js";
@@ -90,6 +91,7 @@ const API_ROUTES: Record<string, RouteModule> = {
   "system-settings": systemSettingsRoute,
   "dry-http": dryHttpRoute,
   "pages-build": pagesBuildRoute,
+  "ai-page-source-flags": aiPageSourceFlagsRoute,
   "types-cache": typesCacheRoute,
   "pages-source": pagesSourceRoute,
   "page-source-ai": pageSourceAiRoute,
