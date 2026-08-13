@@ -1622,6 +1622,18 @@ export default function PageEditor() {
 
   const buildBusy = buildingCurrent || buildAllProgress !== null;
 
+  /** How much work is staged but not yet out the door, across EVERY open
+   * file - not just the selected one the toolbar's own Save/Build buttons
+   * act on. `unsavedCount` counts files edited but never written to storage
+   * (the tree's dirty dot); `unbuiltCount` counts pages saved but not
+   * published since (the tree's needs-build dot, `unbuiltPaths`). Shown in
+   * the topbar next to Publish, so "did I leave something behind?" is
+   * answerable without scanning the file tree for dots. */
+  const unsavedCount = Object.keys(sourceByPath).filter(
+    (filePath) => sourceByPath[filePath] !== savedByPath[filePath],
+  ).length;
+  const unbuiltCount = unbuiltPaths.size;
+
   // "Build all"/Publish moves into `DryLayout`'s shared topbar
   // (`usePageHeaderActions`) rather than living in this page's own compact
   // toolbar, unlike "Build"/"Reset"/"Save" (which stay local - they act on
@@ -1633,6 +1645,16 @@ export default function PageEditor() {
       <div class="topbar-page-title">
         <strong>Page Builder</strong>
       </div>
+      {unsavedCount > 0 && (
+        <span class="badge sm secondary" data-tooltip={`${unsavedCount} file${unsavedCount === 1 ? "" : "s"} with unsaved changes`}>
+          {unsavedCount} unsaved
+        </span>
+      )}
+      {unbuiltCount > 0 && (
+        <span class="badge sm warning" data-tooltip={`${unbuiltCount} page${unbuiltCount === 1 ? "" : "s"} saved but not published yet`}>
+          {unbuiltCount} to build
+        </span>
+      )}
       <span class="spacer" />
       <button type="button" class="outline" disabled={buildBusy} aria-busy={buildAllProgress !== null} onClick={() => void handleBuildAll()}>
         <UploadIcon />

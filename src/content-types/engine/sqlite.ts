@@ -5,7 +5,7 @@ import { superAdminSeedStatement } from "../permissions.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { resolveSqliteDriver, type SqliteHandle } from "./sqlite-driver.js";
-import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
+import { ContentEngineError, type ContentEngineAdapter, type SaveBatchContext } from "./types.js";
 
 function runStatements(handle: SqliteHandle, statements: Statement[]): void {
   for (const stmt of statements) handle.run(stmt.sql, stmt.params ?? []);
@@ -93,7 +93,7 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
     return rows[0] ? (JSON.parse(rows[0].definition) as ContentTypeDefinition) : null;
   }
 
-  async function planSave(next: ContentTypeDefinition): Promise<SavePlan> {
+  async function planSave(next: ContentTypeDefinition, batch: SaveBatchContext = {}): Promise<SavePlan> {
     const oldAllTypes = await listContentTypes();
     // `planMigration` derives `expectedVersion` from whatever's CURRENTLY in
     // `oldAllTypes`, which is always fresh at this point - so it can never
@@ -108,7 +108,12 @@ export function createSqliteContentEngineAdapter(option: ResolvedSqliteContentOp
         `Content type "${next.id}" changed since it was loaded (expected v${next.version}, found v${currentVersion}).`,
       );
     }
-    const newAllTypes = [...oldAllTypes.filter((t) => t.id !== next.id), next];
+    // The NEW-state universe every component reference resolves against:
+    // what's live, with `next` (and any sibling draft from the same batch)
+    // layered over it. `oldAllTypes` deliberately stays pure-live - it's the
+    // diff baseline, so a not-yet-applied draft must never appear there.
+    const overlay = [...(batch.pendingTypes ?? []).filter((t) => t.id !== next.id), next];
+    const newAllTypes = [...oldAllTypes.filter((t) => !overlay.some((o) => o.id === t.id)), ...overlay];
     return planSaveEngine({ savedType: next, oldAllTypes, newAllTypes });
   }
 

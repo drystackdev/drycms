@@ -40,6 +40,7 @@ import {
   watchEntryDraftIndex,
 } from "../content-types/entry-draft-store.js";
 import {
+  drafts,
   hydrateContentTypeDraftIndex,
   watchContentTypeDraftIndex,
 } from "../content-types/draft-store.js";
@@ -510,6 +511,14 @@ export default function DryLayout({ children }: Props) {
     void initMemorySync();
   }, []);
 
+  // Pending, unapplied schema drafts ("Apply and build" - see
+  // `draft-store.ts`), surfaced on the Content Types nav entry as the same
+  // count badge a Collection sub-item already shows for unsaved ENTRY drafts:
+  // both answer "how much staged work is sitting here?" without opening the
+  // page. Reading the signal here (not inside the map below) keeps this
+  // component subscribed to it on every render path.
+  const contentTypeDraftCount = Object.keys(drafts.value).length;
+
   const shellClass = [
     "shell",
     collapsed.value && "collapsed",
@@ -639,6 +648,16 @@ export default function DryLayout({ children }: Props) {
                       >
                         <Icon name={item.icon} />
                         <span>{item.label}</span>
+                        {item.key === "content-types" &&
+                          contentTypeDraftCount > 0 &&
+                          !collapsed.value && (
+                            <span
+                              class="badge sm secondary"
+                              aria-label={`${contentTypeDraftCount} pending change${contentTypeDraftCount === 1 ? "" : "s"}`}
+                            >
+                              {contentTypeDraftCount}
+                            </span>
+                          )}
                       </a>
                     ) : (
                       <a

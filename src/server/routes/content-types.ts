@@ -1,7 +1,11 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { getContentAdapters } from "../content-adapters.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
-import { ContentEngineError, type ContentEngineAdapter } from "../../content-types/engine/types.js";
+import {
+  ContentEngineError,
+  type ContentEngineAdapter,
+  type SaveBatchContext,
+} from "../../content-types/engine/types.js";
 import type { DestructiveChange, SavePlan } from "../../content-types/migration.js";
 import { generateDryTypes } from "../../content-types/codegen.js";
 import { writeGeneratedDryTypes } from "../../content-types/types-cache.js";
@@ -13,6 +17,7 @@ import {
   validateProtectedFields,
 } from "../../content-types/naming.js";
 import { collectTableNames, resolveTableTree } from "../../content-types/tree.js";
+import type { ComponentFieldConfig } from "../../content-types/field-registry.js";
 import type { ContentTypeDefinition, ContentTypeKind } from "../../content-types/types.js";
 import { randomUUID } from "../../lib/uuid.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
@@ -73,6 +78,10 @@ interface SaveResultData {
   requiresConfirm?: true;
   destructiveSummary?: DestructiveChange[];
   definition?: ContentTypeDefinition;
+  /** Version bumps this save's component cascade applied to OTHER content
+   * types (see `migration.ts`'s `planSave`) - internal to `handleBatch`,
+   * stripped before anything reaches the HTTP response. */
+  cascadedVersions?: { id: string; from: number; to: number }[];
 }
 
 /** Core of POST/PUT and of each item in a batch (see `handleBatch` below):
@@ -85,11 +94,27 @@ async function performSave(
   definition: ContentTypeDefinition,
   confirm: boolean,
   dryRun = false,
+  batch: SaveBatchContext = {},
 ): Promise<SaveResultData> {
   definition = normalizeFieldOrder(definition);
-  const allTypes = await adapter.listContentTypes();
-  const existing = allTypes.find((t) => t.id === definition.id);
+  const liveTypes = await adapter.listContentTypes();
+  const existing = liveTypes.find((t) => t.id === definition.id);
   assertNotFrozen(existing);
+
+  // What names/tables/component references are checked AGAINST: the live
+  // schema with this batch's OTHER pending drafts layered over it (a draft
+  // shadows the live definition of the same id). `existing` above stays
+  // strictly live - `assertNotFrozen`/`validateProtectedFields` compare
+  // against what's really stored, not against another unapplied draft.
+  // Without the overlay a brand-new component and a brand-new singleton that
+  // embeds it can never be checked together: whichever is checked first only
+  // sees a schema the other half of the pair isn't in yet, so it fails with
+  // "references missing component" even though the batch as a whole is fine.
+  const pendingTypes = (batch.pendingTypes ?? []).filter((t) => t.id !== definition.id);
+  const allTypes =
+    pendingTypes.length === 0
+      ? liveTypes
+      : [...liveTypes.filter((t) => !pendingTypes.some((p) => p.id === t.id)), ...pendingTypes];
   validateContentTypeDefinition(definition, allTypes);
   validateProtectedFields(existing, definition);
 
@@ -102,7 +127,16 @@ async function performSave(
     const newTableNames = collectTableNames(resolveTableTree(definition, allTypes));
     const others = allTypes.filter((t) => t.id !== definition.id && t.kind !== "component");
     for (const other of others) {
-      const otherTableNames = collectTableNames(resolveTableTree(other, allTypes));
+      let otherTableNames: string[];
+      try {
+        otherTableNames = collectTableNames(resolveTableTree(other, allTypes));
+      } catch {
+        // Only reachable for an unapplied draft from this same batch that
+        // doesn't resolve yet (a live definition always does). That draft
+        // reports its own error under its own batch item - it must not make
+        // every OTHER item in the batch fail with someone else's problem.
+        continue;
+      }
       const collision = newTableNames.find((name) => otherTableNames.includes(name));
       if (collision) {
         throw new NamingError(
@@ -112,7 +146,12 @@ async function performSave(
     }
   }
 
-  const plan: SavePlan = await adapter.planSave(definition);
+  const plan: SavePlan = await adapter.planSave(definition, {
+    // Dry-run only: a real apply relies on `handleBatch`'s dependency-first
+    // ordering instead, so a batch that fails halfway can never leave a table
+    // built from a component that never made it into the live schema.
+    pendingTypes: dryRun ? pendingTypes : undefined,
+  });
   if (dryRun) {
     return { destructiveSummary: plan.destructiveSummary };
   }
@@ -130,7 +169,14 @@ async function performSave(
     await entryAdapter.ensureSingletonEntry(saved, await adapter.listContentTypes());
   }
 
-  return { definition: saved };
+  return {
+    definition: saved,
+    cascadedVersions: plan.cascaded.map((cascade) => ({
+      id: cascade.targetContentTypeId,
+      from: cascade.expectedVersion,
+      to: cascade.nextVersion,
+    })),
+  };
 }
 
 /** Shared by POST (create) and PUT (update). */
@@ -159,7 +205,8 @@ async function handleSave(
   confirm: boolean,
   context: Pick<DryRouteContext, "env">,
 ): Promise<Response> {
-  const result = await performSave(adapter, entryAdapter, definition, confirm);
+  const { cascadedVersions, ...result } = await performSave(adapter, entryAdapter, definition, confirm);
+  void cascadedVersions; // batch bookkeeping only - never part of the response
   await regenerateTypesCache(adapter, context);
   return jsonResponse(result, 200);
 }
@@ -178,23 +225,60 @@ interface BatchItemResult {
 }
 
 /**
+ * Reorders one batch so a draft always lands AFTER every other draft in the
+ * batch it embeds (a component before whatever flattens/repeats it, however
+ * deeply components nest). The client sends its drafts in arbitrary order -
+ * without this, creating a component and a singleton that uses it in one
+ * "Apply and build" fails whenever the singleton happens to come first: its
+ * migration resolves against the live schema, which the component hasn't
+ * reached yet. Depth-first post-order; a cycle (which `resolveTableTree`
+ * rejects with a proper "Circular component reference" error anyway) just
+ * keeps its incoming relative order instead of looping.
+ */
+function orderByDependency(inputs: BatchDraftInput[]): BatchDraftInput[] {
+  const byId = new Map(inputs.map((input) => [input.definition.id, input]));
+  const ordered: BatchDraftInput[] = [];
+  const visiting = new Set<string>();
+  const placed = new Set<string>();
+
+  function visit(input: BatchDraftInput): void {
+    const { id } = input.definition;
+    if (placed.has(id) || visiting.has(id)) return;
+    visiting.add(id);
+    for (const field of input.definition.fields) {
+      if (field.type !== "component") continue;
+      const { componentId } = field.config as ComponentFieldConfig;
+      const dependency = byId.get(componentId);
+      if (dependency) visit(dependency);
+    }
+    visiting.delete(id);
+    placed.add(id);
+    ordered.push(input);
+  }
+
+  for (const input of inputs) visit(input);
+  return ordered;
+}
+
+/**
  * The "Apply and build" flow (see `status/content-type-staged-apply.md`) -
  * every draft the client has pending (across all 3 kinds) in one request.
  * `mode: "plan"` is a pure dry-run (`performSave(..., dryRun: true)` for
  * every item, never writes) used for the review/build-check screen.
- * `mode: "apply"` actually runs each item's migration, sequentially and in
- * the order the client sent them, always with `confirm: true` (the
- * destructive-change review already happened client-side during `"plan"`).
+ * `mode: "apply"` actually runs each item's migration, sequentially, always
+ * with `confirm: true` (the destructive-change review already happened
+ * client-side during `"plan"`).
  * Sequential (not parallel) matters here: `performSave` re-reads live state
  * from `adapter.listContentTypes()` on every call, so applying item N sees
  * items 1..N-1 of THIS SAME batch already committed - the only way a
  * component's own draft and one of its dependents' drafts, edited together,
- * both land consistently in one "Apply and build". Stops at the first
- * failure in apply mode (whatever already committed stays committed - each
- * item is its own transaction, see `engine/sqlite.ts`'s `applySave`) so the
- * client knows exactly which drafts are now safe to discard and which are
- * still pending. Plan mode never stops early - every item's result is
- * useful to show at once. */
+ * both land consistently in one "Apply and build". `orderByDependency` below
+ * is what makes that ordering reliable rather than whatever order the client
+ * happened to send. Stops at the first failure in apply mode (whatever
+ * already committed stays committed - each item is its own transaction, see
+ * `engine/sqlite.ts`'s `applySave`) so the client knows exactly which drafts
+ * are now safe to discard and which are still pending. Plan mode never stops
+ * early - every item's result is useful to show at once. */
 export async function handleBatch(
   adapter: ContentEngineAdapter,
   entryAdapter: ContentEntryEngineAdapter,
@@ -202,10 +286,32 @@ export async function handleBatch(
   draftInputs: BatchDraftInput[],
   context: Pick<DryRouteContext, "env">,
 ): Promise<Response> {
+  const ordered = orderByDependency(draftInputs);
+  const allDrafts = ordered.map((input) => input.definition);
+  /** Version bumps an EARLIER item's component cascade already applied to a
+   * type still waiting its turn in this same batch, keyed by that type's id.
+   * Saving a component rebuilds every dependent's tables and bumps their
+   * `version` (`migration.ts`'s `planSave`) - so a dependent whose own draft
+   * is also pending here would otherwise arrive holding the version it had
+   * BEFORE that bump and be rejected as a stale edit, even though the only
+   * thing that moved it was this very batch. Rewritten only when the draft
+   * still matches the exact pre-bump version: a mismatch means someone else
+   * really did edit it meanwhile, which must still conflict. */
+  const cascadedVersions = new Map<string, { from: number; to: number }>();
   const results: BatchItemResult[] = [];
-  for (const { definition } of draftInputs) {
+  for (let definition of allDrafts) {
+    const otherDrafts = allDrafts.filter((draft) => draft.id !== definition.id);
+    const bumped = cascadedVersions.get(definition.id);
+    if (bumped && definition.version === bumped.from) {
+      definition = { ...definition, version: bumped.to };
+    }
     try {
-      const outcome = await performSave(adapter, entryAdapter, definition, mode === "apply", mode === "plan");
+      const outcome = await performSave(adapter, entryAdapter, definition, mode === "apply", mode === "plan", {
+        pendingTypes: otherDrafts,
+      });
+      for (const cascade of outcome.cascadedVersions ?? []) {
+        cascadedVersions.set(cascade.id, { from: cascade.from, to: cascade.to });
+      }
       results.push({
         id: definition.id,
         label: definition.label || definition.name,

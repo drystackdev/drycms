@@ -5,7 +5,7 @@ import { superAdminSeedStatement } from "../permissions.js";
 import { findDependents } from "../tree.js";
 import type { ContentTypeDefinition } from "../types.js";
 import { prepare, runBatch, type D1Database } from "./d1-driver.js";
-import { ContentEngineError, type ContentEngineAdapter } from "./types.js";
+import { ContentEngineError, type ContentEngineAdapter, type SaveBatchContext } from "./types.js";
 
 /**
  * Looks up the live `D1Database` for `option.binding` on `runtimeEnv`
@@ -147,7 +147,7 @@ export function createD1ContentEngineAdapter(
     return row ? (JSON.parse(row.definition) as ContentTypeDefinition) : null;
   }
 
-  async function planSave(next: ContentTypeDefinition): Promise<SavePlan> {
+  async function planSave(next: ContentTypeDefinition, batch: SaveBatchContext = {}): Promise<SavePlan> {
     const oldAllTypes = await listContentTypes();
     // See the sqlite adapter's identical check: `planMigration` derives
     // `expectedVersion` from whatever's CURRENTLY in `oldAllTypes`, so it
@@ -161,7 +161,11 @@ export function createD1ContentEngineAdapter(
         `Content type "${next.id}" changed since it was loaded (expected v${next.version}, found v${currentVersion}).`,
       );
     }
-    const newAllTypes = [...oldAllTypes.filter((t) => t.id !== next.id), next];
+    // Same overlay the sqlite adapter builds - see its comment: `newAllTypes`
+    // is the resolution universe (live + this batch's other drafts),
+    // `oldAllTypes` stays pure-live because it's the diff baseline.
+    const overlay = [...(batch.pendingTypes ?? []).filter((t) => t.id !== next.id), next];
+    const newAllTypes = [...oldAllTypes.filter((t) => !overlay.some((o) => o.id === t.id)), ...overlay];
     return planSaveEngine({ savedType: next, oldAllTypes, newAllTypes });
   }
 

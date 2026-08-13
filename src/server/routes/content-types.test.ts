@@ -526,6 +526,95 @@ describe("POST /dry/api/content-types - batch apply/plan (Apply and build)", () 
     ]);
     expect((await get("custom-batch-seq-b")).json.definition.name).toBe("seqa");
   });
+
+  /** A brand-new component and a brand-new type that embeds it, staged
+   * together (the flow that used to fail outright with "references missing
+   * component" - neither half is live yet, so each was checked against a
+   * schema the other wasn't in). */
+  function newComponentPair(suffix: string, kind: "singleton" | "collection") {
+    const component = type(`custom-batch-cmp-${suffix}`, `cmp${suffix}`, {
+      kind: "component",
+      fields: [field("caption")],
+    });
+    const dependent = type(`custom-batch-host-${suffix}`, `host${suffix}`, {
+      kind,
+      fields: [
+        field("hero", {
+          id: `field-hero-${suffix}`,
+          type: "component",
+          config: { componentId: component.id, repeatable: false },
+        }),
+      ],
+    });
+    return { component, dependent };
+  }
+
+  it("plan mode checks a brand-new component together with a brand-new type that embeds it", async () => {
+    const { component, dependent } = newComponentPair("plan", "singleton");
+
+    // Dependent FIRST - the order the client happens to send must not matter.
+    const { json } = await post({
+      mode: "plan",
+      drafts: [{ definition: dependent }, { definition: component }],
+    });
+    expect(json.results).toHaveLength(2);
+    expect(json.results.every((r: any) => r.ok)).toBe(true);
+
+    // Still a pure dry-run.
+    expect((await get(component.id)).status).toBe(404);
+    expect((await get(dependent.id)).status).toBe(404);
+  });
+
+  it("apply mode writes the component before whatever embeds it, whatever order the client sent", async () => {
+    const { component, dependent } = newComponentPair("apply", "collection");
+
+    const { json } = await post({
+      mode: "apply",
+      drafts: [{ definition: dependent }, { definition: component }],
+    });
+    expect(json.results).toHaveLength(2);
+    expect(json.results.every((r: any) => r.ok)).toBe(true);
+    expect(json.results[0].id).toBe(component.id); // reordered: dependency first
+
+    // Both are live, and the host's table really got built (the entries API
+    // 500s if the table the definition implies doesn't exist).
+    expect((await get(component.id)).json.definition.version).toBe(1);
+    expect((await get(dependent.id)).json.definition.version).toBe(1);
+    const entries = await entriesGET(context({ slug: "hostapply" }));
+    expect(entries.status).toBe(200);
+  });
+
+  it("applies an edited component and an edited dependent in one batch (the cascade doesn't invalidate the dependent's own draft)", async () => {
+    const { component, dependent } = newComponentPair("both", "collection");
+    await post({ mode: "apply", drafts: [{ definition: component }, { definition: dependent }] });
+
+    const liveComponent = (await get(component.id)).json.definition as ContentTypeDefinition;
+    const liveDependent = (await get(dependent.id)).json.definition as ContentTypeDefinition;
+    const componentDraft = {
+      ...liveComponent,
+      fields: [...liveComponent.fields, field("subtitle", { id: "field-subtitle-both" })],
+    };
+    const dependentDraft = {
+      ...liveDependent,
+      fields: [...liveDependent.fields, field("heading", { id: "field-heading-both" })],
+    };
+
+    const { json } = await post({
+      mode: "apply",
+      drafts: [{ definition: componentDraft }, { definition: dependentDraft }],
+    });
+    expect(json.results).toEqual([
+      expect.objectContaining({ id: component.id, ok: true }),
+      expect.objectContaining({ id: dependent.id, ok: true }),
+    ]);
+    expect((await get(dependent.id)).json.definition.fields).toHaveLength(2);
+
+    // The component's new field reached the dependent's TABLE too (the
+    // cascade), not just its metadata - reading entries selects every column
+    // the definition implies, so a missing `hero_subtitle` would fail here.
+    const entries = await entriesGET(context({ slug: "hostboth" }));
+    expect(entries.status).toBe(200);
+  });
 });
 
 describe("content-types route - authorization", () => {

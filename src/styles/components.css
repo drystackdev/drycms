@@ -2977,6 +2977,12 @@
       margin-inline-start: auto;
     }
 
+    /* Same trailing count badge, on a TOP-level nav entry (Content Types'
+     * pending "Apply and build" drafts) rather than a sub-item. */
+    .sidebar nav > .nav-section > a > .badge {
+      margin-inline-start: auto;
+    }
+
     .sidebar-nav-popup-item > a > .nav-draft-dot,
     .sidebar-nav-popup-item > a > .badge {
       margin-inline-start: 0.375rem;
