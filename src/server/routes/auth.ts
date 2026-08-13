@@ -441,10 +441,19 @@ export const POST: DryRouteHandler = async (context) => {
 
     if (endpoint === "mcp-tokens") {
       if (!context.session) return unauthenticatedResponse();
-      const body = (await context.request.json().catch(() => ({}))) as { label?: unknown };
+      const body = (await context.request.json().catch(() => ({}))) as { label?: unknown; replaces?: unknown };
       const label = typeof body.label === "string" ? body.label.trim().slice(0, 100) : "";
       if (!label) throw new AuthError("validation_failed", "A label is required.", { label: "A label is required." });
+      const replaces = typeof body.replaces === "string" ? body.replaces : "";
       const { tokenId, token } = await createMcpToken(context.session.id, label, context.env);
+      // Regenerating an existing row (`McpConnect.tsx`'s "Regenerate token" -
+      // the only way back to a usable raw value, since nothing here can read
+      // one back out). The old token is revoked only AFTER its replacement
+      // exists, so a failure in between can never leave the user with no
+      // working token, and `revokeMcpToken` is scoped to this session's own
+      // index - a caller can't rotate away someone else's token by guessing
+      // its id.
+      if (replaces) await revokeMcpToken(context.session.id, replaces, context.env);
       // `token` is only ever returned here, this once - see `auth-security.ts`'s
       // `createMcpToken` doc comment. The client must show/copy it immediately.
       return jsonResponse({ tokenId, token }, 201);

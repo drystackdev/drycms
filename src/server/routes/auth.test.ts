@@ -219,6 +219,40 @@ describe("auth route", () => {
     expect(unknownEmail.json.message).toBe(wrongPassword.json.message);
   });
 
+  it("regenerates an MCP token in place: new value works, the replaced one stops authenticating", async () => {
+    const { resolveMcpToken } = await import("../auth-security.js");
+    // Deliberately ahead of the update-profile test below: that one changes
+    // the password, which revokes every session for this user - and a session
+    // minted in the same second as that revocation is itself rejected.
+    const cookie = cookieFrom((await login({ email: "ada@example.com", password: "hunter2-long-password" })).response)!;
+
+    const anonymous = await POST(await context({ slug: "mcp-tokens", method: "POST", body: { label: "Claude Desktop" } }));
+    expect(anonymous.status).toBe(401);
+
+    const created = await POST(await context({ slug: "mcp-tokens", method: "POST", body: { label: "Claude Desktop" }, cookie }));
+    expect(created.status).toBe(201);
+    const first = (await created.json()) as { tokenId: string; token: string };
+    expect(await resolveMcpToken(first.token, {})).not.toBeNull();
+
+    // `replaces` is what `McpConnect.tsx`'s "Regenerate token" sends - one
+    // request that mints the replacement first and only then revokes the old
+    // id, so the row is never left without a working token.
+    const regenerated = await POST(
+      await context({ slug: "mcp-tokens", method: "POST", body: { label: "Claude Desktop", replaces: first.tokenId }, cookie }),
+    );
+    expect(regenerated.status).toBe(201);
+    const second = (await regenerated.json()) as { tokenId: string; token: string };
+    expect(second.tokenId).not.toBe(first.tokenId);
+    expect(second.token).not.toBe(first.token);
+
+    expect(await resolveMcpToken(second.token, {})).not.toBeNull();
+    expect(await resolveMcpToken(first.token, {})).toBeNull();
+
+    const listed = await GET(await context({ slug: "mcp-tokens", cookie }));
+    const { tokens } = (await listed.json()) as { tokens: { tokenId: string; label: string }[] };
+    expect(tokens).toEqual([{ tokenId: second.tokenId, label: "Claude Desktop", createdAt: expect.any(String), lastUsedAt: expect.any(String) }]);
+  });
+
   it("update-profile requires a session, and a password change requires + verifies the current password", async () => {
     const { cookie } = await (async () => {
       const res = await login({ email: "ada@example.com", password: "hunter2-long-password" });

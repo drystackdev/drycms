@@ -312,3 +312,160 @@ Next diagnostic if this fails too: the temporary `/token` request log (added
 in round 4, not yet exercised by a real attempt) will show whether claude.ai
 sends `resource`/`scope`/`client_secret` there. After that, the evidence is
 conclusive enough to report upstream rather than keep changing this server.
+
+### ROOT CAUSE (2026-08-14, round 6): Cloudflare's "Manage AI bots" WAF rule
+
+**Nothing was ever wrong with this server.** The Cloudflare WAF on the
+`drystack.dev` zone was blocking claude.ai's MCP requests at the EDGE, before
+the Worker ran - which is exactly why `wrangler tail` showed "claude.ai never
+calls the MCP endpoint": a request blocked at the edge never reaches the
+Worker and therefore never appears in a tail.
+
+Found by querying the zone's `firewallEventsAdaptive` GraphQL dataset (NOT
+visible in `wrangler tail`; the wrangler OAuth token in
+`~/Library/Preferences/.wrangler/config/default.toml` can read it, though
+zone *settings*/bot_management return 403 with that token):
+
+```
+20:18:30  POST /dry/api/oauth/token  200  IAD  python-httpx/0.28.1   ← Worker, OK
+20:18:32  POST /dry/api/mcp          BLOCK     Claude-User 160.79.106.177
+20:18:35  POST /dry/api/mcp          BLOCK     Claude-User 160.79.106.177
+   rule: "Manage AI bots"  ruleId 7bd01eeccb6b420fa0be30264603a5cb
+   ruleset 3e677e63d4e9479382576f3fa66279e7 (source: firewallManaged)
+```
+
+Two different clients are involved in one connect, and only one of them was
+blocked - which is what hid this for five rounds:
+
+- the OAuth/discovery half runs from claude.ai's backend as
+  `user-agent: python-httpx/0.28.1` → not classified as an AI bot → reaches
+  the Worker (that's why register/authorize/token all returned 200);
+- the actual MCP traffic runs as `user-agent: Claude-User` from
+  `160.79.106.0/24` → classified as an AI bot → **blocked**.
+
+Reproducible with curl against production:
+
+```
+curl -X POST https://dev.drystack.dev/dry/api/mcp -H 'User-Agent: Claude-User' ...
+  → 403 "Your request was blocked."     (edge, no Worker log)
+curl -X POST https://dev.drystack.dev/dry/api/mcp -H 'User-Agent: python-httpx/0.28.1' ...
+  → 401 {"error":"unauthenticated"}     (Worker)
+```
+
+Also explains round 5's "Codex/ChatGPT connects fine": its connector's UA
+isn't on Cloudflare's AI-bot list, so it was never blocked.
+
+Separately visible in the same dataset: a `bic` (Browser Integrity Check)
+block on `Python-urllib/*` UAs - unrelated to claude.ai, but it will bite any
+scripted QA against production that doesn't set a browser-ish UA.
+
+**Fix (zone config, not code)** - Cloudflare dashboard for `drystack.dev`,
+Security → WAF → Custom rules, new rule placed FIRST:
+
+- Expression: `http.request.uri.path eq "/dry/api/mcp" or
+  starts_with(http.request.uri.path, "/dry/api/oauth/") or
+  starts_with(http.request.uri.path, "/.well-known/oauth")`
+- Action: **Skip** → All managed rules (the "Manage AI bots" rule runs in the
+  `http_request_firewall_managed` phase, so a skip from the custom-rules
+  phase bypasses it), and also tick Browser Integrity Check.
+
+The blunt alternative is turning "Block AI bots" off zone-wide (Security →
+Bots / AI Crawl Control), but that also drops AI-bot protection for the
+public site, so the path-scoped skip is preferred.
+
+Note for every future tenant deploy: this is per-zone Cloudflare
+configuration, so any new tenant zone that has AI-bot blocking enabled will
+hit the identical failure with a perfectly correct server.
+
+Round 4/5 code changes (`expires_in`, scopes, refresh tokens, dot-free
+tokens, `405 + Allow: POST` on the bare `GET`) are all still correct and
+worth keeping - they just weren't the cause. The TEMPORARY diagnostic
+`console.log`s in `routes/oauth.ts` (`handleRegister`, `handleToken`) can be
+removed once a connect succeeds.
+
+#### FIX APPLIED (2026-08-14 20:40 UTC) and verified
+
+Created via the Rulesets API with a one-off `Zone WAF: Edit` token the user
+issued (since revoked). The zone had NO custom-rules ruleset at all, so one
+was created containing exactly this single rule:
+
+```
+ruleset  d3eef0e8c2394574b9ed1a5cecc0185a  (zone, http_request_firewall_custom)
+rule     30069ef1747e4c13bf0f2813a9d8a1cf  "Allow Claude MCP connector
+                                            (skip managed rules on MCP/OAuth paths)"
+action   skip
+  phases   http_request_firewall_managed, http_request_sbfm
+  products waf, bic, uaBlock, hot, securityLevel, zoneLockdown
+  ruleset  current
+expr     (http.request.uri.path eq "/dry/api/mcp")
+      or (starts_with(http.request.uri.path, "/dry/api/oauth/"))
+      or (starts_with(http.request.uri.path, "/.well-known/oauth"))
+```
+
+GOTCHA that nearly caused a wrong second diagnosis: the rule looks like it
+did nothing for the first ~2 minutes (immediately after creation,
+`Claude-User` still got 403 and `Python-urllib` still got 1010). It is purely
+propagation delay - re-test a few minutes later before concluding the skip
+doesn't cover the rule. Verified after propagation:
+
+```
+as Claude-User:  POST /dry/api/mcp                  401  (reaches the Worker)
+                 GET  /dry/api/mcp                  401
+                 GET  /.well-known/oauth-*          200
+                 POST /dry/api/oauth/token (bogus)  400  invalid_grant
+                 GET  /                             403  <- still blocked, protection intact
+                 GET  /dry/                         403  <- still blocked
+as browser UA:   GET  /                             200
+```
+
+So AI-bot blocking is untouched everywhere except the three MCP/OAuth path
+groups, which are protected by the app's own bearer-token check anyway.
+
+### ROOT CAUSE (round 6): the connector is configured with static client
+### credentials - `client_id` is the literal string "Authorization"
+
+The `/token` request log added in round 4 finally caught a real claude.ai
+exchange, side by side with a working Codex one:
+
+```
+claude.ai (IAD):
+  GET  /dry/api/oauth/authorize?response_type=code&client_id=Authorization&...
+  POST /dry/api/oauth/token
+    {"grant_type":"authorization_code","code":"<72 chars>",
+     "client_id":"Authorization","code_verifier":"<redacted>",
+     "redirect_uri":"https://claude.ai/api/mcp/auth_callback",
+     "resource":"https://dev.drystack.dev/dry/api/mcp",
+     "client_secret":"<redacted>"}     <- static credentials!
+
+codex (SIN):
+  POST /dry/api/oauth/token
+    {"grant_type":"refresh_token","refresh_token":"<redacted>",
+     "client_id":"6abfda3e-d09f-4cc7-9879-c3c95570c411",   <- the DCR uuid
+     "resource":"https://dev.drystack.dev/dry/api/mcp"}
+```
+
+claude.ai calls `POST /register`, gets a proper uuid `client_id` back - and
+then throws it away and sends `client_id=Authorization` plus a
+`client_secret` instead. That only happens when the custom connector was
+added with the optional **OAuth Client ID / OAuth Client Secret** fields
+filled in (claude.com/docs/connectors/building/authentication: "Supplying
+your own pre-registered client ID (and secret...) as static client
+credentials... avoids dynamic client registration entirely"). Someone typed
+`Authorization` into the Client ID box - which also explains the very first
+round's mystery, wrongly written up back then as "claude.ai has no DCR
+support and hardcodes the string".
+
+This server's `handleAuthorize` fallback for unregistered client ids (added
+in round 1 on that wrong theory) is what let the flow get all the way to a
+200 token response with garbage credentials instead of failing loudly at
+`/authorize` - the misconfiguration was invisible from our side until the
+token body was logged.
+
+FIX: in claude.ai, edit the connector (or delete and re-add it with the URL
+only) leaving OAuth Client ID and OAuth Client Secret EMPTY, so DCR is used
+and the registered uuid `client_id` flows through authorize/token - exactly
+what Codex does on this same server.
+
+Note the fallback is still worth keeping: Claude Code identifies itself with
+a Client ID Metadata Document (an https URL as `client_id`, never registered
+here), and that path needs it.

@@ -118,16 +118,19 @@ function connectSnippets(mcpUrl: string, token: string): McpClientSnippet[] {
  * created earlier THIS session still shows its real value, see
  * `McpTokensSection`'s own `revealedTokens`), just the ready-to-paste command
  * shape with this in place of the value the admin has to paste in
- * themselves. */
+ * themselves. The dialog's "Regenerate token" button is the way back to a
+ * real value from here. */
 const MCP_TOKEN_PLACEHOLDER = "<YOUR_TOKEN>";
 
 interface McpConnectDialogState {
+  /** The row being connected - what "Regenerate token" replaces. */
+  tokenId: string;
   label: string;
   token: string;
-  /** `true` only for the render right after `handleGenerate` succeeds - the
-   * one moment the raw token exists to show/copy at all. `false` for every
-   * later reopen (an existing row's click), where `token` is always
-   * `MCP_TOKEN_PLACEHOLDER`. */
+  /** `true` only for the render right after `handleGenerate`/
+   * `handleRegenerate` succeeds - the one moment the raw token exists to
+   * show/copy at all. `false` for every later reopen (an existing row's
+   * click), where `token` is always `MCP_TOKEN_PLACEHOLDER`. */
   revealed: boolean;
 }
 
@@ -140,7 +143,17 @@ interface McpConnectDialogState {
  * stretching every child - the client tabs, the "Done" button - to fill a
  * grid column meant for a single line of text. Same native `<dialog>` +
  * `useDialogSync` pattern as `McpActivityDetailDialog` below. */
-function McpConnectDialog({ state, onClose }: { state: McpConnectDialogState | null; onClose: () => void }) {
+function McpConnectDialog({
+  state,
+  regenerating,
+  onRegenerate,
+  onClose,
+}: {
+  state: McpConnectDialogState | null;
+  regenerating: boolean;
+  onRegenerate: () => void;
+  onClose: () => void;
+}) {
   const ref = useDialogSync(state !== null, onClose);
   // Deps include `state !== null`: the scroll body only mounts once the
   // dialog opens, so the ref is still null on first render - same reasoning
@@ -167,13 +180,33 @@ function McpConnectDialog({ state, onClose }: { state: McpConnectDialogState | n
             <p>
               {state.revealed
                 ? "It won't be shown again - save it somewhere safe."
-                : "Its raw value was only shown once, when it was created - paste your saved value in place of the placeholder below."}
+                : "Its raw value was only shown once, when it was created - paste your saved value in place of the placeholder below, or regenerate it."}
             </p>
           </header>
 
           <div class="mcp-connect-dialog-scroll" ref={bodyScroll}>
             <div class="stack" style={{ gap: "0.5rem", marginBlockStart: "1rem" }}>
-              <p class="hint" style={{ margin: 0 }}>Ready-to-paste connect command for:</p>
+              {state.revealed ? (
+                <div>
+                  <small class="hint">Token</small>
+                  <CodeBlock code={state.token} copyable wrap />
+                </div>
+              ) : (
+                // Only ever mints a REPLACEMENT - the server can't read the old
+                // raw value back out (`auth-security.ts` stores just its hash),
+                // so this is the one route from a placeholder back to a token
+                // that can actually be pasted somewhere.
+                <div class="stack" style={{ gap: "0.25rem", alignItems: "flex-start" }}>
+                  <button type="button" onClick={onRegenerate} disabled={regenerating} aria-busy={regenerating || undefined}>
+                    Regenerate token
+                  </button>
+                  <small class="hint">
+                    Issues a new token under the same label and revokes the current one - any client still using the old value stops working
+                    until you paste in the new one.
+                  </small>
+                </div>
+              )}
+              <p class="hint" style={{ margin: "0.5rem 0 0" }}>Ready-to-paste connect command for:</p>
               <div class="button-group" style={{ alignSelf: "flex-start" }}>
                 {clients.map((candidate) => (
                   <button
@@ -221,6 +254,7 @@ function McpTokensSection() {
   const [revealedTokens, setRevealedTokens] = useState<Record<string, string>>({});
   const [revokeTarget, setRevokeTarget] = useState<McpTokenMeta | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -250,12 +284,52 @@ function McpTokensSection() {
       if (!res.ok || !body.tokenId || !body.token) throw new Error(body.message ?? "Failed to generate token.");
       setTokens((current) => [...(current ?? []), { tokenId: body.tokenId!, label: label.trim(), createdAt: new Date().toISOString(), lastUsedAt: new Date().toISOString() }]);
       setRevealedTokens((current) => ({ ...current, [body.tokenId!]: body.token! }));
-      setConnectDialog({ label: label.trim(), token: body.token, revealed: true });
+      setConnectDialog({ tokenId: body.tokenId, label: label.trim(), token: body.token, revealed: true });
       setLabel("");
     } catch (error) {
       toast.add({ type: "error", title: "Could not generate token", description: error instanceof Error ? error.message : undefined });
     } finally {
       setCreating(false);
+    }
+  }
+
+  /** Same `POST /mcp-tokens` as `handleGenerate`, plus `replaces` - the server
+   * mints the new token first and only then revokes the old one, so a failure
+   * here never leaves the row without a working token. Reuses the open
+   * dialog's own row rather than taking an argument: this is only ever reached
+   * from `McpConnectDialog`'s button, which can't be shown for anything else. */
+  async function handleRegenerate() {
+    const target = connectDialog;
+    if (!target || regenerating) return;
+    setRegenerating(true);
+    try {
+      const res = await fetch(`${path}/api/auth/mcp-tokens`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ label: target.label, replaces: target.tokenId }),
+      });
+      const body = (await res.json()) as { tokenId?: string; token?: string; message?: string };
+      if (!res.ok || !body.tokenId || !body.token) throw new Error(body.message ?? "Failed to regenerate token.");
+      const now = new Date().toISOString();
+      setTokens((current) =>
+        (current ?? []).map((entry) =>
+          entry.tokenId === target.tokenId
+            ? { tokenId: body.tokenId!, label: target.label, createdAt: now, lastUsedAt: now }
+            : entry,
+        ),
+      );
+      setRevealedTokens((current) => {
+        const next = { ...current, [body.tokenId!]: body.token! };
+        delete next[target.tokenId];
+        return next;
+      });
+      setConnectDialog({ tokenId: body.tokenId, label: target.label, token: body.token, revealed: true });
+      toast.add({ type: "success", title: "New token issued.", description: "The previous value has been revoked." });
+    } catch (error) {
+      toast.add({ type: "error", title: "Could not regenerate token", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -308,8 +382,8 @@ function McpTokensSection() {
                           const revealedToken = revealedTokens[token.tokenId];
                           setConnectDialog(
                             revealedToken
-                              ? { label: token.label, token: revealedToken, revealed: true }
-                              : { label: token.label, token: MCP_TOKEN_PLACEHOLDER, revealed: false },
+                              ? { tokenId: token.tokenId, label: token.label, token: revealedToken, revealed: true }
+                              : { tokenId: token.tokenId, label: token.label, token: MCP_TOKEN_PLACEHOLDER, revealed: false },
                           );
                         }}
                       >
@@ -334,7 +408,12 @@ function McpTokensSection() {
         )}
       </div>
 
-      <McpConnectDialog state={connectDialog} onClose={() => setConnectDialog(null)} />
+      <McpConnectDialog
+        state={connectDialog}
+        regenerating={regenerating}
+        onRegenerate={() => void handleRegenerate()}
+        onClose={() => setConnectDialog(null)}
+      />
 
       <ConfirmDialog
         open={!!revokeTarget}
