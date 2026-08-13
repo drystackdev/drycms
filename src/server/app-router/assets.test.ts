@@ -38,9 +38,20 @@ describe("resolveGlobalsCssHref", () => {
     expect(resolveGlobalsCssHref(false, path)).toBe("/assets/appsGlobals-abc123.css");
   });
 
-  it("throws a clear error when the manifest has no globals.css entry", () => {
+  // Unlike every sibling `resolve*Href` below (always-on-disk COMMITTED
+  // files - a missing entry is a real bug, worth throwing on), a missing
+  // globals.css entry is the expected shape of a CI build with no live
+  // pages-source content yet (`resolve-asset-href.ts`'s own doc comment on
+  // `resolveBuiltAssetHref`'s `required` param) - found live, this crashed
+  // a real Cloudflare build ("0 modules transformed" -> ENOENT reading a
+  // manifest.json that was consequently never written).
+  it("returns an empty href (not a throw) when the manifest has no globals.css entry", () => {
     const path = writeManifest({ "index.html": { file: "assets/main-def456.js" } });
-    expect(() => resolveGlobalsCssHref(false, path)).toThrow(/src\/apps\/styles\/globals\.css/);
+    expect(resolveGlobalsCssHref(false, path)).toBe("");
+  });
+
+  it("returns an empty href (not a throw) when the manifest file itself doesn't exist", () => {
+    expect(resolveGlobalsCssHref(false, "/does/not/exist/manifest.json")).toBe("");
   });
 });
 

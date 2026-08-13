@@ -162,7 +162,11 @@ export function buildHeadPrefix(adminPath: string, siteLang: string, assets: Ass
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     `<link rel="icon" href="${faviconIcoHref}">` +
     `<link rel="icon" type="image/png" href="${faviconPngHref}">` +
-    `<link rel="stylesheet" href="${assets.globalsCssHref}">` +
+    // Empty on a CI build with no live pages-source content yet
+    // (`resolve-asset-href.ts`'s `resolveGlobalsCssHref` doc comment) -
+    // omit the tag rather than emit `<link ... href="">` (which a browser
+    // resolves to the CURRENT document URL and tries to parse as CSS).
+    (assets.globalsCssHref ? `<link rel="stylesheet" href="${assets.globalsCssHref}">` : "") +
     (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
     `<script type="module" src="${assets.hydrateEntryHref}"></script>` +
     `<script type="module" src="${assets.veiOverlayHref}"></script>`

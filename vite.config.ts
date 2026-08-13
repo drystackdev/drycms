@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
@@ -193,7 +193,22 @@ export default defineConfig(({ isSsrBuild, command }) => ({
               // dependency scan... failed to resolve rolldownOptions.input
               // value" the moment this repo's `.dry/pages-source` didn't
               // have a `src/apps/styles/globals.css` copy sitting around yet.
-              ...(command === "build" ? { appsGlobals: "src/apps/styles/globals.css" } : {}),
+              //
+              // Also gated on the file actually existing on disk: a CI build
+              // (Cloudflare Pages/Workers Builds) runs from a fresh git
+              // checkout with no `.dry/pages-source` ever populated - `pull`
+              // then materializes 0 files, and an unresolvable ENTRY (as
+              // opposed to a missing import somewhere inside the graph)
+              // took the whole client build down to "0 modules transformed"
+              // instead of just this one asset - found live, a real
+              // `bun run build` failure on Cloudflare's build image.
+              // `resolve-asset-href.ts`'s `resolveGlobalsCssHref` tolerates
+              // the resulting gap in `manifest.json` (`required: false`);
+              // `build-document.ts`'s `buildHeadPrefix` skips the
+              // `<link rel="stylesheet">` tag entirely when there's no href.
+              ...(command === "build" && existsSync(fileURLToPath(new URL("./src/apps/styles/globals.css", import.meta.url)))
+                ? { appsGlobals: "src/apps/styles/globals.css" }
+                : {}),
               appsHydrate: "src/apps/hydrate-client.ts",
               appsVeiOverlay: "src/apps/vei/overlay.ts",
               // mục 7 (app-r2 build pipeline hydration) - the client

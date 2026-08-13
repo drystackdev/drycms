@@ -30,13 +30,29 @@ interface ManifestEntry {
  * `process.cwd()` internally) so this is testable the same way
  * `route-tree.ts`'s `buildRouteTree` is - a pure function, real
  * environment values supplied only at the real call sites.
+ *
+ * `required` (default `true`) - `false` returns `""` instead of throwing
+ * when `sourcePath` has no entry in the manifest (or the manifest itself
+ * doesn't exist). Only `resolveGlobalsCssHref` passes `false`: unlike the
+ * other 3 hrefs below (always-on-disk COMMITTED files - their absence is a
+ * real bug), `globals.css` is the live pages-source store's build-time
+ * materialized copy, which is legitimately empty on a fresh CI checkout
+ * that never had `.dry/pages-source` populated (`vite.config.ts`'s own
+ * `existsSync` guard on the `appsGlobals` entry) - no entry, not a bug.
  */
-function resolveBuiltAssetHref(dev: boolean, sourcePath: string, manifestPath: string): string {
+function resolveBuiltAssetHref(dev: boolean, sourcePath: string, manifestPath: string, required = true): string {
   if (dev) return `/${sourcePath}`;
 
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, ManifestEntry>;
+  let manifest: Record<string, ManifestEntry>;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, ManifestEntry>;
+  } catch (error) {
+    if (!required) return "";
+    throw error;
+  }
   const entry = manifest[sourcePath];
   if (!entry) {
+    if (!required) return "";
     throw new Error(`[drycms] ${manifestPath} has no "${sourcePath}" entry - rebuild with \`bun run build\`.`);
   }
   return `/${entry.file}`;
@@ -68,7 +84,7 @@ export function resolveGlobalsCssHref(
       return `/@fs/${join(storage.root, "styles/globals.css").replace(/\\/g, "/")}`;
     }
   }
-  return resolveBuiltAssetHref(dev, "src/apps/styles/globals.css", manifestPath);
+  return resolveBuiltAssetHref(dev, "src/apps/styles/globals.css", manifestPath, false);
 }
 
 export function resolveHydrateEntryHref(
