@@ -1,10 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
 import dayjs from "dayjs";
-import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import ConfirmDialog from "../components/ConfirmDialog.js";
+import CodeBlock from "../components/CodeBlock.js";
 import { useDialogSync } from "../hooks/list-nav.js";
-import { ArrowLeftIcon, CopyIcon, EyeIcon, PlusIcon, TrashIcon } from "../components/icons/index.js";
+import { useOverlayScrollbars } from "../hooks/overlayscrollbars.js";
+import { CopyIcon, EyeIcon, LinkIcon, PlusIcon, TrashIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import TextField from "../components/fields/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
@@ -22,13 +23,202 @@ interface McpTokenMeta {
   lastUsedAt: string;
 }
 
+type McpClientId = "claude-desktop" | "claude-code" | "codex" | "gemini" | "other";
+
+interface McpClientSnippet {
+  id: McpClientId;
+  label: string;
+  blocks: { note: string; code: string }[];
+}
+
+/** Ready-to-paste connection commands/configs for the MCP clients this
+ * project's users actually reach for - each just needs the freshly-minted
+ * token and this server's own `/api/mcp` URL substituted in. Kept next to
+ * `justCreated` below since the raw token only exists in memory for that one
+ * render pass. */
+function connectSnippets(mcpUrl: string, token: string): McpClientSnippet[] {
+  return [
+    {
+      id: "claude-desktop",
+      label: "Claude Desktop",
+      blocks: [
+        {
+          note: "Add to claude_desktop_config.json (Settings -> Developer -> Edit Config).",
+          code: JSON.stringify(
+            { mcpServers: { drycms: { type: "http", url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } },
+            null,
+            2,
+          ),
+        },
+      ],
+    },
+    {
+      id: "claude-code",
+      label: "Claude Code",
+      blocks: [
+        {
+          note: "Run in a terminal - including Claude Code's own web terminal at claude.ai/code.",
+          code: `claude mcp add --transport http drycms ${mcpUrl} --header "Authorization: Bearer ${token}"`,
+        },
+        {
+          note: "Or commit this to the repo's .mcp.json so a Claude Code cloud session picks it up automatically.",
+          code: JSON.stringify(
+            { mcpServers: { drycms: { type: "http", url: mcpUrl, headers: { Authorization: `Bearer ${token}` } } } },
+            null,
+            2,
+          ),
+        },
+      ],
+    },
+    {
+      id: "codex",
+      label: "Codex CLI",
+      blocks: [
+        {
+          note: "Set once, e.g. in your shell profile.",
+          code: `export DRYCMS_MCP_TOKEN="${token}"`,
+        },
+        {
+          note: "Add to ~/.codex/config.toml.",
+          code: `[mcp_servers.drycms]\nurl = "${mcpUrl}"\nbearer_token_env_var = "DRYCMS_MCP_TOKEN"`,
+        },
+      ],
+    },
+    {
+      id: "gemini",
+      label: "Gemini CLI",
+      blocks: [
+        {
+          note: "Run in a terminal.",
+          code: `gemini mcp add --transport http --header "Authorization: Bearer ${token}" drycms ${mcpUrl}`,
+        },
+      ],
+    },
+    {
+      id: "other",
+      label: "Other",
+      blocks: [
+        {
+          note: "MCP server URL (Streamable HTTP transport).",
+          code: mcpUrl,
+        },
+        {
+          note: "Authorization header - required on every request.",
+          code: `Authorization: Bearer ${token}`,
+        },
+      ],
+    },
+  ];
+}
+
+/** Stands in for a token's raw value everywhere the connect snippets below
+ * need one but the real secret isn't available - reopening an EXISTING
+ * token's row whose value this tab never saw (it's never stored past
+ * creation, see `auth-security.ts`'s own doc comment on `McpTokenMeta`; a row
+ * created earlier THIS session still shows its real value, see
+ * `McpTokensSection`'s own `revealedTokens`), just the ready-to-paste command
+ * shape with this in place of the value the admin has to paste in
+ * themselves. */
+const MCP_TOKEN_PLACEHOLDER = "<YOUR_TOKEN>";
+
+interface McpConnectDialogState {
+  label: string;
+  token: string;
+  /** `true` only for the render right after `handleGenerate` succeeds - the
+   * one moment the raw token exists to show/copy at all. `false` for every
+   * later reopen (an existing row's click), where `token` is always
+   * `MCP_TOKEN_PLACEHOLDER`. */
+  revealed: boolean;
+}
+
+/** The "copy this token" + "ready-to-paste connect command" UI, shared
+ * between a freshly-generated token (`revealed: true`) and reopening an
+ * existing row to get the connect snippets again (`revealed: false`, token
+ * value replaced by a placeholder - see `MCP_TOKEN_PLACEHOLDER`). A real
+ * `<dialog>` rather than the inline `.alert` this used to be: `.alert`'s own
+ * CSS is a 2-column icon+message grid (`components.css`), which was
+ * stretching every child - the client tabs, the "Done" button - to fill a
+ * grid column meant for a single line of text. Same native `<dialog>` +
+ * `useDialogSync` pattern as `McpActivityDetailDialog` below. */
+function McpConnectDialog({ state, onClose }: { state: McpConnectDialogState | null; onClose: () => void }) {
+  const ref = useDialogSync(state !== null, onClose);
+  // Deps include `state !== null`: the scroll body only mounts once the
+  // dialog opens, so the ref is still null on first render - same reasoning
+  // as `FieldDialog.tsx`'s own `gridScroll`.
+  const { ref: bodyScroll } = useOverlayScrollbars<HTMLDivElement>([state !== null]);
+  const [client, setClient] = useState<McpClientId>("claude-desktop");
+
+  const clients = state ? connectSnippets(`${window.location.origin}${path}/api/mcp`, state.token) : [];
+  const active = clients.find((candidate) => candidate.id === client) ?? clients[0];
+
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text).then(
+      () => toast.add({ type: "success", title: "Copied to clipboard." }),
+      () => toast.add({ type: "error", title: "Could not copy to clipboard." }),
+    );
+  }
+
+  return (
+    <dialog ref={ref} class="lg mcp-connect-dialog" aria-label={state ? `Connect "${state.label}"` : "Connect an MCP client"}>
+      {state && (
+        <>
+          <header>
+            <h3>{state.revealed ? "Copy this token now" : `Connect "${state.label}"`}</h3>
+            <p>
+              {state.revealed
+                ? "It won't be shown again - save it somewhere safe."
+                : "Its raw value was only shown once, when it was created - paste your saved value in place of the placeholder below."}
+            </p>
+          </header>
+
+          <div class="mcp-connect-dialog-scroll" ref={bodyScroll}>
+            <div class="stack" style={{ gap: "0.5rem", marginBlockStart: "1rem" }}>
+              <p class="hint" style={{ margin: 0 }}>Ready-to-paste connect command for:</p>
+              <div class="button-group" style={{ alignSelf: "flex-start" }}>
+                {clients.map((candidate) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    class="sm"
+                    aria-pressed={active?.id === candidate.id}
+                    onClick={() => setClient(candidate.id)}
+                  >
+                    {candidate.label}
+                  </button>
+                ))}
+              </div>
+              {active?.blocks.map((block, index) => (
+                <div key={index}>
+                  <small class="hint">{block.note}</small>
+                  <CodeBlock code={block.code} copyable wrap />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <footer>
+            <button type="button" onClick={onClose}>Done</button>
+          </footer>
+        </>
+      )}
+    </dialog>
+  );
+}
+
 /** Self-contained "API Token" section - own fetch/state, no interaction with
  * anything else on this page. */
 function McpTokensSection() {
   const [tokens, setTokens] = useState<McpTokenMeta[] | null>(null);
   const [label, setLabel] = useState("");
   const [creating, setCreating] = useState(false);
-  const [justCreated, setJustCreated] = useState<string | null>(null);
+  const [connectDialog, setConnectDialog] = useState<McpConnectDialogState | null>(null);
+  // Raw values only ever exist here for tokens THIS tab minted itself, kept
+  // around so re-clicking "Connect" on that same row later in the session
+  // doesn't fall back to `MCP_TOKEN_PLACEHOLDER` for no reason - nothing new
+  // leaves the server to populate this, and it's gone on reload same as any
+  // other in-memory state (the server itself never stores the raw value past
+  // creation, see `MCP_TOKEN_PLACEHOLDER`'s own doc comment).
+  const [revealedTokens, setRevealedTokens] = useState<Record<string, string>>({});
   const [revokeTarget, setRevokeTarget] = useState<McpTokenMeta | null>(null);
   const [revoking, setRevoking] = useState(false);
 
@@ -59,20 +249,14 @@ function McpTokensSection() {
       const body = (await res.json()) as { tokenId?: string; token?: string; message?: string };
       if (!res.ok || !body.tokenId || !body.token) throw new Error(body.message ?? "Failed to generate token.");
       setTokens((current) => [...(current ?? []), { tokenId: body.tokenId!, label: label.trim(), createdAt: new Date().toISOString(), lastUsedAt: new Date().toISOString() }]);
-      setJustCreated(body.token);
+      setRevealedTokens((current) => ({ ...current, [body.tokenId!]: body.token! }));
+      setConnectDialog({ label: label.trim(), token: body.token, revealed: true });
       setLabel("");
     } catch (error) {
       toast.add({ type: "error", title: "Could not generate token", description: error instanceof Error ? error.message : undefined });
     } finally {
       setCreating(false);
     }
-  }
-
-  function handleCopy(token: string) {
-    navigator.clipboard.writeText(token).then(
-      () => toast.add({ type: "success", title: "Copied to clipboard." }),
-      () => toast.add({ type: "error", title: "Could not copy to clipboard." }),
-    );
   }
 
   async function handleRevoke() {
@@ -100,19 +284,6 @@ function McpTokensSection() {
         <p>Lets an MCP client (Claude Desktop, Claude Code, ...) connect to this drycms instance as you.</p>
       </header>
       <div class="under stack">
-        {justCreated && (
-          <div class="alert" style={{ wordBreak: "break-all" }}>
-            <p>Copy this token now - it won't be shown again.</p>
-            <div class="row align-center" style={{ gap: "0.375rem" }}>
-              <code style={{ flex: 1 }}>{justCreated}</code>
-              <button type="button" class="ghost icon sm" aria-label="Copy token" onClick={() => handleCopy(justCreated)}>
-                <CopyIcon />
-              </button>
-            </div>
-            <button type="button" class="ghost sm" onClick={() => setJustCreated(null)}>Done</button>
-          </div>
-        )}
-
         {tokens === null ? (
           <span class="hint">Loading…</span>
         ) : (
@@ -127,9 +298,27 @@ function McpTokensSection() {
                       <div>{token.label}</div>
                       <small class="hint">Created {dayjs(token.createdAt).format("YYYY-MM-DD")} · Last used {dayjs(token.lastUsedAt).format("YYYY-MM-DD HH:mm")}</small>
                     </div>
-                    <button type="button" class="ghost icon sm" aria-label={`Revoke "${token.label}"`} onClick={() => setRevokeTarget(token)}>
-                      <TrashIcon />
-                    </button>
+                    <div class="row" style={{ gap: "0.25rem" }}>
+                      <button
+                        type="button"
+                        class="ghost icon sm"
+                        aria-label={`Connect instructions for "${token.label}"`}
+                        data-tooltip="Connect"
+                        onClick={() => {
+                          const revealedToken = revealedTokens[token.tokenId];
+                          setConnectDialog(
+                            revealedToken
+                              ? { label: token.label, token: revealedToken, revealed: true }
+                              : { label: token.label, token: MCP_TOKEN_PLACEHOLDER, revealed: false },
+                          );
+                        }}
+                      >
+                        <LinkIcon />
+                      </button>
+                      <button type="button" class="ghost icon sm" aria-label={`Revoke "${token.label}"`} onClick={() => setRevokeTarget(token)}>
+                        <TrashIcon />
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -144,6 +333,8 @@ function McpTokensSection() {
           </>
         )}
       </div>
+
+      <McpConnectDialog state={connectDialog} onClose={() => setConnectDialog(null)} />
 
       <ConfirmDialog
         open={!!revokeTarget}
@@ -269,26 +460,21 @@ function McpActivitySection() {
 }
 
 /**
- * Own top-level route (`/dry/mcp`), reached from Profile's "MCP" card and
- * MagicChat's lock-icon shortcut - not in `DryLayout`'s sidebar `NAV` (same
- * as Profile itself), since it's a secondary destination rather than a
- * primary one. Used to be 2 sections bolted onto the bottom of `Profile.tsx`;
- * split out into its own full-width page instead.
+ * Own top-level route (`/dry/mcp`), reached from the sidebar account menu's
+ * "MCP" item (`DryLayout.tsx`) and MagicChat's lock-icon shortcut - not in
+ * `DryLayout`'s main `NAV` (same as Profile itself), since it's a secondary,
+ * self-service destination rather than a permissioned admin section. Used to
+ * be 2 sections bolted onto the bottom of `Profile.tsx`; split out into its
+ * own full-width page instead.
  */
 export default function McpConnect() {
   useDocumentTitle("MCP");
-  const { route } = useLocation();
 
   return (
     <>
       <div class="page-header">
-        <button type="button" class="icon ghost" onClick={() => route(`${path}/profile`)}>
-          <ArrowLeftIcon />
-        </button>
-        <div style={{ flex: 1 }}>
-          <h1>MCP</h1>
-          <p>Connect an external MCP client (Claude Desktop, Claude Code, ...) to this drycms instance, and review what it's done as you.</p>
-        </div>
+        <h1>MCP</h1>
+        <p>Connect an external MCP client (Claude Desktop, Claude Code, ...) and review its activity.</p>
       </div>
 
       <McpTokensSection />

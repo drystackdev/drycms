@@ -8,7 +8,7 @@ import {
 import { useLocation } from "preact-iso";
 import type { ComponentChildren } from "preact";
 import Icon from "./Icon.js";
-import { LogOutIcon, UserIcon } from "./icons/index.js";
+import { LogOutIcon, UserIcon, type IconProps } from "./icons/index.js";
 import Popover from "./Popover.js";
 import SidebarToggle from "./SidebarToggle.js";
 import SyncIndicator from "./SyncIndicator.js";
@@ -43,6 +43,25 @@ import {
   hydrateContentTypeDraftIndex,
   watchContentTypeDraftIndex,
 } from "../content-types/draft-store.js";
+
+/** The MCP mark (two interlocking chain links) - not part of the generated
+ * `icons/index.tsx` set (`scripts/build-icons.mjs` only pulls from Solar/
+ * Lucide), so it's kept local to its one caller, same as `FileManager.tsx`'s
+ * own `OptimizeIcon`. `stroke="currentColor"` (not the source SVG's literal
+ * `#dedede`) so it themes/hovers like every other sidebar icon. */
+function McpIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" width="1em" height="1em" aria-hidden="true" {...props}>
+      <path
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-width="1.7"
+        d="m4.4 15l11-11c1.5-1.5 4-1.5 5.5 0v0c1.5 1.5 1.5 4 0 5.5l-8.3 8.3m0 0l8.3-8.3c1.5-1.5 4-1.5 5.5 0l.057.057c1.5 1.5 1.5 4 0 5.5l-10 10c-.51.51-.51 1.3 0 1.8l2 2m-.4-22l-8.1 8.1c-1.5 1.5-1.5 4 0 5.5v0c1.5 1.5 4 1.5 5.5 0l8.1-8.1"
+      />
+    </svg>
+  );
+}
 
 interface Props {
   children?: ComponentChildren;
@@ -695,6 +714,15 @@ export default function DryLayout({ children }: Props) {
                   onClick={() => route(`${path}/profile`)}
                 >
                   <UserIcon /> Profile
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => route(`${path}/mcp`)}
+                >
+                  <McpIcon /> MCP
                 </button>
               </li>
               <li role="none">

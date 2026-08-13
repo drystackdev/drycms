@@ -1,12 +1,10 @@
 import { useMemo, useState } from "preact/hooks";
-import { useLocation } from "preact-iso";
 const { path } = window.__DRY_CONFIG__;
 import type { MaskedValue } from "../content-types/engine/entry-codec.js";
 import { passwordConfirmError } from "../content-types/engine/entry-validate.js";
 import AvatarField, { commitPendingAvatar, isPendingAvatarValue } from "../components/fields/AvatarField.js";
 import PasswordField from "../components/fields/PasswordField.js";
 import TextField from "../components/fields/TextField.js";
-import { ArrowRightIcon, LockIcon } from "../components/icons/index.js";
 import { toast } from "../components/Toast.js";
 import { createHttpFileSource } from "../storage/http-source.js";
 import { AuthApiError, authState, updateProfile } from "../store/auth.js";
@@ -25,13 +23,12 @@ import { useDocumentTitle } from "./page-common.js";
  * re-prove identity, so the server requires and verifies it.
  *
  * The "API Token"/"AI Activity" sections that used to live here have their
- * own route now (`pages/McpConnect.tsx`, `/dry/mcp`) - the card below just
- * links there, same as any other secondary destination not worth cramming
- * into the account form.
+ * own route now (`pages/McpConnect.tsx`, `/dry/mcp`), reached from the
+ * sidebar account menu's "MCP" item (`DryLayout.tsx`) rather than a card on
+ * this page.
  */
 export default function Profile() {
   useDocumentTitle("My profile");
-  const { route } = useLocation();
 
   const imageSource = useMemo(() => createHttpFileSource(`${path}/api/storage`), []);
   const user = authState.value.user;
@@ -158,21 +155,6 @@ export default function Profile() {
           Save changes
         </button>
       </form>
-
-      <section class="card" style={{ maxWidth: "28rem" }}>
-        <header>
-          <h2>MCP</h2>
-          <p>Connect an external MCP client (Claude Desktop, Claude Code, ...) and review its activity.</p>
-        </header>
-        <div class="under">
-          <button type="button" class="ghost row justify-between align-center" style={{ width: "100%" }} onClick={() => route(`${path}/mcp`)}>
-            <span class="row align-center" style={{ gap: "0.5rem" }}>
-              <LockIcon /> API tokens & AI activity
-            </span>
-            <ArrowRightIcon />
-          </button>
-        </div>
-      </section>
     </>
   );
 }

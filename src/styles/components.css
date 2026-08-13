@@ -3716,6 +3716,31 @@
       margin-block-start: 1.25rem;
     }
 
+    /* MCP "connect an external client" dialog (pages/McpConnect.tsx) - same
+     * fixed-header/scrolling-body shape as `.field-dialog[open]` above, but
+     * the body's scroll is OverlayScrollbars-managed (`useOverlayScrollbars`)
+     * rather than native `overflow-y: auto` - a token's connect commands can
+     * run to several code blocks, same reasoning `.field-dialog-scroll`
+     * already has. No `overflow-y` set here on purpose: the library sets it
+     * on mount, same as `.field-dialog-scroll`. */
+    .mcp-connect-dialog[open] {
+      display: flex;
+      flex-direction: column;
+      max-height: min(44rem, calc(100vh - 4rem));
+
+      & header,
+      & footer {
+        flex: none;
+      }
+    }
+
+    .mcp-connect-dialog-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      margin-inline: -1rem;
+      padding-inline: 1.25rem;
+    }
+
     /* Ref-picker dialog (components/RelationField.tsx), the repeatable-
      * component item dialog (components/ComponentField.tsx), and the
      * quick-create-entry dialog nested inside a relation picker
