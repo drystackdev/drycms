@@ -1,5 +1,5 @@
 import { Component, type ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   ErrorBoundary,
   LocationProvider,
@@ -11,11 +11,15 @@ import {
 const { path } = window.__DRY_CONFIG__;
 import DryLayout from "../components/DryLayout.js";
 import Icon from "../components/Icon.js";
+import { toast } from "../components/Toast.js";
+import { createContentTypesApi, listCached } from "../content-types/http-api.js";
+import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
+import { publishAllPages } from "../page-components/initial-publish.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
 import { isVeiFrame, startVeiBridge } from "../pages/vei/bridge.js";
 import VeiFrame from "../pages/vei/VeiFrame.js";
-import { authState, loadSession } from "../store/auth.js";
+import { authState, canAccess, loadSession } from "../store/auth.js";
 import "../lib/native/native.js";
 
 // Code-split per route: the whole app renders `client:only`, so nothing
@@ -134,6 +138,31 @@ function AuthenticatedApp() {
   // bridge (including its `vei:ready` announcement) for no reason.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => (isVeiFrame() ? startVeiBridge(route) : undefined), []);
+
+  // Fresh-tenant "first publish" (`routes/auth.ts`'s `needsInitialPublish`,
+  // `initial-publish.ts`'s own doc comment for why this can't run
+  // server-side): fires once, silently, the first time this component mounts
+  // with the flag set - i.e. the first authenticated admin session after a
+  // deploy whose pages-source was just auto-seeded but never built. Guarded
+  // by a ref (same pattern `PageBuild.tsx`'s own `ranAutoBuild` uses) so a
+  // later, unrelated re-render never replays it; gated on the SAME
+  // permission `PageBuild.tsx`/`PageEditor.tsx` require for a manual build,
+  // so a signed-in user without it doesn't fire a request that would just
+  // 403.
+  const ranInitialPublish = useRef(false);
+  useEffect(() => {
+    if (ranInitialPublish.current) return;
+    if (!authState.value.needsInitialPublish) return;
+    if (!canAccess(PAGE_BUILDER_RESOURCE_ID, "setting")) return;
+    ranInitialPublish.current = true;
+    void (async () => {
+      const typesApi = createContentTypesApi(`${path}/api/content-types`);
+      const allTypes = await listCached(typesApi);
+      await publishAllPages(path, allTypes, (message) => toast.add({ type: "default", title: message }));
+      authState.value = { ...authState.value, needsInitialPublish: false };
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>

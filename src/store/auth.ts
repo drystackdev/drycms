@@ -26,6 +26,13 @@ export type AuthStatus = "loading" | "needs-setup" | "anonymous" | "authenticate
 export interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
+  /** Whether the built/live registry still has zero pages - set from
+   * `GET /api/auth/session`'s own flag (`routes/auth.ts`'s
+   * `needsInitialPublish`), true only while `status === "authenticated"`.
+   * `routers/App.tsx`'s `AuthenticatedApp` reads this once to run its own
+   * "first publish" in the browser (see `initial-publish.ts`'s doc comment
+   * for why that can't happen server-side). */
+  needsInitialPublish: boolean;
 }
 
 export class AuthApiError extends Error {
@@ -49,7 +56,7 @@ export class AuthApiError extends Error {
  * component state, since `AuthGate` sits ABOVE `DryLayout`/`<Router>` and
  * `DryLayout`'s own "Sign out" action needs to flip it back too.
  */
-export const authState = signal<AuthState>({ status: "loading", user: null });
+export const authState = signal<AuthState>({ status: "loading", user: null, needsInitialPublish: false });
 
 /** Cache-busting nonce for the signed-in user's own avatar image, bumped by
  * `updateProfile()`. `AvatarField`'s upload target is a FIXED path per user
@@ -213,33 +220,33 @@ export async function refreshExpiredSession(): Promise<AuthUser | null> {
  */
 export function markSessionExpired(): void {
   if (authState.value.status !== "authenticated") return;
-  authState.value = { status: "anonymous", user: null };
+  authState.value = { status: "anonymous", user: null, needsInitialPublish: false };
 }
 
 /** Reads `GET /api/auth/session` and sets `authState` accordingly - the one
  * call that decides which of the 3 gate states to show. Called once on app
  * mount (`AuthGate`) and again after `logout()`. */
 export async function loadSession(): Promise<void> {
-  authState.value = { status: "loading", user: authState.value.user };
+  authState.value = { status: "loading", user: authState.value.user, needsInitialPublish: false };
   try {
     const res = await fetch(`${path}/api/auth/session`);
     await assertOk(res, "Failed to load session.");
     const body = await res.json();
     if (!body.hasAnyUser) {
-      authState.value = { status: "needs-setup", user: null };
+      authState.value = { status: "needs-setup", user: null, needsInitialPublish: false };
     } else if (body.user) {
-      authState.value = { status: "authenticated", user: body.user };
+      authState.value = { status: "authenticated", user: body.user, needsInitialPublish: !!body.needsInitialPublish };
     } else {
       const refreshedUser = await refreshExpiredSession();
       authState.value = refreshedUser
-        ? { status: "authenticated", user: refreshedUser }
-        : { status: "anonymous", user: null };
+        ? { status: "authenticated", user: refreshedUser, needsInitialPublish: false }
+        : { status: "anonymous", user: null, needsInitialPublish: false };
     }
   } catch {
     // A failed session check degrades to "anonymous" (show Sign in) rather
     // than getting stuck on the loading spinner forever - Sign in's own
     // submit will surface a real error if the server is genuinely down.
-    authState.value = { status: "anonymous", user: null };
+    authState.value = { status: "anonymous", user: null, needsInitialPublish: false };
   }
 }
 
@@ -251,7 +258,7 @@ export async function registerFirstAdmin(name: string, email: string, password: 
   });
   await assertOk(res, "Failed to create the Super Admin account.");
   const body = await res.json();
-  authState.value = { status: "authenticated", user: body.user };
+  authState.value = { status: "authenticated", user: body.user, needsInitialPublish: !!body.needsInitialPublish };
 }
 
 export async function login(email: string, password: string): Promise<void> {
@@ -262,7 +269,7 @@ export async function login(email: string, password: string): Promise<void> {
   });
   await assertOk(res, "Failed to sign in.");
   const body = await res.json();
-  authState.value = { status: "authenticated", user: body.user };
+  authState.value = { status: "authenticated", user: body.user, needsInitialPublish: !!body.needsInitialPublish };
 }
 
 /** Self-service edit of the signed-in user's own `name`/`email`/`avatar`/
@@ -289,11 +296,14 @@ export async function updateProfile(
   });
   await assertOk(res, "Failed to update profile.");
   const body = await res.json();
-  authState.value = { status: "authenticated", user: body.user };
+  // Not returned by this endpoint - preserves whatever `loadSession()`/
+  // `login()` already resolved rather than resetting a pending flag `App.tsx`
+  // hasn't acted on yet.
+  authState.value = { status: "authenticated", user: body.user, needsInitialPublish: authState.value.needsInitialPublish };
   avatarVersion.value++;
 }
 
 export async function logout(): Promise<void> {
   await fetch(`${path}/api/auth/logout`, { method: "POST" }).catch(() => undefined);
-  authState.value = { status: "anonymous", user: null };
+  authState.value = { status: "anonymous", user: null, needsInitialPublish: false };
 }

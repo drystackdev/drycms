@@ -135,7 +135,7 @@ describe("session refresh", () => {
 
     await loadSession();
 
-    expect(authState.value).toEqual({ status: "authenticated", user: USER });
+    expect(authState.value).toEqual({ status: "authenticated", user: USER, needsInitialPublish: false });
   });
 
   it("loadSession() falls back to anonymous - a real re-login - once the refresh token itself is no longer good", async () => {
@@ -147,7 +147,7 @@ describe("session refresh", () => {
 
     await loadSession();
 
-    expect(authState.value).toEqual({ status: "anonymous", user: null });
+    expect(authState.value).toEqual({ status: "anonymous", user: null, needsInitialPublish: false });
   });
 
   it("refreshExpiredSession() skips the network entirely when there's no CSRF cookie (this browser was never signed in)", async () => {
@@ -224,10 +224,10 @@ describe("session refresh", () => {
   it("login()/logout() still set authState directly, unaffected by the refresh path", async () => {
     stubFetchOnce([{ url: "/api/auth/login", ok: true, body: { user: USER } }]);
     await login("khan@example.com", "secret");
-    expect(authState.value).toEqual({ status: "authenticated", user: USER });
+    expect(authState.value).toEqual({ status: "authenticated", user: USER, needsInitialPublish: false });
 
     stubFetchOnce([{ url: "/api/auth/logout", ok: true }]);
     await logout();
-    expect(authState.value).toEqual({ status: "anonymous", user: null });
+    expect(authState.value).toEqual({ status: "anonymous", user: null, needsInitialPublish: false });
   });
 });

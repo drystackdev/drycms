@@ -1,6 +1,7 @@
 import type { DryRouteContext, DryRouteHandler } from "../context.js";
 import { path as basePath } from "../config.js";
 import { ContentEntryError, type ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
+import type { PagesRegistryAdapter } from "../../content-types/engine/pages-registry-types.js";
 import { resolveAccess } from "../../content-types/access.js";
 import { ContentEngineError } from "../../content-types/engine/types.js";
 import type { ContentTypeDefinition } from "../../content-types/types.js";
@@ -9,7 +10,9 @@ import { signSession } from "../../lib/session-token.js";
 import { createAuthSession, createMcpToken, listMcpTokens, revokeAllAuthSessions, revokeAuthSession, revokeMcpToken, rotateAuthSession } from "../auth-security.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { extractPackagedSeedAssets } from "../../content-types/seed-assets.js";
-import { resolved } from "../config.js";
+import { seedPagesSourceIfEmpty } from "../../content-types/seed-pages-source.js";
+import { resolved, pagesSourceStorage } from "../config.js";
+import { getStorageAdapter } from "../storage-adapters.js";
 import { jsonResponse, unauthenticatedResponse } from "../route-helpers.js";
 import { REFRESH_COOKIE_NAME, SESSION_COOKIE_NAME } from "../session.js";
 import { clearCsrfCookieHeader, csrfCookieHeader, createCsrfToken } from "../csrf.js";
@@ -307,6 +310,43 @@ async function maybeAutoBootstrapAdmin(
   });
 }
 
+/** One-shot per isolate - `seedPagesSourceIfEmpty` itself is cheap (one root
+ * `list("")`) once seeded, but there's no reason to repeat even that on
+ * every single session check once we already know the answer. Independent
+ * of `maybeAutoBootstrapAdmin`/`EMAIL_ADMIN`: a tenant that sticks with the
+ * manual `/register` form should still get its starter pages. */
+let pagesSourceSeedAttempted = false;
+
+async function maybeSeedPagesSource(context: DryRouteContext): Promise<void> {
+  if (pagesSourceSeedAttempted) return;
+  pagesSourceSeedAttempted = true;
+  try {
+    const adapter = getStorageAdapter(pagesSourceStorage, context);
+    await seedPagesSourceIfEmpty(adapter);
+  } catch (error) {
+    console.warn("[drycms] pages-source auto-seed failed:", error);
+  }
+}
+
+/** Whether the built/live registry still has zero pages - the client
+ * (`routers/App.tsx`'s `AuthenticatedApp`) uses this to run its own "first
+ * publish" in the browser once signed in. Can't run here: building a page
+ * needs the admin SPA's own Sucrase/Tailwind pipeline
+ * (`page-components/page-build.ts`), which doesn't exist in a server request
+ * handler - the server only ever writes bytes a browser already compiled
+ * (`routes/pages-build.ts`'s own doc comment). Only worth checking once a
+ * `user` has actually resolved - an anonymous visitor's browser can't act on
+ * this anyway, so there's no reason to spend the extra `pagesRegistry` read
+ * on that traffic. */
+async function needsInitialPublish(pagesRegistry: PagesRegistryAdapter): Promise<boolean> {
+  try {
+    return (await pagesRegistry.listAllPages()).length === 0;
+  } catch (error) {
+    console.warn("[drycms] pages-build status check failed:", error);
+    return false;
+  }
+}
+
 export const GET: DryRouteHandler = async (context) => {
   try {
     const endpoint = context.params.slug;
@@ -319,7 +359,9 @@ export const GET: DryRouteHandler = async (context) => {
 
     if (endpoint !== "session") return jsonResponse({ error: "not_found", message: `Unknown auth endpoint "${String(endpoint)}".` }, 404);
 
-    const { schema: schemaAdapter, entries: entryAdapter } = getContentAdapters(context);
+    await maybeSeedPagesSource(context);
+
+    const { schema: schemaAdapter, entries: entryAdapter, pagesRegistry } = getContentAdapters(context);
     const allTypes = await schemaAdapter.listContentTypes();
     const userType = findType(allTypes, "user");
     const roleType = findType(allTypes, "role");
@@ -341,10 +383,17 @@ export const GET: DryRouteHandler = async (context) => {
       if (entry) user = await resolveClientUser(entryAdapter, allTypes, roleType, entry, context.session);
     }
 
+    const publishPending = user ? await needsInitialPublish(pagesRegistry) : false;
+
     if (bootstrapped) {
-      return withSessionCookies(jsonResponse({ hasAnyUser: anyUser, user }), context, bootstrapped.token, bootstrapped.refreshToken);
+      return withSessionCookies(
+        jsonResponse({ hasAnyUser: anyUser, user, needsInitialPublish: publishPending }),
+        context,
+        bootstrapped.token,
+        bootstrapped.refreshToken,
+      );
     }
-    const response = jsonResponse({ hasAnyUser: anyUser, user });
+    const response = jsonResponse({ hasAnyUser: anyUser, user, needsInitialPublish: publishPending });
     response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
     return response;
   } catch (error) {
@@ -355,7 +404,7 @@ export const GET: DryRouteHandler = async (context) => {
 export const POST: DryRouteHandler = async (context) => {
   try {
     const endpoint = context.params.slug;
-    const { schema: schemaAdapter, entries: entryAdapter } = getContentAdapters(context);
+    const { schema: schemaAdapter, entries: entryAdapter, pagesRegistry } = getContentAdapters(context);
 
     if (endpoint === "register-first-admin") {
       const bootstrapToken = readEnvVar("DRYCMS_BOOTSTRAP_TOKEN");
@@ -385,7 +434,8 @@ export const POST: DryRouteHandler = async (context) => {
         }
 
         const { user, token, refreshToken } = await createFirstAdminAccount(context, entryAdapter, allTypes, userType, roleType, name, email, password);
-        return withSessionCookies(jsonResponse({ user }, 201), context, token, refreshToken);
+        const publishPending = await needsInitialPublish(pagesRegistry);
+        return withSessionCookies(jsonResponse({ user, needsInitialPublish: publishPending }, 201), context, token, refreshToken);
       });
     }
 
@@ -455,7 +505,8 @@ export const POST: DryRouteHandler = async (context) => {
       const entry = await entryAdapter.getEntry(userType, allTypes, found.id);
       const user = entry ? await resolveClientUser(entryAdapter, allTypes, roleType, entry, sessionUser) : null;
       if (!user) throw invalid();
-      return withSessionCookies(jsonResponse({ user }), context, token, authSession.refreshToken);
+      const publishPending = await needsInitialPublish(pagesRegistry);
+      return withSessionCookies(jsonResponse({ user, needsInitialPublish: publishPending }), context, token, authSession.refreshToken);
     }
 
     if (endpoint === "refresh") {

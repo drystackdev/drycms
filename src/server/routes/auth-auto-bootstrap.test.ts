@@ -24,7 +24,7 @@ vi.mock("../config.js", async () => {
   const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-auth-auto-bootstrap-"));
   const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
-  return { path: resolved.path, content: resolved.content, resolved };
+  return { path: resolved.path, content: resolved.content, resolved, pagesSourceStorage: resolved.pagesSource.storage };
 });
 
 const seedAssetsBox = vi.hoisted(() => ({ calls: [] as unknown[] }));

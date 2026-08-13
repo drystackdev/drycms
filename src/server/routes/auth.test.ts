@@ -13,7 +13,7 @@ vi.mock("../config.js", async () => {
   const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-auth-route-"));
   const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
-  return { path: resolved.path, content: resolved.content, resolved };
+  return { path: resolved.path, content: resolved.content, resolved, pagesSourceStorage: resolved.pagesSource.storage };
 });
 
 /** Spies on `register-first-admin`'s call to `extractPackagedSeedAssets` -
