@@ -291,17 +291,24 @@ empty?) alongside whatever session cookie is present - this one call drives
 always-routable paths, not just gate states - visiting either directly works.
 Every OTHER path under `path` (the actual dashboard: `/dashboard`,
 `/content/*`, `/content-types`, ...) requires a session and redirects to
-`/login` (or `/register`, first-run - `RegisterSuperAdmin` is the only way to
-create the first account, assigning the permanently-seeded "Super Admin"
-role from the seed definition). The bootstrap POST additionally requires a
-deployment-provided `DRYCMS_BOOTSTRAP_TOKEN` of at least 32 characters and a
-CSRF token, so an uninitialized public instance cannot be claimed by an
-arbitrary cross-site or unauthenticated request. Already-
-authenticated visits to `/login`/`/register` bounce to `/dashboard`; an
-already-anonymous visit to `/register` once a user exists bounces to
-`/login` (registration is first-run only). Sign in/Register render
-standalone, no sidebar/topbar chrome; both share the same `.auth-split*`
-layout (`components.css`).
+`/login` (or `/register`, first-run - submitting `RegisterSuperAdmin`'s form
+is the manual way to create the first account, assigning the permanently-
+seeded "Super Admin" role from the seed definition). The bootstrap POST
+additionally requires a deployment-provided `DRYCMS_BOOTSTRAP_TOKEN` of at
+least 32 characters and a CSRF token, so an uninitialized public instance
+cannot be claimed by an arbitrary cross-site or unauthenticated request.
+`GET /api/auth/session` itself can also auto-provision that first account -
+`routes/auth.ts`'s `maybeAutoBootstrapAdmin` runs when `EMAIL_ADMIN`/
+`PASSWORD_ADMIN` env vars are both set (and `DRYCMS_BOOTSTRAP_TOKEN` is
+configured, same length requirement as above); a fresh instance then comes
+up already signed in as that account instead of stopping at `/register`.
+Missing/short `DRYCMS_BOOTSTRAP_TOKEN` or a too-short `PASSWORD_ADMIN` just
+falls back to the manual form (logged via `console.warn`), never a hard
+error. Already-authenticated visits to `/login`/`/register` bounce to
+`/dashboard`; an already-anonymous visit to `/register` once a user exists
+bounces to `/login` (registration is first-run only). Sign in/Register
+render standalone, no sidebar/topbar chrome; both share the same
+`.auth-split*` layout (`components.css`).
 
 `AuthGate` also gates itself on `path` - only URLs at or under `path` are
 this app's concern. The dev server/adapters serve the same `index.html` for

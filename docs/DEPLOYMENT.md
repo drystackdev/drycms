@@ -130,7 +130,7 @@ wrangler deploy --dry-run
 2. `vite build --ssr src/server/entry-worker.ts` - server (Worker entry point)
 3. Zips `dist/client/` for the Assets binding
 
-**After first deploy**, visit your Worker's URL to register the first Super Admin account (one-time). The registration form requires a `DRYCMS_BOOTSTRAP_TOKEN` env var (set via `wrangler secret put` or `.env.production`).
+**After first deploy**, visit your Worker's URL to register the first Super Admin account (one-time). The registration form requires a `DRYCMS_BOOTSTRAP_TOKEN` env var (set via `wrangler secret put` or `.env.production`). To skip the form, also set `EMAIL_ADMIN`/`PASSWORD_ADMIN` (secrets) - the first visit then signs in as that account automatically instead of showing `/register` (see `docs/ARCHITECTURE.md`'s Auth section).
 
 ### Git-integrated builds (Cloudflare Pages / Workers Builds)
 

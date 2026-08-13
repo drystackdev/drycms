@@ -9,8 +9,12 @@ import { useDocumentTitle } from "./page-common.js";
  * Rendered by `routers/App.tsx`'s `AuthGate` at `/register` whenever
  * `store/auth.ts`'s `authState` is `"needs-setup"` - i.e. the `user` table
  * is still empty (`GET /api/auth/session`'s `hasAnyUser: false`). This is
- * the only way to create the very first account; the created user is
+ * the manual way to create the very first account; the created user is
  * assigned the seeded "Super Admin" role server-side (see `routes/auth.ts`).
+ * Never reached at all when `EMAIL_ADMIN`/`PASSWORD_ADMIN` are configured -
+ * `routes/auth.ts`'s `maybeAutoBootstrapAdmin` creates that same first
+ * account (and signs it in) as a side effect of the session check this
+ * page's own gate runs, before this component would ever mount.
  * Same split-panel layout as `SignIn` (`.auth-split*` in `components.css`),
  * deliberately kept visually consistent with it - just without the OAuth
  * row, which doesn't apply to a one-time account bootstrap.

@@ -5,6 +5,7 @@ import { getStorageAdapter } from "../server/storage-adapters.js";
 import { getContentAdapters } from "../server/content-adapters.js";
 import { StorageError } from "../storage/types.js";
 import { generateDryTypes } from "./codegen.js";
+import { isNodeRuntime } from "../lib/runtime-env.js";
 
 const CACHE_ENTRY_NAME = "dry.generated.d.ts";
 
@@ -49,7 +50,7 @@ export async function writeGeneratedDryTypes(output: string): Promise<void> {
   const storage = createStorageAdapter(typesCacheStorage);
   await storage.write(CACHE_ENTRY_NAME, Buffer.from(output, "utf8"));
 
-  if (typeof process === "undefined" || !process.versions?.node) return;
+  if (!isNodeRuntime()) return;
   // The path below is resolved from the working directory rather than from
   // any config a test could point elsewhere - so under vitest this would
   // overwrite it with whatever the test passed in. That's exactly what

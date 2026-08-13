@@ -3,6 +3,7 @@ import { StorageError, type StorageAdapter } from "../../storage/types.js";
 import { pagesCacheStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import type { DryRouteContext } from "../context.js";
+import { isNodeRuntime } from "../../lib/runtime-env.js";
 
 /**
  * Raw-HTML object storage for the app-r2 build pipeline
@@ -147,11 +148,12 @@ const PREACT_RUNTIME_ASSET_PATH = "__dry/preact-runtime.js";
  * `false` there too, meaning this could never self-bootstrap under
  * Workers at all, not even in local testing). The real constraint is
  * narrower than dev-vs-prod: `buildPreactRuntimeBundle`'s nested
- * `vite.build()` needs live Vite/esbuild tooling, which only Node can run
+ * `vite.build()` needs live Vite/rolldown tooling, which only Node can run
  * (dev OR prod) - workerd never can, dev OR deployed, `nodejs_compat` or
- * not. Same `process.versions.node` check `types-cache.ts`'s
- * `writeGeneratedDryTypes` already uses to tell the two apart. A Workers
- * deployment can still SERVE an already-built copy fine
+ * not - see `lib/runtime-env.ts`'s `isNodeRuntime` (shared with
+ * `types-cache.ts`'s `writeGeneratedDryTypes`) for why a bare
+ * `process.versions.node` check isn't enough to tell the two apart on its
+ * own. A Workers deployment can still SERVE an already-built copy fine
  * (`routes/built-assets.ts` is a plain storage read, runtime-agnostic) -
  * it just needs a Node run against its storage backend (`bun run dev`
  * pointed at the same storage, or a Node deployment of this same project)
@@ -164,7 +166,17 @@ const PREACT_RUNTIME_ASSET_PATH = "__dry/preact-runtime.js";
 export async function ensurePreactRuntimeAsset(context: Pick<DryRouteContext, "env">): Promise<string> {
   const adapter = getStorageAdapter(pagesCacheStorage, context);
   if (await adapter.stat(liveAssetKeyFor(PREACT_RUNTIME_ASSET_PATH))) return PREACT_RUNTIME_ASSET_PATH;
-  if (typeof process === "undefined" || !process.versions?.node) {
+  // The `import.meta.env.DRYCMS_KIND === "cloudflare"` half is redundant
+  // with `isNodeRuntime()` at runtime (a Worker build only ever runs under
+  // workerd), but it's also a build-time literal (`vite.config.ts`'s
+  // `define`) - `true || x` lets Rollup dead-code-eliminate the
+  // `buildPreactRuntimeBundle` import below out of the WORKER bundle
+  // entirely, so its transitive `import("vite")` (and vite's own
+  // lightningcss dependency) never ends up inlined into
+  // `entry-worker.js` for wrangler's esbuild pass to trip over. The Node
+  // build's `DRYCMS_KIND` folds to `"local"` instead, so this stays a
+  // no-op there and `isNodeRuntime()` keeps doing the real gating.
+  if (import.meta.env.DRYCMS_KIND === "cloudflare" || !isNodeRuntime()) {
     throw new StorageError(
       "unsupported",
       "The Preact runtime bundle hasn't been built yet - run a Node instance of this project (e.g. `bun run dev`) against this storage backend once before using the Workers build.",

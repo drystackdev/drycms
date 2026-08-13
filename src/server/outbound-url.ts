@@ -1,3 +1,5 @@
+import { isNodeRuntime } from "../lib/runtime-env.js";
+
 /** Validate a user-configurable upstream URL before the server makes a
  * request. This is intentionally conservative: provider URLs may be public
  * HTTP(S) endpoints in development, but loopback, link-local, private, local
@@ -28,7 +30,7 @@ export function validateOutboundUrl(raw: string, label = "URL"): string {
  * Node performs the additional lookup here. */
 export async function validateOutboundUrlForRequest(raw: string, label = "URL"): Promise<string> {
   const value = validateOutboundUrl(raw, label);
-  if (typeof process === "undefined" || !process.versions?.node) return value;
+  if (!isNodeRuntime()) return value;
 
   const hostname = new URL(value).hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "");
   if (isPrivateIpv4(hostname) || isPrivateIpv6(hostname)) return value;

@@ -216,6 +216,97 @@ async function hasAnyUser(entryAdapter: ContentEntryEngineAdapter, userType: Con
   return page.total > 0;
 }
 
+/** Shared by the manual `POST register-first-admin` (client-submitted form)
+ * and the `EMAIL_ADMIN`/`PASSWORD_ADMIN` auto-bootstrap path below - creates
+ * the very first `user` row (assigned the seeded "Super Admin" role) and
+ * mints its session. Callers are responsible for running this inside
+ * `withFirstAdminRegistrationLock`, after re-checking `hasAnyUser` under the
+ * lock. */
+async function createFirstAdminAccount(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  userType: ContentTypeDefinition,
+  roleType: ContentTypeDefinition,
+  name: string,
+  email: string,
+  password: string,
+): Promise<{ user: ClientSessionUser; token: string; refreshToken: string }> {
+  // The one point that knows for certain this is a genuinely fresh instance
+  // (no user yet) - extract a build-time-packaged `seed-assets.zip` (if any)
+  // BEFORE creating the admin, so a failure here fails the whole operation
+  // instead of leaving a half-seeded instance with an admin account already
+  // created. An app's own content types/data are NOT touched here (or
+  // anywhere at boot) - they only ever arrive by being created directly in
+  // the admin UI, or by restoring a database backup (`routes/backup.ts`).
+  await extractPackagedSeedAssets(resolved);
+
+  const rolePage = await entryAdapter.listEntries(roleType, allTypes, {
+    page: 0,
+    pageSize: 25,
+    search: "Super Admin",
+    searchableFields: ["name"],
+  });
+  const superAdminRole = rolePage.rows.find((row) => row.value.name === "Super Admin");
+  if (!superAdminRole) {
+    throw new Error('[drycms] The seeded "Super Admin" role is missing - check permissions.ts\'s boot seeding.');
+  }
+
+  const created = await entryAdapter.createEntry(userType, allTypes, {
+    name,
+    email,
+    password: { hasExisting: false, new: password },
+    roles: [superAdminRole.id],
+  });
+
+  const sessionUser: SessionUser = { id: created.id, name, email };
+  const authSession = await createAuthSession(created.id, context.env);
+  const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
+  const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
+  return { user, token, refreshToken: authSession.refreshToken };
+}
+
+/**
+ * Auto-provisions the very first Super Admin from `EMAIL_ADMIN`/
+ * `PASSWORD_ADMIN` env vars, in place of the manual `/register` form - for a
+ * deployment that wants a fresh instance to come up already signed in
+ * rather than stopping at the setup screen. Reuses the same
+ * `DRYCMS_BOOTSTRAP_TOKEN` gate `register-first-admin` enforces (so a
+ * deployment that hasn't configured a bootstrap token still falls back to
+ * `/register`, same as if an operator had to submit the form by hand);
+ * `withFirstAdminRegistrationLock` plus a `hasAnyUser` re-check under the
+ * lock guard the same race a concurrent manual submission would hit.
+ * Returns `null` (no side effect) whenever auto-bootstrap doesn't apply, so
+ * callers fall through to the normal `needs-setup` response.
+ */
+async function maybeAutoBootstrapAdmin(
+  context: DryRouteContext,
+  entryAdapter: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  userType: ContentTypeDefinition,
+  roleType: ContentTypeDefinition,
+): Promise<{ user: ClientSessionUser; token: string; refreshToken: string } | null> {
+  const email = readEnvVar("EMAIL_ADMIN")?.trim();
+  const password = readEnvVar("PASSWORD_ADMIN") ?? "";
+  if (!email || !password) return null;
+
+  const bootstrapToken = readEnvVar("DRYCMS_BOOTSTRAP_TOKEN");
+  if (!bootstrapToken || bootstrapToken.length < 32) {
+    console.warn("[drycms] EMAIL_ADMIN/PASSWORD_ADMIN are set but DRYCMS_BOOTSTRAP_TOKEN is missing or shorter than 32 characters - falling back to the manual /register form.");
+    return null;
+  }
+  if (password.length < 12) {
+    console.warn("[drycms] PASSWORD_ADMIN must be at least 12 characters - falling back to the manual /register form.");
+    return null;
+  }
+
+  return withFirstAdminRegistrationLock(async () => {
+    if (await hasAnyUser(entryAdapter, userType, allTypes)) return null;
+    console.warn(`[drycms] Auto-provisioning the first Super Admin "${email}" from EMAIL_ADMIN/PASSWORD_ADMIN.`);
+    return createFirstAdminAccount(context, entryAdapter, allTypes, userType, roleType, "Admin", email, password);
+  });
+}
+
 export const GET: DryRouteHandler = async (context) => {
   try {
     const endpoint = context.params.slug;
@@ -233,14 +324,26 @@ export const GET: DryRouteHandler = async (context) => {
     const userType = findType(allTypes, "user");
     const roleType = findType(allTypes, "role");
 
-    const anyUser = await hasAnyUser(entryAdapter, userType, allTypes);
+    let anyUser = await hasAnyUser(entryAdapter, userType, allTypes);
 
     let user: ClientSessionUser | null = null;
-    if (context.session) {
+    let bootstrapped: { token: string; refreshToken: string } | undefined;
+
+    if (!anyUser) {
+      const autoAdmin = await maybeAutoBootstrapAdmin(context, entryAdapter, allTypes, userType, roleType);
+      if (autoAdmin) {
+        anyUser = true;
+        user = autoAdmin.user;
+        bootstrapped = { token: autoAdmin.token, refreshToken: autoAdmin.refreshToken };
+      }
+    } else if (context.session) {
       const entry = await entryAdapter.getEntry(userType, allTypes, context.session.id);
       if (entry) user = await resolveClientUser(entryAdapter, allTypes, roleType, entry, context.session);
     }
 
+    if (bootstrapped) {
+      return withSessionCookies(jsonResponse({ hasAnyUser: anyUser, user }), context, bootstrapped.token, bootstrapped.refreshToken);
+    }
     const response = jsonResponse({ hasAnyUser: anyUser, user });
     response.headers.append("Set-Cookie", csrfCookieHeader(context, createCsrfToken()));
     return response;
@@ -273,16 +376,6 @@ export const POST: DryRouteHandler = async (context) => {
           throw new AuthError("already_setup", "An account already exists - sign in instead.");
         }
 
-        // The one point that knows for certain this is a genuinely fresh
-        // instance (no user yet) - extract a build-time-packaged
-        // `seed-assets.zip` (if any) BEFORE creating the admin, so a failure
-        // here fails the whole request instead of leaving a half-seeded
-        // instance with an admin account already created. An app's own
-        // content types/data are NOT touched here (or anywhere at boot) -
-        // they only ever arrive by being created directly in the admin UI,
-        // or by restoring a database backup (`routes/backup.ts`).
-        await extractPackagedSeedAssets(resolved);
-
         const body = (await context.request.json()) as { name?: unknown; email?: unknown; password?: unknown };
         const name = typeof body.name === "string" ? body.name.trim() : "";
         const email = typeof body.email === "string" ? body.email.trim() : "";
@@ -291,29 +384,8 @@ export const POST: DryRouteHandler = async (context) => {
           throw new AuthError("validation_failed", "Name, email, and a password of at least 12 characters are required.");
         }
 
-        const rolePage = await entryAdapter.listEntries(roleType, allTypes, {
-          page: 0,
-          pageSize: 25,
-          search: "Super Admin",
-          searchableFields: ["name"],
-        });
-        const superAdminRole = rolePage.rows.find((row) => row.value.name === "Super Admin");
-        if (!superAdminRole) {
-          throw new Error('[drycms] The seeded "Super Admin" role is missing - check permissions.ts\'s boot seeding.');
-        }
-
-        const created = await entryAdapter.createEntry(userType, allTypes, {
-          name,
-          email,
-          password: { hasExisting: false, new: password },
-          roles: [superAdminRole.id],
-        });
-
-        const sessionUser: SessionUser = { id: created.id, name, email };
-        const authSession = await createAuthSession(created.id, context.env);
-        const token = await signSession(sessionUser, { sessionId: authSession.sessionId });
-        const user = await resolveClientUser(entryAdapter, allTypes, roleType, created, sessionUser);
-        return withSessionCookies(jsonResponse({ user }, 201), context, token, authSession.refreshToken);
+        const { user, token, refreshToken } = await createFirstAdminAccount(context, entryAdapter, allTypes, userType, roleType, name, email, password);
+        return withSessionCookies(jsonResponse({ user }, 201), context, token, refreshToken);
       });
     }
 
