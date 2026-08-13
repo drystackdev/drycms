@@ -40,6 +40,10 @@ const OAUTH_REGISTER_RATE_NAMESPACE = "oauth-register-rate";
 const OAUTH_REQ_COOKIE_NAME = "drycms_oauth_req";
 const AUTHZ_REQUEST_TTL_MS = 10 * 60_000;
 const CODE_TTL_MS = 60_000;
+/** 24h rather than the more usual 1h: the refresh grant below rotates this
+ * happily, but if a client's refresh ever misbehaves a day of working
+ * connector beats an hour of one. */
+const ACCESS_TOKEN_TTL_MS = 24 * 60 * 60_000;
 const REGISTER_RATE_WINDOW_MS = 5 * 60_000;
 const REGISTER_RATE_MAX = 20;
 
@@ -360,19 +364,23 @@ async function readTokenRequestBody(request: Request): Promise<Record<string, st
 
 /**
  * Mints the access token (an ordinary MCP PAT - see this file's own doc
- * comment) plus the rotating refresh token that goes with it. The access
- * token itself doesn't expire, so no `expires_in` is returned; the refresh
- * grant exists because an OAuth 2.1 public client (which is what every MCP
- * client registering here is) expects to be able to rotate its credential,
- * and a client that asked for `refresh_token` at registration and got no way
- * to use one can legitimately decide the registration is unusable.
+ * comment, now with a real expiry) plus the rotating refresh token that goes
+ * with it.
+ *
+ * `expires_in` is not optional in practice: claude.ai's connector accepted a
+ * 200 from this endpoint and still reported "Authorization with DryCMS
+ * failed" while the response carried only `access_token`/`token_type`/
+ * `refresh_token` (proven by production KV holding the refresh records the
+ * exchange wrote - `status/mcp-oauth.md`). A client that registered asking
+ * for the `refresh_token` grant expects a lifetime it can schedule against,
+ * so the token now genuinely expires and says so.
  */
 async function issueTokens(
   context: DryRouteContext,
   grant: { userId: number; clientId: string; clientName: string },
 ): Promise<Response> {
   const store = getAuthSecurityStore(context.env);
-  const { tokenId, token } = await createMcpToken(grant.userId, grant.clientName, context.env);
+  const { tokenId, token } = await createMcpToken(grant.userId, grant.clientName, context.env, { ttlMs: ACCESS_TOKEN_TTL_MS });
   const refreshToken = `mcpr_${crypto.randomUUID()}${crypto.randomUUID()}`;
   await store.set(OAUTH_REFRESH_NAMESPACE, refreshKey(await sha256Hex(refreshToken)), {
     userId: grant.userId,
@@ -384,7 +392,16 @@ async function issueTokens(
   // Deliberately no `scope` in the response: a client that requested none
   // (this server advertises no `scopes_supported`) is entitled to reject a
   // token response that grants a scope it never asked for.
-  return jsonResponse({ access_token: token, token_type: "Bearer", refresh_token: refreshToken });
+  const response = jsonResponse({
+    access_token: token,
+    token_type: "Bearer",
+    expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
+    refresh_token: refreshToken,
+  });
+  // RFC 6749 §5.1 - a token response MUST NOT be cached anywhere.
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  return response;
 }
 
 async function handleAuthorizationCodeGrant(context: DryRouteContext, body: Record<string, string>): Promise<Response> {

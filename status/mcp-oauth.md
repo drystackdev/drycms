@@ -191,3 +191,40 @@ consistent, and the authorization CODE is written in the user's colo
 later - a cross-colo miss there returns `invalid_grant`. If the tail shows
 `/token` 400, move the code (and only the code) to a strongly consistent
 store (D1 via `kv/d1.ts`, binding `CONTENT_DB`).
+
+### Round 3: the register fix worked, the failure moved to `/token`'s BODY
+
+After deploying the RFC 7591 registration response, claude.ai's flow got
+past registration for the first time - the user's `wrangler tail` shows the
+complete sequence twice:
+
+```
+POST /dry/api/mcp 401 → both .well-known docs → POST /oauth/register
+→ GET /oauth/authorize?...&resource=https://dev.drystack.dev/dry/api/mcp
+→ /dry/oauth/consent (SPA) → /oauth/consent-info → POST /oauth/consent
+→ POST /oauth/token   ← and then NOTHING; claude.ai errors out
+```
+
+The registration body it sends is now known (logged):
+`{"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],
+"token_endpoint_auth_method":"none","grant_types":["authorization_code",
+"refresh_token"],"response_types":["code"],"client_name":"Claude",
+"application_type":"web"}` - it does ask for the `refresh_token` grant.
+
+`/token` did NOT fail: production KV holds 2 `oauth-refresh-tokens` records
+(`wrangler kv key list --binding KV --remote --prefix drycms:kv:<ns>:`),
+one per attempt, which only `issueTokens` writes - so the exchange returned
+200 with a valid token and claude.ai rejected the RESPONSE itself. This also
+kills the earlier KV-eventual-consistency theory: the code written in the
+user's colo WAS readable from claude.ai's colo (IAD) seconds later.
+
+The only conspicuous omission left in that response was `expires_in` (a
+client that registered for the refresh grant needs a lifetime to schedule
+against). Fixed:
+- `createMcpToken` gained an optional `{ ttlMs }` - OAuth-issued access
+  tokens now genuinely expire (24h; hand-made PATs are unchanged and stay
+  revoke-only).
+- `/token` returns `expires_in` alongside the rotating `refresh_token`, plus
+  the RFC 6749 §5.1 `Cache-Control: no-store` / `Pragma: no-cache` headers.
+
+Deployed as version `25707557`. 20/20 unit tests, typecheck clean.

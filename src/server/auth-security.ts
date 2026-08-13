@@ -283,13 +283,26 @@ function mcpTokenIndexKey(userId: number): string {
 
 /** Generates a new PAT for `userId`, returning the raw token exactly once -
  * same "shown once, never retrievable again" contract a secretkey field
- * already has elsewhere in this app. Only the hash is ever persisted. */
-export async function createMcpToken(userId: number, label: string, env: Record<string, unknown> = {}): Promise<{ tokenId: string; token: string }> {
+ * already has elsewhere in this app. Only the hash is ever persisted.
+ *
+ * `ttlMs` makes the token expire on its own, which is what an OAuth-issued
+ * access token needs (`routes/oauth.ts` pairs it with a refresh token and
+ * reports the same lifetime as `expires_in`); a hand-created PAT from the
+ * Profile screen passes nothing and stays revoke-only, as before. */
+export async function createMcpToken(
+  userId: number,
+  label: string,
+  env: Record<string, unknown> = {},
+  options: { ttlMs?: number } = {},
+): Promise<{ tokenId: string; token: string }> {
   const store = storeFor(env);
   const tokenId = crypto.randomUUID();
   const token = `mcp_${randomToken()}`;
   const now = new Date().toISOString();
-  await store.set(MCP_TOKEN_NAMESPACE, `token-${await hash(token)}`, { tokenId, userId } satisfies McpTokenLookup, { durability: "sync" });
+  await store.set(MCP_TOKEN_NAMESPACE, `token-${await hash(token)}`, { tokenId, userId } satisfies McpTokenLookup, {
+    durability: "sync",
+    ...(options.ttlMs ? { ttlMs: options.ttlMs } : {}),
+  });
   const index = (await store.get<McpTokenMeta[]>(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId))) ?? [];
   index.push({ tokenId, label, createdAt: now, lastUsedAt: now });
   await store.set(MCP_TOKEN_INDEX_NAMESPACE, mcpTokenIndexKey(userId), index, { durability: "sync" });
