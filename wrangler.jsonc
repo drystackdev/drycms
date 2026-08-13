@@ -12,7 +12,7 @@
   // these names on both sides of the contract; rename them here AND in
   // `options.ts` together if you need different ones for your own account.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "sivelap",
+  "name": "drycms",
   "main": "dist/server/entry-worker.js",
   "compatibility_date": "2026-08-01",
   // `node:stream`'s `Readable`/`Buffer` are used throughout `src/server/**`
