@@ -37,8 +37,6 @@ export async function publishAllPages(
     const pathnames = [...targets.keys()];
     if (pathnames.length === 0) return;
 
-    onStatus?.(`Publishing ${pathnames.length} ${pathnames.length === 1 ? "page" : "pages"}…`);
-
     const origin = window.location.origin;
     let batch: { result: PageBuildResult; options: PublishOptions }[] = [];
     let built = 0;

@@ -110,3 +110,14 @@ export function getDryContext(): DryRequestContext {
   }
   return context;
 }
+
+/** Lenient counterpart to `getDryContext` - `undefined` (never throws)
+ * outside `runWithDryContext`. For an ambient global like `setTitle()`
+ * (`dry-title.ts`) that documents itself as a no-op outside a real render
+ * (e.g. `render.ts`'s `renderErrorHtml`, which renders `404.tsx`/`500.tsx`
+ * deliberately without ever calling `runWithDryContext`) - `dry()`/`params()`
+ * itself still uses `getDryContext` above and should keep throwing; only a
+ * global that's genuinely optional belongs on this one. */
+export function tryGetDryContext(): DryRequestContext | undefined {
+  return storage.getStore();
+}

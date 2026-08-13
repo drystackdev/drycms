@@ -2,6 +2,11 @@ import { h } from "preact";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { DevPagesSource } from "./app-router/route-tree.js";
 
+vi.mock("./vei-session.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./vei-session.js")>();
+  return { ...actual, resolveVeiSession: vi.fn(actual.resolveVeiSession) };
+});
+
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 
 vi.mock("./config.js", async () => {
@@ -26,6 +31,7 @@ const { handlePageRequest } = await import("./page-handler.js");
 const { createContentEngineAdapter, createContentEntryEngineAdapter } = await import("../content-types/engine/index.js");
 const { content } = await import("./config.js");
 const { writeBuiltPage, readBuiltPage } = await import("./app-router/built-pages-storage.js");
+const { resolveVeiSession } = await import("./vei-session.js");
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -91,6 +97,18 @@ describe("handlePageRequest", () => {
     expect(await handlePageRequest(new Request(`http://localhost${adminPath}/dashboard`))).toBeNull();
   });
 
+  it("renders the pages-root 500.tsx via renderErrorHtml at status 500 when request setup fails (e.g. VEI session resolution throws) - true in both prod and dev, since the whole routing/render attempt shares one try/catch", async () => {
+    for (const isDev of [false, true]) {
+      vi.mocked(resolveVeiSession).mockRejectedValueOnce(new Error("boom"));
+      const response = await handlePageRequest(new Request("http://localhost/anything"), {}, isDev);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(500);
+      expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+      const html = await response!.text();
+      expect(html).toContain("Something went wrong");
+    }
+  });
+
   it("301s to the redirect's `to` slug when the URL's last segment matches a redirect row's `from` - checked BEFORE routing, so it also catches a still-syntactically-matching dynamic route (e.g. a renamed /blogs/[slug]) - true in both prod and dev", async () => {
     const schema = createContentEngineAdapter(content);
     const entries = createContentEntryEngineAdapter(content);
@@ -118,21 +136,25 @@ describe("handlePageRequest", () => {
       expect(await response!.text()).toBe("<html><body>promo v3</body></html>");
     });
 
-    it("returns a bare 404 - not an attempted render of the pages-root 404.tsx - when nothing is built for this path and no redirect applies (prod never renders live)", async () => {
+    it("renders the pages-root 404.tsx via renderErrorHtml (no dry() context, no hydrate/VEI scripts) when nothing is built for this path and no redirect applies", async () => {
       // Neither path has ever been through `writeBuiltPage` above, nor
       // matches a `redirect` row - one is a totally bogus path, the other
       // LOOKS like it could be a dynamic `[slug]` route (it isn't: this
       // project's own `src/apps/pages/` has no `blogs/` directory at all).
-      // Both now take the exact same branch and get the exact same bare
-      // fallback - `page-handler.ts` never even calls `discoverRoutes()`'s
-      // `matchRoute` result to decide this, on purpose (see its own doc
-      // comment on why prod stopped rendering anything live).
+      // Both now take the exact same branch and get the exact same
+      // `404.tsx` render - `page-handler.ts` never calls `discoverRoutes()`'s
+      // `matchRoute` result to decide this, only `routeTree.notFound` (see
+      // its own doc comment on why prod still never runs a MATCHED route's
+      // `page.tsx` live).
       for (const path of ["/this-route-does-not-exist-anywhere", "/blogs/some-slug-with-no-redirect"]) {
         const response = await handlePageRequest(new Request(`http://localhost${path}`), {}, false);
         expect(response).not.toBeNull();
         expect(response!.status).toBe(404);
-        expect(response!.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
-        expect(await response!.text()).toBe("Not found");
+        expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+        const html = await response!.text();
+        expect(html).toContain("Page not found");
+        expect(html).not.toContain("hydrate-client.ts");
+        expect(html).not.toContain("vei/overlay.ts");
       }
     });
   });

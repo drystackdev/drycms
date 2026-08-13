@@ -25,12 +25,15 @@ import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegi
  *
  * Two entirely different code paths, chosen once per request (mục 12,
  * `plans/app-r2.md`):
- * - **Prod, no VEI session**: static-only. Reads `built/live/*`
- *   (`readBuiltPage` - whatever `/dry/page-build` last published for this
- *   pathname) and serves it as-is, or 404s on a miss - no
- *   `page.tsx`/`layout.tsx` code ever executes for this request at all. A
- *   page that was never built through the admin simply 404s; that's by
- *   design, not a bug - see this function's own body for why.
+ * - **Prod, no VEI session**: static-only for a real match. Reads
+ *   `built/live/*` (`readBuiltPage` - whatever `/dry/page-build` last
+ *   published for this pathname) and serves it as-is; no `page.tsx`/
+ *   `layout.tsx` code ever executes for a MATCHED route in this branch. A
+ *   miss (never built, or genuinely no such route) renders the pages-root
+ *   `404.tsx` through the same lightweight `renderErrorHtml` pipeline the
+ *   catch block below already uses for `500.tsx` (no `dry()` context, no
+ *   layouts/hydration - just that one component) - falls back to a
+ *   bare-bones plain-text 404 only when the app has no `404.tsx` at all.
  * - **Dev (always), or a VEI-authenticated session (dev + prod)**: the
  *   ORIGINAL live SSR pipeline below, byte-for-byte the same behavior
  *   this function had before mục 12 - a route MISS first checks the
@@ -166,6 +169,10 @@ export async function handlePageRequest(
       // the old `readPageCache`.
       const redirectResponse = await findRedirectResponse(url, entries, allTypes);
       if (redirectResponse) return redirectResponse;
+      if (routeTree.notFound) {
+        const html = await renderErrorHtml(routeTree.notFound);
+        return new Response(html, { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
       return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
 
