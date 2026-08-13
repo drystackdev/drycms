@@ -5,7 +5,7 @@ export default function HomePage() {
     <main class="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background px-6 text-center text-foreground">
       <p class="text-sm font-medium text-muted-foreground">Welcome</p>
       <h1 class="max-w-2xl text-4xl font-bold tracking-tight sm:text-5xl">
-        Your drycms project starts here Khan Tran
+        Your drycms project starts here
       </h1>
       <p class="max-w-md text-muted-foreground">
         This is{" "}
