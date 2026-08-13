@@ -297,7 +297,14 @@ export async function createMcpToken(
 ): Promise<{ tokenId: string; token: string }> {
   const store = storeFor(env);
   const tokenId = crypto.randomUUID();
-  const token = `mcp_${randomToken()}`;
+  // Deliberately DOT-FREE (`randomToken()`'s own `a.b` shape would leave one
+  // in the middle). A bearer token containing a single dot looks like a
+  // malformed JWT to a client that sniffs for one, and
+  // `header, payload, signature = token.split(".")` throws on two segments -
+  // a plausible cause of claude.ai's connector failing immediately after a
+  // successful token exchange (`status/mcp-oauth.md`). Nothing here depends
+  // on the format: only the hash is ever stored or compared.
+  const token = `mcp_${randomToken().replace(".", "")}`;
   const now = new Date().toISOString();
   await store.set(MCP_TOKEN_NAMESPACE, `token-${await hash(token)}`, { tokenId, userId } satisfies McpTokenLookup, {
     durability: "sync",

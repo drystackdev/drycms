@@ -288,3 +288,27 @@ endpoint latency (every OAuth endpoint answers in <1s, far under claude.ai's
 If round 4 still fails, the remaining evidence all points at claude.ai's
 broker rather than this server, and the practical answer is the PAT flow
 (`McpConnect.tsx`) with Claude Code/Desktop, which works today.
+
+### Round 5: Codex/ChatGPT connects to this same server; only Claude doesn't
+
+User report: the OpenAI (Codex/ChatGPT) connector completes the identical
+DCR + PKCE + token flow against `https://dev.drystack.dev/dry/api/mcp` and
+works. That is the strongest evidence yet that this authorization server is
+correct - a second independent third-party OAuth+MCP client drives it end to
+end - and matches `anthropics/claude-ai-mcp` issue #326 ("works in Claude
+Code and ChatGPT") exactly.
+
+One structural difference between our tokens and every working connector's
+was still left: the access token was `mcp_<uuid>.<uuid>` - a bearer token
+with EXACTLY ONE dot. That looks like a malformed JWT to any client that
+sniffs for one, and the usual `header, payload, signature = token.split(".")`
+raises on a two-segment string. Codex never inspects the token; a broker
+that does would throw right after a successful exchange - precisely our
+symptom. `createMcpToken` now mints dot-free tokens (only the hash is ever
+stored, so nothing depends on the format; tokens issued earlier keep
+working). Deployed as version `f834e330`.
+
+Next diagnostic if this fails too: the temporary `/token` request log (added
+in round 4, not yet exercised by a real attempt) will show whether claude.ai
+sends `resource`/`scope`/`client_secret` there. After that, the evidence is
+conclusive enough to report upstream rather than keep changing this server.
