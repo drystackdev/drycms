@@ -54,6 +54,40 @@ comparison bug in the process).
       `POST /api/auth/mcp-tokens` `McpConnect.tsx` uses) still authenticates
       against `/dry/api/mcp` (`ping` → `{}`) on the same running instance -
       OAuth changes didn't disturb the existing flow.
+- [x] Same regression check re-confirmed on real production
+      `dev.drystack.dev` with the user's own real PAT (`tools/list` → all 14
+      tools).
+- [x] **Real claude.ai web connector, end to end, against deployed
+      `dev.drystack.dev`** - confirmed via `wrangler tail` while the user
+      connected live: full `authorize`→`oauth/consent`(SPA page)→
+      `consent-info`→`consent` approve→`token` sequence, all `Ok`.
+- [x] **Root-caused the `client_id=Authorization` value** (an initial
+      "stale cached client_id"/"UI placeholder field" theory was disproven
+      once traced further): `wrangler tail --format json` showed claude.ai's
+      OWN BACKEND (`user-agent: python-httpx`, `cf.asOrganization:
+      "Anthropic, PBC"`) fetches both discovery documents (including a
+      correctly-formed `registration_endpoint`) but NEVER calls
+      `POST /register` - it unconditionally sends the fixed literal string
+      `"Authorization"` as `client_id`. This is a real gap in claude.ai's
+      current MCP connector (no DCR support yet), not something fixable
+      from the user's side. Fixed server-side in `handleAuthorize`
+      (`routes/oauth.ts`): an unregistered `client_id` now falls back to
+      accepting any syntactically valid `https://` (or loopback)
+      `redirect_uri` - same check `POST /register` itself enforces - PKCE
+      still mandatory, consent screen still shows the real redirect host
+      (not a client-supplied name). Added `oauth.test.ts` coverage for both
+      the fallback-accept and the still-rejected (non-https) cases.
+      Deployed to production (`bun run deploy`) and reverified live:
+      `client_id=Authorization` + claude.ai's redirect_uri now gets a clean
+      `302` instead of `400`.
+- [x] `OAuthConsent.tsx` redesigned per user request: now rendered
+      standalone by `AuthGate` (like `SignIn`/`RegisterSuperAdmin`, NOT
+      inside `AuthenticatedApp`/`DryLayout`), a small centered card
+      (`.oauth-consent-screen`/`.oauth-consent-card` in `components.css`)
+      instead of a dashboard page. Error display switched from `toast.add`
+      to an inline `.alert destructive` (the `Toaster` component only
+      mounts inside `DryLayout`, which this page now deliberately skips -
+      `toast.add` would have silently done nothing on this page otherwise).
 
 ## Speed
 

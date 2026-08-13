@@ -110,13 +110,36 @@ describe("oauth register", () => {
 });
 
 describe("oauth authorize", () => {
-  it("rejects an unknown client_id/redirect_uri with a plain 400 (no redirect)", async () => {
+  it("rejects an empty client_id or a non-https/non-loopback redirect_uri with a plain 400 (no redirect)", async () => {
+    const noClientId = await GET(makeContext({
+      method: "GET",
+      slug: "authorize",
+      search: "?response_type=code&redirect_uri=https%3A%2F%2Fevil.example&code_challenge=abc&code_challenge_method=S256",
+    }));
+    expect(noClientId.status).toBe(400);
+
+    const insecureRedirect = await GET(makeContext({
+      method: "GET",
+      slug: "authorize",
+      search: "?response_type=code&client_id=nope&redirect_uri=http%3A%2F%2Fevil.example&code_challenge=abc&code_challenge_method=S256",
+    }));
+    expect(insecureRedirect.status).toBe(400);
+  });
+
+  it("falls back to accepting a non-DCR'd client_id with a valid https redirect_uri (claude.ai interop)", async () => {
+    // Real-world gap (see this file's own `handleAuthorize` doc comment):
+    // claude.ai's MCP connector never calls `POST /register` despite
+    // advertising `registration_endpoint`, and always sends a fixed,
+    // unregistered `client_id`. Mirror that exact shape here rather than a
+    // registered client.
     const response = await GET(makeContext({
       method: "GET",
       slug: "authorize",
-      search: "?response_type=code&client_id=nope&redirect_uri=https%3A%2F%2Fevil.example&code_challenge=abc&code_challenge_method=S256",
+      search: "?response_type=code&client_id=Authorization&redirect_uri=https%3A%2F%2Fclaude.ai%2Fapi%2Fmcp%2Fauth_callback&code_challenge=abc&code_challenge_method=S256&state=s1",
+      session: SESSION,
     }));
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toMatch(/^\/dry\/oauth\/consent\?request_id=/);
   });
 
   it("sends an anonymous visitor to login with a return_to back to the consent page", async () => {

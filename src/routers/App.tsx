@@ -15,6 +15,7 @@ import { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
+import OAuthConsent from "../pages/OAuthConsent.js";
 import RegisterSuperAdmin from "../pages/RegisterSuperAdmin.js";
 import SignIn from "../pages/SignIn.js";
 import { isVeiFrame, startVeiBridge } from "../pages/vei/bridge.js";
@@ -33,7 +34,6 @@ const ContentEntryEditor = lazy(() => import("../pages/ContentEntryEditor.js"));
 const AiKeyEditor = lazy(() => import("../pages/AiKeyEditor.js"));
 const Profile = lazy(() => import("../pages/Profile.js"));
 const McpConnect = lazy(() => import("../pages/McpConnect.js"));
-const OAuthConsent = lazy(() => import("../pages/OAuthConsent.js"));
 const Roles = lazy(() => import("../pages/Roles.js"));
 const RoleEditor = lazy(() => import("../pages/RoleEditor.js"));
 const IconSearchAdd = lazy(() => import("../pages/IconSearchAdd.js"));
@@ -230,7 +230,6 @@ function AuthenticatedApp() {
               <Route path={`${path}/vei/changes`} component={VeiChangesPreview} />
               <Route path={`${path}/profile`} component={Profile} />
               <Route path={`${path}/mcp`} component={McpConnect} />
-              <Route path={`${path}/oauth/consent`} component={OAuthConsent} />
               <Route path={`${path}/roles`} component={Roles} />
               {/* Bare `/settings` -> the default sub-page, so an old
                   bookmark/link to the flat pre-sub-nav URL still lands
@@ -272,6 +271,7 @@ function AuthenticatedApp() {
 
 const LOGIN_PATH = `${path}/login`;
 const REGISTER_PATH = `${path}/register`;
+const OAUTH_CONSENT_PATH = `${path}/oauth/consent`;
 
 /**
  * Sits above `DryLayout`/`<Router>`. `/login`/`/register` are real, always-
@@ -339,6 +339,10 @@ function AuthGate() {
       : `${path}/dashboard`;
     return <Redirect to={target} />;
   }
+  // Rendered standalone, same as `SignIn`/`RegisterSuperAdmin` above - a
+  // one-off "approve this connection" prompt has no business inside
+  // `AuthenticatedApp`'s `DryLayout` sidebar/topbar chrome.
+  if (locationPath === OAUTH_CONSENT_PATH) return <OAuthConsent />;
   return <AuthenticatedApp />;
 }
 

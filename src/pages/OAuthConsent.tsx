@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 const { path } = window.__DRY_CONFIG__;
-import { toast } from "../components/Toast.js";
+import Icon from "../components/Icon.js";
 import { authState } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 
@@ -14,19 +14,23 @@ interface ConsentInfo {
  * web's "custom connector" flow) lands on after `routes/oauth.ts`'s
  * `/authorize` validates the request, minting a short-lived `request_id`
  * (and, if the visitor wasn't signed in yet, bouncing them through `/login`
- * first via `routers/App.tsx`'s `AuthGate` `?return_to=` support). Only
- * reachable while authenticated - `AuthGate` renders this inside
- * `AuthenticatedApp` like any other admin page, so `authState.value.user` is
- * always populated here. Approve/Deny both end by handing this page a
- * `redirect` URL back to the requesting client's own `redirect_uri` - this
- * page never talks to that client directly, only to this server's own
- * `.../api/oauth/consent[-info]`.
+ * first via `routers/App.tsx`'s `AuthGate` `?return_to=` support). Rendered
+ * directly by `AuthGate` (like `SignIn`/`RegisterSuperAdmin`), NOT inside
+ * `AuthenticatedApp`/`DryLayout` - a one-off consent action has no business
+ * inside the dashboard chrome, and this is only ever reached authenticated
+ * (`AuthGate` gates it), so `authState.value.user` is always populated here.
+ * Errors surface inline (not via `toast.add` - `Toaster` only mounts inside
+ * `DryLayout`, which this page deliberately skips). Approve/Deny both end by
+ * handing this page a `redirect` URL back to the requesting client's own
+ * `redirect_uri` - this page never talks to that client directly, only to
+ * this server's own `.../api/oauth/consent[-info]`.
  */
 export default function OAuthConsent() {
   useDocumentTitle("Connect");
 
   const requestId = new URLSearchParams(window.location.search).get("request_id") ?? "";
   const [info, setInfo] = useState<ConsentInfo | null | "error">(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -52,6 +56,7 @@ export default function OAuthConsent() {
 
   async function respond(approve: boolean) {
     setSubmitting(true);
+    setSubmitError(null);
     try {
       // `installCsrfFetch()` (`lib/native/native.ts`) already patches global
       // `fetch` to attach the CSRF header - nothing extra needed here.
@@ -62,41 +67,50 @@ export default function OAuthConsent() {
       });
       const body = (await response.json().catch(() => ({}))) as { redirect?: string; message?: string };
       if (!response.ok || !body.redirect) {
-        toast.add({ type: "error", title: body.message ?? "Something went wrong. Please try connecting again." });
+        setSubmitError(body.message ?? "Something went wrong. Please try connecting again.");
         setSubmitting(false);
         return;
       }
       window.location.href = body.redirect;
     } catch {
-      toast.add({ type: "error", title: "Something went wrong. Please try connecting again." });
+      setSubmitError("Something went wrong. Please try connecting again.");
       setSubmitting(false);
     }
   }
 
   return (
-    <>
-      <div class="page-header">
-        <h1>Connect</h1>
-        <p>An application wants to connect to your drycms account.</p>
-      </div>
+    <div class="oauth-consent-screen">
+      <div class="card oauth-consent-card">
+        <div class="auth-split-brand">
+          <Icon name="Brand" />
+          <span>DRYCMS</span>
+        </div>
 
-      <section class="card">
         {info === null && <span class="hint">Loading…</span>}
+
         {info === "error" && (
           <div class="alert destructive">
             <p>This connection request has expired or is invalid. Please try connecting again from the application.</p>
           </div>
         )}
+
         {info && info !== "error" && (
           <>
             <header>
-              <h2>{info.clientName}</h2>
+              <h1>{info.clientName}</h1>
               <p>
                 wants to access your drycms account as <strong>{authState.value.user?.email}</strong>, and will
                 redirect you to <strong>{info.redirectUriHost}</strong> once you decide.
               </p>
             </header>
-            <div class="under stack" style={{ flexDirection: "row", gap: "0.5rem" }}>
+
+            {submitError && (
+              <div class="alert destructive">
+                <p>{submitError}</p>
+              </div>
+            )}
+
+            <div class="oauth-consent-actions">
               <button type="button" disabled={submitting} aria-busy={submitting || undefined} onClick={() => respond(true)}>
                 Approve
               </button>
@@ -106,7 +120,7 @@ export default function OAuthConsent() {
             </div>
           </>
         )}
-      </section>
-    </>
+      </div>
+    </div>
   );
 }

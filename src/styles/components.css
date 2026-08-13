@@ -2669,6 +2669,28 @@
       }
     }
 
+    /* OAuth consent screen (`status/mcp-oauth.md`) - rendered standalone by
+     * `AuthGate` like `.auth-split` above, but a single small centered card
+     * rather than the 2-pane split (this is a one-off "approve this
+     * connection" prompt, not a full auth page). */
+    .oauth-consent-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100dvh;
+      padding: 1.5rem;
+    }
+
+    .oauth-consent-card {
+      width: 100%;
+      max-width: 24rem;
+    }
+
+    .oauth-consent-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
     .content-entry-editor-form {
       border: none;
       padding: 0;

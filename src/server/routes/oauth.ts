@@ -145,6 +145,14 @@ function isAllowedRedirectUri(uri: string): boolean {
   }
 }
 
+function safeHost(uri: string): string {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return uri;
+  }
+}
+
 async function handleAuthorize(context: DryRouteContext): Promise<Response> {
   const params = context.url.searchParams;
   const clientId = params.get("client_id") ?? "";
@@ -152,11 +160,33 @@ async function handleAuthorize(context: DryRouteContext): Promise<Response> {
   const state = params.get("state") ?? "";
 
   const store = getAuthSecurityStore(context.env);
-  const client = clientId ? await store.get<OAuthClientRecord>(OAUTH_CLIENTS_NAMESPACE, clientKey(clientId)) : null;
-  if (!client || !client.redirectUris.includes(redirectUri)) {
-    // The redirect target itself isn't trusted - can't safely bounce the
-    // browser back to whatever `redirect_uri` claims to be.
-    return jsonResponse({ error: "invalid_request", message: "Unknown client_id or unregistered redirect_uri." }, 400);
+  const registered = clientId ? await store.get<OAuthClientRecord>(OAUTH_CLIENTS_NAMESPACE, clientKey(clientId)) : null;
+
+  let clientName: string;
+  if (registered) {
+    if (!registered.redirectUris.includes(redirectUri)) {
+      // The redirect target itself isn't trusted for THIS client - can't
+      // safely bounce the browser back to whatever `redirect_uri` claims.
+      return jsonResponse({ error: "invalid_request", message: "redirect_uri doesn't match this client's registration." }, 400);
+    }
+    clientName = registered.clientName;
+  } else {
+    // Real-world interop gap (`status/mcp-oauth.md`): confirmed via
+    // `wrangler tail` against production that claude.ai's MCP connector
+    // fetches this server's discovery documents (including
+    // `registration_endpoint`) but never calls `POST /register` - it always
+    // sends a fixed, non-registered `client_id` (literally the string
+    // `"Authorization"`) regardless. With no registry entry to check
+    // `redirect_uri` against for a client that skipped DCR, fall back to
+    // the same syntactic check `POST /register` itself enforces (https, or
+    // loopback for native/dev clients) - PKCE below still protects the code
+    // exchange, and the consent screen shows the real redirect host (not a
+    // client-supplied name) so the user can still notice anything off
+    // before approving.
+    if (!clientId || !isAllowedRedirectUri(redirectUri)) {
+      return jsonResponse({ error: "invalid_request", message: "Unknown client_id or invalid redirect_uri." }, 400);
+    }
+    clientName = safeHost(redirectUri);
   }
 
   const fail = (error: string, description: string) =>
@@ -174,7 +204,7 @@ async function handleAuthorize(context: DryRouteContext): Promise<Response> {
   const requestId = crypto.randomUUID();
   await store.set(OAUTH_AUTHZ_REQUESTS_NAMESPACE, authzRequestKey(requestId), {
     clientId,
-    clientName: client.clientName,
+    clientName,
     redirectUri,
     codeChallenge,
     state,
@@ -231,13 +261,7 @@ async function handleConsentInfo(context: DryRouteContext): Promise<Response> {
   const record = await store.get<OAuthAuthzRequest>(OAUTH_AUTHZ_REQUESTS_NAMESPACE, authzRequestKey(requestId));
   if (!record) return expired();
 
-  let redirectUriHost = record.redirectUri;
-  try {
-    redirectUriHost = new URL(record.redirectUri).host;
-  } catch {
-    // Keep the raw value - already validated at registration time regardless.
-  }
-  return jsonResponse({ clientName: record.clientName, redirectUriHost });
+  return jsonResponse({ clientName: record.clientName, redirectUriHost: safeHost(record.redirectUri) });
 }
 
 async function handleConsent(context: DryRouteContext): Promise<Response> {
