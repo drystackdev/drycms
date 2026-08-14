@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { buildPage, candidatePathsFor, pagesAffectedBy, publishBuiltPage, PageBuildError } from "./page-build.js";
+import { buildPage, candidatePathsFor, evalModule, pagesAffectedBy, publishBuiltPage, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
@@ -383,14 +383,14 @@ describe("candidatePathsFor", () => {
   it("resolves a relative import to its .tsx/.ts candidates", () => {
     expect(candidatePathsFor("pages/blogs/page.tsx", "./Greeting.js")).toEqual({
       kind: "candidates",
-      paths: ["pages/blogs/Greeting.js", "pages/blogs/Greeting", "pages/blogs/Greeting.tsx", "pages/blogs/Greeting.ts"],
+      paths: ["pages/blogs/Greeting.tsx", "pages/blogs/Greeting.ts"],
     });
   });
 
   it("resolves a @component alias from the storage root, not relative to the importer", () => {
     expect(candidatePathsFor("pages/blogs/[slug]/page.tsx", "@component/Card")).toEqual({
       kind: "candidates",
-      paths: ["component/Card", "component/Card.tsx", "component/Card.ts"],
+      paths: ["component/Card.tsx", "component/Card.ts"],
     });
   });
 
@@ -400,5 +400,16 @@ describe("candidatePathsFor", () => {
 
   it("throws on a bare specifier that isn't relative/aliased/preact", () => {
     expect(() => candidatePathsFor("pages/page.tsx", "lodash")).toThrow(PageBuildError);
+  });
+
+  it("evaluates hook imports against a caller-provided Preact runtime", () => {
+    const customHook = () => "custom";
+    const result = evalModule(
+      "component/Test.tsx",
+      { "component/Test.tsx": 'import { useEffect } from "preact/hooks"; export const hook = useEffect; export default () => null;' },
+      new Map(),
+      { h: (() => null) as never, Fragment: Symbol("fragment") as never, hooks: { useEffect: customHook } },
+    );
+    expect(result.exports.hook).toBe(customHook);
   });
 });

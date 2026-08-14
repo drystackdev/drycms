@@ -73,6 +73,23 @@ async function importDefault(url: string): Promise<(props: never) => unknown> {
 
 async function main(): Promise<void> {
   try {
+    // A VEI cache hit also loads `vei-live-refresh.ts`, which deliberately
+    // replaces this built snapshot with a fresh render from pages-source.
+    // Hydrating the snapshot first is both wasted work and unsafe under the
+    // Vite dev middleware: its page modules can resolve the standalone
+    // runtime as `preact-runtime.js?import` while this bootstrap imports the
+    // manifest's canonical `preact-runtime.js` URL, creating two Preact
+    // instances and breaking hooks before live refresh gets its turn.
+    const veiElement = document.getElementById("dry-vei-config");
+    if (veiElement?.textContent) {
+      try {
+        const { edit } = JSON.parse(veiElement.textContent) as { edit?: boolean };
+        if (edit) return;
+      } catch {
+        // Invalid config falls through to the ordinary hydration path.
+      }
+    }
+
     const manifestElement = document.getElementById("dry-hydrate-manifest");
     // No manifest = a page mục 7's build step decided has no interactive
     // island (or one that predates this feature) - nothing to hydrate,

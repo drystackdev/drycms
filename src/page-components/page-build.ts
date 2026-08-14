@@ -44,6 +44,18 @@ const NPM_ALLOWLIST: Record<string, Record<string, unknown>> = {
   "preact/hooks": preactHooks as unknown as Record<string, unknown>,
 };
 
+export interface PageBuildPreactRuntime {
+  h: typeof h;
+  Fragment: typeof Fragment;
+  hooks: Record<string, unknown>;
+}
+
+const DEFAULT_PREACT_RUNTIME: PageBuildPreactRuntime = {
+  h,
+  Fragment,
+  hooks: preactHooks as unknown as Record<string, unknown>,
+};
+
 /**
  * The pure alias/relative-import math half of `resolveModulePath` - no
  * `sourceByPath` involved, so a caller that doesn't have (or doesn't want to
@@ -92,10 +104,9 @@ export function candidatePathsFor(
   // `.tsx`/`.ts` source key, so a trailing `.js`/`.jsx` is stripped before
   // generating candidates too - found by this module's own test suite
   // using a realistic `.js`-suffixed import, not assumed.
+  if (/\.tsx?$/.test(base)) return { kind: "candidates", paths: [base] };
   const withoutJsExt = base.replace(/\.jsx?$/, "");
-  const paths = base === withoutJsExt
-    ? [base, `${base}.tsx`, `${base}.ts`]
-    : [base, withoutJsExt, `${withoutJsExt}.tsx`, `${withoutJsExt}.ts`];
+  const paths = [`${withoutJsExt}.tsx`, `${withoutJsExt}.ts`];
   return { kind: "candidates", paths };
 }
 
@@ -304,7 +315,12 @@ async function compileEsmAsset(
  * (contrast `page-source-preview.ts`, which keeps its own local copy because
  * it deliberately wants a STUBBED `dry()` instead).
  */
-export function evalModule(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): { exports: any } {
+export function evalModule(
+  path: string,
+  sourceByPath: Record<string, string>,
+  cache: Map<string, { exports: any }>,
+  runtime: PageBuildPreactRuntime = DEFAULT_PREACT_RUNTIME,
+): { exports: any } {
   const cached = cache.get(path);
   if (cached) return cached;
   const moduleObj = { exports: {} as any };
@@ -321,14 +337,16 @@ export function evalModule(path: string, sourceByPath: Record<string, string>, c
   }
 
   const require = (specifier: string) => {
+    if (specifier === "preact") return { h: runtime.h, Fragment: runtime.Fragment };
+    if (specifier === "preact/hooks") return runtime.hooks;
     const resolved = resolveModulePath(path, specifier, sourceByPath);
-    return resolved.kind === "external" ? resolved.value : evalModule(resolved.path, sourceByPath, cache).exports;
+    return resolved.kind === "external" ? resolved.value : evalModule(resolved.path, sourceByPath, cache, runtime).exports;
   };
 
   try {
     // eslint-disable-next-line no-new-func
     const fn = new Function("module", "exports", "require", "h", "Fragment", "dry", "params", "setTitle", "dryBind", transformed);
-    fn(moduleObj, moduleObj.exports, require, h, Fragment, dry, params, setTitle, dryBind);
+    fn(moduleObj, moduleObj.exports, require, runtime.h, runtime.Fragment, dry, params, setTitle, dryBind);
   } catch (error) {
     cache.delete(path);
     throw error instanceof PageBuildError ? error : new PageBuildError(`Failed to run "${path}": ${error instanceof Error ? error.message : String(error)}`);
@@ -336,8 +354,13 @@ export function evalModule(path: string, sourceByPath: Record<string, string>, c
   return moduleObj;
 }
 
-export function moduleDefault(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): (props: never) => unknown {
-  const mod = evalModule(path, sourceByPath, cache);
+export function moduleDefault(
+  path: string,
+  sourceByPath: Record<string, string>,
+  cache: Map<string, { exports: any }>,
+  runtime: PageBuildPreactRuntime = DEFAULT_PREACT_RUNTIME,
+): (props: never) => unknown {
+  const mod = evalModule(path, sourceByPath, cache, runtime);
   const exported = mod.exports?.default ?? mod.exports;
   if (typeof exported !== "function") throw new PageBuildError(`"${path}" has no default export function.`);
   return exported;

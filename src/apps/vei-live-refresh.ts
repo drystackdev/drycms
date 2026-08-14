@@ -1,4 +1,3 @@
-import hydrate from "preact-iso/hydrate";
 import { configureHttpDryReader } from "../content-types/dry-reader-http.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { permissionKeyFor } from "../content-types/permissions.js";
@@ -6,8 +5,8 @@ import { setCurrentParams } from "../content-types/params-reader-client.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { buildManifestRouteTree, matchSourceRoute, notFoundRoute } from "../server/app-router/route-manifest.js";
 import type { RouteMatch } from "../server/app-router/match.js";
-import { candidatePathsFor, IMPORT_FROM_RE, moduleDefault } from "../page-components/page-build.js";
-import { listAllFilesRecursive, toUrlPath } from "../page-components/pages-source-http.js";
+import { candidatePathsFor, IMPORT_FROM_RE, moduleDefault, type PageBuildPreactRuntime } from "../page-components/page-build.js";
+import { fetchJson, listAllFilesRecursive, toUrlPath, type AssetHrefs } from "../page-components/pages-source-http.js";
 import { adminPath, setAdminPath } from "../storage/admin-path.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
@@ -108,7 +107,7 @@ async function fetchSource(path: string): Promise<string | null> {
  * PATH - only ever reaches what `roots` (and whatever they transitively
  * import) actually name.
  */
-async function collectClosure(roots: string[]): Promise<Record<string, string>> {
+async function collectClosure(roots: string[], availablePaths: ReadonlySet<string>): Promise<Record<string, string>> {
   const sourceByPath: Record<string, string> = {};
 
   async function scanImports(path: string, text: string): Promise<void> {
@@ -122,14 +121,14 @@ async function collectClosure(roots: string[]): Promise<Record<string, string>> 
   async function resolveSpecifier(fromPath: string, specifier: string): Promise<void> {
     const resolved = candidatePathsFor(fromPath, specifier);
     if (resolved.kind === "external") return;
-    for (const candidate of resolved.paths) {
-      if (candidate in sourceByPath) return;
-      const text = await fetchSource(candidate);
-      if (text !== null) {
-        sourceByPath[candidate] = text;
-        await scanImports(candidate, text);
-        return;
-      }
+    const candidate = resolved.paths.find((path) => availablePaths.has(path));
+    if (!candidate) throw new Error(`[drycms] vei-live-refresh: cannot find "${specifier}" imported from "${fromPath}".`);
+    if (candidate in sourceByPath) return;
+    const text = await fetchSource(candidate);
+    if (text !== null) {
+      sourceByPath[candidate] = text;
+      await scanImports(candidate, text);
+      return;
     }
     throw new Error(`[drycms] vei-live-refresh: cannot find "${specifier}" imported from "${fromPath}".`);
   }
@@ -208,10 +207,11 @@ async function main(): Promise<void> {
 
   try {
     const typesApi = createContentTypesApi(`${adminPath()}/api/content-types`);
-    const [allTypes, vei, fileEntries] = await Promise.all([
+    const [allTypes, vei, fileEntries, assetHrefs] = await Promise.all([
       listCached(typesApi),
       resolveVeiAccess(),
       listAllFilesRecursive(adminPath()),
+      fetchJson<AssetHrefs>(`${adminPath()}/api/asset-hrefs`),
     ]);
 
     const tree = buildManifestRouteTree(fileEntries.map((e) => e.id));
@@ -230,7 +230,10 @@ async function main(): Promise<void> {
     }
     const params = sourceMatch?.params ?? {};
 
-    const sourceByPath = await collectClosure([route.entryPath, ...route.layoutPaths]);
+    const sourceByPath = await collectClosure(
+      [route.entryPath, ...route.layoutPaths],
+      new Set(fileEntries.map((entry) => entry.id)),
+    );
     if (isCacheHit) await whenHydrated();
 
     configureHttpDryReader({
@@ -243,15 +246,23 @@ async function main(): Promise<void> {
     });
     setCurrentParams(params);
 
+    const preactRuntime = (await import(/* @vite-ignore */ assetHrefs.preactRuntimeHref)) as PageBuildPreactRuntime & {
+      hydrate: (vnode: unknown) => void;
+    };
+    const runtime: PageBuildPreactRuntime = {
+      h: preactRuntime.h,
+      Fragment: preactRuntime.Fragment,
+      hooks: preactRuntime as unknown as Record<string, unknown>,
+    };
     const cache = new Map<string, { exports: any }>();
     const match: RouteMatch = {
-      page: async () => ({ default: moduleDefault(route.entryPath, sourceByPath, cache) }),
-      layouts: route.layoutPaths.map((path) => async () => ({ default: moduleDefault(path, sourceByPath, cache) })),
+      page: async () => ({ default: moduleDefault(route.entryPath, sourceByPath, cache, runtime) }),
+      layouts: route.layoutPaths.map((path) => async () => ({ default: moduleDefault(path, sourceByPath, cache, runtime) })),
       params,
     };
 
     const vnode = await resolveMatchToVNode(match);
-    hydrate(vnode as never);
+    preactRuntime.hydrate(vnode);
   } catch (error) {
     // Stale/blank beats broken - leave a cache-hit's already-hydrated
     // content exactly as it is (a mid-edit syntax error or transient fetch
