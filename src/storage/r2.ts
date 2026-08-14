@@ -8,11 +8,12 @@ import { StorageError, type StorageAdapter, type StorageReadResult, type Storage
 const MARKER_FILE = ".dir";
 
 /** Also hides `.tmp.<collection>.<user>` entry-media staging folders
- * (`content-types/entry-media-paths.ts`) and `.avatar`
- * (`AvatarField.tsx`'s upload target) from every listing - see `local.ts`'s
- * identical helper for why. */
+ * (`content-types/entry-media-paths.ts`), `.avatar`
+ * (`AvatarField.tsx`'s upload target), and `.seeded`
+ * (`pages-source-seed.ts`'s auto-seed marker) from every listing - see
+ * `local.ts`'s identical helper for why. */
 function isHiddenName(name: string): boolean {
-  return name === MARKER_FILE || name === ".avatar" || name.startsWith(".tmp.");
+  return name === MARKER_FILE || name === ".avatar" || name === ".seeded" || name.startsWith(".tmp.");
 }
 
 export interface R2ObjectLike {

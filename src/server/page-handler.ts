@@ -9,6 +9,7 @@ import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
+import { ensurePagesSourceSeeded } from "./pages-source-seed.js";
 import { discoverRoutes, devSourcePathOf, type DevPagesSource } from "./app-router/route-tree.js";
 import { matchRoute, type RouteMatch } from "./app-router/match.js";
 import { renderErrorHtml, renderPage } from "./app-router/render.js";
@@ -133,6 +134,13 @@ export async function handlePageRequest(
   try {
     const { schema, entries } = getContentAdapters(routeContext);
     const allTypes = await schema.listContentTypes();
+
+    // A fresh tenant's `pagesSourceStorage` R2 bucket starts empty until
+    // this runs once - see `pages-source-seed.ts`'s own doc comment for why
+    // it's placed right here (same request as D1's own first-time
+    // `ensureBootstrap`, triggered by `listContentTypes()` just above).
+    // No-op for `kind: "local"` and once a tenant has been seeded.
+    await ensurePagesSourceSeeded(routeContext);
 
     const vei = await resolveVeiContext(request, env, entries, allTypes);
 

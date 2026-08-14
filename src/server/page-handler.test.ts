@@ -23,6 +23,10 @@ vi.mock("./config.js", async () => {
     // its own subdirectory, same shape `options.ts`'s `resolveStorageOption`
     // produces for a real local dev instance.
     pagesCacheStorage: { kind: "local", root: join(tempDirBox.path, "pages-cache") },
+    // `pages-source-seed.ts`'s `ensurePagesSourceSeeded` (called from
+    // `handlePageRequest`) no-ops for `kind !== "r2"` - `kind: "local"` here
+    // matches every real `bun run dev`/Node instance, which never needs it.
+    pagesSourceStorage: { kind: "local", root: join(tempDirBox.path, "pages-source") },
   };
 });
 

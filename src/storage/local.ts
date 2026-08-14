@@ -23,13 +23,16 @@ import {
 const MARKER_FILE = ".dir";
 
 /** Also hides `.tmp.<collection>.<user>` entry-media staging folders
- * (`content-types/entry-media-paths.ts`) and `.avatar` (`AvatarField.tsx`'s
- * upload target, `field-registry.ts`'s `avatarFieldType`) from every listing
- * - both are implementation details never meant to be Media-browsable. A
- * file inside `.avatar` is still directly readable by id/URL - only the
- * folder itself is hidden from `list()`/`listAll()`. */
+ * (`content-types/entry-media-paths.ts`), `.avatar` (`AvatarField.tsx`'s
+ * upload target, `field-registry.ts`'s `avatarFieldType`), and `.seeded`
+ * (`pages-source-seed.ts`'s marker that a fresh tenant's `pagesSource` R2
+ * bucket has already been auto-seeded once - never meant to be edited or
+ * even seen through the Page Editor's file tree) from every listing - all
+ * implementation details never meant to be browsable. A file inside
+ * `.avatar` is still directly readable by id/URL - only the folder itself
+ * is hidden from `list()`/`listAll()`. */
 function isHiddenName(name: string): boolean {
-  return name === MARKER_FILE || name === ".avatar" || name.startsWith(".tmp.");
+  return name === MARKER_FILE || name === ".avatar" || name === ".seeded" || name.startsWith(".tmp.");
 }
 
 function isErrno(error: unknown, code: string): boolean {
