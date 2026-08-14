@@ -1,9 +1,16 @@
-export default async function NotFound() {
+import Button from "@component/Button";
+
+export default function NotFoundPage() {
+  setTitle("Page not found");
+
   return (
-    <main class="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-4 px-6 py-16">
-      <p class="text-sm font-semibold uppercase tracking-widest text-slate-500">404</p>
-      <h1 class="text-4xl font-bold text-slate-950 dark:text-white">Page not found</h1>
-      <a class="text-blue-600 hover:underline dark:text-blue-400" href="/">Return home</a>
+    <main class="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background px-6 text-center text-foreground">
+      <p class="text-sm font-medium text-muted-foreground">404</p>
+      <h1 class="text-3xl font-bold">Page not found</h1>
+      <p class="max-w-md text-muted-foreground">
+        The page you're looking for doesn't exist or may have been moved.
+      </p>
+      <Button label="Back to home" href="/" />
     </main>
   );
 }

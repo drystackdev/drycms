@@ -6669,6 +6669,7 @@
         border-inline-start: 1px solid var(--dry-border);
         background-color: transparent;
         box-shadow: unset;
+        color: var(--dry-muted-foreground);
 
         &:first-child {
           border-inline-start: none;
