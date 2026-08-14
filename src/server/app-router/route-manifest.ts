@@ -98,6 +98,16 @@ export function notFoundRoute(tree: RouteTree): NotFoundRoute | undefined {
   };
 }
 
+/** The `500.tsx` counterpart to `notFoundRoute`: error pages live at the
+ * pages root and are wrapped by that root's layout, just like `404.tsx`. */
+export function serverErrorRoute(tree: RouteTree): NotFoundRoute | undefined {
+  if (!tree.serverError) return undefined;
+  return {
+    entryPath: sourcePathOf(tree.serverError),
+    layoutPaths: tree.root.layout ? [sourcePathOf(tree.root.layout)] : [],
+  };
+}
+
 /** Every static page's PATHNAME to build - thin re-export of
  * `route-tree.ts`'s `staticPagePaths` (already pure, works on ANY
  * `RouteTree` regardless of what its loaders do) so callers of this module

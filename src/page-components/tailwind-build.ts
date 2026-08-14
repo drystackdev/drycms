@@ -7,6 +7,7 @@
 // build, literally built for drop-in `<script>` use, not an ESM entry a
 // plain bare import would pull in and execute immediately in THIS document.
 import tailwindBrowserScriptUrl from "@tailwindcss/browser?url";
+import { minifyCss } from "./minify-css.js";
 
 const GLOBALS_CSS_PATH = "styles/globals.css";
 
@@ -110,7 +111,7 @@ export async function compileTailwindCss(bodyHtml: string, stylesheetSource: str
       if (compiled) break;
       await new Promise((resolve) => setTimeout(resolve, 30));
     }
-    return compiled?.textContent ?? "";
+    return minifyCss(compiled?.textContent ?? "");
   } finally {
     document.body.removeChild(iframe);
   }

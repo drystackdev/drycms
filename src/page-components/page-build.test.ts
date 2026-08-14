@@ -62,14 +62,15 @@ it("includes 404.tsx and 500.tsx as built live targets", async () => {
   const { targets } = await resolveAllPageTargets(
     {
       "pages/page.tsx": "export default function Page() { return <main />; }",
+      "pages/layout.tsx": "export default function Layout({ children }) { return <div>{children}</div>; }",
       "pages/404.tsx": "export default function NotFound() { return <main />; }",
       "pages/500.tsx": "export default function ErrorPage() { return <main />; }",
     },
     [],
     "/dry/api/dry-http",
   );
-  expect(targets.get("/404")).toEqual({ pathname: "/404", entryPath: "pages/404.tsx", layoutPaths: [], params: {} });
-  expect(targets.get("/500")).toEqual({ pathname: "/500", entryPath: "pages/500.tsx", layoutPaths: [], params: {} });
+  expect(targets.get("/404")).toEqual({ pathname: "/404", entryPath: "pages/404.tsx", layoutPaths: ["pages/layout.tsx"], params: {} });
+  expect(targets.get("/500")).toEqual({ pathname: "/500", entryPath: "pages/500.tsx", layoutPaths: ["pages/layout.tsx"], params: {} });
 });
 
 function jsonHeaders(resource: string, version: number): Record<string, string> {

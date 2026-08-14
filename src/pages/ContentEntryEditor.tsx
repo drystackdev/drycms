@@ -32,7 +32,6 @@ import { createContentTypesApi } from "../content-types/http-api.js";
 import { supportsMagic } from "../content-types/permissions.js";
 import {
   resolveFieldSide,
-  SYSTEM_FIELD_IDS,
 } from "../content-types/system-fields.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { useParam } from "../hooks/useParam.js";
@@ -61,6 +60,7 @@ import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.
 import { showPublishStatus } from "../store/sync.js";
 import { setValueAtPath } from "./content-entry-editor/field-path.js";
 import { renderFieldNodes } from "./content-entry-editor/entry-fields-form.js";
+import { editableEntryNodes } from "./content-entry-editor/editable-nodes.js";
 import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
 import { canAccess } from "../store/auth.js";
 
@@ -181,17 +181,8 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
   // that must run on every render - has something to diff against even
   // before `type`/`value` are confirmed loaded.
   const editableNodes = useMemo(
-    () =>
-      nodes.filter(
-        (n) =>
-          !(
-            n.kind === "column" &&
-            (n.fieldId === SYSTEM_FIELD_IDS.createdAt ||
-              n.fieldId === SYSTEM_FIELD_IDS.updatedAt)
-          ) &&
-          !(n.kind === "column" && n.fieldId === SYSTEM_FIELD_IDS.sortIndex),
-      ),
-    [nodes],
+    () => (type ? editableEntryNodes(type, nodes) : []),
+    [type, nodes],
   );
   // Same rationale as `originalValue`/`isDirty` above - a full field-by-field
   // diff of the entry has no business running on every render, only when one

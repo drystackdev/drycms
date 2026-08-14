@@ -43,6 +43,8 @@ import {
   buildManifestRouteTree,
   listDynamicPageTemplates,
   matchSourceRoute,
+  notFoundRoute,
+  serverErrorRoute,
   staticPagePaths,
   type DynamicPageTemplate,
 } from "../server/app-router/route-manifest.js";
@@ -1762,10 +1764,12 @@ export default function PageEditor() {
       };
     }
     if (selectedPath === `${PAGES_ROOT}/404.tsx`) {
-      return { label: "404.tsx", pathname: "/__dry-preview-404", entryPath: selectedPath, layoutPaths: [], params: {} };
+      const route = notFoundRoute(manifest);
+      if (route) return { label: "404.tsx", pathname: "/__dry-preview-404", ...route, params: {} };
     }
     if (selectedPath === `${PAGES_ROOT}/500.tsx`) {
-      return { label: "500.tsx", pathname: "/__dry-preview-500", entryPath: selectedPath, layoutPaths: [], params: {} };
+      const route = serverErrorRoute(manifest);
+      if (route) return { label: "500.tsx", pathname: "/__dry-preview-500", ...route, params: {} };
     }
     return null;
   }, [manifest, selectedPath, sourceByPath, dynamicTemplate, previewEntry, isComponentPath, propsSchema]);

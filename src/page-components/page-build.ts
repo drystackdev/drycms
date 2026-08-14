@@ -13,7 +13,7 @@ import { buildDocument } from "../server/app-router/build-document.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { compileTailwindCss, tailwindStylesheetSource } from "./tailwind-build.js";
-import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
+import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, notFoundRoute, serverErrorRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { COMPONENT_ALIAS, PAGES_ROOT, PAGES_SOURCE_ROOTS, resolveAliasSpecifier } from "../server/app-router/source-roots.js";
 import { resolveDynamicPages } from "./dynamic-routes.js";
 import { minifyEsmSource } from "./minify-js.js";
@@ -729,12 +729,10 @@ export async function resolveAllPageTargets(
     const match = matchSourceRoute(manifest, pathname);
     if (match) targets.set(pathname, { pathname, ...match });
   }
-  if (manifest.notFound) {
-    targets.set("/404", { pathname: "/404", entryPath: `${PAGES_ROOT}/404.tsx`, layoutPaths: [], params: {} });
-  }
-  if (manifest.serverError) {
-    targets.set("/500", { pathname: "/500", entryPath: `${PAGES_ROOT}/500.tsx`, layoutPaths: [], params: {} });
-  }
+  const notFound = notFoundRoute(manifest);
+  if (notFound) targets.set("/404", { pathname: "/404", ...notFound, params: {} });
+  const serverError = serverErrorRoute(manifest);
+  if (serverError) targets.set("/500", { pathname: "/500", ...serverError, params: {} });
   const unmatchedTemplates: UnmatchedTemplate[] = [];
   const dynamicTemplates = listDynamicPageTemplates(manifest);
   if (dynamicTemplates.length > 0) {
