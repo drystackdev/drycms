@@ -14,18 +14,21 @@
  * Global (not per-user, unlike `ai-content-type-drafts.ts`'s pending-review
  * queue): a published page is shared site state, not one admin's personal
  * draft awaiting THEIR review - every admin with Page Builder access should
- * see the same flag. Scoped to `page.tsx` paths only, mirroring
- * `PageEditor.tsx`'s own `markUnbuilt()` - the same file class that dot
- * already tracks, since only a route-entry file has an unambiguous "which
- * build event clears this" answer (see `routes/pages-build.ts`'s
- * `publishOne`, which is the only place this ever gets cleared).
+ * see the same flag. Covers every page-source path (`page.tsx`, `layout.tsx`,
+ * `component/*`, `styles/*`, `md/*`), not just `page.tsx` route entries - an
+ * MCP overwrite of a shared layout or component is exactly as invisible to a
+ * browser session as one to a page, so it deserves the same red dot. Clears
+ * two ways: a real build/publish of a `page.tsx` (`routes/pages-build.ts`'s
+ * `publishOne`) - the meaningful "reached the live site" event for a route
+ * entry - or, for any path, the next explicit Save of that same path
+ * (`routes/pages-source.ts`'s `PUT`) - there's no "build" event for a
+ * component/style/md file to hook into, but an admin reviewing and
+ * re-persisting it is just as much an acknowledgment.
  */
 import { getAuthSecurityStore } from "./auth-security.js";
 
 const NAMESPACE = "ai-page-source-flags";
 const KEY = "global";
-
-const PAGE_ENTRY_RE = /(^|\/)page\.tsx$/;
 
 export interface AiPageSourceFlag {
   path: string;
@@ -46,12 +49,11 @@ async function readLog(env: Record<string, unknown>): Promise<AiPageSourceFlagLo
 }
 
 /** Called once, right after `write_page_source` successfully overwrites
- * `path` - a no-op for anything other than a `page.tsx` (see this module's
- * own doc comment on scope). Re-flagging an already-flagged path still
- * bumps the version and refreshes `writtenAt` (a second AI write before
- * anyone rebuilt is still real, newer information). */
+ * `path` - any page-source path (see this module's own doc comment on
+ * scope). Re-flagging an already-flagged path still bumps the version and
+ * refreshes `writtenAt` (a second AI write before anyone acknowledged the
+ * first is still real, newer information). */
 export async function markAiPageSourceWrite(path: string, env: Record<string, unknown> = {}): Promise<void> {
-  if (!PAGE_ENTRY_RE.test(path)) return;
   const store = getAuthSecurityStore(env);
   const current = await readLog(env);
   const withoutThisPath = current.entries.filter((entry) => entry.path !== path);
@@ -59,10 +61,12 @@ export async function markAiPageSourceWrite(path: string, env: Record<string, un
   await store.set(NAMESPACE, KEY, { version: current.version + 1, entries }, { durability: "sync" });
 }
 
-/** Called once a REAL build/publish of `path` succeeds
- * (`routes/pages-build.ts`'s `publishOne`) - the flag's only intended way to
- * clear. No-op (and no version bump) if `path` wasn't flagged, so a build
- * that was never AI-touched doesn't spuriously wake up every poller. */
+/** Called from the two "acknowledged" events this module's own doc comment
+ * describes: a real build/publish of a `page.tsx` (`routes/pages-build.ts`'s
+ * `publishOne`), or an explicit Save of `path` by any session
+ * (`routes/pages-source.ts`'s `PUT`). No-op (and no version bump) if `path`
+ * wasn't flagged, so an ordinary build/save that was never AI-touched
+ * doesn't spuriously wake up every poller. */
 export async function clearAiPageSourceWrite(path: string, env: Record<string, unknown> = {}): Promise<void> {
   const store = getAuthSecurityStore(env);
   const current = await readLog(env);

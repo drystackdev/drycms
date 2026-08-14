@@ -19,7 +19,7 @@ import { rewriteImportsAfterMove } from "../page-components/import-rewrite.js";
 import { createPagesSourceApi } from "../page-components/pages-source-http-api.js";
 import { triggerGithubSync } from "../page-components/github-sync-http-api.js";
 import { fetchJson, toUrlPath, type AssetHrefs } from "../page-components/pages-source-http.js";
-import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft } from "../page-components/page-source-draft-db.js";
+import { getAllPageSourceDrafts, putPageSourceDraft, deletePageSourceDraft, type PageSourceDraftRecord } from "../page-components/page-source-draft-db.js";
 import {
   getAllPageSourceCache,
   putPageSourceCache,
@@ -487,6 +487,17 @@ function clampWidth(value: number, range: { min: number; max: number }): number 
   return Math.min(range.max, Math.max(range.min, value));
 }
 
+/** True when `draft` is provably out of date against `freshContent` - i.e.
+ * storage has moved on since this draft was taken (an MCP `write_page_source`
+ * call, another admin's Save) - see `PageSourceDraftRecord.baseSource`'s own
+ * doc comment. `undefined` `baseSource` (a draft written before that field
+ * existed) is treated as unknown rather than stale - there's no evidence
+ * either way, so the old "always trust the draft" behavior still applies to
+ * it. */
+function isDraftStale(draft: PageSourceDraftRecord, freshContent: string): boolean {
+  return draft.baseSource !== undefined && draft.baseSource !== freshContent;
+}
+
 export default function PageEditor() {
   useDocumentTitle("Page Code Editor");
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
@@ -654,13 +665,16 @@ export default function PageEditor() {
     });
   }
 
-  /** Every `page.tsx` an MCP client (`routes/mcp.ts`'s `write_page_source`)
-   * has overwritten directly in storage, not built since -
+  /** Every page-source path (`page.tsx`, `layout.tsx`, `component/*`,
+   * `styles/*`, `md/*`) an MCP client (`routes/mcp.ts`'s `write_page_source`)
+   * has overwritten directly in storage, not yet acknowledged -
    * `ai-page-source-flags.ts`'s global tracker, polled here so it lights up
    * `ComponentTreePanel`'s red dot for a write that happened OUTSIDE this
    * (or any) browser session, unlike `unbuiltPaths` above (session-local,
-   * only ever set by this tab's own Save). Cleared server-side the moment a
-   * real Build/Publish of that file succeeds - never removed client-side. */
+   * only ever set by this tab's own Save). Cleared server-side by a real
+   * Build/Publish of a `page.tsx`, or the next explicit Save of that exact
+   * path by any session (`ai-page-source-flags.ts`'s own doc comment) -
+   * never removed client-side. */
   const [aiWrittenPaths, setAiWrittenPaths] = useState<Set<string>>(new Set());
   const aiFlagsLastVersion = useRef<number | undefined>(undefined);
 
@@ -834,13 +848,31 @@ export default function PageEditor() {
 
       // Overlay any unsaved edit recovered from IndexedDB on top of the
       // freshly-loaded saved content - but only for a file that's still in
-      // the tree; a draft for a since-deleted/renamed path is stale, so it's
-      // dropped here rather than resurrected.
+      // the tree (a draft for a since-deleted/renamed path is stale, so it's
+      // dropped here rather than resurrected) AND only when storage hasn't
+      // moved on since the draft was taken (`isDraftStale`) - otherwise an
+      // MCP write or another session's Save would sit silently masked behind
+      // a stale local draft on every load, invisible until IndexedDB was
+      // cleared by hand.
       const drafts = await getAllPageSourceDrafts();
       const withDrafts = { ...nextSource };
+      const discardedStalePaths: string[] = [];
       for (const draft of drafts) {
-        if (draft.path in nextSource) withDrafts[draft.path] = draft.source;
-        else void deletePageSourceDraft(draft.path);
+        if (!(draft.path in nextSource)) {
+          void deletePageSourceDraft(draft.path);
+        } else if (isDraftStale(draft, nextSource[draft.path]!)) {
+          void deletePageSourceDraft(draft.path);
+          discardedStalePaths.push(draft.path);
+        } else {
+          withDrafts[draft.path] = draft.source;
+        }
+      }
+      if (discardedStalePaths.length > 0) {
+        toast.add({
+          type: "info",
+          title: discardedStalePaths.length > 1 ? `${discardedStalePaths.length} files changed elsewhere` : `"${discardedStalePaths[0]}" changed elsewhere`,
+          description: "Storage has a newer version than your unsaved local edit, so the local one was discarded.",
+        });
       }
       setSourceByPath(withDrafts);
 
@@ -871,8 +903,8 @@ export default function PageEditor() {
       getAllPageSourceCache(),
       getAllPageSourceDrafts(),
     ]);
-    const draftMap: Record<string, string> = {};
-    for (const draft of drafts) draftMap[draft.path] = draft.source;
+    const draftMap: Record<string, PageSourceDraftRecord> = {};
+    for (const draft of drafts) draftMap[draft.path] = draft;
 
     const cachedSource: Record<string, string> = {};
     for (const file of cachedFiles) cachedSource[file.path] = file.source;
@@ -880,8 +912,13 @@ export default function PageEditor() {
     if (cachedTree) setEntries(cachedTree);
     if (cachedFiles.length > 0) {
       setSavedByPath(cachedSource);
+      // Purely an optimistic first paint, before the real network fetch
+      // below has even started - not staleness-checked against `isDraftStale`
+      // (there's no fresh content yet to check against). `applyFresh` below
+      // corrects this moments later once the real read resolves, discarding
+      // the draft then if it turns out to be stale.
       const withDrafts = { ...cachedSource };
-      for (const path in draftMap) if (path in cachedSource) withDrafts[path] = draftMap[path]!;
+      for (const path in draftMap) if (path in cachedSource) withDrafts[path] = draftMap[path]!.source;
       setSourceByPath(withDrafts);
     }
 
@@ -906,10 +943,19 @@ export default function PageEditor() {
     }
     setSelectedPath((current) => (current && fileIds.has(current) ? current : (files[0]?.id ?? "")));
 
+    const discardedStalePaths: string[] = [];
     function applyFresh(file: FileEntry, content: string) {
       if (cachedSource[file.id] !== content) void putPageSourceCache(file.id, content);
       setSavedByPath((prev) => ({ ...prev, [file.id]: content }));
-      const visible = draftMap[file.id] !== undefined ? draftMap[file.id]! : content;
+      const draft = draftMap[file.id];
+      // Storage moved on since this draft was taken (an MCP write, another
+      // session's Save) - drop it and show the fresh copy instead of masking
+      // it forever, same reasoning `loadTree`'s own overlay uses.
+      if (draft !== undefined && isDraftStale(draft, content)) {
+        void deletePageSourceDraft(file.id);
+        discardedStalePaths.push(file.id);
+      }
+      const visible = draft !== undefined && !isDraftStale(draft, content) ? draft.source : content;
       setSourceByPath((prev) => ({ ...prev, [file.id]: visible }));
     }
 
@@ -946,6 +992,13 @@ export default function PageEditor() {
       }
     }
     await Promise.all(Array.from({ length: Math.min(BACKGROUND_SYNC_CONCURRENCY, rest.length) }, worker));
+    if (!isCancelled() && discardedStalePaths.length > 0) {
+      toast.add({
+        type: "info",
+        title: discardedStalePaths.length > 1 ? `${discardedStalePaths.length} files changed elsewhere` : `"${discardedStalePaths[0]}" changed elsewhere`,
+        description: "Storage has a newer version than your unsaved local edit, so the local one was discarded.",
+      });
+    }
   }
 
   useEffect(() => {
@@ -1149,13 +1202,18 @@ export default function PageEditor() {
     }
   }
 
-  function scheduleDraftWrite(filePath: string, source: string) {
+  /** `baseSource` is `savedByPath[filePath]` at the moment this edit
+   * diverged from it - stored alongside the draft so a later hydrate
+   * (`hydrateInitialTree`/`loadTree`) can tell whether storage has moved on
+   * since (an MCP write, another session's Save) and the draft is now stale,
+   * rather than always trusting whatever's sitting in IndexedDB. */
+  function scheduleDraftWrite(filePath: string, source: string, baseSource: string) {
     cancelDraftWrite(filePath);
     pendingDraftWrites.current.set(
       filePath,
       setTimeout(() => {
         pendingDraftWrites.current.delete(filePath);
-        void putPageSourceDraft(filePath, source);
+        void putPageSourceDraft(filePath, source, baseSource);
       }, 300),
     );
   }
@@ -1171,7 +1229,7 @@ export default function PageEditor() {
       cancelDraftWrite(selectedPath);
       void deletePageSourceDraft(selectedPath);
     } else {
-      scheduleDraftWrite(selectedPath, result.code);
+      scheduleDraftWrite(selectedPath, result.code, savedByPath[selectedPath] ?? "");
     }
   }
 

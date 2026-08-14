@@ -16,6 +16,15 @@ export interface PageSourceDraftRecord {
   path: string;
   source: string;
   updatedAt: number;
+  /** What `savedByPath[path]` was at the moment this draft was taken -
+   * `PageEditor.tsx`'s hydrate paths compare it against the freshly-fetched
+   * server content to tell "storage hasn't moved since, safe to restore this
+   * draft" from "something else (an MCP write, another session's Save)
+   * overwrote this file since - the draft is stale, show the fresh copy
+   * instead." `undefined` only for a draft written before this field
+   * existed - treated as unknown/trust-it rather than assumed stale, since
+   * there's no real evidence either way for those. */
+  baseSource?: string;
 }
 
 let dbPromise: Promise<IDBDatabase> | undefined;
@@ -38,10 +47,10 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-export async function putPageSourceDraft(path: string, source: string): Promise<void> {
+export async function putPageSourceDraft(path: string, source: string, baseSource: string): Promise<void> {
   try {
     const db = await openDb();
-    const record: PageSourceDraftRecord = { path, source, updatedAt: Date.now() };
+    const record: PageSourceDraftRecord = { path, source, baseSource, updatedAt: Date.now() };
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       tx.objectStore(STORE_NAME).put(record);

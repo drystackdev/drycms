@@ -434,10 +434,11 @@ async function runWritePageSourceTool(context: DryRouteContext, rawPath: string 
     const existing = await adapter.stat(path);
     if (existing?.kind === "folder") return { text: `"${path}" is a folder.`, isError: true };
     await adapter.write(path, new TextEncoder().encode(code));
-    // A no-op for anything other than a `page.tsx` (see that module's own
-    // doc comment on scope) - lights up the Page Editor's file-tree red dot
-    // for every OTHER open admin session, not just this request's caller,
-    // until a real Build/Publish of this path clears it.
+    // Lights up the Page Editor's file-tree red dot for every OTHER open
+    // admin session, not just this request's caller (`ai-page-source-flags.ts`'s
+    // own doc comment on scope: every page-source path, not just `page.tsx`)
+    // - until a real Build/Publish of a `page.tsx`, or the next explicit Save
+    // of this exact path by any session, clears it.
     await markAiPageSourceWrite(path, context.env);
     return { text: `Wrote "${path}" (${code.length.toLocaleString()} characters). This is saved to storage already - it still needs a Build (via the Page Editor or the pages-build tool) to reach the live site.` };
   } catch (error) {

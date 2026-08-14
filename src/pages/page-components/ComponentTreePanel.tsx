@@ -45,11 +45,11 @@ interface ComponentTreePanelProps {
    * shape as `isDirty` (only `PageEditor.tsx` has a build concept at all).
    * Only meaningful for a `page.tsx` row; a consumer decides that. */
   needsBuild?: (path: string) => boolean;
-  /** Red "overwritten by AI, not built since" dot - takes priority over
-   * both `isDirty`/`needsBuild` when it applies (see the row renderer
-   * below). Only ever true for a `page.tsx` row - see
-   * `ai-page-source-flags.ts`'s own doc comment on why the flag itself is
-   * scoped that way. */
+  /** Red "overwritten by AI, not acknowledged since" dot - takes priority
+   * over both `isDirty`/`needsBuild` when it applies (see the row renderer
+   * below). True for any page-source row an MCP client has overwritten
+   * directly in storage - see `ai-page-source-flags.ts`'s own doc comment on
+   * scope and on what clears it. */
   aiWritten?: (path: string) => boolean;
 }
 

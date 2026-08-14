@@ -6,6 +6,7 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { joinStoragePath, normalizeStoragePath } from "../../storage/path.js";
 import { StorageError, type StorageAdapter } from "../../storage/types.js";
 import { isCoreStyleFilePath, MD_ROOT, rootOf, STYLES_ROOT } from "../app-router/source-roots.js";
+import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
 
 /**
  * The `pagesSource` storage root (`plans/app-r2.md` quyết định #6 - git is
@@ -122,6 +123,12 @@ export const PUT: DryRouteHandler = async (context) => {
 
     const code = await context.request.text();
     const stat = await adapter.write(path, new TextEncoder().encode(code));
+    // This admin session just explicitly reviewed and persisted `path` -
+    // resolves any pending "AI overwrote this, nobody's acknowledged it yet"
+    // flag from an MCP `write_page_source` call (`ai-page-source-flags.ts`'s
+    // own doc comment on why Save, not just a build, clears it for anything
+    // other than a `page.tsx`). A no-op if `path` wasn't flagged.
+    await clearAiPageSourceWrite(path, context.env);
     return jsonResponse({ entry: toFileEntry(stat) }, 200);
   } catch (error) {
     return errorResponse(error);

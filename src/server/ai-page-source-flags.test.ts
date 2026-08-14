@@ -13,15 +13,15 @@ describe("ai-page-source-flags", () => {
     expect((await listAiPageSourceFlags({})).some((f) => f.path === "pages/a/page.tsx")).toBe(false);
   });
 
-  it("ignores anything that isn't a page.tsx (layouts, components, styles)", async () => {
+  it("flags any page-source path, not just page.tsx (layouts, components, styles, md)", async () => {
     for (const path of ["pages/a/layout.tsx", "component/Card.tsx", "styles/globals.css", "md/README.md"]) {
       await markAiPageSourceWrite(path, {});
     }
     const flags = await listAiPageSourceFlags({});
-    expect(flags.some((f) => f.path === "pages/a/layout.tsx")).toBe(false);
-    expect(flags.some((f) => f.path === "component/Card.tsx")).toBe(false);
-    expect(flags.some((f) => f.path === "styles/globals.css")).toBe(false);
-    expect(flags.some((f) => f.path === "md/README.md")).toBe(false);
+    expect(flags.some((f) => f.path === "pages/a/layout.tsx")).toBe(true);
+    expect(flags.some((f) => f.path === "component/Card.tsx")).toBe(true);
+    expect(flags.some((f) => f.path === "styles/globals.css")).toBe(true);
+    expect(flags.some((f) => f.path === "md/README.md")).toBe(true);
   });
 
   it("re-flagging the same path replaces it (no duplicate) and refreshes writtenAt", async () => {
@@ -43,16 +43,17 @@ describe("ai-page-source-flags", () => {
       const afterMark = await getAiPageSourceFlagsVersion({});
       expect(afterMark).toBe(before + 1);
 
-      // A non-page.tsx write is a no-op at the mark layer - must not bump.
+      // A non-page.tsx write bumps too now (scope is every page-source path).
       await markAiPageSourceWrite("component/Unrelated.tsx", {});
-      expect(await getAiPageSourceFlagsVersion({})).toBe(afterMark);
+      const afterComponentMark = await getAiPageSourceFlagsVersion({});
+      expect(afterComponentMark).toBe(afterMark + 1);
 
-      // Clearing something that was never flagged is also a no-op.
+      // Clearing something that was never flagged is a no-op.
       await clearAiPageSourceWrite("pages/never-flagged/page.tsx", {});
-      expect(await getAiPageSourceFlagsVersion({})).toBe(afterMark);
+      expect(await getAiPageSourceFlagsVersion({})).toBe(afterComponentMark);
 
       await clearAiPageSourceWrite("pages/c/page.tsx", {});
-      expect(await getAiPageSourceFlagsVersion({})).toBe(afterMark + 1);
+      expect(await getAiPageSourceFlagsVersion({})).toBe(afterComponentMark + 1);
     });
   });
 });

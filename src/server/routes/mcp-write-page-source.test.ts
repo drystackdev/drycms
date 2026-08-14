@@ -82,13 +82,13 @@ describe("write_page_source - ai-page-source-flags tracking", () => {
     expect(flags.some((f) => f.path === "pages/hello/page.tsx")).toBe(true);
   });
 
-  it("does NOT flag a non-page.tsx write (layout/component) - only route-entry files are tracked, matching PageEditor's own needsBuild scope", async () => {
+  it("also flags a non-page.tsx write (layout/component) - every page-source path is tracked, not just route entries", async () => {
     await writePageSource("pages/hello/layout.tsx", "export default function Layout({ children }) { return children; }");
     await writePageSource("component/Card.tsx", "export default function Card() { return null; }");
 
     const flags = await listAiPageSourceFlags({});
-    expect(flags.some((f) => f.path === "pages/hello/layout.tsx")).toBe(false);
-    expect(flags.some((f) => f.path === "component/Card.tsx")).toBe(false);
+    expect(flags.some((f) => f.path === "pages/hello/layout.tsx")).toBe(true);
+    expect(flags.some((f) => f.path === "component/Card.tsx")).toBe(true);
   });
 
   it("re-writing an already-flagged path refreshes it rather than duplicating the entry", async () => {
