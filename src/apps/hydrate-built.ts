@@ -13,10 +13,9 @@ import { HYDRATED_EVENT } from "./hydrated-event.js";
  * Client hydration bootstrap for the app-r2 BUILD pipeline (`plans/app-r2.md`
  * mục 7) - the counterpart to `hydrate-client.ts` for a page that only
  * exists as browser-compiled source in `pagesSourceStorage`, never a
- * Vite-known SSR route. `hydrate-client.ts` finds its page/layout modules
- * via `import.meta.glob`+`discoverRoutes()` (compile-time, Vite's own
- * module graph); this one has no such graph to consult - the page/layout
- * URLs it needs are embedded directly in the built HTML itself
+ * Vite-known SSR route. `hydrate-client.ts` receives dev live-source module
+ * URLs from the server; this production bootstrap instead reads page/layout
+ * URLs embedded directly in the built HTML itself
  * (`#dry-hydrate-manifest`, written by `page-build.ts`'s `buildAssets`),
  * and it `import()`s them as plain, already-compiled ESM - no eval, no
  * Vite, nothing this file needs to know about `pagesSourceStorage` at all.

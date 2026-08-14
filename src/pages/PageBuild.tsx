@@ -405,7 +405,7 @@ export default function PageBuild() {
       <div class="page-header">
         <div style={{ flex: 1 }}>
           <h1>Page Build</h1>
-          <p>Compiles and renders `src/apps/pages/**` in this browser tab, then publishes the result (`plans/app-r2.md`).</p>
+          <p>Compiles and renders the live page source in this browser tab, then publishes HTML artifacts (`plans/app-r2.md`).</p>
         </div>
         <div class="row">
           <button type="button" disabled={pathnames.length === 0 || building.size > 0 || buildAllProgress !== null} aria-busy={buildAllProgress !== null || undefined} onClick={() => void buildAll()}>
@@ -464,7 +464,7 @@ export default function PageBuild() {
         <div class="under stack">
           {!sourceByPath && <span class="hint">Loading…</span>}
           {sourceByPath && (
-            <DataTable columns={columns} rows={rows} rowKey={(row) => row.path} emptyLabel="No pages found under src/apps/pages/**." />
+            <DataTable columns={columns} rows={rows} rowKey={(row) => row.path} emptyLabel="No buildable pages found in the live page source." />
           )}
         </div>
       </section>

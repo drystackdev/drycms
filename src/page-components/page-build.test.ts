@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { buildPage, candidatePathsFor, evalModule, pagesAffectedBy, publishBuiltPage, PageBuildError } from "./page-build.js";
+import { buildPage, candidatePathsFor, evalModule, pagesAffectedBy, publishBuiltPage, resolveAllPageTargets, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
@@ -57,6 +57,20 @@ export default function Greeting({ settings }) {
   return <div class="greeting" {...dryBind(settings && settings.$ ? settings.$.title : null)}>{greeting}: {settings ? settings.title : "no title"}</div>;
 }
 `;
+
+it("includes 404.tsx and 500.tsx as built live targets", async () => {
+  const { targets } = await resolveAllPageTargets(
+    {
+      "pages/page.tsx": "export default function Page() { return <main />; }",
+      "pages/404.tsx": "export default function NotFound() { return <main />; }",
+      "pages/500.tsx": "export default function ErrorPage() { return <main />; }",
+    },
+    [],
+    "/dry/api/dry-http",
+  );
+  expect(targets.get("/404")).toEqual({ pathname: "/404", entryPath: "pages/404.tsx", layoutPaths: [], params: {} });
+  expect(targets.get("/500")).toEqual({ pathname: "/500", entryPath: "pages/500.tsx", layoutPaths: [], params: {} });
+});
 
 function jsonHeaders(resource: string, version: number): Record<string, string> {
   return { "Content-Type": "application/json; charset=utf-8", "X-Dry-Resource": resource, "X-Dry-Resource-Version": String(version) };

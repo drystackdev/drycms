@@ -1,12 +1,4 @@
-/**
- * Discovers `src/apps/pages/**` and builds a route tree - see
- * `plans/app-router.md`'s "Vị trí code mới". `buildRouteTree` is pure (no
- * fs, no Vite dependency) so `match.ts`'s tests can feed it a fake module
- * map instead of real files, matching `codegen.ts`'s "pure, easy to test"
- * precedent. `discoverRoutes` is the real entry point, backed by Vite's
- * `import.meta.glob` (the same discovery mechanism `RichtextComponents.tsx`/
- * `virtual-fs-files.ts` already use for a different `src/**` glob).
- */
+/** Builds route trees from the live page-source provider used by dev. */
 
 import { PAGES_ROOT } from "./source-roots.js";
 
@@ -108,8 +100,6 @@ export function staticPagePaths(tree: RouteTree): string[] {
   return paths;
 }
 
-const PAGES_ROOT_PREFIX = "/src/apps/pages";
-
 /** Dev-only alternative to the compile-time Vite glob below - lets
  * `discoverRoutes()` build its tree from `pagesSourceStorage` (`.dry/
  * pages-source` under `kind: "local"`) instead of `src/apps/pages`, real
@@ -142,60 +132,22 @@ export interface DevPagesSource {
   browserUrlFor(relPath: string): string;
 }
 
-/** Reads back the root-relative path a `discoverRoutes(devSource)` loader
- * was tagged with (see below) - `undefined` for a loader from the OTHER
- * branch (the real Vite glob never tags anything), which is how
- * `page-handler.ts` tells whether it's safe to build a dev hydrate
- * manifest for the current request. */
+/** Reads back the root-relative path a live-source loader was tagged with. */
 export function devSourcePathOf(loader: ModuleLoader): string | undefined {
   return (loader as ModuleLoader & { devSourcePath?: string }).devSourcePath;
 }
 
-/** Real discovery entry point. Given a `devSource`, builds the tree from
- * ITS file list/loaders instead of the glob below - `buildRouteTree` itself
- * doesn't care which one fed it, same `RouteTree` shape either way. Lazy in
- * the glob branch (`import.meta.glob` without `eager`), so a route's module
- * only loads when a matching request actually renders it, not on every
- * dev-server/build startup; the `devSource` branch is lazy for the same
- * reason (`loadModule` is only called when `match.ts` actually resolves to
- * that path). Two separate globs (Vite's `import.meta.glob` needs a literal
- * string, not a runtime-built pattern) merged into one modules map before
- * `buildRouteTree` sorts them out. */
-export async function discoverRoutes(devSource?: DevPagesSource): Promise<RouteTree> {
-  if (devSource) {
-    const paths = await devSource.listPaths();
-    const modules: Record<string, ModuleLoader> = {};
-    for (const path of paths) {
-      // Only the `pages` source root holds routes (`source-roots.ts`) - a
-      // `component/page.tsx` is just a component that happens to be named
-      // that, never the `/component` route.
-      if (!path.startsWith(`${PAGES_ROOT}/`)) continue;
-      if (!/(^|\/)(page|layout|404|500)\.tsx$/.test(path)) continue;
-      const loader: ModuleLoader & { devSourcePath?: string } = () => devSource.loadModule(path);
-      loader.devSourcePath = path;
-      modules[path] = loader;
-    }
-    return buildRouteTree(modules, PAGES_ROOT);
-  }
-  const pageModules = import.meta.glob<RouteModule>(
-    "/src/apps/pages/**/{page,layout}.tsx",
-  );
-  const fallbackModules = import.meta.glob<RouteModule>(
-    "/src/apps/pages/{404,500}.tsx",
-  );
-  const allModules = { ...pageModules, ...fallbackModules };
-  // Tagged with the SAME `devSourcePathOf` convention the `devSource` branch
-  // above uses, even though this branch never varies per-request (Vite's own
-  // glob is fixed at build time) - a VEI session still needs to know which
-  // `pagesSourceStorage`-relative path backs the matched page/layout so it
-  // can fetch that file's CURRENT content client-side (`vei-live-refresh.ts`)
-  // instead of the stale compiled module this loader itself returns. See
-  // `page-handler.ts`'s `veiLiveManifest` construction.
+/** Dev-only route discovery from the live page-source provider. Production
+ * serves browser-built artifacts and never imports `src/apps/pages/**`. */
+export async function discoverRoutes(devSource: DevPagesSource): Promise<RouteTree> {
+  const paths = await devSource.listPaths();
   const modules: Record<string, ModuleLoader> = {};
-  for (const [path, loader] of Object.entries(allModules)) {
-    const tagged: ModuleLoader & { devSourcePath?: string } = loader;
-    tagged.devSourcePath = `${PAGES_ROOT}/${path.slice(PAGES_ROOT_PREFIX.length).replace(/^\/+/, "")}`;
-    modules[path] = tagged;
+  for (const path of paths) {
+    if (!path.startsWith(`${PAGES_ROOT}/`)) continue;
+    if (!/(^|\/)(page|layout|404|500)\.tsx$/.test(path)) continue;
+    const loader: ModuleLoader & { devSourcePath?: string } = () => devSource.loadModule(path);
+    loader.devSourcePath = path;
+    modules[path] = loader;
   }
-  return buildRouteTree(modules, PAGES_ROOT_PREFIX);
+  return buildRouteTree(modules, PAGES_ROOT);
 }

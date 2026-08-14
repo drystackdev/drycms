@@ -116,16 +116,13 @@ describe("handlePageRequest", () => {
     expect(await handlePageRequest(new Request(`http://localhost${adminPath}/dashboard`))).toBeNull();
   });
 
-  it("renders the pages-root 500.tsx via renderErrorHtml at status 500 when request setup fails (e.g. VEI session resolution throws) - true in both prod and dev, since the whole routing/render attempt shares one try/catch", async () => {
-    for (const isDev of [false, true]) {
-      vi.mocked(resolveVeiSession).mockRejectedValueOnce(new Error("boom"));
-      const response = await handlePageRequest(new Request("http://localhost/anything"), {}, isDev);
-      expect(response).not.toBeNull();
-      expect(response!.status).toBe(500);
-      expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
-      const html = await response!.text();
-      expect(html).toContain("Something went wrong");
-    }
+  it("serves the built /500 artifact when production request setup fails", async () => {
+    await writeBuiltPage({ env: {} }, "/500", "error-build", "<html><body>built server error</body></html>");
+    vi.mocked(resolveVeiSession).mockRejectedValueOnce(new Error("boom"));
+    const response = await handlePageRequest(new Request("http://localhost/anything"), {}, false);
+    expect(response!.status).toBe(500);
+    expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(await response!.text()).toContain("built server error");
   });
 
   it("301s to the redirect's `to` slug when the URL's last segment matches a redirect row's `from` - checked BEFORE routing, so it also catches a still-syntactically-matching dynamic route (e.g. a renamed /blogs/[slug]) - true in both prod and dev", async () => {
@@ -155,7 +152,8 @@ describe("handlePageRequest", () => {
       expect(await response!.text()).toBe("<html><body>promo v3</body></html>");
     });
 
-    it("renders the pages-root 404.tsx via renderErrorHtml (no dry() context, no hydrate/VEI scripts) when nothing is built for this path and no redirect applies", async () => {
+    it("serves the built /404 artifact when nothing is built for the requested path", async () => {
+      await writeBuiltPage({ env: {} }, "/404", "not-found-build", "<html><body>built not found</body></html>");
       // Neither path has ever been through `writeBuiltPage` above, nor
       // matches a `redirect` row - one is a totally bogus path, the other
       // LOOKS like it could be a dynamic `[slug]` route (it isn't: this
@@ -171,10 +169,15 @@ describe("handlePageRequest", () => {
         expect(response!.status).toBe(404);
         expect(response!.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
         const html = await response!.text();
-        expect(html).toContain("Page not found");
+        expect(html).toContain("built not found");
         expect(html).not.toContain("hydrate-client.ts");
         expect(html).not.toContain("vei/overlay.ts");
       }
+    });
+
+    it("returns error status when /404 or /500 is requested directly", async () => {
+      expect((await handlePageRequest(new Request("http://localhost/404"), {}, false))!.status).toBe(404);
+      expect((await handlePageRequest(new Request("http://localhost/500"), {}, false))!.status).toBe(500);
     });
 
   });

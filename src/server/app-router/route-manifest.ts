@@ -3,15 +3,10 @@ import { matchRoute } from "./match.js";
 import { PAGES_ROOT } from "./source-roots.js";
 
 /**
- * `plans/app-r2.md` mục 1 - the manifest-driven counterpart to
- * `route-tree.ts`'s `discoverRoutes()` (which uses Vite's `import.meta.glob`,
- * compile-time only - a `.tsx` written to `pagesSourceStorage` at RUNTIME by
- * the browser build pipeline would never appear there). Used by the build
- * pipeline (`page-build.ts`) and by `sitemap.ts`, both of which need a tree
- * whose matched nodes read back as SOURCE PATHS rather than as loaders to
- * await; `page-handler.ts`'s own request routing still calls
- * `discoverRoutes()`, whose loaders really do render (see
- * `status/app-r2-build.md`).
+ * `plans/app-r2.md` mục 1 - builds a route tree from the runtime
+ * `pagesSourceStorage` manifest. Used by the browser build pipeline
+ * (`page-build.ts`) and by `sitemap.ts`, both of which need a tree
+ * whose matched nodes read back as SOURCE PATHS rather than loaders.
  *
  * Reuses `buildRouteTree`/`matchRoute`/`staticPagePaths` UNCHANGED (zero
  * risk of behavioral drift from the tested dev-mode matcher) rather than
@@ -45,7 +40,7 @@ function sourcePathOf(loader: ModuleLoader): string {
  * "pages/layout.tsx", "pages/blogs/[slug]/page.tsx", "pages/404.tsx",
  * "component/Card.tsx"]` - storage-root-relative, so INCLUDING the source
  * root folder (`source-roots.ts`) but with no leading slash, unlike
- * `discoverRoutes()`'s Vite glob keys. Only the `pages` root produces
+ * the live-source provider's module keys. Only the `pages` root produces
  * routes; the tagged loader keeps the FULL path (`pages/page.tsx`) so
  * `sourcePathOf` still hands `buildPage` a key its `sourceByPath` actually
  * has. */

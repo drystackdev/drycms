@@ -550,7 +550,7 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
   const html = withCss.replace("</body>", `${manifestScripts}</body>`);
 
   const deps = dedupeDeps(defaultsDep ? [...dryConfig.deps, defaultsDep] : dryConfig.deps);
-  const inSitemap = mergeSeoLayers(seo).noIndex !== true;
+  const inSitemap = input.pathname !== "/404" && input.pathname !== "/500" && mergeSeoLayers(seo).noIndex !== true;
   return { html, jsAssets, deps, inSitemap };
 }
 
@@ -685,6 +685,12 @@ export async function resolveAllPageTargets(
   for (const pathname of staticPagePaths(manifest)) {
     const match = matchSourceRoute(manifest, pathname);
     if (match) targets.set(pathname, { pathname, ...match });
+  }
+  if (manifest.notFound) {
+    targets.set("/404", { pathname: "/404", entryPath: `${PAGES_ROOT}/404.tsx`, layoutPaths: [], params: {} });
+  }
+  if (manifest.serverError) {
+    targets.set("/500", { pathname: "/500", entryPath: `${PAGES_ROOT}/500.tsx`, layoutPaths: [], params: {} });
   }
   const unmatchedTemplates: UnmatchedTemplate[] = [];
   const dynamicTemplates = listDynamicPageTemplates(manifest);

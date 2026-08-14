@@ -2,10 +2,8 @@ import hydrate from "preact-iso/hydrate";
 import { setReplayLog } from "../content-types/dry-reader-client.js";
 import { setCurrentParams } from "../content-types/params-reader-client.js";
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
-import { matchRoute } from "../server/app-router/match.js";
 import { installMediaSrcHook } from "../server/app-router/media-src-hook.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
-import { discoverRoutes } from "../server/app-router/route-tree.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import { setAdminPath } from "../storage/admin-path.js";
 import { HYDRATED_EVENT } from "./hydrated-event.js";
@@ -42,10 +40,8 @@ seedAdminPath();
 installMediaSrcHook();
 
 /**
- * Resolves this page's `RouteMatch` for hydration - 2 sources, checked in
- * order:
- *
- * 1. `#dry-dev-hydrate-manifest` (`render.ts`'s `RenderPageOptions.
+ * Resolves this dev-rendered page from `#dry-dev-hydrate-manifest`
+ * (`render.ts`'s `RenderPageOptions.
  *    devHydrateManifest`, only ever present for a dev request rendered
  *    through `page-handler.ts`'s `devPagesSource` branch): the server
  *    already resolved this exact request against `pagesSourceStorage`
@@ -57,9 +53,6 @@ installMediaSrcHook();
  *    route tree at all. Also carries `params` directly (the server already
  *    resolved them) rather than re-deriving them from a route match that
  *    doesn't exist client-side for this path.
- * 2. Otherwise (prod, or a dev request that wasn't `devPagesSource`-backed):
- *    the original behavior, matching `window.location.pathname` against
- *    `discoverRoutes()`'s glob-based tree (`src/apps/pages`, real for prod).
  */
 async function resolveClientMatch(): Promise<RouteMatch | null> {
   const manifestElement = document.getElementById("dry-dev-hydrate-manifest");
@@ -75,8 +68,7 @@ async function resolveClientMatch(): Promise<RouteMatch | null> {
       params: manifest.params,
     };
   }
-  const routeTree = await discoverRoutes();
-  return matchRoute(routeTree.root, window.location.pathname);
+  return null;
 }
 
 /**

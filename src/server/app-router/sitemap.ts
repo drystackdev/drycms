@@ -6,7 +6,7 @@ import { getContentAdapters } from "../content-adapters.js";
 import { path as adminPath } from "../config.js";
 import { collectionTypeForPageSource } from "./page-collection.js";
 import { buildManifestRouteTree, listDynamicPageTemplates } from "./route-manifest.js";
-import { discoverRoutes, staticPagePaths, type DevPagesSource } from "./route-tree.js";
+import { staticPagePaths, type DevPagesSource } from "./route-tree.js";
 import { resolveSiteOrigin } from "./site-origin.js";
 
 function escapeXml(text: string): string {
@@ -77,8 +77,8 @@ export async function buildSitemapResponse(url: URL, routeContext: DryRouteConte
     // dev source: both build the same tree from the same file list, but only
     // the manifest one's loaders carry the source path back out, which is
     // what `listDynamicPageTemplates` below needs to read a page's own code.
-    const paths = devPagesSource ? await devPagesSource.listPaths() : null;
-    const tree = paths ? buildManifestRouteTree(paths) : await discoverRoutes();
+    const paths = devPagesSource ? await devPagesSource.listPaths() : [];
+    const tree = buildManifestRouteTree(paths);
     for (const staticPath of staticPagePaths(tree)) {
       locs.push(`${origin}${staticPath}`);
     }

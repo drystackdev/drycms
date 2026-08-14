@@ -33,15 +33,10 @@ const VEI_HTML_HEADERS = { "Content-Type": "text/html; charset=utf-8", "Cache-Co
  *   a cache-hit fast path (`readBuiltPage`, spliced via `spliceVeiScripts`)
  *   or, failing that, a minimal shell (`buildVeiShellDocument`) - see both
  *   functions' own doc comments (`render.ts`).
- * - **Prod, no VEI session**: static-only for a real match. Reads
- *   `built/live/*` (`readBuiltPage` - whatever `/dry/page-build` last
- *   published for this pathname) and serves it as-is; no `page.tsx`/
- *   `layout.tsx` code ever executes for a MATCHED route in this branch. A
- *   miss (never built, or genuinely no such route) renders the pages-root
- *   `404.tsx` through the same lightweight `renderErrorHtml` pipeline the
- *   catch block below already uses for `500.tsx` (no `dry()` context, no
- *   layouts/hydration - just that one component) - falls back to a
- *   bare-bones plain-text 404 only when the app has no `404.tsx` at all.
+ * - **Prod, no VEI session**: static-only. Reads `built/live/*` and serves
+ *   it as-is; no page-source module executes. A miss reads the built `/404`
+ *   artifact, while a setup failure reads `/500`; plain text is the final
+ *   fallback when the corresponding artifact has not been published.
  * - **Dev, no VEI session**: the ORIGINAL live SSR pipeline below,
  *   byte-for-byte the same behavior this function had before mục 12 - a
  *   route MISS first checks the built-in `redirect` collection
@@ -60,18 +55,16 @@ const VEI_HTML_HEADERS = { "Content-Type": "text/html; charset=utf-8", "Cache-Co
  * pages-root `500.tsx` (if present) instead of propagating - see that
  * catch's own comment for what it does and doesn't cover.
  *
- * `discoverRoutes()` is called fresh per request (not cached at module
+ * In dev, `discoverRoutes()` is called fresh per request (not cached at module
  * scope) so a page/layout added while the dev server is running is picked
  * up without a restart - unlike most of `src/server/**`, whose modules
  * `scripts/dev-server.mjs` loads once at boot, this module is the one
  * piece whose whole job is to reflect the live source's current state
  * (`app-router.md`'s "trên dev có thể vào xem trực tiếp live preview qua
  * vite"), so the dev-server wiring loads THIS module fresh on every
- * request too - see the "Nối dev" step in `plans/app-router.md`. In dev
- * that live source is `devPagesSource` (`pagesSourceStorage`, i.e. `.dry/
- * pages-source`) when the caller supplies one - see `DevPagesSource`'s own
- * doc comment (`route-tree.ts`) for why. Production never supplies one, so
- * it keeps reading `src/apps/pages` through the unchanged Vite-glob branch.
+ * request too - see the "Nối dev" step in `plans/app-router.md`. Its source
+ * is `devPagesSource` (`pagesSourceStorage`, i.e. `.dry/pages-source`).
+ * Production never performs route discovery.
  */
 export async function handlePageRequest(
   request: Request,
@@ -90,7 +83,7 @@ export async function handlePageRequest(
   isDev: boolean = import.meta.env.DEV,
   // Only `scripts/dev-server.mjs` ever passes this (see `DevPagesSource`'s
   // own doc comment) - `entry-node.ts`/`entry-worker.ts` never do, so
-  // production always takes `discoverRoutes()`'s unchanged glob branch.
+  // Production does not discover or import page-source modules.
   devPagesSource?: DevPagesSource,
 ): Promise<Response | null> {
   const url = new URL(request.url);
@@ -133,8 +126,10 @@ export async function handlePageRequest(
     return buildRobotsResponse(url);
   }
 
-  const routeTree = await discoverRoutes(isDev ? devPagesSource : undefined);
-  const match = matchRoute(routeTree.root, url.pathname);
+  // Production serves browser-built HTML only. Route modules are loaded
+  // exclusively by the dev server's live page-source provider.
+  const routeTree = isDev && devPagesSource ? await discoverRoutes(devPagesSource) : undefined;
+  const match = routeTree ? matchRoute(routeTree.root, url.pathname) : null;
 
   try {
     const { schema, entries } = getContentAdapters(routeContext);
@@ -185,7 +180,8 @@ export async function handlePageRequest(
     if (!isDev) {
       const cached = await readBuiltPage(routeContext, url.pathname);
       if (cached !== null) {
-        return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        const status = url.pathname === "/404" ? 404 : url.pathname === "/500" ? 500 : 200;
+        return new Response(cached, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
       // A live-key miss means "never built through `/dry/page-build`" - full
       // stop. There used to be a page-level `schedule`/`publishAt` staged-
@@ -199,10 +195,8 @@ export async function handlePageRequest(
       // the old `readPageCache`.
       const redirectResponse = await findRedirectResponse(url, entries, allTypes);
       if (redirectResponse) return redirectResponse;
-      if (routeTree.notFound) {
-        const html = await renderErrorHtml(routeTree.notFound);
-        return new Response(html, { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
-      }
+      const notFoundHtml = await readBuiltPage(routeContext, "/404");
+      if (notFoundHtml !== null) return new Response(notFoundHtml, { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } });
       return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
 
@@ -212,6 +206,7 @@ export async function handlePageRequest(
     const redirectResponse = await findRedirectResponse(url, entries, allTypes);
     if (redirectResponse) return redirectResponse;
 
+    if (!routeTree) return null;
     if (!match && !routeTree.notFound) return null;
     // A route miss with a `404.tsx` renders through the SAME pipeline as a
     // real match below, wrapped by the root layout only (a nested layout
@@ -276,7 +271,12 @@ export async function handlePageRequest(
     // is a separate, later moment this `catch` can't observe - see that
     // function's `onRenderError` option above and its own doc comment for
     // why a page miss there is only fixable up to a point.
-    if (!routeTree.serverError) throw error;
+    if (!isDev) {
+      const html = await readBuiltPage(routeContext, "/500");
+      if (html !== null) return new Response(html, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });
+      return new Response("Internal server error", { status: 500, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    }
+    if (!routeTree?.serverError) throw error;
     console.error("[drycms] page render setup failed:", error);
     const html = await renderErrorHtml(routeTree.serverError);
     return new Response(html, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });

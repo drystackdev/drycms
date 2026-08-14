@@ -229,8 +229,11 @@ this has happened once already in this repo, don't repeat it.
   `src/content-types/dry-seo.ts`). `src/server/app-router/build-document.ts`
   turns that into `<title>`, `og:*`, and `<link rel="canonical">`.
 - **404/500**: `pages/404.tsx` and `pages/500.tsx` (pages root only, not per
-  folder) render for an unmatched path and for a render that threw. Without
-  them the response is a plain-text 404 / 500.
+  folder) are included by **Build all** as the reserved `/404` and `/500`
+  live artifacts. Production never SSRs these source files: an unmatched
+  path reads the built `/404` HTML with status 404, and a request-time setup
+  failure reads built `/500` with status 500. If the corresponding artifact
+  has not been built yet, the response falls back to plain text.
 
 ## Not built yet (ask before assuming these exist)
 
