@@ -36,3 +36,25 @@ export function flashSyncSuccess(): void {
     syncSuccess.value = false;
   }, SYNC_SUCCESS_DURATION_MS);
 }
+
+export interface PublishStatus {
+  message: string;
+  loading: boolean;
+}
+
+/** Background page-publish progress shares the topbar's transient status
+ * area with cache sync instead of creating a second, unrelated toast stack. */
+export const publishStatus = signal<PublishStatus | null>(null);
+
+let publishTimer: ReturnType<typeof setTimeout> | undefined;
+const PUBLISH_STATUS_DURATION_MS = 3000;
+
+export function showPublishStatus(message: string, loading: boolean): void {
+  clearTimeout(publishTimer);
+  publishStatus.value = { message, loading };
+  if (!loading) {
+    publishTimer = setTimeout(() => {
+      publishStatus.value = null;
+    }, PUBLISH_STATUS_DURATION_MS);
+  }
+}

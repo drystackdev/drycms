@@ -1,5 +1,5 @@
 import { CheckCircleIcon } from "./icons/index.js";
-import { globalRefreshing, syncSuccess } from "../store/sync.js";
+import { globalRefreshing, publishStatus, syncSuccess } from "../store/sync.js";
 
 /**
  * Small topbar indicator for `useFetch()`'s background sync (see
@@ -13,6 +13,16 @@ import { globalRefreshing, syncSuccess } from "../store/sync.js";
  * once one finds new data. No toast for this anymore.
  */
 export default function SyncIndicator() {
+  if (publishStatus.value) {
+    return (
+      <span class="row" style={{ gap: "0.5rem" }} aria-live="polite">
+        {publishStatus.value.loading
+          ? <span class="spinner" aria-hidden="true" />
+          : <CheckCircleIcon style={{ color: "var(--dry-primary)" }} />}
+        <small class="hint">{publishStatus.value.message}</small>
+      </span>
+    );
+  }
   if (globalRefreshing.value) {
     return (
       <span class="row" style={{ gap: "0.5rem" }}>
@@ -24,7 +34,7 @@ export default function SyncIndicator() {
   if (syncSuccess.value) {
     return (
       <span class="row" style={{ gap: "0.5rem" }}>
-        <CheckCircleIcon style={{color: 'var(--dry-primary)'}} />
+        <CheckCircleIcon style={{ color: "var(--dry-primary)" }} />
         <small class="hint">Sync success</small>
       </span>
     );
