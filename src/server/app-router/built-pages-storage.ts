@@ -86,6 +86,28 @@ export async function removeBuiltPage(context: Pick<DryRouteContext, "env">, pat
   });
 }
 
+/** Removes every generated page, immutable build object, and compiled page
+ * asset before a whole-site reset. The shared pages-cache storage root may
+ * contain legacy envelope-cache keys too, so deletion is scoped to
+ * `built/` rather than clearing the entire adapter. */
+export async function clearBuiltPages(context: Pick<DryRouteContext, "env">): Promise<void> {
+  const adapter = getStorageAdapter(pagesCacheStorage, context);
+  async function removeFolder(folder: string): Promise<void> {
+    let entries;
+    try {
+      entries = await adapter.list(folder);
+    } catch (error) {
+      if (error instanceof StorageError && error.code === "not_found") return;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (entry.kind === "folder") await removeFolder(entry.path);
+      else await adapter.remove(entry.path);
+    }
+  }
+  await removeFolder("built");
+}
+
 /**
  * Compiled JS ASSET storage (mục 7's `page.js`/`layout.js`) - keyed by
  * SOURCE path, not by pathname: a shared `layout.tsx` compiles to the same

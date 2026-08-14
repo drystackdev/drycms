@@ -54,6 +54,9 @@ export interface PagesRegistryAdapter {
    * a stale row never keeps pointing `sitemap.xml`/rollback at content
    * that no longer exists (mục 5's "phải dọn row khi xoá"). */
   removePage(path: string): Promise<void>;
+  /** Clears all built-page rows and dependencies before a whole-site reset.
+   * Content entries and their `_versions` rows are deliberately untouched. */
+  clearAllPages(): Promise<void>;
   /** Every path that depends on `resource` - "what needs rebuilding when
    * this content type changes". */
   listPathsByResource(resource: string): Promise<string[]>;

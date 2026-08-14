@@ -131,43 +131,68 @@ export async function getPagesTreeCache(): Promise<FileEntry[] | null> {
 /** Atomically replaces both saved-source stores after a whole-tree reset.
  * Folder rows are derived from file paths so the next Page Editor mount can
  * paint its complete sidebar without waiting for the storage API. */
+async function replacePageSourceCacheImpl(sourceByPath: Record<string, string>): Promise<void> {
+  const db = await openDb();
+  const now = Date.now();
+  const folders = new Set<string>();
+  for (const path of Object.keys(sourceByPath)) {
+    const segments = path.split("/");
+    for (let index = 1; index < segments.length; index += 1) folders.add(segments.slice(0, index).join("/"));
+  }
+  const folderEntries: FileEntry[] = [...folders].map((id) => ({
+    id,
+    name: id.split("/").at(-1)!,
+    parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
+    kind: "folder",
+  }));
+  const fileEntries: FileEntry[] = Object.entries(sourceByPath).map(([id, source]) => ({
+    id,
+    name: id.split("/").at(-1)!,
+    parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
+    kind: "file",
+    ext: id.includes(".") ? id.slice(id.lastIndexOf(".") + 1).toLowerCase() : undefined,
+    size: new TextEncoder().encode(source).byteLength,
+  }));
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([FILES_STORE, TREE_STORE], "readwrite");
+    const files = tx.objectStore(FILES_STORE);
+    files.clear();
+    for (const [path, source] of Object.entries(sourceByPath)) files.put({ path, source, updatedAt: now } satisfies PageSourceCacheRecord);
+    const tree = tx.objectStore(TREE_STORE);
+    tree.clear();
+    tree.put({ key: TREE_KEY, entries: [...folderEntries, ...fileEntries], updatedAt: now } satisfies PagesTreeCacheRecord);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function replacePageSourceCache(sourceByPath: Record<string, string>): Promise<void> {
   try {
-    const db = await openDb();
-    const now = Date.now();
-    const folders = new Set<string>();
-    for (const path of Object.keys(sourceByPath)) {
-      const segments = path.split("/");
-      for (let index = 1; index < segments.length; index += 1) folders.add(segments.slice(0, index).join("/"));
-    }
-    const folderEntries: FileEntry[] = [...folders].map((id) => ({
-      id,
-      name: id.split("/").at(-1)!,
-      parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
-      kind: "folder",
-    }));
-    const fileEntries: FileEntry[] = Object.entries(sourceByPath).map(([id, source]) => ({
-      id,
-      name: id.split("/").at(-1)!,
-      parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
-      kind: "file",
-      ext: id.includes(".") ? id.slice(id.lastIndexOf(".") + 1).toLowerCase() : undefined,
-      size: new TextEncoder().encode(source).byteLength,
-    }));
-
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([FILES_STORE, TREE_STORE], "readwrite");
-      const files = tx.objectStore(FILES_STORE);
-      files.clear();
-      for (const [path, source] of Object.entries(sourceByPath)) files.put({ path, source, updatedAt: now } satisfies PageSourceCacheRecord);
-      const tree = tx.objectStore(TREE_STORE);
-      tree.clear();
-      tree.put({ key: TREE_KEY, entries: [...folderEntries, ...fileEntries], updatedAt: now } satisfies PagesTreeCacheRecord);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await replacePageSourceCacheImpl(sourceByPath);
   } catch {
     // Best-effort. Storage/GitHub are already authoritative; Page Editor can
     // repopulate this cache from the network on its next mount.
   }
+}
+
+/** Strict reset-flow variant: propagates quota/transaction failures so the
+ * UI cannot claim IndexedDB was refreshed when it was not. */
+export async function replacePageSourceCacheOrThrow(sourceByPath: Record<string, string>): Promise<void> {
+  await replacePageSourceCacheImpl(sourceByPath);
+}
+
+/** Deletes the browser's complete saved page-source mirror before Reset
+ * pages touches server state. Unlike the ordinary cache helpers this is
+ * strict: the reset UI must not report success if its explicit local-cache
+ * reset did not complete. */
+export async function clearPageSourceCache(): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([FILES_STORE, TREE_STORE], "readwrite");
+    tx.objectStore(FILES_STORE).clear();
+    tx.objectStore(TREE_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }

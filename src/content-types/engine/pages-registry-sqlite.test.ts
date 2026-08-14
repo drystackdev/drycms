@@ -115,6 +115,30 @@ describe("createSqlitePagesRegistryAdapter", () => {
     expect(await adapter.listPathsByResource("blog")).toEqual([]);
   });
 
+  it("clearAllPages deletes every page and dependency without touching versions", async () => {
+    const { adapter, dir } = freshAdapter();
+    dirs.push(dir);
+    await adapter.recordBuild(page({ path: "/a" }), [{ resource: "blog", version: 1 }]);
+    await adapter.recordBuild(page({ path: "/b" }), [{ resource: "settings", version: 2 }]);
+    const db = await rawDb(dir);
+    try {
+      db.exec('INSERT INTO "_versions" ("resource","version","updated_at") VALUES (\'blog\', 1, 0);');
+    } finally {
+      db.close();
+    }
+
+    await adapter.clearAllPages();
+
+    expect(await adapter.listAllPages()).toEqual([]);
+    expect(await adapter.listPathsByResource("blog")).toEqual([]);
+    const verify = await rawDb(dir);
+    try {
+      expect(verify.prepare('SELECT "resource" FROM "_versions";').all()).toEqual([{ resource: "blog" }]);
+    } finally {
+      verify.close();
+    }
+  });
+
   it("listStalePaths finds pages whose recorded dep version no longer matches _versions", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);

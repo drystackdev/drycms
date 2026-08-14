@@ -325,7 +325,12 @@ above) are never auto-seeded at boot - they only ever arrive by being
 created directly in the admin UI, or by restoring a full database backup
 (`routes/backup.ts` - Settings → Backup, Super Admin only; downloads/
 restores every content type, entry, role, and system setting as a portable
-`.sql` script, the same format for both `content.engine` values). An
+`.sql` script, the same format for both `content.engine` values). Restore is
+a replacement, never a merge: the complete dump is validated before any
+write, all existing application tables are removed, then the backup schema
+and rows are recreated. SQLite performs that replacement in one transaction;
+D1 snapshots the current database first and compensates from that snapshot
+if its chunked restore fails. An
 earlier design instead shipped an app's content types via a committed
 `dry.seed.json` always imported at boot, then via an admin-triggered
 "Upload schema"/"Upload seed data" action - both removed once the database

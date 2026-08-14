@@ -2131,6 +2131,12 @@ export default function PageEditor() {
   // nothing beyond an in-browser compile+render+Tailwind pass per pause in
   // typing.
   useEffect(() => {
+    // Hiding Preview unmounts the iframe. `previewTarget` and source state do
+    // not change during that toggle, so reopening used to mount a fresh,
+    // blank iframe without retriggering this effect; only the manual Reload
+    // button populated it. Treat visibility as an input and rebuild whenever
+    // the preview column becomes visible again.
+    if (!previewVisible) return;
     if (!previewTarget) {
       setPreviewLabel(null);
       return;
@@ -2148,7 +2154,7 @@ export default function PageEditor() {
     // calls `refreshPreview` fresh, picking up the by-then-populated schema) -
     // found live: a component's own default props silently missing from its
     // own preview on first open, self-correcting only on a manual reload.
-  }, [previewTarget?.label, sourceByPath, allTypes, assetHrefs, origin, propsSchema]);
+  }, [previewVisible, previewTarget?.label, sourceByPath, allTypes, assetHrefs, origin, propsSchema]);
 
   if (!canEdit) return <span class="error">You don't have permission to edit page source.</span>;
   if (loadError) return <span class="error">{loadError}</span>;

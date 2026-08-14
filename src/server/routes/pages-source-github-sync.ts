@@ -9,6 +9,7 @@ import { GITHUB_SYNC_TYPE_ID } from "../../content-types/system-fields.js";
 import { bufferOf } from "../../storage/util.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
 import { SAMPLE_PAGES_SOURCE_FILES } from "../app-router/sample-pages-source.js";
+import { clearBuiltPages } from "../app-router/built-pages-storage.js";
 
 /** Text files owned by the four page-source roots. Binary files do not
  * belong in the GitHub snapshot or the browser editor cache. */
@@ -103,43 +104,53 @@ export const POST: DryRouteHandler = async (context) => {
   return jsonResponse(result);
 };
 
-/** Replaces the working pages-source tree with the committed `mock/` tree
- * and commits that exact snapshot to GitHub. GitHub is updated first so a
- * failed remote push cannot leave storage reset while its configured source
- * of history still points at the previous site. The browser caller then
- * mirrors the returned files into IndexedDB and runs Build all. */
+/** Clears built storage/build-registry state, replaces the working
+ * pages-source tree with the committed `mock/` tree, then best-effort pushes
+ * that exact snapshot to GitHub. The browser caller mirrors the returned
+ * files into IndexedDB and runs Build all. */
 export const PUT: DryRouteHandler = async (context) => {
   const loaded = await loadGithubSyncConfig(context);
-  if ("error" in loaded && loaded.error !== "not-configured") {
-    return jsonResponse({ applied: false, reason: loaded.error });
-  }
 
   const sourceByPath = Object.fromEntries(SAMPLE_PAGES_SOURCE_FILES.map((file) => [file.path, file.content]));
   if (Object.keys(sourceByPath).length === 0) return jsonResponse({ applied: false, reason: "The mock pages-source tree is empty." });
 
+  const adapter = getStorageAdapter(pagesSourceStorage, context);
+  const { pagesRegistry } = getContentAdapters(context);
+  await clearBuiltPages(context);
+  await pagesRegistry.clearAllPages();
+
+  // Remove each root entry recursively instead of listing every descendant
+  // and deleting them one-by-one. Besides being cheaper for R2, this avoids
+  // a partial reset where a parent/child deletion race leaves the source
+  // root empty before the mock writes start.
+  for (const entry of await adapter.list("", true)) await adapter.remove(entry.path);
+  for (const [sourcePath, content] of Object.entries(sourceByPath)) {
+    await adapter.write(sourcePath, new TextEncoder().encode(content));
+  }
+  if (pagesSourceStorage.kind === "r2") await adapter.write(".seeded", new Uint8Array(0));
+
+  // Never return `applied: true` based only on writes not throwing. Read the
+  // authoritative store back and prove every deployed mock file arrived
+  // byte-for-byte; the browser only refreshes IndexedDB/builds after this.
+  const stored = await readPagesSourceTree(context);
+  const expectedPaths = Object.keys(sourceByPath).sort();
+  const storedPaths = Object.keys(stored).sort();
+  if (
+    expectedPaths.length !== storedPaths.length ||
+    expectedPaths.some((sourcePath, index) => sourcePath !== storedPaths[index] || stored[sourcePath] !== sourceByPath[sourcePath])
+  ) {
+    return jsonResponse({ applied: false, reason: "Mock files could not be verified after writing them to page-source storage." }, 500);
+  }
+
   let commitSha: string | undefined;
+  let githubReason: string | undefined;
   if ("config" in loaded) {
     const pushed = await pushPagesSourceSnapshot(sourceByPath, loaded.config, `Reset all pages from mock - ${new Date().toISOString()}`);
-    if (!pushed.pushed) return jsonResponse({ applied: false, reason: pushed.reason ?? "GitHub sync failed." });
-    commitSha = pushed.commitSha;
+    if (pushed.pushed) commitSha = pushed.commitSha;
+    else githubReason = pushed.reason ?? "GitHub sync failed.";
+  } else {
+    githubReason = loaded.error;
   }
 
-  const adapter = getStorageAdapter(pagesSourceStorage, context);
-  const currentPaths = adapter.listAll
-    ? (await adapter.listAll()).filter((entry) => entry.kind === "file" && PAGE_SOURCE_FILE_PATTERN.test(entry.name)).map((entry) => entry.path)
-    : await listAllSourcePaths(adapter);
-  const nextPaths = new Set(Object.keys(sourceByPath));
-  const operations = [
-    ...currentPaths.filter((path) => !nextPaths.has(path)).map((path) => ({ path, data: null })),
-    ...Object.entries(sourceByPath).map(([path, content]) => ({ path, data: new TextEncoder().encode(content) })),
-  ];
-  if (adapter.writeBatch) await adapter.writeBatch(operations, "Reset all pages from mock");
-  else {
-    for (const operation of operations) {
-      if (operation.data === null) await adapter.remove(operation.path);
-      else await adapter.write(operation.path, operation.data);
-    }
-  }
-
-  return jsonResponse({ applied: true, githubPushed: commitSha !== undefined, commitSha, sourceByPath });
+  return jsonResponse({ applied: true, githubPushed: commitSha !== undefined, githubReason, commitSha, sourceByPath });
 };

@@ -103,6 +103,19 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       }
     },
 
+    async clearAllPages() {
+      const handle = await getHandle();
+      handle.exec("BEGIN IMMEDIATE;");
+      try {
+        handle.run('DELETE FROM "_page_deps";');
+        handle.run('DELETE FROM "_pages";');
+        handle.exec("COMMIT;");
+      } catch (error) {
+        handle.exec("ROLLBACK;");
+        throw error;
+      }
+    },
+
     async listAllPages() {
       const handle = await getHandle();
       const rows = handle.all<PageRow>('SELECT "path","object_key","build_id","built_at","in_sitemap" FROM "_pages" ORDER BY "path" ASC;');

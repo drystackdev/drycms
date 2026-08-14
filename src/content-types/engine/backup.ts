@@ -19,6 +19,8 @@ function isInternalTable(name: string): boolean {
  * restore instead of per-content-type CRUD.
  */
 export interface RawSqlHandle {
+  /** Whether one `execAll` call is guaranteed to roll back as a whole. */
+  atomicExecAll: boolean;
   listTables(): Promise<{ name: string; sql: string }[]>;
   queryAll(table: string): Promise<Record<string, unknown>[]>;
   /** Runs every statement as one all-or-nothing unit where the underlying
@@ -31,6 +33,7 @@ export interface RawSqlHandle {
 
 export function sqliteRawHandle(handle: SqliteHandle): RawSqlHandle {
   return {
+    atomicExecAll: true,
     async listTables() {
       const rows = handle.all<{ name: string; sql: string }>(
         `SELECT "name", "sql" FROM "sqlite_master" WHERE "type" = 'table' ORDER BY "name";`,
@@ -60,6 +63,7 @@ const D1_BATCH_CHUNK = 500;
 
 export function d1RawHandle(db: D1Database): RawSqlHandle {
   return {
+    atomicExecAll: false,
     async listTables() {
       const result = await db
         .prepare(`SELECT "name", "sql" FROM "sqlite_master" WHERE "type" = 'table' ORDER BY "name";`)
@@ -134,6 +138,9 @@ function stripCommentLines(statement: string): string {
  * or hand-edited upload, not just a format check.
  */
 export function parseSqlDump(text: string): string[] {
+  if (!/^\s*-- drycms content backup(?:\r?\n|$)/.test(text)) {
+    throw new ContentEngineError("invalid_definition", "This is not a drycms database backup file.");
+  }
   const statements: string[] = [];
   let current = "";
   let quote: string | null = null;
@@ -169,7 +176,53 @@ export function parseSqlDump(text: string): string[] {
       throw new ContentEngineError("invalid_definition", `Unsupported statement in backup file: "${statement.slice(0, 60)}".`);
     }
   }
+  validateDumpStructure(statements);
   return statements;
+}
+
+const SQL_IDENTIFIER = String.raw`(?:"((?:[^"]|"")+)"|([A-Za-z_][A-Za-z0-9_$]*))`;
+const DROP_TABLE_NAME = new RegExp(`^DROP TABLE IF EXISTS\\s+${SQL_IDENTIFIER}\\s*;?$`, "i");
+const CREATE_TABLE_NAME = new RegExp(`^CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?${SQL_IDENTIFIER}(?=\\s|\\()`, "i");
+const INSERT_TABLE_NAME = new RegExp(`^INSERT INTO\\s+${SQL_IDENTIFIER}(?=\\s|\\()`, "i");
+
+function matchedIdentifier(match: RegExpMatchArray | null): string | null {
+  if (!match) return null;
+  return (match[1] ?? match[2] ?? "").replace(/""/g, '"');
+}
+
+/** Ensures the upload is a complete dump produced by `buildSqlDump`, rather
+ * than merely a collection of individually safe SQL statements. This check
+ * runs before the live database is touched. */
+function validateDumpStructure(statements: string[]): void {
+  const dropped = new Set<string>();
+  const created = new Set<string>();
+
+  for (const statement of statements) {
+    const dropName = matchedIdentifier(statement.match(DROP_TABLE_NAME));
+    if (dropName) {
+      if (dropped.has(dropName)) throw new ContentEngineError("invalid_definition", `Duplicate table in backup: "${dropName}".`);
+      dropped.add(dropName);
+      continue;
+    }
+
+    const createName = matchedIdentifier(statement.match(CREATE_TABLE_NAME));
+    if (createName) {
+      if (!dropped.has(createName) || created.has(createName)) {
+        throw new ContentEngineError("invalid_definition", `Invalid table definition order in backup: "${createName}".`);
+      }
+      created.add(createName);
+      continue;
+    }
+
+    const insertName = matchedIdentifier(statement.match(INSERT_TABLE_NAME));
+    if (insertName && !created.has(insertName)) {
+      throw new ContentEngineError("invalid_definition", `Backup inserts into undefined table: "${insertName}".`);
+    }
+  }
+
+  if (created.size === 0 || dropped.size !== created.size || [...dropped].some((name) => !created.has(name))) {
+    throw new ContentEngineError("invalid_definition", "The backup does not contain a complete set of table definitions.");
+  }
 }
 
 /**
@@ -184,6 +237,25 @@ export function parseSqlDump(text: string): string[] {
 export async function restoreFromDump(handle: RawSqlHandle, statements: string[]): Promise<number> {
   const currentTables = await handle.listTables();
   const dropStatements = currentTables.map((table) => `DROP TABLE IF EXISTS ${quoteIdent(table.name)};`);
-  await handle.execAll([...dropStatements, ...statements]);
+  if (handle.atomicExecAll) {
+    await handle.execAll([...dropStatements, ...statements]);
+  } else {
+    // D1 cannot keep a restore larger than one batch in a single
+    // transaction. Capture the exact old state before the first destructive
+    // chunk so a mid-restore failure can be compensated immediately.
+    const recoveryStatements = currentTables.length > 0 ? parseSqlDump(await buildSqlDump(handle)) : [];
+    try {
+      await handle.execAll([...dropStatements, ...statements]);
+    } catch (restoreError) {
+      try {
+        const partialTables = await handle.listTables();
+        const cleanup = partialTables.map((table) => `DROP TABLE IF EXISTS ${quoteIdent(table.name)};`);
+        await handle.execAll([...cleanup, ...recoveryStatements]);
+      } catch (recoveryError) {
+        throw new AggregateError([restoreError, recoveryError], "Database restore failed and the previous state could not be recovered.");
+      }
+      throw restoreError;
+    }
+  }
   return statements.filter((statement) => /^INSERT INTO/i.test(statement)).length;
 }

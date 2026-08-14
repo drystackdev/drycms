@@ -10,7 +10,7 @@ import { toast } from "../components/Toast.js";
 import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
 import ConfirmDialog from "../components/ConfirmDialog.js";
-import { replacePageSourceCache } from "../page-components/page-source-cache-db.js";
+import { clearPageSourceCache, replacePageSourceCacheOrThrow } from "../page-components/page-source-cache-db.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
 
 interface GithubSyncValue extends Record<string, unknown> {
@@ -114,6 +114,11 @@ export default function GithubSyncSettings() {
   async function resetAllPages() {
     setResetting(true);
     try {
+      // Clearing first avoids showing stale files while the server reset is
+      // running. A blocked/unavailable IndexedDB must not prevent the
+      // authoritative storage reset from happening; the strict replacement
+      // below retries the cache as a complete snapshot before success.
+      await clearPageSourceCache().catch(() => undefined);
       const response = await fetch(`${path}/api/github-sync`, {
         method: "PUT",
         credentials: "same-origin",
@@ -121,6 +126,7 @@ export default function GithubSyncSettings() {
       const result = (await response.json().catch(() => ({}))) as {
         applied?: boolean;
         githubPushed?: boolean;
+        githubReason?: string;
         reason?: string;
         sourceByPath?: Record<string, string>;
       };
@@ -128,14 +134,14 @@ export default function GithubSyncSettings() {
         throw new Error(result.reason ?? `Reset failed: HTTP ${response.status}`);
       }
 
-      await replacePageSourceCache(result.sourceByPath);
+      await replacePageSourceCacheOrThrow(result.sourceByPath);
       const published = await publishAllPages(path, allTypes);
       if (published.error) throw new Error(`Mock source was reset, but Build all failed: ${published.error}`);
       setResetOpen(false);
       toast.add({
         type: "success",
         title: "All pages reset",
-        description: `${result.githubPushed ? "Pushed the mock snapshot to GitHub, replaced local source," : "Replaced local source"} and built ${published.built} ${published.built === 1 ? "page" : "pages"}.`,
+        description: `${result.githubPushed ? "Pushed the mock snapshot to GitHub, " : ""}reset page storage and build state, refreshed IndexedDB, and built ${published.built} ${published.built === 1 ? "page" : "pages"}.${result.githubReason && result.githubReason !== "not-configured" ? ` GitHub was skipped: ${result.githubReason}` : ""}`,
       });
     } catch (error) {
       toast.add({ type: "error", title: "Reset All page failed", description: error instanceof Error ? error.message : undefined });
@@ -210,7 +216,7 @@ export default function GithubSyncSettings() {
       <section class="card">
         <header>
           <h2>Reset pages</h2>
-          <p>Replace every page-source file with the deployed mock template, sync the snapshot to GitHub and storage, refresh this browser's IndexedDB cache, then build all pages.</p>
+          <p>Clear this browser's page cache, page-source and built objects in storage, and page build state in D1; restore the deployed mock, sync GitHub when available, refresh IndexedDB, then build all pages.</p>
         </header>
         <div class="under">
           <button type="button" class="destructive" disabled={saving || isDirty || resetting} aria-busy={resetting || undefined} onClick={() => setResetOpen(true)}>

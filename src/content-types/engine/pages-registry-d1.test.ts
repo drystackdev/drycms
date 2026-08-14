@@ -134,6 +134,19 @@ describe("createD1PagesRegistryAdapter", () => {
     expect(await adapter.listResourcesByPath("/blogs/abc")).toEqual([]);
   });
 
+  it("clearAllPages deletes every page and dependency", async () => {
+    const { adapter, dir } = await freshAdapter();
+    dirs.push(dir);
+    await adapter.recordBuild(page({ path: "/a" }), [{ resource: "blog", version: 1 }]);
+    await adapter.recordBuild(page({ path: "/b" }), [{ resource: "settings", version: 2 }]);
+
+    await adapter.clearAllPages();
+
+    expect(await adapter.listAllPages()).toEqual([]);
+    expect(await adapter.listPathsByResource("blog")).toEqual([]);
+    expect(await adapter.listResourcesByPath("/b")).toEqual([]);
+  });
+
   it("listStalePaths finds pages whose recorded dep version no longer matches _versions", async () => {
     const { adapter, dir } = await freshAdapter();
     dirs.push(dir);

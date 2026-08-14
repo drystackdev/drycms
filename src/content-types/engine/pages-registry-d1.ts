@@ -119,6 +119,14 @@ export function createD1PagesRegistryAdapter(
       ]);
     },
 
+    async clearAllPages() {
+      await ensureBootstrap();
+      await db.batch([
+        db.prepare('DELETE FROM "_page_deps";'),
+        db.prepare('DELETE FROM "_pages";'),
+      ]);
+    },
+
     async listAllPages() {
       await ensureBootstrap();
       const result = await db.prepare('SELECT "path","object_key","build_id","built_at","in_sitemap" FROM "_pages" ORDER BY "path" ASC;').all<PageRow>();
