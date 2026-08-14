@@ -8,6 +8,8 @@ import type { EntryFieldNode } from "./entry-tree.js";
 const allTypes = defaultContentTypeDefinitions();
 const user = allTypes.find((t) => t.name === "user")!;
 const userNodes = buildEntryFieldTree(user, allTypes);
+const menu = allTypes.find((t) => t.name === "menu")!;
+const menuNodes = buildEntryFieldTree(menu, allTypes);
 
 describe("passwordConfirmError", () => {
   it("is undefined when nothing is staged", () => {
@@ -84,5 +86,20 @@ describe("RichText required validation", () => {
 
   it("keeps inline RichText text-like", () => {
     expect(validateEntryValue([node(true)], { body: "<p></p>" })).toEqual({});
+  });
+});
+
+describe("URL validation", () => {
+  it.each(["/", "/about", "./about", "../about", "?page=2", "#section", "https://example.com/about"])(
+    "accepts a valid absolute or browser-relative URL: %s",
+    (href) => {
+      expect(validateEntryValue(menuNodes, { name: "Main", refs: [{ label: "Link", href }] })).toEqual({});
+    },
+  );
+
+  it("still rejects text that is not a URL", () => {
+    expect(validateEntryValue(menuNodes, { name: "Main", refs: [{ label: "Link", href: "not a url" }] })).toEqual({
+      "refs[0].href": "Must be a valid URL.",
+    });
   });
 });

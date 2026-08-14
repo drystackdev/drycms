@@ -66,6 +66,24 @@ export function findPasswordChangeErrors(nodes: EntryFieldNode[], value: Record<
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const RELATIVE_URL_RE = /^(?:\/|\.\/|\.\.\/|\?|#)/;
+
+function isValidUrl(value: string): boolean {
+  if (RELATIVE_URL_RE.test(value)) {
+    try {
+      new URL(value, "https://drycms.invalid");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function checkFormat(validation: FieldValidation, value: string): string | undefined {
   if (validation.regex) {
@@ -76,13 +94,7 @@ function checkFormat(validation: FieldValidation, value: string): string | undef
     }
   }
   if (validation.format === "email" && !EMAIL_RE.test(value)) return "Must be a valid email address.";
-  if (validation.format === "url") {
-    try {
-      new URL(value);
-    } catch {
-      return "Must be a valid URL.";
-    }
-  }
+  if (validation.format === "url" && !isValidUrl(value)) return "Must be a valid URL.";
   if (validation.format === "slug" && !SLUG_RE.test(value)) return "Must be a lowercase, hyphen-separated slug.";
   return undefined;
 }
