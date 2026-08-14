@@ -109,6 +109,10 @@ describe("buildPage", () => {
 
     // Layout wraps page content.
     expect(result.html).toContain('<div class="shell">');
+    // Browser-built output owns a per-page inline Tailwind build. It must
+    // not also load the deploy-time global bundle, whose older dark variant
+    // rules could make preview theme follow the browser/admin environment.
+    expect(result.html).not.toContain(`href="${TEST_ASSETS.globalsCssHref}"`);
     // preact/hooks useState + the fetched singleton's title both rendered.
     expect(result.html).toContain("hello: My Site");
     // setTitle() fed the SEO cascade's `page` tier, picked up by

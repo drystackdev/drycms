@@ -12,6 +12,7 @@
 - Focused tests pass (16/16); the full production build passes.
 - `bun run typecheck` remains blocked by pre-existing generated `src/apps/component/**` alias errors (`@component/lib/cva`, `@component/lib/utils`).
 - Browser QA could not run because no in-app/external browser instance is available in this session.
+- 2026-08-14: Removed the duplicate deploy-time `appsGlobals` stylesheet from browser-built preview/published HTML. Those documents already inline CSS compiled from current source; the stale link could apply media-query dark utilities even without a `.dark` class in the preview document.
 
 # Speed
 

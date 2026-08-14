@@ -485,7 +485,12 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     pathname: input.pathname,
     adminPath: input.adminPath,
     siteLang: input.siteLang,
-    assets: input.assets,
+    // Browser-built pages compile and inline the CURRENT pages-source
+    // stylesheet immediately below. Keeping the deploy-time appsGlobals
+    // link as well duplicates CSS and can leak an older dark-mode strategy
+    // (notably `prefers-color-scheme`) into the isolated preview even when
+    // its own document has no `.dark` class.
+    assets: { ...input.assets, globalsCssHref: "" },
     seoEntryDates: dryConfig.seoEntryDates,
     callLog: dryConfig.callLog,
     editMode: false,
