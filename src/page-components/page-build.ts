@@ -12,7 +12,7 @@ import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { buildDocument } from "../server/app-router/build-document.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { compileTailwindCss } from "./tailwind-build.js";
+import { compileTailwindCss, tailwindStylesheetSource } from "./tailwind-build.js";
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { COMPONENT_ALIAS, PAGES_ROOT, PAGES_SOURCE_ROOTS, resolveAliasSpecifier } from "../server/app-router/source-roots.js";
 import { resolveDynamicPages } from "./dynamic-routes.js";
@@ -490,7 +490,7 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     callLog: dryConfig.callLog,
     editMode: false,
   });
-  const withCss = await inlinePageCss(rawHtml);
+  const withCss = await inlinePageCss(rawHtml, input.sourceByPath);
 
   // mục 7: compile the WHOLE reachable closure (entry + layouts + anything
   // THEY import) to real ESM, and embed a manifest telling
@@ -543,11 +543,11 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
  * `buildPage`. Real usage (the browser build pipeline) always has a
  * `document`.
  */
-async function inlinePageCss(html: string): Promise<string> {
+async function inlinePageCss(html: string, sourceByPath: Record<string, string>): Promise<string> {
   if (typeof document === "undefined") return html;
   const bodyMatch = /<body>([\s\S]*)<\/body>/.exec(html);
   if (!bodyMatch) return html;
-  const css = await compileTailwindCss(bodyMatch[1]!);
+  const css = await compileTailwindCss(bodyMatch[1]!, tailwindStylesheetSource(sourceByPath));
   if (!css) return html;
   return html.replace("</head>", `<style>${css}</style></head>`);
 }

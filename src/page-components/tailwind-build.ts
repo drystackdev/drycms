@@ -8,6 +8,45 @@
 // plain bare import would pull in and execute immediately in THIS document.
 import tailwindBrowserScriptUrl from "@tailwindcss/browser?url";
 
+const GLOBALS_CSS_PATH = "styles/globals.css";
+
+function resolveRelativeCssPath(fromPath: string, specifier: string): string {
+  const parts = [...fromPath.split("/").slice(0, -1), ...specifier.split("/")];
+  const normalized: string[] = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") normalized.pop();
+    else normalized.push(part);
+  }
+  return normalized.join("/");
+}
+
+/** Expands the live stylesheet graph into one browser-compiler input. The
+ * browser package cannot fetch relative imports from the in-memory/R2 page
+ * source store, so leaving `@import "./theme.css"` intact silently drops the
+ * project's `@theme` tokens and therefore utilities such as `bg-primary`. */
+export function tailwindStylesheetSource(sourceByPath: Record<string, string>): string {
+  const active = new Set<string>();
+
+  function expand(path: string): string {
+    const source = sourceByPath[path];
+    if (source === undefined) throw new Error(`[drycms] Missing Tailwind stylesheet "${path}".`);
+    if (active.has(path)) throw new Error(`[drycms] Circular Tailwind stylesheet import at "${path}".`);
+    active.add(path);
+    const expanded = source.replace(
+      /@import\s+(?:url\(\s*)?["']([^"']+)["']\s*\)?\s*;/g,
+      (statement, specifier: string) => {
+        if (!specifier.startsWith(".")) return statement;
+        return expand(resolveRelativeCssPath(path, specifier));
+      },
+    );
+    active.delete(path);
+    return expanded;
+  }
+
+  return expand(GLOBALS_CSS_PATH);
+}
+
 /**
  * Per-page Tailwind CSS compile (`plans/app-r2.md` mục 6) - runs
  * `@tailwindcss/browser` inside a FRESH, throwaway iframe per call, never
@@ -24,7 +63,7 @@ import tailwindBrowserScriptUrl from "@tailwindcss/browser?url";
  * of `buildDocument`, minus the `<html>`/`<head>` wrapper) - only its class
  * usage matters, the iframe never navigates anywhere real.
  */
-export async function compileTailwindCss(bodyHtml: string, timeoutMs = 2000): Promise<string> {
+export async function compileTailwindCss(bodyHtml: string, stylesheetSource: string, timeoutMs = 2000): Promise<string> {
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
   iframe.style.left = "-99999px";
@@ -49,7 +88,7 @@ export async function compileTailwindCss(bodyHtml: string, timeoutMs = 2000): Pr
     // time, not ones added later).
     const styleTag = doc.createElement("style");
     styleTag.setAttribute("type", "text/tailwindcss");
-    styleTag.textContent = '@import "tailwindcss";';
+    styleTag.textContent = stylesheetSource;
     const before = new Set(doc.head.querySelectorAll("style"));
     doc.head.appendChild(styleTag);
     before.add(styleTag);
