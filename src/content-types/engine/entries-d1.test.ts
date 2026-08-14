@@ -75,8 +75,13 @@ describe("createD1ContentEntryEngineAdapter", () => {
     const fetched = await entries.getEntry(menu, allTypes, created.id);
     expect(fetched?.value.name).toBe("Main nav");
 
+    // `menu` ships with one pre-seeded row ("Main", with Home/About links -
+    // `seed.ts`'s `pendingSeedStatements`) inserted the moment the schema
+    // bootstraps, before this test's own `createEntry` call ever runs - so a
+    // fresh `menu` collection starts at 1 row, not 0.
     const listed = await entries.listEntries(menu, allTypes, { page: 0, pageSize: 10 });
-    expect(listed.total).toBe(1);
+    expect(listed.total).toBe(2);
+    expect(listed.rows.some((r) => r.id === created.id && r.value.name === "Main nav")).toBe(true);
   });
 
   it("findEntry looks a row up by slug (features.slug) and returns null on no match", async () => {
