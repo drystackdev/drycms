@@ -30,7 +30,12 @@ export function toRecord(row: EntryRow): Record<string, unknown> {
  * for why a `select` transform's derived value must not be boxed.
  */
 export function markRecord(
-  context: DryRequestContext,
+  // Narrower than `DryRequestContext` on purpose - `dry-reader-http.ts`'s
+  // client-side `HttpDryReaderConfig` carries `vei`/`allTypes` too but isn't
+  // (and shouldn't become) a real `DryRequestContext`, so this only asks for
+  // the 2 fields actually read below. Every server caller still passes the
+  // full context; structurally compatible, no behavior change.
+  context: Pick<DryRequestContext, "vei" | "allTypes">,
   type: ContentTypeDefinition,
   record: Record<string, unknown>,
   unboxedKeys?: ReadonlySet<string>,

@@ -3,19 +3,20 @@ import { getContentAdapters } from "./content-adapters.js";
 import type { DryRouteContext } from "./context.js";
 import { tryServeGoogleVerificationFile } from "./google-verification.js";
 import { tryServeOAuthMetadata } from "./oauth-metadata.js";
-import type { DryRequestContext, DryVeiContext } from "../content-types/dry-context.js";
+import type { DryRequestContext } from "../content-types/dry-context.js";
 import { loadSeoDefaults, type DrySeoLayers } from "../content-types/dry-seo.js";
 import type { ContentEntryEngineAdapter } from "../content-types/engine/entries-types.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { resolveAccess } from "../content-types/access.js";
 import { resolveVeiSession } from "./vei-session.js";
 import { ensurePagesSourceSeeded } from "./pages-source-seed.js";
 import { discoverRoutes, devSourcePathOf, type DevPagesSource } from "./app-router/route-tree.js";
 import { matchRoute, type RouteMatch } from "./app-router/match.js";
-import { renderErrorHtml, renderPage } from "./app-router/render.js";
+import { buildVeiShellDocument, renderErrorHtml, renderPage, spliceVeiScripts } from "./app-router/render.js";
 import { readBuiltPage } from "./app-router/built-pages-storage.js";
 import { resolveSiteOrigin } from "./app-router/site-origin.js";
 import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegistry } from "./app-router/sitemap.js";
+
+const VEI_HTML_HEADERS = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" };
 
 /**
  * Renders `src/apps/pages/**` (see `plans/app-router.md`) - the "real
@@ -25,8 +26,13 @@ import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegi
  * exactly this space today; this fills that space with the site's own
  * content instead.
  *
- * Two entirely different code paths, chosen once per request (mục 12,
- * `plans/app-r2.md`):
+ * Three code paths, chosen once per request:
+ * - **A VEI session (dev or prod)**: no server-side route matching or SSR
+ *   at all - `vei-live-refresh.ts` routes AND renders entirely in the
+ *   browser, against the LIVE pages source. This function only ever serves
+ *   a cache-hit fast path (`readBuiltPage`, spliced via `spliceVeiScripts`)
+ *   or, failing that, a minimal shell (`buildVeiShellDocument`) - see both
+ *   functions' own doc comments (`render.ts`).
  * - **Prod, no VEI session**: static-only for a real match. Reads
  *   `built/live/*` (`readBuiltPage` - whatever `/dry/page-build` last
  *   published for this pathname) and serves it as-is; no `page.tsx`/
@@ -36,19 +42,18 @@ import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegi
  *   catch block below already uses for `500.tsx` (no `dry()` context, no
  *   layouts/hydration - just that one component) - falls back to a
  *   bare-bones plain-text 404 only when the app has no `404.tsx` at all.
- * - **Dev (always), or a VEI-authenticated session (dev + prod)**: the
- *   ORIGINAL live SSR pipeline below, byte-for-byte the same behavior
- *   this function had before mục 12 - a route MISS first checks the
- *   built-in `redirect` collection (`content-types/redirects.ts` populates
- *   it whenever a slugged entry's slug changes) by the URL's LAST path
- *   segment - a hit 301s to the same URL with that segment swapped for the
- *   redirect's `to`. Only once that also misses does it fall back to
- *   rendering the pages-root `404.tsx` (if the app has one, through the
- *   exact same `renderPage` pipeline as a real match - full layout/SEO/
- *   hydration, not a stripped-down page) - `null` only when there's truly
- *   nothing to render (no `404.tsx` either), same contract as before: the
- *   caller (dev-server/entry-node/entry-worker) decides what a bare-bones
- *   404 response looks like in that case.
+ * - **Dev, no VEI session**: the ORIGINAL live SSR pipeline below,
+ *   byte-for-byte the same behavior this function had before mục 12 - a
+ *   route MISS first checks the built-in `redirect` collection
+ *   (`content-types/redirects.ts` populates it whenever a slugged entry's
+ *   slug changes) by the URL's LAST path segment - a hit 301s to the same
+ *   URL with that segment swapped for the redirect's `to`. Only once that
+ *   also misses does it fall back to rendering the pages-root `404.tsx` (if
+ *   the app has one, through the exact same `renderPage` pipeline as a real
+ *   match - full layout/SEO/hydration, not a stripped-down page) - `null`
+ *   only when there's truly nothing to render (no `404.tsx` either), same
+ *   contract as before: the caller (dev-server/entry-node/entry-worker)
+ *   decides what a bare-bones 404 response looks like in that case.
  *
  * A failure anywhere in this function's own setup (schema/content adapters,
  * SEO defaults, VEI session) is caught below and rendered through the
@@ -142,7 +147,31 @@ export async function handlePageRequest(
     // No-op for `kind: "local"` and once a tenant has been seeded.
     await ensurePagesSourceSeeded(routeContext);
 
-    const vei = await resolveVeiContext(request, env, entries, allTypes);
+    // A VEI session now routes AND renders entirely in the browser
+    // (`vei-live-refresh.ts`) - no server-side route matching or live SSR at
+    // all, in dev or prod alike. Only `resolveVeiSession` (a cheap cookie/
+    // session validity check) is needed here to decide whether to take this
+    // branch; per-type edit permission resolves client-side instead (see
+    // that script's own doc comment for why and how).
+    const veiSession = await resolveVeiSession(request, env);
+    if (veiSession) {
+      // Fast path: the same cache anonymous visitors read (below) - if
+      // present, splice in a real editing session and the live-render
+      // script; the client then updates it to the truly live source a
+      // moment later (`spliceVeiScripts`'s own doc comment).
+      const cached = await readBuiltPage(routeContext, url.pathname);
+      if (cached !== null) {
+        return new Response(spliceVeiScripts(cached), { headers: VEI_HTML_HEADERS });
+      }
+      // A slug rename should still land VEI in the right place, same as the
+      // anonymous branch below.
+      const redirectResponse = await findRedirectResponse(url, entries, allTypes);
+      if (redirectResponse) return redirectResponse;
+      // Nothing cached (never built, or a brand-new page) - no server-side
+      // route match is attempted; the client resolves routing itself
+      // against the LIVE pages source, including the true-404 case.
+      return new Response(buildVeiShellDocument(), { headers: VEI_HTML_HEADERS });
+    }
 
     // Mục 12 (`plans/app-r2.md`): prod (`!isDev`) never
     // renders a page live anymore - it ONLY serves whatever's already sitting
@@ -153,18 +182,7 @@ export async function handlePageRequest(
     // last-built HTML until someone rebuilds it - a stale page beats a
     // missing one, and staleness is surfaced to the ADMIN (`_pages`'s
     // `staleResource`, `PageBuild.tsx`'s status column), not the visitor.
-    //
-    // VEI is carved out of this branch, in BOTH dev and prod: a built page's
-    // HTML never carries edit markers (`page-build.ts` renders every
-    // `dryBind()` as an inert, marker-free ref - see its own test's doc
-    // comment), so the full click-to-edit experience (hover highlight,
-    // per-field editing) genuinely cannot work purely against static output
-    // yet. Until that's addressed (a separate, not-yet-scoped follow-up -
-    // see `status/app-r2-build.md`), a VEI session keeps getting the exact
-    // same live SSR-with-edit-markers render it already gets today, in prod
-    // as well as dev - a deliberate, documented deviation from mục 12's
-    // literal text ("VEI chạy trên HTML tĩnh"), not an oversight.
-    if (!isDev && !vei) {
+    if (!isDev) {
       const cached = await readBuiltPage(routeContext, url.pathname);
       if (cached !== null) {
         return new Response(cached, { headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -188,31 +206,11 @@ export async function handlePageRequest(
       return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
 
-    // Dev (always) and a VEI session (dev + prod) reach here - the ORIGINAL
-    // live SSR pipeline, unchanged from before mục 12.
+    // Dev, non-VEI reaches here - the ORIGINAL live SSR pipeline, unchanged
+    // from before mục 12 (a VEI session, dev or prod, took its own branch
+    // above and never reaches this one anymore).
     const redirectResponse = await findRedirectResponse(url, entries, allTypes);
     if (redirectResponse) return redirectResponse;
-
-    // A VEI session outside dev can miss here even for a page that renders
-    // fine for every ordinary visitor: `discoverRoutes()`'s route STRUCTURE
-    // in this branch is the deployed build's own snapshot (`src/apps/pages`),
-    // which lags behind `pagesSourceStorage` whenever a page was added/
-    // edited since the last sync+rebuild+deploy (see
-    // `project_drycms_vei_live_content`'s "route STRUCTURE still comes from
-    // the deployed/build-time snapshot" note). The anonymous branch above
-    // never hits this, since it reads `built/live/*` by pathname with no
-    // route-tree lookup at all - falling back to that same cache here (read
-    // -only: no edit markers, since there's no live-rendered page to mark up)
-    // beats a false 404 on a page that plainly exists. Dev is excluded: its
-    // route tree IS the live source, so a miss there is a real miss.
-    if (!match && !isDev && vei) {
-      const cached = await readBuiltPage(routeContext, url.pathname);
-      if (cached !== null) {
-        return new Response(cached, {
-          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-        });
-      }
-    }
 
     if (!match && !routeTree.notFound) return null;
     // A route miss with a `404.tsx` renders through the SAME pipeline as a
@@ -240,17 +238,16 @@ export async function handlePageRequest(
       callLog,
       seo,
       params: resolvedMatch.params,
-      vei,
       origin: resolveSiteOrigin(url),
       pathname: url.pathname,
     };
 
     // No `onDocumentReady` - that was `writePageCache`'s hook into the old
     // implicit per-request cache-on-render-miss scheme (`pages-cache.ts`,
-    // deleted). This branch only ever runs for dev or a VEI session now,
-    // and neither one EVER wrote to that cache even before mục 12 (see the
-    // git history of this file) - there is no longer a caller left who
-    // needs this hook at all.
+    // deleted). This branch only ever runs for a non-VEI dev request now
+    // (a VEI session took its own branch above), which never wrote to that
+    // cache even before mục 12 (see the git history of this file) - there
+    // is no longer a caller left who needs this hook at all.
     // `devSourcePathOf` only returns a real path for a loader THIS branch's
     // own `discoverRoutes(devPagesSource)` call tagged - i.e. exactly when
     // `isDev && devPagesSource` above, so this can't misfire for the prod
@@ -265,33 +262,13 @@ export async function handlePageRequest(
         }
       : undefined;
 
-    // `devHydrateManifest` above only exists inside `bun run dev`'s live
-    // `DevPagesSource` branch - everywhere else (real prod, `dev:worker`'s
-    // built Worker), route discovery took the STATIC glob over `src/apps/
-    // pages` (`route-tree.ts`), which can go stale the moment a Page Editor
-    // save lands without a rebuild. A VEI session needs the fix either way,
-    // just a different one there: `render.ts`'s `veiLiveManifest` doc
-    // comment explains why this can't be a server-side live read the way
-    // `devHydrateManifest` is (`new Function` is blocked in a real Worker).
-    const veiLiveManifest = vei && !devHydrateManifest
-      ? {
-          entryPath: devSourcePathOf(resolvedMatch.page)!,
-          layoutPaths: resolvedMatch.layouts.map((layout) => devSourcePathOf(layout)!),
-          params: resolvedMatch.params,
-          allTypes,
-        }
-      : undefined;
-
-    const response = renderPage(resolvedMatch, dryContext, {
+    return renderPage(resolvedMatch, dryContext, {
       status,
       // `render.ts` already logs the error before calling this - only
       // building the fallback document is left to do here.
       onRenderError: routeTree.serverError ? () => renderErrorHtml(routeTree.serverError!) : undefined,
       devHydrateManifest,
-      veiLiveManifest,
     });
-    if (vei) response.headers.set("Cache-Control", "no-store");
-    return response;
   } catch (error) {
     // Covers failures in THIS function's own setup (schema/content adapters,
     // SEO defaults, VEI session) - anything before `renderPage` was called.
@@ -339,38 +316,4 @@ async function findRedirectResponse(
 
   const target = new URL(replaceLastSegment(url.pathname, row.value.to) + url.search, url);
   return new Response(null, { status: 301, headers: { Location: target.toString() } });
-}
-
-/**
- * The viewer's editing rights for this render, or `undefined` for the
- * ordinary anonymous case (no `drycms_vei` cookie, or an expired/revoked
- * one) - any signed-in admin session gets edit rights, no separate
- * permission to hold. Per-type editability is still resolved from the
- * viewer's actual role grants below, so `canUpdate` only opens up fields the
- * viewer could otherwise save through the admin.
- * Permissions are resolved once per request and closed over, so marking a
- * value costs a map lookup rather than a role query per field.
- */
-async function resolveVeiContext(
-  request: Request,
-  env: Record<string, unknown>,
-  entries: ContentEntryEngineAdapter,
-  allTypes: ContentTypeDefinition[],
-): Promise<DryVeiContext | undefined> {
-  const session = await resolveVeiSession(request, env);
-  if (!session) return undefined;
-  const access = await resolveAccess(entries, allTypes, session);
-  if (!access) return undefined;
-  const editable = new Map<string, boolean>();
-  return {
-    canUpdate(type) {
-      const cached = editable.get(type.id);
-      if (cached !== undefined) return cached;
-      // A singleton's schema collapses every action into one `setting`
-      // grant - see `permissions.ts`'s `permissionActionsFor`.
-      const allowed = type.kind === "singleton" ? access.can(type.id, "setting") : access.can(type.id, "update");
-      editable.set(type.id, allowed);
-      return allowed;
-    },
-  };
 }

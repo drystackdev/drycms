@@ -1,14 +1,14 @@
 /**
- * Bundles the git-committed `src/apps/{pages,component,styles,md}/**` starter
+ * Bundles the git-committed `mock/{pages,component,styles,md}/**` starter
  * template as plain strings at BUILD time (same eager raw-text glob
- * `ai-page-source-docs.ts` uses for `docs/*.md`) - reading `src/apps/**` from
+ * `ai-page-source-docs.ts` uses for `docs/*.md`) - reading `mock/**` from
  * disk at request time would work under `bun run dev`/the Node build and
  * silently break under `kind: "cloudflare"` (no filesystem there at all).
  * `seed-pages-source.ts` writes this manifest into a fresh tenant's
  * `pagesSourceStorage` the first time it's found completely empty.
  */
 const rawSamples = import.meta.glob(
-  ["/src/apps/pages/**", "/src/apps/component/**", "/src/apps/styles/**", "/src/apps/md/**"],
+  ["/mock/pages/**", "/mock/component/**", "/mock/styles/**", "/mock/md/**"],
   { eager: true, query: "?raw", import: "default" },
 ) as Record<string, string>;
 
@@ -22,6 +22,6 @@ export interface SamplePagesSourceFile {
 }
 
 export const SAMPLE_PAGES_SOURCE_FILES: SamplePagesSourceFile[] = Object.entries(rawSamples).map(([globPath, content]) => ({
-  path: globPath.replace(/^\/src\/apps\//, ""),
+  path: globPath.replace(/^\/mock\//, ""),
   content,
 }));

@@ -82,6 +82,27 @@ export function matchSourceRoute(tree: RouteTree, pathname: string): SourceRoute
   };
 }
 
+export interface NotFoundRoute {
+  entryPath: string;
+  /** Root-to-leaf, same convention `SourceRouteMatch.layoutPaths` uses -
+   * just the root layout (if any), since a route miss is wrapped by the
+   * root layout only. */
+  layoutPaths: string[];
+}
+
+/** The manifest-tree counterpart to `page-handler.ts`'s own
+ * `routeTree.notFound`/`routeTree.root.layout` miss-fallback shape - lets a
+ * caller that only has SOURCE PATHS (e.g. a browser resolving routes
+ * client-side, `vei-live-refresh.ts`) render the pages-root `404.tsx` the
+ * same way. `undefined` when the tree has no `404.tsx` at all. */
+export function notFoundRoute(tree: RouteTree): NotFoundRoute | undefined {
+  if (!tree.notFound) return undefined;
+  return {
+    entryPath: sourcePathOf(tree.notFound),
+    layoutPaths: tree.root.layout ? [sourcePathOf(tree.root.layout)] : [],
+  };
+}
+
 /** Every static page's PATHNAME to build - thin re-export of
  * `route-tree.ts`'s `staticPagePaths` (already pure, works on ANY
  * `RouteTree` regardless of what its loaders do) so callers of this module

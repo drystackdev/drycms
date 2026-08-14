@@ -72,7 +72,10 @@ export const POST: DryRouteHandler = async (context) => {
     // Without this, a content editor's newly-allowed build access
     // (`routes/pages-build.ts`) would double as a way to read ANY other
     // resource's published data over `dry-http`, not just the one they
-    // actually have rights to.
+    // actually have rights to. `context.session` itself already falls back
+    // to a VEI session (`handler.ts`'s dispatcher) when the real admin
+    // session expired but a VEI one is still valid - `vei-live-refresh.ts`
+    // calling this from a public page relies on that.
     if (!context.session) return unauthenticatedResponse();
     const access = await resolveAccessCached(context, entries, allTypes, context.session);
     if (!access) return unauthenticatedResponse();

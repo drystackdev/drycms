@@ -28,7 +28,6 @@ describe("pushPagesSourceSnapshot", () => {
   it("commits blob->tree->commit->ref-patch, in order, when the branch already exists", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ object: { sha: "base-commit-sha" } })) // GET ref/heads/main
-      .mockResolvedValueOnce(jsonResponse({ sha: "base-commit-sha", tree: { sha: "base-tree-sha" } })) // GET commits/base-commit-sha
       .mockResolvedValueOnce(jsonResponse({ sha: "blob-sha-1" })) // POST blobs (page.tsx)
       .mockResolvedValueOnce(jsonResponse({ sha: "new-tree-sha" })) // POST trees
       .mockResolvedValueOnce(jsonResponse({ sha: "new-commit-sha" })) // POST commits
@@ -37,28 +36,27 @@ describe("pushPagesSourceSnapshot", () => {
     const result = await pushPagesSourceSnapshot({ "page.tsx": "export default function Page(){}" }, CONFIG, "snapshot");
 
     expect(result).toEqual({ pushed: true, commitSha: "new-commit-sha" });
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
 
     const [refUrl, refInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(refUrl).toBe("https://api.github.com/repos/acme/site/git/ref/heads/main");
     expect((refInit.headers as Record<string, string>).Authorization).toBe("Bearer ghp_test");
 
-    const [blobUrl, blobInit] = fetchMock.mock.calls[2] as [string, RequestInit];
+    const [blobUrl, blobInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(blobUrl).toBe("https://api.github.com/repos/acme/site/git/blobs");
     expect(JSON.parse(blobInit.body as string)).toEqual({ content: "export default function Page(){}", encoding: "utf-8" });
 
-    const [treeUrl, treeInit] = fetchMock.mock.calls[3] as [string, RequestInit];
+    const [treeUrl, treeInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(treeUrl).toBe("https://api.github.com/repos/acme/site/git/trees");
     expect(JSON.parse(treeInit.body as string)).toEqual({
-      base_tree: "base-tree-sha",
       tree: [{ path: "page.tsx", mode: "100644", type: "blob", sha: "blob-sha-1" }],
     });
 
-    const [commitUrl, commitInit] = fetchMock.mock.calls[4] as [string, RequestInit];
+    const [commitUrl, commitInit] = fetchMock.mock.calls[3] as [string, RequestInit];
     expect(commitUrl).toBe("https://api.github.com/repos/acme/site/git/commits");
     expect(JSON.parse(commitInit.body as string)).toEqual({ message: "snapshot", tree: "new-tree-sha", parents: ["base-commit-sha"] });
 
-    const [patchUrl, patchInit] = fetchMock.mock.calls[5] as [string, RequestInit];
+    const [patchUrl, patchInit] = fetchMock.mock.calls[4] as [string, RequestInit];
     expect(patchUrl).toBe("https://api.github.com/repos/acme/site/git/refs/heads/main");
     expect(patchInit.method).toBe("PATCH");
     expect(JSON.parse(patchInit.body as string)).toEqual({ sha: "new-commit-sha", force: false });
@@ -84,7 +82,6 @@ describe("pushPagesSourceSnapshot", () => {
     const [treeUrl, treeInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(treeUrl).toBe("https://api.github.com/repos/acme/site/git/trees");
     expect(JSON.parse(treeInit.body as string)).toEqual({
-      base_tree: undefined,
       tree: [{ path: "page.tsx", mode: "100644", type: "blob", sha: "blob-sha-1" }],
     });
 
@@ -101,7 +98,6 @@ describe("pushPagesSourceSnapshot", () => {
   it("never throws - a GitHub API error comes back as pushed:false with the error message", async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ object: { sha: "base-commit-sha" } }))
-      .mockResolvedValueOnce(jsonResponse({ sha: "base-commit-sha", tree: { sha: "base-tree-sha" } }))
       .mockResolvedValueOnce(jsonResponse({ message: "Bad credentials" }, 401));
 
     const result = await pushPagesSourceSnapshot({ "page.tsx": "x" }, CONFIG, "snapshot");
@@ -160,16 +156,28 @@ describe("pullPagesSourceSnapshot", () => {
           truncated: false,
           tree: [
             { path: "page.tsx", type: "blob", sha: "blob-1" },
-            { path: "README.md", type: "blob", sha: "blob-2" }, // non-.tsx/.ts - excluded
+            { path: "README.txt", type: "blob", sha: "blob-2" }, // unsupported text file - excluded
+            { path: "styles/theme.css", type: "blob", sha: "blob-3" },
+            { path: "md/README.md", type: "blob", sha: "blob-4" },
             { path: "blogs", type: "tree", sha: "tree-2" },
           ],
         }),
       ) // GET trees/tree-sha?recursive=1
-      .mockResolvedValueOnce(jsonResponse({ content: Buffer.from("export default function Page(){}").toString("base64"), encoding: "base64" })); // GET blobs/blob-1
+      .mockResolvedValueOnce(jsonResponse({ content: Buffer.from("export default function Page(){}").toString("base64"), encoding: "base64" }))
+      .mockResolvedValueOnce(jsonResponse({ content: Buffer.from(":root{}").toString("base64"), encoding: "base64" }))
+      .mockResolvedValueOnce(jsonResponse({ content: Buffer.from("# Notes").toString("base64"), encoding: "base64" }));
 
     const result = await pullPagesSourceSnapshot(CONFIG);
 
-    expect(result).toEqual({ ok: true, sha: "head-sha", sourceByPath: { "page.tsx": "export default function Page(){}" } });
+    expect(result).toEqual({
+      ok: true,
+      sha: "head-sha",
+      sourceByPath: {
+        "page.tsx": "export default function Page(){}",
+        "styles/theme.css": ":root{}",
+        "md/README.md": "# Notes",
+      },
+    });
     const [refUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(refUrl).toBe("https://api.github.com/repos/acme/site/git/ref/heads/main");
   });

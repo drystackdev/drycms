@@ -9,6 +9,9 @@ import CheckField from "../components/fields/CheckField.js";
 import { toast } from "../components/Toast.js";
 import { canAccess } from "../store/auth.js";
 import { useDocumentTitle } from "./page-common.js";
+import ConfirmDialog from "../components/ConfirmDialog.js";
+import { replacePageSourceCache } from "../page-components/page-source-cache-db.js";
+import { publishAllPages } from "../page-components/initial-publish.js";
 
 interface GithubSyncValue extends Record<string, unknown> {
   enabled: boolean;
@@ -31,12 +34,15 @@ export default function GithubSyncSettings() {
   const typesApi = useMemo(() => createContentTypesApi(`${path}/api/content-types`), []);
   const entriesApi = useMemo(() => createContentEntriesApi(`${path}/api/content`, "githubSync"), []);
   const [type, setType] = useState<ContentTypeDefinition | null>(null);
+  const [allTypes, setAllTypes] = useState<ContentTypeDefinition[]>([]);
   const [value, setValue] = useState<GithubSyncValue | null>(null);
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const [hasExistingToken, setHasExistingToken] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const canEdit = !!type && canAccess(type.id, "setting");
   const isDirty = initialSnapshot !== null && value !== null && JSON.stringify(value) !== initialSnapshot;
@@ -51,6 +57,7 @@ export default function GithubSyncSettings() {
         const definitions = await listCached(typesApi);
         const found = definitions.find((candidate) => candidate.name === "githubSync");
         if (!found) throw new Error('The system collection "githubSync" is not available.');
+        setAllTypes(definitions);
         setType(found);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Failed to load GitHub Sync settings.");
@@ -101,6 +108,34 @@ export default function GithubSyncSettings() {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function resetAllPages() {
+    setResetting(true);
+    try {
+      const response = await fetch(`${path}/api/github-sync`, {
+        method: "PUT",
+        credentials: "same-origin",
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        applied?: boolean;
+        reason?: string;
+        sourceByPath?: Record<string, string>;
+      };
+      if (!response.ok || !result.applied || !result.sourceByPath) {
+        throw new Error(result.reason ?? `Reset failed: HTTP ${response.status}`);
+      }
+
+      await replacePageSourceCache(result.sourceByPath);
+      const published = await publishAllPages(path, allTypes);
+      if (published.error) throw new Error(`Mock source was reset, but Build all failed: ${published.error}`);
+      setResetOpen(false);
+      toast.add({ type: "success", title: "All pages reset", description: `Synced mock files and built ${published.built} ${published.built === 1 ? "page" : "pages"}.` });
+    } catch (error) {
+      toast.add({ type: "error", title: "Reset All page failed", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -166,6 +201,30 @@ export default function GithubSyncSettings() {
           />
         </div>
       </section>
+
+      <section class="card">
+        <header>
+          <h2>Reset pages</h2>
+          <p>Replace every page-source file with the deployed mock template, sync the snapshot to GitHub and storage, refresh this browser's IndexedDB cache, then build all pages.</p>
+        </header>
+        <div class="under">
+          <button type="button" class="destructive" disabled={saving || isDirty || resetting} aria-busy={resetting || undefined} onClick={() => setResetOpen(true)}>
+            Reset All page
+          </button>
+          {isDirty && <p class="hint">Save the GitHub Sync settings before resetting pages.</p>}
+        </div>
+      </section>
+
+      <ConfirmDialog
+        open={resetOpen}
+        title="Reset all pages from mock?"
+        message="Every current page, component, style and Markdown source file will be replaced. The mock snapshot will be pushed to GitHub and published immediately. This cannot be undone outside GitHub history."
+        confirmLabel="Reset All page"
+        destructive
+        busy={resetting}
+        onConfirm={() => void resetAllPages()}
+        onCancel={() => setResetOpen(false)}
+      />
     </>
   );
 }

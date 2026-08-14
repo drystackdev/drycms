@@ -1,6 +1,7 @@
 import { fetchNoRedirect } from "./outbound-url.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
+export const PAGE_SOURCE_FILE_PATTERN = /\.(?:tsx?|css|md)$/i;
 /** GitHub's own Git Data API operations (blob/tree/commit/ref) normally
  * resolve in well under a second - generous enough that a large "Build all"
  * snapshot (many blobs) on a slow connection isn't mistaken for a hang. */
@@ -146,10 +147,6 @@ export async function pushPagesSourceSnapshot(
 
   try {
     const base = await resolveBaseCommit(config.repo, config.branch, config.token);
-    const baseTreeSha = base.sha
-      ? (await githubRequest<GithubCommitResponse>(`/repos/${config.repo}/git/commits/${base.sha}`, config.token)).tree.sha
-      : undefined;
-
     const blobs = await Promise.all(
       paths.map(async (path) => {
         const blob = await githubRequest<GithubBlobResponse>(`/repos/${config.repo}/git/blobs`, config.token, {
@@ -163,7 +160,6 @@ export async function pushPagesSourceSnapshot(
     const tree = await githubRequest<GithubTreeResponse>(`/repos/${config.repo}/git/trees`, config.token, {
       method: "POST",
       body: JSON.stringify({
-        base_tree: baseTreeSha,
         tree: blobs.map(({ path, sha }) => ({ path, mode: "100644", type: "blob", sha })),
       }),
     });
@@ -282,7 +278,7 @@ export async function pullPagesSourceSnapshot(config: GithubSyncConfig, sha?: st
     const tree = await githubRequest<GithubTreeListResponse>(`/repos/${config.repo}/git/trees/${commit.tree.sha}?recursive=1`, config.token);
     if (tree.truncated) return { ok: false, reason: "The repository tree is too large to fetch in one request." };
 
-    const blobEntries = tree.tree.filter((entry) => entry.type === "blob" && /\.tsx?$/i.test(entry.path));
+    const blobEntries = tree.tree.filter((entry) => entry.type === "blob" && PAGE_SOURCE_FILE_PATTERN.test(entry.path));
     const files = await Promise.all(
       blobEntries.map(async (entry) => {
         const blob = await githubRequest<GithubBlobContentResponse>(`/repos/${config.repo}/git/blobs/${entry.sha}`, config.token);

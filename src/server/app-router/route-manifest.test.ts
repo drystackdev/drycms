@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, staticPagePaths } from "./route-manifest.js";
+import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, notFoundRoute, staticPagePaths } from "./route-manifest.js";
 
 // Storage-root-relative, so every route file sits under the `pages` source
 // root (`source-roots.ts`) - the shape `pagesSourceStorage`'s own `listAll()`
@@ -72,6 +72,23 @@ describe("buildManifestRouteTree + matchSourceRoute", () => {
     const match = matchSourceRoute(tree, "/blogs/utils");
     expect(match?.entryPath).toBe("pages/blogs/[slug]/page.tsx");
     expect(match?.params).toEqual({ slug: "utils" });
+  });
+});
+
+describe("notFoundRoute", () => {
+  it("resolves the pages-root 404.tsx's own source path, with the root layout", () => {
+    const tree = buildManifestRouteTree(PATHS);
+    expect(notFoundRoute(tree)).toEqual({ entryPath: "pages/404.tsx", layoutPaths: ["pages/layout.tsx"] });
+  });
+
+  it("omits layoutPaths when the tree has no root layout of its own", () => {
+    const tree = buildManifestRouteTree(["pages/page.tsx", "pages/404.tsx"]);
+    expect(notFoundRoute(tree)).toEqual({ entryPath: "pages/404.tsx", layoutPaths: [] });
+  });
+
+  it("is undefined when the tree has no 404.tsx at all", () => {
+    const tree = buildManifestRouteTree(["pages/page.tsx", "pages/layout.tsx"]);
+    expect(notFoundRoute(tree)).toBeUndefined();
   });
 });
 

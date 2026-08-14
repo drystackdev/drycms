@@ -4,18 +4,14 @@ import { getStorageAdapter } from "../storage-adapters.js";
 import { getContentAdapters } from "../content-adapters.js";
 import { jsonResponse } from "../route-helpers.js";
 import { decryptSecret } from "../../lib/secret-crypto.js";
-import { pushPagesSourceSnapshot, type GithubSyncConfig } from "../github-source-sync.js";
+import { PAGE_SOURCE_FILE_PATTERN, pushPagesSourceSnapshot, type GithubSyncConfig } from "../github-source-sync.js";
 import { GITHUB_SYNC_TYPE_ID } from "../../content-types/system-fields.js";
 import { bufferOf } from "../../storage/util.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
+import { SAMPLE_PAGES_SOURCE_FILES } from "../app-router/sample-pages-source.js";
 
-/** Only `.tsx`/`.ts` counts as "source" here, same rule
- * `pages-source.ts`'s own doc comment gives for the tree - everything the
- * build pipeline/`Editer` treats as real code, nothing else (an accidental
- * binary asset dropped under `pagesSourceStorage` wouldn't survive the
- * `utf-8` blob encoding `github-source-sync.ts` uses anyway). */
-const SOURCE_FILE_PATTERN = /\.tsx?$/i;
-
+/** Text files owned by the four page-source roots. Binary files do not
+ * belong in the GitHub snapshot or the browser editor cache. */
 /** `pagesSourceStorage.listAll` only exists for the `local` backend (see
  * `pages-source.ts`'s own `handleTree`) - R2 falls back to this same
  * recursive `list()` walk `PageEditor.tsx`/`PageBuild.tsx` already do
@@ -26,7 +22,7 @@ async function listAllSourcePaths(adapter: StorageAdapter, folder = ""): Promise
   for (const entry of entries) {
     if (entry.kind === "folder") {
       paths.push(...(await listAllSourcePaths(adapter, entry.path)));
-    } else if (SOURCE_FILE_PATTERN.test(entry.name)) {
+    } else if (PAGE_SOURCE_FILE_PATTERN.test(entry.name)) {
       paths.push(entry.path);
     }
   }
@@ -36,7 +32,7 @@ async function listAllSourcePaths(adapter: StorageAdapter, folder = ""): Promise
 export async function readPagesSourceTree(context: Pick<DryRouteContext, "env">): Promise<Record<string, string>> {
   const adapter = getStorageAdapter(pagesSourceStorage, context);
   const paths = adapter.listAll
-    ? (await adapter.listAll()).filter((entry: StorageStatEntry) => entry.kind === "file" && SOURCE_FILE_PATTERN.test(entry.name)).map((entry: StorageStatEntry) => entry.path)
+    ? (await adapter.listAll()).filter((entry: StorageStatEntry) => entry.kind === "file" && PAGE_SOURCE_FILE_PATTERN.test(entry.name)).map((entry: StorageStatEntry) => entry.path)
     : await listAllSourcePaths(adapter);
   const entries = await Promise.all(
     paths.map(async (relPath) => {
@@ -105,4 +101,39 @@ export const POST: DryRouteHandler = async (context) => {
   const sourceByPath = await readPagesSourceTree(context);
   const result = await pushPagesSourceSnapshot(sourceByPath, loaded.config, message);
   return jsonResponse(result);
+};
+
+/** Replaces the working pages-source tree with the committed `mock/` tree
+ * and commits that exact snapshot to GitHub. GitHub is updated first so a
+ * failed remote push cannot leave storage reset while its configured source
+ * of history still points at the previous site. The browser caller then
+ * mirrors the returned files into IndexedDB and runs Build all. */
+export const PUT: DryRouteHandler = async (context) => {
+  const loaded = await loadGithubSyncConfig(context);
+  if ("error" in loaded) return jsonResponse({ applied: false, reason: loaded.error });
+
+  const sourceByPath = Object.fromEntries(SAMPLE_PAGES_SOURCE_FILES.map((file) => [file.path, file.content]));
+  if (Object.keys(sourceByPath).length === 0) return jsonResponse({ applied: false, reason: "The mock pages-source tree is empty." });
+
+  const pushed = await pushPagesSourceSnapshot(sourceByPath, loaded.config, `Reset all pages from mock - ${new Date().toISOString()}`);
+  if (!pushed.pushed) return jsonResponse({ applied: false, reason: pushed.reason ?? "GitHub sync failed." });
+
+  const adapter = getStorageAdapter(pagesSourceStorage, context);
+  const currentPaths = adapter.listAll
+    ? (await adapter.listAll()).filter((entry) => entry.kind === "file" && PAGE_SOURCE_FILE_PATTERN.test(entry.name)).map((entry) => entry.path)
+    : await listAllSourcePaths(adapter);
+  const nextPaths = new Set(Object.keys(sourceByPath));
+  const operations = [
+    ...currentPaths.filter((path) => !nextPaths.has(path)).map((path) => ({ path, data: null })),
+    ...Object.entries(sourceByPath).map(([path, content]) => ({ path, data: new TextEncoder().encode(content) })),
+  ];
+  if (adapter.writeBatch) await adapter.writeBatch(operations, "Reset all pages from mock");
+  else {
+    for (const operation of operations) {
+      if (operation.data === null) await adapter.remove(operation.path);
+      else await adapter.write(operation.path, operation.data);
+    }
+  }
+
+  return jsonResponse({ applied: true, commitSha: pushed.commitSha, sourceByPath });
 };

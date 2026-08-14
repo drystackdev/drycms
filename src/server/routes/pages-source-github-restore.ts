@@ -2,14 +2,9 @@ import type { DryRouteHandler } from "../context.js";
 import { pagesSourceStorage } from "../config.js";
 import { getStorageAdapter } from "../storage-adapters.js";
 import { jsonResponse, errorResponse } from "../route-helpers.js";
-import { ensureBranchExists, listSnapshotCommits, pullPagesSourceSnapshot } from "../github-source-sync.js";
+import { ensureBranchExists, listSnapshotCommits, PAGE_SOURCE_FILE_PATTERN, pullPagesSourceSnapshot } from "../github-source-sync.js";
 import { loadGithubSyncConfig, readPagesSourceTree } from "./pages-source-github-sync.js";
 import type { StorageAdapter, StorageStatEntry } from "../../storage/types.js";
-
-/** Same `.tsx`/`.ts`-only rule `pages-source-github-sync.ts`'s own push side
- * uses - a reset must touch exactly the files a push would have committed,
- * nothing else. */
-const SOURCE_FILE_PATTERN = /\.tsx?$/i;
 
 /** `pagesSourceStorage.listAll` fallback for a backend that doesn't
  * implement it (R2/S3) - same recursive walk `pages-source-github-sync.ts`'s
@@ -21,7 +16,7 @@ async function listAllSourcePaths(adapter: StorageAdapter, folder = ""): Promise
   for (const entry of entries) {
     if (entry.kind === "folder") {
       paths.push(...(await listAllSourcePaths(adapter, entry.path)));
-    } else if (SOURCE_FILE_PATTERN.test(entry.name)) {
+    } else if (PAGE_SOURCE_FILE_PATTERN.test(entry.name)) {
       paths.push(entry.path);
     }
   }
@@ -30,7 +25,7 @@ async function listAllSourcePaths(adapter: StorageAdapter, folder = ""): Promise
 
 async function listCurrentSourcePaths(adapter: StorageAdapter): Promise<string[]> {
   return adapter.listAll
-    ? (await adapter.listAll()).filter((entry: StorageStatEntry) => entry.kind === "file" && SOURCE_FILE_PATTERN.test(entry.name)).map((entry: StorageStatEntry) => entry.path)
+    ? (await adapter.listAll()).filter((entry: StorageStatEntry) => entry.kind === "file" && PAGE_SOURCE_FILE_PATTERN.test(entry.name)).map((entry: StorageStatEntry) => entry.path)
     : listAllSourcePaths(adapter);
 }
 

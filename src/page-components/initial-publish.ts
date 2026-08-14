@@ -25,7 +25,7 @@ export async function publishAllPages(
   adminPath: string,
   allTypes: ContentTypeDefinition[],
   onStatus?: (message: string) => void,
-): Promise<void> {
+): Promise<{ built: number; error?: string }> {
   try {
     const [{ buildPage, publishBuiltPages, resolveAllPageTargets }, sourceByPath, assetHrefs] = await Promise.all([
       import("./page-build.js"),
@@ -35,7 +35,7 @@ export async function publishAllPages(
 
     const { targets } = await resolveAllPageTargets(sourceByPath, allTypes, `${adminPath}/api/dry-http`);
     const pathnames = [...targets.keys()];
-    if (pathnames.length === 0) return;
+    if (pathnames.length === 0) return { built: 0 };
 
     const origin = window.location.origin;
     let batch: { result: PageBuildResult; options: PublishOptions }[] = [];
@@ -75,7 +75,10 @@ export async function publishAllPages(
     }
     await flush();
     onStatus?.(built > 0 ? `Published ${built} ${built === 1 ? "page" : "pages"}` : "No pages needed publishing");
+    return { built };
   } catch (error) {
-    onStatus?.(`Initial publish failed: ${error instanceof Error ? error.message : "unknown error"}.`);
+    const message = error instanceof Error ? error.message : "unknown error";
+    onStatus?.(`Initial publish failed: ${message}.`);
+    return { built: 0, error: message };
   }
 }

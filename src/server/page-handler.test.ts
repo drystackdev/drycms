@@ -177,30 +177,47 @@ describe("handlePageRequest", () => {
       }
     });
 
-    it("falls back to the built page cache for a VEI session when the route tree has no match - a stale deployed route snapshot must not false-404 a page that renders fine for ordinary visitors", async () => {
+  });
+
+  describe("VEI session (dev or prod - no server-side route matching or SSR at all)", () => {
+    it("splices the overlay/live-render scripts into a real editing session, no-store, when a built page exists at built/live/* - the client resolves routing and content itself from there", async () => {
       mockVeiSession();
       const ctx = { env: {} };
-      await writeBuiltPage(ctx, "/stale-route", "build-1", "<html><body>cached copy</body></html>");
+      await writeBuiltPage(ctx, "/vei-cache-hit", "build-1", `<html><body>cached copy<script type="application/json" id="dry-vei-config">{"path":"/dry","edit":false}</script></body></html>`);
 
-      // No `pages/stale-route/page.tsx` exists in this fixture's route tree at
-      // all (the prod branch never supplies a `devPagesSource`, so
-      // `discoverRoutes()` takes the real, empty-for-this-path glob) - same
-      // shape as a page that exists in `pagesSourceStorage` but hasn't been
-      // synced+rebuilt+deployed into this Worker's own bundled snapshot yet.
-      const response = await handlePageRequest(new Request("http://localhost/stale-route"), {}, false);
+      const response = await handlePageRequest(new Request("http://localhost/vei-cache-hit"), {}, false);
       expect(response).not.toBeNull();
       expect(response!.status).toBe(200);
-      expect(await response!.text()).toBe("<html><body>cached copy</body></html>");
       expect(response!.headers.get("Cache-Control")).toBe("no-store");
+      const html = await response!.text();
+      expect(html).toContain("cached copy");
+      expect(html).toContain('"edit":true');
+      expect(html).not.toContain('"edit":false');
+      expect(html).toContain("vei-live-refresh.ts");
     });
 
-    it("still falls through to the pages-root 404.tsx for a VEI session when there is no built page to fall back to either", async () => {
+    it("serves a minimal shell with no server-side route match when nothing is cached for this path - the client resolves routing (including the true-404 case) itself", async () => {
       mockVeiSession();
+      // Not even the fixture route tree needs to have this route (or any
+      // route at all) - unlike the old server-SSR pipeline, this branch
+      // never calls `matchRoute`.
       const response = await handlePageRequest(new Request("http://localhost/genuinely-nowhere"), {}, false);
       expect(response).not.toBeNull();
-      expect(response!.status).toBe(404);
+      expect(response!.status).toBe(200);
+      expect(response!.headers.get("Cache-Control")).toBe("no-store");
       const html = await response!.text();
-      expect(html).toContain("Page not found");
+      expect(html).toContain('"edit":true');
+      expect(html).toContain("vei/overlay.ts");
+      expect(html).toContain("vei-live-refresh.ts");
+      expect(html).not.toContain("hydrate-client.ts");
+    });
+
+    it("still 301s to a matching redirect row before falling to the shell", async () => {
+      mockVeiSession();
+      const response = await handlePageRequest(new Request("http://localhost/blogs/old-post?ref=x"), {}, false);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(301);
+      expect(response!.headers.get("Location")).toBe("http://localhost/blogs/new-post?ref=x");
     });
   });
 

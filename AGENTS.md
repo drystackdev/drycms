@@ -106,10 +106,10 @@ git branch is a separate deployed TENANT/project (`sivelap`, `drystack`,
 authored through the Page Editor (a tenant's actual website) is **never
 tracked in git** - it lives in `pagesSourceStorage` only (`.dry/pages-source`
 locally, that tenant's own R2 bucket in production), entirely separate from
-the application source. A fresh deploy - via `wrangler deploy` or a
-git-triggered Cloudflare build - is therefore expected to have **zero site
-pages** until someone runs `bun run pages:sync --push --remote` by hand;
-that's the correct steady state, not something to build around. See
+the application source. The committed `mock/` tree is the one exception: it
+is a generic starter/reset template, bundled directly into the Worker and
+written to a fresh tenant's empty R2 pages-source store on first use. The
+first authenticated admin session then publishes those seeded pages. See
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deploy/build-command
 guidance this implies.
 

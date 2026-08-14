@@ -127,3 +127,47 @@ export async function getPagesTreeCache(): Promise<FileEntry[] | null> {
     return null;
   }
 }
+
+/** Atomically replaces both saved-source stores after a whole-tree reset.
+ * Folder rows are derived from file paths so the next Page Editor mount can
+ * paint its complete sidebar without waiting for the storage API. */
+export async function replacePageSourceCache(sourceByPath: Record<string, string>): Promise<void> {
+  try {
+    const db = await openDb();
+    const now = Date.now();
+    const folders = new Set<string>();
+    for (const path of Object.keys(sourceByPath)) {
+      const segments = path.split("/");
+      for (let index = 1; index < segments.length; index += 1) folders.add(segments.slice(0, index).join("/"));
+    }
+    const folderEntries: FileEntry[] = [...folders].map((id) => ({
+      id,
+      name: id.split("/").at(-1)!,
+      parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
+      kind: "folder",
+    }));
+    const fileEntries: FileEntry[] = Object.entries(sourceByPath).map(([id, source]) => ({
+      id,
+      name: id.split("/").at(-1)!,
+      parentId: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : null,
+      kind: "file",
+      ext: id.includes(".") ? id.slice(id.lastIndexOf(".") + 1).toLowerCase() : undefined,
+      size: new TextEncoder().encode(source).byteLength,
+    }));
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([FILES_STORE, TREE_STORE], "readwrite");
+      const files = tx.objectStore(FILES_STORE);
+      files.clear();
+      for (const [path, source] of Object.entries(sourceByPath)) files.put({ path, source, updatedAt: now } satisfies PageSourceCacheRecord);
+      const tree = tx.objectStore(TREE_STORE);
+      tree.clear();
+      tree.put({ key: TREE_KEY, entries: [...folderEntries, ...fileEntries], updatedAt: now } satisfies PagesTreeCacheRecord);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Best-effort. Storage/GitHub are already authoritative; Page Editor can
+    // repopulate this cache from the network on its next mount.
+  }
+}

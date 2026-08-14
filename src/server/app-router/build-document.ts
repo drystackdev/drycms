@@ -146,6 +146,8 @@ export const BODY_AND_HTML_CLOSE = "</body></html>";
 
 export interface AssetHrefs {
   globalsCssHref: string;
+  /** `""` omits the script tag entirely - see `buildHeadPrefix`'s own use
+   * of it below. */
   hydrateEntryHref: string;
   veiOverlayHref: string;
 }
@@ -168,7 +170,12 @@ export function buildHeadPrefix(adminPath: string, siteLang: string, assets: Ass
     // resolves to the CURRENT document URL and tries to parse as CSS).
     (assets.globalsCssHref ? `<link rel="stylesheet" href="${assets.globalsCssHref}">` : "") +
     (import.meta.env.DEV ? '<script type="module" src="/@vite/client"></script>' : "") +
-    `<script type="module" src="${assets.hydrateEntryHref}"></script>` +
+    // Empty for the VEI shell document (`render.ts`'s `buildVeiShellDocument`)
+    // - deliberately no hydrate script there at all, so `preact-iso`'s
+    // `hydrate()` (called only by `vei-live-refresh.ts` itself) has no
+    // `<script type="isodata">` marker to find and always takes its plain
+    // `render()` branch - see that function's own doc comment.
+    (assets.hydrateEntryHref ? `<script type="module" src="${assets.hydrateEntryHref}"></script>` : "") +
     `<script type="module" src="${assets.veiOverlayHref}"></script>`
   );
 }

@@ -1,6 +1,7 @@
-import type { DryCallLogEntry } from "./dry-context.js";
+import type { DryCallLogEntry, DryVeiContext } from "./dry-context.js";
 import { fetchDryHttp } from "./dry-http-cache.js";
 import { createInertRefProxy } from "./dry-vei.js";
+import { markRecord } from "./dry-populate.js";
 import { seoTierFor, type DrySeoLayers, type DrySeoValue } from "./dry-seo.js";
 import type { ContentTypeDefinition } from "./types.js";
 import { decodeCallLog } from "../server/app-router/dry-replay-codec.js";
@@ -77,6 +78,11 @@ export interface HttpDryReaderConfig {
    * refetched - see `dry-http-cache.ts`. Set ONLY by the page editor's live
    * preview; every publishing build leaves it unset and fetches fresh. */
   cacheTtlMs?: number;
+  /** Present only for a real VEI editing session (`vei-live-refresh.ts`) -
+   * absent for every "build a static page" caller (Page Editor preview,
+   * real publish), which must keep getting today's inert `$` unconditionally.
+   * See `markOrInert` below. */
+  vei?: DryVeiContext;
 }
 
 let config: HttpDryReaderConfig | null = null;
@@ -100,14 +106,31 @@ function activeConfig(): HttpDryReaderConfig {
  * decoded HTTP response carries no `$` of its own (`markRecord`'s real `$`
  * is a non-enumerable property - `JSON.stringify` drops it, so it can't
  * have survived the round trip either way) - grafts an inert one so
- * `dryBind(post.$.title)` calls in real page code don't throw. Real VEI
- * boxing never applies to a build-time render (no live editing session),
- * so "inert" is the correct behavior here, not a shortcut. */
+ * `dryBind(post.$.title)` calls in real page code don't throw. The
+ * fallback `markOrInert` below uses whenever this config carries no `vei`
+ * (every "build a static page" caller - a build never has a live editing
+ * session, so "inert" is the correct behavior there, not a shortcut). */
 function withInertRefs<T>(value: T): T {
   if (value && typeof value === "object") {
     Object.defineProperty(value, "$", { value: createInertRefProxy(), enumerable: false, configurable: true });
   }
   return value;
+}
+
+/** Real VEI boxing when this config carries a `vei` (a real editing
+ * session, `vei-live-refresh.ts`) and `name` resolves to a known content
+ * type; `withInertRefs` otherwise - the exact "no live session" fallback
+ * `withInertRefs` itself documents. `unboxedKeys` only matters for
+ * `list()`'s `select`-transformed fields (see `createCollectionReader`'s
+ * `list()` below) - mirrors `dry-reader.ts`'s own `markRecord` call
+ * field-for-field, just sourced from an HTTP response instead of a live
+ * DB row. */
+function markOrInert<T>(name: string, record: T, unboxedKeys?: ReadonlySet<string>): T {
+  const { vei, allTypes } = activeConfig();
+  if (!vei || !record || typeof record !== "object") return withInertRefs(record);
+  const type = allTypes.find((t) => t.name === name);
+  if (!type) return withInertRefs(record);
+  return markRecord({ vei, allTypes }, type, record as Record<string, unknown>, unboxedKeys) as T;
 }
 
 interface WireRequest {
@@ -185,12 +208,19 @@ function applyLocalTransforms(record: Record<string, unknown>, select: DrySelect
   return record;
 }
 
+/** The field names `select` transformed - `markOrInert`'s "don't box these"
+ * list, same shape/purpose `dry-reader.ts`'s own `selectTransforms().keys`
+ * has server-side. */
+function transformedKeys(select: DrySelect<Record<string, unknown>> | undefined): ReadonlySet<string> {
+  return new Set(Object.entries(select ?? {}).filter(([, value]) => typeof value === "function").map(([field]) => field));
+}
+
 function createCollectionReader(name: string): DryCollectionReader<Record<string, unknown>> {
   return {
     async get(idOrSlug: number | string, options?: DryGetOptions<string>) {
       const entry = await callServer({ kind: "collection", name, method: "get", idOrSlug, populate: options?.populate });
       recordSeoLayer(activeConfig(), name, entry.result as Record<string, unknown> | null);
-      return withInertRefs(entry.result as Record<string, unknown> | null);
+      return markOrInert(name, entry.result as Record<string, unknown> | null);
     },
     async list(options: DryListOptions<Record<string, unknown>> & { select?: DrySelect<Record<string, unknown>> } = {}) {
       const entry = await callServer({
@@ -209,8 +239,9 @@ function createCollectionReader(name: string): DryCollectionReader<Record<string
         // or distrust on this side either.
       });
       const page = entry.result as { rows: Record<string, unknown>[]; total: number };
+      const unboxedKeys = transformedKeys(options.select);
       return {
-        rows: page.rows.map((row) => withInertRefs(applyLocalTransforms(row, options.select))),
+        rows: page.rows.map((row) => markOrInert(name, applyLocalTransforms(row, options.select), unboxedKeys)),
         total: page.total,
       };
     },
@@ -222,7 +253,7 @@ function createSingletonReader(name: string): DrySingletonReader<Record<string, 
     async get(options?: DryGetOptions<string>) {
       const entry = await callServer({ kind: "singleton", name, method: "get", populate: options?.populate });
       recordSeoLayer(activeConfig(), name, entry.result as Record<string, unknown> | null);
-      return withInertRefs(entry.result as Record<string, unknown> | null);
+      return markOrInert(name, entry.result as Record<string, unknown> | null);
     },
   } as DrySingletonReader<Record<string, unknown>>;
 }

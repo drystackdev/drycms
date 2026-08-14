@@ -1,16 +1,11 @@
 import type { DryRouteContext } from "./context.js";
 import { pagesSourceStorage } from "./config.js";
 import { getStorageAdapter } from "./storage-adapters.js";
-import { base64Decode } from "../lib/secret-crypto.js";
-import { parseZip } from "../storage/zip.js";
-import { PAGES_SOURCE_SEED_ZIP_BASE64 } from "./generated-pages-source-seed.js";
+import { SAMPLE_PAGES_SOURCE_FILES } from "./app-router/sample-pages-source.js";
 
 /**
- * Seeds a fresh tenant's R2 `pagesSourceStorage` from `PAGES_SOURCE_SEED_ZIP_
- * BASE64` (`generated-pages-source-seed.ts`, baked at build time from
- * whatever's currently in `src/apps/{pages,component,styles,md}` - see that
- * generator's own doc comment) - replaces what's documented (`AGENTS.md`) as
- * a manual `bun run pages:sync --push --remote` step after a fresh deploy.
+ * Seeds a fresh tenant's R2 `pagesSourceStorage` directly from the committed
+ * `mock/` tree, bundled as raw strings by `sample-pages-source.ts`.
  * `page-handler.ts` calls this once per request, right after the call that
  * already triggers `content-types/engine/d1.ts`'s own `ensureBootstrap` as a
  * side effect - same request, effectively the same "first time this tenant's
@@ -18,15 +13,14 @@ import { PAGES_SOURCE_SEED_ZIP_BASE64 } from "./generated-pages-source-seed.js";
  * zip dependency.
  *
  * A no-op for `kind: "local"` (dev/Node - `pagesSourceStorage` is always
- * real local disk already, nothing to seed) and for an empty generated
- * constant (a checkout that never ran `bun run build:worker`).
+ * real local disk already, nothing to seed) and for an empty mock tree.
  */
 const seededBindings = new WeakSet<object>();
 
 const SEED_MARKER_PATH = ".seeded";
 
 export async function ensurePagesSourceSeeded(context: DryRouteContext): Promise<void> {
-  if (pagesSourceStorage.kind !== "r2" || !PAGES_SOURCE_SEED_ZIP_BASE64) return;
+  if (pagesSourceStorage.kind !== "r2" || SAMPLE_PAGES_SOURCE_FILES.length === 0) return;
   const binding = context.env[pagesSourceStorage.binding] as object | undefined;
   if (!binding) return;
   // Per-isolate fast path only - NOT the real idempotency check. A cold
@@ -43,9 +37,8 @@ export async function ensurePagesSourceSeeded(context: DryRouteContext): Promise
     return;
   }
 
-  const entries = parseZip(base64Decode(PAGES_SOURCE_SEED_ZIP_BASE64));
-  for (const entry of entries) {
-    await storage.write(entry.path, entry.data);
+  for (const file of SAMPLE_PAGES_SOURCE_FILES) {
+    await storage.write(file.path, new TextEncoder().encode(file.content));
   }
   // Written LAST, deliberately: a request that dies mid-loop leaves no
   // marker, so the NEXT request just retries the same (idempotent) writes
