@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { buildPage, candidatePathsFor, evalModule, pagesAffectedBy, publishBuiltPage, resolveAllPageTargets, PageBuildError } from "./page-build.js";
+import { buildPage, candidatePathsFor, canSkipBuild, computeSourceHash, evalModule, pagesAffectedBy, publishBuiltPage, resolveAllPageTargets, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
@@ -336,7 +336,7 @@ describe("publishBuiltPage", () => {
 
     await publishBuiltPage(
       { html: "<html></html>", jsAssets: [{ jsPath: "page.js", source: "export default function(){}" }], deps: [{ resource: "blog", version: 2 }], inSitemap: true },
-      { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", entryPath: "pages/blogs/abc/page.tsx", buildId: "build-1" },
+      { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/blogs/abc", entryPath: "pages/blogs/abc/page.tsx", buildId: "build-1", sourceHash: "abc123" },
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -350,6 +350,7 @@ describe("publishBuiltPage", () => {
       buildId: "build-1",
       deps: [{ resource: "blog", version: 2 }],
       inSitemap: true,
+      sourceHash: "abc123",
     });
 
     vi.unstubAllGlobals();
@@ -358,9 +359,87 @@ describe("publishBuiltPage", () => {
   it("throws PageBuildError on a non-OK response", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
     await expect(
-      publishBuiltPage({ html: "", jsAssets: [], deps: [], inSitemap: true }, { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x", entryPath: "pages/x/page.tsx" }),
+      publishBuiltPage(
+        { html: "", jsAssets: [], deps: [], inSitemap: true },
+        { pagesBuildEndpoint: "/dry/api/pages-build", pathname: "/x", entryPath: "pages/x/page.tsx", sourceHash: "abc123" },
+      ),
     ).rejects.toThrow(PageBuildError);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("computeSourceHash", () => {
+  const SOURCE = {
+    "pages/layout.tsx": `import Nav from "@component/Nav";\nexport default function Layout({ children }) { return <div><Nav />{children}</div>; }`,
+    "pages/page.tsx": `export default function Page() { return <div />; }`,
+    "pages/blogs/[slug]/page.tsx": `export default function Blog() { return <div />; }`,
+    "pages/unrelated/page.tsx": `export default function Unrelated() { return <div />; }`,
+    "component/Nav.tsx": `export default function Nav() { return <nav />; }`,
+  };
+
+  it("is stable regardless of sourceByPath key-insertion order", async () => {
+    const reordered = Object.fromEntries(Object.entries(SOURCE).reverse());
+    const a = await computeSourceHash({ entryPath: "pages/page.tsx", layoutPaths: ["pages/layout.tsx"] }, SOURCE);
+    const b = await computeSourceHash({ entryPath: "pages/page.tsx", layoutPaths: ["pages/layout.tsx"] }, reordered);
+    expect(a).toBe(b);
+  });
+
+  it("changes when the entry page's own source changes", async () => {
+    const before = await computeSourceHash({ entryPath: "pages/page.tsx", layoutPaths: [] }, SOURCE);
+    const after = await computeSourceHash({ entryPath: "pages/page.tsx", layoutPaths: [] }, { ...SOURCE, "pages/page.tsx": `export default function Page() { return <span />; }` });
+    expect(after).not.toBe(before);
+  });
+
+  it("changes when a layout's source changes", async () => {
+    const target = { entryPath: "pages/page.tsx", layoutPaths: ["pages/layout.tsx"] };
+    const before = await computeSourceHash(target, SOURCE);
+    const after = await computeSourceHash(target, { ...SOURCE, "pages/layout.tsx": SOURCE["pages/layout.tsx"] + "\n// edited" });
+    expect(after).not.toBe(before);
+  });
+
+  it("changes when an indirectly-imported component changes", async () => {
+    const target = { entryPath: "pages/page.tsx", layoutPaths: ["pages/layout.tsx"] };
+    const before = await computeSourceHash(target, SOURCE);
+    const after = await computeSourceHash(target, { ...SOURCE, "component/Nav.tsx": SOURCE["component/Nav.tsx"] + "\n// edited" });
+    expect(after).not.toBe(before);
+  });
+
+  it("is unaffected by an unrelated file elsewhere in sourceByPath", async () => {
+    const target = { entryPath: "pages/page.tsx", layoutPaths: [] };
+    const before = await computeSourceHash(target, SOURCE);
+    const after = await computeSourceHash(target, { ...SOURCE, "pages/unrelated/page.tsx": SOURCE["pages/unrelated/page.tsx"] + "\n// edited" });
+    expect(after).toBe(before);
+  });
+
+  it("hashes identically across dynamic-route instances sharing one template", async () => {
+    // Same entryPath/layoutPaths (one `page.tsx` template) - `params` never
+    // enters the hash, since code didn't change between resolved instances.
+    const target = { entryPath: "pages/blogs/[slug]/page.tsx", layoutPaths: [] };
+    const a = await computeSourceHash(target, SOURCE);
+    const b = await computeSourceHash(target, SOURCE);
+    expect(a).toBe(b);
+  });
+});
+
+describe("canSkipBuild", () => {
+  it("is false when the page was never built before", () => {
+    expect(canSkipBuild(undefined, "hash-1")).toBe(false);
+  });
+
+  it("is false when content is stale", () => {
+    expect(canSkipBuild({ staleResource: "blog", sourceHash: "hash-1" }, "hash-1")).toBe(false);
+  });
+
+  it("is false when the recorded hash is null (legacy row / caller didn't attach one)", () => {
+    expect(canSkipBuild({ staleResource: null, sourceHash: null }, "hash-1")).toBe(false);
+  });
+
+  it("is false when the source hash changed", () => {
+    expect(canSkipBuild({ staleResource: null, sourceHash: "hash-1" }, "hash-2")).toBe(false);
+  });
+
+  it("is true when content is current and the source hash matches", () => {
+    expect(canSkipBuild({ staleResource: null, sourceHash: "hash-1" }, "hash-1")).toBe(true);
   });
 });
 

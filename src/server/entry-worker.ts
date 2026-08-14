@@ -118,7 +118,24 @@ export default {
     // to the App Router / admin-shell branches below instead.
     if (pathname !== "/") {
       const assetResponse = await env.ASSETS.fetch(request);
-      if (assetResponse.status !== 404) return withSecurityHeaders(assetResponse);
+      if (assetResponse.status !== 404) {
+        // The Assets binding's own default (`public, max-age=0,
+        // must-revalidate`) forces a revalidation round trip for EVERY
+        // reference to a file under `/assets/` - Vite's own hashed build
+        // output (`assets/<name>-<hash>.<ext>`, its default `assetsDir`),
+        // content-addressed and therefore safe to pin forever: a changed
+        // file gets a new hash/URL, so there's nothing to ever invalidate.
+        // Confirmed live (`curl -D-`) against the deployed Worker before
+        // this fix - every asset request was paying that round trip on
+        // every page, including a page the browser had already rendered
+        // once this session.
+        if (pathname.startsWith("/assets/")) {
+          const cached = new Response(assetResponse.body, assetResponse);
+          cached.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+          return withSecurityHeaders(cached);
+        }
+        return withSecurityHeaders(assetResponse);
+      }
     }
 
     if (!isAdminPath) {

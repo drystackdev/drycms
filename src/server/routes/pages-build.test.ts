@@ -86,7 +86,7 @@ function postContext(body: unknown, session: SessionPayload | null = superAdminS
   return { params: {}, request, url, env: {}, session };
 }
 
-function onePage(pathname: string, deps: { resource: string; version: number }[] = []) {
+function onePage(pathname: string, deps: { resource: string; version: number }[] = [], sourceHash: string | null = null) {
   return {
     pathname,
     entryPath: `pages${pathname === "/" ? "" : pathname}/page.tsx`,
@@ -95,6 +95,7 @@ function onePage(pathname: string, deps: { resource: string; version: number }[]
     buildId: crypto.randomUUID(),
     deps,
     inSitemap: true,
+    sourceHash,
   };
 }
 
@@ -108,15 +109,15 @@ describe("GET /dry/api/pages-build?byResource=", () => {
   it("returns every path recorded as depending on the resource", async () => {
     const registry = createPagesRegistryAdapter(content);
     await registry.recordBuild(
-      { path: "/blogs/hello-world", objectKey: "pages/x/blogs/hello-world.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/blogs/hello-world", objectKey: "pages/x/blogs/hello-world.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "blog", version: 1 }],
     );
     await registry.recordBuild(
-      { path: "/", objectKey: "pages/x/index.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/", objectKey: "pages/x/index.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "blog", version: 1 }, { resource: "homepage", version: 1 }],
     );
     await registry.recordBuild(
-      { path: "/about", objectKey: "pages/x/about.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/about", objectKey: "pages/x/about.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "aboutPage", version: 1 }],
     );
 
@@ -161,6 +162,24 @@ describe("POST /dry/api/pages-build { pages: [...] } (batch)", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { record: { path: string } };
     expect(body.record.path).toBe("/single-page");
+  });
+
+  it("persists a posted sourceHash, readable back through the full manifest GET", async () => {
+    const response = await POST(postContext(onePage("/with-source-hash", [], "hash-abc")));
+    expect(response.status).toBe(200);
+
+    const list = await GET(context({}, codePermissionSession));
+    const body = (await list.json()) as { pages: { path: string; sourceHash: string | null }[] };
+    expect(body.pages.find((p) => p.path === "/with-source-hash")).toMatchObject({ sourceHash: "hash-abc" });
+  });
+
+  it("defaults to a null sourceHash when the caller doesn't send one (graceful wire-level degradation)", async () => {
+    const response = await POST(postContext(onePage("/without-source-hash")));
+    expect(response.status).toBe(200);
+
+    const list = await GET(context({}, codePermissionSession));
+    const body = (await list.json()) as { pages: { path: string; sourceHash: string | null }[] };
+    expect(body.pages.find((p) => p.path === "/without-source-hash")).toMatchObject({ sourceHash: null });
   });
 });
 
@@ -218,7 +237,7 @@ describe("authorization - \"code + content = page\", not just the code-edit perm
   it("a non-code session CAN republish a page once its recorded deps are entirely within what it can view", async () => {
     const registry = createPagesRegistryAdapter(content);
     await registry.recordBuild(
-      { path: "/auth-role-scoped", objectKey: "pages/x/auth-role-scoped.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/auth-role-scoped", objectKey: "pages/x/auth-role-scoped.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "role", version: 1 }],
     );
     const response = await POST(postContext(onePage("/auth-role-scoped", [{ resource: "role", version: 2 }]), roleViewerSession));
@@ -228,7 +247,7 @@ describe("authorization - \"code + content = page\", not just the code-edit perm
   it("a non-code session is denied once ANY recorded dependency is outside what it can view - client-submitted deps don't override this", async () => {
     const registry = createPagesRegistryAdapter(content);
     await registry.recordBuild(
-      { path: "/auth-mixed-deps", objectKey: "pages/x/auth-mixed-deps.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/auth-mixed-deps", objectKey: "pages/x/auth-mixed-deps.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "role", version: 1 }, { resource: "systemSettings", version: 1 }],
     );
     // Even claiming (falsely) that this build only touches `role` must not
@@ -241,11 +260,11 @@ describe("authorization - \"code + content = page\", not just the code-edit perm
   it("GET ?byResource= silently drops a resource the caller can't view instead of 403ing the whole request", async () => {
     const registry = createPagesRegistryAdapter(content);
     await registry.recordBuild(
-      { path: "/auth-byresource-role", objectKey: "pages/x/auth-byresource-role.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/auth-byresource-role", objectKey: "pages/x/auth-byresource-role.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "role", version: 1 }],
     );
     await registry.recordBuild(
-      { path: "/auth-byresource-settings", objectKey: "pages/x/auth-byresource-settings.html", buildId: "x", builtAt: Date.now(), inSitemap: true },
+      { path: "/auth-byresource-settings", objectKey: "pages/x/auth-byresource-settings.html", buildId: "x", builtAt: Date.now(), inSitemap: true, sourceHash: null },
       [{ resource: "systemSettings", version: 1 }],
     );
     const response = await GET(context({ byResource: "role,systemSettings" }, roleViewerSession));

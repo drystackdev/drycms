@@ -8,6 +8,7 @@ interface PageRow {
   build_id: string;
   built_at: number;
   in_sitemap: number;
+  source_hash: string | null;
 }
 
 function toPageRecord(row: PageRow): PageRecord {
@@ -17,7 +18,17 @@ function toPageRecord(row: PageRow): PageRecord {
     buildId: row.build_id,
     builtAt: row.built_at,
     inSitemap: row.in_sitemap === 1,
+    sourceHash: row.source_hash ?? null,
   };
+}
+
+/** SQLite's own wording for re-adding a column that already exists (stable
+ * across `bun:sqlite`/`node:sqlite`/`better-sqlite3` - all 3 throw a real
+ * `Error` from `exec`, confirmed in `sqlite-driver.ts`). `ALTER TABLE` has
+ * no `ADD COLUMN IF NOT EXISTS` form (unlike `CREATE TABLE`/`CREATE INDEX`),
+ * so every cold start after the first is expected to hit this and no-op. */
+function isDuplicateColumnError(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
 export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOption): PagesRegistryAdapter {
@@ -40,6 +51,16 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
             `  "in_sitemap" INTEGER NOT NULL\n` +
             `);`,
         );
+        // Added after the table already existed on real checkouts/tenants -
+        // `CREATE TABLE IF NOT EXISTS` above never adds a column to an
+        // already-existing table, so this runs unconditionally on every
+        // cold start; `isDuplicateColumnError` swallows the expected no-op
+        // case on every boot after the first.
+        try {
+          handle.exec('ALTER TABLE "_pages" ADD COLUMN "source_hash" TEXT;');
+        } catch (error) {
+          if (!isDuplicateColumnError(error)) throw error;
+        }
         handle.exec(
           `CREATE TABLE IF NOT EXISTS "_page_deps" (\n` +
             `  "path" TEXT NOT NULL,\n` +
@@ -73,11 +94,11 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
       handle.exec("BEGIN IMMEDIATE;");
       try {
         handle.run(
-          'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap") VALUES (?,?,?,?,?) ' +
+          'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap","source_hash") VALUES (?,?,?,?,?,?) ' +
             'ON CONFLICT("path") DO UPDATE SET ' +
             '"object_key"=excluded."object_key", "build_id"=excluded."build_id", "built_at"=excluded."built_at", ' +
-            '"in_sitemap"=excluded."in_sitemap";',
-          [record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0],
+            '"in_sitemap"=excluded."in_sitemap", "source_hash"=excluded."source_hash";',
+          [record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0, record.sourceHash ?? null],
         );
         handle.run('DELETE FROM "_page_deps" WHERE "path" = ?;', [record.path]);
         for (const dep of deps) {
@@ -118,7 +139,7 @@ export function createSqlitePagesRegistryAdapter(option: ResolvedSqliteContentOp
 
     async listAllPages() {
       const handle = await getHandle();
-      const rows = handle.all<PageRow>('SELECT "path","object_key","build_id","built_at","in_sitemap" FROM "_pages" ORDER BY "path" ASC;');
+      const rows = handle.all<PageRow>('SELECT "path","object_key","build_id","built_at","in_sitemap","source_hash" FROM "_pages" ORDER BY "path" ASC;');
       return rows.map(toPageRecord);
     },
 

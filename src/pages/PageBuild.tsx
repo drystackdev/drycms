@@ -10,6 +10,8 @@ import TextField from "../components/fields/TextField.js";
 import { useDocumentTitle } from "./page-common.js";
 import {
   buildPage,
+  canSkipBuild,
+  computeSourceHash,
   publishBuiltPage,
   publishBuiltPages,
   resolveAllPageTargets,
@@ -39,6 +41,7 @@ interface PageStatusRow {
   builtAt: number;
   inSitemap: boolean;
   staleResource: string | null;
+  sourceHash: string | null;
 }
 
 interface Row extends Record<string, unknown> {
@@ -49,13 +52,13 @@ interface Row extends Record<string, unknown> {
 }
 
 /** Survives a closed tab (`plans/app-r2.md` mục 11 - "đóng tab giữa chừng
- * là chuyện sẽ xảy ra"): `_pages`/`_page_deps` staleness alone can't drive
- * resume here, because the scenario mục 11 names (editing a shared root
- * `layout.tsx`) is a CODE change, not a content one - every page can still
- * read as "Live" while being built from stale compiled output. `total` is
- * fixed for the whole run (a resumed run reports progress against the
- * ORIGINAL count, not a shrunk one) - `remaining` is what actually drives
- * both the next batch to build and when the queue is done. */
+ * là chuyện sẽ xảy ra"): tracks which pathnames this specific run hasn't yet
+ * confirmed an outcome for (built OR skipped, see `canSkipBuild`), so a
+ * resume doesn't redo work `_pages`/`_page_deps`/`sourceHash` already prove
+ * is current. `total` is fixed for the whole run (a resumed run reports
+ * progress against the ORIGINAL count, not a shrunk one) - `remaining` is
+ * what actually drives both the next batch to build and when the queue is
+ * done. */
 interface PersistedBuildQueue {
   total: number;
   remaining: string[];
@@ -108,9 +111,17 @@ export default function PageBuild() {
   const [resumableQueue, setResumableQueue] = useState<PersistedBuildQueue | null>(null);
   const [buildAllProgress, setBuildAllProgress] = useState<{ done: number; total: number } | null>(null);
 
-  async function reloadStatus() {
+  /** Returns the freshly fetched map (in addition to updating state, for the
+   * UI's own reactive `rows`) - `buildAll`/`resumeBuildAll` need the REAL
+   * current server state to base skip decisions on, not whatever
+   * `statusByPath` a stale render closure happens to hold (a tab left open
+   * while content changes elsewhere must never skip a page that actually
+   * went stale after this component last rendered). */
+  async function reloadStatus(): Promise<Map<string, PageStatusRow>> {
     const { pages } = await fetchJson<{ pages: PageStatusRow[] }>(`${path}/api/pages-build`);
-    setStatusByPath(new Map(pages.map((p) => [p.path, p])));
+    const next = new Map(pages.map((p) => [p.path, p]));
+    setStatusByPath(next);
+    return next;
   }
 
   useEffect(() => {
@@ -149,15 +160,29 @@ export default function PageBuild() {
   /** Compiles (never publishes) one page - shared by `buildOne` below
    * (single-page, publishes immediately) and `runBuildQueue` further down
    * (batches several pages' results into one `publishBuiltPages` call).
-   * `null` (after its own toast, same as before this was split out) for a
-   * target that no longer has a `page.tsx`; silently `null` while still
-   * loading, matching what `buildOne` itself always returned there. */
-  async function compileOne(pathname: string): Promise<{ result: PageBuildResult; options: PublishOptions } | null> {
-    if (!sourceByPath || !allTypes || !assetHrefs) return null;
+   * `"unavailable"` (after its own toast, same as before this was split out)
+   * for a target that no longer has a `page.tsx`, or silently while still
+   * loading. `"skipped"` when `opts.allowSkip` is set and `canSkipBuild`
+   * (`page-build.ts`) says this page's content AND source are both still
+   * exactly what its last recorded build produced - the whole point being
+   * to decide this BEFORE paying for `buildPage`'s real work (every `dry()`
+   * fetch, Tailwind, sucrase). `statusSnapshot` is taken as an explicit
+   * parameter rather than read from the `statusByPath` closure - see
+   * `reloadStatus`'s own doc comment for why. */
+  async function compileOne(
+    pathname: string,
+    statusSnapshot: Map<string, PageStatusRow>,
+    opts: { allowSkip: boolean },
+  ): Promise<{ kind: "unavailable" } | { kind: "skipped" } | { kind: "built"; result: PageBuildResult; options: PublishOptions }> {
+    if (!sourceByPath || !allTypes || !assetHrefs) return { kind: "unavailable" };
     const target = targets.get(pathname);
     if (!target) {
       toast.add({ type: "error", title: `"${pathname}" no longer has a page.tsx`, description: "Its source was removed (or a dynamic entry's slug was deleted) - build skipped." });
-      return null;
+      return { kind: "unavailable" };
+    }
+    const sourceHash = await computeSourceHash(target, sourceByPath);
+    if (opts.allowSkip && canSkipBuild(statusSnapshot.get(pathname), sourceHash)) {
+      return { kind: "skipped" };
     }
     const result = await buildPage({
       pathname,
@@ -180,18 +205,22 @@ export default function PageBuild() {
       layoutPaths: target.layoutPaths,
       params: target.params,
     });
-    return { result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, entryPath: target.entryPath } };
+    return { kind: "built", result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, entryPath: target.entryPath, sourceHash } };
   }
 
   /** Returns whether the build actually published - the auto-build effect
    * below needs a real success/failure signal per path (to report back to
    * whoever asked for the rebuild), not just the toast this already shows a
-   * human for the same outcome. */
+   * human for the same outcome. Always `allowSkip: false` - a single "Build"
+   * click is a deliberate, explicit request to republish THIS page, kept as
+   * a force-rebuild escape hatch (suspected bad live output, manual storage
+   * tinkering) regardless of what `canSkipBuild` would say. */
   async function buildOne(pathname: string): Promise<boolean> {
     setBuilding((current) => new Set(current).add(pathname));
     try {
-      const compiled = await compileOne(pathname);
-      if (!compiled) return false;
+      const compiled = await compileOne(pathname, statusByPath, { allowSkip: false });
+      if (compiled.kind === "unavailable") return false;
+      if (compiled.kind === "skipped") return true;
       await publishBuiltPage(compiled.result, compiled.options);
       toast.add({ type: "success", title: `Built "${pathname}"` });
       await reloadStatus();
@@ -225,11 +254,13 @@ export default function PageBuild() {
    * closed mid-batch leaves the NEXT resume re-attempting exactly the pages
    * that were never confirmed, not silently dropping them.
    */
-  async function runBuildQueue(queue: string[], total: number): Promise<void> {
+  async function runBuildQueue(queue: string[], total: number, statusSnapshot: Map<string, PageStatusRow>): Promise<void> {
     setResumableQueue(null);
     let remaining = [...queue];
     let batch: { result: PageBuildResult; options: PublishOptions }[] = [];
     let batchPathnames: string[] = [];
+    let builtCount = 0;
+    let skippedCount = 0;
     setBuildAllProgress({ done: total - remaining.length, total });
 
     function markDone(donePathnames: string[]): void {
@@ -250,6 +281,7 @@ export default function PageBuild() {
       const flushedPathnames = batchPathnames;
       batch = [];
       batchPathnames = [];
+      builtCount += flushedBatch.length;
       await publishBuiltPages(flushedBatch, `${path}/api/pages-build`);
       markDone(flushedPathnames);
       await reloadStatus();
@@ -259,10 +291,13 @@ export default function PageBuild() {
       for (const pathname of queue) {
         setBuilding((current) => new Set(current).add(pathname));
         try {
-          const compiled = await compileOne(pathname);
-          if (compiled) {
-            batch.push(compiled);
+          const compiled = await compileOne(pathname, statusSnapshot, { allowSkip: true });
+          if (compiled.kind === "built") {
+            batch.push({ result: compiled.result, options: compiled.options });
             batchPathnames.push(pathname);
+          } else if (compiled.kind === "skipped") {
+            skippedCount += 1;
+            markDone([pathname]);
           } else {
             // `compileOne` already toasted (missing target) or is silently
             // skipping (not ready yet) - either way, not retried on resume.
@@ -282,7 +317,13 @@ export default function PageBuild() {
         if (batch.length >= PUBLISH_BATCH_SIZE) await flush();
       }
       await flush();
-      toast.add({ type: "success", title: `Built ${total} ${total === 1 ? "page" : "pages"}` });
+      toast.add({
+        type: "success",
+        title:
+          skippedCount > 0
+            ? `Built ${builtCount} ${builtCount === 1 ? "page" : "pages"} (${skippedCount} already up to date)`
+            : `Built ${total} ${total === 1 ? "page" : "pages"}`,
+      });
       // Snapshot-commits the WHOLE pages-source tree to GitHub exactly ONCE,
       // after the whole queue (a fresh run or a resume) is fully done - not
       // per batch, so a resumed/interrupted run still produces a single
@@ -306,13 +347,15 @@ export default function PageBuild() {
     const queue = [...pathnames];
     if (queue.length === 0) return;
     writePersistedQueue({ total: queue.length, remaining: queue });
-    await runBuildQueue(queue, queue.length);
+    const freshStatus = await reloadStatus();
+    await runBuildQueue(queue, queue.length, freshStatus);
   }
 
   async function resumeBuildAll(): Promise<void> {
     const queue = readPersistedQueue();
     if (!queue) return;
-    await runBuildQueue(queue.remaining, queue.total);
+    const freshStatus = await reloadStatus();
+    await runBuildQueue(queue.remaining, queue.total, freshStatus);
   }
 
   function discardBuildQueue(): void {

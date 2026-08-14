@@ -59,6 +59,7 @@ function page(overrides: Partial<PageRecord> = {}): PageRecord {
     buildId: "build-1",
     builtAt: 1000,
     inSitemap: true,
+    sourceHash: null,
     ...overrides,
   };
 }
@@ -171,5 +172,60 @@ describe("createD1PagesRegistryAdapter", () => {
     } finally {
       db.close();
     }
+  });
+
+  it("round-trips a non-null sourceHash, and upsert replaces it like every other field", async () => {
+    const { adapter, dir } = await freshAdapter();
+    dirs.push(dir);
+
+    await adapter.recordBuild(page({ sourceHash: "hash-1" }), []);
+    expect((await adapter.listAllPages())[0]).toMatchObject({ sourceHash: "hash-1" });
+
+    await adapter.recordBuild(page({ builtAt: 2000, sourceHash: "hash-2" }), []);
+    expect((await adapter.listAllPages())[0]).toMatchObject({ sourceHash: "hash-2" });
+  });
+
+  it("migrates an existing pre-source_hash _pages table without throwing, and reads the old row back as sourceHash: null", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drycms-pages-registry-d1-test-"));
+    dirs.push(dir);
+    const file = join(dir, "content.sqlite");
+
+    // Simulate a real pre-existing tenant D1 database: the table exists in
+    // the OLD 5-column shape, with a row already in it, before this
+    // adapter's guarded `ALTER TABLE` ever runs against it.
+    const { DatabaseSync } = await import("node:sqlite");
+    const preMigration = new DatabaseSync(file);
+    try {
+      preMigration.exec(
+        'CREATE TABLE "_pages" ("path" TEXT PRIMARY KEY, "object_key" TEXT NOT NULL, "build_id" TEXT NOT NULL, "built_at" INTEGER NOT NULL, "in_sitemap" INTEGER NOT NULL);',
+      );
+      preMigration.exec(`INSERT INTO "_pages" VALUES ('/legacy', 'pages/build-0/legacy.html', 'build-0', 500, 1);`);
+    } finally {
+      preMigration.close();
+    }
+
+    const handle = await resolveSqliteDriver(file);
+    const adapter = createD1PagesRegistryAdapter({ engine: "D1", binding: "CONTENT_DB" }, { CONTENT_DB: createFakeD1(handle) });
+    const all = await adapter.listAllPages();
+    expect(all).toEqual([
+      { path: "/legacy", objectKey: "pages/build-0/legacy.html", buildId: "build-0", builtAt: 500, inSitemap: true, sourceHash: null },
+    ]);
+  });
+
+  it("bootstrapping twice against the same file doesn't throw (ALTER TABLE idempotency across cold starts)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drycms-pages-registry-d1-test-"));
+    dirs.push(dir);
+    const file = join(dir, "content.sqlite");
+
+    const first = createD1PagesRegistryAdapter({ engine: "D1", binding: "CONTENT_DB" }, { CONTENT_DB: createFakeD1(await resolveSqliteDriver(file)) });
+    await first.recordBuild(page(), []);
+
+    // A fresh `D1Database` object (real Cloudflare gives a new binding per
+    // isolate cold start) over the SAME underlying file - `ensureBootstrap`'s
+    // `WeakMap` is keyed by the `db` object, so this genuinely re-runs the
+    // guarded `ALTER TABLE` rather than reusing the first adapter's memoized
+    // bootstrap.
+    const second = createD1PagesRegistryAdapter({ engine: "D1", binding: "CONTENT_DB" }, { CONTENT_DB: createFakeD1(await resolveSqliteDriver(file)) });
+    await expect(second.listAllPages()).resolves.toMatchObject([{ path: "/blogs/abc" }]);
   });
 });

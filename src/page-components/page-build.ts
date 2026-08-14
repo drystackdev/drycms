@@ -231,6 +231,43 @@ export function pagesAffectedBy(path: string, sourceByPath: Record<string, strin
   return pagePaths.filter((pagePath) => transitiveDependencies([pagePath, ...ancestorLayoutsOf(pagePath, sourceByPath)], sourceByPath).has(path));
 }
 
+/** SHA-256 hex digest of `target`'s full source closure (entry + layout
+ * chain + every transitively-imported `@component/*` file - exactly the set
+ * `buildPage`'s own `roots`/`transitiveDependencies` call compiles to
+ * `jsAssets`). Sorted by path first so `sourceByPath`'s key-insertion order
+ * can never change the result. Depends only on `entryPath`/`layoutPaths`,
+ * never on `params` - two resolved instances of the same dynamic-route
+ * template (e.g. `/blogs/a`, `/blogs/b`) correctly hash identically, since
+ * their CODE is identical; content staleness is tracked separately via
+ * `_page_deps`, keyed per resolved pathname.
+ *
+ * Cheap and side-effect-free (pure string concatenation over already-in-
+ * memory source + one `crypto.subtle.digest` call - no `dry()` fetch, no
+ * sucrase, no Tailwind) - safe to call before deciding whether a real build
+ * is even needed. Same hex-digest idiom as `auth-security.ts`'s `hash`. */
+export async function computeSourceHash(target: { entryPath: string; layoutPaths: string[] }, sourceByPath: Record<string, string>): Promise<string> {
+  const files = [...transitiveDependencies([target.entryPath, ...target.layoutPaths], sourceByPath)].sort();
+  const joined = files.map((path) => `${path}\0${sourceByPath[path] ?? ""}`).join("\0");
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(joined)));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** The subset of a `_pages` row a skip decision needs. */
+export interface BuiltPageStatus {
+  staleResource: string | null;
+  sourceHash: string | null;
+}
+
+/** Whether a page can skip a full rebuild: its last recorded build's content
+ * dependencies are still current (`staleResource === null`) AND its source
+ * closure hashes identically to what that build recorded. `status`
+ * `undefined` (never built) or a `null` recorded `sourceHash` (a legacy row,
+ * or a build published by a caller that didn't attach one) always returns
+ * `false` - never trust a hash this optimization didn't itself verify. */
+export function canSkipBuild(status: BuiltPageStatus | undefined, currentSourceHash: string): boolean {
+  return !!status && status.staleResource === null && status.sourceHash !== null && status.sourceHash === currentSourceHash;
+}
+
 /** Rewrites a compiled ESM module's bare `"preact"`/`"preact/hooks"`
  * imports to point at the shared runtime chunk, and its relative imports to
  * point at sibling files' own public JS asset URLs - real `import`
@@ -589,6 +626,11 @@ export interface PublishOptions {
    * dot for this file once the publish actually succeeds. */
   entryPath: string;
   buildId?: string;
+  /** `computeSourceHash(target, sourceByPath)` for this exact build -
+   * required so no publish call site can silently leave a build's recorded
+   * hash `null`, which would keep `PageBuild.tsx`'s "Build all" from ever
+   * skipping that page. */
+  sourceHash: string;
 }
 
 function toWireBody(result: PageBuildResult, options: PublishOptions): Record<string, unknown> {
@@ -600,6 +642,7 @@ function toWireBody(result: PageBuildResult, options: PublishOptions): Record<st
     buildId: options.buildId ?? crypto.randomUUID(),
     deps: result.deps,
     inSitemap: result.inSitemap,
+    sourceHash: options.sourceHash,
   };
 }
 

@@ -27,7 +27,7 @@ export async function publishAllPages(
   onStatus?: (message: string) => void,
 ): Promise<{ built: number; error?: string }> {
   try {
-    const [{ buildPage, publishBuiltPages, resolveAllPageTargets }, sourceByPath, assetHrefs] = await Promise.all([
+    const [{ buildPage, computeSourceHash, publishBuiltPages, resolveAllPageTargets }, sourceByPath, assetHrefs] = await Promise.all([
       import("./page-build.js"),
       loadAllPagesSource(adminPath),
       fetchJson<AssetHrefs>(`${adminPath}/api/asset-hrefs`),
@@ -70,7 +70,8 @@ export async function publishAllPages(
         layoutPaths: target.layoutPaths,
         params: target.params,
       });
-      batch.push({ result, options: { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath } });
+      const sourceHash = await computeSourceHash(target, sourceByPath);
+      batch.push({ result, options: { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath, sourceHash } });
       if (batch.length >= PUBLISH_ALL_BATCH_SIZE) await flush();
     }
     await flush();

@@ -9,6 +9,7 @@ interface PageRow {
   build_id: string;
   built_at: number;
   in_sitemap: number;
+  source_hash: string | null;
 }
 
 function toPageRecord(row: PageRow): PageRecord {
@@ -18,7 +19,14 @@ function toPageRecord(row: PageRow): PageRecord {
     buildId: row.build_id,
     builtAt: row.built_at,
     inSitemap: row.in_sitemap === 1,
+    sourceHash: row.source_hash ?? null,
   };
+}
+
+/** Own copy, same reasoning as the sqlite adapter's - see that file's doc
+ * comment on `isDuplicateColumnError`/why the migration is guarded this way. */
+function isDuplicateColumnError(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message);
 }
 
 /** Same per-binding memoization as `d1.ts`/`entries-d1.ts` - one bootstrap
@@ -58,6 +66,16 @@ export function createD1PagesRegistryAdapter(
               `);`,
           )
           .run();
+        // Added after the table already existed on real deployed tenants -
+        // `CREATE TABLE IF NOT EXISTS` above never adds a column to an
+        // already-existing table, so this runs unconditionally on every
+        // isolate cold start; `isDuplicateColumnError` swallows the
+        // expected no-op case on every boot after the first.
+        try {
+          await db.prepare('ALTER TABLE "_pages" ADD COLUMN "source_hash" TEXT;').run();
+        } catch (error) {
+          if (!isDuplicateColumnError(error)) throw error;
+        }
         await db
           .prepare(
             `CREATE TABLE IF NOT EXISTS "_page_deps" (\n` +
@@ -97,12 +115,12 @@ export function createD1PagesRegistryAdapter(
       const statements = [
         db
           .prepare(
-            'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap") VALUES (?,?,?,?,?) ' +
+            'INSERT INTO "_pages" ("path","object_key","build_id","built_at","in_sitemap","source_hash") VALUES (?,?,?,?,?,?) ' +
               'ON CONFLICT("path") DO UPDATE SET ' +
               '"object_key"=excluded."object_key", "build_id"=excluded."build_id", "built_at"=excluded."built_at", ' +
-              '"in_sitemap"=excluded."in_sitemap";',
+              '"in_sitemap"=excluded."in_sitemap", "source_hash"=excluded."source_hash";',
           )
-          .bind(record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0),
+          .bind(record.path, record.objectKey, record.buildId, record.builtAt, record.inSitemap ? 1 : 0, record.sourceHash ?? null),
         db.prepare('DELETE FROM "_page_deps" WHERE "path" = ?;').bind(record.path),
         ...deps.map((dep) =>
           db.prepare('INSERT INTO "_page_deps" ("path","resource","version") VALUES (?,?,?);').bind(record.path, dep.resource, dep.version),
@@ -129,7 +147,7 @@ export function createD1PagesRegistryAdapter(
 
     async listAllPages() {
       await ensureBootstrap();
-      const result = await db.prepare('SELECT "path","object_key","build_id","built_at","in_sitemap" FROM "_pages" ORDER BY "path" ASC;').all<PageRow>();
+      const result = await db.prepare('SELECT "path","object_key","build_id","built_at","in_sitemap","source_hash" FROM "_pages" ORDER BY "path" ASC;').all<PageRow>();
       return (result.results ?? []).map(toPageRecord);
     },
 

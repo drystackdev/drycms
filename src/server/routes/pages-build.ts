@@ -94,6 +94,11 @@ interface PagesBuildRequestBody {
   buildId: string;
   deps: PageDependency[];
   inSitemap: boolean;
+  /** `page-build.ts`'s `computeSourceHash` for this exact build - optional
+   * at the wire level (unlike `PublishOptions.sourceHash`, required at the
+   * TS level) so any not-yet-updated caller mid-rolling-deploy degrades
+   * gracefully instead of a hard-rejected publish. */
+  sourceHash?: string | null;
 }
 
 function isValidBody(value: unknown): value is PagesBuildRequestBody {
@@ -109,7 +114,8 @@ function isValidBody(value: unknown): value is PagesBuildRequestBody {
     typeof body.buildId === "string" &&
     body.buildId.length > 0 &&
     Array.isArray(body.deps) &&
-    typeof body.inSitemap === "boolean"
+    typeof body.inSitemap === "boolean" &&
+    (body.sourceHash === undefined || body.sourceHash === null || typeof body.sourceHash === "string")
   );
 }
 
@@ -130,6 +136,7 @@ async function publishOne(context: Parameters<DryRouteHandler>[0], raw: PagesBui
     buildId: raw.buildId,
     builtAt: now,
     inSitemap: raw.inSitemap,
+    sourceHash: raw.sourceHash ?? null,
   };
   const { pagesRegistry } = getContentAdapters(context);
   await pagesRegistry.recordBuild(record, raw.deps);

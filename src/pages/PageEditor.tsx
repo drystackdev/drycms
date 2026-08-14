@@ -29,6 +29,7 @@ import {
 } from "../page-components/page-source-cache-db.js";
 import {
   buildPage,
+  computeSourceHash,
   publishBuiltPage,
   publishBuiltPages,
   resolveAllPageTargets,
@@ -1330,7 +1331,8 @@ export default function PageEditor() {
         layoutPaths: previewTarget.layoutPaths,
         params: previewTarget.params,
       });
-      await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname, entryPath: previewTarget.entryPath });
+      const sourceHash = await computeSourceHash(previewTarget, saved);
+      await publishBuiltPage(result, { pagesBuildEndpoint: `${path}/api/pages-build`, pathname: previewTarget.pathname, entryPath: previewTarget.entryPath, sourceHash });
       clearUnbuilt([previewTarget.entryPath]);
       reportBuildResult({ type: "success", title: `Built "${previewTarget.pathname}"` });
       await reportGithubSync(`Build: ${previewTarget.pathname} - ${new Date().toISOString()}`);
@@ -1379,7 +1381,8 @@ export default function PageEditor() {
           layoutPaths: target.layoutPaths,
           params: target.params,
         });
-        batch.push({ result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, entryPath: target.entryPath } });
+        const sourceHash = await computeSourceHash(target, saved);
+        batch.push({ result, options: { pagesBuildEndpoint: `${path}/api/pages-build`, pathname, entryPath: target.entryPath, sourceHash } });
         if (batch.length >= BATCH_SIZE) {
           await publishBuiltPages(batch, `${path}/api/pages-build`);
           done += batch.length;

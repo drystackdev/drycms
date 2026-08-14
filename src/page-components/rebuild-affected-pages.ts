@@ -55,7 +55,7 @@ export async function rebuildAffectedPages(
 
     onStatus?.(`Publishing ${paths.length} ${paths.length === 1 ? "page" : "pages"}…`);
 
-    const [{ buildPage, publishBuiltPage, resolveAllPageTargets }, [sourceByPath, assetHrefs]] = await Promise.all([
+    const [{ buildPage, computeSourceHash, publishBuiltPage, resolveAllPageTargets }, [sourceByPath, assetHrefs]] = await Promise.all([
       import("./page-build.js"),
       Promise.all([loadAllPagesSource(adminPath), fetchJson<AssetHrefs>(`${adminPath}/api/asset-hrefs`)]),
     ]);
@@ -81,7 +81,8 @@ export async function rebuildAffectedPages(
         layoutPaths: target.layoutPaths,
         params: target.params,
       });
-      await publishBuiltPage(result, { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath });
+      const sourceHash = await computeSourceHash(target, sourceByPath);
+      await publishBuiltPage(result, { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath, sourceHash });
       built += 1;
     }
     onStatus?.(built > 0 ? `Published ${built} ${built === 1 ? "page" : "pages"}` : "No pages needed rebuilding");

@@ -17,6 +17,13 @@ export interface PageRecord {
    * SEO cascade is known - see mục 8's "hạn chế biến mất" note), not
    * re-derived at sitemap-serve time. */
   inSitemap: boolean;
+  /** SHA-256 hex digest of this build's SOURCE closure (entry + layout
+   * chain + every transitively-imported `@component/*` file -
+   * `page-build.ts`'s `computeSourceHash`). `null` for a legacy row that
+   * predates this column, or a publish whose caller didn't attach one -
+   * `canSkipBuild` never treats a `null` hash as a match, so such a row
+   * always rebuilds once before the skip optimization can apply to it. */
+  sourceHash: string | null;
 }
 
 /** One content-type dependency a built page's render actually touched -
