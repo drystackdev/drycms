@@ -43,7 +43,7 @@ export const SUPER_ADMIN_FIELD_NAME = "isSuperAdmin";
 export const ICON_MANAGEMENT_RESOURCE_ID = "system-icon-management";
 export const RICHTEXT_COMPONENTS_RESOURCE_ID = "system-richtext-components";
 export const CONTENT_TYPES_RESOURCE_ID = "system-content-types";
-/** Gates editing `src/apps/pages/**` source code (`routes/pages-source.ts`'s
+/** Gates editing page source (`routes/pages-source.ts`'s
  * write methods, Magic Chat AI, GitHub sync/restore) AND build/publish of
  * ANY page unrestricted, regardless of what it depends on.
  *

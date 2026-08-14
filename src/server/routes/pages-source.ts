@@ -9,7 +9,7 @@ import { isCoreStyleFilePath, MD_ROOT, rootOf, STYLES_ROOT } from "../app-router
 
 /**
  * The `pagesSource` storage root (`plans/app-r2.md` quyết định #6 - git is
- * still the source of truth on disk; `scripts/sync-pages-r2.ts` pushes
+ * still the source of truth on disk; the Page Editor writes
  * committed files into this root, never the other way round on its own).
  * What the browser build pipeline reads `page.tsx`/`layout.tsx` source text
  * and the tree from (mục 1's route manifest, mục 7's per-page compile) -

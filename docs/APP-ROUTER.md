@@ -4,9 +4,8 @@ A Next.js-App-Router-style file router for the site's own public content
 pages - not the admin UI (`src/pages/` + [DESIGN.md](DESIGN.md), a
 completely different, hand-rolled-CSS design system; never mix the two).
 Read this before creating or editing anything under the page source store's
-`pages/` root (`.dry/pages-source/pages/**` locally, materialized to
-`src/apps/pages/**` for a build - see `source-roots.ts`) or
-`src/apps/globals.css`. A reusable component lives in the sibling
+`pages/` root (`.dry/pages-source/pages/**` locally, R2 in production) or
+`styles/`. A reusable component lives in the sibling
 `component/` root instead and is imported as `@component/Card`; it is never
 a route, whatever it's named. Full design background: `plans/app-router.md`,
 execution log: `status/app-router.md`.
@@ -46,11 +45,9 @@ execution log: `status/app-router.md`.
 
 ## `dry()` - reading content
 
-`dry()` is an ambient global inside this directory - **don't import it**,
-a Vite plugin (`src/server/app-router/app-router-plugin.ts`) injects the
-right implementation automatically (the real DB-backed one on the server,
-a replay-from-already-fetched-data one on the client during hydration -
-you never need to think about this distinction, just call `dry()`).
+`dry()` is an ambient global inside this source tree - **don't import it**.
+Dev SSR's Vite plugin and the browser page builder provide the appropriate
+implementation automatically; just call `dry()`.
 
 ```ts
 await dry().collection("user").get(idOrSlug);   // number = id, string = slug
@@ -188,14 +185,12 @@ export default async function UsersListPage() {
 
 This sync component gets real client-side interactivity for free - it's
 part of the same tree the client hydration bootstrap (`src/apps/hydrate-
-client.ts`) reconstructs and calls `preact-iso/hydrate` on. See
-`src/apps/pages/users/page.tsx` for the working example this pattern is
-based on.
+client.ts`) reconstructs and calls `preact-iso/hydrate` on.
 
 ## Styling - Tailwind utility classes only
 
-`src/apps/globals.css` (`@import "tailwindcss";`, nothing else) is the
-**one** shared stylesheet for this whole directory - write Tailwind
+`styles/globals.css` is the shared Tailwind entry for the whole site and is
+compiled from the current page-source snapshot during each page build. Write Tailwind
 utility classes directly in JSX (`class="flex gap-4 text-blue-600"`), never
 a per-component `.css` file (that's the admin's [DESIGN.md](DESIGN.md)
 convention, not this one). Don't add a second CSS entry point for a

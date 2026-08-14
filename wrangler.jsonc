@@ -29,7 +29,7 @@
     // Cloudflare's asset layer answers a matching request BEFORE the Worker
     // ever runs, and `/` matches `dist/client/index.html` - which is the
     // ADMIN shell, not a site page. Without this, the site's own root page
-    // (`src/apps/pages/page.tsx`) is unreachable in production and `/`
+    // (the published site root) is unreachable in production and `/`
     // serves the admin SPA instead. `entry-worker.ts` already excludes
     // `pathname === "/"` from its own asset branch for exactly this reason
     // (mirroring `entry-node.ts`'s `tryServeStaticAsset`), but that code

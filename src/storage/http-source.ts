@@ -36,7 +36,7 @@ export function encodePath(path: string): string {
  * (e.g. "hero.jpg", resolved through the storage API) or a raw Link URL
  * typed in the picker's "Link" tab (already absolute/root-relative, stored
  * verbatim) - mirrors the admin's own resolution in `ContentEntryList.tsx`.
- * Lives here (not `src/apps/pages/lib`, its original home) so server-side
+ * Lives in shared storage code so server-side
  * framework code (`app-router/render.ts`'s SEO tags) can use it too without
  * importing project page code.
  *

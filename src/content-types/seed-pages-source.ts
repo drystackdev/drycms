@@ -3,11 +3,8 @@ import { SAMPLE_PAGES_SOURCE_FILES } from "../server/app-router/sample-pages-sou
 
 /**
  * Seeds `pagesSourceStorage` with the bundled starter template
- * (`sample-pages-source.ts`, mirroring the git-committed `src/apps/{pages,
- * component,styles,md}/**`) the FIRST time it's found completely empty - a
- * fresh tenant deploy otherwise ships with zero site pages until someone
- * runs `bun run pages:sync --push --remote` by hand (AGENTS.md's
- * "website-builder TOOL" section). A single root `list("")` (not `listAll` -
+ * (`sample-pages-source.ts`, bundled from git-committed `mock/**`) the FIRST
+ * time it is found completely empty. A single root `list("")` (not `listAll` -
  * that's `local`-only, see `StorageAdapter.listAll`'s own doc comment; R2
  * doesn't implement it) is enough: an untouched store has no `pages`/
  * `component`/`styles`/`md` folder at all yet, so ANY root entry means real

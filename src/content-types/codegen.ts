@@ -205,10 +205,10 @@ export function generateDryTypes(allTypes: ContentTypeDefinition[]): string {
 // content type's schema; see plans/reader.md.
 //
 // Calling the ambient globals \`dry()\`/\`params()\`/\`setTitle()\` below works for
-// free in any file under \`src/apps/pages/**\` -
+// free in any page-source file -
 // \`src/server/app-router/app-router-plugin.ts\` (registered in
 // \`vite.config.ts\`) injects the real import automatically. Outside that
-// folder, import them yourself instead:
+// source tree, import them yourself instead:
 // \`import { dry } from "../content-types/dry-reader.js"\`,
 // \`import { params } from "../content-types/params-reader.js"\`,
 // \`import { setTitle } from "../content-types/dry-title.js"\`.

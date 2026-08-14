@@ -58,10 +58,8 @@ afterAll(async () => {
 });
 
 /** A minimal in-memory `DevPagesSource` (`route-tree.ts`) for the dev-branch
- * tests below - decouples them from `src/apps/pages`'s real on-disk content
- * (which is now a gitignored, build-time-materialized copy, not something a
- * fresh checkout/CI run is guaranteed to have - see
- * `status/pages-source-dev-live.md`). Plain `h()` vnodes, no `dry()` call
+ * tests below, decoupled from the checkout's live `.dry/pages-source` content.
+ * Plain `h()` vnodes, no `dry()` call
  * (this repo's real root `layout.tsx`/`404.tsx` don't call it either - a
  * page/layout module loaded this way never goes through the real Vite
  * pipeline's `app-router-plugin.ts` ambient-global injection, same
@@ -157,7 +155,7 @@ describe("handlePageRequest", () => {
       // Neither path has ever been through `writeBuiltPage` above, nor
       // matches a `redirect` row - one is a totally bogus path, the other
       // LOOKS like it could be a dynamic `[slug]` route (it isn't: this
-      // project's own `src/apps/pages/` has no `blogs/` directory at all).
+      // fixture has no `blogs/` route at all).
       // Both now take the exact same branch and get the exact same
       // `404.tsx` render - `page-handler.ts` never calls `discoverRoutes()`'s
       // `matchRoute` result to decide this, only `routeTree.notFound` (see
@@ -226,8 +224,8 @@ describe("handlePageRequest", () => {
 
   describe("dev (isDev: true) - unchanged from before mục 12", () => {
     it("renders the pages-root 404.tsx live (full SSR) at status 404 for a path with no built page, no route match, and no redirect", async () => {
-      // `fixtureDevPagesSource()` stands in for `src/apps/pages` here (see
-      // its own doc comment) - the status code is fixed independently of
+      // `fixtureDevPagesSource()` supplies the live-source fixture here; the
+      // status code is fixed independently of
       // which source rendered the page (see `render.ts`'s
       // `RenderPageOptions.status` doc comment); the hydrate/VEI script
       // tags are what actually distinguish this from prod's bare fallback

@@ -100,12 +100,11 @@ export function staticPagePaths(tree: RouteTree): string[] {
   return paths;
 }
 
-/** Dev-only alternative to the compile-time Vite glob below - lets
+/** Dev-only live route discovery - lets
  * `discoverRoutes()` build its tree from `pagesSourceStorage` (`.dry/
- * pages-source` under `kind: "local"`) instead of `src/apps/pages`, real
- * files read/compiled live through Vite's OWN dev pipeline
- * (`vite.ssrLoadModule`, not `import.meta.glob`'s build-time-known file
- * set). Only `scripts/dev-server.mjs` constructs one (it's the only place
+ * pages-source` under `kind: "local"`), with real
+ * files read/compiled live through Vite's own dev pipeline
+ * (`vite.ssrLoadModule`). Only `scripts/dev-server.mjs` constructs one (it's the only place
  * holding a real Vite dev server instance) and only `page-handler.ts` passes
  * it through, gated on `isDev` - `entry-node.ts`/`entry-worker.ts` never
  * pass one, so production's route discovery is completely unaffected. */
@@ -124,9 +123,8 @@ export interface DevPagesSource {
    * for why that call, and not a config field, is the mapping. */
   readSource(relPath: string): Promise<string>;
   /** The SAME module's URL as the BROWSER can `import()` it - dev's client
-   * hydration (`hydrate-client.ts`) can't call `discoverRoutes()` itself the
-   * way it does for the prod glob branch (a `.dry/pages-source` file isn't
-   * part of that glob's known file set), so `page-handler.ts` embeds this
+   * hydration (`hydrate-client.ts`) receives the already-resolved live module
+   * URLs from `page-handler.ts`, which embeds this
    * URL, per matched entry/layout, into the response instead - see
    * `devSourcePathOf` below. */
   browserUrlFor(relPath: string): string;
@@ -138,7 +136,7 @@ export function devSourcePathOf(loader: ModuleLoader): string | undefined {
 }
 
 /** Dev-only route discovery from the live page-source provider. Production
- * serves browser-built artifacts and never imports `src/apps/pages/**`. */
+ * serves browser-built artifacts and never imports page-source modules. */
 export async function discoverRoutes(devSource: DevPagesSource): Promise<RouteTree> {
   const paths = await devSource.listPaths();
   const modules: Record<string, ModuleLoader> = {};

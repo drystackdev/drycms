@@ -32,11 +32,8 @@ const routeContext = { request: new Request("http://localhost/sitemap.xml"), url
 
 /**
  * A fixture route tree, injected through `buildSitemapResponse`'s own
- * `devSource` test seam (`route-tree.ts`'s `DevPagesSource`) - the real,
- * no-argument path reads `src/apps/pages/**` (a gitignored, build-time-only
- * materialized copy of whatever `.dry/pages-source` currently holds, see
- * `CLAUDE.md`), which varies by checkout/sync state and isn't something a
- * unit test should depend on.
+ * `devSource` test seam (`route-tree.ts`'s `DevPagesSource`) so the unit test
+ * does not depend on the checkout's live `.dry/pages-source` content.
  */
 function fixturePagesSource(sourceByPath: Record<string, string>): DevPagesSource {
   const routeModule: RouteModule = { default: () => null };

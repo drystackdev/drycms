@@ -30,11 +30,9 @@ const PAGES_CACHE_STORAGE_DIR_NAME = "pages-cache";
 const TYPES_CACHE_STORAGE_DIR_NAME = "types-cache";
 /** The live source of the public site, split into per-kind root folders
  * (`source-roots.ts`: `pages/` routes, `component/` reusable components) -
- * `plans/app-r2.md` quyết định #6 + `plans/component.md` mục 1. What
- * `scripts/sync-pages-r2.ts` mirrors to/from `src/apps/<root>` for a build,
- * and what the browser build pipeline reads (mục 1's route manifest, mục 7's
- * per-page compile). Deliberately separate from `pagesCacheStorage` (built
- * HTML OUTPUT). */
+ * `plans/app-r2.md` quyết định #6 + `plans/component.md` mục 1. Dev SSR and
+ * the browser page-build pipeline both read this store directly. Deliberately
+ * separate from `pagesCacheStorage` (built HTML OUTPUT). */
 const PAGES_SOURCE_STORAGE_DIR_NAME = "pages-source";
 const KV_DIR_NAME = "kv";
 

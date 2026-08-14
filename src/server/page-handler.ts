@@ -19,8 +19,7 @@ import { buildRobotsResponse, buildSitemapResponse, buildSitemapResponseFromRegi
 const VEI_HTML_HEADERS = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" };
 
 /**
- * Renders `src/apps/pages/**` (see `plans/app-router.md`) - the "real
- * caller" `plans/reader.md`'s Giai đoạn 4 was waiting on. Only engages
+ * Serves the site's public pages. Only engages
  * for a pathname OUTSIDE the admin's own `path` - symmetric to
  * `routers/App.tsx`'s `AuthGate`, which renders nothing (a blank page) for
  * exactly this space today; this fills that space with the site's own

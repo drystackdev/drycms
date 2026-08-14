@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildRouteTree, type ModuleLoader } from "./route-tree.js";
 import { matchRoute } from "./match.js";
 
-const ROOT = "/src/apps/pages";
+const ROOT = "/pages-source/pages";
 
 /** Fake loader - never actually called in these tests, only identity
  * matters (each `id` gets its own function reference so tests can assert

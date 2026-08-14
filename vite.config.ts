@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import preact from "@preact/preset-vite";
@@ -116,18 +116,11 @@ export default defineConfig(({ isSsrBuild, command }) => ({
     // `src/env.d.ts`'s `ImportMetaEnv.DRYCMS_VERSION` doc comment.
     "import.meta.env.DRYCMS_VERSION": JSON.stringify(pkgVersion),
   },
-  // `appRouterPlugin` (`enforce: "pre"`) injects `dry()`'s import for
-  // `src/apps/pages/**` before Preact's own JSX transform runs (a
-  // server-real or client-replay version depending on
-  // `this.environment.config.consumer` - see the plugin's own doc comment)
-  // - see `plans/app-router.md`'s "Quyết định kiến trúc" #4 - and forces a
-  // full reload on `src/apps/pages/**`/`globals.css` changes, since
-  // `hydrate-client.ts` is a separate bundle Vite's normal per-module HMR
-  // doesn't connect a `page.tsx`/`layout.tsx` edit to (the server-rendered
-  // HTML it hydrates against would go stale otherwise).
-  // `tailwindcss()` only transforms CSS files that `@import "tailwindcss"`
-  // themselves (`src/apps/styles/globals.css` - see "CSS: 1 file chung" in
-  // the same doc) - the admin's own hand-rolled `.css` files
+  // `appRouterPlugin` (`enforce: "pre"`) injects the ambient page helpers
+  // into live local `pagesSourceStorage` modules before Preact transforms
+  // them, and broadcasts a full reload when that source changes.
+  // `tailwindcss()` only transforms CSS files that opt into Tailwind; the
+  // admin's own hand-rolled `.css` files
   // (`docs/DESIGN.md`) never opt in, so this is safe to register globally
   // rather than needing a separate Vite config just for `src/apps`.
   plugins: [
@@ -150,19 +143,15 @@ export default defineConfig(({ isSsrBuild, command }) => ({
     // gets the multi-input block - CLI `--ssr <entry>` makes `<entry>` the
     // sole rollup input for either SSR build regardless of
     // `rollupOptions.input` here, so that `input` map would be ignored
-    // there anyway. `appsGlobals`/`appsHydrate` are App Router's Tailwind
-    // output + client hydration bootstrap, built+hashed like any other
-    // asset - see `app-router/assets.ts`, which reads the resulting
-    // `manifest.json` to find them at runtime (`plans/app-router.md`'s
-    // Giai đoạn 3/2).
+    // there anyway. The committed hydration/VEI runtime entries are built
+    // and hashed like any other asset. Tenant source is never a Vite input.
     ...(isSsrBuild
       ? isWorkerBuild
         ? {
             rollupOptions: {
               output: {
                 // One self-contained bundle, no shared chunks. With
-                // splitting on, the `src/apps/pages/**` chunks import
-                // shared modules that rollup hoisted INTO the entry chunk,
+                // splitting on, Rollup may hoist shared modules into the entry,
                 // so the entry re-exports all of them (`export { ...,
                 // REF_SYMBOL as o, ... }`) - and workerd validates every
                 // export of the entry as a handler, failing the upload with
@@ -180,42 +169,11 @@ export default defineConfig(({ isSsrBuild, command }) => ({
           rollupOptions: {
             input: {
               main: "index.html",
-              // Only during a real build, unlike the other 3 entries below
-              // (real, always-on-disk committed files): `src/apps/styles/
-              // globals.css` is `styles/`'s (`source-roots.ts`) build-time
-              // materialized copy - `sync-pages-r2.ts --pull` writes it right
-              // before `bun run build`'s own `vite build` runs, but it does
-              // NOT exist yet during `bun run dev` (dev serves the LIVE file
-              // straight out of `pagesSourceStorage` instead - see
-              // `resolve-asset-href.ts`'s `/@fs/` dev href). Including it
-              // unconditionally broke `vite dev`'s own dependency scanner on
-              // a fresh checkout - found live, not in review: "Failed to run
-              // dependency scan... failed to resolve rolldownOptions.input
-              // value" the moment this repo's `.dry/pages-source` didn't
-              // have a `src/apps/styles/globals.css` copy sitting around yet.
-              //
-              // Also gated on the file actually existing on disk: a CI build
-              // (Cloudflare Pages/Workers Builds) runs from a fresh git
-              // checkout with no `.dry/pages-source` ever populated - `pull`
-              // then materializes 0 files, and an unresolvable ENTRY (as
-              // opposed to a missing import somewhere inside the graph)
-              // took the whole client build down to "0 modules transformed"
-              // instead of just this one asset - found live, a real
-              // `bun run build` failure on Cloudflare's build image.
-              // `resolve-asset-href.ts`'s `resolveGlobalsCssHref` tolerates
-              // the resulting gap in `manifest.json` (`required: false`);
-              // `build-document.ts`'s `buildHeadPrefix` skips the
-              // `<link rel="stylesheet">` tag entirely when there's no href.
-              ...(command === "build" && existsSync(fileURLToPath(new URL("./src/apps/styles/globals.css", import.meta.url)))
-                ? { appsGlobals: "src/apps/styles/globals.css" }
-                : {}),
               appsHydrate: "src/apps/hydrate-client.ts",
               appsVeiOverlay: "src/apps/vei/overlay.ts",
               // mục 7 (app-r2 build pipeline hydration) - the client
-              // bootstrap for a page that only exists as browser-compiled
-              // source in `pagesSourceStorage`, which Vite's build never
-              // saw (`appsHydrate` above hydrates a Vite-known SSR route
-              // via `import.meta.glob` instead). Its own `preact-iso/
+              // bootstrap for browser-compiled source in
+              // `pagesSourceStorage`. Its own `preact-iso/
               // hydrate` import is dynamic, not this file's static one -
               // see `hydrate-built.ts`'s doc comment for why: mixing it
               // into the ADMIN app's own deduped Preact chunk here would
@@ -254,21 +212,14 @@ export default defineConfig(({ isSsrBuild, command }) => ({
       /**
        * `@component/Card` in page source (`source-roots.ts`) - the same alias
        * `page-build.ts` resolves for the in-browser build and `ts-worker.ts`
-       * resolves for the editor's type-checking, here for the two compile
-       * paths Vite itself owns.
-       *
-       * Dev (`command === "serve"`) points at the LIVE store: the dev server
+       * resolves for the editor's type-checking. Vite only needs it for dev:
+       * the dev server
        * renders pages straight out of `pagesSourceStorage` through
        * `vite.ssrLoadModule` (`route-tree.ts`'s `DevPagesSource`), so a
-       * component has to resolve where it's actually saved, with no build
-       * step in between. A build points at the materialized copy
-       * `sync-pages-r2.ts --pull` writes right before `vite build` runs -
-       * the only form the Worker/Node bundle can see.
+       * component has to resolve where it is actually saved. Production page
+       * builds resolve the alias from their in-memory source map instead.
        */
-      [COMPONENT_ALIAS]:
-        command === "serve"
-          ? fileURLToPath(new URL(`./.dry/pages-source/${COMPONENT_ROOT}/`, import.meta.url)).replace(/\/$/, "")
-          : fileURLToPath(new URL(`./src/apps/${COMPONENT_ROOT}/`, import.meta.url)).replace(/\/$/, ""),
+      [COMPONENT_ALIAS]: fileURLToPath(new URL(`./.dry/pages-source/${COMPONENT_ROOT}/`, import.meta.url)).replace(/\/$/, ""),
     },
     // Keep `preact-iso` and the app on one Preact singleton.
     dedupe: [

@@ -23,7 +23,7 @@
     },
     "noEmit": true
   },
-  // `.dry/pages-source` mirrors `src/apps/{pages,component}` for content
+  // `.dry/pages-source` is the local live page/component source
   // authored through the browser (`PageEditor.tsx`) instead of committed to
   // git - real, editable `.tsx`/`.ts` source (a plain `.ts` helper, e.g.
   // `component/lib/utils.ts`, is as legal here as a component - see

@@ -50,20 +50,6 @@ pnpm-debug.log*
 /src/apps/schema.json
 /src/apps/seed.json
 
-# `src/apps/{pages,component,styles,md}` - build-time-only materialized
-# copies of the live `pagesSourceStorage` source (`.dry/pages-source`
-# locally, R2 in prod - see `source-roots.ts`/`sync-pages-r2.ts`). Vite's
-# `import.meta.glob` needs real files on disk to compile, but the actual
-# tenant content living here is NEVER meant to be tracked - it's per-tenant
-# website content, not app source (see the multi-tenant model doc in
-# CLAUDE.md). `scripts/sync-pages-r2.ts --pull` regenerates these fresh
-# before every build (`bun run build`/`dev:worker`) - safe to delete
-# anytime.
-/src/apps/pages/
-/src/apps/component/
-/src/apps/styles/
-/src/apps/md/
-
 # Playwright artifacts (unanchored - a command run from the wrong cwd can
 # create these under a subdirectory instead of the repo root)
 test-results/

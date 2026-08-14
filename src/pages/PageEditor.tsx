@@ -151,8 +151,8 @@ function sourceRootIcon(rootId: string) {
 
 /** A 4th sidebar tab alongside `PAGES_SOURCE_ROOTS`, but NOT one of them -
  * it has no folder of its own in storage, so it's kept out of
- * `source-roots.ts` entirely (that list also drives the Vite alias/
- * `sync-pages-r2.ts`'s mirroring, neither of which apply here). It only ever
+ * `source-roots.ts` entirely (that list drives every real source consumer).
+ * It only ever
  * shows up for the rest of this session after `loadTree` recreates a
  * missing built-in `styles/` file (`core-styles/registry.ts`) - see
  * `recoveredCoreFiles` below. */
@@ -274,8 +274,8 @@ function consumePendingBuildResult(): PendingBuildResult | null {
 /**
  * In-browser page/layout/component source editor (`plans/app-r2.md` Giai
  * đoạn 6 - the last unbuilt piece of "sửa code trong browser"; the storage
- * plumbing (`pagesSourceStorage`, `routes/pages-source.ts`'s write methods,
- * `sync-pages-r2.ts`) already existed). Deliberately its own page - still a
+ * plumbing (`pagesSourceStorage`, `routes/pages-source.ts`'s write methods)
+ * already existed). Deliberately its own page - still a
  * separate route/nav entry from `PageBuild.tsx` - but both now gated on the
  * same merged `PAGE_BUILDER_RESOURCE_ID` ("Page Builder") permission;
  * quyết định #12's original code/build split was merged back into one, see

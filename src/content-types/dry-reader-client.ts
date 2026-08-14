@@ -5,7 +5,7 @@ import type { DryCollectionReader, DryReader, DrySingletonReader } from "./dry-r
 /**
  * Client-side `dry()` for hydration (`plans/app-router.md`'s Giai đoạn 2) -
  * `app-router-plugin.ts` injects THIS import (instead of `dry-reader.js`'s
- * real, DB-backed one) into the client build of `src/apps/pages/**`. No
+ * real, DB-backed one) into the dev hydration client. No
  * `AsyncLocalStorage` needed here (unlike `dry-context.ts`'s server
  * version) - a browser page only ever has 1 hydration pass in flight at a
  * time, so a plain module-level variable is enough.

@@ -58,8 +58,8 @@ const apiMiddleware = createApiMiddleware();
 /**
  * The dev-only live route source `page-handler.ts`'s `handlePageRequest`
  * accepts as its 4th param (`DevPagesSource`, `route-tree.ts`) - lets
- * `discoverRoutes()` build its tree from `pagesSourceStorage` (`.dry/
- * pages-source`) instead of `src/apps/pages`'s compile-time Vite glob, real
+ * `discoverRoutes()` build its tree directly from `pagesSourceStorage`
+ * (`.dry/pages-source`), with real
  * files read/compiled live through THIS Vite instance's own
  * `ssrLoadModule` (full JSX/TS transform + `app-router-plugin.ts`'s
  * ambient-global injection, which also gates on this same root - see that

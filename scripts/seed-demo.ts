@@ -13,9 +13,8 @@
  *
  * HTTP rather than importing the engines directly, on purpose: under
  * `dev:worker` the data lives in miniflare's own D1/R2, reachable only
- * through `getPlatformProxy`, which does not work under `bun` at all
- * (`scripts/sync-pages-r2.ts`'s doc comment has the details). Talking to the
- * server that already owns those bindings sidesteps that entirely, and gets
+ * through the running Worker bindings. Talking to the server that already
+ * owns those bindings sidesteps runtime-specific binding access, and gets
  * the same permission/validation/migration path a human clicking through the
  * admin would - a seed that passes here can't produce state the UI couldn't.
  *

@@ -18,10 +18,8 @@
  *
  * What it resets, and why each one matters for a project that actually boots:
  *
- * - `pagesSourceStorage` (`.dry/pages-source` - dev's app router reads
- *   live from here, `route-tree.ts`'s `DevPagesSource`; `src/apps/pages` is
- *   just a gitignored, build-time materialized copy of this now, see
- *   `scripts/sync-pages-r2.ts`) - the demo public site. Replaced by a
+ * - `pagesSourceStorage` (`.dry/pages-source` locally, R2 in production) -
+ *   the sole source of the public site. Replaced by a
  *   minimal starter (`layout.tsx`/`page.tsx`/`404.tsx`/`500.tsx`) that
  *   makes NO `dry()` call, so the site renders on a DB that has nothing
  *   modelled in it yet. Deleting the directory outright (what this script
@@ -272,13 +270,6 @@ rmSync(pagesSourceRoot, { recursive: true, force: true });
 for (const root of PAGES_SOURCE_ROOTS) mkdirSync(join(pagesSourceRoot, root.id), { recursive: true });
 writeStarterSite(rawName, resolved.path);
 console.log("  wrote pages/{layout,page,404,500}.tsx (no dry() calls - renders on an empty DB)");
-// `src/apps/pages` (gitignored, build-time-only per Part 3 of
-// `status/pages-source-dev-live.md`) may still hold the OLD project's demo
-// site on disk from a previous `bun run build` - not the live source
-// anymore (dev reads `.dry/pages-source` directly), but stale enough to be
-// worth clearing so it can't be mistaken for current content.
-for (const root of PAGES_SOURCE_ROOTS) rmSync(at(`src/apps/${root.id}`), { recursive: true, force: true });
-
 // -------------------------------------------------------- local artifacts
 
 console.log("\nDeleting local artifacts...");

@@ -20,10 +20,7 @@ function writeManifest(content: unknown): string {
 
 describe("resolveGlobalsCssHref", () => {
   it("in dev, points straight at the live pagesSourceStorage file via /@fs/, without touching the filesystem", () => {
-    // `globals.css` lives in `pagesSourceStorage`'s `styles/` root now
-    // (`source-roots.ts`), not `src/apps/**` - see `resolve-asset-href.ts`'s
-    // own doc comment on why the dev branch differs from every sibling
-    // `resolve*Href` function.
+    // Dev SSR loads the live pagesSourceStorage stylesheet through Vite.
     const storage = resolveOptions({ kind: "local" }).pagesSource.storage;
     if (storage.kind !== "local") throw new Error("expected a local pagesSource root in tests");
     expect(resolveGlobalsCssHref(true, "/does/not/exist.json")).toBe(
@@ -31,21 +28,7 @@ describe("resolveGlobalsCssHref", () => {
     );
   });
 
-  it("reads the built, hashed asset path from the manifest in production", () => {
-    const path = writeManifest({
-      "src/apps/styles/globals.css": { file: "assets/appsGlobals-abc123.css" },
-    });
-    expect(resolveGlobalsCssHref(false, path)).toBe("/assets/appsGlobals-abc123.css");
-  });
-
-  // Unlike every sibling `resolve*Href` below (always-on-disk COMMITTED
-  // files - a missing entry is a real bug, worth throwing on), a missing
-  // globals.css entry is the expected shape of a CI build with no live
-  // pages-source content yet (`resolve-asset-href.ts`'s own doc comment on
-  // `resolveBuiltAssetHref`'s `required` param) - found live, this crashed
-  // a real Cloudflare build ("0 modules transformed" -> ENOENT reading a
-  // manifest.json that was consequently never written).
-  it("returns an empty href (not a throw) when the manifest has no globals.css entry", () => {
+  it("returns an empty href in production because page builds inline CSS", () => {
     const path = writeManifest({ "index.html": { file: "assets/main-def456.js" } });
     expect(resolveGlobalsCssHref(false, path)).toBe("");
   });

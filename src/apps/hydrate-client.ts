@@ -45,12 +45,9 @@ installMediaSrcHook();
  *    devHydrateManifest`, only ever present for a dev request rendered
  *    through `page-handler.ts`'s `devPagesSource` branch): the server
  *    already resolved this exact request against `pagesSourceStorage`
- *    (`.dry/pages-source`) - re-running `discoverRoutes()` client-side
- *    would resolve against the WRONG source (the compile-time
- *    `src/apps/pages` glob, which no longer holds dev's live pages - see
- *    `route-tree.ts`'s `DevPagesSource` doc comment), so this branch
- *    `import()`s the server-given URLs directly instead of matching a
- *    route tree at all. Also carries `params` directly (the server already
+ *    (`.dry/pages-source`). This bootstrap `import()`s the server-given URLs
+ *    directly instead of independently matching a route tree. It also
+ *    carries `params` directly (the server already
  *    resolved them) rather than re-deriving them from a route match that
  *    doesn't exist client-side for this path.
  */
@@ -72,13 +69,10 @@ async function resolveClientMatch(): Promise<RouteMatch | null> {
 }
 
 /**
- * Client bootstrap for `src/apps/pages/**` (`plans/app-router.md`'s Giai
- * đoạn 2) - loaded via `render.ts`'s `<script type="module">` on every App
+ * Client bootstrap for dev-SSR pages - loaded via `render.ts`'s
+ * `<script type="module">` on every App
  * Router page (MPA - 1 fresh module instance per page load, no client
- * router). `route-tree.ts`/`match.ts` are pure (`import.meta.glob` is the
- * only Vite-specific bit, which works in a client bundle exactly like it
- * does server-side - same precedent as `RichtextComponents.tsx`), so they're
- * imported straight from `src/server/app-router/` rather than duplicated.
+ * router).
  *
  * Re-runs the SAME `page.tsx`/`layout.tsx` code path the server already
  * ran, but with `dry()` (injected by `app-router-plugin.ts`'s

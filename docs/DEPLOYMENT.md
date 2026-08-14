@@ -43,19 +43,18 @@ new:project`).
 
 **Page/component/layout content authored through the Page Editor is NEVER
 tracked in git** - it lives in `.dry/pages-source` locally or that tenant's
-own R2 bucket in production (`pagesSourceStorage`, see AGENTS.md's "Two
-page-source roots"), entirely separate from the application source code so
+  own R2 bucket in production (`pagesSourceStorage`, see AGENTS.md's
+  "Page source lives only in pagesSourceStorage"), entirely separate from the application source code so
 editing content never needs a commit/deploy cycle. This means:
 
 - A fresh deploy of the TOOL (via git push or a first `wrangler deploy`) is
   seeded from committed `mock/{pages,component,styles,md}` on first use. The
   first authenticated admin session then runs the browser publish-all
   pipeline. Existing tenant source is never overwritten by deploy.
-- Getting a tenant's real pages onto its live site is a step SEPARATE from
-  deploying code: run `bun run pages:sync --push --remote` by hand, from a
-  machine that already has that tenant's real `.dry/pages-source` content,
-  against that tenant's own R2 bucket. A deploy only provides the generic
-  mock starter; it never substitutes mock files for existing tenant pages.
+- Deploying tool code never moves tenant page source. In production the Page
+  Editor writes that tenant's R2-backed `pagesSourceStorage` directly, and
+  Build/Build all publishes from that same source. A deploy only provides the
+  generic mock starter; it never replaces existing tenant pages.
 
 ### Prerequisites
 
@@ -140,8 +139,8 @@ whether the rest of the build succeeds.
 
 Either way, a git-triggered build runs on a completely fresh checkout with
 no `.dry/pages-source` populated. That is supported: the Worker bundle gets
-its starter from committed `mock/`, not from a generated zip or materialized
-`src/apps/pages` copy.
+its starter from committed `mock/`; tenant page source is not part of the
+application build.
 
 ### Public-page caching (and what a page view actually costs)
 

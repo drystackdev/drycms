@@ -1,7 +1,7 @@
 /**
  * Client-side `params()` for hydration - `app-router-plugin.ts` injects
  * THIS import (instead of `params-reader.ts`'s `AsyncLocalStorage`-backed
- * one) into the client build of `src/apps/pages/**`, same split `dry()`/
+ * one) into the dev hydration client, same split `dry()`/
  * `dry-reader-client.ts` already use. No `AsyncLocalStorage` needed here
  * (unlike the server side) - a browser page only ever hydrates once at a
  * time, so a plain module-level variable is enough, same reasoning

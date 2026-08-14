@@ -7,15 +7,14 @@
  *
  * Consumed by route discovery (`route-tree.ts`/`route-manifest.ts` only ever
  * look inside `pages`), the browser build's import resolver
- * (`page-build.ts`), the editor's TS worker, `vite.config.ts`'s alias, and
- * `scripts/sync-pages-r2.ts`'s storage <-> git mapping - so it must stay
+ * (`page-build.ts`), the editor's TS worker, and `vite.config.ts`'s dev alias
+ * - so it must stay
  * dependency-free (imported from a Vite config, a web worker, the server and
  * the client alike).
  */
 
 export interface PagesSourceRoot {
-  /** Folder name at the storage root - also the `src/apps/<id>` directory
-   * `sync-pages-r2.ts` materializes it into for a build. */
+  /** Folder name at the pages-source storage root. */
   id: string;
   /** Tab label in the Page Editor sidebar. */
   label: string;
@@ -36,8 +35,8 @@ export const COMPONENT_ALIAS = "@component";
 /** The site's shared Tailwind entry (`globals.css`) plus its split-out
  * `.css` files (`theme.css`, `base.css`, ...) - live-edited from the Page
  * Editor's "Styles" tab exactly like `pages/`/`component/`. No `alias`: page
- * code never `import`s these by specifier, they're a fixed build entry
- * (`vite.config.ts`'s `appsGlobals`). */
+ * code never `import`s these by specifier; the browser page builder compiles
+ * and inlines the stylesheet from the source map. */
 export const STYLES_ROOT = "styles";
 
 /** Markdown context files for AI (Magic Chat's Page Editor chat, and the
@@ -70,8 +69,8 @@ export function rootOf(path: string): PagesSourceRoot | null {
 }
 
 /** `styles/` filenames every project ships with and that back a hardcoded
- * dependency elsewhere - `globals.css` is `vite.config.ts`'s literal
- * Tailwind build entry, and it `@import`s the other two by exact relative
+ * dependency elsewhere - the browser page builder starts at `globals.css`,
+ * and it `@import`s the other two by exact relative
  * name. Deleting any of them silently breaks the build rather than failing
  * loudly, so both the Page Editor's tree UI and this route's own `DELETE`
  * refuse to remove them (`PageEditor.tsx` also recreates one from its

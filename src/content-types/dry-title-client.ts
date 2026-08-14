@@ -1,7 +1,7 @@
 /**
  * Client-side `setTitle()` for hydration - `app-router-plugin.ts` injects
  * THIS import (instead of `dry-title.ts`'s SEO-cascade-writing one) into
- * the client build of `src/apps/pages/**`, same split `dry()`/
+ * the dev hydration client, same split `dry()`/
  * `dry-reader-client.ts` already use. The SSR'd `<title>` tag is already in
  * the DOM by the time hydration re-runs this same page code (hydration
  * doesn't re-render `<head>`), so there's no cascade to write into here -

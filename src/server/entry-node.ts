@@ -23,7 +23,7 @@ const apiMiddleware = createApiMiddleware();
  * `null` (not "fall back to the shell") when it doesn't, so callers can
  * distinguish "not a static asset" from "here's the SPA shell" - the two
  * used to be the same branch when this was the only kind of non-API
- * request, but `src/apps/pages/**` routing (below) needs the distinction:
+   * request, but public-page routing below needs the distinction:
  * an asset request like `/assets/main-abc123.js` must never be treated as a
  * possible App Router page path. */
 function tryServeStaticAsset(pathname: string, res: ServerResponse): boolean {
@@ -44,8 +44,8 @@ function serveAdminShell(res: ServerResponse): void {
 }
 
 /**
- * `src/apps/pages/**` (see `plans/app-router.md`'s Giai đoạn 3) - only for a
- * pathname OUTSIDE the admin's own `path`, mirroring `scripts/dev-server.mjs`'s
+ * Handles a pathname outside the admin's own `path`, mirroring
+ * `scripts/dev-server.mjs`'s
  * `tryServeAppRouterPage`. Unlike dev, there's no Vite middleware here to
  * have already filtered out static-asset requests, so `tryServeStaticAsset`
  * above MUST run first - see its own comment.

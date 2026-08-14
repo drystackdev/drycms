@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRouteTree, staticPagePaths, type ModuleLoader } from "./route-tree.js";
 
-const ROOT = "/src/apps/pages";
+const ROOT = "/pages-source/pages";
 
 function loader(id: string): ModuleLoader {
   return () => Promise.resolve({ default: () => id }) as never;

@@ -23,7 +23,7 @@ import { HYDRATED_EVENT } from "./hydrated-event.js";
  * nothing in it yet (`buildVeiShellDocument`).
  *
  * Route STRUCTURE used to come from the deployed build's own snapshot
- * (`src/apps/pages`, a compile-time glob) - stale the moment a page was
+ * (a previously rendered/published snapshot) - stale the moment a page was
  * added/edited since the last sync+rebuild+deploy, which could false-404 a
  * page that rendered fine for every ordinary visitor. This script instead
  * fetches the pages-source PATH LIST fresh on every load

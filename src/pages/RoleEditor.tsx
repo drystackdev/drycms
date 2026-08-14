@@ -116,7 +116,7 @@ const PAGE_BUILDER_RESOURCE: ContentTypeDefinition = {
   kind: "singleton",
   name: "pageBuilder",
   label: "Page Builder",
-  description: "Edit src/apps/pages source code, and build/publish ANY page unrestricted. (A role that can edit a collection/singleton can already rebuild the pages that depend on it, without this.)",
+  description: "Edit page source, and build/publish ANY page unrestricted. (A role that can edit a collection/singleton can already rebuild the pages that depend on it, without this.)",
   fields: [],
   version: 0,
 };

@@ -3,7 +3,7 @@ import { resolveImageSrc } from "../../storage/http-source.js";
 
 /**
  * Resolves a media element's `src`/`poster` through `resolveImageSrc` at the
- * moment its vnode is created, so `src/apps/pages/**` can write
+ * moment its vnode is created, so page source can write
  * `<img src={post.image} />` directly - an `image` field stores a bare
  * storage id ("hero.jpg"), not a URL, and a page that put it straight into
  * `src` used to get a silent 404 (the browser resolves it relative to the

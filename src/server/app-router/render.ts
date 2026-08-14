@@ -123,12 +123,8 @@ export interface RenderPageOptions {
   onRenderError?: (error: unknown) => Promise<string>;
   /** Dev-only, from `page-handler.ts`'s `devPagesSource` branch (see
    * `route-tree.ts`'s `DevPagesSource` doc comment) - `hydrate-client.ts`
-   * `import()`s these URLs directly instead of calling `discoverRoutes()`
-   * itself, since a `.dry/pages-source` file isn't part of the client
-   * bundle's own compile-time glob. Absent for every other case (prod, or a
-   * dev request that isn't `devPagesSource`-backed), in which case
-   * `hydrate-client.ts` falls back to its original glob-based resolution
-   * unchanged. */
+   * `import()`s these already-resolved URLs directly. Absent for production,
+   * which hydrates browser-built assets instead. */
   devHydrateManifest?: { entryUrl: string; layoutUrls: string[]; params: Record<string, string | string[]> };
 }
 

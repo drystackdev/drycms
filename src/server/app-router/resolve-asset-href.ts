@@ -31,28 +31,18 @@ interface ManifestEntry {
  * `route-tree.ts`'s `buildRouteTree` is - a pure function, real
  * environment values supplied only at the real call sites.
  *
- * `required` (default `true`) - `false` returns `""` instead of throwing
- * when `sourcePath` has no entry in the manifest (or the manifest itself
- * doesn't exist). Only `resolveGlobalsCssHref` passes `false`: unlike the
- * other 3 hrefs below (always-on-disk COMMITTED files - their absence is a
- * real bug), `globals.css` is the live pages-source store's build-time
- * materialized copy, which is legitimately empty on a fresh CI checkout
- * that never had `.dry/pages-source` populated (`vite.config.ts`'s own
- * `existsSync` guard on the `appsGlobals` entry) - no entry, not a bug.
  */
-function resolveBuiltAssetHref(dev: boolean, sourcePath: string, manifestPath: string, required = true): string {
+function resolveBuiltAssetHref(dev: boolean, sourcePath: string, manifestPath: string): string {
   if (dev) return `/${sourcePath}`;
 
   let manifest: Record<string, ManifestEntry>;
   try {
     manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, ManifestEntry>;
   } catch (error) {
-    if (!required) return "";
     throw error;
   }
   const entry = manifest[sourcePath];
   if (!entry) {
-    if (!required) return "";
     throw new Error(`[drycms] ${manifestPath} has no "${sourcePath}" entry - rebuild with \`bun run build\`.`);
   }
   return `/${entry.file}`;
@@ -60,19 +50,18 @@ function resolveBuiltAssetHref(dev: boolean, sourcePath: string, manifestPath: s
 
 /**
  * Unlike the sibling `resolve*Href` functions below, `globals.css`'s LIVE
- * source in dev isn't `src/apps/**` at all - it's `pagesSourceStorage`'s
+ * source in dev is `pagesSourceStorage`'s
  * `styles/` root (`source-roots.ts`), the same live-storage `pages/`/
  * `component/` already edit through the Page Editor with no separate build
- * step. `src/apps/styles/globals.css` (this function's `dev: false` branch)
- * is only the BUILD-TIME materialized copy `sync-pages-r2.ts` produces right
- * before `vite build` - in dev that path is never written to at all, so
- * serving it would 404. Instead the dev branch points straight at the live
+ * step. The dev branch points straight at the live
  * file on disk via Vite's `/@fs/<absolute-path>` mechanism (same
  * `resolveOptions({ kind: "local" })` call `app-router-plugin.ts`'s own
  * `pagesSourceRoot` constant already uses, for the same reason: this only
  * ever runs inside a local Vite dev process, so a local storage root always
  * resolves). Forward slashes only - `/@fs/` is a literal URL path, and a
  * Windows backslash would round-trip as `%5C` instead of a path separator.
+ * Production pages compile and inline the current stylesheet, so their href
+ * is deliberately empty.
  */
 export function resolveGlobalsCssHref(
   dev: boolean,
@@ -84,7 +73,7 @@ export function resolveGlobalsCssHref(
       return `/@fs/${join(storage.root, "styles/globals.css").replace(/\\/g, "/")}`;
     }
   }
-  return resolveBuiltAssetHref(dev, "src/apps/styles/globals.css", manifestPath, false);
+  return "";
 }
 
 export function resolveHydrateEntryHref(
