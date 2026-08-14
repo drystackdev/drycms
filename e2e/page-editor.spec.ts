@@ -61,6 +61,16 @@ test.describe("Page Editor", () => {
       await expect(editor).toHaveValue(new RegExp(INITIAL_MARKER));
       await expect(preview.getByRole("heading", { name: INITIAL_MARKER })).toBeVisible();
 
+      const completionProbe = pageSource(INITIAL_MARKER).replace("<main>", '<main class="bg-m">');
+      await editor.fill(completionProbe);
+      await editor.evaluate((textarea: HTMLTextAreaElement) => {
+        const position = textarea.value.indexOf("bg-m") + "bg-m".length;
+        textarea.setSelectionRange(position, position);
+        textarea.focus();
+      });
+      await page.keyboard.type("u");
+      await expect(page.getByRole("option", { name: "bg-muted", exact: true })).toBeVisible();
+
       await editor.fill(pageSource(EDITED_MARKER));
       await expect(page.getByText("1 unsaved", { exact: true })).toBeVisible();
       await expect(save).toBeEnabled();

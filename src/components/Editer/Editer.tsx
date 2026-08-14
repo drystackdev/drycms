@@ -4,6 +4,7 @@ import type { PrismEditor } from "prism-code-editor";
 import {
   autoComplete,
   type Completion,
+  type CompletionSource,
   fuzzyFilter,
   registerCompletions,
 } from "prism-code-editor/autocomplete";
@@ -25,10 +26,10 @@ import { type EditerFormatLanguage, formatCode } from "./format-code.js";
 import {
   tailwindApplyCompletionSource,
   tailwindAtRuleCompletionSource,
-  tailwindClassNames,
   tailwindCompletionSource,
+  loadTailwindCompletionSnapshot,
   tailwindSwatchIconsCss,
-  tailwindThemeVariables,
+  type TailwindCompletionSnapshot,
 } from "./tailwind-completions.js";
 import type { EditerDiagnostic, EditerResult } from "./types.js";
 import { EditerWorkerClient } from "./worker-client.js";
@@ -83,6 +84,10 @@ export interface EditerProps {
    * source itself is registered once, globally, the first time any `Editer` mounts.
    * @default true */
   tailwindCompletions?: boolean;
+  /** The fully-expanded Tailwind stylesheet for this project. Live-updatable:
+   * changing it refreshes custom theme utility/variable suggestions without
+   * remounting the editor or disturbing its undo history. */
+  tailwindStylesheet?: string;
   /** Diagnostics/hover/completions/signature-help stay fully active (useful for
    * reviewing generated/example code with type errors surfaced) - only typing,
    * `Shift+Alt+F`, and applying a quick fix are disabled. @default false */
@@ -93,6 +98,7 @@ export interface EditerProps {
 
 interface InstanceState {
   tailwindCompletions: boolean;
+  tailwindSnapshot?: TailwindCompletionSnapshot;
   /** Only present for a `"tsx"`-language instance - a `"css"` one has no
    * `EditerWorkerClient` at all (see the mount effect's own `language`
    * branch), so `tsCompletionSource` below treats its absence as "no
@@ -251,8 +257,9 @@ function scopedTailwindCompletionSource(
   context: Parameters<typeof tailwindCompletionSource>[0],
   editor: PrismEditor,
 ) {
-  if (instances.get(editor)?.tailwindCompletions === false) return null;
-  return tailwindCompletionSource(context, editor);
+  const instance = instances.get(editor);
+  if (instance?.tailwindCompletions === false) return null;
+  return tailwindCompletionSource(context, instance?.tailwindSnapshot);
 }
 
 /** Same per-instance `tailwindCompletions` gate as `scopedTailwindCompletionSource`,
@@ -261,8 +268,29 @@ function scopedTailwindApplyCompletionSource(
   context: Parameters<typeof tailwindApplyCompletionSource>[0],
   editor: PrismEditor,
 ) {
-  if (instances.get(editor)?.tailwindCompletions === false) return null;
-  return tailwindApplyCompletionSource(context, editor);
+  const instance = instances.get(editor);
+  if (instance?.tailwindCompletions === false) return null;
+  return tailwindApplyCompletionSource(context, instance?.tailwindSnapshot);
+}
+
+let activeCssSnapshot: TailwindCompletionSnapshot | undefined;
+const projectCssCompletion = cssCompletion(
+  { [Symbol.iterator]: () => (activeCssSnapshot?.classList ?? [])[Symbol.iterator]() },
+  { [Symbol.iterator]: () => (activeCssSnapshot?.themeVariableList ?? [])[Symbol.iterator]() },
+);
+
+function scopedCssCompletion(
+  context: Parameters<CompletionSource>[0],
+  editor: PrismEditor,
+) {
+  const instance = instances.get(editor);
+  if (instance?.tailwindCompletions === false) return null;
+  activeCssSnapshot = instance?.tailwindSnapshot;
+  try {
+    return projectCssCompletion(context, editor);
+  } finally {
+    activeCssSnapshot = undefined;
+  }
 }
 
 let completionsRegistered = false;
@@ -274,10 +302,9 @@ function ensureCompletionsRegistered() {
     sources: [
       // Generic CSS IntelliSense (properties, values, at-rules, pseudo-classes/
       // elements, `var(--...)`) - ships with `prism-code-editor` itself, just never
-      // wired up before now. `tailwindClassNames`/`tailwindThemeVariables` seed its
-      // `.selector` and `var(--...)` completions with Tailwind's own utility classes
-      // and `@theme` tokens on top of whatever it finds in the document.
-      cssCompletion(tailwindClassNames, tailwindThemeVariables),
+      // wired up before now. `scopedCssCompletion` supplies this editor's
+      // project utility classes and `@theme` variables on every query.
+      scopedCssCompletion,
       // Tailwind v4's own at-rules (`@theme`, `@layer`, `@apply`, `@variant`, ...) -
       // `cssCompletion`'s built-in at-rule list only knows standard CSS ones.
       tailwindAtRuleCompletionSource,
@@ -615,6 +642,7 @@ export default function Editer({
   debounceMs = 300,
   describeProps = false,
   tailwindCompletions = true,
+  tailwindStylesheet,
   readOnly = false,
   class: className,
   style,
@@ -625,6 +653,7 @@ export default function Editer({
   onChangeRef.current = onChange;
   const extraFilesRef = useRef(extraFiles ?? {});
   extraFilesRef.current = extraFiles ?? {};
+  const tailwindLoadGenerationRef = useRef(0);
   // `onChange`'s `result.code` is a snapshot from whenever the debounced
   // worker round-trip started - by the time it comes back, the user may
   // already have typed further keystrokes the editor itself has, but this
@@ -1034,6 +1063,25 @@ export default function Editer({
       lastReportedCodeRef.current = value;
     }
   }, [value]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    const instance = editor && instances.get(editor);
+    if (!instance || !tailwindCompletions) return;
+    const generation = ++tailwindLoadGenerationRef.current;
+    void loadTailwindCompletionSnapshot(tailwindStylesheet).then(
+      (snapshot) => {
+        if (generation !== tailwindLoadGenerationRef.current) return;
+        const current = editorRef.current && instances.get(editorRef.current);
+        if (current) current.tailwindSnapshot = snapshot;
+      },
+      () => {
+        // A half-written `@theme`/import is normal while editing. Preserve the
+        // last valid snapshot and let the existing diagnostics/build surfaces
+        // report the stylesheet error.
+      },
+    );
+  }, [tailwindCompletions, tailwindStylesheet]);
 
   useEffect(() => {
     const editor = editorRef.current;

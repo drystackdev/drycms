@@ -5,6 +5,12 @@ import { __unstable__loadDesignSystem } from "tailwindcss";
 
 type DesignSystem = Awaited<ReturnType<typeof __unstable__loadDesignSystem>>;
 
+export interface TailwindCompletionSnapshot {
+  classList: readonly string[];
+  variantList: readonly string[];
+  themeVariableList: readonly string[];
+}
+
 /**
  * `colorKey` ("red-500", "black", "current", ...) -> its resolved CSS color -
  * flattened from `tailwindcss/colors`' default palette once at module load.
@@ -59,15 +65,12 @@ export const tailwindSwatchIconsCss: string =
   `.pce-ac-row[aria-selected] .pce-ac-icon[class*="pce-ac-icon-swatch-"]:before{color:inherit}` +
   [...tailwindColorTokens.entries()].map(([key, value]) => `.pce-ac-icon-swatch-${key}{--pce-ac-icon-swatch-${key}:${value}}`).join("");
 
-/**
- * Shared across every `Editer` instance on the page - the class/variant lists
- * only depend on the (for now, fixed default) theme, not on which file is
- * being edited, so there's no reason to reload them per instance.
- */
-let classList: string[] | undefined;
-let variantList: string[] | undefined;
-let themeVariableList: string[] | undefined;
-let listsPromise: Promise<void> | undefined;
+/** Project snapshots are cached by their fully-expanded stylesheet. The
+ * editor keeps the selected snapshot per instance; this cache only avoids
+ * recompiling an identical theme when changing files. */
+let defaultSnapshot: TailwindCompletionSnapshot | undefined;
+const snapshotCache = new Map<string, Promise<TailwindCompletionSnapshot>>();
+const MAX_SNAPSHOT_CACHE_SIZE = 8;
 
 /**
  * Flattens `DesignSystem.getVariants()` into every variant name that's valid
@@ -92,44 +95,42 @@ function buildVariantList(designSystem: DesignSystem): string[] {
   return [...names];
 }
 
-function loadTailwindLists(): Promise<void> {
-  if (!listsPromise) {
-    // `tailwindcss/index.css` (unlike most CSS entry points) has no further
-    // `@import`s of its own - theme tokens, base reset and the `@tailwind
-    // utilities` marker are all inlined in that one file - so `loadStylesheet`
-    // only ever needs to resolve the single top-level `@import "tailwindcss"` below.
-    listsPromise = __unstable__loadDesignSystem('@import "tailwindcss";', {
-      loadStylesheet: async (id, base) => ({ path: id, base, content: tailwindIndexCss }),
-    }).then((designSystem) => {
-      classList = designSystem.getClassList().map(([className]) => className);
-      variantList = buildVariantList(designSystem);
-      // Every `--color-red-500`/`--font-sans`/`--radius-lg`/... CSS custom property the
-      // default theme defines - what `@theme { ... }` blocks and `var(...)` calls in a
-      // `styles/*.css` file (`tailwindThemeVariables` below) draw their completions from.
-      themeVariableList = [...designSystem.theme.entries()].map(([name]) => name);
-    });
+export function loadTailwindCompletionSnapshot(
+  stylesheetSource = '@import "tailwindcss";',
+): Promise<TailwindCompletionSnapshot> {
+  const cached = snapshotCache.get(stylesheetSource);
+  if (cached) return cached;
+
+  const promise = __unstable__loadDesignSystem(stylesheetSource, {
+    // `tailwindStylesheetSource` has already expanded every project-relative
+    // import. The one external import left is Tailwind's own self-contained
+    // entry, supplied from the installed package rather than fetched.
+    loadStylesheet: async (id, base) => {
+      if (id !== "tailwindcss") throw new Error(`[drycms] Unsupported Tailwind stylesheet import "${id}" from "${base}".`);
+      return { path: id, base, content: tailwindIndexCss };
+    },
+  }).then((designSystem) => ({
+    classList: designSystem.getClassList().map(([className]) => className),
+    variantList: buildVariantList(designSystem),
+    themeVariableList: [...designSystem.theme.entries()].map(([name]) => name),
+  }));
+
+  snapshotCache.set(stylesheetSource, promise);
+  if (snapshotCache.size > MAX_SNAPSHOT_CACHE_SIZE) {
+    const oldest = snapshotCache.keys().next().value;
+    if (oldest !== undefined) snapshotCache.delete(oldest);
   }
-  return listsPromise;
+  promise.catch(() => {
+    if (snapshotCache.get(stylesheetSource) === promise) snapshotCache.delete(stylesheetSource);
+  });
+  return promise;
 }
 
 /** Kicks off the (one-time) load eagerly so the lists are likely warm by the
  * time the user's first keystroke could trigger a completion. */
-void loadTailwindLists();
-
-/**
- * Live views over `classList`/`themeVariableList` for `prism-code-editor`'s built-in
- * `cssCompletion` (`Editer.tsx`), which captures whatever `classes`/`variables`
- * iterable it's given ONCE, at registration time - before `loadTailwindLists` above
- * has necessarily resolved. A plain array reference captured that early would stay
- * empty forever (the `let`s above are reassigned wholesale once the design system
- * loads, never mutated in place); these wrap the *variable*, not its current value,
- * so every completion query - which re-iterates fresh each time - sees whatever's
- * loaded by then.
- */
-export const tailwindClassNames: Iterable<string> = { [Symbol.iterator]: () => (classList ?? [])[Symbol.iterator]() };
-export const tailwindThemeVariables: Iterable<string> = {
-  [Symbol.iterator]: () => (themeVariableList ?? [])[Symbol.iterator](),
-};
+void loadTailwindCompletionSnapshot().then((snapshot) => {
+  defaultSnapshot = snapshot;
+});
 
 const CLASS_ATTR_RE = /\b(?:className|class)\s*=\s*["']([^"']*)$/;
 /** `@apply flex items-c` (Tailwind v4 CSS) - same "everything after the
@@ -149,18 +150,22 @@ const APPLY_RE = /@apply\s+([^;{}]*)$/;
  * `segment` after it - which is how stacking (`md:hover:bg-red-500`) falls
  * out for free, with no explicit handling of "how many variants deep" here.
  */
-function classCompletions(pos: number, classesSoFar: string): { from: number; options: Completion[] } | null {
-  if (!classList || !variantList) return null;
+function classCompletions(
+  pos: number,
+  classesSoFar: string,
+  snapshot = defaultSnapshot,
+): { from: number; options: Completion[] } | null {
+  if (!snapshot) return null;
   const currentToken = classesSoFar.slice(classesSoFar.lastIndexOf(" ") + 1);
   const segment = currentToken.slice(currentToken.lastIndexOf(":") + 1);
   if (!segment) return null;
 
   const options: Completion[] = [
-    ...variantList
+    ...snapshot.variantList
       .filter((name) => name.startsWith(segment))
       .slice(0, 30)
       .map((label) => ({ label, insert: `${label}:`, icon: "keyword" as const, detail: "variant" })),
-    ...classList
+    ...snapshot.classList
       .filter((name) => name.startsWith(segment))
       .slice(0, 50)
       .map((label) => ({ label, icon: resolveTailwindColorIcon(label) ?? "property" })),
@@ -178,10 +183,13 @@ function classCompletions(pos: number, classesSoFar: string): { from: number; op
  * `md:`, `group-hover:`, ...) while the cursor is inside a `className="..."`
  * string.
  */
-export const tailwindCompletionSource: CompletionSource = (context) => {
+export const tailwindCompletionSource = (
+  context: Parameters<CompletionSource>[0],
+  snapshot?: TailwindCompletionSnapshot,
+): ReturnType<CompletionSource> => {
   const match = CLASS_ATTR_RE.exec(context.before);
   if (!match) return null;
-  return classCompletions(context.pos, match[1] ?? "");
+  return classCompletions(context.pos, match[1] ?? "", snapshot);
 };
 
 /**
@@ -190,10 +198,13 @@ export const tailwindCompletionSource: CompletionSource = (context) => {
  * registered for the `"css"` language (`Editer.tsx`), used while editing the
  * Page Builder's `styles/*.css` files.
  */
-export const tailwindApplyCompletionSource: CompletionSource = (context) => {
+export const tailwindApplyCompletionSource = (
+  context: Parameters<CompletionSource>[0],
+  snapshot?: TailwindCompletionSnapshot,
+): ReturnType<CompletionSource> => {
   const match = APPLY_RE.exec(context.before);
   if (!match) return null;
-  return classCompletions(context.pos, match[1] ?? "");
+  return classCompletions(context.pos, match[1] ?? "", snapshot);
 };
 
 const AT_RULE_RE = /@([\w-]*)$/;

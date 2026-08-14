@@ -66,6 +66,7 @@ import { FolderComponentsIcon, FolderCssIcon, FolderMarkdownIcon, FolderRoutesIc
 import { copyDestinationPath, entriesForSourceRoot, withSourceRoot } from "../page-components/tree.js";
 import { COMPONENT_ROOT, MD_ROOT, PAGES_ROOT, PAGES_SOURCE_ROOTS, STYLES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import { COMPONENT_PREVIEW_ENTRY_PATH, buildComponentPreviewSource } from "../page-components/component-preview.js";
+import { tailwindStylesheetSource } from "../page-components/tailwind-build.js";
 import { samplePropsSource } from "../page-components/props-sample.js";
 import type { PropsSchema } from "../components/Editer/worker-protocol.js";
 import { useDocumentTitle, usePageHeaderActions } from "./page-common.js";
@@ -1093,6 +1094,20 @@ export default function PageEditor() {
     if (dryTypes) rest["dry.generated.d.ts"] = dryTypes;
     return rest;
   }, [sourceByPath, selectedPath, dryTypes]);
+
+  /** Same expanded stylesheet input preview/build compile. Keep the last
+   * valid graph while a relative import is temporarily incomplete during
+   * editing, so autocomplete doesn't collapse back to the default theme. */
+  const lastValidTailwindStylesheetRef = useRef<string>();
+  const tailwindStylesheet = useMemo(() => {
+    try {
+      const next = tailwindStylesheetSource(sourceByPath);
+      lastValidTailwindStylesheetRef.current = next;
+      return next;
+    } catch {
+      return lastValidTailwindStylesheetRef.current;
+    }
+  }, [sourceByPath]);
 
   /** Every file that already exists in this project's source tree, for
    * `PageSourceMagicChat`'s own orientation (`PageSourceMagicChatProps.projectFiles`'s
@@ -2525,6 +2540,7 @@ export default function PageEditor() {
                   onChange={handleChange}
                   extraFiles={extraFiles}
                   language={editorLanguage}
+                  tailwindStylesheet={tailwindStylesheet}
                   describeProps={isComponentPath}
                   style={{ height: "100%" }}
                 />
