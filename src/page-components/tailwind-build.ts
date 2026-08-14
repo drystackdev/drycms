@@ -63,8 +63,51 @@ export function tailwindStylesheetSource(sourceByPath: Record<string, string>): 
  * `bodyHtml` should be the rendered page's `<body>` INNER html (the output
  * of `buildDocument`, minus the `<html>`/`<head>` wrapper) - only its class
  * usage matters, the iframe never navigates anywhere real.
+ *
+ * `extraScanText`, if given, is `sourceCandidateTokens()`-extracted and
+ * dropped onto a hidden, inert element's `class` attribute alongside
+ * `bodyHtml`. Necessary, not decorative: read `dist/index.global.js`
+ * directly (there's no public API to hook into instead) and its ENTIRE
+ * candidate-collection step is `document.querySelectorAll("[class]")` then
+ * each match's `classList` - it never inspects text content, so a hidden
+ * element carrying candidates as plain text is invisible to it; only a real
+ * `class` attribute is ever read. `bodyHtml` alone is a ONE-SHOT server
+ * render with every piece of client-only state (a menu's `open`, a tab's
+ * active panel, ...) at its default - any utility class that only appears in
+ * a JSX branch gated behind such state (`{open && <nav class="absolute
+ * top-full ...">}`) never renders into that HTML, so it never gets compiled
+ * CSS even though hydration later adds the class to the real DOM (confirmed
+ * live 2026-08-15, `component/MobileMenu.tsx` on a real tenant: the class
+ * was present on the opened element, `getComputedStyle` showed
+ * `position: static` - no rule existed at all). Extracting candidate tokens
+ * from this project's raw `.tsx` source text and forcing them onto a real
+ * element sidesteps that, matching how a normal static Tailwind build
+ * (scanning source files, not runtime DOM) already covers every conditional
+ * branch regardless of whether this one render happened to hit it.
  */
-export async function compileTailwindCss(bodyHtml: string, stylesheetSource: string, timeoutMs = 2000): Promise<string> {
+
+/** Every `[class]="…"`/`cn(…)`/`@apply …` string in real source text is
+ * embedded among JS/TS/JSX syntax this never has to parse: valid Tailwind
+ * utility/variant characters (letters, digits, `-_:/.%#!*` plus `[]` for
+ * arbitrary values) are extracted as run-length tokens, and anything else
+ * (quotes, braces, whitespace, `=`, `<`, `>`, ...) is treated as a
+ * separator. Produces plenty of tokens that are NOT real utilities
+ * (`import`, `useState`, `preact/hooks`, ...) - harmless, since
+ * `@tailwindcss/browser`'s own build step (`$t.build`, confirmed reading
+ * `dist/index.global.js`) silently drops any candidate that doesn't resolve
+ * to a real utility rather than erroring, the same tolerance a real static
+ * Tailwind scan relies on. */
+const CANDIDATE_TOKEN_RE = /[A-Za-z0-9_\-:/.%#!*[\]]+/g;
+
+function sourceCandidateTokens(text: string): string[] {
+  return text.match(CANDIDATE_TOKEN_RE) ?? [];
+}
+export async function compileTailwindCss(
+  bodyHtml: string,
+  stylesheetSource: string,
+  extraScanText = "",
+  timeoutMs = 2000,
+): Promise<string> {
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
   iframe.style.left = "-99999px";
@@ -82,6 +125,17 @@ export async function compileTailwindCss(bodyHtml: string, stylesheetSource: str
     if (!doc) throw new Error("[drycms] compileTailwindCss: iframe has no contentDocument.");
 
     doc.body.innerHTML = bodyHtml;
+
+    const candidateTokens = extraScanText ? sourceCandidateTokens(extraScanText) : [];
+    if (candidateTokens.length > 0) {
+      const scanNode = doc.createElement("div");
+      scanNode.style.display = "none";
+      // A real `class` attribute - see this function's own doc comment for
+      // why nothing else (`textContent`, a `data-*` attribute, ...) is ever
+      // read by the package's candidate-collection step.
+      scanNode.className = candidateTokens.join(" ");
+      doc.body.appendChild(scanNode);
+    }
 
     // Added BEFORE the package imports - confirmed live that a tag added
     // AFTER import never gets picked up (the package's styleObserver binds

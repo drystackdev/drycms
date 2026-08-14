@@ -1020,6 +1020,14 @@ export default function PageEditor() {
 
   const code = selectedPath ? (sourceByPath[selectedPath] ?? "") : "";
   const dirty = !!selectedPath && sourceByPath[selectedPath] !== savedByPath[selectedPath];
+  /** True when ANY file (not just the one open) differs from what's on
+   * storage - Magic Chat can write to a file other than `selectedPath` (or
+   * create a brand new one) while the admin is looking at something else, so
+   * gating Save on `dirty` alone left those writes with no way to persist:
+   * the button stayed disabled until the admin happened to open that exact
+   * other file. `handleSave` below saves every one of these, not just
+   * `selectedPath`, so this is what actually gates it. */
+  const anyDirty = Object.keys(sourceByPath).some((p) => sourceByPath[p] !== savedByPath[p]);
   /** The open file is a component (`component/**`, `source-roots.ts`) rather
    * than a route file - drives the preview mode, the props-schema request to
    * `Editer`, and which starter source a new file gets. */
@@ -1040,10 +1048,20 @@ export default function PageEditor() {
    * previewable file again - no explicit save/restore needed. */
   const isMdPath = !!selectedPath && rootOf(selectedPath)?.id === MD_ROOT;
   const previewVisible = previewOpen && !isMdPath;
+  /** Same root-based rule `editorLanguage` below applies to `selectedPath`,
+   * generalized to any path - `handleSave` needs this for every dirty file
+   * it saves, not just whichever one is currently open. */
+  function languageForPath(filePath: string): EditerFormatLanguage {
+    const root = rootOf(filePath)?.id;
+    if (root === STYLES_ROOT) return "css";
+    if (root === MD_ROOT) return "md";
+    return "tsx";
+  }
+
   /** Mirrors `Editer`'s own `language` prop below - shared so `handleSave`'s
    * format-on-save runs through the exact same Prettier parser `Editer`
    * itself would for this file. */
-  const editorLanguage: EditerFormatLanguage = rootOf(selectedPath)?.id === STYLES_ROOT ? "css" : isMdPath ? "md" : "tsx";
+  const editorLanguage: EditerFormatLanguage = languageForPath(selectedPath);
 
   // Clears stale diagnostics from whatever file was open before - `Editer`
   // remounts on `selectedPath` (its own `key`) and reports fresh ones via
@@ -1157,29 +1175,49 @@ export default function PageEditor() {
     }
   }
 
-  /** Reformats the buffer (Prettier, via `editorLanguage`) before persisting it -
-   * `dirty` (the only thing that gates a call to this, both from the Save
-   * button and the Ctrl/Cmd+S shortcut below) means there's real new content
-   * to write anyway, so folding formatting into that same write means a
-   * saved file is always pretty-printed without a separate action. Updates
-   * `sourceByPath` too so the editor visibly shows the reformatted text
-   * rather than the saved copy silently drifting from what's on screen. */
+  /** Saves EVERY dirty file, not just `selectedPath` - a Magic Chat write to
+   * some other (or brand new) file is just as much "real new content to
+   * persist" as a hand-typed edit to the one currently open, and leaving it
+   * out silently stranded it in the in-memory buffer forever unless the
+   * admin happened to open that exact file (see `handleMagicCodeChange`'s
+   * doc comment - `anyDirty` is what gates this now, not `dirty`). Reformats
+   * each file (Prettier, via its own `languageForPath`) before persisting it,
+   * same as before, and updates `sourceByPath` too so the editor visibly
+   * shows the reformatted text rather than the saved copy silently drifting
+   * from what's on screen. */
   async function handleSave() {
-    if (!selectedPath) return;
+    const dirtyPaths = Object.keys(sourceByPath).filter((p) => sourceByPath[p] !== savedByPath[p]);
+    if (dirtyPaths.length === 0) return;
     setSaving(true);
     try {
-      const { code: formatted } = await formatCode(sourceByPath[selectedPath] ?? "", editorLanguage);
-      setSourceByPath((prev) => (prev[selectedPath] === formatted ? prev : { ...prev, [selectedPath]: formatted }));
-      await api.save(selectedPath, formatted);
-      const nextSaved = { ...savedByPath, [selectedPath]: formatted };
+      const formattedByPath: Record<string, string> = {};
+      for (const p of dirtyPaths) {
+        formattedByPath[p] = (await formatCode(sourceByPath[p] ?? "", languageForPath(p))).code;
+      }
+      setSourceByPath((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const p of dirtyPaths) {
+          if (next[p] !== formattedByPath[p]) {
+            next[p] = formattedByPath[p]!;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      for (const p of dirtyPaths) await api.save(p, formattedByPath[p]!);
+      const nextSaved = { ...savedByPath };
+      for (const p of dirtyPaths) {
+        nextSaved[p] = formattedByPath[p]!;
+        cancelDraftWrite(p);
+        void deletePageSourceDraft(p);
+      }
       setSavedByPath(nextSaved);
-      cancelDraftWrite(selectedPath);
-      void deletePageSourceDraft(selectedPath);
-      // Not just this file: saving a shared component (or a layout) leaves
+      // Not just these files: saving a shared component (or a layout) leaves
       // every page rendering through it stale too, and the yellow dot is the
       // only signal that says so - `markUnbuilt` keeps only `page.tsx` paths,
-      // so handing it the file itself as well is harmless.
-      markUnbuilt([selectedPath, ...pagesAffectedBy(selectedPath, nextSaved)]);
+      // so handing it the files themselves as well is harmless.
+      markUnbuilt(dirtyPaths.flatMap((p) => [p, ...pagesAffectedBy(p, nextSaved)]));
     } catch (error) {
       toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : undefined });
     } finally {
@@ -1192,14 +1230,19 @@ export default function PageEditor() {
    * and the preview-iframe `message` handler further down) are registered
    * with dep arrays that deliberately don't re-run per keystroke, so calling
    * `handleSave` from inside them directly would fire a closure holding an
-   * old `sourceByPath`/`dirty` pair and save stale content. Guarded exactly
-   * like the Save button's own `disabled={!dirty || saving}`: a no-op on a
-   * clean file rather than a pointless write that would also light up the
-   * unbuilt dot (`markUnbuilt`) for a page nothing changed in. */
+   * old `sourceByPath`/`anyDirty` pair and save stale content. Guarded
+   * exactly like the Save button's own `disabled={!anyDirty || saving}`: a
+   * no-op with nothing dirty anywhere rather than a pointless write that
+   * would also light up the unbuilt dot (`markUnbuilt`) for a page nothing
+   * changed in. Still requires a file to be open - `handleSave` has
+   * something to save even with `selectedPath` empty (an other-file Magic
+   * write), but there's no Save button visible in that state either
+   * (`{selectedPath && (...)}` below), so firing on Ctrl/Cmd+S there would
+   * save with no visible affordance that anything happened. */
   const saveShortcutRef = useRef<() => void>(() => {});
   useEffect(() => {
     saveShortcutRef.current = () => {
-      if (!selectedPath || !dirty || saving) return;
+      if (!selectedPath || !anyDirty || saving) return;
       void handleSave();
     };
   });
@@ -1275,9 +1318,12 @@ export default function PageEditor() {
    * effect reacts to the changed prop and re-runs `handleChange` itself
    * (diagnostics + draft persistence included) - nothing extra needed here.
    * A write to some OTHER (not currently open) path only updates in-memory
-   * state; it isn't draft-persisted to IndexedDB until the admin opens that
-   * file (which mounts a fresh `Editer` and primes normally) or Saves - an
-   * accepted v1 gap, see `status/page-editor-magic-chat.md`.
+   * state here; it isn't draft-persisted to IndexedDB until the admin opens
+   * that file (which mounts a fresh `Editer` and primes normally). It IS
+   * covered by Save, though (`handleSave`'s own doc comment) - `anyDirty`
+   * gates that button on every path in `sourceByPath`, not just
+   * `selectedPath`, precisely so a multi-file Magic turn doesn't leave
+   * anything stranded in the buffer. See `status/page-editor-magic-chat.md`.
    *
    * Magic can now target a path with no `FileEntry` yet (a brand new file -
    * `ai-page-source-protocol.ts`'s `PageSourceCodeTurn` isn't limited to
@@ -2320,7 +2366,7 @@ export default function PageEditor() {
             </button>
           )}
           {selectedPath && (
-            <button type="button" class="sm" title="Save (Ctrl/Cmd+S)" disabled={!dirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
+            <button type="button" class="sm" title="Save (Ctrl/Cmd+S)" disabled={!anyDirty || saving} aria-busy={saving} onClick={() => void handleSave()}>
               Save
             </button>
           )}

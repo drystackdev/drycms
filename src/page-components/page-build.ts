@@ -555,18 +555,22 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     callLog: dryConfig.callLog,
     editMode: false,
   });
-  const withCss = await inlinePageCss(rawHtml, input.sourceByPath);
-
-  // mục 7: compile the WHOLE reachable closure (entry + layouts + anything
-  // THEY import) to real ESM, and embed a manifest telling
+  // mục 7: the WHOLE reachable closure (entry + layouts + anything THEY
+  // import) - both the Tailwind scan below (every class ANY of these files
+  // could ever render, not just what this one SSR pass hit) and the compiled
+  // ESM assets loop further down (embedded in a manifest telling
   // `hydrate-built.ts` which uploaded URLs are the entry/layout chain -
   // everything else in the closure is reached by the browser's OWN native
-  // `import` resolution once hydration starts, not listed here directly.
+  // `import` resolution once hydration starts, not listed here directly) walk
+  // the same closure, so it's computed once and shared.
   const roots = [input.entryPath, ...input.layoutPaths];
+  const dependencyClosure = transitiveDependencies(roots, input.sourceByPath);
+  const withCss = await inlinePageCss(rawHtml, input.sourceByPath, dependencyClosure);
+
   const jsAssets = input.skipJsAssets
     ? []
     : await Promise.all(
-        [...transitiveDependencies(roots, input.sourceByPath)].map(async (path) => ({
+        [...dependencyClosure].map(async (path) => ({
           jsPath: toJsAssetPath(path),
           source: await compileEsmAsset(path, input.sourceByPath, input.preactRuntimeHref, input.builtAssetsBaseUrl),
         })),
@@ -607,12 +611,21 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
  * degrades to "no CSS inlined" rather than crashing every test that calls
  * `buildPage`. Real usage (the browser build pipeline) always has a
  * `document`.
+ *
+ * `dependencyClosure` - `buildPage`'s own `transitiveDependencies(roots, ...)`
+ * result - is passed through to `compileTailwindCss` as raw source text
+ * alongside the rendered `html`: `html` alone only reflects whatever branch
+ * THIS ONE render happened to take, so a utility class used only behind
+ * client-only state (a closed-by-default menu, an inactive tab panel, ...)
+ * would otherwise never get compiled CSS at all (confirmed live 2026-08-15 -
+ * see `compileTailwindCss`'s own doc comment).
  */
-async function inlinePageCss(html: string, sourceByPath: Record<string, string>): Promise<string> {
+async function inlinePageCss(html: string, sourceByPath: Record<string, string>, dependencyClosure: Set<string>): Promise<string> {
   if (typeof document === "undefined") return html;
   const bodyMatch = /<body>([\s\S]*)<\/body>/.exec(html);
   if (!bodyMatch) return html;
-  const css = await compileTailwindCss(bodyMatch[1]!, tailwindStylesheetSource(sourceByPath));
+  const extraScanText = [...dependencyClosure].map((path) => sourceByPath[path]).join("\n");
+  const css = await compileTailwindCss(bodyMatch[1]!, tailwindStylesheetSource(sourceByPath), extraScanText);
   if (!css) return html;
   return html.replace("</head>", `<style>${css}</style></head>`);
 }
