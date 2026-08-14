@@ -128,10 +128,18 @@ export default function ComponentTreePanel({
    * are storage PATHS, meaningless outside this tree, and reading the real
    * clipboard would need a permission prompt for no gain. */
   const [clipboard, setClipboard] = useState<string[]>([]);
-  const effectiveFolder = activeFolder ?? (selectedPath ? parentOf(selectedPath) : "");
-
   const tree = useMemo(() => buildComponentTree(entries), [entries]);
   const entryById = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+  // NOT `parentOf(selectedPath)`: that recomputes the parent by cutting the
+  // FULL storage path, but the tree this panel renders is REBASED
+  // (`entriesForSourceRoot`'s own doc comment) - a file sitting directly at
+  // the tab's root has `parentId: null`, not the root folder's own id. Using
+  // `parentOf` here made `effectiveFolder` come out as e.g. `"component"`
+  // for a root-level file, a `folderId` no node in the rendered tree ever
+  // has (the root list renders as `folderId=""`), so `creating &&
+  // creatingParent === folderId` never matched anywhere and "New" silently
+  // rendered no input at all - found live via Playwright.
+  const effectiveFolder = activeFolder ?? (selectedPath ? (entryById.get(selectedPath)?.parentId ?? "") : "");
   const { nodes: filteredTree, matchedFolderIds } = useMemo(
     () => filterComponentTree(tree, query),
     [tree, query],
