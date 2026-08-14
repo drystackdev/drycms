@@ -86,8 +86,12 @@ export interface DryCollectionReader<T, R extends Record<string, unknown> = Reco
 }
 
 export interface DrySingletonReader<T, R extends Record<string, unknown> = Record<string, unknown>> {
-  get(): Promise<DryEntry<T> | null>;
-  get<K extends keyof R & string>(options: DryGetOptions<K>): Promise<DryEntry<Omit<T, K> & Pick<R, K>> | null>;
+  /** Never `null` - a singleton always has exactly one row (`ensureSingletonEntry`
+   * creates a blank one the moment its content type is saved, and this falls
+   * back to the same blank-row guarantee if that row is somehow still
+   * missing), so there's never an "empty state" for a page to special-case. */
+  get(): Promise<DryEntry<T>>;
+  get<K extends keyof R & string>(options: DryGetOptions<K>): Promise<DryEntry<Omit<T, K> & Pick<R, K>>>;
 }
 
 /** Generic over the project's OWN generated name->interface maps
@@ -246,9 +250,14 @@ function createSingletonReader(name: string): DrySingletonReader<Record<string, 
       const { entries, allTypes } = context;
       const type = mustFindType(allTypes, name, "singleton");
       context.touchedTypes?.add(type.name);
-      const row = await entries.getSingletonEntry(type, allTypes);
-      const result = row ? markRecord(context, type, toRecord(row)) : null;
-      if (result && options?.populate && options.populate.length > 0) {
+      // `ensureSingletonEntry` (not `getSingletonEntry`) - a singleton's own
+      // row should always exist by the time its content type is saved, but
+      // this is the reader's guarantee, not just the admin flow's: never
+      // hand a page `null` to special-case, lazily create the blank row
+      // instead if it's somehow still missing.
+      const row = await entries.ensureSingletonEntry(type, allTypes);
+      const result = markRecord(context, type, toRecord(row));
+      if (options?.populate && options.populate.length > 0) {
         await populateRelations(context, type, allTypes, result, options.populate);
       }
       recordSeoLayer(context, type, result);

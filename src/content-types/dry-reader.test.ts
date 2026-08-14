@@ -131,6 +131,35 @@ describe("dry()", () => {
     });
   });
 
+  it("singleton().get() returns a blank row instead of null when its content type has no row yet", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drycms-dry-reader-test-"));
+    dirs.push(dir);
+    const file = join(dir, "content.sqlite");
+    const schema = createSqliteContentEngineAdapter({ engine: "sqlite", file });
+    const entries = createSqliteContentEntryEngineAdapter({ engine: "sqlite", file });
+
+    const settings: ContentTypeDefinition = {
+      id: "custom-unseeded-settings",
+      kind: "singleton",
+      name: "settings",
+      label: "Settings",
+      fields: [{ id: "f-title", name: "siteTitle", label: "Site title", type: "text", config: {}, validation: {}, order: 0 }],
+      version: 0,
+    };
+    await schema.applySave(settings, await schema.planSave(settings));
+    // Deliberately no `ensureSingletonEntry` here - simulates a singleton
+    // whose bootstrap row is somehow still missing (e.g. schema applied
+    // through a path that predates that guarantee).
+    const allTypes = await schema.listContentTypes();
+
+    await runWithDryContext({ entries, allTypes }, async () => {
+      const found = await dry().singleton("settings").get();
+      expect(found).not.toBeNull();
+      expect(found).toMatchObject({ siteTitle: null });
+      expect(await entries.getSingletonEntry(settings, allTypes)).not.toBeNull();
+    });
+  });
+
   describe("list({ select })", () => {
     it("returns only the named fields (plus id), leaving the rest out of the row entirely", async () => {
       const { dir, entries, allTypes } = await freshDrySetup();

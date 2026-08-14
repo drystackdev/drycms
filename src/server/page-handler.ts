@@ -236,12 +236,30 @@ export async function handlePageRequest(
         }
       : undefined;
 
+    // `devHydrateManifest` above only exists inside `bun run dev`'s live
+    // `DevPagesSource` branch - everywhere else (real prod, `dev:worker`'s
+    // built Worker), route discovery took the STATIC glob over `src/apps/
+    // pages` (`route-tree.ts`), which can go stale the moment a Page Editor
+    // save lands without a rebuild. A VEI session needs the fix either way,
+    // just a different one there: `render.ts`'s `veiLiveManifest` doc
+    // comment explains why this can't be a server-side live read the way
+    // `devHydrateManifest` is (`new Function` is blocked in a real Worker).
+    const veiLiveManifest = vei && !devHydrateManifest
+      ? {
+          entryPath: devSourcePathOf(resolvedMatch.page)!,
+          layoutPaths: resolvedMatch.layouts.map((layout) => devSourcePathOf(layout)!),
+          params: resolvedMatch.params,
+          allTypes,
+        }
+      : undefined;
+
     const response = renderPage(resolvedMatch, dryContext, {
       status,
       // `render.ts` already logs the error before calling this - only
       // building the fallback document is left to do here.
       onRenderError: routeTree.serverError ? () => renderErrorHtml(routeTree.serverError!) : undefined,
       devHydrateManifest,
+      veiLiveManifest,
     });
     if (vei) response.headers.set("Cache-Control", "no-store");
     return response;

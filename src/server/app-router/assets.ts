@@ -3,6 +3,7 @@ import {
   HYDRATE_ENTRY_HREF as GENERATED_HYDRATE_ENTRY_HREF,
   VEI_OVERLAY_HREF as GENERATED_VEI_OVERLAY_HREF,
   HYDRATE_BUILT_HREF as GENERATED_HYDRATE_BUILT_HREF,
+  VEI_LIVE_REFRESH_HREF as GENERATED_VEI_LIVE_REFRESH_HREF,
 } from "./generated-asset-hrefs.js";
 
 import { resolveGlobalsCssHref } from "./resolve-asset-href.js";
@@ -12,6 +13,7 @@ export {
   resolveHydrateEntryHref,
   resolveVeiOverlayHref,
   resolveHydrateBuiltHref,
+  resolveVeiLiveRefreshHref,
 } from "./resolve-asset-href.js";
 
 /**
@@ -31,3 +33,8 @@ export const HYDRATE_ENTRY_HREF = import.meta.env.DEV ? "/src/apps/hydrate-clien
 export const VEI_OVERLAY_HREF = import.meta.env.DEV ? "/src/apps/vei/overlay.ts" : GENERATED_VEI_OVERLAY_HREF;
 /** mục 7 - see `src/apps/hydrate-built.ts`'s doc comment. */
 export const HYDRATE_BUILT_HREF = import.meta.env.DEV ? "/src/apps/hydrate-built.ts" : GENERATED_HYDRATE_BUILT_HREF;
+/** See `src/apps/vei-live-refresh.ts`'s doc comment. Never actually loaded in
+ * dev - `page-handler.ts` only sets `veiLiveManifest` outside `bun run dev`
+ * (that case is already live via `DevPagesSource`) - but resolved the same
+ * way as the other 3 hrefs for consistency. */
+export const VEI_LIVE_REFRESH_HREF = import.meta.env.DEV ? "/src/apps/vei-live-refresh.ts" : GENERATED_VEI_LIVE_REFRESH_HREF;

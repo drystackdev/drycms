@@ -67,7 +67,16 @@ exactly what it always did.
   Worker and what a VEI session in PROD (or under `dev:worker`) renders
   through (dev never touches it anymore) - safe to delete locally at any
   time (nothing hand-authored lives there), just don't `deploy`/a standalone
-  `build:worker` right after without repopulating it first.
+  `build:worker` right after without repopulating it first. `dev:worker` now
+  runs `wrangler dev` through `scripts/watch-pages-worker.mjs` (added
+  2026-08-14) instead of invoking it directly: that wrapper watches
+  wrangler's local-R2 persisted state (`.wrangler/state/v3/r2`) and
+  auto-reruns `pull --local` + `build:worker` whenever a Page Editor/VEI save
+  changes it, so a `dev:worker` session picks up new/edited pages within a
+  few seconds instead of staying frozen at whatever was live when the
+  session started (a real `wrangler dev` isolate has no way to dynamically
+  load new `.tsx` source at runtime, so a rebuild is unavoidable - this just
+  automates it instead of requiring a manual restart).
 
 Kept in sync by `scripts/sync-pages-r2.ts`'s `push`/`pull` - both now
 UNCONDITIONALLY OVERWRITE the destination (mirror semantics, same as

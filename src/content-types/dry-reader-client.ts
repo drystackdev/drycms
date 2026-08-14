@@ -40,7 +40,8 @@ function next(kind: DryCallLogEntry["kind"], name: string, method: DryCallLogEnt
   const entry = log[index++];
   if (!entry) {
     console.warn(`[drycms] dry().${kind}("${name}").${method}() - replay log ran out of entries.`);
-    return method === "list" ? { rows: [], total: 0 } : null;
+    if (method === "list") return { rows: [], total: 0 };
+    return kind === "singleton" ? {} : null;
   }
   if (entry.kind !== kind || entry.name !== name || entry.method !== method) {
     console.warn(

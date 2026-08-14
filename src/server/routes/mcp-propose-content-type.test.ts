@@ -12,7 +12,7 @@ vi.mock("../config.js", async () => {
   const { resolveOptions } = await import("../options.js");
   tempDirBox.path = mkdtempSync(join(tmpdir(), "drycms-mcp-propose-"));
   const resolved = resolveOptions({}, { localDataRoot: tempDirBox.path });
-  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, typesCacheStorage: resolved.typesCache.storage };
+  return { content: { engine: "sqlite", file: join(tempDirBox.path, "content.sqlite") }, typesCacheStorage: resolved.typesCache.storage, path: resolved.path };
 });
 
 const { POST } = await import("./mcp.js");

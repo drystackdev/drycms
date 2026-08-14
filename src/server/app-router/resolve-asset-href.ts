@@ -108,3 +108,11 @@ export function resolveHydrateBuiltHref(
 ): string {
   return resolveBuiltAssetHref(dev, "src/apps/hydrate-built.ts", manifestPath);
 }
+
+/** See `src/apps/vei-live-refresh.ts`'s doc comment. */
+export function resolveVeiLiveRefreshHref(
+  dev: boolean,
+  manifestPath: string = join(process.cwd(), "dist/client/.vite/manifest.json"),
+): string {
+  return resolveBuiltAssetHref(dev, "src/apps/vei-live-refresh.ts", manifestPath);
+}

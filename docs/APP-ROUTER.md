@@ -102,6 +102,14 @@ const { rows } = await dry().collection("blog").list({
 - One caveat for [VEI](../plans/vei.md) inline editing: a field you
   transformed is not inline-editable (the rendered text isn't what's in the
   DB). Use `true` for fields an admin should be able to edit in place.
+- VEI marking is automatic for a `true` field rendered plainly - `{post.title}`
+  as JSX text, or `src={post.hero}` as an attribute - server-side rendering
+  already detects it and marks the element for you. **Don't add
+  `` {...dryBind(post.$.field)} `` for a plain, untransformed field** - it's
+  redundant there. Reach for `dryBind` only when the automatic layer can't
+  reach the value: it went through a formatter/derived transform (the
+  `excerpt` case above), it's a non-string field type, or it's passed into a
+  nested component instead of landing directly on a host element.
 
 ## Dynamic routes: the page's own `dry()` call decides which pages exist
 

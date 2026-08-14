@@ -417,11 +417,14 @@ export default function BuilderContentType() {
   // the admin to resolve one at a time below, deduped by id so a later poll
   // never queues the same unresolved conflict twice.
   const [aiConflicts, setAiConflicts] = useState<AiDraftConflict[]>([]);
+  const [aiDraftsSynced, setAiDraftsSynced] = useState(false);
   useEffect(() => {
     let cancelled = false;
     function pull() {
       void syncAiContentTypeDrafts().then((conflicts) => {
-        if (cancelled || conflicts.length === 0) return;
+        if (cancelled) return;
+        setAiDraftsSynced(true);
+        if (conflicts.length === 0) return;
         setAiConflicts((current) => {
           const existingIds = new Set(current.map((entry) => entry.server.id));
           const fresh = conflicts.filter((entry) => !existingIds.has(entry.server.id));
@@ -479,6 +482,23 @@ export default function BuilderContentType() {
     setApplyBuilderId(id);
     setApplyDialogOpen(true);
   }
+
+  // Deep link from an MCP `propose_content_type` tool response
+  // (`routes/mcp.ts`'s `runProposeContentTypeTool`) - opens straight into
+  // "Apply and build" for that one draft instead of leaving the admin to
+  // find it in the list themselves. Waits for both the live schema and the
+  // first AI-draft sync so the dialog's diff isn't computed against a
+  // still-empty `liveDefinitions` or a not-yet-pulled draft, and only fires
+  // once so a later `definitions`/`aiDraftsSynced` update can't reopen it
+  // after the admin closes the dialog.
+  const [openDraftId, setOpenDraftId] = useParam<string>("openDraft");
+  const openedDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (openedDeepLinkRef.current || !openDraftId || !definitions || !aiDraftsSynced) return;
+    openedDeepLinkRef.current = true;
+    openApplyDialog(openDraftId);
+    setOpenDraftId(undefined);
+  }, [openDraftId, definitions, aiDraftsSynced]);
 
   if (!canAccess(CONTENT_TYPES_RESOURCE_ID, "setting")) {
     return <span class="error">You don't have permission to access Content Types.</span>;

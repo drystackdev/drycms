@@ -183,5 +183,19 @@ export async function discoverRoutes(devSource?: DevPagesSource): Promise<RouteT
   const fallbackModules = import.meta.glob<RouteModule>(
     "/src/apps/pages/{404,500}.tsx",
   );
-  return buildRouteTree({ ...pageModules, ...fallbackModules }, PAGES_ROOT_PREFIX);
+  const allModules = { ...pageModules, ...fallbackModules };
+  // Tagged with the SAME `devSourcePathOf` convention the `devSource` branch
+  // above uses, even though this branch never varies per-request (Vite's own
+  // glob is fixed at build time) - a VEI session still needs to know which
+  // `pagesSourceStorage`-relative path backs the matched page/layout so it
+  // can fetch that file's CURRENT content client-side (`vei-live-refresh.ts`)
+  // instead of the stale compiled module this loader itself returns. See
+  // `page-handler.ts`'s `veiLiveManifest` construction.
+  const modules: Record<string, ModuleLoader> = {};
+  for (const [path, loader] of Object.entries(allModules)) {
+    const tagged: ModuleLoader & { devSourcePath?: string } = loader;
+    tagged.devSourcePath = `${PAGES_ROOT}/${path.slice(PAGES_ROOT_PREFIX.length).replace(/^\/+/, "")}`;
+    modules[path] = tagged;
+  }
+  return buildRouteTree(modules, PAGES_ROOT_PREFIX);
 }

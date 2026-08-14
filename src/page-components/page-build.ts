@@ -44,11 +44,21 @@ const NPM_ALLOWLIST: Record<string, Record<string, unknown>> = {
   "preact/hooks": preactHooks as unknown as Record<string, unknown>,
 };
 
-export function resolveModulePath(
+/**
+ * The pure alias/relative-import math half of `resolveModulePath` - no
+ * `sourceByPath` involved, so a caller that doesn't have (or doesn't want to
+ * pre-fetch) a full source map can still compute the same candidate paths and
+ * decide existence its own way. `resolveModulePath` below is the sync,
+ * map-backed wrapper every EXISTING caller in this file uses; `vei-live-
+ * refresh.ts` is the other caller - it resolves existence via a live
+ * `fetch()` per candidate instead of a map lookup, since it only ever needs
+ * the small closure one page's request actually reaches, not a pre-loaded
+ * whole-tree map.
+ */
+export function candidatePathsFor(
   fromPath: string,
   specifier: string,
-  sourceByPath: Record<string, string>,
-): { kind: "external"; value: Record<string, unknown> } | { kind: "local"; path: string } {
+): { kind: "external"; value: Record<string, unknown> } | { kind: "candidates"; paths: string[] } {
   if (specifier in NPM_ALLOWLIST) return { kind: "external", value: NPM_ALLOWLIST[specifier]! };
   // `@component/Card` (`source-roots.ts`) resolves from the STORAGE ROOT, not
   // relative to the importing file - a page at any depth writes the exact
@@ -83,10 +93,20 @@ export function resolveModulePath(
   // generating candidates too - found by this module's own test suite
   // using a realistic `.js`-suffixed import, not assumed.
   const withoutJsExt = base.replace(/\.jsx?$/, "");
-  const candidates = base === withoutJsExt
+  const paths = base === withoutJsExt
     ? [base, `${base}.tsx`, `${base}.ts`]
     : [base, withoutJsExt, `${withoutJsExt}.tsx`, `${withoutJsExt}.ts`];
-  for (const candidate of candidates) {
+  return { kind: "candidates", paths };
+}
+
+export function resolveModulePath(
+  fromPath: string,
+  specifier: string,
+  sourceByPath: Record<string, string>,
+): { kind: "external"; value: Record<string, unknown> } | { kind: "local"; path: string } {
+  const result = candidatePathsFor(fromPath, specifier);
+  if (result.kind === "external") return result;
+  for (const candidate of result.paths) {
     if (candidate in sourceByPath) return { kind: "local", path: candidate };
   }
   throw new PageBuildError(`Cannot find "${specifier}" imported from "${fromPath}".`);
@@ -131,7 +151,7 @@ const ALIAS_ALTERNATION = PAGES_SOURCE_ROOTS.filter((root) => root.alias)
   .map((root) => root.alias!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
   .join("|");
 
-const IMPORT_FROM_RE = new RegExp(
+export const IMPORT_FROM_RE = new RegExp(
   `\\bfrom\\s*(["'])((?:\\.[^"']*)|(?:(?:${ALIAS_ALTERNATION})/[^"']*)|preact(?:/hooks)?)\\1`,
   "g",
 );
@@ -276,8 +296,15 @@ async function compileEsmAsset(
  * resolve instead through plain JS function-parameter scoping - the same
  * trick this function already uses for `h`/`Fragment` (`sucrase-eval.ts`'s
  * own precedent), just with 4 more names.
+ *
+ * Exported (along with `moduleDefault` below) for `vei-live-refresh.ts`,
+ * which wants this EXACT closure (real HTTP-backed `dry`/`params`/
+ * `setTitle` + isomorphic `dryBind`, the same 4 this module already imports
+ * at the top) to re-render a live page client-side, not a stubbed variant
+ * (contrast `page-source-preview.ts`, which keeps its own local copy because
+ * it deliberately wants a STUBBED `dry()` instead).
  */
-function evalModule(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): { exports: any } {
+export function evalModule(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): { exports: any } {
   const cached = cache.get(path);
   if (cached) return cached;
   const moduleObj = { exports: {} as any };
@@ -309,7 +336,7 @@ function evalModule(path: string, sourceByPath: Record<string, string>, cache: M
   return moduleObj;
 }
 
-function moduleDefault(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): (props: never) => unknown {
+export function moduleDefault(path: string, sourceByPath: Record<string, string>, cache: Map<string, { exports: any }>): (props: never) => unknown {
   const mod = evalModule(path, sourceByPath, cache);
   const exported = mod.exports?.default ?? mod.exports;
   if (typeof exported !== "function") throw new PageBuildError(`"${path}" has no default export function.`);

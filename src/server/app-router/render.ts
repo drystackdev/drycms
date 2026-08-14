@@ -10,11 +10,12 @@ import {
   buildStructuredData,
   veiConfigScript,
 } from "./build-document.js";
-import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_OVERLAY_HREF } from "./assets.js";
+import { GLOBALS_CSS_HREF, HYDRATE_ENTRY_HREF, VEI_LIVE_REFRESH_HREF, VEI_OVERLAY_HREF } from "./assets.js";
 import { encodeCallLog } from "./dry-replay-codec.js";
 import type { RouteMatch } from "./match.js";
 import { resolveMatchToVNode } from "./resolve-match.js";
 import type { ModuleLoader } from "./route-tree.js";
+import type { ContentTypeDefinition } from "../../content-types/types.js";
 
 export type { PageProps, LayoutProps } from "./render-types.js";
 
@@ -69,7 +70,11 @@ export function renderPage(
         const devManifest = options.devHydrateManifest
           ? `<script type="application/json" id="dry-dev-hydrate-manifest">${JSON.stringify(options.devHydrateManifest).replace(/</g, "\\u003c")}</script>`
           : "";
-        const rest = bodyHtml + replayData + devManifest + veiConfigScript(adminPath, dryContext.vei !== undefined) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
+        const veiLiveManifest = options.veiLiveManifest
+          ? `<script type="application/json" id="dry-vei-live-manifest">${JSON.stringify(options.veiLiveManifest).replace(/</g, "\\u003c")}</script>` +
+            `<script type="module" src="${VEI_LIVE_REFRESH_HREF}"></script>`
+          : "";
+        const rest = bodyHtml + replayData + devManifest + veiLiveManifest + veiConfigScript(adminPath, dryContext.vei !== undefined) + ISODATA_MARKER + BODY_AND_HTML_CLOSE;
         controller.enqueue(encoder.encode(rest));
         controller.close();
         options.onDocumentReady?.(head + rest);
@@ -130,6 +135,23 @@ export interface RenderPageOptions {
    * `hydrate-client.ts` falls back to its original glob-based resolution
    * unchanged. */
   devHydrateManifest?: { entryUrl: string; layoutUrls: string[]; params: Record<string, string | string[]> };
+  /** Outside `bun run dev` (real prod, and `dev:worker`'s built Worker),
+   * `discoverRoutes()` always resolves the DEPLOYED `src/apps/pages`
+   * snapshot - there's no live-read branch there the way `devHydrateManifest`
+   * above has (`route-tree.ts`'s `DevPagesSource` only exists inside Vite's
+   * own dev middleware). A VEI session needs a different fix for the same
+   * staleness problem: `vei-live-refresh.ts`, a CLIENT script that fetches
+   * the matched page/layout's CURRENT saved source and re-renders over this
+   * stale SSR output - see that file's own doc comment for why the fetch
+   * can't be done here in the Worker (`new Function` is blocked there).
+   * `page-handler.ts` sets this whenever `vei` is present and NOT already
+   * covered by `devHydrateManifest`'s live branch. */
+  veiLiveManifest?: {
+    entryPath: string;
+    layoutPaths: string[];
+    params: Record<string, string | string[]>;
+    allTypes: ContentTypeDefinition[];
+  };
 }
 
 /**

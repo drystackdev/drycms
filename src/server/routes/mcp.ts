@@ -689,8 +689,9 @@ async function runProposeContentTypeTool(context: DryRouteContext, allTypes: Con
 
   const draft: AiContentTypeDraft = { id: definition.id, definition, isNew, createdAt: new Date().toISOString() };
   await saveAiContentTypeDraft(context.session.id, draft, context.env);
+  const reviewUrl = `${resolveSiteOrigin(context.url)}${adminBasePath}/content-types?openDraft=${encodeURIComponent(definition.id)}`;
   return {
-    text: `Proposed ${isNew ? "creating" : "updating"} content type "${definition.name}" (${definition.label}, id "${definition.id}") - saved as a pending draft, not applied. If another proposed type embeds this one as a component, reference this id (preferred) or the name "${definition.name}" as its "config.componentId". The admin will see it under Content Types -> Apply and build to review and apply it.`,
+    text: `Proposed ${isNew ? "creating" : "updating"} content type "${definition.name}" (${definition.label}, id "${definition.id}") - saved as a pending draft, not applied. If another proposed type embeds this one as a component, reference this id (preferred) or the name "${definition.name}" as its "config.componentId". Ask the admin to review and apply it in their browser: ${reviewUrl}`,
   };
 }
 

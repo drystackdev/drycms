@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { buildPage, pagesAffectedBy, publishBuiltPage, PageBuildError } from "./page-build.js";
+import { buildPage, candidatePathsFor, pagesAffectedBy, publishBuiltPage, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
@@ -372,5 +372,29 @@ describe("pagesAffectedBy", () => {
 
   it("returns a page itself when the changed file IS that page", () => {
     expect(pagesAffectedBy("pages/blogs/page.tsx", SOURCE)).toEqual(["pages/blogs/page.tsx"]);
+  });
+});
+
+describe("candidatePathsFor", () => {
+  it("resolves a relative import to its .tsx/.ts candidates", () => {
+    expect(candidatePathsFor("pages/blogs/page.tsx", "./Greeting.js")).toEqual({
+      kind: "candidates",
+      paths: ["pages/blogs/Greeting.js", "pages/blogs/Greeting", "pages/blogs/Greeting.tsx", "pages/blogs/Greeting.ts"],
+    });
+  });
+
+  it("resolves a @component alias from the storage root, not relative to the importer", () => {
+    expect(candidatePathsFor("pages/blogs/[slug]/page.tsx", "@component/Card")).toEqual({
+      kind: "candidates",
+      paths: ["component/Card", "component/Card.tsx", "component/Card.ts"],
+    });
+  });
+
+  it("treats preact/preact-hooks as external", () => {
+    expect(candidatePathsFor("pages/page.tsx", "preact/hooks").kind).toBe("external");
+  });
+
+  it("throws on a bare specifier that isn't relative/aliased/preact", () => {
+    expect(() => candidatePathsFor("pages/page.tsx", "lodash")).toThrow(PageBuildError);
   });
 });

@@ -224,6 +224,12 @@ export default defineConfig(({ isSsrBuild, command }) => ({
               // (`build-preact-runtime-bundle.ts`), and hooks silently
               // break across two instances.
               appsHydrateBuilt: "src/apps/hydrate-built.ts",
+              // The VEI-in-production live-content fix (`page-handler.ts`'s
+              // `veiLiveManifest`) - a normal Vite entry (unlike
+              // `appsHydrateBuilt` above), sharing the app's one deduped
+              // Preact instance, since it re-hydrates over the SAME DOM
+              // `appsHydrate` already hydrated moments earlier.
+              appsVeiLiveRefresh: "src/apps/vei-live-refresh.ts",
             },
             output: {
               // Keep prismjs to exactly ONE instance across the app. A

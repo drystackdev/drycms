@@ -79,7 +79,9 @@ describe("POST /dry/api/dry-http", () => {
     const response = await POST(context({ kind: "singleton", name: "systemSettings", method: "get" }));
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Dry-Resource")).toBe("systemSettings");
-    expect(response.headers.get("X-Dry-Resource-Version")).toBe("0");
+    // "1", not "0" - `dry().singleton().get()` never returns null, so this
+    // first read itself lazily creates the row (bumping the version once).
+    expect(response.headers.get("X-Dry-Resource-Version")).toBe("1");
     const [entry] = decodeCallLog(await response.text());
     expect(entry).toMatchObject({ kind: "singleton", name: "systemSettings", method: "get" });
   });

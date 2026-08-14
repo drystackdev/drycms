@@ -52,7 +52,7 @@ function createStubDryReader(): DryReader {
     list: async () => ({ rows: [], total: 0 }),
   } as DryCollectionReader<Record<string, unknown>>;
   const singletonReader = {
-    get: async () => null,
+    get: async () => ({}),
   } as DrySingletonReader<Record<string, unknown>>;
   return {
     collection: () => collectionReader,
