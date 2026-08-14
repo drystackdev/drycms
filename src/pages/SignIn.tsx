@@ -73,10 +73,10 @@ export default function SignIn() {
   return (
     <div class="auth-split">
       <div class="auth-split-form">
-        <div class="auth-split-brand">
+        <a href="/" class="auth-split-brand">
           <Icon name="Brand" />
           <span>DRYCMS</span>
-        </div>
+        </a>
 
         <div class="auth-split-center">
           <form onSubmit={handleSubmit}>
