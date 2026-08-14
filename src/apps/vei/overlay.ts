@@ -1041,6 +1041,16 @@ function main(): void {
   });
 
   let dialogLoadTimer: ReturnType<typeof setTimeout> | undefined;
+  // Tracks what the frame is CURRENTLY showing, independent of `frame.src`
+  // (the DOM attribute) - the in-session retarget path below deliberately
+  // never touches `frame.src` (a real navigation would tear down and
+  // re-hydrate the admin SPA on every field click, the whole thing that path
+  // exists to avoid), so `frame.src` goes stale the moment a `vei:navigate`
+  // fires and stays pinned at whatever URL the frame last HARD-loaded.
+  // Found live: without this, Home -> About -> Home reads the (stale, still
+  // "Home") `frame.src` on the third click, wrongly concludes nothing
+  // changed, and no-ops instead of navigating back.
+  let currentFrameUrl: string | null = null;
 
   /** Opens the dialog on an arbitrary admin URL - the one field-edit dialog
    * this overlay otherwise only ever points at one entry's editor
@@ -1051,7 +1061,9 @@ function main(): void {
     // rather than a reload that throws away whatever is being typed in there
     // right now (draft writes are debounced 300ms - `saveEntryDraft`).
     const alreadyOpen = sheet.isConnected;
-    if (alreadyOpen && frame.src === new URL(url, window.location.href).href) return;
+    const resolvedUrl = new URL(url, window.location.href).href;
+    if (alreadyOpen && currentFrameUrl === resolvedUrl) return;
+    currentFrameUrl = resolvedUrl;
     // Hidden unconditionally, and BEFORE the push below - `setPagePush`
     // animates a `margin-right` onto `<html>` in panel mode, which reflows
     // the whole page and moves the just-clicked field out from under the
@@ -1115,6 +1127,7 @@ function main(): void {
     sheet.remove();
     frame.removeAttribute("src");
     frameReady = false;
+    currentFrameUrl = null;
     // Whatever ran in that frame - an edit, a Reset all from its own Preview
     // dialog, a visit to `/vei/changes` itself - may have changed the set of
     // pending drafts, so the badge could be stale the moment this closes.

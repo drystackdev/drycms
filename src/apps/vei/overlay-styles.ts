@@ -381,7 +381,7 @@ iframe.agent {
     top: auto;
     width: 100%;
     max-width: 100%;
-    height: 50vh;
+    height: 90vh;
     border-radius: 16px 16px 0 0;
     animation: vei-panel-dock-in-mobile 160ms ease;
   }

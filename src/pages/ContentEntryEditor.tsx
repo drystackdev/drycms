@@ -252,8 +252,12 @@ export default function ContentEntryEditor({ typeSlug, id }: Props) {
     }),
     [aiKey.ready, canUseMagic],
   );
+  // Never inside VEI, regardless of permission - the entry being edited
+  // there is whatever a live page's own marker points at (e.g. the `menu`
+  // row a nav pulls its links from), and deleting it out from under the
+  // page it's rendering into would break that page's layout with no undo.
   const canDelete =
-    !!type && !isSingleton && !isNew && canAccess(type.id, "delete");
+    !!type && !isSingleton && !isNew && !veiFrame && canAccess(type.id, "delete");
   const showLoading = useDelayedLoading(!type || value === null);
 
   useEffect(() => {
