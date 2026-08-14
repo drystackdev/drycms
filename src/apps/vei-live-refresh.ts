@@ -4,12 +4,14 @@ import { permissionKeyFor } from "../content-types/permissions.js";
 import { setCurrentParams } from "../content-types/params-reader-client.js";
 import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { buildManifestRouteTree, matchSourceRoute, notFoundRoute } from "../server/app-router/route-manifest.js";
+import { installVeiMarkerHook } from "../server/app-router/vei-marker-hook.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import { candidatePathsFor, IMPORT_FROM_RE, moduleDefault, type PageBuildPreactRuntime } from "../page-components/page-build.js";
 import { fetchJson, listAllFilesRecursive, toUrlPath, type AssetHrefs } from "../page-components/pages-source-http.js";
 import { adminPath, setAdminPath } from "../storage/admin-path.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
+import type { Options } from "preact";
 import { HYDRATED_EVENT } from "./hydrated-event.js";
 
 /**
@@ -248,7 +250,14 @@ async function main(): Promise<void> {
 
     const preactRuntime = (await import(/* @vite-ignore */ assetHrefs.preactRuntimeHref)) as PageBuildPreactRuntime & {
       hydrate: (vnode: unknown) => void;
+      options: Options;
     };
+    // `preactRuntime` is its own, separately-bundled Preact module instance
+    // (see `vei-marker-hook.ts`'s own doc comment) - the default import
+    // `installVeiMarkerHook()` patches elsewhere in this app never reaches
+    // it, so this render needs its own install against THIS instance's
+    // `options` before any vnode below gets created.
+    installVeiMarkerHook(preactRuntime.options);
     const runtime: PageBuildPreactRuntime = {
       h: preactRuntime.h,
       Fragment: preactRuntime.Fragment,
@@ -261,6 +270,20 @@ async function main(): Promise<void> {
       params,
     };
 
+    // `preactRuntime.hydrate()` (`preact-iso/hydrate`) takes real Preact
+    // hydrate mode - which SKIPS diffing every non-function prop, trusting
+    // the DOM already matches - whenever an `isodata` marker is present,
+    // i.e. exactly the cache-hit case this render exists for. That's wrong
+    // here: this render's whole point is to apply `data-dry-*` marker
+    // attributes (`installVeiMarkerHook`, just installed above) that the
+    // cached build's HTML never had (VEI markers never apply to a static
+    // build - `build-document.ts`'s own doc comment). Removing the marker
+    // first makes the wrapper fall through to a plain `render()` instead -
+    // real prop diffing, while still reusing/matching the existing SSR'd
+    // DOM nodes by type/position (`preact/src/render.js`'s own
+    // `excessDomChildren` fallback for an untracked container) rather than
+    // recreating them from scratch.
+    if (isCacheHit) document.querySelector('script[type="isodata"]')?.remove();
     const vnode = await resolveMatchToVNode(match);
     preactRuntime.hydrate(vnode);
   } catch (error) {

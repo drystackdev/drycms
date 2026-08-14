@@ -1,4 +1,4 @@
-import { options, type VNode } from "preact";
+import { options as defaultOptions, type Options, type VNode } from "preact";
 import { encodeRef, MARKER_ATTR, refOf, unbox } from "../../content-types/dry-vei-ref.js";
 
 /**
@@ -13,6 +13,16 @@ import { encodeRef, MARKER_ATTR, refOf, unbox } from "../../content-types/dry-ve
  * rather than an index into a per-request table (decision #1 in the plan).
  * Outside an edit-mode render no value is ever boxed, so this costs one
  * `typeof` per prop and changes nothing.
+ *
+ * `options` is per-Preact-module-instance state, so patching the default
+ * import only affects vnodes created through THAT instance. `vei-live-refresh.ts`
+ * builds its vnode tree through a separately-bundled, dynamically-imported
+ * Preact runtime (`preact-runtime.ts`, required so `hydrate()` shares one
+ * module instance with the compiled page/layout - `hydrate-built.ts`'s doc
+ * comment) - a different instance than the one this file's own static
+ * `preact` import resolves to. Callers with a non-default instance to patch
+ * (i.e. `vei-live-refresh.ts`) pass its `options` in explicitly instead of
+ * relying on the default.
  */
 type Props = Record<string, unknown>;
 
@@ -49,7 +59,7 @@ function extractMarkers(children: unknown): { markers: string[]; children: unkno
   return { markers, children: next };
 }
 
-export function installVeiMarkerHook(): void {
+export function installVeiMarkerHook(options: Options = defaultOptions): void {
   const previous = options.vnode;
   options.vnode = (vnode: VNode) => {
     // Host elements only - a boxed value passed to a COMPONENT keeps its box
