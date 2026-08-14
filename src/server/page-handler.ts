@@ -193,6 +193,27 @@ export async function handlePageRequest(
     const redirectResponse = await findRedirectResponse(url, entries, allTypes);
     if (redirectResponse) return redirectResponse;
 
+    // A VEI session outside dev can miss here even for a page that renders
+    // fine for every ordinary visitor: `discoverRoutes()`'s route STRUCTURE
+    // in this branch is the deployed build's own snapshot (`src/apps/pages`),
+    // which lags behind `pagesSourceStorage` whenever a page was added/
+    // edited since the last sync+rebuild+deploy (see
+    // `project_drycms_vei_live_content`'s "route STRUCTURE still comes from
+    // the deployed/build-time snapshot" note). The anonymous branch above
+    // never hits this, since it reads `built/live/*` by pathname with no
+    // route-tree lookup at all - falling back to that same cache here (read
+    // -only: no edit markers, since there's no live-rendered page to mark up)
+    // beats a false 404 on a page that plainly exists. Dev is excluded: its
+    // route tree IS the live source, so a miss there is a real miss.
+    if (!match && !isDev && vei) {
+      const cached = await readBuiltPage(routeContext, url.pathname);
+      if (cached !== null) {
+        return new Response(cached, {
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+        });
+      }
+    }
+
     if (!match && !routeTree.notFound) return null;
     // A route miss with a `404.tsx` renders through the SAME pipeline as a
     // real match below, wrapped by the root layout only (a nested layout

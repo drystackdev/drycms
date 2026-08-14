@@ -7,6 +7,11 @@ vi.mock("./vei-session.js", async (importOriginal) => {
   return { ...actual, resolveVeiSession: vi.fn(actual.resolveVeiSession) };
 });
 
+vi.mock("../content-types/access.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../content-types/access.js")>();
+  return { ...actual, resolveAccess: vi.fn(actual.resolveAccess) };
+});
+
 const tempDirBox = vi.hoisted(() => ({ path: "" }));
 
 vi.mock("./config.js", async () => {
@@ -36,6 +41,16 @@ const { createContentEngineAdapter, createContentEntryEngineAdapter } = await im
 const { content } = await import("./config.js");
 const { writeBuiltPage, readBuiltPage } = await import("./app-router/built-pages-storage.js");
 const { resolveVeiSession } = await import("./vei-session.js");
+const { resolveAccess } = await import("../content-types/access.js");
+
+/** Fakes a signed-in VEI session for one request, without needing a real
+ * `user`/`role` row in the fixture DB - `resolveVeiContext` only ever reads
+ * `session` (for identity) and `access.can()` (for per-type edit rights),
+ * neither of which this file's tests care about. */
+function mockVeiSession(): void {
+  vi.mocked(resolveVeiSession).mockResolvedValueOnce({ id: 1, name: "Admin", email: "admin@example.com" });
+  vi.mocked(resolveAccess).mockResolvedValueOnce({ userId: 1, isSuperAdmin: true, permissions: [], can: () => true });
+}
 
 afterAll(async () => {
   const { rm } = await import("node:fs/promises");
@@ -160,6 +175,32 @@ describe("handlePageRequest", () => {
         expect(html).not.toContain("hydrate-client.ts");
         expect(html).not.toContain("vei/overlay.ts");
       }
+    });
+
+    it("falls back to the built page cache for a VEI session when the route tree has no match - a stale deployed route snapshot must not false-404 a page that renders fine for ordinary visitors", async () => {
+      mockVeiSession();
+      const ctx = { env: {} };
+      await writeBuiltPage(ctx, "/stale-route", "build-1", "<html><body>cached copy</body></html>");
+
+      // No `pages/stale-route/page.tsx` exists in this fixture's route tree at
+      // all (the prod branch never supplies a `devPagesSource`, so
+      // `discoverRoutes()` takes the real, empty-for-this-path glob) - same
+      // shape as a page that exists in `pagesSourceStorage` but hasn't been
+      // synced+rebuilt+deployed into this Worker's own bundled snapshot yet.
+      const response = await handlePageRequest(new Request("http://localhost/stale-route"), {}, false);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
+      expect(await response!.text()).toBe("<html><body>cached copy</body></html>");
+      expect(response!.headers.get("Cache-Control")).toBe("no-store");
+    });
+
+    it("still falls through to the pages-root 404.tsx for a VEI session when there is no built page to fall back to either", async () => {
+      mockVeiSession();
+      const response = await handlePageRequest(new Request("http://localhost/genuinely-nowhere"), {}, false);
+      expect(response).not.toBeNull();
+      expect(response!.status).toBe(404);
+      const html = await response!.text();
+      expect(html).toContain("Page not found");
     });
   });
 
