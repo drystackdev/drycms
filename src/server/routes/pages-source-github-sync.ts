@@ -110,13 +110,19 @@ export const POST: DryRouteHandler = async (context) => {
  * mirrors the returned files into IndexedDB and runs Build all. */
 export const PUT: DryRouteHandler = async (context) => {
   const loaded = await loadGithubSyncConfig(context);
-  if ("error" in loaded) return jsonResponse({ applied: false, reason: loaded.error });
+  if ("error" in loaded && loaded.error !== "not-configured") {
+    return jsonResponse({ applied: false, reason: loaded.error });
+  }
 
   const sourceByPath = Object.fromEntries(SAMPLE_PAGES_SOURCE_FILES.map((file) => [file.path, file.content]));
   if (Object.keys(sourceByPath).length === 0) return jsonResponse({ applied: false, reason: "The mock pages-source tree is empty." });
 
-  const pushed = await pushPagesSourceSnapshot(sourceByPath, loaded.config, `Reset all pages from mock - ${new Date().toISOString()}`);
-  if (!pushed.pushed) return jsonResponse({ applied: false, reason: pushed.reason ?? "GitHub sync failed." });
+  let commitSha: string | undefined;
+  if ("config" in loaded) {
+    const pushed = await pushPagesSourceSnapshot(sourceByPath, loaded.config, `Reset all pages from mock - ${new Date().toISOString()}`);
+    if (!pushed.pushed) return jsonResponse({ applied: false, reason: pushed.reason ?? "GitHub sync failed." });
+    commitSha = pushed.commitSha;
+  }
 
   const adapter = getStorageAdapter(pagesSourceStorage, context);
   const currentPaths = adapter.listAll
@@ -135,5 +141,5 @@ export const PUT: DryRouteHandler = async (context) => {
     }
   }
 
-  return jsonResponse({ applied: true, commitSha: pushed.commitSha, sourceByPath });
+  return jsonResponse({ applied: true, githubPushed: commitSha !== undefined, commitSha, sourceByPath });
 };

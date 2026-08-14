@@ -120,6 +120,7 @@ export default function GithubSyncSettings() {
       });
       const result = (await response.json().catch(() => ({}))) as {
         applied?: boolean;
+        githubPushed?: boolean;
         reason?: string;
         sourceByPath?: Record<string, string>;
       };
@@ -131,7 +132,11 @@ export default function GithubSyncSettings() {
       const published = await publishAllPages(path, allTypes);
       if (published.error) throw new Error(`Mock source was reset, but Build all failed: ${published.error}`);
       setResetOpen(false);
-      toast.add({ type: "success", title: "All pages reset", description: `Synced mock files and built ${published.built} ${published.built === 1 ? "page" : "pages"}.` });
+      toast.add({
+        type: "success",
+        title: "All pages reset",
+        description: `${result.githubPushed ? "Pushed the mock snapshot to GitHub, replaced local source," : "Replaced local source"} and built ${published.built} ${published.built === 1 ? "page" : "pages"}.`,
+      });
     } catch (error) {
       toast.add({ type: "error", title: "Reset All page failed", description: error instanceof Error ? error.message : undefined });
     } finally {
@@ -218,7 +223,7 @@ export default function GithubSyncSettings() {
       <ConfirmDialog
         open={resetOpen}
         title="Reset all pages from mock?"
-        message="Every current page, component, style and Markdown source file will be replaced. The mock snapshot will be pushed to GitHub and published immediately. This cannot be undone outside GitHub history."
+        message={`Every current page, component, style and Markdown source file will be replaced. The mock snapshot will be ${value.enabled ? "pushed to GitHub and " : ""}published immediately. This cannot be undone${value.enabled ? " outside GitHub history" : ""}.`}
         confirmLabel="Reset All page"
         destructive
         busy={resetting}

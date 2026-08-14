@@ -12,6 +12,7 @@
 - Added the GitHub Sync reset API and settings action; IndexedDB replacement and browser Build all are wired.
 - Updated deployment guidance for the direct mock bundle/first-use seed.
 - Verification complete: typecheck, focused tests, full unit suite (one transient completion-test timeout passed on immediate isolated rerun), and a Worker SSR bundle containing the mock source.
+- 2026-08-14: Reset no longer requires GitHub Sync to be configured. In local/dev it replaces pages-source and publishes normally; when GitHub Sync is enabled, the remote snapshot remains a required first step.
 
 # Speed
 
