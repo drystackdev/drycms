@@ -21,6 +21,9 @@ describe("seedPagesSourceIfEmpty", () => {
   it("has a non-empty starter manifest to seed with", () => {
     expect(SAMPLE_PAGES_SOURCE_FILES.length).toBeGreaterThan(0);
     expect(SAMPLE_PAGES_SOURCE_FILES.some((f) => f.path === "pages/page.tsx")).toBe(true);
+    expect(SAMPLE_PAGES_SOURCE_FILES.some((f) => f.path === "pages/layout.tsx")).toBe(true);
+    expect(SAMPLE_PAGES_SOURCE_FILES.some((f) => f.path === "pages/about/page.tsx")).toBe(true);
+    expect(SAMPLE_PAGES_SOURCE_FILES.some((f) => f.path === "component/ThemeToggle.tsx")).toBe(true);
   });
 
   it("seeds every sample file into a completely empty store and reports true", async () => {

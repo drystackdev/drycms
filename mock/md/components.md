@@ -6,6 +6,13 @@ Linked from `README.md`; only read when something in this project actually
 needs one of these (an admin request touching a shared component, or
 building a new one).
 
+## `component/ThemeToggle.tsx`
+
+An icon button that switches the public site between light and dark themes
+and persists the visitor's choice in `localStorage`. The starter root layout
+already renders it; import it as `@component/ThemeToggle` anywhere else that
+needs a standalone theme control.
+
 ## `component/Button.tsx`
 
 A `cva()`-declared button. Axes:

@@ -720,6 +720,27 @@ export function pendingSeedStatements(
     const plan = planMigration({ target, oldAllTypes: [], newAllTypes: all });
     for (const table of plan.tables) statements.push(...table.statements);
     statements.push(plan.metadataStatement);
+    if (target.name === "menu") {
+      statements.push(
+        {
+          sql: `INSERT INTO "menu" ("name") VALUES (?);`,
+          params: ["Main"],
+          description: "Seed the default main menu",
+        },
+        {
+          sql: `INSERT INTO "menu_refs" ("parent_id","position","label","description","href")\n` +
+            `SELECT "id", ?, ?, ?, ? FROM "menu" WHERE "name" = ?;`,
+          params: [0, "Home", "", "/", "Main"],
+          description: "Seed the Home item in the default main menu",
+        },
+        {
+          sql: `INSERT INTO "menu_refs" ("parent_id","position","label","description","href")\n` +
+            `SELECT "id", ?, ?, ?, ? FROM "menu" WHERE "name" = ?;`,
+          params: [1, "About", "", "/about", "Main"],
+          description: "Seed the About item in the default main menu",
+        },
+      );
+    }
   }
   return statements;
 }

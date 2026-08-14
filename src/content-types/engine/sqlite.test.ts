@@ -85,6 +85,24 @@ describe("createSqliteContentEngineAdapter", () => {
     expect(roles).toEqual([{ name: "Super Admin", description: SUPER_ADMIN_DESCRIPTION, isSuperAdmin: 1 }]);
   });
 
+  it("seeds a Main menu with Home and About items on first boot", async () => {
+    const { adapter, dir } = freshAdapter();
+    dirs.push(dir);
+    await adapter.listContentTypes();
+
+    const menus = await queryAll<{ id: number; name: string }>(dir, 'SELECT "id", "name" FROM "menu";');
+    expect(menus).toHaveLength(1);
+    expect(menus[0]!.name).toBe("Main");
+    const items = await queryAll<{ label: string; href: string }>(
+      dir,
+      `SELECT "label", "href" FROM "menu_refs" WHERE "parent_id" = ${menus[0]!.id} ORDER BY "position";`,
+    );
+    expect(items).toEqual([
+      { label: "Home", href: "/" },
+      { label: "About", href: "/about" },
+    ]);
+  });
+
   it("the adapter itself has no locked/frozen enforcement - that's the HTTP route's job (see routes/content-types.test.ts)", async () => {
     const { adapter, dir } = freshAdapter();
     dirs.push(dir);

@@ -299,6 +299,7 @@ describe("pendingSeedStatements", () => {
     expect(sql).toContain('CREATE TABLE "user"');
     expect(sql).toContain('CREATE TABLE "menu"');
     expect(sql).toContain('CREATE TABLE "menu_refs"');
+    expect(sql).toContain('INSERT INTO "menu" ("name") VALUES (?)');
     expect(sql).toContain('CREATE TABLE "aiKey"');
     expect(sql).toContain('CREATE TABLE "role"');
     expect(sql).toContain('CREATE TABLE "redirect"');
@@ -315,6 +316,20 @@ describe("pendingSeedStatements", () => {
       s.sql.startsWith('INSERT INTO "metadata"'),
     );
     expect(metadataInserts).toHaveLength(12);
+    expect(statements.find((s) => s.description === "Seed the Home item in the default main menu")?.params).toEqual([
+      0,
+      "Home",
+      "",
+      "/",
+      "Main",
+    ]);
+    expect(statements.find((s) => s.description === "Seed the About item in the default main menu")?.params).toEqual([
+      1,
+      "About",
+      "",
+      "/about",
+      "Main",
+    ]);
   });
 
   it("seeds nothing once every default name is already present", () => {
