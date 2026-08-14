@@ -13,3 +13,6 @@ Xây dụng UI Page Builder: tôi cần thêm chế độ hiển thị để t�
         - khi click vào thì thay cho code editer sẽ hiện ra trang edit entry/singleton tương ứng
         - edit entry/sington hoặc code thì preview sẽ đổi theo
     
+Yêu cầu: cấu trúc phải chia rõ ràng nhiều file để dễ bảo trì
+Mông muốn: hợp nhất chức năng VEI và page-code-editer vào 1 trang để dễ quản lý, bảo mật an toàn hơn cho trang của khách vẫn lai
+Không cần thêm css js thừa riêng cho chế độ VEI phụ vụ việc đã đăng nhập
