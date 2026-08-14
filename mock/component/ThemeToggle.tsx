@@ -12,6 +12,21 @@ function applyTheme(theme: "light" | "dark") {
   document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
+// Same read-storage/fall-back-to-matchMedia logic as `preferredTheme` above,
+// inlined as a string literal so it can run as a plain <script> before
+// Preact hydrates. Without this, the page always paints "light" first (the
+// `dark` class is only added by `applyTheme` inside `useEffect`, which runs
+// post-hydration), then flashes to dark for anyone who chose it.
+const FLASH_GUARD_SCRIPT = `try{var t=localStorage.getItem("${STORAGE_KEY}");if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.classList.toggle("dark",t==="dark");}catch(e){}`;
+
+/** Render as the very first node in `<body>` (ahead of everything else on
+ * the page) so it applies the stored/preferred theme class before first
+ * paint - pages have no static HTML shell of their own to inline this into
+ * the way the admin app's `index.html` does. */
+export function ThemeFlashGuard() {
+  return <script dangerouslySetInnerHTML={{ __html: FLASH_GUARD_SCRIPT }} />;
+}
+
 export default function ThemeToggle() {
   useEffect(() => applyTheme(preferredTheme()), []);
 
