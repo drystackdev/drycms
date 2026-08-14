@@ -354,7 +354,7 @@ file the model has already read) so it gets picked up, e.g. [like this](./other.
 const LAYOUT_PLACEHOLDER_PATH = "__dry-preview-layout-placeholder.tsx";
 const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() {
   return (
-    <div style="padding:3rem 1.5rem;margin:1rem;text-align:center;background:#fef3c7;border:2px dashed #d97706;border-radius:0.5rem;color:#92400e;font:600 14px/1.5 system-ui,sans-serif;"></div>
+    <div style="padding:3rem 1.5rem;margin:1rem;text-align:center;border:2px dashed #ccc5;border-radius:0.5rem;color:#cccc;font:600 14px/1.5 system-ui,sans-serif;">Children</div>
   );
 }
 `;
