@@ -175,6 +175,14 @@ export async function syncAiContentTypeDrafts(): Promise<AiDraftConflict[]> {
     return [];
   }
 
+  // A full changed payload is authoritative for server-staged AI drafts.
+  // Remove local AI mirrors that were applied/discarded elsewhere or whose
+  // 30-day server TTL expired; human/local drafts are never touched here.
+  const serverIds = new Set(serverDrafts.map((draft) => draft.id));
+  for (const [id, local] of Object.entries(drafts.value)) {
+    if (local.source === "ai" && !serverIds.has(id)) discardDraft(id);
+  }
+
   const conflicts: AiDraftConflict[] = [];
   for (const server of serverDrafts) {
     const local = getDraft(server.id);

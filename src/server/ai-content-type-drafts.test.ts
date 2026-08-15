@@ -38,6 +38,36 @@ describe("ai-content-type-drafts", () => {
     expect(await listAiContentTypeDrafts(userA, {})).toHaveLength(1);
   });
 
+  it("isolates the same content-type id across users, including delete", async () => {
+    const userA = 9010;
+    const userB = 9011;
+    await saveAiContentTypeDraft(userA, { id: "shared-id", definition: definition("shared-id", "a-version"), isNew: false, createdAt: new Date().toISOString() }, {});
+    await saveAiContentTypeDraft(userB, { id: "shared-id", definition: definition("shared-id", "b-version"), isNew: false, createdAt: new Date().toISOString() }, {});
+
+    expect((await listAiContentTypeDrafts(userA, {}))[0]!.definition.name).toBe("a-version");
+    expect((await listAiContentTypeDrafts(userB, {}))[0]!.definition.name).toBe("b-version");
+
+    await deleteAiContentTypeDraft(userA, "shared-id", {});
+    expect(await listAiContentTypeDrafts(userA, {})).toEqual([]);
+    expect((await listAiContentTypeDrafts(userB, {}))[0]!.definition.name).toBe("b-version");
+  });
+
+  it("prunes an expired record from both the visible list and versioned index", async () => {
+    vi.useFakeTimers();
+    try {
+      const userId = 9012;
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      await saveAiContentTypeDraft(userId, { id: "expires", definition: definition("expires", "temporary"), isNew: true, createdAt: new Date().toISOString() }, {});
+      const savedVersion = await getAiContentTypeDraftsVersion(userId, {});
+
+      vi.setSystemTime(new Date("2026-02-01T00:00:01Z"));
+      expect(await getAiContentTypeDraftsVersion(userId, {})).toBe(savedVersion + 1);
+      expect(await listAiContentTypeDrafts(userId, {})).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("evicts the oldest draft once the per-user cap is exceeded", async () => {
     const userId = 9005;
     for (let i = 0; i < 21; i++) {

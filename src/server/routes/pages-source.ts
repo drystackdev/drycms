@@ -121,6 +121,25 @@ export const PUT: DryRouteHandler = async (context) => {
       throw new StorageError("invalid_path", `"${path}" is a folder.`);
     }
 
+    const expectedHash = context.request.headers.get("X-Dry-Base-Source-Hash");
+    if (expectedHash !== null) {
+      let current = "";
+      if (existing?.kind === "file") {
+        const file = await adapter.read(path);
+        const chunks: Buffer[] = [];
+        for await (const chunk of file.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        current = Buffer.concat(chunks).toString("utf-8");
+      }
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(current)));
+      const currentHash = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (currentHash !== expectedHash) {
+        return jsonResponse(
+          { error: "conflict", message: `"${path}" changed on storage. Reload it before saving your local edit.` },
+          409,
+        );
+      }
+    }
+
     const code = await context.request.text();
     const stat = await adapter.write(path, new TextEncoder().encode(code));
     // This admin session just explicitly reviewed and persisted `path` -

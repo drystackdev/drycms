@@ -26,14 +26,16 @@ function resolveRelativeCssPath(fromPath: string, specifier: string): string {
  * browser package cannot fetch relative imports from the in-memory/R2 page
  * source store, so leaving `@import "./theme.css"` intact silently drops the
  * project's `@theme` tokens and therefore utilities such as `bg-primary`. */
-export function tailwindStylesheetSource(sourceByPath: Record<string, string>): string {
+function resolveTailwindStylesheets(sourceByPath: Record<string, string>): { source: string; paths: string[] } {
   const active = new Set<string>();
+  const paths = new Set<string>();
 
   function expand(path: string): string {
     const source = sourceByPath[path];
     if (source === undefined) throw new Error(`[drycms] Missing Tailwind stylesheet "${path}".`);
     if (active.has(path)) throw new Error(`[drycms] Circular Tailwind stylesheet import at "${path}".`);
     active.add(path);
+    paths.add(path);
     const expanded = source.replace(
       /@import\s+(?:url\(\s*)?["']([^"']+)["']\s*\)?\s*;/g,
       (statement, specifier: string) => {
@@ -45,7 +47,16 @@ export function tailwindStylesheetSource(sourceByPath: Record<string, string>): 
     return expanded;
   }
 
-  return expand(GLOBALS_CSS_PATH);
+  return { source: expand(GLOBALS_CSS_PATH), paths: [...paths] };
+}
+
+export function tailwindStylesheetSource(sourceByPath: Record<string, string>): string {
+  return resolveTailwindStylesheets(sourceByPath).source;
+}
+
+/** Every stylesheet whose source was actually folded into globals.css. */
+export function tailwindStylesheetPaths(sourceByPath: Record<string, string>): string[] {
+  return resolveTailwindStylesheets(sourceByPath).paths;
 }
 
 /**

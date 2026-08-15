@@ -75,8 +75,10 @@ async function writePageSource(filePath: string, code: string): Promise<{ text: 
 
 describe("write_page_source - ai-page-source-flags tracking", () => {
   it("flags a page.tsx write so PageEditor's red dot can pick it up", async () => {
-    const { isError } = await writePageSource("pages/hello/page.tsx", "export default function Page() { return null; }");
+    const { isError, text } = await writePageSource("pages/hello/page.tsx", "export default function Page() { return null; }");
     expect(isError).toBe(false);
+    expect(text).not.toContain("pages-build tool");
+    expect(text).toContain("admin's Page Editor");
 
     const flags = await listAiPageSourceFlags({});
     expect(flags.some((f) => f.path === "pages/hello/page.tsx")).toBe(true);

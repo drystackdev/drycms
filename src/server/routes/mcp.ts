@@ -598,7 +598,7 @@ async function runWritePageSourceTool(context: DryRouteContext, rawPath: string 
     // - until a real Build/Publish of a `page.tsx`, or the next explicit Save
     // of this exact path by any session, clears it.
     await markAiPageSourceWrite(path, context.env);
-    return { text: `Wrote "${path}" (${code.length.toLocaleString()} characters). This is saved to storage already - it still needs a Build (via the Page Editor or the pages-build tool) to reach the live site.` };
+    return { text: `Wrote "${path}" (${code.length.toLocaleString()} characters). This is saved to storage already - it still needs a Build from the admin's Page Editor to reach the live site. Use preview_page_source first to check that a static page compiles and renders.` };
   } catch (error) {
     return { text: `Could not write "${path}": ${error instanceof Error ? error.message : "unknown error"}.`, isError: true };
   }

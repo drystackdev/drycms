@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tailwindStylesheetSource } from "./tailwind-build.js";
+import { tailwindStylesheetPaths, tailwindStylesheetSource } from "./tailwind-build.js";
 
 describe("tailwindStylesheetSource", () => {
   it("inlines live relative imports so custom theme utilities can compile", () => {
@@ -25,5 +25,15 @@ describe("tailwindStylesheetSource", () => {
         "styles/theme.css": '@import "./globals.css";',
       }),
     ).toThrow('Circular Tailwind stylesheet import at "styles/globals.css"');
+  });
+
+  it("reports only the imported stylesheet graph", () => {
+    expect(
+      tailwindStylesheetPaths({
+        "styles/globals.css": '@import "./theme.css";',
+        "styles/theme.css": "@theme {}",
+        "styles/unrelated.css": ".unused {}",
+      }),
+    ).toEqual(["styles/globals.css", "styles/theme.css"]);
   });
 });

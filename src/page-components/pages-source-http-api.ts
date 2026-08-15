@@ -52,9 +52,15 @@ export function createPagesSourceApi(baseUrl: string) {
   }
 
   /** Create-or-overwrite `path`'s source. */
-  async function save(path: string, code: string): Promise<FileEntry> {
+  async function save(path: string, code: string, baseSource?: string): Promise<FileEntry> {
+    const headers: Record<string, string> = {};
+    if (baseSource !== undefined) {
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(baseSource)));
+      headers["X-Dry-Base-Source-Hash"] = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
     const res = await fetch(`${baseUrl}/${encodePath(path)}`, {
       method: "PUT",
+      headers,
       body: code,
     });
     await assertOk(res, "Failed to save the file.");

@@ -14,7 +14,7 @@ import { resolveMatchToVNode } from "../server/app-router/resolve-match.js";
 import { buildDocument } from "../server/app-router/build-document.js";
 import type { RouteMatch } from "../server/app-router/match.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
-import { compileTailwindCss, tailwindStylesheetSource } from "./tailwind-build.js";
+import { compileTailwindCss, tailwindStylesheetPaths, tailwindStylesheetSource } from "./tailwind-build.js";
 import { buildManifestRouteTree, listDynamicPageTemplates, matchSourceRoute, notFoundRoute, serverErrorRoute, staticPagePaths } from "../server/app-router/route-manifest.js";
 import { COMPONENT_ALIAS, PAGES_ROOT, PAGES_SOURCE_ROOTS, resolveAliasSpecifier } from "../server/app-router/source-roots.js";
 import { resolveDynamicPages } from "./dynamic-routes.js";
@@ -477,6 +477,9 @@ export interface PageBuildResult {
    * mục 7. `publishBuiltPage` uploads each; `html` already references their
    * URLs via the embedded `#dry-hydrate-manifest` (`buildPage` below). */
   jsAssets: { jsPath: string; source: string }[];
+  /** Page-source files whose current contents contributed to this output.
+   * Optional for compatibility with older/test-produced results. */
+  sourcePaths?: string[];
   /** Deduped, keep-latest-version per resource - a page that calls
    * `dry().collection("blog").get(1)` twice shouldn't produce 2 `_page_deps`
    * rows for `"blog"`. */
@@ -628,7 +631,14 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
 
   const deps = dedupeDeps(defaultsDep ? [...dryConfig.deps, defaultsDep] : dryConfig.deps);
   const inSitemap = input.pathname !== "/404" && input.pathname !== "/500" && mergeSeoLayers(seo).noIndex !== true;
-  return { html, jsAssets, deps, inSitemap };
+  const stylesheetPaths = input.sourceByPath["styles/globals.css"] === undefined ? [] : tailwindStylesheetPaths(input.sourceByPath);
+  return {
+    html,
+    jsAssets,
+    deps,
+    inSitemap,
+    sourcePaths: [...new Set([...dependencyClosure, ...stylesheetPaths])],
+  };
 }
 
 /**
@@ -686,6 +696,7 @@ function toWireBody(result: PageBuildResult, options: PublishOptions): Record<st
   return {
     pathname: options.pathname,
     entryPath: options.entryPath,
+    sourcePaths: result.sourcePaths,
     html: result.html,
     jsAssets: result.jsAssets,
     buildId: options.buildId ?? crypto.randomUUID(),

@@ -482,6 +482,10 @@ export default function PageEditor() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceByPath, setSourceByPath] = useState<Record<string, string>>({});
   const [savedByPath, setSavedByPath] = useState<Record<string, string>>({});
+  const sourceByPathRef = useRef(sourceByPath);
+  const savedByPathRef = useRef(savedByPath);
+  sourceByPathRef.current = sourceByPath;
+  savedByPathRef.current = savedByPath;
   // Backed by the URL's `file` query param (`useParam`, same convention as
   // `BuilderContentType.tsx`'s `selectedKind`), not local state, so the file
   // currently open is shareable/reloadable via the URL - `""` stands in for
@@ -657,9 +661,55 @@ export default function PageEditor() {
         const res = await fetch(`${path}/api/ai-page-source-flags`, { credentials: "same-origin", headers });
         if (!res.ok || cancelled) return;
         const body = (await res.json()) as { changed: boolean; version: number; flags?: { path: string }[] };
-        aiFlagsLastVersion.current = body.version;
         if (!body.changed || cancelled) return;
-        setAiWrittenPaths(new Set((body.flags ?? []).map((f) => f.path)));
+        const flaggedPaths = (body.flags ?? []).map((f) => f.path);
+        setAiWrittenPaths(new Set(flaggedPaths));
+
+        // A flag can arrive while this tab still has the pre-MCP copy in
+        // memory. Refresh it now; otherwise Save would PUT that old buffer
+        // back over the MCP write and the same PUT would clear the warning.
+        let reconciledAll = true;
+        for (const flaggedPath of flaggedPaths) {
+          try {
+            const fresh = await api.read(flaggedPath);
+            if (cancelled || savedByPathRef.current[flaggedPath] === fresh) continue;
+            const previousSaved = savedByPathRef.current[flaggedPath];
+            const previousVisible = sourceByPathRef.current[flaggedPath];
+            const discardedLocalEdit = previousVisible !== undefined && previousVisible !== previousSaved;
+            cancelDraftWrite(flaggedPath);
+            void deletePageSourceDraft(flaggedPath);
+            savedByPathRef.current = { ...savedByPathRef.current, [flaggedPath]: fresh };
+            sourceByPathRef.current = { ...sourceByPathRef.current, [flaggedPath]: fresh };
+            setSavedByPath(savedByPathRef.current);
+            setSourceByPath(sourceByPathRef.current);
+            void putPageSourceCache(flaggedPath, fresh);
+            setEntries((prev) => {
+              if (!prev || prev.some((entry) => entry.id === flaggedPath)) return prev;
+              const slash = flaggedPath.lastIndexOf("/");
+              return [
+                ...prev,
+                {
+                  id: flaggedPath,
+                  name: slash === -1 ? flaggedPath : flaggedPath.slice(slash + 1),
+                  parentId: slash === -1 ? null : flaggedPath.slice(0, slash),
+                  kind: "file",
+                },
+              ];
+            });
+            if (discardedLocalEdit) {
+              toast.add({
+                type: "info",
+                title: `"${flaggedPath}" changed through MCP`,
+                description: "The newer storage version replaced your unsaved local edit.",
+              });
+            }
+          } catch {
+            reconciledAll = false;
+            // Keep the old buffer and the red flag. A later poll/version
+            // change or page reload gets another chance without losing work.
+          }
+        }
+        if (!cancelled && reconciledAll) aiFlagsLastVersion.current = body.version;
       } catch {
         // Leave the previous set showing - a transient poll failure isn't worth surfacing.
       }
@@ -670,7 +720,7 @@ export default function PageEditor() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [api]);
 
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
@@ -803,7 +853,10 @@ export default function PageEditor() {
       setEntries(all);
       void putPagesTreeCache(all);
       const files = all.filter((entry) => entry.kind === "file" && /\.(tsx?|css|md)$/i.test(entry.name));
-      const contents = await Promise.all(files.map((file) => api.read(file.id).catch(() => "")));
+      // A failed read is not an empty file. Abort this guaranteed-fresh
+      // reload and preserve the existing state/cache/drafts instead of
+      // writing "" into all three and deleting a valid draft as stale.
+      const contents = await Promise.all(files.map((file) => api.read(file.id)));
       const nextSource: Record<string, string> = {};
       const nextIds = new Set<string>();
       files.forEach((file, index) => {
@@ -1233,7 +1286,7 @@ export default function PageEditor() {
         }
         return changed ? next : prev;
       });
-      for (const p of dirtyPaths) await api.save(p, formattedByPath[p]!);
+      for (const p of dirtyPaths) await api.save(p, formattedByPath[p]!, savedByPath[p] ?? "");
       const nextSaved = { ...savedByPath };
       for (const p of dirtyPaths) {
         nextSaved[p] = formattedByPath[p]!;
@@ -1312,7 +1365,7 @@ export default function PageEditor() {
     setSaving(true);
     try {
       for (const p of dirtyPaths) {
-        await api.save(p, sourceByPath[p] ?? "");
+        await api.save(p, sourceByPath[p] ?? "", savedByPath[p] ?? "");
         cancelDraftWrite(p);
         void deletePageSourceDraft(p);
       }
@@ -1367,6 +1420,13 @@ export default function PageEditor() {
    * under a folder that doesn't visually exist yet either. */
   function handleMagicCodeChange(changedPath: string, code: string) {
     setSourceByPath((prev) => (prev[changedPath] === code ? prev : { ...prev, [changedPath]: code }));
+    const baseSource = savedByPathRef.current[changedPath] ?? "";
+    if (code === baseSource) {
+      cancelDraftWrite(changedPath);
+      void deletePageSourceDraft(changedPath);
+    } else {
+      scheduleDraftWrite(changedPath, code, baseSource);
+    }
     setEntries((prev) => {
       if (!prev || prev.some((entry) => entry.id === changedPath)) return prev;
       const slash = changedPath.lastIndexOf("/");

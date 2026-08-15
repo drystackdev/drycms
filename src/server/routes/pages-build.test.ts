@@ -195,6 +195,19 @@ describe("POST /dry/api/pages-build - clears ai-page-source-flags.ts on a succes
     expect((await listAiPageSourceFlags({})).some((f) => f.path === "pages/build-clears-flag/page.tsx")).toBe(false);
   });
 
+  it("clears flags for layouts/components/styles included in the published source graph", async () => {
+    const { markAiPageSourceWrite, listAiPageSourceFlags } = await import("../ai-page-source-flags.js");
+    const sourcePaths = ["pages/source-graph/page.tsx", "pages/layout.tsx", "component/Card.tsx", "styles/globals.css"];
+    for (const path of sourcePaths) await markAiPageSourceWrite(path, {});
+
+    const body = { ...onePage("/source-graph"), sourcePaths };
+    const response = await POST(postContext(body));
+    expect(response.status).toBe(200);
+
+    const flags = await listAiPageSourceFlags({});
+    for (const path of sourcePaths) expect(flags.some((flag) => flag.path === path)).toBe(false);
+  });
+
   it("leaves an UNRELATED flagged path untouched", async () => {
     const { markAiPageSourceWrite, listAiPageSourceFlags } = await import("../ai-page-source-flags.js");
     await markAiPageSourceWrite("pages/build-unrelated/page.tsx", {});

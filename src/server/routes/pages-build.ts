@@ -82,6 +82,9 @@ interface PagesBuildRequestBody {
    * `ai-page-source-flags.ts`'s red dot for this file below, never
    * persisted to `PagesRegistryAdapter`. */
   entryPath: string;
+  /** Every page-source file that contributed to this output. Older clients
+   * may omit it; `entryPath` remains the compatibility fallback. */
+  sourcePaths?: string[];
   html: string;
   /** mục 7 - `page.js`/`layout.js`/every transitively-imported component,
    * already compiled to real ESM client-side (`page-build.ts`'s
@@ -109,6 +112,8 @@ function isValidBody(value: unknown): value is PagesBuildRequestBody {
     body.pathname.startsWith("/") &&
     typeof body.entryPath === "string" &&
     body.entryPath.length > 0 &&
+    (body.sourcePaths === undefined ||
+      (Array.isArray(body.sourcePaths) && body.sourcePaths.every((path) => typeof path === "string" && path.length > 0))) &&
     typeof body.html === "string" &&
     (body.jsAssets === undefined || Array.isArray(body.jsAssets)) &&
     typeof body.buildId === "string" &&
@@ -144,7 +149,9 @@ async function publishOne(context: Parameters<DryRouteHandler>[0], raw: PagesBui
   // "log and move on" contract `content-types.ts`'s `regenerateTypesCache`
   // uses for its own post-write side effect.
   try {
-    await clearAiPageSourceWrite(raw.entryPath, context.env);
+    for (const sourcePath of new Set(raw.sourcePaths ?? [raw.entryPath])) {
+      await clearAiPageSourceWrite(sourcePath, context.env);
+    }
   } catch (error) {
     console.error("[drycms] failed to clear the ai-page-source-flags entry after a build:", error);
   }

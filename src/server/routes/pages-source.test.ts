@@ -41,6 +41,11 @@ function jsonBody(body: unknown): { body: string; headers: Record<string, string
 
 const SAMPLE_SOURCE = "export default function Page() {\n  return <div></div>;\n}\n";
 
+async function sourceHash(source: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source)));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 describe("GET /dry/api/pages-source/[...slug]", () => {
   it("?tree on an empty root reports supported with no entries", async () => {
     const response = await GET(context({ slug: "", query: { tree: "" } }));
@@ -80,6 +85,26 @@ describe("PUT /dry/api/pages-source/[...slug]", () => {
     expect(put.status).toBe(200);
     const get = await GET(context({ slug: "overwrite/page.tsx" }));
     expect(await get.text()).toBe(updated);
+  });
+
+  it("rejects an overwrite when storage moved beyond the editor's saved baseline", async () => {
+    const slug = "conflict/page.tsx";
+    await PUT(context({ slug, method: "PUT", body: SAMPLE_SOURCE }));
+    const mcpVersion = "export default function Page() { return <main>MCP</main>; }\n";
+    await PUT(context({ slug, method: "PUT", body: mcpVersion }));
+
+    const response = await PUT(
+      context({
+        slug,
+        method: "PUT",
+        body: "export default function Page() { return <main>stale editor</main>; }\n",
+        headers: { "X-Dry-Base-Source-Hash": await sourceHash(SAMPLE_SOURCE) },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "conflict" });
+    expect(await (await GET(context({ slug }))).text()).toBe(mcpVersion);
   });
 
   it("auto-creates missing parent folders for a nested path", async () => {

@@ -156,6 +156,7 @@ describe("buildPage", () => {
       { resource: "siteSettings", version: 7 },
     ]);
     expect(result.inSitemap).toBe(true);
+    expect(result.sourcePaths?.sort()).toEqual(["Greeting.tsx", "layout.tsx", "page.tsx"]);
 
     // mục 7 - the whole reachable closure (entry + layout + the layout's
     // OWN import) got compiled to real ESM, not just the entry.
