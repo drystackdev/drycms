@@ -1,7 +1,7 @@
 import { h, Fragment } from "preact";
 import * as preactHooks from "preact/hooks";
 import { transform, type Options as SucraseOptions } from "sucrase";
-import { dry, configureHttpDryReader, type HttpDryReaderConfig, type HttpDryReaderDependency } from "../content-types/dry-reader-http.js";
+import { dry, configureHttpDryReader, type DryVeiOverrideMap, type HttpDryReaderConfig, type HttpDryReaderDependency } from "../content-types/dry-reader-http.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
 import { installVeiMarkerHook } from "../server/app-router/vei-marker-hook.js";
 import { fetchDryHttp } from "../content-types/dry-http-cache.js";
@@ -469,6 +469,9 @@ export interface PageBuildInput {
    * exactly as it does today - no refs attached, no `data-dry*` markers,
    * byte-identical output. */
   vei?: DryVeiContext;
+  /** Unsaved Page Builder VEI field values overlaid on `dry()` responses
+   * during preview-only renders. Never supplied by a publish path. */
+  veiOverrides?: DryVeiOverrideMap;
 }
 
 export interface PageBuildResult {
@@ -560,6 +563,7 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     seo,
     cacheTtlMs: input.dryCacheTtlMs,
     vei: input.vei,
+    veiOverrides: input.veiOverrides,
   };
   configureHttpDryReader(dryConfig);
   if (input.vei) ensureVeiMarkerHookInstalled();

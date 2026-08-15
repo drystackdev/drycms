@@ -5,6 +5,7 @@ import { useDocumentTitle } from "./page-common.js";
 import { canAccess } from "../store/auth.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import type { DryVeiContext } from "../content-types/dry-context.js";
+import { dryVeiOverrideKey, type DryVeiOverrideMap } from "../content-types/dry-reader-http.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
 import { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
@@ -16,6 +17,7 @@ import { collectionTypeForPageSource } from "../server/app-router/page-collectio
 import { MD_ROOT, PAGES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import type { PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
+import { encodeEntryId } from "../lib/id-hash.js";
 import PreviewFrame from "./page-components/page-builder/PreviewFrame.js";
 import Toolbar from "./page-components/page-builder/Toolbar.js";
 import BubbleMenu from "./page-components/page-builder/BubbleMenu.js";
@@ -106,6 +108,8 @@ export default function PageBuilder() {
   const [codePanelWidth, setCodePanelWidth] = useState(480);
   const [fileDialogPath, setFileDialogPath] = useState<string | null>(null);
   const [veiTarget, setVeiTarget] = useState<PreviewVeiClickRef | null>(null);
+  const [contentRevision, setContentRevision] = useState(0);
+  const [veiOverrides, setVeiOverrides] = useState<DryVeiOverrideMap>({});
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const sidePanelOpen = codePanelOpen || !!veiTarget;
 
@@ -168,9 +172,27 @@ export default function PageBuilder() {
   const handleVeiClick = useCallback((ref: PreviewVeiClickRef) => setVeiTarget(ref), []);
 
   const handleFieldInput = useCallback((detail: PreviewPatchDetail) => {
+    const key = dryVeiOverrideKey(detail.typeSlug, detail.entryId);
+    setVeiOverrides((current) => ({
+      ...current,
+      [key]: { ...current[key], [detail.name]: detail.value },
+    }));
     const doc = iframeRef.current?.contentDocument;
     if (doc) applyPreviewPatch(doc, detail, path);
   }, []);
+
+  const handleVeiSaved = useCallback(() => {
+    if (veiTarget) {
+      const key = dryVeiOverrideKey(veiTarget.type, veiTarget.kind === "singleton" ? null : encodeEntryId(veiTarget.id));
+      setVeiOverrides((current) => {
+        if (!(key in current)) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
+    setContentRevision((revision) => revision + 1);
+  }, [veiTarget]);
 
   async function handleToolbarSave() {
     if (match?.entryPath) await save(match.entryPath);
@@ -204,6 +226,8 @@ export default function PageBuilder() {
         onSave={() => void handleToolbarSave()}
         onVeiClick={handleVeiClick}
         codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
+        contentRevision={contentRevision}
+        veiOverrides={veiOverrides}
       />
 
       <Toolbar
@@ -268,6 +292,7 @@ export default function PageBuilder() {
           adminPath={path}
           onClose={() => setVeiTarget(null)}
           onFieldInput={handleFieldInput}
+          onSaved={handleVeiSaved}
         />
       )}
     </div>

@@ -24,6 +24,7 @@ export interface VeiEntryFrameProps {
   adminPath: string;
   onClose: () => void;
   onFieldInput: (detail: PreviewPatchDetail) => void;
+  onSaved: () => void;
 }
 
 /**
@@ -41,9 +42,11 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin || event.source !== iframeRef.current?.contentWindow) return;
-      const message = event.data as { type?: string; detail?: unknown } | null;
+      const message = event.data as { type?: string; detail?: unknown; ok?: boolean } | null;
       if (message?.type === "vei:input" && message.detail) {
         props.onFieldInput(message.detail as PreviewPatchDetail);
+      } else if (message?.type === "vei:saved" && message.ok === true) {
+        props.onSaved();
       } else if (message?.type === "vei:close") {
         // Fired by `ContentEntryEditor.tsx`'s own Cancel button (via
         // `pages/vei/bridge.ts`'s `closeVeiDialog`) - a real Save leaves
@@ -54,7 +57,7 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [props.onFieldInput, props.onClose]);
+  }, [props.onFieldInput, props.onSaved, props.onClose]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

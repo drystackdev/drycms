@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureHttpDryReader, dry } from "./dry-reader-http.js";
+import { configureHttpDryReader, dry, dryVeiOverrideKey } from "./dry-reader-http.js";
+import { encodeEntryId } from "../lib/id-hash.js";
 import { refOf } from "./dry-vei.js";
 import type { DryVeiContext } from "./dry-context.js";
 import type { ContentTypeDefinition } from "./types.js";
@@ -95,6 +96,44 @@ describe("dry-reader-http.ts's markOrInert (real VEI boxing vs the build-time in
 
     const { rows } = await dry().collection("blog").list();
     expect(rows.every((row) => refOf(row.title) !== null)).toBe(true);
+  });
+
+  it("overlays unsaved VEI fields onto collection list rows before rendering", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        encodeCallLog([{ kind: "collection", name: "blog", method: "list", result: { rows: [{ id: 2, title: "B", items: ["one"] }], total: 1 } }]),
+        { headers: jsonHeaders() },
+      ),
+    );
+    configureHttpDryReader({
+      endpoint: "/dry/api/dry-http",
+      callLog: [],
+      deps: [],
+      allTypes,
+      seo: {},
+      vei: alwaysCanUpdate,
+      veiOverrides: { [dryVeiOverrideKey("blog", encodeEntryId(2))]: { items: ["one", "two", "three"] } },
+    });
+
+    const { rows } = await dry().collection("blog").list();
+    expect(rows[0]?.items).toEqual(["one", "two", "three"]);
+  });
+
+  it("overlays unsaved VEI fields onto singleton reads", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(encodeCallLog([{ kind: "singleton", name: "siteSettings", method: "get", result: { title: "Old" } }]), { headers: jsonHeaders() }),
+    );
+    configureHttpDryReader({
+      endpoint: "/dry/api/dry-http",
+      callLog: [],
+      deps: [],
+      allTypes,
+      seo: {},
+      vei: alwaysCanUpdate,
+      veiOverrides: { [dryVeiOverrideKey("siteSettings", null)]: { title: "New" } },
+    });
+
+    expect((await dry().singleton("siteSettings").get())?.title).toBe("New");
   });
 
   it("list() leaves a select-transformed field unboxed even under a real vei session, matching dry-reader.ts's unboxedKeys contract", async () => {

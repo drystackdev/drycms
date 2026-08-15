@@ -1,5 +1,6 @@
 import type { DryCallLogEntry, DryVeiContext } from "./dry-context.js";
 import { fetchDryHttp } from "./dry-http-cache.js";
+import { encodeEntryId } from "../lib/id-hash.js";
 import { createInertRefProxy } from "./dry-vei.js";
 import { markRecord } from "./dry-populate.js";
 import { seoTierFor, type DrySeoLayers, type DrySeoValue } from "./dry-seo.js";
@@ -83,6 +84,16 @@ export interface HttpDryReaderConfig {
    * real publish), which must keep getting today's inert `$` unconditionally.
    * See `markOrInert` below. */
   vei?: DryVeiContext;
+  /** Page Builder VEI's unsaved, in-memory top-level field overrides. This
+   * lets a preview rebuild render structural edits (repeatable items being
+   * added/removed/reordered), which a direct DOM text/attribute patch cannot. */
+  veiOverrides?: DryVeiOverrideMap;
+}
+
+export type DryVeiOverrideMap = Record<string, Record<string, unknown>>;
+
+export function dryVeiOverrideKey(typeSlug: string, entryId: string | null): string {
+  return `${typeSlug}:${entryId ?? "__singleton__"}`;
 }
 
 let config: HttpDryReaderConfig | null = null;
@@ -183,6 +194,20 @@ async function callServer(body: WireRequest): Promise<DryCallLogEntry> {
   }
   const [entry] = decodeCallLog(response.text);
   if (!entry) throw new Error(`[drycms] dry().${body.kind}("${body.name}").${body.method}() returned no result.`);
+  const overrides = activeConfig().veiOverrides;
+  if (overrides) {
+    const apply = (record: Record<string, unknown>): Record<string, unknown> => {
+      const entryId = body.kind === "singleton" ? null : encodeEntryId(Number(record.id));
+      const override = overrides[dryVeiOverrideKey(body.name, entryId)];
+      return override ? { ...record, ...override } : record;
+    };
+    if (body.method === "list") {
+      const page = entry.result as { rows?: Record<string, unknown>[] } | null;
+      if (page?.rows) entry.result = { ...page, rows: page.rows.map(apply) };
+    } else if (entry.result && typeof entry.result === "object") {
+      entry.result = apply(entry.result as Record<string, unknown>);
+    }
+  }
   callLog.push(entry);
   // Pushed for a cache hit too, with the version as of when it was cached -
   // `_page_deps` stays populated either way, and the only caller that

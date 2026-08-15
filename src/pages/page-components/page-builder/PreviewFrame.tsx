@@ -11,6 +11,7 @@ import type { SourceRouteMatch } from "../../../server/app-router/route-manifest
 import type { AssetHrefs } from "../../../page-components/pages-source-http.js";
 import type { ContentTypeDefinition } from "../../../content-types/types.js";
 import type { DryVeiContext } from "../../../content-types/dry-context.js";
+import type { DryVeiOverrideMap } from "../../../content-types/dry-reader-http.js";
 
 /**
  * The full-viewport `<iframe srcdoc>` `/dry/page-builder` is built around
@@ -35,6 +36,10 @@ export interface PreviewFrameProps {
   onSave: () => void;
   onVeiClick: (ref: PreviewVeiClickRef) => void;
   codePanelWidth: number;
+  /** Changes only after a successful VEI content save, forcing a fresh
+   * `dry()` render even though no page-source code changed. */
+  contentRevision: number;
+  veiOverrides: DryVeiOverrideMap;
 }
 
 export default function PreviewFrame(props: PreviewFrameProps) {
@@ -77,6 +82,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
             layoutPaths: match.layoutPaths,
             params: match.params,
             vei: veiEnabled ? veiContext : undefined,
+            veiOverrides: props.veiOverrides,
           },
           veiOverlayHref: assetHrefs.veiOverlayHref,
           veiEnabled,
@@ -94,7 +100,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, 400);
     return () => clearTimeout(timer);
-  }, [match?.entryPath, match?.layoutPaths.join(","), JSON.stringify(match?.params), sourceByPath, veiEnabled, allTypes, assetHrefs, origin, adminPath]);
+  }, [match?.entryPath, match?.layoutPaths.join(","), JSON.stringify(match?.params), sourceByPath, veiEnabled, allTypes, assetHrefs, origin, adminPath, props.contentRevision, props.veiOverrides]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
