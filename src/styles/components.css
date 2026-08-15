@@ -7585,6 +7585,314 @@
     }
   }
 
+  .dry {
+    /* Page Builder's floating toolbar (`Toolbar.tsx`) reuses `apps/vei/
+     * Dock.tsx`'s `EditingDock`/`ModeToggle` components verbatim - the FIRST
+     * consumer of them outside the VEI overlay's shadow root, where
+     * `apps/vei/overlay-styles.ts` has always supplied their CSS instead
+     * (that shadow root "never loads components.css", per its own doc
+     * comment - the inverse gap: components.css never needed `.dock`/
+     * `.mode-toggle`/`.round` before now). `button`/`.ghost`/`.icon`/`.sm`/
+     * `.badge` themselves are NOT redeclared here - Dock.tsx's JSX only ever
+     * combines those with the classes below, and this app's own versions of
+     * them (above) already apply correctly in normal light DOM. Only the
+     * pieces genuinely missing get a rule: the pill-shaped `.round` button
+     * modifier, the dock's own fixed-position pill container, the dialog/
+     * panel `.mode-toggle`, and `.vei-spinner` (kept as that exact class
+     * name - it's a Dock.tsx-owned literal, not a prop - reusing the
+     * existing `dry-spin` keyframe above rather than declaring a second,
+     * identical one). */
+    .round {
+      border-radius: 32px;
+    }
+
+    .vei-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      flex: none;
+      border: 2px solid color-mix(in srgb, var(--dry-primary-foreground) 40%, transparent);
+      border-top-color: var(--dry-primary-foreground);
+      border-radius: 50%;
+      animation: dry-spin 700ms linear infinite;
+    }
+
+    button.ghost .vei-spinner {
+      border-color: var(--dry-border);
+      border-top-color: var(--dry-foreground);
+    }
+
+    .mode-toggle {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      border-radius: var(--dry-radius-md);
+      background: var(--dry-secondary);
+
+      & button {
+        background: transparent;
+        color: var(--dry-muted-foreground);
+      }
+
+      & button:hover {
+        background: var(--dry-accent);
+      }
+
+      & button[aria-pressed="true"] {
+        background: var(--dry-popover);
+        color: var(--dry-foreground);
+        box-shadow: var(--dry-shadow-xs);
+      }
+    }
+
+    /* `BubbleMenu.tsx` - the left-hand popup listing `PAGES_SOURCE_ROOTS`'s
+     * 4 tabs + an expandable folder tree (`BubbleFileTree.tsx`, reusing
+     * `ComponentTreePanel`'s own `page-components-tree*` CSS below), anchored
+     * to the OPPOSITE corner from `Toolbar.tsx`'s bottom-right dock so
+     * neither ever covers the other. */
+    .page-builder-bubble-menu {
+      position: fixed;
+      left: 1rem;
+      bottom: 1rem;
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      width: 20rem;
+      max-height: min(28rem, calc(100dvh - 2rem));
+      border-radius: var(--dry-radius-lg);
+      background: var(--dry-popover);
+      border: 1px solid var(--dry-border);
+      box-shadow: var(--dry-shadow-lg);
+      overflow: hidden;
+    }
+
+    .page-builder-bubble-tabs {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.5rem;
+      border-bottom: 1px solid var(--dry-border);
+      flex: none;
+
+      & [role="tab"][aria-selected="true"] {
+        background: var(--dry-accent);
+        color: var(--dry-foreground);
+      }
+    }
+
+    /* `CodePanel.tsx` - the Page tab's drag-resizable code panel, docked to
+     * the right edge over the full-screen preview iframe. */
+    .page-builder-code-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 80;
+      display: flex;
+      flex-direction: column;
+      background: var(--dry-background);
+      border-left: 1px solid var(--dry-border);
+      box-shadow: var(--dry-shadow-lg);
+    }
+
+    .page-builder-code-panel-handle {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-start: -3px;
+      width: 6px;
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 1;
+    }
+
+    .page-builder-code-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--dry-border);
+      flex: none;
+    }
+
+    .page-builder-code-panel-path {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--dry-text-sm);
+      font-weight: 600;
+    }
+
+    .page-builder-code-panel-body {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .page-builder-code-panel-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0.625rem 0.75rem;
+      border-top: 1px solid var(--dry-border);
+      flex: none;
+    }
+
+    /* `FileDialog.tsx` - component/style/md files, 1 or 2 columns. */
+    .page-builder-file-dialog-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1rem;
+      min-height: min(32rem, calc(100dvh - 14rem));
+
+      &.split {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+
+    .page-builder-file-dialog-editor {
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .page-builder-file-dialog-preview {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--dry-border);
+      border-radius: var(--dry-radius-md);
+      overflow: hidden;
+    }
+
+    /* `VeiEntryFrame.tsx` - the entry/singleton editor iframe VEI mode opens
+     * on a marked-field click, dialog (centered modal) or panel (right-
+     * docked, page stays visible beside it) per `ModeToggle`. */
+    .page-builder-vei-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 110;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, black 40%, transparent);
+
+      /* Docked (panel) mode is NOT modal - `apps/vei/overlay.ts`'s own
+       * `isModalSheetOpen()` draws this exact line: the desktop side panel
+       * leaves the rest of the page visible AND CLICKABLE beside it, unlike
+       * the dialog/mobile-drawer case above. Shrinking this wrapper down to
+       * just the panel's own footprint (no `inset: 0`, no backdrop) is what
+       * makes that true here - an `inset: 0` wrapper with a transparent
+       * background would still swallow every click over the preview behind
+       * it, even though nothing is visibly there to click on. */
+      &.docked {
+        inset: 0 0 0 auto;
+        width: 28rem;
+        max-width: 92vw;
+        background: transparent;
+      }
+    }
+
+    .page-builder-vei-panel {
+      width: min(40rem, 92vw);
+      height: min(44rem, 88vh);
+      border-radius: var(--dry-radius-lg);
+      background: var(--dry-background);
+      box-shadow: var(--dry-shadow-lg);
+      overflow: hidden;
+
+      .docked & {
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+        border-left: 1px solid var(--dry-border);
+      }
+    }
+
+    /* `PageBuilder.tsx`'s own root - a fixed full-viewport layer covering
+     * `DryLayout`'s sidebar/topbar chrome entirely (`App.tsx` wraps every
+     * route in `<Chrome>`/`<DryLayout>` unconditionally - see this route's
+     * own doc comment for why a CSS cover is simpler than a router change).
+     * `z-index: 50` sits above the sidebar/topbar (`z-index: 30`-ish) but
+     * below every one of Page Builder's OWN floating pieces
+     * (code panel 80 < bubble menu 90 < dock 100 < VEI sheet 110). */
+    .page-builder-root {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: var(--dry-background);
+      overflow: hidden;
+    }
+
+    /* First-load-only state (`loading || !sourceByPath || ...` in
+     * `PageBuilder.tsx`) - the plain `<span class="hint">Loading…</span>`
+     * this used to be rendered unstyled/unpositioned behind `DryLayout`'s own
+     * chrome for the instant before `.page-builder-root` painted over it. */
+    .page-builder-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+
+      & .spinner {
+        width: 1.75rem;
+        height: 1.75rem;
+        border-width: 3px;
+      }
+    }
+
+    .page-builder-preview {
+      position: absolute;
+      inset: 0;
+    }
+
+    .page-builder-preview-empty,
+    .page-builder-preview-error {
+      position: absolute;
+      top: 1rem;
+      left: 1rem;
+      right: 1rem;
+      z-index: 1;
+    }
+
+    .page-builder-preview-error {
+      padding: 0.5rem 0.75rem;
+      border-radius: var(--dry-radius-md);
+      background: var(--dry-background);
+      border: 1px solid var(--dry-destructive);
+    }
+
+    .dock {
+      position: fixed;
+      right: 1rem;
+      bottom: 1rem;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      border-radius: 32px;
+      background: var(--dry-popover);
+      border: 1px solid var(--dry-border);
+      box-shadow: var(--dry-shadow-lg);
+      color: var(--dry-foreground);
+      font-size: var(--dry-text-sm);
+      transition: width 160ms ease;
+
+      & > * {
+        flex-shrink: 0;
+      }
+
+      & .label {
+        padding-inline: 0.375rem;
+        color: var(--dry-muted-foreground);
+        font-size: var(--dry-text-xs);
+        white-space: nowrap;
+      }
+    }
+  }
+
   .error {
     font-size: var(--dry-text-xs);
     color: var(--dry-destructive);

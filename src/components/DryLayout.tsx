@@ -142,6 +142,15 @@ const NAV: {
     permissionResourceId: PAGE_BUILDER_RESOURCE_ID,
   },
   {
+    key: "page-builder",
+    label: "Page Builder",
+    href: `${path}/page-builder`,
+    icon: "Preview",
+    ready: true,
+    section: "System",
+    permissionResourceId: PAGE_BUILDER_RESOURCE_ID,
+  },
+  {
     key: "page-editor",
     label: "Page Code Editor",
     href: `${path}/page-editor`,

@@ -1,18 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeCallLog } from "../server/app-router/dry-replay-codec.js";
 import type { ContentTypeDefinition } from "../content-types/types.js";
+import type { DryVeiContext } from "../content-types/dry-context.js";
 import { buildPage, candidatePathsFor, canSkipBuild, computeSourceHash, evalModule, pagesAffectedBy, publishBuiltPage, resolveAllPageTargets, PageBuildError } from "./page-build.js";
 
 const TEST_ASSETS = { globalsCssHref: "/assets/globals.css", hydrateEntryHref: "/assets/hydrate.js", veiOverlayHref: "/assets/vei-overlay.js" };
 const TEST_PREACT_RUNTIME_HREF = "/assets/preact-runtime.js";
 const TEST_BUILT_ASSETS_BASE_URL = "/dry/api/built-assets";
 
+function field(partial: Partial<ContentTypeDefinition["fields"][number]> & { id: string; name: string; type: string }): ContentTypeDefinition["fields"][number] {
+  return { label: partial.name, config: {}, validation: {}, order: 0, ...partial };
+}
+
+// A real `title` field (not `fields: []`, unlike the other fixtures below) -
+// `markOrInert` only boxes a field it can find on `ContentTypeDefinition.
+// fields`, so the "boxes real fields under vei" test needs this declared to
+// exercise real boxing, not just the build-time inert fallback every OTHER
+// test here already covers.
 const SITE_SETTINGS_TYPE: ContentTypeDefinition = {
   id: "site-settings-id",
   kind: "singleton",
   name: "siteSettings",
   label: "Site Settings",
-  fields: [],
+  fields: [field({ id: "s1", name: "title", type: "text" })],
   version: 0,
 };
 
@@ -327,6 +337,84 @@ describe("buildPage", () => {
     });
 
     expect(result.inSitemap).toBe(false);
+  });
+
+  // `plans/new-ui-page-builder.md` mục 3/step 2 - `PageBuildInput.vei`
+  // threaded into `dryConfig.vei` + `installVeiMarkerHook()`, mirroring
+  // `dry-reader-http.test.ts`'s own `markOrInert` coverage one layer up, at
+  // the `buildPage()` boundary Page Builder's VEI mode actually calls.
+  it("renders byte-identical (no data-dry marker) when input.vei is absent - every real build/preview caller today", async () => {
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { kind: string; name: string };
+      if (body.kind === "singleton" && body.name === "siteSettings") {
+        const text = encodeCallLog([{ kind: "singleton", name: "siteSettings", method: "get", result: { id: 1, title: "My Site" } }]);
+        return new Response(text, { status: 200, headers: jsonHeaders("siteSettings", 7) });
+      }
+      const text = encodeCallLog([{ kind: "singleton", name: "seoDefaults", method: "get", result: null }]);
+      return new Response(text, { status: 200, headers: jsonHeaders("seoDefaults", 0) });
+    });
+
+    const result = await buildPage({
+      pathname: "/",
+      origin: "https://example.com",
+      adminPath: "/dry",
+      siteLang: "en",
+      assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
+      dryHttpEndpoint: "/dry/api/dry-http",
+      allTypes: [SITE_SETTINGS_TYPE, SEO_DEFAULTS_TYPE],
+      sourceByPath: {
+        "page.tsx": `export default async function Page() {\n  const settings = await dry().singleton("siteSettings").get();\n  return <div>{settings.title}</div>;\n}\n`,
+        "layout.tsx": LAYOUT_SOURCE,
+      },
+      entryPath: "page.tsx",
+      layoutPaths: ["layout.tsx"],
+      params: {},
+      skipJsAssets: true,
+    });
+
+    expect(result.html).toContain("My Site");
+    expect(result.html).not.toContain("data-dry");
+  });
+
+  it("boxes real fields into data-dry markers when input.vei says the type is updatable", async () => {
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { kind: string; name: string };
+      if (body.kind === "singleton" && body.name === "siteSettings") {
+        const text = encodeCallLog([{ kind: "singleton", name: "siteSettings", method: "get", result: { id: 1, title: "My Site" } }]);
+        return new Response(text, { status: 200, headers: jsonHeaders("siteSettings", 7) });
+      }
+      const text = encodeCallLog([{ kind: "singleton", name: "seoDefaults", method: "get", result: null }]);
+      return new Response(text, { status: 200, headers: jsonHeaders("seoDefaults", 0) });
+    });
+
+    const alwaysCanUpdate: DryVeiContext = { canUpdate: () => true };
+    const result = await buildPage({
+      pathname: "/",
+      origin: "https://example.com",
+      adminPath: "/dry",
+      siteLang: "en",
+      assets: TEST_ASSETS,
+      preactRuntimeHref: TEST_PREACT_RUNTIME_HREF,
+      builtAssetsBaseUrl: TEST_BUILT_ASSETS_BASE_URL,
+      dryHttpEndpoint: "/dry/api/dry-http",
+      allTypes: [SITE_SETTINGS_TYPE, SEO_DEFAULTS_TYPE],
+      sourceByPath: {
+        "page.tsx": `export default async function Page() {\n  const settings = await dry().singleton("siteSettings").get();\n  return <div>{settings.title}</div>;\n}\n`,
+        "layout.tsx": LAYOUT_SOURCE,
+      },
+      entryPath: "page.tsx",
+      layoutPaths: ["layout.tsx"],
+      params: {},
+      skipJsAssets: true,
+      vei: alwaysCanUpdate,
+    });
+
+    expect(result.html).toContain("My Site");
+    // `s:siteSettings:1:title:text` - `dry-vei-ref.ts`'s `encodeRef` format,
+    // straight off the singleton's real id/field name/declared field type.
+    expect(result.html).toContain('data-dry="s:siteSettings:1:title:text"');
   });
 });
 

@@ -34,11 +34,11 @@ import {
   publishBuiltPages,
   resolveAllPageTargets,
   pagesAffectedBy,
-  builtAssetUrlForJsPath,
   PageBuildError,
   type PageBuildResult,
   type PublishOptions,
 } from "../page-components/page-build.js";
+import { buildPreviewSrcdoc, PREVIEW_NAVIGATE_MESSAGE, PREVIEW_SAVE_MESSAGE } from "../page-components/page-preview-engine.js";
 import {
   buildManifestRouteTree,
   listDynamicPageTemplates,
@@ -363,40 +363,10 @@ const LAYOUT_PLACEHOLDER_SOURCE = `export default function PreviewPlaceholder() 
 }
 `;
 
-/** `postMessage` type for the `.page-components-preview-frame` iframe -
- * `srcdoc` has no real route to navigate to (it's a detached, unpublished
- * render, not a live page - see this file's own doc comment), so a link
- * clicked INSIDE the preview can't be allowed to actually navigate the
- * iframe. Instead the injected script below (`buildPreviewBridgeScript`)
- * intercepts every click, always prevents the default navigation, and
- * reports the resolved pathname back here - which is then checked against
- * this SAME `manifest` `previewTarget` itself resolves against, so clicking a
- * link to another real page focuses that page's `page.tsx` in the tree
- * (switching what's being edited/previewed) instead of silently doing
- * nothing. A pathname with no matching `page.tsx` surfaces as a toast error
- * rather than switching - there's nothing valid to focus. */
-const PREVIEW_NAVIGATE_MESSAGE = "dry-page-editor-preview-navigate";
-
-/** `postMessage` type for `Cmd/Ctrl+S` pressed while focus sits INSIDE the
- * preview iframe (clicking a link or scrolling the preview puts it there).
- * A key event never crosses a frame boundary, so the editor's own window
- * listener (`useEffect` below `handleSave`) can't see it - without this the
- * browser's "Save page as…" dialog would still open in exactly that spot,
- * which is the one thing this shortcut exists to prevent. */
-const PREVIEW_SAVE_MESSAGE = "dry-page-editor-preview-save";
-
-/** Runs INSIDE the preview iframe (injected as a literal `<script>` into the
- * built HTML, never sharing a JS realm with this file) - see
- * `PREVIEW_NAVIGATE_MESSAGE`/`PREVIEW_SAVE_MESSAGE`'s doc comments for why.
- * Capturing-phase so it runs before any in-page handler the previewed code
- * itself might attach. `anchor.href` (not `getAttribute("href")`) resolves
- * relative/rooted hrefs against the `<base href>` `refreshPreview` already
- * stamps onto `<head>`, so `new URL` here just re-parses an already-absolute
- * URL back out to a pathname - no origin-joining logic duplicated on this
- * side. */
-function buildPreviewBridgeScript(): string {
-  return `<script>(function(){document.addEventListener("click",function(event){var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
-}
+/** `PREVIEW_NAVIGATE_MESSAGE`/`PREVIEW_SAVE_MESSAGE` - the `.page-components-
+ * preview-frame` iframe's own bridge - and the `buildPreviewSrcdoc()` call
+ * `refreshPreview` below makes now live in `page-preview-engine.ts`, shared
+ * with `PageBuilder.tsx` (`plans/new-ui-page-builder.md` mục 10). */
 
 /** Same `?tree`-unsupported (R2/S3) fallback `PageBuild.tsx` uses, but
  * keeping the FULL `FileEntry` (`parentId` etc), not `PageBuild.tsx`'s own
@@ -2075,55 +2045,6 @@ export default function PageEditor() {
       // from - only this in-browser preview needs that, real publishes never
       // touch a `blob:` URL.
       const builtAssetsBaseUrl = `${origin}${path}/api/built-assets`;
-      const result = await buildPage({
-        pathname: previewTarget.pathname,
-        origin,
-        adminPath: path,
-        siteLang: "en",
-        assets: {
-          globalsCssHref: assetHrefs.globalsCssHref,
-          hydrateEntryHref: assetHrefs.hydrateBuiltHref,
-          veiOverlayHref: assetHrefs.veiOverlayHref,
-        },
-        // Same reasoning as `builtAssetsBaseUrl` above, and just as needed:
-        // `compileEsmAsset` prepends an `import { h, Fragment } from
-        // "${preactRuntimeHref}"` to EVERY compiled asset (entry, layouts,
-        // every transitively-imported file), and the manifest carries it too
-        // (`preactRuntimeUrl`) - both go through the same blob-module
-        // resolution as any other asset URL, so this needs to be absolute
-        // for exactly the same reason, independent of `builtAssetsBaseUrl`
-        // (a different value - `/api/asset-hrefs`'s own root-relative
-        // `preactRuntimeHref`, not derived from it).
-        preactRuntimeHref: `${origin}${assetHrefs.preactRuntimeHref}`,
-        builtAssetsBaseUrl,
-        dryHttpEndpoint: `${path}/api/dry-http`,
-        allTypes,
-        sourceByPath: buildSourceByPath,
-        entryPath: previewTarget.entryPath,
-        layoutPaths: previewTarget.layoutPaths,
-        params: previewTarget.params,
-        dryCacheTtlMs: PREVIEW_DRY_CACHE_TTL_MS,
-      });
-      if (seq !== previewSeqRef.current) return; // a newer edit already started another build - discard this stale result
-      // Interactive hydration inside the preview iframe. The embedded
-      // hydrate manifest, and every compiled asset's own rewritten `import`
-      // statements (`page-build.ts`'s `compileEsmAsset`), point at
-      // `${builtAssetsBaseUrl}/...` - the REAL, published `/api/built-assets`
-      // endpoint. Fetching those as written would either 404 (this page has
-      // never been built before) or silently hydrate against whatever a past
-      // "Build" click last PUBLISHED - not this in-browser, unpublished
-      // preview's own fresher compile, `result.jsAssets` - overwriting the
-      // correct freshly-SSR'd markup the instant it finished. That mismatch
-      // used to be sidestepped by stripping the manifest entirely (no
-      // preview was ever interactive as a result); fixed here with an import
-      // map instead: each asset's real URL is remapped, for THIS iframe
-      // document only, to a `Blob` object URL holding the exact source just
-      // compiled. The browser never requests the real endpoint at all -
-      // `hydrate-built.ts`'s `import()` calls, and every compiled module's
-      // own nested imports, resolve straight to the blob (import maps apply
-      // to dynamic `import()` the same as static `import`, for every script
-      // in the document, not just the one that registered them).
-      //
       // Known gap, not fixed here: an `about:srcdoc` iframe has no origin of
       // its own, so it inherits the EMBEDDING document's - this admin tab's.
       // `document`/`window` are correctly the IFRAME's own (confirmed live -
@@ -2135,61 +2056,40 @@ export default function PageEditor() {
       // admin's own state. Fixing it would mean sandboxing the iframe to a
       // real cross-origin realm, which breaks blob: URL access entirely
       // (same-origin only) - a bigger redesign than this pass, not attempted.
-      const blobUrls: string[] = [];
-      const importMap = { imports: {} as Record<string, string> };
-      for (const asset of result.jsAssets) {
-        const blobUrl = URL.createObjectURL(new Blob([asset.source], { type: "text/javascript" }));
-        blobUrls.push(blobUrl);
-        const realUrl = builtAssetUrlForJsPath(builtAssetsBaseUrl, asset.jsPath);
-        importMap.imports[realUrl] = blobUrl;
-        // `hydrate-built.ts`'s `import(manifest.entryUrl)` (and the layout/
-        // preact-runtime imports beside it) carries `/* @vite-ignore */` so
-        // Vite's dev transform won't rewrite the CALL - but under `bun run
-        // dev` that file is itself served as a raw, Vite-dev-transformed
-        // module (unlike a real prod build, where it'd be a prebuilt static
-        // bundle), and Vite's dev import-analysis pass instruments EVERY
-        // dynamic `import()` it sees regardless, wrapping the url argument
-        // in its own `__vite__injectQuery(url, "import")` helper for its
-        // module-graph bookkeeping - confirmed by fetching `/src/apps/
-        // hydrate-built.ts` from the dev server directly and reading the
-        // transformed output. That appends a literal `?import` to a query-
-        // less URL (`injectQuery`'s own source), so the string actually
-        // reaching native `import()` in dev is `realUrl + "?import"`, not
-        // `realUrl` - a plain, single-key import map would silently miss and
-        // fall through to a real (404) network request. The nested static
-        // imports INSIDE the compiled module itself aren't affected (they
-        // run from a `blob:` URL, which Vite's dev server never sees), so
-        // only this one entry point needs the extra key.
-        importMap.imports[`${realUrl}?import`] = blobUrl;
-      }
-      // The VEI overlay script (`assets.veiOverlayHref`, embedded by
-      // `buildDocument` on every page unconditionally) checks the admin's
-      // OWN `drycms_admin` hint cookie and, since whoever is using this
-      // editor is signed in, renders its "Edit content" button here too -
-      // but clicking it inside a detached `srcdoc` preview (no real route,
-      // no server round trip possible) does nothing useful. Stripped by its
-      // known href rather than a generic pattern - `assetHrefs` already has
-      // the exact URL this build just used.
-      const withoutVei = assetHrefs
-        ? result.html.replace(`<script type="module" src="${assetHrefs.veiOverlayHref}"></script>`, "")
-        : result.html;
-      // Root-relative asset URLs in `result.html` (`/assets/...`) need a
-      // real origin to resolve against - an `about:srcdoc` iframe has none of
-      // its own. The import map must come AFTER `<base>` in document order
-      // (its own relative-URL resolution, e.g. the manifest's root-relative
-      // asset URLs above, needs the real origin already in effect) but
-      // BEFORE the hydrate bootstrap `<script type="module">` `buildHeadPrefix`
-      // already emits (registering an import map after a module graph has
-      // started fetching is a no-op per spec) - both hold by construction
-      // here, since this whole block runs before that script tag is reached.
-      const headExtras =
-        `<base href="${origin}/">` +
-        (result.jsAssets.length > 0 ? `<script type="importmap">${JSON.stringify(importMap).replace(/</g, "\\u003c")}</script>` : "");
-      const withBase = withoutVei.replace("<head>", `<head>${headExtras}`);
-      const withBridgeScript = withBase.includes("</body>")
-        ? withBase.replace("</body>", `${buildPreviewBridgeScript()}</body>`)
-        : withBase + buildPreviewBridgeScript();
-      if (iframeRef.current) iframeRef.current.srcdoc = withBridgeScript;
+      const { html, blobUrls } = await buildPreviewSrcdoc({
+        buildInput: {
+          pathname: previewTarget.pathname,
+          origin,
+          adminPath: path,
+          siteLang: "en",
+          assets: {
+            globalsCssHref: assetHrefs.globalsCssHref,
+            hydrateEntryHref: assetHrefs.hydrateBuiltHref,
+            veiOverlayHref: assetHrefs.veiOverlayHref,
+          },
+          // Same reasoning as `builtAssetsBaseUrl` above, and just as needed:
+          // `compileEsmAsset` prepends an `import { h, Fragment } from
+          // "${preactRuntimeHref}"` to EVERY compiled asset (entry, layouts,
+          // every transitively-imported file), and the manifest carries it too
+          // (`preactRuntimeUrl`) - both go through the same blob-module
+          // resolution as any other asset URL, so this needs to be absolute
+          // for exactly the same reason, independent of `builtAssetsBaseUrl`
+          // (a different value - `/api/asset-hrefs`'s own root-relative
+          // `preactRuntimeHref`, not derived from it).
+          preactRuntimeHref: `${origin}${assetHrefs.preactRuntimeHref}`,
+          builtAssetsBaseUrl,
+          dryHttpEndpoint: `${path}/api/dry-http`,
+          allTypes,
+          sourceByPath: buildSourceByPath,
+          entryPath: previewTarget.entryPath,
+          layoutPaths: previewTarget.layoutPaths,
+          params: previewTarget.params,
+          dryCacheTtlMs: PREVIEW_DRY_CACHE_TTL_MS,
+        },
+        veiOverlayHref: assetHrefs.veiOverlayHref,
+      });
+      if (seq !== previewSeqRef.current) return; // a newer edit already started another build - discard this stale result
+      if (iframeRef.current) iframeRef.current.srcdoc = html;
       setPreviewLabel(previewTarget.label);
       // Only revoke the PREVIOUS build's blob URLs now, not before: the
       // srcdoc assignment just above has already started tearing down the

@@ -2,6 +2,8 @@ import { h, Fragment } from "preact";
 import * as preactHooks from "preact/hooks";
 import { transform, type Options as SucraseOptions } from "sucrase";
 import { dry, configureHttpDryReader, type HttpDryReaderConfig, type HttpDryReaderDependency } from "../content-types/dry-reader-http.js";
+import type { DryVeiContext } from "../content-types/dry-context.js";
+import { installVeiMarkerHook } from "../server/app-router/vei-marker-hook.js";
 import { fetchDryHttp } from "../content-types/dry-http-cache.js";
 import { params, setCurrentParams } from "../content-types/params-reader-client.js";
 import { resetHttpTitle, readHttpTitleLayer, setTitle } from "../content-types/dry-title-http.js";
@@ -458,6 +460,15 @@ export interface PageBuildInput {
    * unset (every publishing caller does) and every `dry()` call fetches
    * fresh exactly as before. */
   dryCacheTtlMs?: number;
+  /** Present only for a real Visual Editing Interface session
+   * (`PageBuilder.tsx`'s VEI mode, `plans/new-ui-page-builder.md` mục 3) -
+   * threaded straight into `dryConfig.vei` (`dry-reader-http.ts`'s
+   * `markOrInert`), same field `apps/vei-live-refresh.ts` sets when
+   * `configureHttpDryReader`-ing the live public site. Absent (the default,
+   * every publishing/plain-preview caller) means every value renders
+   * exactly as it does today - no refs attached, no `data-dry*` markers,
+   * byte-identical output. */
+  vei?: DryVeiContext;
 }
 
 export interface PageBuildResult {
@@ -474,6 +485,29 @@ export interface PageBuildResult {
    * noIndex !== true`), not a caller-supplied flag - matches how a real
    * page's `noIndex` is decided everywhere else in this codebase. */
   inSitemap: boolean;
+}
+
+/** `installVeiMarkerHook()` patches Preact's `options.vnode` hook once,
+ * process-wide (`vei-marker-hook.ts`'s own doc comment) - calling it again
+ * would stack a second wrapper around the first, double-marking every
+ * render from then on. `buildPage` can run many times in one tab (every
+ * debounced preview edit), so this installs it AT MOST once, lazily, the
+ * first time a caller ever asks for a `vei` build - a build with no `vei`
+ * never marks anything regardless of whether the hook happens to be
+ * installed (`markOrInert` short-circuits on a missing `dryConfig.vei`), so
+ * there's no cost to leaving it installed for the rest of the process.
+ *
+ * No explicit runtime handle to pass (unlike `apps/vei-live-refresh.ts`'s
+ * own call, which patches a SEPARATE, dynamically-imported Preact module
+ * instance): `buildPage` always renders through the statically-imported
+ * `h`/`Fragment` this file itself imports at the top - the SAME instance
+ * `installVeiMarkerHook`'s own default `options` parameter already resolves
+ * to, so the no-arg call is correct here, not an oversight. */
+let veiMarkerHookInstalled = false;
+function ensureVeiMarkerHookInstalled(): void {
+  if (veiMarkerHookInstalled) return;
+  veiMarkerHookInstalled = true;
+  installVeiMarkerHook();
 }
 
 function dedupeDeps(deps: HttpDryReaderDependency[]): HttpDryReaderDependency[] {
@@ -522,8 +556,10 @@ export async function buildPage(input: PageBuildInput): Promise<PageBuildResult>
     allTypes: input.allTypes,
     seo,
     cacheTtlMs: input.dryCacheTtlMs,
+    vei: input.vei,
   };
   configureHttpDryReader(dryConfig);
+  if (input.vei) ensureVeiMarkerHookInstalled();
 
   const { value: defaultSeo, dep: defaultsDep } = await fetchSeoDefaults(input.dryHttpEndpoint, input.dryCacheTtlMs);
   seo.default = defaultSeo;

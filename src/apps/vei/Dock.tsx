@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { ColumnsIcon, EditIcon, FullscreenIcon, type IconProps } from "../../components/icons/index.js";
 
@@ -156,10 +157,22 @@ export function EditingDock(props: {
   initialMode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
   onExit: () => void;
-  onDashboard: () => void;
+  /** Omit to hide the "Dashboard" button entirely - `undefined` (every call
+   * site before `PageBuilder.tsx`) keeps it exactly as before.
+   * `PageBuilder.tsx`'s `Toolbar.tsx` omits it: unlike the public-site
+   * overlay (where "Dashboard" is the only way back INTO the admin app),
+   * Page Builder already IS the admin app, so "Dashboard" and "Exit" would
+   * be two buttons doing the same thing. */
+  onDashboard?: () => void;
   onPreviewAll: () => void;
   onSave: () => void;
   onReady: (handle: EditingDockHandle) => void;
+  /** Extra buttons rendered BEFORE "Dashboard" - `undefined` (every call
+   * site before `PageBuilder.tsx`) renders nothing extra, so this is a
+   * purely additive slot, not a behavior change for `overlay.ts`'s own
+   * usage. `PageBuilder.tsx`'s `Toolbar.tsx` uses it for its "open file
+   * menu"/"toggle VEI mode" buttons rather than forking this component. */
+  extraActions?: ComponentChildren;
 }) {
   const [exiting, setExiting] = useState(false);
   const [navigatingToDashboard, setNavigatingToDashboard] = useState(false);
@@ -191,24 +204,27 @@ export function EditingDock(props: {
 
   return (
     <div className="dock" ref={ref}>
-      <button
-        type="button"
-        className="ghost round"
-        disabled={navigatingToDashboard}
-        onClick={() => {
-          setNavigatingToDashboard(true);
-          props.onDashboard();
-        }}
-      >
-        {navigatingToDashboard ? (
-          <>
-            <span className="vei-spinner" />
-            Opening dashboard
-          </>
-        ) : (
-          "Dashboard"
-        )}
-      </button>
+      {props.extraActions}
+      {props.onDashboard && (
+        <button
+          type="button"
+          className="ghost round"
+          disabled={navigatingToDashboard}
+          onClick={() => {
+            setNavigatingToDashboard(true);
+            props.onDashboard!();
+          }}
+        >
+          {navigatingToDashboard ? (
+            <>
+              <span className="vei-spinner" />
+              Opening dashboard
+            </>
+          ) : (
+            "Dashboard"
+          )}
+        </button>
+      )}
       {status && <span className="label">{status}</span>}
       {!sheetOpen && (
         <ModeToggle
