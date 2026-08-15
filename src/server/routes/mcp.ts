@@ -32,12 +32,13 @@ import { getContentAdapters } from "../content-adapters.js";
 import { getAuthSecurityStore } from "../auth-security.js";
 import { checkAccess } from "./content-entries.js";
 import { executeMagicFetch } from "./ai-magic-write-fetch.js";
-import { readGeneratedDryTypes } from "../../content-types/types-cache.js";
+import { readGeneratedDryTypes, writeGeneratedDryTypes } from "../../content-types/types-cache.js";
+import { generateDryTypes } from "../../content-types/codegen.js";
 import { PAGE_SOURCE_DOCS } from "../../page-components/ai-page-source-docs.js";
-import { buildEntryFieldTree } from "../../content-types/engine/entry-tree.js";
+import { buildEntryFieldTree, type EntryFieldNode } from "../../content-types/engine/entry-tree.js";
 import type { ContentEntryEngineAdapter } from "../../content-types/engine/entries-types.js";
 import type { EntryValue } from "../../content-types/engine/entry-codec.js";
-import { applyMagicWriteFields } from "../../content-types/ai-magic-write-fields.js";
+import { applyMagicWriteFields, type AllowedRelationIds } from "../../content-types/ai-magic-write-fields.js";
 import { supportsMagic, PAGE_BUILDER_RESOURCE_ID, CONTENT_TYPES_RESOURCE_ID } from "../../content-types/permissions.js";
 import type { ContentTypeDefinition, FieldDefinition } from "../../content-types/types.js";
 import { fieldTypes } from "../../content-types/field-registry.js";
@@ -50,6 +51,7 @@ import { validateContentTypeDefinition, NamingError } from "../../content-types/
 import { randomUUID } from "../../lib/uuid.js";
 import { saveAiContentTypeDraft, listAiContentTypeDrafts, type AiContentTypeDraft } from "../ai-content-type-drafts.js";
 import { markAiPageSourceWrite } from "../ai-page-source-flags.js";
+import { decodeEntryId } from "../../lib/id-hash.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
 // Nothing this server exposes (tools only - no resources/prompts/sampling,
@@ -145,12 +147,12 @@ const TOOLS: ToolDefinition[] = [
   {
     name: "create_entry",
     description:
-      "Create a new entry in a collection. Only plain scalar fields (text/richtext/number/boolean/date/select) are supported - relation and image fields must be set afterward in the admin UI.",
+      "Create a new entry in a collection. Plain scalar fields (text/richtext/number/boolean/date/select) and relation fields are both supported - image fields must still be set afterward in the admin UI. For a relation field, use the target entry's real numeric id: a single id for a manyToOne field (e.g. \"author\": 12), or an array (or comma-separated string) of ids for oneToMany/manyToMany (e.g. \"tags\": [12, 45]). The id must belong to an entry that actually exists in that field's target collection AND that you have view access to - look it up first with list_entries/get_entry (use read_dry_types or list_content_types if you don't know the target collection's name). An id that doesn't resolve is silently dropped, not an error.",
     inputSchema: {
       type: "object",
       properties: {
         typeSlug: { type: "string", description: "The target collection's name." },
-        fields: { type: "object", description: "Field name -> value.", additionalProperties: true },
+        fields: { type: "object", description: "Field name -> value. For a relation field, a target entry id (or array/comma-list of ids) - see this tool's description.", additionalProperties: true },
       },
       required: ["typeSlug", "fields"],
       additionalProperties: false,
@@ -159,13 +161,13 @@ const TOOLS: ToolDefinition[] = [
   {
     name: "update_entry_fields",
     description:
-      "Update fields on an existing entry (collection) or a singleton. Only plain scalar fields are supported, same restriction as create_entry.",
+      "Update fields on an existing entry (collection) or a singleton. Same field support as create_entry - plain scalar fields and relation fields (by real target entry id), image fields still excluded.",
     inputSchema: {
       type: "object",
       properties: {
         typeSlug: { type: "string", description: "The content type's name." },
         id: { type: "string", description: "The entry's numeric id. Omit for a singleton." },
-        fields: { type: "object", description: "Field name -> value.", additionalProperties: true },
+        fields: { type: "object", description: "Field name -> value. For a relation field, a target entry id (or array/comma-list of ids) - see create_entry's description.", additionalProperties: true },
       },
       required: ["typeSlug", "fields"],
       additionalProperties: false,
@@ -288,6 +290,160 @@ function findType(allTypes: ContentTypeDefinition[], typeSlug: string): ContentT
   return allTypes.find((candidate) => candidate.name === typeSlug && candidate.kind !== "component");
 }
 
+/** Pulls every plausible numeric id out of one raw relation-field value -
+ * a bare number/numeric string (`manyToOne`), a comma-separated string, or a
+ * real JSON array of either (`oneToMany`/`manyToMany` - see
+ * `ai-magic-write-fields.ts`'s `coerceRelation` for why both shapes are
+ * accepted). Never throws on a malformed shape - just yields nothing, same
+ * "drop, don't crash" contract as the rest of this untrusted-JSON tool
+ * surface. */
+function extractRequestedRelationIds(value: unknown): number[] {
+  if (typeof value === "number") return Number.isFinite(value) ? [value] : [];
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((piece) => Number(piece.trim()))
+      .filter((id) => Number.isFinite(id));
+  }
+  if (Array.isArray(value)) return value.flatMap(extractRequestedRelationIds);
+  return [];
+}
+
+/** Walks `nodes` alongside the CALLER's raw (pre-`toRawFields`) argument
+ * object, collecting every id an MCP `create_entry`/`update_entry_fields`
+ * call asked to link a `relation` field to, grouped by that field's own
+ * `targetTypeId` - the same shape `streamMagicWrite`'s `allowedRelationIds`
+ * accumulates from a turn's `kind: fetch` hops, just gathered from one call's
+ * arguments instead of a conversation's lookups. Recurses into `flatten`/
+ * `component-repeat` nodes so a relation nested inside a component field is
+ * found too, mirroring `coerceNodeValue`'s own recursion. */
+function collectRequestedRelationIds(nodes: EntryFieldNode[], raw: unknown, into: Map<string, Set<number>>): void {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+  const record = raw as Record<string, unknown>;
+  for (const node of nodes) {
+    if (!(node.fieldName in record)) continue;
+    const value = record[node.fieldName];
+    if (node.kind === "relation") {
+      const ids = extractRequestedRelationIds(value);
+      if (ids.length === 0) continue;
+      const set = into.get(node.targetTypeId) ?? new Set<number>();
+      for (const id of ids) set.add(id);
+      into.set(node.targetTypeId, set);
+    } else if (node.kind === "flatten") {
+      collectRequestedRelationIds(node.children, value, into);
+    } else if (node.kind === "component-repeat" && Array.isArray(value)) {
+      for (const item of value) collectRequestedRelationIds(node.itemFields, item, into);
+    }
+  }
+}
+
+/**
+ * MCP's own equivalent of `streamMagicWrite`'s `allowedRelationIds` - but
+ * built from a direct DB existence check instead of "ids surfaced by this
+ * turn's own `kind: fetch` hops", since one MCP `tools/call` is a fully
+ * independent request with no earlier turn to draw on (an AI client
+ * typically discovers a target id via a SEPARATE, EARLIER `list_entries`/
+ * `get_entry` call, which this server never remembers). Every id the caller
+ * asked to link gets verified against the live table for its field's target
+ * type - re-running the exact same "view" access check `list_entries`/
+ * `get_entry` themselves gate on, so an MCP relation write can never link to
+ * (or even confirm the existence of) a row the token's owner couldn't
+ * already see. An id that doesn't resolve to a real row, or whose target
+ * type the caller can't view, is silently left out of the allow-list -
+ * `applyMagicWriteFields` then drops that one id (or the whole field, for a
+ * `manyToOne`) exactly the way an unrecognized id from a model already does.
+ */
+async function resolveAllowedRelationIds(
+  context: DryRouteContext,
+  entries: ContentEntryEngineAdapter,
+  allTypes: ContentTypeDefinition[],
+  nodes: EntryFieldNode[],
+  rawFields: unknown,
+): Promise<AllowedRelationIds> {
+  const requested = new Map<string, Set<number>>();
+  collectRequestedRelationIds(nodes, rawFields, requested);
+  if (requested.size === 0) return new Map();
+
+  const allowed = new Map<string, Set<number>>();
+  await Promise.all(
+    Array.from(requested.entries()).map(async ([targetTypeId, ids]) => {
+      const targetType = allTypes.find((candidate) => candidate.id === targetTypeId);
+      if (!targetType) return;
+      const denied = await checkAccess(context, entries, allTypes, targetType, "view");
+      if (denied) return;
+      const verified = new Set<number>();
+      await Promise.all(
+        Array.from(ids).map(async (id) => {
+          const row = await entries.getEntry(targetType, allTypes, id);
+          if (row) verified.add(id);
+        }),
+      );
+      if (verified.size > 0) allowed.set(targetTypeId, verified);
+    }),
+  );
+  return allowed;
+}
+
+/**
+ * `applyMagicWriteFields` hands back a relation value already ENCODED
+ * (`ai-magic-write-fields.ts`'s `coerceRelation` - a hashed string/array of
+ * them, the same shape a GET response's own `encodeRelationIds` produces) -
+ * that's correct for its normal callers (Magic Chat's client-side commit,
+ * which feeds straight back into `RelationFieldAdapter`, and the terminal SSE
+ * event the admin's own Save button later PUTs back through
+ * `content-entries.ts`'s `decodeRelationIds`), but these MCP tools call
+ * `entries.createEntry`/`updateEntry`/`saveSingletonEntry` DIRECTLY, skipping
+ * that HTTP route (and its decode step) entirely - the adapter layer only
+ * ever stores/expects a raw numeric id. Reverses that encoding here, scoped
+ * to exactly the fields `applied.value` actually contains (checked via `in`,
+ * same as `applyMagicWriteFields`'s own per-field walk) so a field the model
+ * never wrote doesn't get a spurious `null` injected into the merge -
+ * `content-entries.ts`'s own `decodeRelationIds` isn't reused for that reason,
+ * it unconditionally rewrites every node in the tree. */
+function decodeRelationIdsPartial(nodes: EntryFieldNode[], value: EntryValue): EntryValue {
+  const out: EntryValue = { ...value };
+  for (const node of nodes) {
+    if (!(node.fieldName in value)) continue;
+    if (node.kind === "flatten") {
+      out[node.fieldName] = decodeRelationIdsPartial(node.children, (value[node.fieldName] as EntryValue) ?? {});
+    } else if (node.kind === "component-repeat") {
+      const items = Array.isArray(value[node.fieldName]) ? (value[node.fieldName] as EntryValue[]) : [];
+      out[node.fieldName] = items.map((item) => decodeRelationIdsPartial(node.itemFields, item));
+    } else if (node.kind === "relation") {
+      const raw = value[node.fieldName];
+      out[node.fieldName] = node.columnName
+        ? (typeof raw === "string" ? decodeEntryId(raw) : null)
+        : Array.isArray(raw)
+          ? raw.map((v) => (typeof v === "string" ? decodeEntryId(v) : null)).filter((v): v is number => v !== null)
+          : [];
+    }
+  }
+  return out;
+}
+
+/**
+ * `read_dry_types` serves `dry.generated.d.ts` from `typesCacheStorage`
+ * (`types-cache.ts`'s `readGeneratedDryTypes`), which is normally kept fresh
+ * by `routes/content-types.ts`'s own `regenerateTypesCache` running after
+ * every schema mutation THAT ROUTE commits - but an MCP session has no
+ * guarantee that path is what last touched the schema (an admin mid-edit in
+ * another tab, a retry that landed after this tool's own `allTypes` snapshot
+ * was taken, or - defensively - any future write path that forgets the same
+ * regenerate call). `list_content_types` is the one tool call an MCP client
+ * reaches for right before trusting collection/field names (`read_dry_types`'s
+ * own instructions point at both in the same breath), so this regenerates the
+ * cache from the EXACT `allTypes` this call already fetched live, right here,
+ * rather than leaving `read_dry_types` to serve however-stale a copy happens
+ * to be sitting in storage. Best-effort/non-fatal, same as the route it
+ * mirrors - a cache-write hiccup must never fail the listing itself. */
+async function regenerateTypesCacheForMcp(allTypes: ContentTypeDefinition[], context: Pick<DryRouteContext, "env">): Promise<void> {
+  try {
+    await writeGeneratedDryTypes(generateDryTypes(allTypes), context);
+  } catch (error) {
+    console.error("[drycms] mcp: failed to regenerate dry.generated.d.ts before list_content_types", error);
+  }
+}
+
 async function runFetchTool(
   context: DryRouteContext,
   entries: ContentEntryEngineAdapter,
@@ -316,11 +472,12 @@ async function runCreateTool(
   if (deniedCreate) return { text: `You don't have permission to create "${type.name}" entries.`, isError: true };
 
   const nodes = buildEntryFieldTree(type, allTypes);
-  const applied = applyMagicWriteFields(nodes, toRawFields(rawFields));
+  const allowedRelationIds = await resolveAllowedRelationIds(context, entries, allTypes, nodes, rawFields);
+  const applied = applyMagicWriteFields(nodes, toRawFields(rawFields), undefined, allowedRelationIds);
   if (Object.keys(applied.value).length === 0) {
-    return { text: `No usable fields were given for the new "${type.name}" entry - nothing was created. Relation/image fields aren't supported by this tool; set those afterward in the admin UI.`, isError: true };
+    return { text: `No usable fields were given for the new "${type.name}" entry - nothing was created. Image fields aren't supported by this tool; set those afterward in the admin UI. A relation field's id must belong to a real, viewable entry in its target collection - look one up with list_entries/get_entry first.`, isError: true };
   }
-  const created = await entries.createEntry(type, allTypes, applied.value);
+  const created = await entries.createEntry(type, allTypes, decodeRelationIdsPartial(nodes, applied.value));
   return { text: `Created ${type.label} (${type.name}) #${created.id} - ${applied.writtenFieldNames.join(", ")}.` };
 }
 
@@ -356,11 +513,12 @@ async function runUpdateTool(
     existingValue = row.value;
   }
 
-  const applied = applyMagicWriteFields(nodes, toRawFields(rawFields));
+  const allowedRelationIds = await resolveAllowedRelationIds(context, entries, allTypes, nodes, rawFields);
+  const applied = applyMagicWriteFields(nodes, toRawFields(rawFields), undefined, allowedRelationIds);
   if (Object.keys(applied.value).length === 0) {
-    return { text: `No usable fields were given - nothing was updated. Relation/image fields aren't supported by this tool; set those afterward in the admin UI.`, isError: true };
+    return { text: `No usable fields were given - nothing was updated. Image fields aren't supported by this tool; set those afterward in the admin UI. A relation field's id must belong to a real, viewable entry in its target collection - look one up with list_entries/get_entry first.`, isError: true };
   }
-  const merged = { ...existingValue, ...applied.value };
+  const merged = { ...existingValue, ...decodeRelationIdsPartial(nodes, applied.value) };
   const saved = type.kind === "singleton"
     ? await entries.saveSingletonEntry(type, allTypes, merged)
     : await entries.updateEntry(type, allTypes, existingId!, merged);
@@ -779,6 +937,7 @@ async function callTool(context: DryRouteContext, params: Record<string, unknown
   let outcome: ToolResult;
   switch (name) {
     case "list_content_types":
+      await regenerateTypesCacheForMcp(allTypes, context);
       outcome = await runFetchTool(context, entries, allTypes, { kind: "fetch", source: "types" });
       break;
     case "list_entries": {

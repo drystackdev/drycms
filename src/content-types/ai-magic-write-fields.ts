@@ -72,13 +72,17 @@ function coerceScalar(node: EntryColumnNode, text: string, allowedImageSrcs: Rea
 export type AllowedRelationIds = ReadonlyMap<string, ReadonlySet<number>>;
 
 /** A `manyToOne` field writes a single scalar id (`author: 12`); `oneToMany`/
- * `manyToMany` write a comma-separated list (`tags: 12,45,88`) - deliberately
- * NOT a block sequence like `component-repeat` uses, so this needed zero
- * changes to the shared YAML-subset parser (ids are still just one plain
- * scalar line, same grammar rule number/boolean/date/select/image already
- * use). Every id must appear in `allowed` (this turn's own `kind: fetch`
- * results for this exact `targetTypeId`) or it's dropped - a relation write
- * the model never actually looked up via `fetch` is treated the same as one
+ * `manyToMany` write either a comma-separated list (`tags: 12,45,88` - the
+ * model's own YAML-subset dialect, since a block sequence would need parser
+ * changes `component-repeat` didn't) OR a real array of ids (`tags: [12, 45]`) -
+ * the second form is never produced by the model itself, but IS the natural
+ * shape an MCP client sends as real JSON (`routes/mcp.ts`'s `create_entry`/
+ * `update_entry_fields`), so both are accepted here rather than forcing every
+ * caller through the string dialect. Every id must appear in `allowed` (this
+ * turn's own `kind: fetch` results for this exact `targetTypeId`, for Magic
+ * Chat - or, for MCP, a direct existence+access check against the live table,
+ * see `routes/mcp.ts`'s `resolveAllowedRelationIds`) or it's dropped - a
+ * relation write that was never actually verified is treated the same as one
  * that doesn't exist, per `status/magic-chat.md`'s "the model can only link
  * what it's already seen" design (mirrors `allowedImageSrcs` exactly).
  *
@@ -94,17 +98,15 @@ export type AllowedRelationIds = ReadonlyMap<string, ReadonlySet<number>>;
  * through to "no selection") the instant the admin looks at the field,
  * caught by an actual browser check, not by reading the code. */
 function coerceRelation(node: Extract<EntryFieldNode, { kind: "relation" }>, raw: MagicWriteRawValue, allowedRelationIds: AllowedRelationIds): unknown {
-  if (typeof raw !== "string") return undefined;
   const allowed = allowedRelationIds.get(node.targetTypeId);
   if (!allowed || allowed.size === 0) return undefined;
   if (node.cardinality === "manyToOne") {
+    if (typeof raw !== "string") return undefined;
     const id = Number(raw.trim());
     return Number.isFinite(id) && allowed.has(id) ? encodeEntryId(id) : undefined;
   }
-  const ids = raw
-    .split(",")
-    .map((piece) => Number(piece.trim()))
-    .filter((id) => Number.isFinite(id) && allowed.has(id));
+  const pieces = typeof raw === "string" ? raw.split(",") : Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+  const ids = pieces.map((piece) => Number(piece.trim())).filter((id) => Number.isFinite(id) && allowed.has(id));
   return ids.length > 0 ? ids.map(encodeEntryId) : undefined;
 }
 
