@@ -1,4 +1,4 @@
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { FileEntry } from "../../../storage/entry-types.js";
 import { buildComponentTree, type ComponentTreeNode } from "../../../page-components/tree.js";
 import { FolderBaseIcon, FolderBaseOpenIcon, fileIconForName } from "../file-type-icons.js";
@@ -6,6 +6,7 @@ import { FolderBaseIcon, FolderBaseOpenIcon, fileIconForName } from "../file-typ
 export interface BubbleFileTreeProps {
   sourceByPath: Record<string, string>;
   activeRoot: string;
+  activePath: string | null;
   onSelectFile: (path: string) => void;
 }
 
@@ -60,6 +61,7 @@ function buildEntries(paths: string[], rootId: string): FileEntry[] {
  */
 export default function BubbleFileTree(props: BubbleFileTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const treeRef = useRef<HTMLDivElement>(null);
 
   const tree = useMemo(() => {
     const paths = Object.keys(props.sourceByPath).filter(
@@ -67,6 +69,27 @@ export default function BubbleFileTree(props: BubbleFileTreeProps) {
     );
     return buildComponentTree(buildEntries(paths, props.activeRoot));
   }, [props.sourceByPath, props.activeRoot]);
+
+  useEffect(() => {
+    if (!props.activePath || rootOfPath(props.activePath) !== props.activeRoot) return;
+    const relativeParts = props.activePath.slice(props.activeRoot.length + 1).split("/").slice(0, -1);
+    if (relativeParts.length === 0) return;
+    setCollapsed((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (let index = 1; index <= relativeParts.length; index += 1) {
+        if (next.delete(relativeParts.slice(0, index).join("/"))) changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [props.activePath, props.activeRoot]);
+
+  useEffect(() => {
+    if (!props.activePath || rootOfPath(props.activePath) !== props.activeRoot) return;
+    const active = treeRef.current?.querySelector<HTMLButtonElement>('[aria-current="page"]');
+    active?.focus({ preventScroll: true });
+    active?.scrollIntoView({ block: "nearest" });
+  }, [props.activePath, props.activeRoot, collapsed]);
 
   function toggle(id: string) {
     setCollapsed((prev) => {
@@ -80,15 +103,20 @@ export default function BubbleFileTree(props: BubbleFileTreeProps) {
   if (tree.length === 0) return <p class="hint">No files here yet.</p>;
 
   return (
-    <div class="page-components-tree scroll">
-      <BubbleFileTreeList nodes={tree} collapsed={collapsed} onToggle={toggle} onSelectFile={props.onSelectFile} />
+    <div class="page-components-tree scroll" ref={treeRef}>
+      <BubbleFileTreeList nodes={tree} collapsed={collapsed} activePath={props.activePath} onToggle={toggle} onSelectFile={props.onSelectFile} />
     </div>
   );
+}
+
+function rootOfPath(path: string): string {
+  return path.split("/")[0] ?? "";
 }
 
 function BubbleFileTreeList(props: {
   nodes: ComponentTreeNode[];
   collapsed: Set<string>;
+  activePath: string | null;
   onToggle: (id: string) => void;
   onSelectFile: (path: string) => void;
 }) {
@@ -99,7 +127,7 @@ function BubbleFileTreeList(props: {
         const open = entry.kind === "folder" && !props.collapsed.has(entry.id);
         return (
           <div key={entry.id}>
-            <div class="page-components-tree-row">
+            <div class={`page-components-tree-row${entry.kind === "file" && entry.id === props.activePath ? " selected" : ""}`}>
               {entry.kind === "folder" ? (
                 <button
                   type="button"
@@ -119,6 +147,7 @@ function BubbleFileTreeList(props: {
               <button
                 type="button"
                 class="page-components-tree-item"
+                aria-current={entry.id === props.activePath ? "page" : undefined}
                 onClick={() => (entry.kind === "folder" ? props.onToggle(entry.id) : props.onSelectFile(entry.id))}
               >
                 <span>{entry.name}</span>
@@ -126,7 +155,7 @@ function BubbleFileTreeList(props: {
             </div>
             {entry.kind === "folder" && open && node.children.length > 0 && (
               <div class="page-components-tree-children">
-                <BubbleFileTreeList nodes={node.children} collapsed={props.collapsed} onToggle={props.onToggle} onSelectFile={props.onSelectFile} />
+                <BubbleFileTreeList nodes={node.children} collapsed={props.collapsed} activePath={props.activePath} onToggle={props.onToggle} onSelectFile={props.onSelectFile} />
               </div>
             )}
           </div>

@@ -6537,7 +6537,8 @@
       background-color: var(--dry-muted);
     }
 
-    /* TypeScript problems panel below the code editor (`PageEditor.tsx`) -
+    /* TypeScript problems panel below the code editor (`PageEditor.tsx` and
+       Page Builder's `CodePanel.tsx`) -
        collapses to just its own header (the toggle + error/warning badges)
        when closed, same "small summary bar" shape `.page-editor-diagnostics-header`
        always renders regardless of open state. */
@@ -7648,12 +7649,11 @@
     /* `BubbleMenu.tsx` - the left-hand popup listing `PAGES_SOURCE_ROOTS`'s
      * 4 tabs + an expandable folder tree (`BubbleFileTree.tsx`, reusing
      * `ComponentTreePanel`'s own `page-components-tree*` CSS below), anchored
-     * to the OPPOSITE corner from `Toolbar.tsx`'s bottom-right dock so
-     * neither ever covers the other. */
+     * above `Toolbar.tsx`'s bottom-left dock so neither covers the other. */
     .page-builder-bubble-menu {
       position: fixed;
       left: 1rem;
-      bottom: 1rem;
+      bottom: 5rem;
       z-index: 90;
       display: flex;
       flex-direction: column;
@@ -7724,18 +7724,15 @@
       font-weight: 600;
     }
 
+    /* `aria-busy` adds a spinner before the label. A fixed footprint keeps
+     * the path/editor width from jumping while Save is in flight. */
+    .page-builder-code-panel-save {
+      width: 5rem;
+    }
+
     .page-builder-code-panel-body {
       flex: 1;
       min-height: 0;
-    }
-
-    .page-builder-code-panel-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-      padding: 0.625rem 0.75rem;
-      border-top: 1px solid var(--dry-border);
-      flex: none;
     }
 
     /* `FileDialog.tsx` - component/style/md files, 1 or 2 columns. */
@@ -7766,8 +7763,7 @@
     }
 
     /* `VeiEntryFrame.tsx` - the entry/singleton editor iframe VEI mode opens
-     * on a marked-field click, dialog (centered modal) or panel (right-
-     * docked, page stays visible beside it) per `ModeToggle`. */
+     * in the same right-docked panel footprint as the code editor. */
     .page-builder-vei-sheet {
       position: fixed;
       inset: 0;
@@ -7787,7 +7783,6 @@
        * it, even though nothing is visibly there to click on. */
       &.docked {
         inset: 0 0 0 auto;
-        width: 28rem;
         max-width: 92vw;
         background: transparent;
       }
@@ -7809,25 +7804,17 @@
       }
     }
 
-    /* `PageBuilder.tsx`'s own root - a fixed full-viewport layer covering
-     * `DryLayout`'s sidebar/topbar chrome entirely (`App.tsx` wraps every
-     * route in `<Chrome>`/`<DryLayout>` unconditionally - see this route's
-     * own doc comment for why a CSS cover is simpler than a router change).
-     * `z-index: 50` sits above the sidebar/topbar (`z-index: 30`-ish) but
-     * below every one of Page Builder's OWN floating pieces
-     * (code panel 80 < bubble menu 90 < dock 100 < VEI sheet 110). */
+    /* `App.tsx` renders Page Builder outside `DryLayout`; this is the real
+     * standalone route viewport, not a layer covering dashboard chrome. */
     .page-builder-root {
-      position: fixed;
-      inset: 0;
-      z-index: 50;
+      position: relative;
+      width: 100%;
+      height: 100dvh;
       background: var(--dry-background);
       overflow: hidden;
     }
 
-    /* First-load-only state (`loading || !sourceByPath || ...` in
-     * `PageBuilder.tsx`) - the plain `<span class="hint">Loading…</span>`
-     * this used to be rendered unstyled/unpositioned behind `DryLayout`'s own
-     * chrome for the instant before `.page-builder-root` painted over it. */
+    /* First-load-only state (`loading || !sourceByPath || ...`). */
     .page-builder-loading {
       display: flex;
       flex-direction: column;
@@ -7865,7 +7852,7 @@
 
     .dock {
       position: fixed;
-      right: 1rem;
+      left: 1rem;
       bottom: 1rem;
       z-index: 100;
       display: flex;
@@ -7889,6 +7876,10 @@
         color: var(--dry-muted-foreground);
         font-size: var(--dry-text-xs);
         white-space: nowrap;
+      }
+
+      & .dock-save {
+        width: 6rem;
       }
     }
   }

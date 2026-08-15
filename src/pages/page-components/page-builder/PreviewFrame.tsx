@@ -34,6 +34,7 @@ export interface PreviewFrameProps {
   onNavigate: (pathname: string) => void;
   onSave: () => void;
   onVeiClick: (ref: PreviewVeiClickRef) => void;
+  codePanelWidth: number;
 }
 
 export default function PreviewFrame(props: PreviewFrameProps) {
@@ -112,7 +113,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
   }, [props.onSave, props.onNavigate, props.onVeiClick]);
 
   return (
-    <div class="page-builder-preview">
+    <div class="page-builder-preview" style={{ right: `${props.codePanelWidth}px` }}>
       {!match && (
         <div class="page-builder-preview-empty hint">No page.tsx matches "{pathname}" - pick a page from the menu.</div>
       )}

@@ -155,7 +155,7 @@ export interface EditingDockHandle {
  * pending-changes badge), Save, and Exit. */
 export function EditingDock(props: {
   initialMode: EditorMode;
-  onModeChange: (mode: EditorMode) => void;
+  onModeChange?: (mode: EditorMode) => void;
   onExit: () => void;
   /** Omit to hide the "Dashboard" button entirely - `undefined` (every call
    * site before `PageBuilder.tsx`) keeps it exactly as before.
@@ -166,6 +166,7 @@ export function EditingDock(props: {
   onDashboard?: () => void;
   onPreviewAll: () => void;
   onSave: () => void;
+  saveDisabled?: boolean;
   onReady: (handle: EditingDockHandle) => void;
   /** Extra buttons rendered BEFORE "Dashboard" - `undefined` (every call
    * site before `PageBuilder.tsx`) renders nothing extra, so this is a
@@ -173,6 +174,9 @@ export function EditingDock(props: {
    * usage. `PageBuilder.tsx`'s `Toolbar.tsx` uses it for its "open file
    * menu"/"toggle VEI mode" buttons rather than forking this component. */
   extraActions?: ComponentChildren;
+  /** Page Builder only supports the shared right-hand panel, so it hides
+   * this choice. Omitted by the public-site overlay to preserve both modes. */
+  showModeToggle?: boolean;
 }) {
   const [exiting, setExiting] = useState(false);
   const [navigatingToDashboard, setNavigatingToDashboard] = useState(false);
@@ -226,12 +230,12 @@ export function EditingDock(props: {
         </button>
       )}
       {status && <span className="label">{status}</span>}
-      {!sheetOpen && (
+      {!sheetOpen && props.showModeToggle !== false && (
         <ModeToggle
           mode={mode}
           onChange={(next) => {
             setMode(next);
-            props.onModeChange(next);
+            props.onModeChange?.(next);
           }}
         />
       )}
@@ -241,7 +245,7 @@ export function EditingDock(props: {
           <span className="badge sm secondary">{previewCount}</span>
         </button>
       )}
-      <button type="button" className="round" disabled={saving} onClick={props.onSave}>
+      <button type="button" className="round dock-save" disabled={saving || props.saveDisabled} onClick={props.onSave}>
         {saving ? (
           <>
             <span className="vei-spinner" />

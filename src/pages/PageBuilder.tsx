@@ -16,30 +16,12 @@ import { collectionTypeForPageSource } from "../server/app-router/page-collectio
 import { MD_ROOT, PAGES_ROOT, rootOf } from "../server/app-router/source-roots.js";
 import type { PreviewVeiClickRef } from "../page-components/page-preview-engine.js";
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
-import type { EditorMode } from "../apps/vei/Dock.js";
 import PreviewFrame from "./page-components/page-builder/PreviewFrame.js";
 import Toolbar from "./page-components/page-builder/Toolbar.js";
 import BubbleMenu from "./page-components/page-builder/BubbleMenu.js";
 import CodePanel from "./page-components/page-builder/CodePanel.js";
 import FileDialog from "./page-components/page-builder/FileDialog.js";
 import VeiEntryFrame from "./page-components/page-builder/VeiEntryFrame.js";
-
-/** `EditingDock`'s dialog/panel choice, persisted the same way
- * `apps/vei/overlay.ts`'s own `readStoredMode` does for the public site's
- * dock - a real standing preference, `localStorage` not `sessionStorage`. A
- * dedicated key (not reusing `apps/vei/overlay.ts`'s `dry-vei-mode`):
- * Page Builder is a normal admin route with its own `drycms:store`-backed
- * preferences elsewhere, and there's no reason this one setting has to be
- * shared with the public-site overlay's own copy. */
-const MODE_STORAGE_KEY = "dry-page-builder-mode";
-
-function readStoredMode(): EditorMode {
-  try {
-    return localStorage.getItem(MODE_STORAGE_KEY) === "panel" ? "panel" : "dialog";
-  } catch {
-    return "dialog";
-  }
-}
 
 /**
  * `/dry/page-builder?path=<site route pathname>` - the unified page/content
@@ -116,21 +98,16 @@ export default function PageBuilder() {
   }
 
   const [veiEnabled, setVeiEnabled] = useState(false);
-  const [editorMode, setEditorMode] = useState<EditorMode>(() => readStoredMode());
   const [bubbleRoot, setBubbleRoot] = useState<string | null>(null);
-  const [codePanelOpen, setCodePanelOpen] = useState(false);
+  // Start on the route's own page.tsx as soon as the manifest resolves;
+  // preview navigation then keeps this same panel focused on the newly
+  // matched entry path without requiring a second file-menu selection.
+  const [codePanelOpen, setCodePanelOpen] = useState(true);
+  const [codePanelWidth, setCodePanelWidth] = useState(480);
   const [fileDialogPath, setFileDialogPath] = useState<string | null>(null);
   const [veiTarget, setVeiTarget] = useState<PreviewVeiClickRef | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  function handleModeChange(mode: EditorMode) {
-    setEditorMode(mode);
-    try {
-      localStorage.setItem(MODE_STORAGE_KEY, mode);
-    } catch {
-      // Best-effort, same as every other localStorage write in this app.
-    }
-  }
+  const sidePanelOpen = codePanelOpen || !!veiTarget;
 
   const veiContext = useMemo<DryVeiContext>(
     () => ({
@@ -143,6 +120,15 @@ export default function PageBuilder() {
 
   const manifest = useMemo(() => buildManifestRouteTree(Object.keys(sourceByPath ?? {})), [sourceByPath]);
   const match = useMemo(() => matchSourceRoute(manifest, pathname), [manifest, pathname]);
+  const activePagePath = match?.entryPath ?? null;
+  const codePanelExtraFiles = useMemo(
+    () => (activePagePath ? extraFilesExcluding(activePagePath) : baseExtraFiles),
+    [activePagePath, baseExtraFiles],
+  );
+  const fileDialogExtraFiles = useMemo(
+    () => (fileDialogPath ? extraFilesExcluding(fileDialogPath) : baseExtraFiles),
+    [fileDialogPath, baseExtraFiles],
+  );
 
   async function resolvePageFilePathname(entryPath: string): Promise<string | null> {
     for (const candidate of staticPagePaths(manifest)) {
@@ -217,22 +203,23 @@ export default function PageBuilder() {
         onNavigate={setPathname}
         onSave={() => void handleToolbarSave()}
         onVeiClick={handleVeiClick}
+        codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
       />
 
       <Toolbar
-        mode={editorMode}
-        onModeChange={handleModeChange}
         onExit={() => (window.location.href = `${path}/dashboard`)}
         onOpenMenu={() => setBubbleRoot((current) => (current ? null : PAGES_ROOT))}
         veiEnabled={veiEnabled}
         onToggleVei={() => setVeiEnabled((v) => !v)}
         onSave={handleToolbarSave}
+        saveDisabled={!activePagePath || !isDirty(activePagePath) || saving}
       />
 
       {bubbleRoot && (
         <BubbleMenu
           sourceByPath={sourceByPath}
           activeRoot={bubbleRoot}
+          activePath={activePagePath}
           onRootChange={setBubbleRoot}
           onSelectPageFile={(entryPath) => void handleSelectPageFile(entryPath)}
           onSelectOtherFile={handleSelectOtherFile}
@@ -246,12 +233,12 @@ export default function PageBuilder() {
           source={sourceByPath[match.entryPath] ?? ""}
           dirty={isDirty(match.entryPath)}
           saving={saving}
-          extraFiles={extraFilesExcluding(match.entryPath)}
+          extraFiles={codePanelExtraFiles}
           onChange={(code) => updateSource(match.entryPath, code)}
           onSave={() => void save(match.entryPath)}
           onReset={() => reset(match.entryPath)}
           onClose={() => setCodePanelOpen(false)}
-          pageEditorHref={`${path}/page-editor?file=${encodeURIComponent(match.entryPath)}`}
+          onWidthChange={setCodePanelWidth}
         />
       )}
 
@@ -260,14 +247,13 @@ export default function PageBuilder() {
           path={fileDialogPath}
           source={sourceByPath[fileDialogPath] ?? ""}
           sourceByPath={sourceByPath}
-          extraFiles={extraFilesExcluding(fileDialogPath)}
+          extraFiles={fileDialogExtraFiles}
           dirty={isDirty(fileDialogPath)}
           saving={saving}
           onChange={(code) => updateSource(fileDialogPath, code)}
           onSave={() => void save(fileDialogPath)}
           onReset={() => reset(fileDialogPath)}
           onClose={() => setFileDialogPath(null)}
-          pageEditorHref={`${path}/page-editor?file=${encodeURIComponent(fileDialogPath)}`}
           allTypes={allTypes}
           assetHrefs={assetHrefs}
           origin={origin}
@@ -276,7 +262,13 @@ export default function PageBuilder() {
       )}
 
       {veiTarget && (
-        <VeiEntryFrame target={veiTarget} mode={editorMode} adminPath={path} onClose={() => setVeiTarget(null)} onFieldInput={handleFieldInput} />
+        <VeiEntryFrame
+          target={veiTarget}
+          panelWidth={codePanelWidth}
+          adminPath={path}
+          onClose={() => setVeiTarget(null)}
+          onFieldInput={handleFieldInput}
+        />
       )}
     </div>
   );

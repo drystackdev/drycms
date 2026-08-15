@@ -56,7 +56,7 @@ export async function listAllFilesRecursive(adminPath: string, folder = ""): Pro
   return files;
 }
 
-/** Every `.tsx`/`.ts`/`.css` file under pages-source, keyed by path - prefers
+/** Every `.tsx`/`.ts`/`.css`/`.md` file under pages-source, keyed by path - prefers
  * the `?tree` bulk endpoint and falls back to `listAllFilesRecursive` above
  * for a backend that doesn't support it. Shared by `PageBuild.tsx`'s load
  * effect and `rebuild-affected-pages.ts`'s in-process rebuild path - both
@@ -64,11 +64,13 @@ export async function listAllFilesRecursive(adminPath: string, folder = ""): Pro
  * targets from. `.css` is included alongside the code files because
  * `buildPage`'s `tailwindStylesheetSource` (`tailwind-build.ts`) looks up
  * `styles/globals.css` and whatever it `@import`s directly in this same map -
- * without it every real build throws "Missing Tailwind stylesheet". */
+ * without it every real build throws "Missing Tailwind stylesheet". `.md`
+ * is included because Page Builder uses this same snapshot for its source
+ * menu and Markdown editor, even though the build itself ignores those files. */
 export async function loadAllPagesSource(adminPath: string): Promise<Record<string, string>> {
   const tree = await fetchJson<{ supported: boolean; entries?: TreeEntry[] }>(`${adminPath}/api/pages-source?tree`);
   const allEntries = tree.supported && tree.entries ? tree.entries : await listAllFilesRecursive(adminPath, "");
-  const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts|css)$/.test(e.name));
+  const files = allEntries.filter((e) => e.kind === "file" && /\.(tsx|ts|css|md)$/i.test(e.name));
   const sources: Record<string, string> = {};
   await Promise.all(
     files.map(async (file) => {

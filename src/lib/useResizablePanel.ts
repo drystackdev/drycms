@@ -15,6 +15,10 @@ export interface UseResizablePanelOptions {
    * handle is above it) - there, dragging toward positive x/y shrinks the
    * space left for the panel, so the size delta must be negated to match. */
   invert?: boolean;
+  /** Called in the same pointer event that computes the next size. Useful
+   * when a sibling panel must track this divider without waiting for the
+   * resizing component's post-render effect. */
+  onSizeChange?: (size: number) => void;
 }
 
 export interface UseResizablePanelResult {
@@ -50,7 +54,7 @@ export interface UseResizablePanelResult {
  * included, so the listeners can live as plain props on the handle itself
  * instead of a manually added/removed `document` pair.
  */
-export function useResizablePanel({ initial, min, max, axis, invert = false }: UseResizablePanelOptions): UseResizablePanelResult {
+export function useResizablePanel({ initial, min, max, axis, invert = false, onSizeChange }: UseResizablePanelOptions): UseResizablePanelResult {
   const [size, setSize] = useState(initial);
   const [dragging, setDragging] = useState(false);
   const dragState = useRef<{ startPos: number; startSize: number } | null>(null);
@@ -61,9 +65,11 @@ export function useResizablePanel({ initial, min, max, axis, invert = false }: U
       if (!state) return;
       const pos = axis === "x" ? event.clientX : event.clientY;
       const delta = invert ? state.startPos - pos : pos - state.startPos;
-      setSize(Math.min(max, Math.max(min, state.startSize + delta)));
+      const nextSize = Math.min(max, Math.max(min, state.startSize + delta));
+      setSize(nextSize);
+      onSizeChange?.(nextSize);
     },
-    [axis, min, max, invert],
+    [axis, min, max, invert, onSizeChange],
   );
 
   const endDrag = useCallback((event: PointerEvent) => {

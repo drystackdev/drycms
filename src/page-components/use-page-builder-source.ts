@@ -84,6 +84,7 @@ export function usePageBuilderSource(adminPath: string): UsePageBuilderSourceRes
     async (filePath: string) => {
       if (!sourceByPath) return;
       const code = sourceByPath[filePath] ?? "";
+      if (code === savedByPath[filePath]) return;
       setSaving(true);
       try {
         await api.save(filePath, code);
@@ -92,7 +93,7 @@ export function usePageBuilderSource(adminPath: string): UsePageBuilderSourceRes
         setSaving(false);
       }
     },
-    [api, sourceByPath],
+    [api, sourceByPath, savedByPath],
   );
 
   const reset = useCallback(

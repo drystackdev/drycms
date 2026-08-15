@@ -11,7 +11,7 @@ import {
 const { path } = window.__DRY_CONFIG__;
 import DryLayout from "../components/DryLayout.js";
 import Icon from "../components/Icon.js";
-import { toast } from "../components/Toast.js";
+import Toaster, { toast } from "../components/Toast.js";
 import { createContentTypesApi, listCached } from "../content-types/http-api.js";
 import { PAGE_BUILDER_RESOURCE_ID } from "../content-types/permissions.js";
 import { publishAllPages } from "../page-components/initial-publish.js";
@@ -120,7 +120,16 @@ class Boundary extends Component<
  * toast stack - at dialog rather than full-page scale; see its own doc
  * comment. */
 function Chrome({ children }: { children: ComponentChildren }) {
+  const { path: locationPath } = useLocation();
   if (isVeiFrame()) return <VeiFrame>{children}</VeiFrame>;
+  if (locationPath === `${path}/page-builder`) {
+    return (
+      <>
+        {children}
+        <Toaster />
+      </>
+    );
+  }
   return <DryLayout>{children}</DryLayout>;
 }
 

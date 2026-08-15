@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "preact/hooks";
-import type { EditorMode } from "../../../apps/vei/Dock.js";
 import { encodeEntryId } from "../../../lib/id-hash.js";
 import type { PreviewVeiClickRef } from "../../../page-components/page-preview-engine.js";
 import type { PreviewPatchDetail } from "../../../page-components/vei-preview-patch.js";
@@ -21,7 +20,7 @@ export interface VeiEntryFrameProps {
   // refs on a function component (silently dropped, never reaches props)
   // unless the component is wrapped in `forwardRef`, which this isn't.
   target: PreviewVeiClickRef;
-  mode: EditorMode;
+  panelWidth: number;
   adminPath: string;
   onClose: () => void;
   onFieldInput: (detail: PreviewPatchDetail) => void;
@@ -29,7 +28,7 @@ export interface VeiEntryFrameProps {
 
 /**
  * The entry/singleton editor iframe VEI mode opens on a marked-field click -
- * dialog or panel per `Toolbar.tsx`'s `ModeToggle`. Listens for the SAME
+ * the same right-hand panel as the code editor. Listens for the SAME
  * `vei:*` bridge messages `apps/vei/overlay.ts` does (`pages/vei/bridge.ts`'s
  * `startVeiBridge`, running inside this iframe), just without that file's
  * own hover-highlight/cross-tab-draft-sync/drag-resize polish - "không
@@ -66,7 +65,11 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   }, [props.onClose]);
 
   return (
-    <div class={props.mode === "panel" ? "page-builder-vei-sheet docked" : "page-builder-vei-sheet"} onClick={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+    <div
+      class="page-builder-vei-sheet docked"
+      style={{ width: `${props.panelWidth}px` }}
+      onClick={(event) => { if (event.target === event.currentTarget) props.onClose(); }}
+    >
       <div class="page-builder-vei-panel">
         <iframe ref={iframeRef} src={url} title="Edit content" style={{ width: "100%", height: "100%", border: "0" }} />
       </div>

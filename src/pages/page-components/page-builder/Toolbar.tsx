@@ -1,9 +1,9 @@
 import { useRef } from "preact/hooks";
-import { EditingDock, type EditingDockHandle, type EditorMode } from "../../../apps/vei/Dock.js";
+import { EditingDock, type EditingDockHandle } from "../../../apps/vei/Dock.js";
 import { MenuIcon } from "../../../components/icons/index.js";
 
 /**
- * The floating bottom-right toolbar `plans/new-ui-page-builder.md` mục 4
+ * The floating bottom-left toolbar `plans/new-ui-page-builder.md` mục 4
  * describes - `apps/vei/Dock.tsx`'s `EditingDock` reused verbatim (same
  * component, same interaction/animation logic), extended with the 2 buttons
  * that idea needs and `EditingDock` doesn't have on its own: opening the
@@ -12,38 +12,38 @@ import { MenuIcon } from "../../../components/icons/index.js";
  * public site's dock (which starts collapsed until an admin opts in).
  */
 export interface ToolbarProps {
-  mode: EditorMode;
-  onModeChange: (mode: EditorMode) => void;
   onExit: () => void;
   onOpenMenu: () => void;
   veiEnabled: boolean;
   onToggleVei: () => void;
   onSave: () => Promise<void>;
+  saveDisabled: boolean;
 }
 
 export default function Toolbar(props: ToolbarProps) {
   const handleRef = useRef<EditingDockHandle | null>(null);
 
   async function handleSave() {
+    handleRef.current?.setStatus("");
     handleRef.current?.setSaving(true);
     try {
       await props.onSave();
-      handleRef.current?.setStatus("Saved");
     } catch (error) {
       handleRef.current?.setStatus(error instanceof Error ? error.message : "Save failed");
+      setTimeout(() => handleRef.current?.setStatus(""), 3000);
     } finally {
       handleRef.current?.setSaving(false);
-      setTimeout(() => handleRef.current?.setStatus(""), 2000);
     }
   }
 
   return (
     <EditingDock
-      initialMode={props.mode}
-      onModeChange={props.onModeChange}
+      initialMode="panel"
+      showModeToggle={false}
       onExit={props.onExit}
       onPreviewAll={() => {}}
       onSave={() => void handleSave()}
+      saveDisabled={props.saveDisabled}
       onReady={(handle) => {
         handleRef.current = handle;
       }}

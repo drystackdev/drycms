@@ -10,7 +10,6 @@ import { samplePropsSource } from "../../../page-components/props-sample.js";
 import { COMPONENT_ROOT, MD_ROOT, STYLES_ROOT, rootOf } from "../../../server/app-router/source-roots.js";
 import type { AssetHrefs } from "../../../page-components/pages-source-http.js";
 import type { ContentTypeDefinition } from "../../../content-types/types.js";
-import { OpenInNewTabIcon } from "./icons.js";
 
 export interface FileDialogProps {
   path: string;
@@ -28,7 +27,6 @@ export interface FileDialogProps {
   onSave: () => void;
   onReset: () => void;
   onClose: () => void;
-  pageEditorHref: string;
   allTypes: ContentTypeDefinition[];
   assetHrefs: AssetHrefs;
   origin: string;
@@ -109,9 +107,6 @@ export default function FileDialog(props: FileDialogProps) {
     <dialog ref={dialogRef} aria-label={props.path} class="xl page-builder-file-dialog">
       <header>
         <h3>{props.path}</h3>
-        <a class="icon ghost sm" href={props.pageEditorHref} target="_blank" rel="noopener" title="Open in Page Editor">
-          <OpenInNewTabIcon />
-        </a>
       </header>
       <div class={isComponent ? "page-builder-file-dialog-body split" : "page-builder-file-dialog-body"}>
         <div class="page-builder-file-dialog-editor">

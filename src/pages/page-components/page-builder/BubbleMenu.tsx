@@ -1,4 +1,5 @@
 import { PAGES_SOURCE_ROOTS, PAGES_ROOT, COMPONENT_ROOT, STYLES_ROOT, MD_ROOT } from "../../../server/app-router/source-roots.js";
+import { CloseIcon } from "../../../components/icons/index.js";
 import { FolderComponentsIcon, FolderCssIcon, FolderMarkdownIcon, FolderRoutesIcon } from "../file-type-icons.js";
 import BubbleFileTree from "./BubbleFileTree.js";
 
@@ -21,6 +22,7 @@ function sourceRootIcon(rootId: string) {
 export interface BubbleMenuProps {
   sourceByPath: Record<string, string>;
   activeRoot: string;
+  activePath: string | null;
   onRootChange: (root: string) => void;
   /** A file in the `pages/` root - the caller resolves it to a real `?path=`
    * pathname (static match, or the dynamic-template + entry-picker fallback,
@@ -68,10 +70,10 @@ export default function BubbleMenu(props: BubbleMenuProps) {
         ))}
         <span class="spacer" />
         <button type="button" class="icon ghost sm" aria-label="Close menu" onClick={props.onClose}>
-          ×
+          <CloseIcon />
         </button>
       </div>
-      <BubbleFileTree sourceByPath={props.sourceByPath} activeRoot={props.activeRoot} onSelectFile={handleSelectFile} />
+      <BubbleFileTree sourceByPath={props.sourceByPath} activeRoot={props.activeRoot} activePath={props.activePath} onSelectFile={handleSelectFile} />
     </div>
   );
 }

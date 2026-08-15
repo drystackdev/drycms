@@ -214,6 +214,10 @@ button.icon.sm {
   white-space: nowrap;
 }
 
+.dock .dock-save {
+  width: 6rem;
+}
+
 /* Loads and runs, but never shows: the frame that replays each pending
    entry through the real editor's own Save (see overlay.ts's saveAll). */
 iframe.agent {
