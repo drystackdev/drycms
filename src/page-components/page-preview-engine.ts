@@ -29,6 +29,7 @@ export const PREVIEW_SAVE_MESSAGE = "dry-page-preview-save";
  * clicked element's marker attribute, same "first ref wins" rule
  * `apps/vei/overlay.ts`'s own `intercept` uses. */
 export const PREVIEW_VEI_CLICK_MESSAGE = "dry-page-preview-vei-click";
+export const PREVIEW_VEI_MODE_MESSAGE = "dry-page-preview-vei-mode";
 
 export interface PreviewVeiClickRef {
   kind: "collection" | "singleton";
@@ -47,7 +48,7 @@ export interface PreviewVeiClickRef {
  * `--dry-vei-highlight` fetch, no separate focused-field state) - this is
  * the "tương đồng một vài chức năng", not a 1:1 port. */
 const VEI_PREVIEW_MARKER_CSS =
-  "[data-dry],[data-dry-src],[data-dry-html]{outline:1px dashed color-mix(in srgb, #919eab 60%, transparent);cursor:pointer;}";
+  "html.dry-vei-enabled [data-dry],html.dry-vei-enabled [data-dry-src],html.dry-vei-enabled [data-dry-html]{outline:1px dashed color-mix(in srgb, #919eab 60%, transparent);cursor:pointer;}";
 
 /**
  * Runs INSIDE the preview iframe (injected as a literal `<script>` into the
@@ -62,17 +63,21 @@ const VEI_PREVIEW_MARKER_CSS =
  * same precedence `apps/vei/overlay.ts`'s own `intercept` gives a marked
  * click over the page's native behavior.
  */
-export function buildPreviewBridgeScript(options?: { vei?: boolean }): string {
+export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiToggle?: boolean }): string {
   const veiEnabled = options?.vei === true;
   const veiBranch = veiEnabled
-    ? `var marked=findMarked(event.target);if(marked){var parts=marked.raw.trim().split(/\\s+/)[0].split(":");if(parts.length===5){event.preventDefault();window.parent.postMessage({type:${JSON.stringify(
+    ? `if(veiMode&&!event.shiftKey){var marked=findMarked(event.target);if(marked){var parts=marked.raw.trim().split(/\\s+/)[0].split(":");if(parts.length===5){event.preventDefault();window.parent.postMessage({type:${JSON.stringify(
         PREVIEW_VEI_CLICK_MESSAGE,
-      )},ref:{kind:parts[0]==="c"?"collection":"singleton",type:parts[1],id:Number(parts[2]),path:parts[3],fieldType:parts[4]}},"*");return;}}`
+      )},ref:{kind:parts[0]==="c"?"collection":"singleton",type:parts[1],id:Number(parts[2]),path:parts[3],fieldType:parts[4]}},"*");return;}}}`
     : "";
   const findMarked = veiEnabled
     ? `function findMarked(node){while(node){if(node.getAttributeNames){var names=node.getAttributeNames();for(var i=0;i<names.length;i++){var n=names[i];if(n==="data-dry"||n.indexOf("data-dry-")===0){var raw=node.getAttribute(n);if(raw)return{el:node,raw:raw};}}}node=node.parentElement;}return null;}`
     : "";
-  return `<script>(function(){${findMarked}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
+  const initialMode = veiEnabled && !options?.runtimeVeiToggle;
+  const modeListener = options?.runtimeVeiToggle
+    ? `window.addEventListener("message",function(event){if(event.data&&event.data.type===${JSON.stringify(PREVIEW_VEI_MODE_MESSAGE)}){veiMode=event.data.enabled===true;document.documentElement.classList.toggle("dry-vei-enabled",veiMode);}});`
+    : "";
+  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");${findMarked}${modeListener}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 export interface BuildPreviewSrcdocInput {
@@ -90,6 +95,7 @@ export interface BuildPreviewSrcdocInput {
    * any fields at all): a caller only ever sets both together, but this
    * function doesn't assume that. */
   veiEnabled?: boolean;
+  runtimeVeiToggle?: boolean;
 }
 
 export interface BuildPreviewSrcdocResult {
@@ -144,7 +150,7 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
     veiStyle;
   const withBase = withoutVei.replace("<head>", `<head>${headExtras}`);
 
-  const bridgeScript = buildPreviewBridgeScript({ vei: input.veiEnabled });
+  const bridgeScript = buildPreviewBridgeScript({ vei: input.veiEnabled, runtimeVeiToggle: input.runtimeVeiToggle });
   const withBridgeScript = withBase.includes("</body>") ? withBase.replace("</body>", `${bridgeScript}</body>`) : withBase + bridgeScript;
 
   return { html: withBridgeScript, jsAssets: result.jsAssets, deps: result.deps, inSitemap: result.inSitemap, blobUrls };

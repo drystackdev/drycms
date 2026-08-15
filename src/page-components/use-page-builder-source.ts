@@ -37,6 +37,7 @@ export interface UsePageBuilderSourceResult {
   save: (path: string) => Promise<void>;
   reset: (path: string) => void;
   saving: boolean;
+  dirtyPaths: string[];
   /** Registers a brand new path (Page Builder itself never creates files -
    * this is here only so a resolved-but-not-yet-loaded path, e.g. right
    * after `save()` creates one, can be read back without a full reload). */
@@ -103,5 +104,10 @@ export function usePageBuilderSource(adminPath: string): UsePageBuilderSourceRes
     [savedByPath],
   );
 
-  return { sourceByPath, loading, error, updateSource, isDirty, save, reset, saving, reload };
+  const dirtyPaths = useMemo(
+    () => (sourceByPath ? Object.keys(sourceByPath).filter((filePath) => sourceByPath[filePath] !== savedByPath[filePath]) : []),
+    [sourceByPath, savedByPath],
+  );
+
+  return { sourceByPath, loading, error, updateSource, isDirty, save, reset, saving, dirtyPaths, reload };
 }

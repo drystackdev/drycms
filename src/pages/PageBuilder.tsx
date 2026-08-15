@@ -19,11 +19,43 @@ import type { PreviewVeiClickRef } from "../page-components/page-preview-engine.
 import { applyPreviewPatch, type PreviewPatchDetail } from "../page-components/vei-preview-patch.js";
 import { encodeEntryId } from "../lib/id-hash.js";
 import PreviewFrame from "./page-components/page-builder/PreviewFrame.js";
-import Toolbar from "./page-components/page-builder/Toolbar.js";
+import Toolbar, { type BuilderPanelMode } from "./page-components/page-builder/Toolbar.js";
 import BubbleMenu from "./page-components/page-builder/BubbleMenu.js";
 import CodePanel from "./page-components/page-builder/CodePanel.js";
 import FileDialog from "./page-components/page-builder/FileDialog.js";
 import VeiEntryFrame from "./page-components/page-builder/VeiEntryFrame.js";
+import SavePreviewDialog, { type SaveProgress } from "./page-components/page-builder/SavePreviewDialog.js";
+import { getAllEntryDraftRecords, putEntryDraftRecord, type EntryDraftRecord } from "../content-types/entry-draft-db.js";
+import { discardEntryDraft } from "../content-types/entry-draft-store.js";
+import { createContentEntriesApi } from "../content-types/entries-http-api.js";
+import { rebuildAffectedPages } from "../page-components/rebuild-affected-pages.js";
+import { publishPagesAffectedBySource } from "../page-components/initial-publish.js";
+
+interface PersistedBuilderState {
+  panelMode: BuilderPanelMode;
+  panelWidth: number;
+  fileDialogPath: string | null;
+  veiTarget: PreviewVeiClickRef | null;
+}
+
+const BUILDER_STATE_KEY = "drycms:page-builder-state";
+
+function readBuilderState(): PersistedBuilderState {
+  const fallback: PersistedBuilderState = { panelMode: "code", panelWidth: 480, fileDialogPath: null, veiTarget: null };
+  try {
+    const value = JSON.parse(sessionStorage.getItem(BUILDER_STATE_KEY) ?? "null") as Partial<PersistedBuilderState> | null;
+    if (!value) return fallback;
+    const panelMode = value.panelMode === "vei" || value.panelMode === "code" || value.panelMode === null ? value.panelMode : "code";
+    return {
+      panelMode,
+      panelWidth: typeof value.panelWidth === "number" ? value.panelWidth : 480,
+      fileDialogPath: typeof value.fileDialogPath === "string" ? value.fileDialogPath : null,
+      veiTarget: panelMode === "vei" && value.veiTarget ? value.veiTarget : null,
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * `/dry/page-builder?path=<site route pathname>` - the unified page/content
@@ -45,7 +77,7 @@ export default function PageBuilder() {
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
 
-  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving } = usePageBuilderSource(path);
+  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving, dirtyPaths } = usePageBuilderSource(path);
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);
@@ -99,19 +131,54 @@ export default function PageBuilder() {
     return rest;
   }
 
-  const [veiEnabled, setVeiEnabled] = useState(false);
+  const restoredState = useMemo(readBuilderState, []);
   const [bubbleRoot, setBubbleRoot] = useState<string | null>(null);
   // Start on the route's own page.tsx as soon as the manifest resolves;
   // preview navigation then keeps this same panel focused on the newly
   // matched entry path without requiring a second file-menu selection.
-  const [codePanelOpen, setCodePanelOpen] = useState(true);
-  const [codePanelWidth, setCodePanelWidth] = useState(480);
-  const [fileDialogPath, setFileDialogPath] = useState<string | null>(null);
-  const [veiTarget, setVeiTarget] = useState<PreviewVeiClickRef | null>(null);
+  const [panelMode, setPanelMode] = useState<BuilderPanelMode>(restoredState.panelMode);
+  const [codePanelWidth, setCodePanelWidth] = useState(restoredState.panelWidth);
+  const [fileDialogPath, setFileDialogPath] = useState<string | null>(restoredState.fileDialogPath);
+  const [veiTarget, setVeiTarget] = useState<PreviewVeiClickRef | null>(restoredState.veiTarget);
   const [contentRevision, setContentRevision] = useState(0);
   const [veiOverrides, setVeiOverrides] = useState<DryVeiOverrideMap>({});
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveDrafts, setSaveDrafts] = useState<EntryDraftRecord[]>([]);
+  const [draftsHydrated, setDraftsHydrated] = useState(false);
+  const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null);
+
+  useEffect(() => {
+    void getAllEntryDraftRecords().then((records) => {
+      setSaveDrafts(records);
+      const restoredOverrides: DryVeiOverrideMap = {};
+      for (const draft of records) {
+        restoredOverrides[dryVeiOverrideKey(draft.typeSlug, draft.entryId)] = { ...draft.value };
+      }
+      setVeiOverrides((current) => ({ ...restoredOverrides, ...current }));
+      setDraftsHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem(BUILDER_STATE_KEY, JSON.stringify({ panelMode, panelWidth: codePanelWidth, fileDialogPath, veiTarget } satisfies PersistedBuilderState));
+  }, [panelMode, codePanelWidth, fileDialogPath, veiTarget]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const sidePanelOpen = codePanelOpen || !!veiTarget;
+  const veiEnabled = panelMode === "vei";
+  const sidePanelOpen = panelMode !== null;
+  const saveItemCount = dirtyPaths.length + new Set([
+    ...saveDrafts.map((draft) => dryVeiOverrideKey(draft.typeSlug, draft.entryId)),
+    ...Object.keys(veiOverrides),
+  ]).size;
+
+  function togglePanel(mode: Exclude<BuilderPanelMode, null>) {
+    setPanelMode((current) => {
+      const next = current === mode ? null : mode;
+      // Re-entering VEI starts from its empty selection state. Reload still
+      // restores a currently active VEI target through sessionStorage.
+      if (current === "vei" || next === "vei") setVeiTarget(null);
+      return next;
+    });
+  }
 
   const veiContext = useMemo<DryVeiContext>(
     () => ({
@@ -159,7 +226,7 @@ export default function PageBuilder() {
     const resolved = await resolvePageFilePathname(entryPath);
     if (resolved) {
       setPathname(resolved);
-      setCodePanelOpen(true);
+      setPanelMode("code");
     }
     setBubbleRoot(null);
   }
@@ -194,13 +261,112 @@ export default function PageBuilder() {
     setContentRevision((revision) => revision + 1);
   }, [veiTarget]);
 
-  async function handleToolbarSave() {
-    if (match?.entryPath) await save(match.entryPath);
+  async function openSavePreview() {
+    // Entry drafts persist on a short debounce; one frame after a field edit
+    // should still be included when the admin immediately opens Save.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    setSaveDrafts(await getAllEntryDraftRecords());
+    setSaveDialogOpen(true);
+  }
+
+  async function previewChangedCode(filePath: string) {
+    setSaveDialogOpen(false);
+    if (rootOf(filePath)?.id === PAGES_ROOT) {
+      const resolved = await resolvePageFilePathname(filePath);
+      if (resolved) setPathname(resolved);
+      setPanelMode("code");
+      setVeiTarget(null);
+    } else {
+      setFileDialogPath(filePath);
+    }
+  }
+
+  async function revertEntryDraft(draft: EntryDraftRecord) {
+    // Clear visible pending state first; IndexedDB deletion can finish in
+    // the background without leaving the Save row/badge and VEI preview
+    // stale for another frame.
+    setSaveDrafts((current) => current.filter((candidate) => candidate.key !== draft.key));
+    setVeiOverrides((current) => {
+      const key = dryVeiOverrideKey(draft.typeSlug, draft.entryId);
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setContentRevision((revision) => revision + 1);
+    await discardEntryDraft(draft.typeSlug, draft.entryId);
+  }
+
+  async function updateEntryDraft(draft: EntryDraftRecord, value: EntryDraftRecord["value"]) {
+    const next = { ...draft, value, updatedAt: Date.now() };
+    await putEntryDraftRecord(next);
+    setSaveDrafts((current) => current.map((candidate) => candidate.key === draft.key ? next : candidate));
+    setVeiOverrides((current) => ({ ...current, [dryVeiOverrideKey(draft.typeSlug, draft.entryId)]: { ...value } }));
+    setContentRevision((revision) => revision + 1);
+  }
+
+  async function saveAndPublish() {
+    if (!allTypes) return;
+    const types = allTypes;
+    const codePaths = [...dirtyPaths];
+    const drafts = [...saveDrafts];
+    const resources = new Set<string>();
+    const totalWrites = codePaths.length + drafts.length;
+    let completedWrites = 0;
+    setSaveProgress({ percent: 0, label: "Preparing changes…" });
+    try {
+      for (const filePath of codePaths) {
+        setSaveProgress({ percent: Math.round((completedWrites / Math.max(totalWrites, 1)) * 65), label: `Saving ${filePath}` });
+        await save(filePath);
+        completedWrites += 1;
+      }
+      for (const draft of drafts) {
+        const type = types.find((candidate) => candidate.name === draft.typeSlug);
+        if (!type || type.kind === "component") continue;
+        setSaveProgress({ percent: Math.round((completedWrites / Math.max(totalWrites, 1)) * 65), label: `Saving ${type.label}` });
+        const api = createContentEntriesApi(`${path}/api/content`, type.name);
+        if (type.kind === "singleton") await api.saveSingleton(draft.value);
+        else if (draft.entryId === null) await api.create(draft.value);
+        else await api.update(draft.entryId, draft.value);
+        await discardEntryDraft(draft.typeSlug, draft.entryId);
+        resources.add(type.name);
+        completedWrites += 1;
+      }
+
+      setSaveProgress({ percent: 70, label: "Resolving affected pages…" });
+      if (codePaths.length > 0) {
+        // Source dependencies can fan out through layouts, components and
+        // styles. The publish pipeline computes the real target graph; until
+        // source-path lookup is persisted server-side, publishing all targets
+        // is the safe dependency-complete result for a source change.
+        setSaveProgress({ percent: 80, label: "Building pages affected by code…" });
+        const result = await publishPagesAffectedBySource(path, types, codePaths, (message) => setSaveProgress({ percent: 90, label: message }));
+        if (result.error) throw new Error(result.error);
+      } else {
+        const names = [...resources];
+        for (const [index, typeName] of names.entries()) {
+          const percent = 70 + Math.round((index / Math.max(names.length, 1)) * 25);
+          setSaveProgress({ percent, label: `Building pages that use ${typeName}…` });
+          await rebuildAffectedPages(path, typeName, types, (message) => setSaveProgress({ percent, label: message }));
+        }
+      }
+      setSaveProgress({ percent: 100, label: "Saved and published" });
+      setVeiOverrides({});
+      setContentRevision((revision) => revision + 1);
+      setSaveDrafts([]);
+      setTimeout(() => {
+        setSaveDialogOpen(false);
+        setSaveProgress(null);
+      }, 500);
+    } catch (error) {
+      setSaveProgress(null);
+      toast.add({ type: "error", title: "Save failed", description: error instanceof Error ? error.message : "Unknown error" });
+    }
   }
 
   if (!canEdit) return <span class="error">You don't have permission to use the Page Builder.</span>;
   if (loadError) return <span class="error">{loadError}</span>;
-  if (loading || !sourceByPath || !allTypes || !assetHrefs) {
+  if (loading || !sourceByPath || !allTypes || !assetHrefs || !draftsHydrated) {
     return (
       <div class="page-builder-root page-builder-loading">
         <span class="spinner" />
@@ -223,7 +389,7 @@ export default function PageBuilder() {
         veiEnabled={veiEnabled}
         veiContext={veiContext}
         onNavigate={setPathname}
-        onSave={() => void handleToolbarSave()}
+        onSave={() => void openSavePreview()}
         onVeiClick={handleVeiClick}
         codePanelWidth={sidePanelOpen ? codePanelWidth : 0}
         contentRevision={contentRevision}
@@ -233,10 +399,11 @@ export default function PageBuilder() {
       <Toolbar
         onExit={() => (window.location.href = `${path}/dashboard`)}
         onOpenMenu={() => setBubbleRoot((current) => (current ? null : PAGES_ROOT))}
-        veiEnabled={veiEnabled}
-        onToggleVei={() => setVeiEnabled((v) => !v)}
-        onSave={handleToolbarSave}
-        saveDisabled={!activePagePath || !isDirty(activePagePath) || saving}
+        panelMode={panelMode}
+        onTogglePanel={togglePanel}
+        onSave={() => void openSavePreview()}
+        saveDisabled={dirtyPaths.length === 0 && saveDrafts.length === 0 && Object.keys(veiOverrides).length === 0}
+        saveCount={saveItemCount}
       />
 
       {bubbleRoot && (
@@ -251,7 +418,7 @@ export default function PageBuilder() {
         />
       )}
 
-      {codePanelOpen && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
+      {panelMode === "code" && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
         <CodePanel
           path={match.entryPath}
           source={sourceByPath[match.entryPath] ?? ""}
@@ -259,9 +426,9 @@ export default function PageBuilder() {
           saving={saving}
           extraFiles={codePanelExtraFiles}
           onChange={(code) => updateSource(match.entryPath, code)}
-          onSave={() => void save(match.entryPath)}
+          onSave={() => void openSavePreview()}
           onReset={() => reset(match.entryPath)}
-          onClose={() => setCodePanelOpen(false)}
+          onClose={() => setPanelMode(null)}
           onWidthChange={setCodePanelWidth}
         />
       )}
@@ -285,16 +452,36 @@ export default function PageBuilder() {
         />
       )}
 
-      {veiTarget && (
+      {panelMode === "vei" && (
         <VeiEntryFrame
           target={veiTarget}
           panelWidth={codePanelWidth}
           adminPath={path}
-          onClose={() => setVeiTarget(null)}
+          onClose={() => {
+            setVeiTarget(null);
+            setPanelMode(null);
+          }}
           onFieldInput={handleFieldInput}
           onSaved={handleVeiSaved}
         />
       )}
+
+      <SavePreviewDialog
+        open={saveDialogOpen}
+        dirtyPaths={dirtyPaths}
+        drafts={saveDrafts}
+        allTypes={allTypes}
+        progress={saveProgress}
+        adminPath={path}
+        onPreviewCode={(filePath) => void previewChangedCode(filePath)}
+        onRevertCode={reset}
+        onRevertDraft={(draft) => void revertEntryDraft(draft)}
+        onUpdateDraft={(draft, value) => void updateEntryDraft(draft, value)}
+        onConfirm={() => void saveAndPublish()}
+        onClose={() => {
+          if (!saveProgress) setSaveDialogOpen(false);
+        }}
+      />
     </div>
   );
 }

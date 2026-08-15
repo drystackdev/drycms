@@ -126,6 +126,18 @@ export default function ComponentField<T = Record<string, unknown>>({
     setOpen(true);
   }
 
+  // VEI deep-links can open this dialog while ContentEntryEditor is still
+  // showing the server snapshot. Its IndexedDB draft is hydrated one render
+  // later: the outer list then receives the new item, but without this sync
+  // the already-open dialog keeps the old object captured by openEdit().
+  // Local keystrokes only update `draft` (not `value`) until Save, so this
+  // does not overwrite in-progress typing.
+  useEffect(() => {
+    if (!open || editingIndex === null) return;
+    const latest = value[editingIndex];
+    if (latest !== undefined) setDraft(latest);
+  }, [open, editingIndex, value]);
+
   // `revealIndex` deep-links straight into this item's own dialog - it's
   // the ONLY way to reach an item's fields at all, since `renderItem` below
   // only mounts once `open` is true. Deps are `revealIndex` alone: this

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "preact/hooks";
+import { EditIcon } from "../../../components/icons/index.js";
 import { encodeEntryId } from "../../../lib/id-hash.js";
 import type { PreviewVeiClickRef } from "../../../page-components/page-preview-engine.js";
 import type { PreviewPatchDetail } from "../../../page-components/vei-preview-patch.js";
@@ -19,7 +20,7 @@ export interface VeiEntryFrameProps {
   // Not named "ref" - Preact reserves that prop name for real DOM/component
   // refs on a function component (silently dropped, never reaches props)
   // unless the component is wrapped in `forwardRef`, which this isn't.
-  target: PreviewVeiClickRef;
+  target: PreviewVeiClickRef | null;
   panelWidth: number;
   adminPath: string;
   onClose: () => void;
@@ -37,13 +38,39 @@ export interface VeiEntryFrameProps {
  */
 export default function VeiEntryFrame(props: VeiEntryFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const url = editorUrl(props.adminPath, props.target);
+  const readyRef = useRef(false);
+  const currentUrlRef = useRef<string | null>(null);
+  const desiredUrl = props.target ? editorUrl(props.adminPath, props.target) : null;
+  const desiredUrlRef = useRef<string | null>(desiredUrl);
+  desiredUrlRef.current = desiredUrl;
+
+  // Keep the same iframe/document alive while the user moves between VEI
+  // targets. The editor bridge performs an in-app navigation, matching the
+  // public VEI overlay and avoiding a hard iframe reload (the visible jerk).
+  useEffect(() => {
+    const frame = iframeRef.current;
+    if (!frame || !desiredUrl || desiredUrl === currentUrlRef.current) return;
+    if (readyRef.current && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: "vei:navigate", url: desiredUrl }, window.location.origin);
+    } else {
+      readyRef.current = false;
+      frame.src = desiredUrl;
+    }
+    currentUrlRef.current = desiredUrl;
+  }, [desiredUrl]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin || event.source !== iframeRef.current?.contentWindow) return;
       const message = event.data as { type?: string; detail?: unknown; ok?: boolean } | null;
-      if (message?.type === "vei:input" && message.detail) {
+      if (message?.type === "vei:ready") {
+        readyRef.current = true;
+        const nextUrl = desiredUrlRef.current;
+        if (nextUrl && nextUrl !== currentUrlRef.current && iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({ type: "vei:navigate", url: nextUrl }, window.location.origin);
+          currentUrlRef.current = nextUrl;
+        }
+      } else if (message?.type === "vei:input" && message.detail) {
         props.onFieldInput(message.detail as PreviewPatchDetail);
       } else if (message?.type === "vei:saved" && message.ok === true) {
         props.onSaved();
@@ -74,7 +101,20 @@ export default function VeiEntryFrame(props: VeiEntryFrameProps) {
       onClick={(event) => { if (event.target === event.currentTarget) props.onClose(); }}
     >
       <div class="page-builder-vei-panel">
-        <iframe ref={iframeRef} src={url} title="Edit content" style={{ width: "100%", height: "100%", border: "0" }} />
+        <iframe
+          ref={iframeRef}
+          title="Edit content"
+          aria-hidden={!props.target}
+          style={{ width: "100%", height: "100%", border: "0", display: props.target ? "block" : "none" }}
+        />
+        {!props.target && (
+          <div class="page-builder-vei-empty">
+            <EditIcon />
+            <strong>Select content in the preview</strong>
+            <span class="hint">Click a dashed editable area to open its fields here.</span>
+            <button type="button" class="ghost" onClick={props.onClose}>Cancel</button>
+          </div>
+        )}
       </div>
     </div>
   );

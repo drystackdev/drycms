@@ -175,6 +175,13 @@ describe("boxRecordStrings", () => {
     expect(`${blocks[1]!.name}`).toBe("hai");
   });
 
+  it("can mark an already-marked record again", () => {
+    const record = boxRecordStrings({ id: 7, title: "first", hero: { name: "nested" } }, target);
+    expect(() => boxRecordStrings(record, target)).not.toThrow();
+    expect(String(record.title)).toBe("first");
+    expect(String((record.hero as { name: string }).name)).toBe("nested");
+  });
+
   it("leaves a value alone when its path isn't an editable field", () => {
     const record = boxRecordStrings({ id: 7, unknownField: "x", hero: { nope: "y" } }, target);
     expect(refOf(record.unknownField)).toBeNull();

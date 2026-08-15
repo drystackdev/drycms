@@ -1,6 +1,7 @@
-import { useRef } from "preact/hooks";
-import { EditingDock, type EditingDockHandle } from "../../../apps/vei/Dock.js";
-import { MenuIcon } from "../../../components/icons/index.js";
+import { EditingDock } from "../../../apps/vei/Dock.js";
+import { CodeFieldTypeIcon, EditIcon, MenuIcon, SaveIcon } from "../../../components/icons/index.js";
+
+export type BuilderPanelMode = "vei" | "code" | null;
 
 /**
  * The floating bottom-left toolbar `plans/new-ui-page-builder.md` mục 4
@@ -14,52 +15,36 @@ import { MenuIcon } from "../../../components/icons/index.js";
 export interface ToolbarProps {
   onExit: () => void;
   onOpenMenu: () => void;
-  veiEnabled: boolean;
-  onToggleVei: () => void;
-  onSave: () => Promise<void>;
+  panelMode: BuilderPanelMode;
+  onTogglePanel: (mode: Exclude<BuilderPanelMode, null>) => void;
+  onSave: () => void;
   saveDisabled: boolean;
+  saveCount: number;
 }
 
 export default function Toolbar(props: ToolbarProps) {
-  const handleRef = useRef<EditingDockHandle | null>(null);
-
-  async function handleSave() {
-    handleRef.current?.setStatus("");
-    handleRef.current?.setSaving(true);
-    try {
-      await props.onSave();
-    } catch (error) {
-      handleRef.current?.setStatus(error instanceof Error ? error.message : "Save failed");
-      setTimeout(() => handleRef.current?.setStatus(""), 3000);
-    } finally {
-      handleRef.current?.setSaving(false);
-    }
-  }
-
   return (
     <EditingDock
       initialMode="panel"
       showModeToggle={false}
+      showExit={false}
       onExit={props.onExit}
       onPreviewAll={() => {}}
-      onSave={() => void handleSave()}
+      onSave={props.onSave}
       saveDisabled={props.saveDisabled}
-      onReady={(handle) => {
-        handleRef.current = handle;
-      }}
+      saveIcon={<SaveIcon />}
+      saveCount={props.saveCount}
+      onReady={() => {}}
       extraActions={
         <>
           <button type="button" class="icon ghost round" aria-label="Open file menu" title="Page, component, style, MD files" onClick={props.onOpenMenu}>
             <MenuIcon />
           </button>
-          <button
-            type="button"
-            class="ghost round"
-            aria-pressed={props.veiEnabled}
-            title="Toggle Visual Editing (click marked content to edit it)"
-            onClick={props.onToggleVei}
-          >
-            VEI {props.veiEnabled ? "on" : "off"}
+          <button type="button" class="icon ghost round panel-mode" aria-label="Visual editing" aria-pressed={props.panelMode === "vei"} title="Visual editing" onClick={() => props.onTogglePanel("vei")}>
+            <EditIcon />
+          </button>
+          <button type="button" class="icon ghost round panel-mode" aria-label="Code editor" aria-pressed={props.panelMode === "code"} title="Code editor" onClick={() => props.onTogglePanel("code")}>
+            <CodeFieldTypeIcon />
           </button>
         </>
       }

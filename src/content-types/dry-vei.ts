@@ -164,10 +164,15 @@ export function createInertRefProxy(): Record<string, unknown> {
 const BOXABLE_FIELD_TYPES = new Set(["text", "richtext", "select", "image"]);
 
 function boxDeep(value: unknown, path: string, target: DryRefTarget): unknown {
-  if (typeof value === "string") {
+  // Route changes can send a record through VEI marking more than once.
+  // A boxed value is a `String` object with read-only character indices;
+  // recursing into it as a generic object would try to assign index 0.
+  // Re-box from the primitive so the ref is also correct for this path.
+  if (typeof value === "string" || value instanceof String) {
+    const text = value instanceof String ? value.valueOf() : value;
     const fieldType = fieldTypeAt(target.type, target.allTypes, path);
-    if (!fieldType || !BOXABLE_FIELD_TYPES.has(fieldType)) return value;
-    return boxString(value, { kind: target.kind, type: target.type.name, id: target.id, path, fieldType });
+    if (!fieldType || !BOXABLE_FIELD_TYPES.has(fieldType)) return text;
+    return boxString(text, { kind: target.kind, type: target.type.name, id: target.id, path, fieldType });
   }
   if (Array.isArray(value)) return value.map((item, index) => boxDeep(item, `${path}.${index}`, target));
   if (value !== null && typeof value === "object" && !(value instanceof Date)) {

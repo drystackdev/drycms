@@ -5,6 +5,7 @@ import {
   PREVIEW_NAVIGATE_MESSAGE,
   PREVIEW_SAVE_MESSAGE,
   PREVIEW_VEI_CLICK_MESSAGE,
+  PREVIEW_VEI_MODE_MESSAGE,
   type PreviewVeiClickRef,
 } from "../../../page-components/page-preview-engine.js";
 import type { SourceRouteMatch } from "../../../server/app-router/route-manifest.js";
@@ -49,6 +50,12 @@ export default function PreviewFrame(props: PreviewFrameProps) {
   const seqRef = useRef(0);
   const blobUrlsRef = useRef<string[]>([]);
 
+  const syncVeiMode = () => {
+    iframeRef.current?.contentWindow?.postMessage({ type: PREVIEW_VEI_MODE_MESSAGE, enabled: props.veiEnabled }, "*");
+  };
+
+  useEffect(syncVeiMode, [props.veiEnabled]);
+
   useEffect(() => {
     return () => {
       for (const url of blobUrlsRef.current) URL.revokeObjectURL(url);
@@ -81,11 +88,12 @@ export default function PreviewFrame(props: PreviewFrameProps) {
             entryPath: match.entryPath,
             layoutPaths: match.layoutPaths,
             params: match.params,
-            vei: veiEnabled ? veiContext : undefined,
+            vei: veiContext,
             veiOverrides: props.veiOverrides,
           },
           veiOverlayHref: assetHrefs.veiOverlayHref,
-          veiEnabled,
+          veiEnabled: true,
+          runtimeVeiToggle: true,
         });
         if (seq !== seqRef.current) return;
         if (iframeRef.current) iframeRef.current.srcdoc = html;
@@ -100,7 +108,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, 400);
     return () => clearTimeout(timer);
-  }, [match?.entryPath, match?.layoutPaths.join(","), JSON.stringify(match?.params), sourceByPath, veiEnabled, allTypes, assetHrefs, origin, adminPath, props.contentRevision, props.veiOverrides]);
+  }, [match?.entryPath, match?.layoutPaths.join(","), JSON.stringify(match?.params), sourceByPath, allTypes, assetHrefs, origin, adminPath, props.contentRevision, props.veiOverrides]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -129,6 +137,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
         class="page-builder-preview-frame"
         title="Page preview"
         aria-busy={loading}
+        onLoad={syncVeiMode}
         style={{ width: "100%", height: "100%", border: "0", display: match ? "block" : "none" }}
       />
     </div>

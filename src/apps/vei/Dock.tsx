@@ -157,6 +157,8 @@ export function EditingDock(props: {
   initialMode: EditorMode;
   onModeChange?: (mode: EditorMode) => void;
   onExit: () => void;
+  /** Page Builder has a separate future exit mechanism. */
+  showExit?: boolean;
   /** Omit to hide the "Dashboard" button entirely - `undefined` (every call
    * site before `PageBuilder.tsx`) keeps it exactly as before.
    * `PageBuilder.tsx`'s `Toolbar.tsx` omits it: unlike the public-site
@@ -167,6 +169,9 @@ export function EditingDock(props: {
   onPreviewAll: () => void;
   onSave: () => void;
   saveDisabled?: boolean;
+  /** Optional compact Save presentation used by Page Builder's icon dock. */
+  saveIcon?: ComponentChildren;
+  saveCount?: number;
   onReady: (handle: EditingDockHandle) => void;
   /** Extra buttons rendered BEFORE "Dashboard" - `undefined` (every call
    * site before `PageBuilder.tsx`) renders nothing extra, so this is a
@@ -245,34 +250,34 @@ export function EditingDock(props: {
           <span className="badge sm secondary">{previewCount}</span>
         </button>
       )}
-      <button type="button" className="round dock-save" disabled={saving || props.saveDisabled} onClick={props.onSave}>
-        {saving ? (
-          <>
-            <span className="vei-spinner" />
-            Saving
-          </>
-        ) : (
-          "Save"
-        )}
-      </button>
       <button
         type="button"
-        className="ghost round"
-        disabled={exiting}
-        onClick={() => {
-          setExiting(true);
-          props.onExit();
-        }}
+        className={`round dock-save${props.saveIcon ? " icon" : ""}`}
+        aria-label={props.saveIcon ? "Save and publish" : undefined}
+        title={props.saveIcon ? "Save and publish" : undefined}
+        disabled={saving || props.saveDisabled}
+        onClick={props.onSave}
       >
-        {exiting ? (
-          <>
-            <span className="vei-spinner" />
-            Exiting
-          </>
+        {saving ? (
+          props.saveIcon ? <span className="vei-spinner" /> : <><span className="vei-spinner" />Saving</>
         ) : (
-          "Exit"
+          props.saveIcon ?? "Save"
         )}
+        {!!props.saveIcon && !!props.saveCount && <span className="badge sm secondary dock-save-badge">{props.saveCount}</span>}
       </button>
+      {props.showExit !== false && (
+        <button
+          type="button"
+          className="ghost round"
+          disabled={exiting}
+          onClick={() => {
+            setExiting(true);
+            props.onExit();
+          }}
+        >
+          {exiting ? <><span className="vei-spinner" />Exiting</> : "Exit"}
+        </button>
+      )}
     </div>
   );
 }

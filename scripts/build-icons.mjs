@@ -28,6 +28,9 @@ const collections = new Map(
 );
 
 function render(id) {
+  if (typeof id === "object" && id && typeof id.body === "string") {
+    return { id: "custom:inline", viewBox: id.viewBox ?? DEFAULT_VIEW_BOX, body: id.body };
+  }
   const [prefix, name] = id.split(":");
   if (!prefix || !name) {
     throw new Error(`Icon "${id}" must be written as "<set>:<name>".`);
@@ -45,7 +48,7 @@ function render(id) {
   }
 
   const { attributes, body } = iconToSVG(data, { height: "auto" });
-  return { viewBox: attributes.viewBox, body };
+  return { id, viewBox: attributes.viewBox, body };
 }
 
 const DEFAULT_VIEW_BOX = "0 0 24 24";
@@ -53,7 +56,7 @@ const DEFAULT_VIEW_BOX = "0 0 24 24";
 const entries = Object.entries(config.icons).filter(
   ([key]) => !key.startsWith("$"),
 );
-const rendered = entries.map(([key, id]) => ({ key, id, ...render(id) }));
+const rendered = entries.map(([key, id]) => ({ key, ...render(id) }));
 
 function iconEntry(icon) {
   return icon.viewBox === DEFAULT_VIEW_BOX

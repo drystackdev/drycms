@@ -21,10 +21,11 @@ import { fetchJson, loadAllPagesSource, type AssetHrefs } from "./pages-source-h
  */
 const PUBLISH_ALL_BATCH_SIZE = 5;
 
-export async function publishAllPages(
+async function publishPages(
   adminPath: string,
   allTypes: ContentTypeDefinition[],
   onStatus?: (message: string) => void,
+  changedSourcePaths?: ReadonlySet<string>,
 ): Promise<{ built: number; error?: string }> {
   try {
     const [{ buildPage, computeSourceHash, publishBuiltPages, resolveAllPageTargets }, sourceByPath, assetHrefs] = await Promise.all([
@@ -70,6 +71,7 @@ export async function publishAllPages(
         layoutPaths: target.layoutPaths,
         params: target.params,
       });
+      if (changedSourcePaths && !result.sourcePaths?.some((sourcePath) => changedSourcePaths.has(sourcePath))) continue;
       const sourceHash = await computeSourceHash(target, sourceByPath);
       batch.push({ result, options: { pagesBuildEndpoint: `${adminPath}/api/pages-build`, pathname, entryPath: target.entryPath, sourceHash } });
       if (batch.length >= PUBLISH_ALL_BATCH_SIZE) await flush();
@@ -82,4 +84,25 @@ export async function publishAllPages(
     onStatus?.(`Initial publish failed: ${message}.`);
     return { built: 0, error: message };
   }
+}
+
+export function publishAllPages(
+  adminPath: string,
+  allTypes: ContentTypeDefinition[],
+  onStatus?: (message: string) => void,
+): Promise<{ built: number; error?: string }> {
+  return publishPages(adminPath, allTypes, onStatus);
+}
+
+/** Publishes only targets whose compiled dependency closure includes one of
+ * the changed page/layout/component/style paths. The current registry does
+ * not persist source dependencies, so targets are compiled to discover that
+ * closure, but unrelated results are never published. */
+export function publishPagesAffectedBySource(
+  adminPath: string,
+  allTypes: ContentTypeDefinition[],
+  changedSourcePaths: readonly string[],
+  onStatus?: (message: string) => void,
+): Promise<{ built: number; error?: string }> {
+  return publishPages(adminPath, allTypes, onStatus, new Set(changedSourcePaths));
 }

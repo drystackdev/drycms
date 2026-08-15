@@ -83,7 +83,6 @@ export default function FileDialog(props: FileDialogProps) {
             entryPath: COMPONENT_PREVIEW_ENTRY_PATH,
             layoutPaths: [],
             params: {},
-            skipJsAssets: true,
           },
           veiOverlayHref: props.assetHrefs.veiOverlayHref,
         });
@@ -109,6 +108,12 @@ export default function FileDialog(props: FileDialogProps) {
         <h3>{props.path}</h3>
       </header>
       <div class={isComponent ? "page-builder-file-dialog-body split" : "page-builder-file-dialog-body"}>
+        {isComponent && (
+          <div class="page-builder-file-dialog-preview">
+            {previewError && <p class="error">{previewError}</p>}
+            <iframe ref={iframeRef} title="Component preview" style={{ width: "100%", height: "100%", border: "0" }} />
+          </div>
+        )}
         <div class="page-builder-file-dialog-editor">
           <Editer
             key={props.path}
@@ -120,12 +125,6 @@ export default function FileDialog(props: FileDialogProps) {
             style={{ height: "100%" }}
           />
         </div>
-        {isComponent && (
-          <div class="page-builder-file-dialog-preview">
-            {previewError && <p class="error">{previewError}</p>}
-            <iframe ref={iframeRef} title="Component preview" style={{ width: "100%", height: "100%", border: "0" }} />
-          </div>
-        )}
       </div>
       <footer>
         <button type="button" class="outline" disabled={!props.dirty || props.saving} onClick={props.onReset}>
