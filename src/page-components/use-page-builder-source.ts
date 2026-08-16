@@ -10,6 +10,18 @@ function sameSourceSnapshot(left: Record<string, string>, right: Record<string, 
   return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key]);
 }
 
+export function mergeExternalSourceSnapshot(
+  current: Record<string, string>,
+  fresh: Record<string, string>,
+  locallyEditedPaths: ReadonlySet<string>,
+): Record<string, string> {
+  const merged = { ...fresh };
+  for (const filePath of locallyEditedPaths) {
+    if (filePath in current) merged[filePath] = current[filePath]!;
+  }
+  return sameSourceSnapshot(current, merged) ? current : merged;
+}
+
 /**
  * Page Builder's own, deliberately minimal tree/draft/save-reset state -
  * `plans/new-ui-page-builder.md` mục 10's sanctioned cut: `PageEditor.tsx`'s
@@ -58,6 +70,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [locallyEditedPaths, setLocallyEditedPaths] = useState<Set<string>>(() => new Set());
 
   const api = useMemo(() => createPagesSourceApi(`${adminPath}/api/pages-source`), [adminPath]);
 
@@ -96,14 +109,9 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
           setSavedByPath((previousSaved) => {
             setSourceByPath((current) => {
               if (!current) return fresh;
-              const merged = { ...fresh };
-              // An external save wins everywhere except a file with a real
-              // unsaved Page Builder buffer, which must never be discarded
-              // by HMR arriving from another editor/process.
-              for (const [filePath, code] of Object.entries(current)) {
-                if (code !== previousSaved[filePath]) merged[filePath] = code;
-              }
-              return sameSourceSnapshot(current, merged) ? current : merged;
+              // An external save wins everywhere except a file explicitly
+              // edited in Page Builder itself.
+              return mergeExternalSourceSnapshot(current, fresh, locallyEditedPaths);
             });
             return sameSourceSnapshot(previousSaved, fresh) ? previousSaved : fresh;
           });
@@ -125,11 +133,19 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       window.removeEventListener(PAGES_SOURCE_BROWSER_EVENT, refreshExternalChange);
       window.clearInterval(timer);
     };
-  }, [adminPath, enabled]);
+  }, [adminPath, enabled, locallyEditedPaths]);
 
   const updateSource = useCallback((filePath: string, code: string) => {
     setSourceByPath((prev) => (prev && prev[filePath] === code ? prev : { ...prev, [filePath]: code }));
-  }, []);
+    setLocallyEditedPaths((previous) => {
+      const shouldBeDirty = code !== savedByPath[filePath];
+      if (previous.has(filePath) === shouldBeDirty) return previous;
+      const next = new Set(previous);
+      if (shouldBeDirty) next.add(filePath);
+      else next.delete(filePath);
+      return next;
+    });
+  }, [savedByPath]);
 
   const isDirty = useCallback(
     (filePath: string) => !!sourceByPath && sourceByPath[filePath] !== savedByPath[filePath],
@@ -145,6 +161,12 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       try {
         await api.save(filePath, code);
         setSavedByPath((prev) => ({ ...prev, [filePath]: code }));
+        setLocallyEditedPaths((previous) => {
+          if (!previous.has(filePath)) return previous;
+          const next = new Set(previous);
+          next.delete(filePath);
+          return next;
+        });
       } finally {
         setSaving(false);
       }
@@ -155,13 +177,19 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   const reset = useCallback(
     (filePath: string) => {
       setSourceByPath((prev) => (prev ? { ...prev, [filePath]: savedByPath[filePath] ?? "" } : prev));
+      setLocallyEditedPaths((previous) => {
+        if (!previous.has(filePath)) return previous;
+        const next = new Set(previous);
+        next.delete(filePath);
+        return next;
+      });
     },
     [savedByPath],
   );
 
   const dirtyPaths = useMemo(
-    () => (sourceByPath ? Object.keys(sourceByPath).filter((filePath) => sourceByPath[filePath] !== savedByPath[filePath]) : []),
-    [sourceByPath, savedByPath],
+    () => (sourceByPath ? [...locallyEditedPaths].filter((filePath) => sourceByPath[filePath] !== savedByPath[filePath]) : []),
+    [sourceByPath, savedByPath, locallyEditedPaths],
   );
 
   return { sourceByPath, loading, error, updateSource, isDirty, save, reset, saving, dirtyPaths, reload };

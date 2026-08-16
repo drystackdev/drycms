@@ -18,6 +18,7 @@
 - DevTools performance: preview data-module URLs use compact base64 instead of percent-escaped source. The preview keeps its own `/@vite/client`, because its hydrate dependency graph is separate from the admin graph and needs HMR.
 - External source editing: page-source filesystem saves now emit a semantic Vite HMR event. Public pages/Page Editor retain reload behavior; Page Builder refetches and rebuilds preview in place while preserving any locally dirty buffer.
 - External-edit fallback: page-source file responses are `private, no-store`; Page Builder dev also checks a no-store source snapshot every second for tabs that missed HMR across a server restart. Identical snapshots retain state identity, so they do not trigger preview rebuilds.
+- External-edit merge fix: stale state is no longer inferred to be a local dirty buffer merely because it differs from an older server snapshot. Only paths explicitly changed through Page Builder's own editor are protected from external saves; regression coverage added.
 
 # Speed
 
