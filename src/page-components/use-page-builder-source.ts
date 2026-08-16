@@ -44,7 +44,7 @@ export interface UsePageBuilderSourceResult {
   reload: () => Promise<void>;
 }
 
-export function usePageBuilderSource(adminPath: string): UsePageBuilderSourceResult {
+export function usePageBuilderSource(adminPath: string, enabled = true): UsePageBuilderSourceResult {
   const [sourceByPath, setSourceByPath] = useState<Record<string, string> | null>(null);
   const [savedByPath, setSavedByPath] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -54,6 +54,10 @@ export function usePageBuilderSource(adminPath: string): UsePageBuilderSourceRes
   const api = useMemo(() => createPagesSourceApi(`${adminPath}/api/pages-source`), [adminPath]);
 
   const reload = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -65,12 +69,12 @@ export function usePageBuilderSource(adminPath: string): UsePageBuilderSourceRes
     } finally {
       setLoading(false);
     }
-  }, [adminPath]);
+  }, [adminPath, enabled]);
 
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminPath]);
+  }, [adminPath, enabled]);
 
   const updateSource = useCallback((filePath: string, code: string) => {
     setSourceByPath((prev) => (prev && prev[filePath] === code ? prev : { ...prev, [filePath]: code }));

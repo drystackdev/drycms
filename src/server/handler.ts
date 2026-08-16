@@ -282,11 +282,10 @@ export async function handleApiRequest(
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }
-  // `pages-source`'s own GET stays open the same "broadly read" way as
-  // `icons`/`richtext-components` (needed by the BUILD flow, gated on
-  // Page Builder above) - only the write methods (`PageEditor.tsx`'s
-  // save/create/move/delete) are gated here, on the same merged permission.
-  if (segment === "pages-source" && request.method !== "GET") {
+  // Page source is executable tenant code, so reads and writes share the
+  // same Page Builder grant. A content-only session must not be able to
+  // download code merely because it knows this endpoint.
+  if (segment === "pages-source") {
     const denied = await requirePermission(context, PAGE_BUILDER_RESOURCE_ID, "setting");
     if (denied) return secureResponse(denied, request);
   }

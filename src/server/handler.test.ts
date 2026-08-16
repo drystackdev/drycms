@@ -167,4 +167,12 @@ describe("handleApiRequest - dispatcher-level authorization for the 'code + cont
     expect(allowed.status).toBe(200);
     expect(allowed.status).not.toBe(403);
   });
+
+  it("keeps page-source reads behind the Page Builder permission", async () => {
+    const denied = await get("/api/pages-source?tree", contentOnlyCookie);
+    expect(denied.status).toBe(403);
+
+    const allowed = await get("/api/pages-source?tree", codePermissionCookie);
+    expect(allowed.status).toBe(200);
+  });
 });

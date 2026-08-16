@@ -2521,7 +2521,7 @@ export default function PageEditor() {
                       style={{ width: `${viewport.width * effectiveZoom}px`, height: `${previewFrameHeight * effectiveZoom}px` }}
                     >
                       <div style={{ width: `${viewport.width}px`, height: `${previewFrameHeight}px`, transform: `scale(${effectiveZoom})`, transformOrigin: "top left" }}>
-                        <iframe ref={iframeRef} title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+                        <iframe ref={iframeRef} sandbox="allow-scripts" title="Page preview" style={{ width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
                       </div>
                     </div>
                   </div>

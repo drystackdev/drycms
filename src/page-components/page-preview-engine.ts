@@ -30,6 +30,7 @@ export const PREVIEW_SAVE_MESSAGE = "dry-page-preview-save";
  * `apps/vei/overlay.ts`'s own `intercept` uses. */
 export const PREVIEW_VEI_CLICK_MESSAGE = "dry-page-preview-vei-click";
 export const PREVIEW_VEI_MODE_MESSAGE = "dry-page-preview-vei-mode";
+export const PREVIEW_TITLE_MESSAGE = "dry-page-preview-title";
 
 export interface PreviewVeiClickRef {
   kind: "collection" | "singleton";
@@ -102,7 +103,7 @@ export function buildPreviewBridgeScript(options?: { vei?: boolean; runtimeVeiTo
   const shiftSupport = veiEnabled
     ? `function syncShift(event){document.documentElement.classList.toggle("dry-vei-shift",veiMode&&event.shiftKey===true);}window.addEventListener("keydown",syncShift,true);window.addEventListener("keyup",syncShift,true);window.addEventListener("blur",function(){document.documentElement.classList.remove("dry-vei-shift");hideHighlight();});`
     : "";
-  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");${findMarked}${highlightSupport}${modeListener}${shiftSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
+  return `<script>(function(){var veiMode=${JSON.stringify(initialMode)};if(veiMode)document.documentElement.classList.add("dry-vei-enabled");window.parent.postMessage({type:${JSON.stringify(PREVIEW_TITLE_MESSAGE)},title:document.title||""},"*");${findMarked}${highlightSupport}${modeListener}${shiftSupport}document.addEventListener("click",function(event){${veiBranch}var anchor=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!anchor)return;event.preventDefault();var pathname;try{pathname=new URL(anchor.href,document.baseURI).pathname;}catch(e){return;}window.parent.postMessage({type:${JSON.stringify(PREVIEW_NAVIGATE_MESSAGE)},pathname:pathname},"*");},true);document.addEventListener("keydown",function(event){if(String(event.key).toLowerCase()!=="s"||event.altKey||event.shiftKey||!(event.ctrlKey||event.metaKey))return;event.preventDefault();window.parent.postMessage({type:${JSON.stringify(PREVIEW_SAVE_MESSAGE)}},"*");},true);})();</script>`;
 }
 
 export interface BuildPreviewSrcdocInput {

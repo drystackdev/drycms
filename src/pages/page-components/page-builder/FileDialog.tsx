@@ -164,7 +164,7 @@ export default function FileDialog(props: FileDialogProps) {
               <div class="page-builder-file-dialog-preview-scroll-viewport" ref={mergeRefs(viewport.viewportRef, previewScroll.viewportRef)}>
                 <div class="page-components-preview-frame" style={{ width: `${viewport.width * effectiveZoom}px`, height: `${PREVIEW_HEIGHT * effectiveZoom}px` }}>
                   <div style={{ width: `${viewport.width}px`, height: `${PREVIEW_HEIGHT}px`, transform: `scale(${effectiveZoom})`, transformOrigin: "top left" }}>
-                    <iframe ref={iframeRef} title={isComponent ? "Component preview" : "Layout preview"} style={{ width: "100%", height: "100%", border: "0", background: "#fff", display: "block" }} />
+                    <iframe ref={iframeRef} sandbox="allow-scripts" title={isComponent ? "Component preview" : "Layout preview"} style={{ width: "100%", height: "100%", border: "0", background: "#fff", display: "block" }} />
                   </div>
                 </div>
               </div>

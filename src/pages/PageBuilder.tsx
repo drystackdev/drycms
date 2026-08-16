@@ -78,7 +78,7 @@ export default function PageBuilder() {
   const canEdit = canAccess(PAGE_BUILDER_RESOURCE_ID, "setting");
   const [pathname, setPathname] = useParam<string>("path", "/");
 
-  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving, dirtyPaths } = usePageBuilderSource(path);
+  const { sourceByPath, loading, error: loadError, updateSource, isDirty, save, reset, saving, dirtyPaths } = usePageBuilderSource(path, canEdit);
   const [allTypes, setAllTypes] = useState<ContentTypeDefinition[] | null>(null);
   const [assetHrefs, setAssetHrefs] = useState<AssetHrefs | null>(null);
   const [dryTypes, setDryTypes] = useState<string | null>(null);

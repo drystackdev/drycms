@@ -4,6 +4,7 @@ import {
   buildPreviewSrcdoc,
   PREVIEW_NAVIGATE_MESSAGE,
   PREVIEW_SAVE_MESSAGE,
+  PREVIEW_TITLE_MESSAGE,
   PREVIEW_VEI_CLICK_MESSAGE,
   PREVIEW_VEI_MODE_MESSAGE,
   type PreviewVeiClickRef,
@@ -57,36 +58,9 @@ export default function PreviewFrame(props: PreviewFrameProps) {
 
   const handleLoad = () => {
     syncVeiMode();
-    props.onTitleChange(iframeRef.current?.contentDocument?.title.trim() ?? "");
   };
 
   useEffect(syncVeiMode, [props.veiEnabled]);
-
-  // Merely hovering an iframe does not give it keyboard focus, so Shift can
-  // still be delivered to the Page Builder window rather than the injected
-  // bridge inside the preview. Mirror the parent modifier state into the
-  // same class the bridge uses; once the iframe is focused, its own listener
-  // continues to cover the complementary case.
-  useEffect(() => {
-    const setShift = (active: boolean) => {
-      iframeRef.current?.contentDocument?.documentElement.classList.toggle(
-        "dry-vei-shift",
-        props.veiEnabled && active,
-      );
-    };
-    const onKeyDown = (event: KeyboardEvent) => setShift(event.shiftKey);
-    const onKeyUp = (event: KeyboardEvent) => setShift(event.shiftKey);
-    const clear = () => setShift(false);
-    window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("keyup", onKeyUp, true);
-    window.addEventListener("blur", clear);
-    if (!props.veiEnabled) clear();
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("keyup", onKeyUp, true);
-      window.removeEventListener("blur", clear);
-    };
-  }, [iframeRef, props.veiEnabled]);
 
   useEffect(() => {
     return () => {
@@ -147,6 +121,10 @@ export default function PreviewFrame(props: PreviewFrameProps) {
       if (!event.data) return;
       if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
       if (event.data.type === PREVIEW_SAVE_MESSAGE) return props.onSave();
+      if (event.data.type === PREVIEW_TITLE_MESSAGE) {
+        if (typeof event.data.title === "string") props.onTitleChange(event.data.title.trim());
+        return;
+      }
       if (event.data.type === PREVIEW_VEI_CLICK_MESSAGE) {
         if (event.data.ref) props.onVeiClick(event.data.ref as PreviewVeiClickRef);
         return;
@@ -169,6 +147,7 @@ export default function PreviewFrame(props: PreviewFrameProps) {
         class="page-builder-preview-frame"
         title="Page preview"
         aria-busy={loading}
+        sandbox="allow-scripts"
         onLoad={handleLoad}
         style={{ width: "100%", height: "100%", border: "0", display: match ? "block" : "none" }}
       />

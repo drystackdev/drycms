@@ -6,6 +6,7 @@ import { SITEMAP_EDGE_TTL_SECONDS } from "./app-router/sitemap.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
 import { handleVeiRoute } from "./vei-routes.js";
+import { ADMIN_CONTENT_SECURITY_POLICY } from "./security-headers.js";
 
 /**
  * Cloudflare Workers entry - bundled by `vite build --ssr
@@ -71,7 +72,10 @@ async function serveAdminShell(env: WorkerEnv, request: Request): Promise<Respon
   const shellUrl = new URL("/index.html", request.url);
   const shellResponse = await env.ASSETS.fetch(shellUrl.toString());
   const html = await shellResponse.text();
-  return new Response(injectClientConfig(html), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  return new Response(injectClientConfig(html), { headers: {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": ADMIN_CONTENT_SECURITY_POLICY,
+  } });
 }
 
 export default {

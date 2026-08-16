@@ -52,6 +52,7 @@ const { applySecurityHeaders, createApiMiddleware, toFetchRequest, sendFetchResp
 const { guardPageRequest } = await vite.ssrLoadModule("/src/server/page-guard.ts");
 const { handleVeiRoute } = await vite.ssrLoadModule("/src/server/vei-routes.ts");
 const { injectClientConfig } = await vite.ssrLoadModule("/src/server/client-config.ts");
+const { ADMIN_CONTENT_SECURITY_POLICY } = await vite.ssrLoadModule("/src/server/security-headers.ts");
 const { path: adminPath, content, pagesSourceStorage } = await vite.ssrLoadModule("/src/server/config.ts");
 const apiMiddleware = createApiMiddleware();
 
@@ -167,6 +168,7 @@ const server = createHttpServer((req, res) => {
           html = await vite.transformIndexHtml(url, html);
           html = injectClientConfig(html);
           applySecurityHeaders(res);
+          res.setHeader("Content-Security-Policy", ADMIN_CONTENT_SECURITY_POLICY);
           res.setHeader("Content-Type", "text/html");
           res.end(html);
         } catch (error) {

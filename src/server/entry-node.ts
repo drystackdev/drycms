@@ -8,6 +8,7 @@ import { mimeType } from "./route-helpers.js";
 import { guardPageRequest } from "./page-guard.js";
 import { handlePageRequest } from "./page-handler.js";
 import { handleVeiRoute } from "./vei-routes.js";
+import { ADMIN_CONTENT_SECURITY_POLICY } from "./security-headers.js";
 
 /**
  * Production entry - bundled by `vite build --ssr src/server/entry-node.ts`
@@ -39,6 +40,7 @@ function tryServeStaticAsset(pathname: string, res: ServerResponse): boolean {
 
 function serveAdminShell(res: ServerResponse): void {
   applySecurityHeaders(res);
+  res.setHeader("Content-Security-Policy", ADMIN_CONTENT_SECURITY_POLICY);
   res.setHeader("Content-Type", "text/html");
   res.end(indexHtml);
 }

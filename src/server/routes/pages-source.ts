@@ -17,10 +17,7 @@ import { clearAiPageSourceWrite } from "../ai-page-source-flags.js";
  * and, since Giai đoạn 6, what `PageEditor.tsx`'s in-browser editor writes
  * through too.
  *
- * GET stays open to any authenticated session (same "broadly read, narrowly
- * written" treatment `icons`/`richtext-components` GET already get - reading
- * page source is needed by the BUILD flow). The write methods below
- * (POST/PUT/PATCH/DELETE) are gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`
+ * Every method is gated in `handler.ts` on `PAGE_BUILDER_RESOURCE_ID`
  * ("Page Builder") - originally a separate `system-code` toggle (quyết định
  * #12), merged with the build permission since the two were never granted
  * independently in practice.
