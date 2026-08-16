@@ -20,7 +20,10 @@
 - External-edit fallback: page-source file responses are `private, no-store`; Page Builder dev also checks a no-store source snapshot every second for tabs that missed HMR across a server restart. Identical snapshots retain state identity, so they do not trigger preview rebuilds.
 - External-edit merge fix: stale state is no longer inferred to be a local dirty buffer merely because it differs from an older server snapshot. Only paths explicitly changed through Page Builder's own editor are protected from external saves; regression coverage added.
 - Responsive layout: below 64rem the Code and VEI panels render as animated 90dvh bottom drawers with the same 5px blurred overlay as the public VEI. The overlay is a non-button layer and clicking it closes the Code drawer. Desktop retains the resizable split panel.
+- Save integrity hardening: Page Builder now retains the exact storage baseline from when each local edit starts and sends its SHA-256 hash on save. An external VS Code/MCP write during that edit produces HTTP 409 instead of being overwritten.
+- Dev CORS hardening: Vite no longer grants `null` CORS globally. A pre-transform middleware grants it only when the opaque preview requests a module script (`Sec-Fetch-Dest: script`), including 304 responses; admin HTML and arbitrary null-origin fetches receive no CORS header. Production remains limited to public JS/built assets.
+- Workers asset routing: `/assets/*` now runs through `entry-worker.ts` before delegating to the Assets binding, activating the existing JS-only sandbox CORS and immutable hashed-asset cache policy. Direct Asset Worker serving had bypassed both headers under `dev:worker`.
 
 # Speed
 
-- Complete. Browser UI automation was unavailable; verification used unit/integration tests, typecheck, production build, and direct HTTP checks.
+- Complete. Browser UI automation was unavailable; verification used unit/integration tests, typecheck, production/Worker builds, and live `dev` plus `dev:worker` HTTP checks. Worker checks cover JS/CSS/admin-document CORS, JS 200/304 cache headers, and anonymous page-source denial.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createPagesSourceApi } from "./pages-source-http-api.js";
 import { loadAllPagesSource } from "./pages-source-http.js";
 
@@ -71,6 +71,11 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [locallyEditedPaths, setLocallyEditedPaths] = useState<Set<string>>(() => new Set());
+  // The exact storage content from when a local edit began. `savedByPath`
+  // may advance when HMR/polling observes an external VS Code save while
+  // the local buffer is deliberately preserved, so it cannot also serve as
+  // the optimistic-concurrency base for that buffer.
+  const editBaseByPathRef = useRef<Record<string, string>>({});
 
   const api = useMemo(() => createPagesSourceApi(`${adminPath}/api/pages-source`), [adminPath]);
 
@@ -141,8 +146,13 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       const shouldBeDirty = code !== savedByPath[filePath];
       if (previous.has(filePath) === shouldBeDirty) return previous;
       const next = new Set(previous);
-      if (shouldBeDirty) next.add(filePath);
-      else next.delete(filePath);
+      if (shouldBeDirty) {
+        editBaseByPathRef.current[filePath] = savedByPath[filePath] ?? "";
+        next.add(filePath);
+      } else {
+        delete editBaseByPathRef.current[filePath];
+        next.delete(filePath);
+      }
       return next;
     });
   }, [savedByPath]);
@@ -159,8 +169,9 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
       if (code === savedByPath[filePath]) return;
       setSaving(true);
       try {
-        await api.save(filePath, code);
+        await api.save(filePath, code, editBaseByPathRef.current[filePath] ?? savedByPath[filePath] ?? "");
         setSavedByPath((prev) => ({ ...prev, [filePath]: code }));
+        delete editBaseByPathRef.current[filePath];
         setLocallyEditedPaths((previous) => {
           if (!previous.has(filePath)) return previous;
           const next = new Set(previous);
@@ -177,6 +188,7 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   const reset = useCallback(
     (filePath: string) => {
       setSourceByPath((prev) => (prev ? { ...prev, [filePath]: savedByPath[filePath] ?? "" } : prev));
+      delete editBaseByPathRef.current[filePath];
       setLocallyEditedPaths((previous) => {
         if (!previous.has(filePath)) return previous;
         const next = new Set(previous);

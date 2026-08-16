@@ -34,9 +34,12 @@
     // `pathname === "/"` from its own asset branch for exactly this reason
     // (mirroring `entry-node.ts`'s `tryServeStaticAsset`), but that code
     // never got a chance to run. Scoped to `/` alone so every real asset
-    // (`/assets/*`, images, ...) still comes straight off the asset layer
-    // without spending a Worker invocation.
-    "run_worker_first": ["/"]
+    // Asset requests also pass through `entry-worker.ts` so hashed files get
+    // their immutable cache policy and JavaScript modules get the narrowly
+    // scoped `Access-Control-Allow-Origin: null` required by the opaque
+    // Page Builder preview. The Worker immediately delegates bytes to the
+    // Assets binding; no asset content is rebuilt or buffered here.
+    "run_worker_first": ["/", "/assets/*"]
   },
 
   // The resolved `kind: "cloudflare"` uses this for content (Node-only

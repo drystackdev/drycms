@@ -23,6 +23,29 @@ const pkgVersion = (
 
 const PRISM_LANGUAGE_FILE = /\/node_modules\/prismjs\/components\/prism-[\w-]+\.js$/;
 
+export function isSandboxPreviewModuleRequest(headers: Record<string, string | string[] | undefined>): boolean {
+  return headers.origin === "null" && headers["sec-fetch-dest"] === "script";
+}
+
+/** Opaque Page Builder previews need CORS for Vite-transformed module
+ * scripts, but not for the admin HTML shell, CSS, media, or API responses.
+ * Setting the header before Vite transforms the request also covers 304s. */
+function sandboxPreviewModuleCorsPlugin(): Plugin {
+  return {
+    name: "drycms:sandbox-preview-module-cors",
+    enforce: "pre",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (isSandboxPreviewModuleRequest(request.headers)) {
+          response.setHeader("Access-Control-Allow-Origin", "null");
+          response.setHeader("Vary", "Origin");
+        }
+        next();
+      });
+    },
+  };
+}
+
 /**
  * Gives `prismjs`'s language files (`components/prism-*.js`) the import of
  * prismjs core they are missing.
@@ -81,11 +104,10 @@ export default defineConfig(({ isSsrBuild, command }) => ({
    */
   publicDir: command === "build" ? false : "public",
   server: {
-    // Module requests issued by an opaque-origin sandboxed preview serialize
-    // their Origin as `null`. Configure Vite's own CORS middleware (rather
-    // than a static response header it can overwrite on transformed/304
-    // module responses); authenticated APIs still bypass this middleware.
-    cors: { origin: "null" },
+    // A dedicated pre-transform middleware below grants `null` CORS only to
+    // sandboxed module-script requests. Vite's generic CORS middleware would
+    // otherwise attach it to the admin HTML shell and unrelated dev assets.
+    cors: false,
     watch: {
       /**
        * `.dry/` is runtime DATA, not source (see `CLAUDE.md`), and Vite
@@ -129,6 +151,7 @@ export default defineConfig(({ isSsrBuild, command }) => ({
   // (`docs/DESIGN.md`) never opt in, so this is safe to register globally
   // rather than needing a separate Vite config just for `src/apps`.
   plugins: [
+    sandboxPreviewModuleCorsPlugin(),
     appRouterPlugin(),
     assetHrefsPlugin(),
     prismjsLanguagesPlugin(),
