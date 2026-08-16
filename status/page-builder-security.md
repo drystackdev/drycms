@@ -26,4 +26,4 @@
 
 # Speed
 
-- Complete. Browser UI automation was unavailable; verification used unit/integration tests, typecheck, production/Worker builds, and live `dev` plus `dev:worker` HTTP checks. Worker checks cover JS/CSS/admin-document CORS, JS 200/304 cache headers, and anonymous page-source denial.
+- Complete. Browser UI automation was unavailable; verification used unit/integration tests, typecheck, production/Worker builds, and live `dev` plus `dev:worker` HTTP checks. Worker checks cover JS/CSS/admin-document CORS, every preview runtime asset, JS 200/304 cache headers, anonymous denial, authenticated R2 folder fallback, CSRF rejection, optimistic-concurrency 409 with external content preserved, cleanup, and logout.
