@@ -420,6 +420,13 @@ export default function PageBuilder() {
         />
       )}
 
+      {panelMode === "code" && (
+        <div
+          class="page-builder-drawer-backdrop"
+          onClick={() => setPanelMode(null)}
+        />
+      )}
+
       {panelMode === "code" && match?.entryPath && rootOf(match.entryPath)?.id === PAGES_ROOT && (
         <CodePanel
           path={match.entryPath}

@@ -6,6 +6,22 @@
  * elevation.
  */
 @layer dry.components {
+  @keyframes page-builder-drawer-backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes page-builder-drawer-in {
+    from {
+      transform: translateY(100%);
+    }
+
+    to {
+      transform: translateY(0);
+    }
+  }
+
   .dry {
     /* Single column - `AiSchemaWizardPanel` used to become a second column
      * here (`>= 64rem`) or a tab replacing this one (`< 64rem`); now that
@@ -7986,6 +8002,102 @@
     .page-builder-preview {
       position: absolute;
       inset: 0;
+    }
+
+    .page-builder-drawer-backdrop {
+      display: none;
+    }
+
+    /* Below the desktop two-column breakpoint, editor panels use the same
+     * 90%-high bottom-drawer treatment as the public VEI overlay. Desktop
+     * keeps the resizable docked-panel behavior. */
+    @media (width < 64rem) {
+      .page-builder-preview {
+        right: 0 !important;
+      }
+
+      .page-builder-drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 119;
+        display: block;
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: var(--dry-backdrop);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        animation: page-builder-drawer-backdrop-in 120ms ease;
+      }
+
+      .page-builder-code-panel {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 120;
+        width: 100vw !important;
+        max-width: 100vw;
+        height: 90dvh;
+        max-height: 90dvh;
+        border-top: 1px solid var(--dry-border);
+        border-left: 0;
+        border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
+        animation: page-builder-drawer-in 160ms ease;
+      }
+
+      .page-builder-code-panel-handle {
+        display: none;
+      }
+
+      .page-builder-vei-sheet.docked {
+        inset: 0;
+        width: 100% !important;
+        max-width: none;
+        align-items: flex-end;
+        justify-content: center;
+        background: var(--dry-backdrop);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        animation: page-builder-drawer-backdrop-in 120ms ease;
+      }
+
+      .page-builder-vei-sheet.docked .page-builder-vei-panel {
+        width: 100vw;
+        max-width: 100vw;
+        height: 90dvh;
+        max-height: 90dvh;
+        border-top: 1px solid var(--dry-border);
+        border-left: 0;
+        border-radius: var(--dry-radius-lg) var(--dry-radius-lg) 0 0;
+        animation: page-builder-drawer-in 160ms ease;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .page-builder-drawer-backdrop,
+      .page-builder-code-panel,
+      .page-builder-vei-sheet.docked,
+      .page-builder-vei-sheet.docked .page-builder-vei-panel {
+        animation: none;
+      }
+    }
+
+    @media (width < 48rem) {
+      .page-builder-code-panel-header {
+        flex-wrap: wrap;
+      }
+
+      .page-builder-code-panel-path {
+        flex-basis: 100%;
+      }
+
+      .page-builder-bubble-menu {
+        right: 1rem;
+        width: auto;
+      }
     }
 
     .page-builder-preview-empty,

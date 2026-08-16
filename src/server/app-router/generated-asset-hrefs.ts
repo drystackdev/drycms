@@ -2,4 +2,4 @@
 export const HYDRATE_ENTRY_HREF = "/assets/appsHydrate-Dg7TmRBv.js";
 export const VEI_OVERLAY_HREF = "/assets/appsVeiOverlay-DX97Ah0m.js";
 export const HYDRATE_BUILT_HREF = "/assets/appsHydrateBuilt-ChzMHIH8.js";
-export const VEI_LIVE_REFRESH_HREF = "/assets/appsVeiLiveRefresh-114dF63X.js";
+export const VEI_LIVE_REFRESH_HREF = "/assets/appsVeiLiveRefresh-B-t8Bjes.js";
