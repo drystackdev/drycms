@@ -4,6 +4,7 @@ import { resolveOptions } from "../options.js";
 
 const SOURCE_FILE = /\.(tsx?|jsx?)$/;
 const CONTENT_TYPES_DIR = join(process.cwd(), "src/content-types");
+export const PAGES_SOURCE_HMR_EVENT = "dry:pages-source-change";
 
 /** `pagesSourceStorage`'s local root (`.dry/pages-source` by default) - the
  * dev-only live source `route-tree.ts`'s `DevPagesSource` branch reads from
@@ -148,7 +149,11 @@ export function appRouterPlugin(): Plugin {
     },
     handleHotUpdate({ file, server }) {
       if (!isPagesSourceFile(file)) return;
-      server.ws.send({ type: "full-reload" });
+      server.ws.send({
+        type: "custom",
+        event: PAGES_SOURCE_HMR_EVENT,
+        data: { path: relative(pagesSourceRoot!, file).replace(/\\/g, "/") },
+      });
       return [];
     },
   };

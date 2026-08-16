@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { createPagesSourceApi } from "./pages-source-http-api.js";
 import { loadAllPagesSource } from "./pages-source-http.js";
 
+const PAGES_SOURCE_BROWSER_EVENT = "dry:pages-source-change";
+
+function sameSourceSnapshot(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key]);
+}
+
 /**
  * Page Builder's own, deliberately minimal tree/draft/save-reset state -
  * `plans/new-ui-page-builder.md` mục 10's sanctioned cut: `PageEditor.tsx`'s
@@ -74,6 +82,49 @@ export function usePageBuilderSource(adminPath: string, enabled = true): UsePage
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminPath, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !import.meta.env.DEV) return;
+    let refreshing = false;
+    const refreshExternalChange = () => {
+      if (refreshing) return;
+      refreshing = true;
+      void (async () => {
+        try {
+          const fresh = await loadAllPagesSource(adminPath, "no-store");
+          setSavedByPath((previousSaved) => {
+            setSourceByPath((current) => {
+              if (!current) return fresh;
+              const merged = { ...fresh };
+              // An external save wins everywhere except a file with a real
+              // unsaved Page Builder buffer, which must never be discarded
+              // by HMR arriving from another editor/process.
+              for (const [filePath, code] of Object.entries(current)) {
+                if (code !== previousSaved[filePath]) merged[filePath] = code;
+              }
+              return sameSourceSnapshot(current, merged) ? current : merged;
+            });
+            return sameSourceSnapshot(previousSaved, fresh) ? previousSaved : fresh;
+          });
+          setError(null);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to refresh pages source.");
+        } finally {
+          refreshing = false;
+        }
+      })();
+    };
+    window.addEventListener(PAGES_SOURCE_BROWSER_EVENT, refreshExternalChange);
+    // The semantic HMR event is the fast path. Polling is a dev-only safety
+    // net for a tab that stayed open across a Vite server restart and thus
+    // missed the new subscription; no IndexedDB cache participates here.
+    refreshExternalChange();
+    const timer = window.setInterval(refreshExternalChange, 1_000);
+    return () => {
+      window.removeEventListener(PAGES_SOURCE_BROWSER_EVENT, refreshExternalChange);
+      window.clearInterval(timer);
+    };
   }, [adminPath, enabled]);
 
   const updateSource = useCallback((filePath: string, code: string) => {

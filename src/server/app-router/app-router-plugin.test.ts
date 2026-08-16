@@ -101,18 +101,18 @@ describe("appRouterPlugin handleHotUpdate", () => {
     return { result, send };
   }
 
-  it("broadcasts full-reload for a page.tsx change", () => {
+  it("broadcasts a source-change event for a page.tsx change", () => {
     const { result, send } = hotUpdate(pagePath("page.tsx"));
-    expect(send).toHaveBeenCalledWith({ type: "full-reload" });
+    expect(send).toHaveBeenCalledWith({ type: "custom", event: "dry:pages-source-change", data: { path: "pages/page.tsx" } });
     expect(result).toEqual([]);
   });
 
-  it("broadcasts full-reload for a live pages-source styles/globals.css change", () => {
+  it("broadcasts a source-change event for live pages-source styles", () => {
     // Any file under the live storage root shares the same reload path.
     const storage = resolveOptions({ kind: "local" }).pagesSource.storage;
     if (storage.kind !== "local") throw new Error("expected a local pagesSource root in tests");
     const { result, send } = hotUpdate(join(storage.root, "styles/globals.css"));
-    expect(send).toHaveBeenCalledWith({ type: "full-reload" });
+    expect(send).toHaveBeenCalledWith({ type: "custom", event: "dry:pages-source-change", data: { path: "styles/globals.css" } });
     expect(result).toEqual([]);
   });
 

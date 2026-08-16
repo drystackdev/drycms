@@ -184,14 +184,10 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
     importMap.imports[`${realUrl}?import`] = moduleUrl;
   }
 
-  const withoutVei = result.html
-    .replace(`<script type="module" src="${input.veiOverlayHref}"></script>`, "")
-    // `buildDocument()` adds Vite's HMR client whenever its own build runs in
-    // dev. A detached srcdoc preview is already rebuilt by Page Builder and
-    // must not become a second Vite app: the extra client duplicates the WS,
-    // module tracking and error overlay for every preview frame, which is
-    // especially expensive while DevTools is instrumenting all contexts.
-    .replace('<script type="module" src="/@vite/client"></script>', "");
+  // Keep Vite's dev client in the preview: hydrate-built and its dependency
+  // graph are not imported by the admin bundle, so this frame owns their HMR
+  // subscription. HTTP caching is independent from that WebSocket channel.
+  const withoutVei = result.html.replace(`<script type="module" src="${input.veiOverlayHref}"></script>`, "");
 
   const veiStyle = input.veiEnabled ? `<style>${VEI_PREVIEW_MARKER_CSS}</style>` : "";
   const headExtras =

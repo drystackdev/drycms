@@ -8,6 +8,10 @@ import type { RouteMatch } from "../server/app-router/match.js";
 import { setAdminPath } from "../storage/admin-path.js";
 import { HYDRATED_EVENT } from "./hydrated-event.js";
 
+if (import.meta.hot) {
+  import.meta.hot.on("dry:pages-source-change", () => window.location.reload());
+}
+
 /**
  * `resolveImageSrc` (through `media-src-hook.ts` below) needs the admin base
  * path, and `admin-path.ts` reads it from `window.__DRY_CONFIG__` - which

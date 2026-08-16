@@ -74,7 +74,13 @@ export const GET: DryRouteHandler = async (context) => {
     for await (const chunk of file.stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     return new Response(Buffer.concat(chunks).toString("utf-8"), {
       status: 200,
-      headers: { "Content-Type": "text/plain; charset=utf-8", "Last-Modified": new Date(file.modifiedAt).toUTCString() },
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Last-Modified": new Date(file.modifiedAt).toUTCString(),
+        // Executable source is highly mutable in dev and permission-gated;
+        // browser/proxy reuse only creates stale editors/previews here.
+        "Cache-Control": "private, no-store",
+      },
     });
   } catch (error) {
     return errorResponse(error);
