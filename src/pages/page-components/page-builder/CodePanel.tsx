@@ -18,6 +18,7 @@ export interface CodePanelProps {
   onReset: () => void;
   onClose: () => void;
   onWidthChange: (width: number) => void;
+  initialWidth: number;
   layoutPaths: string[];
   onOpenLayout: (path: string) => void;
 }
@@ -31,7 +32,13 @@ export interface CodePanelProps {
  * Builder edits one file at a time by design (mục 10's sanctioned cut).
  */
 export default function CodePanel(props: CodePanelProps) {
-  const panel = useResizablePanel({ ...PANEL_WIDTH, axis: "x", invert: true, onSizeChange: props.onWidthChange });
+  const panel = useResizablePanel({
+    ...PANEL_WIDTH,
+    initial: Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, props.initialWidth)),
+    axis: "x",
+    invert: true,
+    onSizeChange: props.onWidthChange,
+  });
   const diagnosticsPanel = useResizablePanel({ ...DIAGNOSTICS_HEIGHT, axis: "y", invert: true });
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(true);
   const [diagnostics, setDiagnostics] = useState<EditerDiagnostic[]>([]);

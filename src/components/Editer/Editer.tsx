@@ -903,6 +903,7 @@ export default function Editer({
     let keyboardHoverToken = 0;
     const onKeyboardHoverKeydown = (event: KeyboardEvent) => {
       if (event.code === "Escape") return hideKeyboardHover?.();
+      if (isAutocompleteOpen()) return hideKeyboardHover?.();
       if (event.code !== "KeyI" || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey)) return;
       event.preventDefault();
       const pos = editor.getSelection()[0];
@@ -914,6 +915,7 @@ export default function Editer({
       const token = ++keyboardHoverToken;
       client.getHover(pos).then((info) => {
         if (token !== keyboardHoverToken) return;
+        if (isAutocompleteOpen()) return hideKeyboardHover?.();
         if (!info) return hideKeyboardHover?.();
         renderHoverPanel(keyboardHoverElement, info.text, info.documentation);
         showKeyboardHover?.();
@@ -934,6 +936,7 @@ export default function Editer({
       const seq = ++sigSeq;
       client.getSignatureHelp(pos).then((help) => {
         if (seq !== sigSeq || !editorRef.current) return;
+        if (isAutocompleteOpen()) return hideSig?.();
         if (help) {
           renderSignatureTooltip(sigElement, help);
           showSig?.();
@@ -951,12 +954,14 @@ export default function Editer({
       hoverPanel.style.display = "none";
     }
     function positionHoverPanel(clientX: number, clientY: number): void {
+      if (isAutocompleteOpen()) return hideHover();
       hoverPanel.style.left = `${clientX + 12}px`;
       hoverPanel.style.top = `${clientY + 20}px`;
       hoverPanel.style.display = "block";
     }
     function scheduleHover(clientX: number, clientY: number): void {
       clearTimeout(hoverTimer);
+      if (isAutocompleteOpen()) return hideHover();
       hoverTimer = setTimeout(() => {
         const pos = offsetFromPoint(editor, clientX, clientY, getChPx());
         if (pos === null) return hideHover();
@@ -986,6 +991,7 @@ export default function Editer({
     let hoverPanel!: HTMLDivElement;
     let keyboardHoverElement!: HTMLDivElement;
     let liveRegion!: HTMLDivElement;
+    const isAutocompleteOpen = () => editor.textarea.getAttribute("aria-haspopup") === "listbox";
     if (shadowRoot) {
       // `.prism-code-editor` (layout.css, loaded by `basicEditor` itself) has
       // no explicit height - it sizes to its content (line count) by
@@ -1018,6 +1024,23 @@ export default function Editer({
     keyboardHoverElement.className = "editer-hover-tooltip";
     [showKeyboardHover, hideKeyboardHover] = addTooltip(editor, keyboardHoverElement);
 
+    // Autocomplete owns a separate tooltip from quick info/signature help. Watch the
+    // ARIA state it exposes so opening suggestions always dismisses the other informational
+    // overlays, including ones whose worker request was already in flight.
+    const autocompleteObserver = new MutationObserver(() => {
+      if (!isAutocompleteOpen()) return;
+      ++hoverToken;
+      ++keyboardHoverToken;
+      ++sigSeq;
+      hideHover();
+      hideKeyboardHover?.();
+      hideSig?.();
+    });
+    autocompleteObserver.observe(editor.textarea, {
+      attributes: true,
+      attributeFilter: ["aria-haspopup"],
+    });
+
     liveRegion = document.createElement("div");
     liveRegion.className = "editer-sr-only";
     liveRegion.setAttribute("aria-live", "polite");
@@ -1035,6 +1058,7 @@ export default function Editer({
       host.removeEventListener("click", onClick);
       editor.textarea.removeEventListener("keydown", onFormatKeydown);
       editor.textarea.removeEventListener("keydown", onKeyboardHoverKeydown);
+      autocompleteObserver.disconnect();
       editor.remove();
       client.dispose();
     };

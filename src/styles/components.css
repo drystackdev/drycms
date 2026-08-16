@@ -7724,12 +7724,6 @@
       font-weight: 600;
     }
 
-    /* `aria-busy` adds a spinner before the label. A fixed footprint keeps
-     * the path/editor width from jumping while Save is in flight. */
-    .page-builder-code-panel-save {
-      width: 5rem;
-    }
-
     .page-builder-code-panel-body {
       flex: 1;
       min-height: 0;

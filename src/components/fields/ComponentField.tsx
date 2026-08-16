@@ -149,6 +149,22 @@ export default function ComponentField<T = Record<string, unknown>>({
     if (revealIndex !== undefined) openEdit(revealIndex);
   }, [revealIndex]);
 
+  // When Page Builder VEI moves from a repeatable item to a target outside
+  // this list, `_path` no longer carries an item index. Close the old item
+  // dialog instead of leaving it floating over the newly selected field.
+  // A normal, manually-opened dialog is unaffected: its revealIndex starts
+  // and remains undefined, so this effect does not re-run when open changes.
+  useEffect(() => {
+    if (revealIndex !== undefined || !open) return;
+    setOpen(false);
+    setEditingIndex(null);
+    setDraft(null);
+    setAttempted(false);
+    // `open` is intentionally excluded: including it would immediately
+    // close every manually-opened dialog whose revealIndex is undefined.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealIndex]);
+
   // Once that dialog's fields have actually rendered, scroll to and flash
   // the one `revealField` names - `requestAnimationFrame` waits for the
   // frame the JSX below actually commits in, the same "has this appeared

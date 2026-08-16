@@ -62,6 +62,32 @@ export default function PreviewFrame(props: PreviewFrameProps) {
 
   useEffect(syncVeiMode, [props.veiEnabled]);
 
+  // Merely hovering an iframe does not give it keyboard focus, so Shift can
+  // still be delivered to the Page Builder window rather than the injected
+  // bridge inside the preview. Mirror the parent modifier state into the
+  // same class the bridge uses; once the iframe is focused, its own listener
+  // continues to cover the complementary case.
+  useEffect(() => {
+    const setShift = (active: boolean) => {
+      iframeRef.current?.contentDocument?.documentElement.classList.toggle(
+        "dry-vei-shift",
+        props.veiEnabled && active,
+      );
+    };
+    const onKeyDown = (event: KeyboardEvent) => setShift(event.shiftKey);
+    const onKeyUp = (event: KeyboardEvent) => setShift(event.shiftKey);
+    const clear = () => setShift(false);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", clear);
+    if (!props.veiEnabled) clear();
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", clear);
+    };
+  }, [iframeRef, props.veiEnabled]);
+
   useEffect(() => {
     return () => {
       for (const url of blobUrlsRef.current) URL.revokeObjectURL(url);

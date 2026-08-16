@@ -432,6 +432,7 @@ export default function PageBuilder() {
           onReset={() => reset(match.entryPath)}
           onClose={() => setPanelMode(null)}
           onWidthChange={setCodePanelWidth}
+          initialWidth={codePanelWidth}
           layoutPaths={match.layoutPaths}
           onOpenLayout={setFileDialogPath}
         />

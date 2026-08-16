@@ -30,6 +30,12 @@
 - Complete: the code-panel layout footer renders its root-to-leaf chain as chevron-separated breadcrumbs.
 - Complete: removed the preview panel's duplicate border beside the dialog resize handle.
 - Complete: dialog preview scrolling uses the app's OverlayScrollbars theme while sharing its viewport with Fit measurement.
+- Complete: Page Builder VEI includes the public-style hover overlay and orange Shift state, with scroll/blur/mode cleanup.
+- Complete: Shift overlay uses a clear yellow warning highlight.
+- Complete: Shift modifier state is synchronized from both the Page Builder parent window and the focused preview iframe.
+- Complete: VEI preview overlay has no position, size, or color transitions and updates immediately.
+- Complete: remounted Code Panel initializes from Page Builder's shared width, preventing preview/editor divider gaps and position jumps when switching modes.
+- Complete: VEI closes a repeatable-item dialog when selection moves to a field outside that list, without affecting manually opened item dialogs.
 
 # Speed
 
