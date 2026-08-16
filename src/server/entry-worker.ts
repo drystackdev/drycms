@@ -62,6 +62,13 @@ function withSecurityHeaders(response: Response): Response {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+function withSandboxModuleCors(response: Response, pathname: string): Response {
+  if (!/\.(?:js|mjs)$/i.test(pathname)) return response;
+  const copy = new Response(response.body, response);
+  copy.headers.set("Access-Control-Allow-Origin", "null");
+  return copy;
+}
+
 /** `env.ASSETS.fetch()` for `index.html`, with the same client-config
  * `<script>` injection `entry-node.ts`'s `serveAdminShell` does - just
  * sourced from the Assets binding's text instead of a cached
@@ -121,7 +128,7 @@ export default {
     // is the ADMIN shell, not a site-root page, so "/" always continues on
     // to the App Router / admin-shell branches below instead.
     if (pathname !== "/") {
-      const assetResponse = await env.ASSETS.fetch(request);
+      const assetResponse = withSandboxModuleCors(await env.ASSETS.fetch(request), pathname);
       if (assetResponse.status !== 404) {
         // The Assets binding's own default (`public, max-age=0,
         // must-revalidate`) forces a revalidation round trip for EVERY

@@ -7,7 +7,7 @@ export const ADMIN_CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "frame-ancestors 'self'",
   "form-action 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:",
   "style-src 'self' 'unsafe-inline' https:",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https:",

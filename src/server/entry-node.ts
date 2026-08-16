@@ -34,6 +34,7 @@ function tryServeStaticAsset(pathname: string, res: ServerResponse): boolean {
   if (!existsSync(filePath) || !statSync(filePath).isFile()) return false;
   applySecurityHeaders(res);
   res.setHeader("Content-Type", mimeType(filePath));
+  if (/\.(?:js|mjs)$/i.test(filePath)) res.setHeader("Access-Control-Allow-Origin", "null");
   createReadStream(filePath).pipe(res);
   return true;
 }

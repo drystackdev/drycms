@@ -81,6 +81,11 @@ export default defineConfig(({ isSsrBuild, command }) => ({
    */
   publicDir: command === "build" ? false : "public",
   server: {
+    // Module requests issued by an opaque-origin sandboxed preview serialize
+    // their Origin as `null`. Configure Vite's own CORS middleware (rather
+    // than a static response header it can overwrite on transformed/304
+    // module responses); authenticated APIs still bypass this middleware.
+    cors: { origin: "null" },
     watch: {
       /**
        * `.dry/` is runtime DATA, not source (see `CLAUDE.md`), and Vite

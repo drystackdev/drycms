@@ -70,6 +70,15 @@ html.dry-vei-shift .dry-vei-preview-highlight {
 }
 `;
 
+/** Opaque-origin sandbox frames are intentionally denied the browser's real
+ * Storage objects. Tenant components still commonly use localStorage for
+ * harmless UI state (theme toggles, dismissed banners), so give the preview
+ * an in-memory Storage-compatible object scoped to this one frame document.
+ * It neither exposes nor writes the admin origin's storage. */
+export function buildPreviewStorageShimScript(): string {
+  return `<script>(function(){function memoryStorage(){var values=new Map();return{get length(){return values.size;},clear:function(){values.clear();},getItem:function(key){key=String(key);return values.has(key)?values.get(key):null;},key:function(index){return Array.from(values.keys())[Number(index)]??null;},removeItem:function(key){values.delete(String(key));},setItem:function(key,value){values.set(String(key),String(value));}};}function install(name){try{void window[name].length;}catch(error){Object.defineProperty(window,name,{value:memoryStorage(),configurable:false,enumerable:true});}}install("localStorage");install("sessionStorage");})();</script>`;
+}
+
 /**
  * Runs INSIDE the preview iframe (injected as a literal `<script>` into the
  * built HTML, never sharing a JS realm with the caller) - capturing-phase so
@@ -129,12 +138,8 @@ export interface BuildPreviewSrcdocResult {
   jsAssets: PageBuildResult["jsAssets"];
   deps: PageBuildResult["deps"];
   inSitemap: boolean;
-  /** Object URLs backing the returned `html`'s import map - the caller owns
-   * their lifetime (revoke once a LATER build's `srcdoc` assignment has
-   * started tearing down the iframe document that needed them, and on
-   * unmount) - see `PageEditor.tsx`'s `previewBlobUrlsRef` for why revoking
-   * any earlier than that risks yanking a URL out from under an in-flight
-   * fetch in the old document. */
+  /** Kept for caller compatibility. Sandboxed previews use data-module URLs
+   * now, so there are no parent-origin object URLs to revoke. */
   blobUrls: string[];
 }
 
@@ -152,19 +157,21 @@ export interface BuildPreviewSrcdocResult {
 export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promise<BuildPreviewSrcdocResult> {
   const result = await buildPage(input.buildInput);
 
-  const blobUrls: string[] = [];
   const importMap = { imports: {} as Record<string, string> };
   for (const asset of result.jsAssets) {
-    const blobUrl = URL.createObjectURL(new Blob([asset.source], { type: "text/javascript" }));
-    blobUrls.push(blobUrl);
+    // The preview iframe deliberately has an opaque sandbox origin. A Blob
+    // URL created here belongs to the admin parent origin and cannot be
+    // imported there; a data-module URL is self-contained and retains the
+    // exact unsaved source without granting the frame `allow-same-origin`.
+    const moduleUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(asset.source)}`;
     const realUrl = builtAssetUrlForJsPath(input.buildInput.builtAssetsBaseUrl, asset.jsPath);
-    importMap.imports[realUrl] = blobUrl;
+    importMap.imports[realUrl] = moduleUrl;
     // Vite dev's import-analysis pass appends `?import` to every dynamic
     // `import()` it instruments (`hydrate-built.ts`'s own entry/layout/
     // preact-runtime imports included) - see `PageEditor.tsx`'s original
     // doc comment on this exact line for the full trace of why the plain
     // key alone would silently miss under `bun run dev`.
-    importMap.imports[`${realUrl}?import`] = blobUrl;
+    importMap.imports[`${realUrl}?import`] = moduleUrl;
   }
 
   const withoutVei = result.html.replace(`<script type="module" src="${input.veiOverlayHref}"></script>`, "");
@@ -172,6 +179,7 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
   const veiStyle = input.veiEnabled ? `<style>${VEI_PREVIEW_MARKER_CSS}</style>` : "";
   const headExtras =
     `<base href="${input.buildInput.origin}/">` +
+    buildPreviewStorageShimScript() +
     (result.jsAssets.length > 0 ? `<script type="importmap">${JSON.stringify(importMap).replace(/</g, "\\u003c")}</script>` : "") +
     veiStyle;
   const withBase = withoutVei.replace("<head>", `<head>${headExtras}`);
@@ -179,5 +187,5 @@ export async function buildPreviewSrcdoc(input: BuildPreviewSrcdocInput): Promis
   const bridgeScript = buildPreviewBridgeScript({ vei: input.veiEnabled, runtimeVeiToggle: input.runtimeVeiToggle });
   const withBridgeScript = withBase.includes("</body>") ? withBase.replace("</body>", `${bridgeScript}</body>`) : withBase + bridgeScript;
 
-  return { html: withBridgeScript, jsAssets: result.jsAssets, deps: result.deps, inSitemap: result.inSitemap, blobUrls };
+  return { html: withBridgeScript, jsAssets: result.jsAssets, deps: result.deps, inSitemap: result.inSitemap, blobUrls: [] };
 }

@@ -20,7 +20,14 @@ export const GET: DryRouteHandler = async (context) => {
     if (source === null) return new Response("Not found", { status: 404 });
     return new Response(source, {
       status: 200,
-      headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "public, max-age=60" },
+      headers: {
+        "Content-Type": "text/javascript; charset=utf-8",
+        "Cache-Control": "public, max-age=60",
+        // Sandboxed srcdoc previews have the serialized Origin `null`. This
+        // asset is already a public unauthenticated module; allowing only
+        // that origin restores hydration without exposing admin APIs.
+        "Access-Control-Allow-Origin": "null",
+      },
     });
   } catch (error) {
     return errorResponse(error);
